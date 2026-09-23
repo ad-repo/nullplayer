@@ -722,7 +722,7 @@ class RadioManager {
 
             let stations = seeds.compactMap { seed -> RadioStation? in
                 guard let url = URL(string: seed.url) else {
-                    NSLog("RadioManager: Skipping invalid default station URL for '%@': %@", seed.name, seed.url)
+                    NSLog("RadioManager: Skipping invalid default station URL for '%@': %@", seed.name, seed.url.redactingSensitiveURLQueryItems)
                     return nil
                 }
                 let icon = seed.iconURL.flatMap(URL.init(string:))
@@ -737,7 +737,7 @@ class RadioManager {
             NSLog("RadioManager: Loaded %d bundled default stations", stations.count)
             return stations
         } catch {
-            NSLog("RadioManager: Failed to load bundled default_stations.json (%@)", error.localizedDescription)
+            NSLog("RadioManager: Failed to load bundled default_stations.json (%@)", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -1398,7 +1398,7 @@ class RadioManager {
         foldersStore.recordPlayed(station.url)
         postStationsDidChange()
         
-        NSLog("RadioManager: Playing station '%@' at %@", station.name, station.url.absoluteString)
+        NSLog("RadioManager: Playing station '%@' at %@", station.name, station.url.redacted)
         
         startPlayback(station: station)
     }
@@ -1417,7 +1417,7 @@ class RadioManager {
                 }
                 
                 if let streamURL = resolvedURL {
-                    NSLog("RadioManager: Resolved playlist to stream URL: %@", streamURL.absoluteString)
+                    NSLog("RadioManager: Resolved playlist to stream URL: %@", streamURL.redacted)
                     // Create a modified station with the resolved URL
                     let resolvedStation = RadioStation(
                         id: station.id,
@@ -1455,7 +1455,7 @@ class RadioManager {
     
     /// Resolve a playlist URL (.pls, .m3u, .m3u8) to get the actual stream URL
     private func resolvePlaylistURL(_ url: URL, completion: @escaping (URL?) -> Void) {
-        NSLog("RadioManager: Resolving playlist URL: %@", url.absoluteString)
+        NSLog("RadioManager: Resolving playlist URL: %@", url.redacted)
         
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
@@ -1463,7 +1463,7 @@ class RadioManager {
         URLSession.shared.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
                 guard let data = data, error == nil else {
-                    NSLog("RadioManager: Failed to fetch playlist: %@", error?.localizedDescription ?? "unknown")
+                    NSLog("RadioManager: Failed to fetch playlist: %@", error?.localizedDescription.redactingSensitiveURLQueryItems ?? "unknown")
                     completion(nil)
                     return
                 }
@@ -1478,7 +1478,7 @@ class RadioManager {
                 let streamURL = self.parsePlaylistForStreamURL(content, sourceURL: url)
                 // Block SSRF: don't follow playlist redirects from public URLs to private IPs
                 if let resolved = streamURL, self.isPrivateIPRedirect(from: url, to: resolved) {
-                    NSLog("RadioManager: Blocked playlist redirect to private IP: %@", resolved.absoluteString)
+                    NSLog("RadioManager: Blocked playlist redirect to private IP: %@", resolved.redacted)
                     completion(nil)
                     return
                 }
@@ -1716,7 +1716,7 @@ class RadioManager {
             return
         }
         
-        NSLog("RadioManager: Stream disconnected: %@", error?.localizedDescription ?? "unknown")
+        NSLog("RadioManager: Stream disconnected: %@", error?.localizedDescription.redactingSensitiveURLQueryItems ?? "unknown")
         
         // Attempt auto-reconnect if enabled
         if autoReconnectEnabled && reconnectAttempts < maxReconnectAttempts {
@@ -1892,7 +1892,7 @@ class RadioManager {
                 self.somaMetadataRequestInFlight = false
 
                 guard error == nil, let data = data else {
-                    NSLog("RadioManager: Soma metadata fetch failed: %@", error?.localizedDescription ?? "unknown")
+                    NSLog("RadioManager: Soma metadata fetch failed: %@", error?.localizedDescription.redactingSensitiveURLQueryItems ?? "unknown")
                     return
                 }
 

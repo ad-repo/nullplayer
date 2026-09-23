@@ -84,7 +84,7 @@ class JellyfinRadioHistory {
             try createTableIfNeeded(connection)
             NSLog("JellyfinRadioHistory: Database ready at %@", dbPath)
         } catch {
-            NSLog("JellyfinRadioHistory: Failed to open database: %@", error.localizedDescription)
+            NSLog("JellyfinRadioHistory: Failed to open database: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -152,7 +152,7 @@ class JellyfinRadioHistory {
                 colNormalizedKey <- nKey
             ))
         } catch {
-            NSLog("JellyfinRadioHistory: Failed to record track: %@", error.localizedDescription)
+            NSLog("JellyfinRadioHistory: Failed to record track: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -191,7 +191,7 @@ class JellyfinRadioHistory {
             NSLog("JellyfinRadioHistory: Filtered %d/%d tracks", originalCount - result.count, originalCount)
             return result
         } catch {
-            NSLog("JellyfinRadioHistory: Failed to query history for filtering: %@", error.localizedDescription)
+            NSLog("JellyfinRadioHistory: Failed to query history for filtering: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return tracks
         }
     }
@@ -214,7 +214,7 @@ class JellyfinRadioHistory {
                 )
             }
         } catch {
-            NSLog("JellyfinRadioHistory: Failed to fetch history: %@", error.localizedDescription)
+            NSLog("JellyfinRadioHistory: Failed to fetch history: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -226,7 +226,7 @@ class JellyfinRadioHistory {
         do {
             try db.run(table.filter(colId == id).delete())
         } catch {
-            NSLog("JellyfinRadioHistory: Failed to remove entry %lld: %@", id, error.localizedDescription)
+            NSLog("JellyfinRadioHistory: Failed to remove entry %lld: %@", id, error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -235,7 +235,7 @@ class JellyfinRadioHistory {
         do {
             try db.run(table.delete())
         } catch {
-            NSLog("JellyfinRadioHistory: Failed to clear history: %@", error.localizedDescription)
+            NSLog("JellyfinRadioHistory: Failed to clear history: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 

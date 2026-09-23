@@ -378,3 +378,11 @@ let url = "...&ratingCount<=999&..."  // equivalent to <1000
 - [Python PlexAPI](https://github.com/pkkid/python-plexapi)
 - [Plex API Documentation](https://plexapi.dev/)
 - [Plex Support - Sonic Analysis](https://support.plex.tv/articles/sonic-analysis-music/)
+
+
+## Credential-safe logging
+
+Use the shared URL and error-string helpers described in
+[audio-system — Credential-safe logging](../audio-system/SKILL.md#credential-safe-logging).
+Do not log raw authenticated URLs or credentials; pass response bodies
+through the helper rather than omitting them.

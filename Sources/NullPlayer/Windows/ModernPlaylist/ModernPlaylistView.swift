@@ -1397,23 +1397,14 @@ class ModernPlaylistView: NSView {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.init(filenameExtension: "m3u")!, .init(filenameExtension: "m3u8")!]
         if panel.runModal() == .OK, let url = panel.url {
-            if let content = try? String(contentsOf: url, encoding: .utf8) {
-                var urls: [URL] = []
-                for line in content.components(separatedBy: .newlines) {
-                    let trimmed = line.trimmingCharacters(in: .whitespaces)
-                    if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
-                    if let fileURL = URL(string: trimmed) {
-                        urls.append(fileURL)
-                    } else {
-                        let fileURL = url.deletingLastPathComponent().appendingPathComponent(trimmed)
-                        urls.append(fileURL)
-                    }
-                }
-                if !urls.isEmpty {
-                    WindowManager.shared.audioEngine.clearPlaylist()
-                    WindowManager.shared.audioEngine.loadFiles(urls)
-                    needsDisplay = true
-                }
+            // `Playlist.resolveEntry` rather than a local `URL(string:)` test: that initialiser
+            // accepts a bare filename and returns a schemeless URL, so the relative branch here
+            // was dead code and every relative entry loaded as something unplayable.
+            let urls = Playlist.load(from: url)?.trackURLs ?? []
+            if !urls.isEmpty {
+                WindowManager.shared.audioEngine.clearPlaylist()
+                WindowManager.shared.audioEngine.loadFiles(urls)
+                needsDisplay = true
             }
         }
     }

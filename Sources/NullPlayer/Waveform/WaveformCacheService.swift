@@ -286,8 +286,8 @@ actor WaveformCacheService {
         } catch {
             NSLog(
                 "WaveformCacheService: Direct prerender unavailable for %@; falling back to download: %@",
-                descriptor.sourcePath,
-                error.localizedDescription
+                descriptor.sourcePath.redactingSensitiveURLQueryItems,
+                error.localizedDescription.redactingSensitiveURLQueryItems
             )
         }
         try Task.checkCancellation()

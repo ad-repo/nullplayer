@@ -232,10 +232,10 @@ When adding or refactoring top menu bar content:
 
 ## Dockable Center-Stack Windows
 
-Main, EQ, Playlist, Spectrum, Waveform, Audio Analysis, PeppyMeter, and Flow all participate in the center stack managed by `WindowManager`.
+Main, EQ, Playlist, Spectrum, Waveform, Audio Analysis, PeppyMeter, Flow, and Sonos Rooms all participate in the center stack managed by `WindowManager`.
 
 - Width is normalized to the main stack
-- Height is window-specific: Flow is single-height; PeppyMeter uses a 1.75x landscape height
+- Height is window-specific: Flow is single-height; PeppyMeter uses a 1.75x landscape height; Sonos Rooms uses a double-height baseline and preserves a taller restored list
 - Saved frames are restored through `WindowManager` rather than ad hoc per-window logic
 - Opening a center-stack window must calculate gaps from windows actually docked below main, not
   every visible stack-capable window. Use `dockedCenterStackWindowsBelowMain(mainFrame:)` (vertical
@@ -252,6 +252,13 @@ For new center-stack windows, follow the waveform/spectrum pattern:
 2. Classic chrome in `Windows/...`
 3. Modern chrome in `Windows/Modern...`
 4. Registration and docking behavior in `WindowManager`
+
+Sonos Rooms uses a shared controller/content view with separate Original/Metal chrome and a
+`.wal` hosted-surface adapter. Its scrollable list must leave Refresh and casting controls in a
+fixed footer. Explicitly lay out controls on first show and resize, including when the room list
+is empty, and match native AppKit control appearance to the skin's background. The implementation,
+volume semantics, lifecycle, and rendering fixtures are owned by the
+[Sonos casting skill](../sonos-casting/SKILL.md#sonos-rooms-window).
 
 ### Window Dragging (MUST)
 

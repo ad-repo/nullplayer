@@ -10,7 +10,7 @@ enum CLIArtwork {
               track.url.isFileURL ? 1 : 0,
               track.plexRatingKey ?? "nil",
               track.subsonicId ?? "nil",
-              track.artworkThumb ?? "nil")
+              track.artworkThumb?.redactingSensitiveURLQueryItems ?? "nil")
         if track.url.isFileURL {
             return await loadLocalArtwork(url: track.url)
         } else if track.plexRatingKey != nil, let thumb = track.artworkThumb {

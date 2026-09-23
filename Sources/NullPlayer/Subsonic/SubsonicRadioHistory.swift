@@ -84,7 +84,7 @@ class SubsonicRadioHistory {
             try createTableIfNeeded(connection)
             NSLog("SubsonicRadioHistory: Database ready at %@", dbPath)
         } catch {
-            NSLog("SubsonicRadioHistory: Failed to open database: %@", error.localizedDescription)
+            NSLog("SubsonicRadioHistory: Failed to open database: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -153,7 +153,7 @@ class SubsonicRadioHistory {
                 colNormalizedKey <- nKey
             ))
         } catch {
-            NSLog("SubsonicRadioHistory: Failed to record track: %@", error.localizedDescription)
+            NSLog("SubsonicRadioHistory: Failed to record track: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -189,7 +189,7 @@ class SubsonicRadioHistory {
                 return !normalizedKeys.contains(nk)
             }
         } catch {
-            NSLog("SubsonicRadioHistory: Failed to query history for filtering: %@", error.localizedDescription)
+            NSLog("SubsonicRadioHistory: Failed to query history for filtering: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return tracks
         }
     }
@@ -212,7 +212,7 @@ class SubsonicRadioHistory {
                 )
             }
         } catch {
-            NSLog("SubsonicRadioHistory: Failed to fetch history: %@", error.localizedDescription)
+            NSLog("SubsonicRadioHistory: Failed to fetch history: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -224,7 +224,7 @@ class SubsonicRadioHistory {
         do {
             try db.run(table.filter(colId == id).delete())
         } catch {
-            NSLog("SubsonicRadioHistory: Failed to remove entry %lld: %@", id, error.localizedDescription)
+            NSLog("SubsonicRadioHistory: Failed to remove entry %lld: %@", id, error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -233,7 +233,7 @@ class SubsonicRadioHistory {
         do {
             try db.run(table.delete())
         } catch {
-            NSLog("SubsonicRadioHistory: Failed to clear history: %@", error.localizedDescription)
+            NSLog("SubsonicRadioHistory: Failed to clear history: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 

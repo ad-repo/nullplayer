@@ -36,6 +36,12 @@ class ModernMainWindowView: NSView {
     
     /// Video title override
     private var videoTitle: String?
+
+    /// Last track-load failure, shown in the marquee until the next track loads.
+    ///
+    /// `.audioTrackDidFailToLoad` had exactly one consumer — the Classic skin's marquee — so an
+    /// unreadable file stopped the player and said nothing at all in this mode.
+    private var errorMessage: String?
     
     /// Spectrum levels (downsampled to 8 bars for mini display)
     private var spectrumLevels: [Float] = Array(repeating: 0, count: 8)
@@ -139,6 +145,10 @@ class ModernMainWindowView: NSView {
         // Observe window layout changes for seamless docked borders
         NotificationCenter.default.addObserver(self, selector: #selector(windowLayoutDidChange),
                                                 name: .windowLayoutDidChange, object: nil)
+
+        // Observe track load failures to show the error in the marquee.
+        NotificationCenter.default.addObserver(self, selector: #selector(trackDidFailToLoad(_:)),
+                                                name: .audioTrackDidFailToLoad, object: nil)
 
         // Observe radio metadata/connection updates for marquee now-playing text.
         NotificationCenter.default.addObserver(self, selector: #selector(radioMetadataDidChange),
@@ -801,6 +811,7 @@ class ModernMainWindowView: NSView {
         currentArtworkTrackId = track?.id
         self.currentTrack = track
         self.videoTitle = nil
+        self.errorMessage = nil  // A track loaded, so the last failure is no longer current.
         loadArtwork(for: track)
         self.currentBPM = nil  // Reset BPM for new track
         self.bpmMultiplierState = 2  // Reset multiplier for new track (default to 0.5x)
@@ -817,6 +828,9 @@ class ModernMainWindowView: NSView {
             clearArtwork()
         }
         self.videoTitle = title
+        // A video starting is not an audio track change, so nothing else clears an earlier audio
+        // failure — it would sit over the film's title.
+        self.errorMessage = nil
         refreshMarqueeText()
         needsDisplay = true
     }
@@ -1147,6 +1161,13 @@ class ModernMainWindowView: NSView {
         return nil
     }
 
+    @objc private func trackDidFailToLoad(_ notification: Notification) {
+        guard let message = notification.userInfo?["message"] as? String else { return }
+        errorMessage = "[Error] \(message)"
+        refreshMarqueeText()
+        needsDisplay = true
+    }
+
     @objc private func radioMetadataDidChange() {
         guard RadioManager.shared.isActive else { return }
         refreshMarqueeText()
@@ -1160,6 +1181,10 @@ class ModernMainWindowView: NSView {
     }
 
     private func marqueeDisplayText() -> String {
+        if let errorMessage {
+            return errorMessage
+        }
+
         if let title = videoTitle {
             return title
         }

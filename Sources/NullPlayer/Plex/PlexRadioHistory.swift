@@ -84,7 +84,7 @@ class PlexRadioHistory {
             try createTableIfNeeded(connection)
             NSLog("PlexRadioHistory: Database ready at %@", dbPath)
         } catch {
-            NSLog("PlexRadioHistory: Failed to open database: %@", error.localizedDescription)
+            NSLog("PlexRadioHistory: Failed to open database: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -152,7 +152,7 @@ class PlexRadioHistory {
                 colNormalizedKey <- nKey
             ))
         } catch {
-            NSLog("PlexRadioHistory: Failed to record track: %@", error.localizedDescription)
+            NSLog("PlexRadioHistory: Failed to record track: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -195,7 +195,7 @@ class PlexRadioHistory {
                 return true
             }
         } catch {
-            NSLog("PlexRadioHistory: Failed to query history for filtering: %@", error.localizedDescription)
+            NSLog("PlexRadioHistory: Failed to query history for filtering: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return tracks
         }
     }
@@ -218,7 +218,7 @@ class PlexRadioHistory {
                 )
             }
         } catch {
-            NSLog("PlexRadioHistory: Failed to fetch history: %@", error.localizedDescription)
+            NSLog("PlexRadioHistory: Failed to fetch history: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -230,7 +230,7 @@ class PlexRadioHistory {
         do {
             try db.run(table.filter(colId == id).delete())
         } catch {
-            NSLog("PlexRadioHistory: Failed to remove entry %lld: %@", id, error.localizedDescription)
+            NSLog("PlexRadioHistory: Failed to remove entry %lld: %@", id, error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -239,7 +239,7 @@ class PlexRadioHistory {
         do {
             try db.run(table.delete())
         } catch {
-            NSLog("PlexRadioHistory: Failed to clear history: %@", error.localizedDescription)
+            NSLog("PlexRadioHistory: Failed to clear history: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 

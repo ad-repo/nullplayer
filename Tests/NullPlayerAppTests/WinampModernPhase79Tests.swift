@@ -174,6 +174,21 @@ final class WinampModernPhase79Tests: XCTestCase {
         XCTAssertEqual(host.trackDisplayTitle, "Rear Window")
     }
 
+    /// Starting a film posts no `.audioTrackDidChange`, so an audio failure from just before it is
+    /// still stored — and it used to be answered ahead of the session, over the film's title.
+    func testAFilmStartedAfterAnAudioFailureShowsItsOwnTitle() {
+        let engine = AudioEngine()
+        let host = makeHost(engine: engine, session: nil)
+        NotificationCenter.default.post(name: .audioTrackDidFailToLoad, object: engine,
+                                        userInfo: ["message": "Failed to load 'a.mp3'"])
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertEqual(host.trackDisplayTitle, "Failed to load 'a.mp3'", "precondition: the failure is shown")
+
+        host.videoSession = { self.playingFilm }
+
+        XCTAssertEqual(host.trackDisplayTitle, "Rear Window")
+    }
+
     /// Everything but the title and the clock answers empty, so a skin **hides** those lines rather
     /// than printing the stale audio track's bitrate, path and artist against the film's title.
     func testEveryOtherReadoutIsEmptyDuringAFilmRatherThanTheStaleAudioTracks() throws {

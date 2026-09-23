@@ -634,6 +634,23 @@
   Where the skin has a playlist or an equalizer **of its own**, that one is used and no second
   NullPlayer window opens — most Media Player skins do. If the skin keeps its playlist on a
   separate screen, the Playlist Editor item takes you there, exactly as the skin's own button does.
+- **Sonos Rooms window with per-room volume** — a new dockable **Sonos Rooms** window lists every
+  Sonos room NullPlayer has discovered, with a checkbox to include it in the cast and its own volume
+  slider, so each room can be set independently instead of only through the group volume. The list
+  scrolls for any number of rooms, with **Refresh** and **Start/Stop Casting** always visible at the
+  bottom. Open it from **Windows → Sonos Rooms** or **Output → Sonos → Sonos Rooms…**; the existing
+  Sonos submenu still works as before and shares the same room selection. The window docks, resizes
+  and restores like the other windows, follows Compact Mode, and is skinned in Classic, Original,
+  Original-Metal and Winamp Modern (`.wal`) skins. The player's main volume slider still controls
+  the whole group.
+- **Download your complete Play History as a CSV** — the Library Data and Play History views now
+  include a download button that exports every recorded event, including older and skipped plays,
+  rather than only the 200 recent entries visible in the table. Available in every UI mode.
+- **Local library copes with moved folders and missing files** — **Library → Find Missing Files…**
+  finds a watch folder that has moved (for example when iCloud Drive is turned off and its files
+  land in `~/iCloud Drive (Archive)`), shows where it went, and re-points it on your say-so, keeping
+  play counts and ratings. It then offers to forget tracks whose files are genuinely deleted;
+  anything on a disconnected drive or unmounted share is always left alone.
 
 ### Bug Fixes
 
@@ -912,6 +929,22 @@
   any track with a known or resolved sample rate above 48 kHz, even when its URL extension or MIME
   type is unrecognized. Local files with unusual extensions are probed before casting, and Plex
   tracks with missing rate metadata are resolved from the server (GH #422).
+- **One unreadable file no longer stops the playlist** — playback skips past it to the next track,
+  and the error now appears in the Modern and Winamp Modern main windows, not only Classic. A track
+  on a disconnected NAS still stops playback, as before, instead of starting some other track.
+- **Playlists with relative paths play again** — `.m3u` and `.pls` entries written as bare file
+  names or paths next to the playlist were being read as web addresses and could not play.
+- **Local playback recovers after a long idle** — after the Mac sat idle for a long time, local
+  playback could get stuck, silently retrying a broken audio engine every quarter-second. NullPlayer
+  now rebuilds the audio engine instead, restoring your output device (falling back to the system
+  default if it is gone), EQ and pitch settings, and resuming the loaded track where it was. Retries
+  back off and stop after six attempts; pressing Play or changing the output device tries again.
+  Pausing or stopping during recovery is respected, and streaming playback is unaffected.
+- **Server credentials no longer appear in logs** — playback, artwork, radio and casting diagnostics
+  could record access tokens in full URLs and error messages (for example a Plex `X-Plex-Token`, or
+  a Jellyfin or Emby `api_key` when playing video). Credentials are now redacted from logs across
+  Plex, Subsonic/Navidrome, Jellyfin, Emby, radio and casting, and casting failure alerts no longer
+  show raw error details.
 
 ## 0.30.0
 

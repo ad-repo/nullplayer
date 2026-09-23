@@ -203,3 +203,11 @@ Emby and Jellyfin share the same MediaBrowser API ancestry. The REST endpoints a
 
 - **Library selector is browse-mode-aware**: The "Lib:" click zone shows a music library picker in music tabs (Artists/Albums/Tracks/Plists) and a video library picker in Movies/Shows tabs. `EmbyManager` has separate `currentMusicLibrary`, `currentMovieLibrary`, and `currentShowLibrary` — each posts its own notification. `selectMovieLibrary(_:)` and `selectShowLibrary(_:)` accept `nil` to show all.
 - **Streaming URL content type (Sonos)**: Emby stream URLs (`/Audio/{id}/stream`) have no file extension, so `detectAudioContentType(for:)` defaults to `audio/mpeg`. This breaks Sonos casting for non-MP3 formats and can let high-resolution lossless tracks bypass format filtering. Prefer `Track.contentType` set by the server client from API metadata. Preserve `sampleRate` too: strict Sonos compatibility rejects extensionless FLAC/WAV above 48 kHz, and rejects unknown-rate FLAC/WAV conservatively when no sample rate is available.
+
+
+## Credential-safe logging
+
+Use the shared URL and error-string helpers described in
+[audio-system — Credential-safe logging](../audio-system/SKILL.md#credential-safe-logging).
+Do not log raw authenticated URLs or credentials; pass response bodies
+through the helper rather than omitting them.

@@ -176,7 +176,7 @@ class SubsonicManager {
         // Connect to the new server
         try await connect(to: server)
         
-        NSLog("SubsonicManager: Added server '%@' at %@", name, cleanURL)
+        NSLog("SubsonicManager: Added server '%@' at %@", name, cleanURL.redactingSensitiveURLQueryItems)
         
         return server
     }
@@ -305,7 +305,7 @@ class SubsonicManager {
         do {
             try await connect(to: server)
         } catch {
-            NSLog("SubsonicManager: Background connection failed: %@", error.localizedDescription)
+            NSLog("SubsonicManager: Background connection failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
     
@@ -365,7 +365,7 @@ class SubsonicManager {
             }
             
         } catch {
-            NSLog("SubsonicManager: Library preload failed: %@", error.localizedDescription)
+            NSLog("SubsonicManager: Library preload failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             await MainActor.run {
                 self.isPreloading = false
             }
@@ -600,7 +600,7 @@ class SubsonicManager {
         do {
             return try await client.getGenres()
         } catch {
-            NSLog("SubsonicManager: Failed to fetch genres: %@", error.localizedDescription)
+            NSLog("SubsonicManager: Failed to fetch genres: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -617,7 +617,7 @@ class SubsonicManager {
             let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
         } catch {
-            NSLog("SubsonicManager: Failed to create library radio: %@", error.localizedDescription)
+            NSLog("SubsonicManager: Failed to create library radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -645,7 +645,7 @@ class SubsonicManager {
             let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("SubsonicManager: Failed to create library radio (similar): %@", error.localizedDescription)
+            NSLog("SubsonicManager: Failed to create library radio (similar): %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -662,7 +662,7 @@ class SubsonicManager {
             let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
         } catch {
-            NSLog("SubsonicManager: Failed to create genre radio (%@): %@", genre, error.localizedDescription)
+            NSLog("SubsonicManager: Failed to create genre radio (%@): %@", genre, error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -687,7 +687,7 @@ class SubsonicManager {
             let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("SubsonicManager: Failed to create genre radio similar: %@", error.localizedDescription)
+            NSLog("SubsonicManager: Failed to create genre radio similar: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -704,7 +704,7 @@ class SubsonicManager {
             let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
         } catch {
-            NSLog("SubsonicManager: Failed to create decade radio (%d-%d): %@", start, end, error.localizedDescription)
+            NSLog("SubsonicManager: Failed to create decade radio (%d-%d): %@", start, end, error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -729,7 +729,7 @@ class SubsonicManager {
             let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("SubsonicManager: Failed to create decade radio similar: %@", error.localizedDescription)
+            NSLog("SubsonicManager: Failed to create decade radio similar: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -742,7 +742,7 @@ class SubsonicManager {
             let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
         } catch {
-            NSLog("SubsonicManager: Failed to create rating radio: %@", error.localizedDescription)
+            NSLog("SubsonicManager: Failed to create rating radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -767,7 +767,7 @@ class SubsonicManager {
             let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("SubsonicManager: Failed to create rating radio similar: %@", error.localizedDescription)
+            NSLog("SubsonicManager: Failed to create rating radio similar: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -780,7 +780,7 @@ class SubsonicManager {
             let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("SubsonicManager: Failed to create track radio: %@", error.localizedDescription)
+            NSLog("SubsonicManager: Failed to create track radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -793,7 +793,7 @@ class SubsonicManager {
             let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("SubsonicManager: Failed to create artist radio: %@", error.localizedDescription)
+            NSLog("SubsonicManager: Failed to create artist radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -806,7 +806,7 @@ class SubsonicManager {
             let historyFiltered = SubsonicRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("SubsonicManager: Failed to create album radio: %@", error.localizedDescription)
+            NSLog("SubsonicManager: Failed to create album radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }

@@ -93,13 +93,13 @@ class ChromecastManager: CastSessionControllerDelegate {
             case .ready:
                 NSLog("ChromecastManager: Browser ready - actively discovering _googlecast._tcp services")
             case .failed(let error):
-                NSLog("ChromecastManager: Browser failed: %@", error.localizedDescription)
+                NSLog("ChromecastManager: Browser failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 self?.isDiscovering = false
             case .cancelled:
                 NSLog("ChromecastManager: Browser cancelled")
                 self?.isDiscovering = false
             case .waiting(let error):
-                NSLog("ChromecastManager: Browser waiting: %@", error.localizedDescription)
+                NSLog("ChromecastManager: Browser waiting: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             @unknown default:
                 break
             }
@@ -196,7 +196,7 @@ class ChromecastManager: CastSessionControllerDelegate {
                     }
                 case .failed(let error):
                     completed = true
-                    NSLog("ChromecastManager: Connection failed for %@: %@", serviceName, error.localizedDescription)
+                    NSLog("ChromecastManager: Connection failed for %@: %@", serviceName, error.localizedDescription.redactingSensitiveURLQueryItems)
                     connection.cancel()
                     // Retry if we have attempts left
                     if attempt < maxAttempts {
@@ -210,7 +210,7 @@ class ChromecastManager: CastSessionControllerDelegate {
                         completion(nil)
                     }
                 case .waiting(let error):
-                    NSLog("ChromecastManager: Connection waiting for %@: %@", serviceName, error.localizedDescription)
+                    NSLog("ChromecastManager: Connection waiting for %@: %@", serviceName, error.localizedDescription.redactingSensitiveURLQueryItems)
                 default:
                     break
                 }

@@ -113,7 +113,7 @@ class SubsonicPlaybackReporter {
                 try await client.scrobble(id: trackId, submission: false)
                 NSLog("SubsonicPlaybackReporter: Reported 'now playing' for track %@", trackId)
             } catch {
-                NSLog("SubsonicPlaybackReporter: Failed to report 'now playing': %@", error.localizedDescription)
+                NSLog("SubsonicPlaybackReporter: Failed to report 'now playing': %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -152,7 +152,7 @@ class SubsonicPlaybackReporter {
                 try await client.scrobble(id: trackId, submission: true)
                 NSLog("SubsonicPlaybackReporter: Scrobbled track %@", trackId)
             } catch {
-                NSLog("SubsonicPlaybackReporter: Failed to scrobble: %@", error.localizedDescription)
+                NSLog("SubsonicPlaybackReporter: Failed to scrobble: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 // Reset flag so we can try again
                 hasScrobbled = false
             }

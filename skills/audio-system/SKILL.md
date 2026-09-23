@@ -93,11 +93,11 @@ Main audio controller managing:
 
 **Key Properties:**
 ```swift
-private let engine = AVAudioEngine()
-private let playerNode = AVAudioPlayerNode()
-private let crossfadePlayerNode = AVAudioPlayerNode()
-private let activeEQConfiguration: EQConfiguration
-private let eqNode: AVAudioUnitEQ
+private var engine = AVAudioEngine()
+private var playerNode = AVAudioPlayerNode()
+private var crossfadePlayerNode = AVAudioPlayerNode()
+private var activeEQConfiguration: EQConfiguration
+private var eqNode: AVAudioUnitEQ
 private var streamingPlayer: StreamingAudioPlayer?
 private var crossfadeStreamingPlayer: StreamingAudioPlayer?
 var gaplessPlaybackEnabled: Bool
@@ -151,6 +151,40 @@ func streamingPlayerDidFinishPlaying() {
 ### NAS Responsiveness for Local Track Switches
 
 See `skills/local-library/SKILL.md` — NAS Responsiveness section.
+
+### A Local Track That Will Not Open
+
+Two load paths, one rule: **skip a bad file, but never skip past a file whose folder is gone.**
+`AudioEngine.containingFolderIsPresent(_:)` is the test — the file's folder exists and is
+non-empty. Present means this one file is bad (corrupt, deleted), so the queue moves on. Absent or
+empty means the volume is not there — a disconnected NAS leaves no folder or an empty mount point —
+and playback stops with the error, which is the offline behaviour. Skipping in that case silently
+landed on whatever local track followed, usually the one that was already playing, and started it
+under the error message.
+
+- **Asynchronous** (`loadLocalTrackForImmediatePlayback`, used by `playTrack` and the end-of-track
+  advance): the rule is evaluated on `deferredIOQueue` in the catch and passed as
+  `advanceToNextTrack`. The advance waits 0.5 s so the error is readable, is cancelled by the load
+  token (a manual Stop bumps it), and is bounded by `consecutiveTrackLoadFailures < playlist.count`.
+  It reads the failed position from `currentIndex` when it fires, so **anything that replaces the
+  playlist must bump the token too** — `setPlaylistTracks` and `setPlaylistFiles` do. They set
+  `currentIndex = -1`, and an advance still armed read that as "the failed track was before row 0"
+  and started the new playlist's first entry from a call that promises not to play.
+- **The failure streak is reset by anything that plays**: `commitLoadedLocalTrack` for a local file,
+  the AudioStreaming `.playing` callback for a stream. Without the stream reset, a repeating playlist
+  of streams and a few bad local files kept accumulating across loops and ended the queue early.
+- **Synchronous** (`loadTrack(at:)`, used by `playNow`, `next()`, `previous()` and the browsers):
+  the rule guards its recursive skip.
+- **A failed load leaves `currentTrack` nil, and `play()` reads nil as "start the playlist from the
+  top".** So a caller that does `loadTrack(at:)` then `play()` must guard with
+  `if currentTrack != nil` — `playNow`, `loadTracks`, `insertTracksAfterCurrent`, `next()`,
+  `previous()` and `skipTracks(count:)` do. An unguarded `play()` after a failed load starts an
+  unrelated track. The navigation three also capture `wasPlaying` *before* loading: the failure
+  handler sets `.stopped` on the way through the skip, so testing `state` afterwards left the queue
+  paused on the track it had just skipped to.
+
+A reconnected drive plays again only once macOS has remounted the share at the same path; the app
+does not mount shares itself. An SMB share that dropped is not remounted automatically.
 
 ## Equalizer
 
@@ -461,7 +495,19 @@ When audio isn't playing:
 ### Local Playback (AVAudioEngine)
 MP3, M4A, AAC, WAV, AIFF, FLAC, ALAC, OGG
 
-Route-change graph rebuilds must catch Objective-C exceptions from `AVAudioEngine.connect(_:to:format:)` via the `ObjCExceptionCatcher` bridge. If reconnect raises `AVAudioEngineGraph::UpdateGraphAfterReconfig`, defer the rebuild and retry through the existing cast/route-stabilization path instead of relying on Swift `do/catch`.
+Route-change graph rebuilds catch Objective-C exceptions from disconnect/connect via `ObjCExceptionCatcher`; Swift `do/catch` cannot catch them. `AudioGraphRecoveryCoordinator` owns the typed deferred/retry lifecycle and pending playback intent; `AudioEngine` owns only AVFoundation graph mutation and playback restoration. An exception can leave a partially mutated graph (including persistent `-10868` failures after long idle periods). Recovery replaces the engine and **all local nodes**, including the controller's local pitch node, then restores output selection, EQ layout/gains/preamp/bypass, pitch/rate, volume, and balance. Streaming pitch nodes remain independent. If the saved output device is gone, replacement falls back to the system default rather than failing every retry. Configuration observers move to the new engine; stale notifications from the retired engine are ignored. Invalidate playback completion generations before stopping old players.
+
+Local graph recovery gates only playback paths that use the local graph. Streaming renders through AudioStreaming's own engine and EQ, so `play()`'s streaming branch and `loadStreamingTrack` are deliberately ungated — a local graph awaiting replacement must never block a stream.
+
+A configuration change during streaming leaves the local engine paused and does **not** restart it: streaming renders through AudioStreaming's own engine, the spectrum tap is not on the local mixer while streaming, and the next local `play()` starts the engine itself. The local graph is still reconnected so it is ready when playback returns to a file.
+
+The configuration-change notification arrives on an unspecified thread. Only the lock-guarded rebuild flag may be read there; `engine` is a `var` reassigned on main during replacement, so engine identity is compared after the hop to main. Notifications arriving mid-rebuild are dropped — most are provoked by the rebuild's own mutation — but recorded: a completed rebuild re-reads its output format and rebuilds once more if it no longer matches what was connected, which is what keeps a genuine device change from being lost without looping on self-provoked ones. Recovery state is reset when the debounced rebuild actually runs, not when the notification arrives — clearing it early opens a window where playback paths see a ready gate and schedule onto a graph that has not been rebuilt.
+
+If replacement cannot recover the device, deferred retries back off from 250 ms to 4 seconds and stop after six retries. A fresh Play request or device-change notification permits another recovery cycle. Stop/Pause clear deferred playback intent so recovery cannot restart canceled playback. Tests in `AudioEngineGraphRecoveryTests` inject Objective-C exceptions into disconnect/connect to exercise replacement and persistent-failure exhaustion without waiting days.
+
+### Debugging a live defect
+
+For a screen-only audio defect, read `skills/testing/SKILL.md` and `skills/winamp-modern-skin-guide/reference/harness.md` § *Debugging a live defect* before diagnosis. For graph failures, capture the disconnect/connect failure and subsequent replacement/retry logs; preserve the affected process until its route and engine state have been inspected.
 
 ### Streaming Playback (AudioStreaming)
 HTTP/HTTPS URLs with MP3, AAC, Ogg Vorbis
@@ -512,7 +558,7 @@ For detailed information, see:
 
 | Area | Files |
 |------|-------|
-| Core | `Audio/AudioEngine.swift`, `Audio/StreamingAudioPlayer.swift` |
+| Core | `Audio/AudioEngine.swift`, `Audio/AudioGraphRecoveryCoordinator.swift`, `Audio/StreamingAudioPlayer.swift` |
 | EQ | EQ node configuration in AudioEngine, StreamingAudioPlayer |
 | Spectrum | `Audio/AudioEngine.swift` (FFT processing) |
 | BPM | `Audio/BPMDetector.swift` |
@@ -527,3 +573,26 @@ For detailed information, see:
 For an audio-control defect that only reproduces on screen, read `skills/live-ui-testing/SKILL.md`
 and `skills/winamp-modern-skin-guide/reference/harness.md` § *Debugging a live defect*. Instrument
 the control-to-engine path before changing DSP; use offline PCM tests for sample-level behavior.
+
+## Credential-safe logging
+
+Use `URL.redacted` from `Utilities/URL+Redacted.swift` whenever logging a media,
+artwork, radio, or casting URL. Use `String.redactingSensitiveURLQueryItems` for
+error descriptions and strings containing URLs, including optional diagnostics.
+These helpers are for log output only: requests, track URLs, and persistence
+must retain the original values.
+
+The shared helper covers Plex, Subsonic/Navidrome, Jellyfin/Emby, common radio
+auth/signature parameters, URL user info, nested/escaped query delimiters, JSON
+credential fields, auth headers, and LocalMediaServer capability paths.
+Never log a standalone capability token in full: log `logToken(_:)`'s
+four-character prefix, which keeps one stream followable across registration,
+proxying, and completion without publishing the token.
+
+Response bodies go through the helper rather than being dropped — a SOAP
+fault's `errorCode` and a server's error JSON are the primary diagnostics for
+casting and server failures. Bound them with `prefix(500)` (Plex: 1000) and
+redact. UPnP's gated logger redacts the formatted message before emitting it,
+so its call sites pass the body directly.
+
+Regression coverage lives in `Tests/NullPlayerAppTests/SensitiveURLRedactionTests.swift`.

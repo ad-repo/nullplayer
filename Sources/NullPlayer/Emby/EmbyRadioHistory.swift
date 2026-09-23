@@ -84,7 +84,7 @@ class EmbyRadioHistory {
             try createTableIfNeeded(connection)
             NSLog("EmbyRadioHistory: Database ready at %@", dbPath)
         } catch {
-            NSLog("EmbyRadioHistory: Failed to open database: %@", error.localizedDescription)
+            NSLog("EmbyRadioHistory: Failed to open database: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -152,7 +152,7 @@ class EmbyRadioHistory {
                 colNormalizedKey <- nKey
             ))
         } catch {
-            NSLog("EmbyRadioHistory: Failed to record track: %@", error.localizedDescription)
+            NSLog("EmbyRadioHistory: Failed to record track: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -188,7 +188,7 @@ class EmbyRadioHistory {
                 return !normalizedKeys.contains(nk)
             }
         } catch {
-            NSLog("EmbyRadioHistory: Failed to query history for filtering: %@", error.localizedDescription)
+            NSLog("EmbyRadioHistory: Failed to query history for filtering: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return tracks
         }
     }
@@ -211,7 +211,7 @@ class EmbyRadioHistory {
                 )
             }
         } catch {
-            NSLog("EmbyRadioHistory: Failed to fetch history: %@", error.localizedDescription)
+            NSLog("EmbyRadioHistory: Failed to fetch history: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -223,7 +223,7 @@ class EmbyRadioHistory {
         do {
             try db.run(table.filter(colId == id).delete())
         } catch {
-            NSLog("EmbyRadioHistory: Failed to remove entry %lld: %@", id, error.localizedDescription)
+            NSLog("EmbyRadioHistory: Failed to remove entry %lld: %@", id, error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -232,7 +232,7 @@ class EmbyRadioHistory {
         do {
             try db.run(table.delete())
         } catch {
-            NSLog("EmbyRadioHistory: Failed to clear history: %@", error.localizedDescription)
+            NSLog("EmbyRadioHistory: Failed to clear history: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 

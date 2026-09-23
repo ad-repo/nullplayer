@@ -63,6 +63,25 @@ struct RecentEventRow: Identifiable, Sendable {
     }
 }
 
+/// A lossless representation of an event for a full-history export. Unlike the
+/// table rows, these values are read directly from `play_events` so the CSV
+/// remains useful even if the related library track has since been removed.
+struct PlayHistoryExportRow: Sendable {
+    let id: Int64
+    let trackID: String
+    let trackURL: String
+    let title: String
+    let artist: String
+    let album: String
+    let genre: String
+    let playedAt: Date
+    let durationListened: Double
+    let source: String
+    let skipped: Bool
+    let contentType: String
+    let outputDevice: String
+}
+
 struct ArtistTrackRow: Identifiable, Sendable {
     let id: String
     let title: String
@@ -469,6 +488,40 @@ final class PlayHistoryStore: Sendable {
                                   genre: genre, source: source,
                                   playedAt: Date(timeIntervalSince1970: ts),
                                   durationListened: dur, skipped: skip)
+        }
+    }
+
+    /// Fetch every persisted event for CSV export. This deliberately does not
+    /// use the display filter, 30-day default, or the History table's 200-row
+    /// limit: an export is a record of the complete local play history.
+    func fetchAllEventsForExport() throws -> [PlayHistoryExportRow] {
+        let sql = """
+            SELECT id, track_id, track_url, event_title, event_artist, event_album,
+                   event_genre, played_at, duration_listened, source, skipped,
+                   content_type, output_device
+            FROM play_events
+            ORDER BY played_at DESC, id DESC
+            """
+        guard let db = MediaLibraryStore.shared.analyticsConnection else { return [] }
+        let stmt = try db.prepare(sql)
+        return stmt.compactMap { row in
+            guard let id = row[0] as? Int64 else { return nil }
+            let timestamp = row[7] as? Double ?? 0
+            return PlayHistoryExportRow(
+                id: id,
+                trackID: row[1] as? String ?? "",
+                trackURL: row[2] as? String ?? "",
+                title: row[3] as? String ?? "",
+                artist: row[4] as? String ?? "",
+                album: row[5] as? String ?? "",
+                genre: row[6] as? String ?? "",
+                playedAt: Date(timeIntervalSince1970: timestamp),
+                durationListened: row[8] as? Double ?? 0,
+                source: row[9] as? String ?? "",
+                skipped: (row[10] as? Int64 ?? 0) != 0,
+                contentType: row[11] as? String ?? "",
+                outputDevice: row[12] as? String ?? ""
+            )
         }
     }
 

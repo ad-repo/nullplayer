@@ -83,3 +83,8 @@ Run `swift test`. For UI or playback work, manually exercise local and server pl
   `winamp-modern-skin-guide/reference/harness.md` § *Debugging a live defect* — the reference
   implementation of that workflow. Every subsystem skill must carry a *Debugging a live defect*
   section routing there; a new subsystem adds one on day one. See `skin-subsystem-blueprint`.
+- Never diff against local `main` — it goes stale and silently sweeps other people's merged work
+  into the result. Review and diff a branch against `origin/main` (`git fetch origin` first, then
+  `git diff origin/main...HEAD`); for a PR, take the diff from `gh pr diff <N>`, which is
+  authoritative about the base. A branch that merged main in makes a stale-base diff look like a
+  huge legitimate changeset, so confirm the file list matches `gh pr view <N> --json files`.

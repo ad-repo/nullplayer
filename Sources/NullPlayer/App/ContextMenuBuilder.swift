@@ -182,12 +182,11 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("PeppyMeter", visible: wm.isPeppyMeterVisible, action: #selector(MenuActions.togglePeppyMeter), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Flow", visible: wm.isNetworkMonitorVisible, action: #selector(MenuActions.toggleNetworkMonitor), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Cava", visible: wm.isCavaVisible, action: #selector(MenuActions.toggleCava), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Sonos Rooms", visible: wm.isSonosVisible, action: #selector(MenuActions.toggleSonos), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser), enabled: supportsSkinnedAuxiliaryWindows))
-        if wm.isRunningModernUI {
-            menu.addItem(buildWindowItem("Play History", visible: wm.isLibraryHistoryVisible,
-                                         action: #selector(MenuActions.toggleLibraryHistory)))
-        }
+        menu.addItem(buildWindowItem("Play History", visible: wm.isLibraryHistoryVisible,
+                                     action: #selector(MenuActions.toggleLibraryHistory), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Visualizations", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildSkinOwnableWindowItem("Video Player", surface: .video,
                                                 visible: wm.isVideoPlayerVisible,
@@ -2520,6 +2519,12 @@ class ContextMenuBuilder {
         manageFoldersItem.target = MenuActions.shared
         libraryMenu.addItem(manageFoldersItem)
 
+        // Find Missing Files — re-points a watch folder that moved, then offers to forget the
+        // rows whose file really was deleted. Deletion is always confirmed and never automatic.
+        let missingFilesItem = NSMenuItem(title: "Find Missing Files...", action: #selector(MenuActions.findMissingFiles), keyEquivalent: "")
+        missingFilesItem.target = MenuActions.shared
+        libraryMenu.addItem(missingFilesItem)
+
         libraryMenu.addItem(NSMenuItem.separator())
 
         // Split .cue Albums on Import toggle
@@ -3205,12 +3210,16 @@ class ContextMenuBuilder {
 
         // Sonos
         let sonosRooms = castManager.sonosRooms
-        if !sonosRooms.isEmpty {
+        do {
             outputMenu.addItem(NSMenuItem.separator())
 
             let sonosItem = NSMenuItem(title: "Sonos", action: nil, keyEquivalent: "")
             let sonosMenu = NSMenu()
             sonosMenu.autoenablesItems = false
+            let windowItem = NSMenuItem(title: "Sonos Rooms…", action: #selector(MenuActions.showSonos), keyEquivalent: "")
+            windowItem.target = MenuActions.shared
+            sonosMenu.addItem(windowItem)
+            sonosMenu.addItem(.separator())
 
             let castTargetUDN = castManager.activeSession?.device.id
             let isCastingToSonos = castManager.activeSession?.device.type == .sonos
@@ -3441,12 +3450,16 @@ class ContextMenuBuilder {
         for room in rooms {
             NSLog("ContextMenuBuilder: Room '%@' isCoord=%d isInGroup=%d", room.name, room.isGroupCoordinator ? 1 : 0, room.isInGroup ? 1 : 0)
         }
-        if !rooms.isEmpty {
+        do {
             outputMenu.addItem(NSMenuItem.separator())
             
             let sonosItem = NSMenuItem(title: "Sonos", action: nil, keyEquivalent: "")
             let sonosMenu = NSMenu()
             sonosMenu.autoenablesItems = false
+            let windowItem = NSMenuItem(title: "Sonos Rooms…", action: #selector(MenuActions.showSonos), keyEquivalent: "")
+            windowItem.target = MenuActions.shared
+            sonosMenu.addItem(windowItem)
+            sonosMenu.addItem(.separator())
             
             // Determine checkbox state based on whether we're casting
             let castTargetUDN = castManager.activeSession?.device.id
@@ -3622,99 +3635,24 @@ class SonosRoomCheckboxView: NSView {
     }
     
     @objc private func checkboxClicked(_ sender: NSButton) {
-        let isNowChecked = sender.state == .on
-        
-        // Toggle the selection state
-        let castManager = CastManager.shared
-        let isCastingToSonos = castManager.activeSession?.device.type == .sonos
-        
-        NSLog("SonosRoomCheckboxView: Toggled '%@' to %d, isCasting=%d", 
-              info.roomName, isNowChecked ? 1 : 0, isCastingToSonos ? 1 : 0)
-        
-        if isCastingToSonos {
-            // WHILE CASTING: toggle actually joins/unjoins the Sonos group
-            Task {
-                do {
-                    if !isNowChecked {
-                        // Check if we're unchecking the current coordinator
-                        let isCoordinator = info.roomUDN == castManager.activeSession?.device.id
-                        
-                        if isCoordinator {
-                            // Unchecking the coordinator - check if other rooms remain
-                            let groupRooms = castManager.getRoomsInActiveCastGroup()
-                            let otherRooms = groupRooms.filter { $0 != info.roomUDN }
-                            
-                            if otherRooms.isEmpty {
-                                // Only room in group - just stop casting
-                                NSLog("SonosRoomCheckboxView: Unchecking sole coordinator '%@' - stopping cast", info.roomName)
-                                await castManager.stopCasting()
-                            } else {
-                                // Transfer playback to next remaining room
-                                let newCoordinator = otherRooms[0]
-                                let remainingOthers = Array(otherRooms.dropFirst())
-                                NSLog("SonosRoomCheckboxView: Transferring cast from '%@' to room %@ (+%d others)",
-                                      info.roomName, newCoordinator, remainingOthers.count)
-                                try await castManager.transferSonosCast(
-                                    fromCoordinator: info.roomUDN,
-                                    toRoom: newCoordinator,
-                                    otherRooms: remainingOthers
-                                )
-                            }
-                            // Close menu after coordinator change to force UI refresh on next open
-                            await MainActor.run {
-                                self.parentMenu?.cancelTracking()
-                            }
-                            return
-                        }
-                        
-                        // Not the coordinator - just unjoin this room from the group
-                        NSLog("SonosRoomCheckboxView: Removing '%@' from cast group", info.roomName)
-                        try await castManager.unjoinSonos(zoneUDN: info.roomUDN)
-                    } else {
-                        // Was unchecked, now checked - join to active cast
-                        if let coordinatorUDN = castManager.activeSession?.device.id {
-                            NSLog("SonosRoomCheckboxView: Adding '%@' to cast group", info.roomName)
-                            try await castManager.joinSonosToGroup(
-                                zoneUDN: info.roomUDN,
-                                coordinatorUDN: coordinatorUDN
-                            )
-                        }
-                    }
-                    
-                    // Refresh topology to update UI
-                    await castManager.refreshSonosGroups()
-                    NSLog("SonosRoomCheckboxView: Toggle complete for '%@'", info.roomName)
-                    
-                } catch {
-                    NSLog("SonosRoomCheckboxView: Toggle failed for '%@': %@", info.roomName, error.localizedDescription)
-                    // Revert checkbox state on error
-                    await MainActor.run {
-                        sender.state = isNowChecked ? .off : .on
-                    }
-                    // If we can't control the Sonos, the session is effectively broken
-                    // Clean up to prevent local+cast conflict and show error
-                    await castManager.stopCasting()
-                    await MainActor.run {
-                        let alert = NSAlert()
-                        alert.messageText = "Sonos Unavailable"
-                        alert.informativeText = "Lost connection to Sonos: \(error.localizedDescription)"
-                        alert.alertStyle = .warning
-                        alert.runModal()
-                    }
+        let selected = sender.state == .on
+        sender.isEnabled = false
+        Task { @MainActor in
+            defer { sender.isEnabled = true }
+            do {
+                try await SonosRoomMixer.shared.selectRoom(info.roomUDN, selected: selected)
+                if !selected, info.roomUDN == CastManager.shared.activeSession?.device.id {
+                    parentMenu?.cancelTracking()
                 }
-            }
-        } else {
-            // NOT CASTING: just toggle selection state (stored locally)
-            if isNowChecked {
-                castManager.selectedSonosRooms.insert(info.roomUDN)
-                NSLog("SonosRoomCheckboxView: Selected '%@' for casting", info.roomName)
-            } else {
-                castManager.selectedSonosRooms.remove(info.roomUDN)
-                NSLog("SonosRoomCheckboxView: Deselected '%@' for casting", info.roomName)
+            } catch {
+                sender.state = selected ? .off : .on
+                let alert = NSAlert()
+                alert.messageText = "Sonos Room Update Failed"
+                alert.informativeText = error.localizedDescription
+                alert.alertStyle = .warning
+                alert.runModal()
             }
         }
-        
-        // Keep menu open by canceling the close - the menu stays open because we're in a custom view
     }
 
 }
@@ -3812,6 +3750,9 @@ class MenuActions: NSObject {
         WindowManager.shared.toggleCava()
     }
 
+    @objc func showSonos() { WindowManager.shared.showSonos() }
+    @objc func toggleSonos() { WindowManager.shared.toggleSonos() }
+
     @objc func toggleWaveform() {
         WindowManager.shared.toggleWaveform()
     }
@@ -3839,7 +3780,6 @@ class MenuActions: NSObject {
     #endif
 
     @objc func toggleLibraryHistory() {
-        guard WindowManager.shared.isModernUIEnabled else { return }
         WindowManager.shared.toggleLibraryHistory()
     }
 
@@ -5935,7 +5875,7 @@ class MenuActions: NSObject {
                     NotificationCenter.default.post(name: PlexManager.serversDidChangeNotification, object: nil)
                 }
             } catch {
-                NSLog("MenuActions: Failed to connect to server '%@': %@", server.name, error.localizedDescription)
+                NSLog("MenuActions: Failed to connect to server '%@': %@", server.name, error.localizedDescription.redactingSensitiveURLQueryItems)
                 
                 // Show error to user
                 await MainActor.run {
@@ -6004,7 +5944,7 @@ class MenuActions: NSObject {
                     NotificationCenter.default.post(name: SubsonicManager.serversDidChangeNotification, object: nil)
                 }
             } catch {
-                NSLog("MenuActions: Failed to connect to Subsonic server '%@': %@", server.name, error.localizedDescription)
+                NSLog("MenuActions: Failed to connect to Subsonic server '%@': %@", server.name, error.localizedDescription.redactingSensitiveURLQueryItems)
                 
                 await MainActor.run {
                     let alert = NSAlert()
@@ -6214,7 +6154,7 @@ class MenuActions: NSObject {
                 try await CastManager.shared.castCurrentTrack(to: device)
                 NSLog("MenuActions: Started casting to %@", device.name)
             } catch {
-                NSLog("MenuActions: Failed to cast: %@", error.localizedDescription)
+                NSLog("MenuActions: Failed to cast: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 
                 await MainActor.run {
                     let alert = NSAlert()
@@ -6245,6 +6185,7 @@ class MenuActions: NSObject {
     }
     
     @objc func refreshSonosRooms() {
+        CastManager.shared.refreshDevices()
         Task {
             await CastManager.shared.refreshSonosGroups()
             NSLog("MenuActions: Refreshed Sonos rooms")
@@ -6256,128 +6197,14 @@ class MenuActions: NSObject {
     }
 
     @objc func castToSonosRoom(_ sender: NSMenuItem) {
-        let castManager = CastManager.shared
-        
-        // Check if music is loaded
-        guard WindowManager.shared.audioEngine.currentTrack != nil else {
-            NSLog("MenuActions: Cannot cast - no music loaded")
-            Task { @MainActor in
+        Task { @MainActor in
+            do { try await SonosRoomMixer.shared.startCasting() }
+            catch {
                 let alert = NSAlert()
-                alert.messageText = "No Music"
-                alert.informativeText = "Load a track before casting."
+                alert.messageText = "Cast Failed"
+                alert.informativeText = error.localizedDescription
                 alert.alertStyle = .warning
                 alert.runModal()
-            }
-            return
-        }
-        
-        // Get selected rooms
-        let selectedUDNs = castManager.selectedSonosRooms
-        
-        // If no rooms selected, show error
-        if selectedUDNs.isEmpty {
-            NSLog("MenuActions: Cannot cast - no rooms selected")
-            Task { @MainActor in
-                let alert = NSAlert()
-                alert.messageText = "No Room Selected"
-                alert.informativeText = "Select a room first by checking it in the Sonos menu."
-                alert.alertStyle = .warning
-                alert.runModal()
-            }
-            return
-        }
-        
-        // Find a device to cast to
-        // sonosRooms has room UDNs, but sonosDevices only has group coordinator devices
-        // We need to find a device that matches one of our selected rooms
-        let rooms = castManager.sonosRooms
-        let devices = castManager.sonosDevices
-        
-        NSLog("MenuActions: Selected UDNs: %@", selectedUDNs.joined(separator: ", "))
-        NSLog("MenuActions: Available devices: %@", devices.map { "\($0.name):\($0.id)" }.joined(separator: ", "))
-        NSLog("MenuActions: Available rooms: %@", rooms.map { "\($0.name):\($0.id)" }.joined(separator: ", "))
-        
-        // Find the first device that matches a selected room
-        var targetDevice: CastDevice?
-        var targetRoomUDN: String?
-        
-        for udn in selectedUDNs {
-            // First try direct match (room is a coordinator)
-            if let device = devices.first(where: { $0.id == udn }) {
-                targetDevice = device
-                targetRoomUDN = udn
-                break
-            }
-            
-            // If no direct match, find by room name
-            if let room = rooms.first(where: { $0.id == udn }) {
-                if let device = devices.first(where: { $0.name.hasPrefix(room.name) }) {
-                    targetDevice = device
-                    targetRoomUDN = udn
-                    break
-                }
-            }
-        }
-        
-        // If still no match, just use the first available Sonos device
-        // IMPORTANT: Set targetRoomUDN to the device we're actually casting to, not a selected room.
-        // This ensures all selected rooms get joined to the group in the loop below.
-        // (Previously this was set to selectedUDNs.first, which caused that room to be
-        // incorrectly filtered out of the join loop even though it wasn't receiving audio.)
-        if targetDevice == nil, let firstDevice = devices.first {
-            NSLog("MenuActions: No exact match, using first available device: %@", firstDevice.name)
-            targetDevice = firstDevice
-            targetRoomUDN = firstDevice.id
-        }
-        
-        guard let device = targetDevice, let firstUDN = targetRoomUDN else {
-            NSLog("MenuActions: Could not find any Sonos device to cast to")
-            Task { @MainActor in
-                let alert = NSAlert()
-                alert.messageText = "No Device Found"
-                alert.informativeText = "Could not find a Sonos device to cast to. Try refreshing."
-                alert.alertStyle = .warning
-                alert.runModal()
-            }
-            return
-        }
-        
-        Task {
-            do {
-                // Start casting to first room
-                NSLog("MenuActions: Starting cast to '%@' (id: %@)", device.name, device.id)
-                try await castManager.castCurrentTrack(to: device)
-                guard let coordinatorUDN = castManager.activeSession?.device.id else {
-                    throw CastError.sessionNotActive
-                }
-                
-                // Join additional selected rooms to the group
-                let otherUDNs = selectedUDNs.filter { $0 != firstUDN }
-                if !otherUDNs.isEmpty {
-                    // Wait a moment for cast to establish
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    
-                    for udn in otherUDNs {
-                        NSLog("MenuActions: Joining room %@ to cast group (coordinator: %@)", udn, coordinatorUDN)
-                        try await castManager.joinSonosToGroup(zoneUDN: udn, coordinatorUDN: coordinatorUDN)
-                        try? await Task.sleep(nanoseconds: 200_000_000)
-                    }
-                }
-                
-                // Refresh topology
-                await castManager.refreshSonosGroups()
-                
-            } catch {
-                NSLog("MenuActions: Cast to Sonos failed: %@", error.localizedDescription)
-                // Clean up any partial session state to prevent local+cast conflict
-                await castManager.stopCasting()
-                await MainActor.run {
-                    let alert = NSAlert()
-                    alert.messageText = "Cast Failed"
-                    alert.informativeText = error.localizedDescription
-                    alert.alertStyle = .warning
-                    alert.runModal()
-                }
             }
         }
     }
@@ -6397,7 +6224,7 @@ class MenuActions: NSObject {
                 )
                 NSLog("MenuActions: '%@' joined '%@'", action.roomName, coordinatorName)
             } catch {
-                NSLog("MenuActions: Sonos grouping failed: %@", error.localizedDescription)
+                NSLog("MenuActions: Sonos grouping failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 await MainActor.run {
                     let alert = NSAlert()
                     alert.messageText = "Sonos Grouping Failed"
@@ -6419,7 +6246,7 @@ class MenuActions: NSObject {
                 try await CastManager.shared.unjoinSonos(zoneUDN: action.roomUDN)
                 NSLog("MenuActions: '%@' is now standalone", action.roomName)
             } catch {
-                NSLog("MenuActions: Sonos ungrouping failed: %@", error.localizedDescription)
+                NSLog("MenuActions: Sonos ungrouping failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 await MainActor.run {
                     let alert = NSAlert()
                     alert.messageText = "Sonos Ungrouping Failed"
@@ -6468,7 +6295,7 @@ class MenuActions: NSObject {
                     NSLog("MenuActions: Toggle complete for '%@'", info.roomName)
                     
                 } catch {
-                    NSLog("MenuActions: Toggle failed for '%@': %@", info.roomName, error.localizedDescription)
+                    NSLog("MenuActions: Toggle failed for '%@': %@", info.roomName, error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
             }
         } else {
@@ -6500,7 +6327,7 @@ class MenuActions: NSObject {
                     )
                 }
             } catch {
-                NSLog("MenuActions: Sonos grouping failed: %@", error.localizedDescription)
+                NSLog("MenuActions: Sonos grouping failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
@@ -6532,7 +6359,7 @@ class MenuActions: NSObject {
                     try await CastManager.shared.unjoinSonos(zoneUDN: room.id)
                     NSLog("MenuActions: Ungrouped '%@'", room.name)
                 } catch {
-                    NSLog("MenuActions: Failed to ungroup '%@': %@", room.name, error.localizedDescription)
+                    NSLog("MenuActions: Failed to ungroup '%@': %@", room.name, error.localizedDescription.redactingSensitiveURLQueryItems)
                     await collector.add(room.name)
                 }
                 
@@ -6637,6 +6464,106 @@ class MenuActions: NSObject {
     
     @objc func manageFolders() {
         WatchFolderManagerDialog.present {}
+    }
+
+    /// Set while `findMissingFiles` is between steps, so a second click cannot start a second run.
+    private var isFindingMissingFiles = false
+
+    /// Offer to re-point what moved, then offer to forget what was genuinely deleted.
+    ///
+    /// Both steps are confirmed. Relocation is not destructive, but it is not automatic either: a
+    /// copy of a NAS on another drive looks exactly like the NAS having moved there, and only the
+    /// user knows which it is. Every step stats the filesystem — and against a slow or half-mounted
+    /// network volume one stat can block for seconds — so the work runs on a background queue and
+    /// only the dialogs come back to the main thread.
+    @objc func findMissingFiles() {
+        guard !isFindingMissingFiles else { return }
+        isFindingMissingFiles = true
+        let library = MediaLibrary.shared
+        DispatchQueue.global(qos: .userInitiated).async {
+            let proposed = library.findRelocatedWatchFolders()
+            DispatchQueue.main.async {
+                let accepted = self.confirmRelocations(proposed)
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let relocated = library.applyRelocations(accepted)
+                    let pending = library.forgetMissingFiles(dryRun: true)
+                    DispatchQueue.main.async {
+                        guard self.confirmForgetting(pending, relocated: relocated) else {
+                            self.isFindingMissingFiles = false
+                            return
+                        }
+                        DispatchQueue.global(qos: .userInitiated).async {
+                            // Abort if the backup fails — proceeding would remove the rollback path.
+                            do {
+                                try library.backupLibrary(customName: "pre_forget_missing_auto_backup")
+                            } catch {
+                                NSLog("Failed to create pre-forget-missing backup: %@", error.localizedDescription)
+                                DispatchQueue.main.async {
+                                    let errorAlert = NSAlert()
+                                    errorAlert.messageText = "Backup Failed"
+                                    errorAlert.informativeText = "Could not create a backup before forgetting missing files, so nothing was removed.\n\n\(error.localizedDescription)"
+                                    errorAlert.alertStyle = .critical
+                                    errorAlert.runModal()
+                                    self.isFindingMissingFiles = false
+                                }
+                                return
+                            }
+                            let removed = library.forgetMissingFiles()
+                            NSLog("MenuActions: forgot %d track(s), %d movie(s), %d episode(s)",
+                                  removed.tracks, removed.movies, removed.episodes)
+                            DispatchQueue.main.async { self.isFindingMissingFiles = false }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The moves the user accepts, of those proposed. "Leave As Is" is the default button.
+    private func confirmRelocations(_ proposed: [(from: URL, to: URL)]) -> [(from: URL, to: URL)] {
+        guard !proposed.isEmpty else { return [] }
+        let alert = NSAlert()
+        alert.messageText = proposed.count == 1 ? "Re-point a Moved Folder?" : "Re-point \(proposed.count) Moved Folders?"
+        var lines = proposed.map { "\($0.from.path)\n  → \($0.to.path)" }
+        lines.append("Tracks keep their play counts and ratings. If a new location is only a copy — a backup "
+                     + "drive while the NAS is disconnected, say — choose Leave As Is.")
+        alert.informativeText = lines.joined(separator: "\n\n")
+        alert.addButton(withTitle: "Leave As Is")
+        alert.addButton(withTitle: "Re-point")
+        return alert.runModal() == .alertSecondButtonReturn ? proposed : []
+    }
+
+    /// Whether the user chose to forget the rows `pending` counts. "Keep" is the default button.
+    private func confirmForgetting(_ pending: (tracks: Int, movies: Int, episodes: Int),
+                                   relocated: [(from: URL, to: URL)]) -> Bool {
+        let total = pending.tracks + pending.movies + pending.episodes
+        let alert = NSAlert()
+        var lines = relocated.map { "Re-pointed:\n    \($0.from.path)\n  → \($0.to.path)" }
+
+        if total == 0 {
+            alert.messageText = relocated.isEmpty ? "No Missing Files" : "Folders Relocated"
+            lines.append("No file is missing from a folder that is present.")
+            alert.informativeText = lines.joined(separator: "\n\n")
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return false
+        }
+
+        alert.messageText = "Forget \(total) Missing \(total == 1 ? "Item" : "Items")?"
+        var parts: [String] = []
+        if pending.tracks > 0 { parts.append("\(pending.tracks) track\(pending.tracks == 1 ? "" : "s")") }
+        if pending.movies > 0 { parts.append("\(pending.movies) movie\(pending.movies == 1 ? "" : "s")") }
+        if pending.episodes > 0 { parts.append("\(pending.episodes) episode\(pending.episodes == 1 ? "" : "s")") }
+        lines.append("\(parts.joined(separator: ", ")) \(total == 1 ? "is" : "are") no longer on disk, in folders that are present. "
+                     + "Removing them also removes their play counts and ratings. "
+                     + "A backup will be created automatically before removing.")
+        lines.append("Anything on a disconnected drive or an unmounted share has been left alone — "
+                     + "those files are not missing, just unavailable.")
+        alert.informativeText = lines.joined(separator: "\n\n")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Keep")
+        alert.addButton(withTitle: "Forget")
+        return alert.runModal() == .alertSecondButtonReturn
     }
 
     @objc func toggleCueSplitOnImport() {
@@ -6760,7 +6687,7 @@ class MenuActions: NSObject {
             do {
                 try MediaLibrary.shared.backupLibrary(customName: scope.backupName)
             } catch {
-                NSLog("Failed to create pre-clear backup: %@", error.localizedDescription)
+                NSLog("Failed to create pre-clear backup: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 let errorAlert = NSAlert()
                 errorAlert.messageText = "Backup Failed"
                 errorAlert.informativeText = "Could not create a backup before clearing, so nothing was removed.\n\n\(error.localizedDescription)"
@@ -6823,7 +6750,7 @@ class MenuActions: NSObject {
                     do {
                         try MediaLibrary.shared.backupLibrary(customName: "pre_orphan_cleanup_auto_backup")
                     } catch {
-                        NSLog("Failed to create pre-orphan-cleanup backup: %@", error.localizedDescription)
+                        NSLog("Failed to create pre-orphan-cleanup backup: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                         DispatchQueue.main.async {
                             let errorAlert = NSAlert()
                             errorAlert.messageText = "Backup Failed"

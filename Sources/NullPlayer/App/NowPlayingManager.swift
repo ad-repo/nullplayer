@@ -321,7 +321,7 @@ class NowPlayingManager {
             } else if track.plexRatingKey != nil {
                 // Plex track - load from server
                 if let thumb = track.artworkThumb {
-                    NSLog("NowPlayingManager: Loading Plex artwork, thumb=%@", thumb)
+                    NSLog("NowPlayingManager: Loading Plex artwork, thumb=%@", thumb.redactingSensitiveURLQueryItems)
                     image = await self.loadPlexArtwork(thumb: thumb)
                     if image == nil {
                         NSLog("NowPlayingManager: Plex artwork load returned nil")
@@ -429,7 +429,7 @@ class NowPlayingManager {
                 }
             }
         } catch {
-            NSLog("NowPlayingManager: Failed to load local artwork: %@", error.localizedDescription)
+            NSLog("NowPlayingManager: Failed to load local artwork: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
         
         return nil
@@ -438,11 +438,11 @@ class NowPlayingManager {
     /// Load artwork from Plex server
     private func loadPlexArtwork(thumb: String) async -> NSImage? {
         guard let artworkURL = PlexManager.shared.artworkURL(thumb: thumb, size: 400) else {
-            NSLog("NowPlayingManager: PlexManager.artworkURL returned nil for thumb=%@", thumb)
+            NSLog("NowPlayingManager: PlexManager.artworkURL returned nil for thumb=%@", thumb.redactingSensitiveURLQueryItems)
             return nil
         }
         
-        NSLog("NowPlayingManager: Fetching Plex artwork from %@", artworkURL.absoluteString)
+        NSLog("NowPlayingManager: Fetching Plex artwork from %@", artworkURL.redacted)
         
         do {
             var request = URLRequest(url: artworkURL)
@@ -471,7 +471,7 @@ class NowPlayingManager {
             }
             return image
         } catch {
-            NSLog("NowPlayingManager: Failed to load Plex artwork: %@", error.localizedDescription)
+            NSLog("NowPlayingManager: Failed to load Plex artwork: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return nil
         }
     }
@@ -492,7 +492,7 @@ class NowPlayingManager {
             
             return NSImage(data: data)
         } catch {
-            NSLog("NowPlayingManager: Failed to load Subsonic artwork: %@", error.localizedDescription)
+            NSLog("NowPlayingManager: Failed to load Subsonic artwork: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return nil
         }
     }
@@ -505,7 +505,7 @@ class NowPlayingManager {
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return nil }
             return NSImage(data: data)
         } catch {
-            NSLog("NowPlayingManager: Failed to load Jellyfin artwork: %@", error.localizedDescription)
+            NSLog("NowPlayingManager: Failed to load Jellyfin artwork: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return nil
         }
     }
@@ -517,7 +517,7 @@ class NowPlayingManager {
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return nil }
             return NSImage(data: data)
         } catch {
-            NSLog("NowPlayingManager: Failed to load Emby artwork: %@", error.localizedDescription)
+            NSLog("NowPlayingManager: Failed to load Emby artwork: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return nil
         }
     }

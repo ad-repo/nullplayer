@@ -26,7 +26,7 @@ final class PitchTuningController {
     static let maxRate: Float = 4.0
 
     /// Attached to the main AVAudioEngine graph (local files).
-    let localPitchNode = AVAudioUnitTimePitch()
+    private(set) var localPitchNode = AVAudioUnitTimePitch()
 
     private final class WeakPitchNode {
         weak var node: AVAudioUnitTimePitch?
@@ -76,6 +76,11 @@ final class PitchTuningController {
     func setRate(_ value: Float) {
         rate = Self.clampedRate(value)
         apply()
+    }
+
+    func replaceLocalPitchNode() {
+        localPitchNode = AVAudioUnitTimePitch()
+        configureLocal(localPitchNode, cents: Float(appliedCents))
     }
 
     func makeStreamingPitchNode() -> AVAudioUnitTimePitch {

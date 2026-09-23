@@ -208,7 +208,7 @@ class JellyfinManager {
         // Connect to the new server
         try await connect(to: server)
         
-        NSLog("JellyfinManager: Added server '%@' at %@", name, cleanURL)
+        NSLog("JellyfinManager: Added server '%@' at %@", name, cleanURL.redactingSensitiveURLQueryItems)
         
         return server
     }
@@ -365,7 +365,7 @@ class JellyfinManager {
         do {
             try await connect(to: server)
         } catch {
-            NSLog("JellyfinManager: Background connection failed: %@", error.localizedDescription)
+            NSLog("JellyfinManager: Background connection failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
     
@@ -462,7 +462,7 @@ class JellyfinManager {
             }
 
         } catch {
-            NSLog("JellyfinManager: Library preload failed: %@", error.localizedDescription)
+            NSLog("JellyfinManager: Library preload failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             await MainActor.run {
                 self.isPreloading = false
             }
@@ -732,7 +732,7 @@ class JellyfinManager {
         do {
             return try await client.fetchMusicGenres(libraryId: currentMusicLibrary?.id)
         } catch {
-            NSLog("JellyfinManager: Failed to fetch genres: %@", error.localizedDescription)
+            NSLog("JellyfinManager: Failed to fetch genres: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -749,7 +749,7 @@ class JellyfinManager {
             let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
         } catch {
-            NSLog("JellyfinManager: Failed to create library radio: %@", error.localizedDescription)
+            NSLog("JellyfinManager: Failed to create library radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -772,7 +772,7 @@ class JellyfinManager {
             let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("JellyfinManager: Failed to create library radio (instant mix): %@", error.localizedDescription)
+            NSLog("JellyfinManager: Failed to create library radio (instant mix): %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -789,7 +789,7 @@ class JellyfinManager {
             let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
         } catch {
-            NSLog("JellyfinManager: Failed to create genre radio (%@): %@", genre, error.localizedDescription)
+            NSLog("JellyfinManager: Failed to create genre radio (%@): %@", genre, error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -812,7 +812,7 @@ class JellyfinManager {
             let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("JellyfinManager: Failed to create genre radio (instant mix): %@", error.localizedDescription)
+            NSLog("JellyfinManager: Failed to create genre radio (instant mix): %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -829,7 +829,7 @@ class JellyfinManager {
             let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
         } catch {
-            NSLog("JellyfinManager: Failed to create decade radio (%d-%d): %@", start, end, error.localizedDescription)
+            NSLog("JellyfinManager: Failed to create decade radio (%d-%d): %@", start, end, error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -852,7 +852,7 @@ class JellyfinManager {
             let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("JellyfinManager: Failed to create decade radio (instant mix): %@", error.localizedDescription)
+            NSLog("JellyfinManager: Failed to create decade radio (instant mix): %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -869,7 +869,7 @@ class JellyfinManager {
             let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
         } catch {
-            NSLog("JellyfinManager: Failed to create favorites radio: %@", error.localizedDescription)
+            NSLog("JellyfinManager: Failed to create favorites radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -892,7 +892,7 @@ class JellyfinManager {
             let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("JellyfinManager: Failed to create favorites radio (instant mix): %@", error.localizedDescription)
+            NSLog("JellyfinManager: Failed to create favorites radio (instant mix): %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -905,7 +905,7 @@ class JellyfinManager {
             let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("JellyfinManager: Failed to create track radio: %@", error.localizedDescription)
+            NSLog("JellyfinManager: Failed to create track radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -918,7 +918,7 @@ class JellyfinManager {
             let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("JellyfinManager: Failed to create artist radio: %@", error.localizedDescription)
+            NSLog("JellyfinManager: Failed to create artist radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -931,7 +931,7 @@ class JellyfinManager {
             let historyFiltered = JellyfinRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("JellyfinManager: Failed to create album radio: %@", error.localizedDescription)
+            NSLog("JellyfinManager: Failed to create album radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
