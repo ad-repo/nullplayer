@@ -250,7 +250,7 @@ class CastSessionController {
                 if !didComplete { didComplete = true; completion(.success(())) }
 
             case .failed(let error):
-                NSLog("CastSessionController: Connection failed: %@", error.localizedDescription)
+                NSLog("CastSessionController: Connection failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 if !didComplete { didComplete = true; completion(.failure(error)) }
 
             case .cancelled:
@@ -509,7 +509,7 @@ class CastSessionController {
         
         conn.send(content: framed, completion: .contentProcessed { error in
             if let e = error {
-                NSLog("CastSessionController: Send error: %@", e.localizedDescription)
+                NSLog("CastSessionController: Send error: %@", e.localizedDescription.redactingSensitiveURLQueryItems)
             }
         })
     }
@@ -529,7 +529,7 @@ class CastSessionController {
             }
             
             if let error = error {
-                NSLog("CastSessionController: Receive error: %@", error.localizedDescription)
+                NSLog("CastSessionController: Receive error: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 return
             }
             

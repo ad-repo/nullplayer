@@ -203,7 +203,9 @@ class EmbyServerClient {
 
             #if DEBUG
             if let jsonString = String(data: data, encoding: .utf8) {
-                NSLog("EmbyServerClient: Response for %@: %@", request.url?.lastPathComponent ?? "unknown", String(jsonString.prefix(500)))
+                NSLog("EmbyServerClient: Response for %@: %@",
+                      request.url?.lastPathComponent ?? "unknown",
+                      String(jsonString.prefix(500)).redactingSensitiveURLQueryItems)
             }
             #endif
 
@@ -285,7 +287,7 @@ class EmbyServerClient {
             guard let httpResponse = response as? HTTPURLResponse else { return false }
             return httpResponse.statusCode == 200
         } catch {
-            NSLog("EmbyServerClient: Connection check failed: %@", error.localizedDescription)
+            NSLog("EmbyServerClient: Connection check failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return false
         }
     }
@@ -834,7 +836,7 @@ class EmbyServerClient {
         guard let request = makeRadioItemsRequest(limit: limit, libraryId: libraryId) else {
             throw EmbyClientError.invalidURL
         }
-        NSLog("EmbyServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("EmbyServerClient: Radio request %@", request.url?.redacted ?? "unknown")
         let response: EmbyQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as EmbySong? }
     }
@@ -843,7 +845,7 @@ class EmbyServerClient {
         guard let request = makeRadioItemsRequest(limit: limit, libraryId: libraryId, genre: genre) else {
             throw EmbyClientError.invalidURL
         }
-        NSLog("EmbyServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("EmbyServerClient: Radio request %@", request.url?.redacted ?? "unknown")
         let response: EmbyQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as EmbySong? }
     }
@@ -853,7 +855,7 @@ class EmbyServerClient {
         guard let request = makeRadioItemsRequest(limit: limit, libraryId: libraryId, years: years) else {
             throw EmbyClientError.invalidURL
         }
-        NSLog("EmbyServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("EmbyServerClient: Radio request %@", request.url?.redacted ?? "unknown")
         let response: EmbyQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as EmbySong? }
     }
@@ -862,7 +864,7 @@ class EmbyServerClient {
         guard let request = makeRadioItemsRequest(limit: limit, libraryId: libraryId, filters: "IsFavorite") else {
             throw EmbyClientError.invalidURL
         }
-        NSLog("EmbyServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("EmbyServerClient: Radio request %@", request.url?.redacted ?? "unknown")
         let response: EmbyQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as EmbySong? }
     }
@@ -871,7 +873,7 @@ class EmbyServerClient {
         guard let request = makeRadioInstantMixRequest(path: "/Items/\(itemId)/InstantMix", limit: limit) else {
             throw EmbyClientError.invalidURL
         }
-        NSLog("EmbyServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("EmbyServerClient: Radio request %@", request.url?.redacted ?? "unknown")
         let response: EmbyQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as EmbySong? }
     }
@@ -880,7 +882,7 @@ class EmbyServerClient {
         guard let request = makeRadioInstantMixRequest(path: "/Artists/InstantMix", limit: limit, artistId: artistId) else {
             throw EmbyClientError.invalidURL
         }
-        NSLog("EmbyServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("EmbyServerClient: Radio request %@", request.url?.redacted ?? "unknown")
         let response: EmbyQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as EmbySong? }
     }
@@ -889,7 +891,7 @@ class EmbyServerClient {
         guard let request = makeRadioInstantMixRequest(path: "/Items/\(albumId)/InstantMix", limit: limit) else {
             throw EmbyClientError.invalidURL
         }
-        NSLog("EmbyServerClient: Radio request %@", request.url?.absoluteString ?? "unknown")
+        NSLog("EmbyServerClient: Radio request %@", request.url?.redacted ?? "unknown")
         let response: EmbyQueryResult = try await performRequest(request)
         return response.Items.compactMap { $0.toSong() as EmbySong? }
     }

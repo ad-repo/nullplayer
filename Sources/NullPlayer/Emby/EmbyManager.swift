@@ -208,7 +208,7 @@ class EmbyManager {
         // Connect to the new server
         try await connect(to: server)
 
-        NSLog("EmbyManager: Added server '%@' at %@", name, cleanURL)
+        NSLog("EmbyManager: Added server '%@' at %@", name, cleanURL.redactingSensitiveURLQueryItems)
 
         return server
     }
@@ -366,7 +366,7 @@ class EmbyManager {
         do {
             try await connect(to: server)
         } catch {
-            NSLog("EmbyManager: Background connection failed: %@", error.localizedDescription)
+            NSLog("EmbyManager: Background connection failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -456,13 +456,13 @@ class EmbyManager {
             do {
                 movies = try await client.fetchMovies(libraryId: currentMovieLibrary?.id)
             } catch {
-                NSLog("EmbyManager: Movie preload failed: %@", error.localizedDescription)
+                NSLog("EmbyManager: Movie preload failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
 
             do {
                 shows = try await client.fetchShows(libraryId: currentShowLibrary?.id)
             } catch {
-                NSLog("EmbyManager: Show preload failed: %@", error.localizedDescription)
+                NSLog("EmbyManager: Show preload failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
 
             // Snapshot before the actor hop: `MainActor.run`'s closure is @Sendable, and these two
@@ -486,7 +486,7 @@ class EmbyManager {
             }
 
         } catch {
-            NSLog("EmbyManager: Library preload failed: %@", error.localizedDescription)
+            NSLog("EmbyManager: Library preload failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             await MainActor.run {
                 self.isPreloading = false
             }
@@ -762,7 +762,7 @@ class EmbyManager {
         do {
             return try await client.fetchMusicGenres(libraryId: currentMusicLibrary?.id)
         } catch {
-            NSLog("EmbyManager: Failed to fetch genres: %@", error.localizedDescription)
+            NSLog("EmbyManager: Failed to fetch genres: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -779,7 +779,7 @@ class EmbyManager {
             let historyFiltered = EmbyRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
         } catch {
-            NSLog("EmbyManager: Failed to create library radio: %@", error.localizedDescription)
+            NSLog("EmbyManager: Failed to create library radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -803,7 +803,7 @@ class EmbyManager {
             let historyFiltered = EmbyRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("EmbyManager: Failed to create library radio (instant mix): %@", error.localizedDescription)
+            NSLog("EmbyManager: Failed to create library radio (instant mix): %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -820,7 +820,7 @@ class EmbyManager {
             let historyFiltered = EmbyRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
         } catch {
-            NSLog("EmbyManager: Failed to create genre radio (%@): %@", genre, error.localizedDescription)
+            NSLog("EmbyManager: Failed to create genre radio (%@): %@", genre, error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -844,7 +844,7 @@ class EmbyManager {
             let historyFiltered = EmbyRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("EmbyManager: Failed to create genre radio (instant mix): %@", error.localizedDescription)
+            NSLog("EmbyManager: Failed to create genre radio (instant mix): %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -861,7 +861,7 @@ class EmbyManager {
             let historyFiltered = EmbyRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
         } catch {
-            NSLog("EmbyManager: Failed to create decade radio (%d-%d): %@", start, end, error.localizedDescription)
+            NSLog("EmbyManager: Failed to create decade radio (%d-%d): %@", start, end, error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -885,7 +885,7 @@ class EmbyManager {
             let historyFiltered = EmbyRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("EmbyManager: Failed to create decade radio (instant mix): %@", error.localizedDescription)
+            NSLog("EmbyManager: Failed to create decade radio (instant mix): %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -902,7 +902,7 @@ class EmbyManager {
             let historyFiltered = EmbyRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit)
         } catch {
-            NSLog("EmbyManager: Failed to create favorites radio: %@", error.localizedDescription)
+            NSLog("EmbyManager: Failed to create favorites radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -926,7 +926,7 @@ class EmbyManager {
             let historyFiltered = EmbyRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("EmbyManager: Failed to create favorites radio (instant mix): %@", error.localizedDescription)
+            NSLog("EmbyManager: Failed to create favorites radio (instant mix): %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -939,7 +939,7 @@ class EmbyManager {
             let historyFiltered = EmbyRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("EmbyManager: Failed to create track radio: %@", error.localizedDescription)
+            NSLog("EmbyManager: Failed to create track radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -952,7 +952,7 @@ class EmbyManager {
             let historyFiltered = EmbyRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("EmbyManager: Failed to create artist radio: %@", error.localizedDescription)
+            NSLog("EmbyManager: Failed to create artist radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -965,7 +965,7 @@ class EmbyManager {
             let historyFiltered = EmbyRadioHistory.shared.filterOutHistoryTracks(allTracks)
             return filterForArtistVariety(historyFiltered, limit: limit, maxPerArtist: 1)
         } catch {
-            NSLog("EmbyManager: Failed to create album radio: %@", error.localizedDescription)
+            NSLog("EmbyManager: Failed to create album radio: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }

@@ -9,7 +9,8 @@ private let upnpLoggingEnabled = ProcessInfo.processInfo.environment["NULLPLAYER
 /// A free function (like `NSLog`) so call sites inside closures don't need `self`.
 private func upnpLog(_ format: String, _ args: CVarArg...) {
     guard upnpLoggingEnabled else { return }
-    withVaList(args) { NSLogv(format, $0) }
+    let message = String(format: format, arguments: args).redactingSensitiveURLQueryItems
+    NSLog("%@", message)
 }
 
 /// UPnP/DLNA manager for discovering and controlling Sonos speakers and DLNA TVs
@@ -2339,7 +2340,7 @@ class UPnPManager {
                 
                 if httpResponse.statusCode >= 400 {
                     let errorBody = String(data: data, encoding: .utf8) ?? ""
-                    
+
                     // Check if this is a transient error worth retrying
                     if isTransientError(httpResponse.statusCode) && attempt < effectiveMaxRetries {
                         upnpLog("UPnPManager: RenderingControl %@ got transient error %d, will retry: %@", action, httpResponse.statusCode, errorBody)

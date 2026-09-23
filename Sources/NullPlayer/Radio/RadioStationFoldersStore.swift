@@ -38,7 +38,7 @@ final class RadioStationFoldersStore {
             try createTablesIfNeeded(connection)
             NSLog("RadioStationFoldersStore: Database ready at %@", dbPath)
         } catch {
-            NSLog("RadioStationFoldersStore: Failed to open database: %@", error.localizedDescription)
+            NSLog("RadioStationFoldersStore: Failed to open database: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -84,7 +84,7 @@ final class RadioStationFoldersStore {
             }
             return result
         } catch {
-            NSLog("RadioStationFoldersStore: Failed to fetch folders: %@", error.localizedDescription)
+            NSLog("RadioStationFoldersStore: Failed to fetch folders: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -101,7 +101,7 @@ final class RadioStationFoldersStore {
             ))
             return folder
         } catch {
-            NSLog("RadioStationFoldersStore: Failed to create folder '%@': %@", name, error.localizedDescription)
+            NSLog("RadioStationFoldersStore: Failed to create folder '%@': %@", name, error.localizedDescription.redactingSensitiveURLQueryItems)
             return nil
         }
     }
@@ -115,7 +115,7 @@ final class RadioStationFoldersStore {
             )
             return updated > 0
         } catch {
-            NSLog("RadioStationFoldersStore: Failed to rename folder %@: %@", id.uuidString, error.localizedDescription)
+            NSLog("RadioStationFoldersStore: Failed to rename folder %@: %@", id.uuidString, error.localizedDescription.redactingSensitiveURLQueryItems)
             return false
         }
     }
@@ -130,7 +130,7 @@ final class RadioStationFoldersStore {
             }
             return true
         } catch {
-            NSLog("RadioStationFoldersStore: Failed to delete folder %@: %@", id.uuidString, error.localizedDescription)
+            NSLog("RadioStationFoldersStore: Failed to delete folder %@: %@", id.uuidString, error.localizedDescription.redactingSensitiveURLQueryItems)
             return false
         }
     }
@@ -143,7 +143,7 @@ final class RadioStationFoldersStore {
                 .filter(colFolderID == id.uuidString)
             return Set(try db.prepare(query).map { $0[colStationURL] })
         } catch {
-            NSLog("RadioStationFoldersStore: Failed to fetch memberships for folder %@: %@", id.uuidString, error.localizedDescription)
+            NSLog("RadioStationFoldersStore: Failed to fetch memberships for folder %@: %@", id.uuidString, error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -157,7 +157,7 @@ final class RadioStationFoldersStore {
             let ids = try db.prepare(query).compactMap { UUID(uuidString: $0[colFolderID]) }
             return Set(ids)
         } catch {
-            NSLog("RadioStationFoldersStore: Failed to fetch folders for %@: %@", stationURL.absoluteString, error.localizedDescription)
+            NSLog("RadioStationFoldersStore: Failed to fetch folders for %@: %@", stationURL.redacted, error.localizedDescription.redactingSensitiveURLQueryItems)
             return []
         }
     }
@@ -175,7 +175,7 @@ final class RadioStationFoldersStore {
             return true
         } catch {
             NSLog("RadioStationFoldersStore: Failed to add %@ to folder %@: %@",
-                  stationURL.absoluteString, id.uuidString, error.localizedDescription)
+                  stationURL.redacted, id.uuidString, error.localizedDescription.redactingSensitiveURLQueryItems)
             return false
         }
     }
@@ -192,7 +192,7 @@ final class RadioStationFoldersStore {
             return deleted > 0
         } catch {
             NSLog("RadioStationFoldersStore: Failed to remove %@ from folder %@: %@",
-                  stationURL.absoluteString, id.uuidString, error.localizedDescription)
+                  stationURL.redacted, id.uuidString, error.localizedDescription.redactingSensitiveURLQueryItems)
             return false
         }
     }
@@ -203,7 +203,7 @@ final class RadioStationFoldersStore {
             _ = try db.run(membershipsTable.filter(colStationURL == stationURL.absoluteString).delete())
             _ = try db.run(historyTable.filter(colStationURL == stationURL.absoluteString).delete())
         } catch {
-            NSLog("RadioStationFoldersStore: Failed to purge station %@: %@", stationURL.absoluteString, error.localizedDescription)
+            NSLog("RadioStationFoldersStore: Failed to purge station %@: %@", stationURL.redacted, error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -235,7 +235,7 @@ final class RadioStationFoldersStore {
             _ = try db.run(oldHistory.delete())
         } catch {
             NSLog("RadioStationFoldersStore: Failed moving URL refs %@ -> %@: %@",
-                  oldURL.absoluteString, newURL.absoluteString, error.localizedDescription)
+                  oldURL.redacted, newURL.redacted, error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -248,7 +248,7 @@ final class RadioStationFoldersStore {
                 colLastPlayedAt <- Date().timeIntervalSince1970
             ))
         } catch {
-            NSLog("RadioStationFoldersStore: Failed to record play for %@: %@", stationURL.absoluteString, error.localizedDescription)
+            NSLog("RadioStationFoldersStore: Failed to record play for %@: %@", stationURL.redacted, error.localizedDescription.redactingSensitiveURLQueryItems)
         }
     }
 
@@ -261,7 +261,7 @@ final class RadioStationFoldersStore {
             }
             return result
         } catch {
-            NSLog("RadioStationFoldersStore: Failed loading play history: %@", error.localizedDescription)
+            NSLog("RadioStationFoldersStore: Failed loading play history: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return [:]
         }
     }
