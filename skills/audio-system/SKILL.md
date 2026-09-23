@@ -152,6 +152,40 @@ func streamingPlayerDidFinishPlaying() {
 
 See `skills/local-library/SKILL.md` — NAS Responsiveness section.
 
+### A Local Track That Will Not Open
+
+Two load paths, one rule: **skip a bad file, but never skip past a file whose folder is gone.**
+`AudioEngine.containingFolderIsPresent(_:)` is the test — the file's folder exists and is
+non-empty. Present means this one file is bad (corrupt, deleted), so the queue moves on. Absent or
+empty means the volume is not there — a disconnected NAS leaves no folder or an empty mount point —
+and playback stops with the error, which is the offline behaviour. Skipping in that case silently
+landed on whatever local track followed, usually the one that was already playing, and started it
+under the error message.
+
+- **Asynchronous** (`loadLocalTrackForImmediatePlayback`, used by `playTrack` and the end-of-track
+  advance): the rule is evaluated on `deferredIOQueue` in the catch and passed as
+  `advanceToNextTrack`. The advance waits 0.5 s so the error is readable, is cancelled by the load
+  token (a manual Stop bumps it), and is bounded by `consecutiveTrackLoadFailures < playlist.count`.
+  It reads the failed position from `currentIndex` when it fires, so **anything that replaces the
+  playlist must bump the token too** — `setPlaylistTracks` and `setPlaylistFiles` do. They set
+  `currentIndex = -1`, and an advance still armed read that as "the failed track was before row 0"
+  and started the new playlist's first entry from a call that promises not to play.
+- **The failure streak is reset by anything that plays**: `commitLoadedLocalTrack` for a local file,
+  the AudioStreaming `.playing` callback for a stream. Without the stream reset, a repeating playlist
+  of streams and a few bad local files kept accumulating across loops and ended the queue early.
+- **Synchronous** (`loadTrack(at:)`, used by `playNow`, `next()`, `previous()` and the browsers):
+  the rule guards its recursive skip.
+- **A failed load leaves `currentTrack` nil, and `play()` reads nil as "start the playlist from the
+  top".** So a caller that does `loadTrack(at:)` then `play()` must guard with
+  `if currentTrack != nil` — `playNow`, `loadTracks`, `insertTracksAfterCurrent`, `next()`,
+  `previous()` and `skipTracks(count:)` do. An unguarded `play()` after a failed load starts an
+  unrelated track. The navigation three also capture `wasPlaying` *before* loading: the failure
+  handler sets `.stopped` on the way through the skip, so testing `state` afterwards left the queue
+  paused on the track it had just skipped to.
+
+A reconnected drive plays again only once macOS has remounted the share at the same path; the app
+does not mount shares itself. An SMB share that dropped is not remounted automatically.
+
 ## Equalizer
 
 ### Configuration

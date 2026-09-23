@@ -410,6 +410,15 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     private var artworkCache: (trackID: UUID, image: CGImage?)?
     private var artworkObserver: NSObjectProtocol?
 
+    /// The last track that could not be opened, in the spelling the songticker prints.
+    ///
+    /// `.audioTrackDidFailToLoad` had exactly one consumer in the tree — the Classic skin's
+    /// marquee — so an unreadable file left a `.wal` scene showing the previous title with no
+    /// indication that anything had gone wrong. Held here rather than in the view because
+    /// `display="songname"` is answered from the host, through `trackDisplayTitle`.
+    private var trackLoadFailureMessage: String?
+    private var trackLoadFailureObservers: [NSObjectProtocol] = []
+
     // `artworkSnapshot` stays the *last* parameter: the existing call sites pass it as a trailing
     // closure, which binds to the last function-typed parameter.
     init(engine: AudioEngine, consumerID: String = "winampModernMain",
@@ -428,6 +437,16 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         artworkObserver = NotificationCenter.default.addObserver(
             forName: NowPlayingManager.artworkDidLoadNotification,
             object: nil, queue: .main) { [weak self] _ in self?.artworkCache = nil }
+        trackLoadFailureObservers.append(NotificationCenter.default.addObserver(
+            forName: .audioTrackDidFailToLoad, object: nil, queue: .main) { [weak self] note in
+                self?.trackLoadFailureMessage = note.userInfo?["message"] as? String
+            })
+        // A track that loads clears it: the readout is about the *current* item, and a stale
+        // failure would otherwise sit over the next song's title for the rest of the session.
+        trackLoadFailureObservers.append(NotificationCenter.default.addObserver(
+            forName: .audioTrackDidChange, object: nil, queue: .main) { [weak self] _ in
+                self?.trackLoadFailureMessage = nil
+            })
     }
 
     /// The playing track's cover, or `nil` — which is what makes an `<AlbumArt>` fall back to the
@@ -670,7 +689,10 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     /// `display="songname"` — the readout most skins print, and the one `trackTitle` does *not*
     /// cover: only cPro-Bento happens to bind the `songtitle` that already substituted the film.
     var trackDisplayTitle: String {
+        // A video starting posts no `.audioTrackDidChange`, so an earlier audio failure is still
+        // stored; the film that is actually on screen wins over it.
         if let session = videoSession() { return session.title }
+        if let trackLoadFailureMessage { return trackLoadFailureMessage }
         guard let track = engine.currentTrack else { return "" }
         guard let artist = track.artist, !artist.isEmpty else { return track.title }
         return "\(artist) - \(track.title)"
@@ -821,6 +843,7 @@ final class WinampModernAudioEngineHost: WinampModernHost {
 
     deinit {
         if let artworkObserver { NotificationCenter.default.removeObserver(artworkObserver) }
+        trackLoadFailureObservers.forEach(NotificationCenter.default.removeObserver)
         endVisualizationConsumption()
     }
 }

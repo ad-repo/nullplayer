@@ -139,6 +139,13 @@ rule `playItemMetadata` follows. `albumArtwork` and `isArtworkLoading` key on th
 `trackAlbum`, all eighteen of Big Bento's file-info keys follow for free, as do
 `System.getPlayItemDisplayTitle()` and the two other `trackDisplayTitle` bindings.
 
+**The session outranks a stored load failure.** `trackDisplayTitle` also answers an audio
+`.audioTrackDidFailToLoad` message, cleared only by `.audioTrackDidChange` — and starting a film posts
+no track change. So the session is tested *first*: with the failure first, an unreadable file played
+just before a film printed its error over the film's title for the whole session. When the session
+ends the stored failure shows again, which is right — nothing else has loaded since. The Modern main
+window has the same gap and clears its `errorMessage` in `updateVideoTrackInfo` instead.
+
 ### A finished film is not a session — in `.wal` only
 
 Nothing clears `currentTitle` at natural end of media: `clearLoadedContentState()` has four call sites

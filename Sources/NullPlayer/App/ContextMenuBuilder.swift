@@ -2402,6 +2402,12 @@ class ContextMenuBuilder {
         manageFoldersItem.target = MenuActions.shared
         libraryMenu.addItem(manageFoldersItem)
 
+        // Find Missing Files — re-points a watch folder that moved, then offers to forget the
+        // rows whose file really was deleted. Deletion is always confirmed and never automatic.
+        let missingFilesItem = NSMenuItem(title: "Find Missing Files...", action: #selector(MenuActions.findMissingFiles), keyEquivalent: "")
+        missingFilesItem.target = MenuActions.shared
+        libraryMenu.addItem(missingFilesItem)
+
         libraryMenu.addItem(NSMenuItem.separator())
 
         // Split .cue Albums on Import toggle
@@ -6235,6 +6241,106 @@ class MenuActions: NSObject {
     
     @objc func manageFolders() {
         WatchFolderManagerDialog.present {}
+    }
+
+    /// Set while `findMissingFiles` is between steps, so a second click cannot start a second run.
+    private var isFindingMissingFiles = false
+
+    /// Offer to re-point what moved, then offer to forget what was genuinely deleted.
+    ///
+    /// Both steps are confirmed. Relocation is not destructive, but it is not automatic either: a
+    /// copy of a NAS on another drive looks exactly like the NAS having moved there, and only the
+    /// user knows which it is. Every step stats the filesystem — and against a slow or half-mounted
+    /// network volume one stat can block for seconds — so the work runs on a background queue and
+    /// only the dialogs come back to the main thread.
+    @objc func findMissingFiles() {
+        guard !isFindingMissingFiles else { return }
+        isFindingMissingFiles = true
+        let library = MediaLibrary.shared
+        DispatchQueue.global(qos: .userInitiated).async {
+            let proposed = library.findRelocatedWatchFolders()
+            DispatchQueue.main.async {
+                let accepted = self.confirmRelocations(proposed)
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let relocated = library.applyRelocations(accepted)
+                    let pending = library.forgetMissingFiles(dryRun: true)
+                    DispatchQueue.main.async {
+                        guard self.confirmForgetting(pending, relocated: relocated) else {
+                            self.isFindingMissingFiles = false
+                            return
+                        }
+                        DispatchQueue.global(qos: .userInitiated).async {
+                            // Abort if the backup fails — proceeding would remove the rollback path.
+                            do {
+                                try library.backupLibrary(customName: "pre_forget_missing_auto_backup")
+                            } catch {
+                                NSLog("Failed to create pre-forget-missing backup: %@", error.localizedDescription)
+                                DispatchQueue.main.async {
+                                    let errorAlert = NSAlert()
+                                    errorAlert.messageText = "Backup Failed"
+                                    errorAlert.informativeText = "Could not create a backup before forgetting missing files, so nothing was removed.\n\n\(error.localizedDescription)"
+                                    errorAlert.alertStyle = .critical
+                                    errorAlert.runModal()
+                                    self.isFindingMissingFiles = false
+                                }
+                                return
+                            }
+                            let removed = library.forgetMissingFiles()
+                            NSLog("MenuActions: forgot %d track(s), %d movie(s), %d episode(s)",
+                                  removed.tracks, removed.movies, removed.episodes)
+                            DispatchQueue.main.async { self.isFindingMissingFiles = false }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The moves the user accepts, of those proposed. "Leave As Is" is the default button.
+    private func confirmRelocations(_ proposed: [(from: URL, to: URL)]) -> [(from: URL, to: URL)] {
+        guard !proposed.isEmpty else { return [] }
+        let alert = NSAlert()
+        alert.messageText = proposed.count == 1 ? "Re-point a Moved Folder?" : "Re-point \(proposed.count) Moved Folders?"
+        var lines = proposed.map { "\($0.from.path)\n  → \($0.to.path)" }
+        lines.append("Tracks keep their play counts and ratings. If a new location is only a copy — a backup "
+                     + "drive while the NAS is disconnected, say — choose Leave As Is.")
+        alert.informativeText = lines.joined(separator: "\n\n")
+        alert.addButton(withTitle: "Leave As Is")
+        alert.addButton(withTitle: "Re-point")
+        return alert.runModal() == .alertSecondButtonReturn ? proposed : []
+    }
+
+    /// Whether the user chose to forget the rows `pending` counts. "Keep" is the default button.
+    private func confirmForgetting(_ pending: (tracks: Int, movies: Int, episodes: Int),
+                                   relocated: [(from: URL, to: URL)]) -> Bool {
+        let total = pending.tracks + pending.movies + pending.episodes
+        let alert = NSAlert()
+        var lines = relocated.map { "Re-pointed:\n    \($0.from.path)\n  → \($0.to.path)" }
+
+        if total == 0 {
+            alert.messageText = relocated.isEmpty ? "No Missing Files" : "Folders Relocated"
+            lines.append("No file is missing from a folder that is present.")
+            alert.informativeText = lines.joined(separator: "\n\n")
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return false
+        }
+
+        alert.messageText = "Forget \(total) Missing \(total == 1 ? "Item" : "Items")?"
+        var parts: [String] = []
+        if pending.tracks > 0 { parts.append("\(pending.tracks) track\(pending.tracks == 1 ? "" : "s")") }
+        if pending.movies > 0 { parts.append("\(pending.movies) movie\(pending.movies == 1 ? "" : "s")") }
+        if pending.episodes > 0 { parts.append("\(pending.episodes) episode\(pending.episodes == 1 ? "" : "s")") }
+        lines.append("\(parts.joined(separator: ", ")) \(total == 1 ? "is" : "are") no longer on disk, in folders that are present. "
+                     + "Removing them also removes their play counts and ratings. "
+                     + "A backup will be created automatically before removing.")
+        lines.append("Anything on a disconnected drive or an unmounted share has been left alone — "
+                     + "those files are not missing, just unavailable.")
+        alert.informativeText = lines.joined(separator: "\n\n")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Keep")
+        alert.addButton(withTitle: "Forget")
+        return alert.runModal() == .alertSecondButtonReturn
     }
 
     @objc func toggleCueSplitOnImport() {

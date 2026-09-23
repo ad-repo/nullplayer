@@ -794,18 +794,11 @@ extension WinampModernMainView {
         guard !types.isEmpty else { return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = types
-        guard panel.runModal() == .OK, let url = panel.url,
-              let content = try? String(contentsOf: url, encoding: .utf8) else { return }
-        let base = url.deletingLastPathComponent()
-        let urls: [URL] = content.components(separatedBy: .newlines).compactMap { line in
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { return nil }
-            if let parsed = URL(string: trimmed), parsed.scheme != nil { return parsed }
-            // A relative entry is relative to the playlist's own folder, which is how every .m3u
-            // written next to its music is spelled.
-            return trimmed.hasPrefix("/") ? URL(fileURLWithPath: trimmed)
-                                          : base.appendingPathComponent(trimmed)
-        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        // A relative entry is relative to the playlist's own folder, which is how every .m3u
+        // written next to its music is spelled. Shared with every other loader so there is one
+        // answer to what an entry means; this one's guard was already right, so nothing moves.
+        let urls = Playlist.load(from: url)?.trackURLs ?? []
         guard !urls.isEmpty else { return }
         engine.loadFiles(urls)
         playlistDidChange()

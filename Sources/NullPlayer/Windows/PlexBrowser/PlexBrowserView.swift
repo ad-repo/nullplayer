@@ -20016,27 +20016,22 @@ extension PlexDisplayItem {
 }
 
 private func parsePlexLocalPlaylistTracks(at url: URL) -> [Track] {
-    var result: [Track] = []
-    let ext = url.pathExtension.lowercased()
+    guard let playlist = Playlist.load(from: url) else { return [] }
 
-    let playlist: Playlist?
-    if ext == "m3u" || ext == "m3u8" {
-        playlist = try? Playlist.fromM3U(url: url)
-    } else if ext == "pls" {
-        playlist = try? Playlist.fromPLS(url: url)
-    } else {
-        return []
+    // A relative entry is resolved against the playlist file's own directory, which is right only
+    // while the playlist sits beside its music. Nothing used to check that guess, so a playlist
+    // that had been moved listed a full set of entries that all looked fine and none of which
+    // could play. Reported through the validator so it reaches the marquee in every skin mode.
+    let missing = playlist.missingFileEntries
+    if !missing.isEmpty {
+        AudioFileValidator.notifyInvalidFiles(
+            missing.map { (url: $0, reason: "Not found: the playlist entry '\(url.lastPathComponent)' resolves to '\(url.path)'") })
     }
 
-    guard let playlist = playlist else { return [] }
-
-    for trackURL in playlist.trackURLs {
+    return playlist.trackURLs.map { trackURL in
         if let libTrack = MediaLibrary.shared.findTrack(byURL: trackURL) {
-            result.append(libTrack.toTrack())
-        } else {
-            result.append(Track(lightweightURL: trackURL))
+            return libTrack.toTrack()
         }
+        return Track(lightweightURL: trackURL)
     }
-
-    return result
 }

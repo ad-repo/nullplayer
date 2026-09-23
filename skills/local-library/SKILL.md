@@ -155,6 +155,97 @@ Emitted when delta >= 0.02 or >= 0.20s elapsed, plus forced boundary emits.
 ### UI Reload Debouncing
 Both `ModernLibraryBrowserView` and `PlexBrowserView` debounce `MediaLibraryDidChange` reloads (0.30s work-item debounce) and use mode-aware `loadLocalData()` to load only required datasets.
 
+## Missing Files: Relocation and Cleanup
+
+A recorded path can stop resolving for two completely different reasons, and the library must never
+confuse them. **`fileExists` cannot tell an unmounted NAS, a signed-out iCloud Drive or a renamed
+parent from a deleted file**, so every path here refuses to guess.
+
+**Relocation (non-destructive, never automatic).** For each watch root that is not a directory on
+disk, `findRelocatedWatchFolders()` looks for a verified new home and **proposes** the move;
+`applyRelocations(_:)` rewrites only the moves the user accepted. Both run behind the serial
+`relocationQueue`. The only caller is **Library → Find Missing Files…**
+(`MenuActions.findMissingFiles`), which shows each old → new path and defaults to **Leave As Is**.
+
+**Never trigger relocation at launch or on volume mount.** An earlier version did, and it is the
+bug that rule exists for: an unmounted NAS and a moved folder look identical from here, and a copy
+of the NAS's music — a backup drive, a synced `~/Music` — passes the same 60% verification a genuine
+move does. Launch usually runs before a network share has mounted, so an automatic probe re-pointed
+the watch root at the copy and the NAS dropped out of the library for good. Only the user knows
+which one is the library.
+
+**Everything in Find Missing Files runs off the main thread.** The search stats `/Volumes`, every
+shallow home directory and up to 40 recorded files per candidate, and the cleanup stats every row;
+a `fileExists` against an unreachable network mount blocks for seconds apiece. The action hops to a
+background queue for each step and back to main only for the dialogs, and ignores a second click
+while a run is in progress.
+
+- `MediaLibraryStore.relocatePathPrefix(from:to:)` is the rewrite: one transaction over
+  `library_tracks`, `library_movies`, `library_episodes`, `library_playlists` **and
+  `library_watch_folders`**. Missing the watch-folder row is the classic error — the next scan then
+  runs against a directory that is no longer there and finds nothing. Rows keep their `id`, so play
+  counts, ratings and `play_events` history survive; that is why this rewrites rather than deleting
+  and rescanning. Uses `substr(url, 1, n)` anchoring, not `replace`/`LIKE`: `replace` would also
+  rewrite a second occurrence of the prefix further along a path, and `%`/`_` are legal in filenames.
+  Both the `file://…` and legacy plain-path spellings are rewritten.
+- **`track_artists.track_url` has to move with the track.** It `REFERENCES library_tracks(url)` with
+  no `ON UPDATE` action and foreign keys are enforced, so rewriting a track's url alone fails the
+  constraint and rolls back the whole transaction — on every real library, since every scanned
+  track has artist rows. The rewrite runs `PRAGMA defer_foreign_keys = ON` inside the transaction
+  and rewrites `track_artists.track_url` alongside; that table takes no collision DELETE, because
+  the destination track's DELETE already cascaded its artist rows away. A test on bare tracks with
+  no artist rows cannot catch this — `MissingFilesTests.testRelocationCarriesArtistRowsAlong` sets
+  an artist for that reason. `play_events` is keyed by `track_id` and needs no rewrite.
+- **`substr` counts characters, so the anchor length must be `old.unicodeScalars.count`** — never
+  `utf8.count`, and not `count` either. A byte length over a non-ASCII prefix overshoots, matches
+  zero rows, and the caller's `guard rows > 0 else { continue }` swallows it: relocation appears to
+  run and silently fixes nothing. `String.count` is wrong in the other direction — macOS hands back
+  **NFD** paths, where SQLite counts a decomposed accent as two characters and Swift counts one
+  grapheme. Only the plain-path spelling is exposed to this; the `file://…` one is percent-encoded
+  ASCII. Verify a change here against a non-ASCII NFD prefix, not an ASCII one.
+- **Every `url` column is UNIQUE** (PRIMARY KEY on `library_watch_folders`), so a row already at the
+  destination would abort the whole five-table transaction — and the `catch` returns `[:]`, losing
+  the tables that would have succeeded. That collision is not exotic: it is what the obvious user
+  recovery produces — the library breaks, the user adds the new location as a watch folder, it
+  scans, and now both spellings exist. Each spelling therefore runs a
+  `DELETE … WHERE url IN (SELECT <destination> …)` before its `UPDATE`. **The stale row is the
+  survivor, deliberately** — it carries the play counts, ratings and history a fresh scan has none
+  of. A nested rewrite (either prefix a prefix of the other) is refused outright, because a row
+  would be both a source and a collision target.
+- `relocationCandidate(for:)` **verifies, never guesses.** Candidates come from `relocationSearchRoots`
+  — a surviving ancestor, each `/Volumes` entry, `~/<name>` and one level under home — and each is
+  checked by re-basing up to 40 recorded descendant paths onto it and requiring 60% to exist on disk.
+  A name match alone is rejected: in the case this was written from, `~/music` exists and scores 0/2
+  while `~/iCloud Drive (Archive)/music` scores 2/2.
+- A root that is missing and cannot be placed is **left completely alone**.
+
+**Cleanup (destructive, user-confirmed only).** Never call
+`removeMissingItemsInWatchedFolders` directly — it is `private` for that reason. Two gated public
+entry points, both reached through `forgetMissingFiles(dryRun:)`:
+
+| Function | Covers | Gate |
+|---|---|---|
+| `forgetDeletedItemsInPresentWatchFolders` | rows inside a watch root | the root is present **and non-empty** (an empty mount point is what an unmounted share looks like); a moved root is not present at its recorded path, so its rows wait for the relocation the menu offers first |
+| `forgetDeletedItemsOutsideWatchFolders` | `Add Files…` rows outside every root, which the other cannot see by construction | the file's **first surviving ancestor** is an ordinary mounted directory — reaching `/`, `/Volumes` or a `/Volumes/<name>` mount point means the volume is simply not mounted (an unclean eject leaves the mount point behind as an empty directory) |
+
+`forgetMissingFiles(dryRun: true)` counts through the *same* gates that do the deleting, so a
+confirmation count cannot drift from what is removed. Surfaced as **Library → Find Missing Files…**
+(`MenuActions.findMissingFiles` in `App/ContextMenuBuilder.swift`): relocation is offered first and
+defaults to **Leave As Is**, deletion is always confirmed and defaults to **Keep**. Like every other
+destructive library action it backs up first (`pre_forget_missing_auto_backup`) and removes nothing
+if the backup fails — the rows carry play counts and ratings a rescan cannot recover.
+
+**Both cleanups stat outside `dataQueue`.** `forgetRows(dryRun:where:)` snapshots the rows' URLs
+under the lock, runs the predicate without it, and takes the lock again only to drop the rows it
+chose. Running `fileExists` under `dataQueue.sync` — as the original loop did — holds every reader
+of the library, the main thread included, for the whole pass on a slow network volume.
+
+**Parsing a stored URL.** `MediaLibraryStore.urlFromStoredString` tests `hasPrefix("/")` *before*
+`URL(string:)`, and requires a non-nil `scheme` from the latter. On current Foundation
+`URL(string:)` accepts a bare path and returns a **schemeless, non-file** URL instead of nil, which
+silently disabled the legacy plain-path repair branch. The same defect hit every playlist loader —
+see `Playlist.resolveEntry`, and L5 in `docs/local-library/backlog.md`.
+
 ## LocalFileDiscovery Utility
 
 `Utilities/LocalFileDiscovery.swift` — shared for all local file/folder discovery, drag-and-drop, and library scanning.

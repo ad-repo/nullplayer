@@ -73,3 +73,8 @@ Run `swift test`. For UI or playback work, manually exercise local and server pl
 - Skin sprites use a top-left origin; macOS uses bottom-left. See `ui-guide`.
 - Slicing `Data` preserves original indices; always use `data.startIndex`.
 - Read the owning skill before changing a subsystem. Put new subsystem details in that skill, never here.
+- Never diff against local `main` — it goes stale and silently sweeps other people's merged work
+  into the result. Review and diff a branch against `origin/main` (`git fetch origin` first, then
+  `git diff origin/main...HEAD`); for a PR, take the diff from `gh pr diff <N>`, which is
+  authoritative about the base. A branch that merged main in makes a stale-base diff look like a
+  huge legitimate changeset, so confirm the file list matches `gh pr view <N> --json files`.
