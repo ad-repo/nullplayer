@@ -20,6 +20,13 @@
 
 ### Fixed
 
+- **Tall NullPlayer windows no longer lose the right or bottom edge of a Media Player skin's
+  border.** On `Back to the Future Trilogy` the media library's right border stopped a third of the
+  way down and the rest was open to the desktop, and the playlist did the same when stretched.
+  Twenty other skins, including `Jewel`, `Halloween`, `XBOX Music Mixer` and `Blinx`, had a bare
+  stretch in the bottom bar or down a side of a tall window; those borders now close. Short
+  windows were never affected.
+
 - **The Media Player `Classic` skin no longer falls apart when a track plays.** For audio the skin
   shrinks itself to just its controls, and the Windows logo from the hidden video screen was left
   drawn over the top bar. Playing a film after that now opens the video screen back up instead of

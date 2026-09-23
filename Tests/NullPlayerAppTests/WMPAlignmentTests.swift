@@ -446,6 +446,32 @@ final class WMPAlignmentTests: XCTestCase {
     }
 
 
+    // MARK: - An expression extent is a baseline read at the authored canvas
+
+    /// `Back to the Future Trilogy`'s playlist drawer, reduced: `height="jscript:view.height"`, and
+    /// inside it a `stretch` rail between a top and a bottom piece that meet at the view's authored
+    /// 308. Read at the live canvas, the drawer's baseline was the grown height, the rail's delta
+    /// was zero, and it stayed its bitmap's 12pt tall — a bare run down the window's right edge.
+    func testAStretchChildOfAnExpressionSizedContainerFollowsTheResize() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="515" height="308">
+            <SUBVIEW id="drawer" left="227" width="158" height="jscript:view.height"
+                     verticalAlignment="stretch">
+                <SUBVIEW id="rail" top="194" verticalAlignment="stretch" backgroundImage="rail.png"
+                         backgroundTiled="true"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """, resources: ["rail.png": try sheet(158, 12)])
+        let view = try XCTUnwrap(skin.views.first { $0.id == "main" }?.node.stableID)
+        var overrides = WMPSceneOverrides.empty
+        overrides.geometry[.init(stableID: view, property: "height")] = 635
+        let scene = try await WMPSceneBuilder(loadedSkin: skin)
+            .build(viewID: "main", overrides: overrides)
+        XCTAssertEqual(try frame(skin, scene, "drawer").height, 635)
+        XCTAssertEqual(try frame(skin, scene, "rail").height, 12 + (635 - 308),
+                       "the rail keeps its authored 102pt bottom margin inside the drawer")
+    }
+
     // MARK: - A container clipped away entirely clips its children away too
 
     /// `Classic`'s audio mode: `view.height = 359 - 183` stretches `videoview` to zero height, and

@@ -395,6 +395,17 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   fraction back into points before believing a defect belongs to the window it showed up on** —
   the number is the frame's defect divided by the window's size, and one hosted window differing
   is otherwise the signature of that window's own layout (§ *Capturing the hosted windows*).
+- **A rail that is mostly hole is still a rail, and a stretch baseline read through an expression
+  is read at the authored canvas (2026-09-23).** Two defects kept `Back to the Future Trilogy`'s
+  right edge bare on any window taller than about 300pt, and 21 skins' bottom bars bare on tall
+  windows. `authoredDimension` read `height="jscript:view.height"` at the live canvas, so a
+  `stretch` child of that container never grew; that bug was in the skin's own window too. And
+  `ringRender`'s furniture test dropped wide side tiles that carry the list's colour baked in
+  beside a thin rail. A bitmap subview authored to stretch along a side that runs out past the
+  hole is now kept (`railsDownNodeIDs`/`railsAcrossNodeIDs`). **Probe a hosted frame at a tall
+  size, not only at 357x238 and 550x464**: a script- or expression-sized rail's bare run grows
+  with height and is invisible below it. The measurements are in
+  [the dossier](reference/skins/back-to-the-future-trilogy.md).
 - **A borrowed glyph is a lie about what it does (W208, and it is why W209 subtracts).** A skin's
   own buttons are anchored to its window's edges exactly as its corner bitmaps are, so nothing in
   the markup separates them by position. `Ice` writes its playlist shuffle six nodes before

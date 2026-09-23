@@ -137,6 +137,47 @@ reported wrong.
 | Admit every extra edge-anchored piece in the assembler's first pass | Re-broke six rings that measured clean (`AlienMorph`, `ALXMorph`, `ALXVortex`, `AlienwareTeleport`, `Harry_Potter…`, `Project Gotham Racing 2`) |
 | Refuse anything clickable from a corner | Costs 7 of 88 rings — a resize grip and a close box are frame furniture. Moot now: the whole-view path drops controls without needing slots |
 
+## The right rail came apart again on a tall window (2026-09-23)
+
+Reported against the media library at **614x635**: *"broken border"*, with the right edge bare
+from about 193pt to the bottom corner. **Not a regression.** It reproduces at the commit that made
+the frame draw the donor whole (`da42618c`), and every size above measured ≤300pt tall, where the
+bare run is `height − 296` = under 5pt. At 464 it is 168pt and at 635 it is 339pt. Headless it is
+`gaps=…/0.534` on the `HOSTED-FRAME` line at 614x635 and scale 2.
+
+It was **two independent defects, and either one alone leaves the rail bare**:
+
+1. **The skin's own playlist was wrong too.** `leftPlDrawer` is `height="jscript:view.height"`,
+   and `f_drawer_s` inside it is a `stretch` tile at `top=194` whose 12pt bitmap meets
+   `f_drawer_bot` at the authored 308. `WMPSceneBuilder.authoredDimension` read the expression at
+   the *live* canvas, so the drawer's baseline was its grown height, the rail's delta was zero, and
+   it stayed 12pt tall. It now reads at the root's authored canvas. `WMP_RENDER_SIZE=614x464
+   WMP_RENDER_PROBE=plView` shows it directly: `f_drawer_s frame=326,194 158x12` before, `158x168`
+   after.
+2. **The borrowed frame then threw both right rails away as furniture.** `ringRender`'s whole-view
+   pass drops a piece that touches no view edge and lies more than half inside the hole.
+   `f_right_s.png` is 154px wide with the list's black in its inner 139 and the rail in its outer
+   15. The drawer overhangs the view by 130pt, so after the shortfall rebuild (614 → 744) its pieces
+   sit 130pt in from the canvas edge. Both met the test at every size. **Paint order cannot rescue
+   them here**, although it rescued `Ice`'s rail (W210): this donor's "client" is its
+   first stretch/stretch child, the zIndex-1 black backing `<subview>`, which paints before
+   everything. What separates a rail from a rack is how it is authored. A bitmap subview at any
+   depth that stretches along a side (`railsDownNodeIDs` / `railsAcrossNodeIDs`) and runs out past
+   the side of the hole it borders is kept. A backdrop is contained in the hole, and a rack or
+   album-art panel stretches along no side.
+
+**Corpus, all 185 archives, base against fix.** The render sweep at authored size moved three
+images (`Plus! Professional` and `PresstheGreenButton` gaps closing), plus `Scooby-Doo_2`'s random
+picture. At `WMP_RENDER_SIZE=800x600`, BTTF, `NVIDIA`, `Classic` and `corona` moved. `corona`'s
+`vPlayer` is `resizable="false"`, so that size never happens in WMP. Its chrome now follows
+`svMain`'s own `view.width-250` expression over its equaliser drawer.
+`HOSTED-FRAME` at 614x635 moved 21 skins and at 357x238 moved 17. **Every moved `gaps=` field
+shrank.** Composited against a stand-in content rect, every one at 614x635 closed a bare run,
+mostly a black tab in the bottom bar (`Jewel`, `Halloween`, `XBOX Music Mixer`, `Windows_XP_Media_Center_Edition`,
+`QuantumRedshift`, `SplinterCell`, `Plus! Mecha`, `amped2`). `Blinx`'s frame closed and its content
+moved to 134 inside the orange rail. `The_Last_Samurai` lost two black blocks. `Plus! Pulsar` is
+still broken, as it was before.
+
 ## Process lessons this skin taught
 
 1. **Capture the live window, not a probe dump.** Three rounds of fixes measured clean in the

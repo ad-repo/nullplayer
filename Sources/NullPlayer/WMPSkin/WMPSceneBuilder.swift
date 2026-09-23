@@ -291,6 +291,10 @@ struct WMPSceneBuilder: @unchecked Sendable {
         var unresolvedAttributes = Set<String>()
         var resolvedNodes = Set<Int>()
         var layoutResolver = WMPInitialLayoutResolver(graph: loadedSkin.graph, view: view, canvas: canvas)
+        // The same grammar read at the canvas the markup was *written* for — the root's own
+        // authored size, which is the baseline the root hands its children. See `authoredDimension`.
+        var authoredLayoutResolver = WMPInitialLayoutResolver(
+            graph: loadedSkin.graph, view: view, canvas: WMPSize(width: width, height: height))
         // Folded element id to node, for the view being built. `wmpprop:` paths that name another
         // element resolve through this; the first id wins, matching the duplicate-id rule.
         var idToNode: [String: WMPNode] = [:]
@@ -577,6 +581,13 @@ struct WMPSceneBuilder: @unchecked Sendable {
         /// `Compact`'s `svVisual` is 240 authored and 462 when the window is dragged 222 taller:
         /// its visualizer and the effects strip under it follow the drag only because the
         /// difference between those two numbers is what their alignment reads (W226).
+        ///
+        /// **An expression is read at the authored canvas too, for the same reason.** `Back to
+        /// the Future Trilogy`'s playlist drawer is `height="jscript:view.height"`, and its right
+        /// rail inside it is a 12pt `stretch` tile between a 194pt top and a 102pt bottom — which
+        /// meet exactly at the view's authored 308. Read at the live canvas the drawer's baseline
+        /// was the grown height, the rail's delta was zero, and every height past 308 opened a
+        /// bare run down the window's right edge: 168pt at 464, 339pt on a 635pt library window.
         func authoredDimension(_ node: WMPNode, _ name: String) -> CGFloat? {
             let address = WMPScenePropertyAddress(stableID: node.stableID, property: name.lowercased())
             // A script-*assigned* extent is a baseline — W225's reason: the handler stated that
@@ -586,7 +597,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
             if overrides.scriptAssignedGeometry[address] != nil,
                let value = overrides.geometry[address], value.isFinite { return value }
             guard let property = WMPInitialLayoutResolver.Property(rawValue: name.lowercased()),
-                  case let .value(value) = layoutResolver.resolve(node, property: property) else { return nil }
+                  case let .value(value) = authoredLayoutResolver.resolve(node, property: property)
+            else { return nil }
             return value
         }
 

@@ -94,6 +94,13 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     /// every readout. What is left is the picture the skin drew, at our window's size.
     var excludedNodeIDs: Set<Int> = []
 
+    /// Every bitmap subview in the donor, at any depth, that the skin authors as a **rail**: its
+    /// artwork is stretched along one axis, `verticalAlignment="stretch"` down a side or
+    /// `horizontalAlignment="stretch"` across the top or bottom. Keyed by that axis. The whole-view
+    /// furniture test reads it — see `ringRender`.
+    var railsDownNodeIDs: Set<Int> = []
+    var railsAcrossNodeIDs: Set<Int> = []
+
     /// Whether the donor view is drawn whole. **On.** `WMP_HOSTED_FRAME_WHOLE=0` restores the
     /// piece-selecting assembler it replaced, which is the comparison every number in W209's case
     /// study was measured against (`reference/skins/back-to-the-future-trilogy.md`).
@@ -570,6 +577,14 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             note(recovered, role, &stretchedDown, &stretchedAcross)
         }
         guard Role.corners.isSubset(of: Set(ring.keys)), let client else { return nil }
+        var railsDown: Set<Int> = [], railsAcross: Set<Int> = []
+        walk(view) { node in
+            guard node !== view, node.kind == .subview, hasBackgroundImage(node) else { return }
+            let horizontal = WMPAxisAlignment(horizontal: literal(node, "horizontalAlignment"))
+            let vertical = WMPAxisAlignment(vertical: literal(node, "verticalAlignment"))
+            if vertical == .stretch, horizontal != .stretch { railsDown.insert(node.stableID) }
+            if horizontal == .stretch, vertical != .stretch { railsAcross.insert(node.stableID) }
+        }
         return WMPHostedFrameTemplate(
             viewID: registration.id,
             ringNodeIDs: Set(pieces.map(\.stableID)),
@@ -581,7 +596,9 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             minimumSize: CGSize(width: number(view, "minWidth") ?? number(view, "width") ?? 0,
                                 height: number(view, "minHeight") ?? number(view, "height") ?? 0),
             viewNodeID: view.stableID,
-            excludedNodeIDs: notOurs(view, client: client)
+            excludedNodeIDs: notOurs(view, client: client),
+            railsDownNodeIDs: railsDown,
+            railsAcrossNodeIDs: railsAcross
         )
     }
 
@@ -1308,7 +1325,25 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                 guard !touchesEdge else { return nil }
                 let half = piece.width * piece.height * 0.5
                 let inHole = piece.intersection(hole)
-                if !inHole.isNull, inHole.width * inHole.height > half { return id }
+                if !inHole.isNull, inHole.width * inHole.height > half {
+                    // **Except a rail that runs out past the side of the hole it borders.**
+                    // `Back to the Future Trilogy` bakes its list's black into 154pt-wide side
+                    // tiles whose rail is the outer 15pt, and hangs its outer rail off a drawer
+                    // that overhangs the view by 130pt — so neither touches an edge and both are
+                    // mostly hole. Dropped, they left the window's right side bare from 193pt to the
+                    // bottom corner: invisible below 300pt tall, a 339pt run on a 635pt library.
+                    // Paint order cannot tell them apart here, because the stretched subview this
+                    // donor's hole is read from is its zIndex-1 backing, drawn before everything.
+                    // What does is the authoring: a piece stretched *down* the window whose frame
+                    // leaves the hole sideways is a side rail, and one stretched *across* that
+                    // leaves it vertically is a top or bottom rail. A backdrop fills the hole and
+                    // leaves it nowhere; a rack or an album-art panel stretches along no side.
+                    let railsDown = railsDownNodeIDs.contains(id)
+                        && (piece.minX < hole.minX - 1 || piece.maxX > hole.maxX + 1)
+                    let railsAcross = railsAcrossNodeIDs.contains(id)
+                        && (piece.minY < hole.minY - 1 || piece.maxY > hole.maxY + 1)
+                    return railsDown || railsAcross ? nil : id
+                }
                 // Only over the reclaimed strip, and only for a piece the donor draws over its own
                 // content.
                 guard let clientOrder, let order = paintOrder[id], order > clientOrder else { return nil }
