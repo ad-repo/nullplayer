@@ -1562,19 +1562,43 @@ final class MediaLibraryStore {
     /// `substr` rather than `replace`: `replace` would rewrite a second occurrence of the prefix
     /// further along the path as well. Anchoring on `substr(url, 1, n)` also avoids having to
     /// escape `%` and `_`, both of which are legal in a filename, for a `LIKE`.
+    ///
+    /// Every `url` column here is UNIQUE (PRIMARY KEY on `library_watch_folders`), so a row that
+    /// already sits at the destination would abort the whole transaction — and that is not a rare
+    /// shape, it is what the obvious user recovery produces: the library breaks, the user adds the
+    /// new location as a watch folder, it scans, and now both spellings exist. The colliding
+    /// destination row is therefore deleted before the rewrite. The stale row is the one worth
+    /// keeping: it carries the play counts, ratings and history a fresh scan has none of.
     @discardableResult
     func relocatePathPrefix(from oldPrefix: String, to newPrefix: String) -> [String: Int] {
         guard let db = db, !oldPrefix.isEmpty, oldPrefix != newPrefix else { return [:] }
+        // A nested rewrite has no single answer — a row under the old prefix can also be a row
+        // under the new one, so it would be both a source and a collision target.
+        let spellings = Self.prefixSpellings(oldPrefix, newPrefix)
+        guard !spellings.contains(where: { old, new in old.hasPrefix(new) || new.hasPrefix(old) }) else {
+            NSLog("MediaLibraryStore: refusing nested relocation '%@' -> '%@'", oldPrefix, newPrefix)
+            return [:]
+        }
         let tables = ["library_tracks", "library_movies", "library_episodes",
                       "library_playlists", "library_watch_folders"]
         var counts: [String: Int] = [:]
+        var displaced = 0
         do {
             try db.transaction {
                 for table in tables {
                     // Both spellings: rows are written as `file://…` today, but older formats
                     // stored a plain absolute path and those rows are still in live libraries.
-                    for (old, new) in Self.prefixSpellings(oldPrefix, newPrefix) {
-                        let length = old.utf8.count
+                    for (old, new) in spellings {
+                        // Characters, not bytes: SQLite's `substr` indexes TEXT by character, so a
+                        // byte length over a non-ASCII prefix would match nothing and relocation
+                        // would silently no-op. Unicode scalars rather than `count`, because macOS
+                        // hands back NFD paths and SQLite counts a decomposed accent as two.
+                        let length = old.unicodeScalars.count
+                        try db.run(
+                            "DELETE FROM \(table) WHERE url IN "
+                            + "(SELECT ? || substr(url, ?) FROM \(table) WHERE substr(url, 1, ?) = ?)",
+                            [new, Int64(length + 1), Int64(length), old])
+                        displaced += db.changes
                         try db.run(
                             "UPDATE \(table) SET url = ? || substr(url, ?) WHERE substr(url, 1, ?) = ?",
                             [new, Int64(length + 1), Int64(length), old])
@@ -1585,6 +1609,9 @@ final class MediaLibraryStore {
         } catch {
             NSLog("MediaLibraryStore: relocatePathPrefix failed: %@", error.localizedDescription)
             return [:]
+        }
+        if displaced > 0 {
+            NSLog("MediaLibraryStore: dropped %d duplicate row(s) already at '%@'", displaced, newPrefix)
         }
         let total = counts.values.reduce(0, +)
         NSLog("MediaLibraryStore: relocated %d row(s) from '%@' to '%@'", total, oldPrefix, newPrefix)

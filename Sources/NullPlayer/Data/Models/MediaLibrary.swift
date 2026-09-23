@@ -546,8 +546,9 @@ class MediaLibrary {
         store.open()
         loadLibrary()
         // Before anything reads a path: a root that moved while the app was closed orphans every
-        // row beneath it, and the first symptom the user ever saw was playback failing.
-        resolveRelocatedWatchFolders()
+        // row beneath it, and the first symptom the user ever saw was playback failing. Off the
+        // main thread — the search stats candidates that may sit on a slow or absent volume.
+        resolveRelocatedWatchFoldersInBackground()
         setupVolumeMonitoring()
 
         // Trigger backfill if v2→v3 migration ran and track_artists are not yet populated
@@ -2286,6 +2287,23 @@ class MediaLibrary {
     /// and `"rows"` (`Int`).
     static let watchFolderRelocatedNotification = Notification.Name("MediaLibraryWatchFolderRelocated")
 
+    /// Serializes the relocation probe. Launch and a volume mount can both trigger it, and two
+    /// searches rewriting the same prefixes at once would race each other's `loadLibrary`.
+    private let relocationQueue = DispatchQueue(label: "NullPlayer.MediaLibrary.relocation")
+
+    /// Run the probe without waiting for it — for the two callers that fire on their own rather
+    /// than because the user asked.
+    ///
+    /// The search is filesystem-bound by nature: per missing root it stats `/Volumes`, every
+    /// shallow home directory and up to 40 recorded files under each candidate, and `fileExists`
+    /// against an unreachable network mount blocks for seconds apiece. Both of those callers are
+    /// on the main thread, so neither can afford to wait for it.
+    private func resolveRelocatedWatchFoldersInBackground() {
+        relocationQueue.async { [self] in
+            _ = performRelocationScan()
+        }
+    }
+
     /// Re-point any watch root that is no longer at its recorded path.
     ///
     /// Nothing in the tree used to do this. A root that moved orphaned every row beneath it
@@ -2298,8 +2316,16 @@ class MediaLibrary {
     /// A root that is missing but cannot be placed is **left alone**, deliberately: an unmounted
     /// NAS, a signed-out iCloud Drive and a deleted folder are indistinguishable to `fileExists`,
     /// and deleting is unrecoverable where waiting costs nothing.
+    ///
+    /// Runs to completion, so the menu path can put the answer in its modal — the user asked for
+    /// it and is already waiting. The automatic triggers use the background variant instead.
     @discardableResult
     func resolveRelocatedWatchFolders() -> [(from: URL, to: URL)] {
+        relocationQueue.sync { performRelocationScan() }
+    }
+
+    /// The probe itself. Always entered through `relocationQueue`, never called directly.
+    private func performRelocationScan() -> [(from: URL, to: URL)] {
         let fileManager = FileManager.default
         let folders = watchFoldersSnapshot
         var relocated: [(from: URL, to: URL)] = []
@@ -2454,8 +2480,10 @@ class MediaLibrary {
                   let mountedURL = notification.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL else { return }
             let mountedPath = mountedURL.path
             // A volume appearing is also the moment a root that came back under a *different*
-            // mount point becomes findable, so try relocation before matching by path.
-            self.resolveRelocatedWatchFolders()
+            // mount point becomes findable, so try relocation as well as matching by path. This
+            // observer runs on the main thread and the search stats paths on the volume that just
+            // appeared, so it cannot run inline — a half-ready network mount blocks for seconds.
+            self.resolveRelocatedWatchFoldersInBackground()
             let affected = self.watchFoldersSnapshot.filter { $0.path.hasPrefix(mountedPath + "/") || $0.path == mountedPath }
             guard !affected.isEmpty else { return }
             NSLog("MediaLibrary: Volume mounted at '%@' — rescanning %d watch folder(s)", mountedPath, affected.count)

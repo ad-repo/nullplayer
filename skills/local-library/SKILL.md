@@ -161,9 +161,23 @@ A recorded path can stop resolving for two completely different reasons, and the
 confuse them. **`fileExists` cannot tell an unmounted NAS, a signed-out iCloud Drive or a renamed
 parent from a deleted file**, so every path here refuses to guess.
 
-**Relocation (non-destructive, automatic).** `MediaLibrary.resolveRelocatedWatchFolders()` runs at
-startup (in `init`, right after `loadLibrary`) and on volume mount. For each watch root that is not
-a directory on disk it looks for a new home and re-points it.
+**Relocation (non-destructive, automatic).** For each watch root that is not a directory on disk,
+the probe looks for a new home and re-points it. It runs at startup (in `init`, right after
+`loadLibrary`) and on volume mount.
+
+**Never call the probe inline from the main thread.** It is filesystem-bound by construction: per
+missing root it stats `/Volumes`, every shallow home directory, and up to 40 recorded files under
+each candidate, and a `fileExists` against an unreachable network mount blocks for seconds apiece.
+Both automatic triggers are on the main thread — `init`, and an `NSWorkspaceDidMount` observer
+registered with `queue: .main` — so both call `resolveRelocatedWatchFoldersInBackground()` and do
+not wait. The volume-mount case is the sharp one: the paths being stat'd are on the volume that has
+just appeared and may not be ready. Only `MenuActions.findMissingFiles` calls the synchronous
+`resolveRelocatedWatchFolders()`, because it has a modal to put the answer in and the user is
+already waiting for it.
+
+Both entry points funnel into `performRelocationScan()` behind the serial `relocationQueue`; nothing
+calls that directly. The queue is what stops launch and a mount (or two mounts) from searching and
+rewriting at once and racing each other's `loadLibrary()`.
 
 - `MediaLibraryStore.relocatePathPrefix(from:to:)` is the rewrite: one transaction over
   `library_tracks`, `library_movies`, `library_episodes`, `library_playlists` **and
@@ -173,6 +187,22 @@ a directory on disk it looks for a new home and re-points it.
   and rescanning. Uses `substr(url, 1, n)` anchoring, not `replace`/`LIKE`: `replace` would also
   rewrite a second occurrence of the prefix further along a path, and `%`/`_` are legal in filenames.
   Both the `file://…` and legacy plain-path spellings are rewritten.
+- **`substr` counts characters, so the anchor length must be `old.unicodeScalars.count`** — never
+  `utf8.count`, and not `count` either. A byte length over a non-ASCII prefix overshoots, matches
+  zero rows, and the caller's `guard rows > 0 else { continue }` swallows it: relocation appears to
+  run and silently fixes nothing. `String.count` is wrong in the other direction — macOS hands back
+  **NFD** paths, where SQLite counts a decomposed accent as two characters and Swift counts one
+  grapheme. Only the plain-path spelling is exposed to this; the `file://…` one is percent-encoded
+  ASCII. Verify a change here against a non-ASCII NFD prefix, not an ASCII one.
+- **Every `url` column is UNIQUE** (PRIMARY KEY on `library_watch_folders`), so a row already at the
+  destination would abort the whole five-table transaction — and the `catch` returns `[:]`, losing
+  the tables that would have succeeded. That collision is not exotic: it is what the obvious user
+  recovery produces — the library breaks, the user adds the new location as a watch folder, it
+  scans, and now both spellings exist. Each spelling therefore runs a
+  `DELETE … WHERE url IN (SELECT <destination> …)` before its `UPDATE`. **The stale row is the
+  survivor, deliberately** — it carries the play counts, ratings and history a fresh scan has none
+  of. A nested rewrite (either prefix a prefix of the other) is refused outright, because a row
+  would be both a source and a collision target.
 - `relocationCandidate(for:)` **verifies, never guesses.** Candidates come from `relocationSearchRoots`
   — a surviving ancestor, each `/Volumes` entry, `~/<name>` and one level under home — and each is
   checked by re-basing up to 40 recorded descendant paths onto it and requiring 60% to exist on disk.

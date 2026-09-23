@@ -20025,7 +20025,7 @@ private func parsePlexLocalPlaylistTracks(at url: URL) -> [Track] {
     let missing = playlist.missingFileEntries
     if !missing.isEmpty {
         AudioFileValidator.notifyInvalidFiles(
-            missing.map { (url: $0, reason: "Not found at the path '\(url.lastPathComponent)' resolves it to") })
+            missing.map { (url: $0, reason: "Not found: the playlist entry '\(url.lastPathComponent)' resolves to '\(url.path)'") })
     }
 
     return playlist.trackURLs.map { trackURL in
