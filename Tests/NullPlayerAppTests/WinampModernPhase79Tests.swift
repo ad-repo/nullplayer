@@ -181,7 +181,8 @@ final class WinampModernPhase79Tests: XCTestCase {
         let host = makeHost(engine: engine, session: nil)
         NotificationCenter.default.post(name: .audioTrackDidFailToLoad, object: engine,
                                         userInfo: ["message": "Failed to load 'a.mp3'"])
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        // No run-loop spin: a `.main`-queue observer posted to from the main thread runs inline, and
+        // spinning only let an earlier test's engine land its own late failure over this one.
         XCTAssertEqual(host.trackDisplayTitle, "Failed to load 'a.mp3'", "precondition: the failure is shown")
 
         host.videoSession = { self.playingFilm }
