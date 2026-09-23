@@ -775,7 +775,7 @@ objects, this engine has no JS object to stand for either, and all 77 of their c
 skin function (`updateAlbumArt()`, `getVisMeta()`, `updateMetadata('playlist')`) rather than reading
 the bare name. Binding a scalar in their place would answer a question the skin never asked.
 
-**The keyboard is bound and the rest of the `event` object is W121.** WMP binds one `event`
+**The whole `event` object is bound as of W121, closed 2026-09-22.** WMP binds one `event`
 object per handler with the modifier and key state on it.
 `value_onchange="toolTip = Math.round(value); if (!event.shiftKey) eq.gainLevel9 = value;"` is the
 shape — an equaliser band that skips its write while shift is held, which is how the Skins Factory
@@ -789,6 +789,53 @@ named arguments above are bound — for the duration of that one handler, then c
 whole class first**: sweep the corpus's handler attributes for `event.` and split by event kind,
 since the modifier state a mouse handler wants and the `keyCode` a key handler wants come from
 different places.
+
+### The rest of the `event` object (W121)
+
+**Re-measured 2026-09-22 over 184 archives** with `wmp_handler_scope_census.py`'s decoder — never
+`grep` — there are **1,249 `event.` reads** a handler can reach. `keyCode` is 1,025 of them (W53),
+and `shiftKey` (85 uses / 5 archives), `screenHeight` (65/6), `ctrlKey` (6/3) and `screenWidth` (3/1)
+were already answered. **The row's own stated reach was the wrong idiom**: its "30 handlers across
+the Skins Factory equaliser family" is `value_onchange`/`ondragend` reading `event.shiftKey`, live
+since W184, so the row ranked a class that already worked. Re-measure a row whose evidence predates
+a change to the same subsystem.
+
+The residue was **65 uses across 3 archives**, and each one takes a whole control surface with it,
+because a handler dies on its first unrecognised member:
+
+| Member | Uses / archives | What it costs |
+|---|---|---|
+| `srcElement` | 34 / 1 | `Cablemusic`'s eighteen station buttons *and* eighteen presets share one handler each and ask which was pressed |
+| `button` | 15 / 1 | `digitaldj`'s list boxes, spinners and comparison toggles are `if (event.button != 1) return;` |
+| `clientX`/`clientY` | 16 / 1 | `LostPlanet`'s `menuTicker()` opens and closes its drop-down from the pointer on every tick |
+
+**`srcElement` answers the element object**, resolved by the markup's own id and then by stable id —
+the same precedence `WMPScriptContext`'s `eventOwner` uses, because an identifier is not unique
+across views (W89). `.id` is only the member the corpus happens to read first.
+
+**`button` is IE's numbering, which WMP inherits: 1 left, 2 right, 4 middle.** Every corpus
+comparison is `== 1` or `!= 1`. Only the left button reaches a script event at all, because
+`WMPMainView` overrides `mouseDown` and not `rightMouseDown` — so the constant is a measurement,
+not a guess. It is carried on the event rather than derived from the event's *name*, so the day a
+secondary button is dispatched the answer moves with it.
+
+**`clientX`/`clientY` is set on every transaction, not only a mouse one**, because WMP's `event` is
+ambient rather than per-dispatch — that is the whole reason `LostPlanet`'s timer can work. It is
+read live at dispatch like `currentEventModifiers`, and for the same reason: the callbacks that
+raise these transactions have no `NSEvent` of their own.
+
+**All four answer absent rather than zero outside their transaction** — W260's rule, which `keyCode`
+already applied. `null` matches no numeric case, fails `== 1`, passes `!= 1`, and the member still
+*resolves*, so a handler reading it from a timer or a host event runs on instead of dying with a
+`ReferenceError`.
+
+**No headless instrument reaches any of the three skins**: two are `onMouseDown` and
+`WMP_RENDER_CLICK` raises only `onClick`, and the third needs a timer tick with a live pointer.
+
+**A test trap this row left behind, and it produced a live false pass.** Two transactions raised
+against one `WMPScriptRuntime` do not re-run the handler for a second target — the reused runtime
+answers the first target's result to both, so every negative case passes regardless of the
+implementation. **Use a fresh runtime per case** in any test that varies the event's target.
 
 **`WMPScriptConstants` carries the whole enumeration for the same reason.** A skin switches over all
 of `WMPOpenState`, and one missing global (`osMediaWaiting`, in Corona's case) is a `ReferenceError`

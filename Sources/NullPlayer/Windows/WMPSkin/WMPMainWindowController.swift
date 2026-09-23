@@ -102,6 +102,37 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// markup authored a handler for them. See `dispatchScriptEvent(name:targetID:…)`.
     static let hoverEvents: Set<String> = ["mouseover", "mouseout"]
 
+    /// The events WMP raises with a mouse button behind them, so `event.button` is answered on
+    /// those and absent on everything else (W121). A view timer and a host state change carry no
+    /// button at all, and `digitaldj`'s `if (event.button != 1) return;` has to be able to tell
+    /// those apart from a click of the wrong button — see `WMPJScriptEvent.button`.
+    static let mouseEvents: Set<String> = ["mousedown", "mouseup", "click", "dblclick",
+                                           "dragbegin", "dragend", "mousemove",
+                                           "mouseover", "mouseout"]
+
+    /// IE's left button, which is what WMP's `event.button` answers, or nil where no mouse raised
+    /// the event. **Only the left button ever reaches a script event** — `WMPMainView` overrides
+    /// `mouseDown` and not `rightMouseDown` — so the constant is honest rather than a guess.
+    static func mouseButton(for event: String) -> Int? {
+        mouseEvents.contains(event) ? 1 : nil
+    }
+
+    /// Where the pointer is, in the view's own skin-space top-left coordinates: WMP's
+    /// `event.clientX`/`event.clientY`.
+    ///
+    /// **Answered on every transaction, not only a mouse one**, because WMP's `event` object is
+    /// ambient rather than per-dispatch: `LostPlanet`'s `menuTicker()` is an `onTimer` that opens
+    /// and closes its drop-down by testing the pointer against the menu's rectangle on every tick,
+    /// so confining this to mouse events would leave that handler dead in a different way. Read
+    /// live here rather than carried up from an `NSEvent` for the reason
+    /// `currentEventModifiers` gives: the callbacks that raise these transactions have none.
+    static func currentPointer(_ presentation: WMPViewPresentation) -> WMPPoint? {
+        guard let view = presentation.mainView, let window = view.window,
+              let scene = presentation.activeScene else { return nil }
+        let windowPoint = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+        return view.skinPoint(fromWindowPoint: windowPoint, sceneSize: scene.canvasSize)
+    }
+
     private let importer: WMPSkinImporter
     private let host: any WMPHost
     /// **The effect selection is the one host property nothing else refreshes for.** Every other
@@ -837,7 +868,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             self.dispatchScriptTransaction(presentation,
                 WMPJScriptEvent(name: name, targetID: targetID, targetStableID: targetStableID,
                                 handlers: handlers, modifiers: Self.currentEventModifiers(),
-                                keyCode: keyCode))
+                                keyCode: keyCode,
+                                pointer: Self.currentPointer(presentation)))
             return true
         }
         view.onElementTextChanged = { [weak self, weak presentation] stableID, targetID, text in
@@ -892,7 +924,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 self.scriptDidCommitSeek = false
                 self.dispatchScriptTransaction(presentation,
                     WMPJScriptEvent(name: "mouseup", targetID: targetID,
-                                    targetStableID: stableID, handlers: handlers))
+                                    targetStableID: stableID, handlers: handlers,
+                                    modifiers: Self.currentEventModifiers(),
+                                    button: Self.mouseButton(for: "mouseup"),
+                                    pointer: Self.currentPointer(presentation)))
                 // **The hold outlives the dispatch, not the call that made it.**
                 // `dispatchScriptTransaction` only *creates* a task, so releasing here released the
                 // element before the transaction ran — and the transaction then settled the
@@ -2206,7 +2241,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                                                   targetStableID: targetStableID,
                                                   handlers: handlers,
                                                   modifiers: Self.currentEventModifiers(),
-                                                  keyCode: keyCode),
+                                                  keyCode: keyCode,
+                                                  button: Self.mouseButton(for: name),
+                                                  pointer: Self.currentPointer(presentation)),
                                   stickyLatch: name == "click"
                                       ? Self.stickyLatch(presentation, targetStableID) : nil)
     }
@@ -2939,7 +2976,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         presentation.scriptTask?.cancel()
         presentation.scriptTask = Task { [weak self, weak presentation] in
             guard let self, let presentation else { return }
-            let event = WMPJScriptEvent(name: "timer", targetID: nil, handlers: [request.source])
+            let event = WMPJScriptEvent(name: "timer", targetID: nil, handlers: [request.source],
+                                        pointer: Self.currentPointer(presentation))
             let output = await scriptRuntime.transact(skin: skin, viewID: viewID,
                 size: activeScene.canvasSize, snapshot: host.snapshot, event: event,
                 geometry: activeScene.scriptGeometry, animatesTweens: true)
@@ -3361,7 +3399,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             Self.handlers(in: skin, event: $0, targetID: nil, viewID: viewID)
         }
         let event = WMPJScriptEvent(name: (["timer"] + videoEvents).joined(separator: ","),
-                                   targetID: viewID, handlers: videoHandlers + dispatcherHandlers)
+                                   targetID: viewID, handlers: videoHandlers + dispatcherHandlers,
+                                   pointer: Self.currentPointer(player))
         let output = await scriptRuntime.dispatch(skin: skin, viewID: viewID,
                                                   currentViewID: player.viewID,
                                                   snapshot: snapshot, event: event)

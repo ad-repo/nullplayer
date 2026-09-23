@@ -1465,6 +1465,109 @@ final class WMPScriptRuntimeTests: XCTestCase {
         XCTAssertFalse(withNoKey)
     }
 
+    /// **The element that raised the event, and the reason a whole skin depends on it (W121).**
+    ///
+    /// `Cablemusic` gives all eighteen of its station buttons the same
+    /// `onMouseDown="StartProgram();"` and the function asks which one it was —
+    /// `var i = Number(String(event.srcElement.id).substring(2));`. Eighteen presets share
+    /// `AssignPreset()` the same way, so an unrecognised member here took both surfaces with it:
+    /// the handler dies on its first statement and nothing on the skin's face does anything.
+    /// It answers the element *object*, which is what WMP hands back; `.id` is only the member
+    /// the corpus happens to read first.
+    ///
+    /// **The assertion is which button, not whether one.** Both buttons author the same source,
+    /// exactly as the skin does, so a `srcElement` answering any element at all — or the first in
+    /// the view — would still pass a whether-it-fired check and fail this one.
+    ///
+    /// **A fresh runtime per case, and that is not incidental.** Two transactions raised against
+    /// one runtime do not re-run the handler for a second target, so a reused runtime answers the
+    /// *first* target's result to both and every negative case passes for the wrong reason. This
+    /// was a live false pass while the implementation was correct.
+    func testAHandlerReadsTheElementThatRaisedItOffTheEventObject() async throws {
+        let source = "if (String(event.srcElement.id) == 'b7') player.controls.play();"
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+            <BUTTON id="b7" left="0" top="0" width="10" height="10" onMouseDown="\(source)"/>
+            <BUTTON id="b8" left="20" top="0" width="10" height="10" onMouseDown="\(source)"/>
+        </VIEW></THEME>
+        """)
+        func played(targetID: String) async throws -> Bool {
+            let (runtime, cleanup) = try runtime()
+            defer { cleanup() }
+            let output = await runtime.transact(
+                skin: skin, viewID: "main", size: WMPSize(width: 100, height: 60),
+                snapshot: WMPHostSnapshot(),
+                event: WMPJScriptEvent(name: "mousedown", targetID: targetID, handlers: [source]))
+            return output.hostCommands.contains { $0.action == "play" }
+        }
+        let fromB7 = try await played(targetID: "b7")
+        let fromB8 = try await played(targetID: "b8")
+        XCTAssertTrue(fromB7, "the handler must see the button that raised it")
+        XCTAssertFalse(fromB8, "a different button sharing the same source must not match b7")
+    }
+
+    /// **`event.button` is IE's numbering, which WMP inherits: 1 left, 2 right, 4 middle (W121).**
+    ///
+    /// `digitaldj`'s list boxes, spinners and comparison toggles are built out of
+    /// `if (event.button == 1)` and `if (event.button != 1) return;` — 15 uses in its markup alone.
+    /// Only the left button reaches a script event at all, because `WMPMainView` overrides
+    /// `mouseDown` and not `rightMouseDown`, so the answer is a measurement rather than a guess.
+    func testAMouseHandlerReadsTheButtonAndATransactionWithNoMouseReadsNone() async throws {
+        let source = "if (event.button == 1) player.controls.next();"
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+            <TEXT id="spin" left="0" top="0" width="40" height="10" onMouseDown="\(source)"/>
+        </VIEW></THEME>
+        """)
+        func advanced(button: Int?) async throws -> Bool {
+            let (runtime, cleanup) = try runtime()
+            defer { cleanup() }
+            let output = await runtime.transact(
+                skin: skin, viewID: "main", size: WMPSize(width: 100, height: 60),
+                snapshot: WMPHostSnapshot(),
+                event: WMPJScriptEvent(name: "mousedown", targetID: "spin",
+                                       handlers: [source], button: button))
+            return output.hostCommands.contains { $0.action == "next" }
+        }
+        let onTheLeftButton = try await advanced(button: 1)
+        let withNoMouse = try await advanced(button: nil)
+        XCTAssertTrue(onTheLeftButton)
+        // A view timer and a host state change carry no button at all. `null` fails `== 1` and
+        // passes `!= 1`, which is what the corpus's early-return idiom wants: a transaction with
+        // no mouse behind it is not a click of the wrong button.
+        XCTAssertFalse(withNoMouse)
+    }
+
+    /// **WMP's `event` object is ambient rather than per-dispatch, and `clientX`/`clientY` is where
+    /// that matters (W121).** `LostPlanet`'s `menuTicker()` is an `onTimer` that opens and closes
+    /// its own drop-down by testing the pointer against the menu's rectangle on every tick, so
+    /// confining the pointer to mouse transactions leaves that handler dead in a different way.
+    /// The coordinates are the view's own top-left client space, the space the scene is built in —
+    /// `WMPMainView.skinPoint(fromWindowPoint:sceneSize:)` is where a live one comes from.
+    func testATimerHandlerReadsThePointerOffTheEventObject() async throws {
+        let source = "if (event.clientX > 10 && event.clientY < 75) player.controls.play();"
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="120" onTimer="\(source)"
+                     timerInterval="500"/></THEME>
+        """)
+        func opened(pointer: WMPPoint?) async throws -> Bool {
+            let (runtime, cleanup) = try runtime()
+            defer { cleanup() }
+            let output = await runtime.transact(
+                skin: skin, viewID: "main", size: WMPSize(width: 200, height: 120),
+                snapshot: WMPHostSnapshot(),
+                event: WMPJScriptEvent(name: "timer", targetID: nil,
+                                       handlers: [source], pointer: pointer))
+            return output.hostCommands.contains { $0.action == "play" }
+        }
+        let insideTheHotspot = try await opened(pointer: WMPPoint(x: 40, y: 20))
+        let belowIt = try await opened(pointer: WMPPoint(x: 40, y: 90))
+        let withNoPointer = try await opened(pointer: nil)
+        XCTAssertTrue(insideTheHotspot, "a timer handler must see where the pointer is")
+        XCTAssertFalse(belowIt, "outside the rectangle the handler must not fire")
+        XCTAssertFalse(withNoPointer, "no window to ask means no pointer, not the origin")
+    }
+
     private func fixtureScript(_ name: String) throws -> String {
         let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("Fixtures/WMPSkin")

@@ -27,6 +27,8 @@ Technical documentation lives in `skills/`. Read the owning skill before changin
 - `projectm-milkdrop`: MilkDrop; `metal-gotchas`: Metal rules
 - `geiss-port`, `tripex-port`, `vis-classic-guide`: visualization ports and compatibility
 - `app-control`: launching, configuring, driving and measuring the running app; test-data targets
+- Backlogs: `WMP_TASKS.md` (`.wmz`), `WINAMP5_TASKS.md` (`.wal`), `docs/video-playback/backlog.md`
+  (shared video), `docs/local-library/backlog.md` (library scanning and playlist playback)
 - `live-ui-testing`: process skill for screen-only defects — instrument first, drive the app yourself, measure what is drawn
 - `testing`: UI test workflows; `non-retina-fixes`: 1x display fixes; `local-library`: SQLite and scanning; `cli`: headless mode
 - `skin-screenshots`: per-skin main-window captures across all skin systems, and slideshow GIFs

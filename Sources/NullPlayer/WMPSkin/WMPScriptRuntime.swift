@@ -223,21 +223,44 @@ struct WMPJScriptEvent: Hashable, Codable, Sendable {
     /// the absent case rather than `0`: `0` is VK_NULL and every corpus handler switches over the
     /// number (W53, and W260's rule that an absent value is not a zero).
     var keyCode: Int?
+    /// The mouse button this event was raised by, as `event.button` answers it: IE's numbering,
+    /// which WMP inherits — 1 left, 2 right, 4 middle. Nil for every transaction that is not a
+    /// mouse event, for the same reason `keyCode` is (W260): `digitaldj`'s list boxes are built
+    /// out of `if (event.button != 1) return;`, and a zero standing in for "no mouse" would read
+    /// as a button that is not the left one rather than as no button at all.
+    ///
+    /// **Only the left button reaches a script event at all**, because `WMPMainView` overrides
+    /// `mouseDown` and not `rightMouseDown`, so this is `1` wherever it is set. It is carried on
+    /// the event rather than derived from the event's *name* so that the day a secondary button is
+    /// dispatched, the answer moves with it instead of staying a constant the name implies.
+    var button: Int?
+    /// Where the pointer was, in the view's own top-left client coordinates, as
+    /// `event.clientX`/`event.clientY` answer it.
+    ///
+    /// **WMP's `event` is ambient rather than per-dispatch**, which is the whole reason this is
+    /// not confined to mouse transactions: `LostPlanet`'s `menuTicker()` is an `onTimer` that
+    /// opens and closes its own drop-down menu by testing `event.clientX`/`Y` against the menu's
+    /// rectangle every tick. Read live at dispatch like `currentEventModifiers`, and for the same
+    /// reason — the callbacks that raise these transactions have no `NSEvent` of their own.
+    var pointer: WMPPoint?
 
     init(name: String, targetID: String?, targetStableID: Int? = nil, handlers: [Handler],
-         modifiers: WMPEventModifiers = [], keyCode: Int? = nil) {
+         modifiers: WMPEventModifiers = [], keyCode: Int? = nil,
+         button: Int? = nil, pointer: WMPPoint? = nil) {
         self.name = name; self.targetID = targetID; self.targetStableID = targetStableID
         self.handlers = handlers
         self.modifiers = modifiers
         self.keyCode = keyCode
+        self.button = button
+        self.pointer = pointer
     }
 
     init(name: String, targetID: String?, targetStableID: Int? = nil, handlers: [String],
          arguments: [String: WMPJSONValue] = [:], modifiers: WMPEventModifiers = [],
-         keyCode: Int? = nil) {
+         keyCode: Int? = nil, button: Int? = nil, pointer: WMPPoint? = nil) {
         self.init(name: name, targetID: targetID, targetStableID: targetStableID,
                   handlers: handlers.map { Handler(source: $0, arguments: arguments) },
-                  modifiers: modifiers, keyCode: keyCode)
+                  modifiers: modifiers, keyCode: keyCode, button: button, pointer: pointer)
     }
 }
 
@@ -295,7 +318,8 @@ enum WMPJScriptCompatibility {
                   "closeView", "openViewRelative"],
         // The two members of WMP's `event` object that describe the display rather than a live
         // input event. The rest of it stays off this list on purpose — see `readEvent`.
-        "event": ["screenWidth", "screenHeight", "shiftKey", "ctrlKey", "altKey", "keyCode"],
+        "event": ["screenWidth", "screenHeight", "shiftKey", "ctrlKey", "altKey", "keyCode",
+                  "srcElement", "button", "clientX", "clientY"],
         // `backgroundImage` is on this list because the view root resolves it the way every other
         // node does — a script override before the authored attribute (W75). Every skin with a
         // store-thumbnail `previewView` writes it, and the tally must not call it unknown.

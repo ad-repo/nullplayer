@@ -11,7 +11,7 @@ this file is [`docs/winamp-modern/backlog-archive.md`](../winamp-modern/backlog-
 
 ## Issuing a number: what is taken, what collided, what is free
 
-**The next free number is W261.** (**W56 closed 2026-09-22** and is archived below — the video and playback-position events; it was issued long ago and carried in Tier 2c, so it spends no new number. Two of its three events had been dispatched since W102 and only wanted measuring; the third was the inverse of that tier's rule, a dispatch site with no classification.) (**W53 closed 2026-09-22** and is archived below — the keyboard: three events classified, dispatched and bound to `event.keyCode`. It was issued long ago and carried in Tier 2c, so it spends no new number, and it closed the key half of **W121** on the way past.) (**W41 and W260 closed 2026-09-22** and are archived below — `sourceURL` answered in a spelling no skin's classifier could read, and, found while verifying it in the running app, a view's `onTimer` with no `timerInterval` that never ticked. W41 was issued long ago and carried in Tier 2a, so it spends no new number.) (**W258 and W259 were issued and closed 2026-09-22**, both out of the `Plus! SlimLine` live report and both archived below — a boolean element property written as a quoted string and read back truthy, and an inert `<BUTTONGROUP>` swallowing the controls under it. W259 closes the half of **W149** that had been an open question since it was written.) (**W40 closed 2026-09-22** and is archived below; it was issued long ago and carried in Tier 2a, so it spends no new number.) (**W257 was issued and closed 2026-09-22** and is archived below — a `theme.currentViewID` switch that landed and was immediately undone, reported live on `Plus! SlimLine`. It was reachable only behind W40, had no headless signature, and **spent no second number**: it is W204's defect, and closing it closed the scope half of W204 too.) (**W256 was issued and closed 2026-09-22** — the equaliser sliders that cannot be dragged, reported live on `elvis` and `anemone`; archived below. It was three defects and **spent no second number**: the named `<EQUALIZERSETTINGS>` half, which the row had reserved one for, is the other half of the same report.) (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253 — the `onLoad` tween that lands in one frame because the load transaction carries no clock — **closed 2026-09-22** and is archived below. Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
+**The next free number is W263.** (**W262 was issued 2026-09-23** and is open in [`WMP_TASKS.md`](../../WMP_TASKS.md) — `player.url`, 167 uses across 122 of 184 archives, found live on `Cablemusic` while verifying W121.) (**W121 closed 2026-09-22** and is archived below — the rest of the `event` object. It was issued long ago and carried in Tier 2c, so it spends no new number; its key half had already gone with W53.) (**W261 was issued 2026-09-22** and is open in [`WMP_TASKS.md`](../../WMP_TASKS.md) — cover flow drawing over the window's borders, reported live and not reproduced headlessly.) (**W56 closed 2026-09-22** and is archived below — the video and playback-position events; it was issued long ago and carried in Tier 2c, so it spends no new number. Two of its three events had been dispatched since W102 and only wanted measuring; the third was the inverse of that tier's rule, a dispatch site with no classification.) (**W53 closed 2026-09-22** and is archived below — the keyboard: three events classified, dispatched and bound to `event.keyCode`. It was issued long ago and carried in Tier 2c, so it spends no new number, and it closed the key half of **W121** on the way past.) (**W41 and W260 closed 2026-09-22** and are archived below — `sourceURL` answered in a spelling no skin's classifier could read, and, found while verifying it in the running app, a view's `onTimer` with no `timerInterval` that never ticked. W41 was issued long ago and carried in Tier 2a, so it spends no new number.) (**W258 and W259 were issued and closed 2026-09-22**, both out of the `Plus! SlimLine` live report and both archived below — a boolean element property written as a quoted string and read back truthy, and an inert `<BUTTONGROUP>` swallowing the controls under it. W259 closes the half of **W149** that had been an open question since it was written.) (**W40 closed 2026-09-22** and is archived below; it was issued long ago and carried in Tier 2a, so it spends no new number.) (**W257 was issued and closed 2026-09-22** and is archived below — a `theme.currentViewID` switch that landed and was immediately undone, reported live on `Plus! SlimLine`. It was reachable only behind W40, had no headless signature, and **spent no second number**: it is W204's defect, and closing it closed the scope half of W204 too.) (**W256 was issued and closed 2026-09-22** — the equaliser sliders that cannot be dragged, reported live on `elvis` and `anemone`; archived below. It was three defects and **spent no second number**: the named `<EQUALIZERSETTINGS>` half, which the row had reserved one for, is the other half of the same report.) (**W254 and W255 were issued and closed 2026-09-22**, both out of W252 and both archived below — the hosted video window bursting out of a fixed view's box, and `wmpenabled:player.controls.seek` being answered "no". Neither could exist before W252: the `<VIDEO>` was never shown, so nothing had ever parked a window over it, which is `reachable-code-fires-latent-traps` in a single afternoon.) (**W252 and W253 were issued 2026-09-21.** W252 — the `Revert` video rect that never shows a picture — **closed 2026-09-22** and is archived below; W253 — the `onLoad` tween that lands in one frame because the load transaction carries no clock — **closed 2026-09-22** and is archived below. Both were reported live and neither had a headless signature.) (**W251 was issued 2026-09-21** for the live half of W104 and moved to [`LOW_QUALITY_TASKS.md`](../../LOW_QUALITY_TASKS.md) the same day — the statistics it named do not exist; the number stays spent either way. **W104 itself closed 2026-09-21** and is archived below — it was issued long before and carried in Tier 1e, so it spends no new number.) (W244, W245 and W246 were issued 2026-09-20 — the `onLoad` self-resize row in Tier 1g, the sweep damage-detector row and the `Xbox Live Skin` playlist-scrolling row, all three closed the same day and archived below. W247-W249 were issued 2026-09-20; **W250 was issued and closed 2026-09-21** and is archived below.) Check this file before reusing any number — the live backlog is a
 list of *open* work and says nothing about which numbers are spent.
 
 **Two IDs were issued twice by different sessions, and the open halves were renumbered 2026-09-17.**
@@ -40,6 +40,57 @@ already been closed by the hosted-frame work that landed after its report. **W21
 corpus's unimplemented-tag demand was 1,197 uses and is 258, so any `COMPAT`/`UNKNOWN tag` Reach
 taken before that date is inflated rather than merely stale.
 
+
+
+## W121 — a handler that reads the `event` object (closed 2026-09-22)
+
+**Re-measured over 184 archives before it was taken**, with `scripts/wmp_handler_scope_census.py`'s
+BOM-sniffing decoder rather than `grep`: **1,249 `event.` reads** a handler can reach. `keyCode` is
+1,025 of them and closed with W53; `shiftKey` (85 uses / 5 archives), `screenHeight` (65/6),
+`ctrlKey` (6/3) and `screenWidth` (3/1) were already answered.
+
+**The row's stated Reach was a count of the wrong idiom.** Its "30 handlers across the Skins Factory
+equaliser family" is `value_onchange`/`ondragend` reading `event.shiftKey` — **live since W184** — so
+the row had been ranking a class that already worked. This page keeps finding the same thing:
+re-measure a row whose evidence predates a change to the same subsystem.
+
+**The residue was 65 uses across 3 archives**, and each takes a whole control surface with it,
+because a handler dies on its first unrecognised member: `srcElement` 34/1 (`Cablemusic`'s eighteen
+station buttons and eighteen presets each share one handler and ask which was pressed), `button`
+15/1 (`digitaldj`'s list boxes and spinners are `if (event.button != 1) return;`), `clientX`+
+`clientY` 16/1 (`LostPlanet`'s `menuTicker()` opens and closes its drop-down from the pointer every
+tick). The contract for all four is `object-model.md` § *The rest of the `event` object (W121)*.
+
+**Three things it leaves behind.**
+
+*A row's Reach can be a count of an idiom that already works.* The measurement that mattered was not
+"how many handlers read `event`" but "how many read a member nothing answers" — and those are
+different by a factor of nineteen.
+
+*`event` is ambient, not per-dispatch.* `clientX`/`clientY` had to be set on **every** transaction,
+including a view timer, or `LostPlanet`'s ticker stays dead in a new way. Confining an `event`
+member to the event kind whose name suggests it is the trap here.
+
+*Two transactions on one `WMPScriptRuntime` do not re-run the handler for a second target* — the
+reused runtime answers the first target's result to both, so **every negative case passes regardless
+of the implementation**. This produced a live false pass during the row's own verification: a test
+asserting that button `b8` must not match `b7` failed while the engine was correct, and the probe
+that settled it showed `b7.id.read` and `b8.id.read` resolving correctly under a fresh runtime per
+case. Use a fresh runtime per case whenever a test varies the event's target.
+
+**Verified live 2026-09-23, on two of the three skins**, because no instrument here reaches them:
+two are `onMouseDown` and `WMP_RENDER_CLICK` raises only `onClick`, and the third needs a timer tick
+with a live pointer. `LostPlanet`'s drop-down **opened on hover**, which is `clientX`/`clientY` on a
+timer working — it was wholly dead before. `Cablemusic`'s station buttons reached
+`PlayThis()` and posted its *"Starting..."* readout, which is two lines from the end of a function
+that previously **died on its first statement**; the station does not load, and that is **W262**
+(`player.url`), found by this verification rather than caused by it. `digitaldj` was not driven.
+
+**The verification is the row's best argument for driving the app.** Both confirmations are
+mid-handler side effects — a menu that slides and a status string — and neither is a thing any
+headless probe here reports. The `Cablemusic` result is also the cleaner shape of
+`reachable-code-fires-latent-traps` than the rule's own examples: the fix worked, the skin still does
+not play, and **those are not in conflict**.
 
 ## W41 — `sourceURL` resolved, and resolved to a string no skin could read (closed 2026-09-22)
 

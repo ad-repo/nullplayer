@@ -1470,7 +1470,7 @@ the skin, or trails a drag, the parent-child link is gone — do not go looking 
 animation is not a human-scale job, and Phase 5 shipped its AppKit half unmeasured for exactly that
 reason. So **a genuine gap in instrument reach ranks above a skin-side defect when one is found** —
 and a probe that reports work already done is a gap in reach exactly as a missing probe is. That is
-what Tier 1d in `WMP_TASKS.md` exists to hold, and why the tier stays even while it is empty.
+how a row is ranked in `WMP_TASKS.md`: an instrument gap goes above the skin-side rows, not among them.
 
 ## Numbers that are void, and why
 

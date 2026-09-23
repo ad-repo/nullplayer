@@ -114,6 +114,18 @@ final class WMPObjectModel {
     /// **405 of the 409** `event.` reads in the corpus's key handlers are (W53). Nil outside a
     /// keystroke.
     var eventKeyCode: Int?
+    /// The mouse button this transaction's own event carried, answered as `event.button` — IE's
+    /// numbering, which WMP inherits. Nil outside a mouse event; see `WMPJScriptEvent.button`.
+    var eventButton: Int?
+    /// Where the pointer is, in the view's top-left client coordinates, answered as
+    /// `event.clientX`/`event.clientY`. Nil where no window could be asked.
+    var eventPointer: WMPPoint?
+    /// The element that raised this transaction's event, answered as `event.srcElement`. Both
+    /// addresses are carried and resolved in that order for the same reason
+    /// `WMPScriptContext`'s `eventOwner` does: the markup's own id where it authored one, and the
+    /// stable id where it did not, because an identifier is not unique across views (W89).
+    var eventTargetID: String?
+    var eventTargetStableID: Int?
     var elements: [String: WMPScriptElement] = [:]
     private var elementOrder: [String] = []
     /// The preset the skin last selected. WMP tracks one; the engine has no notion of a current
@@ -162,13 +174,19 @@ final class WMPObjectModel {
 
     func beginTransaction(snapshot: WMPHostSnapshot, preferences: [String: String], viewID: String,
                           screen: WMPSize = WMPObjectModel.defaultScreen,
-                          modifiers: WMPEventModifiers = [], keyCode: Int? = nil) {
+                          modifiers: WMPEventModifiers = [], keyCode: Int? = nil,
+                          button: Int? = nil, pointer: WMPPoint? = nil,
+                          targetID: String? = nil, targetStableID: Int? = nil) {
         self.snapshot = snapshot
         self.preferences = preferences
         currentViewID = viewID
         self.screen = screen
         eventModifiers = modifiers
         eventKeyCode = keyCode
+        eventButton = button
+        eventPointer = pointer
+        eventTargetID = targetID
+        eventTargetStableID = targetStableID
         calls.removeAll(keepingCapacity: true)
         mutations.removeAll(keepingCapacity: true)
         hostCommands.removeAll(keepingCapacity: true)
@@ -652,6 +670,27 @@ final class WMPObjectModel {
         // and the member still *resolves*, so a handler reading it outside a keystroke runs on
         // rather than dying with a `ReferenceError` (W53, and W260's absent-is-not-zero rule).
         case "keycode": return .value(eventKeyCode.map { .number(Double($0)) } ?? .null)
+        // **The element the event was raised on, and the reason a whole skin depends on it.**
+        // `Cablemusic` gives all eighteen of its station buttons the same
+        // `onMouseDown="StartProgram();"` and the function asks which one it was:
+        // `var i = Number(String(event.srcElement.id).substring(2));`. Eighteen presets share
+        // `AssignPreset()` the same way, so an unrecognised member here took both surfaces — the
+        // handler dies on its first statement and nothing on the skin's face does anything.
+        //
+        // Answered as the element object rather than as its id, because that is what WMP hands
+        // back and `.id` is only the member the corpus happens to read first.
+        case "srcelement":
+            let target = eventTargetID.flatMap(element) ?? eventTargetStableID.flatMap(element(stableID:))
+            guard let element = target, !element.id.isEmpty else {
+                // Absent is not a wrong element: outside an element-raised event, and for a node
+                // the markup left unnamed, there is nothing honest to hand back. The member still
+                // resolves, so the handler runs on — W260's rule, as `keyCode` applies it above.
+                return .value(.null)
+            }
+            return .object("element:\(WMPPath.fold(element.id))")
+        case "button": return .value(eventButton.map { .number(Double($0)) } ?? .null)
+        case "clientx": return .value(eventPointer.map { .number(Double($0.x)) } ?? .null)
+        case "clienty": return .value(eventPointer.map { .number(Double($0.y)) } ?? .null)
         default: return .unrecognised("event member")
         }
     }

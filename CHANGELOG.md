@@ -4,6 +4,13 @@
 
 ### Added
 
+- **Media Player skin controls that ask which button was pressed now work.** Skins that give a whole
+  row of buttons one shared handler, and then ask the player which one the user hit, previously did
+  nothing at all — the question went unanswered and took the rest of the handler with it. On
+  `Cablemusic` that was every one of its eighteen station buttons and eighteen presets; on
+  `digitaldj` its list boxes, spinners and comparison toggles; on `LostPlanet` the drop-down menu
+  that opens and closes as the pointer crosses it.
+
 - **Media Player skins answer the keyboard.** These skins carry their own shortcuts — on
   `Age of Mythology` and `ALXMorph`, Z / X / C / V / B are previous, play, pause, stop and next, and
   the arrow keys nudge volume and position — and none of them did anything before. 80 of the

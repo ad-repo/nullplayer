@@ -12,8 +12,8 @@ import Foundation
 ///
 /// A case is not the fix on its own: routing stands NullPlayer's window aside on the strength of an
 /// authored tag, so **adding one before `WMPMainView` hosts that surface trades a duplicate window
-/// for an empty drawer.** W101-W105 in `WMP_TASKS.md` § *Tier 1e* rank the hosting ahead of the
-/// routing for that reason. The library, Cava, PeppyMeter, the waveform and the analysis panes do
+/// for an empty drawer.** W101-W105 (closed; in `docs/wmp-skin/wmp-backlog-archive.md`) ranked the
+/// hosting ahead of the routing for that reason. The library, Cava, PeppyMeter, the waveform and the analysis panes do
 /// genuinely have no counterpart.
 enum WMPSkinSurface: String, CaseIterable {
     case playlist
