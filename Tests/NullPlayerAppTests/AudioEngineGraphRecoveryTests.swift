@@ -66,6 +66,28 @@ final class AudioEngineGraphRecoveryTests: XCTestCase {
         }
     }
 
+    func testFailedRebuildArmsExactlyOneRetryAttempt() {
+        let recovery = AudioGraphRecoveryCoordinator()
+        let engine = AudioEngine(audioGraphRecovery: recovery)
+        recovery.setFaultInjectorForTesting { _ in
+            NSException(name: .internalInconsistencyException, reason: "error -10868", userInfo: nil).raise()
+        }
+
+        engine.rebuildAudioGraphForTesting()
+
+        XCTAssertEqual(recovery.retryCount, 1)
+        XCTAssertTrue(recovery.hasScheduledWork)
+
+        // The retry callback re-arms when it sees the rebuild fail, and so does the rebuild
+        // itself. Only one of the two may consume an attempt, or the six-retry budget is
+        // really three and each armed backoff is cancelled before it fires.
+        recovery.scheduleRetry {}
+
+        XCTAssertEqual(recovery.retryCount, 1)
+        XCTAssertTrue(recovery.hasScheduledWork)
+        recovery.cancelScheduledWork()
+    }
+
     func testPersistentFailureStopsSchedulingAndLaterRecoverySucceeds() {
         let recovery = AudioGraphRecoveryCoordinator()
         let engine = AudioEngine(audioGraphRecovery: recovery)

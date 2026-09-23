@@ -88,7 +88,11 @@ final class AudioGraphRecoveryCoordinator {
     /// Returns false once the recovery cycle has been exhausted.
     @discardableResult
     func scheduleRetry(_ action: @escaping () -> Void) -> Bool {
-        cancelScheduledWork()
+        // One failed attempt reaches this from two places: the failure path inside the
+        // rebuild, and the caller that observed the rebuild fail. The retry armed first is
+        // the one that counts — re-arming here would burn a second attempt from the budget
+        // and cancel the backoff that was just scheduled.
+        guard !hasScheduledWork else { return true }
         let attempt = retryCount + 1
         guard attempt <= 6 else {
             clearPendingIntent()
