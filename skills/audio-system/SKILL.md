@@ -96,7 +96,7 @@ Main audio controller managing:
 private var engine = AVAudioEngine()
 private var playerNode = AVAudioPlayerNode()
 private var crossfadePlayerNode = AVAudioPlayerNode()
-private let activeEQConfiguration: EQConfiguration
+private var activeEQConfiguration: EQConfiguration
 private var eqNode: AVAudioUnitEQ
 private var streamingPlayer: StreamingAudioPlayer?
 private var crossfadeStreamingPlayer: StreamingAudioPlayer?
@@ -455,6 +455,10 @@ When audio isn't playing:
 MP3, M4A, AAC, WAV, AIFF, FLAC, ALAC, OGG
 
 Route-change graph rebuilds catch Objective-C exceptions from disconnect/connect via `ObjCExceptionCatcher`; Swift `do/catch` cannot catch them. `AudioGraphRecoveryCoordinator` owns the typed deferred/retry lifecycle and pending playback intent; `AudioEngine` owns only AVFoundation graph mutation and playback restoration. An exception can leave a partially mutated graph (including persistent `-10868` failures after long idle periods). Recovery replaces the engine and **all local nodes**, including the controller's local pitch node, then restores output selection, EQ layout/gains/preamp/bypass, pitch/rate, volume, and balance. Streaming pitch nodes remain independent. Configuration observers move to the new engine; stale notifications from the retired engine are ignored. Invalidate playback completion generations before stopping old players.
+
+A configuration change during streaming leaves the local engine paused and does **not** restart it: streaming renders through AudioStreaming's own engine, the spectrum tap is not on the local mixer while streaming, and the next local `play()` starts the engine itself. The local graph is still reconnected so it is ready when playback returns to a file.
+
+The configuration-change notification arrives on an unspecified thread. Only the lock-guarded rebuild flag may be read there; `engine` is a `var` reassigned on main during replacement, so engine identity is compared after the hop to main. Recovery state is reset when the debounced rebuild actually runs, not when the notification arrives — clearing it early opens a window where playback paths see a ready gate and schedule onto a graph that has not been rebuilt.
 
 If replacement cannot recover the device, deferred retries back off from 250 ms to 4 seconds and stop after six retries. A fresh Play request or device-change notification permits another recovery cycle. Stop/Pause clear deferred playback intent so recovery cannot restart canceled playback. Tests in `AudioEngineGraphRecoveryTests` inject Objective-C exceptions into disconnect/connect to exercise replacement and persistent-failure exhaustion without waiting days.
 

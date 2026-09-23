@@ -39,7 +39,7 @@ final class AudioGraphRecoveryCoordinator {
 
     func startNewRecoveryCycle() {
         cancelScheduledWork()
-            state = .ready
+        state = .ready
     }
 
     func deferRebuild() {

@@ -697,8 +697,26 @@ class AudioEngine {
     /// Audio route/configuration changes can arrive in bursts while macOS is switching
     /// devices, Zoom routes, AirPlay/Sonos, or Wi-Fi-backed outputs.
     private let audioGraphRecovery: AudioGraphRecoveryCoordinator
-    private var isRebuildingAudioGraph = false
     private var audioGraphNeedsReplacement = false
+
+    /// Set while `rebuildAudioGraph()` mutates the graph on main, and read from the
+    /// AVAudioEngineConfigurationChange delivery thread (an unspecified thread) so that
+    /// notifications our own mutation provokes are dropped rather than queued. Guarded
+    /// because of that cross-thread access; `engine` itself is never read off main.
+    private let audioGraphRebuildFlagLock = NSLock()
+    private var _isRebuildingAudioGraph = false
+    private var isRebuildingAudioGraph: Bool {
+        get {
+            audioGraphRebuildFlagLock.lock()
+            defer { audioGraphRebuildFlagLock.unlock() }
+            return _isRebuildingAudioGraph
+        }
+        set {
+            audioGraphRebuildFlagLock.lock()
+            defer { audioGraphRebuildFlagLock.unlock() }
+            _isRebuildingAudioGraph = newValue
+        }
+    }
     
     /// Whether audio casting is currently active (playback controlled by CastManager)
     var isCastingActive: Bool {
@@ -1255,17 +1273,24 @@ class AudioEngine {
     /// Handle audio configuration changes (device format changes)
     /// Called when AVAudioEngine detects a configuration change (e.g., device sample rate changed)
     @objc private func handleAudioConfigChange(_ notification: Notification) {
+        // This notification is delivered on an unspecified thread. `engine` is a `var`
+        // reassigned on main by replaceFailedAudioGraph(), so its identity is compared on
+        // main; only the lock-guarded rebuild flag is safe to read here.
         guard !isRebuildingAudioGraph,
-              let notifyingEngine = notification.object as? AVAudioEngine,
-              notifyingEngine === engine else { return }
+              let notifyingEngine = notification.object as? AVAudioEngine else { return }
         NSLog("AudioEngine: Configuration change detected")
 
         DispatchQueue.main.async { [weak self] in
             guard let self, notifyingEngine === self.engine else { return }
 
-            self.audioGraphRecovery.startNewRecoveryCycle()
             self.audioGraphRecovery.scheduleConfigurationChange { [weak self] in
                 guard let self else { return }
+
+                // Reset the recovery budget here rather than when the notification
+                // arrived: until this point the graph is still unusable, and clearing the
+                // deferred state early opens a window where playback paths see a ready
+                // gate and schedule onto a graph that has not been rebuilt yet.
+                self.audioGraphRecovery.startNewRecoveryCycle()
 
                 guard CastManager.shared.activeSession == nil, !self.isAnyCastingActive else {
                     self.audioGraphRecovery.deferRebuild()
@@ -1278,19 +1303,27 @@ class AudioEngine {
         }
     }
 
+    /// True while the local graph must not carry playback: either recovery is pending, or a
+    /// failed replacement left its audio units unusable. `audioGraphNeedsReplacement` is
+    /// tracked separately from the coordinator's state and outlives a recovery-cycle reset,
+    /// so both have to be consulted before scheduling onto the graph.
+    private var isAudioGraphUnusableForPlayback: Bool {
+        audioGraphRecovery.isDeferred || audioGraphNeedsReplacement
+    }
+
     /// Applies a deferred local graph rebuild once cast routing has fully cleared.
     /// Returns false when callers should avoid starting or scheduling playback.
     @discardableResult
     private func rebuildAudioGraphIfDeferredAfterCast(clearPendingIntentOnSuccess: Bool = true) -> Bool {
-        guard audioGraphRecovery.isDeferred else { return true }
+        guard isAudioGraphUnusableForPlayback else { return true }
         guard CastManager.shared.activeSession == nil, !isAnyCastingActive else { return false }
 
         NSLog("AudioEngine: Applying deferred graph rebuild before local playback")
         rebuildAudioGraph()
-        if clearPendingIntentOnSuccess, !audioGraphRecovery.isDeferred {
+        if clearPendingIntentOnSuccess, !isAudioGraphUnusableForPlayback {
             audioGraphRecovery.clearPendingIntent()
         }
-        return !audioGraphRecovery.isDeferred
+        return !isAudioGraphUnusableForPlayback
     }
 
     private func deferPlaybackIntentUntilAudioGraphReady(_ intent: AudioGraphRecoveryIntent) {
@@ -1304,7 +1337,7 @@ class AudioEngine {
         audioGraphRecovery.scheduleRetry { [weak self] in
             guard let self else { return }
 
-            guard self.audioGraphRecovery.isDeferred else { return }
+            guard self.isAudioGraphUnusableForPlayback else { return }
             guard self.rebuildAudioGraphIfDeferredAfterCast(clearPendingIntentOnSuccess: false) else {
                 self.scheduleDeferredAudioGraphRebuildRetry()
                 return
@@ -1470,8 +1503,13 @@ class AudioEngine {
         // Get new format from the updated output device
         let mixerFormat = engine.mainMixerNode.outputFormat(forBus: 0)
         guard mixerFormat.sampleRate > 0, mixerFormat.channelCount > 0 else {
+            // beginRebuild() cancelled any pending retry, so this path has to re-arm one or
+            // a device that is still settling never gets rebuilt. The graph has not been
+            // mutated yet and playback state is untouched, so no intent is recorded here —
+            // the retry re-enters rebuildAudioGraph() and captures the state then.
             audioGraphRecovery.deferRebuild()
             NSLog("AudioEngine: Deferring graph rebuild because output format is not ready: %@", mixerFormat.description)
+            scheduleDeferredAudioGraphRebuildRetry()
             return
         }
 
