@@ -16,6 +16,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     private var artworkObserver: NSObjectProtocol?
     /// Tells the skin when shuffle, repeat or crossfade moved from outside it.
     private var playbackOptionsObserver: NSObjectProtocol?
+    private var trackLoadFailureObserver: NSObjectProtocol?
     private var loadedSkin: WinampModernLoadedSkin?
     private var skinView: WinampModernMainView?
     private var host: WinampModernAudioEngineHost?
@@ -105,6 +106,15 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             forName: .audioPlaybackOptionsChanged, object: nil, queue: .main) { [weak self] _ in
                 self?.skinView?.scripts.refreshBridgedConfigState()
                 self?.skinView?.needsDisplay = true
+                self?.auxiliaryContainers.forEach { $0.view.needsDisplay = true }
+            }
+        // A file that will not open stops playback, so no clock and no state transition follows to
+        // repaint the scene — without this the songticker keeps printing the previous title and the
+        // failure the host now holds is never drawn.
+        trackLoadFailureObserver = NotificationCenter.default.addObserver(
+            forName: .audioTrackDidFailToLoad, object: nil, queue: .main) { [weak self] _ in
+                self?.skinView?.updateTrackInfo()
+                self?.refreshBoundText()
                 self?.auxiliaryContainers.forEach { $0.view.needsDisplay = true }
             }
         #if DEBUG
@@ -2756,6 +2766,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     deinit {
         if let artworkObserver { NotificationCenter.default.removeObserver(artworkObserver) }
         if let playbackOptionsObserver { NotificationCenter.default.removeObserver(playbackOptionsObserver) }
+        if let trackLoadFailureObserver { NotificationCenter.default.removeObserver(trackLoadFailureObserver) }
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         tearDownSkin()
     }
