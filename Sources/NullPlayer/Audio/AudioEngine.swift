@@ -2595,8 +2595,13 @@ class AudioEngine {
             return
         }
         
+        let wasPlaying = state == .playing
         loadTrack(at: currentIndex)
-        if state == .playing {
+        // `loadTrack` skips past a file it cannot open, and the failure handler sets `.stopped` on
+        // the way — so testing `state` alone left the queue paused on the track it had just skipped
+        // to. `currentTrack` is the proof a skip actually landed somewhere; when every remaining
+        // entry failed it is nil, and resuming would restart the playlist from the top.
+        if currentTrack != nil, wasPlaying || state == .playing {
             play()
         }
     }
@@ -4353,7 +4358,7 @@ class AudioEngine {
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     guard self.deferredLocalTrackLoadToken == token else { return }
-                    self.handleLocalTrackLoadFailure(track: track, error: error)
+                    self.handleLocalTrackLoadFailure(track: track, error: error, advanceToNextTrack: true)
                 }
             }
         }
@@ -4568,6 +4573,7 @@ class AudioEngine {
         currentTrack = track
         _currentTime = 0
         lastReportedTime = 0
+        consecutiveTrackLoadFailures = 0
 
         // Volume normalization gain is a property of the backing file. When reusing the
         // already-open file (an adjacent cue track, or re-selecting the current track),
@@ -4647,7 +4653,16 @@ class AudioEngine {
         NSLog("loadLocalTrack: file scheduled, EQ bypass = %d, normGain = %.2f", eqNode.bypass, normalizationGain)
     }
 
-    private func handleLocalTrackLoadFailure(track: Track, error: Error) {
+    /// Tracks that failed to open back to back since the last successful load.
+    ///
+    /// The only thing that terminates `advancePastFailedTrack`: one bad file is skipped, but an
+    /// unmounted volume fails *every* entry, and without this the queue would walk itself forever.
+    private var consecutiveTrackLoadFailures = 0
+
+    /// `advanceToNextTrack` is opt-in because `loadTrack(at:)` runs its own synchronous skip on a
+    /// `false` return; only the asynchronous immediate-playback path — which is what `playTrack` and
+    /// the natural end-of-track advance both use — dead-ended on an unreadable file.
+    private func handleLocalTrackLoadFailure(track: Track, error: Error, advanceToNextTrack: Bool = false) {
         let fileExtension = track.url.pathExtension.lowercased()
         var errorMessage = "Failed to load '\(track.url.lastPathComponent)': \(error.localizedDescription)"
 
@@ -4664,8 +4679,64 @@ class AudioEngine {
             NSLog("  Error domain: %@, code: %d", nsError.domain, nsError.code)
         }
 
+        let failedIndex = currentIndex
         stopPlaybackOnError()
         notifyTrackLoadFailure(track: track, error: error, message: errorMessage)
+
+        if advanceToNextTrack {
+            // Delayed so the message this just posted is actually readable in the marquee before
+            // the next track's title replaces it — the same half-second the streaming codec-error
+            // fallback already uses for the same reason. Anything the user starts inside that
+            // window bumps the load token and wins — `stopLocalOnly` bumps it too, so a manual
+            // Stop cancels the advance rather than being overridden by it.
+            let token = deferredLocalTrackLoadToken
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self, self.deferredLocalTrackLoadToken == token,
+                      self.state == .stopped else { return }
+                self.advancePastFailedTrack(at: failedIndex)
+            }
+        }
+    }
+
+    /// Continue the queue past a track that could not be opened, rather than ending it.
+    ///
+    /// One unreadable file used to stop the player dead with the rest of the playlist still ahead
+    /// of it — the whole-playlist symptom a single bad pair of entries produced.
+    private func advancePastFailedTrack(at failedIndex: Int) {
+        guard !playlist.isEmpty else { return }
+
+        consecutiveTrackLoadFailures += 1
+        guard consecutiveTrackLoadFailures < playlist.count else {
+            NSLog("AudioEngine: %d consecutive load failures — ending queue rather than looping it",
+                  consecutiveTrackLoadFailures)
+            consecutiveTrackLoadFailures = 0
+            stopAfterQueueExhausted()
+            return
+        }
+
+        let nextIndex: Int
+        if shuffleEnabled {
+            guard let peeked = peekNextShuffleIndexForPlayback() else {
+                consecutiveTrackLoadFailures = 0
+                stopAfterQueueExhausted()
+                return
+            }
+            nextIndex = peeked
+        } else if failedIndex + 1 < playlist.count {
+            nextIndex = failedIndex + 1
+        } else if repeatEnabled {
+            // Repeat-one over a file that will not open would retry the same failure forever, so a
+            // failure always moves on; wrapping is the only thing repeat still means here.
+            nextIndex = 0
+        } else {
+            consecutiveTrackLoadFailures = 0
+            stopAfterQueueExhausted()
+            return
+        }
+
+        NSLog("AudioEngine: skipping unreadable track at index %d, advancing to %d", failedIndex, nextIndex)
+        currentIndex = nextIndex
+        advanceToLocalTrackAsync(at: nextIndex)
     }
     
     /// Stop playback completely when a track fails to load
