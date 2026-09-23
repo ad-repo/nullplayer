@@ -43,10 +43,8 @@ It is not L3, and L3's diagnosis does not survive the pre-repair evidence — se
 
 ## Open
 
-| ID | Item | Evidence | Notes |
-|---|---|---|---|
-| L2 | Nothing ever re-resolves a track that is not at its recorded path | **Measured 2026-09-23**: no bookmark, no relocation pass, no path re-resolution anywhere. `grep` over `Sources/` for `UPDATE library_tracks`, `SET url` and `relocat` returns **nothing**. **Reproduced, on the report itself**: a watch root moved from `~/Library/Mobile Documents/com~apple~CloudDocs/music/` to `~/iCloud Drive (Archive)/music/` and orphaned every row beneath it — tracks, the playlist row, and the watch-folder row. Only a hand-written SQL `replace()` across three tables recovered them | **This is the row the report was actually about, and it is now the top of the file.** The reach is not "iCloud" — it is any watch folder on a detached drive, an unmounted NAS, or a directory the user reorganised — but the instance in hand is a real relocated root, not a hypothetical, and it argues for **re-resolution over a locate/forget affordance**: the user's own remedy was a prefix rewrite, which is exactly what a relocation pass would do automatically. **Any fix must re-point `library_watch_folders` too**, or the next scan runs against a root that is no longer there and finds nothing. **The second class, still real and different**: 60 absent track rows measured in the live library, all outside every watch root (57 under a deleted `~/Downloads/` folder, 3 scratchpad `.mp4`s in `library_movies`) — one-off `Add Files…` entries whose source was later cleaned up, which relocation cannot help and which want a forget affordance instead. The post-repair "0 absent inside a watch root" reading is **worthless as evidence** and is recorded here only so it is not re-derived: the repair is what made it zero |
-| L4 | `removeMissingItemsInWatchedFolders` has no callers | **Measured 2026-09-23**: `Sources/NullPlayer/Data/Models/MediaLibrary.swift:2602`, declared `private`, and the only occurrence of the name in `Sources/` and `Tests/` is its own declaration. It has never run | **Do not simply call it — that is the trap this row exists to record, and the pre-repair evidence confirms it rather than softening it.** It deletes a track, movie or episode whose file is absent from a watched folder. Before the repair the two reported rows were *exactly* that: absent at their recorded path, and inside a watch folder — the stale one. Had this function ever run, it would have deleted two rows whose files were fine all along, sitting untouched one directory rename away. **An unmounted NAS, a signed-out iCloud Drive and a deleted folder are indistinguishable to `fileExists`**, and there is already volume-mount awareness beside it (`MediaLibrary.swift:2287`) that any live version has to be gated on. **A post-repair count of "0 rows would be deleted today" was taken and is not evidence** — the repair had already removed what it would have eaten. **Rank it behind L2**: deletion is the wrong response to "not at the recorded path" until re-resolution exists to rule out relocation first |
+Nothing. Every row opened from the 2026-09-23 report is closed; a new row is added here the moment
+something reproduces.
 
 ## Closed
 
@@ -86,3 +84,35 @@ existence check the row asked for shipped anyway, under L5, because it is worth 
 **Closed by** `Resolve a playlist entry as a path, and check the file is there (L3)` — filed against
 L3 before the hand-repair was known, which is why the commit message argues it corrected L3's
 diagnosis. It did not: it fixed an unrelated defect that would have produced a similar symptom.
+
+| ID | Item | Evidence | Notes |
+|---|---|---|---|
+| L2 | Nothing ever re-resolves a track that is not at its recorded path | **Measured 2026-09-23**: no bookmark, no relocation pass, no path re-resolution anywhere. `grep` over `Sources/` for `UPDATE library_tracks`, `SET url` and `relocat` returns **nothing**. **Reproduced, on the report itself**: a watch root moved from `~/Library/Mobile Documents/com~apple~CloudDocs/music/` to `~/iCloud Drive (Archive)/music/` and orphaned every row beneath it — tracks, the playlist row, and the watch-folder row. Only a hand-written SQL `replace()` across three tables recovered them | **This is the row the report was actually about, and it is now the top of the file.** The reach is not "iCloud" — it is any watch folder on a detached drive, an unmounted NAS, or a directory the user reorganised — but the instance in hand is a real relocated root, not a hypothetical, and it argues for **re-resolution over a locate/forget affordance**: the user's own remedy was a prefix rewrite, which is exactly what a relocation pass would do automatically. **Any fix must re-point `library_watch_folders` too**, or the next scan runs against a root that is no longer there and finds nothing. **The second class, still real and different**: 60 absent track rows measured in the live library, all outside every watch root (57 under a deleted `~/Downloads/` folder, 3 scratchpad `.mp4`s in `library_movies`) — one-off `Add Files…` entries whose source was later cleaned up, which relocation cannot help and which want a forget affordance instead. The post-repair "0 absent inside a watch root" reading is **worthless as evidence** and is recorded here only so it is not re-derived: the repair is what made it zero |
+
+**Closed by** `Re-point a watch folder that moved, and forget only what really went (L2, L4)`.
+`MediaLibraryStore.relocatePathPrefix` is the user's own hand-written remedy as a primitive — one
+transaction across tracks, movies, episodes, playlists **and the watch-folder row**, with every row
+keeping its identity so play counts, ratings and history survive. `MediaLibrary.relocationCandidate`
+finds the new home and **verifies it rather than guessing**: candidates come from a bounded search
+(a surviving ancestor, `/Volumes`, one level under home) and each is checked by re-basing up to 40
+recorded paths onto it and requiring 60% to exist. **Verified against the real case**: it picks
+`~/iCloud Drive (Archive)/music` at 2/2 and rejects `~/music`, which exists and scores 0/2 — the
+verification, not the name match, is what chooses. Runs at startup and on volume mount, and a root
+that cannot be placed is left strictly alone. The second class the row identified — 60 `Add Files…`
+rows outside every watch root — is handled by `forgetDeletedItemsOutsideWatchFolders` under L4.
+
+| ID | Item | Evidence | Notes |
+|---|---|---|---|
+| L4 | `removeMissingItemsInWatchedFolders` has no callers | **Measured 2026-09-23**: `Sources/NullPlayer/Data/Models/MediaLibrary.swift:2602`, declared `private`, and the only occurrence of the name in `Sources/` and `Tests/` is its own declaration. It has never run | **Do not simply call it — that is the trap this row exists to record, and the pre-repair evidence confirms it rather than softening it.** It deletes a track, movie or episode whose file is absent from a watched folder. Before the repair the two reported rows were *exactly* that: absent at their recorded path, and inside a watch folder — the stale one. Had this function ever run, it would have deleted two rows whose files were fine all along, sitting untouched one directory rename away. **An unmounted NAS, a signed-out iCloud Drive and a deleted folder are indistinguishable to `fileExists`**, and there is already volume-mount awareness beside it (`MediaLibrary.swift:2287`) that any live version has to be gated on. **A post-repair count of "0 rows would be deleted today" was taken and is not evidence** — the repair had already removed what it would have eaten. **Rank it behind L2**: deletion is the wrong response to "not at the recorded path" until re-resolution exists to rule out relocation first |
+
+**Closed by** the same change. The function gets the caller it never had **and the gate that makes
+one safe**: `forgetDeletedItemsInPresentWatchFolders` asks the question only of a watch root that is
+present and non-empty, and only after `resolveRelocatedWatchFolders` has had its chance to prove the
+tree merely moved. An unmounted NAS, a signed-out iCloud Drive and a deleted folder stay
+indistinguishable to `fileExists` — so none of them is ever read as deletion.
+`forgetDeletedItemsOutsideWatchFolders` covers what that function cannot see by construction, gated
+on the first surviving ancestor being an ordinary mounted directory; **verified** that a deleted
+`~/Downloads/` folder is forgotten while `/Volumes/NAS/…` is kept. Surfaced as **Library → Find
+Missing Files…**: relocation runs unprompted because it is not destructive, deletion is always
+confirmed with Keep as the default, and the count shown comes from a dry run through the very same
+gates so it cannot drift from what is removed.

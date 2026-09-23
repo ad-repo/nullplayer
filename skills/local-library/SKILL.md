@@ -155,6 +155,52 @@ Emitted when delta >= 0.02 or >= 0.20s elapsed, plus forced boundary emits.
 ### UI Reload Debouncing
 Both `ModernLibraryBrowserView` and `PlexBrowserView` debounce `MediaLibraryDidChange` reloads (0.30s work-item debounce) and use mode-aware `loadLocalData()` to load only required datasets.
 
+## Missing Files: Relocation and Cleanup
+
+A recorded path can stop resolving for two completely different reasons, and the library must never
+confuse them. **`fileExists` cannot tell an unmounted NAS, a signed-out iCloud Drive or a renamed
+parent from a deleted file**, so every path here refuses to guess.
+
+**Relocation (non-destructive, automatic).** `MediaLibrary.resolveRelocatedWatchFolders()` runs at
+startup (in `init`, right after `loadLibrary`) and on volume mount. For each watch root that is not
+a directory on disk it looks for a new home and re-points it.
+
+- `MediaLibraryStore.relocatePathPrefix(from:to:)` is the rewrite: one transaction over
+  `library_tracks`, `library_movies`, `library_episodes`, `library_playlists` **and
+  `library_watch_folders`**. Missing the watch-folder row is the classic error — the next scan then
+  runs against a directory that is no longer there and finds nothing. Rows keep their `id`, so play
+  counts, ratings and `play_events` history survive; that is why this rewrites rather than deleting
+  and rescanning. Uses `substr(url, 1, n)` anchoring, not `replace`/`LIKE`: `replace` would also
+  rewrite a second occurrence of the prefix further along a path, and `%`/`_` are legal in filenames.
+  Both the `file://…` and legacy plain-path spellings are rewritten.
+- `relocationCandidate(for:)` **verifies, never guesses.** Candidates come from `relocationSearchRoots`
+  — a surviving ancestor, each `/Volumes` entry, `~/<name>` and one level under home — and each is
+  checked by re-basing up to 40 recorded descendant paths onto it and requiring 60% to exist on disk.
+  A name match alone is rejected: in the case this was written from, `~/music` exists and scores 0/2
+  while `~/iCloud Drive (Archive)/music` scores 2/2.
+- A root that is missing and cannot be placed is **left completely alone** and posts
+  `watchFolderUnresolvedNotification`. A successful move posts `watchFolderRelocatedNotification`.
+
+**Cleanup (destructive, user-confirmed only).** Never call
+`removeMissingItemsInWatchedFolders` directly — it is `private` for that reason. Two gated public
+entry points, both reached through `forgetMissingFiles(dryRun:)`:
+
+| Function | Covers | Gate |
+|---|---|---|
+| `forgetDeletedItemsInPresentWatchFolders` | rows inside a watch root | the root is present **and non-empty** (an empty mount point is what an unmounted share looks like), and relocation ran first |
+| `forgetDeletedItemsOutsideWatchFolders` | `Add Files…` rows outside every root, which the other cannot see by construction | the file's **first surviving ancestor** is an ordinary mounted directory — reaching `/Volumes` or `/` means the volume is simply not mounted |
+
+`forgetMissingFiles(dryRun: true)` counts through the *same* gates that do the deleting, so a
+confirmation count cannot drift from what is removed. Surfaced as **Library → Find Missing Files…**
+(`MenuActions.findMissingFiles` in `App/ContextMenuBuilder.swift`): relocation runs unprompted,
+deletion is always confirmed and defaults to **Keep**.
+
+**Parsing a stored URL.** `MediaLibraryStore.urlFromStoredString` tests `hasPrefix("/")` *before*
+`URL(string:)`, and requires a non-nil `scheme` from the latter. On current Foundation
+`URL(string:)` accepts a bare path and returns a **schemeless, non-file** URL instead of nil, which
+silently disabled the legacy plain-path repair branch. The same defect hit every playlist loader —
+see `Playlist.resolveEntry`, and L5 in `docs/local-library/backlog.md`.
+
 ## LocalFileDiscovery Utility
 
 `Utilities/LocalFileDiscovery.swift` — shared for all local file/folder discovery, drag-and-drop, and library scanning.
