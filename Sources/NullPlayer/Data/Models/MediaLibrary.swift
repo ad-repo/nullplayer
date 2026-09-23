@@ -545,10 +545,6 @@ class MediaLibrary {
 
         store.open()
         loadLibrary()
-        // Before anything reads a path: a root that moved while the app was closed orphans every
-        // row beneath it, and the first symptom the user ever saw was playback failing. Off the
-        // main thread — the search stats candidates that may sit on a slow or absent volume.
-        resolveRelocatedWatchFoldersInBackground()
         setupVolumeMonitoring()
 
         // Trigger backfill if v2→v3 migration ran and track_artists are not yet populated
@@ -2279,90 +2275,66 @@ class MediaLibrary {
     
     // MARK: - Watch-Folder Relocation
 
-    /// Posted when a watch root is gone and no new home for it could be found. Carries
-    /// `"folder"` (the `URL`). Nothing is deleted — the rows are left exactly as they are.
-    static let watchFolderUnresolvedNotification = Notification.Name("MediaLibraryWatchFolderUnresolved")
-
-    /// Posted after a watch root has been re-pointed. Carries `"from"` and `"to"` (`URL`s)
-    /// and `"rows"` (`Int`).
-    static let watchFolderRelocatedNotification = Notification.Name("MediaLibraryWatchFolderRelocated")
-
-    /// Serializes the relocation probe. Launch and a volume mount can both trigger it, and two
-    /// searches rewriting the same prefixes at once would race each other's `loadLibrary`.
+    /// Serializes the relocation search and rewrite, so two runs cannot race each other's
+    /// `loadLibrary`.
     private let relocationQueue = DispatchQueue(label: "NullPlayer.MediaLibrary.relocation")
 
-    /// Run the probe without waiting for it — for the two callers that fire on their own rather
-    /// than because the user asked.
+    /// Watch roots that are no longer at their recorded path, each paired with a verified new home.
     ///
-    /// The search is filesystem-bound by nature: per missing root it stats `/Volumes`, every
-    /// shallow home directory and up to 40 recorded files under each candidate, and `fileExists`
-    /// against an unreachable network mount blocks for seconds apiece. Both of those callers are
-    /// on the main thread, so neither can afford to wait for it.
-    private func resolveRelocatedWatchFoldersInBackground() {
-        relocationQueue.async { [self] in
-            _ = performRelocationScan()
-        }
-    }
-
-    /// Re-point any watch root that is no longer at its recorded path.
+    /// **Proposes only — nothing is rewritten.** The caller shows the moves and passes the ones the
+    /// user accepts to `applyRelocations`. This is never run automatically, at launch or on a volume
+    /// mount: an unmounted NAS and a moved folder look identical from here, and a copy of the NAS's
+    /// music on another drive passes the same verification a genuine move does. Re-pointing a watch
+    /// root at that copy while the NAS is merely disconnected would take the NAS out of the library
+    /// for good, so only the user can say which one it is.
     ///
-    /// Nothing in the tree used to do this. A root that moved orphaned every row beneath it
-    /// permanently — tracks, playlists and the watch-folder row alike — and the only signal was
-    /// playback failing on a file that was in fact sitting safely one rename away. The live case
-    /// this was written from: `~/Library/Mobile Documents/com~apple~CloudDocs/music/` became
-    /// `~/iCloud Drive (Archive)/music/` when iCloud Drive was turned off, and recovering it took
-    /// a hand-written SQL prefix rewrite across three tables.
-    ///
-    /// A root that is missing but cannot be placed is **left alone**, deliberately: an unmounted
-    /// NAS, a signed-out iCloud Drive and a deleted folder are indistinguishable to `fileExists`,
-    /// and deleting is unrecoverable where waiting costs nothing.
-    ///
-    /// Runs to completion, so the menu path can put the answer in its modal — the user asked for
-    /// it and is already waiting. The automatic triggers use the background variant instead.
-    @discardableResult
-    func resolveRelocatedWatchFolders() -> [(from: URL, to: URL)] {
-        relocationQueue.sync { performRelocationScan() }
-    }
-
-    /// The probe itself. Always entered through `relocationQueue`, never called directly.
-    private func performRelocationScan() -> [(from: URL, to: URL)] {
-        let fileManager = FileManager.default
-        let folders = watchFoldersSnapshot
-        var relocated: [(from: URL, to: URL)] = []
-
-        for folder in folders {
-            var isDirectory: ObjCBool = false
-            let exists = fileManager.fileExists(atPath: folder.path, isDirectory: &isDirectory)
-            if exists && isDirectory.boolValue { continue }
-
-            guard let destination = relocationCandidate(for: folder) else {
-                NSLog("MediaLibrary: watch folder '%@' is missing and no new home was found — leaving its rows intact",
-                      folder.path)
-                NotificationCenter.default.post(
-                    name: Self.watchFolderUnresolvedNotification, object: nil,
-                    userInfo: ["folder": folder])
-                continue
+    /// A root that is missing and cannot be placed is left alone — deleting is unrecoverable where
+    /// waiting costs nothing. Stats the filesystem, so never call it on the main thread.
+    func findRelocatedWatchFolders() -> [(from: URL, to: URL)] {
+        relocationQueue.sync {
+            let fileManager = FileManager.default
+            return watchFoldersSnapshot.compactMap { folder in
+                var isDirectory: ObjCBool = false
+                if fileManager.fileExists(atPath: folder.path, isDirectory: &isDirectory),
+                   isDirectory.boolValue { return nil }
+                guard let destination = relocationCandidate(for: folder) else {
+                    NSLog("MediaLibrary: watch folder '%@' is missing and no new home was found — leaving its rows intact",
+                          folder.path)
+                    return nil
+                }
+                return (from: folder, to: destination)
             }
-
-            let counts = store.relocatePathPrefix(from: folder.path, to: destination.path)
-            let rows = counts.values.reduce(0, +)
-            guard rows > 0 else { continue }
-
-            NSLog("MediaLibrary: relocated watch folder '%@' -> '%@' (%d rows)",
-                  folder.path, destination.path, rows)
-            relocated.append((from: folder, to: destination))
-            NotificationCenter.default.post(
-                name: Self.watchFolderRelocatedNotification, object: nil,
-                userInfo: ["from": folder, "to": destination, "rows": rows])
         }
+    }
 
-        if !relocated.isEmpty {
-            // Every in-memory index is keyed by path, so they are all stale now. Reloading from
-            // the store is both simpler and safer than rewriting six dictionaries in place.
-            loadLibrary()
-            notifyChange()
+    /// Re-point each accepted move, and return the ones that rewrote at least one row.
+    ///
+    /// Rows keep their identity, so play counts, ratings and history survive; that is the point of
+    /// rewriting rather than deleting and rescanning. The live case this was written from:
+    /// `~/Library/Mobile Documents/com~apple~CloudDocs/music/` became
+    /// `~/iCloud Drive (Archive)/music/` when iCloud Drive was turned off, and recovering it took a
+    /// hand-written SQL prefix rewrite across three tables.
+    @discardableResult
+    func applyRelocations(_ moves: [(from: URL, to: URL)]) -> [(from: URL, to: URL)] {
+        guard !moves.isEmpty else { return [] }
+        return relocationQueue.sync {
+            var applied: [(from: URL, to: URL)] = []
+            for move in moves {
+                let counts = store.relocatePathPrefix(from: move.from.path, to: move.to.path)
+                let rows = counts.values.reduce(0, +)
+                guard rows > 0 else { continue }
+                NSLog("MediaLibrary: relocated watch folder '%@' -> '%@' (%d rows)",
+                      move.from.path, move.to.path, rows)
+                applied.append(move)
+            }
+            if !applied.isEmpty {
+                // Every in-memory index is keyed by path, so they are all stale now. Reloading from
+                // the store is both simpler and safer than rewriting six dictionaries in place.
+                loadLibrary()
+                notifyChange()
+            }
+            return applied
         }
-        return relocated
     }
 
     /// Where a missing watch root appears to have moved to, or nil when nothing can be established.
@@ -2479,11 +2451,6 @@ class MediaLibrary {
             guard let self,
                   let mountedURL = notification.userInfo?[NSWorkspace.volumeURLUserInfoKey] as? URL else { return }
             let mountedPath = mountedURL.path
-            // A volume appearing is also the moment a root that came back under a *different*
-            // mount point becomes findable, so try relocation as well as matching by path. This
-            // observer runs on the main thread and the search stats paths on the volume that just
-            // appeared, so it cannot run inline — a half-ready network mount blocks for seconds.
-            self.resolveRelocatedWatchFoldersInBackground()
             let affected = self.watchFoldersSnapshot.filter { $0.path.hasPrefix(mountedPath + "/") || $0.path == mountedPath }
             guard !affected.isEmpty else { return }
             NSLog("MediaLibrary: Volume mounted at '%@' — rescanning %d watch folder(s)", mountedPath, affected.count)
@@ -2806,15 +2773,13 @@ class MediaLibrary {
     /// there. When the root *is* there and a file under it is not, the file really was deleted, and
     /// that is the one case where forgetting the row is right.
     ///
-    /// Ordered after `resolveRelocatedWatchFolders` deliberately: relocation has to have had its
-    /// chance to rule out "the whole tree moved" before anything is deleted for being absent. The
-    /// report that opened this row is exactly the case that ordering protects — two rows whose
-    /// files were fine, one directory rename away, which the ungated version would have deleted
-    /// along with their play counts and ratings.
+    /// A moved root is skipped by the same gate — it is not present at its recorded path — so its
+    /// rows survive until the user accepts or declines the relocation `MenuActions.findMissingFiles`
+    /// offers first. The report that opened this row is exactly that case: two rows whose files were
+    /// fine, one directory rename away, which the ungated version would have deleted along with
+    /// their play counts and ratings. Stats the filesystem, so never call it on the main thread.
     @discardableResult
     func forgetDeletedItemsInPresentWatchFolders(dryRun: Bool = false) -> (tracks: Int, movies: Int, episodes: Int) {
-        if !dryRun { resolveRelocatedWatchFolders() }
-
         let fileManager = FileManager.default
         let present = watchFoldersSnapshot.filter { folder in
             var isDirectory: ObjCBool = false
@@ -2853,77 +2818,38 @@ class MediaLibrary {
     func forgetDeletedItemsOutsideWatchFolders(dryRun: Bool = false) -> (tracks: Int, movies: Int, episodes: Int) {
         let fileManager = FileManager.default
         let folderPaths = watchFoldersSnapshot.map { Self.normalizedPath(for: $0) }
-        var counts = (tracks: 0, movies: 0, episodes: 0)
-        var removedTrackPaths: [String] = []
-        var removedMoviePaths: [String] = []
-        var removedEpisodePaths: [String] = []
-
-        func isDeleted(_ url: URL) -> Bool {
+        return forgetRows(dryRun: dryRun) { url in
             guard url.isFileURL else { return false }
             guard !Self.isPath(Self.normalizedPath(for: url), insideAnyFolderPaths: folderPaths) else { return false }
             guard !fileManager.fileExists(atPath: url.path) else { return false }
             return Self.firstSurvivingAncestorIsMounted(url)
         }
-
-        dataQueue.sync {
-            tracks.removeAll { track in
-                guard isDeleted(track.url) else { return false }
-                if dryRun { counts.tracks += 1; return false }
-                tracksByPath.removeValue(forKey: track.url.path)
-                scanSignaturesByPath.removeValue(forKey: track.url.path)
-                removedTrackPaths.append(track.url.path)
-                counts.tracks += 1
-                return true
-            }
-            movies.removeAll { movie in
-                guard isDeleted(movie.url) else { return false }
-                if dryRun { counts.movies += 1; return false }
-                moviesByPath.removeValue(forKey: movie.url.path)
-                scanSignaturesByPath.removeValue(forKey: movie.url.path)
-                removedMoviePaths.append(movie.url.path)
-                counts.movies += 1
-                return true
-            }
-            episodes.removeAll { episode in
-                guard isDeleted(episode.url) else { return false }
-                if dryRun { counts.episodes += 1; return false }
-                episodesByPath.removeValue(forKey: episode.url.path)
-                scanSignaturesByPath.removeValue(forKey: episode.url.path)
-                removedEpisodePaths.append(episode.url.path)
-                counts.episodes += 1
-                return true
-            }
-        }
-
-        if counts.tracks > 0 || counts.movies > 0 || counts.episodes > 0 {
-            for path in removedTrackPaths { store.deleteTrackByPath(path) }
-            for path in removedMoviePaths { store.deleteMovieByPath(path) }
-            for path in removedEpisodePaths { store.deleteEpisodeByPath(path) }
-            notifyChange()
-        }
-        return counts
     }
 
     /// Whether the nearest existing ancestor of a missing file is an ordinary mounted directory.
     ///
     /// `/Volumes` and `/` do not count: reaching either means every real directory on the way down
     /// is absent, which is what an unmounted share looks like — not what a deleted file looks like.
-    private static func firstSurvivingAncestorIsMounted(_ url: URL) -> Bool {
+    static func firstSurvivingAncestorIsMounted(_ url: URL) -> Bool {
         let fileManager = FileManager.default
         var ancestor = url.deletingLastPathComponent()
         while ancestor.pathComponents.count > 1 {
             if fileManager.fileExists(atPath: ancestor.path) {
                 let path = ancestor.standardizedFileURL.path
+                // `/Volumes/<name>` itself counts as unmounted too: an unclean eject or a dropped
+                // share leaves the mount point behind as an empty directory.
                 return path != "/Volumes" && path != "/"
+                    && ancestor.deletingLastPathComponent().standardizedFileURL.path != "/Volumes"
             }
             ancestor = ancestor.deletingLastPathComponent()
         }
         return false
     }
 
-    /// Relocate what moved, then forget what was genuinely deleted — the one entry point the UI
-    /// calls. Strictly ordered: nothing is ever deleted for being absent until relocation has had
-    /// its chance to prove the tree simply moved.
+    /// Forget what was genuinely deleted, inside and outside the watch roots — the one cleanup entry
+    /// point the UI calls. Never relocates: a root that is not at its recorded path is skipped, and
+    /// moving it is a separate, confirmed step. Stats the filesystem, so never call it on the main
+    /// thread.
     @discardableResult
     func forgetMissingFiles(dryRun: Bool = false) -> (tracks: Int, movies: Int, episodes: Int) {
         let inside = forgetDeletedItemsInPresentWatchFolders(dryRun: dryRun)
@@ -2942,59 +2868,64 @@ class MediaLibrary {
         guard !folderPaths.isEmpty else { return (0, 0, 0) }
 
         let fileManager = FileManager.default
-        var counts = (tracks: 0, movies: 0, episodes: 0)
+        return forgetRows(dryRun: dryRun) { url in
+            Self.isPath(Self.normalizedPath(for: url), insideAnyFolderPaths: folderPaths)
+                && !fileManager.fileExists(atPath: url.path)
+        }
+    }
+
+    /// Forget every track, movie and episode `isGone` picks — deciding which **outside** `dataQueue`.
+    ///
+    /// `isGone` stats the filesystem, and on a slow or half-mounted network volume one stat can take
+    /// seconds. Run under `dataQueue.sync` it held every reader of the library, the main thread
+    /// included, for the whole pass. So the URLs are snapshotted under the lock, tested without it,
+    /// and the lock is taken again only to drop the rows already chosen. A dry run counts through
+    /// the same predicate and keeps everything, so a confirmation count cannot drift from what is
+    /// deleted.
+    private func forgetRows(dryRun: Bool, where isGone: (URL) -> Bool) -> (tracks: Int, movies: Int, episodes: Int) {
+        let (trackURLs, movieURLs, episodeURLs) = dataQueue.sync {
+            (tracks.map(\.url), movies.map(\.url), episodes.map(\.url))
+        }
+        let goneTracks = Set(trackURLs.filter(isGone).map(\.path))
+        let goneMovies = Set(movieURLs.filter(isGone).map(\.path))
+        let goneEpisodes = Set(episodeURLs.filter(isGone).map(\.path))
+        if dryRun { return (goneTracks.count, goneMovies.count, goneEpisodes.count) }
+        guard !goneTracks.isEmpty || !goneMovies.isEmpty || !goneEpisodes.isEmpty else { return (0, 0, 0) }
+
         var removedTrackPaths: [String] = []
         var removedMoviePaths: [String] = []
         var removedEpisodePaths: [String] = []
-
         dataQueue.sync {
             tracks.removeAll { track in
-                let normalizedTrackPath = Self.normalizedPath(for: track.url)
-                guard Self.isPath(normalizedTrackPath, insideAnyFolderPaths: folderPaths) else { return false }
-                guard !fileManager.fileExists(atPath: track.url.path) else { return false }
-                // A dry run counts the same rows through the same gates and keeps every one of
-                // them, so the number the confirmation shows cannot drift from what is deleted.
-                if dryRun { counts.tracks += 1; return false }
+                guard goneTracks.contains(track.url.path) else { return false }
                 tracksByPath.removeValue(forKey: track.url.path)
                 scanSignaturesByPath.removeValue(forKey: track.url.path)
                 removedTrackPaths.append(track.url.path)
-                counts.tracks += 1
                 return true
             }
-
             movies.removeAll { movie in
-                let normalizedMoviePath = Self.normalizedPath(for: movie.url)
-                guard Self.isPath(normalizedMoviePath, insideAnyFolderPaths: folderPaths) else { return false }
-                guard !fileManager.fileExists(atPath: movie.url.path) else { return false }
-                if dryRun { counts.movies += 1; return false }
+                guard goneMovies.contains(movie.url.path) else { return false }
                 moviesByPath.removeValue(forKey: movie.url.path)
                 scanSignaturesByPath.removeValue(forKey: movie.url.path)
                 removedMoviePaths.append(movie.url.path)
-                counts.movies += 1
                 return true
             }
-
             episodes.removeAll { episode in
-                let normalizedEpisodePath = Self.normalizedPath(for: episode.url)
-                guard Self.isPath(normalizedEpisodePath, insideAnyFolderPaths: folderPaths) else { return false }
-                guard !fileManager.fileExists(atPath: episode.url.path) else { return false }
-                if dryRun { counts.episodes += 1; return false }
+                guard goneEpisodes.contains(episode.url.path) else { return false }
                 episodesByPath.removeValue(forKey: episode.url.path)
                 scanSignaturesByPath.removeValue(forKey: episode.url.path)
                 removedEpisodePaths.append(episode.url.path)
-                counts.episodes += 1
                 return true
             }
         }
 
-        if counts.tracks > 0 || counts.movies > 0 || counts.episodes > 0 {
-            for path in removedTrackPaths { store.deleteTrackByPath(path) }
-            for path in removedMoviePaths { store.deleteMovieByPath(path) }
-            for path in removedEpisodePaths { store.deleteEpisodeByPath(path) }
+        for path in removedTrackPaths { store.deleteTrackByPath(path) }
+        for path in removedMoviePaths { store.deleteMovieByPath(path) }
+        for path in removedEpisodePaths { store.deleteEpisodeByPath(path) }
+        if !removedTrackPaths.isEmpty || !removedMoviePaths.isEmpty || !removedEpisodePaths.isEmpty {
             notifyChange()
         }
-
-        return counts
+        return (removedTrackPaths.count, removedMoviePaths.count, removedEpisodePaths.count)
     }
 }
 

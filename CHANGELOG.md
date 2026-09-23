@@ -10,6 +10,16 @@
   any track with a known or resolved sample rate above 48 kHz, even when its URL extension or MIME
   type is unrecognized. Local files with unusual extensions are probed before casting, and Plex
   tracks with missing rate metadata are resolved from the server (GH #422).
+- **Local library copes with moved folders and missing files** — **Library → Find Missing Files…**
+  finds a watch folder that has moved (for example when iCloud Drive is turned off and its files
+  land in `~/iCloud Drive (Archive)`), shows where it went, and re-points it on your say-so, keeping
+  play counts and ratings. It then offers to forget tracks whose files are genuinely deleted;
+  anything on a disconnected drive or unmounted share is always left alone.
+- **One unreadable file no longer stops the playlist** — playback skips past it to the next track,
+  and the error now appears in the Modern and Winamp Modern main windows, not only Classic. A track
+  on a disconnected NAS still stops playback, as before, instead of starting some other track.
+- **Playlists with relative paths play again** — `.m3u` and `.pls` entries written as bare file
+  names or paths next to the playlist were being read as web addresses and could not play.
 
 ## 0.30.0
 

@@ -63,6 +63,14 @@ way through it, so `next()`'s `if state == .playing` never fired and the queue s
 it had just skipped to. `Windows/WMPSkin/` does not exist on `main`, so the surfacing half landed in
 the two modes that do.
 
+**Corrected in review, before merge.** The advance broke offline mode: with a NAS disconnected every
+entry on it fails, so the queue walked the whole playlist error by error, and the synchronous skip
+in `loadTrack(at:)` landed on whatever local track followed — reproduced live, it restarted the track
+that was already playing under the error message. A failure now advances only when the file's
+folder is present and non-empty (`AudioEngine.containingFolderIsPresent`); a missing folder stops
+playback as before. Callers that `play()` after `loadTrack(at:)` now require a loaded track, because
+`play()` reads a nil `currentTrack` as "start from the top". Both are in `skills/audio-system`.
+
 | ID | Item | Evidence | Notes |
 |---|---|---|---|
 | L3 | A relative-path playlist resolves its entries against the playlist's own recorded directory, and nothing validates the result | **Reproduced 2026-09-23** on the report's own data: `Those Hills - Anika Nilles.m3u` lists `01 - … .flac` and `02 - … .flac` with **no directory**, and both library rows carry the playlist row's root. `file_size`, `duration` (298.21 s) and `bitrate` (1019 kbps) were all written | **One wrong root on the playlist file silently poisons every track it lists**, and the rows look fully populated afterwards — real sizes, real durations, real bitrates — so nothing downstream can tell them from good ones. **The rows are written without ever checking that the resolved file exists.** That check is the cheap half of this row and is worth taking on its own. **Unmeasured and the number to take next**: how many playlists in the corpus library use relative entries, and whether any other rows were written the same way. |
@@ -97,8 +105,20 @@ finds the new home and **verifies it rather than guessing**: candidates come fro
 (a surviving ancestor, `/Volumes`, one level under home) and each is checked by re-basing up to 40
 recorded paths onto it and requiring 60% to exist. **Verified against the real case**: it picks
 `~/iCloud Drive (Archive)/music` at 2/2 and rejects `~/music`, which exists and scores 0/2 — the
-verification, not the name match, is what chooses. Runs at startup and on volume mount, and a root
-that cannot be placed is left strictly alone. The second class the row identified — 60 `Add Files…`
+verification, not the name match, is what chooses. A root that cannot be placed is left strictly
+alone.
+
+**Corrected in review, before merge — two defects the first version shipped with.** (1) It ran
+automatically at launch and on every volume mount. An unmounted NAS and a moved folder look
+identical, and a copy of the NAS's music on a backup drive or in `~/Music` passes the same 60%
+check a genuine move does; launch usually beats a network share's mount, so the NAS could be
+re-pointed at the copy and drop out of the library for good. Relocation is now **proposed, never
+applied unasked** — only from Find Missing Files, with each move shown and **Leave As Is** as the
+default. (2) The rewrite could never commit on a real library: `track_artists.track_url`
+`REFERENCES library_tracks(url)` with no `ON UPDATE` action, so every scanned track's artist rows
+failed the foreign key and rolled the whole transaction back. The "verified against the real case"
+above verified the candidate search only, never the rewrite. The rewrite now defers the foreign
+keys and carries `track_artists` along; `MissingFilesTests` covers both halves. The second class the row identified — 60 `Add Files…`
 rows outside every watch root — is handled by `forgetDeletedItemsOutsideWatchFolders` under L4.
 
 | ID | Item | Evidence | Notes |
@@ -107,12 +127,13 @@ rows outside every watch root — is handled by `forgetDeletedItemsOutsideWatchF
 
 **Closed by** the same change. The function gets the caller it never had **and the gate that makes
 one safe**: `forgetDeletedItemsInPresentWatchFolders` asks the question only of a watch root that is
-present and non-empty, and only after `resolveRelocatedWatchFolders` has had its chance to prove the
-tree merely moved. An unmounted NAS, a signed-out iCloud Drive and a deleted folder stay
+present and non-empty — a moved root is not present at its recorded path, so its rows wait for the
+relocation the menu offers first. An unmounted NAS, a signed-out iCloud Drive and a deleted folder stay
 indistinguishable to `fileExists` — so none of them is ever read as deletion.
 `forgetDeletedItemsOutsideWatchFolders` covers what that function cannot see by construction, gated
 on the first surviving ancestor being an ordinary mounted directory; **verified** that a deleted
-`~/Downloads/` folder is forgotten while `/Volumes/NAS/…` is kept. Surfaced as **Library → Find
-Missing Files…**: relocation runs unprompted because it is not destructive, deletion is always
-confirmed with Keep as the default, and the count shown comes from a dry run through the very same
+`~/Downloads/` folder is forgotten while `/Volumes/NAS/…` is kept — and, since review, so is a file
+under a leftover empty `/Volumes/<name>` mount point. Surfaced as **Library → Find Missing Files…**:
+relocation is offered first with Leave As Is as the default, deletion is always confirmed with Keep
+as the default, every filesystem check runs off the main thread and outside `dataQueue`, and the count shown comes from a dry run through the very same
 gates so it cannot drift from what is removed.

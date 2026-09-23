@@ -1579,13 +1579,24 @@ final class MediaLibraryStore {
             NSLog("MediaLibraryStore: refusing nested relocation '%@' -> '%@'", oldPrefix, newPrefix)
             return [:]
         }
-        let tables = ["library_tracks", "library_movies", "library_episodes",
-                      "library_playlists", "library_watch_folders"]
+        // `track_artists.track_url` REFERENCES `library_tracks(url)` with no ON UPDATE action, and
+        // foreign keys are enforced — so rewriting a track's url while its artist rows still hold
+        // the old one fails the constraint, and with it the whole transaction. Every scanned track
+        // has artist rows, so without this relocation rolled back on any real library. Checks are
+        // deferred to the commit (the pragma lapses with the transaction) and the artist rows are
+        // rewritten alongside; their collision rows are already gone, cascaded from the track
+        // DELETE, so they take no DELETE of their own.
+        let tables: [(table: String, column: String, dropsCollisions: Bool)] = [
+            ("library_tracks", "url", true), ("track_artists", "track_url", false),
+            ("library_movies", "url", true), ("library_episodes", "url", true),
+            ("library_playlists", "url", true), ("library_watch_folders", "url", true)
+        ]
         var counts: [String: Int] = [:]
         var displaced = 0
         do {
             try db.transaction {
-                for table in tables {
+                try db.run("PRAGMA defer_foreign_keys = ON")
+                for (table, column, dropsCollisions) in tables {
                     // Both spellings: rows are written as `file://…` today, but older formats
                     // stored a plain absolute path and those rows are still in live libraries.
                     for (old, new) in spellings {
@@ -1594,13 +1605,15 @@ final class MediaLibraryStore {
                         // would silently no-op. Unicode scalars rather than `count`, because macOS
                         // hands back NFD paths and SQLite counts a decomposed accent as two.
                         let length = old.unicodeScalars.count
+                        if dropsCollisions {
+                            try db.run(
+                                "DELETE FROM \(table) WHERE \(column) IN "
+                                + "(SELECT ? || substr(\(column), ?) FROM \(table) WHERE substr(\(column), 1, ?) = ?)",
+                                [new, Int64(length + 1), Int64(length), old])
+                            displaced += db.changes
+                        }
                         try db.run(
-                            "DELETE FROM \(table) WHERE url IN "
-                            + "(SELECT ? || substr(url, ?) FROM \(table) WHERE substr(url, 1, ?) = ?)",
-                            [new, Int64(length + 1), Int64(length), old])
-                        displaced += db.changes
-                        try db.run(
-                            "UPDATE \(table) SET url = ? || substr(url, ?) WHERE substr(url, 1, ?) = ?",
+                            "UPDATE \(table) SET \(column) = ? || substr(\(column), ?) WHERE substr(\(column), 1, ?) = ?",
                             [new, Int64(length + 1), Int64(length), old])
                         counts[table, default: 0] += db.changes
                     }

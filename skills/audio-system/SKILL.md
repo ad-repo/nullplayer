@@ -152,6 +152,30 @@ func streamingPlayerDidFinishPlaying() {
 
 See `skills/local-library/SKILL.md` — NAS Responsiveness section.
 
+### A Local Track That Will Not Open
+
+Two load paths, one rule: **skip a bad file, but never skip past a file whose folder is gone.**
+`AudioEngine.containingFolderIsPresent(_:)` is the test — the file's folder exists and is
+non-empty. Present means this one file is bad (corrupt, deleted), so the queue moves on. Absent or
+empty means the volume is not there — a disconnected NAS leaves no folder or an empty mount point —
+and playback stops with the error, which is the offline behaviour. Skipping in that case silently
+landed on whatever local track followed, usually the one that was already playing, and started it
+under the error message.
+
+- **Asynchronous** (`loadLocalTrackForImmediatePlayback`, used by `playTrack` and the end-of-track
+  advance): the rule is evaluated on `deferredIOQueue` in the catch and passed as
+  `advanceToNextTrack`. The advance waits 0.5 s so the error is readable, is cancelled by the load
+  token (a manual Stop bumps it), and is bounded by `consecutiveTrackLoadFailures < playlist.count`.
+- **Synchronous** (`loadTrack(at:)`, used by `playNow`, `next()`, `previous()` and the browsers):
+  the rule guards its recursive skip.
+- **A failed load leaves `currentTrack` nil, and `play()` reads nil as "start the playlist from the
+  top".** So a caller that does `loadTrack(at:)` then `play()` must guard with
+  `if currentTrack != nil` — `playNow`, `loadTracks`, `insertTracksAfterCurrent` and `next()` do.
+  An unguarded `play()` after a failed load starts an unrelated track.
+
+A reconnected drive plays again only once macOS has remounted the share at the same path; the app
+does not mount shares itself. An SMB share that dropped is not remounted automatically.
+
 ## Equalizer
 
 ### Configuration

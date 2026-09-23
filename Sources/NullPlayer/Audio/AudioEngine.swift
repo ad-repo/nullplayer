@@ -3780,7 +3780,9 @@ class AudioEngine {
                 // Normal local playback
                 NSLog("loadTracks: loading track at index %d", currentIndex)
                 loadTrack(at: currentIndex)
-                play()
+                // A failed load leaves `currentTrack` nil, and `play()` reads nil as "start the
+                // playlist from the top" — which started an unrelated track under the error.
+                if currentTrack != nil { play() }
             }
         } else {
             invalidateShufflePlaybackStateAfterPlaylistMutation()
@@ -4068,7 +4070,8 @@ class AudioEngine {
                 }
             } else {
                 loadTrack(at: currentIndex)
-                play()
+                // A failed load leaves `currentTrack` nil; see `playNow`.
+                if currentTrack != nil { play() }
             }
         }
         
@@ -4142,7 +4145,9 @@ class AudioEngine {
             }
         } else {
             loadTrack(at: currentIndex)
-            play()
+            // A failed load leaves `currentTrack` nil, and `play()` reads nil as "start the
+            // playlist from the top" — which started an unrelated track under the error.
+            if currentTrack != nil { play() }
         }
         
         delegate?.audioEngineDidChangePlaylist()
@@ -4260,7 +4265,15 @@ class AudioEngine {
             loadStreamingTrack(track)
         } else {
             if !loadLocalTrack(track) {
-                // File doesn't exist or failed to load - skip to next track silently
+                // One bad file is skipped. A file whose folder is gone — a disconnected NAS — is
+                // not: skipping would silently land on whatever local track follows it and start
+                // that instead, while the marquee reports the failure. Stopping is the offline
+                // behaviour. The stat is on this thread only because `loadLocalTrack` just opened
+                // the same path synchronously on it.
+                guard Self.containingFolderIsPresent(track.url) else {
+                    NSLog("loadTrack: Failed to load track at index %d and its folder is not present — stopping", index)
+                    return
+                }
                 NSLog("loadTrack: Failed to load track at index %d, skipping to next", index)
                 if index + 1 < playlist.count {
                     currentIndex = index + 1
@@ -4355,10 +4368,14 @@ class AudioEngine {
                 }
             } catch {
                 if let tmp = tempURL { try? FileManager.default.removeItem(at: tmp) }
+                // Decided here, on the IO queue, because it stats the folder — which may sit on
+                // the very volume that just failed.
+                let folderIsPresent = Self.containingFolderIsPresent(track.url)
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     guard self.deferredLocalTrackLoadToken == token else { return }
-                    self.handleLocalTrackLoadFailure(track: track, error: error, advanceToNextTrack: true)
+                    self.handleLocalTrackLoadFailure(track: track, error: error,
+                                                     advanceToNextTrack: folderIsPresent)
                 }
             }
         }
@@ -4659,9 +4676,25 @@ class AudioEngine {
     /// unmounted volume fails *every* entry, and without this the queue would walk itself forever.
     private var consecutiveTrackLoadFailures = 0
 
+    /// Whether the folder holding `url` is on disk and non-empty — what separates "this one file is
+    /// bad" from "the volume it lives on is not there". An unmounted NAS leaves either no folder or
+    /// an empty mount point, and skipping through a queue of tracks that are all on it would only
+    /// walk the whole playlist error by error; stopping, as before, is the offline behaviour.
+    /// Stats the filesystem, so never call it on the main thread.
+    static func containingFolderIsPresent(_ url: URL) -> Bool {
+        let folder = url.deletingLastPathComponent()
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else { return false }
+        let entries = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        return !entries.isEmpty
+    }
+
     /// `advanceToNextTrack` is opt-in because `loadTrack(at:)` runs its own synchronous skip on a
     /// `false` return; only the asynchronous immediate-playback path — which is what `playTrack` and
-    /// the natural end-of-track advance both use — dead-ended on an unreadable file.
+    /// the natural end-of-track advance both use — dead-ended on an unreadable file. That path
+    /// passes it only when the file's folder is present (`containingFolderIsPresent`), so a
+    /// disconnected volume still stops playback instead of skipping.
     private func handleLocalTrackLoadFailure(track: Track, error: Error, advanceToNextTrack: Bool = false) {
         let fileExtension = track.url.pathExtension.lowercased()
         var errorMessage = "Failed to load '\(track.url.lastPathComponent)': \(error.localizedDescription)"

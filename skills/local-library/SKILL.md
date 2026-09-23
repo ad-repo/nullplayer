@@ -161,23 +161,24 @@ A recorded path can stop resolving for two completely different reasons, and the
 confuse them. **`fileExists` cannot tell an unmounted NAS, a signed-out iCloud Drive or a renamed
 parent from a deleted file**, so every path here refuses to guess.
 
-**Relocation (non-destructive, automatic).** For each watch root that is not a directory on disk,
-the probe looks for a new home and re-points it. It runs at startup (in `init`, right after
-`loadLibrary`) and on volume mount.
+**Relocation (non-destructive, never automatic).** For each watch root that is not a directory on
+disk, `findRelocatedWatchFolders()` looks for a verified new home and **proposes** the move;
+`applyRelocations(_:)` rewrites only the moves the user accepted. Both run behind the serial
+`relocationQueue`. The only caller is **Library → Find Missing Files…**
+(`MenuActions.findMissingFiles`), which shows each old → new path and defaults to **Leave As Is**.
 
-**Never call the probe inline from the main thread.** It is filesystem-bound by construction: per
-missing root it stats `/Volumes`, every shallow home directory, and up to 40 recorded files under
-each candidate, and a `fileExists` against an unreachable network mount blocks for seconds apiece.
-Both automatic triggers are on the main thread — `init`, and an `NSWorkspaceDidMount` observer
-registered with `queue: .main` — so both call `resolveRelocatedWatchFoldersInBackground()` and do
-not wait. The volume-mount case is the sharp one: the paths being stat'd are on the volume that has
-just appeared and may not be ready. Only `MenuActions.findMissingFiles` calls the synchronous
-`resolveRelocatedWatchFolders()`, because it has a modal to put the answer in and the user is
-already waiting for it.
+**Never trigger relocation at launch or on volume mount.** An earlier version did, and it is the
+bug that rule exists for: an unmounted NAS and a moved folder look identical from here, and a copy
+of the NAS's music — a backup drive, a synced `~/Music` — passes the same 60% verification a genuine
+move does. Launch usually runs before a network share has mounted, so an automatic probe re-pointed
+the watch root at the copy and the NAS dropped out of the library for good. Only the user knows
+which one is the library.
 
-Both entry points funnel into `performRelocationScan()` behind the serial `relocationQueue`; nothing
-calls that directly. The queue is what stops launch and a mount (or two mounts) from searching and
-rewriting at once and racing each other's `loadLibrary()`.
+**Everything in Find Missing Files runs off the main thread.** The search stats `/Volumes`, every
+shallow home directory and up to 40 recorded files per candidate, and the cleanup stats every row;
+a `fileExists` against an unreachable network mount blocks for seconds apiece. The action hops to a
+background queue for each step and back to main only for the dialogs, and ignores a second click
+while a run is in progress.
 
 - `MediaLibraryStore.relocatePathPrefix(from:to:)` is the rewrite: one transaction over
   `library_tracks`, `library_movies`, `library_episodes`, `library_playlists` **and
@@ -187,6 +188,14 @@ rewriting at once and racing each other's `loadLibrary()`.
   and rescanning. Uses `substr(url, 1, n)` anchoring, not `replace`/`LIKE`: `replace` would also
   rewrite a second occurrence of the prefix further along a path, and `%`/`_` are legal in filenames.
   Both the `file://…` and legacy plain-path spellings are rewritten.
+- **`track_artists.track_url` has to move with the track.** It `REFERENCES library_tracks(url)` with
+  no `ON UPDATE` action and foreign keys are enforced, so rewriting a track's url alone fails the
+  constraint and rolls back the whole transaction — on every real library, since every scanned
+  track has artist rows. The rewrite runs `PRAGMA defer_foreign_keys = ON` inside the transaction
+  and rewrites `track_artists.track_url` alongside; that table takes no collision DELETE, because
+  the destination track's DELETE already cascaded its artist rows away. A test on bare tracks with
+  no artist rows cannot catch this — `MissingFilesTests.testRelocationCarriesArtistRowsAlong` sets
+  an artist for that reason. `play_events` is keyed by `track_id` and needs no rewrite.
 - **`substr` counts characters, so the anchor length must be `old.unicodeScalars.count`** — never
   `utf8.count`, and not `count` either. A byte length over a non-ASCII prefix overshoots, matches
   zero rows, and the caller's `guard rows > 0 else { continue }` swallows it: relocation appears to
@@ -208,8 +217,7 @@ rewriting at once and racing each other's `loadLibrary()`.
   checked by re-basing up to 40 recorded descendant paths onto it and requiring 60% to exist on disk.
   A name match alone is rejected: in the case this was written from, `~/music` exists and scores 0/2
   while `~/iCloud Drive (Archive)/music` scores 2/2.
-- A root that is missing and cannot be placed is **left completely alone** and posts
-  `watchFolderUnresolvedNotification`. A successful move posts `watchFolderRelocatedNotification`.
+- A root that is missing and cannot be placed is **left completely alone**.
 
 **Cleanup (destructive, user-confirmed only).** Never call
 `removeMissingItemsInWatchedFolders` directly — it is `private` for that reason. Two gated public
@@ -217,13 +225,18 @@ entry points, both reached through `forgetMissingFiles(dryRun:)`:
 
 | Function | Covers | Gate |
 |---|---|---|
-| `forgetDeletedItemsInPresentWatchFolders` | rows inside a watch root | the root is present **and non-empty** (an empty mount point is what an unmounted share looks like), and relocation ran first |
-| `forgetDeletedItemsOutsideWatchFolders` | `Add Files…` rows outside every root, which the other cannot see by construction | the file's **first surviving ancestor** is an ordinary mounted directory — reaching `/Volumes` or `/` means the volume is simply not mounted |
+| `forgetDeletedItemsInPresentWatchFolders` | rows inside a watch root | the root is present **and non-empty** (an empty mount point is what an unmounted share looks like); a moved root is not present at its recorded path, so its rows wait for the relocation the menu offers first |
+| `forgetDeletedItemsOutsideWatchFolders` | `Add Files…` rows outside every root, which the other cannot see by construction | the file's **first surviving ancestor** is an ordinary mounted directory — reaching `/`, `/Volumes` or a `/Volumes/<name>` mount point means the volume is simply not mounted (an unclean eject leaves the mount point behind as an empty directory) |
 
 `forgetMissingFiles(dryRun: true)` counts through the *same* gates that do the deleting, so a
 confirmation count cannot drift from what is removed. Surfaced as **Library → Find Missing Files…**
-(`MenuActions.findMissingFiles` in `App/ContextMenuBuilder.swift`): relocation runs unprompted,
-deletion is always confirmed and defaults to **Keep**.
+(`MenuActions.findMissingFiles` in `App/ContextMenuBuilder.swift`): relocation is offered first and
+defaults to **Leave As Is**, deletion is always confirmed and defaults to **Keep**.
+
+**Both cleanups stat outside `dataQueue`.** `forgetRows(dryRun:where:)` snapshots the rows' URLs
+under the lock, runs the predicate without it, and takes the lock again only to drop the rows it
+chose. Running `fileExists` under `dataQueue.sync` — as the original loop did — holds every reader
+of the library, the main thread included, for the whole pass on a slow network volume.
 
 **Parsing a stored URL.** `MediaLibraryStore.urlFromStoredString` tests `hasPrefix("/")` *before*
 `URL(string:)`, and requires a non-nil `scheme` from the latter. On current Foundation
