@@ -105,6 +105,26 @@ Then:
 3. Launch through the front door, passing app arguments after `--`.
 4. Read the Confirm column. **Every row on this surface fails silently.**
 
+> **Every skin row in the table below depends on step 1.** The table is the part people jump to,
+> and a row read on its own looks complete — it is not. With `rememberStateEnabled` left on, the
+> app restores its saved state over the key you just wrote, the previous skin comes back, and
+> `defaults read` afterwards shows the *old* name, which reads as "the write didn't take" rather
+> than "restoration undid it". This cost four relaunches on 2026-09-23: `wmpSkinName` set to
+> `Melvin`, `PowerToys` loaded every time, with the skin key read back as `PowerToys`.
+>
+> **Quit any running instance before writing the keys, and read them back before launching.**
+> `kill_build_run.sh` replaces a running app, and that app gets to run its own shutdown after your
+> `defaults write`. Observed in the same session: a key written with an instance still running
+> read back as that instance's skin after the relaunch. Whether that was a save-on-quit or
+> restoration was not isolated, because step 1 had also been skipped — so do both, in this order:
+>
+> ```bash
+> pkill -x NullPlayer; while pgrep -x NullPlayer >/dev/null; do sleep 0.5; done
+> defaults write NullPlayer rememberStateEnabled -bool false
+> defaults write NullPlayer wmpSkinName -string "<name>"          # or the row you need
+> defaults read NullPlayer wmpSkinName                             # must print <name>
+> ```
+
 ```bash
 bash <<'SESSION'
 set -euo pipefail
@@ -121,12 +141,15 @@ read -r -p "Quit the app, then press Enter to restore defaults: " _ </dev/tty
 SESSION
 ```
 
+Every skin row (`.wsz`, `.wal`, `.wmz`, modern, metal) assumes step 1 above — `rememberStateEnabled`
+false, no instance running — or the saved skin wins.
+
 | Want | Set | Confirm it took |
 |---|---|---|
 | UI mode | `-uiMode classic\|modern\|metal\|winampModern\|wmp` | `winhelper windows` title: `NullPlayer — Windows Media Player`, `— Winamp Modern`, else bare `NullPlayer` |
 | A classic `.wsz` | `NULLPLAYER_SKIN=/abs/x.wsz` (DEBUG only) | `defaults delete NullPlayer lastClassicSkinPath` first, then read it back — it names the loaded `.wsz`, and stays **absent** if the load failed |
 | A `.wal` | `-winampModernSkinPath /abs/x.wal` | log line `WinampModern surfaces [<file>.wal]:` names the file |
-| A `.wmz` | `defaults write NullPlayer wmpSkinName "<name>"` + `defaults delete NullPlayer wmpSkinViewID` — **`NULLPLAYER_SKIN` does not work for `.wmz`** | `defaults read NullPlayer wmpSkinViewID` is rewritten to the skin's own view (corona → `vPlayer`), and the window is not the unskinned 440x170 |
+| A `.wmz` | **Step 1 first** (`rememberStateEnabled` false, app quit), then `defaults write NullPlayer wmpSkinName "<name>"` + `defaults delete NullPlayer wmpSkinViewID` — **`NULLPLAYER_SKIN` does not work for `.wmz`** | `defaults read NullPlayer wmpSkinViewID` is rewritten to the skin's own view (corona → `vPlayer`), and the window is not the unskinned 440x170 |
 | A modern skin | `defaults write NullPlayer modernSkinName "<name>"` (bundled: `NeonWave`) | log line `ModernSkinLoader: Loaded skin '<name>'` |
 | A metal skin | `defaults write NullPlayer metalSkinName "<name>"` (bundled: `Brushed Steel`) | log line `ModernSkinEngine: Loaded built-in metal skin '<name>'` |
 | A track playing | `NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)"` (DEBUG only) | log line `loadLocalTrack: <file>`; elapsed readout advancing across two captures |
