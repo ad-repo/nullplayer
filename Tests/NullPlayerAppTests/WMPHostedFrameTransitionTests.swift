@@ -3,20 +3,19 @@ import CoreGraphics
 import XCTest
 @testable import NullPlayer
 
-/// **What a hosted window wears while its own frame does not exist yet (W248).**
+/// **What a hosted window wears while its own frame does not exist yet (W248, reworked 2026-09-23).**
 ///
 /// `WMPHostedFrameProvider` never blocks, so every one of these moments is answered with something
-/// other than the frame that was asked for, and the whole of W248 is *which* something. Three
-/// answers are pinned here, each reported by a user before it was written:
+/// other than the frame that was asked for, and the requirement is that none of it is visible as a
+/// transition:
 ///
-/// - **A stretched ring is refused for a window it was not built for.** The 15% tolerance was a
-///   panel's rule; a ring was stretched without limit, so a first open — where `mostRecent` holds
-///   the ring W230 primed at the *donor's* reference size — dressed a 550x890 library in a 389x247
-///   player's frame. Reported 2026-09-20 as *"the window loads with stretched graphics"*.
-/// - **A skin change keeps the outgoing skin's frames until the incoming skin answers.** The cache
-///   was emptied the instant a new skin arrived, so every hosted window on screen dropped to flat
-///   palette chrome for a full scene build — measured on AlienMorph → ALXVortex at **1.29 s**. The
-///   prewarm cannot reach this case: the window is already open when the skin changes.
+/// - **A stand-in is the nearest render re-laid out, never stretched.** W248 refused a stretched
+///   ring past 15% and drew palette chrome instead, and a drag crosses 15% in a few pixels — the
+///   reported skin → chrome → skin flicker.
+/// - **A drag builds one frame at a time and cannot evict a resting window's frame.**
+/// - **A skin change keeps the old skin live until the new one can dress every open window**, then
+///   switches them all at once. The W248 "outgoing" stand-in it replaces is what left windows
+///   wearing the previous skin after a drag.
 /// - **A speculative render is made before any window asks for it**, so the wait belongs to the
 ///   skin load rather than to the user's click.
 ///
@@ -114,72 +113,148 @@ final class WMPHostedFrameTransitionTests: XCTestCase {
         return (provider, rendered)
     }
 
-    // MARK: - A stand-in is for a resize, not for a different window
+    // MARK: - A stand-in is re-laid out, never stretched
 
-    /// **Past 15% a ring is refused, and the window takes the palette for that frame.**
+    /// **A size nothing has rendered is answered with the nearest render re-laid out (2026-09-23).**
     ///
-    /// Before W248 this tolerance held panels only, and the ring came back stretched onto whatever
-    /// was asked for. The size here is the shape of the reported case: a window more than twice the
-    /// donor's height.
-    func testARingStandInIsRefusedForAWindowItWasNotBuiltFor() async throws {
-        let (provider, _) = try await providerWithRenderedFrame()
-
-        let answered = provider.artwork(for: CGSize(width: 900, height: 900))
-
-        XCTAssertNil(answered, "a ring was stretched onto a window it was never built for — W248 regressed")
-    }
-
-    /// **And inside the tolerance it still stands in**, which is the case it exists for: a live
-    /// resize, where returning nil would drop the window to palette chrome for the drag and flash it
-    /// back. Five percent, and the stretch is invisible for the frame or two before the real one.
-    func testARingStandInStillCoversASmallResize() async throws {
+    /// W248 refused a stretched ring past 15% and the window drew palette chrome, which a drag
+    /// crossed within a few pixels: skin → chrome → skin. A relayout keeps the border's thickness
+    /// at any distance, so no tolerance applies and the insets are the source's exactly.
+    func testAStandInForAnotherSizeKeepsTheBorderItWasRenderedWith() async throws {
         let (provider, rendered) = try await providerWithRenderedFrame()
 
-        let nudged = CGSize(width: 420, height: 315)
-        let answered = try XCTUnwrap(provider.artwork(for: nudged),
-                                     "a 5% resize was left without a frame")
+        let far = CGSize(width: 900, height: 900)
+        let answered = try XCTUnwrap(provider.artwork(for: far),
+                                     "a window far from the rendered size was left on palette chrome")
 
-        XCTAssertEqual(answered.image, rendered.image, "the stand-in is not the frame that was rendered")
-        XCTAssertEqual(answered.size.width, nudged.width, accuracy: 0.5)
-        XCTAssertEqual(answered.size.height, nudged.height, accuracy: 0.5)
-        XCTAssertTrue(answered.wasScaledToFit)
+        XCTAssertEqual(answered.size.width, far.width, accuracy: 0.5)
+        XCTAssertEqual(answered.size.height, far.height, accuracy: 0.5)
+        XCTAssertEqual(answered.metrics.titleHeight, rendered.metrics.titleHeight, accuracy: 0.5,
+                       "the border was stretched with the window")
+        XCTAssertEqual(answered.metrics.leftBorder, rendered.metrics.leftBorder, accuracy: 0.5)
+        XCTAssertEqual(answered.metrics.rightBorder, rendered.metrics.rightBorder, accuracy: 0.5)
+        XCTAssertEqual(answered.metrics.bottomBorder, rendered.metrics.bottomBorder, accuracy: 0.5)
+        let pixelsPerPoint = CGFloat(rendered.image.width) / rendered.size.width
+        XCTAssertEqual(CGFloat(answered.image.width), far.width * pixelsPerPoint, accuracy: 1,
+                       "the picture was not re-laid out to the window, only mapped onto it")
+    }
+
+    /// **The seams fall between the borders, and the output adds up to the target.** Growing
+    /// repeats a column, shrinking removes some, and the border columns are copied one for one.
+    func testARelayoutPlanLeavesTheBordersWhole() {
+        let uniform = [Bool](repeating: true, count: 99)
+        for target in [60, 100, 250] {
+            let segments = try! XCTUnwrap(WMPHostedFrameRelayout.plan(
+                length: 100, target: target, lead: 20, trail: 15, uniform: uniform))
+            XCTAssertEqual(segments.map(\.length).reduce(0, +), target)
+            XCTAssertEqual(segments.first, .init(source: 0, length: segments.first!.length, repeats: false))
+            XCTAssertGreaterThanOrEqual(segments.first!.length, 20, "the leading border was cut")
+            XCTAssertFalse(segments.last!.repeats)
+            XCTAssertEqual(segments.last!.source + segments.last!.length, 100)
+            XCTAssertGreaterThanOrEqual(segments.last!.length, 15, "the trailing border was cut")
+        }
+        XCTAssertNil(WMPHostedFrameRelayout.plan(length: 100, target: 30, lead: 20, trail: 15,
+                                                 uniform: uniform),
+                     "a window too small for its border was answered")
+    }
+
+    // MARK: - A drag
+
+    /// **One drag build at a time, and the latest size behind it (step B).** Every pixel of a drag
+    /// used to start its own render — ~30 at once on `ALXVortex`, each 2–4.7 s. A size the drag
+    /// only passed through while a build was running is never built.
+    func testADragBuildsTheLatestSizeNotEverySize() async throws {
+        let (provider, _) = try await providerWithRenderedFrame()
+        provider.beginLiveResize()
+
+        let first = CGSize(width: 410, height: 300)
+        let passedThrough = CGSize(width: 420, height: 300)
+        let latest = CGSize(width: 430, height: 300)
+        _ = provider.artwork(for: first)
+        _ = provider.artwork(for: passedThrough)
+        _ = provider.artwork(for: latest)
+
+        _ = try await waitForRender(provider, at: latest)
+        XCTAssertNil(provider.renderedArtwork(for: passedThrough),
+                     "a size the drag only passed through was rendered")
+        provider.endLiveResize(at: latest)
+    }
+
+    /// **A drag cannot evict a resting window's frame (step B).** The cache holds twelve sizes and
+    /// a drag passes through more than that; the untouched windows then missed their frame and wore
+    /// the previous skin's. The drag's own sizes go first, and all but the last go when it ends.
+    func testADragNeverEvictsAWindowAtRest() async throws {
+        let (provider, _) = try await providerWithRenderedFrame()
+        provider.beginLiveResize()
+        var sizes: [CGSize] = []
+        for step in 1...14 {
+            let size = CGSize(width: 400 + CGFloat(step) * 7, height: 300)
+            sizes.append(size)
+            _ = provider.artwork(for: size)
+            _ = try await waitForRender(provider, at: size)
+        }
+        XCTAssertNotNil(provider.renderedArtwork(for: Self.windowSize),
+                        "the drag pushed a resting window's frame out of the cache")
+
+        provider.endLiveResize(at: sizes.last!)
+        XCTAssertNil(provider.renderedArtwork(for: sizes[sizes.count - 2]),
+                     "an intermediate drag size outlived the drag")
+        XCTAssertNotNil(provider.renderedArtwork(for: sizes.last!),
+                        "the size the drag came to rest at was dropped")
+        XCTAssertNotNil(provider.renderedArtwork(for: Self.windowSize))
     }
 
     // MARK: - A skin change
 
-    /// **The outgoing skin's frame covers the change, and is replaced the moment the new skin has
-    /// one of its own.** Not "looks similar" — the same `CGImage`, then a different one.
-    func testASkinChangeKeepsTheOutgoingFrameUntilTheNewSkinAnswers() async throws {
+    /// **The old skin answers, unchanged, until the new one can dress every open window — then all
+    /// of them change at once (step E).** No stand-in of the previous skin exists any more: before
+    /// the commit the window wears the old skin's exact frame, after it the new skin's.
+    func testASkinChangeKeepsTheOldSkinLiveUntilItCommits() async throws {
         let (provider, outgoing) = try await providerWithRenderedFrame(corner: 40, red: 20)
+        provider.hostedWindowsVisible = { true }
+        provider.openWindowTargets = { _ in [Self.windowSize] }
 
         let incomingSkin = try await ringSkin(corner: 30, red: 200, tag: "b")
         XCTAssertTrue(provider.configure(skin: incomingSkin, playerViewID: nil))
-        let duringTheChange = try XCTUnwrap(provider.artwork(for: Self.windowSize),
-                                            "the window was stripped to palette chrome by a skin change")
-        XCTAssertEqual(duringTheChange.image, outgoing.image,
-                       "something other than the outgoing skin's own frame was handed back")
+        XCTAssertEqual(provider.artwork(for: Self.windowSize)?.image, outgoing.image,
+                       "the window stopped wearing the live skin before the new one was ready")
 
-        let incoming = try await waitForRender(provider, at: Self.windowSize)
-        XCTAssertNotEqual(incoming.image, outgoing.image,
-                          "the new skin's frame never replaced the one held over")
-        XCTAssertEqual(provider.artwork(for: Self.windowSize)?.image, incoming.image,
-                       "the outgoing frame outlived the answer that should have dropped it")
+        let deadline = Date().addingTimeInterval(20)
+        while provider.renderedArtwork(for: Self.windowSize)?.image == outgoing.image,
+              Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let incoming = try XCTUnwrap(provider.renderedArtwork(for: Self.windowSize),
+                                     "the switch committed without the window's own frame")
+        XCTAssertNotEqual(incoming.image, outgoing.image, "the new skin never replaced the old one")
+        XCTAssertEqual(provider.artwork(for: Self.windowSize)?.image, incoming.image)
     }
 
-    /// **A skin change is usually a size change too**, because the two skins lend different borders
-    /// and every hosted window is grown or shrunk by the difference. The held frame covers the new
-    /// size as well, within the same 15% — the reporter's pair moves the library 890 → 887.
-    func testTheOutgoingFrameCoversTheSizeTheNewBorderCauses() async throws {
+    /// **A held-back player commits with the frames (step E).** `stage` returns once every target
+    /// has its frame; until `configure` the old skin is still live, and `configure` flips it in one
+    /// call — the new border and every target's exact frame at once.
+    func testAStagedSwitchCommitsEveryTargetInOneStep() async throws {
         let (provider, outgoing) = try await providerWithRenderedFrame(corner: 40, red: 20)
+        let deadline = Date().addingTimeInterval(20)
+        while provider.donorInsets == nil, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let outgoingInsets = try XCTUnwrap(provider.donorInsets)
+        // The new border moves the window: the target is a size the old skin never rendered.
+        let moved = CGSize(width: Self.windowSize.width, height: Self.windowSize.height - 3)
+        provider.hostedWindowsVisible = { true }
+        provider.openWindowTargets = { _ in [moved] }
 
         let incomingSkin = try await ringSkin(corner: 30, red: 200, tag: "b")
-        XCTAssertTrue(provider.configure(skin: incomingSkin, playerViewID: nil))
-        let moved = CGSize(width: Self.windowSize.width, height: Self.windowSize.height - 3)
-        let answered = try XCTUnwrap(provider.artwork(for: moved),
-                                     "the three points the new border moved the window cost it its frame")
+        await provider.stage(skin: incomingSkin, playerViewID: nil)
+        XCTAssertEqual(provider.artwork(for: Self.windowSize)?.image, outgoing.image,
+                       "staging replaced the live skin before the player was presented")
+        XCTAssertEqual(provider.donorInsets?.top, outgoingInsets.top)
 
-        XCTAssertEqual(answered.image, outgoing.image)
-        XCTAssertEqual(answered.size.height, moved.height, accuracy: 0.5)
+        XCTAssertTrue(provider.configure(skin: incomingSkin, playerViewID: nil))
+        XCTAssertNotEqual(provider.donorInsets?.top, outgoingInsets.top, "the border did not change")
+        XCTAssertNotNil(provider.renderedArtwork(for: moved),
+                        "a window resized to the new border would have drawn without its frame")
     }
 
     /// **A skin that lends no frame carries nothing over.** Its windows *should* go back to the

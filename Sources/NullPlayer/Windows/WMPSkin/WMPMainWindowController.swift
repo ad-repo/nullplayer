@@ -297,6 +297,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                                    backing: .buffered, defer: false)
         super.init(window: window)
         materializer = WMPViewWindowMaterializer(controller: self, playerWindow: window)
+        // A skin switch is staged against the windows that are open, at the sizes the border
+        // layout will give them — both of which belong to `HostedWindowBorderLayout`.
+        hostedFrames.openWindowTargets = { insets in
+            WindowManager.shared.hostedWindowTargets(for: insets)
+        }
+        hostedFrames.hostedWindowsVisible = { WindowManager.shared.hasVisibleHostedWindows }
         effectSelectionObserver = NotificationCenter.default.addObserver(
             forName: WMPEffectSelection.didChange, object: nil, queue: .main
         ) { [weak self] _ in
@@ -491,6 +497,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     }
                     let rendered = try await WMPRenderer(imageStore: store).render(
                         scene: resolved, backingScale: renderScale(for: resolved.canvasSize))
+                    try Task.checkCancellation()
+                    // **The player waits for the hosted windows' frames, so they change skin
+                    // together.** The new skin's frames are built at the size every open hosted
+                    // window will be under its border while the old skin stays up — player and
+                    // frames alike — and `publishSurfacePalette` below commits the switch in the
+                    // same turn as the player is presented. Nothing happens here when no hosted
+                    // window is on screen, or the skin lends none.
+                    await hostedFrames.stage(skin: skin, playerViewID: resolved.viewID)
                     try Task.checkCancellation()
                     // The first view with a canvas binds the app's own window and becomes the
                     // player; everything the skin opens after it gets a window of its own.

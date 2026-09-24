@@ -13,7 +13,9 @@
   skin's own screen with NullPlayer's normal video controls and casting. NullPlayer's own windows —
   library, playlist, equalizer, spectrum and audio analyzers, PeppyMeter, Flow, Cava, waveform,
   visualizer and Sonos Rooms — open beside the skin wearing its colours and a frame borrowed from the
-  skin's own playlist; where the skin has its own playlist or equalizer, that one is used instead.
+  skin's own playlist, which keeps its shape while a window is resized and changes together with the
+  player when you switch skins; where the skin has its own playlist or equalizer, that one is used
+  instead.
   ActiveX, registry, shell, plug-in, filesystem and network access stay unavailable, and a skin that
   asks for something NullPlayer does not implement loses only that one action, not the skin.
 - **Sonos Rooms window with per-room volume** — a new dockable **Sonos Rooms** window lists every

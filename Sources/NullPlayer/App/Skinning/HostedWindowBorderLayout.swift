@@ -79,6 +79,23 @@ final class HostedWindowBorderLayout {
             forName: NSWindow.didResizeNotification, object: nil, queue: .main) { [weak self] note in
                 MainActor.assumeIsolated { self?.windowDidResize(note.object as? NSWindow) }
             })
+        // **A drag is not a series of new windows (the 2026-09-23 drag fix).** Every pixel of a
+        // drag used to reach the frame provider as a size nobody had asked for, and each started its
+        // own full donor render. The provider is told when a hosted window starts and stops being
+        // dragged instead. NullPlayer's own windows resize by hand (`ResizableWindow`), which never
+        // enters AppKit's live resize, so both families of notification are listened to.
+        for name in [NSWindow.willStartLiveResizeNotification, Notification.Name.windowEdgeResizeDidBegin] {
+            observers.append(NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main) { [weak self] note in
+                    MainActor.assumeIsolated { self?.liveResize(note.object as? NSWindow, began: true) }
+                })
+        }
+        for name in [NSWindow.didEndLiveResizeNotification, Notification.Name.windowEdgeResizeDidEnd] {
+            observers.append(NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main) { [weak self] note in
+                    MainActor.assumeIsolated { self?.liveResize(note.object as? NSWindow, began: false) }
+                })
+        }
         // **A window closed while held has to be given its opacity back (W250)**, or the next open
         // finds it at alpha 0 with nothing left to reveal it.
         observers.append(NotificationCenter.default.addObserver(
@@ -86,6 +103,7 @@ final class HostedWindowBorderLayout {
                 MainActor.assumeIsolated {
                     guard let self, let window = note.object as? NSWindow else { return }
                     self.reveal(ObjectIdentifier(window), reason: "closed")
+                    self.liveResize(window, began: false)
                 }
             })
     }
@@ -137,6 +155,37 @@ final class HostedWindowBorderLayout {
         // **After the loop, not before it (W250).** A held window may have just been grown, and the
         // question a hold asks is about the size it is at now.
         releaseSettledHolds()
+    }
+
+    // MARK: - A drag
+
+    /// Windows being dragged right now, so a begin and its end are counted once each however many of
+    /// the two notification families report them.
+    private var resizing: Set<ObjectIdentifier> = []
+
+    private func liveResize(_ window: NSWindow?, began: Bool) {
+        guard let window,
+              WindowManager.shared.hostedBorderWindows.contains(where: { $0.window === window })
+        else { return }
+        let key = ObjectIdentifier(window)
+        if began {
+            guard resizing.insert(key).inserted else { return }
+        } else {
+            guard resizing.remove(key) != nil else { return }
+        }
+        WindowManager.shared.hostedSurfaceLiveResize(began: began, size: window.frame.size)
+    }
+
+    /// **The size every open hosted window would be under `border`** — `apply()`'s target, asked for
+    /// a border that is not in play yet. A `.wmz` skin switch renders these before it commits, and
+    /// the commit's `apply()` then resizes each window to exactly the size that was rendered.
+    func openTargets(border: SkinnedSurfaceChrome.Metrics) -> [CGSize] {
+        WindowManager.shared.hostedBorderWindows.compactMap { entry in
+            guard let window = entry.window, window.isVisible,
+                  window.frame.width > 0, window.frame.height > 0 else { return nil }
+            return Self.outerSize(interior: seededInterior(for: window, fallback: entry.fallback).size,
+                                  border: border)
+        }
     }
 
     // MARK: - Before the window opens

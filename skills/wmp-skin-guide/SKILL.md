@@ -126,8 +126,9 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   on resolved insets alone would freeze every window under a skin that lends nothing: its insets
   never resolve, so a resize would never be adopted and the rule would put the window straight back.
 - Exact artwork may include below-floor or extent scaling. During pending renders the provider
-  can return a scaled previous image; a panel allows this only within 15% on both axes.
-  `wasScaledToFit` is not a readiness flag.
+  returns the nearest render of the **current** skin *re-laid out* (`WMPHostedFrameRelayout`) —
+  never a proportional stretch, and with no distance limit; see *A hosted window never shows a
+  transitional state* below. `wasScaledToFit` is not a readiness flag.
 - **A hosted window is sized before it is shown, and a stand-in is refused when it would be a
   different window's (W248).** The first open was four visible stages, all of them *after* the
   window was on screen: it appeared at the size its controller built it, jumped to the positioned
@@ -143,7 +144,9 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   the *donor's reference size*, and stretching 389x247 onto a 550x890 library is the reported defect.
   **`showPlexBrowser` and `showProjectM` positioned the window after showing it** and were reordered;
   the other six already positioned first. Verified live on `ALXVortex` 2026-09-20 — the reporter's
-  words were *"it loaded chrome and then the skin with no resize"*.
+  words were *"it loaded chrome and then the skin with no resize"*. **The 15% half is superseded
+  (2026-09-23)**: a stand-in is now re-laid out rather than stretched, so it needs no tolerance —
+  see *A hosted window never shows a transitional state*. The presize half stands.
 - **The wait for a ring belongs to the skin load, not to the user's click (W248).** What A and C
   left was the render itself — **1.28 s** for `ALXVortex`'s library ring, during which the window
   wears palette chrome — and nothing about that build needs the window: the size is
@@ -199,27 +202,68 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   outcome is `reason=frame`, and the measured spread is 276 ms for a cold analyser to 2.09 s for the
   library at launch, of which 1.4 s is the ring render alone. `WMP_HOSTED_HOLD=0` is the A/B switch.
   Every non-`.wmp` family answers "settled" unconditionally, or the hold would never end.
-- **A skin change holds the outgoing skin's frames until the incoming skin can replace them
-  (W248).** `configure(skin:)` emptied the cache the instant a new skin arrived, so every hosted
-  window on screen was stripped to flat palette chrome for the length of one scene build — measured
-  on the reporter's own pair, AlienMorph → ALXVortex, 2026-09-20: **51 draws on bare chrome, 1.29
-  s**. *The prewarm cannot reach this case*, and that is the point worth remembering: the window is
-  already open when the skin changes, so it asks for its frame the same instant the prewarm queues
-  it and both wait on the one build. There is no "before" left to move the work into. What the
-  window was wearing a moment ago, though, is real, complete, correctly-proportioned artwork for
-  exactly that size — the wrong *skin* for a beat, which is a far smaller lie than a stretched ring
-  or than nothing at all. So `outgoing` carries the old cache across the change and each entry is
-  dropped the moment the new skin answers for that size, **with a frame or with a refusal**; a skin
-  that lends nothing carries nothing, because its windows *should* go back to the palette. The
-  lookup falls back to the nearest held frame within the same 15%, because a skin change is usually
-  a size change too: different borders move every hosted window by the difference, and the
-  reporter's pair moves the library 890 → 887. After: all 51 of those draws are
-  `standin=outgoing from=550x890`, and no frame is bare. **An outer-size change is expected when
-  borders differ.** W249 attributed it to a docking conflict, but live retesting preserved the
-  interior: 890 → 887 → 890 with 822 points inside, and 890 → 893 → 890 with 825 points inside.
-  Its cited trace prints before the resize, not after a refusal. The row and reproducible evidence
-  moved to `LOW_QUALITY_TASKS.md` on 2026-09-20; do not restore that diagnosis without a settled
-  interior change. A new skin still needs its own donor render, held behind the outgoing frame.
+- **A hosted window never shows a transitional state — not during a drag, not across a skin switch
+  (2026-09-23).** Reported as *resizing any `.wmz`-framed window goes skin → palette chrome → skin,
+  and after a skin change a resize can leave windows wearing the previous skin*. Four causes, all
+  confirmed by `WMP_FRAME_TRACE` before the fix, and one answer each:
+  - **Every drag pixel started its own full donor render, all at once.** ~30 concurrent builds on
+    `ALXVortex`, each 2–4.7 s instead of 0.3–1.3 s alone, finishing out of order, each posting
+    `hostedSurfaceStyleDidChange`. **The drag is now a signal**: `HostedWindowBorderLayout` tells the
+    provider when a hosted window starts and stops being dragged (`hostedSurfaceLiveResize`, a
+    `.wmp`-only family switch), and while one is, a miss queues **one build at a time**, the latest
+    size waiting behind the one in flight. The end of the drag `demand`s the size it came to rest
+    at, and the prewarm is skipped mid-drag (it would name the drag's passing size).
+    **NullPlayer's windows are `ResizableWindow`s, which resize by hand and never enter AppKit's
+    live resize** — `willStartLiveResizeNotification` is never posted for them. `ResizableWindow`
+    posts `.windowEdgeResizeDidBegin`/`DidEnd` itself; the layout listens to both families.
+  - **The stand-in was one stretched global slot, refused past 15%** — and a drag crosses 15% in
+    a few pixels, so the window drew palette chrome until a build landed: the flicker. **The
+    stand-in is now the nearest render of the current skin, re-laid out** (`WMPHostedFrameRelayout`):
+    each axis is cut once per half, inside the longest run of columns (rows) that match their
+    neighbour across the border bands — where the skin stretches or spans an edge piece — and
+    grown by repeating a column there or shrunk by removing columns there. Everything else is
+    copied 1:1, so the border keeps its thickness, corners and edge-anchored details stay put, and
+    a centred ornament stays centred. **Not cut at the client-hole insets**: these corners are
+    decorative and run far past the border (190pt on `Halo 2`), and a slice at the insets
+    stretches half of each corner. No tolerance applies, because nothing distorts. The measuring
+    seam (`renderedArtwork`) never sees a relaid frame.
+  - **The old skin's frames (W248's `outgoing`) were never retired.** Borders differ between skins,
+    so windows land points off their old size and the entry stayed for the session, checked
+    *before* anything else within 15% — any later miss near an old size drew the previous skin.
+    `outgoing` is **gone**, replaced by the staged switch below.
+  - **A drag evicted the resting windows' frames** (`cacheLimit = 12`). Drag sizes are now
+    `transient`: evicted first, and dropped when the drag ends except the final one.
+
+  **The staged switch.** `configure` no longer retires the old skin the moment the new one
+  arrives. When a hosted window is on screen (`hasVisibleHostedWindows` — held windows at alpha 0
+  do not count, so a launch is not delayed), the new skin is built in a `staged` slot: insets first,
+  then — serially — the size every open hosted window will be under the new border
+  (`HostedWindowBorderLayout.openTargets(border:)`), while the live slot keeps answering with the old
+  skin's exact frames. **The player joins it**: `WMPMainWindowController` awaits
+  `hostedFrames.stage(skin:playerViewID:)` after rendering the player's scene and before
+  materializing it, so the old player stays up too, and the `configure` from that same present
+  **commits** — slot swap, new `donorInsets`, one `hostedSurfaceStyleDidChange`, whose `apply()`
+  resizes every window to exactly the size that was pre-rendered. A present that was not staged
+  (a view switch) stages in the background and commits itself. A skin lending no frame commits
+  at once. Budget: `WMP_HOSTED_HOLD_MS` (default 4000), then `commit reason=budget`, which is the
+  switch failing. Each slot is an object a build captures, so a render landing after its skin is
+  gone is dropped by identity — no generation counter.
+  **`hostedSurfaceBordersAreSettled` reads true during a switch while the live skin still lends a
+  frame**, because what is on screen is that skin with its own border; a drag during staging is
+  read against it (or the next `apply()` would put the window back), and its end size is added to
+  the staged targets.
+
+  Measured on `ALXVortex`, library dragged 180pt, screen captured every ~55 ms: before, **1004**
+  `standin=out-of-scale` (chrome) and 749 stretched frames from ~30 concurrent builds; after,
+  **0 / 0**, every miss `standin=relaid`, **2** serial builds. AlienMorph → ALXVortex then a drag:
+  **451** `standin=outgoing` before, 0 after. The switch itself with library, Cava and Spectrum
+  open: `commit reason=ready ms=1953`, and every window — player included — changes in the **same
+  capture**. `WMP_FRAME_LIVE_RESIZE=0` restores the flicker in the same binary (1032 chrome, 900
+  stretched, 24 builds). **Residual, unmeasured across the corpus:** a half with no uniform run
+  (a tiled or noisy edge) is cut at its middle, and the exact render replacing the relaid one can
+  shift detail there. `ALXVortex`'s relaid mid-drag frame matched its exact render by eye; if a
+  skin shows a snap when a drag ends, compare a `WMP_HOSTED_FRAME_DUMP` of the rest size against a
+  capture taken mid-drag at that size.
 - **The stand-in is primed before any window opens, so a first open is never unskinned (W230).**
   Learning a ring donor's borders *is* composing a ring — `WMPHostedFrameTemplate.border` does it at
   the reference size when the skin loads — and the composition used to be discarded, so the first
@@ -227,7 +271,7 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   render at its own size landed. It is now adopted as `mostRecent`, never into `cache`: a cache hit
   promises the frame was built for the size asked for, and this one was built for the donor's.
   **Rings only** — a panel's borders are four constants of its own bitmap, read without composing
-  anything, and a stretched nine-patch is what the 15% guard exists to refuse. The current static frame probe does not exercise live
+  anything. The primed ring is now re-laid out to a window rather than stretched onto it. The current static frame probe does not exercise live
   child composition or animation; verify those through live-host captures.
 
 **Every rule above is a rule each hosting view has to apply for itself, and that is the standing
@@ -328,7 +372,7 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   A panel too small to carry its borders at 1:1 is answered nil and keeps palette chrome until
   growth lands. Exact panels preserve their sliced borders; rings can scale below the donor floor
   or when mapping their cropped extent onto the target. Pending renders may return provisional
-  scaled artwork, including panels within the provider's 15% per-axis guard. `wasScaledToFit`
+  artwork, re-laid out from the nearest render rather than scaled. `wasScaledToFit`
   records extent-to-target scaling or provisional scaling, not exclusively a below-floor case.
   Three answers preceded it and each was reported wrong:
   composing at the borders' own size (a five-point hole), refusing the window (the border came off

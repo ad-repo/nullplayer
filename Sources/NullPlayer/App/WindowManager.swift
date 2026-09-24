@@ -1150,6 +1150,45 @@ class WindowManager {
         }
     }
 
+    /// **A hosted window started or stopped being dragged to a new size (the 2026-09-23 drag fix).**
+    ///
+    /// While a drag is on, the `.wmz` provider builds one frame at a time rather than one per pixel,
+    /// keeps the drag's sizes out of the way of the windows at rest, and draws the nearest render
+    /// re-laid out; the end of the drag builds the size the window came to rest at. Every other
+    /// family lends no frame, so there is nothing to coalesce.
+    func hostedSurfaceLiveResize(began: Bool, size: CGSize) {
+        switch uiMode.controllerFamily {
+        case .classic, .nullPlayerModern, .winampModern: return
+        case .wmp:
+            guard let controller = mainWindowController as? WMPMainWindowController else { return }
+            MainActor.assumeIsolated {
+                if began {
+                    controller.hostedFrames.beginLiveResize()
+                } else {
+                    controller.hostedFrames.endLiveResize(at: size)
+                }
+            }
+        }
+    }
+
+    /// The size every open hosted window would be under a border of `insets` — what a `.wmz` skin
+    /// switch pre-renders before it commits, so each window draws its exact frame the moment it is
+    /// resized to the new border. Only the `.wmz` provider asks.
+    func hostedWindowTargets(for insets: NSEdgeInsets) -> [CGSize] {
+        MainActor.assumeIsolated {
+            hostedBorderLayout?.openTargets(border: SkinnedSurfaceChrome.Metrics(insets: insets)) ?? []
+        }
+    }
+
+    /// Whether any hosted window is on screen and seen — not held transparent while it waits for
+    /// its frame (W250). A skin switch with none of these has nothing to keep consistent.
+    var hasVisibleHostedWindows: Bool {
+        hostedBorderWindows.contains { entry in
+            guard let window = entry.window else { return false }
+            return window.isVisible && window.alphaValue > 0 && !window.isMiniaturized
+        }
+    }
+
     /// **Whether a hosted window's frame can be read back as interior + border right now (W238).**
     ///
     /// `hostedSurfaceBorderInsets` answers nil for two different situations and only one of them is
@@ -1174,7 +1213,13 @@ class WindowManager {
                 // nothing gives, and the one that let a restored hosted window come up at launch
                 // wearing palette chrome. Nothing measured against a border that is about to
                 // arrive is worth keeping, which is what this predicate has always meant.
-                guard !controller.isResolvingHostedFrames else { return false }
+                //
+                // **Unless the skin on screen still lends a frame.** A `.wmz` switch is staged: the
+                // old skin keeps answering, with its own border, until every window flips in one
+                // turn, so a window resized meanwhile is read against the border it is wearing — and
+                // must be, or a drag during the switch is put straight back by the next pass.
+                guard !controller.isResolvingHostedFrames || controller.hostedFrames.lendsFrame
+                else { return false }
                 return !controller.hostedFrames.lendsFrame || controller.hostedFrames.donorInsets != nil
             }
         }

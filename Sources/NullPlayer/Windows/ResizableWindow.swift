@@ -1,5 +1,14 @@
 import AppKit
 
+extension Notification.Name {
+    /// Posted by a `ResizableWindow` (the object) when the user starts dragging one of its edges, and
+    /// `windowEdgeResizeDidEnd` when they let go. The resize is done by hand with `setFrame`, which
+    /// never enters AppKit's live resize, so `willStartLiveResizeNotification` is never posted for
+    /// these windows — a hosted `.wmz` frame needs to know a drag is on (`HostedWindowBorderLayout`).
+    static let windowEdgeResizeDidBegin = Notification.Name("windowEdgeResizeDidBegin")
+    static let windowEdgeResizeDidEnd = Notification.Name("windowEdgeResizeDidEnd")
+}
+
 /// A borderless window that can become key/main and supports manual edge resizing
 class ResizableWindow: NSWindow {
     
@@ -189,6 +198,7 @@ class ResizableWindow: NSWindow {
             resizeEdges = edges
             initialMouseLocation = NSEvent.mouseLocation
             initialFrame = frame
+            NotificationCenter.default.post(name: .windowEdgeResizeDidBegin, object: self)
             return true
         }
         
@@ -202,6 +212,7 @@ class ResizableWindow: NSWindow {
     private func handleResizeMouseUp(_ event: NSEvent) {
         isResizing = false
         resizeEdges = .none
+        NotificationCenter.default.post(name: .windowEdgeResizeDidEnd, object: self)
         
         // Update cursor based on current position
         let windowPoint = event.locationInWindow
@@ -306,6 +317,8 @@ class ResizableWindow: NSWindow {
         newFrame.origin.y += heightDiff
         newFrame.size = targetSize
         
+        NotificationCenter.default.post(name: .windowEdgeResizeDidBegin, object: self)
         setFrame(newFrame, display: true, animate: true)
+        NotificationCenter.default.post(name: .windowEdgeResizeDidEnd, object: self)
     }
 }
