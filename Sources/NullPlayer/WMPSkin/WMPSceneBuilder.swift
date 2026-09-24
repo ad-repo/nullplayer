@@ -1446,7 +1446,11 @@ struct WMPSceneBuilder: @unchecked Sendable {
             let foregroundNames: [String]
             switch visualState {
             case .disabled: foregroundNames = ["disabledImage", "image"]
-            case .down: foregroundNames = ["downImage", "image"]
+            case .down:
+                // A toggle left on, with the pointer on it (W132) — see `isHoverDown`. Every
+                // corpus node authoring `hoverDownImage` also authors `downImage`.
+                foregroundNames = node.kind != .buttonGroup && interactionState.isHoverDown(node.stableID)
+                    ? ["hoverDownImage", "downImage", "image"] : ["downImage", "image"]
             case .hover: foregroundNames = ["hoverImage", "image"]
             case .normal: foregroundNames = ["image"]
             }
@@ -1536,6 +1540,17 @@ struct WMPSceneBuilder: @unchecked Sendable {
                             mappingMask: WMPSceneMappingMask(mapping: mapping,
                                 nodeIDs: activeIDs.isEmpty ? everyChild : activeIDs,
                                 resourcePath: mappingPath),
+                            clippingPath: clippingPath, hueShift: hueShift))
+                    }
+                    // A latched child the pointer is on takes `hoverDownImage` over the down
+                    // sheet, cut to that child alone (W132); the other down children keep it.
+                    if visualState == .down, let hovered = interactionState.hoveredNode,
+                       activeIDs.contains(hovered), interactionState.isHoverDown(hovered),
+                       let (_, hoverDownPath) = try resource(node, names: ["hoverDownImage"]) {
+                        emit(imageCommand(node: node, path: hoverDownPath, frame: frame,
+                            clip: inheritedClip, z: z, background: false, alpha: alpha,
+                            mappingMask: WMPSceneMappingMask(mapping: mapping, nodeIDs: [hovered],
+                                                             resourcePath: mappingPath),
                             clippingPath: clippingPath, hueShift: hueShift))
                     }
                 } else if let (_, path) = try resource(node, names: foregroundNames) {

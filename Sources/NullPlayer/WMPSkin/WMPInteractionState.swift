@@ -65,6 +65,14 @@ struct WMPInteractionState: Equatable {
         return .normal
     }
 
+    /// A latched-down node with the pointer on it and not being pressed — the one state that takes
+    /// `hoverDownImage` (W132). A press keeps `downImage`: 21 of the 62 corpus skins authoring it
+    /// (`Windows XP`, `Roundlet`, `NVIDIA`…) name their hover sheet there, so a press drawn through
+    /// it would never show down.
+    func isHoverDown(_ node: Int) -> Bool {
+        stickyDownNodes.contains(node) && hoveredNode == node && pressedNode != node
+    }
+
     private mutating func transition(_ keyPath: WritableKeyPath<Self, Int?>, to value: Int?) -> Set<Int> {
         let old = self[keyPath: keyPath]
         guard old != value else { return [] }

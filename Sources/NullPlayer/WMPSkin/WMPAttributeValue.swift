@@ -31,7 +31,7 @@ struct WMPAttribute: Hashable {
 
 enum WMPAttributeParser {
     private static let resourceNames: Set<String> = [
-        "image", "hoverimage", "downimage", "disabledimage", "mappingimage",
+        "image", "hoverimage", "downimage", "hoverdownimage", "disabledimage", "mappingimage",
         "background", "backgroundimage", "foregroundimage", "cursor", "thumbnail",
         "thumbimage", "thumbhoverimage", "thumbdownimage", "thumbdisabledimage",
         "positionimage", "resizebackgroundimage", "clippingimage"

@@ -3026,17 +3026,18 @@ Three rules come out of W218, and the first is the one worth carrying to unrelat
 
 ## Drawing the skin's own controls
 
-- **`hoverDownImage` is never selected, and the fix is not just a name (W132).** `button-element`:
-  "the image displayed when the **BUTTON** is in the down state and the user hovers over it with the
-  mouse pointer." `WMPSceneBuilder.swift:490-493` resolves `.down` to `["downImage", "image"]` and
-  never consults it. **126 nodes across 62 skins** (`BUTTON` 86, `BUTTONGROUP` 38, `MUTEBUTTON` 2),
-  and **every one also authors `downImage`** — checked, zero exceptions — so the fallback is the
-  correct down artwork missing only its hover lighting. **Deliberately ranked low, and kept rather
-  than dropped** because the sticky case is the one a user looks at for seconds at a time:
-  repeat/shuffle/mute left toggled on. `WMPInteractionState.swift:63` collapses a pressed node and a
-  sticky-down node into the same `.down`, so **this needs a distinct hover-down face in the state
-  machine before the attribute has anywhere to go**, and it needs the live loop for the same reason
-  W131 did.
+- **`hoverDownImage` is the face of a control *latched* down with the pointer on it, never of a
+  press (W132).** `button-element`: "the image displayed when the **BUTTON** is in the down state and
+  the user hovers over it". It is drawn only when `WMPInteractionState.isHoverDown` holds — the node
+  is in `stickyDownNodes`, hovered, and not pressed; a press keeps `downImage`. **The corpus settles
+  the press case**: 21 of the 62 skins authoring it name their `hoverImage` file as
+  `hoverDownImage` (`Windows XP`, `Roundlet`, `NVIDIA`, `circle`, the Xbox family…), so a press
+  drawn through it would never look pressed. In a `BUTTONGROUP` the down sheet still covers every
+  latched child and `hoverDownImage` is laid over it, masked to the hovered child alone; a missing
+  file falls back to `downImage` (`Ice`, `claw`). **It needed a parser change as well as a state**:
+  the attribute was absent from `WMPAttributeParser.resourceNames`, so its value parsed as a literal
+  and no lookup could ever find it — a new image attribute is invisible until it is listed there.
+  Verified live on `NVIDIA`'s shuffle group; `WMPHoverDownImageTests`.
 - **Hosted `PLAYLIST` chrome attributes are unread, and verification halves the row (W133).**
   `playlist-element` defines 37 attributes; the engine reads background/foreground/itemPlaying
   colours via `WMPSurfacePalette` and nothing else. **Most of the corpus authors values that *agree*
