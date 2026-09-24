@@ -523,6 +523,22 @@ final class WMPAlignmentTests: XCTestCase {
         XCTAssertNil(lid.frame.intersection(lidClip), "the eyelid stays parked out of sight")
     }
 
+    /// The `Xbox` family's `screen_buttons_back.png`: a top-level artwork-sized subview with no key
+    /// is a patch, not a window body, and the visualization arrows it parks 9px past its bottom
+    /// edge stay clipped until the script slides them up.
+    func testAnUnkeyedTopLevelArtworkSizedSubviewClipsItsChildren() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="100">
+            <SUBVIEW id="panel" left="20" top="50" backgroundImage="panel.png">
+                <BUTTON id="visPrev" left="5" top="10" image="arrow.png"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """, resources: ["panel.png": try sheet(60, 15), "arrow.png": try sheet(10, 13)])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let arrow = try XCTUnwrap(scene.commands.first { $0.nodeID == "visPrev" })
+        XCTAssertEqual(arrow.clipRect, WMPRect(x: 20, y: 50, width: 60, height: 15))
+    }
+
     /// `Melvin`'s belly: a plain `backgroundColor` container with an `<effects zIndex="-2">` in
     /// it. The fill is the ground under the visualizer, so it must land below the split.
     func testAPlainColourContainerGroundsItsNegativeZIndexChildren() async throws {

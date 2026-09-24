@@ -262,8 +262,7 @@ struct WMPRenderer: @unchecked Sendable {
             // A shape is the skin's own statement about where its window is; without one the
             // backdrop is simply the rect, which is what WMP paints behind a visualization.
             if let shape = ground.shape {
-                guard let mask = try? imageStore.regionMask(for: shape.resourcePath,
-                                                            keyedOut: shape.keyedOut)
+                guard let mask = try? imageStore.regionMask(for: shape)
                 else { context.restoreGState(); continue }
                 clip(to: shape.frame, mask: mask, context: context)
             }
@@ -295,8 +294,7 @@ struct WMPRenderer: @unchecked Sendable {
             // way. A `<BUTTONGROUP>`'s own `clippingImage` is unchanged and still honours alpha —
             // that is an authored mask bitmap, not a container's ground.
             for shape in command.inheritedClipMasks {
-                let mask = try imageStore.regionMask(for: shape.resourcePath,
-                                                     keyedOut: shape.keyedOut)
+                let mask = try imageStore.regionMask(for: shape)
                 if !shape.boundedByFrame, let (padded, extent) = Self.pad(mask, frame: shape.frame,
                                                                           toCover: command.frame) {
                     clip(to: extent, mask: padded, context: context)

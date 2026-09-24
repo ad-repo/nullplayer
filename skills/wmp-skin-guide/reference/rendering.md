@@ -646,7 +646,14 @@ counter-evidence table in `reference/skins/README.md`.
   and resize buttons laid out for a wider window that sat wholly off the canvas, which used to keep
   a hit only because a parent missing the canvas handed down no clip at all.
   `WMPAlignmentTests.testOnlyATopLevelArtworkSizedSubviewLetsItsChildrenPastItsBitmap` pins both
-  halves. Reproduce Ursula's opened state headlessly by authoring `playlist_drawer` at `top="212"`
+  halves. **And only a keyed one — a window body, not a patch (W278).** `Ursula`, `Creed` and
+  `Asimov_Radio` each declare a `clippingColor` or `transparencyColor` on that subview; the `Xbox`
+  family's `screen_buttons_back.png` declares neither, and parks its visualization arrows 9px past
+  its bottom edge precisely so they are hidden until the visualizer is on. Unclipped they drew as two
+  black boxes along the bottom of the screen — the "now drawn and reachable" line above was that
+  defect, read as a gain. Sweep: `XBOX` and `Official_Xbox_XP` 257 px each, sub-pixel edges on six
+  `videoView`s, and a `QuantumRedshift` close button laid out wholly off its canvas gets its hit back.
+  `testAnUnkeyedTopLevelArtworkSizedSubviewClipsItsChildren` pins it. Reproduce Ursula's opened state headlessly by authoring `playlist_drawer` at `top="212"`
   and `plsub` visible in a copy of the archive — `WMP_RENDER_CLICK` reports the move but dumps the
   pre-click frame. Accepted live 2026-09-23.
 - **A container that paints only a `backgroundColor` grounds all its children, negative `zIndex`
@@ -1106,8 +1113,13 @@ counter-evidence table in `reference/skins/README.md`.
   subview routinely carries both with *different* values (`Alpine7618_v09` keys `#FF00FF` and
   `#FF0033`). 103 of the 180 archives author clipping attributes, so an engine honouring one key per
   image paints the other as a flat slab over most of the window. `WMPSceneImage.colorKeys` is
-  therefore a list, in authored order, and the image-store cache key contains all of it. PNG, GIF
-  and BMP color keys compare exact un-premultiplied RGB; JPEG keys allow the bounded 64-value
+  therefore a list, in authored order, and the image-store cache key contains all of it. PNG and
+  GIF color keys compare exact un-premultiplied RGB; **BMP keys compare at RGB555, 5 bits per
+  channel** (W277), because the corpus's bitmaps were saved off 16-bit Windows displays and hold the
+  key as that display stored it: `YIL!OMA2K` declares `#6699FF` and its `ySpeakers 1.bmp` and
+  `jButtonsFlat.bmp` hold `#639CFF`, so an exact compare drew both speakers as blue slabs. Sweep
+  (179 archives): 21 images, every changed pixel a matte leaving — `Crystalball` lost four black
+  corner patches, `Asimov_Radio` a dark-gold ring round its outline, the rest edge speckle. JPEG keys allow the bounded 64-value
   compression fringe per channel because lossy decoding turns authored `#FF00FF` into a
   blue-channel ramp (W125, Plus! Professional). Preserve the source alpha of every non-matching
   pixel.
@@ -1556,6 +1568,19 @@ counter-evidence table in `reference/skins/README.md`.
     `#33CC66` with `backgroundTiled="true"`, and its `clippingColor="#33CC66"` says *my ground is
     invisible*, not *my window is empty* — reading the tile as a shape erased the whole skin, all
     143,248 px of it, and it was the only total loss this rule produced anywhere in the corpus.
+- **A view with no shape of its own is shaped by its body, and the body's outer matte cuts every
+  sibling (W279).** `WMPSceneBuilder.bodySilhouette`: when a `<VIEW>` states no `clippingColor`,
+  `clippingImage` or background, its single lowest subview — at 0,0, sized by its artwork alone to
+  the whole canvas, untiled, keyed by `transparencyColor` — is the window, and the view pushes that
+  shape over everything it holds. A WMP window is a region, so a control drawn over the matte is
+  outside the window: `xXx_night_vision_redx`'s open, info and EQ buttons carry a flat `#ADCC31`
+  field outside the ring, **every pixel of it over `main_bg.png`'s `#FF00FF`**, and they drew as
+  green boxes on the window's edge. **Only the matte connected to the bitmap's edge is cut**
+  (`WMPSceneClipMask.exteriorOnly`, a flood from the border): `transparencyColor` alone does not say
+  hole from matte — `Plus! BubbleSkin`'s reason — and a keyed hole inside a body is where it shows
+  its visualizer. Sweep (179 archives): `xXx_night_vision_redx` 3,278 px and `Erektorset` 13 px — a
+  slider end-cap's outline hanging 1-2 px past its body, which the same region rule predicts.
+  `WMPClippingShapeTests.testAWindowBodysMatteClipsItsSiblingsButNotItsInteriorHole` pins it.
 - **A mask buffer's row zero is the authored top row.** A `CGImage` drawn into a bitmap context
   arrives that way round — `WMPMappingImage` says so in as many words — so "correcting for
   CoreGraphics" by reversing the rows mirrors the mask and clips the half it should keep. That is

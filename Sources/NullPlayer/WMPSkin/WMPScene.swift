@@ -348,6 +348,11 @@ struct WMPSceneClipMask: Hashable, Codable {
     /// 388x224 `mainbg.bmp` subview and slides it to `top="212"` in a 320-high view, so ending the
     /// region at the bitmap cut the opened drawer off at its first 12 rows.
     var boundedByFrame = true
+    /// Whether only the keyed pixels reachable from the bitmap's edge are cut away. A window body
+    /// keyed by `transparencyColor` alone has not said which of its keyed pixels are the matte
+    /// round the window and which are a hole inside it; the ones connected to the edge are the
+    /// matte. See `WMPSceneBuilder.bodySilhouette`.
+    var exteriorOnly = false
 }
 
 struct WMPPaintCommand: Hashable, Codable {

@@ -28,9 +28,15 @@ enum WMPColorKey {
     /// component window clears the whole matte without reaching normal artwork.
     static let jpegComponentTolerance: UInt8 = 64
 
+    /// A BMP key matches at the 5 bits per channel of a 16-bit (RGB555) Windows display, which
+    /// is what these skins were authored and keyed on. `YIL!OMA2K` declares `#6699FF` and its
+    /// `ySpeakers 1.bmp` and `jButtonsFlat.bmp` hold `#639CFF` — exactly `#6699FF` through
+    /// RGB555 — so an exact compare drew both speakers as solid blue slabs.
+    static let highColorShift = 3
+
     /// Replaces only pixels whose un-premultiplied RGB matches the key. JPEG has no lossless RGB
     /// representation, so a JPEG colour key permits the bounded compression fringe around its key;
-    /// other formats stay exact. Non-matching pixels keep their original alpha, including partial
+    /// a BMP key matches at `highColorShift`; PNG and GIF stay exact. Non-matching pixels keep their original alpha, including partial
     /// alpha from PNG/GIF sources.
     static func applying(_ key: WMPColor, to image: CGImage) throws -> CGImage {
         try applying([key], to: image)
@@ -40,7 +46,8 @@ enum WMPColorKey {
     /// own artwork while `transparencyColor` keys the drawing inside it, and the two are different
     /// colours in most of the corpus. Every declared key clears in one pass.
     static func applying(_ keys: [WMPColor], to image: CGImage,
-                         componentTolerance: UInt8 = 0) throws -> CGImage {
+                         componentTolerance: UInt8 = 0,
+                         matchesAtHighColor: Bool = false) throws -> CGImage {
         guard !keys.isEmpty else { return image }
         let width = image.width, height = image.height
         let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -66,7 +73,11 @@ enum WMPColorKey {
             let green = unpremultiply(bytes[offset + 1], alpha: alpha)
             let blue = unpremultiply(bytes[offset + 2], alpha: alpha)
             if keys.contains(where: { key in
-                abs(Int(key.red) - Int(red)) <= Int(componentTolerance)
+                matchesAtHighColor
+                    ? key.red >> highColorShift == red >> highColorShift
+                        && key.green >> highColorShift == green >> highColorShift
+                        && key.blue >> highColorShift == blue >> highColorShift
+                    : abs(Int(key.red) - Int(red)) <= Int(componentTolerance)
                     && abs(Int(key.green) - Int(green)) <= Int(componentTolerance)
                     && abs(Int(key.blue) - Int(blue)) <= Int(componentTolerance)
             }) {

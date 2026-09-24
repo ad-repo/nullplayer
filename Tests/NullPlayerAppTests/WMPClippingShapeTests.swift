@@ -444,6 +444,68 @@ final class WMPClippingShapeTests: XCTestCase {
         XCTAssertFalse(try store.isShapeMask(for: "picture.png"))
     }
 
+    // MARK: - A window body's silhouette
+
+    /// `xXx_night_vision_redx`: a view with no shape of its own takes one from its lowest subview,
+    /// a whole-canvas body keyed by `transparencyColor`, and the matte round the outside is cut
+    /// from every sibling too — the open button's flat green field sits over the body's magenta.
+    /// A keyed hole *inside* the body is not outside the window and stays open.
+    func testAWindowBodysMatteClipsItsSiblingsButNotItsInteriorHole() async throws {
+        let magenta: [UInt8] = [255, 0, 255, 255]
+        var rgba: [UInt8] = []
+        for row in 0..<8 {
+            for column in 0..<8 {
+                let matte = row == 0 || row == 7 || column == 0 || column == 7
+                let hole = (3...4).contains(row) && (3...4).contains(column)
+                rgba += matte || hole ? magenta : [40, 40, 40, 255]
+            }
+        }
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="8" height="8" backgroundColor="none">
+            <SUBVIEW id="body" zIndex="1" left="0" top="0" backgroundImage="body.png"
+                     transparencyColor="#ff00ff"/>
+            <SUBVIEW id="buttons" zIndex="6" left="0" top="0" width="8" height="8"
+                     transparencyColor="#ff00ff">
+                <BUTTON id="open" left="0" top="0" width="8" height="8" image="slab.png"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """, images: ["body.png": try WMPSkinTestSupport.encodedImage(width: 8, height: 8, rgba: rgba),
+                      "slab.png": try flat([173, 204, 49, 255])])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        XCTAssertEqual(try XCTUnwrap(scene.commands.first { $0.nodeID == "open" })
+                        .inheritedClipMasks.map(\.exteriorOnly), [true])
+
+        let rendered = try await renderer(for: skin).render(scene: scene).image
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered, x: 0, yFromTop: 0)[3], 0,
+                       "the green field over the matte is outside the window")
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered, x: 1, yFromTop: 1),
+                       [173, 204, 49, 255], "inside the silhouette the button draws")
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered, x: 3, yFromTop: 3),
+                       [173, 204, 49, 255], "an interior keyed hole is not cut from the siblings")
+    }
+
+    // MARK: - Keys at 16-bit colour
+
+    /// `YIL!OMA2K` declares `#6699FF` and its speaker bitmaps hold `#639CFF`, which is `#6699FF`
+    /// through RGB555. A BMP key matches at 5 bits per channel; a PNG key stays exact.
+    func testABitmapKeyMatchesAtHighColourAndAPNGKeyStaysExact() throws {
+        let stored: [UInt8] = [99, 156, 255, 255]
+        let neighbour: [UInt8] = [96, 160, 255, 255]
+        let rgba = [stored, neighbour].flatMap { $0 }
+        let store = WMPImageStore(provider: WMPMemoryResourceProvider([
+            "speaker.bmp": try WMPSkinTestSupport.encodedImage(width: 2, height: 1, rgba: rgba, type: .bmp),
+            "speaker.png": try WMPSkinTestSupport.encodedImage(width: 2, height: 1, rgba: rgba),
+        ]))
+        let key = [WMPColor(red: 0x66, green: 0x99, blue: 0xFF)]
+
+        let bitmap = try store.image(for: "speaker.bmp", colorKeys: key).image
+        XCTAssertEqual(WMPSkinTestSupport.rgba(bitmap, x: 0, yFromTop: 0)[3], 0)
+        XCTAssertEqual(WMPSkinTestSupport.rgba(bitmap, x: 1, yFromTop: 0)[3], 255,
+                       "one RGB555 step away is artwork, not the key")
+        let png = try store.image(for: "speaker.png", colorKeys: key).image
+        XCTAssertEqual(WMPSkinTestSupport.rgba(png, x: 0, yFromTop: 0)[3], 255)
+    }
+
     /// `cornerColor` is nil for a bitmap whose corner is already transparent: a file that authored
     /// its own alpha has said what is see-through and there is no matte colour to infer.
     func testCornerColourIsNilForAnAlreadyTransparentCorner() throws {

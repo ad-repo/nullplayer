@@ -251,9 +251,9 @@ struct WMPSceneBuilder: @unchecked Sendable {
         var keepPlanes: [String: WMPAlphaPlane?] = [:]
         func keepPlane(for shape: WMPSceneClipMask) -> WMPAlphaPlane? {
             let key = "\(shape.resourcePath)|\(shape.keyedOut.map(\.description).joined(separator: ","))"
+                + (shape.exteriorOnly ? "|exterior" : "")
             if let cached = keepPlanes[key] { return cached }
-            let plane = (try? imageStore.regionMask(for: shape.resourcePath,
-                                                    keyedOut: shape.keyedOut))
+            let plane = (try? imageStore.regionMask(for: shape))
                 .flatMap { WMPAlphaPlane(keepMask: $0) }
             keepPlanes[key] = plane
             return plane
@@ -712,6 +712,45 @@ struct WMPSceneBuilder: @unchecked Sendable {
         /// a bitmap standing in for a frame it does not cover is not that frame (`Gorillaz`).
         /// `isShapeMask` is deliberately *not* required — this artwork is a picture with keys cut
         /// out of it, which is exactly the population that guard excludes.
+        /// The window silhouette a `<VIEW>` takes from its body when it states none of its own:
+        /// the lowest subview, sized by its artwork alone to the whole canvas and keyed by
+        /// `transparencyColor`, with the keyed matte round the outside cut from **everything** in
+        /// the view — not only from the body's own artwork.
+        ///
+        /// A WMP window is a region, and a control drawn over the region's matte is outside the
+        /// window. `xXx_night_vision_redx` is authored against that: its open, info and EQ buttons
+        /// carry a flat `#ADCC31` field outside the ring, every pixel of it over `main_bg.png`'s
+        /// `#FF00FF`, and drawn unclipped they were green boxes on the window's edge. Only the matte
+        /// connected to the bitmap's edge is cut (`exteriorOnly`): a keyed hole inside the body is
+        /// where it shows its visualizer, and `transparencyColor` alone does not say which is which.
+        func bodySilhouette(_ node: WMPNode, frame: WMPRect) throws -> WMPSceneClipMask? {
+            guard node.kind == .view, !frame.isEmpty,
+                  node.statedAttribute(named: "clippingColor") == nil,
+                  node.statedAttribute(named: "clippingImage") == nil,
+                  try resource(node, names: ["backgroundImage", "background"]) == nil else { return nil }
+            let subviews = node.children.filter { $0.kind == .subview }
+            guard let lowest = subviews.map({ zIndex(of: $0) }).min() else { return nil }
+            let bodies = subviews.filter { zIndex(of: $0) == lowest }
+            guard bodies.count == 1, let body = bodies.first,
+                  literalString(body, "left").map({ Double($0) == 0 }) ?? true,
+                  literalString(body, "top").map({ Double($0) == 0 }) ?? true,
+                  body.statedAttribute(named: "width") == nil,
+                  body.statedAttribute(named: "height") == nil,
+                  body.statedAttribute(named: "clippingColor") == nil,
+                  body.statedAttribute(named: "clippingImage") == nil,
+                  literalString(body, "backgroundTiled")?.caseInsensitiveCompare("true") != .orderedSame
+            else { return nil }
+            let keys = colors(body, names: ["transparencyColor"])
+            guard !keys.isEmpty,
+                  let path = try resource(body, names: ["backgroundImage", "background"])?.1,
+                  let decoded = try? imageStore.image(for: path),
+                  CGFloat(decoded.image.width) == frame.width,
+                  CGFloat(decoded.image.height) == frame.height else { return nil }
+            var mask = WMPSceneClipMask(resourcePath: path, keyedOut: keys, frame: frame)
+            mask.exteriorOnly = true
+            return mask
+        }
+
         func groundShape(_ node: WMPNode, frame: WMPRect) throws -> WMPSceneClipMask? {
             guard !frame.isEmpty else { return nil }
             let clipping = colors(node, names: ["clippingColor"])
@@ -1125,7 +1164,13 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // **Only a direct child of the view.** Nested, the same shape is a clipping window:
             // `Melvin`'s `x` subview is `clip.gif` with the eyelid parked wholly above it until a
             // blink slides it down, and unclipped the eyelid sat on top of the head.
+            // **Only a keyed one — a window body, not a patch.** All three bodies declare a
+            // `clippingColor` or `transparencyColor`. The `Xbox` family's `screen_buttons_back.png`
+            // declares neither, and parks its visualization arrows 9px past its bottom edge to
+            // hide them until the visualizer is on; unclipped they drew as two black boxes.
             let sizedByArtworkAlone = node.kind == .subview && parentNode?.kind == .view
+                && (node.statedAttribute(named: "clippingColor") != nil
+                    || node.statedAttribute(named: "transparencyColor") != nil)
                 && node.statedAttribute(named: "width") == nil
                 && node.statedAttribute(named: "height") == nil
                 && authoredDimension(node, "width") == nil
@@ -1308,7 +1353,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 var mask = mask
                 mask.boundedByFrame = !sizedByArtworkAlone
                 return mask
-            }
+            } ?? bodySilhouette(node, frame: frame)
             let ownGroundShape = try groundShape(node, frame: frame)
             let behindOwnArtwork = orderedChildren.prefix { zIndex(of: $0) < 0 }
             // **A plain colour is the ground under every child, however negative its `zIndex`.**

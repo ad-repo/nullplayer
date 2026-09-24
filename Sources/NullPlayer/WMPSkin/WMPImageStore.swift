@@ -1052,6 +1052,13 @@ final class WMPImageStore: @unchecked Sendable {
         try mask(for: path, keyedOut: keyedOut, honoringSourceAlpha: false, kind: "region")
     }
 
+    /// A container shape's region, honouring `exteriorOnly`.
+    func regionMask(for shape: WMPSceneClipMask) throws -> CGImage {
+        try mask(for: shape.resourcePath, keyedOut: shape.keyedOut, honoringSourceAlpha: false,
+                 kind: shape.exteriorOnly ? "exterior" : "region",
+                 exteriorOnly: shape.exteriorOnly)
+    }
+
     /// The 8-bit region mask a `<BUTTONGROUP>` paints one of its sheets through, cached.
     ///
     /// **It is a pure function of the bitmap and the child set, and it must not be rebuilt per
@@ -1097,7 +1104,7 @@ final class WMPImageStore: @unchecked Sendable {
     }
 
     private func mask(for path: String, keyedOut: [WMPColor], honoringSourceAlpha: Bool,
-                      kind: String) throws -> CGImage {
+                      kind: String, exteriorOnly: Bool = false) throws -> CGImage {
         let canonical = provider.canonicalPath(for: path) ?? path
         let keys = keyedOut.map(\.description).joined(separator: ",")
         let key = "\(canonical)|\(kind)=\(keys)"
@@ -1113,7 +1120,8 @@ final class WMPImageStore: @unchecked Sendable {
 
         let source = try image(for: canonical).image
         let mask = try Self.makeClippingMask(from: source, keyedOut: keyedOut,
-                                             honoringSourceAlpha: honoringSourceAlpha)
+                                             honoringSourceAlpha: honoringSourceAlpha,
+                                             exteriorOnly: exteriorOnly)
         let bytes = mask.width * mask.height
         lock.lock()
         defer { lock.unlock() }
@@ -1130,8 +1138,31 @@ final class WMPImageStore: @unchecked Sendable {
         return mask
     }
 
+    /// Re-opens every cut pixel the bitmap's edge cannot reach through other cut pixels: a keyed
+    /// hole inside a window body is where the body shows what is behind it, not outside the window.
+    private static func keepInteriorHoles(_ alpha: inout [UInt8], width: Int, height: Int) {
+        var exterior = [Bool](repeating: false, count: width * height)
+        var stack: [Int] = []
+        func seed(_ index: Int) {
+            guard alpha[index] == 0, !exterior[index] else { return }
+            exterior[index] = true
+            stack.append(index)
+        }
+        for x in 0..<width { seed(x); seed((height - 1) * width + x) }
+        for y in 0..<height { seed(y * width); seed(y * width + width - 1) }
+        while let index = stack.popLast() {
+            let x = index % width, y = index / width
+            if x > 0 { seed(index - 1) }
+            if x < width - 1 { seed(index + 1) }
+            if y > 0 { seed(index - width) }
+            if y < height - 1 { seed(index + width) }
+        }
+        for index in alpha.indices where alpha[index] == 0 && !exterior[index] { alpha[index] = 255 }
+    }
+
     private static func makeClippingMask(from image: CGImage, keyedOut: [WMPColor],
-                                        honoringSourceAlpha: Bool = true) throws -> CGImage {
+                                        honoringSourceAlpha: Bool = true,
+                                        exteriorOnly: Bool = false) throws -> CGImage {
         let width = image.width, height = image.height
         guard width > 0, height > 0 else {
             throw WMPFailure(WMPDiagnostic(.renderFailed, "Clipping image has no pixels."))
@@ -1168,6 +1199,7 @@ final class WMPImageStore: @unchecked Sendable {
                 alpha[y * width + x] = keyed ? 0 : 255
             }
         }
+        if exteriorOnly { keepInteriorHoles(&alpha, width: width, height: height) }
         // A **grayscale image**, not a `CGImage` image mask: `clip(to:mask:)` reads the two
         // oppositely — an image mask paints where its samples are 0 — and 255-means-keep is the
         // convention `WMPMappingImage.maskImage` already established, so the two mask paths in this
@@ -1245,7 +1277,8 @@ final class WMPImageStore: @unchecked Sendable {
             byteCount = extent.width * extent.height * 4
         }
         image = try WMPColorKey.applying(keys(colorKeys, implicitKey: implicitKey), to: image,
-            componentTolerance: (ext == "jpg" || ext == "jpeg") ? WMPColorKey.jpegComponentTolerance : 0)
+            componentTolerance: (ext == "jpg" || ext == "jpeg") ? WMPColorKey.jpegComponentTolerance : 0,
+            matchesAtHighColor: ext == "bmp")
         return WMPDecodedImage(image: image, size: size, decodedBytes: byteCount)
     }
 
@@ -1260,7 +1293,8 @@ final class WMPImageStore: @unchecked Sendable {
         do {
             let decoded = try WMPBitmapDecoder.decode(data, limits: bounds)
             var image = decoded.image
-            image = try WMPColorKey.applying(keys(colorKeys, implicitKey: implicitKey), to: image)
+            image = try WMPColorKey.applying(keys(colorKeys, implicitKey: implicitKey), to: image,
+                matchesAtHighColor: true)
             return WMPDecodedImage(image: image,
                 size: WMPSize(width: CGFloat(decoded.width), height: CGFloat(decoded.height)),
                 decodedBytes: decoded.decodedBytes)
