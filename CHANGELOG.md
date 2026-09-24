@@ -27,6 +27,9 @@
   read the library but never change it.
   Right-click a skin's playlist for NullPlayer's own playlist menu — play, remove, crop, clear, sort,
   randomize and file info — with Shift- and Cmd-click to select several tracks at once.
+  In a skin's visualization box, **Up/Down** switch between effects and **Left/Right** step through
+  the presets or modes inside the current one, on every skin — including skins that bring their own
+  keyboard shortcuts, which keep them.
   ActiveX, registry, shell, plug-in, filesystem and network access stay unavailable, and a skin that
   asks for something NullPlayer does not implement loses only that one action, not the skin.
 - **Sonos Rooms window with per-room volume** — a new dockable **Sonos Rooms** window lists every

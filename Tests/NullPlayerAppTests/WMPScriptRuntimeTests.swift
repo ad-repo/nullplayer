@@ -1414,6 +1414,61 @@ final class WMPScriptRuntimeTests: XCTestCase {
         XCTAssertEqual(WMPVirtualKeyCode.keyDown(keyCode: 9, charactersIgnoringModifiers: "V"), 86)
     }
 
+    /// **An authored key handler owns an arrow only where it compares that arrow.** `Halloween`'s
+    /// player view is `onKeyPress="viewHotKeys();"`, which switches over letters; its resize button
+    /// is `onkeydown="viewResizer(event);"`, which switches over `37`…`40`. Before the scan the
+    /// first claimed every arrow and the `<EFFECTS>` surface never saw one — and the scan's own
+    /// first revision shipped an unbalanced pattern whose fallback answered "yes" for every skin,
+    /// so the Halloween pair is the case that has to keep both answers.
+    func testAKeyHandlerOwnsAnArrowOnlyWhereItComparesIt() {
+        let script = """
+        function viewHotKeys()
+        {
+            switch(event.keycode)
+            {
+                case 122:
+                case 90:
+                    player.controls.previous();
+                    break;
+                case 108:
+                case 76:
+                    openFile();
+                    break;
+            }
+        }
+        function openFile()
+        {
+            var media = theme.openDialog('FILE_OPEN','FILES_ALLMEDIA');
+            if(media) { player.URL = media; player.controls.play(); }
+        }
+        function viewResizer(event)
+        {
+            switch(event.keycode)
+            {
+                case 37: view.width-=20; break;
+                case 38: view.height-=20; break;
+                case 39: view.width+=20; break;
+                case 40: view.height+=20; break;
+            }
+        }
+        """
+        for arrow in 37...40 {
+            XCTAssertFalse(WMPKeyHandlerScan.handlers(["viewHotKeys();"], compare: arrow, in: [script]),
+                           "a letter hotkey handler must not claim VK \(arrow)")
+            XCTAssertTrue(WMPKeyHandlerScan.handlers(["viewResizer(event);"], compare: arrow, in: [script]),
+                          "a resize handler keeps VK \(arrow)")
+        }
+        // Inline comparisons, either way round; a longer number is not the key.
+        XCTAssertTrue(WMPKeyHandlerScan.handlers(["if (event.keyCode == 38) vol.value += 5;"],
+                                                 compare: 38, in: []))
+        XCTAssertTrue(WMPKeyHandlerScan.handlers(["if (40 == event.keyCode) vol.value -= 5;"],
+                                                 compare: 40, in: []))
+        XCTAssertFalse(WMPKeyHandlerScan.handlers(["if (event.keyCode == 380) vol.value = 0;"],
+                                                  compare: 38, in: []))
+        // A function the scan cannot find keeps the key rather than losing it.
+        XCTAssertTrue(WMPKeyHandlerScan.handlers(["notDefinedAnywhere();"], compare: 39, in: [script]))
+    }
+
     /// **`charactersIgnoringModifiers` is the key as engraved**, which is what a VK names: Option-G
     /// is `g` there rather than the `©` that `characters` reports. And a key with no honest VK
     /// answers nil rather than `0` — `0` is VK_NULL, a number `switch(event.keyCode)` can match,

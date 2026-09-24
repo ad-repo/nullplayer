@@ -1019,9 +1019,15 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         view.onKeyEvent = { [weak self, weak presentation] name, targetID, targetStableID, keyCode in
             guard let self, let presentation, let skin = self.loadedSkin else { return false }
             let names = name == "keydown" ? ["keydown", "keypress"] : [name]
-            let authored = names.contains { !Self.handlers(in: skin, event: $0, targetID: targetID,
-                                                           targetStableID: targetStableID,
-                                                           viewID: presentation.viewID).isEmpty }
+            let handlers = names.flatMap {
+                Self.handlers(in: skin, event: $0, targetID: targetID,
+                              targetStableID: targetStableID, viewID: presentation.viewID)
+            }
+            // **An arrow is the skin's only where its handler compares that arrow.** Everything
+            // else a handler is authored for stays the skin's: see `WMPKeyHandlerScan`.
+            let authored = !handlers.isEmpty && (!(37...40).contains(keyCode)
+                || WMPKeyHandlerScan.handlers(handlers, compare: keyCode,
+                                              in: [skin.definitionSource] + Array(skin.scriptSources.values)))
             #if DEBUG
             if ProcessInfo.processInfo.environment["WMP_CLICK_TRACE"] == "1" {
                 NSLog("[wmp/key] offer %@ keyCode=%d targetID=%@ stable=%@ authored=%d",
@@ -1030,10 +1036,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             }
             #endif
             guard authored else { return false }
-            let handlers = names.flatMap {
-                Self.handlers(in: skin, event: $0, targetID: targetID,
-                              targetStableID: targetStableID, viewID: presentation.viewID)
-            }
             self.dispatchScriptTransaction(presentation,
                 WMPJScriptEvent(name: name, targetID: targetID, targetStableID: targetStableID,
                                 handlers: handlers, modifiers: Self.currentEventModifiers(),

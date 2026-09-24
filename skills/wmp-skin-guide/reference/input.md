@@ -157,6 +157,18 @@ a dispatch defect — it is a control the pointer never reached at all.
   loses the first — put both handler sets in one event. And it only *creates* a task, so anything
   that must outlive the transaction (releasing a hold, clearing a gate) has to `await
   presentation.scriptTask?.value`, not simply follow the call.
+- **A key handler owns an arrow only where it compares that arrow.** `WMPMainView.keyDown` offers
+  every key to the skin before the hosted `<EFFECTS>` surface's own keys (up/down pick the effect,
+  left/right step inside it), and the offer must be answered synchronously, from the markup.
+  "A handler is authored" was that answer, and **68 of the 154 archives with an `<EFFECTS>` hang a
+  letter-hotkey handler on its view** (`onKeyPress="viewHotKeys();"`) that never compares `37`…`40`
+  — so on those skins every arrow was claimed and the visualization keys did nothing (`Halloween`,
+  2026-09-24). `WMPKeyHandlerScan` reads the handler and the bare functions it calls for a literal
+  comparison of the arrow's VK; only arrows are scanned, and every other key a handler is authored
+  for stays the skin's. The arrow handlers the corpus does write are on sliders (`volKey(event)`)
+  and on views with no `<EFFECTS>` (`viewResizer(event)`), and they keep their keys. **Live check:**
+  `WMP_CLICK_TRACE=1` prints `offer keydown keyCode=38 targetID=view … authored=0` on such a skin,
+  and a `[wmp/pref] … currenteffecttype_onchange` line follows each up/down press.
 - **`<EFFECTS>` and `<VIDEO>` are fallbacks, never blockers.** Both are click-through by design —
   `WMPEffectsSurfaceView.hitTest` returns `nil` — but 51 skins wire an `onClick` on the effects node,
   so they rank last rather than not at all. Both are routinely the largest node in their view and
