@@ -32,7 +32,7 @@ import XCTest
 /// diff against a baseline worktree is exactly 76 lines changing prefix, same view and same reason
 /// on both sides, with all 553 PNGs byte-identical. Three consecutive captures came back
 /// byte-identical with zero damaged, so the interleaving the first arm of the detector looks for is
-/// unfired here rather than disproven — see `harness.md` § *The residue is a size fallback*.
+/// unfired here rather than disproven — see `harness-history.md` § *The residue is a size fallback*.
 final class WMPDumpLineAccountingTests: XCTestCase {
 
     // MARK: The emitter

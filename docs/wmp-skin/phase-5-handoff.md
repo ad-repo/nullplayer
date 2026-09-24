@@ -2,7 +2,7 @@
 
 > **Historical handoff — availability and hosting guidance is superseded.** This records a past
 > implementation phase, not the current product contract. Native WMP-hosted windows are now
-> available; see the [current hosting contract](../../skills/wmp-skin-guide/SKILL.md#current-hosting-contract).
+> available; see the [current hosting contract](../../skills/wmp-skin-guide/reference/windows.md#current-hosting-contract).
 > Other phase claims remain unverified narrative and must be checked against current code.
 
 > **Superseded in part (2026-09-07).** The helper-process script architecture this

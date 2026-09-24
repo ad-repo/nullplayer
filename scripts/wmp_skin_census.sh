@@ -112,6 +112,16 @@ rev=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
 measured=$(date +%Y-%m-%d)
 mkdir -p "$out"
 
+# A completion marker, removed only by a run that reached `done`. A run killed together with its own
+# shell (started detached, `nohup … &`) exits no status anyone reads and leaves `corpus/`,
+# `render.txt` and `render.stderr.txt` looking exactly like a finished capture. --parse-only refuses
+# a capture that still carries it, and so should anything else that reads one.
+if [ "$parse_only" -eq 1 ] && [ -f "$out/INCOMPLETE" ]; then
+    echo "wmp_skin_census: $out is an unfinished capture (INCOMPLETE present) — re-run without --parse-only" >&2
+    exit 1
+fi
+echo "wmp_skin_census started $(date '+%F %T') — not finished" > "$out/INCOMPLETE"
+
 # Everything downstream — the sweep, the sha256 rows, the denominator — sees the farm, not the
 # installed directory, so an excluded skin cannot reach a column.
 source_corpus="$corpus"
@@ -155,7 +165,7 @@ elif [ ! -f "$out/render.txt" ]; then
     exit 1
 fi
 
-python3 - "$corpus" "$out" "$rev" "$measured" <<'PYCENSUS'
+python3 - "$corpus" "$out" "$rev" "$measured" <<'PYCENSUS' || { echo "wmp_skin_census: the census parse failed; census.tsv is not trustworthy" >&2; exit 1; }
 import hashlib, os, re, sys
 
 corpus, out, rev, measured = sys.argv[1:5]
@@ -517,4 +527,5 @@ if damaged:
     print("  Re-run each alone: --corpus <dir holding just that archive>")
 PYCENSUS
 
+rm -f "$out/INCOMPLETE"
 echo "wmp_skin_census: done — $out/census.tsv"

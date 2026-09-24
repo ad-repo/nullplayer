@@ -62,7 +62,7 @@ a frame out of register with its own contents is a wrong-looking picture.
   `hit=prevbutton#14 … command=previous`, and `view-2@145,35`, where prev should be, reported
   `MISS`. `WMP_RENDER_SETTLE` does not repair it; only an event does, and the repair rides on the
   same click that misfired. Closed by measuring a `<TEXT>` before the first layout exists; the rule
-  is in `SKILL.md` § *A `<TEXT>` is sized by its glyphs*.
+  is in `reference/bindings.md` § *A `<TEXT>` is sized by its glyphs*.
 - **`UNRESOLVED view-2/3 text id=style size=missing literal geometry (width+height)` is not a
   defect either.** `<TEXT id="style">` is a palette holder with no geometry on purpose; it is read
   through `wmpprop:` and never drawn.

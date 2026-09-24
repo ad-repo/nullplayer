@@ -88,7 +88,7 @@ struct SonosWindowChrome {
         context.restoreGState()
     }
 
-    /// The hosted-window contract (`wmp-skin-guide` § *Adding a NullPlayer-native window in WMP
+    /// The hosted-window contract (`wmp-skin-guide/reference/windows.md` § *Adding a NullPlayer-native window in WMP
     /// mode*): ground only in the hole, then the borrowed frame over it.
     private func drawWMP(_ bounds: NSRect, style: SkinnedSurfaceStyle, closePressed: Bool, context: CGContext) {
         style.background.setFill()

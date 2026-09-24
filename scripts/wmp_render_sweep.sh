@@ -8,7 +8,10 @@
 # one test-binary startup rather than fourteen.
 #
 #   scripts/wmp_render_sweep.sh capture <outdir> [--allow-dirty] [--corpus <dir>]
-#   scripts/wmp_render_sweep.sh compare <base-outdir> <curr-outdir>
+#   scripts/wmp_render_sweep.sh compare <base-outdir> <curr-outdir> [--summary]
+#
+# --summary classifies each changed image (lost / gained / size / moved / recolour / lsb, see
+# scripts/png_diff.py) and lists only the lost, gained and resized ones.
 #
 # Run `capture` before an engine-wide change and `compare` after. Every engine change from Phase 2
 # onward is expected to pass through this. See skills/wmp-skin-guide/reference/harness.md for the
@@ -34,8 +37,9 @@
 # Never capture the baseline with `git stash` — it relinks .build under the user's running app. Use
 # a worktree:
 #
-#   git worktree add ../nullplayer-base HEAD
+#   scripts/baseline_worktree.sh ../nullplayer-base HEAD
 #   (cd ../nullplayer-base && scripts/wmp_render_sweep.sh capture /tmp/wmp-sweep/base)
+#   (add --allow-dirty only when baseline_worktree.sh says the framework links dirty the tree)
 
 set -u -o pipefail
 
@@ -79,7 +83,7 @@ usage() {
     cat >&2 <<'USAGE'
 usage:
   wmp_render_sweep.sh capture <outdir> [--allow-dirty] [--corpus <dir>]
-  wmp_render_sweep.sh compare <base-outdir> <curr-outdir>
+  wmp_render_sweep.sh compare <base-outdir> <curr-outdir> [--summary]
 USAGE
     exit 2
 }
@@ -116,6 +120,10 @@ capture() {
     fi
 
     mkdir -p "$out/png"
+    # A completion marker, removed only by a capture that got to the end. A run killed with its own
+    # shell (a detached `nohup … &`) cannot report anything, and leaves a directory that looks
+    # exactly like a finished one; `compare` refuses any capture still carrying this file.
+    echo "wmp_render_sweep capture started $(date '+%F %T') — not finished" > "$out/INCOMPLETE"
     # Sweep the farm, not the installed directory: an excluded skin must not reach the captures the
     # comparison is made from. See scripts/wmp_corpus_exclusions.txt.
     archives=$(exclusion_farm "$corpus" "$out/corpus" wmp_render_sweep)
@@ -213,14 +221,24 @@ PYDAMAGED
         echo "wmp_render_sweep: skins that failed to load:" >&2
         grep '^SKIN .* FAILED ' "$out/invariants.txt" >&2
     fi
+    rm -f "$out/INCOMPLETE"
+    echo "wmp_render_sweep: done — $out"
 }
 
 compare() {
-    [ $# -eq 2 ] || usage
-    local base="$1" curr="$2"
+    local summary=0 args=()
+    for arg in "$@"; do
+        if [ "$arg" = "--summary" ]; then summary=1; else args+=("$arg"); fi
+    done
+    [ ${#args[@]} -eq 2 ] || usage
+    local base="${args[0]}" curr="${args[1]}"
     for dir in "$base" "$curr"; do
         if [ ! -f "$dir/invariants.txt" ]; then
             echo "wmp_render_sweep: no capture at $dir (missing invariants.txt)" >&2
+            exit 1
+        fi
+        if [ -f "$dir/INCOMPLETE" ]; then
+            echo "wmp_render_sweep: $dir is an unfinished capture (INCOMPLETE present) — re-capture it" >&2
             exit 1
         fi
     done
@@ -238,8 +256,13 @@ LOADMS = re.compile(r" loadms=[0-9.]+")
 # it collides with differs between two runs of one unchanged binary. Set those aside and count them.
 BANNER = "Test Case '-["
 
+# The HARNESS line names the capture's own farm directory, so it differs between every two captures
+# and measures nothing. Normalise the path away.
+HARNESS_FROM = re.compile(r"^(HARNESS .* from ).*$")
+
 def read(path):
-    return [LOADMS.sub("", line) for line in open(path, errors="replace").read().splitlines()]
+    return [HARNESS_FROM.sub(r"\1<corpus>", LOADMS.sub("", line))
+            for line in open(path, errors="replace").read().splitlines()]
 
 damaged = set(read(sys.argv[3])) if os.path.exists(sys.argv[3]) else set()
 
@@ -257,6 +280,18 @@ def usable(lines):
 base = usable(read(sys.argv[1]))
 curr = usable(read(sys.argv[2]))
 
+def owners(lines):
+    """The SKIN each line sits under, so a changed RENDER-DUMP line — which carries only a view id —
+    says which archive it belongs to without a trip back into invariants.txt."""
+    out, skin = [], ""
+    for line in lines:
+        if line.startswith("SKIN "):
+            skin = line[len("SKIN "):].strip().split(" FAILED ")[0]
+        out.append(skin)
+    return out
+
+base_owner, curr_owner = owners(base), owners(curr)
+changed_skins = set()
 real, noise = [], 0
 for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, base, curr, autojunk=False).get_opcodes():
     if tag == "equal":
@@ -265,8 +300,10 @@ for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, base, curr, autojunk=Fa
     if any(BANNER in line for line in block):
         noise += len(block)
         continue
-    real += ["- " + line for line in base[i1:i2]]
-    real += ["+ " + line for line in curr[j1:j2]]
+    for i in range(i1, i2):
+        real.append("- [%s] %s" % (base_owner[i], base[i])); changed_skins.add(base_owner[i])
+    for j in range(j1, j2):
+        real.append("+ [%s] %s" % (curr_owner[j], curr[j])); changed_skins.add(curr_owner[j])
 
 summary = "%d base lines, %d curr lines" % (len(base), len(curr))
 if noise:
@@ -276,7 +313,8 @@ if damaged:
 if not real:
     print("identical (" + summary + ")")
 else:
-    print("DIFFER — %d changed lines (%s)" % (len(real), summary))
+    print("DIFFER — %d changed lines in %d skin(s) (%s)" % (len(real), len(changed_skins), summary))
+    print("  skins: " + ", ".join(sorted(s or "<before the first SKIN>" for s in changed_skins)))
     for line in real[:80]:
         print("  " + line)
     if len(real) > 80:
@@ -289,6 +327,13 @@ PYINVARIANTS
 
     echo
     echo "=== images ==="
+    # --summary: classify every changed image by which way it went (scripts/png_diff.py) and list
+    # only the lost / gained / resized ones — the short list worth opening. Same comparison, same
+    # totals; it only changes what is printed.
+    if [ "$summary" -eq 1 ]; then
+        python3 "$(dirname "$0")/png_diff.py" "$base/png" "$curr/png" --summary --top 25
+        return 0
+    fi
     python3 - "$base/png" "$curr/png" <<'PY'
 import os, sys
 from PIL import Image, ImageChops

@@ -203,7 +203,7 @@ No runtime behavior changed as part of this documentation cleanup.
 | D3 | [Harness](../../skills/wmp-skin-guide/reference/harness.md#the-probe-flags) now gives `gaps` in emitted order: top, left, bottom, right. |
 | D4 | [Capture guidance](../../skills/wmp-skin-guide/reference/harness.md#capturing-the-hosted-windows-one-at-a-time) compares donor, dimensions, scale, readiness, and geometry before attributing a symptom to one window. Retains the requirement to capture every affected window. |
 | D5 | Deleted the obsolete caption-scaling paragraph and nonexistent `drawBorrowedCaption` guidance from the owning skill. Retained the current no-added-title/glyph rule and useful rejected-approach history. |
-| D6 | [Current hosting contract](../../skills/wmp-skin-guide/SKILL.md#current-hosting-contract) names the eight border-growth participants and playlist/EQ exceptions; the checklist now scopes its growth step accordingly. |
+| D6 | [Current hosting contract](../../skills/wmp-skin-guide/reference/windows.md#current-hosting-contract) names the eight border-growth participants and playlist/EQ exceptions; the checklist now scopes its growth step accordingly. |
 | D7 | Skill scaling guidance distinguishes exact panel slicing, ring floor/extent scaling, and provisional scaling. `wasScaledToFit` is not a readiness or exclusively below-floor flag. |
 | D8 | [Dossier index](../../skills/wmp-skin-guide/reference/skins/README.md) marks W210/W212/W228 and the open-resize defect closed, and distinguishes rack removal from rail preservation. |
 | D9 | Harness distinguishes default whole-view repair gating from diagnostic assembler rejection; whole-view rendering is no longer claimed to guarantee complete rails. |
@@ -227,7 +227,7 @@ Keep future operational changes in the owning skill's current contract and retir
 
 ## Source map
 
-- [WMP owning skill](../../skills/wmp-skin-guide/SKILL.md): hosted-window rules and onboarding checklist.
+- [WMP owning skill](../../skills/wmp-skin-guide/SKILL.md); hosted-window rules and onboarding checklist are in [reference/windows.md](../../skills/wmp-skin-guide/reference/windows.md).
 - [Harness reference](../../skills/wmp-skin-guide/reference/harness.md): probes, captures, limitations, corpus comparisons.
 - [Skin dossiers and counter-evidence](../../skills/wmp-skin-guide/reference/skins/README.md), especially [TheUnit](../../skills/wmp-skin-guide/reference/skins/the-unit.md), [Alienware Invader](../../skills/wmp-skin-guide/reference/skins/alienware-invader.md), and [Back to the Future Trilogy](../../skills/wmp-skin-guide/reference/skins/back-to-the-future-trilogy.md).
 - [Frame template](../../Sources/NullPlayer/WMPSkin/WMPHostedFrameTemplate.swift): `derive`, `artwork`, `composeRing`, `ringRender`, `borderInsets`, and pixel/repair policy.

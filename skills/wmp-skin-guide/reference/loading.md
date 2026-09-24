@@ -275,3 +275,48 @@ which is now the only cause left. **There are no rejections left in the corpus a
 raises the stakes on the paragraph above rather than lowering them: load level is now a constant,
 and every remaining defect is a rendering or runtime one that only a dumped PNG or a `SCRIPT-DIAG`
 line can see. `WMP0015` was the last rejecting code and it went with W33.
+
+## Loader contracts
+
+- `WMPPhase0Limits` and stable codes `WMP0001`–`WMP0020` are locked. Production loading must preserve
+  their meanings and reject metadata bounds before decompressing payloads. One amendment exists:
+  `WMP0005`'s 200:1 ratio is tested only on entries expanding past `entryCompressionRatioFloorBytes`
+  (1 MiB), because a ratio is not the quantity a bomb is dangerous in and flat-colour BMPs are not
+  bombs — see Amendment 1 in `phase-0-decision-record.md`. It is not a precedent: **never relax a
+  limit to make a skin load.** That one held only because the limit was mis-specified against its
+  own threat model, and it was argued about the threat rather than about the skins.
+- Archive paths normalize Windows separators, use Unicode-composed case-insensitive lookup, and
+  reject absolute paths, drive prefixes, traversal, symlinks, collisions, excess wrapper depth, and
+  CRC failure. The provider is read-only and never extracts to disk.
+- A skin contains exactly one unambiguous `.wms` at root or under one wrapper directory. Resources
+  resolve relative to the declaring file and then the skin root, never outside the provider.
+- Text decoding is BOM-aware UTF-8/UTF-16LE/UTF-16BE, then a **positional** BOM-less UTF-16 sniff,
+  then a deterministic Windows-1252 fallback for unmarked legacy WMP text. Do not guess other ANSI
+  code pages, shell out to `iconv`, accept malformed surrogates, or allow embedded NULs.
+- XML is parsed by a hand-rolled lenient parser, **not** `XMLParser` — libxml2 aborts on a duplicate
+  attribute before the delegate runs, which rejected 4 of 14 archives. It retains authored
+  tag/attribute spelling, **attribute document order**, and source locations while bounding depth and
+  node count. Unknown elements stay in the graph for compatibility reporting.
+- `reference/loading.md` is the contract for both: what is tolerated, what stays fatal, and the two
+  things (attribute order, CR-only line endings) that look cosmetic and are not.
+- Attribute parsing classifies expressions, bindings, handlers, colors, and resources without
+  executing skin code. `res://` and optional missing artwork warn; path escapes and required missing
+  scripts fail.
+- **TEXT colour roles follow interaction state.** Resolve `hoverForegroundColor` and
+  `hoverBackgroundColor` only while the TEXT hit target is hovered, then fall back to the normal
+  roles; resolve `disabledFontStyle` only while disabled, then fall back to `fontStyle`. Use
+  `WMPAttributeParser.color(from:)` for every role so named SDK colours stay consistent (W131).
+- Graph IDs and registry order are deterministic. Duplicate authored IDs are retained and warned,
+  not silently collapsed.
+- **A skin that names no `scriptFile` still has a script, and it is found by name.** Seven archives
+  declare none and ship one `.js` whose basename is the skin definition's own; all seven call into it
+  from their handlers, so registering only what `scriptFile` names left each of them throwing on the
+  first statement of its first handler (W163). The fallback is narrowed to **both** conditions — no
+  `scriptFile` anywhere in the skin, and a basename match against the `.wms` — because a skin that
+  names its scripts has said what it wants loaded. See `reference/loading.md` § *The script a skin
+  never names*.
+
+Skin JScript runs in one persistent in-process `JSContext` per skin session, on a WMP-owned serial
+queue, with the object model as the security boundary — see Amendment 2 in
+`phase-0-decision-record.md` for why the helper process was retired and what that costs. An in-app
+`WKWebView` remains prohibited.

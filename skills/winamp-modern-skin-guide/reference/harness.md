@@ -424,10 +424,8 @@ the archive, so skins cannot collide on a shared container name.
 user's running app:
 
 ```sh
-git worktree add ../nullplayer-base HEAD
-cp -R .build/arm64-apple-macosx/debug/*.framework \
-      .build/arm64-apple-macosx/debug/*.dylib ../nullplayer-base/.build/arm64-apple-macosx/debug/
-(cd ../nullplayer-base && scripts/wal_render_sweep.sh capture /tmp/sweep/base)
+scripts/baseline_worktree.sh ../nullplayer-base HEAD   # worktree + the vendored frameworks it needs
+(cd ../nullplayer-base && scripts/wal_render_sweep.sh capture /tmp/sweep/base)   # + --allow-dirty if the script says so
 ```
 
 Copying the vendored frameworks and dylibs across is not optional; without them the test bundle will
@@ -879,6 +877,9 @@ CGEvent click raises the window when nothing occludes it; when something does, t
 ```sh
 osascript -e 'tell application "System Events" to set frontmost of first process whose unix id is <pid> to true'
 ```
+
+`skills/app-control/scripts/winhelper raise <pid>` does exactly this and then exits non-zero unless
+the pid is frontmost — the gate below, built in.
 
 **By unix id, never by name** — `activate application "NullPlayer"` launches the *installed* copy
 instead of the build under test ([[applescript-activate-launches-installed-app]]). Gate every

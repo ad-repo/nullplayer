@@ -52,7 +52,7 @@ W116. Budget for that shape whenever a row turns a class of nodes from unresolve
 ## What was ruled out
 
 - **Geometry expressions.** This view declares none, and it carried 63 unresolved nodes anyway. That
-  is what ended the expression-cascade theory corpus-wide; see `../harness.md` § *After the cascade*.
+  is what ended the expression-cascade theory corpus-wide; see `../harness-history.md` § *After the cascade*.
 - **AppKit and compositing.** Every defect here was scene-side or app-path. No overlay ever painted
   outside its own widget frame on this skin.
 - **Missing artwork.** `BITMAPS mainview: resolved=21 missing=` — it has never been missing a file.

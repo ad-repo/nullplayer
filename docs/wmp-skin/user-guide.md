@@ -80,4 +80,4 @@ available in WMP mode. They wear a frame borrowed from the skin when one is avai
 colours derived from the skin otherwise. Playlist and equalizer use the skin's own surface when
 provided, with themed native windows as fallbacks. Video, radio sheets, compact mode, and debug
 windows retain their unskinned presentation. See the
-[current hosting contract](../../skills/wmp-skin-guide/SKILL.md#current-hosting-contract).
+[current hosting contract](../../skills/wmp-skin-guide/reference/windows.md#current-hosting-contract).

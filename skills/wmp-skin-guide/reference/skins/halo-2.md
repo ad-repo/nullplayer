@@ -90,7 +90,7 @@ common shape, never to prove the choice is right.
   handler empty it: a blank window, on a skin whose `mainView` renders perfectly. Its zero size was
   then saved under `wmpViewSizes` and handed back on every launch after. Cause: the initial-load
   walk needed a `collapsed` test **after** the load transaction, not only a canvas test before it.
-  See `SKILL.md` § *Static scene and image contracts*.
+  See `reference/rendering.md` § *Static scene and image contracts*.
 - **`introStart()` never opened its shutter** (reported 2026-09-08). No `.wmz` view timer in the
   corpus had ever fired: a load transaction that requested no script timers — the common case —
   cancelled the view timer `apply` had just started, one line earlier. Cause: `cancelScriptTimers`

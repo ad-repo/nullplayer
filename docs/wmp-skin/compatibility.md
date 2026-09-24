@@ -56,7 +56,7 @@ WMP-derived palette chrome otherwise. Playlist and equalizer route to the skin's
 provided; native fallbacks also receive WMP theming but are excluded from border growth because
 their layouts use classic sprite geometry. Video, radio sheets, compact mode, and debug windows
 have no skin chrome and are outside this theming policy. See the
-[current hosting contract](../../skills/wmp-skin-guide/SKILL.md#current-hosting-contract).
+[current hosting contract](../../skills/wmp-skin-guide/reference/windows.md#current-hosting-contract).
 
 ## Expressions and bindings
 

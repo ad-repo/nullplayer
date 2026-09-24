@@ -12,7 +12,7 @@ import XCTest
 /// The gate is now `appliesPlacementRecovery` — `.winampModern` **and** `.wmp`, Classic and Original
 /// still out, which is the load-bearing part (B56).
 ///
-/// The AppKit half of the fix needs a window server and was verified live (`wmp-skin-guide`
+/// The AppKit half of the fix needs a window server and was verified live (`wmp-skin-guide/reference/windows.md`
 /// § *Window placement and recovery*). What is pinned here is the gate itself, the geometry the
 /// correction produces, and the one AppKit contract the sweep's new skip depends on.
 final class WMPPlacementRecoveryTests: XCTestCase {

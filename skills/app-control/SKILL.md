@@ -202,9 +202,9 @@ Applies when the defect needs a click, drag, hover or a view switch. Build the t
 
 ```bash
 WH=skills/app-control/scripts/winhelper
-read -r WID _ X Y W H _ < <("$WH" windows | head -1)
 PID=$(pgrep -x NullPlayer | head -1)
-osascript -e "tell application \"System Events\" to tell (first process whose unix id is $PID) to set frontmost to true"
+read -r WID _ X Y W H _ < <("$WH" windows --pid "$PID" --size 289x283)   # the skin's own canvas
+"$WH" raise "$PID"                                        # exits non-zero unless it is frontmost
 "$WH" click  $((X+320)) $((Y+291))                       # throwaway: activates the window
 "$WH" drag   $((X+320)) $((Y+291)) $((X+400)) $((Y+291)) $((X+500)) $((Y+291))
 ```
@@ -214,13 +214,16 @@ osascript -e "tell application \"System Events\" to tell (first process whose un
   it lands on the desktop: the gesture posts, the log shows the hover/down repaints of *nothing*,
   and it reads exactly like a dead control. Two measurement runs on 2026-09-17 were thrown away to
   it, one of them a "0 redraws" rate that was really a pane that never opened. Pick the row whose
-  `w`/`h` are the skin's own canvas (`$WH windows | awk -F'\t' '$5==289 && $6==283 {print; exit}'`),
-  and **confirm the state you think you set** from the subsystem's own trace before measuring
-  anything against it.
+  `w`/`h` are the skin's own canvas (`$WH windows --size 289x283`, and `--pid` so the installed
+  app's rows never match), and **confirm the state you think you set** from the subsystem's own
+  trace before measuring anything against it.
 
 | Verb | What it posts |
 |---|---|
-| `winhelper windows` | `id layer x y w h alpha title`, on-screen windows owned by NullPlayer |
+| `winhelper windows [--pid <n>] [--size <w>x<h>]` | `id layer x y w h alpha title`, on-screen windows owned by NullPlayer, front to back |
+| `winhelper raise <pid>` | frontmost via System Events **by unix id**; exits non-zero unless that pid is frontmost afterwards |
+| `winhelper capture <id> <out.png> [--pid <n>]` | the window's own content (`screencapture -l`), size-checked — see below |
+| `winhelper capture-all <outdir> [--pid <n>] [--size <w>x<h>]` | `capture` for every matching window, one PNG each; non-zero if any is refused |
 | `winhelper click <x> <y>` | `mouseMoved`, then down/up **with `mouseEventClickState = 1`** |
 | `winhelper dblclick <x> <y>` | two clicks, the second at `clickState = 2` |
 | `winhelper scroll <x> <y> <count> <delta> [line\|precise]` | `count` wheel events at one point; `precise` is a trackpad (points), `line` (the default) a mouse wheel (lines) |
@@ -240,6 +243,14 @@ osascript -e "tell application \"System Events\" to tell (first process whose un
   is no name fallback: `process "NullPlayer"` is ambiguous whenever the installed build is also
   running, which is how it gets driven by accident.
 - **A contextual menu is not drivable. That is Route D.**
+- **`capture` refuses a picture that is not the window.** `screencapture -l` returns a
+  **full-screen** image for an off-screen or stale id, and the **whole docked group** for a window
+  with attached windows (a 197x194 pt `.wmz` pane came back 950x890 pt, it plus two docked
+  neighbours, 2026-09-24). `capture` checks the pixel size against the window's points × scale;
+  a group-sized image is cropped to the window and marked `cropped-from-group`; anything else exits
+  non-zero. It retries three times, 400 ms apart, because a pane that is fading in or resizing
+  changes size between the listing and the shot. `-l` sees the window regardless of occlusion,
+  unlike `-R`, which photographs the screen.
 - **A wheel gesture has two devices and a surface may read only one (W246).** `.line` events carry
   a line count and `.pixel` events a precise, continuous delta in points — the trackpad's, and the
   only one `hasPreciseScrollingDeltas` is true for. A list that advances one row per event however

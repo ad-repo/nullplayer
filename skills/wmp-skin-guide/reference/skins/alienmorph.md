@@ -63,7 +63,7 @@ behind an intro with one that has none.
 
 **What the live run found in its place is W243**, and it is not this family's defect but the
 engine's: a `<NEXTELEMENT>` whose own `onClick` calls `player.controls.next()` was dispatched twice,
-so one click on Next advanced two tracks. `SKILL.md` § *Which control a click reaches* carries the
+so one click on Next advanced two tracks. `reference/input.md` § *Which control a click reaches* carries the
 rule and its 73-element reach; this skin is the case it was measured on because its transport is
 authored in exactly that shape.
 

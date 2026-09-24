@@ -77,7 +77,7 @@ Bionic Dot derivative, on the evidence of an identically named `visMask`/`visEff
 ### W147 — the visualizer was clipped to a rectangle, not the lens
 
 *"the spectrum is just slapped on top of the UI covering controls"*. Same archive entry. The rule
-that came out of it is in `../../SKILL.md` § *Drawing the skin's own controls*, and **the guard on it
+that came out of it is in `../rendering.md` § *Drawing the skin's own controls*, and **the guard on it
 is Cerulean** — a two-state keyed container means the opposite of a three-state one.
 
 ### W148 — the controls hovered and did nothing
@@ -158,7 +158,7 @@ pixels each, and a 2x bilinear upscale destroys exactly that. Flat cartoon art s
 `interpolation: .low` for every image, so on a Retina display every bitmap took a bilinear 2x
 upscale. Classic (`SkinRenderer`) and Winamp Modern (`WasabiBitmapInterpolationPolicy`) had both
 already decided this question for their own 1x artwork; the WMP engine was the only one that had
-not. The fix and its three conditions are in `../../SKILL.md` § *Static scene and image contracts*.
+not. The fix and its three conditions are in `../rendering.md` § *Static scene and image contracts*.
 
 **The first fix was wrong and the reporter's second sentence is why.** Matching the other two
 engines means `.none` — crisp pixel-doubling, which is right for the pixel art those engines were
@@ -191,7 +191,7 @@ of *four*, and Hard Boiled came back ringing with white halos on every bevel. It
 
 Three independent defects in one report, opened *"combat flight simulator and plus plasma ball have
 a gray box background I suspect should not be showing"* and closed *"this is a huge improvement"*.
-The rules are in `../../SKILL.md` § *Drawing the skin's own controls*; what the family contributes is
+The rules are in `../rendering.md` § *Drawing the skin's own controls*; what the family contributes is
 the reach, and the reason two of the three were invisible for a whole phase.
 
 **W167 — `clippingColor="auto"`.** `Plus! Plasma Ball`'s `mainButtons` and `playListPanel` are two of
@@ -285,7 +285,7 @@ own restore path and exercises script assignment → scene → image store → r
 
 *"in hue pressing pause does not pause the stream and play is not responsive at all"*, then *"stop
 does not stop"*. Reported 2026-09-14 against `Plus! HueShifter`; the cause was engine-wide and this
-family is the only place in the corpus it could show. The rule is in `../../SKILL.md` § *Phase 4
+family is the only place in the corpus it could show. The rule is in `../input.md` § *Phase 4
 input and transport contracts*.
 
 `openstatechange` was raised off the **play** state, so every pause told the skin a media had just

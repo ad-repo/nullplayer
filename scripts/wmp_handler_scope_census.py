@@ -21,11 +21,17 @@ calibration**: a correct run over 184 archives reproduces 158 UTF-16-BOM / 146 c
 
   scripts/wmp_handler_scope_census.py [json-out]
 
+Ties are broken on the name everywhere, so two runs are byte-identical (string hashing is randomized
+per process, and before 2026-09-24 tied rows swapped places between runs).
+
 Measured 2026-09-21 for W216: 31 calls / 20 archives, and 255 unresolved reads + 249 silent writes
 across 100 of 184 archives. See `docs/wmp-skin/wmp-backlog-archive.md` § W216.
 """
 import io, os, re, struct, sys, zipfile
 from collections import Counter, defaultdict
+
+sys.dont_write_bytecode = True   # no scripts/__pycache__ from importing wmp_corpus
+from wmp_corpus import decode, repaired, archives as corpus_archives
 
 CORPUS = os.path.expanduser("~/Library/Application Support/NullPlayer/WMPSkins")
 EXCL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wmp_corpus_exclusions.txt")
@@ -52,61 +58,8 @@ DEF = re.compile(r'\bfunction\s+([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{', re.I)
 TAG = re.compile(r'<\s*([A-Za-z_][\w:]*)\b')
 
 
-def decode(data):
-    if data[:3] == b'\xef\xbb\xbf':
-        try: return data[3:].decode('utf-8'), 'utf8-bom'
-        except Exception: return None, None
-    for bom, enc, label in ((b'\xff\xfe', 'utf-16-le', 'utf16-bom'), (b'\xfe\xff', 'utf-16-be', 'utf16-bom')):
-        if data[:2] == bom:
-            try: return data[2:].decode(enc), label
-            except Exception: return None, None
-    if len(data) >= 4 and len(data) % 2 == 0:
-        s = data[:4096]
-        even = sum(1 for i in range(len(s)) if s[i] == 0 and i % 2 == 0)
-        odd = sum(1 for i in range(len(s)) if s[i] == 0 and i % 2 == 1)
-        enc = 'utf-16-le' if (odd and not even) else 'utf-16-be' if (even and not odd) else None
-        if enc:
-            try:
-                t = data.decode(enc)
-                if t.lstrip()[:1] == '<': return t, 'utf16-nobom'
-            except Exception: pass
-    try: return data.decode('utf-8'), 'utf8'
-    except Exception: pass
-    try: return data.decode('cp1252'), 'cp1252'
-    except Exception: return None, None
-
-
-def repaired(path):
-    """WMPArchiveHeaderRepair in miniature: rewrite a local header signature only where the header
-    already agrees with the central-directory record pointing at it."""
-    data = bytearray(open(path, 'rb').read())
-    end = data.rfind(b'PK\x05\x06')
-    if end < 0: return None
-    offset = struct.unpack_from('<I', data, end + 16)[0]
-    count = struct.unpack_from('<H', data, end + 10)[0]
-    fixed = 0
-    for _ in range(count):
-        if data[offset:offset + 4] != b'PK\x01\x02': break
-        nlen, elen, clen = struct.unpack_from('<HHH', data, offset + 28)
-        local = struct.unpack_from('<I', data, offset + 42)[0]
-        name = bytes(data[offset + 46:offset + 46 + nlen])
-        if data[local:local + 4] != b'PK\x03\x04':
-            if struct.unpack_from('<H', data, local + 26)[0] == nlen \
-               and bytes(data[local + 30:local + 30 + nlen]) == name:
-                data[local:local + 4] = b'PK\x03\x04'; fixed += 1
-        offset += 46 + nlen + elen + clen
-    return bytes(data) if fixed else None
-
-
 def archives():
-    excluded = set()
-    if os.path.exists(EXCL):
-        for line in open(EXCL):
-            line = line.split('#')[0].strip()
-            if line: excluded.add(line)
-    for name in sorted(os.listdir(CORPUS)):
-        if name.lower().endswith('.wmz') and name not in excluded:
-            yield name
+    return corpus_archives(CORPUS)
 
 
 def body_of(text, name):
@@ -231,7 +184,7 @@ def main():
 
     print("archives scanned: %d" % scanned)
     print("\nencoding breakdown (files / archives touching that encoding):")
-    for enc, count in encodings.most_common():
+    for enc, count in sorted(encodings.items(), key=lambda kv: (-kv[1], kv[0])):
         print("  %-12s %5d files  %3d archives" % (enc, count, len(enc_archives[enc])))
 
     for label, table in (("written in the handler attribute", direct),
@@ -239,7 +192,7 @@ def main():
         arcs = {r[0] for rows in table.values() for r in rows}
         print("\n== unqualified element-method call %s ==" % label)
         print("   %d uses / %d archives" % (sum(len(v) for v in table.values()), len(arcs)))
-        for name, rows in sorted(table.items(), key=lambda kv: -len(kv[1])):
+        for name, rows in sorted(table.items(), key=lambda kv: (-len(kv[1]), kv[0])):
             print("   %-16s %3d uses %3d archives  impl=%s tags=%s" % (
                 name, len(rows), len({r[0] for r in rows}),
                 'yes' if name in IMPLEMENTED else 'NO',
@@ -251,7 +204,7 @@ def main():
     print("   (net of `value` and the `<attribute>_onchange` name, which the engine binds)")
     print("   %d reads + %d writes" % (sum(read_uses.values()), sum(write_uses.values())))
     for name in sorted(set(read_uses) | set(write_uses),
-                       key=lambda n: -(read_uses[n] + write_uses[n])):
+                       key=lambda n: (-(read_uses[n] + write_uses[n]), n)):
         print("   %-20s R %4d uses %3d archives   W %4d uses %3d archives" % (
             name, read_uses[name], len(reads[name]), write_uses[name], len(writes[name])))
     read_archives = set().union(*reads.values()) if reads else set()
