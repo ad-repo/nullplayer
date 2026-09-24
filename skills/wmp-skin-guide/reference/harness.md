@@ -891,13 +891,16 @@ shattering two skins that had nothing to do with it. Those attributes are an ini
 live binding, and several read the property they write. The narrow fix that shipped raises only the
 `_onchange` handlers the skin itself declared, and sweeps to 544 of 545 identical.
 
-**A fix that resolves the report and moves things outside it is telling you it is the wrong fix.**
+**A fix that resolves the report and moves things outside it has raised a question, not answered
+one.** Here the answer was "wrong fix"; in W143 below it was "right fix, reaching every skin that
+needed it". The baseline is the engine's own previous guess, not WMP, so neither reading is the
+default — `skin-subsystem-blueprint` § *A sweep diff is unclassified, not a regression* is the method.
 Sweep before believing a fix, not only before believing a refactor — and read the `RENDER-DUMP`
 counts in the invariants diff, not just the image count: `33 commands / 15 hits → 28 / 8` named the
 regressed view before any PNG was opened.
 
-**And the mirror case, so the rule is not read as "a big diff is a bad fix": W143 moved 139 of 535
-and was right.** The two are distinguishable without taste, by two things measured in the same
+**W143 moved 139 of 535 and was right.** The two are distinguishable without taste, by two things
+measured in the same
 capture. First, **the invariants**: W87's collateral announced itself as changed `RENDER-DUMP`
 counts, and W143's 514 changed invariant lines are *entirely* `loadms` timings and `SCRIPT inline:`
 tie-ordering — no view gained or lost a node, command, hit target or canvas, so nothing stopped

@@ -9,6 +9,13 @@ Read this skill before changing `Sources/NullPlayer/WMPSkin/` or
 `Sources/NullPlayer/Windows/WMPSkin/`. The current security decisions and locked limits are in
 `phase-0-decision-record.md`.
 
+**This engine is a clean-room reverse-engineering effort, and it is incomplete.** A corpus sweep
+compares it against its own last guess, not against WMP, so an engine-wide change that moves skins
+nobody reported is often unlocking behaviour they were silently missing — or it is collateral. A
+diff is unclassified until it is judged against the skin's own artwork and script; the method is
+`skin-subsystem-blueprint` § *A sweep diff is unclassified, not a regression*. Classic and Original
+are the exception: a diff there from `.wmz` work is always a regression.
+
 **The script runtime and everything skin JScript can reach is `reference/object-model.md`.** It is
 the canonical reference for the persistent `JSContext`, the three member resolutions
 (`ok`/`INERT`/`UNRECOGNISED`), element and expression semantics, and how to add a member without

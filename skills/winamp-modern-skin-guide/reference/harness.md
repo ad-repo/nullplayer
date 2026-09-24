@@ -354,10 +354,13 @@ is defined, with the measurements that ruled out the obvious alternatives, in
 `.claude/skills/wal-skin-report/SKILL.md` → *The census rating is not a grade*; the user-facing list
 it feeds is `docs/winamp-modern/skin-compatibility.md`.
 
-### The corpus render sweep — the regression proof for any engine-wide change
+### The corpus render sweep — what an engine-wide change reached
 
 A change to loading, initialization, script startup, hit testing or **drawing** reaches every skin,
-so the proof that it broke none of them is a before/after capture across the whole installed corpus.
+so the way to see what it did to them is a before/after capture across the whole installed corpus.
+**The baseline is the engine's previous guess, not Winamp**: a skin that moves may have been
+repaired as easily as broken, and each difference is classified against the skin's own artwork and
+script — `skin-subsystem-blueprint` § *A sweep diff is unclassified, not a regression* is the method.
 `WINAMP_MODERN_WAL` takes a **directory** as well as a single archive (B72, 2026-08-30) and loops the
 corpus inside one invocation, the way `WINAMP_MODERN_DRAG_PROBE` always has. Measured over the 69 skins then installed: **69 skins in
 ~100 seconds**, against ~25 minutes for the shell loop it replaces.

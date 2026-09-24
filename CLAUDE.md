@@ -16,7 +16,9 @@ See `docs/development-workflow.md` for build details, log monitoring, and versio
 Technical documentation lives in `skills/`. Read the owning skill before changing a subsystem.
 
 - `ui-guide`: UI geometry/rendering; `audio-system`: playback/EQ; `app-state`: restoration and persistence; `user-guide`: features and menus
-- `skin-subsystem-blueprint`: adding/extending a skin family — shared seams, isolation, harness, docs layout
+- `skin-subsystem-blueprint`: adding/extending a skin family — shared seams, isolation, harness, docs layout.
+  `.wal` and `.wmz` are clean-room reverse engineering: a sweep diff there is unclassified, not a
+  regression — it may be newly unlocked behaviour (Classic/Original diffs are always regressions)
 - `original-skin-guide`: Original skins; `winamp-modern-skin-guide`: `.wal` support, a slim router over `reference/`; `wal-skin-report`: `/wal-skin-report <skin.wal>`
 - `wmp-skin-guide`: Windows Media Player `.wmz`/`.wms` loading, rendering, scripting, menus, state, and WMP-owned windows
 - `plex-integration`, `jellyfin-integration`, `subsonic-integration`, `emby-integration`: media servers

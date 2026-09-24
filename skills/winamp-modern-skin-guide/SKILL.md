@@ -20,6 +20,13 @@ The runtime loads, scripts, and renders real skins, but see
 [compatibility.md](compatibility.md) for the exact supported/unsupported surface before assuming any
 behavior works.
 
+**Because the engine is clean-room and incomplete, a corpus sweep compares it against its own last
+guess, not against Winamp.** An engine-wide change that moves skins nobody reported is often
+unlocking behaviour those skins were silently missing — or it is collateral. A diff is unclassified
+until it is judged against the skin's own artwork and script; the method is
+`skin-subsystem-blueprint` § *A sweep diff is unclassified, not a regression*. (Classic and Original
+are the exception: a diff there is always a regression — see below.)
+
 ## The rule that outranks everything below
 
 **Winamp Modern must never change how Classic or Original skins behave.** Those modes work; this one
@@ -196,8 +203,8 @@ top to bottom. Rows are grouped by area; within a group, follow the most specifi
 | Meter moves too little | [reference/harness.md](reference/harness.md) → histogram the frames |
 | GUI-only scripted-control report | [reference/harness.md](reference/harness.md) → *Ask for the live trace first, not fourth* |
 | Frame is fast but the app hangs | [reference/harness.md](reference/harness.md) → *Profiling the running app* |
-| Renderer regression proof | [reference/harness.md](reference/harness.md) → *The golden images* |
-| Proving an engine-wide change broke no other skin | [reference/harness.md](reference/harness.md) → *The corpus render sweep* |
+| Renderer golden images | [reference/harness.md](reference/harness.md) → *The golden images* |
+| Measuring what an engine-wide change reached across the corpus | [reference/harness.md](reference/harness.md) → *The corpus render sweep* |
 | Measure one skin end to end | `/wal-skin-report <skin.wal>` |
 | The GUI verification pass before handing work over | [manual-qa-checklist.md](manual-qa-checklist.md) |
 | One named skin's current state | [skins.md](skins.md) → `skins/<skin>.md` |

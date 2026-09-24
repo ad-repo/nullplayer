@@ -199,8 +199,9 @@ Build, in this order:
 3. **A census** (one structural row per input, with a sha256 so duplicates are visible) and a
    **render sweep**. Sweep a whole directory inside one process invocation: `.wal` does 79 archives in
    ~5 minutes where a shell loop took 25, and one invocation cannot be invalidated halfway by an edit.
-4. **A committed baseline the gate ratchets against**, so a regression is a diff rather than an
-   opinion.
+4. **A committed baseline the gate ratchets against**, so a change is a diff rather than an
+   opinion — and a diff is then classified, not assumed to be a regression (see *A sweep diff is
+   unclassified, not a regression* below).
 5. A **demand-driven backlog** (`<FAMILY>_TASKS.md` at the repo root, closed entries moved to
    `docs/<family>/…-archive.md`) ranked by what the corpus actually asks for. A test case is not a
    milestone: one fix that unblocks 200 inputs beats ten that unblock one.
@@ -220,6 +221,48 @@ event reaches. **Say in the reference which events your sweep raises**, and when
 the worked method, and its traps (decode every encoding and print the breakdown; resolve handler
 names through the call graph; take the **median** pixel of a mapping colour, never the first) are
 family-agnostic.
+
+## A sweep diff is unclassified, not a regression
+
+`.wal` and `.wmz` are **clean-room reverse-engineering efforts**, and both engines are incomplete.
+A corpus sweep compares the engine against **its own previous output** — its last guess at what
+Winamp or WMP drew — not against the original player. The baseline is not ground truth, so a
+before/after difference says that something changed and nothing about which side is right.
+
+**An engine-wide fix is expected to reach skins nobody reported.** The rule it implements was
+usually missing for every skin that authors it, and the diff is the first time anyone sees those
+skins drawn correctly. Reading every moved image as damage steers work toward narrow, skin-specific
+patches and away from the general rule the engine actually needs. It is equally not permission to
+wave a diff through: real collateral looks exactly the same in an image count.
+
+Classify it. **The reference is the skin itself — its artwork, its script, what its author evidently
+intended — never the previous capture.**
+
+1. **Rule out harness noise first.** Capture the same tree twice; anything that moves between those
+   two is not your change (each family's `reference/harness.md` names its known nondeterministic
+   view).
+2. **Read the invariants diff before any image.** A view that gained or lost nodes, commands, hit
+   targets or canvases is something that stopped (or started) resolving — look there first. A wide
+   image diff over a still invariants diff is a layout rule reaching everything that authored it.
+3. **Choose a sample of changed skins unrelated to the report and to each other *before* opening
+   them**, then open before and after side by side. Each one must be a repair or a regression on its
+   own evidence. "Every one I opened is better" is only worth something if the sample was fixed first.
+4. **When the two readings still compete, hunt the corpus for the skin that separates them** — an
+   author using both settings on identical artwork outranks any amount of reasoning.
+
+Report the classification — how many were opened, how many are repairs, how many regressions, how
+many unexamined — never "no regressions" or "improvement" from a count alone.
+
+**The worked pair.** B114 (`.wal`): the first fix for `desktopalpha="0"` moved 34 of 590 images, 32
+outside the report; they were rationalised as intended, and the user found it broken on screen in one
+look — the skin that disproved it (EPS High-End, identical artwork declared `"0"` on one speaker and
+`"1"` on the other) was in the sweep's own diff list. W143 (`.wmz`): one line of alignment math moved
+139 of 535 and was right — the invariants diff held still, and ten pre-chosen unrelated skins were
+each a repair on their own evidence. Neither verdict came from the image count.
+
+**This applies only to the engines under construction.** Classic and Original are finished; there is
+no missing behaviour in them for a change to unlock, so any diff there from `.wal`/`.wmz` work is a
+regression by definition — see *The rule that outranks everything*.
 
 ## Debugging a live defect
 
