@@ -134,6 +134,20 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   outcome is `reason=frame`, and the measured spread is 276 ms for a cold analyser to 2.09 s for the
   library at launch, of which 1.4 s is the ring render alone. `WMP_HOSTED_HOLD=0` is the A/B switch.
   Every non-`.wmp` family answers "settled" unconditionally, or the hold would never end.
+- **The player itself is held transparent until the first skin load settles (2026-09-24).** Reported
+  as *on launch into WMP mode the unskinned player shows for a second or two*. `init` presents
+  `WMPUnskinnedMainView` so the window has content, and the launch path orders it front at once —
+  several callers through `window.makeKeyAndOrderFront`, not `showWindow` — so the hold is
+  `alphaValue = 0` on the window, not a guard on any one reveal. `releaseLaunchHold` ends it on the
+  skin (after the view walk presents), on a missing or failed selection (which *want* the unskinned
+  player), or on a 5 s timeout so a load that never returns cannot leave the app windowless. It is
+  once per controller: a later skin switch never touches the alpha, which `WMPVideoSurface` also
+  owns. The same launch surfaced the **fallback playlist and equalizer** — restored open, they were
+  shown before the skin had said it draws its own, and stood beside the hidden player until
+  `dismissWMPFallbackSurfacesTheSkinProvides` put them away. `showPlaylist`/`showEqualizer` now hand
+  their open to `WMPMainWindowController.deferUntilLaunchSettles` during the hold, and it is replayed
+  on release, where `routeWMPSkinSurface` routes it to the skin's copy. Checked on `pharaoh` with a
+  `screencapture` every ~0.2 s from launch: nothing on screen until skin and library appear together.
 - **A hosted window never shows a transitional state — not during a drag, not across a skin switch
   (2026-09-23).** Reported as *resizing any `.wmz`-framed window goes skin → palette chrome → skin,
   and after a skin change a resize can leave windows wearing the previous skin*. Four causes, all

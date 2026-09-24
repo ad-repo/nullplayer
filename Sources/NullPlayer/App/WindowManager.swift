@@ -1524,6 +1524,15 @@ class WindowManager {
         return true
     }
 
+    /// At launch a `.wmz` has not said yet which surfaces it draws, so opening NullPlayer's fallback
+    /// then flashed it beside the held player; the open is replayed once the skin has loaded. See
+    /// `WMPMainWindowController.launchHoldTimeout`.
+    private func deferWMPFallbackUntilSkinLoads(_ open: @escaping () -> Void) -> Bool {
+        guard uiMode.controllerFamily == .wmp,
+              let controller = mainWindowController as? WMPMainWindowController else { return false }
+        return controller.deferUntilLaunchSettles(open)
+    }
+
     /// Whether the skin's own copy of this surface is on screen in **any** open WMP window — the
     /// case where there is nothing for a menu item to open, because the skin is already showing it.
     ///
@@ -1815,6 +1824,7 @@ class WindowManager {
     func showPlaylist(at restoredFrame: NSRect? = nil) {
         if routeWinampModernSurface(.playlist, toggle: false, restoredFrame: restoredFrame) { return }
         if routeWMPSkinSurface(.playlist, switchingViews: false) { return }
+        if deferWMPFallbackUntilSkinLoads({ [weak self] in self?.showPlaylist(at: restoredFrame) }) { return }
         let isNewWindow = playlistWindowController == nil
         if isNewWindow {
             switch auxiliaryControllerStyle {
@@ -1888,6 +1898,7 @@ class WindowManager {
     func showEqualizer(at restoredFrame: NSRect? = nil) {
         if routeWinampModernSurface(.equalizer, toggle: false, restoredFrame: restoredFrame) { return }
         if routeWMPSkinSurface(.equalizer, switchingViews: false) { return }
+        if deferWMPFallbackUntilSkinLoads({ [weak self] in self?.showEqualizer(at: restoredFrame) }) { return }
         // The skin owns no equalizer, so NullPlayer's goes inside the skin's own frame when one
         // qualifies (B55) and into the standalone window below when none does.
         if routeWinampModernHostedWindow(.equalizer, toggle: false, restoredFrame: restoredFrame) { return }

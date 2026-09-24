@@ -208,6 +208,29 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private var artworkTrackID: UUID?
     private var lastScriptSnapshot: WMPHostSnapshot?
     private var unskinnedView: WMPUnskinnedMainView?
+    /// **The player is held transparent until its first skin load settles.** `init` has to present
+    /// the unskinned player so the window has content, but `showMainWindow` and the launch path
+    /// order the window front straight after — and several callers do it through
+    /// `window.makeKeyAndOrderFront` rather than `showWindow`, so the hold is on the window's alpha
+    /// rather than on any one reveal. Without it the app-authored player showed for the one or two
+    /// seconds a `.wmz` takes to load. Released by `releaseLaunchHold`: on the skin, on a failed or
+    /// missing selection (which do want the unskinned player), or by the timeout, so a load that
+    /// never returns cannot leave the app windowless. The same held-transparent state hosted
+    /// windows use while they wait for their frame (W250).
+    private var launchHoldTimeout: Task<Void, Never>?
+    /// Opens of NullPlayer's fallback playlist/equalizer asked for during the launch hold, replayed
+    /// when it ends — by then the skin has said whether it draws that surface itself, which 171 and
+    /// 164 of the 180 corpus skins do. Opened at once, the fallback stood on screen beside the
+    /// hidden player until `dismissWMPFallbackSurfacesTheSkinProvides` put it away.
+    private var launchHoldDeferred: [() -> Void] = []
+
+    /// Holds `open` until the launch hold ends; false when there is no hold, and the caller opens
+    /// now.
+    func deferUntilLaunchSettles(_ open: @escaping () -> Void) -> Bool {
+        guard launchHoldTimeout != nil else { return false }
+        launchHoldDeferred.append(open)
+        return true
+    }
 
     /// **The windows this skin has open, and the one bound to the app's own.**
     ///
@@ -356,7 +379,25 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         })
         configureWindow()
         presentUnskinned(message: nil)
+        window.alphaValue = 0
+        launchHoldTimeout = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.releaseLaunchHold()
+        }
         reloadSelectedSkin()
+    }
+
+    /// Ends the launch hold; see `launchHoldTimeout`. Idempotent — only the first call restores
+    /// the alpha, so a later skin switch cannot undo a video surface's own alpha.
+    private func releaseLaunchHold() {
+        guard let timeout = launchHoldTimeout else { return }
+        timeout.cancel()
+        launchHoldTimeout = nil
+        window?.alphaValue = 1
+        let deferred = launchHoldDeferred
+        launchHoldDeferred = []
+        deferred.forEach { $0() }
     }
 
     required init?(coder: NSCoder) { nil }
@@ -534,6 +575,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             do {
                 guard let url = try importer.selectedSkinURL() else {
                     presentUnskinned(message: nil)
+                    releaseLaunchHold()
                     return
                 }
                 let skin = try await importer.loader.load(from: url)
@@ -702,6 +744,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     throw WMPFailure(WMPDiagnostic(.invalidGeometry,
                         "The skin contains no renderable WMP view."))
                 }
+                releaseLaunchHold()
                 // The one moment a `.wmz` skin load is finished: the player is bound, its panels
                 // are materialized and the dispatcher has been adopted. A `.wmz` window's size
                 // *is* the skin, so switching to a larger one grows the player in place around its
@@ -714,6 +757,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 return
             } catch {
                 presentUnskinned(message: error.localizedDescription)
+                releaseLaunchHold()
             }
         }
     }
