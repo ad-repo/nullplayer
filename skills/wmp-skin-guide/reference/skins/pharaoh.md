@@ -24,7 +24,7 @@ and three script programs in an archive of 49 entries, and almost nothing about 
 | An `<EFFECTS zIndex="-1">` behind a `transparencyColor` hole in its container's artwork | **5 of those 9** — `aoe`, `bluegrid`, `claw`, `gadget`, `pharaoh` | each rect compared against the hole's bounds in the container's bitmap; every one within 2 px |
 | An `openView` target with **no canvas** | **2 of 185 archives** — `pharaoh` (twice) and `cyberchannel`'s `playView` | every `openView`/`openViewRelative` target resolved against its own `<VIEW>` declaration |
 | Two `scriptFile` programs defining the same top-level function names | **7 of 185 archives**; `pharaoh` collides on `OnOpenStateChange` and `UpdateMetadata` | every `function <name>(` in each named program |
-| A GIF whose frame image blocks are far smaller than its logical screen | **27 files in 12 archives** of 4,303 GIFs, and `pyrevolver.gif` is the extreme at 6.7% | first frame's image block against the screen descriptor |
+| A GIF whose frame image blocks are far smaller than its logical screen | **27 files in 12 archives** of 4,303 GIFs, and `pyrevolver.gif` is the extreme at 6.7% — and the only one of the 27 with **no global colour table** (W201) | every image block against the screen descriptor, and the screen descriptor's global-table flag |
 | `<DURATIONTEXT>` | **2 nodes in 2 archives** — this and `circle` | tag census |
 | The widest filmstrip in the corpus | `seek_steps.bmp`, 15990x20 | `reference/loading.md`; it is why the axis bound is 32,768 (W33) |
 
@@ -65,21 +65,13 @@ does not clear it.
 
 ### Still open
 
-**`W201` — the `pyrevolver.gif` back button draws as an opaque 21x30 black box over a 21x16
-declaration.** Scarab mode's only route back to the player is
-`<button left="56" top="17" width="21" height="16" upToolTip="Sphinx mode" image="pyrevolver.gif"
-onClick="ToggleScarab(false);">`. `pyrevolver.gif` is a **140x128 logical screen whose 16 frames are
-each a 21x16 block at 0,0** — 6.7% of the declared area — and the area the frame block does not cover
-is painted rather than left alone. It is the extreme of a class: **27 files in 12 archives** of the
-corpus's 4,303 GIFs have frame blocks smaller than their logical screen, the rest within a few pixels
-(`Age_of_Mythology` 198x173 vs 193x172, `bruteforce` 289x111 vs 289x101, `xsn_sports` 205x70 vs
-191x70, `Official_Xbox_MP71` 23x18 vs 16x10 ×6), measured by a header scan of every `.gif` entry,
-first frame's image block against the screen descriptor. **The button still clicks** — driven live, a
-click at `66,25` returns to the sphinx view — so this is artwork, not input, and it is why the
-reporter read the scarab as a dead end. **The cause is an observation, not a diagnosis**: the two
-candidates are the screen-versus-block size and the GIF's uninitialised screen area, and neither has
-been isolated. **Check `Age_of_Mythology`'s `open_shutter.gif` before changing anything** — it is
-already load-bearing for the one-shot terminator rule (`README.md`).
+**`W201` — the `pyrevolver.gif` back button drawing as a black box — closed 2026-09-24.**
+`pyrevolver.gif` is a 140x128 logical screen whose 16 frames are each a 21x16 block at 0,0, and it
+is the corpus's only GIF with frames smaller than the canvas **and no global colour table**. That
+leaves the canvas outside the frames undefined, ImageIO decodes it as opaque black, and the 21x16
+`<BUTTON>` had the whole canvas stretched into it. Such a GIF is now trimmed to its frames
+(`WMPGIFCanvas`); the other 26 undersized-frame GIFs all carry a global colour table, decode
+transparent, and keep their canvas. Closure: `docs/wmp-skin/wmp-backlog-archive.md` § *W201*.
 
 **`W202` — the scarab's visualizer never appearing — closed 2026-09-24 as not reproducing.**
 Driven live, the click logs `create id=27 kind=effects frame=1,7 129x79` under `WMP_WIDGET_TRACE=1`
@@ -156,7 +148,7 @@ pixel of its mapping colour, never the first (`reference/harness.md` says why).
 | Control | Point | What it does |
 |---|---|---|
 | Scarab mode | `271,119` | `ToggleScarab(true)` — swaps to the 132x117 silhouette in the same window |
-| Sphinx mode (back) | `66,25` | `ToggleScarab(false)`, in scarab mode only. Draws as a black box (W201) and works |
+| Sphinx mode (back) | `66,25` | `ToggleScarab(false)`, in scarab mode only. The animated red-gem pyramid (W201 closed) |
 | Audio controls/Playlist/Video | `358,212` | `theme.openView('vGhostAutoDetect')` → opens `vRos` beside the player |
 | Return to Full Mode | `365,200` | `view.returnToMediaCenter()`, `UNRECOGNISED` |
 | Previous / Next | `258,208` / `270,222` | |

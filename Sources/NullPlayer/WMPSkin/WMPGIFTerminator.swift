@@ -97,7 +97,7 @@ enum WMPGIFTerminator {
     }
 
     /// Past a run of length-prefixed data sub-blocks, ending on the zero-length terminator.
-    private static func skipSubBlocks(in bytes: [UInt8], from start: Int) -> Int {
+    static func skipSubBlocks(in bytes: [UInt8], from start: Int) -> Int {
         var cursor = start
         while cursor < bytes.count {
             let length = Int(bytes[cursor])
@@ -106,5 +106,65 @@ enum WMPGIFTerminator {
             cursor += length
         }
         return cursor
+    }
+}
+
+/// **A GIF with no global colour table has no defined canvas outside its frames.**
+///
+/// `pharaoh`'s `pyrevolver.gif` declares a 140x128 logical screen, but all 16 of its frames are
+/// 21x16 blocks at 0,0, carrying a local colour table and no transparent index. The rest of the
+/// screen is never painted and has no background colour to fall back on, so ImageIO fills it with
+/// opaque black. Drawn into the 21x16 `<BUTTON>` the skin declares for it, the whole canvas turned
+/// into a black box with the real artwork squeezed into one corner (W201).
+///
+/// A canvas larger than its frames is usually deliberate: `Official_Xbox_MP71` places a 16x10
+/// frame at 4,4 inside a 23x18 button. Those GIFs carry a global colour table, and ImageIO
+/// decodes their uncovered area as transparent. Only a GIF **with no global colour table**,
+/// whose frames all fit inside a smaller rectangle at the origin, is trimmed to that rectangle.
+/// Measured 2026-09-24 over the installed corpus, that is 1 of the 27 GIFs whose first frame is
+/// smaller than the canvas.
+enum WMPGIFCanvas {
+
+    /// The size to trim the decoded canvas to, or `nil` to keep the canvas. Returns `nil` for
+    /// anything it cannot read, as `WMPGIFTerminator` does.
+    static func paintedExtent(_ data: Data) -> (width: Int, height: Int)? {
+        let bytes = [UInt8](data)
+        guard bytes.count > 13, bytes[0] == 0x47, bytes[1] == 0x49, bytes[2] == 0x46 else {
+            return nil
+        }
+        let canvasWidth = Int(bytes[6]) | Int(bytes[7]) << 8
+        let canvasHeight = Int(bytes[8]) | Int(bytes[9]) << 8
+        guard bytes[10] & 0x80 == 0 else { return nil }                // global colour table
+        var cursor = 13
+        var maxX = 0, maxY = 0, frames = 0
+        while cursor < bytes.count {
+            switch bytes[cursor] {
+            case 0x3B:
+                cursor = bytes.count
+            case 0x21:
+                cursor += 2
+                guard cursor <= bytes.count else { return nil }
+                cursor = WMPGIFTerminator.skipSubBlocks(in: bytes, from: cursor)
+            case 0x2C:
+                guard cursor + 10 <= bytes.count else { return nil }
+                let x = Int(bytes[cursor + 1]) | Int(bytes[cursor + 2]) << 8
+                let y = Int(bytes[cursor + 3]) | Int(bytes[cursor + 4]) << 8
+                let width = Int(bytes[cursor + 5]) | Int(bytes[cursor + 6]) << 8
+                let height = Int(bytes[cursor + 7]) | Int(bytes[cursor + 8]) << 8
+                maxX = max(maxX, x + width)
+                maxY = max(maxY, y + height)
+                frames += 1
+                let framePacked = bytes[cursor + 9]
+                cursor += 10
+                if framePacked & 0x80 != 0 { cursor += 3 << ((Int(framePacked) & 7) + 1) }
+                guard cursor < bytes.count else { return nil }
+                cursor = WMPGIFTerminator.skipSubBlocks(in: bytes, from: cursor + 1)
+            default:
+                return nil
+            }
+        }
+        guard frames > 0, maxX > 0, maxY > 0, maxX <= canvasWidth, maxY <= canvasHeight,
+              maxX < canvasWidth || maxY < canvasHeight else { return nil }
+        return (maxX, maxY)
     }
 }

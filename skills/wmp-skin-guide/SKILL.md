@@ -1029,6 +1029,17 @@ queue, with the object model as the security boundary — see Amendment 2 in
   of this**: it draws at clock 0, before any animation has finished, so a clean sweep here proves
   only that nothing else moved — the measurement is the live window.
 
+- **A GIF with no global colour table has no canvas outside its frames (W201).** `pharaoh`'s
+  `pyrevolver.gif` is a 140x128 logical screen whose 16 frames are 21x16 blocks at 0,0. With no
+  global colour table the rest of the screen is undefined, ImageIO decodes it as opaque black, and
+  the 21x16 `<BUTTON>` drew the whole canvas stretched into itself: a black box. Such a GIF is
+  decoded as the rectangle at the origin that holds all its frames (`WMPGIFCanvas`, applied in
+  `WMPImageStore.decode` to every frame and to the natural size). **A canvas larger than its frames
+  is not the test** — 27 corpus GIFs have one and 26 mean it: `Official_Xbox_MP71` and `TripleX`
+  place a frame at an offset inside an unsized button, and `Age_of_Mythology`'s shutter is a
+  193x172 frame on 198x173. All 26 carry a global colour table and decode their uncovered area
+  transparent, so the rule matches 1 file.
+
 - **`player.status` is a sentence, not a token (W162).** `Playing` / `Paused` / `Stopped`, and
   `Ready` before anything is open — `WMPHostSnapshot.statusText`, read by the object-model member,
   by the `wmpprop:player.status` binding **and** by the `status_onchange` argument, which are three

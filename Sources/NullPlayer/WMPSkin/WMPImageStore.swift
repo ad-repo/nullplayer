@@ -1235,11 +1235,18 @@ final class WMPImageStore: @unchecked Sendable {
             throw WMPFailure(WMPDiagnostic(.imageDecodeFailed,
                 "ImageIO could not decode '\(path)'."))
         }
+        var size = WMPSize(width: CGFloat(width), height: CGFloat(height))
+        var byteCount = decodedByteCount
+        if ext == "gif", let extent = WMPGIFCanvas.paintedExtent(bytes),
+           let trimmed = image.cropping(to: CGRect(x: 0, y: 0, width: extent.width,
+                                                   height: extent.height)) {
+            image = trimmed
+            size = WMPSize(width: CGFloat(extent.width), height: CGFloat(extent.height))
+            byteCount = extent.width * extent.height * 4
+        }
         image = try WMPColorKey.applying(keys(colorKeys, implicitKey: implicitKey), to: image,
             componentTolerance: (ext == "jpg" || ext == "jpeg") ? WMPColorKey.jpegComponentTolerance : 0)
-        return WMPDecodedImage(image: image,
-            size: WMPSize(width: CGFloat(width), height: CGFloat(height)),
-            decodedBytes: decodedByteCount)
+        return WMPDecodedImage(image: image, size: size, decodedBytes: byteCount)
     }
 
     /// ImageIO refuses legacy WMP bitmaps over details Windows treats as advisory — `biClrImportant`
