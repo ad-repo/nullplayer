@@ -600,7 +600,8 @@ reasoning.
   draws its own rows: `WMPMainView` substitutes `WMPPlaylistSurfaceView` for the skin's `PLAYLIST`
   element and the skin contributes only the palette above, so one row renderer serves all 170
   archives that declare one — a defect here is never one skin's. `WMPPlaylistSurfaceView` carries two
-  distinct marks: the highlight bar is `selectedIndex` (the user's selection) and the `▶` prefix plus
+  distinct marks: the highlight bar is `selectedRows` (the user's selection; `selectedIndex` is only the
+  arrow-key cursor inside it — see W272 below) and the `▶` prefix plus
   `currentText` colour is `snapshot.playlistIndex` (the playing track). Seeding `selectedIndex` from
   `playlistIndex` once, at first update, left the bar parked on row 1 for the whole session while the
   marker walked down on its own — reported 2026-09-16 against `nvidia`, but visible in every skin.
@@ -632,6 +633,30 @@ reasoning.
   surface offers none, so there is no page scroll and no drag-to-position — and the `columns`
   attribute (`Title;Artist;Album;Type;Length` on `Xbox Live Skin`) is still drawn as title and
   artist. Neither was the report.
+- **The pane's right-click is NullPlayer's own playlist menu, because no skin authors one (W272).**
+  WMP skins left queue management to WMP's own menus, so the corpus draws no Remove/Sort/Clear
+  controls against a `<PLAYLIST>`. `WMPPlaylistSurfaceView.menu(for:)` returns
+  `PlaylistMenuBuilder`'s menu (`App/PlaylistMenuBuilder.swift`), the one the Modern playlist shows —
+  lifted into `App/` because this engine may not reach into `ModernPlaylistView`, and the Modern
+  view now builds its menu there too. Queue edits go straight to `WindowManager.shared.audioEngine`,
+  as the Modern playlist's do; the next host refresh redraws the rows. Four rules hold it:
+  - **The selection is a set.** `selectedRows` takes Shift-click (a range from `selectionAnchor`),
+    Cmd-click (toggle) and Shift+↑/↓, so Remove, Crop and Invert act on more than one row; Delete
+    removes every selected row, highest index first. `selectedIndex` stays the cursor.
+  - **One highlighted row follows the playing track; several do not.** The `nvidia` rule above
+    re-homes a selection of one row on a track change. A selection of several is the user's and
+    survives it — otherwise the next track change would shrink it to one before the menu acted.
+    An empty selection (Select None) is not re-seeded by a refresh either: only a cursor of `-1`
+    (first load, a new library list) seeds from the playing row.
+  - **A library preview is read-only (W136).** While the pane shows a library playlist every row that
+    edits the queue is disabled; Play and the selection rows still apply to what the pane shows.
+  - **The pane's menu sets `autoenablesItems = false`; the Modern playlist's keeps the default.**
+    Neither view validates these rows, so under AppKit's default every row with an implemented action
+    is enabled and `isEnabled` is ignored — which is how the Modern playlist has always behaved, and
+    the builder keeps it. The pane needs its disabled rows to hold, so it opts out.
+  A right-click on an unselected row selects that row alone first; on a selected row it keeps the
+  selection. Verified live 2026-09-24; `WMPPlaylistMenuTests`. **A contextual menu cannot be driven
+  synthetically** (`app-control` Route D), so verify a change here with the user driving.
 - **A `.wmz` main window's width is not a zoom.** `playlistChromeScale` is
   `mainWindow.width / Skin.baseMainSize.width` — true of a *classic* player, whose 275px grid means
   its width is the size the user chose. A `.wmz` main window is the skin's own canvas: Corona's is

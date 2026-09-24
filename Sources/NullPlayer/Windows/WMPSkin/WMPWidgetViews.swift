@@ -18,7 +18,13 @@ final class WMPPlaylistSurfaceView: NSView {
         guard !playing.isEmpty else { return -1 }
         return libraryRows.items.firstIndex { $0.sourceURL == playing } ?? -1
     }
+    /// The cursor row: where the arrow keys move from, and the row that follows the playing track.
     private var selectedIndex = -1
+    /// Every highlighted row. Shift- and Cmd-click extend it past the cursor, so the host playlist
+    /// menu's Remove, Crop and Invert have a selection to act on (W272).
+    /// `private(set)` for the W272 selection tests, as `firstVisibleIndex` is for W246's.
+    private(set) var selectedRows: Set<Int> = []
+    private var selectionAnchor: Int?
     private var lastPlayingIndex = -1
     /// The row drawn at the top. `private(set)` rather than `private` so the W246 scrolling tests
     /// can read the position back: the alternative is asserting on rendered text, which measures
@@ -40,7 +46,7 @@ final class WMPPlaylistSurfaceView: NSView {
         // reaches `draw`.
         let drawnItems = rows
         let drawnPlaying = playingRow
-        let drawnSelection = selectedIndex
+        let drawnSelection = selectedRows
         let drawnScroll = firstVisibleIndex
         self.snapshot = snapshot
         // The highlight follows the track that is playing. Seeding it once and leaving it there
@@ -53,13 +59,20 @@ final class WMPPlaylistSurfaceView: NSView {
         let playing = playingRow
         if playing != lastPlayingIndex {
             lastPlayingIndex = playing
-            if rows.indices.contains(playing) {
+            // A selection of several rows is the user's, and survives a track change.
+            if rows.indices.contains(playing), selectedRows.count <= 1 {
                 selectedIndex = playing
+                selectedRows = [playing]
+                selectionAnchor = playing
                 trackChanged = true
             }
         }
-        if selectedIndex < 0 { selectedIndex = playing }
+        if selectedIndex < 0 {
+            selectedIndex = playing
+            if rows.indices.contains(playing) { selectedRows = [playing]; selectionAnchor = playing }
+        }
         selectedIndex = min(selectedIndex, rows.count - 1)
+        selectedRows = selectedRows.filter { $0 < rows.count }
         // **Scrolling to the selection is an event, not a state (W246).** A host refresh arrives
         // ~12 times a second whether or not anything moved, and pulling the scroll position back
         // onto `selectedIndex` from every one of them clamped `firstVisibleIndex` into
@@ -72,7 +85,7 @@ final class WMPPlaylistSurfaceView: NSView {
         // the list; the track change is what still scrolls it, the way WMP's own playlist does.
         if trackChanged { scrollSelectionIntoView() } else { clampScroll() }
         if drawnItems != rows || drawnPlaying != playing
-            || drawnSelection != selectedIndex || drawnScroll != firstVisibleIndex {
+            || drawnSelection != selectedRows || drawnScroll != firstVisibleIndex {
             needsDisplay = true
         }
         setAccessibilityValue(selectedIndex >= 0 ? selectedIndex + 1 : 0)
@@ -85,6 +98,8 @@ final class WMPPlaylistSurfaceView: NSView {
         // A different list under the same control starts at its top, unselected.
         self.libraryRows = libraryRows
         selectedIndex = -1
+        selectedRows = []
+        selectionAnchor = nil
         firstVisibleIndex = 0
         lastPlayingIndex = -1
         update(snapshot)
@@ -130,8 +145,9 @@ final class WMPPlaylistSurfaceView: NSView {
         for index in firstVisibleIndex..<min(rows.count, firstVisibleIndex + visibleRows) {
             let rect = NSRect(x: 0, y: CGFloat(index - firstVisibleIndex) * rowHeight,
                               width: bounds.width, height: rowHeight)
-            if index == selectedIndex || index == playing {
-                (index == selectedIndex ? style.selectionBackground : style.background).setFill()
+            let selected = selectedRows.contains(index)
+            if selected {
+                style.selectionBackground.setFill()
                 rect.fill()
             }
             let item = rows[index]
@@ -139,7 +155,7 @@ final class WMPPlaylistSurfaceView: NSView {
             let artist = item.artist.isEmpty ? "" : " — \(item.artist)"
             (prefix + item.title + artist).draw(in: rect.insetBy(dx: 4, dy: 1), withAttributes: [
                 .font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: index == selectedIndex ? style.selectionText :
+                .foregroundColor: selected ? style.selectionText :
                     (index == playing ? style.currentText : style.text)])
         }
     }
@@ -148,8 +164,33 @@ final class WMPPlaylistSurfaceView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         let index = firstVisibleIndex + Int(point.y / rowHeight)
         guard rows.indices.contains(index) else { return }
+        if event.modifierFlags.contains(.shift) {
+            let anchor = selectionAnchor ?? selectedRows.min() ?? index
+            selectedRows = Set(min(anchor, index)...max(anchor, index))
+        } else if event.modifierFlags.contains(.command) {
+            if selectedRows.contains(index) { selectedRows.remove(index) } else { selectedRows.insert(index) }
+            selectionAnchor = index
+        } else {
+            selectedRows = [index]
+            selectionAnchor = index
+        }
         selectedIndex = index; needsDisplay = true; window?.makeFirstResponder(self)
         if event.clickCount > 1 { play(index) }
+    }
+
+    /// **NullPlayer's own playlist menu, since the skin authors none (W272).** WMP supplied these
+    /// rows from its own menus, so no skin draws them. A right-click on an unselected row selects
+    /// it first, the way a list does. A library preview is read-only: its editing rows are disabled.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let point = convert(event.locationInWindow, from: nil)
+        let index = firstVisibleIndex + Int(point.y / rowHeight)
+        if rows.indices.contains(index), !selectedRows.contains(index) {
+            selectedRows = [index]; selectionAnchor = index; selectedIndex = index
+            needsDisplay = true
+        }
+        return PlaylistMenuBuilder.menu(target: self, state: .init(
+            selectionCount: selectedRows.count, hasTracks: !rows.isEmpty, canEdit: libraryRows == nil),
+            autoenablesItems: false)
     }
 
     /// WMP plays a row of whichever playlist the control shows: a library playlist becomes the
@@ -187,22 +228,92 @@ final class WMPPlaylistSurfaceView: NSView {
             let destination = max(0, min(rows.count - 1,
                                          selectedIndex + (event.keyCode == 125 ? 1 : -1)))
             if destination != selectedIndex {
-                onAction?(.movePlaylistItem(selectedIndex, destination), nil); selectedIndex = destination
+                onAction?(.movePlaylistItem(selectedIndex, destination), nil)
+                selectedIndex = destination; selectedRows = [destination]; selectionAnchor = destination
             }
             return
         }
         switch event.keyCode {
-        case 125: selectedIndex = min(rows.count - 1, selectedIndex + 1)
-        case 126: selectedIndex = max(0, selectedIndex - 1)
+        case 125, 126:
+            selectedIndex = event.keyCode == 125 ? min(rows.count - 1, selectedIndex + 1)
+                                                 : max(0, selectedIndex - 1)
+            if event.modifierFlags.contains(.shift), let anchor = selectionAnchor {
+                selectedRows = Set(min(anchor, selectedIndex)...max(anchor, selectedIndex))
+            } else if selectedIndex >= 0 {
+                selectedRows = [selectedIndex]; selectionAnchor = selectedIndex
+            }
         case 36, 76: if selectedIndex >= 0 { play(selectedIndex) }
         // A library playlist is read-only to a skin, so delete only edits the current one.
-        case 51, 117: if selectedIndex >= 0, libraryRows == nil {
-            onAction?(.removePlaylistItem(selectedIndex), nil)
+        case 51, 117: if !selectedRows.isEmpty, libraryRows == nil {
+            for index in selectedRows.sorted(by: >) { onAction?(.removePlaylistItem(index), nil) }
+            selectedIndex = selectedRows.min() ?? selectedIndex
+            selectedRows = [selectedIndex]; selectionAnchor = selectedIndex
         }
         default: super.keyDown(with: event); return
         }
         scrollSelectionIntoView()
         needsDisplay = true
+    }
+}
+
+/// The host playlist menu's actions. Queue edits go straight to the engine, as NullPlayer's own
+/// playlist does; the next host refresh redraws the rows.
+extension WMPPlaylistSurfaceView: PlaylistMenuTarget {
+    private func selectOnly(_ rows: Set<Int>) {
+        selectedRows = rows
+        selectionAnchor = rows.min()
+        if let first = rows.min() { selectedIndex = first }
+        needsDisplay = true
+    }
+
+    @objc func playSelected(_ sender: Any?) {
+        guard let index = selectedRows.min() else { return }
+        play(index)
+    }
+    @objc func removeSelected(_ sender: Any?) {
+        guard libraryRows == nil else { return }
+        PlaylistMenuBuilder.removeTracks(at: selectedRows)
+        selectOnly([])
+    }
+    @objc func removeAll(_ sender: Any?) {
+        guard libraryRows == nil else { return }
+        WindowManager.shared.audioEngine.clearPlaylist()
+        selectOnly([]); firstVisibleIndex = 0
+    }
+    @objc func removeDeadFiles(_ sender: Any?) {
+        guard libraryRows == nil else { return }
+        PlaylistMenuBuilder.removeDeadFiles()
+        selectOnly([])
+    }
+    @objc override func selectAll(_ sender: Any?) { selectOnly(Set(rows.indices)) }
+    @objc func selectNone(_ sender: Any?) { selectOnly([]) }
+    @objc func invertSelection(_ sender: Any?) { selectOnly(Set(rows.indices).subtracting(selectedRows)) }
+    @objc func cropSelection(_ sender: Any?) {
+        guard libraryRows == nil else { return }
+        PlaylistMenuBuilder.cropPlaylist(to: selectedRows)
+        selectOnly(Set(0..<WindowManager.shared.audioEngine.playlist.count)); firstVisibleIndex = 0
+    }
+    @objc func sortByTitle(_ sender: Any?) { sort(.title) }
+    @objc func sortByArtist(_ sender: Any?) { sort(.artist) }
+    @objc func sortByAlbum(_ sender: Any?) { sort(.album) }
+    @objc func sortByFilename(_ sender: Any?) { sort(.filename) }
+    @objc func sortByPath(_ sender: Any?) { sort(.path) }
+    @objc func reverse(_ sender: Any?) {
+        guard libraryRows == nil else { return }
+        WindowManager.shared.audioEngine.reversePlaylist()
+    }
+    @objc func randomize(_ sender: Any?) {
+        guard libraryRows == nil else { return }
+        WindowManager.shared.audioEngine.shufflePlaylist()
+    }
+    @objc func showFileInfo(_ sender: Any?) {
+        guard libraryRows == nil, let index = selectedRows.min() else { return }
+        PlaylistMenuBuilder.showFileInfo(forTrackAt: index)
+    }
+
+    private func sort(_ criteria: AudioEngine.SortCriteria) {
+        guard libraryRows == nil else { return }
+        WindowManager.shared.audioEngine.sortPlaylist(by: criteria)
     }
 }
 

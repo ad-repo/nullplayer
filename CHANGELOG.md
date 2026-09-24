@@ -25,6 +25,8 @@
   is set to — local files or a Plex, Navidrome, Jellyfin or Emby server: click a playlist to see its
   tracks in the skin, double-click to play it, and search the server straight from the skin. Skins can
   read the library but never change it.
+  Right-click a skin's playlist for NullPlayer's own playlist menu — play, remove, crop, clear, sort,
+  randomize and file info — with Shift- and Cmd-click to select several tracks at once.
   ActiveX, registry, shell, plug-in, filesystem and network access stay unavailable, and a skin that
   asks for something NullPlayer does not implement loses only that one action, not the skin.
 - **Sonos Rooms window with per-room volume** — a new dockable **Sonos Rooms** window lists every
