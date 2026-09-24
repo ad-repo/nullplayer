@@ -41,11 +41,13 @@ final class WMPEffectsGroundTests: XCTestCase {
         return try WMPSkinTestSupport.encodedImage(width: 40, height: 40, rgba: rgba)
     }
 
-    private func scene(clippingColor: String?) async throws -> (WMPLoadedSkin, WMPScene) {
+    private func scene(clippingColor: String?,
+                       backgroundColor: String? = nil) async throws -> (WMPLoadedSkin, WMPScene) {
         let keys = clippingColor.map { #"clippingColor="\#($0)" "# } ?? ""
+        let fill = backgroundColor.map { #"backgroundColor="\#($0)" "# } ?? ""
         let wms = """
         <THEME><VIEW id="vis" width="40" height="40" titleBar="false"
-                     backgroundImage="body.png" \(keys)transparencyColor="#FF00FF">
+                     backgroundImage="body.png" \(keys)\(fill)transparencyColor="#FF00FF">
             <EFFECTS id="myeffects" zIndex="-1" left="10" top="10" width="20" height="20"/>
         </VIEW></THEME>
         """
@@ -90,6 +92,23 @@ final class WMPEffectsGroundTests: XCTestCase {
         let flat = try flatten(rendered, size: 40)
         XCTAssertEqual(WMPSkinTestSupport.rgba(flat, x: 20, yFromTop: 20)[3], 0,
                        "so the rect renders exactly as it always has")
+    }
+
+    /// `bluegrid`: no `clippingColor`, but the view paints its own `backgroundColor="#000000"` over
+    /// the keyed artwork and hangs the rect behind it. That fill is the skin saying what its screen
+    /// stands on; before it counted, the screen was see-through and click-through.
+    /// `Plus! BubbleSkin`, the guard above, authors no `backgroundColor` anywhere.
+    func testAFilledContainerGroundsTheRectBehindItsKeyedHole() async throws {
+        let (skin, scene) = try await scene(clippingColor: nil, backgroundColor: "#000000")
+        XCTAssertEqual(scene.effectsGrounds.count, 1, "the authored fill is a permission")
+        XCTAssertNil(scene.effectsGrounds.first?.shape, "and no shape was stated, so it is the rect")
+
+        let store = WMPImageStore(provider: skin.archive)
+        let flat = try flatten(try await WMPRenderer(imageStore: store).render(scene: scene), size: 40)
+        XCTAssertEqual(WMPSkinTestSupport.rgba(flat, x: 20, yFromTop: 20), [0, 0, 0, 255],
+                       "the screen is opaque black, not a hole to the desktop")
+        XCTAssertEqual(WMPSkinTestSupport.rgba(flat, x: 35, yFromTop: 20), [40, 180, 40, 255],
+                       "the skin's own artwork is untouched")
     }
 
     /// A rect the skin backs itself takes no ground of ours — which is the whole of W9's rule, and

@@ -281,6 +281,10 @@ struct WMPSceneBuilder: @unchecked Sendable {
         /// The window shapes the containers above the current node have stated, innermost last.
         /// Only a `clippingColor` contributes one; see `WMPEffectsGround` and `groundShape`.
         var groundShapeStack: [WMPSceneClipMask] = []
+        /// Whether the node being walked was put behind its parent's own artwork by that parent,
+        /// and that parent authored an opaque fill under a keyed background image. See
+        /// `WMPEffectsGround` — it is the one other permission a ground takes.
+        var behindFilledArtworkStack: [Bool] = []
         func emit(_ command: WMPPaintCommand) {
             guard command.alpha > 0 else { return }
             commands.append(command.inside(clipMaskStack))
@@ -1156,9 +1160,19 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // under every command in the below layer. A rect whose node declares its own
             // `backgroundImage` is excluded — that backdrop is already emitted and already moves
             // the split index past itself.
+            //
+            // **A parent that fills its own keyed artwork and hangs the rect behind it has said the
+            // same thing a matte says.** `bluegrid`'s view is `backgroundImage="background.bmp"
+            // backgroundColor="#000000" transparencyColor="#FF00FF"` with no `clippingColor`, and
+            // its 19,200 magenta pixels are exactly the 160x120 screen its `<effects zIndex="-1">`
+            // sits in. With no shape in scope that screen took no ground: a hole straight through
+            // the window, see-through and click-through. Reported 2026-09-24 as *"visualizer has
+            // empty background and can be clicked through"*. `Plus! BubbleSkin`, the reason the
+            // transparency key alone is not a shape, authors no `backgroundColor` anywhere.
             var effectsGround: WMPEffectsGround?
             if node.kind == .effects, !frame.isEmpty,
-               groundShapeStack.last != nil || viewStatesAMatte,
+               groundShapeStack.last != nil || viewStatesAMatte
+                || behindFilledArtworkStack.last == true,
                try resource(node, names: ["backgroundImage", "background"]) == nil {
                 let authored = color(node, names: ["backgroundColor"])
                 effectsGround = WMPEffectsGround(frame: frame,
@@ -1276,11 +1290,15 @@ struct WMPSceneBuilder: @unchecked Sendable {
             }
             if let ownClipMask { clipMaskStack.append(ownClipMask) }
             if let ownGroundShape { groundShapeStack.append(ownGroundShape) }
+            behindFilledArtworkStack.append(hasBackgroundImage
+                && !colors(node, names: ["transparencyColor"]).isEmpty
+                && mirroredColor(of: node, names: ["backgroundColor"]) != nil)
             for child in behindOwnArtwork {
                 try walk(child, parentFrame: frame, parentAuthoredSize: ownAuthoredSize,
                          inheritedClip: childClip, parentAlpha: alpha,
                          parentNode: node, parentNodeFrame: frame)
             }
+            behindFilledArtworkStack.removeLast()
             if ownClipMask != nil { clipMaskStack.removeLast() }
             if ownGroundShape != nil { groundShapeStack.removeLast() }
 
@@ -1740,11 +1758,13 @@ struct WMPSceneBuilder: @unchecked Sendable {
 
             if let ownClipMask { clipMaskStack.append(ownClipMask) }
             if let ownGroundShape { groundShapeStack.append(ownGroundShape) }
+            behindFilledArtworkStack.append(false)
             for child in orderedChildren.dropFirst(behindOwnArtwork.count) {
                 try walk(child, parentFrame: frame, parentAuthoredSize: ownAuthoredSize,
                          inheritedClip: childClip, parentAlpha: alpha,
                          parentNode: node, parentNodeFrame: frame)
             }
+            behindFilledArtworkStack.removeLast()
             if ownClipMask != nil { clipMaskStack.removeLast() }
             if ownGroundShape != nil { groundShapeStack.removeLast() }
         }

@@ -978,6 +978,20 @@ queue, with the object model as the security boundary — see Amendment 2 in
   magenta pixels are a one-pixel antialias fringe between the grey field and the red matte rather
   than a screen. Relaxing either half draws a black halo round that skin.
 
+  **A parent that paints its own `backgroundColor` over keyed artwork and hangs the rect behind it
+  is the third permission, and the ground is then the rect itself.** `bluegrid`'s view is
+  `backgroundImage="background.bmp" backgroundColor="#000000" transparencyColor="#FF00FF"` with no
+  `clippingColor`; its 19,200 magenta pixels are exactly the 160x120 screen its
+  `<effects zIndex="-1">` sits in, so the screen was see-through and click-through — reported
+  2026-09-24 as *"visualizer has empty background and can be clicked through"*. `Plus! BubbleSkin`
+  still refuses it: it authors no `backgroundColor` anywhere. The gate is
+  `behindFilledArtworkStack` — the rect's *direct* parent, and only for a negative-`zIndex` child.
+  Markup scan over the 180 readable `.wms` files: 7 nodes in 6 archives match (`aoe`, `bluegrid`,
+  `cerulean`, `claw`, `gadget`, `pharaoh` ×2), and every one but `bluegrid` already had a
+  `clippingColor` shape (`WIDGET … shape=` in the probe), so `bluegrid` is the only render that moves.
+  Accepted live 2026-09-24. `WMPEffectsGroundTests.testAFilledContainerGroundsTheRectBehindItsKeyedHole`
+  pins it.
+
   **This class a corpus sweep can arbitrate, and the ground is drawn in the flat dump for that
   reason** — it is the *skin's* backdrop, not the hosted surface. Sweep over 184 archives: **5 images
   move and every changed pixel is a former hole becoming opaque black** — `rad` 27,090 px, `Ovoid`
