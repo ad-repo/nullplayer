@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **One layout for every skin menu** — the Classic, Modern and Windows Media Player skin menus now
+  share the same order and wording: **Load Skin...**, **Get More Skins...** and **Open Skins
+  Folder...**, then the family's **Default Skin**, then your installed skins. Windows Media Player
+  gains a **Get More Skins...** link to the Internet Archive's WMP skins collection, and Classic gains
+  **Open Skins Folder...**.
 - **Windows Media Player `.wmz` skins** — a new Windows Media Player mode that runs real WMP 9-era
   skins natively on macOS. Import a `.wmz` from the UI menu, or start from the built-in unskinned
   player; existing Classic, Original, Original-Metal and Winamp Modern choices are kept on upgrade.

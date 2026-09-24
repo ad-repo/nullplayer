@@ -869,6 +869,11 @@ class ContextMenuBuilder {
         getMoreSkins.target = MenuActions.shared
         classicMenu.addItem(getMoreSkins)
         
+        // Open Skins Folder...
+        let openClassicFolder = NSMenuItem(title: "Open Skins Folder...", action: #selector(MenuActions.openClassicSkinsFolder), keyEquivalent: "")
+        openClassicFolder.target = MenuActions.shared
+        classicMenu.addItem(openClassicFolder)
+        
         classicMenu.addItem(NSMenuItem.separator())
         
         // Default Skin (Silver)
@@ -1044,58 +1049,23 @@ class ContextMenuBuilder {
                 winampModernMenu.addItem(NSMenuItem.separator())
             }
 
-            // What this installation is, before what is loaded into it. The ClassicPro engine leads
-            // because it is the **dependency**: a cPro skin needs it imported before it can run at
-            // all, so it belongs above the skins that ask for it rather than below them.
-            let engineInstalled = ClassicProEngineStore.shared.isInstalled
-            let engineItem = NSMenuItem(
-                title: engineInstalled ? "Reimport ClassicPro Engine..." : "Import ClassicPro Engine...",
-                action: #selector(MenuActions.importClassicProEngineFromFile), keyEquivalent: "")
-            engineItem.target = MenuActions.shared
-            if engineInstalled { engineItem.state = .on }
-            winampModernMenu.addItem(engineItem)
+            // Where skins come from, in the order every skin family's menu uses: load one, find
+            // more (WinampHeritage is the archive that still hosts `.wal` skins), and the folder
+            // they land in.
+            let loadItem = NSMenuItem(title: "Load Skin...",
+                                      action: #selector(MenuActions.loadWinampModernSkinFromFile), keyEquivalent: "")
+            loadItem.target = MenuActions.shared
+            winampModernMenu.addItem(loadItem)
 
-            let downloadEngineItem = NSMenuItem(title: "Download ClassicPro Engine...",
-                                                action: #selector(MenuActions.downloadClassicProEngine), keyEquivalent: "")
-            downloadEngineItem.target = MenuActions.shared
-            winampModernMenu.addItem(downloadEngineItem)
-
-            // Whether the installed engine is the build we test against. The engine is third-party
-            // and user-supplied, so an untested build is allowed \u{2014} it just must not be silent.
-            if engineInstalled {
-                let verdict = ClassicProEngineStore.shared.info()?.provenanceVerdict
-                let title: String
-                switch verdict {
-                case .knownGood: title = "Engine: verified 2.01"
-                // An installed engine with unreadable info is untested for the same reason an
-                // unrecognized one is: nothing vouches for what is on disk.
-                case .unrecognized, .none: title = "\u{26A0}\u{FE0E} Engine: untested build"
-                case .treeMismatch: title = "\u{26A0}\u{FE0E} Engine: unexpected contents"
-                }
-                let status = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-                status.isEnabled = false
-                winampModernMenu.addItem(status)
-            }
-
-            // How the user gets `.wal` skins, and where they land — about *this* installation, not
-            // about what is loaded into it. Opening the folder belongs with the import it is the
-            // other half of, not stranded at the bottom of the menu.
-            let importItem = NSMenuItem(title: "Import .wal Skin...",
-                                        action: #selector(MenuActions.loadWinampModernSkinFromFile), keyEquivalent: "")
-            importItem.target = MenuActions.shared
-            winampModernMenu.addItem(importItem)
+            let getMoreItem = NSMenuItem(title: "Get More Skins...",
+                                         action: #selector(MenuActions.getMoreWinampModernSkins), keyEquivalent: "")
+            getMoreItem.target = MenuActions.shared
+            winampModernMenu.addItem(getMoreItem)
 
             let openFolder = NSMenuItem(title: "Open Skins Folder...",
                                         action: #selector(MenuActions.openWinampModernSkinsFolder), keyEquivalent: "")
             openFolder.target = MenuActions.shared
             winampModernMenu.addItem(openFolder)
-
-            // The other half of "where do skins come from": the folder is where they land, this is
-            // where they are found. WinampHeritage is the archive that still hosts `.wal` skins.
-            let getMoreItem = NSMenuItem(title: "Get More Skins...",
-                                         action: #selector(MenuActions.getMoreWinampModernSkins), keyEquivalent: "")
-            getMoreItem.target = MenuActions.shared
-            winampModernMenu.addItem(getMoreItem)
 
             // The bundled placeholder, in the same place and shape Classic gives its bundled
             // Silver: its own entry between "where skins come from" and the user's own library,
@@ -1112,6 +1082,26 @@ class ContextMenuBuilder {
                     defaultItem.state = .on
                 }
                 winampModernMenu.addItem(defaultItem)
+            }
+
+            winampModernMenu.addItem(NSMenuItem.separator())
+            let installed = WinampModernSkinImporter.shared.installedSkins()
+            if installed.isEmpty {
+                let noSkins = NSMenuItem(title: "No skins installed", action: nil, keyEquivalent: "")
+                noSkins.isEnabled = false
+                winampModernMenu.addItem(noSkins)
+            } else {
+                for skin in installed {
+                    let item = NSMenuItem(title: skin.name,
+                                          action: #selector(MenuActions.selectWinampModernSkin(_:)),
+                                          keyEquivalent: "")
+                    item.target = MenuActions.shared
+                    item.representedObject = skin.archiveURL
+                    if WinampModernSkinImporter.shared.selectedSkin()?.archiveURL == skin.archiveURL {
+                        item.state = .on
+                    }
+                    winampModernMenu.addItem(item)
+                }
             }
 
             // Everything configured for the **loaded skin**, in one block: what it can be coloured
@@ -1193,20 +1183,37 @@ class ContextMenuBuilder {
                 for item in skinSpecific { winampModernMenu.addItem(item) }
             }
 
-            let installed = WinampModernSkinImporter.shared.installedSkins()
-            if !installed.isEmpty {
-                winampModernMenu.addItem(NSMenuItem.separator())
-                for skin in installed {
-                    let item = NSMenuItem(title: skin.name,
-                                          action: #selector(MenuActions.selectWinampModernSkin(_:)),
-                                          keyEquivalent: "")
-                    item.target = MenuActions.shared
-                    item.representedObject = skin.archiveURL
-                    if WinampModernSkinImporter.shared.selectedSkin()?.archiveURL == skin.archiveURL {
-                        item.state = .on
-                    }
-                    winampModernMenu.addItem(item)
+            // The ClassicPro engine a cPro skin needs imported before it can run at all. It sits
+            // below the skin list so the top of this menu matches Classic's and Media Player's.
+            winampModernMenu.addItem(NSMenuItem.separator())
+            let engineInstalled = ClassicProEngineStore.shared.isInstalled
+            let engineItem = NSMenuItem(
+                title: engineInstalled ? "Reimport ClassicPro Engine..." : "Import ClassicPro Engine...",
+                action: #selector(MenuActions.importClassicProEngineFromFile), keyEquivalent: "")
+            engineItem.target = MenuActions.shared
+            if engineInstalled { engineItem.state = .on }
+            winampModernMenu.addItem(engineItem)
+
+            let downloadEngineItem = NSMenuItem(title: "Download ClassicPro Engine...",
+                                                action: #selector(MenuActions.downloadClassicProEngine), keyEquivalent: "")
+            downloadEngineItem.target = MenuActions.shared
+            winampModernMenu.addItem(downloadEngineItem)
+
+            // Whether the installed engine is the build we test against. The engine is third-party
+            // and user-supplied, so an untested build is allowed \u{2014} it just must not be silent.
+            if engineInstalled {
+                let verdict = ClassicProEngineStore.shared.info()?.provenanceVerdict
+                let title: String
+                switch verdict {
+                case .knownGood: title = "Engine: verified 2.01"
+                // An installed engine with unreadable info is untested for the same reason an
+                // unrecognized one is: nothing vouches for what is on disk.
+                case .unrecognized, .none: title = "\u{26A0}\u{FE0E} Engine: untested build"
+                case .treeMismatch: title = "\u{26A0}\u{FE0E} Engine: unexpected contents"
                 }
+                let status = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+                status.isEnabled = false
+                winampModernMenu.addItem(status)
             }
 
             winampModernItem.submenu = winampModernMenu
@@ -1229,15 +1236,46 @@ class ContextMenuBuilder {
                 wmpMenu.addItem(switchItem)
                 wmpMenu.addItem(.separator())
             }
-            let load = NSMenuItem(title: "Load WMZ Skin…",
+            // Where skins come from, in the order every skin family's menu uses.
+            let load = NSMenuItem(title: "Load Skin...",
                                   action: #selector(MenuActions.loadWMPSkinFromFile), keyEquivalent: "")
             load.target = MenuActions.shared
             wmpMenu.addItem(load)
-            let unskinned = NSMenuItem(title: "Unskinned Default Player",
+            let getMore = NSMenuItem(title: "Get More Skins...",
+                                     action: #selector(MenuActions.getMoreWMPSkins), keyEquivalent: "")
+            getMore.target = MenuActions.shared
+            wmpMenu.addItem(getMore)
+            let open = NSMenuItem(title: "Open Skins Folder...",
+                                  action: #selector(MenuActions.openWMPSkinsFolder), keyEquivalent: "")
+            open.target = MenuActions.shared
+            wmpMenu.addItem(open)
+            wmpMenu.addItem(.separator())
+
+            let unskinned = NSMenuItem(title: "Default Skin (Unskinned)",
                                        action: #selector(MenuActions.useUnskinnedWMPPlayer), keyEquivalent: "")
             unskinned.target = MenuActions.shared
             unskinned.state = activeMode == .wmp && importer.selectedSkinName == nil ? .on : .off
             wmpMenu.addItem(unskinned)
+            wmpMenu.addItem(.separator())
+
+            let installed = importer.installedSkins()
+            if installed.isEmpty {
+                let empty = NSMenuItem(title: "No skins installed", action: nil, keyEquivalent: "")
+                empty.isEnabled = false
+                wmpMenu.addItem(empty)
+            } else {
+                for skin in installed {
+                    let item = NSMenuItem(title: skin.name, action: #selector(MenuActions.selectWMPSkin(_:)), keyEquivalent: "")
+                    item.target = MenuActions.shared
+                    item.representedObject = skin.name
+                    if activeMode == .wmp,
+                       importer.selectedSkinName?.caseInsensitiveCompare(skin.name) == .orderedSame {
+                        item.state = .on
+                    }
+                    wmpMenu.addItem(item)
+                }
+            }
+            wmpMenu.addItem(.separator())
 
             if activeMode == .wmp,
                let controller = wm.mainWindowController as? WMPMainWindowController,
@@ -1256,27 +1294,7 @@ class ContextMenuBuilder {
                 viewsItem.submenu = viewsMenu
                 wmpMenu.addItem(viewsItem)
             }
-            wmpMenu.addItem(.separator())
-
-            let installed = importer.installedSkins()
-            if installed.isEmpty {
-                let empty = NSMenuItem(title: "No WMP skins installed", action: nil, keyEquivalent: "")
-                empty.isEnabled = false
-                wmpMenu.addItem(empty)
-            } else {
-                for skin in installed {
-                    let item = NSMenuItem(title: skin.name, action: #selector(MenuActions.selectWMPSkin(_:)), keyEquivalent: "")
-                    item.target = MenuActions.shared
-                    item.representedObject = skin.name
-                    if activeMode == .wmp,
-                       importer.selectedSkinName?.caseInsensitiveCompare(skin.name) == .orderedSame {
-                        item.state = .on
-                    }
-                    wmpMenu.addItem(item)
-                }
-            }
-            wmpMenu.addItem(.separator())
-            let report = NSMenuItem(title: "Save Compatibility Report…",
+            let report = NSMenuItem(title: "Save Compatibility Report...",
                                     action: #selector(MenuActions.saveWMPCompatibilityReport),
                                     keyEquivalent: "")
             report.target = MenuActions.shared
@@ -1284,16 +1302,12 @@ class ContextMenuBuilder {
                 && (wm.mainWindowController as? WMPMainWindowController)?.hasCompatibilityReport == true
             wmpMenu.addItem(report)
             if let selectedName = importer.selectedSkinName {
-                let remove = NSMenuItem(title: "Remove \u{201c}\(selectedName)\u{201d}…",
+                let remove = NSMenuItem(title: "Remove \u{201c}\(selectedName)\u{201d}...",
                                         action: #selector(MenuActions.removeSelectedWMPSkin),
                                         keyEquivalent: "")
                 remove.target = MenuActions.shared
                 wmpMenu.addItem(remove)
             }
-            let open = NSMenuItem(title: "Open WMP Skins Folder…",
-                                  action: #selector(MenuActions.openWMPSkinsFolder), keyEquivalent: "")
-            open.target = MenuActions.shared
-            wmpMenu.addItem(open)
             if activeMode == .wmp { wmpItem.state = .on }
             wmpItem.submenu = wmpMenu
             uiMenu.addItem(wmpItem)
@@ -4708,6 +4722,17 @@ class MenuActions: NSObject {
     
     @objc func getMoreClassicSkins() {
         guard let url = URL(string: "https://skins.webamp.org") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc func openClassicSkinsFolder() {
+        let directory = WindowManager.shared.skinsDirectoryURL
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(directory)
+    }
+
+    @objc func getMoreWMPSkins() {
+        guard let url = URL(string: "https://archive.org/download/windowsmediaplayerskinscollection") else { return }
         NSWorkspace.shared.open(url)
     }
 

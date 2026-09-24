@@ -17,9 +17,10 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 ### Windows Media Player skins
 
 Fresh installs start in NullPlayer's app-authored Windows Media Player mode. Use **Import WMZ…** on
-the unskinned player or **UI > Windows Media Player > Load WMZ Skin…** to install a user-supplied
-`.wmz`. The same menu selects installed skins and authored views, removes the selected installed
-copy, exports a compatibility report, or returns to **Unskinned Default Player**. Existing users keep
+the unskinned player or **UI > Windows Media Player > Load Skin...** to install a user-supplied
+`.wmz`; **Get More Skins...** opens the Internet Archive's WMP skins collection. The same menu selects
+installed skins and authored views, removes the selected installed copy, exports a compatibility
+report, or returns to **Default Skin (Unskinned)**. Existing users keep
 their saved Classic, Original, Original-Metal, or WMP choice after upgrading. See
 `docs/wmp-skin/user-guide.md` for recovery and security limitations.
 
@@ -362,7 +363,7 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - Bundled Original skins: NeonWave (default), Skulls
 
 ### Winamp Modern (`.wal`) Mode
-- **Skins > Modern** lists installed Winamp 5.x `.wal` skins, imported with **Import .wal Skin...**.
+- **Skins > Modern** lists installed Winamp 5.x `.wal` skins, imported with **Load Skin...**; **Get More Skins...** opens WinampHeritage.
 - **Skins > Modern > Default Skin (Black)** is the plain placeholder skin that ships with the app —
   what Modern mode loads on a first run, before any skin is imported. NullPlayer bundles no Winamp
   skins; this one is our own. It gives the mode a working player window (transport, seek, volume,

@@ -49,10 +49,11 @@ final class WMPPhase3Tests: XCTestCase {
         let uiMenu = ContextMenuBuilder.buildMenuBarUIMenu()
         let wmpItem = uiMenu.items.first { $0.title == PlayerUIMode.wmp.displayName }
         XCTAssertNotNil(wmpItem)
-        XCTAssertNotNil(wmpItem?.submenu?.items.first { $0.title == "Load WMZ Skin…" })
-        XCTAssertNotNil(wmpItem?.submenu?.items.first { $0.title == "Unskinned Default Player" })
-        XCTAssertNotNil(wmpItem?.submenu?.items.first { $0.title == "Save Compatibility Report…" })
-        XCTAssertNotNil(wmpItem?.submenu?.items.first { $0.title == "Open WMP Skins Folder…" })
+        XCTAssertNotNil(wmpItem?.submenu?.items.first { $0.title == "Load Skin..." })
+        XCTAssertNotNil(wmpItem?.submenu?.items.first { $0.title == "Default Skin (Unskinned)" })
+        XCTAssertNotNil(wmpItem?.submenu?.items.first { $0.title == "Get More Skins..." })
+        XCTAssertNotNil(wmpItem?.submenu?.items.first { $0.title == "Save Compatibility Report..." })
+        XCTAssertNotNil(wmpItem?.submenu?.items.first { $0.title == "Open Skins Folder..." })
     }
 
     func testMissingAndCorruptSelectionsRemainInDedicatedUnskinnedController() async throws {

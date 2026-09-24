@@ -27,7 +27,7 @@ You supply the fixtures — nothing third-party is committed:
 ./scripts/kill_build_run.sh
 ```
 
-Then **Modern** → **Import .wal Skin…** (the menu family for `.wal` skins; the `-uiMode` value and
+Then **Modern** → **Load Skin...** (the menu family for `.wal` skins; the `-uiMode` value and
 every internal identifier stay `winampModern`), and for cPro-Bento also
 **Import ClassicPro Engine…**. In a DEBUG build you can bypass the picker:
 

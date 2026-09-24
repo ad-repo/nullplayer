@@ -7,16 +7,16 @@ preferences from another NullPlayer skin family.
 
 ## Import, select, and remove
 
-1. Choose **Import WMZ…** on the unskinned player, or open **UI > Windows Media Player > Load WMZ
-   Skin…**.
+1. Choose **Import WMZ…** on the unskinned player, or open **UI > Windows Media Player > Load
+   Skin...**. **Get More Skins...** in the same menu opens the Internet Archive's WMP skins collection.
 2. Select a `.wmz` file. NullPlayer validates the complete archive before installing it under
    `~/Library/Application Support/NullPlayer/WMPSkins/` and switches to WMP mode.
 3. Use **UI > Windows Media Player** to select any installed skin. If it defines multiple views, use
    the **Views** submenu. Skin-authored compact/full buttons can also request a supported view.
-4. Choose **Remove “name”…** to delete NullPlayer's installed copy of the selected skin. This never
+4. Choose **Remove “name”...** to delete NullPlayer's installed copy of the selected skin. This never
    deletes the original file you downloaded.
 
-Choose **Unskinned Default Player** at any time to clear the selection without deleting installed
+Choose **Default Skin (Unskinned)** at any time to clear the selection without deleting installed
 skins. Classic, Original, Original-Metal, and Windows Media Player can be selected live from the
 **UI** menu.
 
@@ -24,10 +24,10 @@ skins. Classic, Original, Original-Metal, and Windows Media Player can be select
 
 - A missing, corrupt, rejected, or deleted selected skin leaves the app in WMP mode and shows the
   unskinned player with a named diagnostic. Import the skin again, choose another installed skin, or
-  select **Unskinned Default Player**.
+  select **Default Skin (Unskinned)**.
 - Skin script preferences are isolated by the archive's content hash. Re-importing different bytes
   does not inherit another skin's namespace.
-- To reset the WMP selection manually, choose **Unskinned Default Player**. To remove all installed
+- To reset the WMP selection manually, choose **Default Skin (Unskinned)**. To remove all installed
   copies, use the menu once per selected skin or open the WMP skins folder and remove only `.wmz`
   files while they are not selected.
 - Existing users retain their persisted Classic, Original, Original-Metal, or WMP mode after an
@@ -35,7 +35,7 @@ skins. Classic, Original, Original-Metal, and Windows Media Player can be select
 
 ## Compatibility reports and support
 
-With a valid skin loaded, choose **Save Compatibility Report…**. The JSON report inventories tags,
+With a valid skin loaded, choose **Save Compatibility Report...**. The JSON report inventories tags,
 attributes, resources, scripts, object-model members, events, and typed diagnostics. It contains no
 archive payload, source text, pixels, screenshot, or local input path. Include this file and any
 visible `WMPnnnn` diagnostic code in a support report; do not redistribute a skin unless its license

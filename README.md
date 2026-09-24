@@ -281,7 +281,7 @@ To set up:
 
 1. Open **Skins > Modern > Download ClassicPro Engine...** to fetch `ClassicPro_2.01.exe`.
 2. Import the installer via **Skins > Modern > Import ClassicPro Engine…** (it stays as a single private copy and is not run as a program).
-3. Import a ClassicPro skin via **Skins > Modern > Import .wal Skin...**, then select it from **Skins > Modern**.
+3. Import a ClassicPro skin via **Skins > Modern > Load Skin...**, then select it from **Skins > Modern**.
 
 NullPlayer's Winamp Modern support is built through clean-room reverse engineering, verified against a corpus of real-world skins. The [skin compatibility report](docs/winamp-modern/skin-compatibility.md) is the current corpus of `.wal` skins tested in that effort — every Winamp 5.x skin the engine has been measured against, its compatibility grade, and what is still known to be outstanding on it. It is updated as the engine improves and new skins are measured.
 
