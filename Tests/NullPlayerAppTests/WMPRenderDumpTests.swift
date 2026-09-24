@@ -894,6 +894,9 @@ enum WMPHarness {
         var scene = try await builder.build(viewID: viewID)
 
         var output: WMPScriptOutput?
+        // Every transaction's diagnostics, not the last one's: a settle loop or a resize pass
+        // replaces `output`, and reporting only what survived it dropped every `onLoad` error.
+        var diagnostics: [WMPJScriptDiagnostic] = []
         if let session = pass.session {
             await session.discardView(viewID)
             // The load pass: the skin's programs evaluate, every `JScript:` geometry expression
@@ -904,6 +907,7 @@ enum WMPHarness {
                                             snapshot: probe.hostSnapshot,
                                             event: eventFor(name: "onLoad", skin: skin, viewID: viewID),
                                             geometry: scene.scriptGeometry)
+            diagnostics += output?.diagnostics ?? []
             if probe.hostSnapshot.video.hasVideo {
                 let readyScene = try await builder.build(viewID: viewID, requestedSize: scene.canvasSize,
                                                          overrides: output?.overrides ?? .empty)
@@ -911,6 +915,7 @@ enum WMPHarness {
                     snapshot: probe.hostSnapshot,
                     event: eventFor(name: "onVideoStart", skin: skin, viewID: viewID),
                     geometry: readyScene.scriptGeometry)
+                diagnostics += output?.diagnostics ?? []
                 scene = readyScene
                 WMPHarnessOutput.emit("VIDEO \(viewID): ready \(probe.hostSnapshot.video.width)x\(probe.hostSnapshot.video.height)")
             }
@@ -935,6 +940,7 @@ enum WMPHarness {
                                                 size: resized.canvasSize,
                                                 snapshot: probe.hostSnapshot, event: event,
                                                 geometry: resized.scriptGeometry)
+                diagnostics += output?.diagnostics ?? []
                 scene = resized
             }
             if probe.settleSeconds > 0, let timer = eventFor(name: "onTimer", skin: skin, viewID: viewID) {
@@ -964,6 +970,7 @@ enum WMPHarness {
                     output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
                                                     snapshot: probe.hostSnapshot, event: timer,
                                                     geometry: scene.scriptGeometry)
+                    diagnostics += output?.diagnostics ?? []
                     // Rebuild between ticks: an animation reads the geometry it is drawn at, and a
                     // loop that fed it the same starting frame every time would freeze on the first
                     // step while still looking like it was running.
@@ -982,13 +989,16 @@ enum WMPHarness {
                     output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
                                                     snapshot: probe.hostSnapshot, event: timer,
                                                     geometry: scene.scriptGeometry)
+                    diagnostics += output?.diagnostics ?? []
                 }
             }
             if let output, output.overrides != .empty {
                 scene = try await builder.build(viewID: viewID, requestedSize: probe.requestedSize,
                                                 overrides: output.overrides)
             }
-            for diagnostic in output?.diagnostics ?? [] {
+            // A timer handler that throws does so on every tick; print each diagnostic once.
+            var reported = Set<WMPJScriptDiagnostic>()
+            for diagnostic in diagnostics where reported.insert(diagnostic).inserted {
                 WMPHarnessOutput.emit("SCRIPT-DIAG \(viewID) [\(diagnostic.code)] \(diagnostic.message)")
             }
         }

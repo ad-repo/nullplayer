@@ -1019,15 +1019,21 @@ evaluation order and unchanged.
 - **non-function globals are one variable in one scope**, here as in the markup. `perfect.js`'s
   `var currView = "perfectSkin"` and `perfectV.js`'s `"perfectVSkin"` are still the same variable.
   No corpus skin has been shown to need otherwise, and two views' `Init`s writing one flag is also
-  how these skins share state — measure a case before scoping values (W204).
+  how these skins share state. **Measured 2026-09-24 and none needs otherwise (W204)**: `SlimLine`
+  re-reads each shared value from a preference in `Init`, `pharaoh`'s `vidIsRunning` is derived
+  from the same player state in both views, and the one `holiday_skin` value that crosses views
+  (`playlistIsVisible`) is read in `Globe` only by an `onEndMove` nothing there fires.
 
 A case-folded alias from the section below follows the function it aliases when a view rebinds it.
 
-**It reaches 7 of 184 archives** — `Plus! SlimLine` (17 contested names), `holiday_skin` (22),
-`Sports` (6), `pharaoh` (2), `portals` (2), `corona` and `9SeriesDefault` (1). That census is worth
-re-reading before trusting a re-run of it: the first pass tried UTF-16 before UTF-8 and accepted any
-decode with no NUL bytes, so two plain CP1252 `.js` files came back as mojibake with zero functions
-in them and the answer was 3 archives instead of 7. Sniff the BOM; a decoder that cannot fail is
+**It reaches 6 of 184 archives** — `Plus! SlimLine` (17 contested names), `holiday_skin` (22),
+`pharaoh` (2), `portals` (2), `corona` and `9SeriesDefault` (1), and only four of those change
+behaviour: `corona`'s two `OpenMedia`s are byte-identical. The census first said 7, counting
+`Sports`, whose archive carries two `.wms` files; the loader takes `ExtremeSports.wms` (WMP0022)
+and `saltmine.js` never evaluates. **Count only the programs the loaded definition names.** The
+census is also worth re-reading before trusting a re-run: the first pass tried UTF-16 before UTF-8
+and accepted any decode with no NUL bytes, so two plain CP1252 `.js` files came back as mojibake
+with zero functions in them and the answer was 3 archives instead of 7. Sniff the BOM; a decoder that cannot fail is
 the same trap as a `grep` that prints nothing (W256).
 
 `WMP_VIEW_SCRIPT_SCOPE=0` restores the pre-W257 last-program-wins binding — the A/B, in one binary.

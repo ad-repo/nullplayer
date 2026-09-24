@@ -23,7 +23,7 @@ and three script programs in an archive of 49 entries, and almost nothing about 
 | A container with a `backgroundColor` **and** keys **and** a background image | **10 nodes in 9 archives**, and `pharaoh` is 2 of them | scan of every `<VIEW>`/`<SUBVIEW>` over the 185 installed archives, decoded as `WMPTextDecoder` does (158 UTF-16, 146 cp1252, 89 UTF-8, 9 UTF-8-BOM) |
 | An `<EFFECTS zIndex="-1">` behind a `transparencyColor` hole in its container's artwork | **5 of those 9** — `aoe`, `bluegrid`, `claw`, `gadget`, `pharaoh` | each rect compared against the hole's bounds in the container's bitmap; every one within 2 px |
 | An `openView` target with **no canvas** | **2 of 185 archives** — `pharaoh` (twice) and `cyberchannel`'s `playView` | every `openView`/`openViewRelative` target resolved against its own `<VIEW>` declaration |
-| Two `scriptFile` programs defining the same top-level function names | **7 of 185 archives**; `pharaoh` collides on `OnOpenStateChange` and `UpdateMetadata` | every `function <name>(` in each named program |
+| Two `scriptFile` programs defining the same top-level function names | **6 of 184 archives** (the first count said 7 and included `Sports`, whose second `.wms` never loads); `pharaoh` collides on `OnOpenStateChange` and `UpdateMetadata` | every `function <name>(` in each program the **loaded** definition names |
 | A GIF whose frame image blocks are far smaller than its logical screen | **27 files in 12 archives** of 4,303 GIFs, and `pyrevolver.gif` is the extreme at 6.7% — and the only one of the 27 with **no global colour table** (W201) | every image block against the screen descriptor, and the screen descriptor's global-table flag |
 | `<DURATIONTEXT>` | **2 nodes in 2 archives** — this and `circle` | tag census |
 | The widest filmstrip in the corpus | `seek_steps.bmp`, 15990x20 | `reference/loading.md`; it is why the axis bound is 32,768 (W33) |
@@ -92,26 +92,14 @@ author — **which means a `<DURATIONTEXT>` anywhere is dead**, not just this on
 archives (`pharaoh`, `circle`), kept as a row because it is a *visible* readout on a shipped
 Microsoft skin.
 
-**`W204` — every view in a skin shares one script scope, so a second `scriptFile` silently
-overwrites the first's functions.** One `JSContext` serves every view by design —
-`WMPScriptContext.restoreElements(for:)` swaps each window's live elements in for the length of its
-own transaction, because every view root is called `view` — but **a program's top-level functions are
-not swapped**, so the last `scriptFile` evaluated wins for the whole skin. `pharaoh.js` and
-`pharaoh_ros.js` each define `OnOpenStateChange`, `UpdateMetadata` and `vidIsRunning`; the rosetta's
-wins, so the *player's* `player.OpenState_onchange` runs the rosetta's handler and dies on the first
-identifier that view does not have:
-`SCRIPT-DIAG view-2 [handler-error] onLoad[0]: ReferenceError: Can't find variable: bgVid (line 50)`,
-reproducible with `WMP_SKIN=…/pharaoh.wmz WMP_RENDER_HOST=playing`. **It is invisible with a stopped
-player**, which is why no sweep has shown it — the handler's `else` branch touches nothing
-view-specific — so a default-state capture cannot measure it. The population is **7 of 185 archives**
-declaring two or more `scriptFile` programs that define the same top-level function name:
-`Plus! SlimLine`, `Sports` and `holiday_skin` collide on six each (`Init`, `OnOpenStateChange`,
-`OnPlayStateChange`, `EndVideo`, `StartVideo`/`OnClose`, `OnTimerTick`), `pharaoh` on two,
-`9SeriesDefault` and `corona` on `OpenMedia`, `portals` on `init`/`shutdown` — a scan of every
-`function <name>(` in each program a `scriptFile` names, decoded as `WMPTextDecoder` does; **re-run
-it before ranking**. `pharaoh`'s own symptom is bounded (its video pane never auto-opens) and the row
-is ranked on the other six. **The shape of the fix is per-view function scope; what that costs a skin
-whose views deliberately share a helper is the question to answer first.**
+**`W204` — every view in a skin shared one script scope — closed 2026-09-24.** The function half
+closed with W257: the rosetta's `OnOpenStateChange` no longer runs in the main view. A playing-host
+`WMP_CALL_TRACE=1` sweep, A/B'd with `WMP_VIEW_SCRIPT_SCOPE=0`, shows the main view writing
+`visSphinx`/`visScarab` (its own handler) where the old binding wrote `bgVid.enabled`. The one
+shared value, `vidIsRunning`, is derived from the same player state in both views, so one variable
+serves both. The old `ReferenceError: bgVid` no longer appears even with `=0`: since W40 every
+view's elements are bound, so the wrong handler now runs silently rather than throwing. Closure:
+`docs/wmp-skin/wmp-backlog-archive.md` § *W204*.
 
 ## What was ruled out
 
