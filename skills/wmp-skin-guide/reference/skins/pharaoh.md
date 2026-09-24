@@ -81,19 +81,12 @@ candidates are the screen-versus-block size and the GIF's uninitialised screen a
 been isolated. **Check `Age_of_Mythology`'s `open_shutter.gif` before changing anything** — it is
 already load-bearing for the one-shot terminator rule (`README.md`).
 
-**`W202` — an `<EFFECTS visible="false">` that a script later makes visible never gets a hosted
-surface**, so scarab mode's 903-px hole stays black.
-`<effects id="visScarab" zIndex="-1" visible="false" left="1" top="7" width="129" height="79">` is
-made visible by `ToggleScarab(true)` and the `#FF00FF` its `scarab.bmp` cuts for it never fills.
-**Measured live after W199**: the sphinx view's surface mounts and animates
-(`VisualizationGLView: Setting up ProjectM with viewport 174x148`, 1,595 of 1,608 hole pixels
-changing between captures) and **no second `Setting up ProjectM` line is ever logged for the
-scarab** — the surface is never created, rather than created and hidden. The population is
-**57 nodes in 54 archives** declaring `visible="false"` on an `<EFFECTS>`/`<WMPEFFECTS>`
-(`Erektorset`, `Plus! SlimLine` and `Sports` twice each); **how many are turned on by script is the
-number to measure next**. Rank it on that population, not on pharaoh — the scarab's hole is small.
-Drive it with `defaults write NullPlayer wmpSkinName -string pharaoh`, the debug build, and a click
-at the window's `262,107`, then **read the log, not the screen**.
+**`W202` — the scarab's visualizer never appearing — closed 2026-09-24 as not reproducing.**
+Driven live, the click logs `create id=27 kind=effects frame=1,7 129x79` under `WMP_WIDGET_TRACE=1`
+and the wing lattice animates. Two traps made it look broken. **A `Setting up ProjectM` line is not
+evidence of a surface**: the effect is shared across skins, and with any other effect selected
+neither view logs it. And **the first click on an inactive window only activates it**, so the
+scarab does not open. Closure: `docs/wmp-skin/wmp-backlog-archive.md` § *W202*.
 
 **`W203` — `<DURATIONTEXT>` never renders**, so the face reads `1:03 /` with nothing after the slash.
 `<currentPositionText>` at `57,86` and the literal `/` at `103,86` both draw;
