@@ -335,6 +335,27 @@ struct WMPSceneBuilder: @unchecked Sendable {
         }
         indexGeometryBindings(view)
 
+        /// **A node a script has shown is drawn even inside a hidden container (W263).** Markup inherits —
+        /// a default-visible child of a `visible="false"` subview stays hidden, and 2,630 corpus
+        /// children rely on that — but an explicit script write of `visible = true` is the node's
+        /// own answer. `Charlies_Angels_Full_Throttle` nests its whole face in `pos`, and its
+        /// Gallery hides `pos` and shows `boxsmall`, the cut-down face inside it, along with the
+        /// gallery's wings and pictures; drawing nothing below `pos` emptied the window. The US
+        /// forces skins (`Stars and Stripes` and five siblings) show their Help and Credits text
+        /// inside `help`/`credits`, which are authored hidden and never shown by any script.
+        /// These are the hidden ancestors the walk has to pass through to reach such a node.
+        var passThroughAncestors = Set<Int>()
+        func indexScriptShown(_ node: WMPNode, ancestors: [Int]) -> Void {
+            if overrides.properties[WMPScenePropertyAddress(stableID: node.stableID,
+                                                           property: "visible")]?.truth == true {
+                passThroughAncestors.formUnion(ancestors)
+            }
+            for child in node.children {
+                indexScriptShown(child, ancestors: ancestors + [node.stableID])
+            }
+        }
+        indexScriptShown(view, ancestors: [])
+
         /// A number a script may have written, then the markup's own.
         ///
         /// The type's `literal(_:_:)` reads the attribute and nothing else, and `<TEXT>` is where
@@ -803,15 +824,17 @@ struct WMPSceneBuilder: @unchecked Sendable {
 
         func walk(_ node: WMPNode, parentFrame: WMPRect, parentAuthoredSize: WMPSize,
                   inheritedClip: WMPRect?, parentAlpha: CGFloat = 1, isRoot: Bool = false,
-                  parentNode: WMPNode? = nil, parentNodeFrame: WMPRect? = nil) throws {
+                  parentNode: WMPNode? = nil, parentNodeFrame: WMPRect? = nil,
+                  insideHidden: Bool = false) throws {
             // A script override outranks the markup. Corona's `SetPane` switches its video and
             // visualization panes purely by writing `vid.visible` / `vis.visible`, so a builder
             // that reads only the authored attribute draws whichever the author happened to leave
             // on — which is how an opaque video pane ended up over the artwork as soon as playback
             // started.
             var hidden = false
-            if let override = overrides.properties[WMPScenePropertyAddress(stableID: node.stableID,
-                                                                          property: "visible")] {
+            let visibleOverride = overrides.properties[WMPScenePropertyAddress(stableID: node.stableID,
+                                                                               property: "visible")]
+            if let override = visibleOverride {
                 if !override.truth { hidden = true }
             } else if let mirrored = mirroredVisibility(of: node) {
                 // **A `wmpprop:` path can name another element in the same skin, not only a host
@@ -823,14 +846,20 @@ struct WMPSceneBuilder: @unchecked Sendable {
             } else if literalString(node, "visible")?.caseInsensitiveCompare("false") == .orderedSame {
                 hidden = true
             }
+            // Below a hidden ancestor only a node the script itself has shown is drawn — see
+            // `passThroughAncestors`.
+            if insideHidden, visibleOverride?.truth != true { hidden = true }
+            let passesThrough = hidden && passThroughAncestors.contains(node.stableID)
             // Measured-only, and only for a node the graph reads a coordinate off. A node with no
             // frame of its own has no coordinate to give, so `isNonLayout` still leaves here.
-            if hidden, !geometryBindingTargets.contains(node.stableID) || isNonLayout(node) { return }
+            if hidden, !passesThrough,
+               !geometryBindingTargets.contains(node.stableID) || isNonLayout(node) { return }
             if isNonLayout(node) {
                 for child in node.children.sorted(by: paintOrder) {
                     try walk(child, parentFrame: parentFrame, parentAuthoredSize: parentAuthoredSize,
                              inheritedClip: inheritedClip, parentAlpha: parentAlpha,
-                             parentNode: parentNode, parentNodeFrame: parentNodeFrame)
+                             parentNode: parentNode, parentNodeFrame: parentNodeFrame,
+                             insideHidden: hidden)
                 }
                 return
             }
@@ -910,10 +939,10 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     let partial = WMPRect(x: parentFrame.x + left, y: parentFrame.y + top,
                         width: width ?? 0, height: height ?? 0)
                     let partialAuthored = WMPSize(width: width ?? 0, height: height ?? 0)
-                    for child in hidden ? [] : node.children.sorted(by: paintOrder) {
+                    for child in hidden && !passesThrough ? [] : node.children.sorted(by: paintOrder) {
                         try walk(child, parentFrame: partial, parentAuthoredSize: partialAuthored,
                                  inheritedClip: inheritedClip, parentAlpha: parentAlpha,
-                                 parentNode: node, parentNodeFrame: partial)
+                                 parentNode: node, parentNodeFrame: partial, insideHidden: hidden)
                     }
                     return
                 }
@@ -1076,10 +1105,48 @@ struct WMPSceneBuilder: @unchecked Sendable {
                                 width: frame.width, height: frame.height)
             geometries[node.stableID] = WMPResolvedGeometry(localFrame: local,
                 absoluteFrame: frame, visibleFrame: visible, clipRect: inheritedClip)
+            // **A container collapsed to nothing clips its children away too.** `nil` is "no clip
+            // at all" here, so a zero-area frame has to hand down a zero-area rect: `Classic` sets
+            // `view.height = 359 - 183` for audio, its `stretch` video pane collapses to zero
+            // height, and the centred `wmlogo` inside it drew unclipped across the nav bar.
+            //
+            // **Only a collapsed frame, not one that merely misses its parent.** `Back to the
+            // Future Trilogy` authors its "previous visualization" button at `left="-25"`, wholly
+            // outside the logo strip it belongs to, mirroring the next button on the other side —
+            // clipping that too took the button off the window. Whether WMP clips it is unproven;
+            // the corpus sweep said this is the one rule that moves only the reported skin.
+            //
+            // **A top-level `<SUBVIEW>` sized by its artwork alone is not a box, and does not clip
+            // to one.** With no `width` or `height` of its own its frame is only the bitmap's
+            // extent, and `Ursula` slides its playlist drawer out of the 388x224 `mainbg.bmp`
+            // subview to `top="212"` in a 320-high view: clipped to the bitmap, the opened drawer
+            // showed its first 12 rows and nothing else. `Creed` (same drawer, past `Main.bmp`) and
+            // `Asimov_Radio` (a 190-high face hung 30px inside the sign it belongs to) say the same.
+            // **Only a direct child of the view.** Nested, the same shape is a clipping window:
+            // `Melvin`'s `x` subview is `clip.gif` with the eyelid parked wholly above it until a
+            // blink slides it down, and unclipped the eyelid sat on top of the head.
+            let sizedByArtworkAlone = node.kind == .subview && parentNode?.kind == .view
+                && node.statedAttribute(named: "width") == nil
+                && node.statedAttribute(named: "height") == nil
+                && authoredDimension(node, "width") == nil
+                && authoredDimension(node, "height") == nil
+            let childClip = frame.isEmpty && inheritedClip != nil
+                ? WMPRect(x: frame.x, y: frame.y, width: 0, height: 0)
+                : sizedByArtworkAlone ? inheritedClip
+                : inheritedClip.flatMap { frame.intersection($0) } ?? (inheritedClip == nil ? frame : nil)
             // A measured hidden node stops here: it answers where it is and nothing else. Paint,
-            // hit targets, widgets, children and the resolved/unresolved tallies all stay exactly
-            // as they were before it was measured at all.
-            if hidden { return }
+            // hit targets, widgets and the resolved/unresolved tallies all stay exactly as they
+            // were before it was measured at all. Its children are walked only to reach a node the
+            // script has shown (`passThroughAncestors`), and are hidden themselves unless they are.
+            if hidden {
+                guard passesThrough else { return }
+                for child in node.children.sorted(by: paintOrder) {
+                    try walk(child, parentFrame: frame, parentAuthoredSize: ownAuthoredSize,
+                             inheritedClip: childClip, parentAlpha: inheritedAlpha(node, parentAlpha),
+                             parentNode: node, parentNodeFrame: frame, insideHidden: true)
+                }
+                return
+            }
             resolvedNodes.insert(node.stableID)
             let z = zIndex(of: node)
             let alpha = inheritedAlpha(node, parentAlpha)
@@ -1233,35 +1300,6 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // and 32 `<EFFECTS>` across 30 skins use the same mechanism. Siblings are already
             // sorted by zIndex, so the eye still lands under the visualizer.
             let orderedChildren = node.children.sorted(by: paintOrder)
-            // **A container collapsed to nothing clips its children away too.** `nil` is "no clip
-            // at all" here, so a zero-area frame has to hand down a zero-area rect: `Classic` sets
-            // `view.height = 359 - 183` for audio, its `stretch` video pane collapses to zero
-            // height, and the centred `wmlogo` inside it drew unclipped across the nav bar.
-            //
-            // **Only a collapsed frame, not one that merely misses its parent.** `Back to the
-            // Future Trilogy` authors its "previous visualization" button at `left="-25"`, wholly
-            // outside the logo strip it belongs to, mirroring the next button on the other side —
-            // clipping that too took the button off the window. Whether WMP clips it is unproven;
-            // the corpus sweep said this is the one rule that moves only the reported skin.
-            //
-            // **A top-level `<SUBVIEW>` sized by its artwork alone is not a box, and does not clip
-            // to one.** With no `width` or `height` of its own its frame is only the bitmap's
-            // extent, and `Ursula` slides its playlist drawer out of the 388x224 `mainbg.bmp`
-            // subview to `top="212"` in a 320-high view: clipped to the bitmap, the opened drawer
-            // showed its first 12 rows and nothing else. `Creed` (same drawer, past `Main.bmp`) and
-            // `Asimov_Radio` (a 190-high face hung 30px inside the sign it belongs to) say the same.
-            // **Only a direct child of the view.** Nested, the same shape is a clipping window:
-            // `Melvin`'s `x` subview is `clip.gif` with the eyelid parked wholly above it until a
-            // blink slides it down, and unclipped the eyelid sat on top of the head.
-            let sizedByArtworkAlone = node.kind == .subview && parentNode?.kind == .view
-                && node.statedAttribute(named: "width") == nil
-                && node.statedAttribute(named: "height") == nil
-                && authoredDimension(node, "width") == nil
-                && authoredDimension(node, "height") == nil
-            let childClip = frame.isEmpty && inheritedClip != nil
-                ? WMPRect(x: frame.x, y: frame.y, width: 0, height: 0)
-                : sizedByArtworkAlone ? inheritedClip
-                : inheritedClip.flatMap { frame.intersection($0) } ?? (inheritedClip == nil ? frame : nil)
             // **A clipping shape shapes the element's contents, not only the element.** The mask
             // covers this node's frame and every descendant's paint is cut to it; see
             // `WMPSceneClipMask` for the two archives that state the rule and the one that guards

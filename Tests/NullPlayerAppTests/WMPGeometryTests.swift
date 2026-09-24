@@ -215,6 +215,38 @@ final class WMPGeometryTests: XCTestCase {
                       "a script revealed this element and it was not drawn")
     }
 
+    /// A node the script shows is drawn inside a hidden container; the container and every child
+    /// the script did not show stay hidden. `Charlies_Angels_Full_Throttle`'s Gallery hides `pos`,
+    /// which holds the whole face, and shows `boxsmall` inside it — the window went empty.
+    func testAScriptShownNodeIsDrawnInsideAHiddenContainer() async throws {
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="60" height="40">
+              <SUBVIEW id="pos" left="10" top="10" width="40" height="20" backgroundColor="#FF0000">
+                <SUBVIEW id="face" left="0" top="0" width="10" height="10" backgroundColor="#00FF00"/>
+                <SUBVIEW id="wing" left="20" top="0" width="10" height="10" visible="false">
+                  <SUBVIEW id="box" left="2" top="3" width="4" height="4" visible="false"
+                           backgroundColor="#0000FF"/>
+                </SUBVIEW>
+              </SUBVIEW>
+            </VIEW></THEME>
+            """.utf8))
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        func node(_ id: String) throws -> WMPNode { try XCTUnwrap(skin.graph.nodes(id: id).first) }
+        var overrides = WMPSceneOverrides.empty
+        overrides.properties[.init(stableID: try node("pos").stableID, property: "visible")] = .bool(false)
+        overrides.properties[.init(stableID: try node("box").stableID, property: "visible")] = .bool(true)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main", overrides: overrides)
+        let drawn = Set(scene.commands.map(\.stableID))
+        XCTAssertTrue(drawn.contains(try node("box").stableID), "the script showed this node")
+        XCTAssertFalse(drawn.contains(try node("pos").stableID), "the hidden container drew itself")
+        XCTAssertFalse(drawn.contains(try node("face").stableID),
+                       "a child the script never showed escaped its hidden container")
+        XCTAssertEqual(scene.geometries[try node("box").stableID]?.absoluteFrame,
+                       WMPRect(x: 32, y: 13, width: 4, height: 4))
+    }
+
     /// The natural size of a background bitmap fills in an *unstated* dimension. It must never
     /// overwrite one the skin computed: Corona's compact view collapses `svVideo` to height 0
     /// through its own timer, and the bitmap kept stamping its own height back over it, leaving a

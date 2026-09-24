@@ -1801,6 +1801,22 @@ queue, with the object model as the security boundary — see Amendment 2 in
   of `visible="wmpprop:…"`); **an element it does not declare answers nothing**, leaving the markup's
   own value. Only `visible` declines to default — on every other property the empty string is the
   honest answer, and `wmpenabled:` still disables.
+- **A node the script shows is drawn inside a hidden container (W263).** Markup inherits: a
+  default-visible child of a `visible="false"` subview stays hidden (2,630 corpus children rely on
+  it). An explicit script write of `visible = true` is the node's own answer, though, and the walk
+  passes through a hidden ancestor to reach it — the ancestor paints nothing, hits nothing, and
+  every child the script did not show stays hidden (`passThroughAncestors` in `WMPSceneBuilder`).
+  `Charlies_Angels_Full_Throttle` nests its whole face in `pos`; Gallery hides `pos` and shows
+  `boxsmall` (the cut-down face), the wings and the pictures inside it, and the window went empty
+  with no way back (Speaker Mode is in a wing). `Stars and Stripes` and its five US-forces siblings
+  show Help/Credits text inside `help`/`credits`, which are authored hidden and never shown.
+  **This is not proven WMP behaviour and the corpus argues both ways** — `portals` and
+  `modernblue` also show children inside closed containers (a pane choice in a shut tray, a play
+  button on a hidden compact face) where inheritance is what the skin wants. The before/after sweep
+  moved 3 of 529 images (`portals/mode1`, `modernblue/myview`, `US Army/MainPlayer`); the reporter
+  reviewed all three and accepted them, the one visible cost being W264. Most of this pattern fires
+  only on a click or play-state change, so a clean load-time sweep does not clear it — check a
+  reported stray pane against this rule first.
 - **A panel opened with `theme.openView` is not the session's view (W96).** `apply` persisted
   `wmpSkinViewID` on every present, so quitting with a playlist open recorded the playlist; the
   covered view was not persisted, so the next launch restored a panel with no player and no route
