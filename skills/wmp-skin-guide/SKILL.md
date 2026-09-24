@@ -1434,6 +1434,28 @@ queue, with the object model as the security boundary — see Amendment 2 in
   `Blinx/mainView` hosts two fewer text widgets that were already `visible=none`. The cursor-rect
   pass in `WMPMainView` treats a clip that misses a control as hidden, not unconfined.
   `WMPAlignmentTests.testAChildOfACollapsedStretchPaneIsClippedAway` pins it.
+- **A top-level `<SUBVIEW>` sized by its background image alone is not a box and clips nothing
+  past it — a nested one is, and does.** With no `width`/`height` (authored or script-assigned) its
+  frame is only the bitmap's extent. `Ursula` hangs its playlist drawer off the 388x224 `mainbg.bmp`
+  subview and `moveTo`s it to `top="212"` in a 320-high view; clipped to the bitmap, the opened
+  drawer showed its first 12 rows and read as "the drawer does not extend". A **direct child of the
+  view** so sized hands its children the *inherited* clip, and its `clippingColor` shape keeps its
+  keyed region inside the bitmap and says nothing outside it (`WMPSceneClipMask.boundedByFrame =
+  false`; the renderer pads the mask with keep, and `WMPHitCoverage` treats a sample past the bitmap
+  as kept). **The first cut applied it at any depth, and the corpus sweep refuted that**: `Melvin`'s
+  `x` subview is a nested `clip.gif` whose eyelid is parked wholly above it until a blink slides it
+  down, and unclipped it sat on the head. The top-level cases corroborate one another — `Creed`
+  runs the same drawer script past `Main.bmp` (466x400 in a 550-high view), and `Asimov_Radio`'s
+  default-on `splHead` is a 190-high face hung 30px inside its 288-high sign, which the old clip cut
+  to a forehead. Sweep against the old rule (A/B, 184 archives): those two plus `Ursula`, the `Xbox`
+  family's previous/next-visualization buttons (9px past `screen_buttons_back.png`, now drawn and
+  reachable), and sub-pixel edge moves on half-pixel frames; the hit counts that *drop* are close
+  and resize buttons laid out for a wider window that sat wholly off the canvas, which used to keep
+  a hit only because a parent missing the canvas handed down no clip at all.
+  `WMPAlignmentTests.testOnlyATopLevelArtworkSizedSubviewLetsItsChildrenPastItsBitmap` pins both
+  halves. Reproduce Ursula's opened state headlessly by authoring `playlist_drawer` at `top="212"`
+  and `plsub` visible in a copy of the archive — `WMP_RENDER_CLICK` reports the move but dumps the
+  pre-click frame. Accepted live 2026-09-23.
 - **A hidden element still has a place, and the extent a binding gives it is not a baseline
   (W226).** Two more steps along the same read, both found by measuring `Compact`'s visualizer at
   two window sizes. **First: the walk returns on an invisible node before recording a geometry**, so

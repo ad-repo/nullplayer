@@ -185,8 +185,11 @@ enum WMPHitCoverageBuilder {
                         guard let keep, shape.frame.width > 0, shape.frame.height > 0 else { return false }
                         let mx = Int((sample.x - shape.frame.x) * CGFloat(keep.width) / shape.frame.width)
                         let my = Int((sample.y - shape.frame.y) * CGFloat(keep.height) / shape.frame.height)
-                        // Outside the shape's own bitmap is outside the region it keeps.
-                        guard mx >= 0, my >= 0, mx < keep.width, my < keep.height else { return false }
+                        // Outside the shape's own bitmap is outside the region it keeps — unless
+                        // the container states no extent past it; see `boundedByFrame`.
+                        guard mx >= 0, my >= 0, mx < keep.width, my < keep.height else {
+                            return !shape.boundedByFrame
+                        }
                         return keep.alpha(atX: mx, y: my) > 0
                     }
                     guard kept else { continue }

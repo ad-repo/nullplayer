@@ -500,4 +500,27 @@ final class WMPAlignmentTests: XCTestCase {
         }
     }
 
+    /// `Ursula`'s drawer slides out of an image-sized top-level subview; `Melvin`'s eyelid is
+    /// parked outside an image-sized *nested* one and must stay hidden. Both halves pinned.
+    func testOnlyATopLevelArtworkSizedSubviewLetsItsChildrenPastItsBitmap() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="100">
+            <SUBVIEW id="body" backgroundImage="body.png" clippingColor="#FF0000">
+                <SUBVIEW id="drawer" top="40" width="30" height="40" backgroundImage="drawer.png"/>
+                <SUBVIEW id="eye" left="60" top="10" backgroundImage="eye.png">
+                    <BUTTON id="lid" top="-10" image="lid.png"/>
+                </SUBVIEW>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """, resources: ["body.png": try sheet(100, 50), "drawer.png": try sheet(30, 40),
+                         "eye.png": try sheet(10, 10), "lid.png": try sheet(10, 10)])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let drawer = try XCTUnwrap(scene.commands.first { $0.nodeID == "drawer" })
+        XCTAssertEqual(drawer.clipRect, WMPRect(x: 0, y: 0, width: 100, height: 100))
+        XCTAssertEqual(drawer.inheritedClipMasks.map(\.boundedByFrame), [false])
+        let lid = try XCTUnwrap(scene.commands.first { $0.nodeID == "lid" })
+        let lidClip = try XCTUnwrap(lid.clipRect)
+        XCTAssertNil(lid.frame.intersection(lidClip), "the eyelid stays parked out of sight")
+    }
+
 }

@@ -342,6 +342,12 @@ struct WMPSceneClipMask: Hashable, Codable {
     /// inversion arriving by a second route.
     let keyedOut: [WMPColor]
     let frame: WMPRect
+    /// Whether the region ends at `frame`. It does for every container that states its own
+    /// extent; a top-level `<SUBVIEW>` sized by its background image alone states none, and its shape says
+    /// nothing about what lies past the bitmap — `Ursula` hangs its playlist drawer off the
+    /// 388x224 `mainbg.bmp` subview and slides it to `top="212"` in a 320-high view, so ending the
+    /// region at the bitmap cut the opened drawer off at its first 12 rows.
+    var boundedByFrame = true
 }
 
 struct WMPPaintCommand: Hashable, Codable {

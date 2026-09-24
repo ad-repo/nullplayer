@@ -1229,14 +1229,34 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // outside the logo strip it belongs to, mirroring the next button on the other side —
             // clipping that too took the button off the window. Whether WMP clips it is unproven;
             // the corpus sweep said this is the one rule that moves only the reported skin.
+            //
+            // **A top-level `<SUBVIEW>` sized by its artwork alone is not a box, and does not clip
+            // to one.** With no `width` or `height` of its own its frame is only the bitmap's
+            // extent, and `Ursula` slides its playlist drawer out of the 388x224 `mainbg.bmp`
+            // subview to `top="212"` in a 320-high view: clipped to the bitmap, the opened drawer
+            // showed its first 12 rows and nothing else. `Creed` (same drawer, past `Main.bmp`) and
+            // `Asimov_Radio` (a 190-high face hung 30px inside the sign it belongs to) say the same.
+            // **Only a direct child of the view.** Nested, the same shape is a clipping window:
+            // `Melvin`'s `x` subview is `clip.gif` with the eyelid parked wholly above it until a
+            // blink slides it down, and unclipped the eyelid sat on top of the head.
+            let sizedByArtworkAlone = node.kind == .subview && parentNode?.kind == .view
+                && node.statedAttribute(named: "width") == nil
+                && node.statedAttribute(named: "height") == nil
+                && authoredDimension(node, "width") == nil
+                && authoredDimension(node, "height") == nil
             let childClip = frame.isEmpty && inheritedClip != nil
                 ? WMPRect(x: frame.x, y: frame.y, width: 0, height: 0)
+                : sizedByArtworkAlone ? inheritedClip
                 : inheritedClip.flatMap { frame.intersection($0) } ?? (inheritedClip == nil ? frame : nil)
             // **A clipping shape shapes the element's contents, not only the element.** The mask
             // covers this node's frame and every descendant's paint is cut to it; see
             // `WMPSceneClipMask` for the two archives that state the rule and the one that guards
-            // the key list.
-            let ownClipMask = try clipMask(node, frame: frame)
+            // the key list. Past the bitmap of a container sized by it, the shape says nothing.
+            let ownClipMask = try clipMask(node, frame: frame).map { mask -> WMPSceneClipMask in
+                var mask = mask
+                mask.boundedByFrame = !sizedByArtworkAlone
+                return mask
+            }
             let ownGroundShape = try groundShape(node, frame: frame)
             let behindOwnArtwork = orderedChildren.prefix { zIndex(of: $0) < 0 }
             if let ownClipMask { clipMaskStack.append(ownClipMask) }

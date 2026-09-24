@@ -297,7 +297,12 @@ struct WMPRenderer: @unchecked Sendable {
             for shape in command.inheritedClipMasks {
                 let mask = try imageStore.regionMask(for: shape.resourcePath,
                                                      keyedOut: shape.keyedOut)
-                clip(to: shape.frame, mask: mask, context: context)
+                if !shape.boundedByFrame, let (padded, extent) = Self.pad(mask, frame: shape.frame,
+                                                                          toCover: command.frame) {
+                    clip(to: extent, mask: padded, context: context)
+                } else {
+                    clip(to: shape.frame, mask: mask, context: context)
+                }
             }
             switch command.paint {
             case let .fill(color):
@@ -388,6 +393,36 @@ struct WMPRenderer: @unchecked Sendable {
     /// button of a BUTTONGROUP lit the bottom one. Apply the counter-flip `drawImage` uses. The clip
     /// is resolved at the call, so undoing the transform afterwards leaves the region correct —
     /// which is why this cannot use save/restore, as restoring would drop the clip with it.
+    /// A region mask extended to cover `target`, keeping everything past its own `frame` — the
+    /// shape of a container that states no extent beyond its bitmap (see `boundedByFrame`). Nil
+    /// when `target` already lies inside `frame`, which is the plain mask's answer anyway.
+    private static func pad(_ mask: CGImage, frame: WMPRect,
+                            toCover target: WMPRect) -> (CGImage, WMPRect)? {
+        let minX = min(frame.x, target.x), minY = min(frame.y, target.y)
+        let maxX = max(frame.x + frame.width, target.x + target.width)
+        let maxY = max(frame.y + frame.height, target.y + target.height)
+        guard frame.width > 0, frame.height > 0,
+              minX < frame.x || minY < frame.y
+                || maxX > frame.x + frame.width || maxY > frame.y + frame.height else { return nil }
+        let extent = WMPRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        let scaleX = CGFloat(mask.width) / frame.width, scaleY = CGFloat(mask.height) / frame.height
+        let width = Int((extent.width * scaleX).rounded(.up))
+        let height = Int((extent.height * scaleY).rounded(.up))
+        guard width > 0, height > 0, width * height <= WMPPhase0Limits.imagePixels,
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
+                                      bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return nil }
+        // 255 keeps, the convention `makeClippingMask` states. Bottom-up here, so the bitmap's
+        // offset is measured from the extent's bottom edge.
+        context.setFillColor(gray: 1, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.setBlendMode(.copy)
+        context.draw(mask, in: CGRect(x: (frame.x - extent.x) * scaleX,
+                                      y: (extent.y + extent.height - frame.y - frame.height) * scaleY,
+                                      width: CGFloat(mask.width), height: CGFloat(mask.height)))
+        return context.makeImage().map { ($0, extent) }
+    }
+
     private func clip(to frame: WMPRect, mask: CGImage, context: CGContext) {
         let centerY = frame.y + frame.height / 2
         context.translateBy(x: 0, y: centerY)
