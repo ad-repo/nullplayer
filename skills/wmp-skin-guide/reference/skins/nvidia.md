@@ -28,12 +28,17 @@ to settle before anything is worth measuring.
   (`view.width = view.minWidth`). `mWidth` is never saved — `saveViewSize` is commented out of
   `onPlayerResize` — so the sentinel is the *only* path this skin ever takes. An empty string here
   would silently leave the window wherever it was.
-- **A `<LISTBOX>` that is a playlist chooser.** `fillListBox()` walks `player.playlistCollection`,
-  not `mediaCollection` — "Now Playing", then a row per CD drive, then each saved playlist's
-  `getItemInfo("Title")`. The `"All Music"`/`"All Video"` branches in `getSelPlaylist()` are
-  unreachable: nothing in any of the nine archives ever appends those rows. `WMP_TASKS.md`'s W66 row
-  describes this as walking the media collection, which is wrong; the media collection is reached by
-  the **search box** above the library (`onMlSearch`), and that is a separate question.
+- **A `<LISTBOX>` that is a playlist chooser, filled from a click rather than a load.**
+  `fillListBox()` walks `player.playlistCollection`, not `mediaCollection` — "Now Playing", then a row
+  per CD drive, then each saved playlist's `getItemInfo("Title")` — and is answered since W136 from the
+  library browser's selected source (`object-model.md` § *The library*). **Unlike `WoW`, whose
+  `onLoadPl()` fills on load, `NVIDIA` fills in `plModeToggle()`** — the Show Playlist click — and only
+  while its saved `loadList` preference is `'false'`: reset in the view's load (`nvidia.js:33`), set
+  `'true'` at the end of `fillListBox()` (`:694`), so it fills **once per load**. The `"All Music"`/
+  `"All Video"` branches in `getSelPlaylist()` are unreachable: nothing in any of the nine archives ever
+  appends those rows. The media collection is reached only by the **search box** above the library
+  (`onMlSearch`: `getAll()`, filtered in script), which on a server is the server's track search
+  (W136).
 
 ## Defects it found
 
@@ -41,6 +46,8 @@ to settle before anything is worth measuring.
 |---|---|---|
 | *"the playlist library is opening very small size now and possibly distorting the aspect ratio"* | The window resize the switch asked for was lost when the view's own 100 ms timer cancelled the transaction carrying it, so a 730x574 picture was presented into the 285x301 window and stretched | W197 |
 | the same report | A script-assigned `minWidth`/`minHeight` never reached `WMPResizeLimits`, so the playlist's floor stayed at the audio mode's 285x301 and the window could sit far below what its layout resolves in | W196 |
+| *"media library just does not work in nvidia but does work in WOW"* (2026-09-24; search works) | **Open.** The chooser is filled only by `plModeToggle()`, gated on `loadList`, and W136's source-switch refresh re-runs only views whose `onLoad` read the library — so `NVIDIA` is never refilled when the browser's source changes, and keeps whatever the one fill of this load produced. Re-dispatching the filling click is not a fix: it toggles the mode back off. No `handler-error` or `execution terminated` line was logged in the session; whether the fill, which runs inside a larger click handler, fits the 0.25 s budget on a 1,850-playlist Jellyfin is **unmeasured** | W274 |
+| *"i switched to nvidia skin and the search keeps coming back when i switch sources"* (2026-09-24; the search had been run in `WoW`) | Tracks a server fetched — for a search or an opened playlist — were counted in the library proper, so `getAll()` outside a search answered with an earlier skin's search; and a search result kept across a source switch left `library.media:<n>` references that no longer existed, so `updatePlInfo()` threw on every `Playlist_onChange` (`unimplemented library.media.getiteminfo (no such media)`) | W136 (closed) |
 
 ## What was ruled out
 
@@ -50,10 +57,15 @@ to settle before anything is worth measuring.
   matches the block on screen exactly. **Two fixes were built and both backed out**: suppressing the
   `<LISTBOX>`'s own `backgroundColor="#ffffff"` fill in `WMPSceneBuilder`, and having
   `WMPListBoxSurfaceView` paint nothing while it has no rows. Neither moved a pixel. The panel is
-  white because it is **empty** — W66, still open — and not because anything paints it.
-- **The `<LISTBOX>` is not hosted in this view at all.** `WMP_RENDER_CLICK`'s after-state reads
-  `16 widgets[editBox×1 playlist×1 slider×3 text×11]`: `plListBox1` declares no `height`, so it never
-  resolves and never becomes a widget. Do not reason about its AppKit surface from what is on screen.
+  white because it was **empty** — W66 then, closed by W136 on 2026-09-24 — and not because anything
+  paints it.
+- **The `<LISTBOX>` was not hosted in this view at all** (measured 2026-09-16, before W136).
+  `WMP_RENDER_CLICK`'s after-state read `16 widgets[editBox×1 playlist×1 slider×3 text×11]`:
+  `plListBox1` declares no `height`, so it did not resolve and never became a widget. **Its only height
+  is the one `resizeListBox()` writes** — `itemCount × 14 + 1`, capped at `plListBoxSub.height` — so an
+  unfilled list is 1 px tall. **Whether it is hosted now that the fill has rows is unmeasured**, and is
+  the first thing W274 should read for this skin, before the refill question. Do not reason about its
+  AppKit surface from what is on screen.
 - **`plModeToggle` was never the suspect it looked like.** `WMP_RENDER_CLICK` answered
   `viewSize=700x480` before and after both fixes. The engine always computed the right size; only the
   window was wrong, and no flag in `harness.md` has a window.

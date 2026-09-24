@@ -196,6 +196,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// for whatever size each of our windows is open at.
     let hostedFrames = WMPHostedFrameProvider()
     private var scriptRuntime: WMPScriptRuntime?
+    /// What the skin's `mediaCollection`/`playlistCollection` read, and the tracks behind it (W136).
+    private let librarySource = WMPLibrarySource()
+    private var libraryBuiltFor: ModernBrowserSource = .local
+    /// The latest library play request; see `fetchLibraryDemands`.
+    private var libraryPlayTicket = 0
+    private var libraryObservers: [NSObjectProtocol] = []
     /// The in-flight fetch for WMP's built-in album-art images. It is cancelled on a track change
     /// and session teardown, so a slow server cannot replace a newer track's artwork.
     private var artworkLoadTask: Task<Void, Never>?
@@ -314,6 +320,40 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         visualizationSettingsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification, object: importer.defaults, queue: .main
         ) { [weak self] _ in MainActor.assumeIsolated { self?.captureVisualizationSettings() } }
+        // The catalog is a copy of the browser's selected source (W136), so it is rebuilt when that
+        // source changes, when a local rescan lands, and when a server finishes loading its
+        // lists. `BrowserSource` has no notification of its own: the browser writes it to
+        // defaults, and a defaults change is compared against the source last built.
+        // Each notification rebuilds only when it is about the selected source: every server
+        // announces its own preload, and rebuilding the Plex catalog because Emby finished
+        // loading re-listed playlists and refreshed every window for nothing.
+        let sources: [(Notification.Name, (ModernBrowserSource) -> Bool)] = [
+            (MediaLibrary.libraryDidChangeNotification, { if case .local = $0 { true } else { false } }),
+            (PlexManager.libraryContentDidPreloadNotification, { if case .plex = $0 { true } else { false } }),
+            (SubsonicManager.libraryContentDidPreloadNotification, { if case .subsonic = $0 { true } else { false } }),
+            (JellyfinManager.libraryContentDidPreloadNotification, { if case .jellyfin = $0 { true } else { false } }),
+            (EmbyManager.libraryContentDidPreloadNotification, { if case .emby = $0 { true } else { false } }),
+        ]
+        for (name, concerns) in sources {
+            libraryObservers.append(NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let runtime = self.scriptRuntime,
+                          concerns(ModernBrowserSource.load() ?? .local) else { return }
+                    Task { await self.refreshLibrary(runtime) }
+                }
+            })
+        }
+        libraryObservers.append(NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let runtime = self.scriptRuntime,
+                      (ModernBrowserSource.load() ?? .local) != self.libraryBuiltFor else { return }
+                Task { await self.refreshLibrary(runtime) }
+            }
+        })
         configureWindow()
         presentUnskinned(message: nil)
         reloadSelectedSkin()
@@ -321,8 +361,116 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     required init?(coder: NSCoder) { nil }
 
+    /// **One `<LISTBOX>` event at a time, in the order the user made them.** A click is a
+    /// selection and its `selectedItem_onChange`; a double-click is `onDblClick`, which reads what
+    /// the click set up — `WoW`'s `playSelPlaylist()` plays `playlist1.playlist`, which
+    /// `getSelPlaylist()` assigns. Dispatched independently, the double-click's transaction could
+    /// run first and play the playlist chosen before. Each event now waits for the previous one's
+    /// transaction to finish, so fast clicking resolves in order.
+    private func enqueueListEvent(_ presentation: WMPViewPresentation,
+                                  _ dispatch: @escaping @MainActor () async -> Void) {
+        let previous = presentation.listEventTail
+        presentation.listEventTail = Task { [weak presentation] in
+            await previous?.value
+            await dispatch()
+            // The handle `dispatchScriptEvent` just stored is this event's own transaction.
+            await presentation?.scriptTask?.value
+        }
+    }
+
+    /// Make a library playlist the current one and play it from `row` — WMP's
+    /// `player.currentPlaylist = …` and a double-click in a `<PLAYLIST>` showing one (W136). The
+    /// queue is replaced, not added to: the assignment names the whole playlist.
+    private func playLibraryTracks(_ indices: [Int], from row: Int) {
+        // A direct play supersedes any play still waiting on a fetch.
+        libraryPlayTicket += 1
+        let playables = librarySource.playables
+        let tracks = indices.compactMap { playables.indices.contains($0) ? playables[$0] : nil }
+        guard !tracks.isEmpty else { return }
+        let engine = WindowManager.shared.audioEngine
+        engine.setPlaylistTracks(tracks)
+        engine.playTrack(at: max(0, min(tracks.count - 1, row)))
+    }
+
+    /// Hand the script runtime the library the browser's selected source holds (W136). `initial`
+    /// is the skin's first load, which has no windows to refresh yet: its `onLoad` is still to run.
+    private func refreshLibrary(_ runtime: WMPScriptRuntime, initial: Bool = false) async {
+        libraryBuiltFor = ModernBrowserSource.load() ?? .local
+        let playlistsChanged = await librarySource.rebuild()
+        await runtime.setLibrary(librarySource.catalog)
+        guard !initial else { return }
+        await refreshLibraryViews(runtime, reloadFillers: playlistsChanged)
+    }
+
+    /// Fetch what a skin asked for that the catalog does not hold — a server playlist's tracks, an
+    /// album, an artist — and let the windows showing it redraw (W136).
+    private func fetchLibraryDemands(_ demands: Set<String>, viewID: String,
+                                     event: WMPJScriptEvent?) async {
+        guard let runtime = scriptRuntime else { return }
+        var fetched = false
+        var searchLanded = false
+        for demand in demands.sorted() where !demand.hasPrefix("play:") {
+            guard await librarySource.fetch(demand) else { continue }
+            fetched = true
+            if demand.hasPrefix("query:search:"),
+               librarySource.catalog.queryResults[String(demand.dropFirst("query:".count))]?.isEmpty == false {
+                searchLanded = true
+            }
+        }
+        if fetched { await runtime.setLibrary(librarySource.catalog) }
+        // A skin's search ran against an answer that was still on its way. Run the same event —
+        // the Return in the search box, the click on its button — again now that the server's
+        // results are in: this time `getAll()` answers with them and the skin's own loop fills
+        // its results list. Once only: the second run finds the answer cached and asks for nothing.
+        if searchLanded, let event, event.name != "load",
+           let presentation = materializer.openPresentations.first(where: {
+               $0.viewID.caseInsensitiveCompare(viewID) == .orderedSame }) {
+            dispatchScriptTransaction(presentation, event)
+        }
+        // `player.currentPlaylist = <a playlist still loading>`: the assignment withheld its
+        // `play()`, and this is where it happens instead — once, and only if the playlist has
+        // tracks. A failed fetch plays nothing rather than the queue that was there before.
+        //
+        // **Only the latest request plays** (fast clicking): each pending play takes a ticket, and
+        // a later request — or any change to the queue made some other way while this one was
+        // loading — makes it stale, so a slow first fetch cannot land over a second choice.
+        for demand in demands where demand.hasPrefix("play:") {
+            let reference = String(demand.dropFirst("play:".count))
+            guard let id = WMPObjectModel.libraryPlaylistID(inReference: reference) else { continue }
+            libraryPlayTicket += 1
+            let ticket = libraryPlayTicket
+            let queueAtRequest = WindowManager.shared.audioEngine.playlist.map(\.url)
+            if await librarySource.fetch("playlist:" + id) {
+                await runtime.setLibrary(librarySource.catalog)
+                fetched = true
+            }
+            guard ticket == libraryPlayTicket,
+                  WindowManager.shared.audioEngine.playlist.map(\.url) == queueAtRequest else { continue }
+            let catalog = librarySource.catalog
+            guard let index = catalog.playlistIndex(id: id), catalog.playlists[index].loaded,
+                  !catalog.playlists[index].tracks.isEmpty else { continue }
+            await runtime.adoptCurrentLibraryPlaylist(reference)
+            playLibraryTracks(catalog.playlists[index].tracks, from: 0)
+        }
+        if fetched { await refreshLibraryViews(runtime, reloadFillers: false) }
+    }
+
+    /// **A skin fills its chooser once, in `onLoad`**, from a library WMP always has ready. A
+    /// server's lists arrive later and the source can change under an open skin, so a view whose
+    /// `onLoad` read the library is loaded again when the playlist list changes — the same load it
+    /// would have run had the library been there. Every other open view runs a transaction with
+    /// no handlers, which is what redraws a pane whose playlist's tracks just arrived.
+    private func refreshLibraryViews(_ runtime: WMPScriptRuntime, reloadFillers: Bool) async {
+        let fillers = reloadFillers ? await runtime.viewsThatFillFromLibrary() : []
+        for presentation in materializer.openPresentations {
+            let reload = fillers.contains(WMPPath.fold(presentation.viewID))
+            dispatchScriptEvent(presentation, name: reload ? "load" : "librarychange", targetID: nil)
+        }
+    }
+
     deinit {
-        for observer in [effectSelectionObserver, visualizationSettingsObserver].compactMap({ $0 }) {
+        for observer in [effectSelectionObserver, visualizationSettingsObserver].compactMap({ $0 })
+            + libraryObservers {
             NotificationCenter.default.removeObserver(observer)
         }
     }
@@ -406,6 +554,13 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 let skinData = try await Task.detached { try Data(contentsOf: skin.archive.sourceURL) }.value
                 let runtime = WMPScriptRuntime(
                     preferences: WMPPreferenceStore(skinData: skinData, defaults: importer.defaults))
+                // Before the first `onLoad`: that is where a skin fills its playlist chooser (W136).
+                await runtime.setLibraryDemandHandler { [weak self] demands, viewID, event in
+                    Task { @MainActor in
+                        await self?.fetchLibraryDemands(demands, viewID: viewID, event: event)
+                    }
+                }
+                await refreshLibrary(runtime, initial: true)
                 await runtime.setScreen(Self.screenSize(for: window),
                                         usable: Self.usableScreenSize(for: window))
                 var candidates = Self.startupCandidates(
@@ -895,6 +1050,41 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                                          targetStableID: stableID)
             }
         }
+        view.onElementTextReturn = { [weak self, weak presentation] stableID, targetID, text in
+            guard let self, let presentation, let scriptRuntime = self.scriptRuntime else { return }
+            Task {
+                await scriptRuntime.setWidgetText(stableID: stableID, text: text,
+                                                  viewID: presentation.viewID)
+                self.dispatchScriptEvent(presentation, name: "keyup", targetID: targetID,
+                                         targetStableID: stableID,
+                                         keyCode: WMPVirtualKeyCode.keyDown(keyCode: 36,
+                                                    charactersIgnoringModifiers: "\r"))
+            }
+        }
+        view.onPlayLibraryTracks = { [weak self] playlist, row in
+            guard let self else { return }
+            self.playLibraryTracks(playlist.tracks, from: row)
+            if let scriptRuntime = self.scriptRuntime {
+                Task { await scriptRuntime.adoptCurrentLibraryPlaylist(playlist.reference) }
+            }
+        }
+        view.onListSelected = { [weak self, weak presentation] stableID, targetID, index in
+            guard let self, let presentation, let scriptRuntime = self.scriptRuntime else { return }
+            self.enqueueListEvent(presentation) {
+                await scriptRuntime.setWidgetSelection(stableID: stableID, index: index)
+                self.dispatchScriptEvent(presentation, name: "selecteditem_onchange",
+                                         targetID: targetID, targetStableID: stableID)
+            }
+        }
+        view.onListDoubleClicked = { [weak self, weak presentation] stableID, targetID, index in
+            guard let self, let presentation, let scriptRuntime = self.scriptRuntime else { return }
+            self.enqueueListEvent(presentation) {
+                // `onDblClick` reads `selectedItem`, so it is the row that was double-clicked.
+                await scriptRuntime.setWidgetSelection(stableID: stableID, index: index)
+                self.dispatchScriptEvent(presentation, name: "dblclick",
+                                         targetID: targetID, targetStableID: stableID)
+            }
+        }
         view.onElementValueChanged = { [weak self, weak presentation] stableID, targetID, value in
             guard let self, let presentation, let scriptRuntime = self.scriptRuntime else { return }
             Task {
@@ -1279,7 +1469,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 self.startAnimation(presentation, for: scene)
                 if let scriptOutput {
                     presentation.presentedListItems = scriptOutput.listItems
+                    presentation.presentedWidgetState = scriptOutput.widgetState
                     presentation.mainView?.updateListItems(scriptOutput.listItems)
+                    presentation.mainView?.updateWidgetState(scriptOutput.widgetState)
                 }
                 presentation.mainView?.present(result.image, overlay: result.overlayImage, scene: scene, traceSource: "load")
                 presentation.mainView?.refreshHostState(self.host.snapshot)
@@ -2506,6 +2698,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             if output.viewSize == nil,
                output.overrides == presentation.sceneOverrides,
                output.listItems == presentation.presentedListItems,
+               output.widgetState == presentation.presentedWidgetState,
                let presented = presentation.activeScene,
                presented.canvasSize == rebuildSize,
                // …and the window is already wearing that canvas. Skipping the rebuild is only safe
@@ -2567,7 +2760,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 presentation.activeScene = scene
                 self.startAnimation(presentation, for: scene)
                 presentation.presentedListItems = output.listItems
+                presentation.presentedWidgetState = output.widgetState
                 presentation.mainView?.updateListItems(output.listItems)
+                presentation.mainView?.updateWidgetState(output.widgetState)
                 presentation.mainView?.present(result.image, overlay: result.overlayImage, scene: scene, traceSource: "transaction")
                 self.arbitrateVideoSurface()
             } catch { recordScriptDiagnostics([.init(code: "scene-transaction", message: error.localizedDescription)]) }
@@ -2919,6 +3114,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 } else {
                     WindowManager.shared.togglePlexBrowser()
                 }
+            // `player.currentPlaylist = <a library playlist>` (W136): catalog indices, resolved
+            // against the locations the catalog was built with.
+            case "loadLibraryTracks":
+                playLibraryTracks((command.value?.string ?? "").split(separator: ",")
+                    .compactMap { Int($0) }, from: 0)
             case let action where action.hasPrefix("playPlaylistItem:"):
                 if let index = Int(action.dropFirst("playPlaylistItem:".count)) {
                     host.perform(.playPlaylistItem(index), value: nil)
@@ -3021,6 +3221,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 presentation.activeScene = scene
                 self.startAnimation(presentation, for: scene)
                 presentation.mainView?.updateListItems(output.listItems)
+                presentation.mainView?.updateWidgetState(output.widgetState)
                 presentation.mainView?.present(rendered.image, overlay: rendered.overlayImage,
                                                scene: scene, traceSource: "timer")
                 self.arbitrateVideoSurface()
@@ -3133,7 +3334,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             presentation.activeScene = scene
             startAnimation(presentation, for: scene)
             presentation.presentedListItems = output.listItems
+            presentation.presentedWidgetState = output.widgetState
             presentation.mainView?.updateListItems(output.listItems)
+            presentation.mainView?.updateWidgetState(output.widgetState)
             presentation.mainView?.present(rendered.image, overlay: rendered.overlayImage,
                                            scene: scene, traceSource: "tween")
             arbitrateVideoSurface()

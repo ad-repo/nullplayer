@@ -96,6 +96,13 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     /// transaction it starts runs on the script actor.
     var onKeyEvent: ((String, String?, Int?, Int) -> Bool)?
     var onElementValueChanged: ((Int, String?, Double) -> Void)?
+    /// A `<LISTBOX>` row the user picked: `(stableID, authored id, row)`. Its own callback rather
+    /// than a `value` change, because WMP moves `selectedItem` and raises `selectedItem_onChange`
+    /// (W136).
+    var onListSelected: ((Int, String?, Int) -> Void)?
+    var onListDoubleClicked: ((Int, String?, Int) -> Void)?
+    /// A row of a library playlist a `<PLAYLIST>` is showing was played: `(the playlist, row)`.
+    var onPlayLibraryTracks: ((WMPWidgetScriptState.PlaylistRows, Int) -> Void)?
     /// A slider the user has just let go of: its value, then `mouseup`/`dragend`, **in that order
     /// and in one transaction**. See W151. The fourth argument is the seek the gesture is asking
     /// for, held back from every intermediate mouse-move — see `pendingSeek` and W156.
@@ -107,6 +114,8 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     /// `onElementValueChanged`. Nine of the corpus's ten edit boxes are a playlist search field
     /// whose script reads this back as `plSearchEdit.value`.
     var onElementTextChanged: ((Int, String?, String) -> Void)?
+    /// Return in an `<EDITBOX>`: the text, then `onKeyUp` with `event.keyCode` 13 (W136).
+    var onElementTextReturn: ((Int, String?, String) -> Void)?
     var onSpectrumDemandChanged: ((Bool) -> Void)?
     private var image: NSImage?
     /// Persistent, created once, never in `widgetViews` — it is not a widget. Everything hosted in
@@ -333,6 +342,15 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         }
     }
 
+    /// What the last script transaction pointed the skin's own controls at (W136).
+    func updateWidgetState(_ state: WMPWidgetScriptState) {
+        for (stableID, view) in widgetViews {
+            (view as? WMPPlaylistSurfaceView)?.update(libraryRows: state.playlists[stableID])
+            (view as? WMPListBoxSurfaceView)?.update(selection: state.listSelections[stableID])
+            (view as? WMPEditBoxSurfaceView)?.update(scriptValue: state.editValues[stableID])
+        }
+    }
+
     func updateSpectrum(_ levels: [Float]) {
         widgetViews.values.compactMap { $0 as? WMPEffectsSurfaceView }.forEach { $0.updateSpectrum(levels) }
     }
@@ -357,6 +375,8 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         isDraggingWindow = false
         onInteractionChanged = nil; onAction = nil; onScriptEvent = nil; onKeyEvent = nil
         onElementValueChanged = nil; onElementTextChanged = nil; onSpectrumDemandChanged = nil
+        onListSelected = nil; onListDoubleClicked = nil; onPlayLibraryTracks = nil
+        onElementTextReturn = nil
     }
 
     func skinPoint(from event: NSEvent, sceneSize: WMPSize) -> WMPPoint {
@@ -923,10 +943,8 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             case .dropdownPlaylist: view = WMPDropdownPlaylistSurfaceView(frame: .zero, pullsDown: false)
             case .popup: view = WMPPopupSurfaceView(frame: .zero)
             case .editBox: view = WMPEditBoxSurfaceView()
-            // A `<LISTBOX>` is a playlist chooser the skin fills from script. The control is real;
-            // what it can hold is whatever `listItems` carries, which is empty until the object
-            // model can answer `player.mediaCollection` — recorded as W66 rather than faked with
-            // rows this player invented.
+            // A `<LISTBOX>` is a playlist chooser the skin fills from script, out of
+            // `player.playlistCollection` — the library browser's selected source (W136).
             case .listBox: view = WMPListBoxSurfaceView()
             case .effects: view = WMPEffectsSurfaceView(frame: .zero)
             default: continue
@@ -934,7 +952,12 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             view.toolTip = widget.toolTip
             view.setAccessibilityIdentifier("wmp.\(widget.nodeID ?? String(widget.stableID))")
             view.setAccessibilityLabel(widget.label)
-            if let actionable = view as? WMPPlaylistSurfaceView { actionable.onAction = onAction }
+            if let actionable = view as? WMPPlaylistSurfaceView {
+                actionable.onAction = onAction
+                actionable.onPlayLibrary = { [weak self] playlist, row in
+                    self?.onPlayLibraryTracks?(playlist, row)
+                }
+            }
             if let playlist = view as? WMPPlaylistSurfaceView, let surfaceStyle {
                 playlist.apply(style: surfaceStyle)
             }
@@ -956,12 +979,20 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
                     self?.onElementTextChanged?(stableID, nodeID, text)
                     self?.onScriptEvent?("keyup", nodeID, stableID)
                 }
+                edit.onReturn = { [weak self] text in
+                    self?.onElementTextReturn?(stableID, nodeID, text)
+                }
+                edit.onFocusChange = { [weak self] focused in
+                    self?.onScriptEvent?(focused ? "focus" : "blur", nodeID, stableID)
+                }
             }
             if let list = view as? WMPListBoxSurfaceView {
                 let stableID = widget.stableID, nodeID = widget.nodeID
                 list.onSelect = { [weak self] index in
-                    self?.onElementValueChanged?(stableID, nodeID, Double(index))
-                    self?.onScriptEvent?("change", nodeID, stableID)
+                    self?.onListSelected?(stableID, nodeID, index)
+                }
+                list.onDoubleClick = { [weak self] index in
+                    self?.onListDoubleClicked?(stableID, nodeID, index)
                 }
             }
             #if DEBUG

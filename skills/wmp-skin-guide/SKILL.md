@@ -90,7 +90,7 @@ owns the code you are changing.
 | [reference/rendering.md](reference/rendering.md) | anything drawn: the scene, images, `backgroundImage`, keying, text, controls, hover/down/latched faces | *Static scene and image contracts*; *Drawing the skin's own controls* |
 | [reference/input.md](reference/input.md) | hit testing, mapping images, clicks, keys, transport | *Which control a click reaches*; *Phase 4 input and transport contracts* |
 | [reference/bindings.md](reference/bindings.md) | `WMPScriptRuntime`, expressions, `wmpprop:` bindings, `<TEXT>` sizing | *Script, expression, and binding contracts* |
-| [reference/object-model.md](reference/object-model.md) | a member skin JScript can reach | the host object model and the member-resolution rules |
+| [reference/object-model.md](reference/object-model.md) | a member skin JScript can reach | the host object model and the member-resolution rules; *The library* — `playlistCollection`/`mediaCollection`, choosers, panes and server search (W136) |
 | [reference/loading.md](reference/loading.md) | the archive, text decoding, XML tolerance, `WMP00xx` codes | *Loader contracts* and the loader's governing rules |
 | [reference/harness.md](reference/harness.md) | any measurement — every probe flag and corpus script | the probe reference; dated past measurements are in [reference/harness-history.md](reference/harness-history.md) |
 | [reference/audio-enhancements.md](reference/audio-enhancements.md) | WOW / TruBass | the WMP-only DSP |

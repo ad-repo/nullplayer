@@ -21,6 +21,10 @@
   skin's own playlist, which keeps its shape while a window is resized and changes together with the
   player when you switch skins; where the skin has its own playlist or equalizer, that one is used
   instead.
+  A skin's own playlist chooser, library pickers and search box read whichever library the browser
+  is set to — local files or a Plex, Navidrome, Jellyfin or Emby server: click a playlist to see its
+  tracks in the skin, double-click to play it, and search the server straight from the skin. Skins can
+  read the library but never change it.
   ActiveX, registry, shell, plug-in, filesystem and network access stay unavailable, and a skin that
   asks for something NullPlayer does not implement loses only that one action, not the skin.
 - **Sonos Rooms window with per-room volume** — a new dockable **Sonos Rooms** window lists every

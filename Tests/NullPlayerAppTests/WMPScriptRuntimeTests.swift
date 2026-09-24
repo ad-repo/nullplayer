@@ -281,6 +281,15 @@ final class WMPScriptRuntimeTests: XCTestCase {
         XCTAssertFalse(WMPJScriptCompatibility.supports(object: "element", member: "setFocus"))
     }
 
+    /// W136's half of the list above: the `<LISTBOX>` fill methods a playlist chooser is built
+    /// out of are answered, so the census must stop ranking them as demand.
+    func testTheListBoxFillMethodsAreImplemented() {
+        for method in ["deleteall", "insertitem", "deleteitem", "appenditem", "getitem"] {
+            XCTAssertTrue(WMPObjectModel.implementedElementMethods.contains(method), method)
+            XCTAssertTrue(WMPJScriptCompatibility.supports(object: "element", member: method), method)
+        }
+    }
+
     /// W128. The vocabulary is the SDK's element-method list, and an SDK method this engine does
     /// **not** implement has to resolve unrecognised so the census can rank it. A name missing from
     /// the set falls into the open property surface instead, answers `""`, and dies as a bare
@@ -290,7 +299,10 @@ final class WMPScriptRuntimeTests: XCTestCase {
         // `returntomediacenter` was this list's `<VIEW>` example until W100 implemented it;
         // `restore` replaces it because the point is the *kind*, not the name — a VIEW method the
         // SDK defines and this engine does not answer still has to be counted rather than swallowed.
-        for method in ["deleteall", "copy", "abortcopy", "deleteselected", "insertitem",
+        // `deleteAll` and `insertItem` were this list's `<LISTBOX>` examples until W136 filled a
+        // skin's playlist chooser; `findItem` and `replaceItem` are the list-box methods still
+        // unanswered, and the ones W136 implemented are pinned the other way round below.
+        for method in ["finditem", "replaceitem", "copy", "abortcopy", "deleteselected",
                        "restore", "sortcolumn", "getline", "getbutton"] {
             XCTAssertTrue(WMPObjectModel.elementMethodVocabulary.contains(method),
                           "\(method) is an SDK element method and must be counted, not swallowed")
@@ -382,8 +394,8 @@ final class WMPScriptRuntimeTests: XCTestCase {
         await session.teardown()
     }
 
-    /// The behavioural half of W128, on the two highest-reach names in the corpus scan:
-    /// `plListBox1.deleteAll()` (10 skins) and `playlist2.copy()` (8), plus `view.restore()` for
+    /// The behavioural half of W128, on a still-unanswered `<LISTBOX>` method and the second
+    /// highest-reach name in the corpus scan, `playlist2.copy()` (8), plus `view.restore()` for
     /// the `<VIEW>` kind. Each aborts its own handler exactly as before — the screen does not
     /// change — and each now appears in `output.calls` as unrecognised demand instead of nowhere.
     /// `view.returnToMediaCenter()` was the third until W100; it is pinned the other way round in
@@ -401,11 +413,11 @@ final class WMPScriptRuntimeTests: XCTestCase {
         let output = await session.transact(skin: skin, viewID: "main",
             size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
             event: .init(name: "onLoad", targetID: "main",
-                         handlers: ["box.deleteAll(); pane.left = 1;",
+                         handlers: ["box.replaceItem(0, 'x'); pane.left = 1;",
                                     "pl.copy(); pane.top = 2;",
                                     "view.restore(); pane.width = 3;",
                                     "pane.height = 4;"]))
-        for method in ["deleteall", "copy", "restore"] {
+        for method in ["replaceitem", "copy", "restore"] {
             XCTAssertTrue(output.calls.contains {
                 $0.path.hasSuffix(method) && $0.kind == .read && !$0.recognised
             }, "\(method) must be tallied as unrecognised demand, not answer as an empty string")

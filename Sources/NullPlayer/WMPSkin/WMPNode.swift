@@ -77,9 +77,9 @@ enum WMPElementKind: Hashable, CustomStringConvertible {
         // It maps wholesale rather than earning its own kind because the authored attributes are
         // `PLAYLIST`'s: list geometry (226x174, 187x139, 155x116 …) plus `backgroundColor`,
         // `foregroundColor`, `itemPlayingColor` and `backgroundImage`. `dropdownVisible` (7 of the
-        // 8) asks for a playlist *chooser* above the rows, which needs `player.mediaCollection` and
-        // is therefore W66's question, not this one — it is unhonoured here exactly as it is on
-        // `PLAYLIST`, rather than faked with playlists this player invented.
+        // 8) asks for a playlist *chooser* above the rows. The playlists it would list are answered
+        // since W136 (`player.playlistCollection`, the browser's selected source), but no chooser is
+        // drawn for the attribute yet — it is unhonoured here exactly as it is on `PLAYLIST`.
         case "itemsplaylist": self = .playlist
         case "dropdownplaylist": self = .dropdownPlaylist
         case "video": self = .video

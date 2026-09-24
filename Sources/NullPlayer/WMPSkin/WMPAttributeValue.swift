@@ -50,6 +50,14 @@ enum WMPAttributeParser {
     private static let handlerNames: Set<String> = [
         "onclick", "onchange", "onload", "onclose", "ontimer", "onresize",
         "onmouseover", "onmouseout", "onmousedown", "onmouseup",
+        // Raised by a `<LISTBOX>` row only (W136) — `WoW`'s `onDblClick="playSelPlaylist()"` is
+        // how its chooser plays what it selected. Deliberately not in `supportedEvents`: no other
+        // element raises it yet, so it keeps ranking as demand everywhere else.
+        "ondblclick",
+        // Raised by an `<EDITBOX>` only (W136): `WoW`'s search field clears its "Search..."
+        // placeholder in `onFocus` and puts it back in `onBlur`. Off `supportedEvents` for the
+        // same reason as `ondblclick`.
+        "onfocus", "onblur",
         "openstatechange", "playstatechange", "status_onchange", "modechange",
         "buffering_onchange", "reception_onchange",
         // The `_onchange` spellings of three events the engine already dispatches. They are not

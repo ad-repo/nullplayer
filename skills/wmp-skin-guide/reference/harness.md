@@ -1163,8 +1163,8 @@ git rev it was measured at. This is the only honest source for the reach numbers
 **It drives `onLoad` and nothing else, and that bounds every demand number it produces.** A member
 called from an `onClick` is invisible here, so a row ranked on this alone is ranked on the subset
 of the corpus that runs before the user touches anything: `view.returnToMediaCenter` counted **7**
-and is authored by **162 of 180 archives** (W100), and W136 still carries that pair as its own
-warning. When a row is about a *control*, the census gives you a floor and § *Auditing one authored
+and is authored by **162 of 180 archives** (W100), and W136's click-handler methods (`copy`,
+`deleteSelected`) were ranked on the same blind spot. When a row is about a *control*, the census gives you a floor and § *Auditing one authored
 control across the whole corpus* gives you the number.
 
 `--parse-only` re-derives the TSV from a previous run's logs without paying the sweep again — it is

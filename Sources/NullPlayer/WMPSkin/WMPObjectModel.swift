@@ -61,6 +61,9 @@ final class WMPScriptElement {
     /// Playlist column widths set by script, by column index. Nothing draws playlist columns yet,
     /// so this is session state the skin can read back through its own bookkeeping and no more.
     var columnWidths: [Int: Double] = [:]
+    /// The queue generation a `<PLAYLIST>` was pointed at a library playlist in (W136); see
+    /// `WMPObjectModel.queueGeneration`.
+    var libraryPlaylistGeneration = -1
 
     init(id: String, stableID: Int, kind: WMPElementKind,
          properties: [String: WMPJSONValue], authored: Set<String>) {
@@ -131,6 +134,77 @@ final class WMPObjectModel {
     /// The preset the skin last selected. WMP tracks one; the engine has no notion of a current
     /// preset, so it is session state and every selection is applied as ten band commands.
     var currentPresetIndex = 0
+    /// What `player.mediaCollection` and `player.playlistCollection` answer from — the library
+    /// browser's selected source, read-only (W66/W136). Session state the host replaces whole.
+    private(set) var library = WMPLibraryCatalog.empty
+    /// What this transaction asked of the library that the catalog does not hold yet —
+    /// `playlist:<id>`, `query:<attribute>:<value>` or `play:<playlist path>`. The host fetches them and hands back a
+    /// fuller catalog; until then the skin is answered with what is loaded, which is empty.
+    private(set) var libraryDemands: Set<String> = []
+    /// Set when this transaction assigned a playlist that could not play yet; see the
+    /// `player.currentPlaylist` write.
+    private var libraryPlayWithheld = false
+    /// `<LISTBOX>` selections the script *wrote* this transaction. Reporting the selection as state
+    /// on every transaction let one that started before a fast click put the old row back under
+    /// the pointer; a write is the only thing that should move the highlight.
+    private var listSelectionWrites: [Int: Int] = [:]
+
+    /// A new catalog. **A different source is a different library**: a pane still pointed at
+    /// a playlist id from the old one would show nothing, or the wrong server's list, so every pane
+    /// goes back to the live queue and nothing is the current library playlist any more.
+    /// The rows each shown library playlist draws, built once per catalog. A pane can show a
+    /// library-sized playlist and `widgetState()` runs every transaction; rebuilding the rows each
+    /// time is what made a large playlist cost a full pass per tick. Sharing the array also lets the
+    /// host's equality check stop at the buffer.
+    private var playlistRowsCache: [String: WMPWidgetScriptState.PlaylistRows] = [:]
+
+    func replaceLibrary(_ catalog: WMPLibraryCatalog) {
+        playlistRowsCache.removeAll()
+        if catalog.sourceID != library.sourceID {
+            currentLibraryPlaylist = nil
+            queueGeneration += 1
+            // A search result is a list of the old catalog's track numbers; kept across a switch it
+            // named the new source's tracks at those positions, and came back as a stale search.
+            scratchPlaylists.removeAll()
+        }
+        library = catalog
+    }
+    /// Playlists a skin built with `player.newPlaylist()` — `WoW`'s search results. Session state,
+    /// never saved: WMP's own `newPlaylist` is not in the library until something adds it, and
+    /// adding is the write a skin is refused. Oldest dropped past the cap.
+    private var scratchPlaylists: [(serial: Int, tracks: [Int])] = []
+    /// **The library playlist that became the current one** (W136). In WMP that object *is*
+    /// `player.currentPlaylist` from then on: a control showing it shows the live queue — what the
+    /// user adds or replaces from anywhere — and its name is the current playlist's name, which is
+    /// how `WoW` finds it again (`nList` → `getByName`). Without this the pane kept a frozen copy
+    /// and every queue change made outside the skin looked lost.
+    private(set) var currentLibraryPlaylist: String?
+
+    func adoptCurrentLibraryPlaylist(_ reference: String) {
+        currentLibraryPlaylist = reference
+    }
+
+    /// **Bumped whenever the host's queue changes, from anywhere** (W136). A `<PLAYLIST>` pointed
+    /// at a library playlist or a search result shows it only until the user's queue next
+    /// changes: adding an artist or replacing the queue from the library browser puts the live
+    /// queue back in front of them, rather than leaving the pane on a list that hides the change.
+    private(set) var queueGeneration = 0
+    private var lastSeenQueue: [WMPPlaylistItemSnapshot]?
+
+    /// The library playlist a `<PLAYLIST>` shows, or nil when it shows the live queue.
+    private func libraryPlaylistShown(by element: WMPScriptElement) -> String? {
+        guard Self.isPlaylist(element.kind), let value = element.properties["playlist"],
+              let reference = Self.objectReference(value),
+              reference.hasPrefix(Self.libraryPathPrefix) else { return nil }
+        guard element.libraryPlaylistGeneration == queueGeneration,
+              reference != currentLibraryPlaylist else {
+            element.properties["playlist"] = .string(Self.objectReferencePrefix + "player.currentplaylist")
+            return nil
+        }
+        return reference
+    }
+    private var nextScratchSerial = 0
+    private static let maximumScratchPlaylists = 16
 
     // Per-transaction output.
     private(set) var calls: [WMPJScriptCall] = []
@@ -178,6 +252,13 @@ final class WMPObjectModel {
                           button: Int? = nil, pointer: WMPPoint? = nil,
                           targetID: String? = nil, targetStableID: Int? = nil) {
         self.snapshot = snapshot
+        libraryDemands.removeAll()
+        libraryPlayWithheld = false
+        listSelectionWrites.removeAll()
+        if lastSeenQueue != snapshot.playlistItems {
+            if lastSeenQueue != nil { queueGeneration += 1 }
+            lastSeenQueue = snapshot.playlistItems
+        }
         self.preferences = preferences
         currentViewID = viewID
         self.screen = screen
@@ -357,6 +438,9 @@ final class WMPObjectModel {
         let receiver: String
         if path.hasPrefix("element:") { receiver = String(path.dropFirst("element:".count)) }
         else if path.hasPrefix("playlistitem:") { receiver = "player.currentplaylist.item" }
+        else if path.hasPrefix(libraryPathPrefix) {
+            receiver = String(path.prefix { $0 != ":" })
+        }
         else { receiver = path }
         return "\(receiver).\(member.lowercased())"
     }
@@ -381,6 +465,292 @@ final class WMPObjectModel {
     /// next `record`, which is always the one for that member.
     private var resolutionOverride: WMPMemberResolution?
     private func inert() { resolutionOverride = .inert }
+
+    // MARK: - The library (W66/W136)
+    //
+    // Every object `mediaCollection`/`playlistCollection` hands out is a *query*, addressed by a
+    // path that restates it: `library.playlists:all`, `library.query:genre:Rock`,
+    // `library.playlist:3`, `library.media:120`. Nothing is allocated per call and a reference a
+    // skin keeps across transactions (`playlist1.playlist = …`) still resolves in the next one.
+
+    static let libraryPathPrefix = "library."
+    /// How a host object travels through a JS *value*: `x.playlist = pl` or
+    /// `player.currentPlaylist = pl` hand the proxy itself to `__wmpSet`, which has only JSON to
+    /// carry it in. `WMPScriptContext.jsonValue` spells a proxy this way.
+    static let objectReferencePrefix = "\u{1}wmpobject:"
+
+    static func objectReference(_ value: WMPJSONValue) -> String? {
+        guard let string = value.string, string.hasPrefix(objectReferencePrefix) else { return nil }
+        return String(string.dropFirst(objectReferencePrefix.count))
+    }
+
+    static func libraryPath(_ kind: String, _ parts: String...) -> String {
+        let escaped = parts.map {
+            $0.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+        }
+        return libraryPathPrefix + kind + ":" + escaped.joined(separator: ":")
+    }
+
+    /// The playlist id a `library.playlist:<id>` reference names, for the host.
+    static func libraryPlaylistID(inReference reference: String) -> String? {
+        guard reference.hasPrefix(libraryPathPrefix) else { return nil }
+        let (kind, parts) = libraryParts(reference)
+        return kind == "playlist" ? parts.first : nil
+    }
+
+    private static func libraryParts(_ path: String) -> (kind: String, parts: [String]) {
+        let body = path.dropFirst(libraryPathPrefix.count)
+        let pieces = body.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        return (pieces.first ?? "", pieces.dropFirst().map { $0.removingPercentEncoding ?? $0 })
+    }
+
+    /// The playlists a `library.playlists:` array holds, as indices into `library.playlists`.
+    /// `all` is the whole list and is answered without building it: `count` and `item(i)` are
+    /// called once per playlist in a fill loop.
+    private func libraryPlaylists(_ parts: [String]) -> [Int]? {
+        if parts.first == "name" { return library.playlists(named: parts.count > 1 ? parts[1] : "") }
+        return nil
+    }
+
+    /// The tracks a playlist-shaped path holds, as indices into `library.tracks`; nil for a path
+    /// that is not a playlist.
+    private func libraryTracks(_ path: String) -> [Int]? {
+        guard path.hasPrefix(Self.libraryPathPrefix) else { return nil }
+        let (kind, parts) = Self.libraryParts(path)
+        switch kind {
+        case "playlist":
+            guard let id = parts.first, let index = library.playlistIndex(id: id) else { return [] }
+            guard library.playlists[index].loaded else {
+                libraryDemands.insert("playlist:" + id)
+                return []
+            }
+            return library.playlists[index].tracks
+        case "scratch":
+            let serial = parts.first.flatMap(Int.init)
+            return scratchPlaylists.first { $0.serial == serial }?.tracks ?? []
+        case "query":
+            guard let first = parts.first, first != "all" else { return allLibraryTracks() }
+            guard let attribute = WMPLibraryCatalog.attribute(first) else { return [] }
+            let value = parts.count > 1 ? parts[1] : ""
+            // A server is never asked for everything of one media type — `WoW`'s "All Music" —
+            // or for a title: those are filtered from what has been loaded.
+            if library.isComplete || attribute == .mediaType || attribute == .title
+                || attribute == .sourceURL {
+                return library.tracks(where: attribute, equals: value)
+            }
+            let key = WMPLibraryCatalog.queryKey(attribute, value)
+            if let answered = library.queryResults[key] { return answered }
+            libraryDemands.insert("query:" + key)
+            return []
+        default: return nil
+        }
+    }
+
+    /// What the skin's own controls show beyond their rows — see `WMPWidgetScriptState`.
+    func widgetState() -> WMPWidgetScriptState {
+        var state = WMPWidgetScriptState()
+        // An alias is a second key for the same element, and writes the same entry twice.
+        for element in elements.values {
+            if let reference = libraryPlaylistShown(by: element) {
+                if let cached = playlistRowsCache[reference] {
+                    state.playlists[element.stableID] = cached
+                } else if let tracks = libraryTracks(reference) {
+                    let rows = WMPWidgetScriptState.PlaylistRows(reference: reference, items: tracks.map {
+                        let track = library.tracks[$0]
+                        return WMPPlaylistItemSnapshot(title: track.title, artist: track.artist,
+                                                       duration: track.duration,
+                                                       sourceURL: track.sourceURL)
+                    }, tracks: tracks)
+                    // An unloaded server playlist answers empty until its fetch lands, and a
+                    // scratch playlist grows while a search fills it: neither is final yet.
+                    if !tracks.isEmpty, !reference.hasPrefix(Self.libraryPathPrefix + "scratch:") {
+                        playlistRowsCache[reference] = rows
+                    }
+                    state.playlists[element.stableID] = rows
+                }
+            }
+            if element.kind == .editBox, let value = element.properties["value"]?.string {
+                state.editValues[element.stableID] = value
+            }
+            if element.kind == .listBox, let index = listSelectionWrites[element.stableID] {
+                state.listSelections[element.stableID] = index
+            }
+        }
+        return state
+    }
+
+    /// `mediaCollection.getAll()`. A server's whole library is far too large to hand a skin —
+    /// tens of thousands of tracks walked in a 0.25 s handler — so on a server the only caller that
+    /// wants it, a skin's own search (`WoW`'s `onMlSearch`: `getAll()`, then filter each item by the
+    /// text), is answered with **the server's search for the text in this view's search box**
+    /// (W136). The first answer is empty and demands the search; the host runs the same event again
+    /// when the results land, and the skin's loop filters them exactly as it would the library.
+    /// With no search text it is what has been loaded, as before.
+    private func allLibraryTracks() -> [Int] {
+        // Only the user's own act is a search. A skin's `onLoad`, a timer, or the refresh the host
+        // runs after a source switch reading `getAll()` with an old term still in the box used to
+        // run that search again — the search that "kept coming back" on every source switch.
+        guard !library.isComplete, Self.userInputEvents.contains(eventName ?? ""),
+              let text = searchBoxText() else { return library.libraryTracks }
+        let key = "search:" + text.lowercased()
+        if let answered = library.queryResults[key] { return answered }
+        libraryDemands.insert("query:" + key)
+        return []
+    }
+
+    /// The name of the event this transaction runs, set per transaction by the context.
+    var eventName: String?
+
+    private static let userInputEvents: Set<String> = [
+        "click", "dblclick", "keyup", "keydown", "keypress", "mousedown", "mouseup"
+    ]
+
+    /// The text in this view's `<EDITBOX>`, when there is exactly one with something in it.
+    private func searchBoxText() -> String? {
+        var seen = Set<Int>(), texts: [String] = []
+        for element in elements.values where element.kind == .editBox
+            && seen.insert(element.stableID).inserted {
+            if let text = element.properties["value"]?.string?.trimmingCharacters(in: .whitespaces),
+               !text.isEmpty { texts.append(text) }
+        }
+        return texts.count == 1 ? texts[0] : nil
+    }
+
+    private func libraryPlaylistName(_ path: String) -> String {
+        let (kind, parts) = Self.libraryParts(path)
+        if kind == "playlist", let id = parts.first, let index = library.playlistIndex(id: id) {
+            return library.playlists[index].name
+        }
+        return parts.count > 1 ? parts[1] : "Library"
+    }
+
+    private func readLibrary(_ path: String, _ name: String) -> WMPMemberValue {
+        let (kind, parts) = Self.libraryParts(path)
+        switch kind {
+        case "playlists":
+            switch name {
+            case "count":
+                return .value(.number(Double(libraryPlaylists(parts)?.count ?? library.playlists.count)))
+            case "item": return .function
+            default: return .unrecognised("playlistArray member")
+            }
+        case "strings":
+            switch name {
+            case "count":
+                guard let attribute = WMPLibraryCatalog.attribute(parts.first ?? "") else {
+                    return .value(.number(0))
+                }
+                return .value(.number(Double(library.strings(of: attribute,
+                    mediaType: parts.count > 1 ? parts[1] : "").count)))
+            case "item": return .function
+            default: return .unrecognised("stringCollection member")
+            }
+        case "playlist", "query", "scratch":
+            let tracks = libraryTracks(path) ?? []
+            switch name {
+            case "count": return .value(.number(Double(tracks.count)))
+            case "name": return .value(.string(libraryPlaylistName(path)))
+            case "item", "getiteminfo", "attributecount", "getattributename": return .function
+            case "appenditem" where kind == "scratch", "clear" where kind == "scratch": return .function
+            default: return .unrecognised("playlist member")
+            }
+        case "media":
+            // A reference from a catalog that has since been replaced — the source switched under a
+            // skin still holding a search result — is an empty media item, not an error: WMP's
+            // media objects always answer, and `NVIDIA`'s `updatePlInfo()` threw on every
+            // `playlist_onChange` after a switch.
+            guard let index = parts.first.flatMap(Int.init), library.tracks.indices.contains(index)
+            else {
+                switch name {
+                case "name", "sourceurl", "durationstring": return .value(.string(""))
+                case "duration": return .value(.number(0))
+                case "getiteminfo", "getiteminfobyatom": return .function
+                default: return .unrecognised("media member")
+                }
+            }
+            let track = library.tracks[index]
+            switch name {
+            case "name": return .value(.string(track.title))
+            case "sourceurl": return .value(.string(track.sourceURL))
+            case "duration": return .value(.number(track.duration))
+            case "durationstring": return .value(.string(Self.timeString(track.duration)))
+            case "getiteminfo", "getiteminfobyatom": return .function
+            default: return .unrecognised("media member")
+            }
+        default: return .unrecognised("unknown library object")
+        }
+    }
+
+    /// The attribute names `getMediaAtom` numbers, by atom. Any stable numbering will do: a skin
+    /// only ever hands the number straight back to `getItemInfoByAtom`.
+    private static let mediaAtoms = ["title", "author", "artist", "wm/albumtitle", "album",
+                                     "wm/albumartist", "wm/genre", "genre", "mediatype", "sourceurl"]
+
+    private func callLibrary(_ path: String, _ name: String,
+                             _ arguments: [WMPJSONValue]) -> WMPMemberValue {
+        let (kind, parts) = Self.libraryParts(path)
+        let index = Int(arguments.first?.number ?? -1)
+        switch (kind, name) {
+        case ("playlists", "item"):
+            let resolved: Int?
+            if let named = libraryPlaylists(parts) {
+                resolved = named.indices.contains(index) ? named[index] : nil
+            } else {
+                resolved = library.playlists.indices.contains(index) ? index : nil
+            }
+            guard let resolved else { return .value(.null) }
+            return .object(Self.libraryPath("playlist", library.playlists[resolved].id))
+        case ("strings", "item"):
+            guard let attribute = WMPLibraryCatalog.attribute(parts.first ?? "") else { return .value(.null) }
+            let strings = library.strings(of: attribute, mediaType: parts.count > 1 ? parts[1] : "")
+            return .value(strings.indices.contains(index) ? .string(strings[index]) : .null)
+        case ("playlist", "item"), ("query", "item"), ("scratch", "item"):
+            let tracks = libraryTracks(path) ?? []
+            guard tracks.indices.contains(index) else { return .value(.null) }
+            return .object(Self.libraryPath("media", String(tracks[index])))
+        // Playlist-level attributes. The one the corpus reads is the title (`WoW`'s chooser is
+        // `playlistArray.item(i).getItemInfo("Title")`); the rest are decorations this player's
+        // playlists never carry, and the empty string is WMP's answer for an absent one.
+        case ("playlist", "getiteminfo"), ("query", "getiteminfo"), ("scratch", "getiteminfo"):
+            let attribute = (arguments.first?.string ?? "").lowercased()
+            return .value(.string(attribute == "title" || attribute == "name"
+                ? libraryPlaylistName(path) : ""))
+        case ("playlist", "attributecount"), ("query", "attributecount"), ("scratch", "attributecount"):
+            return .value(.number(1))
+        case ("playlist", "getattributename"), ("query", "getattributename"),
+             ("scratch", "getattributename"):
+            return .value(.string(index == 0 ? "Title" : ""))
+        // A skin's own playlist is the one thing it may change: `WoW`'s search appends each hit.
+        case ("scratch", "appenditem"):
+            guard let serial = parts.first.flatMap(Int.init),
+                  let slot = scratchPlaylists.firstIndex(where: { $0.serial == serial }),
+                  let reference = arguments.first.flatMap(Self.objectReference),
+                  reference.hasPrefix(Self.libraryPathPrefix + "media:"),
+                  let track = Self.libraryParts(reference).parts.first.flatMap(Int.init),
+                  library.tracks.indices.contains(track),
+                  scratchPlaylists[slot].tracks.count < 10_000 else { return .value(.null) }
+            scratchPlaylists[slot].tracks.append(track)
+            return .value(.null)
+        case ("scratch", "clear"):
+            let serial = parts.first.flatMap(Int.init)
+            if let slot = scratchPlaylists.firstIndex(where: { $0.serial == serial }) {
+                scratchPlaylists[slot].tracks.removeAll()
+            }
+            return .value(.null)
+        case ("media", "getiteminfo"), ("media", "getiteminfobyatom"):
+            var attributeName = arguments.first?.string ?? ""
+            if name == "getiteminfobyatom", let atom = arguments.first?.number {
+                let index = Int(atom)
+                attributeName = Self.mediaAtoms.indices.contains(index) ? Self.mediaAtoms[index] : ""
+            }
+            guard let track = parts.first.flatMap(Int.init),
+                  let attribute = WMPLibraryCatalog.attribute(attributeName) else {
+                return .value(.string(""))
+            }
+            return .value(.string(library.value(of: attribute, track: track)))
+        default: return .unrecognised("library method")
+        }
+    }
 
     // MARK: - Reads
 
@@ -418,6 +788,7 @@ final class WMPObjectModel {
             }
             return readElement(element, name)
         }
+        if path.hasPrefix(Self.libraryPathPrefix) { return readLibrary(path, name) }
         if path.hasPrefix("playlistitem:") {
             guard let index = Int(path.dropFirst("playlistitem:".count)),
                   snapshot.playlistItems.indices.contains(index) else {
@@ -444,6 +815,26 @@ final class WMPObjectModel {
         case "player.currentplaylist": return readPlaylist(name)
         case "player.network": return readNetwork(name)
         case "player.dvd": return readDVD(name)
+        case "player.playlistcollection":
+            switch name {
+            case "getall", "getbyname": return .function
+            default: return .unrecognised("playlistCollection member (read-only)")
+            }
+        case "player.mediacollection":
+            switch name {
+            case "getall", "getbyattribute", "getbyalbum", "getbygenre", "getbyauthor", "getbyname",
+                 "getattributestringcollection", "getmediaatom": return .function
+            default: return .unrecognised("mediaCollection member (read-only)")
+            }
+        // **There is no CD drive, and saying so is the answer.** `WoW`'s `fillListBox()` walks
+        // `cdromCollection.Count` between the "Now Playing" row and the playlists, so an
+        // unrecognised collection aborted the fill before any playlist was appended.
+        case "player.cdromcollection":
+            switch name {
+            case "count": return .value(.number(0))
+            case "item", "getbydrivespecifier": return .function
+            default: return .unrecognised("cdromCollection member")
+            }
         case "eq": return readEqualizer(name)
         case "theme": return readTheme(name)
         case "event": return readEvent(name)
@@ -459,6 +850,10 @@ final class WMPObjectModel {
         case "currentmedia": return .object("player.currentmedia")
         case "currentplaylist": return .object("player.currentplaylist")
         case "network": return .object("player.network")
+        case "playlistcollection": return .object("player.playlistcollection")
+        case "newplaylist": return .function
+        case "mediacollection": return .object("player.mediacollection")
+        case "cdromcollection": return .object("player.cdromcollection")
         // **There is no DVD, and saying so is the answer rather than refusing the question.**
         // `Corona`'s metadata table opens with `player.dvd.isAvailable('dvd')==false` on all three
         // of its rows, so an unrecognised `dvd` aborted the handler that reads the track title —
@@ -537,7 +932,11 @@ final class WMPObjectModel {
     private func readPlaylist(_ name: String) -> WMPMemberValue {
         switch name {
         case "count": return .value(.number(Double(snapshot.playlistCount)))
-        case "name": inert(); return .value(.string("Now Playing"))
+        case "name":
+            if let currentLibraryPlaylist {
+                return .value(.string(libraryPlaylistName(currentLibraryPlaylist)))
+            }
+            inert(); return .value(.string("Now Playing"))
         case "item", "getiteminfo", "attributecount", "getattributename": return .function
         default: return .unrecognised("playlist member")
         }
@@ -765,7 +1164,7 @@ final class WMPObjectModel {
     private static func computedElementProperties(_ element: WMPScriptElement) -> Set<String> {
         var names: Set<String> = ["textwidth"]
         switch element.kind {
-        case .popup: names.insert("itemcount")
+        case .popup, .listBox: names.insert("itemcount")
         case .effects:
             names.formUnion(["currenteffecttype", "currenteffecttitle",
                              "currentpreset", "currentpresettitle"])
@@ -788,7 +1187,7 @@ final class WMPObjectModel {
         }
         switch name {
         case "id": return .value(.string(element.id))
-        case "itemcount" where element.kind == .popup:
+        case "itemcount" where element.kind == .popup || element.kind == .listBox:
             return .value(.number(Double(element.items.count)))
         // **`textWidth` is how a skin decides to marquee.** `WoW` writes
         // `metadata.scrolling = (metadata.textWidth > metadata.width)` on every metadata change,
@@ -820,7 +1219,19 @@ final class WMPObjectModel {
             inert()
             return .value(element.properties[name] ?? Self.defaultInertEqualizerSettingsValue(for: name))
         }
-        if let value = element.properties[name] { return .value(value) }
+        if let value = element.properties[name] {
+            // A host object a skin stored on its own element — `playlist1.playlist = lbCurrentItem`
+            // — reads back as that object, not as the reference string it was carried in.
+            if let reference = Self.objectReference(value) {
+                // A pane whose library playlist the queue has moved past reads back as the live
+                // queue, which is what it is showing.
+                if name == "playlist", libraryPlaylistShown(by: element) == nil {
+                    return .object("player.currentplaylist")
+                }
+                return .object(reference)
+            }
+            return .value(value)
+        }
         // **A `<TEXT>` is sized by its own glyphs, and until the first layout exists nothing
         // has told the element model so.** `perform` syncs every element's frame from the layout
         // the skin is *currently drawn at*, which on the opening transaction is no layout at all —
@@ -929,6 +1340,10 @@ final class WMPObjectModel {
     private func elementMethod(_ element: WMPScriptElement, _ name: String) -> String? {
         switch (element.kind, name) {
         case (.popup, "appenditem"), (.popup, "removeallitems"), (.popup, "getitem"): return name
+        // A `<LISTBOX>` is filled the same way, under the SDK's own names (W136): `WoW`'s
+        // `fillListBox()` opens with `plListBox1.deleteAll()`.
+        case (.listBox, "appenditem"), (.listBox, "deleteall"), (.listBox, "getitem"),
+             (.listBox, "insertitem"), (.listBox, "deleteitem"): return name
         // 82 archives call `visEffects.next()` and 74 `visEffects.previous()` — the corpus's own
         // way of cycling the surface, and the reason the selector never needed a menu (W101).
         case (.effects, "next"), (.effects, "previous"), (.effects, "nextpreset"): return name
@@ -949,7 +1364,7 @@ final class WMPObjectModel {
     static let implementedElementMethods: Set<String> = [
         "moveto", "resizeto", "alphablendto", "close", "minimize", "returntomediacenter", "size",
         "appenditem", "removeallitems", "getitem", "setcolumnresizemode", "setcolumnwidth",
-        "next", "previous", "nextpreset"
+        "next", "previous", "nextpreset", "deleteall", "insertitem", "deleteitem"
     ]
 
     /// Names WMP defines as element *methods*. One of these that this engine does not implement
@@ -1032,9 +1447,48 @@ final class WMPObjectModel {
                 let answer = write(path: "eq", member: member, value: value)
                 if case .unrecognised = answer {} else { return answer }
             }
+            if name == "playlist" { element.libraryPlaylistGeneration = queueGeneration }
+            if name == "selecteditem", element.kind == .listBox, let index = value.number {
+                listSelectionWrites[element.stableID] = Int(index)
+            }
             return writeElement(element, name, value)
         }
         switch (path, name) {
+        // **`player.currentPlaylist = <a library playlist>` is how a skin plays what its chooser
+        // selected** (W136) — `WoW`'s `playSelPlaylist()`. The playlist arrives as an object
+        // reference (`WMPScriptContext.jsonValue`); anything else, including the current playlist
+        // handed back to itself, changes nothing.
+        case ("player", "currentplaylist"):
+            guard let reference = Self.objectReference(value),
+                  reference != currentLibraryPlaylist,
+                  let tracks = libraryTracks(reference) else {
+                inert()
+                return .value(value)
+            }
+            // **A playlist with nothing to play does not become the current one** (W136). WMP's
+            // assignment is synchronous; here a server playlist may still be loading, or its
+            // fetch may have failed. Adopting it anyway, and then running the `play()` every skin
+            // writes after the assignment, played whatever was queued before under the new
+            // playlist's name. A loading playlist is played when it arrives; a failed one plays
+            // nothing — and either way this transaction's `play()` is withheld.
+            guard !tracks.isEmpty else {
+                libraryPlayWithheld = true
+                if libraryDemands.contains(where: { $0.hasPrefix("playlist:") }) {
+                    libraryDemands.insert("play:" + reference)
+                }
+                return .value(value)
+            }
+            currentLibraryPlaylist = reference
+            // Catalog indices, not URLs: `sourceURL` is WMP's spelling for the skin to read, and
+            // the host holds the real locations beside the catalog it built.
+            hostCommand("loadLibraryTracks",
+                        .string(tracks.map(String.init).joined(separator: ",")))
+            return .value(value)
+        // WMP renames the playlist; this player's queue has no name to give it. Accepted so the
+        // `player.controls.play()` after it in `WoW`'s `playSelPlaylist()` still runs.
+        case ("player.currentplaylist", "name"):
+            inert()
+            return .value(value)
         case ("player.controls", "currentposition"):
             hostCommand("seekSeconds", value)
             return .value(value)
@@ -1286,8 +1740,40 @@ final class WMPObjectModel {
                                                 artist: snapshot.playlistItems[index].artist,
                                                 album: "")))
         }
+        if path.hasPrefix(Self.libraryPathPrefix) { return callLibrary(path, name, arguments) }
         switch (path, name) {
-        case ("player.controls", "play"): hostCommand("play", nil); return .value(.null)
+        case ("player.playlistcollection", "getall"):
+            return .object(Self.libraryPath("playlists", "all"))
+        case ("player.playlistcollection", "getbyname"):
+            return .object(Self.libraryPath("playlists", "name", arguments.first?.string ?? ""))
+        case ("player.mediacollection", "getall"):
+            return .object(Self.libraryPath("query", "all"))
+        case ("player.mediacollection", "getbyattribute"):
+            return .object(Self.libraryPath("query", arguments.first?.string ?? "",
+                                            arguments.count > 1 ? arguments[1].string ?? "" : ""))
+        case ("player.mediacollection", "getbyalbum"), ("player.mediacollection", "getbygenre"),
+             ("player.mediacollection", "getbyauthor"), ("player.mediacollection", "getbyname"):
+            let attribute = ["getbyalbum": "album", "getbygenre": "genre",
+                             "getbyauthor": "artist", "getbyname": "title"][name] ?? "title"
+            return .object(Self.libraryPath("query", attribute, arguments.first?.string ?? ""))
+        case ("player.mediacollection", "getattributestringcollection"):
+            return .object(Self.libraryPath("strings", arguments.first?.string ?? "",
+                                            arguments.count > 1 ? arguments[1].string ?? "" : ""))
+        case ("player.cdromcollection", "item"), ("player.cdromcollection", "getbydrivespecifier"):
+            return .value(.null)
+        case ("player", "newplaylist"):
+            nextScratchSerial += 1
+            scratchPlaylists.append((nextScratchSerial, []))
+            if scratchPlaylists.count > Self.maximumScratchPlaylists { scratchPlaylists.removeFirst() }
+            return .object(Self.libraryPath("scratch", String(nextScratchSerial),
+                                            arguments.first?.string ?? ""))
+        // An atom is WMP's number for an attribute name; `getItemInfoByAtom` takes it back.
+        case ("player.mediacollection", "getmediaatom"):
+            let name = (arguments.first?.string ?? "").lowercased()
+            return .value(.number(Double(Self.mediaAtoms.firstIndex(of: name) ?? -1)))
+        case ("player.controls", "play"):
+            if !libraryPlayWithheld { hostCommand("play", nil) }
+            return .value(.null)
         case ("player.controls", "pause"): hostCommand("pause", nil); return .value(.null)
         case ("player.controls", "stop"): hostCommand("stop", nil); return .value(.null)
         case ("player.controls", "next"): hostCommand("next", nil); return .value(.null)
@@ -1443,14 +1929,23 @@ final class WMPObjectModel {
     private func callElement(_ element: WMPScriptElement, _ name: String,
                              _ arguments: [WMPJSONValue]) -> WMPMemberValue {
         switch (element.kind, name) {
-        case (.popup, "appenditem"):
+        case (.popup, "appenditem"), (.listBox, "appenditem"):
             guard element.items.count < 1_024 else { return .value(.null) }
             element.items.append(arguments.first?.string ?? "")
             return .value(.number(Double(element.items.count - 1)))
-        case (.popup, "removeallitems"):
+        case (.popup, "removeallitems"), (.listBox, "deleteall"):
             element.items.removeAll()
             return .value(.null)
-        case (.popup, "getitem"):
+        case (.listBox, "insertitem"):
+            guard element.items.count < 1_024 else { return .value(.null) }
+            let index = max(0, min(element.items.count, Int(arguments.first?.number ?? 0)))
+            element.items.insert(arguments.count > 1 ? arguments[1].string ?? "" : "", at: index)
+            return .value(.null)
+        case (.listBox, "deleteitem"):
+            let index = Int(arguments.first?.number ?? -1)
+            if element.items.indices.contains(index) { element.items.remove(at: index) }
+            return .value(.null)
+        case (.popup, "getitem"), (.listBox, "getitem"):
             let index = Int(arguments.first?.number ?? -1)
             return .value(.string(element.items.indices.contains(index) ? element.items[index] : ""))
         case (_, "setcolumnresizemode") where Self.isPlaylist(element.kind):

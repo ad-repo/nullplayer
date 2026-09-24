@@ -166,6 +166,15 @@ struct WMPScriptRunResult: Sendable {
     /// has to mean "nothing changed" rather than "there are none" — see
     /// `WMPMainWindowController.applyTimerDelta`.
     var clearedTimers: [Int] = []
+    /// The items this view's `POPUP`/`LISTBOX` elements hold, **read on the queue, in the same
+    /// block that ran the handlers**. Reading them after the runtime's `await` raced another
+    /// window's transaction: `WoW`'s `plView` and `mainView` both tick while a track plays, and
+    /// whichever view the context had swapped in by then answered — so the chooser alternated
+    /// between its rows and `mainView`'s none, several times a second (W136).
+    var listItems: [Int: [String]] = [:]
+    var widgetState = WMPWidgetScriptState.empty
+    /// What the transaction asked of the library that is not loaded yet (W136).
+    var libraryDemands: Set<String> = []
     /// The tweens this transaction asked its caller to animate (W194). Only ever non-empty for a
     /// transaction run with `animatesTweens`; see `WMPObjectModel.tweenGroup`.
     var tweens: [WMPScriptTween] = []
@@ -471,11 +480,36 @@ final class WMPScriptContext: @unchecked Sendable {
     /// from script — all four corpus popups are equaliser preset menus built in an `onLoad` — so
     /// this is the only source the AppKit menu has.
     func listItems() -> [Int: [String]] {
+        queue.sync { currentListItems() }
+    }
+
+    private func currentListItems() -> [Int: [String]] {
         var items: [Int: [String]] = [:]
         for element in model.elements.values where !element.items.isEmpty {
             items[element.stableID] = element.items
         }
         return items
+    }
+
+    /// The library the skin's `mediaCollection`/`playlistCollection` answer from (W136).
+    func setLibrary(_ library: WMPLibraryCatalog) {
+        queue.sync { model.replaceLibrary(library) }
+    }
+
+    /// The user played a row of a library playlist a `<PLAYLIST>` was showing: it is now the
+    /// current playlist (W136).
+    func adoptCurrentLibraryPlaylist(_ reference: String) {
+        queue.sync { model.adoptCurrentLibraryPlaylist(reference) }
+    }
+
+    /// A `<LISTBOX>` row the user picked, as `selectedItem` — the property WMP moves and the one
+    /// `selectedItem_onChange` handlers read back (W136).
+    func setElementSelection(stableID: Int, index: Int) {
+        queue.sync {
+            guard let element = model.elements.values.first(where: { $0.stableID == stableID })
+            else { return }
+            element.properties["selecteditem"] = .number(Double(index))
+        }
     }
 
     func setElementValue(stableID: Int, value: Double) {
@@ -597,6 +631,7 @@ final class WMPScriptContext: @unchecked Sendable {
                                button: event?.button, pointer: event?.pointer,
                                targetID: event?.targetID, targetStableID: event?.targetStableID)
         model.animatesTweens = animatesTweens
+        model.eventName = event?.name.lowercased()
         pendingTimers.removeAll()
         pendingClearedTimers.removeAll()
         // Sync the element state to the layout the skin is drawn at. The scene was built with the
@@ -800,6 +835,9 @@ final class WMPScriptContext: @unchecked Sendable {
         result.clearedTimers = pendingClearedTimers
         result.tweens = model.tweens
         result.resizeCallMutationIndex = model.resizeCallMutationIndex
+        result.listItems = currentListItems()
+        result.widgetState = model.widgetState()
+        result.libraryDemands = model.libraryDemands
         return result
     }
 
@@ -1308,6 +1346,11 @@ final class WMPScriptContext: @unchecked Sendable {
         if value.isNumber {
             let number = value.toDouble()
             return .number(number.isFinite ? number : 0)
+        }
+        // A host object handed back as a value — `player.currentPlaylist = pl` — is carried as a
+        // reference the model resolves, not as the `function () {}` its proxy target prints (W136).
+        if value.isObject, let path = value.forProperty("__wmpPath"), path.isString {
+            return .string(WMPObjectModel.objectReferencePrefix + (path.toString() ?? ""))
         }
         return .string(value.toString() ?? "")
     }

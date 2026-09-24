@@ -112,7 +112,7 @@ final class WMPAudioEngineHost: WMPHost {
     /// straight. Nothing in this engine reads the value back — it is a readout, never a route to
     /// the file — so the spelling is a presentation conversion in the same seam that states
     /// `crossFadeWindow` in milliseconds because WMP does.
-    static func sourceURLSpelling(_ url: URL?) -> String {
+    nonisolated static func sourceURLSpelling(_ url: URL?) -> String {
         guard let url else { return "" }
         guard url.isFileURL else { return url.absoluteString }
         return "C:" + url.path.replacingOccurrences(of: "/", with: "\\")

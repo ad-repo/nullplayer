@@ -344,9 +344,9 @@ struct WMPCorpusReportHarness: @unchecked Sendable {
         // The five host-driven ambient attribute handlers (W129), raised by
         // `WMPMainWindowController.refreshHostState` off the snapshot diff. **The rest of the
         // `<attribute>_onchange` family is deliberately not listed**: the element-side cascade
-        // raises any attribute a script writes, but a name whose attribute nothing in this engine
-        // ever moves — `textWidth_onchange`, `selectedItem_onchange` — has no dispatch site of its
-        // own and must keep ranking as measured demand. Listing it
+        // raises any attribute a script writes, but a name whose attribute this engine moves only
+        // in part — `textWidth_onchange` not at all, `selectedItem_onchange` from a `<LISTBOX>`
+        // click (W136) but not a `<POPUP>` — must keep ranking as measured demand. Listing it
         // would drop it out of this tally while still doing nothing, which is the state `onResize`
         // sat in for three phases.
         "currentposition_onchange", "currentmedia_onchange", "currentplaylist_onchange",

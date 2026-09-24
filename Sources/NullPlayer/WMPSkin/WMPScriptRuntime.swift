@@ -370,6 +370,9 @@ struct WMPScriptOutput: Sendable {
     /// `popupPreset.appendItem(...)` in an `onLoad` — so they are transaction output, not markup,
     /// and the AppKit menu has no other source for them.
     let listItems: [Int: [String]]
+    /// A `<PLAYLIST>` pointed at a library playlist and a `<LISTBOX>`'s script-set selection
+    /// (W136). Applied wherever `listItems` is.
+    let widgetState: WMPWidgetScriptState
     /// The size this transaction's script **assigned to the view itself**, when it did.
     ///
     /// A `.wmz` compact mode is a script writing `view.width`/`view.height` and hiding one shell in
@@ -389,10 +392,12 @@ struct WMPScriptOutput: Sendable {
          timerRequests: [WMPJScriptTimerRequest] = [], clearedTimerTokens: [Int] = [],
          calls: [WMPJScriptCall] = [],
          expressions: [WMPJScriptExpressionResult] = [], expressionOrder: [String] = [],
-         listItems: [Int: [String]] = [:], viewSize: WMPSize? = nil,
+         listItems: [Int: [String]] = [:], widgetState: WMPWidgetScriptState = .empty,
+         viewSize: WMPSize? = nil,
          hasActiveTweens: Bool = false) {
         self.hasActiveTweens = hasActiveTweens
         self.listItems = listItems
+        self.widgetState = widgetState
         self.viewSize = viewSize
         self.overrides = overrides
         self.hostCommands = hostCommands
@@ -578,6 +583,7 @@ actor WMPScriptRuntime {
         var pendingLoad = false
         if context == nil || contextSkin != ObjectIdentifier(skin) {
             context = WMPScriptContext(executionSeconds: executionSeconds)
+            context?.setLibrary(library)
             contextSkin = ObjectIdentifier(skin)
             contextViewID = nil
             pendingLoad = true
@@ -632,6 +638,7 @@ actor WMPScriptRuntime {
                                        screen: screen, usableScreen: usableScreen,
                                        animatesTweens: animatesTweens,
                                        tweenFrame: tweenFrame)
+        noteLibraryUse(result, viewID: viewID, event: event)
         register(tweens: result.tweens, in: scope)
         if WMPTweenTrace.enabled, !result.tweens.isEmpty || !(activeTweens[scope] ?? []).isEmpty {
             WMPTweenTrace.log("transact view=\(viewID) event=\(event?.name ?? "-")"
@@ -924,7 +931,7 @@ actor WMPScriptRuntime {
                                timerRequests: result.timers, clearedTimerTokens: result.clearedTimers,
                                calls: result.calls,
                                expressions: result.expressions, expressionOrder: result.expressionOrder,
-                               listItems: context.listItems(),
+                               listItems: result.listItems, widgetState: result.widgetState,
                                viewSize: mediaDrivenResize ? restoredViewSize : assigned,
                                hasActiveTweens: !(activeTweens[scope] ?? []).isEmpty)
     }
@@ -1228,6 +1235,7 @@ actor WMPScriptRuntime {
                                                  snapshot: snapshot,
                                                  preferences: preferences.values(), event: event,
                                                  screen: screen)
+        noteLibraryUse(result, viewID: viewID, event: event)
         var diagnostics = result.diagnostics
         diagnostics.append(contentsOf: preferences.apply(result.preferenceWrites))
         return WMPScriptOutput(overrides: .empty, hostCommands: result.hostCommands,
@@ -1243,6 +1251,48 @@ actor WMPScriptRuntime {
 
     func holdElement(stableID: Int) { heldElements.insert(stableID) }
     func releaseElement(stableID: Int) { heldElements.remove(stableID) }
+
+    /// The library the skin sees (W136). Kept here as well as in the context, because the context
+    /// is rebuilt per skin and must be handed the current one when it is.
+    private var library = WMPLibraryCatalog.empty
+
+    func setLibrary(_ library: WMPLibraryCatalog) {
+        self.library = library
+        context?.setLibrary(library)
+    }
+
+    /// Called with what a transaction asked of the library that is not loaded yet, so the host can
+    /// fetch it (W136).
+    private var libraryDemandHandler: (@Sendable (Set<String>, String, WMPJScriptEvent?) -> Void)?
+    /// The views whose `onLoad` read the library — the ones that fill a chooser from it, and so
+    /// the ones to load again when a server's playlists arrive or the source changes.
+    private var viewsFillingFromLibrary: Set<String> = []
+
+    /// The handler is told which view and event made the demand, so a search the skin ran before
+    /// its results arrived can be run again once they have.
+    func setLibraryDemandHandler(_ handler: @escaping @Sendable (Set<String>, String, WMPJScriptEvent?) -> Void) {
+        libraryDemandHandler = handler
+    }
+
+    func viewsThatFillFromLibrary() -> Set<String> { viewsFillingFromLibrary }
+
+    private func noteLibraryUse(_ result: WMPScriptRunResult, viewID: String,
+                                event: WMPJScriptEvent?) {
+        if !result.libraryDemands.isEmpty { libraryDemandHandler?(result.libraryDemands, viewID, event) }
+        if event?.name == "load", result.calls.contains(where: {
+            $0.path.hasPrefix("player.playlistcollection") || $0.path.hasPrefix("player.mediacollection")
+        }) {
+            viewsFillingFromLibrary.insert(WMPPath.fold(viewID))
+        }
+    }
+
+    func adoptCurrentLibraryPlaylist(_ reference: String) {
+        context?.adoptCurrentLibraryPlaylist(reference)
+    }
+
+    func setWidgetSelection(stableID: Int, index: Int) {
+        context?.setElementSelection(stableID: stableID, index: index)
+    }
 
     func setWidgetValue(stableID: Int, value: Double, viewID: String) {
         guard value.isFinite else { return }
