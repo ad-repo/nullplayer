@@ -106,7 +106,7 @@ hosted render (W71), so nothing here is an overlay defect and the whole of it is
   holds.
 - **Not the hosted `PLAYLIST` overlay, and not AppKit.** The gaps are in the scene's own artwork;
   the missing column headers and `Selected:` / `Total Time:` footer in the same window are a
-  different, still-open thing (W133).
+  different thing (W133, closed 2026-09-24 as unreadable at these widths — see the backlog archive).
 - **Not the top tile's 100x170 artwork.** `f_top_tile.png` really is 170 tall against a 76px bar, and
   drawing it at its natural size is correct — everything below the bar is black, over a black
   `plFrame`, and WMP composites the same way. It reads as a defect in a screenshot and is not one.

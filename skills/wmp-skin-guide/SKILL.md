@@ -3048,7 +3048,8 @@ Three rules come out of W218, and the first is the one worth carrying to unrelat
   `disabledItemColor`'s 74 have no meaning here at all — there are no disabled tracks. **The
   substance is column headers, which the overlay draws none of.** `dropDownVisible="true"`
   (114 skins) is explicitly **not** part of it: a documented deliberate refusal in `object-model.md`
-  pending W66.
+  pending W66. **Closed 2026-09-24 without implementing**: the column playlists render at a median
+  327 px, too narrow for readable columns — measurements in `docs/wmp-skin/wmp-backlog-archive.md` (W133).
 
 - **A `<BUTTONGROUP>`'s artwork is a sheet the size of the whole group, and every state of it is
   painted through the group's mapping mask (W154).** The dead area a sheet carries around its
