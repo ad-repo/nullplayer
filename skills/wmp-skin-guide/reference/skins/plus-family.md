@@ -281,6 +281,16 @@ per-session context and `changeHue()` also writes it through `theme.savePreferen
 specific angle, patch `loadPrefs()` in a copy of the archive to force `currHue`: that is the skin's
 own restore path and exercises script assignment → scene → image store → renderer end to end.
 
+### The equaliser drawer drew no bands (2026-09-24)
+
+*"the eq in plus hugh shifter is non functional"*. The bands were buried under the drawer's own art.
+`hueshifter_eq` (the eight sliders) and the tray's `<buttonGroup>` are both `zIndex="2"`, the
+subview first, and `eq_tray_MASK.gif` is opaque over the whole band area. `hueshifter_final.jpg`
+shows the green thumbs over the tray. Fixed engine-wide as a tie rule: `../rendering.md`
+§ *At a `zIndex` tie a `<SUBVIEW>` paints above its non-subview siblings*. **The resting render
+cannot show it**: the drawer is parked behind the body at `left="235"` until `openTray('eqTray')`
+moves it to 395. Author `left="395"` in a copy of the archive to render it open.
+
 ### W170 — pause did not pause, and stop reloaded the track
 
 *"in hue pressing pause does not pause the stream and play is not responsive at all"*, then *"stop

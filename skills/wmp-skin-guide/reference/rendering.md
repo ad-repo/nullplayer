@@ -106,6 +106,23 @@ counter-evidence table in `reference/skins/README.md`.
   colour standing. The reach beyond that skin is the mechanism's, not a heuristic's: 8 further corpus
   images moved, every one a colour the skin's own script had always assigned and nothing painted.
 
+- **At a `zIndex` tie a `<SUBVIEW>` paints above its non-subview siblings, whichever comes first
+  in the markup** (`WMPSceneBuilder.paintOrder`, 2026-09-24). Otherwise ties go by document order.
+  `Plus! HueShifter` authors its equaliser drawer as the band subview *then* the tray's opaque
+  `<buttonGroup>`, both `zIndex="2"`; `Plus! SlimLine` authors the same drawer the other way round.
+  Both skins' shipped screenshots show the bands over the tray, and a subview-wins-ties rule is the
+  only simple one that fits both. Under plain document order HueShifter's eight bands drew no
+  thumbs and every press landed on the tray — reported as "the EQ in plus hue shifter is non
+  functional". **Reach**: across the 179-archive corpus, 14 subview/sibling ties overlap
+  (a statically resolved frame, subview first). Apart from HueShifter they are hosted widgets
+  (`<video>`, `<playlist>`, `<effects>`, which sit above the scene anyway), `TDK`/`portals`'
+  `content_image` (hidden until the script pages to it) and `Tomb Raider 2`'s background-less EQ
+  subview. An A/B render of all 11 reachable skins was byte-identical except HueShifter with its
+  drawer authored open. The rule does **not** put subviews above *higher*-`zIndex` siblings: 235
+  overlapping pairs across 29 archives author a button or text over a subview at a higher
+  `zIndex`, and they are meant to be seen. `WMPEqualizerSliderDragTests.testASubviewWinsAZIndexTieWithItsSiblingsInEitherOrder`
+  pins both drawer orders.
+
 - **A script owns paint order as much as the markup does (W166).** `zIndex` is an ordinary writable
   property and seven archives animate it — 58 assignments across `Beck`, `Cablemusic`,
   `Charlies_Angels_Full_Throttle`, `Colorchooser`, `Plus! Professional`, `Spider-man` and

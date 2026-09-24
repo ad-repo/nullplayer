@@ -472,9 +472,22 @@ struct WMPSceneBuilder: @unchecked Sendable {
             return Int(literal(node, "zIndex") ?? 0)
         }
 
+        /// **At a `zIndex` tie a `<SUBVIEW>` paints above its non-subview siblings**, whichever
+        /// comes first in the markup. `Plus! HueShifter` authors its equaliser drawer as the band
+        /// subview *then* the tray's opaque `<buttonGroup>`, both `zIndex="2"`, and its shipped
+        /// `hueshifter_final.jpg` shows the thumbs over the tray; `Plus! SlimLine` authors the same
+        /// drawer the other way round at `zIndex="1"` and shows the same thing. Document order
+        /// alone buried HueShifter's eight bands under the tray — no thumbs drawn, and every press
+        /// landed on the tray artwork — reported as "the EQ in Plus! HueShifter is non-functional".
+        /// Measured 2026-09-24 over 179 archives: 14 subview/sibling ties overlap, and apart from
+        /// HueShifter they are hosted widgets (which sit above the scene regardless) or `TDK` and
+        /// `portals`' `content_image`, which is hidden until the script pages to it.
         func paintOrder(_ lhs: WMPNode, _ rhs: WMPNode) -> Bool {
             let leftZ = zIndex(of: lhs), rightZ = zIndex(of: rhs)
-            return leftZ == rightZ ? lhs.stableID < rhs.stableID : leftZ < rightZ
+            guard leftZ == rightZ else { return leftZ < rightZ }
+            let leftSubview = lhs.kind == .subview, rightSubview = rhs.kind == .subview
+            guard leftSubview == rightSubview else { return rightSubview }
+            return lhs.stableID < rhs.stableID
         }
 
         func recordUnresolved(_ node: WMPNode, attribute: String, value: String) {

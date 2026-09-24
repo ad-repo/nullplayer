@@ -294,4 +294,32 @@ final class WMPEqualizerSliderDragTests: XCTestCase {
         XCTAssertEqual(registry.changes(for: snapshot).first { $0.address == address }?.value,
                        .number(-14), "and settles again rather than sticking where it opened")
     }
+
+    // MARK: - 4: a band subview tied with its tray's artwork
+
+    /// `Plus! HueShifter`'s drawer: the band subview first and the tray's opaque artwork after it,
+    /// both `zIndex="2"`. Document order alone put the tray on top — no thumbs drawn, every press
+    /// taken by the tray — and the skin's own `hueshifter_final.jpg` shows WMP drawing the bands
+    /// over it. `Plus! SlimLine` authors the same drawer the other way round; both must agree.
+    func testASubviewWinsAZIndexTieWithItsSiblingsInEitherOrder() async throws {
+        let band = """
+            <SUBVIEW id="bands" zIndex="2" left="10" top="10" width="40" height="80">
+                <SLIDER id="eq1" direction="vertical" left="10" top="0" width="10" height="75"
+                        min="-14" max="14" thumbImage="knob.png"/>
+            </SUBVIEW>
+            """
+        let tray = #"<BUTTON id="tray" zIndex="2" left="0" top="0" width="60" height="100" image="tray.png"/>"#
+        for (label, children) in [("band first", band + tray), ("tray first", tray + band)] {
+            let skin = try await load(wms: """
+            <THEME><VIEW id="main" width="60" height="100">\(children)</VIEW></THEME>
+            """, images: ["tray.png": try opaqueSquare(60), "knob.png": try opaqueSquare(8)])
+            let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+            let order = scene.commands.compactMap(\.nodeID)
+            let thumb = try XCTUnwrap(order.lastIndex(of: "eq1"), label)
+            let artwork = try XCTUnwrap(order.lastIndex(of: "tray"), label)
+            XCTAssertGreaterThan(thumb, artwork, "\(label): the band paints over the tray")
+            XCTAssertEqual(WMPHitTester(hits: scene.hits).hitTest(WMPPoint(x: 25, y: 50))?.nodeID,
+                           "eq1", "\(label): and the press reaches it")
+        }
+    }
 }
