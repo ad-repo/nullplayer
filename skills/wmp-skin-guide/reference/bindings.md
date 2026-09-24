@@ -106,6 +106,19 @@ Moved verbatim from `SKILL.md` on 2026-09-24. The object model these contracts d
   `pause` immediately followed by `play(): Starting streaming playback`. It reproduces only through
   the streaming path (a Plex/Jellyfin track); with a local file the same re-play lands on an
   already-loaded engine and is invisible, which is how a first live pass cleared it wrongly.
+- **A new media opening is an open edge even though the open state never left `osMediaOpen`
+  (W275).** `openState(for:)` answers `osMediaOpen` for as long as the queue is non-empty, and WMP
+  steps through `osMediaChanging` … `osMediaOpen` for every track, so an audio track change raised no
+  `openstatechange` at all. `pharaoh` writes its title only from `OnOpenStateChange`, so after a Clear
+  and re-add it read "Stopped" through any number of played tracks. `stateEdgeEvents` now also raises
+  it when a media is open and **`metadata.sourceURL` changed, or `playlistIndex` and the metadata
+  changed together** — the tracks of one cue sheet share a file. Neither half alone qualifies: a sort
+  or move changes the index with nothing opened, and a stream's ICY title changes the metadata with
+  nothing opened. **Next while stopped opens a media too**, so the three Plus! skins whose
+  `osMediaOpen` arm calls `player.controls.play()` start playback there — WMP's own behaviour for
+  them. Measured live on a 3-track cue with an A/B switch: off, the clock reset on every next and the
+  title stayed on the first track. `WMP_VIDEO_TRACE`'s `VIDEOEDGE` line does not print for this
+  edge — it fires only when the state, the `os*` number or the picture size moves.
 - **Hover is two events and a gate.** Crossing from one control to another raises `onMouseOut` on
   the node left *before* `onMouseOver` on the node reached — a skin that fades a readout in on entry
   never fades it back out otherwise — and nothing is raised while the pointer stays inside the same

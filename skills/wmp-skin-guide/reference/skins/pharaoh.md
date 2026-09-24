@@ -63,6 +63,14 @@ whichever branch the user left it on, the next launch either closed the player b
 replaced it with the 197x194 panel. There is no route out of that inside the skin, and restarting
 does not clear it.
 
+### The 2026-09-24 report — *"the track name just says stopped"*
+
+The title readout (`metadata`) is written only from `OnOpenStateChange`, and a track change raised
+no `openstatechange` — the open state stayed `osMediaOpen` while the queue was non-empty. **W275**,
+closed 2026-09-24; the rule is `bindings.md` § *A new media opening is an open edge*. Separate and
+unchanged: pressing stop leaves "Playing -- …" in the readout, because stop opens no media and the
+skin authors no play-state handler.
+
 ### Still open
 
 **`W201` — the `pyrevolver.gif` back button drawing as a black box — closed 2026-09-24.**

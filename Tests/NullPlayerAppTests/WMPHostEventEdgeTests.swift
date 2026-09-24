@@ -68,6 +68,48 @@ final class WMPHostEventEdgeTests: XCTestCase {
                       "an unchanged snapshot is not an edge")
     }
 
+    /// **W275 — an audio track change raised no open edge, so `pharaoh`'s title froze.**
+    ///
+    /// `pharaoh.js` writes its `metadata` readout only from `OnOpenStateChange`, and the open state
+    /// answers `osMediaOpen` for as long as the queue is non-empty, so after a Clear and re-add the
+    /// title read "Stopped" through any number of played tracks. Measured live 2026-09-24 on a
+    /// 3-track cue with the rule switched off: the clock reset on every next and the title stayed
+    /// on the first track. WMP steps through `osMediaChanging` … `osMediaOpen` for every new media.
+    func testANewMediaOpeningRaisesTheOpenStateEdgeWithoutTheQueueEmptying() {
+        func media(_ url: String, _ title: String, index: Int,
+                   _ state: WMPHostSnapshot.State = .playing) -> WMPHostSnapshot {
+            var snapshot = snapshot(state)
+            snapshot.metadata = WMPMediaMetadata(title: title, sourceURL: url)
+            snapshot.playlistIndex = index
+            return snapshot
+        }
+        let first = media("C:\\music\\a.mp3", "A", index: 0)
+        XCTAssertEqual(WMPMainWindowController.stateEdgeEvents(previous: first,
+                                                               current: media("C:\\music\\b.mp3", "B", index: 1)),
+                       ["openstatechange"], "a different file opened")
+        XCTAssertEqual(WMPMainWindowController.stateEdgeEvents(previous: media("C:\\music\\b.mp3", "B", index: 1, .stopped),
+                                                               current: media("C:\\music\\c.mp3", "C", index: 2, .stopped)),
+                       ["openstatechange"], "next while stopped opens a media too — as it does in WMP")
+
+        // The tracks of one cue sheet share a file: the index and the metadata move together.
+        XCTAssertEqual(WMPMainWindowController.stateEdgeEvents(previous: media("C:\\album.flac", "One", index: 0),
+                                                               current: media("C:\\album.flac", "Two", index: 1)),
+                       ["openstatechange"], "a cue track change")
+
+        // Neither half alone is a media opening.
+        XCTAssertTrue(WMPMainWindowController.stateEdgeEvents(previous: first,
+                                                              current: media("C:\\music\\a.mp3", "A", index: 4))
+                        .isEmpty, "a sort or move changes the index with nothing opened")
+        XCTAssertTrue(WMPMainWindowController.stateEdgeEvents(previous: media("http://radio/x", "Song 1", index: 0),
+                                                              current: media("http://radio/x", "Song 2", index: 0))
+                        .isEmpty, "a stream's ICY title changes the metadata with nothing opened")
+
+        // Pause and stop still raise no open edge (W170), with a media carrying a URL.
+        XCTAssertEqual(WMPMainWindowController.stateEdgeEvents(previous: first,
+                                                               current: media("C:\\music\\a.mp3", "A", index: 0, .paused)),
+                       ["playstatechange"])
+    }
+
     /// The value the event carries and the property a handler reads must agree, because
     /// `OnOpenStateChange` branches on one of them — HueShifter reads `player.OpenState`, and
     /// `arguments(for:)` hands the same number to a handler that reads `NewState` instead.

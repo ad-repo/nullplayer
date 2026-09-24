@@ -2213,7 +2213,21 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     static func stateEdgeEvents(previous: WMPHostSnapshot?, current: WMPHostSnapshot) -> [String] {
         var events: [String] = []
         if previous?.state != current.state { events.append("playstatechange") }
-        if openState(previous) != openState(current) { events.append("openstatechange") }
+        // **A new media opening is an open edge even when the queue never emptied (W275).** WMP
+        // steps through `osMediaChanging` … `osMediaOpen` for every track, while `openState(for:)`
+        // answers `osMediaOpen` for as long as the queue is non-empty, so a track change raised
+        // nothing and `pharaoh`, which writes its title only from `OnOpenStateChange`, kept the
+        // first track's name all session. Keyed on `sourceURL`, not on either half alone: a sort or
+        // move changes `playlistIndex` with nothing opened, and a stream's ICY title changes the
+        // rest of the metadata with nothing opened. The tracks of one cue sheet share a file, so
+        // for them it is the index and the metadata moving together.
+        let mediaChanged: Bool = {
+            guard let previous, openState(current) == WMPScriptConstants.osMediaOpen,
+                  !current.metadata.sourceURL.isEmpty else { return false }
+            if previous.metadata.sourceURL != current.metadata.sourceURL { return true }
+            return previous.playlistIndex != current.playlistIndex && previous.metadata != current.metadata
+        }()
+        if openState(previous) != openState(current) || mediaChanged { events.append("openstatechange") }
         return events
     }
 
