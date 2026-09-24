@@ -523,4 +523,20 @@ final class WMPAlignmentTests: XCTestCase {
         XCTAssertNil(lid.frame.intersection(lidClip), "the eyelid stays parked out of sight")
     }
 
+    /// `Melvin`'s belly: a plain `backgroundColor` container with an `<effects zIndex="-2">` in
+    /// it. The fill is the ground under the visualizer, so it must land below the split.
+    func testAPlainColourContainerGroundsItsNegativeZIndexChildren() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="100">
+            <SUBVIEW id="look" left="10" top="10" width="50" height="40" backgroundColor="white">
+                <EFFECTS id="viss" zIndex="-2" left="0" top="0" width="50" height="40"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let split = try XCTUnwrap(scene.effectsCommandSplitIndex)
+        let fill = try XCTUnwrap(scene.commands.firstIndex { $0.nodeID == "look" })
+        XCTAssertLessThan(fill, split, "the white ground is under the visualizer, not over it")
+    }
+
 }

@@ -1456,6 +1456,22 @@ queue, with the object model as the security boundary — see Amendment 2 in
   halves. Reproduce Ursula's opened state headlessly by authoring `playlist_drawer` at `top="212"`
   and `plsub` visible in a copy of the archive — `WMP_RENDER_CLICK` reports the move but dumps the
   pre-click frame. Accepted live 2026-09-23.
+- **A container that paints only a `backgroundColor` grounds all its children, negative `zIndex`
+  included.** Behind-own-artwork ordering is for artwork with a hole (`Cerulean`); a colour with no
+  image has no hole, so a child drawn behind it is simply gone. `Melvin`'s belly is
+  `<subview id="look" backgroundColor="white">` holding `<effects id="viss" zindex="-2">`: the
+  white slab was emitted after the effects split, landed in the overlay above the hosted surface,
+  and a playing track showed a blank belly — reported as *"visualizer button not launching it"*,
+  though the button, the `stepEffect` command and the surface were all working. `WMPSceneBuilder`
+  now emits that fill before the negative children when the node has no background image; with an
+  image the order is unchanged. Sweep (A/B, 184 archives): 10 `plView`s move, all the same shape —
+  a `backgroundColor="#000000"` `plcenterBox` over a `<playlist zIndex="-10">` with its own colour,
+  which now shows the playlist's authored colour instead of the container's black (live, the hosted
+  playlist draws over both). **Finding it took the live app**: every headless instrument agreed
+  with the broken app, because the harness spectrum is empty and a native effect with no levels
+  draws nothing either way. What settled it was dumping the two rasters `WMPMainView.present`
+  receives and reading the overlay's alpha over the effects rect — opaque white.
+  `WMPAlignmentTests.testAPlainColourContainerGroundsItsNegativeZIndexChildren` pins it.
 - **A hidden element still has a place, and the extent a binding gives it is not a baseline
   (W226).** Two more steps along the same read, both found by measuring `Compact`'s visualizer at
   two window sizes. **First: the walk returns on an invisible node before recording a geometry**, so

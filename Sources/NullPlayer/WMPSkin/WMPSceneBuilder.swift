@@ -1259,6 +1259,21 @@ struct WMPSceneBuilder: @unchecked Sendable {
             }
             let ownGroundShape = try groundShape(node, frame: frame)
             let behindOwnArtwork = orderedChildren.prefix { zIndex(of: $0) < 0 }
+            // **A plain colour is the ground under every child, however negative its `zIndex`.**
+            // Behind-own-artwork is for artwork with a hole in it (`Cerulean`'s `face.bmp`); a
+            // `backgroundColor` with no image beside it has no hole, so a child drawn behind it is
+            // simply gone. `Melvin`'s belly is `<subview id="look" backgroundColor="white">`
+            // holding `<effects zindex="-2">`, and the white slab landed in the overlay above the
+            // hosted visualizer: a playing track showed a blank belly and the vis button seemed
+            // dead. With an image the order is unchanged — the fill is keyed with that image.
+            let hasBackgroundImage = try resource(node, names: ["backgroundImage", "background"]) != nil
+            let groundsNegativeChildren = !behindOwnArtwork.isEmpty && !hasBackgroundImage
+            if groundsNegativeChildren, !frame.isEmpty,
+               let background = mirroredColor(of: node, names: ["backgroundColor"]) {
+                emit(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,
+                    frame: frame, clipRect: inheritedClip, zIndex: z,
+                    documentOrder: node.stableID, paint: .fill(background), alpha: alpha))
+            }
             if let ownClipMask { clipMaskStack.append(ownClipMask) }
             if let ownGroundShape { groundShapeStack.append(ownGroundShape) }
             for child in behindOwnArtwork {
@@ -1299,7 +1314,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
             let backgroundNames = visualState == .hover && isText(node.kind)
                 ? ["hoverBackgroundColor", "backgroundColor"]
                 : ["backgroundColor"]
-            if let background = mirroredColor(of: node, names: backgroundNames), !frame.isEmpty {
+            if !groundsNegativeChildren,
+               let background = mirroredColor(of: node, names: backgroundNames), !frame.isEmpty {
                 // The fill is under this node's own keyed artwork and is keyed with it — never a
                 // bare rectangle filling in the holes that artwork cuts. See `backgroundFillMask`;
                 // `Cerulean`'s face used to be a named exemption here and is now one of ten.
