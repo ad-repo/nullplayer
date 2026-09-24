@@ -312,7 +312,7 @@ NullPlayer polls Sonos every 5 seconds during casting:
 - NullPlayer sent a valid `REL_TIME` seek to a direct Plex FLAC URL. The Arc acknowledged the SOAP request in about 15 ms and reported `PLAYING` at the requested position, then changed to `STOPPED` at position 0 after only 3–4 seconds while still advertising 12–18 seconds of remaining duration. This points to receiver-specific FLAC time-to-byte/range seeking behavior, not a rejected SOAP command.
 - The ordinary natural-finish classifier intentionally has a tight 6-second tolerance so an external stop near the end does not advance. The Arc's premature EOF falls outside that tolerance and would therefore be misclassified as an external stop, leaving playback paused.
 - `CastManager` briefly records a Sonos seek made within the final 30 seconds (and no earlier than halfway through a short track). If the same session was playing, its local clock reached the target, and Sonos reports `STOPPED` within 12 seconds, classify that report as EOF and use the normal cast-track advance path. Clear the recent-seek state on a new cast/track, teardown, local Stop, and after the first STOPPED classification. Rooms that play through normally remain on the ordinary completion path.
-- **A mid-track instance on the Dining Room renderer is open as `WMP_TASKS.md` W271** (2026-09-24): same Plex FLAC URL + opening seek, but `STOPPED` ~45 s into a 260 s track, outside this classifier's final-30-second window.
+- **A mid-track `STOPPED` on the Dining Room (2026-09-24, W271) was not this class**: another NullPlayer instance was still casting to the room. See **Casting Stops Unexpectedly** — rule that out before widening this classifier.
 - Regression status: this is **not introduced by the #419 changes**. Fire-and-forget Sonos seeking existed from the initial January 2026 casting implementation, and STOPPED polling paused playback from the February 2026 resilience work. #419 added the 6-second natural-finish classifier for #415; the Arc/Plex case is a pre-existing renderer edge case that exceeded that classifier's intended tolerance.
 
 ### Group Management
@@ -550,10 +550,15 @@ If you see "Sonos rejected the command":
 - Chromecast and non-Sonos DLNA should still route through `stopCasting()` from `softStopForActiveDevice()`.
 
 ### Casting Stops Unexpectedly
-1. Check if Sonos speaker went to sleep (idle timeout)
-2. Check if someone paused via Sonos app (NullPlayer detects this)
-3. Check if Mac went to sleep (NullPlayer recovers on wake)
-4. Check Console.app for "Sonos reported STOPPED" or "consecutive command failures"
+1. **Check that no other NullPlayer (another Mac, a CLI run) is casting to the same room.** A displaced
+   instance keeps its session and still acts on the room; the new cast then reports `STOPPED` at
+   position 0 at a steady point (~45 s in, every run, 2026-09-24) and pauses as "ended externally".
+   It looks exactly like a renderer or stream defect and survives a bisect, because the fault is in
+   the other process. Open as `WMP_TASKS.md` W276 (detect a replaced `TrackURI` and drop the session).
+2. Check if Sonos speaker went to sleep (idle timeout)
+3. Check if someone paused via Sonos app (NullPlayer detects this)
+4. Check if Mac went to sleep (NullPlayer recovers on wake)
+5. Check Console.app for "Sonos reported STOPPED" or "consecutive command failures"
 
 ## Network Requirements
 
