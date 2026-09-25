@@ -792,6 +792,13 @@ counter-evidence table in `reference/skins/README.md`.
   (`archive.org/download/windowsmediaplayerskinscollection/<skin>.png`) are real-WMP ground truth for
   any size question — read the skin's own state first, since most show a stopped player. Every
   corpus image containing text moves with this rule; that is the rule, not collateral.
+- **A face the skin ships is loaded from the archive (W304).** `WMPSkinFonts.register` runs in
+  `WMPSkinLoader` off the main thread and registers each `.ttf`/`.otf` entry for the process, so
+  `CTFontCreateWithName` finds the family by name — `Alpine7618_v09`'s `fontFace="Quartz"` drew in
+  Helvetica before, wider than the LCD it was laid out for. **A family already installed is never
+  registered over**: a skin must not change what `Arial` means to another window or skin family.
+  Registrations are never undone; a second load of the same PostScript name is a no-op. Reach: 1 of
+  180 installed archives ships a font (2026-09-25).
 - **An element's own artwork is drawn at its own size, and the box it does not fill is left to
   whatever is under it (W122).** WMP never scales a `<BUTTON>`'s `image` to the authored frame, and
   a skin that swaps that image from script is written against exactly that: **563 script `.image`

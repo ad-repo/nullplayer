@@ -270,4 +270,7 @@ struct WMPAlphaPlane: Hashable {
         guard x >= 0, y >= 0, x < width, y < height else { return 0 }
         return alpha[y * width + x]
     }
+    /// The topmost row, counted from the authored top, holding any pixel that is not fully
+    /// transparent; nil for a plane that draws nothing.
+    var firstOpaqueRow: Int? { alpha.firstIndex(where: { $0 != 0 }).map { $0 / width } }
 }

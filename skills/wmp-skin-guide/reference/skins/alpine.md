@@ -28,6 +28,15 @@ under the knob open them through `Alpine.js` (`ShowVIS`/`ShowPL`/`ShowEQ`/`ShowV
   underneath. Every surface was cut at the earliest split (the LCD's), so `vis_panel.bmp`'s opaque
   black centre went into the overlay above the second surface.
 
+- **W303**: *"you can only drag the main window several inches from the screen top"*. The drag clamp
+  and AppKit both measured the 412-tall frame, whose top ~258 rows are empty while the drawers are
+  shut. The drawn top is now what reaches the menu bar; see `../windows.md` § *Window placement
+  and recovery*.
+- **W304**: *"the faceplate text is misaligned in multiple ways"*. The LCD's `fontFace="Quartz"` is
+  the archive's own `Quartz.TTF`, never loaded, so it drew in Helvetica; see `WMPSkinFonts`. The
+  only corpus archive that ships a font.
+- **W305**: `Vol:` read `20.000000000000004` in a 28 px box; `settings.volume` is an integer now.
+
 ## What was ruled out
 
 - The big picture is **not** NullPlayer's own visualization window: it is 362x211, which is

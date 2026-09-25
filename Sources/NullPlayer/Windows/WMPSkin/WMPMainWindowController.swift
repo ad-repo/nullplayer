@@ -16,6 +16,19 @@ final class WMPSkinWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 
+    /// AppKit keeps even a borderless window's frame below the visible top, and the frame includes
+    /// every transparent row a skin keeps for its drawers. Clamp the first *drawn* row instead
+    /// (`WMPMainView.transparentTopInset`), so a skin whose closed drawers leave the top empty
+    /// can be dragged up to the menu bar.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        var constrained = super.constrainFrameRect(frameRect, to: screen)
+        guard let inset = (contentView as? WMPMainView)?.transparentTopInset, inset > 0,
+              let visible = (screen ?? self.screen)?.visibleFrame,
+              frameRect.maxY > constrained.maxY else { return constrained }
+        constrained.origin.y = min(frameRect.origin.y, visible.maxY + inset - frameRect.height)
+        return constrained
+    }
+
     /// Whether the drag in flight is the edge band's, taken before AppKit could see it.
     private var isResizingFromEdgeBand = false
 

@@ -86,6 +86,7 @@ struct WMPSkinLoader {
     private func loadOffMain(from url: URL) throws -> WMPLoadedSkin {
         let wasLoadedOnMainThread = Thread.isMainThread
         let archive = try WMPArchive(url: url, limits: archiveLimits)
+        WMPSkinFonts.register(from: archive)
         let path = archive.skinDefinitionPath
         let decoded = try WMPTextDecoder.decode(archive.data(for: path), path: path)
         let document = try WMPXMLParser(limits: xmlLimits).parse(decoded.string, path: path)

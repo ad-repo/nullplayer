@@ -1596,6 +1596,9 @@ aborting its handler, counted `inert()` because nothing draws playlist columns.
    and redraw. `player.settings.volume` queued the command alone, so `Asimov_Radio`'s `SetVolume`
    clamped against, and lit its bars from, the value before the click (W280). `balance`, `mute`
    and `controls.currentPosition` still have that shape; no skin has been measured depending on it.
+   **A WMP `long` is read as an integer**: `settings.volume` and `settings.balance` round
+   `snapshot × 100`, in the object model and the `wmpprop:` registry alike — `0.2 * 100` is
+   `20.000000000000004`, which `Alpine7618_v09` drew as `20.0…` clipped in its volume box (W305).
 3. Add it to `WMPJScriptCompatibility.members` in the same change; that table is what the census's
    static `UNKNOWN member` tally is measured against.
 4. Re-measure. The next member is now visible; the list you started from is already stale.

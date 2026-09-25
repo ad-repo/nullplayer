@@ -749,6 +749,18 @@ is why the rules below are contracts rather than preferences.
 | A restore onto a smaller desktop | `AppStateManager.correctedRestoredFrames` | run, same gate — one offset for the whole session, and the corrected `main` is what the player is restored to (W217 G2) |
 | The player's own restored frame | `WMPMainWindowController.restoreFrame` | no rule of its own: it keeps the top-left it is handed, which is the corrected one (W217 G1) |
 
+**A drag reaches the screen top with the skin's first drawn row, not its frame (W303).** A `.wmz`
+frame keeps transparent room for drawers — `Alpine7618_v09`'s 412-tall view draws only its bottom
+~150 while they are shut — and both AppKit's `constrainFrameRect` (which clamps even a borderless
+window) and `applySnapping`'s hard clamp measured the frame, parking the faceplate ~260 pt down.
+`WMPMainView.transparentTopInset` is the empty rows read off the composite on a full or structural
+present; `WMPSkinWindow.constrainFrameRect` and `WindowManager.transparentTopOverhang` (zero for
+every window that is not a `WMPSkinWindow`, so no other family moves) let that much hang above the
+visible top, and the top snap aligns the drawn top. When the inset shrinks — a drawer opening into
+the hidden part — the view re-constrains the window down. **The recovery sweep below still judges the
+frame's corner**, so a session restored or a display changed with the window parked up there brings
+it back down to frame-top; that was left alone deliberately.
+
 **The recovery gate is `WindowManager.appliesPlacementRecovery`, never `appliesWinampModernPlacement`.**
 The second one stays what it says — the `.wal` *arrangement* — and the two are not interchangeable.
 A seam about getting a window back on screen takes the first; a seam about how `.wal` lays its

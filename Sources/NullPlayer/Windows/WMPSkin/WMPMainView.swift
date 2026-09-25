@@ -166,6 +166,12 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     private var isEdgeBandResize = false
     /// Raised when a `view.size(corner)` drag lets go — the moment WMP's own call returns.
     var onScriptResizeEnded: (() -> Void)?
+    /// **How much of the window's top draws nothing, in points.** `Alpine`'s view is 517x412 and
+    /// its artwork fills only the bottom ~150 — the top is where its drawers open — so a frame
+    /// clamped at the screen top parked the faceplate a quarter-screen down. `WMPSkinWindow`
+    /// lets this much of the frame go above the visible top. Read off the composite on a full or
+    /// structural present, so a drawer that opens shrinks it.
+    private(set) var transparentTopInset: CGFloat = 0
     /// **The grips this view authors for its own resize (W227).** Set by the controller from the
     /// skin's markup and scripts, because a grip is identified by the script its handler reaches
     /// and the scene carries no script. Empty for the 97 corpus archives that author none, and for
@@ -296,6 +302,25 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         // describes the same tree — and rebuilding it per frame is what an assistive client sees as
         // a window whose contents change 12 times a second.
         if !structureUnchanged { setAccessibilityChildren(nil) }
+        if dirtyBounds == nil || !structureUnchanged { updateTransparentTopInset(cgImage) }
+    }
+
+    private func updateTransparentTopInset(_ cgImage: CGImage) {
+        let inset: CGFloat
+        switch cgImage.alphaInfo {
+        case .none, .noneSkipFirst, .noneSkipLast:
+            inset = 0
+        default:
+            guard let plane = WMPAlphaPlane(cgImage), plane.height > 0 else { inset = 0; break }
+            inset = CGFloat(plane.firstOpaqueRow ?? 0) * bounds.height / CGFloat(plane.height)
+        }
+        guard inset != transparentTopInset else { return }
+        let shrank = inset < transparentTopInset
+        transparentTopInset = inset
+        // A drawer opening into the part above the screen top would open under the menu bar.
+        guard shrank, let window else { return }
+        let constrained = window.constrainFrameRect(window.frame, to: window.screen)
+        if constrained != window.frame { window.setFrame(constrained, display: true) }
     }
 
     func refreshHostState(_ snapshot: WMPHostSnapshot) {

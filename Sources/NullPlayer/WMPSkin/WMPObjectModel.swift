@@ -904,8 +904,8 @@ final class WMPObjectModel {
 
     private func readSettings(_ name: String) -> WMPMemberValue {
         switch name {
-        case "volume": return .value(.number(snapshot.volume * 100))
-        case "balance": return .value(.number(snapshot.balance * 100))
+        case "volume": return .value(.number((snapshot.volume * 100).rounded()))
+        case "balance": return .value(.number((snapshot.balance * 100).rounded()))
         case "mute": return .value(.bool(snapshot.muted))
         case "getmode", "setmode", "getstring", "setstring": return .function
         case "autostart", "enableerrordialogs", "invokeurls":

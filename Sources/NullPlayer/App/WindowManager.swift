@@ -7072,6 +7072,13 @@ class WindowManager {
     }
     
     /// Apply snapping to other windows and screen edges
+    /// How far a window may sit above the screen top: the rows at its top that draw nothing.
+    /// Only a `.wmz` window has any — `Alpine`'s frame keeps ~260pt of transparent room for its
+    /// drawers — so every other family clamps and snaps exactly as before.
+    private static func transparentTopOverhang(of window: NSWindow) -> CGFloat {
+        ((window as? WMPSkinWindow)?.contentView as? WMPMainView)?.transparentTopInset ?? 0
+    }
+
     private func applySnapping(for window: NSWindow, to newOrigin: NSPoint) -> NSPoint {
         var snappedX = newOrigin.x
         var snappedY = newOrigin.y
@@ -7130,9 +7137,10 @@ class WindowManager {
             }
             
             // Top edge to screen top
-            let topDist = abs(frame.maxY - screenFrame.maxY)
+            let topOverhang = Self.transparentTopOverhang(of: window)
+            let topDist = abs(frame.maxY - topOverhang - screenFrame.maxY)
             if topDist < snapThreshold {
-                let candidateY = screenFrame.maxY - frame.height
+                let candidateY = screenFrame.maxY + topOverhang - frame.height
                 let candidateOrigin = NSPoint(x: newOrigin.x, y: candidateY)
                 if !isDraggingGroup || !wouldSnapCauseScreenSeparation(mainOrigin: candidateOrigin, mainSize: windowSize) {
                     if bestVerticalSnap == nil || topDist < bestVerticalSnap!.distance {
@@ -7265,10 +7273,11 @@ class WindowManager {
         // when a lower window is dragged upward, its docked peers above (positive Y offset)
         // get placed at snappedY + offset.y and can exceed the screen top.
         if let screen = window.screen ?? NSScreen.main {
-            var maxAllowedY = screen.visibleFrame.maxY - frame.height
+            var maxAllowedY = screen.visibleFrame.maxY + Self.transparentTopOverhang(of: window) - frame.height
             for dockedWindow in dockedWindowsToMove {
                 if let offset = dockedWindowOffsets[ObjectIdentifier(dockedWindow)], offset.y > 0 {
-                    let clampForDocked = screen.visibleFrame.maxY - offset.y - dockedWindow.frame.height
+                    let clampForDocked = screen.visibleFrame.maxY + Self.transparentTopOverhang(of: dockedWindow)
+                        - offset.y - dockedWindow.frame.height
                     maxAllowedY = min(maxAllowedY, clampForDocked)
                 }
             }
