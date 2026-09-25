@@ -895,7 +895,11 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 // line. Resolving it here is what keeps the bar hidden now that an *unanswerable*
                 // path no longer resolves to a falsy empty string.
                 if !mirrored { hidden = true }
-            } else if literalString(node, "visible")?.caseInsensitiveCompare("false") == .orderedSame {
+            } else if !isRoot,
+                      literalString(node, "visible")?.caseInsensitiveCompare("false") == .orderedSame {
+                // `visible` is not a `<VIEW>` attribute: `gnome` is the one skin in the corpus that
+                // authors `<view visible="false">`, never shows it from script, and loads in WMP.
+                // Honouring it here dropped every node and left the main window empty.
                 hidden = true
             }
             // Below a hidden ancestor only a node the script itself has shown is drawn — see
@@ -1487,8 +1491,17 @@ struct WMPSceneBuilder: @unchecked Sendable {
                         }
                     }
                 }
+                // **Art larger than a subview's box stops at the box.** A subview is a window
+                // region and its bitmap is trimmed to it, which is how a skin reveals a drawer by
+                // animating `height`: `Asimov_Radio` sizes `splView` to 255 over a 436-tall
+                // `vid_screen.bmp` and opens it to 470, so the parent's clip drew the closed
+                // drawer as a granite slab behind the whole head. Only where the art overflows —
+                // a background that exactly fills a fractional box would gain an antialiased seam.
+                let ownClip = node.kind == .subview && !isRoot
+                    && (backgroundFrame.width > frame.width + 0.5 || backgroundFrame.height > frame.height + 0.5)
+                    ? (inheritedClip.flatMap { frame.intersection($0) } ?? frame) : inheritedClip
                 emit(imageCommand(node: node, path: path, frame: backgroundFrame,
-                    clip: inheritedClip, z: z, background: true, alpha: alpha,
+                    clip: ownClip, z: z, background: true, alpha: alpha,
                     clippingPath: clippingPath, hueShift: hueShift))
             }
             // **An `<EFFECTS>` rect's own backdrop belongs under the visualizer, not over it.**

@@ -32,7 +32,18 @@ enum WMPColorKey {
     /// is what these skins were authored and keyed on. `YIL!OMA2K` declares `#6699FF` and its
     /// `ySpeakers 1.bmp` and `jButtonsFlat.bmp` hold `#639CFF` — exactly `#6699FF` through
     /// RGB555 — so an exact compare drew both speakers as solid blue slabs.
+    ///
+    /// **It matches the key's 16-bit representations, not its whole 5-bit bucket.** A display
+    /// stores a channel either truncated or bit-replicated, and nothing else: `#66` becomes `#60`
+    /// or `#63`, and black stays exactly black. The bucket compare also cleared every channel 0-7
+    /// under a black key, and `gnome` paints its face on a flat `(4,4,4)` backing — 24,000 pixels
+    /// of `gnome3a.bmp` went transparent.
     static let highColorShift = 3
+
+    static func isHighColorMatch(_ key: UInt8, _ value: UInt8) -> Bool {
+        let truncated = (key >> highColorShift) << highColorShift
+        return value == key || value == truncated || value == truncated | (key >> 5)
+    }
 
     /// Replaces only pixels whose un-premultiplied RGB matches the key. JPEG has no lossless RGB
     /// representation, so a JPEG colour key permits the bounded compression fringe around its key;
@@ -74,9 +85,8 @@ enum WMPColorKey {
             let blue = unpremultiply(bytes[offset + 2], alpha: alpha)
             if keys.contains(where: { key in
                 matchesAtHighColor
-                    ? key.red >> highColorShift == red >> highColorShift
-                        && key.green >> highColorShift == green >> highColorShift
-                        && key.blue >> highColorShift == blue >> highColorShift
+                    ? isHighColorMatch(key.red, red) && isHighColorMatch(key.green, green)
+                        && isHighColorMatch(key.blue, blue)
                     : abs(Int(key.red) - Int(red)) <= Int(componentTolerance)
                     && abs(Int(key.green) - Int(green)) <= Int(componentTolerance)
                     && abs(Int(key.blue) - Int(blue)) <= Int(componentTolerance)

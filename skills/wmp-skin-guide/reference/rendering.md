@@ -805,6 +805,16 @@ counter-evidence table in `reference/skins/README.md`.
   (`Scooby-Doo_2`), and one that is now half-right and is the open row: `Ice/videoView` draws
   `Pl-xp.bmp` as a 196x44 button inside a subview that still stretches the *same* bitmap to 313x144,
   so the two no longer meet.
+- **A subview's background art larger than its box stops at the box (W283).** A background
+  bitmap on a non-`stretch`, non-tiled axis draws at its own size (the `Ice` corner rule in
+  `WMPSceneBuilder`), and overflowing art used to be trimmed only by the *parent's* clip. A subview
+  is a window region: its own frame now clips its background wherever the art is larger than the
+  box. `Asimov_Radio` closes its video drawer by sizing `splView` to 255 over a 436-tall
+  `vid_screen.bmp` (and opens it to 470), and the closed half drew as a granite slab behind the
+  whole head. **Gated on overflow**: clipping a background that exactly fills a fractional box put
+  antialiased one-pixel seams in 70 images across 36 skins; gated, the sweep moved 4 images —
+  Asimov plus a stray overflow line or speck leaving `Plus! SlimLine`, `Television` and `Gold`.
+  `Ice`, whose corner relies on overflow, did not move.
 - **A `<VIDEO>` box shrinks the picture to fit by default and never enlarges it (W102).** The two
   fit flags are independent and neither means crop or fill: `shrinkToFit` governs the picture being
   *reduced*, `stretchToFit` its being *enlarged*, and `maintainAspectRatio` (default true) decides
@@ -1016,6 +1026,9 @@ counter-evidence table in `reference/skins/README.md`.
   `boxsmall` (the cut-down face), the wings and the pictures inside it, and the window went empty
   with no way back (Speaker Mode is in a wing). `Stars and Stripes` and its five US-forces siblings
   show Help/Credits text inside `help`/`credits`, which are authored hidden and never shown.
+- **`visible` is not a `<VIEW>` attribute (W281).** The root's authored `visible="false"` is
+  ignored; a script override still applies. `gnome` is the only corpus view that authors it, never
+  shows itself from script, and loads in WMP — honouring it drew 0 nodes and an empty window.
   **This is not proven WMP behaviour and the corpus argues both ways** — `portals` and
   `modernblue` also show children inside closed containers (a pane choice in a shut tray, a play
   button on a hidden compact face) where inheritance is what the skin wants. The before/after sweep
@@ -1134,12 +1147,17 @@ counter-evidence table in `reference/skins/README.md`.
   `#FF0033`). 103 of the 180 archives author clipping attributes, so an engine honouring one key per
   image paints the other as a flat slab over most of the window. `WMPSceneImage.colorKeys` is
   therefore a list, in authored order, and the image-store cache key contains all of it. PNG and
-  GIF color keys compare exact un-premultiplied RGB; **BMP keys compare at RGB555, 5 bits per
-  channel** (W277), because the corpus's bitmaps were saved off 16-bit Windows displays and hold the
+  GIF color keys compare exact un-premultiplied RGB; **BMP keys also match the key's 16-bit
+  representations** (W277, narrowed by W282), because the corpus's bitmaps were saved off 16-bit Windows displays and hold the
   key as that display stored it: `YIL!OMA2K` declares `#6699FF` and its `ySpeakers 1.bmp` and
   `jButtonsFlat.bmp` hold `#639CFF`, so an exact compare drew both speakers as blue slabs. Sweep
   (179 archives): 21 images, every changed pixel a matte leaving — `Crystalball` lost four black
-  corner patches, `Asimov_Radio` a dark-gold ring round its outline, the rest edge speckle. JPEG keys allow the bounded 64-value
+  corner patches, `Asimov_Radio` a dark-gold ring round its outline, the rest edge speckle. **W282 narrowed it**: a channel matches the key exactly or as a 16-bit display stores it —
+  truncated to 5 bits or bit-replicated — never the whole 5-bit bucket. The bucket also cleared
+  channels 0-7 under a black key, and `gnome` paints its face on a flat `(4,4,4)`: 24,000 pixels of
+  `gnome3a.bmp` went transparent, which W277's sweep could not see because gnome's view drew nothing
+  then (W281). Narrowed, `YIL!OMA2K` keys identically; Crystalball's fringe and Asimov's ring
+  return. JPEG keys allow the bounded 64-value
   compression fringe per channel because lossy decoding turns authored `#FF00FF` into a
   blue-channel ramp (W125, Plus! Professional). Preserve the source alpha of every non-matching
   pixel.

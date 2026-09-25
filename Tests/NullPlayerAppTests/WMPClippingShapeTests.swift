@@ -506,6 +506,51 @@ final class WMPClippingShapeTests: XCTestCase {
         XCTAssertEqual(WMPSkinTestSupport.rgba(png, x: 0, yFromTop: 0)[3], 255)
     }
 
+    /// W282: a black key clears black, not every channel 0-7. `gnome` paints its face on a flat
+    /// `(4,4,4)` inside a `#000000` surround, and the 5-bit bucket W277 introduced keyed the face.
+    func testABlackBitmapKeyLeavesANearBlackBacking() throws {
+        let rgba: [UInt8] = [0, 0, 0, 255, 4, 4, 4, 255]
+        let store = WMPImageStore(provider: WMPMemoryResourceProvider([
+            "face.bmp": try WMPSkinTestSupport.encodedImage(width: 2, height: 1, rgba: rgba, type: .bmp),
+        ]))
+
+        let face = try store.image(for: "face.bmp", colorKeys: [WMPColor(red: 0, green: 0, blue: 0)]).image
+        XCTAssertEqual(WMPSkinTestSupport.rgba(face, x: 0, yFromTop: 0)[3], 0)
+        XCTAssertEqual(WMPSkinTestSupport.rgba(face, x: 1, yFromTop: 0), [4, 4, 4, 255],
+                       "a near-black backing is artwork")
+    }
+
+    // MARK: - W281, W283: what a view and a subview draw
+
+    /// W281: `visible` is not a `<VIEW>` attribute. `gnome` authors `<view visible="false">` and
+    /// loads in WMP; honouring it emptied the window.
+    func testAViewAuthoredInvisibleStillDraws() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="8" height="8" visible="false">
+            <SUBVIEW id="body" left="0" top="0" width="8" height="8" backgroundImage="body.png"/>
+        </VIEW></THEME>
+        """, images: ["body.png": try flat([10, 120, 200, 255])])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+
+        XCTAssertNotNil(scene.commands.first { $0.nodeID == "body" })
+    }
+
+    /// W283: art larger than a subview's box stops at the box. `Asimov_Radio` closes its video
+    /// drawer by sizing `splView` shorter than `vid_screen.bmp`, and the rest drew as a slab.
+    func testASubviewTrimsBackgroundArtLargerThanItsBox() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="8" height="8">
+            <SUBVIEW id="drawer" left="0" top="0" width="8" height="4" backgroundImage="drawer.png"/>
+        </VIEW></THEME>
+        """, images: ["drawer.png": try flat([10, 120, 200, 255])])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+
+        let rendered = try await renderer(for: skin).render(scene: scene).image
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered, x: 2, yFromTop: 2), [10, 120, 200, 255])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered, x: 2, yFromTop: 6)[3], 0,
+                       "the closed half of the drawer is not drawn")
+    }
+
     /// `cornerColor` is nil for a bitmap whose corner is already transparent: a file that authored
     /// its own alpha has said what is see-through and there is no matte colour to infer.
     func testCornerColourIsNilForAnAlreadyTransparentCorner() throws {
