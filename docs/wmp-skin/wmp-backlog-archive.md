@@ -165,8 +165,8 @@ backing"*, then *"asimov radio looks wrong"* against the Internet Archive's refe
 **Verified live** in the debug build: gnome draws its full face with its dark backing, and Asimov
 matches the reference (title strip, no slab). Rules: `rendering.md` (the BMP-key paragraph,
 *A subview's background art larger than its box stops at the box*, *`visible` is not a `<VIEW>`
-attribute*); counter-evidence row `gnome`. Tests in `WMPClippingShapeTests`. **Not checked:** Asimov
-with its drawer opened to 470. **Found on the way:** a `-wmpSkinPath` launch over a saved session
+attribute*); counter-evidence row `gnome`. Tests in `WMPClippingShapeTests`. Asimov's video drawer opening to 470
+confirmed working by the reporter. **Found on the way:** a `-wmpSkinPath` launch over a saved session
 applies the previous skin's frame when both skins' views are the synthesized `view-2`
 (`pendingRestoredFrame` carries no skin name) — a launch-hook ordering, not reachable from the menu,
 and not filed. W280, Asimov's volume, was filed from the same session.
