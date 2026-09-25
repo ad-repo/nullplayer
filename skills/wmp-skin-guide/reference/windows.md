@@ -1200,6 +1200,44 @@ apply takes width and height from the loaded scene. A validation of the saved re
 validating a rectangle that does not survive the next statement. See § *Window placement and
 recovery* for the two seams that own reachability instead.
 
+### Raising the skin's windows together (W273, closed 2026-09-25)
+
+**Clicking any NullPlayer window raises every one of them, a skin's `theme.openView` panels
+included, with the clicked window on top.** `WindowManager.bringAllWindowsToFront` raises a fixed
+list of NullPlayer's controllers. The panels are not controllers, so `WindowManager.raiseOrder`
+appends `materializedAuxiliaryWindows` after that list, in the order the skin opened them. It does
+this in `.wmz` only; every other family raises the list unchanged. Before this, clicking `WoW`'s
+player left its EQ, vis and info panels behind whatever other app covered them.
+
+Adding the panels to the list was not enough, and the live loop showed why. With a cover window from
+another app over the player's edge and two panels, a click on the player ran the raise with the
+right list and a nil key window, because the activation had not settled. The window server applied
+only some of the reorders: the panels stayed under the cover. Two changes fix it, both limited to
+WMP:
+
+- **Both WMP `windowDidBecomeKey`s defer the raise one main-loop turn** (in `WMPMainWindowController`
+  and `WMPViewWindowMaterializer`). The deferred call runs only if its window is still key.
+- **In `.wmz`, the raise orders the other windows front with `orderFrontRegardless`**; the clicked
+  window keeps `orderFront`. Deferral alone still left the panels behind the cover, while the key
+  window, the list and the ordering were all correct in `NSApp.orderedWindows` immediately after
+  the raise. `orderFrontRegardless` is what put them on top, confirmed by pixels.
+
+What the live check showed, so it isn't re-investigated:
+
+- **A docked panel sits above the player in the window list.** `updateDockedChildWindows` makes
+  every docked window a child of the main window, and AppKit keeps a child above its parent. This
+  is true in every mode, and docked windows don't overlap, so it can't be seen on screen.
+- **Z-order between windows that don't overlap has no visible effect.** `NSApp.orderedWindows`
+  settled 0.3 s after the raise with the panels above the player. That order is harmless, because
+  the panels don't overlap the player. **Judge a raise by sampling pixels where a cover window
+  overlaps each window, never by the window list alone.**
+- **Covering the test area with your own windows is dangerous**: a click meant for the player
+  landed on a Finder sidebar and navigated the reporter's window. Use a throwaway cover window
+  (a 15-line `NSWindow` script) and hide other apps (`set visible of process … to false`), which
+  leaves their state untouched.
+
+The ordering itself needs a window server, so `WMPWindowRaiseTests` pins only the gate and the list.
+
 ## Presenting a skin in a window
 
 Learned by driving the real app on 2026-09-07, after a headless sweep said everything was fine. Each

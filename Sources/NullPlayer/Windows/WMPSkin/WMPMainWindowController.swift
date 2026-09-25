@@ -2099,7 +2099,13 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         if let window { WindowManager.shared.detachDockedWindowsAfterDeminiaturize(mainWindow: window) }
     }
     func windowDidBecomeKey(_ notification: Notification) {
-        WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
+        // Deferred a turn: raised while a click is still activating the app, the window server
+        // takes only some of the reorders, leaving panels behind another app's window and one
+        // above the window that was clicked (W273).
+        DispatchQueue.main.async { [weak self] in
+            guard let window = self?.window, window.isKeyWindow else { return }
+            WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
+        }
     }
 
     /// **The macOS close control closes the window it is on, like every other close route.**

@@ -297,6 +297,10 @@ final class WMPViewWindowMaterializer: NSObject, NSWindowDelegate {
     func windowDidBecomeKey(_ notification: Notification) {
         guard let window = notification.object as? NSWindow,
               presentation(for: window) != nil else { return }
-        WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
+        // A turn later, once a click-activation has finished (W273).
+        DispatchQueue.main.async { [weak window] in
+            guard let window, window.isKeyWindow else { return }
+            WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
+        }
     }
 }

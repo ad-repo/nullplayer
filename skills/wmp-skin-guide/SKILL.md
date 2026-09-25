@@ -86,7 +86,7 @@ owns the code you are changing.
 
 | Read | Before changing | Sections it holds |
 |---|---|---|
-| [reference/windows.md](reference/windows.md) | a window: its hosting, chrome, frame, placement, size, restore, docking, or how a skin is presented in one | *Every NullPlayer window in WMP mode is the skin's or is themed* (the hosting contract, adding a native window); *NullPlayer's own windows beside a skin* (window placement and recovery, sizing, `onLoad` sizing, `isRunningModernUI`, the kept visualization, restored size, the centre stack); *Presenting a skin in a window* |
+| [reference/windows.md](reference/windows.md) | a window: its hosting, chrome, frame, placement, size, restore, docking, or how a skin is presented in one | *Every NullPlayer window in WMP mode is the skin's or is themed* (the hosting contract, adding a native window); *NullPlayer's own windows beside a skin* (window placement and recovery, sizing, `onLoad` sizing, `isRunningModernUI`, the kept visualization, restored size, the centre stack, raising the skin's windows together); *Presenting a skin in a window* |
 | [reference/rendering.md](reference/rendering.md) | anything drawn: the scene, images, `backgroundImage`, keying, text, controls, hover/down/latched faces | *Static scene and image contracts*; *Drawing the skin's own controls* |
 | [reference/input.md](reference/input.md) | hit testing, mapping images, clicks, keys, transport | *Which control a click reaches*; *Phase 4 input and transport contracts* |
 | [reference/bindings.md](reference/bindings.md) | `WMPScriptRuntime`, expressions, `wmpprop:` bindings, `<TEXT>` sizing | *Script, expression, and binding contracts* |

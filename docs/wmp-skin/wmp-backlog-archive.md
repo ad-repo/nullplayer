@@ -137,6 +137,25 @@ and stays stopped. Accepted by the reporter. **Not driven live:** next while sto
 `Plus! HueShifter`, `Plus! Plasma Ball` and `Plus! SlimLine` now starts playback, because their
 `osMediaOpen` arm calls `player.controls.play()` — which is WMP's behaviour for them.
 
+## W273 — clicking one window left a skin's other panels behind (closed 2026-09-25)
+
+Reported live: *"when you click on a window only some windows come into focus, all windows should"*.
+Two causes, both in the group raise. First, `bringAllWindowsToFront` raised a fixed list of
+NullPlayer's controllers that never included a skin's `theme.openView` panels; they now follow it,
+in `.wmz` only (`WindowManager.raiseOrder`). Second, once they were in the list, a click from
+another app still left them behind that app's window: the raise ran before the activation settled,
+and a plain `orderFront` did not hold. Both WMP `windowDidBecomeKey`s now defer the raise one turn,
+and `.wmz` orders the other windows front with `orderFrontRegardless`. Classic, Original and `.wal`
+raise exactly the same list as before. **Verified live** on `WoW` with its EQ, vis and info panels
+open, sampling pixels under a cover window, and accepted by the reporter. The video window's
+missing raise (`VideoPlayerWindowController.windowDidBecomeKey`) was left alone; it is shared code
+and not part of this report. Rule: `windows.md` § *Raising the skin's windows together*; tests in
+`WMPWindowRaiseTests`.
+
+Row as filed:
+
+| W273 | Clicking one window brings only some of the app's windows to the front | **Every `.wmz` session that opens a second skin window** (`WoW`'s `plView`, any `theme.openView` panel); reported live 2026-09-24 ("when you click on a window only some windows come into focus, all windows should") | Not blocked. **Measured in code 2026-09-24**: the group raise is `WindowManager.bringAllWindowsToFront(keepingWindowOnTop:)` (`App/WindowManager.swift:5471`), which orders front a **fixed list** of NullPlayer's own controllers — main, EQ, playlist, spectrum, analysis, PeppyMeter, network, Cava, Sonos, waveform, video, ProjectM, library browser. **A `.wmz` skin's own view windows are not in it**: `WMPViewWindowMaterializer`'s presentations (`openPresentations`) call the raise from their own `windowDidBecomeKey` (`WMPViewWindowMaterializer.swift:300`), so clicking a skin panel raises the NullPlayer windows but never the skin's *other* panels, and clicking the player or the library browser leaves every skin panel behind. **Two windows never start the raise at all**: `VideoPlayerWindowController` and `WinampModernMainWindowController` implement `windowDidBecomeKey` without calling it — the second is `.wal`, not this backlog's, and is recorded only so it is not rediscovered. **Fix at a WMP-owned seam, gated on the WMP controller family** (`SKILL.md` § *Isolation boundary*): the list is shared by every skin mode, so a change to it must leave Classic/Original/`.wal` stacking byte-identical — e.g. let the WMP controller contribute its open presentations to the raise, rather than widening the fixed list. Keep the clicked window on top, as the raise already does. Verify live by clicking each window of a two-panel skin with another app's window partly covering them (`winhelper windows` shows the order). |
+
 ## W280 — `Asimov_Radio`'s volume bars trailed the volume by a click (closed 2026-09-25)
 
 Reported live: *"asminov volume cant be asdjusted"*. **The volume itself adjusted in the current
