@@ -549,8 +549,11 @@ class ContextMenuBuilder {
         let wm = WindowManager.shared
 
         // Winamp Modern (.wal) drives its in-skin visualizer from the main window's own menu,
-        // so the menu-bar entry is suppressed there. Classic and NullPlayer modern keep it.
-        if wm.uiMode.controllerFamily != .winampModern {
+        // so the menu-bar entry is suppressed there. A `.wmz` skin draws its own player and hosts
+        // this player's visuals in its authored effects rect, so WMP suppresses it too.
+        // Classic and NullPlayer modern keep it.
+        let family = wm.uiMode.controllerFamily
+        if family != .winampModern && family != .wmp {
             let mainWindowItem = NSMenuItem(title: "Main Window", action: nil, keyEquivalent: "")
             mainWindowItem.submenu = buildMainVisualizationSubmenu()
             menu.addItem(mainWindowItem)
