@@ -80,7 +80,11 @@ too, so matching one would be less faithful rather than more.
 `scripts/wmp_markup_census.sh <outdir> <tag-or-attribute ...>` is the instrument, and it is the only
 one to use. It matches `<NAME[[:space:]/>]`, so `VIDEO` does not catch `<VIDEOSETTINGS>`, and it
 strips each `.wms` to ASCII first for the two traps in its own header comment (grep goes silent on a
-UTF-16 file; a tag is spread over many lines).
+UTF-16 file; a tag is spread over many lines). It reads archives through
+`wmp_corpus.open_archive`, so its denominator is the full measurable corpus (179 of 180 today, the
+one exclusion being `scripts/wmp_corpus_exclusions.txt`) and agrees with `wms_grep.py`. Before
+W268 it used `unzip`, which refuses the two repaired-header archives, so **a census figure over 177
+recorded before 2026-09-25 is two archives short** and is re-measured, not compared.
 
 **Do not write your own scanner for this, and distrust any number that came from one.** The surface
 inventory in `SKILL.md` was first measured by an ad-hoc Python scan trying `utf-8-sig`, then
@@ -95,9 +99,9 @@ sniff, then Windows-1252 — and reconcile it against the census before recordin
 **Grepping the corpus's *script text* is a different job, and the same decode trap ends it.**
 Neither census reads `.wms`/`.js` as program text, so a question like "is this name ever read as a
 property rather than called as a method" needs its own scan — that is the check that made W128 safe
-to land. Extract with Python's `zipfile` (it refuses `Need_for_Speed_Underground.wmz` and
-`SplinterCellWMPSkin.wmz`, whose local headers `WMPArchiveHeaderRepair` exists to fix, so **177 of
-180**, and every count is a floor), then decode each file the way `WMPTextDecoder` does before
+to land. Extract with `wmp_corpus.open_archive`, not bare `zipfile` (that refuses
+`Need_for_Speed_Underground.wmz` and `SplinterCellWMPSkin.wmz`, whose local headers
+`WMPArchiveHeaderRepair` exists to fix, so a bare scan is **177 of 180** and every count a floor), then decode each file the way `WMPTextDecoder` does before
 matching anything. The W128 scan was run twice because the first pass decoded as
 `utf-8, errors="replace"`: **153 of the 392 script files are UTF-16**, they became null-interleaved
 mojibake, no pattern matched in any of them, and the result — 141 uses — looked entirely plausible
@@ -1128,8 +1132,7 @@ fire because nothing registered them as targets.
 python3 scripts/wmp_input_kinds.py
 ```
 
-**Tooltips.** Measured with the markup census, whose denominator is 177 — the two repaired-header
-archives `unzip` cannot open are outside it:
+**Tooltips.** Measured with the markup census (re-measured 2026-09-25 over 179 after W268):
 
 ```bash
 scripts/wmp_markup_census.sh /tmp/wmp/markup toolTip upToolTip downToolTip
@@ -1137,9 +1140,9 @@ scripts/wmp_markup_census.sh /tmp/wmp/markup toolTip upToolTip downToolTip
 
 | Attribute | Uses | Skins |
 |---|---|---|
-| `upToolTip` | 4,712 | 175 of 177 |
-| `toolTip` | 3,749 | 174 of 177 |
-| `downToolTip` | 517 | 104 of 177 |
+| `upToolTip` | 4,717 | 177 of 179 |
+| `toolTip` | 3,746 | 175 of 179 |
+| `downToolTip` | 528 | 104 of 179 |
 
 None of them reached the screen before 2026-09-08: only widgets answered `stringForToolTip`, and a
 skin's controls are `<BUTTON>`s. The tip is resolved per drawn state in `WMPSceneBuilder.toolTip` —

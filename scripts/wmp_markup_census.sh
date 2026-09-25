@@ -66,8 +66,19 @@ while IFS= read -r archive; do
     name=${base%.*}
     staging="$outdir/staging"
     rm -rf "$staging"; mkdir -p "$staging"
-    # -C: match the entry name case-insensitively. A corpus `.wms` is as often `Corona.WMS`.
-    unzip -o -qq -C -j "$archive" '*.wms' -d "$staging" >/dev/null 2>&1
+    # Read through wmp_corpus.open_archive, not unzip: two corpus archives carry `01 00 01 00` local
+    # headers unzip refuses, and the tally would quietly shrink to 177. Entry names match
+    # case-insensitively — a corpus `.wms` is as often `Corona.WMS`.
+    python3 - "$archive" "$staging" "$root/scripts" <<'PY' 2>/dev/null
+import os, sys
+sys.path.insert(0, sys.argv[3])
+from wmp_corpus import open_archive
+with open_archive(sys.argv[1]) as z:
+    for info in z.infolist():
+        if info.filename.lower().endswith(".wms"):
+            with open(os.path.join(sys.argv[2], os.path.basename(info.filename)), "wb") as out:
+                out.write(z.read(info))
+PY
     if [ -z "$(ls -A "$staging" 2>/dev/null)" ]; then
         unreadable+=("$base")
         continue
@@ -83,7 +94,7 @@ rm -rf "$outdir/staging"
 
 echo "wmp_markup_census: $total archive(s) in $corpus"
 if [ ${#unreadable[@]} -gt 0 ]; then
-    echo "wmp_markup_census: ${#unreadable[@]} unreadable by unzip (repaired-header archives): ${unreadable[*]}"
+    echo "wmp_markup_census: ${#unreadable[@]} unreadable by wmp_corpus.open_archive: ${unreadable[*]}"
 fi
 echo "wmp_markup_census: measuring $measured"
 
