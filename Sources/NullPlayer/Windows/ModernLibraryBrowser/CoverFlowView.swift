@@ -111,6 +111,9 @@ final class CoverFlowView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
+        // The stacked side covers are laid out past the view's width; clip them to the content
+        // rect the host lends, or they draw over its borders (W261).
+        layer?.masksToBounds = true
 
         var perspectiveTransform = CATransform3DIdentity
         perspectiveTransform.m34 = perspective

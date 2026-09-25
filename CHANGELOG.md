@@ -53,6 +53,8 @@
   land in `~/iCloud Drive (Archive)`), shows where it went, and re-points it on your say-so, keeping
   play counts and ratings. It then offers to forget tracks whose files are genuinely deleted;
   anything on a disconnected drive or unmounted share is always left alone.
+- **Cover Flow stays inside the library window** — the stacked covers at either side of the
+  carousel no longer spill over the library browser's border, in every skin mode.
 - **One unreadable file no longer stops the playlist** — playback skips past it to the next track,
   and the error now appears in the Modern and Winamp Modern main windows, not only Classic. A track
   on a disconnected NAS still stops playback, as before, instead of starting some other track.

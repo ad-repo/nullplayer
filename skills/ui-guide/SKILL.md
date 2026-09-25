@@ -907,7 +907,9 @@ library list, toggled by a **FLOW** button. It is a visual lens over the browser
 
 **Shared component** — `Windows/ModernLibraryBrowser/CoverFlowView.swift` (used by both browsers):
 - A layer-backed `NSView` with a `containerLayer` whose `sublayerTransform` applies perspective
-  (`m34 ≈ -1/900`). Each cover is a `CoverLayer` (a `CALayer` with the artwork as `contents`, a
+  (`m34 ≈ -1/900`). The view's own layer sets `masksToBounds`: the stacked side covers are laid
+  out past its width, and unclipped they drew over the host window's borders in every skin family
+  (W261). Each cover is a `CoverLayer` (a `CALayer` with the artwork as `contents`, a
   gradient-masked flipped reflection sublayer, and a solid-color placeholder). **Never** render
   placeholders with `NSImage.lockFocus` — that bitmap path was a main-thread hang; use the layer's
   `backgroundColor`. The Back cover uses one cheap `CATextLayer`.
