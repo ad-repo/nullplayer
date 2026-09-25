@@ -375,16 +375,30 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 && overrides.properties[address]?.truth == false
                 && self.literalString(node, "visible")?.caseInsensitiveCompare("false") == .orderedSame
         }
-        func indexScriptShown(_ node: WMPNode, ancestors: [Int]) -> Void {
+        /// **…and never out of a pane closed *after* it was shown (W311).** `Navigator`'s
+        /// `movescren()` shows `vis` inside `visual`, an authored-visible pane, and `showconf()`/
+        /// `showlist()`/`showlink()` then hide `visual` over it; read as an escape, the visualizer
+        /// drew over the EQ, playlist and links. `Charlies_Angels`' Gallery hides `pos` *first* and
+        /// then shows `boxsmall` inside it, which still escapes. The position of a script's last
+        /// hide of any ancestor, or 0 when none hid it.
+        func scriptHideOrder(_ node: WMPNode) -> Int {
+            let address = WMPScenePropertyAddress(stableID: node.stableID, property: "visible")
+            guard overrides.properties[address]?.truth == false,
+                  !overrides.boundProperties.contains(address) else { return 0 }
+            return overrides.visibleWriteOrder[node.stableID] ?? 0
+        }
+        func indexScriptShown(_ node: WMPNode, ancestors: [Int], closedAt: Int) -> Void {
             if closesSubtree(node) { return }
-            if escapesHiddenAncestor(node) {
+            if escapesHiddenAncestor(node),
+               closedAt == 0 || overrides.visibleWriteOrder[node.stableID, default: 0] > closedAt {
                 passThroughAncestors.formUnion(ancestors)
             }
+            let closedAt = max(closedAt, scriptHideOrder(node))
             for child in node.children {
-                indexScriptShown(child, ancestors: ancestors + [node.stableID])
+                indexScriptShown(child, ancestors: ancestors + [node.stableID], closedAt: closedAt)
             }
         }
-        indexScriptShown(view, ancestors: [])
+        indexScriptShown(view, ancestors: [], closedAt: 0)
 
         /// A number a script may have written, then the markup's own.
         ///
@@ -2593,6 +2607,11 @@ struct WMPSceneOverrides: Hashable, Codable, Sendable {
     /// This is what tells a pane the skin opens and closes from one it never opens — see
     /// `closesSubtree` in `WMPSceneBuilder` (W309).
     var scriptShown: Set<Int> = []
+    /// When each node's `visible` last changed by script this session, as a position in
+    /// `visibleWriteCount` — the order a show and an ancestor's hide happened in, which is what
+    /// tells a child shown inside a closed pane from one the pane was closed over (W311).
+    var visibleWriteOrder: [Int: Int] = [:]
+    var visibleWriteCount = 0
 
     static let empty = WMPSceneOverrides(geometry: [:], properties: [:])
 }

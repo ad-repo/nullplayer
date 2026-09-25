@@ -319,6 +319,35 @@ final class WMPGeometryTests: XCTestCase {
                        "the help text outlived the closed pane")
     }
 
+    /// **A pane hidden after its child was shown takes the child with it (W311).** `Navigator`'s
+    /// `movescren()` shows `vis` inside the authored-visible `visual`, and `showconf()` then hides
+    /// `visual`; the visualizer drew over the EQ. `Charlies_Angels`' order — hide `pos`, then show
+    /// `boxsmall` — still escapes (W263).
+    func testAPaneHiddenAfterItsChildWasShownHidesTheChild() async throws {
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="60" height="40">
+              <SUBVIEW id="visual" left="10" top="10" width="40" height="20">
+                <SUBVIEW id="vis" left="2" top="3" width="4" height="4" backgroundColor="#0000FF" visible="false"/>
+              </SUBVIEW>
+            </VIEW></THEME>
+            """.utf8))
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        func id(_ name: String) throws -> Int { try XCTUnwrap(skin.graph.nodes(id: name).first).stableID }
+        var overrides = WMPSceneOverrides.empty
+        overrides.properties[.init(stableID: try id("vis"), property: "visible")] = .bool(true)
+        overrides.properties[.init(stableID: try id("visual"), property: "visible")] = .bool(false)
+        overrides.scriptShown = [try id("vis")]
+        for (showFirst, drawsVis) in [(true, false), (false, true)] {
+            overrides.visibleWriteOrder = [try id("vis"): showFirst ? 1 : 2,
+                                           try id("visual"): showFirst ? 2 : 1]
+            let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main", overrides: overrides)
+            XCTAssertEqual(scene.commands.contains { $0.stableID == (try? id("vis")) }, drawsVis,
+                           "show first: \(showFirst)")
+        }
+    }
+
     /// **A binding's `true` is not a script show (W301).** `Alpine7618_v09` hangs its panel's
     /// `<EFFECTS visible="wmpenabled:player.controls.stop">` inside `VisPanel`, authored hidden and
     /// shown only by its VIS button. Once playback enabled `stop`, the bound value read as a script

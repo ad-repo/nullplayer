@@ -1050,6 +1050,14 @@ counter-evidence table in `reference/skins/README.md`.
   handler sets `infodown2.visible = true` on a scroll arrow inside it; `sflink` sits inside
   `creditsmask`, closed the same way. Both stayed on the face after Info closed. `help`/`credits`
   (never shown) and `Charlies_Angels`' `pos` (authored visible) are not toggles by this rule.
+  **Nor out of a pane hidden *after* the show (W311)**: `WMPSceneOverrides.visibleWriteOrder`
+  records when each node's `visible` last changed by script, and a shown node escapes only the
+  hidden ancestors a script hid before it was shown (an ancestor no script hid counts as before).
+  `Navigator`'s `movescren()` shows `vis` inside the authored-visible `visual`, and its
+  `showconf()`/`showlist()`/`showlink()` hide `visual` afterwards; read as an escape, the
+  visualizer drew over the EQ, playlist and links panes. `Charlies_Angels` is the other order —
+  `pos` hidden, then `boxsmall` shown — and still escapes. Only a change of value takes a
+  position, so a skin that rewrites the same `visible` on a timer does not reorder anything.
   `Charlies_Angels_Full_Throttle` nests its whole face in `pos`; Gallery hides `pos` and shows
   `boxsmall` (the cut-down face), the wings and the pictures inside it, and the window went empty
   with no way back (Speaker Mode is in a wing). `Stars and Stripes` and its five US-forces siblings

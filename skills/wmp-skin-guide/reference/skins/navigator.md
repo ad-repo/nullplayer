@@ -21,7 +21,9 @@ All from one report on 2026-09-25, after W309 made its handlers run to the end.
 - *"i cant get the eq to show on navigator"* — the panes sat behind `config`'s opaque artwork. W310,
   closed.
 - The visualizer keeps drawing over the EQ, playlist and links panes — W263's escape through the
-  hidden `visual`. W311, open.
+  hidden `visual`. `visual` is authored visible, so W309's `closesSubtree` did not reach it; the
+  escape now honours the order of the writes (`visibleWriteOrder`): `vis` was shown before `visual`
+  was hidden, so it goes with the pane. W311, closed.
 - *"this skin also opens with the panel open, it should not"* — the grey box is `vid`'s
   `backgroundColor="#404040"` below the wing, painted with nothing behind it. W312, open.
 

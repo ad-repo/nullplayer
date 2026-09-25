@@ -333,6 +333,33 @@ final class WMPPhase14Tests: XCTestCase {
                      "but `drawer.left` still read 100 inside the handler, so the guard did not fire")
     }
 
+    /// **The order of `visible` writes decides whether a shown child escapes its pane (W311).**
+    /// `Navigator` shows `vis`, then hides `visual` around it: the visualizer must go with the pane.
+    /// `Charlies_Angels` hides `pos`, then shows `boxsmall`: the child still draws (W263).
+    func testAPaneHiddenAfterItsChildWasShownTakesTheChildWithIt() async throws {
+        for (handler, drawsVis) in [("vis.visible = true; visual.visible = false;", false),
+                                    ("visual.visible = false; vis.visible = true;", true)] {
+            let skin = try await load(wms: """
+            <THEME><VIEW id="main" width="60" height="40" scriptFile="s.js">
+                <SUBVIEW id="visual" left="10" top="10" width="40" height="20">
+                    <SUBVIEW id="vis" left="2" top="3" width="4" height="4" backgroundColor="#0000FF" visible="false"/>
+                </SUBVIEW>
+                <BUTTON id="tab" left="0" top="0" width="10" height="10"/>
+            </VIEW></THEME>
+            """, js: "function Go() { \(handler) }")
+            let (runtime, cleanup) = try runtime()
+            defer { cleanup() }
+            let output = await runtime.transact(
+                skin: skin, viewID: "main", size: WMPSize(width: 60, height: 40),
+                snapshot: WMPHostSnapshot(),
+                event: WMPJScriptEvent(name: "click", targetID: "tab", handlers: ["Go();"]))
+            let scene = try await WMPSceneBuilder(loadedSkin: skin)
+                .build(viewID: "main", overrides: output.overrides)
+            let vis = try stableID(skin, "vis")
+            XCTAssertEqual(scene.commands.contains { $0.stableID == vis }, drawsVis, handler)
+        }
+    }
+
     /// A duration of zero is not a tween: it is an instant move, and a later read in the same
     /// handler must see it. `movePlayButton()` toggles on exactly that.
     func testAZeroDurationMoveIsVisibleToTheRestOfTheHandler() async throws {

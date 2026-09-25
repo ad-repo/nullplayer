@@ -821,6 +821,12 @@ actor WMPScriptRuntime {
                                             geometry: geometry, skin: skin)
                 }
             } else {
+                if address.property == "visible",
+                   overrides.properties[address]?.truth != mutation.value.truth
+                    || overrides.boundProperties.contains(address) {
+                    overrides.visibleWriteCount += 1
+                    overrides.visibleWriteOrder[stableID] = overrides.visibleWriteCount
+                }
                 overrides.properties[address] = mutation.value
                 overrides.boundProperties.remove(address)
                 if address.property == "visible", mutation.value.truth {
