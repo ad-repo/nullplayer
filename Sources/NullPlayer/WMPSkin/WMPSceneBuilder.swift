@@ -345,9 +345,14 @@ struct WMPSceneBuilder: @unchecked Sendable {
         /// inside `help`/`credits`, which are authored hidden and never shown by any script.
         /// These are the hidden ancestors the walk has to pass through to reach such a node.
         var passThroughAncestors = Set<Int>()
+        /// A binding's `true` is the node's default state, not a script's decision to show it.
+        func scriptShows(_ node: WMPNode) -> Bool {
+            let address = WMPScenePropertyAddress(stableID: node.stableID, property: "visible")
+            return overrides.properties[address]?.truth == true
+                && !overrides.boundProperties.contains(address)
+        }
         func indexScriptShown(_ node: WMPNode, ancestors: [Int]) -> Void {
-            if overrides.properties[WMPScenePropertyAddress(stableID: node.stableID,
-                                                           property: "visible")]?.truth == true {
+            if scriptShows(node) {
                 passThroughAncestors.formUnion(ancestors)
             }
             for child in node.children {
@@ -904,7 +909,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
             }
             // Below a hidden ancestor only a node the script itself has shown is drawn — see
             // `passThroughAncestors`.
-            if insideHidden, visibleOverride?.truth != true { hidden = true }
+            if insideHidden, !scriptShows(node) { hidden = true }
             let passesThrough = hidden && passThroughAncestors.contains(node.stableID)
             // Measured-only, and only for a node the graph reads a coordinate off. A node with no
             // frame of its own has no coordinate to give, so `isNonLayout` still leaves here.
@@ -2477,6 +2482,14 @@ struct WMPSceneOverrides: Hashable, Codable, Sendable {
     /// window's edges. Keyed by `width`/`height`; the canvas it is anchored at is the alignment's
     /// own, in `scriptAssignedAlignment`.
     var scriptAlignmentExtent: [WMPScenePropertyAddress: CGFloat] = [:]
+    /// **The addresses in `properties` a `wmpprop:`/`wmpenabled:` binding last wrote, not a
+    /// script (W301).** Both land in `properties`, and on `visible` the difference decides whether a
+    /// node escapes a hidden ancestor — only a script's own `visible = true` does (W263).
+    /// `Alpine7618_v09` hangs a 362x211 `<EFFECTS visible="wmpenabled:player.controls.stop">` inside `VisPanel`, a
+    /// `visible="false"` subview its VIS button shows; read as a script show, the binding put the
+    /// visualization over the window's transparent top half the moment playback started, with no
+    /// control to take it away.
+    var boundProperties: Set<WMPScenePropertyAddress> = []
 
     static let empty = WMPSceneOverrides(geometry: [:], properties: [:])
 }

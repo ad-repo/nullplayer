@@ -663,6 +663,7 @@ actor WMPScriptRuntime {
         let baselineGeometry = overrides.geometry
         for change in boundChanges {
             overrides.properties[change.address] = change.value
+            overrides.boundProperties.insert(change.address)
         }
         // **An authored geometry expression re-applies only when its own value changes, because
         // otherwise it overwrites the script assignment that came after it.**
@@ -803,6 +804,7 @@ actor WMPScriptRuntime {
                 }
             } else {
                 overrides.properties[address] = mutation.value
+                overrides.boundProperties.remove(address)
                 if address.property == "horizontalalignment" || address.property == "verticalalignment" {
                     scriptAligned[address] = canvas
                     // **Assigning an alignment freezes the element where it currently is (W225).**

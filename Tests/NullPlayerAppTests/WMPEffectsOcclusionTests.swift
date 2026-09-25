@@ -103,4 +103,32 @@ final class WMPEffectsOcclusionTests: XCTestCase {
                                        width: image.width, height: image.height))
         return pixel[3]
     }
+    /// **Each surface is covered only by what follows its own split (W302).** `Alpine7618_v09` has
+    /// a visualizer in its LCD and a second one in `VisPanel`, declared after it, whose opaque black
+    /// `vis_panel.bmp` sits under the second surface. Cutting both surfaces at the earliest split
+    /// put that panel over the second visualizer, so the open panel showed black.
+    func testASecondSurfaceIsNotCoveredByArtworkBeforeItsOwnSplit() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200">
+            <SUBVIEW id="face" left="0" top="150" width="200" height="50" backgroundColor="#202020">
+                <EFFECTS id="lcd" left="10" top="10" width="60" height="20"/>
+                <SUBVIEW id="lcdGlass" left="10" top="10" width="60" height="20" backgroundColor="#FFFFFF"
+                         alphaBlend="64"/>
+            </SUBVIEW>
+            <SUBVIEW id="panel" left="10" top="10" width="180" height="130" backgroundColor="#000000">
+                <EFFECTS id="big" left="10" top="10" width="160" height="100"/>
+                <SUBVIEW id="bezel" left="0" top="110" width="180" height="20" backgroundColor="#808080"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let layers = try XCTUnwrap(scene.effectsLayers)
+        func id(_ name: String) throws -> Int { try XCTUnwrap(skin.graph.nodes(id: name).first).stableID }
+        let below = Set(layers.below.map(\.stableID)), over = Set(layers.over.map(\.stableID))
+        XCTAssertTrue(below.contains(try id("panel")),
+                      "the panel's own ground was drawn over the visualizer it frames")
+        XCTAssertTrue(over.contains(try id("lcdGlass")), "artwork after the LCD's split still covers it")
+        XCTAssertTrue(below.contains(try id("bezel")),
+                      "artwork that touches no surface draws the same from either layer")
+    }
 }

@@ -541,11 +541,48 @@ struct WMPScene: Hashable, Codable {
     /// over it. Nil when the scene hosts no `<EFFECTS>`, in which case the whole list is one layer
     /// and the rendered output is exactly what it has always been.
     ///
-    /// A scene with several effects widgets takes the earliest, so every surface sits under the
-    /// same overlay — the artwork between two of them is authored to cover both.
-    ///
+    /// The earliest split of any surface. Which commands actually go over the surfaces is
+    /// `effectsLayers`, which is per surface.
     var effectsCommandSplitIndex: Int? {
         widgets.filter { $0.kind == .effects }.compactMap(\.commandSplitIndex).min()
+    }
+
+    /// `commands` split into the layer drawn below the effects surfaces and the one drawn over
+    /// them, or nil when the scene hosts no `<EFFECTS>`.
+    ///
+    /// **Each surface is covered only by what comes after its own split (W302).** Cutting every
+    /// surface at the earliest split hoisted everything between two of them over the later one:
+    /// `Alpine7618_v09` has a 150x26 visualizer in its LCD and a 362x211 one in `VisPanel`, drawn
+    /// after it, whose `vis_panel.bmp` is opaque black where the visualization shows — so opening
+    /// the panel showed a black screen with the visualizer running underneath it. A command goes
+    /// over when it overlaps a surface whose split it follows, or overlaps a command already
+    /// placed over one; the second rule keeps paint order among artwork that overlaps. A command
+    /// that touches no surface draws the same in either layer. With one surface this places every
+    /// command that overlaps it exactly where the single split did.
+    var effectsLayers: (below: [WMPPaintCommand], over: [WMPPaintCommand])? {
+        let surfaces = widgets.filter { $0.kind == .effects }.compactMap { widget -> (Int, WMPRect)? in
+            guard let split = widget.commandSplitIndex else { return nil }
+            let rect = widget.clipRect.flatMap { widget.frame.intersection($0) }
+                ?? (widget.clipRect == nil ? widget.frame : nil)
+            return rect.map { (split, $0) }
+        }
+        guard !surfaces.isEmpty else { return nil }
+        var below: [WMPPaintCommand] = [], over: [WMPPaintCommand] = []
+        var overRects: [WMPRect] = []
+        func overlaps(_ a: WMPRect, _ b: WMPRect) -> Bool { a.intersection(b).map { !$0.isEmpty } ?? false }
+        for (index, command) in commands.enumerated() {
+            let rect = command.clipRect.flatMap { command.frame.intersection($0) }
+                ?? (command.clipRect == nil ? command.frame : nil)
+            guard let rect, !rect.isEmpty else { below.append(command); continue }
+            if surfaces.contains(where: { index >= $0.0 && overlaps(rect, $0.1) })
+                || overRects.contains(where: { overlaps(rect, $0) }) {
+                over.append(command)
+                overRects.append(rect)
+            } else {
+                below.append(command)
+            }
+        }
+        return (below, over)
     }
 
     /// The backdrops the scene's `<EFFECTS>` rects paint behind their visualizers, drawn beneath

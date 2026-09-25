@@ -6,8 +6,8 @@ import UniformTypeIdentifiers
 
 struct WMPRenderResult {
     let image: CGImage
-    /// The artwork a skin draws *over* its effects surface, when it has one: everything from
-    /// `WMPScene.effectsCommandSplitIndex` onwards, on a transparent canvas of the same size.
+    /// The artwork a skin draws *over* its effects surfaces, when it has any:
+    /// `WMPScene.effectsLayers.over`, on a transparent canvas of the same size.
     /// Nil for every scene without an `<EFFECTS>` widget, where `image` is the whole picture and
     /// the output is byte-identical to a single-layer render.
     ///
@@ -212,8 +212,8 @@ struct WMPRenderer: @unchecked Sendable {
         // between them, which is the whole of the z-order fix — the skin's own artwork occludes
         // the visualizer exactly where it declares it does. With no effects widget there is no
         // split and this is one pass over the same list as before.
-        let split = splitAtEffects ? scene.effectsCommandSplitIndex : nil
-        let below = split.map { Array(scene.commands[..<$0]) } ?? scene.commands
+        let layers = splitAtEffects ? scene.effectsLayers : nil
+        let below = layers?.below ?? scene.commands
         // **The visualizer's own backdrop goes under the below layer, never over it** — so a skin
         // that paints its own ground behind the rect still covers this completely and renders
         // byte-identically, and one that paints nothing there stops being a hole (W174). It is
@@ -227,8 +227,8 @@ struct WMPRenderer: @unchecked Sendable {
         // punched out of the overlay after it is rasterized, so the surface hosted underneath shows
         // through and whatever the skin painted *before* the effects node stands where the
         // visualization is idle. See `WMPScene.windowedEffectsRects` (W144).
-        let overlay = try split.map {
-            try rasterize(Array(scene.commands[$0...]), scene: scene, pixelWidth: pixelWidth,
+        let overlay = try layers.map {
+            try rasterize($0.over, scene: scene, pixelWidth: pixelWidth,
                           pixelHeight: pixelHeight, backingScale: backingScale, clock: clock,
                           slotClocks: slotClocks, punchingOut: scene.windowedEffectsRects)
         }

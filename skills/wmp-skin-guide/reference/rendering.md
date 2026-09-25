@@ -1035,6 +1035,17 @@ counter-evidence table in `reference/skins/README.md`.
   `boxsmall` (the cut-down face), the wings and the pictures inside it, and the window went empty
   with no way back (Speaker Mode is in a wing). `Stars and Stripes` and its five US-forces siblings
   show Help/Credits text inside `help`/`credits`, which are authored hidden and never shown.
+  **A binding's `true` is not a script show (W301).** `wmpprop:`/`wmpenabled:` values land in the
+  same `overrides.properties` as script writes, so `WMPSceneOverrides.boundProperties` records which
+  addresses a binding wrote last, and a script write clears the mark. Without it
+  `visible="wmpenabled:player.controls.pause"` (60 corpus uses) and `…stop` (10) escaped a closed
+  panel the moment playback enabled them: `Alpine7618_v09`'s panel visualizer floated over its
+  window's transparent top half. A before/after sweep with a playing host over the 50 archives that
+  bind `visible` to the player moved 5 skins, each a stray control from a closed panel: `Alpine`,
+  `Melvin` (two pause glyphs, from `lefthi` and `little`), `Secura` (the `video` panel's pause over the
+  face's stop button), `Creed` (`visual`'s visualizer) and `Charlies_Angels_Full_Throttle`
+  (`boxsmall`'s pause in the normal player; it still draws in Gallery, where the script shows
+  `boxsmall`).
 - **`visible` is not a `<VIEW>` attribute (W281).** The root's authored `visible="false"` is
   ignored; a script override still applies. `gnome` is the only corpus view that authors it, never
   shows itself from script, and loads in WMP — honouring it drew 0 nodes and an empty window.
@@ -1087,6 +1098,19 @@ counter-evidence table in `reference/skins/README.md`.
   `commands` is DFS order and a `zIndex = -5` node in one subtree can legitimately follow a
   `zIndex = 10` node in another. `WMPImageStore.clippingMask(for:keyedOut:)` and `WMPColorKey` then
   apply to the overlay for free — no new masking code exists anywhere for this.
+
+  **With two surfaces, each is covered only by what follows its own split (W302).** The rasters
+  are `WMPScene.effectsLayers`, not a cut at one index: a command goes over when it overlaps a
+  surface whose split it follows, or overlaps a command already placed over one, which keeps paint
+  order among overlapping artwork; a command that touches no surface draws the same from either
+  layer. The old rule cut every surface at the earliest split, so everything between two of them
+  covered the later one. `Alpine7618_v09` has a 150x26 visualizer in its LCD and a 362x211 one in
+  `VisPanel`, declared after it over an opaque black `vis_panel.bmp`, and the open panel showed
+  black. **8 corpus views author two `<EFFECTS>`** (`Alpine7618_v09`, `Erektorset`, `Goo`,
+  `Science`, `The Unit`/`TheUnit`, `holiday_skin`, `pharaoh`); under `WMP_RENDER_HOST=playing` every
+  one draws only one at load, so this changes nothing until a skin opens its second panel. With one
+  surface the pixels are the same as the single split (`Erektorset` and `Science` move 1 and 14
+  commands that touch no surface into the lower raster).
 
   **The rect's own background is the one thing the split steps past.** A backdrop declared *on* the
   `<EFFECTS>` node — `backgroundColor="#000000"`, or a `backgroundImage` — is what WMP shows behind

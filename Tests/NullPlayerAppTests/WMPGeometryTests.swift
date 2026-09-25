@@ -247,6 +247,45 @@ final class WMPGeometryTests: XCTestCase {
                        WMPRect(x: 32, y: 13, width: 4, height: 4))
     }
 
+    /// **A binding's `true` is not a script show (W301).** `Alpine7618_v09` hangs its panel's
+    /// `<EFFECTS visible="wmpenabled:player.controls.stop">` inside `VisPanel`, authored hidden and
+    /// shown only by its VIS button. Once playback enabled `stop`, the bound value read as a script
+    /// write and the visualizer escaped the closed panel. A script write of the same address makes it
+    /// the script's again.
+    func testABoundVisibleDoesNotEscapeAHiddenContainer() async throws {
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="60" height="40">
+              <SUBVIEW id="panel" left="10" top="10" width="40" height="20" visible="false">
+                <SUBVIEW id="bound" left="0" top="0" width="10" height="10" backgroundColor="#00FF00"
+                         visible="wmpenabled:player.controls.stop"/>
+                <SUBVIEW id="shown" left="20" top="0" width="10" height="10" backgroundColor="#0000FF"
+                         visible="false"/>
+              </SUBVIEW>
+            </VIEW></THEME>
+            """.utf8))
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        func address(_ id: String) throws -> WMPScenePropertyAddress {
+            .init(stableID: try XCTUnwrap(skin.graph.nodes(id: id).first).stableID, property: "visible")
+        }
+        var overrides = WMPSceneOverrides.empty
+        overrides.properties[try address("bound")] = .bool(true)
+        overrides.boundProperties.insert(try address("bound"))
+        overrides.properties[try address("shown")] = .bool(true)
+        var scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main", overrides: overrides)
+        var drawn = Set(scene.commands.map(\.stableID))
+        XCTAssertFalse(drawn.contains(try address("bound").stableID),
+                       "a bound visible escaped its hidden container")
+        XCTAssertTrue(drawn.contains(try address("shown").stableID), "the script showed this node (W263)")
+
+        overrides.boundProperties.remove(try address("bound"))
+        scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main", overrides: overrides)
+        drawn = Set(scene.commands.map(\.stableID))
+        XCTAssertTrue(drawn.contains(try address("bound").stableID),
+                      "a script write of the same address is a show")
+    }
+
     /// The natural size of a background bitmap fills in an *unstated* dimension. It must never
     /// overwrite one the skin computed: Corona's compact view collapses `svVideo` to height 0
     /// through its own timer, and the bitmap kept stamping its own height back over it, leaving a
