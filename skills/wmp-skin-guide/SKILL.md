@@ -272,7 +272,8 @@ is wrong and must be revised or dropped; it is never a licence to fix that famil
   must be registered only while an effects surface exists in the active view and removed on
   switch/teardown.
 - `VIDEO`/`WMPVIDEO` draw nothing — the placeholder that painted them opaque black over the skin's
-  own artwork is gone (W9). WMP plug-ins, ActiveX, DLLs, and arbitrary media surfaces remain denied.
+  own artwork is gone (W9). Their `backgroundColor` paints only over what is already drawn beneath
+  it (`confinedToPaint`, W312), so it never adds to the window's shape. WMP plug-ins, ActiveX, DLLs, and arbitrary media surfaces remain denied.
 - A view switch cancels capture and outgoing timers, stops continuous commands, clears view-local
   overrides, resolves off-main, preserves safe top-left, applies per-skin/view size, atomically swaps
   scene/native/accessibility state, then dispatches the view event.

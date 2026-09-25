@@ -370,10 +370,16 @@ struct WMPPaintCommand: Hashable, Codable {
     /// author it and 717 of those uses are `alphaBlend="0"` — an element the skin means to be
     /// invisible until a script fades it in. Drawing those opaque paints a slab over the artwork.
     let alpha: CGFloat
+    /// Paint only where something is already drawn beneath this command (W312). A `<VIDEO>`'s
+    /// `backgroundColor` is a surface inside the window, never a piece of its shape: WMP shapes a
+    /// window from its artwork, and this engine from what is painted, so a fill over bare canvas
+    /// became a grey box hanging off `Navigator`'s wing. Over artwork — `The Unit`'s black well —
+    /// it paints exactly as before.
+    let confinedToPaint: Bool
 
     init(stableID: Int, nodeID: String?, frame: WMPRect, clipRect: WMPRect?, zIndex: Int,
          documentOrder: Int, paint: WMPPaint, alpha: CGFloat = 1,
-         inheritedClipMasks: [WMPSceneClipMask] = []) {
+         inheritedClipMasks: [WMPSceneClipMask] = [], confinedToPaint: Bool = false) {
         self.stableID = stableID
         self.nodeID = nodeID
         self.frame = frame
@@ -383,13 +389,15 @@ struct WMPPaintCommand: Hashable, Codable {
         self.paint = paint
         self.alpha = alpha
         self.inheritedClipMasks = inheritedClipMasks
+        self.confinedToPaint = confinedToPaint
     }
 
     func inside(_ masks: [WMPSceneClipMask]) -> WMPPaintCommand {
         guard !masks.isEmpty else { return self }
         return WMPPaintCommand(stableID: stableID, nodeID: nodeID, frame: frame, clipRect: clipRect,
                                zIndex: zIndex, documentOrder: documentOrder, paint: paint,
-                               alpha: alpha, inheritedClipMasks: masks + inheritedClipMasks)
+                               alpha: alpha, inheritedClipMasks: masks + inheritedClipMasks,
+                               confinedToPaint: confinedToPaint)
     }
 }
 

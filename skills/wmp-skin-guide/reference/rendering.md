@@ -5,6 +5,12 @@ counter-evidence table in `reference/skins/README.md`.
 
 ## Static scene and image contracts
 
+- **A `<VIDEO>`'s `backgroundColor` is a surface inside the window, never part of its shape
+  (W312).** The fill carries `WMPPaintCommand.confinedToPaint`, and `WMPRenderer` clips it to the
+  alpha already drawn beneath it — this layer and, in the overlay, the layer below. `Navigator`'s
+  `#404040` well over bare canvas under the wing is gone; `The Unit`'s, `The_Sentinel_v.1.0`'s and
+  `circle`'s black wells over their own artwork are byte-identical. Suppressing the fill while
+  `hasVideo` is false would have lost those three.
 - **What WMP does with a `backgroundImage` whose frame is not its bitmap is unsettled — decide it
   before extending W122's natural-size rule to backgrounds.** `Ice` authors
   `<button image="Pl-xp.bmp" width="196" height="144">` over a bitmap that is really 196x**44**,

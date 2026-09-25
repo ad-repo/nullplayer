@@ -1523,7 +1523,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 emit(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,
                     frame: frame, clipRect: inheritedClip, zIndex: z,
                     documentOrder: node.stableID, paint: .fill(background), alpha: alpha,
-                    inheritedClipMasks: fillMask.map { [$0] } ?? []))
+                    inheritedClipMasks: fillMask.map { [$0] } ?? [],
+                    confinedToPaint: node.kind == .video || node.kind == .wmpVideo))
             }
             if let path = backgroundPath, !frame.isEmpty {
                 var backgroundFrame = isRoot ? (rootBackgroundSize.map {

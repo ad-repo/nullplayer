@@ -230,7 +230,8 @@ struct WMPRenderer: @unchecked Sendable {
         let overlay = try layers.map {
             try rasterize($0.over, scene: scene, pixelWidth: pixelWidth,
                           pixelHeight: pixelHeight, backingScale: backingScale, clock: clock,
-                          slotClocks: slotClocks, punchingOut: scene.windowedEffectsRects)
+                          slotClocks: slotClocks, punchingOut: scene.windowedEffectsRects,
+                          underneath: image)
         }
         return WMPRenderResult(image: image, overlayImage: overlay,
             renderMilliseconds: (CFAbsoluteTimeGetCurrent() - started) * 1_000,
@@ -244,7 +245,8 @@ struct WMPRenderer: @unchecked Sendable {
                            clock: TimeInterval,
                            slotClocks: [WMPAnimationSlot: TimeInterval] = [:],
                            punchingOut: [WMPRect] = [],
-                           grounds: [WMPEffectsGround] = []) throws -> CGImage {
+                           grounds: [WMPEffectsGround] = [],
+                           underneath: CGImage? = nil) throws -> CGImage {
         let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
             | CGImageAlphaInfo.premultipliedLast.rawValue
         guard let context = CGContext(data: nil, width: pixelWidth, height: pixelHeight,
@@ -304,6 +306,15 @@ struct WMPRenderer: @unchecked Sendable {
             }
             switch command.paint {
             case let .fill(color):
+                // Over the layer below as well as this one: an overlay starts transparent, and
+                // the artwork a fill sits on may have been rasterized into `underneath`.
+                if command.confinedToPaint {
+                    guard let painted = Self.paintedMask(of: [context.makeImage(), underneath])
+                    else { context.restoreGState(); continue }
+                    clip(to: WMPRect(x: 0, y: 0, width: scene.canvasSize.width,
+                                     height: scene.canvasSize.height),
+                         mask: painted, context: context)
+                }
                 context.setFillColor(red: CGFloat(color.red) / 255,
                     green: CGFloat(color.green) / 255, blue: CGFloat(color.blue) / 255, alpha: 1)
                 context.fill(command.frame.cgRect)
@@ -419,6 +430,31 @@ struct WMPRenderer: @unchecked Sendable {
                                       y: (extent.y + extent.height - frame.y - frame.height) * scaleY,
                                       width: CGFloat(mask.width), height: CGFloat(mask.height)))
         return context.makeImage().map { ($0, extent) }
+    }
+
+    /// The union of the images' alpha as a clipping mask (255 keeps), top-down like the images.
+    /// All of them are the same canvas-sized bitmap, so no scaling is involved.
+    private static func paintedMask(of images: [CGImage?]) -> CGImage? {
+        let images = images.compactMap { $0 }
+        guard let first = images.first else { return nil }
+        let width = first.width, height = first.height
+        guard let context = CGContext(data: nil, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let data = context.data else { return nil }
+        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        for image in images { context.draw(image, in: bounds) }
+        let rgba = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+        var alpha = [UInt8](repeating: 0, count: width * height)
+        for index in alpha.indices { alpha[index] = rgba[index * 4 + 3] }
+        let bytes = Data(alpha)
+        guard let provider = CGDataProvider(data: bytes as CFData) else { return nil }
+        return CGImage(width: width, height: height, bitsPerComponent: 8,
+                       bitsPerPixel: 8, bytesPerRow: width,
+                       space: CGColorSpaceCreateDeviceGray(),
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: false,
+                       intent: .defaultIntent)
     }
 
     private func clip(to frame: WMPRect, mask: CGImage, context: CGContext) {
