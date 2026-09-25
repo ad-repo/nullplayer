@@ -47,9 +47,17 @@ enum WMPTextMetrics {
         return name
     }
 
+    /// **A `fontSize` is in points at WMP's 96 dpi, not in skin pixels.** GDI draws 7 pt as 9.33 px,
+    /// and a skin is laid out in pixels, so drawing the number as a pixel size shrank every `<TEXT>`
+    /// in the corpus to three quarters: `xXx_night_vision_redx`'s Tahoma 7 metadata measures 7 px
+    /// caps in its reference capture against 5.5 here, and `WoW`'s Arial 11 `00:00` 11 px against 8.
+    static func pixelSize(_ points: CGFloat) -> CGFloat {
+        max(1, points) * 96 / 72
+    }
+
     static func font(_ base: String, size: CGFloat, bold: Bool, italic: Bool) -> CTFont {
         CTFontCreateWithName(fontName(base, bold: bold, italic: italic) as CFString,
-                             max(1, size), nil)
+                             pixelSize(size), nil)
     }
 
     static func line(_ value: String, font: CTFont, color: CGColor,
@@ -77,7 +85,7 @@ enum WMPTextMetrics {
                            bold: Bool, italic: Bool) -> CGFloat {
         let font = font(base, size: fontSize, bold: bold, italic: italic)
         let height = CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)
-        return max(fontSize, height.rounded(.up))
+        return max(pixelSize(fontSize), height.rounded(.up))
     }
 
     /// Typographic width of `value` in the authored face, in skin pixels.

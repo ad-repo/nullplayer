@@ -508,7 +508,7 @@ struct WMPRenderer: @unchecked Sendable {
         // the clip below still leaves the vertical overflow that is not.
         let ascent = CTFontGetAscent(font)
         let baseline = frame.y + frame.height
-            - max(ascent, (frame.height - text.fontSize) / 2)
+            - max(ascent, (frame.height - WMPTextMetrics.pixelSize(text.fontSize)) / 2)
         let centerY = frame.y + frame.height / 2
         context.saveGState()
         // **A `<TEXT>` is a box, and the clip is horizontal only.** WMP clips its text to the

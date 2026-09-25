@@ -781,6 +781,17 @@ counter-evidence table in `reference/skins/README.md`.
   The object-model half is the same rule: `justification`, `fontFace`, `fontStyle` and `fontSize`
   are **rendered**, so a write to one has to commit as a mutation rather than be stored inert, and
   each was only reaching the scene when the markup happened to author the same attribute.
+- **A `fontSize` is points at 96 dpi, not skin pixels (2026-09-25).** GDI draws 7 pt as 9.33 px, and
+  the engine used the number as a CoreText pixel size, so every `<TEXT>` in the corpus drew at three
+  quarters of its size — reported as "the fonts are small in general". `WMPTextMetrics.pixelSize` is
+  the one conversion, applied in `WMPTextMetrics.font` (so drawing, `textWidth` and the intrinsic
+  text size agree) and wherever `fontSize` is used as a distance (the renderer's baseline, the
+  line-height floor). **Checked against the Internet Archive's reference captures, not reasoned**:
+  `xXx_night_vision_redx`'s Tahoma 7 metadata caps measure 7 px there, 5.5 before, 7.5 after;
+  `WoW`'s Arial 11 `00:00` digits 11 px there, ~8 before. The collection's per-skin PNGs
+  (`archive.org/download/windowsmediaplayerskinscollection/<skin>.png`) are real-WMP ground truth for
+  any size question — read the skin's own state first, since most show a stopped player. Every
+  corpus image containing text moves with this rule; that is the rule, not collateral.
 - **An element's own artwork is drawn at its own size, and the box it does not fill is left to
   whatever is under it (W122).** WMP never scales a `<BUTTON>`'s `image` to the authored frame, and
   a skin that swaps that image from script is written against exactly that: **563 script `.image`
