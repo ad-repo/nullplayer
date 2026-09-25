@@ -265,6 +265,13 @@ final class SonosWindowView: NSView {
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    /// A titleless WMP window's close sits over the status line, so it has to win against it.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = superview.map { convert(point, from: $0) } ?? point
+        if hostedContext == nil, SkinnedSurfaceChrome.hidesPaletteTitleBar,
+           chrome.closeRect(bounds).contains(local) { return self }
+        return super.hitTest(point)
+    }
     override func mouseDown(with event: NSEvent) {
         if let hostedContext { hostedDrag.prime(event, context: hostedContext); return }
         let point = convert(event.locationInWindow, from: nil)

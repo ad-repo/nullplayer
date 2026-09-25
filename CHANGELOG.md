@@ -20,7 +20,8 @@
   visualizer and Sonos Rooms — open beside the skin wearing its colours and a frame borrowed from the
   skin's own playlist, in whichever colour scheme the skin is showing, which keeps its shape while a window is resized and changes together with the
   player when you switch skins; where the skin has its own playlist or equalizer, that one is used
-  instead.
+  instead. Where a skin lends no frame, those windows have no title bar and wear a thin glossy frame
+  in the skin's own colours; the top-right corner still closes them.
   A skin's own playlist chooser, library pickers and search box read whichever library the browser
   is set to — local files or a Plex, Navidrome, Jellyfin or Emby server: click a playlist to see its
   tracks in the skin, double-click to play it, and search the server straight from the skin. The

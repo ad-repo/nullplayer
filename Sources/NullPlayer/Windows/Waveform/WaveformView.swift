@@ -241,7 +241,10 @@ class WaveformView: BaseWaveformView {
     }
 
     private func titleBarRect() -> NSRect {
-        let titleHeight = SkinElements.Playlist.titleHeight
+        // A titleless WMP window drags by its thin top border, as the Original family's does.
+        let titleHeight = SkinnedSurfaceChrome.hidesPaletteTitleBar
+            ? SkinnedSurfaceChrome.metrics(for: bounds, fallback: .waveform).titleHeight
+            : SkinElements.Playlist.titleHeight
         return NSRect(x: 0, y: bounds.height - titleHeight, width: bounds.width, height: titleHeight)
     }
 
@@ -252,9 +255,10 @@ class WaveformView: BaseWaveformView {
     /// coordinates; this view works bottom-left.
     private func closeButtonRect() -> NSRect {
         let titleHeight = SkinElements.Playlist.titleHeight
-        if let artwork = WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size) {
+        let artwork = WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size)
+        if artwork != nil || SkinnedSurfaceChrome.hidesPaletteTitleBar {
             let corner = SkinnedSurfaceChrome.closeButtonRect(
-                in: bounds, captionHeight: artwork.scaled(to: bounds.size).captionHeight,
+                in: bounds, captionHeight: artwork?.scaled(to: bounds.size).captionHeight ?? 0,
                 artwork: artwork)
             return NSRect(x: corner.minX, y: bounds.height - corner.maxY,
                           width: corner.width, height: corner.height)

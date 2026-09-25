@@ -564,7 +564,7 @@ final class HostedWindowBorderLayout {
     /// the half of this rule that adds the border and the half that subtracts it have to agree** —
     /// when they did not, each pass left a residue and the two chased each other across renders.
     private static func borderInPlay(fallback: SkinnedSurfaceChrome.Metrics) -> SkinnedSurfaceChrome.Metrics {
-        WindowManager.shared.hostedSurfaceBorderInsets ?? fallback
+        WindowManager.shared.hostedSurfaceBorderInsets ?? SkinnedSurfaceChrome.paletteMetrics(fallback)
     }
 
     /// **The first sight of a window is read against its *own* chrome, not the skin's.** A window
@@ -607,7 +607,8 @@ final class HostedWindowBorderLayout {
     /// frame or nothing, which is exactly the question this doc comment already claimed to ask.
     private static func drawnBorder(of window: NSWindow,
                                     fallback: SkinnedSurfaceChrome.Metrics) -> SkinnedSurfaceChrome.Metrics {
-        WindowManager.shared.hostedSurfaceRenderedFrameArtwork(for: window.frame.size)?.metrics ?? fallback
+        WindowManager.shared.hostedSurfaceRenderedFrameArtwork(for: window.frame.size)?.metrics
+            ?? SkinnedSurfaceChrome.paletteMetrics(fallback)
     }
 
     // MARK: - Across launches

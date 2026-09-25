@@ -1520,7 +1520,17 @@ class PlexBrowserView: NSView {
 
     var Layout: LayoutMetrics {
         if isEmbeddedInSkin { return .embedded }
-        guard let metrics = hostedFrame?.metrics else { return .classic }
+        guard let metrics = hostedFrame?.metrics else {
+            // A `.wmz` session draws the unskinned library without its title bar: the top edge is
+            // a border as thin as the status bar (`SkinnedSurfaceChrome.hidesPaletteTitleBar`).
+            guard SkinnedSurfaceChrome.hidesPaletteTitleBar else { return .classic }
+            var titleless = LayoutMetrics.classic
+            titleless.titleBarHeight = SkinnedSurfaceChrome.glossBorder
+            titleless.leftBorder = SkinnedSurfaceChrome.glossBorder
+            titleless.rightBorder = SkinnedSurfaceChrome.glossBorder
+            titleless.statusBarHeight = SkinnedSurfaceChrome.glossBorder
+            return titleless
+        }
         // The borrowed frame's own client hole replaces the four chrome numbers and nothing else:
         // the tab, server, search and status *bars* are this window's own furniture and keep their
         // heights, so only where the window's edges are moves.
@@ -1634,6 +1644,7 @@ class PlexBrowserView: NSView {
         let textWidth: (String) -> CGFloat = { CGFloat($0.count) * charWidth }
         let leadingInset = 4 + toolbarItemHorizontalEdgePadding
         let trailingInset = 8 + toolbarItemHorizontalEdgePadding + rightEdgeItemPaddingBoost
+            + cornerCloseInset
         let prefixWidth = textWidth("Source: ")
         let minimumGap: CGFloat = 12
         let remoteLeftWidth: (_ maxServerCharacters: Int, _ serverName: String) -> CGFloat = {
@@ -2620,6 +2631,13 @@ class PlexBrowserView: NSView {
             return
         }
 
+        // Titleless in WMP: the gloss frame, and the close is the corner hit area alone.
+        if closesFromCorner {
+            SkinnedSurfaceChrome.drawGlossFrame(in: context, bounds: bounds, style: style,
+                                                isActive: isActive, fillGround: true)
+            return
+        }
+
         context.setFillColor(style.background.cgColor)
         context.fill(bounds)
 
@@ -2685,6 +2703,17 @@ class PlexBrowserView: NSView {
     /// that would move the content off the top of the holder.
     private var hidesClassicTitleBar: Bool {
         !isEmbeddedInSkin && WindowManager.shared.hideTitleBars
+    }
+
+    /// True for a titleless WMP library with no borrowed frame: its close is a corner hit area
+    /// over the server bar, so the bar's right-edge items move out from under it.
+    private var closesFromCorner: Bool {
+        !isEmbeddedInSkin && hostedFrame == nil && SkinnedSurfaceChrome.hidesPaletteTitleBar
+    }
+
+    /// How much further the server bar's right-edge items sit in, in unscaled toolbar points.
+    private var cornerCloseInset: CGFloat {
+        closesFromCorner ? max(0, SkinnedSurfaceFrameArtwork.closeHitWidth - Layout.rightBorder) : 0
     }
 
     private var originalWindowSize: NSSize {
@@ -3413,6 +3442,7 @@ class PlexBrowserView: NSView {
         let textY = backingScale < 1.5 ? round(rawTextY) : rawTextY
         let toolbarLeftInset = (4 + toolbarItemHorizontalEdgePadding) * chromeScale
         let toolbarRightInset = (8 + toolbarItemHorizontalEdgePadding + rightEdgeItemPaddingBoost) * chromeScale
+            + cornerCloseInset
         
         // Common prefix for all sources
         let prefix = "Source: "
@@ -8242,7 +8272,7 @@ class PlexBrowserView: NSView {
         // 20x14 in our own flat chrome. Under a borrowed ring the column spans the skin's caption
         // band — 7px to 104px across the corpus — and sits inside its right border, which is where
         // the shared painter draws the glyph: what is clickable is what is drawn (W178).
-        let closeRect = hostedFrame == nil
+        let closeRect = hostedFrame == nil && !closesFromCorner
             ? NSRect(x: originalSize.width - 20, y: 0, width: 20, height: 14)
             : SkinnedSurfaceChrome.closeButtonRect(in: NSRect(origin: .zero, size: originalSize),
                                                    captionHeight: Layout.titleBarHeight, width: 20)

@@ -28,6 +28,23 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   WMP theming but **do not participate in border growth**: their classic sprite geometry does not
   follow the shared metrics. Video, radio sheets, compact mode, and debug windows have no skin
   chrome and are outside this policy.
+- **Where the skin lends no frame, the window has no title bar and wears the gloss frame
+  (2026-09-25).** The reporter's words: no title bar, *"similar to original no titlebars"*, no
+  setting, keep the top-right close, and — because *"the skins all have shine to them"* — glossy, in
+  *"the theme colors"*. `SkinnedSurfaceChrome.hidesPaletteTitleBar` is the gate (the WMP family,
+  never a flag); `paletteMetrics` turns every fallback into a uniform `glossBorder` (6pt), and
+  layout, drawing and `HostedWindowBorderLayout` all read it so the three agree.
+  `drawGlossFrame` is the one painter: a rounded rim graded light-to-dark from the palette's
+  `barBackground`, a white sheen and specular edge, the outline in `style.border` unaltered, an inset
+  shadow at the hole. The spectrum family and Sonos reach it through `drawSpectrumFamilyWindow`; the
+  playlist, library and EQ call it from their own palette painters. The close is the same
+  un-drawn 40×26 corner hit area a borrowed frame gets (`closeButtonRect`), so views whose content
+  is a subview that eats clicks (Audio Analyzer's SwiftUI panes, Sonos's status line) override
+  `hitTest` to claim it; the library moves its server-bar right-edge items in by `cornerCloseInset`.
+  The EQ is a fixed 275x116 layout, so its old band stays as ground inside a thinner rim.
+  `hostedGroundRect` returns the gloss hole, not `bounds`: PeppyMeter (and Cava, Flow) paint their
+  ground through it, and a full-window fill showed as square black corners outside the rounded rim. `.wal`
+  shares every one of these painters and is unchanged — the gate is false there.
 - Borrowed rings use whole-donor rendering with subtraction; fixed panels use nine-slicing.
 - **A ring wears the colour the donor's own `onLoad` chose, not its markup's (W145).** `xsn_sports`
   stacks eight colours of its frame in `plView` and reveals one from `htcpStartupPl()` by writing
@@ -566,7 +583,9 @@ wires every applicable step in the same change; each prevents a previously repor
    a **hit area in the borrowed frame's top-right corner**, not a glyph of ours; nothing of ours is
    drawn over a borrowed frame. **Relayout on `hostedSurfaceStyleDidChange`, not just repaint**
    (W220) — the frame arrives after your first layout pass, and a subview framed for the old hole
-   covers the ring.
+   covers the ring. With no frame lent the window is titleless (§ *Current hosting contract*): read
+   the fallback through `SkinnedSurfaceChrome.paletteMetrics`, and make sure the corner close hit
+   area wins over any subview under it.
 4. **Chrome** — `WindowManager.hostedSurfaceFrameArtwork(for:)`.
 5. **Paint the ground as `hostedGroundRect`, never `bounds`.** A `bounds.fill()` turns a shaped
    frame into a black box with the skin drawn inside it.

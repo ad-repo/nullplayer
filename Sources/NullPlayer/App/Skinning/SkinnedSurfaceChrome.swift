@@ -86,7 +86,119 @@ struct SkinnedSurfaceChrome {
     /// The layout a hosted window measures its content and its hit targets from: the skin's own
     /// client hole wherever a frame was lent, and the caller's classic constants otherwise.
     static func metrics(for bounds: CGRect, fallback: Metrics) -> Metrics {
-        WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size)?.metrics ?? fallback
+        WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size)?.metrics ?? paletteMetrics(fallback)
+    }
+
+    /// **A `.wmz` session draws our unskinned windows without a title bar.** Where the skin lends
+    /// no frame, the palette chrome keeps its side and bottom borders, and its top edge becomes a
+    /// border as thin as the bottom one — the Original family's *Hide Title Bars*, but always on and
+    /// with no setting, because a WMP skin has no title bar of its own to match. The close control
+    /// stays, as the same top-right corner hit area a borrowed frame gets (`closeButtonRect`).
+    /// `.wal` shares this painter and keeps its title bar: the gate is the WMP family, never a flag.
+    static var hidesPaletteTitleBar: Bool { WindowManager.shared.isRunningWMPUI }
+
+    /// The border a window wears when no frame is lent: `fallback`, less its title bar in WMP.
+    /// Layout, drawing and `HostedWindowBorderLayout` all read it, so the three agree.
+    static func paletteMetrics(_ fallback: Metrics) -> Metrics {
+        guard hidesPaletteTitleBar else { return fallback }
+        return Metrics(titleHeight: glossBorder, leftBorder: glossBorder,
+                       rightBorder: glossBorder, bottomBorder: glossBorder)
+    }
+
+    /// The rim of the gloss frame, the same on all four sides.
+    static let glossBorder: CGFloat = 6
+    private static let glossRadius: CGFloat = 7
+
+    /// **The frame a titleless WMP window wears: a thin glass rim, not four flat slabs.** WMP skins
+    /// are glossy — lit from above, specular along the top edge — so the palette frame is too: a
+    /// rounded rim whose fill runs light to dark down the window, a sheen over its upper half, a
+    /// highlight along the top edge and an inset shadow where it meets the content. Every colour
+    /// is derived from the skin's palette, so it takes the skin's hue.
+    ///
+    /// Drawn in the flipped top-left space every chrome path here uses. `content` is the hole; the
+    /// caller fills or draws it. `fillGround` paints the hole in the palette background first.
+    static func drawGlossFrame(in context: CGContext, bounds: CGRect, border: CGFloat = glossBorder,
+                               style: SkinnedSurfaceStyle, isActive: Bool, fillGround: Bool) {
+        guard bounds.width > 2, bounds.height > 2 else { return }
+        let outer = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let hole = bounds.insetBy(dx: border, dy: border)
+        let radius = min(glossRadius, outer.width / 2, outer.height / 2)
+        let innerRadius = max(0, min(radius - border + 2, hole.width / 2, hole.height / 2))
+        let outerPath = CGPath(roundedRect: outer, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        let holePath = CGPath(roundedRect: hole, cornerWidth: innerRadius, cornerHeight: innerRadius,
+                              transform: nil)
+        let base = isActive ? style.barBackground : style.background.blended(withFraction: 0.5,
+                                                                             of: style.barBackground) ?? style.barBackground
+        func tone(_ fraction: CGFloat, _ toward: NSColor) -> CGColor {
+            (base.usingColorSpace(.deviceRGB)?.blended(withFraction: fraction, of: toward) ?? base).cgColor
+        }
+
+        context.saveGState()
+        context.setShouldAntialias(true)
+        context.setAllowsAntialiasing(true)
+
+        if fillGround {
+            context.addPath(holePath)
+            context.setFillColor(style.background.cgColor)
+            context.fillPath()
+        }
+
+        // The rim: outer rounded rect minus the hole, a vertical gradient from lit to shaded.
+        context.saveGState()
+        context.addPath(outerPath)
+        context.addPath(holePath)
+        context.clip(using: .evenOdd)
+        let space = CGColorSpaceCreateDeviceRGB()
+        if let rim = CGGradient(colorsSpace: space,
+                                colors: [tone(0.22, .white), tone(0.04, .white), tone(0.0, .black),
+                                         tone(0.28, .black)] as CFArray,
+                                locations: [0, 0.12, 0.55, 1]) {
+            context.drawLinearGradient(rim, start: CGPoint(x: 0, y: bounds.minY),
+                                       end: CGPoint(x: 0, y: bounds.maxY), options: [])
+        }
+        // Sheen: a soft white wash over the upper part of the rim, strongest at the top.
+        if let sheen = CGGradient(colorsSpace: space,
+                                  colors: [NSColor(white: 1, alpha: 0.18).cgColor,
+                                           NSColor(white: 1, alpha: 0.0).cgColor] as CFArray,
+                                  locations: [0, 1]) {
+            context.drawLinearGradient(sheen, start: CGPoint(x: 0, y: bounds.minY),
+                                       end: CGPoint(x: 0, y: bounds.minY + min(bounds.height * 0.45, 60)),
+                                       options: [])
+        }
+        context.restoreGState()
+
+        // Specular edge: a bright hairline just inside the top of the rim, fading down the sides.
+        context.saveGState()
+        context.addPath(CGPath(roundedRect: outer.insetBy(dx: 1, dy: 1), cornerWidth: max(0, radius - 1),
+                               cornerHeight: max(0, radius - 1), transform: nil))
+        context.replacePathWithStrokedPath()
+        context.clip()
+        if let edge = CGGradient(colorsSpace: space,
+                                 colors: [NSColor(white: 1, alpha: 0.55).cgColor,
+                                          NSColor(white: 1, alpha: 0.08).cgColor] as CFArray,
+                                 locations: [0, 1]) {
+            context.drawLinearGradient(edge, start: CGPoint(x: 0, y: bounds.minY),
+                                       end: CGPoint(x: 0, y: bounds.maxY), options: [])
+        }
+        context.restoreGState()
+
+        // Outline in the theme's own border colour.
+        context.addPath(outerPath)
+        context.setStrokeColor((isActive ? style.border : style.divider).cgColor)
+        context.setLineWidth(1)
+        context.strokePath()
+
+        // Inset shadow where the rim meets the content, with a faint lit lip below it.
+        context.addPath(CGPath(roundedRect: hole.insetBy(dx: -0.5, dy: -0.5), cornerWidth: innerRadius + 0.5,
+                               cornerHeight: innerRadius + 0.5, transform: nil))
+        context.setStrokeColor(NSColor(white: 0, alpha: 0.55).cgColor)
+        context.strokePath()
+        context.move(to: CGPoint(x: hole.minX + innerRadius, y: hole.maxY + 1))
+        context.addLine(to: CGPoint(x: hole.maxX - innerRadius, y: hole.maxY + 1))
+        context.setStrokeColor(NSColor(white: 1, alpha: 0.12).cgColor)
+        context.strokePath()
+
+        context.restoreGState()
     }
 
     /// **The ground a hosted window paints: its content hole wherever a frame was lent, and the
@@ -116,7 +228,12 @@ struct SkinnedSurfaceChrome {
     /// Reported 2026-09-17 as the windows still being broken after the border itself was fixed.
     static func hostedGroundRect(in bounds: CGRect) -> CGRect {
         guard let artwork = WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size) else {
-            return bounds
+            // The gloss frame has rounded corners, so a ground filling the whole window shows as
+            // square black corners outside the rim (PeppyMeter, 2026-09-25). Its hole is symmetric,
+            // so no flip is needed here.
+            guard hidesPaletteTitleBar else { return bounds }
+            let hole = bounds.insetBy(dx: glossBorder, dy: glossBorder)
+            return hole.isEmpty ? bounds : hole
         }
         let metrics = artwork.scaled(to: bounds.size).metrics
         let hole = CGRect(x: bounds.minX + metrics.leftBorder,
@@ -143,6 +260,12 @@ struct SkinnedSurfaceChrome {
             drawSkinFrame(artwork, in: context, bounds: bounds, isActive: isActive,
                           isClosePressed: isClosePressed, controlScale: controlScale,
                           title: title, fillBackground: fillBackground)
+            return
+        }
+
+        if Self.hidesPaletteTitleBar {
+            Self.drawGlossFrame(in: context, bounds: bounds, style: style, isActive: isActive,
+                                fillGround: fillBackground)
             return
         }
 
@@ -322,14 +445,17 @@ struct SkinnedSurfaceChrome {
     static func closeButtonRect(in bounds: CGRect, captionHeight: CGFloat, width requested: CGFloat = 25,
                                 artwork: SkinnedSurfaceFrameArtwork?) -> CGRect {
         let width = min(requested, bounds.width)
-        guard artwork != nil else {
+        guard artwork != nil || hidesPaletteTitleBar else {
             return CGRect(x: bounds.maxX - width, y: bounds.minY, width: width,
                           height: max(0, min(captionHeight, bounds.height)))
         }
         // Flush into the corner, because nothing is drawn here: the whole point is that the target
         // covers the painted × wherever in that corner the skin put it.
         let hitWidth = max(0, min(SkinnedSurfaceFrameArtwork.closeHitWidth, bounds.width))
-        let hitHeight = max(0, min(SkinnedSurfaceFrameArtwork.closeHitHeight, captionHeight))
+        // A titleless palette window has no band to cap the target by, so it keeps its full depth.
+        let hitHeight = artwork == nil
+            ? max(0, min(SkinnedSurfaceFrameArtwork.closeHitHeight, bounds.height))
+            : max(0, min(SkinnedSurfaceFrameArtwork.closeHitHeight, captionHeight))
         return CGRect(x: bounds.maxX - hitWidth, y: bounds.minY, width: hitWidth, height: hitHeight)
     }
 

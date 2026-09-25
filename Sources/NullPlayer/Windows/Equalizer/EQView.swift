@@ -584,7 +584,13 @@ class EQView: NSView {
         context.setFillColor(style.background.cgColor)
         context.fill(body)
 
-        if drawsChrome {
+        // A `.wmz` session draws the unskinned equalizer without a title bar
+        // (`SkinnedSurfaceChrome.hidesPaletteTitleBar`). Its body is a fixed 275x116 layout, so the
+        // band stays as ground inside a thin gloss rim, with the close target in its top-right corner.
+        if drawsChrome, SkinnedSurfaceChrome.hidesPaletteTitleBar {
+            SkinnedSurfaceChrome.drawGlossFrame(in: context, bounds: drawBounds, border: 3, style: style,
+                                                isActive: isActive, fillGround: false)
+        } else if drawsChrome {
             context.setFillColor(style.barBackground.cgColor)
             context.fill(NSRect(x: 0, y: 0, width: drawBounds.width, height: Layout.titleBarHeight))
             context.setStrokeColor(style.border.cgColor)

@@ -111,7 +111,13 @@ class PlaylistView: NSView {
     /// Where the chrome ends and the track list begins. The borrowed frame's own client hole
     /// wherever there is one, so the list, its hit testing and its scrolling all move together.
     private var Layout: PlaylistChrome {
-        guard let metrics = hostedFrame?.metrics else { return .classic }
+        guard let metrics = hostedFrame?.metrics else {
+            // A `.wmz` session draws the unskinned playlist without its title bar: the top edge is
+            // a border as thin as the bottom one (`SkinnedSurfaceChrome.hidesPaletteTitleBar`).
+            guard SkinnedSurfaceChrome.hidesPaletteTitleBar, !isEmbedded else { return .classic }
+            let rim = SkinnedSurfaceChrome.glossBorder
+            return PlaylistChrome(titleBarHeight: rim, bottomBarHeight: rim, leftBorder: rim, rightBorder: rim)
+        }
         return PlaylistChrome(titleBarHeight: metrics.titleHeight,
                               bottomBarHeight: metrics.bottomBorder,
                               leftBorder: metrics.leftBorder,
@@ -584,6 +590,13 @@ class PlaylistView: NSView {
     /// bottom-bar button is painted in the box `hitTestBottomButton` already owns.
     private func drawWinampModernChrome(style: WinampModernSurfaceStyle, context: CGContext,
                                         bounds: NSRect, isActive: Bool) {
+        // Titleless in WMP: the gloss frame, and the close is the corner hit area alone.
+        if SkinnedSurfaceChrome.hidesPaletteTitleBar, !isEmbedded {
+            SkinnedSurfaceChrome.drawGlossFrame(in: context, bounds: bounds, style: style,
+                                                isActive: isActive, fillGround: true)
+            return
+        }
+
         let titleHeight = Layout.titleBarHeight
         let bottomHeight = Layout.bottomBarHeight
         let leftBorder = Layout.leftBorder
@@ -1194,6 +1207,7 @@ class PlaylistView: NSView {
         // and sits inside its right border, which is where the shared painter draws it (W178).
         let bounds = NSRect(origin: .zero, size: effectiveSize)
         let closeRect = WindowManager.shared.hostedSurfaceFrameArtwork(for: effectiveSize) == nil
+            && !SkinnedSurfaceChrome.hidesPaletteTitleBar
             ? NSRect(x: effectiveSize.width - 20, y: 0, width: 20, height: 14)
             : SkinnedSurfaceChrome.closeButtonRect(in: bounds, captionHeight: Layout.titleBarHeight,
                                                    width: 20)

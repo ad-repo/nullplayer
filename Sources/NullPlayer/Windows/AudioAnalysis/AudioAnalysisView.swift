@@ -190,6 +190,17 @@ final class AudioAnalysisView: NSView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// A titleless WMP window's close sits over the content corner, so it has to win against the
+    /// SwiftUI panes beneath it.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = superview.map { convert(point, from: $0) } ?? point
+        if hostedContext == nil, SkinnedSurfaceChrome.hidesPaletteTitleBar,
+           hitTestCloseButton(at: convertToSkinCoordinates(local)) {
+            return self
+        }
+        return super.hitTest(point)
+    }
+
     override func mouseDown(with event: NSEvent) {
         if hostedContext != nil {
             hostedDrag.prime(event, context: hostedContext)
