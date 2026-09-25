@@ -723,22 +723,24 @@ defects behind it (W120, W51) were both visible in a single 200-character tag.
 ### The residue `WMP_RENDER_OCCLUDED` does not explain (W149)
 
 Reproduce with `WMP_SKIN=<corpus> WMP_RENDER_HOST=playing WMP_RENDER_OCCLUDED=1` and read the
-`reached=rect-only` lines. **11 controls remain unreachable after W148**, re-measured 2026-09-12
-after W150 (was 16; `Gold`'s five containers and four others were the position-map half). It is the
-residue that rule does not explain rather than a regression from it.
+`reached=rect-only` lines. **W149 closed every row it named as not a defect** (2026-09-24, 10 rows in
+4 archives; `STALKER`'s `blankRate4` had already gone). **The probe tests the load-time layout,
+before any script has moved, clipped or swapped a node**, so a `rect-only` row is a question, not a
+lost control. Before ranking one, rule out the four shapes W149 found:
 
-**10 of the original 16 are `<BUTTONGROUP>` *containers* with no mapping children** — `Gold`'s five
-stacked `drawerButton*` at one 144x123 rect, `The_Doobie_Brothers`, `Plus! SlimLine`,
-`Plus! Professional` — and a group with no `<BUTTONELEMENT>` dispatches nothing however it is ranked.
-**Decide whether those should be hit targets at all before counting them as work.**
+- **A closed drawer.** `Sports`' `eq2`–`eq8` sit in `EqVid`, parked behind the main panel under
+  `pl2`–`pl4`; `ToggleEqVidView()` moves it clear. Read the container's `moveto` targets.
+- **A stacked twin running the same handler.** `anime`'s `plHandle`/`closepl` share a frame and both
+  run `togglePlView()`; whichever is on top answers and the click does the same thing.
+- **A `<BUTTONGROUP>` container whose element still answers.** `Plus! Professional`'s pause group:
+  `WMP_RENDER_CLICK` at its centre reaches the `pauseElement`, `action=pause`. A group with no
+  element of its own dispatches nothing however it is ranked.
+- **A clipped sprite frame.** `T3-Skynet_Media_Player`'s `timeSign` is a 168-wide strip shown
+  through a 14x15 cell; outside the cell it is `clipped`, and inside it the elapsed-time frame is
+  all transparency colour, so `not-drawn-here` is right.
 
-The six that are real: `Sports`'s `eq2`–`eq8` sliders answer to `pl2`/`pl3`/`pl4` `<TEXT>` nodes
-drawn over them — the same question in reverse, since a `<TEXT>` keeps its box because glyphs are not
-a hit shape (`WMPHitCoverageBuilder`), and that skin trades 7 sliders for the 3 texts it gained;
-`anime`'s `plHandle` answers to `closepl`; `STALKER`'s `blankRate4` to a plain `<BUTTON>` while its
-other four stars work; `T3-Skynet_Media_Player`'s `timeSign` is authored at `x=-25` and is mostly off
-its own canvas. **Name the node before ranking the count**, the same rule this file states for
-`unresolved`.
+Confirm with `WMP_RENDER_CLICK` at the control's drawn pixels and read `hit=`/`refused=`. **Name the
+node before ranking the count**, the same rule this file states for `unresolved`.
 
 ### Read the probe for what is *absent*
 

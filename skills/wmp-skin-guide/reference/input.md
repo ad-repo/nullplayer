@@ -176,9 +176,10 @@ a dispatch defect — it is a control the pointer never reached at all.
   rating stars, `Radio`'s equalizer sliders, `XBOX`'s `xDown`.
 
 Net over the 180-archive corpus, `WMP_RENDER_HOST=playing`: **112 controls in 33 archives recovered,
-11 lost**. The 11 are open and named in `WMP_TASKS.md` (W149): `Sports`'s 7 equalizer sliders under
-its playlist text, `anime`, `STALKER`, `T3-Skynet_Media_Player`, and one `<BUTTONGROUP>` container
-with no mapping children, which dispatches nothing in any case.
+11 lost**. W149 closed all of them as not defects (2026-09-24): each is lost only in the load-time
+layout — a closed drawer, a stacked twin running the same handler, a container whose element still
+answers, a clipped sprite frame — see `harness.md` § *The residue `WMP_RENDER_OCCLUDED` does not
+explain (W149)*.
 
 ## Phase 4 input and transport contracts
 

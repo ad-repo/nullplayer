@@ -42,6 +42,20 @@ taken before that date is inflated rather than merely stale.
 
 
 
+## W149 — the controls `WMP_RENDER_OCCLUDED` still lost: closed as not defects (closed 2026-09-24)
+
+Re-measured 2026-09-24 (`WMP_RENDER_HOST=playing WMP_RENDER_OCCLUDED=1`) over the five named
+archives: **10 `rect-only` rows in 4 archives**, and `STALKER`'s `blankRate4` no longer appears. Each
+was read against its markup and script and none is a reachable defect — the probe tests the
+load-time layout, before any script moves, clips or swaps a node. `Sports`' `eq2`–`eq8` sit in the
+closed `EqVid` drawer, which `ToggleEqVidView()` moves clear of `pl2`–`pl4` (verified live by the
+reporter: the sliders work). `anime`'s `plHandle` is one of two stacked handles that both run
+`togglePlView()`. `Plus! Professional`'s row is the pause `<BUTTONGROUP>` container;
+`WMP_RENDER_CLICK=mainView@344,129` reaches its `pauseElement`, `action=pause`. `T3-Skynet`'s
+`timeSign` is a sprite strip clipped to a 14x15 cell whose elapsed-time frame is all transparency
+colour, so a click there correctly falls through (`refused=… not-drawn-here`). The reading rule is
+`harness.md` § *The residue `WMP_RENDER_OCCLUDED` does not explain (W149)*.
+
 ## W266 — the Xbox skins' `event.keyCode` write, and a shutter that never opened (closed 2026-09-24)
 
 `Official_Xbox_XP`, `Official_Xbox_MP71` and `XBOX` share `xbox.js`, whose `resetCode()` runs
