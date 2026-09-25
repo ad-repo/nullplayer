@@ -296,12 +296,14 @@ extension WMPTransportAction {
     /// themselves and posting the command too would toggle the library open and shut again.
     /// **Nothing headless saw this**: `WMP_RENDER_CLICK` runs the authored handler and prints its
     /// host command, and never applies `WMPHitTarget.action` the way `WMPMainView` does.
-    /// **Only where the tag is the source of the action.** A plain `<BUTTON>` whose action was
-    /// *derived* from its own handler literal is the Phase 4 fallback above, and suppressing the
-    /// command there would leave the button with nothing but the handler it was standing in for.
+    /// **A plain `<BUTTON>` whose action was *derived* from its own handler literal is owned by
+    /// that handler too (W265).** The handler runs, so posting the derived action as well is the
+    /// same double command — and on a toggle it cancels out: `Frostbite`'s
+    /// `onClick="player.settings.mute = !player.settings.mute"` muted natively, then the script
+    /// read the pre-click snapshot and unmuted 5 ms later, measured live. The derived action is
+    /// still carried for what reads it — the sticky latch and the enabled state.
     static func handlerOwnsAction(_ action: WMPTransportAction, on node: WMPNode) -> Bool {
-        guard kindAction(for: node) == action else { return false }
-        return statements(ofHandler: "onClick", on: node).contains { literalAction($0) == action }
+        statements(ofHandler: "onClick", on: node).contains { literalAction($0) == action }
     }
 
     /// One authored handler, lowercased, whitespace stripped, split into statements, with the

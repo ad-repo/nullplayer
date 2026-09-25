@@ -80,7 +80,8 @@ final class WMPVideoCastTransportTests: XCTestCase {
         host.perform(.toggleMute, value: nil)
         XCTAssertEqual(cast.volumes.last, 0)
         XCTAssertTrue(host.snapshot.muted)
-        XCTAssertEqual(host.snapshot.volume, 0, accuracy: 0.001)
+        XCTAssertEqual(host.snapshot.volume, 0.6, accuracy: 0.001,
+                       "a skin reads the level it was muted from, not zero (W265)")
         host.perform(.toggleMute, value: nil)
         XCTAssertEqual(cast.volumes.last, 0.6)
         XCTAssertFalse(host.snapshot.muted)

@@ -47,6 +47,13 @@ final class WMPAudioEngineHost: WMPHost {
     private var scanTimer: Timer?
     private var scanDirection: WMPScanDirection?
     private var preMuteVolume: Float = 0.2
+    /// **Mute is not a volume of zero to a skin (W265).** It is implemented here by zeroing the
+    /// output, but WMP keeps `settings.volume` where it was while muted, and skins rely on that:
+    /// `Frostbite`'s volume knob binds `wmpprop:player.settings.volume` and its `value_onchange`
+    /// ends `player.settings.mute = false`, so reporting the zero moved the knob, raised the
+    /// handler, and unmuted 40 ms after every press. Set by the mute toggle only; a volume write
+    /// clears it, because that write is what puts sound back.
+    private var muteLatched = false
     /// **A cast device's volume is write-only from here, so the skin's slider needs a memory.**
     ///
     /// `ChromecastManager.getVolume()` is a stub returning 1.0 and nothing parses a level out of
@@ -151,7 +158,7 @@ final class WMPAudioEngineHost: WMPHost {
         let sourceGains = (0..<sourceLayout.bandCount).map { engine.getEQBand($0) }
         let classicGains = EQBandRemapper.remap(gains: sourceGains, from: sourceLayout, to: .classic10)
         var result = WMPHostSnapshot(state: state, currentTime: Self.finite(engine.currentTime),
-            duration: Self.finite(engine.duration), volume: Double(max(0, min(1, engine.volume))),
+            duration: Self.finite(engine.duration), volume: reportedVolume(engine.volume, preMute: preMuteVolume),
             balance: Double(max(-1, min(1, engine.balance))), muted: engine.volume == 0,
             shuffle: engine.shuffleEnabled, repeatMode: engine.repeatEnabled,
             bitrate: Double(track?.bitrate ?? 0) * 1_000,
@@ -180,7 +187,7 @@ final class WMPAudioEngineHost: WMPHost {
             result.currentTime = Self.finite(cast.currentTime)
             result.duration = Self.finite(cast.duration)
             result.metadata = WMPMediaMetadata(title: cast.title ?? "")
-            result.volume = Double(max(0, min(1, castVolume)))
+            result.volume = reportedVolume(castVolume, preMute: preMuteCastVolume)
             result.muted = castVolume == 0
             result.playlistCount = max(1, result.playlistCount)
             videoEventLatch.reset()
@@ -209,7 +216,7 @@ final class WMPAudioEngineHost: WMPHost {
         // local film as a network stream.
         result.metadata = WMPMediaMetadata(title: video.currentTitle ?? "",
                                            sourceURL: Self.sourceURLSpelling(video.currentArtworkTrack?.url))
-        result.volume = Double(video.volume)
+        result.volume = reportedVolume(video.volume, preMute: preMuteVolume)
         result.muted = video.volume == 0
         result.playlistCount = max(1, result.playlistCount)
         var currentVideo = WMPVideoSnapshot()
@@ -249,7 +256,7 @@ final class WMPAudioEngineHost: WMPHost {
             case .volume:
                 if let volume = value?.finiteNumber {
                     syncCastVolumeLatch()
-                    castVolume = Float(max(0, min(1, volume)))
+                    castVolume = Float(max(0, min(1, volume))); muteLatched = false
                     cast.setVolume(castVolume)
                 }
                 return
@@ -259,6 +266,7 @@ final class WMPAudioEngineHost: WMPHost {
                 syncCastVolumeLatch()
                 if castVolume > 0 { preMuteCastVolume = castVolume; castVolume = 0 }
                 else { castVolume = max(0.01, min(1, preMuteCastVolume)) }
+                muteLatched = castVolume == 0
                 cast.setVolume(castVolume)
                 return
             // A cast film is one item with nowhere to skip to, and `next`/`previous` must not fall
@@ -280,11 +288,12 @@ final class WMPAudioEngineHost: WMPHost {
                 if let fraction = value?.finiteNumber { video.seek(to: max(0, min(1, fraction)) * video.duration) }
                 return
             case .volume:
-                if let volume = value?.finiteNumber { video.volume = Float(max(0, min(1, volume))) }
+                if let volume = value?.finiteNumber { video.volume = Float(max(0, min(1, volume))); muteLatched = false }
                 return
             case .toggleMute:
                 if video.volume > 0 { preMuteVolume = video.volume; video.volume = 0 }
                 else { video.volume = max(0.01, min(1, preMuteVolume)) }
+                muteLatched = video.volume == 0
                 return
             default: break
             }
@@ -302,13 +311,14 @@ final class WMPAudioEngineHost: WMPHost {
             engine.seek(to: max(0, min(1, fraction)) * engine.duration)
         case .volume:
             guard let volume = value?.finiteNumber else { return }
-            engine.volume = Float(max(0, min(1, volume)))
+            engine.volume = Float(max(0, min(1, volume))); muteLatched = false
         case .balance:
             guard let balance = value?.finiteNumber else { return }
             engine.balance = Float(max(-1, min(1, balance)))
         case .toggleMute:
             if engine.volume > 0 { preMuteVolume = engine.volume; engine.volume = 0 }
             else { engine.volume = max(0.01, min(1, preMuteVolume)) }
+            muteLatched = engine.volume == 0
         case .toggleShuffle: engine.shuffleEnabled.toggle()
         case .toggleRepeat: engine.repeatEnabled.toggle()
         case let .playPlaylistItem(index): engine.playTrack(at: index)
@@ -424,6 +434,13 @@ final class WMPAudioEngineHost: WMPHost {
         guard casting != wasCastingVideo else { return }
         castVolume = 1
         preMuteCastVolume = 0.2
+        muteLatched = false
+    }
+
+    /// The level a skin reads: the one it was muted from while the mute toggle holds the output
+    /// at zero, the output itself otherwise — so a slider dragged to zero still reads zero.
+    private func reportedVolume(_ output: Float, preMute: Float) -> Double {
+        Double(max(0, min(1, muteLatched && output == 0 ? preMute : output)))
     }
 
     private func startScanning(_ direction: WMPScanDirection) {

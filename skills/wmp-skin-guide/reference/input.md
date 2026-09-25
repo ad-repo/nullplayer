@@ -106,9 +106,10 @@ a dispatch defect — it is a control the pointer never reached at all.
   and never ran the handler at all. **Reach: 73 elements across 19 of 182 archives** (`next` 17 uses
   / 16 skins, `previous` 15 / 14, `play` 20 / 19, `stop` 14 / 13, `pause` 7 / 7), counted over
   `wmp_markup_census.sh`'s flat files. **It is a dedupe and not "an authored handler wins"**: three
-  corpus elements author a handler that only plays a sound and rely on the tag for the transport,
-  and it is scoped to actions that come from the *tag*, so the Phase 4 fallback that derives an
-  action from a plain `<BUTTON>`'s own literal keeps it. This is the rule `dispatchScriptEvent`
+  corpus elements author a handler that only plays a sound and rely on the tag for the transport.
+  **Since W265 a plain `<BUTTON>` whose action was *derived* from its own literal is owned by the
+  handler too** — W243 had exempted it, and it doubled on **108 of 179 archives**; the derived action
+  is kept only for the sticky latch and the enabled state. This is the rule `dispatchScriptEvent`
   already applied to `<RETURNBUTTON>`, where `anemone` and `modernblue` spell
   `view.returnToMediaCenter()` themselves. **Why it outlived every headless sweep:**
   `WMP_RENDER_CLICK` runs the authored handler and prints its host command and never applies
@@ -116,6 +117,28 @@ a dispatch defect — it is a control the pointer never reached at all.
   states the gap on the flag itself. The symptoms are shaped like the engine losing a click, not
   doubling one: `play`/`pause`/`stop` are idempotent and hide it, a `sticky` toggle driven this way
   returns to where it started, and only `next`/`previous` show the skip.
+- **Mute and its button, driven live on `Frostbite` and `Plus! Professional` (W265).** Three defects
+  stood behind "the mute button never shows down while muted", and the first meant it never muted:
+  - `Frostbite`'s `<BUTTON sticky="true" down="wmpprop:player.settings.mute"
+    onClick="player.settings.mute = !player.settings.mute">` (the corpus idiom — **50 archives** bind
+    `down` that way) posted the derived `.toggleMute` *and* ran the handler, which read the
+    pre-click snapshot and unmuted 5 ms later. See the W243 bullet above.
+  - **A muted host reports the level it was muted from, not zero.** `WMPAudioEngineHost` mutes by
+    zeroing the output (engine, local video and cast alike) and used to report that zero as
+    `settings.volume`. WMP keeps the volume while muted, and `Frostbite`'s knob binds
+    `wmpprop:player.settings.volume` with a `value_onchange` that ends `player.settings.mute = false`,
+    so the settle after every mute moved the knob and unmuted ~40 ms later. `muteLatched` holds the
+    pre-mute level for the readback; any volume write clears it, and a slider dragged to zero still
+    reads zero.
+  - **`<MUTEBUTTON>`, `<REPEATBUTTON>` and `<SHUFFLEBUTTON>` are sticky unless they author
+    `sticky="false"`.** One of their 14 corpus uses (`QuickSilver`'s mute) says `sticky`, and
+    `WMPMainView.refreshHostState` latches only sticky hits from the host, so `Plus! Professional`'s
+    mute never drew `downImage`.
+
+  None of it has a headless signature: `WMP_RENDER_CLICK` never applies the hit's action and a sweep's
+  host never mutes, and no shipped trace prints a host command. Drive it with `WMP_CLICK_TRACE=1`
+  (one `click` per press), listen for the silence, and read the down face off a `winhelper capture`
+  taken with the pointer moved away — a capture under the pointer shows the hover face.
 - **A control the host has greyed out is still a control, and the window does not move under it
   (W154).** `WMPMainView.interactiveTarget` answers `nil` for a disabled target exactly as it does
   for bare artwork, and `mouseDown` reads that as "no control here" — so pressing a greyed transport

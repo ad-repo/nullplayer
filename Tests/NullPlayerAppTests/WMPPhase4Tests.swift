@@ -99,10 +99,10 @@ final class WMPPhase4Tests: XCTestCase {
     /// in their own `onClick`. `WMPMainView.mouseUp` raised the handler and then posted the action,
     /// so one click on `ALXMorph`'s Next advanced two tracks of a three-index cue.
     ///
-    /// The three cases below are the whole rule, and the second and third are why it is a dedupe
-    /// rather than "an authored handler wins": three corpus elements author a handler that only
-    /// plays a sound and rely on the tag for the transport, and a plain `<BUTTON>` whose action was
-    /// *derived* from its handler literal would be left with nothing at all.
+    /// The second case is why it is a dedupe rather than "an authored handler wins": three corpus
+    /// elements author a handler that only plays a sound and rely on the tag for the transport.
+    /// The third is W265: a plain `<BUTTON>` whose action was *derived* from its handler literal is
+    /// owned by that handler too, or a toggle runs twice and cancels — `Frostbite`'s mute.
     func testHandlerThatReissuesItsOwnTransportCommandOwnsTheClick() throws {
         let document = try WMPXMLParser().parse("""
         <VIEW><NEXTELEMENT id="doubled" onClick="checkSoundPref('click.wav');player.controls.next()"/>
@@ -117,7 +117,32 @@ final class WMPPhase4Tests: XCTestCase {
         XCTAssertEqual(WMPTransportAction.authoredAction(for: sound), .stop)
         XCTAssertFalse(WMPTransportAction.handlerOwnsAction(.stop, on: sound))
         XCTAssertEqual(WMPTransportAction.authoredAction(for: derived), .next)
-        XCTAssertFalse(WMPTransportAction.handlerOwnsAction(.next, on: derived))
+        XCTAssertTrue(WMPTransportAction.handlerOwnsAction(.next, on: derived))
+    }
+
+    /// **A dedicated toggle tag is sticky without saying so (W265).** One of the corpus's 14
+    /// `<MUTEBUTTON>`/`<REPEATBUTTON>`/`<SHUFFLEBUTTON>` authors `sticky`, and without it the button
+    /// was never latched from the host, so `Plus! Professional`'s mute never drew its down face.
+    func testDedicatedToggleButtonsAreStickyUnlessTheyDeclineIt() async throws {
+        let sheet = try WMPSkinTestSupport.encodedImage(width: 10, height: 10,
+            rgba: Self.flood(10, 10) { _, _ in [10, 10, 10, 255] })
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="40" height="10">
+            <MUTEBUTTON id="mute" left="0" top="0" image="b.png"/>
+            <REPEATBUTTON id="repeat" left="10" top="0" image="b.png"/>
+            <SHUFFLEBUTTON id="shuffle" left="20" top="0" image="b.png" sticky="false"/>
+            <BUTTON id="plain" left="30" top="0" image="b.png"/></VIEW></THEME>
+            """.utf8)), WMPTestArchiveEntry("b.png", data: sheet)
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let sticky = Dictionary(uniqueKeysWithValues: scene.hits.compactMap { hit in
+            hit.nodeID.map { ($0, hit.sticky) } })
+        XCTAssertEqual(sticky["mute"], true)
+        XCTAssertEqual(sticky["repeat"], true)
+        XCTAssertEqual(sticky["shuffle"], false, "an authored sticky=\"false\" still wins")
+        XCTAssertEqual(sticky["plain"], false)
     }
 
     /// The flag has to survive the trip a click actually takes — builder to `WMPHitMetadata` to the
@@ -315,6 +340,26 @@ final class WMPPhase4Tests: XCTestCase {
         XCTAssertTrue(hit.clipRect?.contains(point) ?? true,
                       "mapped target probe must be inside its inherited clip")
         XCTAssertEqual(WMPHitTester(hits: scene.hits).hitTest(point)?.stableID, target.stableID)
+    }
+
+    /// **A muted host still reports the level it was muted from (W265).** Mute zeroes the output,
+    /// but WMP keeps `settings.volume`, and `Frostbite`'s volume knob unmutes from its own
+    /// `value_onchange` when the bound value moves. A slider dragged to zero is not a mute and
+    /// still reads zero.
+    @MainActor
+    func testMutedHostReportsTheVolumeItWasMutedFrom() {
+        let engine = AudioEngine()
+        let host = WMPAudioEngineHost(audioEngine: engine)
+        host.perform(.volume, value: .number(0.4))
+        host.perform(.toggleMute, value: nil)
+        XCTAssertEqual(engine.volume, 0, "the output is silenced")
+        XCTAssertTrue(host.snapshot.muted)
+        XCTAssertEqual(host.snapshot.volume, 0.4, accuracy: 0.001)
+        host.perform(.toggleMute, value: nil)
+        XCTAssertFalse(host.snapshot.muted)
+        XCTAssertEqual(host.snapshot.volume, 0.4, accuracy: 0.001)
+        host.perform(.volume, value: .number(0))
+        XCTAssertEqual(host.snapshot.volume, 0, accuracy: 0.001)
     }
 
     @MainActor

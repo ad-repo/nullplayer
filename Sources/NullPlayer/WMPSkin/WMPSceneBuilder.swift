@@ -1759,7 +1759,10 @@ struct WMPSceneBuilder: @unchecked Sendable {
             if isInteractive(node.kind) || authorsInputHandler(node), visible != nil, !passthrough {
                 let enabled = literalString(node, "enabled")?.caseInsensitiveCompare("false") != .orderedSame
                     && !interactionState.disabledNodesForScene.contains(node.stableID)
-                let sticky = literalString(node, "sticky")?.caseInsensitiveCompare("true") == .orderedSame
+                // A `<MUTEBUTTON>`, `<REPEATBUTTON>` or `<SHUFFLEBUTTON>` is a toggle by being one,
+                // and the corpus authors `sticky` on one of their 14 uses (W265).
+                let sticky = literalString(node, "sticky").map { $0.caseInsensitiveCompare("true") == .orderedSame }
+                    ?? [.muteButton, .repeatButton, .shuffleButton].contains(node.kind)
                 var mappingImage: WMPMappingImage?
                 var mappingTargets: [WMPHitTarget] = []
                 if node.kind == .buttonGroup,
