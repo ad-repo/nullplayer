@@ -1290,8 +1290,8 @@ actor WMPScriptRuntime {
         context?.adoptCurrentLibraryPlaylist(reference)
     }
 
-    func setWidgetSelection(stableID: Int, index: Int) {
-        context?.setElementSelection(stableID: stableID, index: index)
+    func setWidgetSelection(stableID: Int, index: Int, viewID: String) {
+        context?.setElementSelection(stableID: stableID, index: index, viewID: viewID)
     }
 
     func setWidgetValue(stableID: Int, value: Double, viewID: String) {

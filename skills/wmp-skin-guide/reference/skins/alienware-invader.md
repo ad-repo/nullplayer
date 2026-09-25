@@ -251,9 +251,10 @@ refill, preview, play and search all work on Local Files and on Jellyfin's 1,850
 `object-model.md` § *Pitfalls this surface taught* handed `playSelPlaylist()` the first playlist
 ever previewed. Fixed there.
 
-Seen and not fixed: `playSelPlaylist()` ends with `plListBox1.selectedItem = 0`, and the chooser
-keeps the played row highlighted rather than moving to "Now Playing"; and after a relaunch `btnPl`
-needs two clicks, the first flipping the skin's own saved `plViewer` toggle.
+Seen and not fixed, both filed as lower priority: `playSelPlaylist()` ends with
+`plListBox1.selectedItem = 0`, and the chooser keeps the played row highlighted rather than moving
+to "Now Playing" (W300); and after a relaunch `btnPl` needs two clicks, because `onLoadSkin()`'s
+`theme.openView('plView')` opens nothing while the saved `plViewer` says it is open (W299).
 
 ## What is already ruled out
 

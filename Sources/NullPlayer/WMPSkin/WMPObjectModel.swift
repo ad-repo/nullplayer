@@ -320,6 +320,10 @@ final class WMPObjectModel {
     struct ElementRegistry {
         fileprivate let elements: [String: WMPScriptElement]
         fileprivate let order: [String]
+
+        func element(stableID: Int) -> WMPScriptElement? {
+            elements.values.first { $0.stableID == stableID }
+        }
     }
 
     func captureElements() -> ElementRegistry { .init(elements: elements, order: elementOrder) }

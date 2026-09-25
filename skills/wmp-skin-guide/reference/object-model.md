@@ -595,6 +595,14 @@ rule on the host side: `WMPLibrarySource.append` finds tracks by URL in a dictio
   first created. `NVIDIA`'s chooser and search box are first hosted in the frame that sizes them, so
   both came up empty — no rows, no "Search for" — and nothing refilled them until some later
   transaction changed the rows. `WMPMainView` keeps the last of each and applies them on creation.
+- **A user's input is written into its own view's elements, never the installed ones** (W284). The
+  context holds only the view that transacted last, and `Batman Begins`' `controlView` transacts
+  every 100 ms, so a chooser click usually landed while `plView` was stashed: `setElementSelection`
+  found no element, the row was dropped, and `getSelPlaylist()` read "Now Playing" — an empty
+  preview, and a double-click that played nothing. It is a race, so it looked like a synthetic-click
+  fault (a reporter's own first double-click lost it too). `setWidgetSelection` now takes the view
+  id and writes into that view's registry when another is installed. `setElementValue`, `Text` and
+  `Down` still look only in the installed view; nothing has been measured failing through them.
 
 `WMPLibraryTests` and `WMPLibrarySurfaceTests` pin all of the above.
 

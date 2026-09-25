@@ -504,9 +504,17 @@ final class WMPScriptContext: @unchecked Sendable {
 
     /// A `<LISTBOX>` row the user picked, as `selectedItem` — the property WMP moves and the one
     /// `selectedItem_onChange` handlers read back (W136).
-    func setElementSelection(stableID: Int, index: Int) {
+    ///
+    /// **Written into the list's own view, installed or not.** One context serves every window and
+    /// holds only the view that transacted last, so a `controlView` whose 100 ms timer ran between
+    /// the click and its `selectedItem_onChange` left the list stashed: the row was never recorded,
+    /// and `getSelPlaylist()` read "Now Playing" and previewed nothing (W284).
+    func setElementSelection(stableID: Int, index: Int, viewID: String) {
         queue.sync {
-            guard let element = model.elements.values.first(where: { $0.stableID == stableID })
+            let key = WMPPath.fold(viewID)
+            let stashed = key == installedViewID ? nil : viewRegistries[key]?.element(stableID: stableID)
+            guard let element = stashed
+                    ?? model.elements.values.first(where: { $0.stableID == stableID })
             else { return }
             element.properties["selecteditem"] = .number(Double(index))
         }

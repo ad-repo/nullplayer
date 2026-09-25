@@ -1149,7 +1149,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         view.onListSelected = { [weak self, weak presentation] stableID, targetID, index in
             guard let self, let presentation, let scriptRuntime = self.scriptRuntime else { return }
             self.enqueueListEvent(presentation) {
-                await scriptRuntime.setWidgetSelection(stableID: stableID, index: index)
+                await scriptRuntime.setWidgetSelection(stableID: stableID, index: index,
+                                                      viewID: presentation.viewID)
                 self.dispatchScriptEvent(presentation, name: "selecteditem_onchange",
                                          targetID: targetID, targetStableID: stableID)
             }
@@ -1158,7 +1159,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             guard let self, let presentation, let scriptRuntime = self.scriptRuntime else { return }
             self.enqueueListEvent(presentation) {
                 // `onDblClick` reads `selectedItem`, so it is the row that was double-clicked.
-                await scriptRuntime.setWidgetSelection(stableID: stableID, index: index)
+                await scriptRuntime.setWidgetSelection(stableID: stableID, index: index,
+                                                      viewID: presentation.viewID)
                 self.dispatchScriptEvent(presentation, name: "dblclick",
                                          targetID: targetID, targetStableID: stableID)
             }

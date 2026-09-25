@@ -300,6 +300,33 @@ final class WMPLibraryTests: XCTestCase {
         await session.teardown()
     }
 
+    /// **A clicked row reaches its list while another window's view is the one installed** (W284).
+    /// One context serves every window, and `Batman Begins`' `controlView` transacts every 100 ms,
+    /// so the click usually landed while the chooser's view was stashed. The row was dropped, and
+    /// `getSelPlaylist()` read "Now Playing".
+    func testAListBoxSelectionReachesItsViewWhileAnotherIsInstalled() async throws {
+        let skin = try await load("""
+        <THEME><VIEW id="main" width="200" height="200">
+          <LISTBOX id="box" left="0" top="0" width="100" height="100"/>
+          <PLAYLIST id="pl" left="100" top="0" width="100" height="100"/>
+        </VIEW><VIEW id="control" width="10" height="10"/></THEME>
+        """)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        await session.setLibrary(catalog())
+        _ = await transact(session, skin, "box.appendItem('Now Playing'); box.appendItem('B');")
+        _ = await session.transact(skin: skin, viewID: "control", size: .init(width: 10, height: 10),
+                                   snapshot: WMPHostSnapshot(), event: nil)
+        await session.setWidgetSelection(stableID: try stableID(skin, "box"), index: 1, viewID: "main")
+        let output = await transact(session, skin, """
+            pl.playlist = player.playlistCollection.getByName(box.getItem(box.selectedItem)).item(0);
+            player.currentPlaylist = pl.playlist;
+            player.controls.play();
+            """)
+        XCTAssertEqual(output.hostCommands.first { $0.action == "loadLibraryTracks" }?.value?.string,
+                       "1,2")
+        await session.teardown()
+    }
+
     /// A different source is a different library: a pane pointed at the old one's playlist goes
     /// back to the live queue rather than naming a playlist the new source does not have.
     func testSwitchingSourceReleasesAPanesLibraryPlaylist() async throws {
