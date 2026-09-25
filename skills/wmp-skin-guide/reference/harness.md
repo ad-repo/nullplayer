@@ -521,8 +521,9 @@ Windows are moved back on-screen afterwards. They are the user's.
 
 *"Every skin has this button and it does nothing"* is a shape of report the census cannot answer,
 and W100 is the worked example: it stood **unmeasured for three days** at a recorded reach of 2
-skins and the true number was **162 of 180**. The route that produced it, in order, because each
-step exists to survive a trap the previous one hides:
+skins and the true number was **162 of 180**. **`scripts/wmp_control_audit.py <member>` runs this
+route** (§ *`scripts/wmp_control_audit.py`* says which of its click points to trust); the steps are
+kept here because each exists to survive a trap the previous one hides:
 
 1. **Scan the script text, not the census** (`scripts/wms_grep.py` does the decoding and prints the
    breakdown). `wmp_skin_census.sh` drives `onLoad`; a control's
@@ -1236,6 +1237,37 @@ attribute tally; use this for everything else — a member name, a handler body,
 
 The decoding, header repair and exclusion reading live in `scripts/wmp_corpus.py`, and
 `wmp_handler_scope_census.py` imports them from there; a new Python corpus scan should too.
+
+### `scripts/wmp_control_audit.py [--render <render.txt>] [--sample N] [--skin <archive>] [-v] <member>`
+
+*Which authored controls reach this member, and where is each one clicked?* § *Auditing one authored
+control across the whole corpus* as one command (W267). Steps 1–2 need nothing but the corpus and
+take ~2 s: every handler attribute resolved through the skin's functions to three levels, with the
+counts by tag, handler, tooltip and "in the first `<VIEW>`", and the encoding breakdown as
+calibration. Steps 3–5 need a probe capture, which **the census does not contain** — it never sets
+`WMP_RENDER_PROBE` — so without `--render` the script prints the sweep that makes one (~35 s for the
+corpus once the tests are built; a directory handed to `WMP_SKIN` must hold copies — the sweep
+skips symlinks and reports "No .wmz archives"). `-v` prints one row per control with its point and where the point
+came from; `--sample N` prints the `WMP_RENDER_CLICK` + `WMP_CALL_TRACE=1` runs.
+
+**Trust the point by its source column.** Checked 2026-09-25 by clicking every located W100 control
+(`returnToMediaCenter`, 199 controls in 165 of 179 archives — the raw `wms_grep.py` count, exactly):
+
+| source | hit the control |
+|---|---|
+| `probe` — a drawn node's frame centre | 55 of 55 |
+| `mapping` — a drawn group's bitmap, median pixel of the colour | 74 of 76 |
+| `authored`, `authored-mapping` — the authored `left`/`top` chain | **26 of 65** |
+| `none (<why>)` — colour absent from the bitmap, or the bitmap absent from the archive | 3, all real skin defects |
+
+The authored fallback is what step 4 prescribes and it is right less than half the time: it cannot
+see alignment, script moves, hidden groups or views the sweep never dumps. The script prints it
+flagged unverified and never samples it. The two `mapping` misses are `digitaldj` (its script
+disables the transport until the splash is dismissed) and `Plus!_The_Bionic_Dot`, whose
+`main_blue_set_map.png` holds `#0066FF` where the click lands and whose group still reports
+`unmapped-pixel` — unexplained as of this writing. **W100's own 162/180 is not reproducible**: five
+archives joined the corpus after it closed (`Ovoid` and `Raptor` author the button) and `Darkling`
+(one control) is now excluded.
 
 ### `scripts/png_diff.py <a> <b>` / `<base-dir> <curr-dir> [--summary] [--top N]`
 

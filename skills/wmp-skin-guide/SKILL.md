@@ -149,13 +149,14 @@ one line that separates "the drawer opened" from "the window followed" is `viewS
 line; the picture cannot tell you. See `reference/skins/compact.md`.
 
 **When the report is about a control rather than one skin — "every skin has this button and it does
-nothing" — the route is `reference/harness.md` § *Auditing one authored control across the whole
-corpus*, and the live half is § *A live pass is a window frame, before and after*.** The census
-cannot answer that question: it drives `onLoad` and a control's demand is in `onClick`, which is how
-W100 stood at a recorded reach of 2 skins against a true 162. A window frame read before and after a
-`CGEvent` click is the measurement, it scales to a skin per launch, and the first thing to check in
-any capture is that the window size matches the view's canvas — the unskinned view is **440x170** and
-a launch that failed to select the skin looks exactly like a button that does nothing.
+nothing" — the route is `scripts/wmp_control_audit.py <member>`, which runs
+`reference/harness.md` § *Auditing one authored control across the whole corpus*, and the live half
+is § *A live pass is a window frame, before and after*.** The census cannot answer that question:
+it drives `onLoad` and a control's demand is in `onClick`, which is how W100 stood at a recorded
+reach of 2 skins against a true 162. A window frame read before and after a `CGEvent` click is the
+measurement, it scales to a skin per launch, and the first thing to check in any capture is that
+the window size matches the view's canvas — the unskinned view is **440x170** and a launch that
+failed to select the skin looks exactly like a button that does nothing.
 
 The ones that cost the most, in WMP terms:
 
