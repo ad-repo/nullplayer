@@ -241,6 +241,20 @@ five different numbers on five windows and as nothing at all once it is repaired
 appears on one hosted window and not the others, read the run in **points** before concluding the
 window is at fault: `sidePoints = gaps[1] × height`.
 
+## W274, 2026-09-25 — the library chooser against Local Files and Jellyfin
+
+Driven live, reporter-accepted. `plView` fills its chooser in `onLoadPl()` (the `WoW` shape, so a
+source switch reloads the view rather than raising `CdromMediaChange`), and it opens from `btnPl`
+in `mainView`'s `m_top_map.png` group — `#0033ff`, window point `154,132`. Fill, source-switch
+refill, preview, play and search all work on Local Files and on Jellyfin's 1,850 playlists with no
+`terminated` line, **except play of any playlist after the first**: the proxy cache in
+`object-model.md` § *Pitfalls this surface taught* handed `playSelPlaylist()` the first playlist
+ever previewed. Fixed there.
+
+Seen and not fixed: `playSelPlaylist()` ends with `plListBox1.selectedItem = 0`, and the chooser
+keeps the played row highlighted rather than moving to "Now Playing"; and after a relaunch `btnPl`
+needs two clicks, the first flipping the skin's own saved `plViewer` toggle.
+
 ## What is already ruled out
 
 | Theory | Why it is wrong |

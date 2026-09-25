@@ -582,6 +582,14 @@ rule on the host side: `WMPLibrarySource.append` finds tracks by URL in a dictio
   `item(i).getItemInfo("Title")` demanded every server playlist — 1,850 serial fetches on Jellyfin
   for a list of names, from `WoW` as much as `NVIDIA`. `count` and `item(i)` read the tracks; `name`
   and `getItemInfo` do not.
+- **The JS proxy caches only an object's own shape** (W274). Every element global is one proxy
+  for the session, and it used to cache every object-valued member it answered — so
+  `playlist1.playlist` kept answering the first playlist ever stored there. `Alienware Invader`'s
+  `playSelPlaylist()` then assigned the playing playlist back to itself (inert), or after a source
+  switch a playlist the new catalog does not hold, and a second choice never played. Now a member
+  is cached only when its answer is its own child path (`player` → `player.controls`); one that
+  answers any other object is a stored value and is asked again on every read. A render sweep
+  moved nothing (528/529 identical, the other `Scooby-Doo_2/infoView`).
 - **A widget hosted after its rows arrived has to start with them.** The transaction path hands the
   view its list items and widget state and *then* presents, and the present is where a widget is
   first created. `NVIDIA`'s chooser and search box are first hosted in the frame that sizes them, so

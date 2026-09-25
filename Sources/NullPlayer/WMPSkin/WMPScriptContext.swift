@@ -1424,7 +1424,14 @@ final class WMPScriptContext: @unchecked Sendable {
             if (cache[name] !== undefined) return cache[name];
             var answer = __wmpGet(path, name);
             if (!answer) return undefined;
-            if (answer.k === 1) { cache[name] = wrap(answer.o); return cache[name]; }
+            if (answer.k === 1) {
+              // Only the object's own shape is cached (`player.controls`). A member answering
+              // some other object holds a value the skin can reassign — `playlist1.playlist` —
+              // and a cached answer kept the first playlist ever read for the proxy's life.
+              var child = wrap(answer.o);
+              if (String(answer.o).toLowerCase() === (path + '.' + name).toLowerCase()) cache[name] = child;
+              return child;
+            }
             if (answer.k === 2) {
               cache[name] = function () {
                 var answered = __wmpCall(path, name, Array.prototype.slice.call(arguments));

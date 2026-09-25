@@ -179,6 +179,28 @@ final class WMPLibraryTests: XCTestCase {
         await session.teardown()
     }
 
+    /// **The reported defect (W274, `Alienware Invader`): a second playlist chosen never played.**
+    /// The element proxies live for the whole session and cached every object a member answered,
+    /// so `playlist1.playlist` kept answering the first playlist ever stored there. A choice after
+    /// that assigned the playing playlist back to itself — or, after a source switch, one the new
+    /// catalog does not hold — and nothing played.
+    func testAPlaylistStoredOnAnElementReadsBackAsTheLatestOne() async throws {
+        let skin = try await load(chooser)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        await session.setLibrary(catalog())
+        for (name, tracks) in [("A", "0"), ("B", "1,2")] {
+            _ = await transact(session, skin,
+                               "pl.playlist = player.playlistCollection.getByName('\(name)').item(0);")
+            let output = await transact(session, skin, """
+                player.currentPlaylist = pl.playlist;
+                player.controls.play();
+                """)
+            XCTAssertEqual(output.hostCommands.first { $0.action == "loadLibraryTracks" }?.value?.string,
+                           tracks, "playlist \(name)")
+        }
+        await session.teardown()
+    }
+
     /// **Search on a server** (W136). A skin's search is `mediaCollection.getAll()` filtered in
     /// script; a server cannot hand over its whole library, so `getAll()` answers with the server's
     /// search for the text in the view's search box. The first answer is empty and demands the
