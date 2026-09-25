@@ -636,10 +636,21 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         }
         if isDraggingWindow { finishWindowDrag(); return }
         guard let scene else { return }
-        let target = interactiveTarget(at: skinPoint(from: event, sceneSize: scene.canvasSize))
+        let releasePoint = skinPoint(from: event, sceneSize: scene.canvasSize)
+        var target = interactiveTarget(at: releasePoint)
+        // **A press changes the artwork the release is tested against (W306).** A control's hit area is
+        // the sprite it is drawing, and the press swaps that sprite: `xsn_sports`' drawer tab is a
+        // 19x13 `hoverImage` that is opaque edge to edge over a 13x7 `image`/`downImage` arrow, so a
+        // press on the hover sprite's margin released over nothing and raised no `onClick` — the
+        // drawer "sometimes" opened, depending on the pixel. A release inside the pressed control's
+        // own rectangle, where no other control answers, is a release over it.
+        if target == nil, let capturedTarget, capturedTarget.frame.contains(releasePoint),
+           hitTester?.hitTest(releasePoint) == nil {
+            target = capturedTarget
+        }
         #if DEBUG
         if ProcessInfo.processInfo.environment["WMP_CLICK_TRACE"] == "1" {
-            let p = skinPoint(from: event, sceneSize: scene.canvasSize)
+            let p = releasePoint
             NSLog("[wmp/click] UP at %.0f,%.0f over=%@ captured=%@ dragging=%@",
                   p.x, p.y, target.map { $0.nodeID ?? "\($0.stableID)" } ?? "-",
                   capturedTarget.map { $0.nodeID ?? "\($0.stableID)" } ?? "-",

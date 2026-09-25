@@ -23,6 +23,14 @@ a dispatch defect — it is a control the pointer never reached at all.
   sprite with *nothing* opaque in it is a hit catcher rather than a shape (`holiday_skin`, `Grinch`
   and `Josie_and_the_Pussycats` build whole transports that way, 104 controls across 21 archives),
   and a node with a `mappingImage` takes its region from the *map*, never from its art.
+- **A release inside the pressed control's rectangle is a release over it (W306).** Coverage is read
+  off the sprite the control is drawing, and the press swaps that sprite: `xsn_sports`'
+  `visDrawerButton` is a 19x13 hover sprite, opaque edge to edge, over a 13x7 `image`/`downImage`
+  arrow, so a press on the margin logged `UP … over=- captured=visDrawerButton` and raised no
+  `onClick` — the drawer "sometimes" opened, by pixel. `WMPMainView.mouseUp` now counts a release
+  inside the captured target's frame where no other control answers. **Only the release half is
+  fixed**: coverage still omits the hover sprites, so a press on the margin of a sticky-down button
+  misses (`raw=-#-`); that is W306, open.
 - **A hosted surface is its picture, and its picture ends where the skin paints over it (W213).**
   `<EFFECTS>` and `<VIDEO>` already rank last, which keeps the controls drawn over them; what
   ranking cannot give back is the artwork *between* those controls, which is not a control at all.

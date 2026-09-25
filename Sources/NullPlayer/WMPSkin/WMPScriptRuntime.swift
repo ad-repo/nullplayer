@@ -418,15 +418,31 @@ final class WMPPreferenceStore: @unchecked Sendable {
     let namespace: String
     private let maximumCount: Int
 
+    /// Set for a store that is never written back — see `init(copying:)`.
+    private var memory: [String: String]?
+
     init(skinData: Data, defaults: UserDefaults = .standard, maximumCount: Int = 512) {
         namespace = SHA256.hash(data: skinData).map { String(format: "%02x", $0) }.joined()
         self.defaults = defaults
         self.maximumCount = maximumCount
     }
 
+    /// **A copy of a skin's preferences that nothing reads back (W145).** For running a view's
+    /// handler off-screen to learn what it would draw: `loadPlPrefs()` saves `plViewer = "true"`,
+    /// and that write must not reach the skin's real preferences, where it decides whether its
+    /// toggle button opens or closes the panel.
+    init(copying values: [String: String], maximumCount: Int = 512) {
+        namespace = "volatile"
+        defaults = .standard
+        self.maximumCount = maximumCount
+        memory = values
+    }
+
     private var key: String { "wmp.preferences.\(namespace)" }
 
-    func values() -> [String: String] { defaults.dictionary(forKey: key) as? [String: String] ?? [:] }
+    func values() -> [String: String] {
+        memory ?? defaults.dictionary(forKey: key) as? [String: String] ?? [:]
+    }
 
     @discardableResult
     func apply(_ mutations: [WMPJScriptPreferenceMutation]) -> [WMPJScriptDiagnostic] {
@@ -450,11 +466,13 @@ final class WMPPreferenceStore: @unchecked Sendable {
                 values[mutation.key] = value
             } else { values.removeValue(forKey: mutation.key) }
         }
-        defaults.set(values, forKey: key)
+        if memory != nil { memory = values } else { defaults.set(values, forKey: key) }
         return diagnostics
     }
 
-    func reset() { defaults.removeObject(forKey: key) }
+    func reset() {
+        if memory != nil { memory = [:] } else { defaults.removeObject(forKey: key) }
+    }
 }
 
 // MARK: - The session
@@ -657,7 +675,7 @@ actor WMPScriptRuntime {
                       .joined(separator: ","))
         }
         #endif
-        diagnostics.append(contentsOf: preferences.apply(result.preferenceWrites))
+        diagnostics.append(contentsOf: applyPreferences(result.preferenceWrites))
         var overrides = overrides(for: scope)
         /// The geometry this transaction started from, kept for a refused decoder-driven resize.
         let baselineGeometry = overrides.geometry
@@ -1239,7 +1257,7 @@ actor WMPScriptRuntime {
                                                  screen: screen)
         noteLibraryUse(result, viewID: viewID, event: event)
         var diagnostics = result.diagnostics
-        diagnostics.append(contentsOf: preferences.apply(result.preferenceWrites))
+        diagnostics.append(contentsOf: applyPreferences(result.preferenceWrites))
         return WMPScriptOutput(overrides: .empty, hostCommands: result.hostCommands,
                                diagnostics: diagnostics, timerRequests: result.timers,
                                clearedTimerTokens: result.clearedTimers,
@@ -1277,6 +1295,24 @@ actor WMPScriptRuntime {
     }
 
     func viewsThatFillFromLibrary() -> Set<String> { viewsFillingFromLibrary }
+
+    /// Called after a transaction changed the skin's preferences. A borrowed window frame is drawn
+    /// from what the donor view's `onLoad` makes of them, so it is rebuilt when they move (W145).
+    private var preferencesChangedHandler: (@Sendable () -> Void)?
+
+    func setPreferencesChangedHandler(_ handler: @escaping @Sendable () -> Void) {
+        preferencesChangedHandler = handler
+    }
+
+    func preferenceValues() -> [String: String] { preferences.values() }
+
+    private func applyPreferences(_ writes: [WMPJScriptPreferenceMutation]) -> [WMPJScriptDiagnostic] {
+        guard !writes.isEmpty else { return [] }
+        let before = preferences.values()
+        let diagnostics = preferences.apply(writes)
+        if preferences.values() != before { preferencesChangedHandler?() }
+        return diagnostics
+    }
 
     private func noteLibraryUse(_ result: WMPScriptRunResult, viewID: String,
                                 event: WMPJScriptEvent?) {

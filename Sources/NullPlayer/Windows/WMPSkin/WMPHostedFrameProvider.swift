@@ -168,9 +168,65 @@ final class WMPHostedFrameProvider {
     /// this turn; a skin arriving while hosted windows are on screen and nothing was staged is
     /// **staged now** and commits itself when ready, the old skin answering meanwhile; and otherwise
     /// it is adopted immediately, because nothing on screen would see the difference.
+    // MARK: - The donor's scripted appearance (W145)
+
+    /// What the donor view's `onLoad` committed, for the skin and donor view it was run against.
+    private var scriptedAppearance: (skin: ObjectIdentifier, viewID: String, overrides: WMPSceneOverrides)?
+
+    /// The template for `skin`, drawn with the appearance its donor's script chose when one was
+    /// computed for this skin and this donor.
+    private func derive(_ skin: WMPLoadedSkin, playerViewID: String?) -> WMPHostedFrameTemplate? {
+        guard let derived = WMPHostedFrameTemplate.derive(from: skin, playerViewID: playerViewID) else {
+            return nil
+        }
+        guard let scriptedAppearance, scriptedAppearance.skin == ObjectIdentifier(skin),
+              scriptedAppearance.viewID.caseInsensitiveCompare(derived.viewID) == .orderedSame
+        else { return derived }
+        return derived.appearing(scriptedAppearance.overrides)
+    }
+
+    /// **Run the donor view's `onLoad` off-screen and keep what it did to the frame's artwork.**
+    ///
+    /// A throwaway runtime over a *copy* of the skin's preferences: the handler runs exactly as it
+    /// would when the skin opens that view, and none of its writes, timers or host commands reach
+    /// the session. Returns whether the appearance moved, so the caller knows to rebuild.
+    /// `WMP_FRAME_APPEARANCE=0` draws the frame from markup alone, as before W145 — the A/B switch.
+    static let followsScriptedAppearance =
+        ProcessInfo.processInfo.environment["WMP_FRAME_APPEARANCE"] != "0"
+
+    @discardableResult
+    func refreshScriptedAppearance(skin: WMPLoadedSkin, playerViewID: String?,
+                                   preferences: [String: String],
+                                   snapshot: WMPHostSnapshot) async -> Bool {
+        guard Self.followsScriptedAppearance,
+              let template = WMPHostedFrameTemplate.derive(from: skin, playerViewID: playerViewID),
+              let registration = skin.views.first(where: {
+                  $0.id.caseInsensitiveCompare(template.viewID) == .orderedSame
+              })
+        else { return false }
+        let handlers = WMPMainWindowController.handlers(in: skin, event: "load", targetID: nil,
+                                                        viewID: registration.id)
+        guard !handlers.isEmpty,
+              let scene = try? await WMPSceneBuilder(loadedSkin: skin).build(viewID: registration.id)
+        else { return false }
+        let runtime = WMPScriptRuntime(preferences: WMPPreferenceStore(copying: preferences))
+        let output = await runtime.transact(
+            skin: skin, viewID: registration.id, size: scene.canvasSize, snapshot: snapshot,
+            event: WMPJScriptEvent(name: "load", targetID: registration.id, handlers: handlers),
+            geometry: scene.scriptGeometry)
+        await runtime.teardown()
+        let before = scriptedAppearance.flatMap {
+            $0.skin == ObjectIdentifier(skin) ? template.appearing($0.overrides).appearance : nil
+        } ?? [:]
+        scriptedAppearance = (ObjectIdentifier(skin), template.viewID, output.overrides)
+        let after = template.appearing(output.overrides).appearance
+        Self.trace("appearance view=\(template.viewID) properties=\(after.count) moved=\(after != before)")
+        return after != before
+    }
+
     @discardableResult
     func configure(skin: WMPLoadedSkin, playerViewID: String?) -> Bool {
-        let derived = WMPHostedFrameTemplate.derive(from: skin, playerViewID: playerViewID)
+        let derived = derive(skin, playerViewID: playerViewID)
         if let live, derived == live.template, staged == nil { return derived != nil }
         if let staged, let derived, staged.slot.derived == derived {
             // A switch staging itself in the background is not hurried by a second present of the
@@ -206,7 +262,7 @@ final class WMPHostedFrameProvider {
     /// that lends nothing (it commits immediately in `configure`), or the skin already live.
     func stage(skin: WMPLoadedSkin, playerViewID: String?) async {
         guard Self.stagesSwitches, hostedWindowsVisible(),
-              let derived = WMPHostedFrameTemplate.derive(from: skin, playerViewID: playerViewID),
+              let derived = derive(skin, playerViewID: playerViewID),
               derived != live?.template
         else { return }
         if staged?.slot.derived != derived {
@@ -221,6 +277,7 @@ final class WMPHostedFrameProvider {
     func reset() {
         cancelStaged()
         live = nil
+        scriptedAppearance = nil
         standIns.removeAll()
         relayouts.removeAll()
     }

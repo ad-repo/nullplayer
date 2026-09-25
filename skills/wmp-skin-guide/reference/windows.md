@@ -29,6 +29,18 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   follow the shared metrics. Video, radio sheets, compact mode, and debug windows have no skin
   chrome and are outside this policy.
 - Borrowed rings use whole-donor rendering with subtraction; fixed panels use nine-slicing.
+- **A ring wears the colour the donor's own `onLoad` chose, not its markup's (W145).** `xsn_sports`
+  stacks eight colours of its frame in `plView` and reveals one from `htcpStartupPl()` by writing
+  `alphaBlend`, keyed on its `htcpID` preference, which its own colour cycle rewrites every few
+  seconds. `WMPHostedFrameProvider.refreshScriptedAppearance` runs the donor's `load` in a throwaway
+  `WMPScriptRuntime` over `WMPPreferenceStore(copying:)` — a copy, because `loadPlPrefs()` saves
+  `plViewer = "true"` and that write must not reach the session — and keeps only `alphaBlend` and
+  `backgroundImage` on nodes the frame does not subtract (`WMPHostedFrameTemplate.appearing`):
+  colour, never layout. It runs before `stage` at skin load and again from the runtime's
+  `setPreferencesChangedHandler`, one run at a time, and rebuilds only when the appearance moved,
+  through the staged switch below — so our windows change colour with the skin, in one step, with no
+  cross-fade. Cost with a hosted window open and the cycle running: one ring render per open window
+  per colour change (~200 ms each, off the main thread). `WMP_FRAME_APPEARANCE=0` is the A/B switch.
   Apply the supplied geometry and `paintsOverContent` policy. Borrowed artwork receives no added
   title or close glyph; the close target is the capped 40×26-point top-right hit area.
 - Asynchronous frame completion is a layout change, not just a repaint. Consumers relayout and

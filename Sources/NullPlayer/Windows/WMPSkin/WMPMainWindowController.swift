@@ -648,6 +648,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     }
                 }
                 await refreshLibrary(runtime, initial: true)
+                // A borrowed frame is drawn with what the donor's `onLoad` makes of these (W145).
+                let runtimeID = ObjectIdentifier(runtime)
+                await runtime.setPreferencesChangedHandler { [weak self] in
+                    Task { @MainActor in self?.hostedFrameAppearanceNeedsRefresh(from: runtimeID) }
+                }
                 await runtime.setScreen(Self.screenSize(for: window),
                                         usable: Self.usableScreenSize(for: window))
                 var candidates = Self.startupCandidates(
@@ -746,6 +751,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     // frames alike — and `publishSurfacePalette` below commits the switch in the
                     // same turn as the player is presented. Nothing happens here when no hosted
                     // window is on screen, or the skin lends none.
+                    await hostedFrames.refreshScriptedAppearance(
+                        skin: skin, playerViewID: resolved.viewID,
+                        preferences: await runtime.preferenceValues(), snapshot: host.snapshot)
                     await hostedFrames.stage(skin: skin, playerViewID: resolved.viewID)
                     try Task.checkCancellation()
                     // The first view with a canvas binds the app's own window and becomes the
@@ -1389,6 +1397,37 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         guard palette != currentSurfacePalette else { return }
         currentSurfacePalette = palette
         NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
+    }
+
+    private var appearanceRefresh: Task<Void, Never>?
+    private var appearanceRefreshPending = false
+
+    /// **The skin wrote a preference, so its donor's `onLoad` may now choose a different frame
+    /// (W145).** `xsn_sports` moves `htcpID` on its own colour cycle. Coalesced: one off-screen run
+    /// at a time, and one more after it if anything was written meanwhile. The frame is rebuilt only
+    /// when the appearance actually moved, through the same staged switch a skin change uses.
+    private func hostedFrameAppearanceNeedsRefresh(from source: ObjectIdentifier) {
+        guard let runtime = scriptRuntime, ObjectIdentifier(runtime) == source,
+              let skin = loadedSkin, hostedFrames.lendsFrame else { return }
+        guard appearanceRefresh == nil else {
+            appearanceRefreshPending = true
+            return
+        }
+        appearanceRefresh = Task { [weak self] in
+            guard let self else { return }
+            let viewID = selectedViewID
+            let moved = await hostedFrames.refreshScriptedAppearance(
+                skin: skin, playerViewID: viewID,
+                preferences: await runtime.preferenceValues(), snapshot: host.snapshot)
+            if moved, loadedSkin === skin, scriptRuntime === runtime {
+                hostedFrames.configure(skin: skin, playerViewID: viewID)
+            }
+            appearanceRefresh = nil
+            if appearanceRefreshPending {
+                appearanceRefreshPending = false
+                hostedFrameAppearanceNeedsRefresh(from: source)
+            }
+        }
     }
 
     private func clearSurfacePalette() {

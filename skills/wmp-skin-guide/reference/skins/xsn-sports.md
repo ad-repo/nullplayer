@@ -71,20 +71,24 @@ color theme selected in xsn"*, *"on the xsn the issue is there are 2 eq windows"
    `WindowManager.dismissWMPFallbackSurfacesTheSkinProvides()` now runs on every presentation.
    **The lesson generalises past the equaliser**: any "ours or the skin's" decision taken when a
    window opens has to be retaken when the skin changes.
-6. **A borrowed window frame wears the skin's *opening* colour, not its selected one** (W145, open).
-   xsn's colour scheme is not a palette: `plView` stacks **all eight frame variants** (`pl1_1`…
-   `pl1_8`, 2-8 authored `alphaBlend="0"`) and `htcpStartupPl()` cross-fades between them from the
-   `htcpID` / `winAlpha` preferences, read in the view's own `onLoad`. "Hyper-Transient Color
-   Phasing", trademarked in a comment block in `xsn.js`. Anything that reads this skin's appearance
-   from markup alone gets variant 1 forever. `WMPHostedFrameTemplate` builds the ring through
-   `WMPSceneBuilder` **from markup alone** (86 of 180 archives declare a ring), so a skin whose
-   colour scheme is a *script* decision always gets its opening one. **The fix is to run the donor
-   view's `load` off-screen** (`WMPScriptRuntime.transact`, whose overrides `dispatch` deliberately
-   discards) and build the ring with the overrides it commits, re-running when the skin's
-   preferences change; the template must then keep **every** candidate per ring role rather than the
-   first declaration. **It settles on the chosen colour and does not animate the phase** — running a
-   closed window's timer to match a cross-fade is out of proportion to what it buys. `xsn_sports`
-   was measured 2026-09-12; the pattern is stacked variants and is **unmeasured across the corpus**.
+6. **A borrowed window frame wore the skin's *opening* colour, not its selected one** (W145,
+   closed 2026-09-25). xsn's colour scheme is not a palette: `plView` stacks **all eight frame
+   variants** (`pl1_1`…`pl8_8`, 2-8 authored `alphaBlend="0"`) and `htcpStartupPl()` reveals one from
+   the `htcpID` / `winAlpha` preferences, read in the view's own `onLoad`. "Hyper-Transient Color
+   Phasing", trademarked in a comment block in `xsn.js`. The frame was built from markup alone, so
+   it was variant 1 (gold) forever. **The fix runs the donor's `load` off-screen** over a copy of the
+   preferences and draws the ring with the `alphaBlend`/`backgroundImage` it commits, again after
+   every preference write — `windows.md` § *Current hosting contract*. The cycle is on by default
+   (`htcpTimerStatus`, every ~4.4 s on the reporter's settings) and our windows follow it in one step
+   each, with no cross-fade. Verified live: skin and Analyzer white, then both orange a cycle later;
+   accepted by the reporter (*"all windows are synced with colora"*). The stacked-variant pattern is
+   still **unmeasured across the corpus**.
+7. **The drawer tab "sometimes" did nothing** (W306, found while verifying W145). Not W145 — the
+   same with `WMP_FRAME_APPEARANCE=0`. `visDrawerButton`'s hit area is its 13x7
+   `vid_drawer_no.png`/`vid_drawer_do.png` arrow while the pointer sees the 19x13 opaque hover sprite,
+   so a press on the arrow's margin released `over=-` and raised no `onClick`. The release half is
+   fixed (`input.md`, the W306 bullet); a press on the margin of the **open** tab still misses —
+   W306 is open. `visView@187,276` (shut) and `visView@187,326` (open) are the margin pixels.
 
 **And xsn is the reason the donor view is ranked rather than taken.** `WMPHostedFrameTemplate` looks
 for the best eight-piece ring in the skin, and xsn wraps the *same* ring around `upgradeView` — the

@@ -18,7 +18,7 @@
   skin's own screen with NullPlayer's normal video controls and casting. NullPlayer's own windows —
   library, playlist, equalizer, spectrum and audio analyzers, PeppyMeter, Flow, Cava, waveform,
   visualizer and Sonos Rooms — open beside the skin wearing its colours and a frame borrowed from the
-  skin's own playlist, which keeps its shape while a window is resized and changes together with the
+  skin's own playlist, in whichever colour scheme the skin is showing, which keeps its shape while a window is resized and changes together with the
   player when you switch skins; where the skin has its own playlist or equalizer, that one is used
   instead.
   A skin's own playlist chooser, library pickers and search box read whichever library the browser

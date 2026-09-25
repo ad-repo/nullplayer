@@ -101,6 +101,30 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     var railsDownNodeIDs: Set<Int> = []
     var railsAcrossNodeIDs: Set<Int> = []
 
+    /// **What the donor view's own `onLoad` makes of the frame's appearance (W145).** Markup is
+    /// only the skin's opening state: `xsn_sports` stacks all eight colours of its frame in
+    /// `plView` (`pl1_1`…`pl8_8`, variants 2-8 authored `alphaBlend="0"`) and `htcpStartupPl()`
+    /// reveals the one its `htcpID` preference names, so a frame built from markup alone wore the
+    /// first colour forever — reported as *"the nullplayer window does not follow the color theme
+    /// selected in xsn"*. Filled by `appearing(_:)` from an off-screen run of that handler; empty
+    /// for a skin whose `onLoad` touches no frame artwork, which leaves its build unchanged.
+    var appearance: [WMPScenePropertyAddress: WMPJSONValue] = [:]
+
+    /// The properties `appearance` keeps. Colour, never layout: a script's geometry is the window
+    /// it was sized for, and the frame is laid out for ours.
+    static let appearanceProperties: Set<String> = ["alphablend", "backgroundimage"]
+
+    /// This template, drawn with the appearance a script committed. Keeps only `appearanceProperties`
+    /// on the donor's own frame nodes — never on a subtree `excludedNodeIDs` subtracts.
+    func appearing(_ overrides: WMPSceneOverrides) -> WMPHostedFrameTemplate {
+        var copy = self
+        copy.appearance = overrides.properties.filter { address, _ in
+            Self.appearanceProperties.contains(address.property.lowercased())
+                && !excludedNodeIDs.contains(address.stableID)
+        }
+        return copy
+    }
+
     /// Whether the donor view is drawn whole. **On.** `WMP_HOSTED_FRAME_WHOLE=0` restores the
     /// piece-selecting assembler it replaced, which is the comparison every number in W209's case
     /// study was measured against (`reference/skins/back-to-the-future-trilogy.md`).
@@ -1712,6 +1736,7 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     /// squeezed into: it is drawn 1:1 at whatever the window is, and `wasScaledToFit` goes false.
     private var unclamped: WMPSceneOverrides {
         var overrides = WMPSceneOverrides.empty
+        overrides.properties = appearance
         for name in ["minwidth", "minheight"] {
             overrides.properties[WMPScenePropertyAddress(stableID: viewNodeID, property: name)] = .number(1)
         }
