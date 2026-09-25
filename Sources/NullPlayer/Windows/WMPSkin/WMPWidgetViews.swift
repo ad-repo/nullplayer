@@ -440,7 +440,7 @@ final class WMPListBoxSurfaceView: NSView {
     /// skin's own script may have moved in the meantime — a refill resets it to row 0, and the
     /// double-click then played "Now Playing" instead of the row under the pointer.
     var onDoubleClick: ((Int) -> Void)?
-    private var items: [String] = []
+    private(set) var items: [String] = []
     /// `private(set)` so the W136 tests can read the highlight back without rendering it.
     private(set) var selected = -1
     /// The row drawn at the top. A server's playlist list runs to hundreds of rows in a box that

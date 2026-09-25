@@ -58,6 +58,10 @@ enum WMPAttributeParser {
         // placeholder in `onFocus` and puts it back in `onBlur`. Off `supportedEvents` for the
         // same reason as `ondblclick`.
         "onfocus", "onblur",
+        // Raised when the library's playlist list changes (W274), which is what the nine
+        // `<LISTBOX>` chooser skins hang their refill on: `CdromMediaChange="onCdRomChange()"`,
+        // and `onCdRomChange()` re-runs `fillListBox()`. Off `supportedEvents`: no CD ever raises it.
+        "cdrommediachange",
         "openstatechange", "playstatechange", "status_onchange", "modechange",
         "buffering_onchange", "reception_onchange",
         // The `_onchange` spellings of three events the engine already dispatches. They are not

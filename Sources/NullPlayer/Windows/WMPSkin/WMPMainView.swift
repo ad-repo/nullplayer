@@ -334,8 +334,16 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         return interaction
     }
 
+    /// The last list items and widget state a transaction handed over, kept so a widget hosted
+    /// *after* them starts with them (W274). The transaction path updates before it presents, and
+    /// a present is where a widget is first created — `NVIDIA`'s chooser and search box appear in
+    /// the very frame that sizes them, and were created empty, with nothing left to fill them.
+    private var lastListItems: [Int: [String]] = [:]
+    private var lastWidgetState = WMPWidgetScriptState.empty
+
     /// The items a `POPUP` or `LISTBOX` holds, from the last script transaction.
     func updateListItems(_ items: [Int: [String]]) {
+        lastListItems = items
         for (stableID, view) in widgetViews {
             (view as? WMPPopupSurfaceView)?.update(items: items[stableID] ?? [])
             (view as? WMPListBoxSurfaceView)?.update(items: items[stableID] ?? [])
@@ -344,6 +352,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
 
     /// What the last script transaction pointed the skin's own controls at (W136).
     func updateWidgetState(_ state: WMPWidgetScriptState) {
+        lastWidgetState = state
         for (stableID, view) in widgetViews {
             (view as? WMPPlaylistSurfaceView)?.update(libraryRows: state.playlists[stableID])
             (view as? WMPListBoxSurfaceView)?.update(selection: state.listSelections[stableID])
@@ -999,6 +1008,12 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             wmpWidgetTrace("create id=\(widget.stableID) kind=\(widget.kind) frame=\(widget.frame)")
             #endif
             widgetViews[widget.stableID] = view; addSubview(view)
+            let stableID = widget.stableID
+            (view as? WMPPopupSurfaceView)?.update(items: lastListItems[stableID] ?? [])
+            (view as? WMPListBoxSurfaceView)?.update(items: lastListItems[stableID] ?? [])
+            (view as? WMPPlaylistSurfaceView)?.update(libraryRows: lastWidgetState.playlists[stableID])
+            (view as? WMPListBoxSurfaceView)?.update(selection: lastWidgetState.listSelections[stableID])
+            (view as? WMPEditBoxSurfaceView)?.update(scriptValue: lastWidgetState.editValues[stableID])
         }
         // A partial fade is a real state in the corpus — `Plus! Plasma Ball` hangs its effects off
         // a `alphaBlend="110"` layer — so the surviving surfaces carry their inherited alpha, and

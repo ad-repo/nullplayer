@@ -501,10 +501,42 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// `onLoad` read the library is loaded again when the playlist list changes — the same load it
     /// would have run had the library been there. Every other open view runs a transaction with
     /// no handlers, which is what redraws a pane whose playlist's tracks just arrived.
+    ///
+    /// **A skin that fills its chooser from a click refills it from `CdromMediaChange` (W274).**
+    /// `NVIDIA` fills in `plModeToggle()`, not `onLoad`, so a reload never refills it and
+    /// re-dispatching the click would toggle the mode back off. All nine `<LISTBOX>` chooser skins
+    /// author `CdromMediaChange="onCdRomChange()"`, whose body is their refill — `fillListBox()`, or
+    /// in `NVIDIA`'s case that when the list is showing and a reset of its `loadList` latch when
+    /// it is not — so a changed playlist list raises it in every view that authors one and is not
+    /// being loaded again anyway.
+    ///
+    /// **The view's own `onResize` runs in the same transaction, after the refill.** Eight of the
+    /// nine size the list inside `fillListBox()`; `NVIDIA` does not — it sizes it in
+    /// `plModeToggle()` and `onPlayerResize()` — so its refilled 1,850 rows stayed in the two-row
+    /// box the previous source had left.
     private func refreshLibraryViews(_ runtime: WMPScriptRuntime, reloadFillers: Bool) async {
         let fillers = reloadFillers ? await runtime.viewsThatFillFromLibrary() : []
         for presentation in materializer.openPresentations {
             let reload = fillers.contains(WMPPath.fold(presentation.viewID))
+            if reloadFillers, !reload, let skin = loadedSkin {
+                let refill = Self.handlers(in: skin, event: "cdrommediachange", targetID: nil,
+                                           viewID: presentation.viewID)
+                if !refill.isEmpty {
+                    let layout = Self.handlers(in: skin, event: "onResize", targetID: "view",
+                                               viewID: presentation.viewID)
+                    #if DEBUG
+                    if ProcessInfo.processInfo.environment["WMP_CLICK_TRACE"] == "1" {
+                        NSLog("[wmp/dispatch] cdrommediachange view=%@ playlists=%d handlers=%d",
+                              presentation.viewID, librarySource.catalog.playlists.count,
+                              refill.count + layout.count)
+                    }
+                    #endif
+                    dispatchScriptTransaction(presentation,
+                        WMPJScriptEvent(name: "cdrommediachange", targetID: nil,
+                                        handlers: refill + layout))
+                    continue
+                }
+            }
             dispatchScriptEvent(presentation, name: reload ? "load" : "librarychange", targetID: nil)
         }
     }
@@ -2788,11 +2820,40 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 // where the skin is asking for a different one, and pinning `requestedSize` to the
                 // old canvas made `SwitchSmall()` draw a 475x373 player inside a 593x600 window
                 // with two hundred empty pixels around it.
-                let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+                var scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
                     .build(viewID: viewID,
                            requestedSize: rebuildSize,
                            interactionState: presentation.interactionState,
                            overrides: output.overrides)
+                // **A skin that resizes its own view is resized, and its `onResize` runs on the
+                // way (W274).** The drag path and the open path (W211) raise it; this one did not,
+                // so a handler reading a stretched pane in the transaction that grew the window
+                // kept the stale size for good. `NVIDIA`'s `plModeToggle()` takes the window from
+                // 285x301 to 700x480 and then sizes its playlist chooser off `plListBoxSub.height`
+                // — still the audio mode's −95 inside that click — so the list got a negative
+                // height, was never hosted, and the Media Library panel stayed empty.
+                // `onPlayerResize()` → `resizeListBox()` is the skin's own correction, reading the
+                // laid-out 84.
+                //
+                // **Keyed on the canvas changing, not on this transaction's assignment.** The view
+                // timer cancels the click's task mid-build often enough (W197); the size survives
+                // on `scriptViewSize`, and the transaction that finally presents it is the timer's,
+                // which assigned nothing — so tying the raise to `output.viewSize` lost it about
+                // half the time.
+                var presented = output
+                if let before = presentation.activeScene, before.canvasSize != scene.canvasSize,
+                   let event = Self.resizeEvent(in: skin, viewID: viewID,
+                                                before: presentation.activeScene, after: scene) {
+                    presented = await scriptRuntime.transact(skin: skin, viewID: viewID,
+                        size: scene.canvasSize, snapshot: host.snapshot, event: event,
+                        geometry: scene.scriptGeometry)
+                    recordScriptDiagnostics(presented.diagnostics)
+                    scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+                        .build(viewID: viewID,
+                               requestedSize: rebuildSize,
+                               interactionState: presentation.interactionState,
+                               overrides: presented.overrides)
+                }
                 let result = try await WMPRenderer(imageStore: store).render(
                     scene: scene, backingScale: renderBackingScale(for: presentation),
                     clock: presentation.animationClock(for: scene.viewID),
@@ -2822,13 +2883,13 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     setWindowSize(presentation, NSSize(width: scene.canvasSize.width,
                                                        height: scene.canvasSize.height))
                 }
-                presentation.sceneOverrides = output.overrides
+                presentation.sceneOverrides = presented.overrides
                 presentation.activeScene = scene
                 self.startAnimation(presentation, for: scene)
-                presentation.presentedListItems = output.listItems
-                presentation.presentedWidgetState = output.widgetState
-                presentation.mainView?.updateListItems(output.listItems)
-                presentation.mainView?.updateWidgetState(output.widgetState)
+                presentation.presentedListItems = presented.listItems
+                presentation.presentedWidgetState = presented.widgetState
+                presentation.mainView?.updateListItems(presented.listItems)
+                presentation.mainView?.updateWidgetState(presented.widgetState)
                 presentation.mainView?.present(result.image, overlay: result.overlayImage, scene: scene, traceSource: "transaction")
                 self.arbitrateVideoSurface()
             } catch { recordScriptDiagnostics([.init(code: "scene-transaction", message: error.localizedDescription)]) }

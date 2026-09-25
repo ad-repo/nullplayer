@@ -646,9 +646,11 @@ final class WMPObjectModel {
             default: return .unrecognised("stringCollection member")
             }
         case "playlist", "query", "scratch":
-            let tracks = libraryTracks(path) ?? []
             switch name {
-            case "count": return .value(.number(Double(tracks.count)))
+            // Only `count` needs the tracks. Reading them for every member made a chooser's fill
+            // loop — `playlistArray.item(i).getItemInfo("Title")` — demand every server playlist's
+            // tracks: 1,850 serial fetches on Jellyfin for a list of names (W274).
+            case "count": return .value(.number(Double((libraryTracks(path) ?? []).count)))
             case "name": return .value(.string(libraryPlaylistName(path)))
             case "item", "getiteminfo", "attributecount", "getattributename": return .function
             case "appenditem" where kind == "scratch", "clear" where kind == "scratch": return .function

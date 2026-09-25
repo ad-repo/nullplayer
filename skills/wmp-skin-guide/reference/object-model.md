@@ -463,6 +463,14 @@ request per demand — a second asker awaits the first), hands back the fuller c
 - **a view whose `onLoad` read the library is loaded again** when the playlist list changes (a source
   switch, a server finishing its preload) — the load it would have run had the library been there;
   the runtime records which views those are (`viewsThatFillFromLibrary`);
+- **a view that authors `CdromMediaChange` raises it instead, with the view's own `onResize` after
+  it in the same transaction** (W274). A chooser filled from a click — `NVIDIA`'s `plModeToggle()` —
+  is never refilled by a reload, and re-dispatching the click toggles the mode back off. All nine
+  `<LISTBOX>` skins author `CdromMediaChange="onCdRomChange()"`, and its body is their refill:
+  `fillListBox(); fillCopyListBox();` in eight, and in `NVIDIA` the fill when the list is showing
+  and a reset of its `loadList` latch when it is not. The `onResize` is for `NVIDIA`, the one
+  whose `fillListBox()` does not size the list; the other eight do it inside the fill. No CD ever
+  raises the event, so `cdrommediachange` is in `handlerNames` and not `supportedEvents`;
 - **every other open view runs a handler-less `librarychange` transaction**, which is what redraws a
   pane whose playlist's tracks just arrived.
 
@@ -569,6 +577,16 @@ rule on the host side: `WMPLibrarySource.append` finds tracks by URL in a dictio
   (`WMPScriptRunResult.listItems`/`widgetState`).
 - **`playNow` inserts after the current track**; a playlist assignment replaces the queue, so it is
   `setPlaylistTracks` + `playTrack(at:)`.
+- **Only a member that needs a playlist's tracks may demand them** (W274). Resolving *any* member of
+  a `library.playlist:` object used to read its tracks first, so the fill loop's
+  `item(i).getItemInfo("Title")` demanded every server playlist — 1,850 serial fetches on Jellyfin
+  for a list of names, from `WoW` as much as `NVIDIA`. `count` and `item(i)` read the tracks; `name`
+  and `getItemInfo` do not.
+- **A widget hosted after its rows arrived has to start with them.** The transaction path hands the
+  view its list items and widget state and *then* presents, and the present is where a widget is
+  first created. `NVIDIA`'s chooser and search box are first hosted in the frame that sizes them, so
+  both came up empty — no rows, no "Search for" — and nothing refilled them until some later
+  transaction changed the rows. `WMPMainView` keeps the last of each and applies them on creation.
 
 `WMPLibraryTests` and `WMPLibrarySurfaceTests` pin all of the above.
 
@@ -1497,7 +1515,15 @@ this list before opening a row that came from reading the SDK against a corpus s
 
 * **`onresize` is dispatched.** `WMPMainWindowController.swift:1162` builds the event as `"resize"`;
   handler names are stored with the `on` prefix stripped, so grepping the sources for `onresize`
-  finds only the census table. 47 uses / 19 skins already work.
+  finds only the census table. 47 uses / 19 skins already work. It is raised on a user drag, at
+  open when the view opens at a size it was not authored at (W211), and **when a transaction
+  presents a canvas different from the one on screen** — a skin resizing its own view (W274).
+  WMP runs `onResize` whoever changed the size, and a handler that reads a stretched pane in the
+  transaction that grew the window reads the old layout: `NVIDIA`'s `plModeToggle()` sized its
+  chooser off `plListBoxSub.height` at −95 and the list was never hosted, and `onPlayerResize()` is
+  the skin's own correction. The raise is keyed on the canvas, not on `viewSize`, because the view
+  timer cancels the click's task mid-build (W197) and the transaction that finally presents the
+  new size is the timer's.
 * **`nineGridMargins`, `resizeImages`, `elementType`, `bottom`, `right`, `accDescription`** — ambient
   attributes with **zero corpus uses**. Absent from the engine and correctly so.
 * **`moveSizeTo` and `slideTo`** — ambient methods, **zero calls** corpus-wide. (`resizeTo` is also

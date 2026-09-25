@@ -72,6 +72,43 @@ final class WMPLibraryTests: XCTestCase {
         await session.teardown()
     }
 
+    /// **A chooser's fill is a list of names, and asks the server for nothing (W274).** Resolving
+    /// any member of an unloaded server playlist used to demand its tracks, so the fill loop over
+    /// Jellyfin's 1,850 playlists queued 1,850 serial fetches. Only `count` needs them.
+    func testAChooserFillOverAServerDemandsNoPlaylistTracks() async throws {
+        let skin = try await load(chooser)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let demands = DemandLog()
+        await session.setLibraryDemandHandler { set, _, _ in demands.record(set) }
+        await session.setLibrary(catalog(loaded: false, complete: false))
+        let output = await transact(session, skin, """
+            box.deleteAll(); box.appendItem('Now Playing');
+            var all = player.playlistCollection.getAll();
+            for (var i = 0; i < all.count; i++) box.appendItem(all.item(i).getItemInfo('Title'));
+            """)
+        XCTAssertEqual(output.listItems[try stableID(skin, "box")], ["Now Playing", "A", "B"])
+        XCTAssertFalse(demands.all.contains { $0.hasPrefix("playlist:") },
+                       "naming a playlist must not fetch its tracks: \(demands.all)")
+        _ = await transact(session, skin, "var n = player.playlistCollection.getAll().item(1).count;")
+        XCTAssertEqual(demands.all, ["playlist:b"], "a playlist's count is its tracks")
+        await session.teardown()
+    }
+
+    /// **`CdromMediaChange` is the chooser skins' refill, and the host raises it (W274).** All nine
+    /// `<LISTBOX>` skins author `CdromMediaChange="onCdRomChange()"` on their `<PLAYER>`; the name
+    /// has to be classified as a handler or the dispatcher never finds it.
+    @MainActor
+    func testCdromMediaChangeIsAHandlerTheHostCanRaise() async throws {
+        let skin = try await load("""
+            <THEME><VIEW id="main" width="200" height="200">
+              <PLAYER id="p" CdromMediaChange="onCdRomChange()"/>
+            </VIEW></THEME>
+            """)
+        XCTAssertEqual(WMPMainWindowController.handlers(in: skin, event: "cdrommediachange",
+                                                        targetID: nil, viewID: "main"),
+                       ["onCdRomChange()"])
+    }
+
     /// `player.currentPlaylist = <playlist>` replaces the queue with the playlist's tracks —
     /// carried as catalog indices, since the skin's `sourceURL` is WMP's spelling, not a location.
     func testAssigningALoadedPlaylistLoadsItsTracksAndPlays() async throws {
@@ -283,6 +320,39 @@ final class WMPLibrarySurfaceTests: XCTestCase {
             list.mouseDown(with: event)
         }
         XCTAssertEqual(played, 2)
+    }
+
+    /// **A widget hosted after its rows arrived starts with them (W274).** The transaction path
+    /// hands over the rows and then presents, and the present is where a widget is first created:
+    /// `NVIDIA`'s chooser and search box appear in the very frame that sizes them, and were
+    /// created empty with nothing left to fill them.
+    func testAWidgetHostedAfterItsRowsArrivedStartsWithThem() throws {
+        let context = try XCTUnwrap(CGContext(data: nil, width: 200, height: 100, bitsPerComponent: 8,
+                                              bytesPerRow: 800, space: CGColorSpaceCreateDeviceRGB(),
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let view = WMPMainView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
+        view.updateListItems([1: ["Now Playing", "A"]])
+        var state = WMPWidgetScriptState()
+        state.editValues[2] = "Search for"
+        view.updateWidgetState(state)
+        let widgets = [
+            WMPWidget(stableID: 1, nodeID: "box", kind: .listBox,
+                      frame: .init(x: 0, y: 0, width: 100, height: 60), clipRect: nil,
+                      label: "Box", toolTip: nil, minimumValue: nil, maximumValue: nil),
+            WMPWidget(stableID: 2, nodeID: "search", kind: .editBox,
+                      frame: .init(x: 0, y: 70, width: 100, height: 20), clipRect: nil,
+                      label: "Search", toolTip: nil, minimumValue: nil, maximumValue: nil)]
+        let size = WMPSize(width: 200, height: 100)
+        view.present(try XCTUnwrap(context.makeImage()), scene: WMPScene(
+            viewID: "main", canvasSize: size, resizeLimits: .init(minimum: size, maximum: size),
+            commands: [], hits: [], widgets: widgets, geometries: [:], unresolved: [],
+            diagnostics: [], dirtyBounds: nil,
+            metrics: .init(resolvedNodeCount: 2, unresolvedNodeCount: 0, visibleBounds: nil),
+            wasBuiltOnMainThread: false))
+        let list = try XCTUnwrap(view.hostedWidgetViews.compactMap { $0 as? WMPListBoxSurfaceView }.first)
+        let edit = try XCTUnwrap(view.hostedWidgetViews.compactMap { $0 as? WMPEditBoxSurfaceView }.first)
+        XCTAssertEqual(list.items, ["Now Playing", "A"])
+        XCTAssertEqual(edit.stringValue, "Search for")
     }
 
     /// A refill is a different list: it starts at the top with nothing selected, and a script

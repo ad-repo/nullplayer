@@ -46,7 +46,7 @@ to settle before anything is worth measuring.
 |---|---|---|
 | *"the playlist library is opening very small size now and possibly distorting the aspect ratio"* | The window resize the switch asked for was lost when the view's own 100 ms timer cancelled the transaction carrying it, so a 730x574 picture was presented into the 285x301 window and stretched | W197 |
 | the same report | A script-assigned `minWidth`/`minHeight` never reached `WMPResizeLimits`, so the playlist's floor stayed at the audio mode's 285x301 and the window could sit far below what its layout resolves in | W196 |
-| *"media library just does not work in nvidia but does work in WOW"* (2026-09-24; search works) | **Open.** The chooser is filled only by `plModeToggle()`, gated on `loadList`, and W136's source-switch refresh re-runs only views whose `onLoad` read the library — so `NVIDIA` is never refilled when the browser's source changes, and keeps whatever the one fill of this load produced. Re-dispatching the filling click is not a fix: it toggles the mode back off. No `handler-error` or `execution terminated` line was logged in the session; whether the fill, which runs inside a larger click handler, fits the 0.25 s budget on a 1,850-playlist Jellyfin is **unmeasured** | W274 |
+| *"media library just does not work in nvidia but does work in WOW"* (2026-09-24; search works) | Four defects, measured live 2026-09-25 and fixed together. **(1)** `plModeToggle()` grows the window to 700x480 and then `resizeListBox()` reads `plListBoxSub.height` in the same click — still the audio mode's −95 — so `plListBox1.height` was −95 and the list was never hosted, even on Local Files; the engine never raised `onResize` for a script's own resize, which is what `onPlayerResize()` → `resizeListBox()` corrects. **(2)** The chooser and search box are first hosted in the frame that sizes them and were created empty. **(3)** A source switch never refilled it: it fills from a click, not `onLoad`; the refill is now its own `CdromMediaChange="onCdRomChange()"`, with the view's `onResize` after it because this `fillListBox()` — alone of the nine — does not size the list. **(4)** The fill loop's `getItemInfo("Title")` demanded every server playlist's tracks, 1,850 serial Jellyfin fetches. The fill fits the 0.25 s budget on that 1,850-playlist server (no `terminated` line) | W274 |
 | *"i switched to nvidia skin and the search keeps coming back when i switch sources"* (2026-09-24; the search had been run in `WoW`) | Tracks a server fetched — for a search or an opened playlist — were counted in the library proper, so `getAll()` outside a search answered with an earlier skin's search; and a search result kept across a source switch left `library.media:<n>` references that no longer existed, so `updatePlInfo()` threw on every `Playlist_onChange` (`unimplemented library.media.getiteminfo (no such media)`) | W136 (closed) |
 
 ## What was ruled out
@@ -62,10 +62,11 @@ to settle before anything is worth measuring.
 - **The `<LISTBOX>` was not hosted in this view at all** (measured 2026-09-16, before W136).
   `WMP_RENDER_CLICK`'s after-state read `16 widgets[editBox×1 playlist×1 slider×3 text×11]`:
   `plListBox1` declares no `height`, so it did not resolve and never became a widget. **Its only height
-  is the one `resizeListBox()` writes** — `itemCount × 14 + 1`, capped at `plListBoxSub.height` — so an
-  unfilled list is 1 px tall. **Whether it is hosted now that the fill has rows is unmeasured**, and is
-  the first thing W274 should read for this skin, before the refill question. Do not reason about its
-  AppKit surface from what is on screen.
+  is the one `resizeListBox()` writes** — `itemCount × 14 + 1`, capped at `plListBoxSub.height`.
+  Answered 2026-09-25 (W274): the click writes `plListBox1.height=-95`, because the cap is read before
+  the window's new size is laid out; `WMP_RENDER_CLICK` still prints that −95, since the probe raises
+  `onClick` only and never the `onResize` the app now runs after it. Do not reason about its AppKit
+  surface from what is on screen.
 - **`plModeToggle` was never the suspect it looked like.** `WMP_RENDER_CLICK` answered
   `viewSize=700x480` before and after both fixes. The engine always computed the right size; only the
   window was wrong, and no flag in `harness.md` has a window.
