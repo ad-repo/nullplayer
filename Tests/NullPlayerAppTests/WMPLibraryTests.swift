@@ -417,6 +417,41 @@ final class WMPLibrarySurfaceTests: XCTestCase {
         XCTAssertEqual(list.selected, -1, "a row the list does not have is ignored")
     }
 
+    /// **A transaction's selection write reaches the chooser on its own (W300).** The controller
+    /// hands it over ahead of the scene, because the `play()` beside `playSelPlaylist()`'s
+    /// `plListBox1.selectedItem = 0` starts the transaction that cancels the scene's presentation.
+    /// Only the chooser moves: the edit box keeps the value the last presented state gave it.
+    func testAScriptSelectionWriteMovesTheChooserAheadOfTheScene() throws {
+        let context = try XCTUnwrap(CGContext(data: nil, width: 200, height: 100, bitsPerComponent: 8,
+                                              bytesPerRow: 800, space: CGColorSpaceCreateDeviceRGB(),
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let view = WMPMainView(frame: NSRect(x: 0, y: 0, width: 200, height: 100))
+        view.updateListItems([1: ["Now Playing", "A", "B"]])
+        var state = WMPWidgetScriptState()
+        state.editValues[2] = "Search..."
+        view.updateWidgetState(state)
+        let widgets = [
+            WMPWidget(stableID: 1, nodeID: "box", kind: .listBox,
+                      frame: .init(x: 0, y: 0, width: 100, height: 60), clipRect: nil,
+                      label: "Box", toolTip: nil, minimumValue: nil, maximumValue: nil),
+            WMPWidget(stableID: 2, nodeID: "search", kind: .editBox,
+                      frame: .init(x: 0, y: 70, width: 100, height: 20), clipRect: nil,
+                      label: "Search", toolTip: nil, minimumValue: nil, maximumValue: nil)]
+        let size = WMPSize(width: 200, height: 100)
+        view.present(try XCTUnwrap(context.makeImage()), scene: WMPScene(
+            viewID: "main", canvasSize: size, resizeLimits: .init(minimum: size, maximum: size),
+            commands: [], hits: [], widgets: widgets, geometries: [:], unresolved: [],
+            diagnostics: [], dirtyBounds: nil,
+            metrics: .init(resolvedNodeCount: 2, unresolvedNodeCount: 0, visibleBounds: nil),
+            wasBuiltOnMainThread: false))
+        let list = try XCTUnwrap(view.hostedWidgetViews.compactMap { $0 as? WMPListBoxSurfaceView }.first)
+        let edit = try XCTUnwrap(view.hostedWidgetViews.compactMap { $0 as? WMPEditBoxSurfaceView }.first)
+        list.update(selection: 2)   // the double-clicked row
+        view.updateListSelections([1: 0, 99: 1])
+        XCTAssertEqual(list.selected, 0, "the script's write moves the highlight to \"Now Playing\"")
+        XCTAssertEqual(edit.stringValue, "Search...", "nothing but the chooser is touched")
+    }
+
     /// A `<PLAYLIST>` showing a library playlist plays *that* playlist from the chosen row, and
     /// hands delete to nothing — a skin may not edit the library.
     func testAPlaylistPaneShowingALibraryPlaylistPlaysItFromTheRow() {

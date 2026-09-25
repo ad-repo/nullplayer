@@ -24,7 +24,7 @@
   in the skin's own colours; the top-right corner still closes them.
   A skin's own playlist chooser, library pickers and search box read whichever library the browser
   is set to — local files or a Plex, Navidrome, Jellyfin or Emby server: click a playlist to see its
-  tracks in the skin, double-click to play it, and search the server straight from the skin. The
+  tracks in the skin, double-click to play it (the chooser returns to Now Playing, as in WMP), and search the server straight from the skin. The
   chooser refills when you switch the browser to another source, including in skins such as NVIDIA
   that fill it when you open their playlist. Skins can read the library but never change it.
   Right-click a skin's playlist for NullPlayer's own playlist menu — play, remove, crop, clear, sort,

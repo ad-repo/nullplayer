@@ -514,7 +514,11 @@ queue while it loads, makes it stale.
   rebuilt every tick.
 - **A `<LISTBOX>`** answers `appendItem`, `deleteAll`, `insertItem`, `deleteItem`, `getItem`, `itemCount`,
   scrolls, and shows the highlight the script **wrote in that transaction** — reported as state on every
-  transaction, one that started before a fast click put the old row back.
+  transaction, one that started before a fast click put the old row back. **That write is handed to the
+  chooser ahead of the scene** (W300): a write is reported by one transaction only, and the one that
+  carries `playSelPlaylist()`'s `plListBox1.selectedItem = 0` also posts the `play()` whose host
+  refresh starts the next transaction, which cancels the scene's presentation every time. Dropped
+  with the scene, the played row stayed highlighted instead of "Now Playing".
 - **A click and a double-click are queued per window** (`enqueueListEvent`): the click writes
   `selectedItem` and raises `selectedItem_onChange`; the double-click writes the **clicked row** and
   raises `onDblClick`, after the click's transaction has finished. Dispatched independently,

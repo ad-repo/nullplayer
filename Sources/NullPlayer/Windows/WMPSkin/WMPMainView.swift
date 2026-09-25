@@ -385,6 +385,13 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         }
     }
 
+    /// Only the `<LISTBOX>` selections a transaction wrote, ahead of its scene (W300).
+    func updateListSelections(_ selections: [Int: Int]) {
+        for (stableID, index) in selections {
+            (widgetViews[stableID] as? WMPListBoxSurfaceView)?.update(selection: index)
+        }
+    }
+
     func updateSpectrum(_ levels: [Float]) {
         widgetViews.values.compactMap { $0 as? WMPEffectsSurfaceView }.forEach { $0.updateSpectrum(levels) }
     }

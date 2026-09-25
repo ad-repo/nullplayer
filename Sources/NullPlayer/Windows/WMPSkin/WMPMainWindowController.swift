@@ -2818,6 +2818,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     presentation.interactionState = view.applyScriptedStickyLatches(latches)
                 }
             }
+            // **A `<LISTBOX>` selection the script wrote is not part of the scene, so it is not
+            // dropped with it (W300).** A selection is reported only by the transaction that wrote
+            // it, and `playSelPlaylist()`'s `plListBox1.selectedItem = 0` is written beside the
+            // `play()` whose host refresh starts the next transaction — which cancels this one
+            // before the guard below, every time. The played row stayed highlighted.
+            if !switchedView, !output.widgetState.listSelections.isEmpty {
+                presentation.mainView?.updateListSelections(output.widgetState.listSelections)
+            }
             guard !switchedView, !Task.isCancelled else { return }
             // **A transaction whose script moved nothing has nothing to draw (W158).**
             //

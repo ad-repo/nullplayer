@@ -37,7 +37,6 @@ nothing behind them*.
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W300 | **Lower priority.** A `<LISTBOX>` keeps the double-clicked row highlighted after the script moved the selection | `Alienware Invader` measured 2026-09-25; the other `NVIDIA`-family choosers end `playSelPlaylist()` the same way, **unmeasured** | Not blocked. `playSelPlaylist()` ends with `plListBox1.selectedItem = 0`, so WMP would highlight "Now Playing" after a play; here the played row stays highlighted (captures in the W274 pass, Local Files and Jellyfin both). `object-model.md` § *`<PLAYLIST>` panes and `<LISTBOX>` choosers* says the highlight is the one the script **wrote in that transaction**, and the double-click also writes the **clicked row** — so the first question is which of the two writes wins in the `onDblClick` transaction. Cosmetic: the next click reselects correctly. |
 
 ## Harness and tooling
 
