@@ -148,6 +148,10 @@ final class WMPImageStore: @unchecked Sendable {
     /// `filmstripIsDescending` answers, keyed by path, frame count and axis. One bool each:
     /// no eviction, because the whole map is smaller than one decoded frame.
     private var descendingStripEntries: [String: Bool] = [:]
+    /// A button's hit region across all its state sprites (W306), keyed by the paints it is built
+    /// from and the frame's size. `.some(nil)` is "no hole" — the whole rect. The scene is rebuilt
+    /// on every host tick, and re-sampling four sprites per button each time cost `Secura` a core.
+    private var stateCoverageEntries: [String: WMPHitCoverage?] = [:]
     /// `.some(nil)` is "checked, not animated" — a still must not be re-probed on every frame.
     private var animationEntries: [String: WMPImageAnimation??] = [:]
     /// Artwork belongs to the WMP session, not to the archive. The transparent defaults preserve
@@ -242,6 +246,7 @@ final class WMPImageStore: @unchecked Sendable {
         shapeMaskEntries.removeAll(keepingCapacity: false)
         cornerColorEntries.removeAll(keepingCapacity: false)
         descendingStripEntries.removeAll(keepingCapacity: false)
+        stateCoverageEntries.removeAll(keepingCapacity: false)
         clipBytes = 0
         animationEntries.removeAll(keepingCapacity: false)
         lock.unlock()
@@ -764,6 +769,17 @@ final class WMPImageStore: @unchecked Sendable {
         return map
     }
 
+    func stateCoverage(key: String, build: () -> WMPHitCoverage?) -> WMPHitCoverage? {
+        lock.lock()
+        if let cached = stateCoverageEntries[key] { lock.unlock(); return cached }
+        lock.unlock()
+        let coverage = build()
+        lock.lock()
+        stateCoverageEntries[key] = coverage
+        lock.unlock()
+        return coverage
+    }
+
     /// Whether a `CUSTOMSLIDER`'s filmstrip is authored **maximum first**, so the frame index has
     /// to count back from the end.
     ///
@@ -785,13 +801,14 @@ final class WMPImageStore: @unchecked Sendable {
     /// frames, measured along the axis the map's own ramp increases on (`WMPPositionMap.gradient`)
     /// and needing 15% of the frame's travel before it counts.
     ///
-    /// Measured over the 180 installed archives this selects **19 of the 342 stripped
-    /// `CUSTOMSLIDER`s, in 7 skins**: 13 by coverage — Halo 2's and STALKER's TruBass and WOW,
-    /// `Plus! Mecha`'s, `Rave-MP`'s and `Xbox Live Skin`'s seek, `Secura`'s pair, `XBOX`'s and
-    /// `Xbox Live Skin`'s volume — and 6 by travel, every one of them Halo 2's or STALKER's balance
+    /// Measured over the 180 installed archives this selects **17 of the 342 stripped
+    /// `CUSTOMSLIDER`s, in 6 skins**: 11 by coverage — Halo 2's and STALKER's TruBass and WOW,
+    /// `Plus! Mecha`'s, `Rave-MP`'s and `Xbox Live Skin`'s seek, `XBOX`'s and `Xbox Live Skin`'s
+    /// volume — and 6 by travel, every one of them Halo 2's or STALKER's balance
     /// and the four video sliders beside it. Nothing outside those two families is reached by the
     /// second reading, which is what says it is picking up one authoring habit rather than firing
-    /// on art in general.
+    /// on art in general. `Secura`'s pair made it 19 in 7 until W307 took it away — see the
+    /// middle-frame reading in the body.
     func filmstripIsDescending(for path: String, frameCount: Int, vertical: Bool,
                                gradient: (horizontal: Bool, positive: Bool)?) throws -> Bool {
         guard frameCount > 1 else { return false }
@@ -835,15 +852,74 @@ final class WMPImageStore: @unchecked Sendable {
             return (total, total > 0 ? moment / total : nil)
         }
         let first = measure(frame: 0), last = measure(frame: frameCount - 1)
-        let answer: Bool
-        if first.coverage > last.coverage * 1.5 { answer = true }
-        else if last.coverage > first.coverage * 1.5 { answer = false }
+        // **Which end of the strip is full is read at the map's minimum end, halfway through —
+        // not from brightness.** Brightness is only a proxy for "fill", and `Secura` inverts it:
+        // `bar.gif` is 23 frames of a *dark* fill growing over a light ground, so the empty frame
+        // read as the lit one and both its bars drew backwards (volume set high showed a sliver;
+        // progress at 0:00 showed full), while its light `barhover.gif` read forwards — so the bar
+        // flipped whenever the pointer left it. The two end frames alone cannot say which is full
+        // (dark growing from the left and light shrinking to the right are the same pair), but the
+        // position map says where the minimum is, and a fill grows from there: per line along the
+        // axis, the stretch that differs between the end frames is what the fill sweeps, and its
+        // pixel nearest the minimum is already covered in the middle frame. Whichever end frame the
+        // middle one matches there is the full one. A moving thumb reads the same way — at the
+        // minimum end the middle frame shows bare track, like the frame whose thumb has left.
+        func pixel(_ frame: Int, _ along: Int, _ across: Int) -> (Int, Int, Int, Int) {
+            let x = vertical ? (alongX ? along : across) : frame * frameWidth + (alongX ? along : across)
+            let y = vertical ? frame * frameHeight + (alongX ? across : along) : (alongX ? across : along)
+            let offset = (y * width + x) * 4
+            return (Int(bytes[offset]), Int(bytes[offset + 1]), Int(bytes[offset + 2]), Int(bytes[offset + 3]))
+        }
+        func same(_ a: (Int, Int, Int, Int), _ b: (Int, Int, Int, Int)) -> Bool {
+            abs(a.0 - b.0) + abs(a.1 - b.1) + abs(a.2 - b.2) + abs(a.3 - b.3) < 48
+        }
+        let length = alongX ? frameWidth : frameHeight, breadth = alongX ? frameHeight : frameWidth
+        let middle = frameCount / 2, minimumFirst = gradient?.positive ?? true
+        var forwards = 0, backwards = 0
+        // A line votes only when the middle frame crosses it **exactly once** — covered on one
+        // side, bare on the other, read outward from the minimum — which is what a fill boundary
+        // is and what a thumb's old and new spots also give. A line with more crossings (digits,
+        // segment gaps, an arc folding back across it) or none says nothing. It takes three
+        // lines, all agreeing: asking one pixel per line flipped `T3-Skynet`'s arcs, `portals` and
+        // `Scooby-Doo_2` on one to three votes.
+        if frameCount > 2 {
+            for line in 0..<breadth {
+                var runs: [Bool] = []
+                for step in 0..<length {
+                    let along = minimumFirst ? step : length - 1 - step
+                    let start = pixel(0, along, line), end = pixel(frameCount - 1, along, line)
+                    guard !same(start, end) else { continue }
+                    let seen = pixel(middle, along, line)
+                    let matchesStart = same(seen, start), matchesEnd = same(seen, end)
+                    guard matchesStart != matchesEnd else { continue }
+                    if runs.last != matchesEnd { runs.append(matchesEnd) }
+                }
+                guard runs.count == 2 else { continue }
+                if runs[0] { forwards += 1 } else { backwards += 1 }
+            }
+        }
+        let lit: Bool
+        if first.coverage > last.coverage * 1.5 { lit = true }
+        else if last.coverage > first.coverage * 1.5 { lit = false }
         else if let start = first.centre, let end = last.centre,
                 abs(start - end) > Double(alongX ? frameWidth : frameHeight) * 0.15 {
             // A thumb that ends up *behind* where it started, read along the map's own direction,
             // is a strip authored the other way round.
-            answer = (gradient?.positive ?? true) ? start > end : start < end
-        } else { answer = false }
+            lit = (gradient?.positive ?? true) ? start > end : start < end
+        } else { lit = false }
+        // **It only ever takes a reversal away.** Brightness fails one way — a dark fill read as
+        // empty — and letting this reading *add* reversals moved five strips in four skins
+        // (`Crimson_Skies`, `Gold`, `Plus! Professional`, `T3-Skynet`) on evidence nobody has
+        // checked against the skins. Every strip brightness reverses today but `bar.gif` votes
+        // backwards here too, so this changes that one strip and nothing else in the corpus.
+        let answer = lit && !(forwards >= 3 && backwards == 0)
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["WMP_STRIP_TRACE"] == "1" {
+            NSLog("[wmp/strip] %@ frames=%d vertical=%@ gradient=%@ anchor=+%d/-%d lit=%@ descending=%@",
+                  canonical, frameCount, vertical ? "yes" : "no", axis, forwards, backwards,
+                  lit ? "yes" : "no", answer ? "yes" : "no")
+        }
+        #endif
         lock.lock()
         descendingStripEntries[cacheKey] = answer
         lock.unlock()

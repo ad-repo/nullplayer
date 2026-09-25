@@ -23,14 +23,22 @@ a dispatch defect — it is a control the pointer never reached at all.
   sprite with *nothing* opaque in it is a hit catcher rather than a shape (`holiday_skin`, `Grinch`
   and `Josie_and_the_Pussycats` build whole transports that way, 104 controls across 21 archives),
   and a node with a `mappingImage` takes its region from the *map*, never from its art.
-- **A release inside the pressed control's rectangle is a release over it (W306).** Coverage is read
-  off the sprite the control is drawing, and the press swaps that sprite: `xsn_sports`'
-  `visDrawerButton` is a 19x13 hover sprite, opaque edge to edge, over a 13x7 `image`/`downImage`
-  arrow, so a press on the margin logged `UP … over=- captured=visDrawerButton` and raised no
-  `onClick` — the drawer "sometimes" opened, by pixel. `WMPMainView.mouseUp` now counts a release
-  inside the captured target's frame where no other control answers. **Only the release half is
-  fixed**: coverage still omits the hover sprites, so a press on the margin of a sticky-down button
-  misses (`raw=-#-`); that is W306, open.
+- **A button is every state sprite it authors, not the one it is drawing (W306).** The pointer
+  sees the hover sprite, so that is the shape it aims at: `xsn_sports`' `visDrawerButton` is a 13x7
+  arrow in `image`/`downImage` under a 19x13 `hoverImage`/`hoverDownImage` tab, opaque edge to edge,
+  and a press on the tab's margin hit nothing (`raw=-#-`, 8 of 8 with the drawer open). Coverage for
+  any node but a `<BUTTONGROUP>`, `<SUBVIEW>` or `<VIEW>` is the union of `image`, `downImage`,
+  `hoverImage` and `hoverDownImage`, each placed at natural size, top-left, as the foreground path
+  draws it. **Only a node that already has a shape widens** — a union only adds pixels, and a hit
+  catcher (fully transparent `image`) keeps its whole rect whatever its hover sprite is. **It is
+  cached** (`WMPImageStore.stateCoverage`, keyed by the paints and the frame's size): a scene is
+  rebuilt on every host tick, and re-sampling four sprites per button cost `Secura` a core, which
+  showed as every click landing a click late. Measured over 179 archives with
+  `WMP_RENDER_OCCLUDED=1`: no `lost` count moved; ten skins changed, all classified — `Zengarden`'s
+  `pausebutton` now covers its stacked `Playb` while playing (the visible one), `Scooby-Doo_2`'s
+  colour button's glow reaches into `infoButton`'s keyed corner, the rest are masks becoming whole
+  rects. **The release half** is `WMPMainView.mouseUp`: a release inside the captured target's frame
+  where no other control answers is a release over it.
 - **A hosted surface is its picture, and its picture ends where the skin paints over it (W213).**
   `<EFFECTS>` and `<VIDEO>` already rank last, which keeps the controls drawn over them; what
   ranking cannot give back is the artwork *between* those controls, which is not a control at all.

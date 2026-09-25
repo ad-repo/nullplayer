@@ -1537,10 +1537,22 @@ counter-evidence table in `reference/skins/README.md`.
   frame 13 empty. So the *map* answers which end of the control is the minimum and the *art*
   answers which end of the strip is, separately. `WMPImageStore.filmstripIsDescending` measures it
   two ways — lit coverage for a fill bar, centre-of-mass travel along `WMPPositionMap.gradient()`
-  for a moving thumb — and selects **19 of the 342 stripped `CUSTOMSLIDER`s across 7 skins**, every
+  for a moving thumb — and selects **17 of the 342 stripped `CUSTOMSLIDER`s across 6 skins** (19 in 7
+  before W307 returned `Secura`'s pair), every
   one of the 6 travel-selected ones a Halo 2 or STALKER control. Indexing Halo 2 forwards drew one
   segment for a TruBass of 95 and the full bar for 0 while the audio followed the pointer: reported
   as *"the SRS WOW effect and TruBass level controls do not fire correctly"*.
+  **Brightness is only a proxy for "fill", and it fails one way (W307):** `Secura`'s `bar.gif` is
+  a *dark* fill over a light ground, so the empty frame read as lit and both its bars drew backwards
+  — while its light `barhover.gif` read forwards, so the bar flipped whenever the pointer left it.
+  A second reading can now take a reversal away, never add one: per line along the map's axis, the
+  middle frame must cross the stretch that differs between the end frames exactly once, and the
+  side nearest the map's minimum names the full end; three unanimous lines undo a brightness
+  reversal. Allowed to *add* reversals it moved five strips in `Crimson_Skies`, `Gold`,
+  `Plus! Professional` and `T3-Skynet` on unchecked evidence (`T3-Skynet`'s arcs are plainly
+  ascending). Census with `WMP_STRIP_TRACE=1`: exactly one strip changes, `bar.gif`; the 11 other
+  brightness reversals all vote backwards too. **Known miss:** `NVIDIA`'s `volume.png` counts
+  99 → 00 and both readings draw it forwards.
 - **A host change the skin drove through its own command still has to settle its own bindings.**
   `eq.*` is the one host surface a `.wmz` both writes and binds. Halo 2's SRS button posts
   `eq.enhancedAudio = !eq.enhancedAudio` and its TruBass and WOW sliders carry

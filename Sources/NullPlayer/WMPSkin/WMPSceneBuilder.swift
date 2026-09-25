@@ -1850,6 +1850,42 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 // *better* answer than the frame rather than a worse one (W150).
                 } else if isSlider(node.kind) {
                     coverage = nil
+                } else if node.kind != .buttonGroup, node.kind != .subview, node.kind != .view {
+                    // **A button's region is every state sprite it authors, not the one it is
+                    // drawing (W306).** The pointer sees the hover sprite, so that is the shape it
+                    // aims at: `xsn_sports`' `visDrawerButton` is a 13x7 arrow in `image` and
+                    // `downImage` under a 19x13 tab, opaque edge to edge, in `hoverImage` and
+                    // `hoverDownImage`, and a press on the tab's margin fell through to nothing.
+                    // Each sprite is placed the way the foreground path draws it — natural size,
+                    // top-left. Only a node that already has a shape widens: a union can only add
+                    // pixels, and a hit catcher (no coverage of its own) keeps its whole rect.
+                    let own = Array(ownPaint)
+                    var states: [WMPPaintCommand] = []
+                    for name in ["image", "downImage", "hoverImage", "hoverDownImage"] {
+                        guard let (_, statePath) = try resource(node, names: [name]) else { continue }
+                        let command = imageCommand(node: node, path: statePath, frame: frame,
+                            clip: inheritedClip, z: z, background: false,
+                            clippingPath: clippingPath, hueShift: hueShift)
+                        guard case .image(let image) = command.paint, image.sourceRect == nil else {
+                            states.append(command)
+                            continue
+                        }
+                        states.append(imageCommand(node: node, path: statePath, frame: frame,
+                            clip: inheritedClip, z: z, background: false,
+                            sourceOverride: WMPRect(x: 0, y: 0, width: frame.width, height: frame.height),
+                            clippingPath: clippingPath, hueShift: hueShift))
+                    }
+                    // Sampling reads only the paints and the frame's size, so those are the key.
+                    let key = "\(Int(frame.width.rounded()))x\(Int(frame.height.rounded()))|"
+                        + String(describing: own.map(\.paint)) + "|" + String(describing: states.map(\.paint))
+                    coverage = imageStore.stateCoverage(key: key) {
+                        guard WMPHitCoverageBuilder.coverage(for: own, frame: frame,
+                                                             pixels: alphaPlane) != nil else { return nil }
+                        // `nil` here is a union with no hole left in it — the whole rect, as for
+                        // any node — never a reason to fall back to the node's own coverage.
+                        return WMPHitCoverageBuilder.coverage(for: own + states, frame: frame,
+                                                              pixels: alphaPlane)
+                    }
                 } else {
                     coverage = WMPHitCoverageBuilder.coverage(for: Array(ownPaint), frame: frame,
                                                              pixels: alphaPlane)
