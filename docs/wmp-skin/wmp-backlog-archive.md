@@ -137,6 +137,22 @@ and stays stopped. Accepted by the reporter. **Not driven live:** next while sto
 `Plus! HueShifter`, `Plus! Plasma Ball` and `Plus! SlimLine` now starts playback, because their
 `osMediaOpen` arm calls `player.controls.play()` — which is WMP's behaviour for them.
 
+## W280 — `Asimov_Radio`'s volume bars trailed the volume by a click (closed 2026-09-25)
+
+Reported live: *"asminov volume cant be asdjusted"*. **The volume itself adjusted in the current
+build** — the report likely predates W281–W283, or missed VolUp's thin (~14 px) mapping band. Both
+`<BUTTONELEMENT>`s hit (`VolUp#49`, `VolDn#50`, headless and live under `WMP_CLICK_TRACE`), and each
+click reached the host as `volumePercent`. What was wrong was the read-back: the
+`player.settings.volume` setter queued the host command without updating `snapshot`, so
+`SetVolume`'s clamp and `DisplayVolume()`'s twelve bars read the value from before the click. The
+setter now clamps to 0–100 and stores the write, the way the `eq` setters do. **Verified live**
+(each VolDn click drops one bar on the same click) and accepted by the reporter. Rule:
+`object-model.md` § *Adding a member*; tests in `WMPSettingsVolumeTests`.
+
+Row as filed:
+
+| W280 | `Asimov_Radio`'s volume cannot be adjusted | **1 skin, reported live 2026-09-25** ("asminov volume cant be asdjusted"); not yet reproduced, and not yet measured whether other skins share the idiom | Not started, cause unknown. The control is not a slider: `btnvol` is a `<BUTTONGROUP>` over `vol_hilite_map.bmp` with two `<BUTTONELEMENT>`s, `VolUp` (`#0000FF`) and `VolDn` (`#FF0000`), whose `onClick` calls `SetVolume(true/false)` in `MBay.js` — `player.settings.volume ± 9`, clamped 0–100 — and `DisplayVolume()` lights the twelve `splVolume1`–`splVolume12` subviews from `player.settings.volume`. The group sits inside `splVolume` next to those subviews, so first separate the three candidates in the live loop (`harness.md` § *Driving the app*, **with a track playing**): the click never reaches the element (decode both mapping colours and click them with a `CGEvent`), the write to `player.settings.volume` never reaches the host, or the volume changes and `DisplayVolume` never repaints the bars. |
+
 ## W281, W282, W283 — `gnome` and `Asimov_Radio` (closed 2026-09-25)
 
 Reported live: *"gnome skin does not load the main window"*, then *"gnome seems to be missing its

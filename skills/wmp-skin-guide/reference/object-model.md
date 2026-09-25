@@ -1548,7 +1548,12 @@ aborting its handler, counted `inert()` because nothing draws playlist columns.
    § *Verified **not** gaps* before you open anything — the author-typo list there is the largest
    single false lead in the whole scan.
 2. Implement it in `WMPObjectModel` — `live` if there is a host behind it, `inert()` if there is
-   not, and leave it out entirely if neither is honest.
+   not, and leave it out entirely if neither is honest. **A writable `live` member stores the
+   clamped write in `snapshot` as well as queuing the host command**, because host commands apply
+   only after the handler returns: WMP's idiom is write, then read back in the same handler to clamp
+   and redraw. `player.settings.volume` queued the command alone, so `Asimov_Radio`'s `SetVolume`
+   clamped against, and lit its bars from, the value before the click (W280). `balance`, `mute`
+   and `controls.currentPosition` still have that shape; no skin has been measured depending on it.
 3. Add it to `WMPJScriptCompatibility.members` in the same change; that table is what the census's
    static `UNKNOWN member` tally is measured against.
 4. Re-measure. The next member is now visible; the list you started from is already stale.

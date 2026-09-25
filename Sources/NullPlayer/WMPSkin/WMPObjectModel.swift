@@ -1499,9 +1499,14 @@ final class WMPObjectModel {
         case ("player.controls", "currentposition"):
             hostCommand("seekSeconds", value)
             return .value(value)
+        // Stored as well as sent, so a read later in the same handler sees the write: `Asimov_Radio`'s
+        // `SetVolume` clamps and `DisplayVolume` lights its bars off the value it just set (W280).
         case ("player.settings", "volume"):
-            hostCommand("volumePercent", value)
-            return .value(value)
+            guard let number = value.number, number.isFinite else { return .value(.number(snapshot.volume * 100)) }
+            let percent = max(0, min(100, number))
+            snapshot.volume = percent / 100
+            hostCommand("volumePercent", .number(percent))
+            return .value(.number(percent))
         case ("player.settings", "balance"):
             hostCommand("balancePercent", value)
             return .value(value)
