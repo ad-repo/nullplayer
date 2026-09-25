@@ -1489,6 +1489,13 @@ final class WMPObjectModel {
         case ("player.currentplaylist", "name"):
             inert()
             return .value(value)
+        // **The Xbox skins' `resetCode()` writes the key back every timer tick** (W266):
+        // `event.keycode = 65` so a stale X cannot fire the Easter egg on hover. `eventKeyCode`
+        // is set afresh by every `beginTransaction`, so the write lives for this dispatch only —
+        // later reads in the same handler see it, the next event does not.
+        case ("event", "keycode"):
+            eventKeyCode = value.number.map { Int($0) }
+            return .value(value)
         case ("player.controls", "currentposition"):
             hostCommand("seekSeconds", value)
             return .value(value)

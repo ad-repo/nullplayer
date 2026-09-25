@@ -1049,6 +1049,12 @@ on whichever control happened to hold focus.
 a handler reading it from a timer or a host event runs on rather than dying with a `ReferenceError`.
 `0` would be VK_NULL, a number a `switch` can match. Same rule as W260's `timerInterval`.
 
+**A skin may write it, for its own dispatch** (W266). The Xbox skins' `resetCode()` runs
+`event.keycode = 65` on every 400 ms `onTimer`, and threw every tick while the member was read-only.
+`WMPObjectModel.write` stores the value in `eventKeyCode`, which every `beginTransaction` resets, so
+later reads in the same handler see it and the next event does not. The other `event` members stay
+read-only.
+
 **The hole this work found, and it hid the dispatch site completely.** `WMPMainView` took first
 responder on `mouseDown` and nowhere else, so a window that had never been clicked received no key
 event at all and every one of the corpus's 1,052 key handlers was unreachable — the same hole `.wal`

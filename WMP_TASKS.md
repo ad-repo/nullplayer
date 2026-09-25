@@ -27,7 +27,6 @@ defect*).
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W266 | A skin's write to `event.keyCode` is refused, so its timer throws every tick | **3 archives**, measured 2026-09-24 by scanning every `.js`/`.wms` for an `event.<member> =` write over 179 archives (two `.wms` unreadable to the scan: `Need_for_Speed_Underground`, `SplinterCellWMPSkin`) — `Official_Xbox_XP`, `Official_Xbox_MP71`, `XBOX`, all the same `xbox.js` | Not blocked. `resetCode()`, the view's `onTimer` every 400 ms, does `event.keycode = 65`, and the engine answers `unimplemented event.keycode (read-only or unknown member)`. It clears the key the X-key Easter egg reads: `pressButton(event)` runs on `onMouseOver`/`onmousemove` as well as `onKeyDown`, and the reset is there so a stale `88` cannot launch `xbox.com` on hover. What our engine's `event.keyCode` reads in a mouse handler is **unmeasured**. **Decide what WMP's `event` is between key events** (a writable object that keeps the last value, or a fresh one) before making the member writable. Check what the throw costs per tick too: `SlimLine`'s throwing `OnTimerTick` showed up in `sample` (harness.md § `WMP_SCRIPT_TRACE`). Reproduce with `WMP_SKIN=…/Official_Xbox_XP.wmz WMP_RENDER_SETTLE=2` and read the `SCRIPT-DIAG mainBox … onTimer[0]` line. |
 
 Do not add a name to `handlerNames`/`supportedEvents` without its dispatch site — `object-model.md`
 § *Recognising an event is not dispatching it*. Candidate gaps already disproved (incl. the author-typo

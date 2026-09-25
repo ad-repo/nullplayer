@@ -1414,6 +1414,22 @@ final class WMPScriptRuntimeTests: XCTestCase {
         XCTAssertEqual(WMPVirtualKeyCode.keyDown(keyCode: 9, charactersIgnoringModifiers: "V"), 86)
     }
 
+    /// **`event.keyCode` is writable, for the one dispatch** (W266). The Xbox skins' `resetCode()`
+    /// runs `event.keycode = 65` every timer tick and threw on every tick while the member was
+    /// read-only. The write is read back within the transaction and never reaches the next one.
+    func testEventKeyCodeWriteLastsForItsOwnTransactionOnly() {
+        let model = WMPObjectModel()
+        model.beginTransaction(snapshot: WMPHostSnapshot(), preferences: [:], viewID: "mainBox")
+        guard case .value = model.set("event", "keycode", .number(65)) else {
+            return XCTFail("the write is accepted")
+        }
+        guard case .value(let written) = model.get("event", "keyCode") else { return XCTFail() }
+        XCTAssertEqual(written, .number(65))
+        model.beginTransaction(snapshot: WMPHostSnapshot(), preferences: [:], viewID: "mainBox")
+        guard case .value(let next) = model.get("event", "keyCode") else { return XCTFail() }
+        XCTAssertEqual(next, .null, "a written key does not leak into the next event")
+    }
+
     /// **An authored key handler owns an arrow only where it compares that arrow.** `Halloween`'s
     /// player view is `onKeyPress="viewHotKeys();"`, which switches over letters; its resize button
     /// is `onkeydown="viewResizer(event);"`, which switches over `37`…`40`. Before the scan the

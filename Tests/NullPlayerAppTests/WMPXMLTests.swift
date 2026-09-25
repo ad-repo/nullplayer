@@ -61,6 +61,20 @@ final class WMPXMLTests: XCTestCase {
                       "the discarded value is named so a case where they differ is visible")
     }
 
+    /// **A repeated `id` keeps its first value** (W266). `Official_Xbox_MP71`'s intro still is
+    /// `<subview id="mainIntro" … id="introPNG">`; its script hides `mainIntro` to open the shutter
+    /// and means a different node by `introPNG`. Every other attribute stays last-wins.
+    func testDuplicateIdKeepsTheFirstValue() throws {
+        let document = try WMPXMLParser().parse(
+            #"<THEME><SUBVIEW id="mainIntro" zIndex="1" id="introPNG" zIndex="19"/></THEME>"#,
+            path: "dup.wms")
+        let subview = try XCTUnwrap(document.roots.first?.children.first)
+        XCTAssertEqual(subview.attribute("id"), "mainIntro")
+        XCTAssertEqual(subview.attribute("zIndex"), "19")
+        let warning = try XCTUnwrap(document.diagnostics.first)
+        XCTAssertTrue(warning.message.contains("kept \"mainIntro\" over \"introPNG\""))
+    }
+
     /// Alphabetising these is not cosmetic. The `.wal` engine sorted them once, which put `id` at
     /// position 4 of 10, silently dropped four style properties and mislaid cPro2's clock.
     func testAttributesKeepDocumentOrderAndAuthoredSpelling() throws {

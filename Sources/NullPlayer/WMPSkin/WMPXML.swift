@@ -231,17 +231,26 @@ struct WMPXMLParser {
                     let attribute = WMPXMLAttribute(name: attributeName, value: attributeValue)
                     if let existing = positionByFoldedName[folded] {
                         // Last wins, in the slot the *first* spelling claimed, so the document order
-                        // the rest of the engine reads stays the document's own. All three duplicates
-                        // measured across the corpus repeat an identical value, so the choice is
-                        // invisible today; the diagnostic carries both values so that the first case
-                        // where they differ shows up in the census instead of being silently decided.
+                        // the rest of the engine reads stays the document's own. The diagnostic
+                        // carries both values so a differing pair shows up in the census.
+                        //
+                        // **Except `id`, where the first wins** (W266). `Official_Xbox_MP71`'s
+                        // intro still is `<subview id="mainIntro" … id="introPNG">`, and its script
+                        // needs both names as the first spelling leaves them: `pullAnimation()`
+                        // hides `mainIntro` to open the shutter, and `reverseAnim()`'s `introPNG`
+                        // is the child of `introAnim`. Last-wins threw on `mainIntro` and left the
+                        // closed shutter over the screen. It is the only `id` in the corpus
+                        // repeated with a different value, so no other skin moves.
+                        let keepFirst = folded == WMPPath.fold("id")
                         diagnostics.append(WMPDiagnostic(
                             .duplicateAttribute,
                             "<\(name)> repeats attribute '\(attributeName)'; "
-                                + "kept \"\(attributeValue)\" over \"\(attributes[existing].value)\".",
+                                + (keepFirst
+                                    ? "kept \"\(attributes[existing].value)\" over \"\(attributeValue)\"."
+                                    : "kept \"\(attributeValue)\" over \"\(attributes[existing].value)\"."),
                             severity: .warning,
                             location: WMPSourceLocation(path: path, line: tagLine, column: tagColumn)))
-                        attributes[existing] = attribute
+                        if !keepFirst { attributes[existing] = attribute }
                     } else {
                         positionByFoldedName[folded] = attributes.count
                         attributes.append(attribute)

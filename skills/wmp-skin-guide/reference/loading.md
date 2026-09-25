@@ -108,7 +108,7 @@ precisely where the Foundation error code does not.
 
 | Code | What | Behaviour | Corpus |
 |---|---|---|---|
-| `WMP0034` | duplicate attribute on a tag | **last wins, in the slot the first spelling claimed**; the message names both values | 19 occurrences, 4 skins |
+| `WMP0034` | duplicate attribute on a tag | **last wins, in the slot the first spelling claimed** — except `id`, where **the first wins** (W266: `Official_Xbox_MP71`'s `<subview id="mainIntro" … id="introPNG">`, whose script needs `mainIntro`); the message names both values | 412 occurrences, 267 with differing values across ~40 skins (measured 2026-09-24); `Official_Xbox_MP71`'s is the only differing `id` |
 | `WMP0036` | tag left open at end of file | the node keeps its children and siblings, because a node is attached to its parent when it *opens* | 0 today |
 | — | unknown tag | stays in the graph as `.unknown(name)` for the compatibility report | see `COMPAT`/`UNKNOWN` lines |
 | `WMP0029` | `res://`, `file:`, `http(s):`, `activex:` resource | that one entry is skipped; a `scriptFile` list keeps its siblings (Corona's `res://wmploc.dll/RT_TEXT/#132` warns and its four real programs still register) | 15 |
