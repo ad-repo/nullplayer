@@ -341,6 +341,17 @@ Reproduce with `python3 scripts/wmp_slider_drag_census.py` (population C), which
 rather than grepping them**: see § *A corpus number taken with `grep` is not a corpus number* in
 [`harness.md`](harness.md).
 
+**`eq` itself falls through to the element named `eq` (W309).** `eq` is bound as a host global
+over any element of that name, so a member the equaliser does not answer — `eq.visible = false` —
+came back unrecognised and killed the handler. `US Army`'s `playlistpop()`, `banan()` and `eqpop()`
+set their open flag *after* that line, so every toggle opened its pane and never closed it.
+`WMPObjectModel.get`/`set`/`invoke` now retry an unrecognised `eq` member against `element:eq`
+(`shadowedElement`). In WMP `eq` is only ever the element: `<equalizerSettings id="eq">` in most
+skins, a `<SUBVIEW id="eq">` in `Navigator`, whose `eq.visible` writes now really hide that panel.
+`python3 scripts/wms_grep.py -c '\beq\.(visible|enabled|alphablend|moveto)\b'` reaches 10
+archives: `Navigator`, `Stars and Stripes`, the five `US …`, `Josie_and_the_Pussycats`, `Grinch`
+and `gnome`.
+
 `eq.gainLevels(band) = value` (`Compact`, `Charlies_Angels_Full_Throttle`) stays unrecognised: it is
 assignment to the result of a call and not valid JScript, so answering it would be answering a typo.
 

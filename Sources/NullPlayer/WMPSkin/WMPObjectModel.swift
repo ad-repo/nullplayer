@@ -379,22 +379,42 @@ final class WMPObjectModel {
     /// `path` is a receiver address: a host object path (`player.controls`), `element:<id>`, or
     /// `playlistitem:<index>`.
     func get(_ path: String, _ member: String) -> WMPMemberValue {
-        let result = read(path: path, member: member)
+        var result = read(path: path, member: member)
+        if case .unrecognised = result, let element = shadowedElement(path) {
+            result = read(path: element, member: member)
+        }
         record(path: path, member: member, kind: .read, result: result)
         return result
     }
 
     @discardableResult
     func set(_ path: String, _ member: String, _ value: WMPJSONValue) -> WMPMemberValue {
-        let result = write(path: path, member: member, value: value)
+        var result = write(path: path, member: member, value: value)
+        if case .unrecognised = result, let element = shadowedElement(path) {
+            result = write(path: element, member: member, value: value)
+        }
         record(path: path, member: member, kind: .write, result: result, written: value)
         return result
     }
 
     func invoke(_ path: String, _ member: String, _ arguments: [WMPJSONValue]) -> WMPMemberValue {
-        let result = call(path: path, member: member, arguments: arguments)
+        var result = call(path: path, member: member, arguments: arguments)
+        if case .unrecognised = result, let element = shadowedElement(path) {
+            result = call(path: element, member: member, arguments: arguments)
+        }
         record(path: path, member: member, kind: .invoke, result: result)
         return result
+    }
+
+    /// **The skin's own element named `eq` answers what the equaliser does not (W309).** `eq` is
+    /// bound as a host global over any element of that name, so `eq.visible = false` reached
+    /// `write(path: "eq")`, came back unrecognised and killed the handler — and `US Army`'s
+    /// `playlistpop()` and its three siblings set their open/closed flag *after* that line, so
+    /// every toggle button opened its pane and never closed it again. In WMP `eq` is only ever the
+    /// element (`<equalizerSettings id="eq">`, or `Navigator`'s `<SUBVIEW id="eq">`), so its open
+    /// property surface is the honest fallback once the equaliser has declined the member.
+    private func shadowedElement(_ path: String) -> String? {
+        path == "eq" && liveElement("eq") != nil ? "element:eq" : nil
     }
 
     /// Does this receiver answer this member at all? Used by the `with` scope a geometry

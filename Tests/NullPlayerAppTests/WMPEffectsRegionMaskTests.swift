@@ -144,6 +144,28 @@ final class WMPEffectsRegionMaskTests: XCTestCase {
                         "and the occlusion path it does use is untouched")
     }
 
+    /// **An `<EFFECTS>` that names its own `clippingImage` is shaped by it (W309).** `US Army`'s
+    /// surface writes `clippingImage="vismask.gif" clippingColor="#FF00FF"` inside a container whose
+    /// background is the same opaque two-state plate — which the Cerulean guard above rightly
+    /// refuses — so the spectrum filled the whole window.
+    func testAnEffectsOwnClippingImageShapesTheSurface() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200">
+            <SUBVIEW id="visuals" left="20" top="30" width="100" height="80"
+                     backgroundImage="lens.png" transparencyColor="#FF00FF">
+                <EFFECTS id="fx" left="0" top="0" width="100" height="80"
+                         clippingImage="lens.png" clippingColor="#FF00FF"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """, images: ["lens.png": try containerImage(opening: .keyed)])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let mask = try XCTUnwrap(try effectsWidget(in: scene).regionMask,
+                                 "the surface's own clipping image is its shape")
+        XCTAssertEqual(mask.resourcePath.lowercased(), "lens.png")
+        XCTAssertEqual(mask.keyedOut, [WMPColor(red: 255, green: 0, blue: 255)])
+        XCTAssertEqual(mask.frame, WMPRect(x: 20, y: 30, width: 100, height: 80))
+    }
+
     /// A container with no key at all cannot describe a shape either way.
     func testAContainerWithoutATransparencyColourShapesNothing() async throws {
         let skin = try await load(wms: """

@@ -361,7 +361,22 @@ struct WMPSceneBuilder: @unchecked Sendable {
             guard scriptShows(node), node.statedAttribute(named: "visible") != nil else { return false }
             return self.literalString(node, "visible")?.caseInsensitiveCompare("true") != .orderedSame
         }
+        /// **…but never out of a pane the skin itself has closed (W309).** A container authored
+        /// hidden that a script has shown before is a toggle, and hiding it again closes
+        /// everything in it: `US Army`'s `hideinfomode()` hides `infomode` and, in the same
+        /// handler, sets `infodown2.visible = true` on a scroll arrow inside it — and the
+        /// `sflink` credit link it showed earlier sits inside `creditsmask`, closed the same way.
+        /// Read as escapes, both stayed on the face after Info closed. `help`/`credits` (never
+        /// shown by any script) and `Charlies_Angels`' `pos` (authored visible) are not toggles
+        /// by this rule and still pass their shown children through.
+        func closesSubtree(_ node: WMPNode) -> Bool {
+            let address = WMPScenePropertyAddress(stableID: node.stableID, property: "visible")
+            return overrides.scriptShown.contains(node.stableID)
+                && overrides.properties[address]?.truth == false
+                && self.literalString(node, "visible")?.caseInsensitiveCompare("false") == .orderedSame
+        }
         func indexScriptShown(_ node: WMPNode, ancestors: [Int]) -> Void {
+            if closesSubtree(node) { return }
             if escapesHiddenAncestor(node) {
                 passThroughAncestors.formUnion(ancestors)
             }
@@ -702,7 +717,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
             guard !node.children.isEmpty, !frame.isEmpty else { return nil }
             let clipping = colors(node, names: ["clippingColor"])
             if let path = try resource(node, names: ["clippingImage"])?.1 {
-                guard !clipping.isEmpty else { return nil }
+                guard !clipping.isEmpty, clippingImageFits(path, frame) else { return nil }
                 return WMPSceneClipMask(resourcePath: path, keyedOut: clipping, frame: frame)
             }
             let keys = clipping.isEmpty ? colors(node, names: ["transparencyColor"]) : clipping
@@ -779,11 +794,27 @@ struct WMPSceneBuilder: @unchecked Sendable {
             return mask
         }
 
+        /// Whether a node's `clippingImage` can shape it at all. A mask larger than the node on
+        /// **both** axes cannot (W309): `US Army` and its five siblings clip their 191x143
+        /// `helpmask` and `creditsmask` panes with `infomask.gif`, a 370x370 plate whose black key
+        /// is exactly the pane's rect in its *parent's* coordinates. Stretched over the pane, the
+        /// black cut a hole in the help text and the pane's pink `backgroundColor` showed through;
+        /// at the pane's origin it cut the corner instead; at the parent's origin it keys out the
+        /// whole pane, text and all. The skin is only right with no mask: the opaque 191-wide
+        /// `infohelp1.gif`/`infocred1.gif` then cover the pink, which is what the authors saw.
+        /// Those twelve nodes are the corpus's whole population of this shape; every other
+        /// mismatched mask is smaller than its node on at least one axis and keeps the stretch.
+        func clippingImageFits(_ path: String, _ frame: WMPRect) -> Bool {
+            guard let image = try? imageStore.image(for: path).image else { return true }
+            return !(CGFloat(image.width) > frame.width && CGFloat(image.height) > frame.height)
+        }
+
         func groundShape(_ node: WMPNode, frame: WMPRect) throws -> WMPSceneClipMask? {
             guard !frame.isEmpty else { return nil }
             let clipping = colors(node, names: ["clippingColor"])
             guard !clipping.isEmpty else { return nil }
             if let path = try resource(node, names: ["clippingImage"])?.1 {
+                guard clippingImageFits(path, frame) else { return nil }
                 return WMPSceneClipMask(resourcePath: path, keyedOut: clipping, frame: frame)
             }
             guard let path = try resource(node, names: ["backgroundImage", "background"])?.1,
@@ -1239,7 +1270,20 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // a `SUBVIEW`'s `transparencyColor` carves the region its windowless child is confined
             // to, and every other hosted surface in this engine is a real rectangular control.
             var regionMask: WMPWidgetRegionMask?
-            if node.kind == .effects, let parentNode, let parentNodeFrame, !parentNodeFrame.isEmpty,
+            // **…unless the `<EFFECTS>` names its own shape (W309).** `US Army` and its five
+            // siblings write `clippingImage="vismask.gif" clippingColor="#FF00FF"` on the surface
+            // itself — a 370x370 plate that keeps a small black disc in the middle of the face.
+            // Its parent's `backgroundImage` is the same opaque file, which `shapesChildrenByRegion`
+            // correctly refuses (Cerulean), so without this the spectrum filled the whole window.
+            if node.kind == .effects, !frame.isEmpty,
+               let (_, maskPath) = try resource(node, names: ["clippingImage"]) {
+                let keys = clippingMaskKeys(node, path: maskPath)
+                if !keys.isEmpty {
+                    regionMask = WMPWidgetRegionMask(resourcePath: maskPath, keyedOut: keys, frame: frame)
+                }
+            }
+            if node.kind == .effects, regionMask == nil, let parentNode, let parentNodeFrame,
+               !parentNodeFrame.isEmpty,
                let (_, maskPath) = try resource(parentNode, names: ["backgroundImage", "background"]) {
                 let keys = colors(parentNode, names: ["transparencyColor", "clippingColor"])
                 // Only a container that shapes by region, never one that occludes by paint — the
@@ -2536,6 +2580,10 @@ struct WMPSceneOverrides: Hashable, Codable, Sendable {
     /// visualization over the window's transparent top half the moment playback started, with no
     /// control to take it away.
     var boundProperties: Set<WMPScenePropertyAddress> = []
+    /// Every node a script has written `visible = true` to this session, whatever it holds now.
+    /// This is what tells a pane the skin opens and closes from one it never opens — see
+    /// `closesSubtree` in `WMPSceneBuilder` (W309).
+    var scriptShown: Set<Int> = []
 
     static let empty = WMPSceneOverrides(geometry: [:], properties: [:])
 }

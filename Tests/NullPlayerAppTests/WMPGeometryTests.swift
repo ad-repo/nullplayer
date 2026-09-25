@@ -279,6 +279,46 @@ final class WMPGeometryTests: XCTestCase {
                       "the open drawer did not draw its button")
     }
 
+    /// **A pane the skin opened and then closed takes its script-shown children with it (W309).**
+    /// `US Army`'s `hideinfomode()` hides `infomode` and sets `infodown2.visible = true` inside it;
+    /// both are authored hidden, so the arrow read as an escape and stayed on the face. `help` —
+    /// authored hidden and never shown — still passes its shown `helpmask` through.
+    func testAClosedScriptOpenedPaneHidesItsShownChildren() async throws {
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="60" height="40">
+              <SUBVIEW id="infomode" left="0" top="0" width="60" height="40" visible="false">
+                <SUBVIEW id="arrow" left="2" top="3" width="4" height="4" backgroundColor="#0000FF" visible="false"/>
+                <SUBVIEW id="help" left="10" top="10" width="40" height="20" visible="false">
+                  <SUBVIEW id="helpmask" left="2" top="3" width="4" height="4" backgroundColor="#00FF00" visible="false"/>
+                </SUBVIEW>
+              </SUBVIEW>
+            </VIEW></THEME>
+            """.utf8))
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        func id(_ name: String) throws -> Int { try XCTUnwrap(skin.graph.nodes(id: name).first).stableID }
+        func visible(_ name: String) throws -> WMPScenePropertyAddress {
+            .init(stableID: try id(name), property: "visible")
+        }
+        var overrides = WMPSceneOverrides.empty
+        overrides.properties[try visible("infomode")] = .bool(true)
+        overrides.properties[try visible("helpmask")] = .bool(true)
+        overrides.scriptShown = [try id("infomode"), try id("helpmask")]
+        var scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main", overrides: overrides)
+        XCTAssertTrue(scene.commands.contains { $0.stableID == (try? id("helpmask")) },
+                      "an open pane passes help's shown child through")
+
+        overrides.properties[try visible("infomode")] = .bool(false)
+        overrides.properties[try visible("arrow")] = .bool(true)
+        overrides.scriptShown.insert(try id("arrow"))
+        scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main", overrides: overrides)
+        XCTAssertFalse(scene.commands.contains { $0.stableID == (try? id("arrow")) },
+                       "the arrow outlived the closed pane")
+        XCTAssertFalse(scene.commands.contains { $0.stableID == (try? id("helpmask")) },
+                       "the help text outlived the closed pane")
+    }
+
     /// **A binding's `true` is not a script show (W301).** `Alpine7618_v09` hangs its panel's
     /// `<EFFECTS visible="wmpenabled:player.controls.stop">` inside `VisPanel`, authored hidden and
     /// shown only by its VIS button. Once playback enabled `stop`, the bound value read as a script

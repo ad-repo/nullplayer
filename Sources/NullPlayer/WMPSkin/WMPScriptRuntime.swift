@@ -823,6 +823,9 @@ actor WMPScriptRuntime {
             } else {
                 overrides.properties[address] = mutation.value
                 overrides.boundProperties.remove(address)
+                if address.property == "visible", mutation.value.truth {
+                    overrides.scriptShown.insert(address.stableID)
+                }
                 if address.property == "horizontalalignment" || address.property == "verticalalignment" {
                     scriptAligned[address] = canvas
                     // **Assigning an alignment freezes the element where it currently is (W225).**

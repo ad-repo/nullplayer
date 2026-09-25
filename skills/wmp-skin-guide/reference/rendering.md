@@ -1044,6 +1044,12 @@ counter-evidence table in `reference/skins/README.md`.
   the frame around it; read as an escape, the button floated beside the shut drawer. Blocking at an
   authored-hidden *container* instead is wrong — `US Army`'s Help lives in `help`, authored hidden
   and never shown, and emptied. Every pass-through the corpus needs is an authored-hidden node.
+  **And never out of a pane the skin itself closed (W309)**: an ancestor authored hidden that a
+  script has shown this session (`WMPSceneOverrides.scriptShown`) and has hidden again closes its
+  whole subtree (`closesSubtree`). `US Army`'s `hideinfomode()` hides `infomode` and in the same
+  handler sets `infodown2.visible = true` on a scroll arrow inside it; `sflink` sits inside
+  `creditsmask`, closed the same way. Both stayed on the face after Info closed. `help`/`credits`
+  (never shown) and `Charlies_Angels`' `pos` (authored visible) are not toggles by this rule.
   `Charlies_Angels_Full_Throttle` nests its whole face in `pos`; Gallery hides `pos` and shows
   `boxsmall` (the cut-down face), the wings and the pictures inside it, and the window went empty
   with no way back (Speaker Mode is in a wing). `Stars and Stripes` and its five US-forces siblings
@@ -1360,6 +1366,16 @@ counter-evidence table in `reference/skins/README.md`.
   `main_vis_back.png` (36/58/5) and `Plus! Professional`'s `vis_mask_s.png` (23/59/18). Getting the
   sign wrong on Cerulean does not distort its visualizer, it **erases** it: the mask would keep the
   surface only where the face already covers it and clip it away inside the hole.
+
+  **An `<EFFECTS>` that names its own `clippingImage` is shaped by that, first (W309).** The US
+  forces family (`US Army` and five siblings) writes `clippingImage="vismask.gif"
+  clippingColor="#FF00FF"` on the surface itself; its container's `backgroundImage` is the same
+  opaque two-state plate, which the discriminator above rightly refuses, so the spectrum filled the
+  whole 370x370 window instead of the small disc. The key is `clippingMaskKeys` (the corner when
+  none is authored); a mask with no key and its own alpha still shapes nothing. 14 `<EFFECTS>`
+  declarations across 11 archives author one (`Secura`, `Windows XP`, `deepbluesomething`,
+  `holiday_skin`, `gnome`, `Charlies_Angels_Full_Throttle`, `portals` and the six) — only the
+  six were checked on screen.
 - **The skin draws its controls; an AppKit overlay is only for what the scene genuinely cannot
   paint.** What is left hosted is `PLAYLIST`, `DROPDOWNPLAYLIST`, `EFFECTS`, `EDITBOX`, `LISTBOX`
   and `POPUP`. `VIDEO` is not: its placeholder filled every `<VIDEO>` frame with opaque black over
@@ -1650,6 +1666,16 @@ counter-evidence table in `reference/skins/README.md`.
     mask's own alpha cut the keep region and the key alike and both of its `Frost` layers vanished.
     Every other mask in the corpus is opaque and reads the same either way. A `<BUTTONGROUP>`'s own
     `clippingImage` still honours alpha — that is an authored mask bitmap, not a container's ground.
+  - **A `clippingImage` larger than its node on both axes shapes nothing (W309).** `US Army` and its
+    five siblings clip the 191x143 `helpmask`/`creditsmask` panes with the 370x370 `infomask.gif`,
+    whose black key is exactly the pane's rect in its *parent's* coordinates. Every placement was
+    tried live and every one was wrong: stretched to the pane, the key cut a hole in the help text
+    and the pane's `backgroundColor="pink"` showed through; at the pane's origin, unscaled, it cut the
+    bottom-right corner; at the parent's origin it keys out the whole pane, text included. With no
+    mask the opaque `infohelp1.gif`/`infocred1.gif` cover the pink, which is the skin as designed.
+    `clippingImageFits` in `clipMask`/`groundShape`. Those 12 nodes are the whole population
+    (a scan of every `clippingImage` against its authored `width`/`height`); every other mismatched
+    mask is smaller than its node on at least one axis and keeps the stretch.
   - **A `backgroundImage` is a shape only when it is untiled, authored at the node's own size, and
     two-toned.** 84 `<SUBVIEW>`s across 38 archives and 26 `<VIEW>`s across 17 declare a
     `clippingColor` with no `clippingImage`, and they are two authoring idioms the attribute cannot

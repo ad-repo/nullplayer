@@ -551,6 +551,28 @@ final class WMPClippingShapeTests: XCTestCase {
                        "the closed half of the drawer is not drawn")
     }
 
+    /// **A clipping image larger than its node on both axes shapes nothing (W309).** `US Army`'s
+    /// 191x143 `helpmask` names the 370x370 `infomask.gif`; stretched over the pane its key cut a
+    /// hole in the help text and the pane's pink ground showed through. The child draws whole.
+    func testAClippingImageLargerThanItsNodeShapesNothing() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="8" height="8">
+            <SUBVIEW id="pane" left="1" top="1" width="3" height="3" backgroundColor="pink"
+                     clippingImage="mask.png" clippingColor="white">
+                <BUTTON id="text" left="0" top="0" width="3" height="3" image="text.png"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """, images: ["mask.png": try shapeMask(), "text.png": try flat([10, 120, 200, 255], width: 3, height: 3)])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+
+        let text = try XCTUnwrap(scene.commands.first { $0.nodeID == "text" })
+        XCTAssertFalse(text.inheritedClipMasks.contains { $0.resourcePath.lowercased() == "mask.png" },
+                       "an 8x8 mask over a 3x3 pane is not the pane's shape")
+        let rendered = try await renderer(for: skin).render(scene: scene).image
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered, x: 1, yFromTop: 1), [10, 120, 200, 255],
+                       "the pane's corner is text, not a hole showing its ground")
+    }
+
     /// `cornerColor` is nil for a bitmap whose corner is already transparent: a file that authored
     /// its own alpha has said what is see-through and there is no matte colour to infer.
     func testCornerColourIsNilForAnAlreadyTransparentCorner() throws {

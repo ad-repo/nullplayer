@@ -631,6 +631,35 @@ final class WMPPhase14Tests: XCTestCase {
                        "inert settings do not claim to have changed a rendered scene")
     }
 
+    /// **`eq` is the skin's own element for every member the equaliser does not answer (W309).**
+    /// `US Army`'s `playlistpop()` writes `eq.visible = false` and sets its open flag after it; an
+    /// unrecognised member killed the handler there, so every toggle button opened and never closed.
+    /// `Navigator`'s `eq` is a `<SUBVIEW>`, which the write must actually hide.
+    func testEqFallsThroughToTheElementNamedEq() async throws {
+        for element in [#"<EQUALIZERSETTINGS id="eq" enable="true"/>"#,
+                        #"<SUBVIEW id="eq" left="0" top="40" width="20" height="20"/>"#] {
+            let skin = try await load(wms: """
+            <THEME><VIEW id="main" width="100" height="100">
+                \(element)
+                <TEXT id="out" left="0" top="0" width="90" height="12" value=""/>
+                <BUTTON id="go" left="0" top="20" width="10" height="10"/>
+            </VIEW></THEME>
+            """)
+            let (runtime, cleanup) = try runtime()
+            defer { cleanup() }
+            let output = await runtime.transact(
+                skin: skin, viewID: "main", size: .init(width: 100, height: 100),
+                snapshot: WMPHostSnapshot(), event: .init(name: "click", targetID: "go", handlers: [
+                    "eq.visible = false; out.value = 'closed';"
+                ]))
+            XCTAssertFalse(output.diagnostics.contains { $0.code == "handler-error" }, element)
+            XCTAssertEqual(output.overrides.properties[.init(stableID: try stableID(skin, "out"), property: "value")],
+                           .string("closed"), "the handler ran past eq.visible: \(element)")
+            XCTAssertEqual(output.overrides.properties[.init(stableID: try stableID(skin, "eq"), property: "visible")],
+                           .bool(false), "the element named eq took the write: \(element)")
+        }
+    }
+
     // MARK: - W118: a semantic slider tag is itself a binding
 
     /// `<SLIDER value="wmpprop:player.settings.balance">` says where the control reads;
