@@ -1038,6 +1038,12 @@ counter-evidence table in `reference/skins/README.md`.
   it). An explicit script write of `visible = true` is the node's own answer, though, and the walk
   passes through a hidden ancestor to reach it — the ancestor paints nothing, hits nothing, and
   every child the script did not show stays hidden (`passThroughAncestors` in `WMPSceneBuilder`).
+  **Only a show that changes the node's answer counts (W308)**: the node must author a `visible`
+  that is not `true` (`"false"`, or a binding). `Gorillaz` writes `vis.visible = true` on a button
+  that was never hidden when its left drawer opens, then closes the drawer by hiding `left_ear11`,
+  the frame around it; read as an escape, the button floated beside the shut drawer. Blocking at an
+  authored-hidden *container* instead is wrong — `US Army`'s Help lives in `help`, authored hidden
+  and never shown, and emptied. Every pass-through the corpus needs is an authored-hidden node.
   `Charlies_Angels_Full_Throttle` nests its whole face in `pos`; Gallery hides `pos` and shows
   `boxsmall` (the cut-down face), the wings and the pictures inside it, and the window went empty
   with no way back (Speaker Mode is in a wing). `Stars and Stripes` and its five US-forces siblings

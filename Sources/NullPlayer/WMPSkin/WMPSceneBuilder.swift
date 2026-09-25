@@ -351,8 +351,18 @@ struct WMPSceneBuilder: @unchecked Sendable {
             return overrides.properties[address]?.truth == true
                 && !overrides.boundProperties.contains(address)
         }
+        /// **Only a show that changes the node's answer escapes (W308).** Every pass-through the
+        /// corpus needs is a node authored hidden (`visible="false"`, or a binding) and shown by script — `Charlies_Angels`'
+        /// `boxsmall`, the `US Army` family's `helpmask`/`helpdrawer`. `Gorillaz` writes
+        /// `vis.visible = true` on a button that was never hidden when its left drawer opens, then
+        /// closes the drawer by hiding `left_ear11`, the frame the button lives in; read as an
+        /// escape, the button stayed on screen beside the shut drawer.
+        func escapesHiddenAncestor(_ node: WMPNode) -> Bool {
+            guard scriptShows(node), node.statedAttribute(named: "visible") != nil else { return false }
+            return self.literalString(node, "visible")?.caseInsensitiveCompare("true") != .orderedSame
+        }
         func indexScriptShown(_ node: WMPNode, ancestors: [Int]) -> Void {
-            if scriptShows(node) {
+            if escapesHiddenAncestor(node) {
                 passThroughAncestors.formUnion(ancestors)
             }
             for child in node.children {
@@ -909,7 +919,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
             }
             // Below a hidden ancestor only a node the script itself has shown is drawn — see
             // `passThroughAncestors`.
-            if insideHidden, !scriptShows(node) { hidden = true }
+            if insideHidden, !escapesHiddenAncestor(node) { hidden = true }
             let passesThrough = hidden && passThroughAncestors.contains(node.stableID)
             // Measured-only, and only for a node the graph reads a coordinate off. A node with no
             // frame of its own has no coordinate to give, so `isNonLayout` still leaves here.

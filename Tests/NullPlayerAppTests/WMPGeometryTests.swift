@@ -247,6 +247,38 @@ final class WMPGeometryTests: XCTestCase {
                        WMPRect(x: 32, y: 13, width: 4, height: 4))
     }
 
+    /// **A script show of a node that was never hidden does not escape its container (W308).**
+    /// `Gorillaz` writes `vis.visible = true` on a default-visible button when its left drawer opens,
+    /// then closes the drawer by hiding `left_ear11`, the frame it lives in — the button stayed on
+    /// screen beside the shut drawer. Open again, the drawer draws it.
+    func testAScriptShowOfADefaultVisibleNodeStaysInsideAHiddenContainer() async throws {
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="60" height="40">
+              <SUBVIEW id="drawer" left="10" top="10" width="40" height="20" visible="false">
+                <SUBVIEW id="button" left="2" top="3" width="4" height="4" backgroundColor="#0000FF"/>
+              </SUBVIEW>
+            </VIEW></THEME>
+            """.utf8))
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        func address(_ id: String) throws -> WMPScenePropertyAddress {
+            .init(stableID: try XCTUnwrap(skin.graph.nodes(id: id).first).stableID, property: "visible")
+        }
+        let button = try address("button")
+        var overrides = WMPSceneOverrides.empty
+        overrides.properties[button] = .bool(true)
+        overrides.properties[try address("drawer")] = .bool(false)
+        var scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main", overrides: overrides)
+        XCTAssertFalse(scene.commands.contains { $0.stableID == button.stableID },
+                       "a default-visible button escaped the closed drawer")
+
+        overrides.properties[try address("drawer")] = .bool(true)
+        scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main", overrides: overrides)
+        XCTAssertTrue(scene.commands.contains { $0.stableID == button.stableID },
+                      "the open drawer did not draw its button")
+    }
+
     /// **A binding's `true` is not a script show (W301).** `Alpine7618_v09` hangs its panel's
     /// `<EFFECTS visible="wmpenabled:player.controls.stop">` inside `VisPanel`, authored hidden and
     /// shown only by its VIS button. Once playback enabled `stop`, the bound value read as a script
