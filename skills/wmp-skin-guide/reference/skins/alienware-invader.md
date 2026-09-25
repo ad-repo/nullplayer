@@ -253,8 +253,10 @@ ever previewed. Fixed there.
 
 Seen and not fixed, both filed as lower priority: `playSelPlaylist()` ends with
 `plListBox1.selectedItem = 0`, and the chooser keeps the played row highlighted rather than moving
-to "Now Playing" (W300); and after a relaunch `btnPl` needs two clicks, because `onLoadSkin()`'s
-`theme.openView('plView')` opens nothing while the saved `plViewer` says it is open (W299).
+to "Now Playing" (W300); and after a relaunch `btnPl` needed two clicks, because `onLoadSkin()`'s
+`theme.openView('plView')` opened nothing while the saved `plViewer` said it was open (W299, fixed
+2026-09-25: the persisted `mainView` start skipped `controlView`'s `onLoad` altogether — see
+`rendering.md` § *A view the skin never shows can still have to keep running*).
 
 ## What is already ruled out
 

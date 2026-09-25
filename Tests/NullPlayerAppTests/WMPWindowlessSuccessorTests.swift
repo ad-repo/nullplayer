@@ -191,4 +191,47 @@ final class WMPWindowlessSuccessorTests: XCTestCase {
                         command("openView", "eqView"), command("setViewTimerInterval", "50")]
         XCTAssertEqual(WMPMainWindowController.redirectedToOwnWindow(commands), commands)
     }
+
+    // MARK: - W299: the dispatcher's `onLoad` on a launch that starts at the persisted player
+
+    /// **The second launch onward starts at the persisted player, and the dispatcher's `onLoad`
+    /// still runs.** `wmpSkinViewID` puts `mainView` first in the walk, so `controlView` — where the
+    /// Skins Factory family's `onLoadSkin()` re-opens the panels the user left open — was never
+    /// visited. `Alienware Invader` opened with no playlist while its `plViewer` said `"true"`, and
+    /// `btnPl` took two clicks.
+    func testAPersistedPlayerStillRunsTheDispatchersOnLoad() async throws {
+        let root = try WMPSkinTestSupport.temporaryDirectory()
+        let suite = "WMPWindowlessSuccessorTests.W299.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let importer = WMPSkinImporter(directoryURL: root, defaults: defaults)
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME>
+                <VIEW id="controlView" scriptFile="s.js" onLoad="onLoadSkin()"
+                      timerInterval="100" onTimer="tick()"><PLAYER/></VIEW>
+                <VIEW id="mainView" width="240" height="120"/>
+                <VIEW id="plView" width="200" height="100"/>
+            </THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("s.js", data: Data("""
+            function onLoadSkin() { theme.openView('plView'); theme.openView('mainView'); }
+            function tick() {}
+            """.utf8))
+        ], filename: "Dispatcher.wmz")
+        _ = try await importer.importSkin(from: archive)
+        defaults.set("mainView", forKey: WMPSkinImporter.selectedViewIDKey)
+        let controller = WMPMainWindowController(importer: importer)
+        defer { controller.prepareForUITeardown(); controller.window?.close() }
+        let store = WMPViewFrameStore(defaults: defaults)
+        let skin = try XCTUnwrap(importer.selectedSkinName)
+        let clock = ContinuousClock(), deadline = clock.now.advanced(by: .seconds(3))
+        while !store.openViews(skin: skin).contains("plView"), clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(controller.selectedViewID, "mainView",
+                       "the walk started at the persisted player, not at controlView")
+        XCTAssertEqual(store.openViews(skin: skin), ["plView"],
+                       "controlView's onLoad was skipped, so the panel it re-opens never opened")
+    }
 }

@@ -132,6 +132,13 @@ Why each family is selected the way it is — only needed when changing `launch.
 (440x170). Restoration, if left on, rewrites `wmpSkinName` from the saved state before the window
 opens. `launch.sh` exists so neither has to be remembered.
 
+**Deleting `wmpSkinViewID` makes every `.wmz` launch a first launch.** The user's second launch
+onward starts the view walk at the persisted player and skips the views ahead of it, so a defect
+that only shows "after a relaunch" never reproduces through `launch.sh` — W299 measured fine on nine
+launches that way. Reproduce it by killing the app and relaunching the debug binary with
+`wmpSkinViewID` left in place (`./scripts/kill_build_run.sh --debug -- -uiMode wmp
+-rememberStateEnabled NO`, with `NULLPLAYER_PLAY` set if the skin needs playback).
+
 **The mode names do not match the menu.** `-uiMode modern` is the **Original** submenu;
 `-uiMode winampModern` is the **Modern** submenu (`App/PlayerUIMode.swift:33-39`).
 

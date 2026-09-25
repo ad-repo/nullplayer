@@ -13,7 +13,7 @@
   Skins look and behave like themselves: their own artwork, shaped windows, animations, hover and
   pressed states, tooltips, fonts, drawers and multiple views, with the skin's own JScript running in
   a sandboxed session so its buttons, sliders, timers, keyboard shortcuts and readouts work the way
-  they do in Windows Media Player — a button answers anywhere its highlight is drawn, and a skin's level bars fill the right way round whatever colours it draws them in. A skin's panels close again from the buttons that opened them, and its visualizer stays inside the shape the skin cut for it. The skin's transport, seek bar, volume and ten-band equalizer drive
+  they do in Windows Media Player — a button answers anywhere its highlight is drawn, and a skin's level bars fill the right way round whatever colours it draws them in. A skin's panels close again from the buttons that opened them, the ones you left open come back when you relaunch, and its visualizer stays inside the shape the skin cut for it. The skin's transport, seek bar, volume and ten-band equalizer drive
   NullPlayer's playback, including WMP's WOW and TruBass enhancements, and video plays inside the
   skin's own screen with NullPlayer's normal video controls and casting. NullPlayer's own windows —
   library, playlist, equalizer, spectrum and audio analyzers, PeppyMeter, Flow, Cava, waveform,

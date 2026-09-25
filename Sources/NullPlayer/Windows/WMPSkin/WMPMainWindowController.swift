@@ -789,7 +789,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                         startTweenLoop(presentation, hasActiveTweens: output.hasActiveTweens)
                     }
                     recordScriptDiagnostics(output.diagnostics)
-                    await adoptDispatcher(in: skin, store: store, presenting: resolved.viewID)
+                    await adoptDispatcher(in: skin, store: store, presenting: resolved.viewID,
+                                          loaded: visited)
                     presented = true
                     break
                 }
@@ -3744,7 +3745,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// markup prefilter is only to bound the cost: a view sized by its own artwork or by the union
     /// of its subtree declares none of the three attributes either, so the build is what decides.
     private func adoptDispatcher(in skin: WMPLoadedSkin, store: WMPImageStore,
-                                 presenting viewID: String) async {
+                                 presenting viewID: String, loaded: Set<String>) async {
         stopDispatcher()
         for registration in skin.views
         where registration.id.caseInsensitiveCompare(viewID) != .orderedSame {
@@ -3761,9 +3762,37 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                       .build(viewID: registration.id),
                   scene.canvasSize.width <= 0 || scene.canvasSize.height <= 0 else { continue }
             dispatcherViewID = registration.id
+            if !loaded.contains(WMPPath.fold(registration.id)) {
+                await runSkippedDispatcherLoad(in: skin, viewID: registration.id,
+                                               size: scene.canvasSize, player: viewID)
+            }
             startDispatcherTimer(in: skin)
             return
         }
+    }
+
+    /// **The dispatcher's `onLoad` is the skin's launch, and the walk skips it on every launch but
+    /// the first (W299).** The same persisted `wmpSkinViewID` that keeps the walk from reaching the
+    /// timer keeps it from reaching `onLoad` — and the Skins Factory family's `onLoadSkin()` is
+    /// where the panels the user left open are re-opened from their `plViewer`/`eqViewer`/…
+    /// preferences. Skipping it left `plViewer` saying `"true"` over no window, so `btnPl`'s
+    /// `toggleView` "closed" it and the second click was the first to open anything. Run here, its
+    /// commands take the same route as the walk's deferred ones: against the player, minus the
+    /// player's own `openView`.
+    private func runSkippedDispatcherLoad(in skin: WMPLoadedSkin, viewID: String, size: WMPSize,
+                                          player playerViewID: String) async {
+        guard let scriptRuntime, let player = materializer.playerPresentation else { return }
+        let event = WMPJScriptEvent(name: "load", targetID: viewID,
+            handlers: Self.handlers(in: skin, event: "load", targetID: nil, viewID: viewID))
+        guard !event.handlers.isEmpty else { return }
+        await scriptRuntime.discardView(viewID)
+        let output = await scriptRuntime.transact(skin: skin, viewID: viewID, size: size,
+                                                  snapshot: host.snapshot, event: event)
+        guard dispatcherViewID == viewID else { return }
+        applyHostCommands(output.hostCommands.filter {
+            $0.value?.string?.caseInsensitiveCompare(playerViewID) != .orderedSame
+        }, from: player)
+        recordScriptDiagnostics(output.diagnostics)
     }
 
     /// Start the background dispatcher's clock. Its period is the `timerInterval` the view authors,
