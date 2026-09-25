@@ -5,20 +5,18 @@ counter-evidence table in `reference/skins/README.md`.
 
 ## Static scene and image contracts
 
-- **What WMP does with a `backgroundImage` whose frame is not its bitmap is unsettled, and it must be
-  measured before the rule changes (W123).** `Ice` authors
+- **What WMP does with a `backgroundImage` whose frame is not its bitmap is unsettled — decide it
+  before extending W122's natural-size rule to backgrounds.** `Ice` authors
   `<button image="Pl-xp.bmp" width="196" height="144">` over a bitmap that is really 196x**44**,
-  inside `<subview id="Drawerbutton2" backgroundimage="Pl-xp.bmp" width="313" height="144">`. Both
-  were stretched and therefore agreed; the button is now drawn at its own 196x44 (W122) and **a seam
-  appears in the lower shell**. **1 view measured** (`Ice/videoView`) out of the 545-image corpus
-  capture; the wider class — every `backgroundImage` whose frame is not its bitmap — is unmeasured.
-  Reproduce with `WMP_SKIN=…/Ice.wmz WMP_RENDER_PROBE=videoView`. **It cannot be answered by
-  extending W122**: `Ice`'s own frame tiles all author `backgroundtiled="true"`, which suggests WMP
-  does not stretch and a skin tiles deliberately — but `Vidcolorbox` is
+  inside `<subview id="Drawerbutton2" backgroundimage="Pl-xp.bmp" width="313" height="144">`. After
+  W122 a headless dump showed a seam in the lower shell (W123); **checked live 2026-09-25 there is
+  none** and the row is closed as not reproducing. The open question is the rule, not a defect:
+  `Ice`'s own frame tiles all author `backgroundtiled="true"`, which suggests WMP does not stretch
+  and a skin tiles deliberately — but `Vidcolorbox` is
   `horizontalAlignment="stretch" verticalAlignment="stretch"` with an untiled `Vid-bg.bmp`, and
   `LostPlanet`'s stretch tiles are 61 px of window frame that would punch through. Check
-  `reference/skins/README.md`'s counter-evidence table first, and settle it together with W240 —
-  `Radio` is in both, and in `harness.md`'s *17 views, 4 mismatched* table.
+  `reference/skins/README.md`'s counter-evidence table first, and measure the class — every
+  `backgroundImage` whose frame is not its bitmap — before changing the rule.
 
 - **A `.wmz` is 1x artwork and this app draws it on a 2x display, so the upscale is done by Lanczos
   ahead of the draw — never by CoreGraphics' own filter.** This is the one rendering rule that is
@@ -802,9 +800,9 @@ counter-evidence table in `reference/skins/README.md`.
   returns early on an empty playlist, so the 545-image corpus capture moved **16 images, none of them
   a clock** — every one an oversized bitmap that had been upscaled and is now crisp (`portals/mode2`,
   the five `US …` `videoUSM` logos, `tubeframe`, `Ice/mainView`), one nondeterministic
-  (`Scooby-Doo_2`), and one that is now half-right and is the open row: `Ice/videoView` draws
-  `Pl-xp.bmp` as a 196x44 button inside a subview that still stretches the *same* bitmap to 313x144,
-  so the two no longer meet.
+  (`Scooby-Doo_2`), and `Ice/videoView`, which draws
+  `Pl-xp.bmp` as a 196x44 button inside a subview that still stretches the *same* bitmap to 313x144
+  (W123 read that as a seam; live on 2026-09-25 there is none).
 - **A subview's background art larger than its box stops at the box (W283).** A background
   bitmap on a non-`stretch`, non-tiled axis draws at its own size (the `Ice` corner rule in
   `WMPSceneBuilder`), and overflowing art used to be trimmed only by the *parent's* clip. A subview
