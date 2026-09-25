@@ -88,17 +88,12 @@ evidence of a surface**: the effect is shared across skins, and with any other e
 neither view logs it. And **the first click on an inactive window only activates it**, so the
 scarab does not open. Closure: `docs/wmp-skin/wmp-backlog-archive.md` § *W202*.
 
-**`W203` — `<DURATIONTEXT>` never renders**, so the face reads `1:03 /` with nothing after the slash.
-`<currentPositionText>` at `57,86` and the literal `/` at `103,86` both draw;
-`<durationText left="108" top="86" width="45" fontSize="8" justification="Left">` produces no `PROBE`
-line at all and is the view's single `unresolved`.
-`WMP_SKIN=…/pharaoh.wmz WMP_RENDER_UNRESOLVED=1 WMP_RENDER_HOST=playing` names the dimension:
-`UNRESOLVED view-2/11 durationText id=- size=missing literal geometry (height)`.
-**`<currentPositionText>` beside it declares no `height` either and resolves to 45x10**, so the
-missing piece is a glyph-height fallback this one tag does not get, not anything the skin failed to
-author — **which means a `<DURATIONTEXT>` anywhere is dead**, not just this one. Only 2 nodes in 2
-archives (`pharaoh`, `circle`), kept as a row because it is a *visible* readout on a shipped
-Microsoft skin.
+**`W203` — the track length drawing flush right — closed 2026-09-24.** The row was filed as
+`<DURATIONTEXT>` never rendering; that half had already gone when the tag became an element, and a
+playing-host probe resolves the cell at `108,86 45x10` painting `3:33`. What was left was placement:
+the face read `1:03 /      3:33`, because the justification switch named `center` and `right` but
+not `left`, and a clock readout's default is `right`. `pharaoh`'s `durationText` is the corpus's only
+clock readout authoring `Left`. Closure: `docs/wmp-skin/wmp-backlog-archive.md` § *W203*.
 
 **`W204` — every view in a skin shared one script scope — closed 2026-09-24.** The function half
 closed with W257: the rosetta's `OnOpenStateChange` no longer runs in the main view. A playing-host

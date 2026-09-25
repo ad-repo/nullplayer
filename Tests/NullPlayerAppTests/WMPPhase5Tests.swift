@@ -185,6 +185,34 @@ final class WMPPhase5Tests: XCTestCase {
         XCTAssertEqual(text.color, WMPColor(red: 0x10, green: 0x20, blue: 0x30))
     }
 
+    func testAClockReadoutHonoursAnAuthoredLeftJustification() async throws {
+        // A clock readout right-aligns by default, and `left` was the one justification the
+        // switch did not name — so `pharaoh`'s `justification="Left"` duration fell through to
+        // that default and drew 30 px clear of its `/` (W203).
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="160" height="20">
+              <CURRENTPOSITIONTEXT id="elapsed" left="0" top="0" width="45" fontSize="8"/>
+              <DURATIONTEXT id="total" left="50" top="0" width="45" fontSize="8"
+                            justification="Left"/>
+            </VIEW></THEME>
+            """.utf8))
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        var snapshot = WMPHostSnapshot(); snapshot.currentTime = 63; snapshot.duration = 213
+        var registry = WMPObservablePropertyRegistry(graph: skin.graph)
+        var overrides = WMPSceneOverrides.empty
+        for change in registry.changes(for: snapshot) { overrides.properties[change.address] = change.value }
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main", overrides: overrides)
+        func alignment(_ id: String) throws -> WMPTextAlignment {
+            let command = try XCTUnwrap(scene.commands.first { $0.nodeID == id })
+            guard case let .text(text) = command.paint else { throw XCTSkip("expected a text paint") }
+            return text.alignment
+        }
+        XCTAssertEqual(try alignment("elapsed"), .right)
+        XCTAssertEqual(try alignment("total"), .left)
+    }
+
     // MARK: - Where a bound slider writes
 
     func testAValueBindingNamesTheActionTheSliderWritesTo() {

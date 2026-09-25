@@ -1710,6 +1710,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                let value = WMPResourceStrings.resolved(literalString(node, "value")) {
                 let alignment: WMPTextAlignment
                 switch literalString(node, "justification")?.lowercased() {
+                case "left": alignment = .left
                 case "center": alignment = .center
                 case "right": alignment = .right
                 // `CURRENTPOSITIONTEXT` reserves the trailing cell of a composite readout.

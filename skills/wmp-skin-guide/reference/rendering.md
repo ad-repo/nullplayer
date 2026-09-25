@@ -933,7 +933,10 @@ counter-evidence table in `reference/skins/README.md`.
   `player.controls.currentPositionString`. WMP right-aligns an otherwise-unqualified
   `CURRENTPOSITIONTEXT`, because it is normally the trailing cell beside a scrolling title.
   Cerulean exposed both requirements: omitting the tag removed its clock, and left alignment made
-  the clock touch the title.
+  the clock touch the title. `DURATIONTEXT` is the other half of the same clock and takes the same
+  default. **An authored `justification="left"` must be named, not left to the default** — the
+  default is `right` for these two tags, so a missing `left` case drew `pharaoh`'s
+  `justification="Left"` duration flush right, 30 px clear of its `/` (W203).
 - **An origin the markup never stated can still have been written by script, and asking the markup
   first meant it never was.** `left`/`top` default to 0 when unauthored — but the check was
   `attribute == nil ? 0 : resolve`, which short-circuited *before* `parseDimension` could look in
