@@ -126,10 +126,7 @@ view's elements are bound, so the wrong handler now runs silently rather than th
 ## How to drive it
 
 ```bash
-defaults write NullPlayer wmpSkinName -string "pharaoh"
-defaults delete NullPlayer wmpSkinViewID
-NULLPLAYER_PLAY=/abs/path/track.mp3 \
-  nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
+skills/app-control/scripts/launch.sh pharaoh
 ```
 
 Decoded coordinates, in the player window's own top-left points. The transport is one

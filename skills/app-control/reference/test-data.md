@@ -68,7 +68,7 @@ cp tmp/testdata/audio-long.mp3 "$SCRATCH/big.mp3"
            $i $i $(( s/60 )) $(( s%60 ))
   done
 } > "$SCRATCH/big.cue"
-NULLPLAYER_PLAY="$SCRATCH/big.cue" ./scripts/kill_build_run.sh --debug --log /tmp/np.log -- -uiMode wmp
+NULLPLAYER_PLAY="$SCRATCH/big.cue" skills/app-control/scripts/launch.sh corona
 ```
 
 **Number the rows in their titles.** "Row 137 of 200" on screen is the scroll position, read

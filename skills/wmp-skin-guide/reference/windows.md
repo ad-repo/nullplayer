@@ -1162,8 +1162,8 @@ its hosted controller first. Pinned by `Tests/NullPlayerAppTests/WindowRestoreGe
 flag.
 
 **Reproducing it needs the restore path, which means two launches and a pinned default.**
-`defaults write NullPlayer rememberStateEnabled -bool true` (it is off in most measurement recipes,
-which is exactly why this class was invisible), size the window with
+`defaults write NullPlayer rememberStateEnabled -bool true` and launch with `launch.sh <skin> --restore`
+(restoration is off in every other launch, which is exactly why this class was invisible), size the window with
 `osascript -e 'tell application "System Events" to tell (first process whose unix id is <pid>) to set
 size of (first window whose name is "NullPlayer PeppyMeter") to {416, 290}'`, ⌘Q, relaunch, and read
 `winhelper windows`. The saved frames themselves are in the `savedAppState` JSON blob of the

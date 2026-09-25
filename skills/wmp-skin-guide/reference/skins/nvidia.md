@@ -88,7 +88,5 @@ skin's own resize handlers).
 during it is of a different scene. A capture at 6 s shows the animation, not the player.
 
 ```bash
-defaults write NullPlayer wmpSkinName -string "NVIDIA"
-defaults write NullPlayer wmpSkinViewID -string "mainView"
-nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
+skills/app-control/scripts/launch.sh NVIDIA --no-play        # opens on mainView, the skin's own default
 ```

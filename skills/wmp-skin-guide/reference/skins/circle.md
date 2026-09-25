@@ -108,10 +108,7 @@ skins wire `onClick` on the surface, and this is the one where the rect is the e
 ## How to drive it
 
 ```bash
-defaults write NullPlayer wmpSkinName -string "circle"
-defaults delete NullPlayer wmpSkinViewID
-WMP_SIZE_TRACE=1 NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)" \
-  nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
+WMP_SIZE_TRACE=1 skills/app-control/scripts/launch.sh circle
 ```
 
 Scene coordinates in `vMain`, decoded from `trans_colormap.bmp` at the group's `24,19` (take the

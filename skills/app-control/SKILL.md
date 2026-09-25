@@ -7,8 +7,9 @@ description: Launch, configure, drive, screenshot and measure the running NullPl
 
 ## Rule zero: the app under test is the local debug build, always
 
-**`./scripts/kill_build_run.sh --debug` is the build-and-run command.** It is the only one this
-skill uses, and every recipe here assumes it. Not `swift build`, not Xcode, not a release build.
+**`skills/app-control/scripts/launch.sh <skin>` is the launch command** (Route B); it runs
+`./scripts/kill_build_run.sh --debug`, which is the build-and-run command for a launch with no skin
+to pin. Not `swift build`, not Xcode, not a release build.
 
 Everything here then operates on the binary it produced:
 
@@ -35,9 +36,7 @@ Two consequences, stated as facts:
 1. A recipe that builds any other way is a bug in the recipe. Release exists only for a deliberate
    profiling measurement, which is out of scope here.
 2. **There is exactly one defaults domain in this skill: `NullPlayer`.** `com.nullplayer.app` is
-   never read or written, so the `defaults write` recipes below cannot damage the user's real
-   preferences. The restore trap in Route D keeps *successive agent runs* deterministic; that is
-   its whole job, and it is not optional for being cosmetic.
+   never read or written, so nothing here can damage the user's real preferences.
 
 ## Routing
 
@@ -88,105 +87,68 @@ BIN=.build/arm64-apple-macosx/debug/NullPlayer     # never `nullplayer`
 
 ## Route B — launch preconfigured, don't click
 
-Applies when you need the app running in a specific mode, skin and playback state. Clicking
-through menus to reach a state a launch flag already sets is the most common wasted launch.
-
-Answer three questions before reading the matrix:
-
-1. **Which binary?** The local debug build, by path. (Rule zero. There is no other answer.)
-2. **Therefore which defaults domain?** `NullPlayer`.
-3. **Therefore are `NULLPLAYER_*` live?** Yes, because it is a debug build.
-
-Then:
-
-1. `defaults write NullPlayer rememberStateEnabled -bool false` — restoration overwrites the skin
-   keys before the window opens.
-2. Set the mode and skin rows you need.
-3. Launch through the front door, passing app arguments after `--`.
-4. Read the Confirm column. **Every row on this surface fails silently.**
-
-> **Every skin row in the table below depends on step 1.** The table is the part people jump to,
-> and a row read on its own looks complete — it is not. With `rememberStateEnabled` left on, the
-> app restores its saved state over the key you just wrote, the previous skin comes back, and
-> `defaults read` afterwards shows the *old* name, which reads as "the write didn't take" rather
-> than "restoration undid it". This cost four relaunches on 2026-09-23: `wmpSkinName` set to
-> `Melvin`, `PowerToys` loaded every time, with the skin key read back as `PowerToys`.
->
-> **Quit any running instance before writing the keys, and read them back before launching.**
-> `kill_build_run.sh` replaces a running app, and that app gets to run its own shutdown after your
-> `defaults write`. Observed in the same session: a key written with an instance still running
-> read back as that instance's skin after the relaunch. Whether that was a save-on-quit or
-> restoration was not isolated, because step 1 had also been skipped — so do both, in this order:
->
-> ```bash
-> pkill -x NullPlayer; while pgrep -x NullPlayer >/dev/null; do sleep 0.5; done
-> defaults write NullPlayer rememberStateEnabled -bool false
-> defaults write NullPlayer wmpSkinName -string "<name>"          # or the row you need
-> defaults read NullPlayer wmpSkinName                             # must print <name>
-> ```
+**One command launches the debug build on any skin, playing, and verifies it:**
 
 ```bash
-bash <<'SESSION'
-set -euo pipefail
-source skills/app-control/scripts/session-defaults.sh
-for key in rememberStateEnabled wmpSkinName wmpSkinViewID; do save "$key"; done
-scripts/testdata.sh ensure
-defaults write NullPlayer rememberStateEnabled -bool false
-defaults write NullPlayer wmpSkinName -string "corona"
-defaults delete NullPlayer wmpSkinViewID 2>/dev/null || true
-NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)"
-export NULLPLAYER_PLAY
-./scripts/kill_build_run.sh --debug --log /tmp/np.log -- -uiMode wmp
-read -r -p "Quit the app, then press Enter to restore defaults: " _ </dev/tty
-SESSION
+skills/app-control/scripts/launch.sh corona                 # .wmz   → -uiMode wmp
+skills/app-control/scripts/launch.sh aquamp                 # .wsz   → -uiMode classic
+skills/app-control/scripts/launch.sh 2222-cPro__Bento       # .wal   → -uiMode winampModern
+skills/app-control/scripts/launch.sh modern:NeonWave        # Original submenu
+skills/app-control/scripts/launch.sh "metal:Brushed Steel"  # Original-Metal submenu
 ```
 
-Every skin row (`.wsz`, `.wal`, `.wmz`, modern, metal) assumes step 1 above — `rememberStateEnabled`
-false, no instance running — or the saved skin wins.
+It prints one line — `LAUNCH PASS: wmp skin 'corona'  pid … log /tmp/np.log` — or `LAUNCH FAIL: …`
+and exits 1. **Trust that line and nothing else; do not hand-roll a skin launch.** Every other
+way of doing it (`defaults write` recipes, `NULLPLAYER_SKIN` for a `.wmz`, a bare
+`./.build/debug/NullPlayer`, `kill_build_run.sh` without `--debug`) has launched the wrong skin in
+a past session, silently.
 
-| Want | Set | Confirm it took |
+- `<skin>` is a bare installed name (searched across `Skins/`, `WinampModernSkins/`, `WMPSkins/`),
+  `name.ext` to pin a family, or an absolute path. A name found in two families **fails and lists
+  both** rather than guessing. A `.wmz` path outside `WMPSkins/` is imported via `-wmpSkinPath`.
+- `--no-play` skips `NULLPLAYER_PLAY` (default: `audio-long` playing; an exported
+  `NULLPLAYER_PLAY` replaces it). `--log <path>` (default
+  `/tmp/np.log`). App arguments go after `--`; trace env vars are simply exported in front:
+  `WMP_SEEK_TRACE=1 skills/app-control/scripts/launch.sh corona -- -winampModernShowVisualization 1`.
+- It quits any running NullPlayer first — including another session's. Say so before using it
+  while someone else's run is up.
+- **Nothing to restore afterwards.** Session restoration is disabled with the *launch argument*
+  `-rememberStateEnabled NO`, never a `defaults write`, so the saved Remember State is untouched
+  and there is no restore trap to race. (The old recipes' trap ran the instant a non-interactive
+  `read </dev/tty` failed — restoring the previous skin and `rememberStateEnabled=1` while the app
+  was still starting. That was the wrong-skin bug.)
+
+Why each family is selected the way it is — only needed when changing `launch.sh`:
+
+| Family | Mechanism | PASS means |
 |---|---|---|
-| UI mode | `-uiMode classic\|modern\|metal\|winampModern\|wmp` | `winhelper windows` title: `NullPlayer — Windows Media Player`, `— Winamp Modern`, else bare `NullPlayer` |
-| A classic `.wsz` | `NULLPLAYER_SKIN=/abs/x.wsz` (DEBUG only) | `defaults delete NullPlayer lastClassicSkinPath` first, then read it back — it names the loaded `.wsz`, and stays **absent** if the load failed |
-| A `.wal` | `-winampModernSkinPath /abs/x.wal` | log line `WinampModern surfaces [<file>.wal]:` names the file |
-| A `.wmz` | **Step 1 first** (`rememberStateEnabled` false, app quit), then `defaults write NullPlayer wmpSkinName "<name>"` + `defaults delete NullPlayer wmpSkinViewID` — **`NULLPLAYER_SKIN` does not work for `.wmz`** | `defaults read NullPlayer wmpSkinViewID` is rewritten to the skin's own view (corona → `vPlayer`), and the window is not the unskinned 440x170 |
-| A modern skin | `defaults write NullPlayer modernSkinName "<name>"` (bundled: `NeonWave`) | log line `ModernSkinLoader: Loaded skin '<name>'` |
-| A metal skin | `defaults write NullPlayer metalSkinName "<name>"` (bundled: `Brushed Steel`) | log line `ModernSkinEngine: Loaded built-in metal skin '<name>'` |
-| A track playing | `NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)"` (DEBUG only) | log line `loadLocalTrack: <file>`; elapsed readout advancing across two captures |
-| A deterministic start | `defaults write NullPlayer rememberStateEnabled -bool false` | no `AppStateManager: Restoring` lines; the skin key survives to window open |
-| Servers / radio / casting | do not launch the GUI — `"$BIN" --cli …` | `--json` output non-empty |
+| `.wsz`/`.whsz` | `NULLPLAYER_SKIN=<path>` (DEBUG only) | `lastClassicSkinPath` rewritten to that path (deleted first) |
+| `.wal` | `-winampModernSkinPath <path>` (DEBUG only) | log `WinampModern surfaces [<file>.wal]:` |
+| `.wmz` installed | `defaults write wmpSkinName`, `wmpSkinViewID` deleted | `wmpSkinName` is the name **and** the app re-wrote `wmpSkinViewID` (it only does once a scene renders) |
+| `.wmz` elsewhere | `-wmpSkinPath <path>` (imports it) | same |
+| modern / metal | `defaults write modernSkinName\|metalSkinName` | log `ModernSkinLoader: Loaded skin '<name>'` / `Loaded built-in metal skin '<name>'` |
 
-### Ready-made blocks — `reference/launch-recipes.md`
-
-One standalone block per **skin family** (Classic, Original, Original-Metal, Winamp Modern, WMP),
-and one per **media cell** — audio/video × local/streaming, with real content frozen in. Copy a
-block and run it; nothing depends on a line from another block.
-
-|  | **Local** | **Streaming** |
-|---|---|---|
-| **Audio** | `NULLPLAYER_PLAY`, or `"$BIN" --cli --file` | `"$BIN" --cli --source plex\|subsonic\|jellyfin\|emby …`, or `--source radio --station` |
-| **Video** | library scan → browser **MOVIES** tab | Plex browser **MOVIES** tab (GUI); `--movie … --cast` (CLI only) |
-
-**Video never goes through `NULLPLAYER_PLAY`**, and **Windows → Video Player is inert** until a
-video has been opened from a browser (`App/WindowManager.swift:3205`). A browser is the only way
-into the video window.
+`NULLPLAYER_SKIN` is the classic loader: a `.wmz` there loads nothing and comes up unskinned
+(440x170). Restoration, if left on, rewrites `wmpSkinName` from the saved state before the window
+opens. `launch.sh` exists so neither has to be remembered.
 
 **The mode names do not match the menu.** `-uiMode modern` is the **Original** submenu;
-`-uiMode winampModern` is the **Modern** submenu (`App/PlayerUIMode.swift:33-39`). Getting this
-backwards silently tests the wrong family.
+`-uiMode winampModern` is the **Modern** submenu (`App/PlayerUIMode.swift:33-39`).
 
 **`NULLPLAYER_PLAY` takes audio and `.cue` only** — `mp3 m4a aac wav aiff aif flac ogg alac`
 (`App/AppDelegate.swift:340,357`). An `.m3u` or `.mp4` there is dropped with no log line and reads
-exactly like a playback bug. See `reference/test-data.md`.
+exactly like a playback bug. **Video never goes through it**, and **Windows → Video Player is
+inert** until a video has been opened from a browser (`App/WindowManager.swift:3205`). Media
+recipes (audio/video × local/streaming) are in `reference/launch-recipes.md`.
 
-Four launch rules:
+Launch rules that still apply to anything `launch.sh` does not cover:
 
 - **Redirect, never pipe.** `kill_build_run.sh --log <path>` writes the log; a pipe keeps the
   script attached. Live traces write to stderr, and a redirected `print` is block-buffered.
 - **The front door un-throttles for you** (`taskpolicy -B`). A hand-rolled `nohup` does not: the
   app inherits background QoS, timers defer and animation stalls. Confirm with `ps -o nice= -p <pid>`.
 - **The domain is `NullPlayer`.** Never `com.nullplayer.app`.
-- **Restore what you wrote**, with a `trap`, so the next run starts clean.
+- Servers / radio / casting: don't launch the GUI — `"$BIN" --cli …` (Route A).
 
 ## Route C — drive it yourself
 
@@ -271,22 +233,13 @@ one `performSlider` per point and **exactly one** commit; a commit per move is t
 Applies to judgment ("does it look right"), contextual menus, and anything a synthetic gesture
 cannot do. **The agent owns the process and the log; the user owns the mouse.**
 
-1. Copy `scripts/qa-session-template.sh` to your scratchpad and fill in the scenario.
-2. Hand the user **one short line**: `! <path>/qa-session.sh`. A long quoted one-liner is what
-   fails to parse.
+1. Launch it yourself with `launch.sh` (Route B) and wait for `LAUNCH PASS`. The user runs nothing.
+2. Tell the user it is up, on which skin, and what to look at.
 3. **End your turn.** Do not block, do not sleep, do not background a watcher.
 4. Mark the log's line count. On the user's next message, read from that mark, answer, re-mark,
    end the turn.
 
-```bash
-cp skills/app-control/scripts/qa-session-template.sh "$SCRATCH/qa-session.sh"
-# …edit the SCENARIO block…
-echo "Run:  ! $SCRATCH/qa-session.sh"
-```
-
-The template and Route B recipes source `scripts/session-defaults.sh` for the restore trap.
-
-**Confirm it took:** the user reports the window is up, or the log has the Route B Confirm line.
+**Confirm it took:** the `LAUNCH PASS` line.
 
 ## Route E — measure
 

@@ -79,7 +79,7 @@ that window's own layout. Sorting the report that way first would have saved a r
 
 ## How to drive it
 
-The skin is already selected with `defaults write NullPlayer wmpSkinName -string "The Unit"`. Its
+Launch it with `skills/app-control/scripts/launch.sh "The Unit"`. Its
 windows tile down a column and run off the bottom of the screen, so a capture by window id returns
 a full-screen image and a `-R` capture picks up whatever is behind; park each window alone before
 shooting it:

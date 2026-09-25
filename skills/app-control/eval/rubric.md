@@ -18,14 +18,14 @@ rest, because those are the errors that make every later number meaningless.
 |---|---|
 | 1 | Did not invoke `skin-screenshots` |
 | 2 | Chose Route B over clicking through the Skins menu |
-| 3 | Used `-uiMode wmp` |
-| 4 | Selected the skin via `wmpSkinName`, **not** `NULLPLAYER_SKIN` |
-| 5 | Disabled `rememberStateEnabled` |
+| 3 | Launched with `launch.sh corona`, or `-uiMode wmp` by hand |
+| 4 | Selected the skin as a `.wmz` (`launch.sh`, `wmpSkinName` or `-wmpSkinPath`), **not** `NULLPLAYER_SKIN` |
+| 5 | Session restoration off for the launch (`launch.sh` does it by launch argument) |
 | 6 | Started playback via `NULLPLAYER_PLAY`, not a file dialog |
 | 7 | Used `audio-long`, not `audio-short` |
 | 8 | Redirected the log, did not pipe |
-| 9 | Un-throttled QoS (or launched through `kill_build_run.sh`, which does it) |
-| 10 | Restored the `NullPlayer` defaults it wrote |
+| 9 | Un-throttled QoS (or launched through `launch.sh` / `kill_build_run.sh`, which do it) |
+| 10 | Left no persistent setting behind that changes the next launch (`launch.sh` writes none that needs restoring) |
 
 ## Block 2 — evidence and outcome (binary, 6 pts)
 
@@ -33,7 +33,7 @@ A 10/10 route with a wrong answer must not pass.
 
 | | |
 |---|---|
-| 11 | **Confirmed the skin actually loaded** before measuring anything — per the state matrix's Confirm column — rather than assuming the `defaults write` took |
+| 11 | **Confirmed the skin actually loaded** before measuring anything — a `LAUNCH PASS` from `launch.sh`, or Route B's PASS-means column — rather than assuming a `defaults write` took |
 | 12 | Captured with `-l <windowid>`, not `-R` |
 | 13 | Took **two or more** captures separated in time and compared them |
 | 14 | **Reached the correct conclusion** about whether the readout advances (`ground-truth.md`) |

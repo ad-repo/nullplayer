@@ -28,11 +28,10 @@ five-second file, or runs the installed `/Applications` build.
 - **Route A** to locate the readout: `WMP_SKIN=…/corona.wmz WMP_RENDER_PROBE=all
   WMP_RENDER_HOST=playing swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus`
   → `PROBE vPlayer/30 text id=tracktime frame=537,268 49x10 … value=wmpprop:player.controls.currentPositionString`
-- **Route B** to launch it: `rememberStateEnabled` off, `wmpSkinName corona`, `wmpSkinViewID`
-  deleted, `NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)"`,
-  `./scripts/kill_build_run.sh --debug --log <log> -- -uiMode wmp`
-- **Confirm it took**: `defaults read NullPlayer wmpSkinViewID` → `vPlayer`, and
-  `loadLocalTrack: audio-long.mp3` in the log
+- **Route B** to launch it: `skills/app-control/scripts/launch.sh corona` — `-uiMode wmp`,
+  `wmpSkinName corona`, restoration off by launch argument, `audio-long` playing
+- **Confirm it took**: `LAUNCH PASS: wmp skin 'corona'`, and `loadLocalTrack: audio-long.mp3` in
+  the log
 - **Route E** to measure: `screencapture -o -x -l <windowid>` twice, several seconds apart,
   cropped to the `tracktime` frame (×2 on a retina display)
 

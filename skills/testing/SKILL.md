@@ -115,9 +115,9 @@ the app. The first measurement identified the real cause in one run.
 ### The loop
 
 ```bash
-pkill -9 -x NullPlayer; sleep 1
-WINAMP_MODERN_PLACE_TRACE=1 .build/arm64-apple-macosx/debug/NullPlayer > /tmp/run.log 2>&1 &
-sleep 12                       # let restore + the layout pass settle
+# add --restore when the defect is in *restored* placement; the default launch skips restoration
+WINAMP_MODERN_PLACE_TRACE=1 skills/app-control/scripts/launch.sh /abs/Skin.wal --no-play --log /tmp/run.log
+sleep 12                       # let the layout pass settle
 PID=$(pgrep -x NullPlayer)
 
 # Drive the UI: menu items by name, addressing the debug build by pid — never by app
@@ -275,14 +275,9 @@ if CommandLine.arguments.contains("--ui-testing") {
 
 ### Launching into a given skin or state — see `app-control`
 
-`NULLPLAYER_SKIN` (DEBUG only, `AppDelegate.swift:56`) loads a **classic `.wsz`** at launch, so a
-skin-specific check needs no clicking through the Skins menu and leaves the user's selection alone.
-
-It is one row of a larger surface, and **every row of that surface fails silently** — a `.wmz` path
-in `NULLPLAYER_SKIN` loads nothing at all. The full state matrix, with a "Confirm it took"
-observable per row, is **`app-control` § Route B**: UI mode, classic `.wsz`, `.wal`, `.wmz`,
-modern/metal skins, playback, and turning session restoration off so it does not overwrite the
-skin key before the window opens.
+`skills/app-control/scripts/launch.sh <skin>` launches the debug build on any skin family, playing,
+and prints a verified `LAUNCH PASS`/`LAUNCH FAIL`. Use it instead of `NULLPLAYER_SKIN` or
+`defaults write` — every one of those fails silently. Details: **`app-control` § Route B**.
 
 ## Running Tests
 

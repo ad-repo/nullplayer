@@ -46,8 +46,7 @@ under the knob open them through `Alpine.js` (`ShowVIS`/`ShowPL`/`ShowEQ`/`ShowV
 
 ## How to drive it
 
-- Launch: `-uiMode wmp -wmpSkinPath <copy of Alpine7618_v09.wmz>` with `NULLPLAYER_PLAY`. Setting
-  `wmpSkinName` did not hold on 2026-09-25: session restore wrote the saved skin back at launch.
+- Launch: `skills/app-control/scripts/launch.sh Alpine7618_v09`.
 - VIS tab (`ShowVIS`, then `HideVIS` on the second click): window origin + **(91, 367)**. The group
   is at 78,333 and red spans x 1-26, y 4-64 in `btn_vis_map.bmp`.
 - Checked by eye: capture the window with `winhelper capture-all`, which should be 1034x824 at 2x.

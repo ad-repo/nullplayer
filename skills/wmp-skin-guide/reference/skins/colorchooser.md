@@ -81,9 +81,7 @@ a frame out of register with its own contents is a wrong-looking picture.
 ## How to drive it
 
 ```bash
-defaults write NullPlayer wmpSkinName -string "Colorchooser"
-NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)" \
-  nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
+skills/app-control/scripts/launch.sh Colorchooser
 ```
 
 **A stopped player is the one state in which this skin is correct**, so a pass with nothing playing

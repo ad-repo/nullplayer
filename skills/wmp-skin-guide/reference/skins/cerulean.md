@@ -74,10 +74,7 @@ scene coordinates at 1x. Measured 2026-09-16 with `screencapture -l <id>` at 2x:
 | Transport strip | see `PROBE` lines for `transport_map.bmp` |
 
 ```bash
-defaults write NullPlayer wmpSkinName -string "cerulean"
-defaults delete NullPlayer wmpSkinViewID
-NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)" \
-  ./scripts/kill_build_run.sh --debug --log /tmp/np.log -- -uiMode wmp
+skills/app-control/scripts/launch.sh cerulean
 ```
 
 **Nothing playing draws nothing at all**, so a capture with a stopped player shows the skin's own

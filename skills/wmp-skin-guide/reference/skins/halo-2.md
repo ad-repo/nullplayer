@@ -141,9 +141,7 @@ Select the skin, launch the debug build with a track playing, and watch the plac
 it opens for itself:
 
 ```bash
-./scripts/kill_build_run.sh --debug
-WMP_PLACE_TRACE=1 NULLPLAYER_PLAY=/abs/path/track.mp3 \
-  nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
+WMP_PLACE_TRACE=1 skills/app-control/scripts/launch.sh "Halo 2"
 ```
 
 One `[wmp/place]` line per auxiliary window, once each. **Five windows at load is the case to watch**

@@ -87,9 +87,11 @@ re-build if new evidence arrives — the exact edits are in the session, the ver
 
 Two traps cost a whole session on 2026-09-20, both of which hand back a confident wrong picture:
 
-- **Confirm the skin from the app's own trace, never from `defaults`.** State restoration rewrites
-  `wmpSkinName` at launch, so a `defaults write` before `kill_build_run.sh` is silently discarded and
-  the run lands on whatever the app restored (it landed on `AlienMorph` twice). The check is
+- **Confirm the skin from the app's own trace, never from `defaults` alone.** State restoration
+  rewrote `wmpSkinName` at launch, so a `defaults write` before `kill_build_run.sh` was silently
+  discarded and the run landed on whatever the app restored (it landed on `AlienMorph` twice).
+  `launch.sh Blinx` turns restoration off and verifies the load; the border line below is still the
+  Blinx-specific check. The check is
   `[wmp/border] run donorBorder=104/154/76/43` in the log — Blinx's insets. `AlienMorph`'s are
   `42/30/26/30`, and its frame looks nothing like this one, which is the only reason it was caught.
 - **A window near 475x332 looks right whatever the code does.** The defect scales with the distance
@@ -98,11 +100,8 @@ Two traps cost a whole session on 2026-09-20, both of which hand back a confiden
   picture.
 
 ```bash
-defaults write NullPlayer rememberStateEnabled -bool false   # restore to true afterwards
-defaults write NullPlayer wmpSkinName -string "Blinx"
-defaults delete NullPlayer wmpSkinViewID
 WMP_BORDER_TRACE=1 WMP_FRAME_TRACE=1 WMP_HOSTED_FRAME_DUMP=/tmp/b/live \
-  ./scripts/kill_build_run.sh --debug --log /tmp/b/app.log -- -uiMode wmp
+  skills/app-control/scripts/launch.sh Blinx --no-play --log /tmp/b/app.log
 ```
 
 **Restore the persisted interior after any live run.** A resize taken while the donor's border is in

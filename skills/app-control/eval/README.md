@@ -13,8 +13,6 @@ A canned case for grading several agents against the same task.
    defaults delete NullPlayer rememberStateEnabled
    ```
 
-   Save the user's real values first if they matter — `app-control/scripts/qa-session-template.sh`
-   has the save/restore helper.
 3. Paste the prompt from `case-01-wmp-elapsed-readout.md` **verbatim**. Do not add hints; the
    omissions are the test.
 4. Score against `rubric.md`. Block 0 first — it is a gate.

@@ -18,7 +18,7 @@ the hard way, having never opened them:
 
 | Rediscovered painfully | Already written down |
 |---|---|
-| `kill_build_run.sh` piped to `tail` never completes | harness.md §*The measurement loop* step 2 — the script **stays attached to the app it launched** |
+| `kill_build_run.sh` piped to `tail` never completes | `app-control` § Route B — launch with `launch.sh`; the app holds any stdout it is given, so only `--log` returns |
 | `System Events` clicks silently did nothing useful | §*Driving clicks in the running app: `CGEvent`, never System Events* |
 | Raising the app by name launched the installed build | §*Raise the build under test with System Events by unix id* |
 | A green headless sweep proved nothing about the screen | §*A structural probe is not a picture* |
@@ -101,9 +101,10 @@ canonical test-data targets. It owns the tools, too — they live in
 Three of its rules are load-bearing for everything below and are restated here because a wrong
 answer to any of them invalidates the whole session:
 
-- **`./scripts/kill_build_run.sh --debug` is the build-and-run command, and it stays attached to
-  the app it launched.** Piping it into `tail`/`head` means the pipe never closes and the task
-  never reports completion — it looks like an eternal build. Use its `--log <path>`.
+- **`skills/app-control/scripts/launch.sh <skin>` is the launch command** — debug build, skin
+  verified, log at `/tmp/np.log`. Under it, `./scripts/kill_build_run.sh --debug --log <path>`;
+  without `--log` the app inherits the script's stdout, so a pipe into `tail`/`head` never closes
+  and looks like an eternal build.
 - **Never drive the installed app.** Not `nullplayer`, not `open -a`, not
   `activate application "NullPlayer"`. Raise and address the build under test by unix id.
 - **A CGEvent pair without `mouseEventClickState` is not a click.** It arrives `clickCount == 0`:

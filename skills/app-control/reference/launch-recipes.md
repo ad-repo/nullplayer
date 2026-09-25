@@ -1,7 +1,7 @@
 # Launch recipes
 
-Copy-paste blocks that open the player straight to a given **skin family** and a given
-**media type**, with no menu clicking. Session setup is shell-verified; skin and media confirms require the running app.
+Commands that open the player straight to a given **skin family** and a given
+**media type**, with no menu clicking.
 
 **Rule zero applies**: these build and run the local debug build. `BIN` is never the `nullplayer`
 shim. See `SKILL.md`.
@@ -14,91 +14,16 @@ BIN=.build/arm64-apple-macosx/debug/NullPlayer     # Intel: .build/x86_64-apple-
 
 ## Part 1 — skin family
 
-**Each block is standalone: copy one and run it.** Nothing depends on a line from another block,
-so a block cannot half-work. `scripts/testdata.sh` generates the media on first use and prints its
-absolute path.
+One line, any family. It builds, launches, plays `audio-long`, and prints a verified
+`LAUNCH PASS`/`LAUNCH FAIL` — see `SKILL.md` Route B for the options.
 
 ```bash
-bash <<'SESSION'
-set -euo pipefail
-source skills/app-control/scripts/session-defaults.sh
-for key in rememberStateEnabled lastClassicSkinPath; do save "$key"; done
-# Classic — a .wsz
-scripts/testdata.sh ensure
-defaults write NullPlayer rememberStateEnabled -bool false
-defaults delete NullPlayer lastClassicSkinPath 2>/dev/null || true
-NULLPLAYER_SKIN="$HOME/Library/Application Support/NullPlayer/Skins/aquamp.wsz" \
-NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)" \
-  ./scripts/kill_build_run.sh --debug --log /tmp/np.log -- -uiMode classic
-read -r -p "Quit the app, then press Enter to restore defaults: " _ </dev/tty
-SESSION
+skills/app-control/scripts/launch.sh aquamp                 # Classic — a .wsz
+skills/app-control/scripts/launch.sh modern:NeonWave        # Original (menu name "Original")
+skills/app-control/scripts/launch.sh "metal:Brushed Steel"  # Original-Metal
+skills/app-control/scripts/launch.sh 2222-cPro__Bento       # Winamp Modern .wal (menu name "Modern")
+skills/app-control/scripts/launch.sh corona                 # Windows Media Player .wmz
 ```
-
-```bash
-bash <<'SESSION'
-set -euo pipefail
-source skills/app-control/scripts/session-defaults.sh
-for key in rememberStateEnabled modernSkinName; do save "$key"; done
-# Original — a bundled modern skin   (menu name: "Original")
-scripts/testdata.sh ensure
-defaults write NullPlayer rememberStateEnabled -bool false
-defaults write NullPlayer modernSkinName -string "NeonWave"
-NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)" \
-  ./scripts/kill_build_run.sh --debug --log /tmp/np.log -- -uiMode modern
-read -r -p "Quit the app, then press Enter to restore defaults: " _ </dev/tty
-SESSION
-```
-
-```bash
-bash <<'SESSION'
-set -euo pipefail
-source skills/app-control/scripts/session-defaults.sh
-for key in rememberStateEnabled metalSkinName; do save "$key"; done
-# Original-Metal — a bundled metal skin   (menu name: "Original-Metal")
-scripts/testdata.sh ensure
-defaults write NullPlayer rememberStateEnabled -bool false
-defaults write NullPlayer metalSkinName -string "Brushed Steel"
-NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)" \
-  ./scripts/kill_build_run.sh --debug --log /tmp/np.log -- -uiMode metal
-read -r -p "Quit the app, then press Enter to restore defaults: " _ </dev/tty
-SESSION
-```
-
-```bash
-bash <<'SESSION'
-set -euo pipefail
-source skills/app-control/scripts/session-defaults.sh
-for key in rememberStateEnabled; do save "$key"; done
-# Winamp Modern — a .wal   (menu name: "Modern")
-scripts/testdata.sh ensure
-defaults write NullPlayer rememberStateEnabled -bool false
-NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)" \
-  ./scripts/kill_build_run.sh --debug --log /tmp/np.log -- -uiMode winampModern \
-  -winampModernSkinPath "$HOME/Library/Application Support/NullPlayer/WinampModernSkins/2222-cPro__Bento.wal"
-read -r -p "Quit the app, then press Enter to restore defaults: " _ </dev/tty
-SESSION
-```
-
-```bash
-bash <<'SESSION'
-set -euo pipefail
-source skills/app-control/scripts/session-defaults.sh
-for key in rememberStateEnabled wmpSkinName wmpSkinViewID; do save "$key"; done
-# Windows Media Player — a .wmz   (menu name: "Media Player")
-scripts/testdata.sh ensure
-defaults write NullPlayer rememberStateEnabled -bool false
-defaults write NullPlayer wmpSkinName -string "corona"
-defaults delete NullPlayer wmpSkinViewID 2>/dev/null || true
-NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)" \
-  ./scripts/kill_build_run.sh --debug --log /tmp/np.log -- -uiMode wmp
-read -r -p "Quit the app, then press Enter to restore defaults: " _ </dev/tty
-SESSION
-```
-
-**Confirm it took:** the Route B state matrix in `SKILL.md`, one row per family. Quit the app and press Enter in the recipe terminal to restore the saved defaults.
-
-**The mode names do not match the menu.** `-uiMode modern` is the **Original** submenu;
-`-uiMode winampModern` is the **Modern** submenu (`App/PlayerUIMode.swift:33-39`).
 
 ---
 
@@ -118,8 +43,7 @@ from a browser: `WindowManager.toggleVideoPlayer` returns early while the contro
 
 ```bash
 scripts/testdata.sh ensure
-NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)" \
-  ./scripts/kill_build_run.sh --debug --log /tmp/np.log -- -uiMode classic   # GUI
+skills/app-control/scripts/launch.sh aquamp                                   # GUI
 "$BIN" --cli --file "$(scripts/testdata.sh path audio-long)"                 # headless
 ```
 

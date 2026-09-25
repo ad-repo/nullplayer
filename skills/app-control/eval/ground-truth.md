@@ -8,11 +8,7 @@ Established 2026-09-13 against commit `d9e81ae6`, on the local debug build.
 ## Setup
 
 ```bash
-defaults write NullPlayer rememberStateEnabled -bool false
-defaults write NullPlayer wmpSkinName -string "corona"
-defaults delete NullPlayer wmpSkinViewID
-export NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)"
-./scripts/kill_build_run.sh --debug --log /tmp/gt.log -- -uiMode wmp
+skills/app-control/scripts/launch.sh corona --log /tmp/gt.log
 ```
 
 ## Confirms

@@ -79,11 +79,7 @@ Found immediately after W161, because the readout only became visible once the s
 Window is 243x270 at its own origin; scene coordinates are window coordinates.
 
 ```bash
-defaults write NullPlayer rememberStateEnabled -bool false
-defaults write NullPlayer wmpSkinName -string "Windows_XP_Media_Center_Edition"
-defaults delete NullPlayer wmpSkinViewID
-NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)" \
-  nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/np.log 2>&1 &
+skills/app-control/scripts/launch.sh Windows_XP_Media_Center_Edition
 ```
 
 **Wait ~12 s before clicking anything** — the intro runs 1.5 s + 3.4 s and the drawer buttons are

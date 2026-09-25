@@ -200,8 +200,7 @@ A line whose frame is outside every screen is the `rescuedOrigin` fallback faili
 repeats for the same view is placement running twice, which is the bug this flag exists to catch.
 
 ```bash
-WMP_PLACE_TRACE=1 NULLPLAYER_PLAY=/abs/path/track.mp3 \
-  nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
+WMP_PLACE_TRACE=1 skills/app-control/scripts/launch.sh <skin>        # log: /tmp/np.log
 ```
 
 `WMP_SIZE_TRACE=1` is read by **the app** (`WMPMainWindowController.windowDidResize`, DEBUG, through
@@ -247,8 +246,7 @@ second is a rebuild cancelling the loop mid-sleep, `sleep` above the requested p
 `Task.sleep` overshoot, and `render` is what a serial render adds to every frame interval.
 
 ```bash
-WMP_ANIM_TRACE=1 NULLPLAYER_PLAY=/abs/path/track.mp3 \
-  nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
+WMP_ANIM_TRACE=1 skills/app-control/scripts/launch.sh <skin>        # log: /tmp/np.log
 ```
 
 **Once a second, never once a frame** — and `restarts` is *why* it can be. The first version reset
@@ -292,12 +290,13 @@ and nothing happens".
   and re-read the window origin every time: a session shared with a live reporter moves the window
   under you, and a click computed from a stale origin lands on the desktop.
 - **A short track cannot show a seek.** Pair it with `NULLPLAYER_PLAY` and something long.
-- **`NULLPLAYER_SKIN` does not select a `.wmz`.** `AppDelegate` hands it to `WindowManager.loadSkin`, which is the **classic** `.wsz` loader, so a `.wmz` path there loads nothing and the launch comes up on the unskinned WMP view (440x170) — which reads as the skin failing to load. A `.wmz` is selected the way step 1 of the live loop says, `defaults write NullPlayer wmpSkinName`, and **session restoration overwrites that key from the saved state before the window opens**, so a launch that keeps coming up on the wrong skin wants `defaults write NullPlayer rememberStateEnabled -bool false` for the duration. Both cost a launch each on 2026-09-12. Put the user's values back afterwards.
+- **Launch a skin with `skills/app-control/scripts/launch.sh <name>`, never by hand.** It prints a
+  verified `LAUNCH PASS`. Hand-rolled launches came up on the wrong skin repeatedly: `NULLPLAYER_SKIN`
+  is the classic loader and loads nothing for a `.wmz`, and session restoration rewrites
+  `wmpSkinName` before the window opens (2026-09-12, 2026-09-23, 2026-09-25).
 
 ```bash
-defaults write NullPlayer wmpSkinName -string "Plus! Pulsar"
-WMP_SEEK_TRACE=1 NULLPLAYER_PLAY=/abs/path/long.m4a \
-  nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
+WMP_SEEK_TRACE=1 skills/app-control/scripts/launch.sh "Plus! Pulsar"     # log: /tmp/np.log
 ```
 
 `WMP_WIDGET_TRACE=1` is read by **the app** (`WMPMainView`, `WMPWidgetViews`, `#if DEBUG`, stderr)
@@ -344,8 +343,7 @@ into a launched debug build costs a Local Library window and a CGEvent double-cl
 WMP mode's own route to a track is a file dialog. It is the live counterpart of `WMP_RENDER_HOST`:
 
 ```bash
-NULLPLAYER_PLAY=/abs/path/track.mp3 \
-  nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
+skills/app-control/scripts/launch.sh <skin>        # log: /tmp/np.log
 ```
 
 **`WMP_TRACE_INPUT` and the `INPUT` trace were removed on 2026-09-11.** The instrument had become
@@ -430,18 +428,12 @@ Three of the four defects in the compact-mode report were invisible to every fla
 The loop below is what reproduced them, and it is cheap enough to be the default response to a
 screen-only report rather than a last resort. Nothing in it is committed; rebuild it as needed.
 
-1. **Select the skin and launch the debug build with the trace on.** A bare binary launch does not
-   use the bundle's defaults domain — it uses `NullPlayer`, not `com.nullplayer.NullPlayer`, and
-   writing the wrong one silently loads a different skin:
+1. **Select the skin and launch the debug build with the trace on** — one line, verified, nothing
+   to restore afterwards (`app-control` § Route B):
 
    ```bash
-   defaults write NullPlayer wmpSkinName -string "9SeriesDefault"
-   defaults delete NullPlayer wmpSkinViewID
-   nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
+   WMP_SEEK_TRACE=1 skills/app-control/scripts/launch.sh 9SeriesDefault
    ```
-
-   `-uiMode wmp` is `PlayerUIMode.argumentOverride`, and it works in release builds too. **Restore
-   whatever you changed afterwards** — it is the user's skin selection, not yours.
 
 2. **Ask the probe where the control is, then click that frame.** `WMP_RENDER_PROBE` prints every
    drawn node's resolved frame in scene coordinates, which are the window's own top-left

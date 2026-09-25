@@ -158,9 +158,7 @@ frame-differencing a `screencapture` series over the shutter's own 282x282 regio
 
 ```bash
 # park the pointer off the window (or on the button group, which is the failing case), then:
-defaults write NullPlayer wmpSkinName -string "AlienMorph"
-defaults delete NullPlayer wmpSkinViewID
-./scripts/kill_build_run.sh --debug -- -uiMode wmp
+skills/app-control/scripts/launch.sh AlienMorph --no-play
 # poll `winhelper windows` for the 368x426 window, then screencapture -R its rect in a tight loop
 # and diff consecutive crops: the span of intervals above the noise floor is the animation's length.
 ```

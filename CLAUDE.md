@@ -5,6 +5,7 @@
 ```bash
 ./scripts/bootstrap.sh      # Download frameworks (first time)
 ./scripts/kill_build_run.sh # Build and run
+skills/app-control/scripts/launch.sh <skin>  # Debug build on a given skin, verified — agents always use this
 ./scripts/build_dmg.sh      # Build distributable DMG
 swift test                  # Run unit tests
 ```

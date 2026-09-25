@@ -570,7 +570,7 @@ which turns the click into a readable chain:
 
 ```sh
 WINAMP_MODERN_DEBUG_CLICK="92,251;92,251" WINAMP_MODERN_CALL_TRACE=1 \
-  ./.build/debug/NullPlayer -uiMode winampModern -winampModernSkinPath "/abs/Skin.wal" > /tmp/x.log 2>&1
+  skills/app-control/scripts/launch.sh "/abs/Skin.wal" --log /tmp/x.log
 ```
 
 Coordinates are **skin pixels** in the main window's active layout — take them from
@@ -594,7 +594,7 @@ all is the check that it was the scope.
 
 ```sh
 WINAMP_MODERN_DEBUG_CLICK="97,118" WINAMP_MODERN_DEBUG_PLAY="/abs/film.mp4" \
-  ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode winampModern -winampModernSkinPath "/abs/Skin.wal"
+  skills/app-control/scripts/launch.sh "/abs/Skin.wal" --no-play
 ```
 
 Two things it measures that nothing else can. **The picture is placed twice** — a tab revealed by
@@ -611,8 +611,7 @@ For a skin that declares an AVS container that is the skin's own window with the
 for one that does not it is NullPlayer's own — and which of the two happened is the point of looking.
 
 ```sh
-./.build/debug/NullPlayer -rememberStateEnabled 0 -uiMode winampModern \
-  -winampModernSkinPath "/abs/Skin.wal" -winampModernShowVisualization 1
+skills/app-control/scripts/launch.sh "/abs/Skin.wal" -- -winampModernShowVisualization 1
 ```
 
 The surface also logs one line each time its window is shown, which is the fastest way to split "no
@@ -651,7 +650,7 @@ osascript -e 'tell application "System Events" to keystroke "g" using {option do
 Load a developer archive directly (DEBUG builds):
 
 ```sh
-./.build/debug/NullPlayer -uiMode winampModern -winampModernSkinPath /abs/path/Skin.wal
+skills/app-control/scripts/launch.sh /abs/path/Skin.wal
 ```
 
 This still goes through `WinampModernSkinLoader` and its VFS — it is an acceptance hook, not a
@@ -739,7 +738,7 @@ Live QA is a shared machine, and both halves of that go wrong in ways that look 
 
 **Own the launch, and redirect its output to a file.** `NSLog` from a binary started by
 `kill_build_run.sh` goes to *that process's* stderr — if the user launches, the log is on their screen
-and invisible to you. Launch it yourself with `> /tmp/np.log 2>&1`, wait for a known line before asking
+and invisible to you. Launch it yourself with `app-control/scripts/launch.sh` (log `/tmp/np.log`), wait for `LAUNCH PASS` before asking
 for anything, then ask only for what they alone can do (reproduce the state, click, press play).
 2026-08-25 (BB28): the loop stalled for several exchanges because each of us thought the other was
 driving — the user was clicking in an app my tooling had never started, while my `pgrep` checks
@@ -777,15 +776,14 @@ is no toggling one on later, and an app already running reports nothing no matte
 Decide the full set before launching, and prefer too many over a relaunch. All of them are
 `#if DEBUG`, so a release build answers "no problem found" whether or not there was one.
 
-**2. Launch it yourself, not through `kill_build_run.sh`.** That script does not redirect `NSLog`
-and — the trap that cost 10 minutes here — **does not exit after building**; it stays attached to the
-app it launched, so a "timeout" is the app running, not a slow compile. Build with it if you need the
-vendored frameworks ad-hoc signed, then relaunch the binary directly with the env set:
+**2. Launch with `launch.sh`, env set in front.** It builds the debug build, launches it with the
+log redirected, returns once the skin is confirmed loaded, and quits any running instance first
+(`app-control` § Route B). (An older `kill_build_run.sh` stayed attached to the app and did not
+redirect `NSLog`; `--log` fixed both, and `launch.sh` uses it.)
 
 ```bash
-pkill -x NullPlayer
 WINAMP_MODERN_VIS_GAPS=1 WINAMP_MODERN_VIS_STALL=50 \
-  .build/arm64-apple-macosx/debug/NullPlayer > <scratchpad>/run.log 2>&1 &
+  skills/app-control/scripts/launch.sh "/abs/Skin.wal" --log <scratchpad>/run.log
 ```
 
 **3. Mark the log before every run.** One log accumulates many runs, and "the last N lines" is not a
@@ -961,7 +959,7 @@ source and reasoning about which hop *might* be broken; every one of those guess
 and none of them was the one the user was hitting.
 
 ```sh
-WINAMP_MODERN_CALL_TRACE=1 ./scripts/kill_build_run.sh > /tmp/x.log 2>&1
+WINAMP_MODERN_CALL_TRACE=1 skills/app-control/scripts/launch.sh /abs/Skin.wal --log /tmp/x.log
 ```
 
 Then read the **arguments**, not just the call names. The scrollbar case was settled by a histogram:

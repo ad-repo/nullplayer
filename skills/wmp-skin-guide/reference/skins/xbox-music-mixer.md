@@ -139,9 +139,7 @@ loader defect; it is also why `windowlessSuccessors` has to rank undeclared ids 
 ## How to drive it
 
 ```bash
-defaults write NullPlayer wmpSkinName -string "XBOX Music Mixer"
-defaults delete NullPlayer wmpSkinViewID
-nohup ./.build/arm64-apple-macosx/debug/NullPlayer -uiMode wmp > /tmp/app.log 2>&1 &
+skills/app-control/scripts/launch.sh "XBOX Music Mixer" --no-play
 # the whole measurement for W175: which windows exist, and how big
 osascript -e 'tell application "System Events" to get {name, size} of every window \
   of (first process whose name is "NullPlayer")'
