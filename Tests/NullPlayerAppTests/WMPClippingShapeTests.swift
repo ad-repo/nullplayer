@@ -573,6 +573,26 @@ final class WMPClippingShapeTests: XCTestCase {
                        "the pane's corner is text, not a hole showing its ground")
     }
 
+    /// **Artwork with no key has no hole, so a negative-`zIndex` child draws over it (W310).**
+    /// `Navigator`'s `config` pane paints the opaque `screenback.bmp` with no key and holds its EQ
+    /// pane at `zIndex="-2"`; behind the artwork the EQ could never be seen. A keyed parent keeps
+    /// the Cerulean order — its hole is what the child shows through.
+    func testANegativeZIndexChildDrawsOverUnkeyedArtwork() async throws {
+        for (key, childOnTop) in [("", true), (#"transparencyColor="white""#, false)] {
+            let skin = try await load(wms: """
+            <THEME><VIEW id="main" width="8" height="8">
+                <SUBVIEW id="config" left="0" top="0" width="8" height="8" backgroundImage="back.png" \(key)>
+                    <SUBVIEW id="eq" left="0" top="0" width="8" height="8" zIndex="-2" backgroundColor="#0000FF"/>
+                </SUBVIEW>
+            </VIEW></THEME>
+            """, images: ["back.png": try flat([10, 120, 200, 255])])
+            let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+            let back = try XCTUnwrap(scene.commands.firstIndex { $0.nodeID == "config" })
+            let eq = try XCTUnwrap(scene.commands.firstIndex { $0.nodeID == "eq" })
+            XCTAssertEqual(eq > back, childOnTop, "key=\(key)")
+        }
+    }
+
     /// `cornerColor` is nil for a bitmap whose corner is already transparent: a file that authored
     /// its own alpha has said what is see-through and there is no matte colour to infer.
     func testCornerColourIsNilForAnAlreadyTransparentCorner() throws {

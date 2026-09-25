@@ -1431,7 +1431,17 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 return mask
             } ?? bodySilhouette(node, frame: frame)
             let ownGroundShape = try groundShape(node, frame: frame)
-            let behindOwnArtwork = orderedChildren.prefix { zIndex(of: $0) < 0 }
+            let hasBackgroundImage = try resource(node, names: ["backgroundImage", "background"]) != nil
+            // **Artwork with no key has no hole, so nothing sits behind it (W310).** `Navigator`'s
+            // `config` pane paints the opaque `screenback.bmp` with no `transparencyColor`,
+            // `clippingColor` or `clippingImage`, and holds its EQ, links, playlist and video
+            // settings panes at `zIndex="-2"`; behind that artwork every one of them was invisible
+            // however the script showed it. Those children draw over it in `zIndex` order instead.
+            // Three containers in the corpus have this shape (`Navigator`'s and two in `tubeframe`).
+            let artworkHasNoHole = hasBackgroundImage
+                && colors(node, names: ["transparencyColor", "clippingColor"]).isEmpty
+                && node.statedAttribute(named: "clippingImage") == nil
+            let behindOwnArtwork = artworkHasNoHole ? [] : orderedChildren.prefix { zIndex(of: $0) < 0 }
             // **A plain colour is the ground under every child, however negative its `zIndex`.**
             // Behind-own-artwork is for artwork with a hole in it (`Cerulean`'s `face.bmp`); a
             // `backgroundColor` with no image beside it has no hole, so a child drawn behind it is
@@ -1439,7 +1449,6 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // holding `<effects zindex="-2">`, and the white slab landed in the overlay above the
             // hosted visualizer: a playing track showed a blank belly and the vis button seemed
             // dead. With an image the order is unchanged — the fill is keyed with that image.
-            let hasBackgroundImage = try resource(node, names: ["backgroundImage", "background"]) != nil
             let groundsNegativeChildren = !behindOwnArtwork.isEmpty && !hasBackgroundImage
             if groundsNegativeChildren, !frame.isEmpty,
                let background = mirroredColor(of: node, names: ["backgroundColor"]) {

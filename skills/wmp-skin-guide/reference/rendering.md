@@ -1104,6 +1104,13 @@ counter-evidence table in `reference/skins/README.md`.
   Plus! Professional is the same mechanism with a tilted oval (`vis_mask_w.png` inside
   `<subview id="visMask" clippingColor="#ff00ff">`). **32 `<EFFECTS>` across 30 skins author a
   negative zIndex**, and no per-skin code renders any of them.
+  **Only artwork with a hole has a behind (W310).** A `backgroundImage` with no `transparencyColor`,
+  `clippingColor` or `clippingImage` is opaque everywhere, so its negative-`zIndex` children draw
+  over it in `zIndex` order (`artworkHasNoHole` in `WMPSceneBuilder`) — the same answer a plain
+  `backgroundColor` already gets. `Navigator`'s `config` pane paints the unkeyed `screenback.bmp`
+  over its EQ, links, playlist and video-settings panes, all `zIndex="-2"`, and none of them could
+  ever be seen. Three containers in the corpus have this shape (an XML scan of every
+  `<VIEW>`/`<SUBVIEW>`); `tubeframe`'s two render byte-identical either way.
 
   How it is hosted: **a node's negative-`zIndex` children are walked before it emits its own paints**
   — DFS order cannot express "behind the parent's background" on its own, and getting this wrong is
