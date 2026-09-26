@@ -21,34 +21,11 @@
   Folder...**, then the family's **Default Skin**, then your installed skins. Windows Media Player
   gains a **Get More Skins...** link to the Internet Archive's WMP skins collection, and Classic gains
   **Open Skins Folder...**.
-- **Windows Media Player `.wmz` skins** — a new Windows Media Player mode that runs real WMP 9-era
-  skins natively on macOS. Import a `.wmz` from the UI menu, or start from the built-in unskinned
-  player; existing Classic, Original, Original-Metal and Winamp Modern choices are kept on upgrade.
-  Skins look and behave like themselves: their own artwork, shaped windows, animations, hover and
-  pressed states, tooltips, fonts, drawers and multiple views, with the skin's own JScript running in
-  a sandboxed session so its buttons, sliders, timers, keyboard shortcuts and readouts work the way
-  they do in Windows Media Player — a button answers anywhere its highlight is drawn, and a skin's level bars fill the right way round whatever colours it draws them in. A skin's panels close again from the buttons that opened them, the ones you left open come back when you relaunch, and its visualizer stays inside the shape the skin cut for it. The skin's transport, seek bar, volume and ten-band equalizer drive
-  NullPlayer's playback, including WMP's WOW and TruBass enhancements, and video plays inside the
-  skin's own screen with NullPlayer's normal video controls and casting. NullPlayer's own windows —
-  library, playlist, equalizer, spectrum and audio analyzers, PeppyMeter, Flow, Cava, waveform,
-  visualizer and Sonos Rooms — open beside the skin wearing its colours and a frame borrowed from the
-  skin's own playlist, in whichever colour scheme the skin is showing, which keeps its shape while a window is resized and changes together with the
-  player when you switch skins; where the skin has its own playlist or equalizer, that one is used
-  instead. Where a skin lends no frame, those windows have no title bar and wear a thin glossy frame
-  in the skin's own colours; the top-right corner still closes them. A skin that was designed around
-  Windows' own title bar and has no close button, such as Classic, closes from its top-right corner.
-  A skin's own playlist chooser, library pickers and search box read whichever library the browser
-  is set to — local files or a Plex, Navidrome, Jellyfin or Emby server: click a playlist to see its
-  tracks in the skin, double-click to play it (the chooser returns to Now Playing, as in WMP), and search the server straight from the skin. The
-  chooser refills when you switch the browser to another source, including in skins such as NVIDIA
-  that fill it when you open their playlist. Skins can read the library but never change it.
-  Right-click a skin's playlist for NullPlayer's own playlist menu — play, remove, crop, clear, sort,
-  randomize and file info — with Shift- and Cmd-click to select several tracks at once.
-  In a skin's visualization box, **Up/Down** switch between effects and **Left/Right** step through
-  the presets or modes inside the current one, on every skin — including skins that bring their own
-  keyboard shortcuts, which keep them.
-  ActiveX, registry, shell, plug-in, filesystem and network access stay unavailable, and a skin that
-  asks for something NullPlayer does not implement loses only that one action, not the skin.
+- **Windows Media Player `.wmz` skins** — a new Windows Media Player mode that runs real WMP 9-12 era
+  skins natively on macOS. Skins look and behave like themselves: their own artwork, shaped windows,
+  animations, hover and pressed states, tooltips, fonts, drawers and multiple views, with the skin's
+  own JScript running in a sandboxed session so its buttons, sliders, timers, keyboard shortcuts and
+  readouts work the way they do in Windows.
 - **Sonos Rooms window with per-room volume** — a new dockable **Sonos Rooms** window lists every
   Sonos room NullPlayer has discovered, with a checkbox to include it in the cast and its own volume
   slider, so each room can be set independently instead of only through the group volume. The list
