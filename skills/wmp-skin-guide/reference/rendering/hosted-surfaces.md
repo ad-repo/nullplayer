@@ -27,7 +27,7 @@ Moved verbatim from `reference/rendering.md` § *Drawing the skin's own controls
   `Radio`); render dumps of all four are pixel-identical either side, because the strip is hidden at
   load in the two Tattoo skins and `Compact`'s unsized one never resolved before. `Compact`'s popup
   sits under its own black `svPlaylistDDown` ground and `WMP_RENDER_APPKIT` reads `differing=0`
-  there — whether it shows or takes clicks in the running app is unverified.
+  there, yet in the running app it opens and lists the queue (reporter-verified 2026-09-26).
 
 - **A hosted AppKit surface obeys the container's `alphaBlend`; it is not exempt because it is not
   a paint command.** `alphaBlend` inherits, and a `.wmz` closes a pane it has not opened by fading
