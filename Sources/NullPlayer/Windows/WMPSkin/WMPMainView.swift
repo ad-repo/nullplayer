@@ -269,7 +269,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             $0.widgets == scene.widgets && $0.hits == scene.hits
         } ?? false
         #if DEBUG
-        wmpWidgetTrace("present src=\(traceSource) view=\(scene.viewID) widgets=[\(scene.widgets.map { "\($0.kind):\($0.stableID)" }.joined(separator: ","))] snapshotItems=\(currentSnapshot.playlistItems.count) structure=\(structureUnchanged ? "same" : "new")")
+        wmpWidgetTrace("present src=\(traceSource) view=\(scene.viewID) canvas=\(Int(scene.canvasSize.width))x\(Int(scene.canvasSize.height)) bounds=\(Int(bounds.width))x\(Int(bounds.height)) widgets=[\(scene.widgets.map { "\($0.kind):\($0.stableID)" }.joined(separator: ","))] snapshotItems=\(currentSnapshot.playlistItems.count) structure=\(structureUnchanged ? "same" : "new")")
         #endif
         if !structureUnchanged {
             hitTester = WMPHitTester(hits: scene.hits)

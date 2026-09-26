@@ -208,6 +208,22 @@ struct WMPSceneBuilder: @unchecked Sendable {
             .caseInsensitiveCompare("true") == .orderedSame
         let canvas = resizeLimits.clamp(requestedSize ?? defaultSize)
         let canvasRect = WMPRect(x: 0, y: 0, width: canvas.width, height: canvas.height)
+        // **A script that resizes a view the user cannot resize has not asked for its picture to
+        // stretch either.** W164 anchored only a mismatch the markup states; a size a *script*
+        // wrote on a fixed view is the same statement made at runtime. `gadget` opens its drawer
+        // with `view.height = 333` over a 336x246 `base_unit.bmp` and hangs the drawer subview,
+        // with its own `clippingColor` shape, in the rows below: stretched, the whole player grew
+        // 35% taller and the view's black `backgroundColor` — unkeyed once the bitmap no longer
+        // matched the frame — filled the canvas edge to edge. A resizable view is left as W164
+        // left it.
+        if rootBackgroundSize == nil, !resizable, !backgroundTiles(view),
+           let (_, backgroundPath) = try resolveResource(view, names: ["backgroundImage", "background"],
+                                                         overrides: overrides,
+                                                         warn: { diagnostics.append($0) }),
+           let intrinsic = try? imageStore.image(for: backgroundPath).size,
+           intrinsic.width > 0, intrinsic.height > 0, intrinsic != canvas {
+            rootBackgroundSize = intrinsic
+        }
 
         // **A view whose own field states a matte gives its visualizer the rect as a backdrop
         // (W213).** An `<EFFECTS>` with no ancestor shape used to take no ground at all, and a
@@ -1625,7 +1641,11 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 // The fill is under this node's own keyed artwork and is keyed with it — never a
                 // bare rectangle filling in the holes that artwork cuts. See `backgroundFillMask`;
                 // `Cerulean`'s face used to be a named exemption here and is now one of ten.
-                let fillMask = try backgroundFillMask(node, frame: frame)
+                // The root's art is anchored at its own size when the view is not (W164), and the
+                // fill is keyed with the art where it is drawn — past it there is no window.
+                let fillMask = try backgroundFillMask(node, frame: isRoot ? (rootBackgroundSize.map {
+                    WMPRect(x: frame.x, y: frame.y, width: $0.width, height: $0.height)
+                } ?? frame) : frame)
                 emit(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,
                     frame: frame, clipRect: inheritedClip, zIndex: z,
                     documentOrder: node.stableID, paint: .fill(background), alpha: alpha,

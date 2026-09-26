@@ -53,8 +53,15 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   `Colorchooser` declares `width="300" height="200"` over a 246x202 bitmap, and stretched by 1.22 its
   drawn box landed at x=87…299 while the opaque panel that belongs inside it stayed at the authored
   77…241. **Scoped to a mismatch the markup states, not one a resize produced**: where the authored
-  size and the artwork agree, a canvas the user or a script grew still stretches the background as
-  before. 17 corpus views declare a literal size alongside a resolvable background image and exactly
+  size and the artwork agree, a canvas the user grew still stretches the background as before.
+  **A view the user cannot resize anchors too, whatever size its own script gives it** (2026-09-26):
+  `gadget` opens its drawer with `view.height = 333` over a 336x246 `base_unit.bmp`, and stretched
+  the player grew 35% taller while the view's black `backgroundColor` — keyed only when the art
+  matches its frame — filled the window edge to edge. `backgroundFillMask` takes the anchored frame,
+  so the fill stops where the art does and the rows below are the drawer's alone. Corpus sweep: 527
+  of 529 images identical; `Asia MP11/vidWindow` (`SnapToVideo()` sizing a fixed view to the video
+  plus a 92x93 border) now crops its 621x404 frame rather than squashing it, and `Scooby-Doo_2` is
+  its known `Math.random()`. 17 corpus views declare a literal size alongside a resolvable background image and exactly
   4 disagree — `Colorchooser`, `Cubist`, `Radio`, `Tomb Raider 2`, each of which authors a band or a
   plate rather than a full-window picture. `Ice` is what this deliberately does **not** settle: a
   `<BUTTON>` sized against a background image is the natural-size rule (W122), not the root's art.

@@ -129,8 +129,8 @@ WMP_SEEK_TRACE=1 skills/app-control/scripts/launch.sh "Plus! Pulsar"     # log: 
 
 `WMP_WIDGET_TRACE=1` is read by **the app** (`WMPMainView`, `WMPWidgetViews`, `#if DEBUG`, stderr)
 and prints the lifetime of every AppKit-hosted widget against the presents that carry it: one
-`present src=<initial|load|interaction|transaction|timer|animation> widgets=[<kind>:<stableID>,…]`
-line per present, a `create`/`drop` line per hosted view, and a `playlist draw rows=…` line per
+`present src=<initial|load|interaction|transaction|timer|animation> canvas=<W>x<H> bounds=<W>x<H>
+widgets=[<kind>:<stableID>,…]` line per present, a `create`/`drop` line per hosted view, and a `playlist draw rows=…` line per
 redraw of a playlist surface.
 
 **It exists because a pane that opens and then closes itself is invisible to every other
@@ -144,6 +144,15 @@ goes black, then displays" and the whole defect is three lines:
 946.483 present src=interaction  widgets=[effects:4,text:25]    ← stale overrides: list dropped
 946.785 present src=transaction  widgets=[playlist:6,text:25]   ← the list comes back
 ```
+
+**`canvas=` differing from `bounds=` is the same class on the size axis** — a picture built for
+one window size drawn into another, which AppKit stretches. `gadget`'s drawer closing (2026-09-26):
+the transaction presented `canvas=336x246`, then the press repaint of the × that was already in
+flight presented `canvas=336x333 bounds=336x246` and handed that scene to the animation loop. Playing,
+the next metadata transaction corrected it ~75 ms later — reported as the skin "jumping"; stopped,
+nothing followed and the player stayed squashed. `renderInteraction` now reads the canvas per attempt
+and re-checks it after rendering, as it already did the overrides. Count mismatched lines across a
+few open/close cycles; zero is the pass.
 
 **`src=` is the field to read, and a `drop` followed by a `create` of a different kind is the
 signature.** The black frame is not a paint bug: dropping a hosted view and building a new

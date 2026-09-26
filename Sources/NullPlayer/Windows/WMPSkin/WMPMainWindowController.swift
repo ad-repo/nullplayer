@@ -2548,11 +2548,18 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 // compromise: `state` is stored on `presentation.interactionState` above, and
                 // every other build path passes it, so the down/hover image is drawn by whichever
                 // present lands next.
+                //
+                // **The canvas is the transaction's too.** A handler that resizes its own window
+                // presents a scene at the new size, and a repaint that kept the canvas it started
+                // with presented the old one into the new frame — and, as `activeScene`, kept the
+                // animation loop drawing it there. `gadget`'s drawer: the release on its × lands
+                // mid-close, and the 333-tall picture sat squashed in the 246-tall player.
                 for _ in 0..<3 {
                     guard let presentation else { return }
                     let overrides = presentation.sceneOverrides
+                    let canvas = presentation.activeScene?.canvasSize ?? activeScene.canvasSize
                     let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store)
-                        .build(viewID: viewID, requestedSize: activeScene.canvasSize,
+                        .build(viewID: viewID, requestedSize: canvas,
                                interactionState: state, dirtyNodeIDs: changed,
                                overrides: overrides)
                     let result = try await WMPRenderer(imageStore: store).render(
@@ -2560,7 +2567,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                         clock: presentation.animationClock(for: scene.viewID),
                         slotClocks: Self.slotClocks(presentation, for: scene, store: store))
                     try Task.checkCancellation()
-                    guard presentation.sceneOverrides == overrides else { continue }
+                    guard presentation.sceneOverrides == overrides,
+                          presentation.activeScene?.canvasSize == canvas else { continue }
                     presentation.activeScene = scene
                     self?.startAnimation(presentation, for: scene)
                     presentation.mainView?.present(result.image, overlay: result.overlayImage, silhouette: result.silhouetteMask,

@@ -64,11 +64,12 @@ final class WMPPaintOrderAndColorTests: XCTestCase {
     /// has to be one the **markup** states. Where the authored size and the artwork agree, a canvas
     /// a user drag or a script grew still stretches the background exactly as before — which is
     /// what the corpus's other 13 views with both a literal size and a resolvable background image
-    /// rely on.
+    /// rely on. Resizable, because a fixed view grown by its own script anchors its art instead
+    /// (`gadget`'s drawer).
     func testAViewWhoseArtworkMatchesItsAuthoredSizeStillStretchesWithTheCanvas() async throws {
         let skin = try await load([
             WMPTestArchiveEntry("skin.wms", data: Data("""
-            <THEME><VIEW id="main" width="200" height="100" maxWidth="400"
+            <THEME><VIEW id="main" width="200" height="100" maxWidth="400" resizAble="true"
                          backgroundImage="back.png"/></THEME>
             """.utf8)),
             WMPTestArchiveEntry("back.png", data: try image(width: 200, height: 100, rgba: (10, 20, 30)))
@@ -83,6 +84,35 @@ final class WMPPaintOrderAndColorTests: XCTestCase {
         XCTAssertEqual(grown.canvasSize.width, 320)
         XCTAssertEqual(grown.commands.first?.frame.width, 320,
                        "artwork authored at the view's own size still fills a resized window")
+    }
+
+    /// The other half: a view the user cannot resize changes size only because its own script
+    /// asked, and that is W164's statement made at runtime. `gadget` opens its drawer with
+    /// `view.height = 333` over a 336x246 `base_unit.bmp`; stretched, the player grew 35% taller,
+    /// and its black `backgroundColor` — no longer keyed once the art missed the frame — filled
+    /// the whole window. The art stays at its own size and the fill stays inside it.
+    func testAFixedViewItsScriptGrewKeepsItsArtworkAndItsFillAtTheArtworksSize() async throws {
+        let skin = try await load([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="200" height="100" backgroundImage="back.png"
+                         backgroundColor="#000000" clippingColor="#FF0000"/></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("back.png", data: try image(width: 200, height: 100, rgba: (10, 20, 30)))
+        ])
+        let grown = try await WMPSceneBuilder(loadedSkin: skin)
+            .build(viewID: "main", requestedSize: WMPSize(width: 200, height: 160))
+
+        XCTAssertEqual(grown.canvasSize.height, 160, "the window is the size the script asked for")
+        let artwork = try XCTUnwrap(grown.commands.first {
+            if case .image = $0.paint { return true } else { return false }
+        })
+        XCTAssertEqual(artwork.frame.height, 100, "the art is not stretched into the drawer's rows")
+        let backdrop = try XCTUnwrap(grown.commands.first {
+            if case .fill = $0.paint { return true } else { return false }
+        })
+        XCTAssertEqual(backdrop.inheritedClipMasks.map(\.frame),
+                       [WMPRect(x: 0, y: 0, width: 200, height: 100)],
+                       "the fill is keyed with the art where the art is drawn, and nowhere past it")
     }
 
     // MARK: W165 — a colour has three sources and the markup is only one of them
