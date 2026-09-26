@@ -104,7 +104,11 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   moved 3 of 529 images (`portals/mode1`, `modernblue/myview`, `US Army/MainPlayer`); the reporter
   reviewed all three and accepted them, the one visible cost being W264. Most of this pattern fires
   only on a click or play-state change, so a clean load-time sweep does not clear it — check a
-  reported stray pane against this rule first.
+  reported stray pane against this rule first. **Both of those two are now bounded (2026-09-26):**
+  an authored-hidden container the skin's own code can show (`WMPLoadedSkin.scriptShowableIDs`)
+  closes its subtree until it is shown, which took `modernblue`'s small pause off the large display
+  and `portals`' EQ out of its shut drawer; `help`, only ever hidden by script, still passes
+  through. See `skins/modernblue.md`.
 
 - **A panel opened with `theme.openView` is not the session's view (W96).** `apply` persisted
   `wmpSkinViewID` on every present, so quitting with a playlist open recorded the playlist; the

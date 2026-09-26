@@ -50,6 +50,13 @@ Its `main_button` is also the corpus's clearest **decorative full-window backdro
    sweep's opaque-magenta residual and attributed to W116; it was `sysbuttons_group`, and it closed
    with (1) rather than separately. The corpus residual went from 878 px across 2 views to 49 px
    across 1.
+4. **"The eq/playlist is missing"** (2026-09-26) — reported right after the fix that closed it, and
+   not a defect. `playlist_eq_video` is the drawer to the right of the porthole, authored
+   `visible="false"`, and `init()` → `loadPrefs()` → `detPlaylistEqVideo()` shows it only when the
+   saved `showPlEQVid` is `true`, which a fresh profile's `--` is not. `switchPlEqVid()` meanwhile
+   sets `equalizer.visible = true` inside it, and W263's pass-through drew that EQ on the face with
+   its drawer shut; the `scriptShowableIDs` bound (`modernblue.md`) closed it. The drawer opens from
+   `togplaylisteq_button`, the brass chevron tab on the upper-left of the ring — confirmed live.
 
 ## What was ruled out
 
@@ -77,6 +84,10 @@ WMP_RENDER_PROBE=mode1 WMP_RENDER_DUMP=/tmp/wmp/portals \
 WMP_RENDER_CLICK='mode1@259.5,259.5' \
   swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus
 ```
+
+The drawer toggle is `togplaylisteq_button` at `29,86 31x35` (`WMP_RENDER_CLICK='mode1@44,103'`
+prints `playlist_eq_video.visible=true` and 28 commands against 12 shut); the double-arrow tab at
+the drawer's lower left (`switchPlEqVid()`) cycles playlist, EQ and video.
 
 Live, `mode1` opens at 550x400 with the player body in its left 305 px. The transport ovals are
 inside `cbuttons` at `13,236 280x140`; `sysbuttons_group` is at `149,44 55x31`. **Check the opaque
