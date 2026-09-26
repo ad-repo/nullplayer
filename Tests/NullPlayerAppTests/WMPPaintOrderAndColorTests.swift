@@ -92,7 +92,7 @@ final class WMPPaintOrderAndColorTests: XCTestCase {
     ///
     /// Its caption takes `foregroundColor="wmpprop:style.foregroundColor"` from an invisible
     /// `<TEXT id="style">` held purely as a palette, so reading the markup alone drew it in the
-    /// unset-colour white on a white panel and the only affordance the skin has was invisible.
+    /// unset-colour default on a white panel and the only affordance the skin has was invisible.
     func testAColourMirrorsAnotherElementsAuthoredValue() async throws {
         let skin = try await load([WMPTestArchiveEntry("skin.wms", data: Data("""
         <THEME><VIEW id="main" width="200" height="100">
@@ -107,6 +107,22 @@ final class WMPPaintOrderAndColorTests: XCTestCase {
         XCTAssertEqual(fill(of: scene, id: "panel"), WMPColor(red: 0xFF, green: 0xEE, blue: 0xDD))
         XCTAssertEqual(fill(of: scene, id: "strip"), WMPColor(red: 0xFF, green: 0xEE, blue: 0xDD),
                        "a wmpprop: colour is the value the named element holds")
+    }
+
+    /// A `<TEXT>` that states no colour anywhere draws black. `Colorchooser`'s `red`/`green`/`blue`
+    /// labels author none over a white panel, and a white default drew them invisible.
+    func testAnUncolouredTextDrawsBlack() async throws {
+        let skin = try await load([WMPTestArchiveEntry("skin.wms", data: Data("""
+        <THEME><VIEW id="main" width="200" height="100">
+          <TEXT id="label" left="10" top="10" value="red"/>
+        </VIEW></THEME>
+        """.utf8))])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let text = scene.commands.compactMap { command -> WMPSceneText? in
+            guard command.nodeID == "label", case let .text(text) = command.paint else { return nil }
+            return text
+        }.first
+        XCTAssertEqual(try XCTUnwrap(text).color, WMPColor(red: 0, green: 0, blue: 0))
     }
 
     /// The other two sources, together, because `Colorchooser` needs them together: its three RGB

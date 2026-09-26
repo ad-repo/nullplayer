@@ -8,6 +8,13 @@ Moved verbatim from `SKILL.md` on 2026-09-24. The object model these contracts d
 - `WMPScriptRuntime` is the only production route for skin JScript: one persistent `JSContext` per
   skin session, one transaction at a time, expressions then handlers. `reference/object-model.md`
   is the contract for what it exposes; do not add a member without reading its rules.
+- **A `jscript:` colour is an assignment `load` runs before the view's own handlers.** Only
+  geometry `jscript:` attributes are expressions (`WMPScriptExpression.geometryProperties`); a
+  `*Color="jscript:…"` is collected into `WMPScriptViewPlan.colorAssignments` and written as
+  `<id>.<attr> = (<source>)`, so it lands through the same property-write path as a handler's
+  (W165). The app raises the event as `load` and the render harness as `onLoad`; both are matched.
+  22 uses in 2 archives — `Asimov_Radio` (`NormalTextColor`, `#00FF00` in `MBay.js`) and
+  `digitaldj` — and Asimov's readouts drew in the default colour until 2026-09-26.
 - A skin's programs evaluate once per session, **after** the view's elements are installed as
   globals and the host objects are bound, because skins run top-level code that touches both.
 - Fail closed per handler, never per session: an unrecognised member aborts that one handler and is

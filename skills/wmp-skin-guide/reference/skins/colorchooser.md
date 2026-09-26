@@ -46,6 +46,7 @@ has no backing when a track plays and it clicks through to the background"*.
 | W166 | `zIndex` was read from the markup only, so `checkForContent()`'s `viz.zIndex = 5` never reordered the scene; the opaque panel stayed classified as artwork *above* a windowed surface and was punched out, leaving a click-through hole while a track played |
 | W218 | A `<TEXT>`'s measured width was 0 until the first layout existed, so the four buttons chained off one another all resolved to `left=16`; the glyphs overprinted and the first click in the row fired `previous`. Found by the transport audit on 2026-09-14, not by the report above, and closed 2026-09-19 |
 | — | The sliders' `tiled="true"` was not read as the background's tiling, so after W208's own-size rule each 1x11 `sliderBack.bmp` drew one pixel wide and the three thumbs sat over no track. Reported 2026-09-26 as *"lost the tracks on the sliders"*; see `reference/rendering/artwork.md` |
+| — | The `red`/`green`/`blue` labels and the panel's `x` author no colour, and the engine's unauthored-text default was white — invisible on the white panel. The default is black now; see `reference/rendering/text.md` |
 
 **W164 is the one that made the skin read as "totally broken"** — the others are missing detail, but
 a frame out of register with its own contents is a wrong-looking picture.

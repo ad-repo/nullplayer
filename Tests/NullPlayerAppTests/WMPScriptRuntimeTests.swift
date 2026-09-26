@@ -1794,6 +1794,35 @@ final class WMPScriptRuntimeTests: XCTestCase {
                        "the saved value is there, so the skin takes its restore branch")
     }
 
+    // MARK: A colour written as an expression
+
+    /// `Asimov_Radio`'s texts author `foregroundColor="jscript:NormalTextColor"` against a global in
+    /// `MBay.js`. Only geometry expressions were evaluated, so the colour was never read and every
+    /// readout drew in the default instead of the skin's green.
+    func testAJScriptColourIsAssignedOnLoad() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200" scriptFile="s.js" onLoad="Init();">
+            <TEXT id="status" left="0" top="0" value="Ready" foregroundColor="jscript:NormalTextColor"/>
+        </VIEW></THEME>
+        """, js: """
+        var NormalTextColor = "#00FF00";
+        function Init() {}
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let output = await runtime.transact(skin: skin, viewID: "main",
+                                            size: WMPSize(width: 200, height: 200),
+                                            snapshot: WMPHostSnapshot(),
+                                            event: WMPJScriptEvent(name: "load", targetID: "main",
+                                                                   handlers: ["Init();"]))
+        XCTAssertFalse(output.diagnostics.contains { $0.code == "handler-error" },
+                       "\(output.diagnostics)")
+        let status = try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == "status" }?.stableID)
+        XCTAssertEqual(output.overrides.properties[.init(stableID: status,
+                                                         property: "foregroundcolor")]?.string,
+                       "#00FF00")
+    }
+
     // MARK: A skin's own function, called in the wrong case (W42)
 
     /// **The call site is in the program, and the declaration is further down the same file.**

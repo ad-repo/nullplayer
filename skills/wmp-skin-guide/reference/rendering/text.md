@@ -4,6 +4,14 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
 `reference/rendering.md`. Before an engine-wide change here, check the counter-evidence table in
 `reference/skins/README.md`.
 
+- **A text that states no colour draws black.** The phase-2 default was white, recorded without a
+  reason. `Colorchooser` — Microsoft's own SDK sample — draws its `red`/`green`/`blue` labels and
+  its panel's `x` with no colour on a white panel, legible only against a black default. Of 895
+  corpus texts authoring no static colour, the switch moved **8 views** (2026-09-26 sweep):
+  `Colorchooser`, `Melvin`, `PowerToys/AlertDialog` (its warning was white on white), `Zengarden`,
+  `cerulean`, `rad`, `digitaldj/DigitalDJ` and `Asimov_Radio`. The last was a second defect the
+  white default had hidden — see `reference/bindings.md` on `jscript:` colours.
+
 - **`player.status` is a sentence, not a token (W162).** `Playing` / `Paused` / `Stopped`, and
   `Ready` before anything is open — `WMPHostSnapshot.statusText`, read by the object-model member,
   by the `wmpprop:player.status` binding **and** by the `status_onchange` argument, which are three

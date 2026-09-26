@@ -1937,8 +1937,11 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     bold: style.contains("bold"), italic: style.contains("italic"),
                     underline: style.contains("underline"),
                     smoothed: literalString(node, "fontSmoothing")?.caseInsensitiveCompare("false") != .orderedSame,
+                    // **An unauthored colour is black.** `Colorchooser` — Microsoft's own SDK
+                    // sample — draws its `red`/`green`/`blue` labels and its panel's `x` with no
+                    // colour on a white panel, which reads only against a black default.
                     color: mirroredColor(of: node, names: textColorNames)
-                        ?? WMPColor(red: 255, green: 255, blue: 255), alignment: alignment,
+                        ?? WMPColor(red: 0, green: 0, blue: 0), alignment: alignment,
                     // **A departure from WMP, by request:** WMP's default is `false` and clips an
                     // overflowing readout (`modernblue`'s artist and title). Here an unauthored
                     // `scrolling` scrolls; the renderer only runs a marquee when the text overflows,

@@ -44,6 +44,11 @@ struct WMPScriptViewPlan: Sendable {
     /// `stableID -> handler source`, from the `value_onchange`/`onChange` attribute a control uses
     /// to repaint whatever it drives. Same shape and reason as the two maps above (W51).
     let valueChangeHandlers: [Int: String]
+    /// `foregroundColor="jscript:NormalTextColor"` and its kin, as the assignment `onLoad` runs
+    /// before the skin's own handlers. A colour is a property write, not a geometry expression, so
+    /// it takes the same path a script's `el.backgroundColor = …` does (W165). Only `Asimov_Radio`
+    /// (18) and `digitaldj` (4) author one; unread, they drew in the default text colour.
+    let colorAssignments: [String]
 
     init(skin: WMPLoadedSkin, viewID: String) {
         self.viewID = viewID
@@ -52,6 +57,7 @@ struct WMPScriptViewPlan: Sendable {
         })?.node else {
             elements = []; expressions = []; expressionAddresses = [:]; idToStableID = [:]
             attributeChangeHandlers = [:]; completionHandlers = [:]; valueChangeHandlers = [:]
+            colorAssignments = []
             return
         }
         var included = Set<Int>()
@@ -65,6 +71,7 @@ struct WMPScriptViewPlan: Sendable {
         var changeHandlers: [Int: [String: WMPAmbientChangeHandler]] = [:]
         var completions: [Int: [String: String]] = [:]
         var valueChanges: [Int: String] = [:]
+        var colorAssignments: [String] = []
         for node in skin.graph.allNodes where included.contains(node.stableID) {
             let id = node === view ? "view" : (node.xmlID ?? "node\(node.stableID)")
             ids[WMPPath.fold(id)] = node.stableID
@@ -81,6 +88,8 @@ struct WMPScriptViewPlan: Sendable {
                     let key = "\(id).\(name)"
                     expressions.append(.init(key: key, source: source))
                     addresses[key.lowercased()] = .init(stableID: node.stableID, property: name)
+                case let .jScript(source) where name.hasSuffix("color"):
+                    colorAssignments.append("\(id).\(attribute.name) = (\(source));")
                 case let .binding(kind, source)
                     where kind == .property && WMPScriptExpression.geometryProperties.contains(name):
                     let key = "\(id).\(name)"
@@ -117,6 +126,7 @@ struct WMPScriptViewPlan: Sendable {
         attributeChangeHandlers = changeHandlers
         completionHandlers = completions
         valueChangeHandlers = valueChanges
+        self.colorAssignments = colorAssignments
     }
 
     /// One ambient `<attribute>_onchange` handler: the **authored** spelling of the attribute
@@ -718,6 +728,15 @@ final class WMPScriptContext: @unchecked Sendable {
                 // property, and leaving the last drag's number bound as a global would let an
                 // unrelated later handler read a stale one instead of failing honestly.
                 if boundEventValue { context.setObject(nil, forKeyedSubscript: "value" as NSString) }
+            }
+            // The app raises `load`, the render harness `onLoad`; both are this view opening.
+            if ["load", "onload"].contains(event.name.lowercased()) {
+                for assignment in plan.colorAssignments {
+                    if let error = invokeHandler(assignment, label: "load[color]", owner: nil) {
+                        result.diagnostics.append(.init(code: "handler-error",
+                                                        message: "load[color]: \(error)"))
+                    }
+                }
             }
             for (index, handler) in event.handlers.enumerated() {
                 // The event's own arguments, bound and then cleared exactly as `value` above is:
