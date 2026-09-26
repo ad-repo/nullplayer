@@ -472,6 +472,28 @@ final class WMPAlignmentTests: XCTestCase {
                        "the rail keeps its authored 102pt bottom margin inside the drawer")
     }
 
+    // MARK: - A slider's `tiled` is its background's tiling
+
+    /// `Colorchooser`'s RGB sliders, reduced: a 1x11 track bitmap under `tiled="true"` in a 40 px
+    /// slider. Only `backgroundTiled` exempted a background from the own-size rule, so the track
+    /// drew one pixel wide and the three thumbs sat over nothing.
+    func testASliderTiledTrackFillsItsFrame() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="40">
+            <SLIDER id="track" backgroundImage="back.png" thumbImage="thumb.png" tiled="true"
+                    left="5" top="10" width="40" height="11" min="0" max="255" value="255"/>
+        </VIEW></THEME>
+        """, resources: ["back.png": try sheet(1, 11), "thumb.png": try sheet(6, 11)])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let track = try XCTUnwrap(scene.commands.first { command in
+            guard command.nodeID == "track", case .image(let image) = command.paint else { return false }
+            return image.resourcePath.hasSuffix("back.png")
+        })
+        XCTAssertEqual(track.frame.width, 40, "the track spans the slider, not its 1 px bitmap")
+        guard case .image(let image) = track.paint else { return XCTFail() }
+        XCTAssertTrue(image.tiled)
+    }
+
     // MARK: - A container clipped away entirely clips its children away too
 
     /// `Classic`'s audio mode: `view.height = 359 - 183` stretches `videoview` to zero height, and

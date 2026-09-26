@@ -158,6 +158,13 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   `Pl-xp.bmp` as a 196x44 button inside a subview that still stretches the *same* bitmap to 313x144
   (W123 read that as a seam; live on 2026-09-25 there is none).
 
+- **A slider spells `backgroundTiled` as `tiled`.** The SDK's `SLIDER.tiled` is the background's
+  tiling, and 114 slider backgrounds across 24 skins author it that way (`Colorchooser`, `Compact`'s
+  seek bar, `Headspace`, `Mandalay`'s EQ, `iconic`, `raveworld`, …). Reading only `backgroundTiled`
+  sent them through the own-size rule above, which drew `Colorchooser`'s 1x11 `sliderBack.bmp` one
+  pixel wide in its 40 px slider — thumbs over no track (reported 2026-09-26). Before that rule the
+  bitmap was stretched, which hid the missing read. `WMPSceneBuilder.backgroundTiles`.
+
 - **A subview's background art larger than its box stops at the box (W283).** A background
   bitmap on a non-`stretch`, non-tiled axis draws at its own size (the `Ice` corner rule in
   `WMPSceneBuilder`), and overflowing art used to be trimmed only by the *parent's* clip. A subview

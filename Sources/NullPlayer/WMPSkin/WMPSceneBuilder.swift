@@ -1651,8 +1651,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                         horizontal: literalString(node, "horizontalAlignment"))
                     let verticalAlignment = WMPAxisAlignment(
                         vertical: literalString(node, "verticalAlignment"))
-                    let tiled = literalString(node, "backgroundTiled")?
-                        .caseInsensitiveCompare("true") == .orderedSame
+                    let tiled = backgroundTiles(node)
                     // **Its own size, not the smaller of the two.** `min` was the first shape of
                     // this rule and it still squashed the other half of the population: `Ice`'s
                     // `Vid-topleft.bmp` is 43x61 inside a 62x52 box, so `min` drew it 43x52 and the
@@ -2180,7 +2179,6 @@ struct WMPSceneBuilder: @unchecked Sendable {
             ?? (sourceX == nil && sourceY == nil && sourceWidth == nil && sourceHeight == nil ? nil
                 : WMPRect(x: sourceX ?? 0, y: sourceY ?? 0,
                           width: sourceWidth ?? frame.width, height: sourceHeight ?? frame.height))
-        let tiledName = background ? "backgroundTiled" : "tiled"
         // **A node that declares no key at all still gets one, if its artwork has no alpha.** That
         // is WMP's implicit magenta transparency colour (W78) — the store applies it only to a
         // sprite with no alpha channel, because only such a sprite can have meant it. A node that
@@ -2200,7 +2198,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
             ? ["transparencyColor", "clippingColor"] : ["transparencyColor"])
         let image = WMPSceneImage(resourcePath: path, sourceRect: source,
             colorKeys: declared,
-            tiled: literalString(node, tiledName)?.caseInsensitiveCompare("true") == .orderedSame,
+            tiled: background ? backgroundTiles(node)
+                : literalString(node, "tiled")?.caseInsensitiveCompare("true") == .orderedSame,
             interpolation: .low, mappingMask: mappingMask,
             clippingMaskPath: clippingPath,
             clippingMaskKeys: clippingPath.map { clippingMaskKeys(node, path: $0) } ?? [],
@@ -2332,6 +2331,18 @@ struct WMPSceneBuilder: @unchecked Sendable {
         guard (try? imageStore.carriesOwnTransparency(for: path)) == false,
               let corner = (try? imageStore.cornerColor(for: path)) ?? nil else { return [] }
         return [corner]
+    }
+
+    /// Whether `backgroundImage` repeats across the node's frame rather than drawing once.
+    ///
+    /// **A slider spells it `tiled`, not `backgroundTiled`** — the SDK's `SLIDER.tiled` is the
+    /// background's tiling, and 114 slider backgrounds across 24 corpus skins author it that way.
+    /// Reading only `backgroundTiled` sent them through W208's natural-size rule, which drew
+    /// `Colorchooser`'s 1x11 `sliderBack.bmp` one pixel wide inside its 40 px slider: three
+    /// thumbs over no track, reported 2026-09-26 as *"lost the tracks on the sliders"*.
+    private func backgroundTiles(_ node: WMPNode) -> Bool {
+        let names = isSlider(node.kind) ? ["tiled", "backgroundTiled"] : ["backgroundTiled"]
+        return names.contains { literalString(node, $0)?.caseInsensitiveCompare("true") == .orderedSame }
     }
 
     private func isSlider(_ kind: WMPElementKind) -> Bool {
