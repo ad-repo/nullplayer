@@ -318,8 +318,11 @@ final class WMPPhase5ControlsTests: XCTestCase {
         let vertical = WMPSize(width: 2, height: 6)
         XCTAssertEqual(map.frame(for: 0, in: vertical), WMPRect(x: 0, y: 0, width: 2, height: 2))
         XCTAssertEqual(map.frame(for: 1, in: vertical), WMPRect(x: 0, y: 4, width: 2, height: 2))
-        // Artwork that is not a whole multiple is not a strip, and is drawn whole.
-        XCTAssertNil(map.frame(for: 0.5, in: WMPSize(width: 5, height: 2)))
+        // A tail shorter than one cell is ignored: `Mandalay`'s volume is 255x48 over a 16x48 map.
+        let short = WMPSize(width: 5, height: 2)
+        XCTAssertEqual(map.stripLayout(in: short)?.frames, 2)
+        XCTAssertEqual(map.frame(for: 1, in: short), WMPRect(x: 2, y: 0, width: 2, height: 2))
+        // A single cell is not a strip, and is drawn whole.
         XCTAssertNil(map.frame(for: 0.5, in: WMPSize(width: 2, height: 2)))
     }
 

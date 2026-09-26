@@ -131,8 +131,12 @@ struct WMPPositionMap: Hashable, Codable {
 
     /// How `image` is laid out against this map, and which frame a fraction selects.
     ///
-    /// Returns nil when the artwork is not a whole multiple of the map on either axis — a single
-    /// frame the same size as the map, or art that simply does not match. The caller then draws it
+    /// Returns nil when the artwork is not at least two of the map's cells along one axis and
+    /// exactly the map along the other — a single frame the same size as the map, or art that
+    /// simply does not match. **The cell count is whole cells, and a tail short of one is never
+    /// drawn**: `Mandalay`'s volume strip is sixteen 16 px cells one pixel short (255x48 over a
+    /// 16x48 map), the only non-multiple strip in the 180 installed archives, and requiring an
+    /// exact multiple drew the whole strip squeezed into the 16 px control. The caller then draws it
     /// as an ordinary image rather than cropping a frame out of something that is not a strip.
     /// `descending` is for a strip authored **maximum first** — 13 of the corpus's 342 stripped
     /// `CUSTOMSLIDER`s are, and nothing but the art says so. `WMPImageStore.filmstripIsDescending`
@@ -142,12 +146,12 @@ struct WMPPositionMap: Hashable, Codable {
         let horizontal = Int(artwork.width) / width
         let vertical = Int(artwork.height) / height
         let clamped = max(0, min(1, descending ? 1 - fraction : fraction))
-        if horizontal > 1, Int(artwork.width) % width == 0, Int(artwork.height) == height {
+        if horizontal > 1, Int(artwork.height) == height {
             let index = min(horizontal - 1, Int((Double(horizontal - 1) * clamped).rounded()))
             return WMPRect(x: CGFloat(index * width), y: 0,
                            width: CGFloat(width), height: CGFloat(height))
         }
-        if vertical > 1, Int(artwork.height) % height == 0, Int(artwork.width) == width {
+        if vertical > 1, Int(artwork.width) == width {
             let index = min(vertical - 1, Int((Double(vertical - 1) * clamped).rounded()))
             return WMPRect(x: 0, y: CGFloat(index * height),
                            width: CGFloat(width), height: CGFloat(height))
@@ -160,10 +164,10 @@ struct WMPPositionMap: Hashable, Codable {
         guard width > 0, height > 0 else { return nil }
         let horizontal = Int(artwork.width) / width
         let vertical = Int(artwork.height) / height
-        if horizontal > 1, Int(artwork.width) % width == 0, Int(artwork.height) == height {
+        if horizontal > 1, Int(artwork.height) == height {
             return (horizontal, false)
         }
-        if vertical > 1, Int(artwork.height) % height == 0, Int(artwork.width) == width {
+        if vertical > 1, Int(artwork.width) == width {
             return (vertical, true)
         }
         return nil

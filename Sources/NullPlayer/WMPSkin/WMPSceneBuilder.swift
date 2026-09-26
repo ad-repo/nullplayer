@@ -1719,7 +1719,10 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     let descending = try positionMap?.stripLayout(in: artwork).map { layout in
                         try imageStore.filmstripIsDescending(for: path, frameCount: layout.frames,
                                                              vertical: layout.vertical,
-                                                             gradient: positionMap?.gradient())
+                                                             gradient: positionMap?.gradient(),
+                                                             cellLength: positionMap.map {
+                                                                 layout.vertical ? $0.height : $0.width
+                                                             })
                     } ?? false
                     let strip = slider.flatMap {
                         positionMap?.frame(for: $0.fraction, in: artwork, descending: descending)

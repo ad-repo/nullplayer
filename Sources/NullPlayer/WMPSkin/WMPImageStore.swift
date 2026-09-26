@@ -810,18 +810,21 @@ final class WMPImageStore: @unchecked Sendable {
     /// on art in general. `Secura`'s pair made it 19 in 7 until W307 took it away — see the
     /// middle-frame reading in the body.
     func filmstripIsDescending(for path: String, frameCount: Int, vertical: Bool,
-                               gradient: (horizontal: Bool, positive: Bool)?) throws -> Bool {
+                               gradient: (horizontal: Bool, positive: Bool)?,
+                               cellLength: Int? = nil) throws -> Bool {
         guard frameCount > 1 else { return false }
         let canonical = provider.canonicalPath(for: path) ?? path
         let axis = gradient.map { "\($0.horizontal)|\($0.positive)" } ?? "-"
-        let cacheKey = "\(canonical)|\(frameCount)|\(vertical)|\(axis)"
+        let cacheKey = "\(canonical)|\(frameCount)|\(vertical)|\(axis)|\(cellLength ?? 0)"
         lock.lock()
         if let cached = descendingStripEntries[cacheKey] { lock.unlock(); return cached }
         lock.unlock()
         let image = try self.image(for: canonical).image
         let width = image.width, height = image.height
-        let frameWidth = vertical ? width : width / frameCount
-        let frameHeight = vertical ? height / frameCount : height
+        // The cell is the position map's size, not the strip divided evenly: a strip may end in a
+        // tail shorter than one cell (`WMPPositionMap.frame(for:in:descending:)`).
+        let frameWidth = vertical ? width : cellLength ?? width / frameCount
+        let frameHeight = vertical ? cellLength ?? height / frameCount : height
         guard frameWidth > 0, frameHeight > 0 else { return false }
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
         bytes.withUnsafeMutableBytes { buffer in
