@@ -470,6 +470,10 @@ struct WMPHitMetadata: Hashable, Codable {
     /// This node's own `onClick` already issues `action`, so a click must not post it as well —
     /// `WMPTransportAction.handlerOwnsAction`, which is where the measurement and the rule are.
     let handlerOwnsAction: Bool
+    /// Disabled *now* — by a `wmpprop:`/`jscript:` binding or by the host — rather than by a literal
+    /// `enabled="false"` in the markup. A press here swallows the gesture instead of dragging the
+    /// window; see `WMPHitTester.isGreyedOutControl(at:)`.
+    var greyedOut = false
 
     init(stableID: Int, nodeID: String?, kind: String, frame: WMPRect, clipRect: WMPRect?,
          zIndex: Int, documentOrder: Int, paintOrder: Int? = nil,

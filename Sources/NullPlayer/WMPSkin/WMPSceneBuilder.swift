@@ -1874,7 +1874,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                             let childEnabled = literalString(child, "enabled")?.caseInsensitiveCompare("false") != .orderedSame
                                 && !interactionState.disabledNodesForScene.contains(child.stableID)
                             let childAction = WMPTransportAction.authoredAction(for: child)
-                            return WMPHitTarget(stableID: child.stableID, nodeID: child.xmlID,
+                            var target = WMPHitTarget(stableID: child.stableID, nodeID: child.xmlID,
                                 kind: child.kind.description, frame: frame,
                                 action: childAction,
                                 sticky: literalString(child, "sticky")?.caseInsensitiveCompare("true") == .orderedSame,
@@ -1884,6 +1884,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
                                 handlerOwnsAction: childAction.map {
                                     WMPTransportAction.handlerOwnsAction($0, on: child)
                                 } ?? false)
+                            target.greyedOut = !childEnabled && !authorsLiteralDisabled(child)
+                            return target
                         }
                     }
                 }
@@ -1988,7 +1990,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     && mappingTargets.isEmpty && !authorsInputHandler(node)
                     && WMPTransportAction.authoredAction(for: node) == nil
                 if !inertGroup {
-                hits.append(WMPHitMetadata(stableID: node.stableID, nodeID: node.xmlID,
+                var hit = WMPHitMetadata(stableID: node.stableID, nodeID: node.xmlID,
                     kind: node.kind.description, frame: frame, clipRect: inheritedClip, zIndex: z,
                     documentOrder: node.stableID, paintOrder: paintSequence,
                     action: WMPTransportAction.authoredAction(for: node),
@@ -1999,7 +2001,9 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     toolTip: toolTip(node, state: visualState, literal: literalString),
                     handlerOwnsAction: WMPTransportAction.authoredAction(for: node).map {
                         WMPTransportAction.handlerOwnsAction($0, on: node)
-                    } ?? false))
+                    } ?? false)
+                hit.greyedOut = !enabled && !authorsLiteralDisabled(node)
+                hits.append(hit)
                 }
             }
 
@@ -2154,6 +2158,11 @@ struct WMPSceneBuilder: @unchecked Sendable {
 
     private func literal(_ node: WMPNode, _ name: String) -> CGFloat? {
         WMPNumber.literal(node.attribute(named: name))
+    }
+
+    /// `enabled="false"` written in the markup, as opposed to a binding that currently answers false.
+    private func authorsLiteralDisabled(_ node: WMPNode) -> Bool {
+        literalString(node, "enabled")?.caseInsensitiveCompare("false") == .orderedSame
     }
 
     private func literalString(_ node: WMPNode, _ name: String) -> String? {

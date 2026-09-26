@@ -595,7 +595,10 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         // An `enabled="false"` authored in the markup is *not* this case and still drags: those
         // never reach the hit tester at all, which is what keeps `portals`' own 305x400
         // `main_button` backdrop draggable.
-        if target == nil, hitTester?.hitTest(point) != nil { return }
+        // A control a binding has switched off is the same case, and is not in `hitTest` at all:
+        // `KungFuChaos`' speaker button with SRS WOW off dragged the docked group and outlined it.
+        if target == nil, hitTester?.hitTest(point) != nil
+            || hitTester?.isGreyedOutControl(at: point) == true { return }
         // The edge band is consulted only where hit testing found no control, so a button sitting
         // against the window edge keeps every pixel it had. **The window claims this first**, and
         // for a real drag it is the only path that runs — see `WMPSkinWindow.sendEvent`. What is

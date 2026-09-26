@@ -16,6 +16,8 @@ struct WMPHitTarget: Hashable, Codable {
     /// — `WMPTransportAction.handlerOwnsAction`. A mapping child carries its own, because every
     /// doubled transport element measured in the corpus is a `<BUTTONGROUP>` child.
     var handlerOwnsAction: Bool = false
+    /// See `WMPHitMetadata.greyedOut`.
+    var greyedOut: Bool = false
 }
 
 struct WMPHitTester {
@@ -40,6 +42,29 @@ struct WMPHitTester {
                                 enabled: hit.enabled, handlerOwnsAction: hit.handlerOwnsAction)
         }
         return nil
+    }
+
+    /// **A control switched off at runtime still owns its pixels.** `hitTest` skips every disabled
+    /// control, so without this a press on one reads as bare artwork and drags the window — and
+    /// with it the docked group, whose connected-window highlight is drawn for as long as the
+    /// button is held. `KungFuChaos`' speaker button is `enabled="wmpprop:eq.enhancedAudio"`, so
+    /// with SRS WOW off it outlined the docked library window. A literal `enabled="false"` is not
+    /// this case and stays draggable, as `WMPMainView.mouseDown` says of `portals`' backdrop.
+    func isGreyedOutControl(at point: WMPPoint) -> Bool {
+        for hit in hits.sorted(by: Self.frontToBack) {
+            guard hit.frame.contains(point), hit.clipRect.map({ $0.contains(point) }) ?? true,
+                  hit.coverage?.covers(point, in: hit.frame) ?? true else { continue }
+            guard hit.enabled else {
+                if hit.greyedOut { return true }
+                continue
+            }
+            guard let mapping = hit.mappingImage else { return false }
+            guard let stableID = mapping.node(at: point, in: hit.frame),
+                  let target = hit.mappingTargets.first(where: { $0.stableID == stableID }) else { continue }
+            if target.enabled { return false }
+            if target.greyedOut { return true }
+        }
+        return false
     }
 
     /// Front-most first, in the reverse of the order the scene painted them.

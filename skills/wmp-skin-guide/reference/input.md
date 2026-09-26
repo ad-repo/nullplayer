@@ -165,6 +165,15 @@ a dispatch defect — it is a control the pointer never reached at all.
   authored `enabled="false"` is not this case and still drags**, because those never reach the hit
   tester at all — which is what keeps `portals`' own 305x400 decorative `main_button` backdrop
   movable, and is the distinction to preserve if this is ever touched again.
+- **A control a binding has switched off is the same case, and `hitTest` never returns it (W313).**
+  The W154 check only asks whether `hitTest` found something, and `hitTest` skips every disabled hit —
+  so `KungFuChaos`' speaker button, `enabled="wmpprop:eq.enhancedAudio"`, dragged the EQ window with
+  SRS WOW off. The only visible symptom was the **docked-group highlight**: the EQ touches the
+  library window, so a press that starts a drag outlines that window for as long as it is held. The
+  builder marks a hit `greyedOut` when it is disabled by an override or the host rather than by a
+  literal `enabled="false"`, and `WMPHitTester.isGreyedOutControl(at:)` makes `mouseDown` swallow a
+  press on one. Pinned by `testPressOnABindingDisabledControlDoesNotDragTheWindow`, which also keeps
+  the authored case draggable.
 - **`host.snapshot` is computed live and carries the clock, so never diff it across a transaction
   (W157).** `WMPAudioEngineHost.snapshot` reads `engine.currentTime` on every access; two readings
   taken either side of a 10 ms transaction always differ while a track plays. `dispatchScriptTransaction`

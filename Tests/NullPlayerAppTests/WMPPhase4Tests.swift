@@ -504,6 +504,60 @@ final class WMPPhase4Tests: XCTestCase {
         XCTAssertNotEqual(window.frame.origin, origin, "Bare artwork still moves the window")
     }
 
+    /// **A control a binding has switched off swallows the press too (W313).** `hitTest` skips
+    /// every disabled hit, so W154's check never saw one: `KungFuChaos`' speaker button is
+    /// `enabled="wmpprop:eq.enhancedAudio"`, and with SRS WOW off a press on it dragged the EQ
+    /// window and outlined the docked library window for as long as it was held. An authored
+    /// `enabled="false"` is not greyed out and still drags.
+    @MainActor
+    func testPressOnABindingDisabledControlDoesNotDragTheWindow() throws {
+        let frame = WMPRect(x: 10, y: 10, width: 20, height: 10)
+        var greyed = WMPHitMetadata(stableID: 4, nodeID: "speaker", kind: "button", frame: frame,
+            clipRect: nil, zIndex: 1, documentOrder: 1, action: nil, sticky: false,
+            enabled: false, mappingImage: nil, mappingTargets: [])
+        greyed.greyedOut = true
+        let authored = WMPHitMetadata(stableID: 5, nodeID: "backdrop", kind: "button",
+            frame: WMPRect(x: 50, y: 10, width: 20, height: 10), clipRect: nil, zIndex: 1,
+            documentOrder: 2, action: nil, sticky: false, enabled: false, mappingImage: nil,
+            mappingTargets: [])
+        let tester = WMPHitTester(hits: [greyed, authored])
+        XCTAssertTrue(tester.isGreyedOutControl(at: WMPPoint(x: 20, y: 15)))
+        XCTAssertFalse(tester.isGreyedOutControl(at: WMPPoint(x: 60, y: 15)))
+        XCTAssertFalse(tester.isGreyedOutControl(at: WMPPoint(x: 90, y: 40)))
+
+        let window = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 100, height: 50),
+                              styleMask: [.borderless], backing: .buffered, defer: true)
+        let view = WMPMainView(frame: NSRect(x: 0, y: 0, width: 100, height: 50))
+        window.contentView = view
+        let scene = WMPScene(viewID: "eqView", canvasSize: WMPSize(width: 100, height: 50),
+            resizeLimits: WMPResizeLimits(minimum: WMPSize(width: 100, height: 50), maximum: nil),
+            commands: [], hits: [greyed, authored], geometries: [:],
+            unresolved: [], diagnostics: [], dirtyBounds: nil,
+            metrics: WMPSceneMetrics(resolvedNodeCount: 2, unresolvedNodeCount: 0,
+                                     visibleBounds: nil), wasBuiltOnMainThread: false)
+        let context = CGContext(data: nil, width: 100, height: 50, bitsPerComponent: 8,
+            bytesPerRow: 400, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        view.present(context.makeImage()!, scene: scene)
+
+        func event(_ type: NSEvent.EventType, _ point: NSPoint) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                clickCount: 1, pressure: 1))
+        }
+        let origin = window.frame.origin
+        // The scene's y runs down from the top; the view's runs up from the bottom.
+        view.mouseDown(with: try event(.leftMouseDown, NSPoint(x: 20, y: 35)))
+        view.mouseDragged(with: try event(.leftMouseDragged, NSPoint(x: 60, y: 45)))
+        view.mouseUp(with: try event(.leftMouseUp, NSPoint(x: 60, y: 45)))
+        XCTAssertEqual(window.frame.origin, origin, "A binding-disabled control swallows the press")
+
+        view.mouseDown(with: try event(.leftMouseDown, NSPoint(x: 60, y: 35)))
+        view.mouseDragged(with: try event(.leftMouseDragged, NSPoint(x: 80, y: 45)))
+        view.mouseUp(with: try event(.leftMouseUp, NSPoint(x: 80, y: 45)))
+        XCTAssertNotEqual(window.frame.origin, origin, "An authored enabled=\"false\" still drags")
+    }
+
     private func hit(id: Int, z: Int, order: Int, frame: WMPRect) -> WMPHitMetadata {
         WMPHitMetadata(stableID: id, nodeID: "node\(id)", kind: "button", frame: frame,
             clipRect: nil, zIndex: z, documentOrder: order, action: .play, sticky: false,
