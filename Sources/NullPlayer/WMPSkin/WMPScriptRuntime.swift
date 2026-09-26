@@ -333,6 +333,9 @@ enum WMPJScriptCompatibility {
         // something unimplemented. Both halves are derived from the object model, never restated.
         "element": Set(WMPObjectModel.standardElementProperties)
             .union(WMPObjectModel.implementedElementMethods).union(["id"])
+            // Computed by `readElement` for every kind, and read by the `updateMetadata()` idiom in
+            // 100 archives — hidden while their `metadata.*` paths were misrouted (W315).
+            .union(["textWidth"])
             // The `<EFFECTS>` rect's own four, which only that kind answers (W101). The set is
             // flat, so they are listed here rather than derived: a kind-aware table would have to
             // restate `elementMethod`, which is the authority.

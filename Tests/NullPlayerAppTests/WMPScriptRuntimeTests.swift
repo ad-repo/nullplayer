@@ -281,6 +281,22 @@ final class WMPScriptRuntimeTests: XCTestCase {
         XCTAssertFalse(WMPJScriptCompatibility.supports(object: "element", member: "setFocus"))
     }
 
+    /// W315: `metadata` is not a host global, so where a skin authors `<TEXT id="metadata">` its
+    /// members are element members — 463 false unknowns across ~107 archives before this.
+    func testSkinElementIDShadowsUnboundReservedHead() throws {
+        let graph = WMPObjectGraph(document: try WMPXMLParser().parse("""
+        <THEME><VIEW id="main"><TEXT id="metadata"/><SUBVIEW id="eq"/></VIEW></THEME>
+        """, path: "theme.wms"))
+        XCTAssertTrue(WMPCorpusReportHarness.supports(memberPath: "metadata.value", in: graph))
+        XCTAssertTrue(WMPCorpusReportHarness.supports(memberPath: "metadata.textWidth", in: graph))
+        XCTAssertFalse(WMPCorpusReportHarness.supports(memberPath: "metadata.hoverFontStyle", in: graph),
+                       "an element member the runtime does not answer must keep ranking")
+        // No element with the id: `Grinch`'s leftover `UpdateMetadata()` reaches nothing in WMP.
+        XCTAssertFalse(WMPCorpusReportHarness.supports(memberPath: "metadata.value"))
+        // `eq` is bound as a host global, so an element id never takes it over in the tally.
+        XCTAssertFalse(WMPCorpusReportHarness.supports(memberPath: "eq.value", in: graph))
+    }
+
     /// W136's half of the list above: the `<LISTBOX>` fill methods a playlist chooser is built
     /// out of are answered, so the census must stop ranking them as demand.
     func testTheListBoxFillMethodsAreImplemented() {

@@ -122,7 +122,7 @@ struct WMPCorpusReportHarness: @unchecked Sendable {
             let unknownAttributes = Self.unknown(skin.compatibilityReport.attributes,
                                                   supported: Self.supportedAttributes,
                                                   permitsEventPrefix: true)
-            let unknownMembers = skin.compatibilityReport.members.filter { !Self.supports(memberPath: $0.name) }
+            let unknownMembers = skin.compatibilityReport.members.filter { !Self.supports(memberPath: $0.name, in: skin.graph) }
             let unknownEvents = Self.unknown(skin.compatibilityReport.events, supported: Self.supportedEvents)
             let confidence = Self.confidence(unknownTags: unknownTags, unknownAttributes: unknownAttributes,
                 unknownMembers: unknownMembers, unknownEvents: unknownEvents,
@@ -230,9 +230,21 @@ struct WMPCorpusReportHarness: @unchecked Sendable {
     /// Internal for the same reason as `supportedTags` and `supportedEvents`: the probe harness
     /// classifies the same member paths and must not keep its own copy of this. It did, and the
     /// copy had already dropped the `mediacenter` case (W215).
-    static func supports(memberPath path: String) -> Bool {
+    ///
+    /// `graph` is the skin the path was authored in. `metadata`, `vis`, `ipl` and `ddpl` are not
+    /// host globals — `bindHostGlobals` binds none of them — so where the skin authors an element
+    /// with one of those ids, that element is what the script reaches, and its members are element
+    /// members. Without this, `<TEXT id="metadata">` (108 archives, the `updateMetadata()` idiom)
+    /// filed 463 false `metadata.*` unknowns and pointed the QuickSilver investigation at the
+    /// script (W315). `eq` is left out on purpose: it is bound as a global.
+    static func supports(memberPath path: String, in graph: WMPObjectGraph? = nil) -> Bool {
         let parts = path.lowercased().split(separator: ".").map(String.init)
         guard parts.count >= 2 else { return false }
+        if ["metadata", "vis", "ipl", "ddpl"].contains(parts[0]),
+           graph?.nodes(id: parts[0]).isEmpty == false,
+           WMPJScriptCompatibility.supports(object: "element", member: parts[1]) {
+            return true
+        }
         let object: String
         let member: String
         switch parts[0] {

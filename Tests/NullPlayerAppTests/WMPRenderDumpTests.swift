@@ -1141,7 +1141,7 @@ enum WMPHarness {
     static func compatibilityLines(_ skin: WMPLoadedSkin) -> [String] {
         let report = skin.compatibilityReport
         let tags = report.tags.filter { !WMPCorpusReportHarness.supportedTags.contains($0.name) }
-        let members = report.members.filter { !WMPCorpusReportHarness.supports(memberPath: $0.name) }
+        let members = report.members.filter { !WMPCorpusReportHarness.supports(memberPath: $0.name, in: skin.graph) }
         // Events were collected and compared all along and never printed, so the largest single
         // block of Class A demand in the corpus was invisible to the only instrument that ranks it:
         // `onResize` sat unrecognised through three phases with 47 uses across 19 archives, and

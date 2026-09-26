@@ -122,6 +122,14 @@ this list before opening a row that came from reading the SDK against a corpus s
   because `effectType` is an SDK `EFFECTS` *method* and the vocabulary gates reads. Every use is on
   the `mediacenter` host receiver, answered by `readMediaCenter` before the element path. Not a gap
   and not a regression risk.
+* **`metadata.*`, `vis.*`, `ipl.*`, `ddpl.*` are element ids, not host objects (W315).** WMP has no
+  global by those names and `bindHostGlobals` binds none of them, so a skin's `<TEXT id="metadata">`
+  (108 archives) is what its script reaches. `WMPCorpusReportHarness.supports(memberPath:in:)`
+  classifies such a path against the element table when the skin authors that id; `eq` is bound as
+  a global and is never taken over. What stays unknown under those heads is either real element
+  demand (`hoverFontStyle`, `vis.nextEffect`…) or an **author leftover**: `Grinch`, `Primitive`,
+  `Israeli`, `Heart_Butterfly` and `Asia MP11` call a template `UpdateMetadata()` with no `metadata`
+  element, which throws in WMP too — nothing to implement.
 * **`<CONTROLS>` (77 skins), `<VIDEOSETTINGS>` (84), `windowed` (114), `allowAll`,
   `dropDownVisible` (114)** — real gaps, but already tracked as W103 and the documented
   refusals in this file (`<CONTROLS>`/`<VIDEOSETTINGS>` were W111, moved to
