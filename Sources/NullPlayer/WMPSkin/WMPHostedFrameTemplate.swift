@@ -137,6 +137,10 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     static let wholeDonorViewObeysFloor: Bool =
         ProcessInfo.processInfo.environment["WMP_HOSTED_FRAME_WHOLE"] != "1"
 
+    /// Whether a panel with no top edge borrows its bottom edge (`closingOpenTop`). **On.**
+    /// `WMP_OPEN_TOP=0` leaves the open top as the skin drew it — the A/B switch for that rule.
+    static let closesOpenTop: Bool = ProcessInfo.processInfo.environment["WMP_OPEN_TOP"] != "0"
+
     // MARK: - Derivation
 
     /// The eight places a ring piece can be anchored. A piece is classified by its *alignment*
@@ -1670,9 +1674,65 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             .allSatisfy({ $0 >= Self.minimumBorder }) else {
             throw WMPHostedFrameRefusal.panelCannotBeSliced
         }
-        return PanelSlices(image: cropped,
-                           panel: CGSize(width: panel.width, height: panel.height),
-                           margins: margins)
+        let slices = PanelSlices(image: cropped,
+                                 panel: CGSize(width: panel.width, height: panel.height),
+                                 margins: margins)
+        guard Self.closesOpenTop else { return slices }
+        return Self.closingOpenTop(slices, scale: backingScale) ?? slices
+    }
+
+    /// **A drawer with no top edge borrows its bottom edge for one.** `activate`'s playlist tray is
+    /// a U — side rails and a rounded bottom, and a keyed-out band where it slides out from under
+    /// the player — so a hosted window wearing it had no top border and nothing opaque to drag by.
+    /// Where the top strip between the corners is at least 90% transparent, the bottom band is flipped
+    /// into its place and the top slice line moves to the bottom's thickness. Nil when the panel
+    /// already has a top edge.
+    private static func closingOpenTop(_ slices: PanelSlices, scale: CGFloat) -> PanelSlices? {
+        let m = slices.margins
+        let source = slices.image
+        let width = source.width, height = source.height
+        let topRows = Int((m.top * scale).rounded())
+        let bottomRows = Int((m.bottom * scale).rounded())
+        let left = Int((m.left * scale).rounded()), right = width - Int((m.right * scale).rounded())
+        guard topRows > 0, bottomRows > 0, bottomRows < height - topRows, left < right,
+              let rgba = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                   bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let data = rgba.data else { return nil }
+        rgba.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
+        // Row 0 of the buffer is the image's top row. "Open" is a share, not every pixel: a rail
+        // one column wider than its slice line (`activate`'s right rail is 9px against an 8px
+        // margin) leaves a sliver inside the strip that is still no top edge.
+        let pixels = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+        var opaque = 0
+        for row in 0..<topRows {
+            for column in left..<right where pixels[(row * width + column) * 4 + 3] >= 128 {
+                opaque += 1
+            }
+        }
+        guard Double(opaque) < 0.1 * Double(topRows * (right - left)) else { return nil }
+        let newHeight = height - topRows + bottomRows
+        guard let context = CGContext(data: nil, width: width, height: newHeight, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let body = source.cropping(to: CGRect(x: 0, y: topRows, width: width,
+                                                    height: height - topRows)),
+              let bottom = source.cropping(to: CGRect(x: 0, y: height - bottomRows, width: width,
+                                                      height: bottomRows)) else { return nil }
+        // `CGContext` is bottom-left: the body fills the lower rows, and the bottom band is drawn
+        // mirrored into the top `bottomRows`.
+        context.draw(body, in: CGRect(x: 0, y: 0, width: width, height: height - topRows))
+        context.saveGState()
+        context.translateBy(x: 0, y: CGFloat(newHeight))
+        context.scaleBy(x: 1, y: -1)
+        context.draw(bottom, in: CGRect(x: 0, y: 0, width: width, height: bottomRows))
+        context.restoreGState()
+        guard let closed = context.makeImage() else { return nil }
+        return PanelSlices(image: closed,
+                           panel: CGSize(width: slices.panel.width,
+                                         height: slices.panel.height - m.top + m.bottom),
+                           margins: NSEdgeInsets(top: m.bottom, left: m.left,
+                                                 bottom: m.bottom, right: m.right))
     }
 
     /// The panel's bitmap and the four slice lines cut out of it. Size-independent, by construction.

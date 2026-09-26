@@ -73,6 +73,17 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   the ring path refuses the player view by scoring it -100. What a panel cannot exclude is the
   donor's own *painted* controls: `Gorillaz` has a button strip in its bitmap, and those are pixels,
   not nodes.
+- **A panel with no top edge borrows its bottom edge (2026-09-26).** `activate`'s
+  `playlist_drawer.bmp` is a U: rails and a rounded bottom, and a keyed-out 6px band where the tray
+  slides out from under the player. Every hosted window wearing it had no top border and nothing
+  opaque to drag by. `WMPHostedFrameTemplate.closingOpenTop` runs on the panel's slices: where the
+  top strip between the slice lines is at least 90% transparent (alpha < 128 — the render leaves a
+  faint fringe, and `activate`'s 9px right rail pokes one column past its 8px slice line), the
+  bottom band is flipped into its place and the top margin becomes the bottom's. `borderInsets`
+  reads the same slices, so growth follows. `activate` at 560x506: `caption=6` → `caption=13`.
+  Panels only; a ring with an open top is not handled. Corpus on 2026-09-26 (180 archives, 45
+  panels, 550x464 and 550x890, scale 1 and 2, A/B via `WMP_OPEN_TOP=0`): **one line moves in every
+  configuration, `activate`'s**, top-edge gap 0.965 → 0.007 at 1x.
 - **How the window and the border share the space: the window is grown (W207, closed 2026-09-16).**
   **The interior keeps its size and the border is added around it** — `HostedWindowBorderLayout`,
   one central rule for the nine registered growth participants listed in `windows/hosting.md`, driven off
