@@ -492,21 +492,18 @@ that each hand back a confident wrong picture (W219-W222, 2026-09-17):
   window's points × the backing scale before reading it, every time.
 - **`-R x,y,w,h` picks up whatever is behind the window**, and a hosted window is mostly keyed-out
   artwork, so the window behind reads as *this* window's content: a visualizer showing through a
-  transparent hole reads as a ground that was never painted. Park each window alone before shooting
-  it — move the others off-screen right (`set position to {1400, 40}` via System Events), put the
-  one under test at a fixed origin, `AXRaise` it, capture, then move it away and bring up the next:
+  transparent hole reads as a ground that was never painted.
+
+`winhelper park` + `capture` answer both: `park` puts one window at an on-screen origin and proves
+it landed, and `capture` shoots that window's own content (occlusion ignored) and refuses a
+full-screen or unexpected size, cropping a docked group down to the window. Nothing needs moving
+out of the way:
 
 ```bash
-PID=$(pgrep -x NullPlayer | head -1)
-pos() { osascript -e "tell application \"System Events\" to tell (first process whose unix id is $PID) \
-  to tell (first window whose name is \"$1\") to set position to {$2, $3}"; }
-skills/app-control/scripts/winhelper windows > /tmp/wins.txt
-while read id layer x y w h alpha name; do pos "$name" 1400 40; done < /tmp/wins.txt
-while read id layer x y w h alpha name; do
-  pos "$name" 60 60; sleep 0.5
-  osascript -e "tell application \"System Events\" to tell (first process whose unix id is $PID) \
-    to tell (first window whose name is \"$name\") to perform action \"AXRaise\""
-  screencapture -x -R 60,60,$w,$h "/tmp/w-${name// /_}.png"; pos "$name" 1400 40
+PID=$(pgrep -x NullPlayer | head -1); WH=skills/app-control/scripts/winhelper
+"$WH" windows --pid "$PID" > /tmp/wins.txt
+while IFS=$'\t' read -r id layer x y w h alpha name; do
+  "$WH" park "$PID" "$name" 60 60 >/dev/null && "$WH" capture "$id" "/tmp/w-${name// /_}.png" --pid "$PID"
 done < /tmp/wins.txt
 ```
 
@@ -561,8 +558,13 @@ view a skin lands on, the running app is the only arbiter — which is what the 
 ### A live pass is a window frame, before and after
 
 For "does the button change anything", the measurement is `CGWindowListCopyWindowInfo` filtered on
-owner `NullPlayer`, read before the click and after it. It is objective, it is two lines of Swift,
-and it scales to a skin per launch — eleven skins were audited this way in one pass. A screenshot
+owner `NullPlayer`, read before the click and after it. It is objective, it is one command —
+`winhelper clickdiff <x> <y> --pid <n>` (`skills/app-control` § *Route C*), which prints both
+listings, names each window that moved, resized, faded, retitled, vanished or appeared, and **exits
+2 when nothing changed** — and it scales to a skin per launch — eleven skins were audited this way
+in one pass. Windows are matched by id, so a view switch that swaps windows reads as `gone` + `new`,
+not as a resize. Its first check on 2026-09-25 was `Cablemusic`'s Shrink:
+`changed … resized 593x600->475x373`. A screenshot
 diff is the second reading, for the case where the window legitimately does not resize
 (`portals`'s two views are both 359x465, and byte-identical captures are what proved that click
 dead).

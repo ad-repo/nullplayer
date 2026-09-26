@@ -81,16 +81,13 @@ that window's own layout. Sorting the report that way first would have saved a r
 
 Launch it with `skills/app-control/scripts/launch.sh "The Unit"`. Its
 windows tile down a column and run off the bottom of the screen, so a capture by window id returns
-a full-screen image and a `-R` capture picks up whatever is behind; park each window alone before
-shooting it:
+a full-screen image and a `-R` capture picks up whatever is behind; park each window on-screen
+before shooting it:
 
 ```bash
 PID=$(pgrep -x NullPlayer | head -1); WH=skills/app-control/scripts/winhelper
-osascript -e "tell application \"System Events\" to tell (first process whose unix id is $PID) \
-  to tell (first window whose name is \"CAVA\") to set position to {60, 60}"
-osascript -e "tell application \"System Events\" to tell (first process whose unix id is $PID) \
-  to tell (first window whose name is \"CAVA\") to perform action \"AXRaise\""
-screencapture -x -R 60,60,530,209 /tmp/cava.png
+read -r WID _ < <("$WH" park "$PID" CAVA 60 60)   # exits non-zero unless it landed at 60,60
+"$WH" capture "$WID" /tmp/cava.png --pid "$PID"   # size-checked; refuses a full-screen or group image
 ```
 
 The corner is 80x80 points from the top-right of any hosted window; crop and magnify it rather than

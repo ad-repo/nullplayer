@@ -191,10 +191,12 @@ read -r WID _ X Y W H _ < <("$WH" windows --pid "$PID" --size 289x283)   # the s
 |---|---|
 | `winhelper windows [--pid <n>] [--size <w>x<h>]` | `id layer x y w h alpha title`, on-screen windows owned by NullPlayer, front to back |
 | `winhelper raise <pid>` | frontmost via System Events **by unix id**; exits non-zero unless that pid is frontmost afterwards |
+| `winhelper park <pid> <title> <x> <y>` | moves the window with that title to a top-left screen point and raises it, then reads the position back; non-zero if no window has that title or it landed elsewhere — use it before `capture` on a window that runs off the screen |
 | `winhelper capture <id> <out.png> [--pid <n>]` | the window's own content (`screencapture -l`), size-checked — see below |
 | `winhelper capture-all <outdir> [--pid <n>] [--size <w>x<h>]` | `capture` for every matching window, one PNG each; non-zero if any is refused |
 | `winhelper click <x> <y>` | `mouseMoved`, then down/up **with `mouseEventClickState = 1`** |
 | `winhelper dblclick <x> <y>` | two clicks, the second at `clickState = 2` |
+| `winhelper clickdiff <x> <y> [--pid <n>] [--size <w>x<h>] [--settle <s>]` | the window-frame check: `before` rows, a `click`, a wait (1 s default), `after` rows, then one `changed`/`gone`/`new` line per window; **exits 2 when nothing changed**. `dblclickdiff` is the same with `dblclick`. `--size` filters only the *before* listing |
 | `winhelper scroll <x> <y> <count> <delta> [line\|precise]` | `count` wheel events at one point; `precise` is a trackpad (points), `line` (the default) a mouse wheel (lines) |
 | `winhelper move <x> <y> …` | `mouseMoved` through the path, 250 ms apart |
 | `winhelper drag <x> <y> …` | press, `leftMouseDragged` through the path, release at the last point |

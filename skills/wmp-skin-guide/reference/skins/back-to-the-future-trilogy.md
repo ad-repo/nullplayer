@@ -185,9 +185,9 @@ still broken, as it was before.
    chrome (nothing in a dump can show that), once because the probe size (550x464) and the window
    size (357x238) put this skin either side of the `minHeight` threshold.
    ```bash
-   osascript -e 'tell application "System Events" to tell process "NullPlayer" \
-     to get {position, size} of (first window whose name is "flow")'
-   screencapture -x -R <x>,<y>,<w>,<h> /tmp/live.png
+   WH=skills/app-control/scripts/winhelper; PID=$(pgrep -x NullPlayer | head -1)
+   WID=$("$WH" windows --pid "$PID" | awk -F'\t' '$8=="flow" {print $1; exit}')
+   "$WH" capture "$WID" /tmp/live.png --pid "$PID"
    ```
 2. **Measure at the window's real size, and at `WMP_HOSTED_FRAME_SCALE=2`.** The harness defaults to
    1x; the screen is 2x, and connectivity and threshold rules do not survive the difference.

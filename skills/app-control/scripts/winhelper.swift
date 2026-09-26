@@ -66,6 +66,75 @@ func raise(pid: Int) {
     fail("pid \(pid) is not frontmost after raising (frontmost: \(NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1))")
 }
 
+/// Move one window of `pid`, found by title, to a top-left screen point and raise it; prove it took.
+///
+/// A window that runs off the screen cannot be captured by id — `-l` returns a full-screen image
+/// for it — so it has to be parked on-screen first. Position is set through System Events (the
+/// same top-left origin as `winhelper windows`), then read back from the window list: a title that
+/// matched nothing, or a window the app snapped elsewhere, exits non-zero instead of leaving the
+/// next capture to photograph the wrong place.
+func park(pid: Int, name: String, x: Int, y: Int) {
+    let quoted = name.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+    let target = "tell application \"System Events\" to tell (first process whose unix id is \(pid)) to tell (first window whose name is \"\(quoted)\")"
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+    p.arguments = ["-e", "\(target) to set position to {\(x), \(y)}", "-e", "\(target) to perform action \"AXRaise\""]
+    p.standardOutput = FileHandle.nullDevice
+    p.standardError = FileHandle.nullDevice
+    do { try p.run() } catch { fail("osascript: \(error)") }
+    p.waitUntilExit()
+    if p.terminationStatus != 0 { fail("no window titled \"\(name)\" in pid \(pid)") }
+    for _ in 0..<10 {
+        if let r = windowRows(pid: pid).first(where: { $0.name == name }), r.x == x, r.y == y {
+            print("\(r.id)\t\(r.layer)\t\(r.x)\t\(r.y)\t\(r.w)\t\(r.h)\t\(r.alpha)\t\(r.name)"); return
+        }
+        usleep(100_000)
+    }
+    let now = windowRows(pid: pid).first(where: { $0.name == name }).map { "\($0.x),\($0.y)" } ?? "not on screen"
+    fail("window \"\(name)\" is at \(now) after parking at \(x),\(y)")
+}
+
+/// The window-frame check: list the windows, click, wait, list them again, and say what changed.
+///
+/// This is the measurement for "does this control do anything" — `harness.md` § *A live pass is a
+/// window frame, before and after*. Windows are matched by id, so a view switch that replaces its
+/// window reads as one `gone` and one `new`, not as a resize. `--size` narrows only the *before*
+/// listing (to find the skin's canvas); the *after* listing takes every window of the same
+/// processes, since a resize is exactly what would otherwise drop the row. Exits 2 when nothing
+/// changed, so a dead click cannot pass for a live one — and the before listing is printed first,
+/// so a launch that came up on the unskinned 440x170 view is visible at a glance.
+func clickdiff(_ x: Double, _ y: Double, pid: Int?, size: (Int, Int)?, settle: Double, double: Bool) {
+    let before = windowRows(pid: pid, size: size)
+    guard !before.isEmpty else { fail("no on-screen NullPlayer window matches (see `winhelper windows`)") }
+    let pids = Set(before.map(\.pid))
+    let existing = Set(windowRows().filter { pids.contains($0.pid) }.map(\.id))
+    func line(_ tag: String, _ r: WindowRow) -> String {
+        "\(tag)\t\(r.id)\t\(r.x)\t\(r.y)\t\(r.w)\t\(r.h)\t\(r.alpha)\t\(r.name)"
+    }
+    for r in before { print(line("before", r)) }
+    if double { dblclick(x, y) } else { click(x, y) }
+    usleep(useconds_t(settle * 1_000_000))
+    let after = windowRows().filter { pids.contains($0.pid) }
+    for r in after { print(line("after", r)) }
+    var changes = 0
+    let afterByID = Dictionary(after.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    let beforeIDs = Set(before.map(\.id))
+    for b in before {
+        guard let a = afterByID[b.id] else { print(line("gone", b)); changes += 1; continue }
+        var what: [String] = []
+        if (a.x, a.y) != (b.x, b.y) { what.append("moved \(b.x),\(b.y)->\(a.x),\(a.y)") }
+        if (a.w, a.h) != (b.w, b.h) { what.append("resized \(b.w)x\(b.h)->\(a.w)x\(a.h)") }
+        if a.alpha != b.alpha { what.append("alpha \(b.alpha)->\(a.alpha)") }
+        if a.name != b.name { what.append("renamed \"\(b.name)\"->\"\(a.name)\"") }
+        if !what.isEmpty { print("changed\t\(b.id)\t\(what.joined(separator: " "))\t\(a.name)"); changes += 1 }
+    }
+    // A window --size filtered out of `before` existed already; the click did not create it.
+    for a in after where !beforeIDs.contains(a.id) && !existing.contains(a.id) {
+        print(line("new", a)); changes += 1
+    }
+    if changes == 0 { print("unchanged"); exit(2) }
+}
+
 /// Capture one window's **own** content with `screencapture -l`, and refuse a wrong picture.
 ///
 /// `-l` sees the window regardless of what occludes it (`-R` photographs the screen — including a
@@ -263,6 +332,20 @@ case "capture-all":
         if !captureSettled(id: row.id, pid: row.pid, to: "\(f.rest[0])/\(row.id)-\(safe).png") { failed += 1 }
     }
     exit(failed == 0 ? 0 : 1)
+case "park":
+    guard args.count == 6, let pid = Int(args[2]), let x = Int(args[4]), let y = Int(args[5]) else {
+        fail("usage: winhelper park <pid> <window-title> <x> <y>")
+    }
+    park(pid: pid, name: args[3], x: x, y: y)
+case "clickdiff", "dblclickdiff":
+    var f = filters(args.dropFirst(2)), settle = 1.0
+    if let i = f.rest.firstIndex(of: "--settle"), i + 1 < f.rest.count, let s = Double(f.rest[i + 1]) {
+        settle = s; f.rest.removeSubrange(i...(i + 1))
+    }
+    guard f.rest.count == 2, let x = Double(f.rest[0]), let y = Double(f.rest[1]) else {
+        fail("usage: winhelper \(args[1]) <x> <y> [--pid <n>] [--size <w>x<h>] [--settle <seconds>]")
+    }
+    clickdiff(x, y, pid: f.pid, size: f.size, settle: settle, double: args[1] == "dblclickdiff")
 case "click":
     guard args.count == 4, let x = Double(args[2]), let y = Double(args[3]) else {
         FileHandle.standardError.write("usage: winhelper click <x> <y>\n".data(using: .utf8)!); exit(1)
@@ -287,6 +370,6 @@ case "drag":
     drag(pairs("drag", args.dropFirst(2), minimum: 4))
 default:
     FileHandle.standardError.write(
-        "usage: winhelper windows|raise|capture|capture-all|click|dblclick|scroll|move|drag\n".data(using: .utf8)!)
+        "usage: winhelper windows|raise|park|capture|capture-all|click|dblclick|clickdiff|dblclickdiff|scroll|move|drag\n".data(using: .utf8)!)
     exit(1)
 }

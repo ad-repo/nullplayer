@@ -118,7 +118,7 @@ the app. The first measurement identified the real cause in one run.
 # add --restore when the defect is in *restored* placement; the default launch skips restoration
 WINAMP_MODERN_PLACE_TRACE=1 skills/app-control/scripts/launch.sh /abs/Skin.wal --no-play --log /tmp/run.log
 sleep 12                       # let the layout pass settle
-PID=$(pgrep -x NullPlayer)
+PID=$(pgrep -x NullPlayer); WH=skills/app-control/scripts/winhelper
 
 # Drive the UI: menu items by name, addressing the debug build by pid — never by app
 # name, which launches the *installed* copy instead.
@@ -126,13 +126,15 @@ osascript -e "tell application \"System Events\" to tell (first process whose un
   to click menu item \"Equalizer\" of menu 1 of menu bar item \"Windows\" of menu bar 1"
 
 # Read the finished layout back, rather than judging it by eye or by screenshot.
-osascript -e "tell application \"System Events\" to tell (first process whose unix id is $PID) \
-  to get {position, size} of every window"
+"$WH" windows --pid "$PID"            # id layer x y w h alpha title, one window per line
 ```
 
-The accessibility dump is flattened — *n* positions then *n* sizes — and its origin is **top-left**,
-unlike AppKit's. Convert once, then check every pair for intersection arithmetically. "It looks fine"
-is not a result; a table of frames is.
+`winhelper windows` lists on-screen windows only, one row each, with a **top-left** origin, unlike
+AppKit's. Convert once, then check every pair for intersection arithmetically. "It looks fine" is
+not a result; a table of frames is. For "did this click change the layout", `winhelper clickdiff
+<x> <y> --pid "$PID"` prints the table before and after and names what moved; `winhelper raise`,
+`park` and `capture` replace hand-written `AXRaise`/`set position`/`screencapture` snippets and
+check what those leave to the reader (`skills/app-control` § *Route C*).
 
 ### What to instrument
 

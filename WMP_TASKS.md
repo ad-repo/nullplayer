@@ -47,7 +47,6 @@ wrong-answer risk a script removes, not skins. Filed 2026-09-24 from the token-r
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W269 | The before/after window-frame check and the remaining hand-written captures are not in `winhelper` | `harness.md` § *A live pass is a window frame, before and after* (eleven skins audited that way in one pass); osascript raise/`-R` snippets still in `skills/testing/SKILL.md` and `reference/skins/the-unit.md` | Not blocked. Add a `winhelper` verb that prints the NullPlayer windows' frames, clicks, and prints the frames again (the check the harness calls "two lines of Swift"), and point those two files at `winhelper raise` / `capture` / `capture-all`, which check what the snippets leave to the reader. `capture`'s group crop was verified live 2026-09-24 (a docked `Plex Browser` made `-l` return the whole 950x890 group). |
 | W270 | The biggest `.wmz` reference files are still the biggest token cost | `harness.md` ~160 KB, `rendering.md` ~159 KB, `windows.md` ~104 KB, `object-model.md` ~98 KB | Not blocked. Split each behind a routing table the way `SKILL.md` was split on 2026-09-24 (320 KB → 25 KB): move sections verbatim, then check that the non-blank lines before and after are the same multiset and re-point every inbound `§` reference. **`rendering.md` needs subheadings first**: *Static scene and image contracts* is ~1,150 lines of bullets with no heading to route to, so name the bullet groups before moving any. |
 
 ## Found during `.wmz` work, owned elsewhere
