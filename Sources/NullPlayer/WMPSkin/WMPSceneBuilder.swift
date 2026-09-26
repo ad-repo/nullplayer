@@ -2211,12 +2211,15 @@ struct WMPSceneBuilder: @unchecked Sendable {
             ?? (sourceX == nil && sourceY == nil && sourceWidth == nil && sourceHeight == nil ? nil
                 : WMPRect(x: sourceX ?? 0, y: sourceY ?? 0,
                           width: sourceWidth ?? frame.width, height: sourceHeight ?? frame.height))
-        // **A node that declares no key at all still gets one, if its artwork has no alpha.** That
-        // is WMP's implicit magenta transparency colour (W78) — the store applies it only to a
-        // sprite with no alpha channel, because only such a sprite can have meant it. A node that
-        // keys anything has said what it wants and is left alone, including one whose only key is
-        // a colour the parser rejected: `Alpine7618_v09` writes `transparencyColor="FF00FF"` with
-        // no `#`, which resolves to nothing here and therefore falls to the same default.
+        // **Drawn artwork always keys WMP's implicit magenta (W78), declared key or not.** A node
+        // that declares nothing keys magenta alone, including one whose only key is a colour the
+        // parser rejected: `Alpine7618_v09` writes `transparencyColor="FF00FF"` with no `#`. A node
+        // that declares another colour keys magenta *as well*: `MSN`'s `funb`/`wlb` key `#ff0000`
+        // and their `hoverImage`s hold magenta in exactly the pixels the up and down faces hold red
+        // (193 and 59), which drew a magenta fringe under the pointer; `Ovoid`'s prev button
+        // (`#00FF00`, 332 magenta in hover and down), `QuickSilver`'s pause (`#000000`, a 1,732-px
+        // magenta surround) and `Plus! Pulsar`'s shutter (`#ffffff`, 49) are the same authoring.
+        // No corpus node declaring a non-magenta key draws magenta it means to show.
         //
         // **And `clippingColor` keys the *clipping image*, not the artwork, whenever the node
         // declares one.** The two attributes were read as one list here, which is harmless while
@@ -2235,7 +2238,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
             interpolation: .low, mappingMask: mappingMask,
             clippingMaskPath: clippingPath,
             clippingMaskKeys: clippingPath.map { clippingMaskKeys(node, path: $0) } ?? [],
-            implicitColorKey: declared.isEmpty && WMPBuiltInImage.named(path) == nil
+            implicitColorKey: WMPBuiltInImage.named(path) == nil
                 ? WMPColorKey.implicitTransparency : nil,
             hueShift: hueShift)
         return WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID, frame: frame,

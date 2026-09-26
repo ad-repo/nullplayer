@@ -1387,12 +1387,13 @@ final class WMPImageStore: @unchecked Sendable {
         }
     }
 
-    /// The declared keys, or the implicit one when the node declared none. The sprite's own alpha
-    /// channel does **not** veto it: see `WMPColorKey.implicitTransparency` for what the corpus
-    /// says about an alpha-carrying sprite that also holds the key colour (W78a).
+    /// The declared keys plus the implicit one — see `WMPSceneBuilder.imageCommand` for why a
+    /// declared key does not suppress it. The sprite's own alpha channel does **not** veto it
+    /// either: see `WMPColorKey.implicitTransparency` for what the corpus says about an
+    /// alpha-carrying sprite that also holds the key colour (W78a).
     private func keys(_ colorKeys: [WMPColor], implicitKey: WMPColor?) -> [WMPColor] {
-        guard colorKeys.isEmpty, let implicitKey else { return colorKeys }
-        return [implicitKey]
+        guard let implicitKey, !colorKeys.contains(implicitKey) else { return colorKeys }
+        return colorKeys + [implicitKey]
     }
 
     private func integer(_ value: Any?) -> Int? {

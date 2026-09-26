@@ -56,12 +56,12 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   deliberately *not* required, for `groundShape`'s reason, so `YIL!OMA2K` is not in the population
   at all. See `reference/skins/pharaoh.md`.
 
-- **A node that declares no key at all still gets one: magenta, whatever alpha the sprite carries.**
+- **Drawn artwork always keys magenta, whatever alpha the sprite carries and whatever key the node declares.**
   WMP's implicit transparency colour (W78, W78a). The corpus is authored against it — 4,979 of its
   6,076 `transparencyColor` declarations (82%, 142 skins) are `#ff00ff`, `Halo 2` keys three
   siblings by hand and leaves `m_trans_no.png` to the default, and `Main_Street` authors one key in
   the whole file. The scene builder decides (`WMPSceneImage.implicitColorKey`, set only when the
-  node declares nothing) and the image store applies it. **The sprite's own alpha channel does not
+  drawn artwork is not a built-in image) and the image store adds it to the declared keys. **The sprite's own alpha channel does not
   veto it, and W78 shipped believing it did.** The reasoning was that a PNG or GIF which authored
   transparency has already said what is see-through; the corpus says the alpha channel is an export
   format instead. `scripts/wmp_implicit_key.py --alpha only` measures the complement — 76 references
@@ -75,6 +75,14 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   `scripts/wmp_implicit_key.py` before touching the rule; the default removed 315,157 magenta pixels
   across 87 corpus views, and dropping the alpha veto took the corpus residual from 7,253 px across
   15 views to 878 across 2, changing 13 PNGs and nothing else.
+  **A declared key does not suppress it either** (2026-09-26). `MSN`'s `funb`/`wlb` key `#ff0000`
+  and their `hoverImage`s hold magenta in exactly the pixels the up and down faces hold red (193 and
+  59), so the buttons grew a magenta fringe under the pointer. Every corpus node that declares a
+  non-magenta key over artwork holding magenta means it transparent: `Ovoid`'s prev button
+  (`#00FF00`, 332 in hover and down), `QuickSilver`'s pause (`#000000`, a 1,732-px surround) and
+  `Plus! Pulsar`'s shutter (`#ffffff`, 49 on its edge). Clipping the state face to the normal face's
+  keyed shape instead is **refuted** by `Grinch` and `Josie_and_the_Pussycats`, whose normal
+  faces are wholly keyed and whose hover faces are the visible ones.
 
 - **`clippingImage` shapes an element, and it is what makes a shaped window shaped.** 172 corpus
   nodes author a non-empty one and 169 of them declare a `clippingColor` beside it, which is what

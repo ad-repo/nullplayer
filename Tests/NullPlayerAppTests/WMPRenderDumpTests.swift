@@ -380,11 +380,12 @@ final class WMPRenderDumpTests: XCTestCase {
     /// magenta out of a sprite whatever alpha it authored — the BMP arm and the RGBA-PNG arm are
     /// the same answer, which is W78a: the corpus holds eleven buttons whose normal state exported
     /// without an alpha channel and whose hover state exported with one, magenta identical in both,
-    /// and under W78's original alpha veto such a button turned magenta under the pointer. What
-    /// still stops the key is a node declaring another colour, and a mapping image is never keyed at
+    /// and under W78's original alpha veto such a button turned magenta under the pointer. A node
+    /// declaring another colour keys magenta as well — `MSN`'s `funb`/`wlb` key `#ff0000` over
+    /// hover faces holding magenta in the same pixels — and a mapping image is never keyed at
     /// all, or a `#FF00FF` mapping colour would vanish from its own map and stop answering the
-    /// pointer. Without the third and fourth arms, "the default works" and "the default eats
-    /// artwork" print the same pass.
+    /// pointer. Without the mapping arm, "the default works" and "the default eats artwork" print
+    /// the same pass.
     func testImplicitMagentaKeyAppliesToArtworkWhateverAlphaItAuthored() async throws {
         // A real 24-bit BMP, not an ImageIO one: see `trueColor24Bitmap`. The PNG beside it is RGBA
         // and is the arm W78a inverted.
@@ -411,20 +412,20 @@ final class WMPRenderDumpTests: XCTestCase {
             else { return nil }
             return image
         }
-        // The builder decides on the markup alone: both undeclared nodes carry the implicit key and
-        // the declared one does not. Which of the two *uses* it is the store's answer, below.
+        // The builder decides on the markup alone: every drawn node carries the implicit key,
+        // declared key or not.
         XCTAssertEqual(specification("bare")?.implicitColorKey, WMPColorKey.implicitTransparency)
         XCTAssertEqual(specification("alpha")?.implicitColorKey, WMPColorKey.implicitTransparency)
-        XCTAssertNil(specification("keyed")?.implicitColorKey)
+        XCTAssertEqual(specification("keyed")?.implicitColorKey, WMPColorKey.implicitTransparency)
         XCTAssertEqual(specification("keyed")?.colorKeys, [WMPColor(red: 0, green: 255, blue: 0)])
 
         let rendered = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
         // The magenta pixel is the bottom-right of the 2x2 source in every one of the three. The
-        // alpha-carrying sprite clears exactly like the bare one; only the node that declared a
-        // different key keeps its magenta.
+        // alpha-carrying sprite clears exactly like the bare one, and the node that declared a
+        // different key clears it too.
         XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 1, yFromTop: 1), [0, 0, 0, 0])
         XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 3, yFromTop: 1), [0, 0, 0, 0])
-        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 5, yFromTop: 1), [255, 0, 255, 255])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 5, yFromTop: 1), [0, 0, 0, 0])
         // …and the colour the third node did key is gone, so the arm is not passing by accident.
         XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 5, yFromTop: 0), [0, 0, 0, 0])
         // Nothing else moved: the red pixel is untouched in all three.
