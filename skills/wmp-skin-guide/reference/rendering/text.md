@@ -84,6 +84,19 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   any size question — read the skin's own state first, since most show a stopped player. Every
   corpus image containing text moves with this rule; that is the rule, not collateral.
 
+- **A comma in `fontFace` is a fallback list (2026-09-26).** `Dreamcatcher`'s clock authors
+  `fontFace="arial narrow,arial,tahoma,verdana"`, and the whole string went to
+  `CTFontCreateWithName`, which never fails: it drew in **Helvetica**, whose shorter ascent put the
+  baseline ~1.5 px above the metadata beside it (both `top="53"`) and under the opaque logo button
+  above. Reported as *"display text getting chopped"*. `WMPTextMetrics.face(_:)` now splits on
+  commas and takes the first entry CoreText resolves to its own family; a list naming none keeps
+  its first entry, exactly as a single uninstalled name does, and a single name is untouched.
+  **Reach: 62 uses across 40 of 179 archives** (`scripts/wms_grep.py -i -c
+  '(fontFace|fontType)\s*=\s*"[^"]*,'`), Microsoft's own `Windows_XP_Media_Center_Edition` among
+  them — every one had been Helvetica. No corpus sweep was run; the live capture is the evidence.
+  Dreamcatcher's metadata cut at its right edge is not this defect: it is a running marquee in the
+  120 px box the skin authors, `marqueeTrailingPad` short of it.
+
 - **A face the skin ships is loaded from the archive (W304).** `WMPSkinFonts.register` runs in
   `WMPSkinLoader` off the main thread and registers each `.ttf`/`.otf` entry for the process, so
   `CTFontCreateWithName` finds the family by name — `Alpine7618_v09`'s `fontFace="Quartz"` drew in

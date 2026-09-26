@@ -26,13 +26,31 @@ enum WMPTextMetrics {
     ///
     /// A resource URL is put through `WMPResourceStrings` rather than rejected outright, so that a
     /// future table row naming a real family is used the moment it is earned.
+    ///
+    /// **A comma is a fallback list, not part of a name.** `fontFace="arial narrow,arial,tahoma,
+    /// verdana"` — 62 uses across 40 of 179 archives, Microsoft's own Media Center skin among
+    /// them — went to CoreText whole and drew in Helvetica, whose shorter ascent lifted
+    /// `Dreamcatcher`'s clock into the logo above it. The first installed family wins; a list
+    /// naming none is read as its first entry, as a single uninstalled name already is.
     static func face(_ candidates: String?...) -> String {
         for candidate in candidates {
             guard let resolved = WMPResourceStrings.resolved(candidate) else { continue }
-            let trimmed = resolved.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { return trimmed }
+            let names = resolved.split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            guard let first = names.first else { continue }
+            if names.count == 1 { return first }
+            return names.first(where: isInstalled) ?? first
         }
         return defaultFace
+    }
+
+    /// Whether CoreText resolves `family` to itself rather than substituting — a face a skin
+    /// registered from its archive counts, since `WMPSkinFonts` registers it for the process.
+    private static func isInstalled(_ family: String) -> Bool {
+        let font = CTFontCreateWithName(family as CFString, 12, nil)
+        return (CTFontCopyFamilyName(font) as String)
+            .caseInsensitiveCompare(family) == .orderedSame
     }
 
     /// The face a `<TEXT>` is drawn in when its markup and its script both leave one unstated.

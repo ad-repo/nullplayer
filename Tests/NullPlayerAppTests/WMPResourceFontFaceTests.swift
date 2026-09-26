@@ -160,4 +160,32 @@ final class WMPResourceFontFaceTests: XCTestCase {
             "if these ever agree the test above proves nothing — the whole defect is that an "
             + "unmatched name silently becomes a different face at a different height")
     }
+
+    /// **A comma in `fontFace` is a fallback list (2026-09-26).** `Dreamcatcher`'s clock authors
+    /// `"arial narrow,arial,tahoma,verdana"`; handed to CoreText whole it became Helvetica, whose
+    /// shorter ascent lifted the digits into the logo above them. 62 uses across 40 of 179 archives.
+    /// The first installed family is the one drawn; `tahomaArial` is a real typo from `bttf.wms`.
+    func testACommaListDrawsInItsFirstInstalledFamily() async throws {
+        let skin = try await load("""
+        <THEME><VIEW id="main" width="300" height="200">
+            <TEXT id="time" left="0" top="0" width="54" fontSize="8" fontStyle="bold"
+                  fontFace="arial narrow,arial,tahoma,verdana" value="0:20"/>
+            <TEXT id="typo" left="0" top="20" width="80" fontFace="tahomaArial, verdana"
+                  value="00:00"/>
+        </VIEW></THEME>
+        """)
+        let scene = try await build(skin, WMPSize(width: 300, height: 200))
+
+        XCTAssertEqual(try drawnFace("time", in: scene), "arial narrow")
+        XCTAssertEqual(try drawnFace("typo", in: scene), "verdana",
+                       "an uninstalled entry is skipped, and the next one is trimmed")
+    }
+
+    /// A list naming nothing installed reads as its first entry — what a single uninstalled name
+    /// already does — so the rule moves only the lists that name a real family.
+    func testACommaListNamingNothingInstalledKeepsItsFirstEntry() {
+        XCTAssertEqual(WMPTextMetrics.face("NoSuchFaceA,NoSuchFaceB"), "NoSuchFaceA")
+        XCTAssertEqual(WMPTextMetrics.face(" , ", "Verdana"), "Verdana",
+                       "a list of empty entries is an unstated face, and falls through")
+    }
 }
