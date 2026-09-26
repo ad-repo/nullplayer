@@ -1483,6 +1483,15 @@ final class WMPScriptRuntimeTests: XCTestCase {
                                                   compare: 38, in: []))
         // A function the scan cannot find keeps the key rather than losing it.
         XCTAssertTrue(WMPKeyHandlerScan.handlers(["notDefinedAnywhere();"], compare: 39, in: [script]))
+        // A call in a comment is not a call (`Age_of_Mythology_MPXP`'s `//\tvideoZoom();`), and a
+        // comparison in one is not a comparison; a `//` inside a string is not a comment.
+        let commented = """
+        function hotKeys() { switch(event.keycode) { case 90: break; case 70: //\tvideoZoom();
+        /* case 38: */ break; } }
+        function urlKeys() { var u = "http://x"; if (event.keyCode == 38) u = ''; }
+        """
+        XCTAssertFalse(WMPKeyHandlerScan.handlers(["hotKeys();"], compare: 38, in: [commented]))
+        XCTAssertTrue(WMPKeyHandlerScan.handlers(["urlKeys();"], compare: 38, in: [commented]))
     }
 
     /// **`charactersIgnoringModifiers` is the key as engraved**, which is what a VK names: Option-G

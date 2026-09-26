@@ -214,7 +214,11 @@ a dispatch defect — it is a control the pointer never reached at all.
   2026-09-24). `WMPKeyHandlerScan` reads the handler and the bare functions it calls for a literal
   comparison of the arrow's VK; only arrows are scanned, and every other key a handler is authored
   for stays the skin's. The arrow handlers the corpus does write are on sliders (`volKey(event)`)
-  and on views with no `<EFFECTS>` (`viewResizer(event)`), and they keep their keys. **Live check:**
+  and on views with no `<EFFECTS>` (`viewResizer(event)`), and they keep their keys. **Comments are
+  stripped before the scan** (`withoutComments`; string literals kept, so a URL's `//` survives): a
+  function it cannot find claims the key, and `Age_of_Mythology_MPXP`'s `viewHotKeys` carries a
+  commented-out `videoZoom();` whose body calls an undefined `updateZoomToolTip` — every arrow was
+  claimed through dead code (2026-09-26). **Live check:**
   `WMP_CLICK_TRACE=1` prints `offer keydown keyCode=38 targetID=view … authored=0` on such a skin,
   and a `[wmp/pref] … currenteffecttype_onchange` line follows each up/down press.
 - **`<EFFECTS>` and `<VIDEO>` are fallbacks, never blockers.** Both are click-through by design —
