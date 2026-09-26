@@ -294,6 +294,14 @@ Two entry points, one slot sequence: `arrangeWindows()` lays out everything at o
 `tiledOrigin(for:avoiding:)` gives a window opened later the first slot clear of what is on screen, so
 it lands where the arrangement would have put it without disturbing anything already placed.
 
+**A NullPlayer window is tiled once, not on every open.** `WindowManager.reopensWhereLeft` (WMP and
+`.wal` only) records each window the first time a `show*` path places it — a launch restore counts —
+and every reopen after that skips the reset-to-default and `positionSubWindow`, so the window stays
+where the user left it. `handleCenterStackWindowWillClose` skips `slideUpWindowsBelow` in the same
+families. Classic and Original re-stack on every open, by design. A controller's own `showWindow`
+must never position its window: `WindowManager` places it first (W248), and a second placement there
+overwrote the remembered frame for the library and Visualizations windows in every mode.
+
 Four attempts to solve this per-window failed before the sweep, and the reasons are the load-bearing
 part of this section:
 

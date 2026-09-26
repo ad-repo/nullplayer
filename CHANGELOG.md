@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Windows reopen where you left them** — the library browser and the visualizer window once again
+  come back where you moved them when closed and reopened, instead of snapping back beside the player.
+  In Windows Media Player and Winamp Modern skins, the spectrum and audio analyzers, PeppyMeter, Flow,
+  Cava, waveform, Sonos Rooms and the fallback playlist and equalizer do the same, and closing one no
+  longer moves the others. Classic and Original keep their stacked layout.
 - **One layout for every skin menu** — the Classic, Modern and Windows Media Player skin menus now
   share the same order and wording: **Load Skin...**, **Get More Skins...** and **Open Skins
   Folder...**, then the family's **Default Skin**, then your installed skins. Windows Media Player

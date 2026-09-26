@@ -13,7 +13,7 @@ is why the rules below are contracts rather than preferences.
 | Moment | Seam | `.wmz` |
 |---|---|---|
 | A skin's own view opens | `WMPViewWindowMaterializer.place` | authored `openViewRelative` offset or the stored top-left, else `WindowManager.tiledOrigin`, then `rescuedOrigin` as the never-`nil` backstop. Placed **once**, so a window the user moved is never yanked back |
-| One of NullPlayer's own windows opens | `WindowManager.positionSubWindow` | the same `tiledOrigin` → `rescuedOrigin` pair, sharing the `.wal` branch |
+| One of NullPlayer's own windows opens | `WindowManager.positionSubWindow` | the same `tiledOrigin` → `rescuedOrigin` pair, sharing the `.wal` branch. **First open in a session only** — `reopensWhereLeft` keeps a reopened window where the user left it, and closing one no longer slides the others up |
 | Snap To Default | `WindowManager.snapWMPToDefaultPositions` | the player re-centred, then one `WinampModernTiler` walked over every window, then an unconditional reachability pass |
 | A resize | per-family | top-left anchored, so growth cannot strand the reachable corner |
 | A display change, a UI Size change, a skin load | `WindowManager.ensureAllWindowsOnScreen` | run, gated `appliesPlacementRecovery` (W217 G3) |

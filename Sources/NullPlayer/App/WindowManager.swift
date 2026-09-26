@@ -1592,9 +1592,10 @@ class WindowManager {
                 markModeDependentWindow(window)
                 if let kind = centerStackKind(for: id) {
                     applyCenterStackSizingConstraints(window, kind: kind)
+                    let keepsLeftFrame = reopensWhereLeft(window)
                     if let restoredFrame, restoredFrame != .zero {
                         applyRestoredCenterStackFrame(restoredFrame, to: window, kind: kind)
-                    } else {
+                    } else if !keepsLeftFrame {
                         if !wasMaterialized { applyHostedWindowDefaultWidth(window) }
                         positionSubWindow(window)
                     }
@@ -1839,9 +1840,10 @@ class WindowManager {
         // Position BEFORE showing (unless restoring from saved state)
         if let playlistWindow = playlistWindowController?.window {
             applyCenterStackSizingConstraints(playlistWindow, kind: .playlist)
+            let keepsLeftFrame = reopensWhereLeft(playlistWindow)
             if let frame = restoredFrame, frame != .zero {
                 applyRestoredCenterStackFrame(frame, to: playlistWindow, kind: .playlist)
-            } else {
+            } else if !keepsLeftFrame {
                 // By design: always reset to default when showing without a saved frame.
                 // This keeps the window snapped below main whenever the user opens it fresh,
                 // even if it was previously resized. Stretch state is intentionally not persisted
@@ -1916,9 +1918,10 @@ class WindowManager {
         // Position BEFORE showing (unless restoring from saved state)
         if let eqWindow = equalizerWindowController?.window {
             applyCenterStackSizingConstraints(eqWindow, kind: .equalizer)
+            let keepsLeftFrame = reopensWhereLeft(eqWindow)
             if let frame = restoredFrame, frame != .zero {
                 applyRestoredCenterStackFrame(frame, to: eqWindow, kind: .equalizer)
-            } else {
+            } else if !keepsLeftFrame {
                 if isNewWindow {
                     applyDefaultCenterStackFrameForCurrentHT(eqWindow, kind: .equalizer)
                 }
@@ -2115,6 +2118,23 @@ class WindowManager {
     /// Position a sub-window (EQ, Playlist, Spectrum, or Waveform) in the vertical stack.
     /// Fills the first gap between visible stack windows if one exists,
     /// otherwise positions below the lowest visible window in the stack.
+    /// Windows already placed once in a WMP or `.wal` session.
+    private let placedFreeFloatingWindows = NSHashTable<NSWindow>.weakObjects()
+
+    /// Whether a reopen keeps the frame the user left the window at, instead of re-stacking it.
+    ///
+    /// The centre stack is Classic and Original's, whose windows have fixed sizes and shapes. In WMP
+    /// and `.wal` these windows float free, so only the first open in a session is placed; every
+    /// reopen after that is where the user left it. Registers the window, so call it once per show,
+    /// before any branch — a launch restore counts as the first placement.
+    private func reopensWhereLeft(_ window: NSWindow) -> Bool {
+        let family = uiMode.controllerFamily
+        guard family == .wmp || family == .winampModern else { return false }
+        if placedFreeFloatingWindows.contains(window) { return true }
+        placedFreeFloatingWindows.add(window)
+        return false
+    }
+
     private func positionSubWindow(_ window: NSWindow, preferBelowEQ: Bool = false) {
         guard let mainWindow = mainWindowController?.window else { return }
         
@@ -2250,8 +2270,11 @@ class WindowManager {
     /// when closed via the X button. Slides up windows below and tightens the stack.
     func handleCenterStackWindowWillClose(_ window: NSWindow) {
         guard !isRunningModernUI else { return }
-        let closingFrame = window.frame
-        slideUpWindowsBelow(closingFrame: closingFrame)
+        // No stack in WMP or `.wal`: closing one window must not move the others.
+        let family = uiMode.controllerFamily
+        if family != .wmp, family != .winampModern {
+            slideUpWindowsBelow(closingFrame: window.frame)
+        }
         _ = tightenClassicCenterStackIfNeeded()
         postLayoutChangeNotification()
         updateDockedChildWindows()
@@ -3971,9 +3994,10 @@ class WindowManager {
         // Position BEFORE showing (unless restoring from saved state)
         if let window = spectrumWindowController?.window {
             applyCenterStackSizingConstraints(window, kind: .spectrum)
+            let keepsLeftFrame = reopensWhereLeft(window)
             if let frame = restoredFrame, frame != .zero {
                 applyRestoredCenterStackFrame(frame, to: window, kind: .spectrum)
-            } else {
+            } else if !keepsLeftFrame {
                 // By design: always reset to default when showing without a saved frame.
                 // Same rationale as showPlaylist — stretch state is not persisted across toggles.
                 if auxiliaryControllerStyle == .nullPlayerModern {
@@ -4052,9 +4076,10 @@ class WindowManager {
 
         if let window = audioAnalysisWindowController?.window {
             applyCenterStackSizingConstraints(window, kind: .audioAnalysis)
+            let keepsLeftFrame = reopensWhereLeft(window)
             if let frame = restoredFrame, frame != .zero {
                 applyRestoredCenterStackFrame(frame, to: window, kind: .audioAnalysis)
-            } else {
+            } else if !keepsLeftFrame {
                 if runningModernMode {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .audioAnalysis)
                 } else {
@@ -4129,9 +4154,10 @@ class WindowManager {
 
         if let window = peppyMeterWindowController?.window {
             applyCenterStackSizingConstraints(window, kind: .peppyMeter)
+            let keepsLeftFrame = reopensWhereLeft(window)
             if let frame = restoredFrame, frame != .zero {
                 applyRestoredCenterStackFrame(frame, to: window, kind: .peppyMeter)
-            } else {
+            } else if !keepsLeftFrame {
                 if runningModernMode {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .peppyMeter)
                 } else {
@@ -4229,9 +4255,10 @@ class WindowManager {
 
         if let window = networkMonitorWindowController?.window {
             applyCenterStackSizingConstraints(window, kind: .networkMonitor)
+            let keepsLeftFrame = reopensWhereLeft(window)
             if let frame = restoredFrame, frame != .zero {
                 applyRestoredCenterStackFrame(frame, to: window, kind: .networkMonitor)
-            } else {
+            } else if !keepsLeftFrame {
                 if runningModernMode {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .networkMonitor)
                 } else {
@@ -4312,8 +4339,11 @@ class WindowManager {
             window.minSize = NSSize(width: 250 * scale, height: 160 * scale)
         }
         applyCenterStackSizingConstraints(window, kind: .sonos)
+        let keepsLeftFrame = reopensWhereLeft(window)
         if let restoredFrame, restoredFrame != .zero {
             applyRestoredCenterStackFrame(restoredFrame, to: window, kind: .sonos)
+        } else if keepsLeftFrame {
+            // Free-floating family: where the user left it.
         } else if created {
             let width = mainWindowController?.window?.frame.width ?? 360
             window.setContentSize(NSSize(width: width, height: 270 * uiScaleLevel.scaleFactor))
@@ -4359,9 +4389,10 @@ class WindowManager {
 
         if let window = cavaWindowController?.window {
             applyCenterStackSizingConstraints(window, kind: .cava)
+            let keepsLeftFrame = reopensWhereLeft(window)
             if let frame = restoredFrame, frame != .zero {
                 applyRestoredCenterStackFrame(frame, to: window, kind: .cava)
-            } else {
+            } else if !keepsLeftFrame {
                 if runningModernMode {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .cava)
                 } else {
@@ -4444,10 +4475,11 @@ class WindowManager {
         if let window = waveformWindowController?.window {
             let classicController = waveformWindowController as? WaveformWindowController
             applyCenterStackSizingConstraints(window, kind: .waveform)
+            let keepsLeftFrame = reopensWhereLeft(window)
             if let frame = restoredFrame, frame != .zero {
                 classicController?.clearPendingFrameReset()
                 applyRestoredCenterStackFrame(frame, to: window, kind: .waveform)
-            } else {
+            } else if !keepsLeftFrame {
                 if auxiliaryControllerStyle == .nullPlayerModern {
                     applyDefaultCenterStackFrameForCurrentHT(window, kind: .waveform)
                 } else {
