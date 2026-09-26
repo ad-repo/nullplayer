@@ -33,6 +33,28 @@ final class WMPPhase6Tests: XCTestCase {
         XCTAssertFalse(scene.wasBuiltOnMainThread)
     }
 
+    /// A `<PLAYLIST playlistItemsVisible="false">` draws only its toolbar, so it is hosted as the
+    /// dropdown — and one with no height takes the dropdown's, as `Compact`'s does.
+    func testAPlaylistHidingItsItemsIsHostedAsADropdown() async throws {
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="full" width="400" height="240">
+              <PLAYLIST id="strip" left="7" top="170" width="135" height="22" playlistItemsVisible="false"/>
+              <PLAYLIST id="unsized" left="190" top="4" width="172" playlistItemsVisible="false"/>
+              <PLAYLIST id="list" left="4" top="48" width="180" height="100"/>
+            </VIEW></THEME>
+            """.utf8))
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "full")
+        let kinds = Dictionary(uniqueKeysWithValues: scene.widgets.compactMap { widget in
+            widget.nodeID.map { ($0, widget.kind) } })
+        XCTAssertEqual(kinds["strip"], .dropdownPlaylist)
+        XCTAssertEqual(kinds["unsized"], .dropdownPlaylist)
+        XCTAssertEqual(kinds["list"], .playlist)
+        XCTAssertEqual(scene.widgets.first { $0.nodeID == "unsized" }?.frame.height, 24)
+    }
+
     func testScriptCompatibilityProvidesPlaylistEQAndViewCommands() async throws {
         let archive = try WMPSkinTestSupport.makeArchive([
             WMPTestArchiveEntry("skin.wms", data: Data("""

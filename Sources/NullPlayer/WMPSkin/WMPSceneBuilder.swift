@@ -1135,7 +1135,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     if !statesDimension(node, "height"), height == nil { height = glyphs.height }
                 }
                 if !statesDimension(node, "height"), height == nil,
-                   let intrinsicHeight = widgetKind(node.kind)?.intrinsicHeight {
+                   let intrinsicHeight = widgetKind(node)?.intrinsicHeight {
                     height = intrinsicHeight
                 }
                 guard let left, let top else {
@@ -1513,7 +1513,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
 
             // Patched once this node's own background is emitted — see `effectsWidgetIndex` below.
             var effectsWidgetIndex: Int?
-            if let kind = widgetKind(node.kind), visible != nil {
+            if let kind = widgetKind(node), visible != nil {
                 if kind == .effects { effectsWidgetIndex = widgets.count }
                 let label = literalString(node, "accessibleName")
                     ?? literalString(node, "title") ?? literalString(node, "name")
@@ -2559,6 +2559,18 @@ struct WMPSceneBuilder: @unchecked Sendable {
         default:
             return ["image", "backgroundImage", "background"]
         }
+    }
+
+    /// **A `<PLAYLIST playlistItemsVisible="false">` is a dropdown, not a list.** It draws only its
+    /// toolbar, so the skin sizes it as one: `Heart_Butterfly` and `Josie_and_the_Pussycats` give
+    /// it 22pt, where the list surface drew one clipped row over its own ground.
+    private func widgetKind(_ node: WMPNode) -> WMPWidgetKind? {
+        if node.kind == .playlist,
+           literalString(node, "playlistItemsVisible")?
+               .caseInsensitiveCompare("false") == .orderedSame {
+            return .dropdownPlaylist
+        }
+        return widgetKind(node.kind)
     }
 
     private func widgetKind(_ kind: WMPElementKind) -> WMPWidgetKind? {

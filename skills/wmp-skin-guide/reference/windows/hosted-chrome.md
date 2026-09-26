@@ -73,6 +73,15 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   the ring path refuses the player view by scoring it -100. What a panel cannot exclude is the
   donor's own *painted* controls: `Gorillaz` has a button strip in its bitmap, and those are pixels,
   not nodes.
+- **A playlist that hides its items is not a hole (2026-09-26).** `firstHole` skips a
+  `<PLAYLIST playlistItemsVisible="false">`: it draws only a toolbar, so it is a strip, not where the
+  skin puts rows. `Heart_Butterfly`'s `panel` is a plain 149x205 blue box with such a strip 22pt
+  tall at its foot, and slicing there put a 170pt band of blank panel above every hosted window
+  (`caption=170`); `Josie_and_the_Pussycats`, the same Tattoo Media template, had `caption=44
+  bottom=124`. Both now lend nothing and take palette chrome. Four archives author the attribute;
+  `Compact`'s sits beside its real drawer list and `Radio` lends nothing, and both lines are
+  byte-identical either side of the change (361x330 and 550x464). **`Compact`'s own frame is broken
+  independently** — its drawer is three bitmaps and only the top one is sliced; that is W314.
 - **A panel with no top edge borrows its bottom edge (2026-09-26).** `activate`'s
   `playlist_drawer.bmp` is a U: rails and a rounded bottom, and a keyed-out 6px band where the tray
   slides out from under the player. Every hosted window wearing it had no top border and nothing

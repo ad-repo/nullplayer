@@ -95,6 +95,21 @@ final class WMPHostedPanelFrameTests: XCTestCase {
         XCTAssertNil(WMPHostedFrameTemplate.derive(from: loaded, playerViewID: "myview"))
     }
 
+    /// **A playlist that hides its items is a toolbar, not a hole.** `Heart_Butterfly`'s panel is a
+    /// 149x205 blue box with a 22pt `playlistItemsVisible="false"` strip at its foot; slicing there
+    /// gave every hosted window a 170pt band of blank panel above its content.
+    func testAPlaylistHidingItsItemsIsNotAHole() async throws {
+        let loaded = try await skin("""
+        <THEME><VIEW id="myview" width="350" height="400">
+        <SUBVIEW id="panel" left="103" top="192" width="149" height="205"
+                 backgroundImage="tray.png" visible="false">
+          <PLAYLIST id="playList" left="7" top="170" width="135" height="22"
+                    playlistItemsVisible="false" toolbarVisible="true" dropdownVisible="true"/>
+        </SUBVIEW></VIEW></THEME>
+        """, images: ["tray.png": try panelImage(width: 149, height: 205)])
+        XCTAssertNil(WMPHostedFrameTemplate.derive(from: loaded, playerViewID: "myview"))
+    }
+
     /// A hole flush to an edge leaves no border on that side, which is a hairline rather than a
     /// frame: 30 of the corpus's 77 panels, deliberately out of this landing.
     func testAHoleFlushToAnEdgeIsNotAPanel() async throws {

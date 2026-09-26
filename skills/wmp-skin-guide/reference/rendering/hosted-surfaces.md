@@ -18,6 +18,17 @@ Moved verbatim from `reference/rendering.md` § *Drawing the skin's own controls
   pending W66. **Closed 2026-09-24 without implementing**: the column playlists render at a median
   327 px, too narrow for readable columns — measurements in `docs/wmp-skin/wmp-backlog-archive.md` (W133).
 
+- **A `<PLAYLIST playlistItemsVisible="false">` is hosted as the dropdown (2026-09-26).**
+  `WMPSceneBuilder.widgetKind(_:)` maps it to `.dropdownPlaylist`, so it gets
+  `WMPDropdownPlaylistSurfaceView` (the queue as a popup; choosing a row plays it) and, when it
+  states no height, the popup's 24pt. The list surface drew one clipped, highlighted 18pt row over
+  its own ground in `Heart_Butterfly`'s 22pt strip — reported live as "does not draw the playlist
+  properly". Four archives author it (`Compact`, `Heart_Butterfly`, `Josie_and_the_Pussycats`,
+  `Radio`); render dumps of all four are pixel-identical either side, because the strip is hidden at
+  load in the two Tattoo skins and `Compact`'s unsized one never resolved before. `Compact`'s popup
+  sits under its own black `svPlaylistDDown` ground and `WMP_RENDER_APPKIT` reads `differing=0`
+  there — whether it shows or takes clicks in the running app is unverified.
+
 - **A hosted AppKit surface obeys the container's `alphaBlend`; it is not exempt because it is not
   a paint command.** `alphaBlend` inherits, and a `.wmz` closes a pane it has not opened by fading
   the container to zero — so `WMPWidget` carries the walk's inherited alpha, `WMPMainView` hosts

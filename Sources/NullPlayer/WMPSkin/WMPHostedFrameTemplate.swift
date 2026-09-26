@@ -445,6 +445,14 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     private static func firstHole(in node: WMPNode) -> WMPNode? {
         for child in node.children {
             switch child.kind {
+            // **A playlist that hides its items is a toolbar, not a hole.** `Heart_Butterfly` and
+            // `Josie_and_the_Pussycats` put a 22pt `playlistItemsVisible="false"` strip at the
+            // foot of a plain panel; slicing at it gave every hosted window a 170pt (44pt top,
+            // 124pt bottom on Josie) band of blank panel. `Compact`'s is beside a real list.
+            case .playlist
+                where literal(child, "playlistItemsVisible")?
+                    .caseInsensitiveCompare("false") == .orderedSame:
+                continue
             case .playlist, .dropdownPlaylist, .listBox: return child
             default: if let found = firstHole(in: child) { return found }
             }
