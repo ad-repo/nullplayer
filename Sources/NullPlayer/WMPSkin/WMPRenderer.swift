@@ -550,19 +550,22 @@ struct WMPRenderer: @unchecked Sendable {
         let images = images.compactMap { $0 }
         guard let first = images.first else { return nil }
         let width = first.width, height = first.height
+        // **Composited straight into an alpha-only buffer, whose bytes are the mask.** This runs on
+        // every render of a skin with a `<VIDEO>` — the fill is confined to paint — and it used to
+        // composite into RGBA and copy the alpha out a pixel at a time: ~60 ms at 2x on
+        // `cyberchannel`'s 524x430 canvas in a debug build, which with the rest of the rebuild
+        // outlasted the 100 ms clock tick. Each tick cancelled the last before it presented, so the
+        // elapsed readout never left `0:00`.
         guard let context = CGContext(data: nil, width: width, height: height,
-                bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+                bitsPerComponent: 8, bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
+                bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue),
               let data = context.data else { return nil }
         let bounds = CGRect(x: 0, y: 0, width: width, height: height)
         for image in images { context.draw(image, in: bounds) }
-        let rgba = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
-        var alpha = [UInt8](repeating: 0, count: width * height)
-        for index in alpha.indices { alpha[index] = rgba[index * 4 + 3] }
-        let bytes = Data(alpha)
+        let bytes = Data(bytes: data, count: context.bytesPerRow * height)
         guard let provider = CGDataProvider(data: bytes as CFData) else { return nil }
         return CGImage(width: width, height: height, bitsPerComponent: 8,
-                       bitsPerPixel: 8, bytesPerRow: width,
+                       bitsPerPixel: 8, bytesPerRow: context.bytesPerRow,
                        space: CGColorSpaceCreateDeviceGray(),
                        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
                        provider: provider, decode: nil, shouldInterpolate: false,

@@ -10,6 +10,11 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   `#404040` well over bare canvas under the wing is gone; `The Unit`'s, `The_Sentinel_v.1.0`'s and
   `circle`'s black wells over their own artwork are byte-identical. Suppressing the fill while
   `hasVideo` is false would have lost those three.
+  **That clip is a whole-canvas mask built on every render of every skin with a `<VIDEO>`**, so it
+  has to stay cheap: `paintedMask` composites straight into an alpha-only context whose bytes *are*
+  the mask. It used to composite into RGBA and copy the alpha out in a Swift loop — ~60 ms at 2x on
+  `cyberchannel`'s 524x430 canvas in a debug build (`sample` of the running app, 1152 of 1804
+  render samples), enough to starve the clock readout (`input.md` § the release-build bullet).
 
 - **A `<VIDEO>` box shrinks the picture to fit by default and never enlarges it (W102).** The two
   fit flags are independent and neither means crop or fill: `shrinkToFit` governs the picture being

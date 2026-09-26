@@ -708,7 +708,13 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             // No controller listening — a test, or a view being torn down. The gesture's seek has
             // nowhere to be arbitrated against the skin's own handlers, so send it plainly.
             if let pendingSeek { onAction?(.seek, pendingSeek) }
-            onScriptEvent?("mouseup", capturedTarget?.nodeID, capturedTarget?.stableID)
+            // **A release with nothing pressed has no element to raise on.** Untargeted, the event
+            // matched every `onmouseup` in the view: `cyberchannel`'s seek bar authors
+            // `onmouseup="player.controls.currentPosition = progress.value;"`, so a press on bare
+            // artwork or a disabled Play seeked the track. `mousedown` is never raised untargeted.
+            if let capturedTarget {
+                onScriptEvent?("mouseup", capturedTarget.nodeID, capturedTarget.stableID)
+            }
         }
         guard let capturedTarget else { return }
         // **`onDragEnd` is the seek commit** (W55). It is authored only on `SLIDER` (125 uses) and
@@ -973,7 +979,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             default: onAction?(action, .number(value))
             }
         }
-        if target.kind.lowercased().contains("slider") {
+        if Self.holdsValue(target) {
             widgetValues[target.stableID] = value
             #if DEBUG
             wmpSeekTrace("performSlider \(target.nodeID ?? "-") mapped=\(String(describing: mapped)) "
@@ -1378,8 +1384,17 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     }
 
     private static func isSlider(_ action: WMPTransportAction) -> Bool { action == .seek || action == .volume || action == .balance }
+    /// **A `<PROGRESSBAR>` is a slider the pointer moves.** 12 of the corpus's 14 are seek bars —
+    /// `max` bound to the duration and `onmouseup="player.controls.currentPosition=progress.value;"`
+    /// (`cyberchannel`, the Xbox family, `The Unit`, `Ursula`, `v2_underworld`) — and with the press
+    /// never moving `value`, that handler read back the live position and seeked to where the track
+    /// already was. The other two are `digitaldj`'s hidden query meters, which nothing can press.
+    private static func holdsValue(_ target: WMPHitTarget) -> Bool {
+        let kind = target.kind.lowercased()
+        return kind.contains("slider") || kind == "progressbar"
+    }
     private func isSlider(_ target: WMPHitTarget) -> Bool {
-        target.kind.lowercased().contains("slider") || target.action.map(Self.isSlider(_:)) == true
+        Self.holdsValue(target) || target.action.map(Self.isSlider(_:)) == true
     }
     private static func isDown(_ action: WMPTransportAction, _ snapshot: WMPHostSnapshot) -> Bool {
         switch action {

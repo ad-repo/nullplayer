@@ -92,4 +92,68 @@ final class WMPSliderCommitTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(top), 1, accuracy: 0.01)
         XCTAssertEqual(try XCTUnwrap(end), 0, accuracy: 0.05)
     }
+
+    // MARK: - cyberchannel: a `<PROGRESSBAR>` seek bar
+
+    /// The seek bar in `cyberchannel` and nine other corpus skins is a `<PROGRESSBAR>` that commits
+    /// with `onmouseup="player.controls.currentPosition = progress.value;"`, beside a Play the host
+    /// greys out — its own Play is disabled for the whole time a track is playing.
+    @MainActor
+    private func progressBarView() async throws -> (WMPMainView, NSWindow) {
+        let archive = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="200" height="40">
+            <PROGRESSBAR id="progress" left="0" top="0" width="200" height="20" min="0" max="400"
+             onmouseup="player.controls.currentPosition = progress.value;"/>
+            <PLAYBUTTON id="play" left="0" top="20" width="40" height="20"/>
+            </VIEW></THEME>
+            """.utf8))
+        ])
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let context = try XCTUnwrap(CGContext(data: nil, width: 200, height: 40, bitsPerComponent: 8,
+            bytesPerRow: 800, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 40),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        let view = WMPMainView(frame: NSRect(x: 0, y: 0, width: 200, height: 40))
+        window.contentView = view
+        view.present(try XCTUnwrap(context.makeImage()), scene: scene)
+        return (view, window)
+    }
+
+    @MainActor
+    private func click(_ view: WMPMainView, _ window: NSWindow, at point: NSPoint) throws {
+        for (type, pressure) in [(NSEvent.EventType.leftMouseDown, Float(1)), (.leftMouseUp, 0)] {
+            let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point,
+                modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                eventNumber: 1, clickCount: 1, pressure: pressure))
+            type == .leftMouseDown ? view.mouseDown(with: event) : view.mouseUp(with: event)
+        }
+    }
+
+    /// The press has to move `value`, or the skin's own handler reads the live position back and
+    /// seeks to where the track already is.
+    @MainActor
+    func testAProgressBarTakesThePointersValue() async throws {
+        let (view, window) = try await progressBarView()
+        var released: Double?
+        view.onSliderRelease = { _, _, value, _ in released = value }
+        // Window points are bottom-up: y 30 is the progress bar's row.
+        try click(view, window, at: NSPoint(x: 150, y: 30))
+        XCTAssertEqual(try XCTUnwrap(released, "the progress bar was not captured as a slider"),
+                       300, accuracy: 10)
+    }
+
+    /// A release with nothing pressed is on no element. Raised untargeted it matched every
+    /// `onmouseup` in the view, so a press on a disabled Play ran the seek bar's commit.
+    @MainActor
+    func testAReleaseWithNothingPressedRaisesNoMouseUp() async throws {
+        let (view, window) = try await progressBarView()
+        var events: [String] = []
+        view.onScriptEvent = { name, target, _ in events.append("\(name):\(target ?? "-")") }
+        view.refreshHostState(WMPHostSnapshot())   // an empty playlist greys Play
+        try click(view, window, at: NSPoint(x: 20, y: 10))
+        XCTAssertFalse(events.contains { $0.hasPrefix("mouseup") }, "\(events)")
+    }
 }

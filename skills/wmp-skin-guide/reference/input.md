@@ -112,6 +112,23 @@ a dispatch defect — it is a control the pointer never reached at all.
   harsh and `corona` clean; driven live, they are identical — 21 commits apiece, Mario through its
   `value` binding and corona through `target.action` — and the markup changes only the 22nd. How
   harsh it sounds is the material and the distance dragged, not the authoring.
+- **A `<PROGRESSBAR>` is a slider the pointer moves.** `WMPMainView.holdsValue` is the one test
+  for "this press writes `value`", and it used to be `kind.contains("slider")`, which a
+  `progressBar` fails. **12 of the corpus's 14 `<PROGRESSBAR>`s are seek bars** — `max` bound to
+  `player.currentMedia.duration` and `onmouseup="player.controls.currentPosition=progress.value;"`,
+  several with `cursor="hand"` (`cyberchannel`, `Official_Xbox_MP71`/`_XP`, `XBOX`, `The Unit`,
+  `TheUnit`, `The_Sentinel_v.1.0`, `Ursula`, `Mandalay`, `v2_underworld`, `Ducky`); the other two
+  are `digitaldj`'s `visible="false"` query meters. A press never moved `value`, so that handler read
+  the live position back and seeked to where the track already was — "the seek bar does nothing".
+  Counted with `scripts/wms_grep.py -i -c '<progressbar'` and the element bodies read by hand.
+  Pinned by `WMPSliderCommitTests.testAProgressBarTakesThePointersValue`.
+- **A release with nothing pressed raises no `mouseup`.** `handlers(in:event:targetID:)` reads a nil
+  target as *every node in the view* — right for host events, wrong for a pointer. A press on a
+  greyed-out control (W154/W313) captures nothing and starts no drag, so its release went out
+  untargeted and ran every `onmouseup` the view authors: on `cyberchannel` a press on Play while
+  playing ran the seek bar's commit, a seek to the current second and an audible hiccup. `mousedown`
+  was never raised untargeted, so the pair is now symmetric. Pinned by
+  `testAReleaseWithNothingPressedRaisesNoMouseUp`.
 - **A transport element that issues its own command in `onClick` owns the click, and the engine must
   not post the command as well (W243).** `<NEXTELEMENT onClick="player.controls.next()">` says the
   same thing twice — the kind carries `.next` and the handler calls it — and `WMPMainView.mouseUp`
@@ -200,6 +217,13 @@ a dispatch defect — it is a control the pointer never reached at all.
   (debug, arrivals beating completion so nearly every transaction is cancelled mid-flight) and "it
   runs at 22" (release, same code, same skin, same track). Both readings above are real; only one of
   them is what a user sees.
+  **Its limit is total starvation, and a readout is where it shows.** A transaction whose build
+  and render outlast the clock tick is cancelled by the next tick every time, so nothing it carries
+  ever presents: `cyberchannel` (debug, 2x) resolved `position.value` to `0:01`, `0:02`… on every
+  tick and drew `0:00` for the whole track, because its render took ~90 ms against a 100 ms tick.
+  Counting `build` against `rendered cancelled=` around the `Task.isCancelled` guard showed 25
+  builds and 24 cancellations. The fix was the cost (`WMPRenderer.paintedMask`, see
+  `rendering/video.md`), not the cancellation; release was not measured.
 - **Two ordering traps live in `dispatchScriptTransaction`, and both give plausible wrong answers.**
   It **cancels the presentation's previous script task**, so dispatching two events back to back
   loses the first — put both handler sets in one event. And it only *creates* a task, so anything
