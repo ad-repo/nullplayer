@@ -368,7 +368,6 @@ class WindowManager {
                       AppPersistence.forcedUIMode?.displayName ?? "its configured mode")
                 return
             }
-            audioEngine.wmpWOWController.setActive(newValue.controllerFamily == .wmp)
             storedUIMode = newValue
             newValue.persist()
         }

@@ -200,7 +200,7 @@ class AudioEngine {
     /// Reference Tuning controller. Owns the pitch-shift nodes used in both the
     /// local AVAudioEngine graph and the AudioStreaming graph.
     let tuningController = PitchTuningController()
-    let wmpWOWController = WMPWOWController(active: PlayerUIMode.stored().controllerFamily == .wmp)
+    let wmpWOWController = WMPWOWController(defaults: .standard)
 
     /// Current audio file (for local files)
     private var audioFile: AVAudioFile?

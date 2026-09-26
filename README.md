@@ -18,7 +18,7 @@ No Winamp skins are distributed with the project
 
 - 21-band EQ (Original/Original-Metal) and 10-band EQ (Classic, Modern)
 - Gapless + Sweet Fades (configurable crossfade), volume normalization, play speed (0.25×–4×), and Reference Tuning (432/440 Hz/custom)
-- WOW stereo widening and TruBass low-frequency enhancement, driven from a Windows Media Player skin's own enhancement controls (on/off, both strengths, and headphone/normal/large speaker profiles). Independent approximations of the SRS effects, not the licensed algorithms; they apply to local files and HTTP streams, and are unavailable while casting
+- SRS audio enhancements in every skin under **Playback > Options > SRS**: WOW stereo widening and TruBass low-frequency enhancement (Off / 25–100%), plus a Headphones profile for TruBass. Remembered across launches, and a Windows Media Player skin's own SRS controls drive the same settings. Independent approximations of the SRS effects, not the licensed algorithms; they apply to local files and HTTP streams, and are unavailable while casting
 - Stream Ripper — rip and import stream URLs to FLAC, MP3, or MP4 with metadata, cover art, and `.cue` sheets (requires `yt-dlp` + `ffmpeg`)
 - Intelligent radio mix generation for all sources
 - Cast to Sonos (multi-room), Chromecast, DLNA, and AirPlay — local files, server streams, and radio

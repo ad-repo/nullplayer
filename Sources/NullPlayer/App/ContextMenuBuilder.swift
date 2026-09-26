@@ -398,8 +398,42 @@ class ContextMenuBuilder {
         return menu
     }
 
-    /// Builds the Reference Tuning submenu.
-    static func buildReferenceTuningMenu() -> NSMenu {
+    static let srsLevels: [Double] = [25, 50, 75, 100]
+
+    /// WOW and TruBass each read Off unless SRS is enabled and their level is above zero,
+    /// so the menu reflects what is audible whichever of the two a `.wmz` set.
+    static func buildSRSMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let srs = WindowManager.shared.audioEngine.wmpWOWController
+
+        func levelItem(_ title: String, current: Double, action: Selector) -> NSMenuItem {
+            let root = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let submenu = NSMenu()
+            submenu.autoenablesItems = false
+            let effective = srs.enabled ? current : 0
+            for level in [0] + srsLevels {
+                let item = NSMenuItem(title: level == 0 ? "Off" : "\(Int(level))%", action: action, keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = level
+                item.state = effective == level ? .on : .off
+                submenu.addItem(item)
+            }
+            root.submenu = submenu
+            return root
+        }
+
+        menu.addItem(levelItem("WOW Effect", current: srs.level, action: #selector(MenuActions.setSRSWOWLevel(_:))))
+        menu.addItem(levelItem("TruBass", current: srs.bassLevel, action: #selector(MenuActions.setSRSTruBassLevel(_:))))
+
+        let headphonesItem = NSMenuItem(title: "Headphones", action: #selector(MenuActions.toggleSRSHeadphones), keyEquivalent: "")
+        headphonesItem.target = MenuActions.shared
+        headphonesItem.state = srs.speakerSize == 0 ? .on : .off
+        menu.addItem(headphonesItem)
+        return menu
+    }
+
+        static func buildReferenceTuningMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
@@ -1691,6 +1725,15 @@ class ContextMenuBuilder {
             balanceRoot.toolTip = "Not available while casting"
         }
         optionsMenu.addItem(balanceRoot)
+
+        // SRS submenu: WOW Effect, TruBass and Headphones
+        let srsRoot = NSMenuItem(title: "SRS", action: nil, keyEquivalent: "")
+        srsRoot.submenu = buildSRSMenu()
+        if engine.isAnyCastingActive {
+            srsRoot.isEnabled = false
+            srsRoot.toolTip = "Not available while casting"
+        }
+        optionsMenu.addItem(srsRoot)
 
         optionsMenu.addItem(NSMenuItem.separator())
 
@@ -5010,6 +5053,23 @@ class MenuActions: NSObject {
     
     @objc func toggleVolumeNormalization() {
         WindowManager.shared.audioEngine.volumeNormalizationEnabled.toggle()
+    }
+
+    // MARK: - SRS
+
+    @objc func setSRSWOWLevel(_ sender: NSMenuItem) {
+        guard let level = sender.representedObject as? Double else { return }
+        WindowManager.shared.audioEngine.wmpWOWController.setMenuLevel(level, wow: true)
+    }
+
+    @objc func setSRSTruBassLevel(_ sender: NSMenuItem) {
+        guard let level = sender.representedObject as? Double else { return }
+        WindowManager.shared.audioEngine.wmpWOWController.setMenuLevel(level, wow: false)
+    }
+
+    @objc func toggleSRSHeadphones() {
+        let srs = WindowManager.shared.audioEngine.wmpWOWController
+        srs.setSpeakerSize(srs.speakerSize == 0 ? 1 : 0)
     }
 
     // MARK: - Reference Tuning

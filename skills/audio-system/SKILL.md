@@ -301,10 +301,11 @@ Casting paths (Sonos / Chromecast / DLNA) hand the remote renderer a stream URL 
 
 ## WMP WOW and TruBass
 
-WMP skins own an optional stereo butterfly and bass enhancement stage after EQ/tuning in both audio
-pipelines. Read [the design and implementation reference](../wmp-skin-guide/reference/audio-enhancements.md)
+**Playback Options ▸ SRS** (and a `.wmz`'s SRS controls) drive an optional stereo butterfly and bass
+enhancement stage after EQ/tuning in both audio pipelines. Read [the design and implementation reference](../wmp-skin-guide/reference/audio-enhancements.md)
 before changing `WMPWOWAudioUnit`, `WMPTruBassDSP`, or their graph integration. The controller follows
-Reference Tuning’s per-player node ownership, but activation is explicitly restricted to WMP mode.
+Reference Tuning’s per-player node ownership. It is app-wide in every skin family and persists in
+UserDefaults (`srsEnabled`, `srsWOWLevel`, `srsTruBassLevel`, `srsSpeakerSize`).
 
 ## Spectrum Analyzer
 

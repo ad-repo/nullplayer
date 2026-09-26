@@ -1,7 +1,7 @@
 import AVFoundation
 import os
 
-/// WMP-only approximation of the forum's stereo butterfly, not licensed SRS DSP.
+/// Approximation of the forum's stereo butterfly, not licensed SRS DSP.
 /// Widening adds the side signal rather than subtracting the mid: the two reach the
 /// same mid/side ratio, but only this one leaves a centred mix at its original level.
 /// Only side content above `wideningCutoff` is added — low bass carries no usable
@@ -164,11 +164,18 @@ final class WMPWOWAudioUnit: AUAudioUnit, @unchecked Sendable {
 
 /// Mirrors PitchTuningController's ownership: independent nodes for primary and
 /// crossfade streams, driven from one state, with no changes to the ordinary EQ.
+/// A global playback option: Playback Options ▸ SRS and a `.wmz`'s SRS controls
+/// drive the same state, which persists when the controller is given defaults.
 final class WMPWOWController {
     /// Side gain at WOW 100 is `1 + maximumWidening`. FFmpeg's `extrastereo` ships
     /// 2.5 as its default; this sits just under it, and the headroom clamp keeps the
     /// loud, already-wide frames the extra reach would otherwise push over full scale.
     static let maximumWidening: Float = 1.4
+
+    private enum Key {
+        static let enabled = "srsEnabled", level = "srsWOWLevel"
+        static let bassLevel = "srsTruBassLevel", speakerSize = "srsSpeakerSize"
+    }
 
     let localNode = WMPWOWAudioUnit.makeNode()
     private class WeakNode {
@@ -176,15 +183,29 @@ final class WMPWOWController {
         init(_ node: AVAudioUnitEffect) { self.node = node }
     }
     private var streams: [WeakNode] = []
+    private let defaults: UserDefaults?
     private(set) var enabled = false
     private(set) var level: Double = 50
     private(set) var bassLevel: Double = 50
     private(set) var speakerSize: Int = 0
-    private(set) var active: Bool
 
-    init(active: Bool) { self.active = active }
+    init(defaults: UserDefaults? = nil) {
+        self.defaults = defaults
+        if let defaults {
+            enabled = defaults.bool(forKey: Key.enabled)
+            if let value = defaults.object(forKey: Key.level) as? Double, value.isFinite {
+                level = max(0, min(100, value))
+            }
+            if let value = defaults.object(forKey: Key.bassLevel) as? Double, value.isFinite {
+                bassLevel = max(0, min(100, value))
+            }
+            if let value = defaults.object(forKey: Key.speakerSize) as? Int, (0...2).contains(value) {
+                speakerSize = value
+            }
+        }
+        apply()
+    }
 
-    func setActive(_ value: Bool) { active = value; apply() }
     func setEnabled(_ value: Bool) { enabled = value; apply() }
     func setLevel(_ value: Double) {
         guard value.isFinite else { return }
@@ -198,6 +219,18 @@ final class WMPWOWController {
         guard (0...2).contains(value) else { return }
         speakerSize = value; apply()
     }
+    /// Playback Options ▸ SRS. One enable flag gates both effects (WMP's `eq.enhancedAudio`), so
+    /// turning one on from Off zeroes the other rather than waking it at a level the menu showed
+    /// as Off, and the flag follows whether either level is above zero.
+    func setMenuLevel(_ value: Double, wow: Bool) {
+        guard value.isFinite else { return }
+        if value > 0, !enabled {
+            if wow { bassLevel = 0 } else { level = 0 }
+        }
+        if wow { level = max(0, min(100, value)) } else { bassLevel = max(0, min(100, value)) }
+        enabled = level > 0 || bassLevel > 0
+        apply()
+    }
     func makeStreamingNode() -> AVAudioUnitEffect {
         let node = WMPWOWAudioUnit.makeNode()
         streams.append(WeakNode(node)); configure(node)
@@ -205,12 +238,16 @@ final class WMPWOWController {
     }
     private func configure(_ node: AVAudioUnitEffect) {
         (node.auAudioUnit as? WMPWOWAudioUnit)?.setAmount(
-            active && enabled ? Float(level / 100 * Double(WMPWOWController.maximumWidening)) : 0,
-            bass: active && enabled ? Float(bassLevel / 100) : 0, speaker: speakerSize)
+            enabled ? Float(level / 100 * Double(WMPWOWController.maximumWidening)) : 0,
+            bass: enabled ? Float(bassLevel / 100) : 0, speaker: speakerSize)
     }
     private func apply() {
         configure(localNode)
         streams.removeAll { $0.node == nil }
         for entry in streams { if let node = entry.node { configure(node) } }
+        defaults?.set(enabled, forKey: Key.enabled)
+        defaults?.set(level, forKey: Key.level)
+        defaults?.set(bassLevel, forKey: Key.bassLevel)
+        defaults?.set(speakerSize, forKey: Key.speakerSize)
     }
 }

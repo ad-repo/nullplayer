@@ -281,8 +281,8 @@ final class WMPWOWTests: XCTestCase {
 
     /// Exercise the actual AU graph, including null output buffer ownership and
     /// graph format negotiation; a pure kernel test cannot catch a silent node.
-    func testOfflineAudioUnitAndModeGate() throws {
-        let controller = WMPWOWController(active: true)
+    func testOfflineAudioUnitAndEnableGate() throws {
+        let controller = WMPWOWController()
         controller.setEnabled(true)
         controller.setLevel(100)
         controller.setBassLevel(0)
@@ -290,7 +290,7 @@ final class WMPWOWTests: XCTestCase {
         for node in nodes {
             for rate in [44100.0, 48000.0, 96000.0] {
                 for channels: AVAudioChannelCount in [2] {
-                    controller.setActive(true)
+                    controller.setEnabled(true)
                     let engine = AVAudioEngine()
                     let player = AVAudioPlayerNode()
                     let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: channels)!
@@ -332,7 +332,7 @@ final class WMPWOWTests: XCTestCase {
                     let widening = (wetWidth / dryWidth).squareRoot()
                     XCTAssertGreaterThan(widening, 2.2)
                     XCTAssertLessThan(widening, 1 + Double(WMPWOWController.maximumWidening) + 0.01)
-                    controller.setActive(false)
+                    controller.setEnabled(false)
                     XCTAssertEqual(try engine.renderOffline(4096, to: output), .success)
                     let tail = 2 * Double.pi * 1000 * 8191 / rate
                     XCTAssertEqual(output.floatChannelData![0][4095], Float(0.5 * sin(tail)), accuracy: 0.00001)
@@ -342,5 +342,63 @@ final class WMPWOWTests: XCTestCase {
                 }
             }
         }
+    }
+
+    /// Playback Options ▸ SRS: a level chosen from Off must not wake the other effect at a
+    /// level the menu showed as Off, and clearing both turns SRS off.
+    func testMenuLevelsShareOneEnableFlag() {
+        let controller = WMPWOWController()
+        XCTAssertFalse(controller.enabled)
+        XCTAssertEqual(controller.bassLevel, 50)
+
+        controller.setMenuLevel(75, wow: true)
+        XCTAssertTrue(controller.enabled)
+        XCTAssertEqual(controller.level, 75)
+        XCTAssertEqual(controller.bassLevel, 0)
+
+        controller.setMenuLevel(25, wow: false)
+        XCTAssertEqual(controller.level, 75, "enabling is already done; the other level is kept")
+        XCTAssertEqual(controller.bassLevel, 25)
+
+        controller.setMenuLevel(0, wow: true)
+        XCTAssertTrue(controller.enabled)
+        controller.setMenuLevel(0, wow: false)
+        XCTAssertFalse(controller.enabled)
+
+        controller.setMenuLevel(.nan, wow: true)
+        controller.setMenuLevel(250, wow: false)
+        XCTAssertEqual(controller.level, 0)
+        XCTAssertEqual(controller.bassLevel, 100)
+        XCTAssertTrue(controller.enabled)
+    }
+
+    /// SRS is a global playback option, so a controller given defaults restores it on launch.
+    func testSettingsPersistAcrossControllers() throws {
+        let suite = "WMPWOWTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let fresh = WMPWOWController(defaults: defaults)
+        XCTAssertFalse(fresh.enabled)
+        XCTAssertEqual(fresh.level, 50)
+        XCTAssertEqual(fresh.bassLevel, 50)
+        XCTAssertEqual(fresh.speakerSize, 0)
+
+        fresh.setEnabled(true)
+        fresh.setLevel(30)
+        fresh.setBassLevel(80)
+        fresh.setSpeakerSize(2)
+
+        let restored = WMPWOWController(defaults: defaults)
+        XCTAssertTrue(restored.enabled)
+        XCTAssertEqual(restored.level, 30)
+        XCTAssertEqual(restored.bassLevel, 80)
+        XCTAssertEqual(restored.speakerSize, 2)
+
+        defaults.set(900.0, forKey: "srsWOWLevel")
+        defaults.set(7, forKey: "srsSpeakerSize")
+        let clamped = WMPWOWController(defaults: defaults)
+        XCTAssertEqual(clamped.level, 100)
+        XCTAssertEqual(clamped.speakerSize, 0, "an out-of-range speaker keeps the default")
     }
 }

@@ -34,12 +34,19 @@ The temporary -1 exists only in the script transaction; it sends no engine comma
 increment sends 0. Clamping -1 to 0 immediately would skip headphones on every wrap.
 Non-finite numeric writes are ignored; levels clamp to 0–100 and committed speaker indices to 0–2.
 
-`eq.crossFade`, `eq.crossFadeWindow` and `eq.normalization` are **not** part of this DSP and are not
-gated to WMP; see *Graph integration and mode isolation* below.
+`eq.crossFade`, `eq.crossFadeWindow` and `eq.normalization` are **not** part of this DSP; see
+*Graph integration and mode isolation* below.
 
-Initial session settings: enhancements off, both strengths 50, headphones. The controller owns
-session state across track, stream and skin changes. It does not persist preferences across app
-launches and does not reuse or overwrite graphic-EQ, tuning, or normalization preferences.
+Defaults: enhancements off, both strengths 50, headphones. The controller persists all four values
+in UserDefaults (`srsEnabled`, `srsWOWLevel`, `srsTruBassLevel`, `srsSpeakerSize`) when `AudioEngine`
+constructs it with `.standard`; tests construct it without defaults. It does not reuse or overwrite
+graphic-EQ, tuning, or normalization preferences.
+
+**Playback Options ▸ SRS** is the app-wide surface: WOW Effect and TruBass level submenus (Off / 25 /
+50 / 75 / 100) and a Headphones toggle (speaker 0 ↔ 1). A level shows Off unless `enabled` and above
+zero. Because one `enabled` flag gates both effects, `WMPWOWController.setMenuLevel` zeroes the
+other effect when a level is chosen while disabled, and the flag follows whether either level is
+above zero.
 
 ## Graph integration and mode isolation
 
@@ -58,18 +65,16 @@ New streaming nodes inherit all current settings immediately.
 `sweetFadeDuration` — the same app-wide Sweet Fades every other skin family drives from its own menu
 — and `eq.normalization` binds to `volumeNormalizationEnabled` the same way. Those three
 `WMPTransportAction` cases carry **no `.wmp` gate**, and `.setEQEnabled` beside them is the existing
-precedent. The WOW group is gated because WOW *is* WMP-only DSP that must never activate in Classic,
-Original or WAL; a setting the other families already own is the opposite case, and gating it would
-be scoping a preference the user shares. The only translation is units: WMP states the window in
+precedent. The WOW group is likewise ungated: it is the app-wide SRS option from Playback Options,
+and gating it would be scoping a preference the user shares. The only translation is units: WMP states the window in
 **milliseconds** (the corpus writes 7000), `sweetFadeDuration` is seconds, and that conversion lives
 at the host boundary in `WMPAudioEngineHost` and nowhere else. See
 [object-model/elements.md](object-model/elements.md) § *The `eq` object and the element are one surface (W39)*.
 
-`AudioEngine` seeds the controller's active gate from the stored WMP controller family.
-`WindowManager.uiMode` updates it on every mode assignment; host writes also require the WMP family.
-The node remains connected to avoid rebuilding a playing graph on every toggle/mode change, but
-receives zero effect targets outside WMP. After the short ramp, dry samples pass through exactly and
-filter work is skipped. Retained WMP settings never activate effects in Classic, Original or WAL.
+There is no mode gate: the effect runs in every skin family whenever SRS is enabled. The node
+remains connected to avoid rebuilding a playing graph on every toggle, and receives zero effect
+targets while disabled. After the short ramp, dry samples pass through exactly and filter work is
+skipped.
 
 These shared paths are necessary: a skin view or host adapter can send controls but cannot transform
 rendered audio. A spectrum tap is an observation path, not an output effect. Editing graphic-EQ bands

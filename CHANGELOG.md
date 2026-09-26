@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **SRS audio enhancements for every skin** — the WOW Effect, TruBass and Headphones settings that
+  came with Windows Media Player skins are now global playback options under **Playback Options ▸
+  SRS**, work in every skin, and are remembered across launches. A `.wmz` skin's own SRS controls
+  drive the same settings.
+  - **WOW Effect** widens the stereo image, pushing sound out beyond the speakers while leaving
+    centred vocals and deep bass where they are.
+  - **TruBass** adds a fuller, deeper low end by enhancing the bass already in the music, without
+    simply turning up the lowest frequencies.
+  - **Headphones** tunes TruBass for headphones instead of speakers.
 - **Windows reopen where you left them** — the library browser and the visualizer window once again
   come back where you moved them when closed and reopened, instead of snapping back beside the player.
   In Windows Media Player and Winamp Modern skins, the spectrum and audio analyzers, PeppyMeter, Flow,

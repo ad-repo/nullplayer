@@ -168,7 +168,7 @@ final class WMPAudioEngineHost: WMPHost {
             playlistIndex: engine.currentIndex, playlistCount: engine.playlist.count,
             playlistItems: playlistItems,
             equalizer: WMPEqualizerSnapshot(enabled: engine.isEQEnabled(),
-                enhancedAudio: engine.wmpWOWController.active && engine.wmpWOWController.enabled,
+                enhancedAudio: engine.wmpWOWController.enabled,
                 wowLevel: engine.wmpWOWController.level,
                 truBassLevel: engine.wmpWOWController.bassLevel,
                 speakerSize: engine.wmpWOWController.speakerSize,
@@ -325,26 +325,20 @@ final class WMPAudioEngineHost: WMPHost {
         case let .removePlaylistItem(index): engine.removeTrack(at: index)
         case let .movePlaylistItem(source, destination): engine.moveTrack(from: source, to: destination)
         case .setWOWEnabled:
-            guard WindowManager.shared.uiMode.controllerFamily == .wmp,
-                  let enabled = value?.finiteNumber else { return }
+            guard let enabled = value?.finiteNumber else { return }
             engine.wmpWOWController.setEnabled(enabled != 0)
         case .setWOWLevel:
-            guard WindowManager.shared.uiMode.controllerFamily == .wmp,
-                  let level = value?.finiteNumber else { return }
+            guard let level = value?.finiteNumber else { return }
             engine.wmpWOWController.setLevel(level)
         case .setTruBassLevel:
-            guard WindowManager.shared.uiMode.controllerFamily == .wmp,
-                  let level = value?.finiteNumber else { return }
+            guard let level = value?.finiteNumber else { return }
             engine.wmpWOWController.setBassLevel(level)
         case .setSpeakerSize:
-            guard WindowManager.shared.uiMode.controllerFamily == .wmp,
-                  let speaker = value?.finiteNumber, (0...2).contains(speaker) else { return }
+            guard let speaker = value?.finiteNumber, (0...2).contains(speaker) else { return }
             engine.wmpWOWController.setSpeakerSize(Int(speaker))
-        // **Crossfade and normalization are app-wide settings, so they carry no `.wmp` gate.**
-        // The WOW group above is gated because WOW *is* WMP-only DSP — retained WMP settings must
-        // never activate an effect in Classic, Original or WAL. Crossfade is the opposite case:
-        // it is the same Sweet Fades the other three families drive from their own menus, and a
-        // `.wmz`'s crossfade button is that setting's control while WMP is the skin on screen.
+        // **SRS, crossfade and normalization are app-wide settings, so they carry no `.wmp` gate.**
+        // They are the same settings the other families drive from Playback Options, and a
+        // `.wmz`'s control is that setting's control while WMP is the skin on screen.
         // `.setEQEnabled` below is the existing precedent for an app-wide control on this switch.
         case .setCrossFade:
             guard let enabled = value?.finiteNumber else { return }

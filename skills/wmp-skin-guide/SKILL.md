@@ -53,8 +53,9 @@ see `reference/harness-history.md` § "What the harness measured".
 
 ## WOW and TruBass audio enhancements
 
-Read [reference/audio-enhancements.md](reference/audio-enhancements.md) for the WMP-only DSP design,
-source research, control round trips, graph ownership, mode gating, and verification. The skin’s
+Read [reference/audio-enhancements.md](reference/audio-enhancements.md) for the DSP design,
+source research, control round trips, graph ownership, and verification. The DSP is app-wide
+(**Playback Options ▸ SRS**); a skin's controls drive the same state. The skin’s
 `eq.enhancedAudio`, `wowLevel`, `truBassLevel`, and `speakerSize` now drive audio processing.
 
 ## Isolation boundary
@@ -93,7 +94,7 @@ owns the code you are changing.
 | [reference/object-model.md](reference/object-model.md) | a member skin JScript can reach | the shape, the three resolutions and adding a member; a router over `reference/object-model/`: property reads, elements, the library (W136), methods and tweens, events and the keyboard, handlers and timers, classification and *Verified **not** gaps* |
 | [reference/loading.md](reference/loading.md) | the archive, text decoding, XML tolerance, `WMP00xx` codes | *Loader contracts* and the loader's governing rules |
 | [reference/harness.md](reference/harness.md) | any measurement — every probe flag and corpus script | a router and flag index over `reference/harness/`: the corpus, probe flags, app flags and probes, driving the app, sweep limits, the line grammar, the scripts, trusting the instrument; dated past measurements are in [reference/harness-history.md](reference/harness-history.md) |
-| [reference/audio-enhancements.md](reference/audio-enhancements.md) | WOW / TruBass | the WMP-only DSP |
+| [reference/audio-enhancements.md](reference/audio-enhancements.md) | WOW / TruBass | the SRS DSP a `.wmz` drives |
 | [reference/skins/](reference/skins/README.md) | an engine-wide change | per-skin dossiers and the counter-evidence table |
 
 A reference to `SKILL.md` § *<section>* written before 2026-09-24 names a section that now lives in
