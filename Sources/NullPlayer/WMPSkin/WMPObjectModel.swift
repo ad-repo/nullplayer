@@ -2105,6 +2105,24 @@ final class WMPObjectModel {
     /// subtrees *arriving* rather than on their fading in.
     private func tweenGroup(_ element: WMPScriptElement, duration: Double?, completion: String?,
                             channels: [(property: String, value: Double)]) {
+        // **A later call supersedes an earlier one on the same channels, in this transaction too.**
+        // `Plus! Space`'s `TogglePlaylist()` with the equaliser open runs `CloseEqualizer()` —
+        // `svDrawer.moveTo(left, closed, 120)` — then `svDrawer.moveTo(left, opened, 120)` in the
+        // same handler. The second call reads `top` as still open and drops as already-there, so
+        // unless it also cancels the first, the drawer slides shut and its `onEndMove` reveals the
+        // playlist over the player. `WMPScriptRuntime.register` does the same across transactions.
+        let superseded = Set(channels.map { $0.property })
+        tweens = tweens.compactMap { queued in
+            guard queued.stableID == element.stableID else { return queued }
+            let kept = queued.channels.filter { !superseded.contains($0.property) }
+            guard kept.count != queued.channels.count else { return queued }
+            WMPTweenTrace.log("supersede \(element.id)"
+                + " channels=[\(superseded.sorted().joined(separator: ","))] kept=\(kept.count)")
+            guard !kept.isEmpty else { return nil }
+            return .init(targetID: queued.targetID, stableID: queued.stableID, channels: kept,
+                         durationMilliseconds: queued.durationMilliseconds,
+                         completionEvent: queued.completionEvent)
+        }
         let animates = animatesTweens && (duration.map { $0.isFinite && $0 > 0 } ?? false)
         var resolved: [WMPScriptTweenChannel] = []
         if animates {

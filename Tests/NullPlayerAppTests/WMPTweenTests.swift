@@ -215,6 +215,23 @@ final class WMPTweenTests: XCTestCase {
         XCTAssertFalse(frame.hasActiveTweens, "and the slide it replaced is not still running")
     }
 
+    /// **The same supersession inside one handler.** `Plus! Space`'s `TogglePlaylist()` with the
+    /// equaliser open slides its drawer shut and straight back open in one statement list. The
+    /// second call reads the drawer where it still is, so it has nowhere to travel — and unless it
+    /// also cancels the first, the drawer closed and `onEndMove` revealed the playlist over the
+    /// player.
+    func testASecondCallInTheSameHandlerCancelsTheFirst() async throws {
+        let skin = try await load(wms: drawerSkin(), js: """
+        function Swap() { drawer.moveTo(300, drawer.top, 10000); drawer.moveTo(100, drawer.top, 10000); }
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let output = await click(runtime, skin, "Swap();", animates: true)
+        XCTAssertFalse(output.hasActiveTweens, "the slide away was cancelled by the slide back")
+        XCTAssertNotEqual(try left(output, skin), 300)
+        XCTAssertTrue(try listIsVisible(output, skin), "the move that stayed put completes at once")
+    }
+
     /// `resizeTo` animates like the other two and raises **nothing** at the end of it:
     /// `onEndResize` is zero uses corpus-wide and deliberately not implemented.
     func testResizeToAnimatesAndHasNoCompletion() async throws {

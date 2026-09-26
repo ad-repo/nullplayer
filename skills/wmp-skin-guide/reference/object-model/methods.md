@@ -113,7 +113,17 @@ Three things still arrive instantly under a clock, each because a frame would be
   `m_anim_*` subtrees depend on.
 
 A later call on the same element and property **replaces** the one running, so a drawer re-toggled
-mid-slide reverses from wherever it currently is. `WMPScriptRuntime.cancelTweens(for:)` and
+mid-slide reverses from wherever it currently is. **That holds inside one handler too**, including when the
+later call is one of the instant cases above: `Plus! Space`'s `TogglePlaylist()` with the equaliser
+open runs `CloseEqualizer()`'s `svDrawer.moveTo(…, closed, 120)` and then `svDrawer.moveTo(…, opened,
+120)`. The second reads `top` as still open and drops `already-there`, so until 2026-09-26 it never
+cancelled the first — the drawer slid shut and its `onEndMove` put the native playlist over the
+player. `tweenGroup` now strips the earlier call's channels from this transaction's `tweens` before
+resolving the new one. Headless callers never saw it: with no clock both endpoints land in call
+order. The same `Close…(); …moveTo(back)` shape is in `Plus! Nature` and `Plus! da Vinci`
+(`DrawerClose()` inside `ToggleEqualizer`/`TogglePlaylist`) and `LostPlanet`'s `menuClick`
+(`hideGalNav` then `showGalNav`, switching Gallery ↔ Screenshots); `XBOX`/`Official_Xbox_*`'s
+`shuffVis(); disableVis();` hits it only on the no-`Stop` edge. `WMPScriptRuntime.cancelTweens(for:)` and
 `discardView` drop a view's motion outright: a view that stops existing has no motion to finish.
 
 **The callback is the load-bearing half of this row, not the tween.** Moving `onEndMove` from
