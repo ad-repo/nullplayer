@@ -222,4 +222,60 @@ final class WMPGIFTerminatorTests: XCTestCase {
         XCTAssertEqual(WMPSkinTestSupport.rgba(after, x: 16, yFromTop: 16), [0, 200, 0, 255],
                        "the finished terminator animation draws nothing, so the face shows")
     }
+
+    // MARK: - Landing
+
+    /// `QuickSilver`'s shape, reduced: a still at `zIndex="1"`, a readout between, and a one-shot
+    /// animation at `zIndex="5"` in the same rect. The fixture GIF has no transparent index, so its
+    /// last frame decodes as one white pixel at the origin on opaque black; the landing still is
+    /// that picture, and the other is transparent — coverage differs, so it can never match.
+    private func landingScene(stillLandsOnTheLastFrame: Bool) async throws -> (WMPRenderer, WMPScene) {
+        func canvas(_ pixel: (Int) -> [UInt8]) throws -> Data {
+            try WMPSkinTestSupport.encodedImage(width: 32, height: 32,
+                                                rgba: (0..<(32 * 32)).flatMap(pixel))
+        }
+        let still = try canvas { index in
+            guard stillLandsOnTheLastFrame else { return [0, 0, 0, 0] }
+            return index == 0 ? [255, 255, 255, 255] : [0, 0, 0, 255]
+        }
+        let readout = try canvas { _ in [0, 200, 0, 255] }
+        let shutter = WMPSkinTestSupport.animatedGIF(frameCount: 4, delayCentiseconds: 10, canvas: 32)
+        let skin = try await WMPSkinLoader().load(from: try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="32" height="32">
+                <SUBVIEW id="plate" zIndex="1" left="0" top="0" backgroundImage="plate.png"/>
+                <SUBVIEW id="meta" zIndex="3" left="0" top="0" backgroundImage="meta.png"/>
+                <SUBVIEW id="shutter" zIndex="5" left="0" top="0" backgroundImage="shutter.gif"/>
+            </VIEW></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("plate.png", data: still),
+            WMPTestArchiveEntry("meta.png", data: readout),
+            WMPTestArchiveEntry("shutter.gif", data: shutter)
+        ]))
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        return (WMPRenderer(imageStore: WMPImageStore(provider: skin.archive)), scene)
+    }
+
+    /// **A finished one-shot animation that has come to rest on the still beneath it draws nothing**,
+    /// so the readout the skin put between the two shows. `QuickSilver`'s `Shutter.gif` carries no
+    /// terminator and lands on `Shutterbg.gif`; holding it hid the status, title and time.
+    func testAFinishedAnimationThatLandsOnTheStillBeneathItRevealsWhatLiesBetween() async throws {
+        let (renderer, scene) = try await landingScene(stillLandsOnTheLastFrame: true)
+        let during = try await renderer.render(scene: scene, clock: 0).image
+        let after = try await renderer.render(scene: scene, clock: 60).image
+        XCTAssertNotEqual(WMPSkinTestSupport.rgba(during, x: 0, yFromTop: 0), [0, 200, 0, 255],
+                          "the shutter is still playing and still covers the readout")
+        XCTAssertEqual(WMPSkinTestSupport.rgba(after, x: 0, yFromTop: 0), [0, 200, 0, 255],
+                       "the landed animation draws nothing, so the readout shows")
+    }
+
+    /// The guard, and the reason the rule reads art rather than flags: `Age_of_Mythology`'s closed
+    /// shutter and `BlueCrush`'s hover pulses both end on *restore to background* and must hold.
+    /// A last frame the still beneath does not repeat is held exactly as before.
+    func testAFinishedAnimationOverDifferentArtStillHoldsItsLastFrame() async throws {
+        let (renderer, scene) = try await landingScene(stillLandsOnTheLastFrame: false)
+        let after = try await renderer.render(scene: scene, clock: 60).image
+        XCTAssertEqual(WMPSkinTestSupport.rgba(after, x: 0, yFromTop: 0), [255, 255, 255, 255],
+                       "nothing beneath matches, so the last frame stays over the readout")
+    }
 }

@@ -85,7 +85,12 @@ struct WMPImageAnimation: Hashable, Codable {
     /// Whether the element has nothing left to draw at `clock`. Only a finite animation can reach
     /// it — an endless one has no end to hold.
     func isCleared(at clock: TimeInterval) -> Bool {
-        guard clearsWhenFinished, let end = endOfPlayback, clock.isFinite else { return false }
+        clearsWhenFinished && hasFinished(at: clock)
+    }
+
+    /// Played every time it asked to and holding its last frame. Never true of a looping one.
+    func hasFinished(at clock: TimeInterval) -> Bool {
+        guard let end = endOfPlayback, clock.isFinite else { return false }
         return clock >= end
     }
 
@@ -148,6 +153,8 @@ final class WMPImageStore: @unchecked Sendable {
     /// `filmstripIsDescending` answers, keyed by path, frame count and axis. One bool each:
     /// no eviction, because the whole map is smaller than one decoded frame.
     private var descendingStripEntries: [String: Bool] = [:]
+    /// `finalFrame(of:landsOn:frameCount:)` answers, keyed by both draws. One bool each.
+    private var landingEntries: [String: Bool] = [:]
     /// A button's hit region across all its state sprites (W306), keyed by the paints it is built
     /// from and the frame's size. `.some(nil)` is "no hole" — the whole rect. The scene is rebuilt
     /// on every host tick, and re-sampling four sprites per button each time cost `Secura` a core.
@@ -246,6 +253,7 @@ final class WMPImageStore: @unchecked Sendable {
         shapeMaskEntries.removeAll(keepingCapacity: false)
         cornerColorEntries.removeAll(keepingCapacity: false)
         descendingStripEntries.removeAll(keepingCapacity: false)
+        landingEntries.removeAll(keepingCapacity: false)
         stateCoverageEntries.removeAll(keepingCapacity: false)
         clipBytes = 0
         animationEntries.removeAll(keepingCapacity: false)
@@ -927,6 +935,68 @@ final class WMPImageStore: @unchecked Sendable {
         descendingStripEntries[cacheKey] = answer
         lock.unlock()
         return answer
+    }
+
+    /// **Whether a one-shot animation comes to rest on the still drawn beneath it** — the same
+    /// coverage, and colours only a palette apart. See `WMPGIFTerminator` § *landing*.
+    ///
+    /// Both sides are decoded exactly as they are drawn, keys and hue included, so a still that
+    /// only matches before its `transparencyColor` is applied does not count. The two GIFs
+    /// `QuickSilver` pairs are quantized separately: coverage is identical and the mean channel
+    /// difference is 1.6/255, with single pixels up to 29/255 apart, so the test is on the mean.
+    func finalFrame(of animated: WMPSceneImage, landsOn still: WMPSceneImage,
+                    frameCount: Int) -> Bool {
+        guard frameCount > 1 else { return false }
+        let cacheKey = "\(animated)|\(still)|\(frameCount)"
+        lock.lock()
+        if let cached = landingEntries[cacheKey] { lock.unlock(); return cached }
+        lock.unlock()
+        var answer = false
+        if let last = try? image(for: animated.resourcePath, colorKeys: animated.colorKeys,
+                                 implicitKey: animated.implicitColorKey, frame: frameCount - 1,
+                                 hueShift: animated.hueShift).image,
+           let under = try? image(for: still.resourcePath, colorKeys: still.colorKeys,
+                                  implicitKey: still.implicitColorKey,
+                                  hueShift: still.hueShift).image,
+           last.width == under.width, last.height == under.height {
+            answer = Self.pixelsMatch(last, under)
+        }
+        lock.lock()
+        landingEntries[cacheKey] = answer
+        lock.unlock()
+        return answer
+    }
+
+    /// The largest mean channel difference, over the pixels both images cover, that still reads as
+    /// one picture quantized twice rather than two pictures.
+    static let landingMeanTolerance = 4.0
+
+    private static func pixelsMatch(_ lhs: CGImage, _ rhs: CGImage) -> Bool {
+        let width = lhs.width, height = lhs.height
+        func rgba(_ image: CGImage) -> [UInt8] {
+            var bytes = [UInt8](repeating: 0, count: width * height * 4)
+            bytes.withUnsafeMutableBytes { buffer in
+                guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                    bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                        | CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+                context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            }
+            return bytes
+        }
+        let a = rgba(lhs), b = rgba(rhs)
+        var covered = 0, difference = 0
+        for offset in stride(from: 0, to: a.count, by: 4) {
+            let aCovers = a[offset + 3] >= 128, bCovers = b[offset + 3] >= 128
+            guard aCovers == bCovers else { return false }
+            guard aCovers else { continue }
+            covered += 1
+            for channel in 0..<3 {
+                difference += abs(Int(a[offset + channel]) - Int(b[offset + channel]))
+            }
+        }
+        guard covered > 0 else { return false }
+        return Double(difference) / Double(covered * 3) <= landingMeanTolerance
     }
 
     /// A `clippingImage` as an alpha mask: opaque where the artwork shows through, transparent

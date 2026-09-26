@@ -248,6 +248,28 @@ struct WMPRenderer: @unchecked Sendable {
             wasRenderedOnMainThread: Thread.isMainThread)
     }
 
+    /// A finished one-shot animation whose last frame is the still artwork of an earlier, visible
+    /// command at exactly the same frame. Only reached once an animation has finished, and the
+    /// pixel comparison is cached by the store, so a settled scene pays a lookup per draw.
+    private func landsOnStillBeneath(_ command: WMPPaintCommand, _ specification: WMPSceneImage,
+                                     animation: WMPImageAnimation, in scene: WMPScene) -> Bool {
+        guard specification.sourceRect == nil, !specification.tiled else { return false }
+        for beneath in scene.commands {
+            if beneath == command { return false }
+            // Drawn exactly as the animation would be — as opaque, and cut by the same clips —
+            // or dropping the animation changes what shows even where the art matches.
+            guard beneath.alpha >= command.alpha, beneath.frame == command.frame,
+                  beneath.clipRect == command.clipRect,
+                  beneath.inheritedClipMasks == command.inheritedClipMasks,
+                  case let .image(still) = beneath.paint, still.sourceRect == nil, !still.tiled,
+                  (try? imageStore.animation(for: still.resourcePath)) ?? nil == nil
+            else { continue }
+            if imageStore.finalFrame(of: specification, landsOn: still,
+                                     frameCount: animation.frameCount) { return true }
+        }
+        return false
+    }
+
     /// One layer of the scene, on its own transparent canvas.
     private func rasterize(_ commands: [WMPPaintCommand], scene: WMPScene,
                            pixelWidth: Int, pixelHeight: Int, backingScale: CGFloat,
@@ -338,6 +360,12 @@ struct WMPRenderer: @unchecked Sendable {
                 // A finished terminator animation has nothing left to draw, and holding its last
                 // frame buries whatever it was drawn over — see `WMPGIFTerminator`.
                 if animation?.isCleared(at: slotClock) == true { context.restoreGState(); continue }
+                // So has one that has come to rest on the still beneath it (`WMPGIFTerminator`
+                // § *landing*): holding it adds nothing but a lid over what lies between the two.
+                if let animation, animation.hasFinished(at: slotClock),
+                   landsOnStillBeneath(command, specification, animation: animation, in: scene) {
+                    context.restoreGState(); continue
+                }
                 let frame = animation?.frameIndex(at: slotClock) ?? 0
                 let decoded = try imageStore.image(for: specification.resourcePath,
                                                    colorKeys: specification.colorKeys,

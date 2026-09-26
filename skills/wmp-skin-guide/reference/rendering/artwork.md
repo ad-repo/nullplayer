@@ -131,6 +131,30 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   of this**: it draws at clock 0, before any animation has finished, so a clean sweep here proves
   only that nothing else moved — the measurement is the live window.
 
+- **A one-shot animation that comes to rest on the still beneath it also ends showing nothing
+  (landing).** `QuickSilver` (both releases) opens its shutter with a 30-frame `Shutter.gif` on a
+  `zIndex="5"` button, ending on the same blue plate as `Shutterbg.gif`, the static button at
+  `zIndex="1"` in the identical 300x56 rect. Between them sit the `zIndex="3"` `Meta` readout
+  (status, artist - title, elapsed) and the closing `Shutter-rev.gif`, and nothing in the script
+  ever hides the opening shutter. So holding its last frame showed the skin with no track info and
+  a close button that animated invisibly. The GIF has no terminator, and **its disposal flags cannot
+  tell it apart**: it switches to *restore to background* only on its last frame, exactly as
+  `BlueCrush`'s hover pulses do, and those must hold. The art tells it apart:
+  `WMPImageStore.finalFrame(of:landsOn:frameCount:)` compares the final frame against an earlier
+  command with the same frame, clip, clip masks and at least the same alpha. It needs identical
+  coverage and a mean channel difference of at most 4/255. The two QuickSilver GIFs are quantized
+  separately (1.6 mean, single pixels 29 apart), so an exact match finds nothing.
+
+  **Blast radius, measured 2026-09-26 over 180 archives.** Pairing every one-shot GIF's last frame
+  with every same-size still in its archive gives **~130 candidate pairs in 30 skins**, almost all
+  hover/down faces that settle back to the normal face (`The Unit`, `TripleX`, the Xbox family,
+  `deepbluesomething`, `Stars and Stripes` and the `US …` family). The rule acts only where the
+  still is *drawn beneath* in the same rect, and dropping a frame that matches what is beneath is
+  invisible unless something sits between the two layers. A corpus render sweep with
+  `WMP_RENDER_CLOCK=120` (past every one-shot end, unlike the default clock 0) fires it on **one of
+  599 views**, `QuickSilver/mainView`'s `shutterbut`. Scripted, hover and click states are not in
+  that sweep. `WMPGIFTerminatorTests` pins both the landing and the mismatched-art guard.
+
 - **A GIF with no global colour table has no canvas outside its frames (W201).** `pharaoh`'s
   `pyrevolver.gif` is a 140x128 logical screen whose 16 frames are 21x16 blocks at 0,0. With no
   global colour table the rest of the screen is undefined, ImageIO decodes it as opaque black, and

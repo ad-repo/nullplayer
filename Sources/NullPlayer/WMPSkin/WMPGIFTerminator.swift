@@ -31,6 +31,19 @@ import Foundation
 ///
 /// Only the **renderer** consults this. Hit testing and coverage still read the sprite, so a
 /// cleared animation does not change which control a click reaches.
+///
+/// **Landing: a one-shot animation that comes to rest on the still beneath it also ends showing
+/// nothing.** `QuickSilver` (both releases) opens its shutter with a 30-frame `Shutter.gif` on a
+/// `zIndex="5"` button, and that animation ends on the same blue plate as `Shutterbg.gif`, the
+/// static button at `zIndex="1"` in the identical 300x56 rect. Between them sit the `zIndex="3"`
+/// `Meta` readout (status, artist - title, elapsed time) and the closing `Shutter-rev.gif`. Nothing
+/// in the script ever hides the opening shutter, so holding its last frame hid all of it, and
+/// Microsoft's skin showed no track information. The GIF carries no terminator, and its disposal
+/// flags cannot tell it apart: `BlueCrush`'s hover pulses switch to *restore to background* on
+/// the last frame exactly as it does, and must stay. What does tell it apart is the art, so
+/// `WMPImageStore.finalFrame(of:landsOn:frameCount:)` compares the final frame against an earlier
+/// visible still at the same frame. Holding a frame that matches the art already there changes
+/// nothing, except to cover whatever the skin put in between.
 enum WMPGIFTerminator {
 
     /// The most pixels a final image block may cover and still be a terminator rather than artwork.
