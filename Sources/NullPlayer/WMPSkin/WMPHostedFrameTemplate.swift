@@ -145,6 +145,16 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     /// `WMP_OPEN_SIDE=0` slices it anyway — the A/B switch for that rule.
     static let refusesOpenSide: Bool = ProcessInfo.processInfo.environment["WMP_OPEN_SIDE"] != "0"
 
+    /// Archives whose frame no rule derives correctly, so they lend none and every hosted window
+    /// takes palette chrome. `Ocean`'s playlist drawer bitmap carries the player's aquarium panel
+    /// beside the list, and `Plus! Pulsar`'s `plView` ring comes out ~40% bare on every side. No
+    /// markup or `gaps=` signature separates them from skins that frame correctly — a bare-edge
+    /// threshold also takes `deepbluesomething`, `The_Last_Samurai` and `KungFuChaos` — so they are
+    /// named. `WMP_FRAME_DENYLIST=0` derives them anyway — the A/B switch.
+    static let lendsNoFrame: Set<String> = ["ocean", "plus! pulsar"]
+    static let obeysFrameDenylist: Bool =
+        ProcessInfo.processInfo.environment["WMP_FRAME_DENYLIST"] != "0"
+
     // MARK: - Derivation
 
     /// The eight places a ring piece can be anchored. A piece is classified by its *alignment*
@@ -188,6 +198,10 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     /// spectrum window is the least interesting answer — but a skin whose *only* ring is there
     /// (`NVIDIA`, `WALL-E`) still has one, and one is better than none.
     static func derive(from skin: WMPLoadedSkin, playerViewID: String?) -> WMPHostedFrameTemplate? {
+        if obeysFrameDenylist,
+           lendsNoFrame.contains(skin.archive.sourceURL.deletingPathExtension().lastPathComponent.lowercased()) {
+            return nil
+        }
         var best: (template: WMPHostedFrameTemplate, score: Int, hostsList: Bool, hostsVideo: Bool)?
         for registration in skin.views {
             guard let candidate = template(for: registration) else { continue }

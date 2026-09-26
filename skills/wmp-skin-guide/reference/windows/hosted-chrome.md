@@ -102,6 +102,14 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   invented, and the reporter accepted the fallback. The top is only checked while `closingOpenTop`
   is on, so `WMP_OPEN_TOP=0` stays its own A/B; `WMP_OPEN_SIDE=0` is this rule's. Corpus on
   2026-09-26 (180 archives, 550x464, scale 1 and 2): **one line moves, `Compact`'s**.
+- **Two archives lend no frame by name (2026-09-26): `Ocean` and `Plus! Pulsar`**
+  (`WMPHostedFrameTemplate.lendsNoFrame`). `Ocean`'s `background_pl.bmp` carries the player's
+  aquarium panel beside the list, so the sliced panel put that picture into every hosted window.
+  `Pulsar`'s `plView` ring came out 0.33–0.41 bare on every side. No rule separates them: a
+  bare-edge threshold that takes Pulsar also takes `deepbluesomething`, `The_Last_Samurai` and
+  `KungFuChaos`. So they are named, the reporter accepted the palette fallback, and
+  `WMP_FRAME_DENYLIST=0` is the A/B. Corpus at 550x464, scale 2: those two lines move and nothing
+  else. A skin added here should have failed the same search for a rule first.
 - **How the window and the border share the space: the window is grown (W207, closed 2026-09-16).**
   **The interior keeps its size and the border is added around it** — `HostedWindowBorderLayout`,
   one central rule for the nine registered growth participants listed in `windows/hosting.md`, driven off
