@@ -62,6 +62,13 @@ W116. Budget for that shape whenever a row turns a class of nodes from unresolve
 - **The presets do nothing, and that is not this engine.** A preset reaches `stop` and then the
   skin's own handler, which dies on `player.url` — the stations are cablemusic.com streams from
   2000 that no longer exist.
+- **The blue box after a preset is the skin's own ad frame, not a render defect** (reported
+  2026-09-26, left as is). `PlayThis()` sets `m_currProgram` before its `player.url` write dies
+  (unimplemented; the URL now 404s), so the paused track stays loaded. Resume an `http` track — a
+  Subsonic/Plex stream — and `GenericProgramInfoBig()` takes it for a station and calls
+  `setBannerUrl()`, which shows `adBorder`: solid blue 472x64 at `0,0`. A local file clears it.
+  Implementing `player.url` would not remove it: re-opening a server track after a preset hits the
+  same branch, as it would in WMP.
 
 ## How to drive it
 
