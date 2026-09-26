@@ -100,6 +100,19 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   `scrolling="false"` clips, and the renderer and `animationCadence` still run a marquee only when
   the measured text overflows its box, so a readout that fits stays still. A short-title playing
   sweep moved no skin; `modernblue`'s artist and title were the report.
+- **An unsized `<TEXT>` is bounded by the surface it is drawn on — also a departure (2026-09-26).**
+  WMP sizes a `<TEXT>` with no `width` to its glyphs, so the marquee above never engages: the box
+  always fits. `anime` hangs its `wmpprop:player.currentmedia.name` title at `left="400"` with no
+  width, and a real track name ran off the screen, over the bezel and out of the window. The
+  builder now caps such a text at the right edge of the **smallest drawn sibling `<SUBVIEW>` under
+  its origin**, and — when a sibling's artwork is transparent at the origin (the text starts in a
+  keyed hole) — at the first opaque pixel of that hole across the text's own rows. The second half
+  is not optional: `anime`'s screen is the `#00FF00` hole in the bezel drawn over the panel, and at
+  the title's rows the rounded corner comes in 16 px short of the panel edge, so the panel bound
+  alone left the last glyphs on the grey rim. A value that fits is untouched. **Reach, measured
+  with `WMP_RENDER_HOST` seeding a long title/artist/album over the 185 installed archives: one
+  node, `anime`'s `metadataTitle`** — a stopped-player sweep cannot see it at all.
+  `WMPTextIntrinsicSizeTests.testAnUnsizedTextStopsAtTheEdgeOfTheHoleItStartsIn` pins it.
 - **`<TRACKNAMETEXT>` is a `TEXT`.** `modernblue` is its one use (1 of 179) and authors its own
   `value`, so it needs no host default; as `.unknown` the title never drew.
 

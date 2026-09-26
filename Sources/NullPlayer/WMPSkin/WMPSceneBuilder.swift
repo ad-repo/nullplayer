@@ -290,6 +290,9 @@ struct WMPSceneBuilder: @unchecked Sendable {
             commands.append(command.inside(clipMaskStack))
         }
         var geometries: [Int: WMPResolvedGeometry] = [:]
+        /// Local frames of the drawn `<SUBVIEW>`s already walked under each parent, in paint order —
+        /// the surfaces a later sibling sits on. Read only to bound an unsized `<TEXT>`.
+        var drawnSurfaces: [Int: [(frame: WMPRect, stableID: Int)]] = [:]
         var unresolved: [WMPUnresolvedGeometry] = []
         var unresolvedNodes = Set<Int>()
         var unresolvedAttributes = Set<String>()
@@ -1046,7 +1049,52 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 if isText(node.kind), width == nil || height == nil,
                    let glyphs = intrinsicTextSize(node, literal: literalNumber,
                                                   literalString: literalString) {
-                    if !statesDimension(node, "width"), width == nil { width = glyphs.width }
+                    if !statesDimension(node, "width"), width == nil {
+                        width = glyphs.width
+                        // **An unsized `<TEXT>` is bounded by the surface it is drawn on.** WMP
+                        // sizes it to its glyphs and lets a long value run on; `anime` hangs its
+                        // `wmpprop:player.currentmedia.name` title at `left="400"` on the 350-wide
+                        // screen that starts at 358, and a real track name ran off the screen,
+                        // over the bezel and out of the window. Capped at the right edge of the
+                        // smallest drawn sibling under its origin, the value overflows its box and
+                        // the unauthored-`scrolling` marquee takes it. A value that fits is untouched.
+                        // **A keyed sibling whose hole the text starts in bounds it at the hole.**
+                        // The screen in `anime` is the `#00FF00` hole in the bezel subview drawn over
+                        // that panel, and at the title's rows the bezel's rounded corner comes in
+                        // 16 px short of the panel edge — the last glyphs sat on the grey rim.
+                        if let left, let top, let parentNode,
+                           let surfaces = drawnSurfaces[parentNode.stableID]?
+                               .filter({ $0.frame.x <= left && left < $0.frame.x + $0.frame.width
+                                         && $0.frame.y <= top && top < $0.frame.y + $0.frame.height }),
+                           let smallest = surfaces.min(by: {
+                               $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) {
+                            var bound = smallest.frame.x + smallest.frame.width - left
+                            for surface in surfaces {
+                                guard let image = commands.last(where: { $0.stableID == surface.stableID })
+                                        .flatMap({ command -> WMPSceneImage? in
+                                            if case .image(let image) = command.paint { return image }
+                                            return nil
+                                        }),
+                                      let plane = alphaPlane(for: image),
+                                      surface.frame.width > 0, surface.frame.height > 0 else { continue }
+                                let sx = CGFloat(plane.width) / surface.frame.width
+                                let sy = CGFloat(plane.height) / surface.frame.height
+                                let x0 = Int(((left - surface.frame.x) * sx).rounded(.down))
+                                let rows = Int(((top - surface.frame.y) * sy).rounded(.down))
+                                    ..< max(Int(((top - surface.frame.y) * sy).rounded(.down)) + 1,
+                                            Int(((top + glyphs.height - surface.frame.y) * sy).rounded(.up)))
+                                guard plane.alpha(atX: x0, y: rows.lowerBound) == 0 else { continue }
+                                var edge = plane.width
+                                for y in rows where y < plane.height {
+                                    var x = x0
+                                    while x < edge, plane.alpha(atX: x, y: y) == 0 { x += 1 }
+                                    edge = min(edge, x)
+                                }
+                                bound = min(bound, surface.frame.x + CGFloat(edge) / sx - left)
+                            }
+                            if glyphs.width > bound, bound > 0 { width = bound }
+                        }
+                    }
                     if !statesDimension(node, "height"), height == nil { height = glyphs.height }
                 }
                 if !statesDimension(node, "height"), height == nil,
@@ -1241,6 +1289,9 @@ struct WMPSceneBuilder: @unchecked Sendable {
                                 width: frame.width, height: frame.height)
             geometries[node.stableID] = WMPResolvedGeometry(localFrame: local,
                 absoluteFrame: frame, visibleFrame: visible, clipRect: inheritedClip)
+            if !hidden, node.kind == .subview, !frame.isEmpty, let parentNode {
+                drawnSurfaces[parentNode.stableID, default: []].append((local, node.stableID))
+            }
             // **A container collapsed to nothing clips its children away too.** `nil` is "no clip
             // at all" here, so a zero-area frame has to hand down a zero-area rect: `Classic` sets
             // `view.height = 359 - 183` for audio, its `stretch` video pane collapses to zero

@@ -153,4 +153,40 @@ final class WMPTextIntrinsicSizeTests: XCTestCase {
                        "4+0: an empty string is not a frame, and inventing one would move every "
                        + "readout the host has not filled in yet")
     }
+
+    /// **An unsized `<TEXT>` is bounded by the surface it is drawn on, and by the hole it starts in.**
+    /// `anime` hangs its title, with no `width`, on a panel seen through the `#00FF00` hole of the
+    /// bezel subview drawn over it. Sized by its glyphs a real track name ran over the bezel and out
+    /// of the window; bounded, it overflows its box and the unauthored-`scrolling` marquee takes it.
+    /// The hole ends 50 px short of the panel here, the way the bezel's rounded corner does there.
+    func testAnUnsizedTextStopsAtTheEdgeOfTheHoleItStartsIn() async throws {
+        let panel = try WMPSkinTestSupport.encodedImage(width: 200, height: 100,
+            rgba: (0..<(200 * 100)).flatMap { _ in [UInt8(0), 0, 0, 255] })
+        let bezel = try WMPSkinTestSupport.encodedImage(width: 300, height: 150,
+            rgba: (0..<(300 * 150)).flatMap { index -> [UInt8] in
+                let x = index % 300, y = index / 300
+                return (60..<200).contains(x) && (30..<120).contains(y)
+                    ? [0, 255, 0, 255] : [90, 90, 90, 255]
+            })
+        let skin = try await WMPSkinLoader().load(from: try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="400" height="200">
+                <SUBVIEW id="screen" zIndex="1" left="50" top="20" backgroundImage="panel.png"/>
+                <SUBVIEW id="bezel" zIndex="2" left="0" top="0" backgroundImage="bezel.png"
+                         transparencyColor="#00FF00"/>
+                <TEXT id="title" zIndex="3" left="80" top="40" fontSize="8"
+                      value="A title far too long for the screen it is drawn on, by a long way"/>
+                <TEXT id="short" zIndex="3" left="80" top="60" fontSize="8" value="Fits"/>
+            </VIEW></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("panel.png", data: panel),
+            WMPTestArchiveEntry("bezel.png", data: bezel),
+        ]))
+        let scene = try await build(skin, WMPSize(width: 400, height: 200), .empty)
+
+        XCTAssertEqual(try frame("title", in: scene).width, 120,
+                       "200-80: the bezel's hole ends at 200, before the panel's own edge at 250")
+        XCTAssertLessThan(try frame("short", in: scene).width, 120,
+                          "a value that fits keeps the width of its own glyphs")
+    }
 }
