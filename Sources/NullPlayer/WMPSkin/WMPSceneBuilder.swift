@@ -526,11 +526,17 @@ struct WMPSceneBuilder: @unchecked Sendable {
         /// Measured 2026-09-24 over 179 archives: 14 subview/sibling ties overlap, and apart from
         /// HueShifter they are hosted widgets (which sit above the scene regardless) or `TDK` and
         /// `portals`' `content_image`, which is hidden until the script pages to it.
+        ///
+        /// **Not against an `<EFFECTS>`, which keeps document order.** `anemone`
+        /// parks `<subview id="blback" zIndex="-1">` — the black lens — *before* its
+        /// `<effects zindex="-1">`; lifting the subview put the lens in the overlay over the
+        /// spectrum and took it out of the backdrop lookup that shapes the surface (W205).
         func paintOrder(_ lhs: WMPNode, _ rhs: WMPNode) -> Bool {
             let leftZ = zIndex(of: lhs), rightZ = zIndex(of: rhs)
             guard leftZ == rightZ else { return leftZ < rightZ }
             let leftSubview = lhs.kind == .subview, rightSubview = rhs.kind == .subview
-            guard leftSubview == rightSubview else { return rightSubview }
+            guard leftSubview == rightSubview || lhs.kind == .effects || rhs.kind == .effects
+            else { return rightSubview }
             return lhs.stableID < rhs.stableID
         }
 
