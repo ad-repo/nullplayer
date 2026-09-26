@@ -41,6 +41,10 @@ final class WMPLoadedSkin {
     let compatibilityReport: WMPCompatibilityReport
     let deterministicGraphDump: String
     let wasLoadedOnMainThread: Bool
+    /// Lowercased ids the skin's own code ever writes a non-`false` `visible` to, in its scripts
+    /// or in a markup handler. Read by `WMPSceneBuilder` to tell a pane the skin opens from a
+    /// container it never does.
+    let scriptShowableIDs: Set<String>
 
     init(archive: WMPArchive, definitionPath: String, definitionSource: String,
          textEncoding: WMPTextEncoding,
@@ -63,6 +67,27 @@ final class WMPLoadedSkin {
             scripts: scripts, diagnostics: diagnostics, scriptSources: scriptSources)
         deterministicGraphDump = graph.dump()
         self.wasLoadedOnMainThread = wasLoadedOnMainThread
+        scriptShowableIDs = Self.scriptShowableIDs(in: Array(scriptSources.values) + [definitionSource])
+    }
+
+    /// `<id>.visible = <rhs>` with any right-hand side but a literal `false`/`0`. A computed one
+    /// (`x.visible = !x.visible`, `= flag`) can show the node, so it counts.
+    private static func scriptShowableIDs(in sources: [String]) -> Set<String> {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"\b([A-Za-z_]\w*)\s*\.\s*visible\s*=(?!=)\s*([^;\r\n"]*)"#,
+            options: [.caseInsensitive]) else { return [] }
+        var ids = Set<String>()
+        for source in sources {
+            let range = NSRange(source.startIndex..., in: source)
+            for match in regex.matches(in: source, range: range) {
+                guard let id = Range(match.range(at: 1), in: source),
+                      let rhs = Range(match.range(at: 2), in: source) else { continue }
+                let value = source[rhs].trimmingCharacters(in: .whitespaces).lowercased()
+                if value == "false" || value == "0" { continue }
+                ids.insert(source[id].lowercased())
+            }
+        }
+        return ids
     }
 }
 

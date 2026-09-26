@@ -17,6 +17,10 @@ enum WMPElementKind: Hashable, CustomStringConvertible {
         case "view": self = .view
         case "subview": self = .subview
         case "text": self = .text
+        // `modernblue` is the corpus's one `<TRACKNAMETEXT>` (1 of 179) and authors its own
+        // `value="wmpprop:player.currentmedia.name"`, so it is a `TEXT` with nothing to default;
+        // as `.unknown` it was dropped and only the artist line drew under the track.
+        case "tracknametext": self = .text
         // WMP's readout tags are TEXT controls with a host-supplied value.  Treating these
         // spellings as unknown left a skin's status and elapsed-time cells absent, even though the
         // adjacent ordinary TEXT metadata cell rendered correctly. **A readout with no host value

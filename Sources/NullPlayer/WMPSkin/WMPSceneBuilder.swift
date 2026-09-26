@@ -369,11 +369,25 @@ struct WMPSceneBuilder: @unchecked Sendable {
         /// Read as escapes, both stayed on the face after Info closed. `help`/`credits` (never
         /// shown by any script) and `Charlies_Angels`' `pos` (authored visible) are not toggles
         /// by this rule and still pass their shown children through.
+        ///
+        /// **…nor out of one the skin opens and has not opened yet.** `modernblue` nests its
+        /// small player in `smallplayer`, authored hidden and shown only by `switchToSmall()`, and
+        /// `onPlayStateChange` shows `smpauseb` inside it on every play; read as an escape, the
+        /// small pause button drew over the large player's display. What separates it from
+        /// `help` is that the skin's code can show `smallplayer` at all
+        /// (`WMPLoadedSkin.scriptShowableIDs`).
         func closesSubtree(_ node: WMPNode) -> Bool {
             let address = WMPScenePropertyAddress(stableID: node.stableID, property: "visible")
-            return overrides.scriptShown.contains(node.stableID)
-                && overrides.properties[address]?.truth == false
-                && self.literalString(node, "visible")?.caseInsensitiveCompare("false") == .orderedSame
+            if overrides.scriptShown.contains(node.stableID) {
+                return overrides.properties[address]?.truth == false
+                    && self.literalString(node, "visible")?.caseInsensitiveCompare("false") == .orderedSame
+            }
+            guard overrides.properties[address]?.truth != true,
+                  let attribute = node.attribute(named: "visible"),
+                  case let .literal(authored) = attribute.value,
+                  authored.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("false") == .orderedSame,
+                  let id = node.xmlID?.lowercased() else { return false }
+            return loadedSkin.scriptShowableIDs.contains(id)
         }
         /// **…and never out of a pane closed *after* it was shown (W311).** `Navigator`'s
         /// `movescren()` shows `vis` inside `visual`, an authored-visible pane, and `showconf()`/
@@ -1854,8 +1868,12 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     smoothed: literalString(node, "fontSmoothing")?.caseInsensitiveCompare("false") != .orderedSame,
                     color: mirroredColor(of: node, names: textColorNames)
                         ?? WMPColor(red: 255, green: 255, blue: 255), alignment: alignment,
-                    scrolling: literalString(node, "scrolling")?.caseInsensitiveCompare("true")
-                        == .orderedSame,
+                    // **A departure from WMP, by request:** WMP's default is `false` and clips an
+                    // overflowing readout (`modernblue`'s artist and title). Here an unauthored
+                    // `scrolling` scrolls; the renderer only runs a marquee when the text overflows,
+                    // and a skin that authors or scripts `false` still gets the clip.
+                    scrolling: literalString(node, "scrolling")?.caseInsensitiveCompare("false")
+                        != .orderedSame,
                     scrollDelayMilliseconds: Double(literalNumber(node, "scrollingDelay") ?? 100),
                     scrollAmount: max(1, literalNumber(node, "scrollingAmount") ?? 1))
                 emit(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,

@@ -95,6 +95,14 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   default is `right` for these two tags, so a missing `left` case drew `pharaoh`'s
   `justification="Left"` duration flush right, 30 px clear of its `/` (W203).
 
+- **An unauthored `scrolling` scrolls — a deliberate departure from WMP.** WMP defaults it to
+  `false` and clips an overflowing readout; by the user's request here only an authored or scripted
+  `scrolling="false"` clips, and the renderer and `animationCadence` still run a marquee only when
+  the measured text overflows its box, so a readout that fits stays still. A short-title playing
+  sweep moved no skin; `modernblue`'s artist and title were the report.
+- **`<TRACKNAMETEXT>` is a `TEXT`.** `modernblue` is its one use (1 of 179) and authors its own
+  `value`, so it needs no host default; as `.unknown` the title never drew.
+
 - **A `<TEXT>` is a box, the clip is horizontal, and `scrolling` is what a skin turns on when the
   value overflows it (W94).** Drawing text unclipped let `WoW`'s 77x30 `metadata` readout paint
   "- AC/DC - Shoot to Thrill / Playing" straight across the player's buttons. Three things had to
