@@ -74,7 +74,11 @@ struct WMPScriptViewPlan: Sendable {
         var colorAssignments: [String] = []
         for node in skin.graph.allNodes where included.contains(node.stableID) {
             let id = node === view ? "view" : (node.xmlID ?? "node\(node.stableID)")
-            ids[WMPPath.fold(id)] = node.stableID
+            // First declaration wins, the rule `WMPObjectModel.resetElements` applies to the element
+            // a script resolves. Last-wins here split a duplicated id in two: `The_Sentinel`'s
+            // `eq1.moveTo` read the EQ drawer panel and its write landed on the band slider that
+            // reuses the id, so the drawer never opened and the sliders stayed buried beneath it.
+            if ids[WMPPath.fold(id)] == nil { ids[WMPPath.fold(id)] = node.stableID }
             var properties: [String: WMPJSONValue] = [:]
             var authored = Set<String>()
             for attribute in node.attributes {
@@ -524,7 +528,7 @@ final class WMPScriptContext: @unchecked Sendable {
             let key = WMPPath.fold(viewID)
             let stashed = key == installedViewID ? nil : viewRegistries[key]?.element(stableID: stableID)
             guard let element = stashed
-                    ?? model.elements.values.first(where: { $0.stableID == stableID })
+                    ?? model.element(stableID: stableID)
             else { return }
             element.properties["selecteditem"] = .number(Double(index))
         }
@@ -532,7 +536,7 @@ final class WMPScriptContext: @unchecked Sendable {
 
     func setElementValue(stableID: Int, value: Double) {
         queue.sync {
-            guard let element = model.elements.values.first(where: { $0.stableID == stableID })
+            guard let element = model.element(stableID: stableID)
             else { return }
             element.properties["value"] = .number(value)
         }
@@ -541,7 +545,7 @@ final class WMPScriptContext: @unchecked Sendable {
     /// A sticky button's latch, as the *pointer* left it. See `WMPScriptRuntime.setWidgetDown`.
     func setElementDown(stableID: Int, down: Bool) {
         queue.sync {
-            guard let element = model.elements.values.first(where: { $0.stableID == stableID })
+            guard let element = model.element(stableID: stableID)
             else { return }
             element.properties["down"] = .bool(down)
         }
@@ -552,7 +556,7 @@ final class WMPScriptContext: @unchecked Sendable {
     /// corpus edit boxes search on.
     func setElementText(stableID: Int, text: String) {
         queue.sync {
-            guard let element = model.elements.values.first(where: { $0.stableID == stableID })
+            guard let element = model.element(stableID: stableID)
             else { return }
             element.properties["value"] = .string(text)
         }
@@ -670,7 +674,7 @@ final class WMPScriptContext: @unchecked Sendable {
         // nothing at all. This is the same sync the geometry block above is, for the same reason —
         // the transaction's starting state is what the skin is currently drawn at.
         for (stableID, value) in boundValues {
-            guard let element = model.elements.values.first(where: { $0.stableID == stableID })
+            guard let element = model.element(stableID: stableID)
             else { continue }
             element.properties["value"] = value
         }
@@ -716,8 +720,11 @@ final class WMPScriptContext: @unchecked Sendable {
             // the handler's own scope below were keyed on nil: the handler ran, `value` resolved to
             // the undefined global, and `eq.gainLevel1 = value` wrote null — the band never moved
             // and the thumb settled straight back onto the host's unchanged gain.
-            let eventOwner = event.targetID.flatMap(model.element)
-                ?? event.targetStableID.flatMap(model.element(stableID:))
+            // The stable id is asked first because an id can name two nodes of one view, and the
+            // node that raised the event is the one the pointer was on: `The_Sentinel`'s band
+            // slider `eq1` otherwise bound the drawer panel's `value` and wrote 0 to the band.
+            let eventOwner = event.targetStableID.flatMap(model.element(stableID:))
+                ?? event.targetID.flatMap(model.element)
             var boundEventValue = false
             if let value = eventOwner?.properties["value"] {
                 context.setObject(Self.jsAny(value), forKeyedSubscript: "value" as NSString)
@@ -755,7 +762,7 @@ final class WMPScriptContext: @unchecked Sendable {
                 // handler, so one missing member costs many unrelated features — and the demand
                 // tally is what makes that visible. A session-wide kill switch made it invisible.
                 if let error = invokeHandler(source, label: "\(event.name)[\(index)]",
-                                             owner: eventOwner?.id) {
+                                             owner: eventOwner) {
                     result.diagnostics.append(.init(code: "handler-error",
                                                     message: "\(event.name)[\(index)]: \(error)"))
                 }
@@ -897,7 +904,7 @@ final class WMPScriptContext: @unchecked Sendable {
             context.setObject(Self.jsAny(value), forKeyedSubscript: "value" as NSString)
             defer { context.setObject(nil, forKeyedSubscript: "value" as NSString) }
             if let error = invokeHandler(source, label: "value_onchange",
-                                         owner: ownerID(forStableID: stableID)) {
+                                         owner: ownerElement(forStableID: stableID)) {
                 result.diagnostics.append(.init(code: "handler-error",
                                                 message: "value_onchange: \(error)"))
             }
@@ -953,7 +960,7 @@ final class WMPScriptContext: @unchecked Sendable {
                                   forKeyedSubscript: handler.attribute as NSString)
                 defer { context.setObject(nil, forKeyedSubscript: handler.attribute as NSString) }
                 if let error = invokeHandler(handler.source, label: "\(property)_onchange",
-                                             owner: mutation.targetID) {
+                                             owner: model.element(mutation.targetID)) {
                     result.diagnostics.append(.init(code: "handler-error",
                                                     message: "\(property)_onchange: \(error)"))
                 }
@@ -992,7 +999,7 @@ final class WMPScriptContext: @unchecked Sendable {
                 guard fired.insert(token).inserted else { continue }
                 raised = true
                 if let error = invokeHandler(source, label: "on\(completion.event)",
-                                             owner: ownerID(forStableID: completion.stableID)) {
+                                             owner: ownerElement(forStableID: completion.stableID)) {
                     result.diagnostics.append(.init(code: "handler-error",
                                                     message: "on\(completion.event): \(error)"))
                 }
@@ -1114,7 +1121,8 @@ final class WMPScriptContext: @unchecked Sendable {
     ///
     /// The `value` and `<attribute>` globals the call sites bind stay: they are bound for the
     /// element that *raised* the event, which is not always the one the handler is written on.
-    private func invokeHandler(_ source: String, label: String, owner: String? = nil) -> String? {
+    private func invokeHandler(_ source: String, label: String,
+                               owner: WMPScriptElement? = nil) -> String? {
         // The handler boundary is where a tween's endpoint lands: WMP is animating for the
         // duration the call named, so the rest of *this* handler must still read the element where
         // it was. See `WMPObjectModel.tween(_:_:_:duration:)`.
@@ -1126,18 +1134,18 @@ final class WMPScriptContext: @unchecked Sendable {
             function.call(withArguments: [])
             return lastException
         }
-        guard let owner, model.element(owner) != nil else { return evaluate(source, label: label) }
+        guard let owner else { return evaluate(source, label: label) }
         // Not wrapped in a function: a handler's `var` is the skin's global, and the corpus holds
         // its state in exactly those — `corona`'s `g_playlistIsVisible` is declared in one handler
         // and read by every other. A `with` block keeps them where they were.
-        let scope = "with (__wmpWrap('element:\(WMPPath.fold(owner))')) {\n\(source)\n}"
+        let scope = "with (__wmpWrap('element:\(model.receiverKey(for: owner))')) {\n\(source)\n}"
         return evaluate(scope, label: label)
     }
 
     /// The element a stable id names, as `invokeHandler`'s owner. The cascades below key their
     /// handlers by stable id because an element's *identifier* is not unique across views (W89).
-    private func ownerID(forStableID stableID: Int) -> String? {
-        model.elements.values.first(where: { $0.stableID == stableID })?.id
+    private func ownerElement(forStableID stableID: Int) -> WMPScriptElement? {
+        model.element(stableID: stableID)
     }
 
     /// **A skin calls its own function in the wrong case, and the handler dies on that statement.**

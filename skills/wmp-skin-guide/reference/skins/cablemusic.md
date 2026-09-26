@@ -23,7 +23,7 @@ very little; `Init()` positions the readouts and both 17-row station lists by ha
 | Six `<BUTTONGROUP>`s with **no normal `image`** | presets, stop, close/minimize/effect/shrink, bandwidth, and one tab per drawer — every one is `mappingImage` + `hoverImage` + `downImage` and nothing else |
 | A compact mode built from `view.width`/`view.height` | `SwitchSmall()` writes 475x373, hides `mainPlayer`, shows `smallPlayer`; `SwitchBig()` reverses it |
 | Reading a position back after moving it | `onClick="PlayListMove();HidePlist();"` — the second call reads `subPlayList.left` to decide what the first one just did |
-| Duplicate authored ids | Eight `<TEXT>` ids are declared **twice**. The second wins and the first is never written |
+| Duplicate authored ids | Eight `<TEXT>` ids are declared **twice**, as byte-identical top-level pairs. The first wins the name and the second is never written — see `../object-model/elements.md` § *An id declared twice in one view* |
 | A duplicate `mappingColor` | `bnpb6` and `bnpb7` are both `#00C0FF` — one preset too many for the eight regions in `map.gif` |
 | No geometry expressions at all | Zero `JScript:` attributes, which is why it was the case that killed the expression-cascade theory (W68) |
 
@@ -56,9 +56,10 @@ W116. Budget for that shape whenever a row turns a class of nodes from unresolve
 - **AppKit and compositing.** Every defect here was scene-side or app-path. No overlay ever painted
   outside its own widget frame on this skin.
 - **Missing artwork.** `BITMAPS mainview: resolved=21 missing=` — it has never been missing a file.
-- **The remaining 8 unresolved nodes are not a defect.** They are the first of the eight
-  duplicate-id `<TEXT>` pairs; the second declaration wins the id and the first is never written,
-  which is WMP's own outcome. Do not chase the count to zero.
+- **The remaining 8 unresolved nodes are not a defect.** They are the second of each of the eight
+  duplicate-id `<TEXT>` pairs; the first declaration wins the id and the second is never written
+  (last-wins until 2026-09-26, which drew the same pixels because the pair is identical). Do not
+  chase the count to zero.
 - **The presets do nothing, and that is not this engine.** A preset reaches `stop` and then the
   skin's own handler, which dies on `player.url` — the stations are cablemusic.com streams from
   2000 that no longer exist.

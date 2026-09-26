@@ -124,13 +124,18 @@ final class WMPObjectModel {
     /// `event.clientX`/`event.clientY`. Nil where no window could be asked.
     var eventPointer: WMPPoint?
     /// The element that raised this transaction's event, answered as `event.srcElement`. Both
-    /// addresses are carried and resolved in that order for the same reason
-    /// `WMPScriptContext`'s `eventOwner` does: the markup's own id where it authored one, and the
-    /// stable id where it did not, because an identifier is not unique across views (W89).
+    /// addresses are carried and resolved stable id first, for the same reason `WMPScriptContext`'s
+    /// `eventOwner` is: an identifier is unique neither across views (W89) nor, in a malformed
+    /// skin, within one — and the id where the stable id names no element installed here.
     var eventTargetID: String?
     var eventTargetStableID: Int?
     var elements: [String: WMPScriptElement] = [:]
     private var elementOrder: [String] = []
+    /// Elements whose id an earlier node of the view already holds, by stable id. A script name
+    /// reaches only the first declaration, but the host still addresses the later one by its node:
+    /// `The_Sentinel` declares its EQ drawer panels `eq1`…`eq3` and then band sliders under the same
+    /// ids, and a slider dropped from the registry had no element for its drag to write `value` to.
+    private var shadowedElements: [Int: WMPScriptElement] = [:]
     /// The preset the skin last selected. WMP tracks one; the engine has no notion of a current
     /// preset, so it is session state and every selection is applied as ten band commands.
     var currentPresetIndex = 0
@@ -300,9 +305,13 @@ final class WMPObjectModel {
     func resetElements(_ elements: [WMPScriptElement]) {
         self.elements = [:]
         elementOrder = []
+        shadowedElements = [:]
         for element in elements {
             let key = WMPPath.fold(element.id)
-            guard self.elements[key] == nil else { continue }
+            guard self.elements[key] == nil else {
+                shadowedElements[element.stableID] = element
+                continue
+            }
             self.elements[key] = element
             elementOrder.append(key)
         }
@@ -320,17 +329,21 @@ final class WMPObjectModel {
     struct ElementRegistry {
         fileprivate let elements: [String: WMPScriptElement]
         fileprivate let order: [String]
+        fileprivate let shadowed: [Int: WMPScriptElement]
 
         func element(stableID: Int) -> WMPScriptElement? {
-            elements.values.first { $0.stableID == stableID }
+            shadowed[stableID] ?? elements.values.first { $0.stableID == stableID }
         }
     }
 
-    func captureElements() -> ElementRegistry { .init(elements: elements, order: elementOrder) }
+    func captureElements() -> ElementRegistry {
+        .init(elements: elements, order: elementOrder, shadowed: shadowedElements)
+    }
 
     func restoreElements(_ registry: ElementRegistry) {
         elements = registry.elements
         elementOrder = registry.order
+        shadowedElements = registry.shadowed
     }
 
     var elementIDs: [String] { elementOrder }
@@ -362,7 +375,20 @@ final class WMPObjectModel {
 
     /// The element a receiver address names: the installed view first, then any other live view.
     private func liveElement(_ key: String) -> WMPScriptElement? {
-        elements[key] ?? otherViewElements[key]
+        elements[key] ?? otherViewElements[key] ?? duplicateElement(key)
+    }
+
+    /// `#<stableID>`: the receiver key of an element whose id an earlier node of the view holds,
+    /// which is how a handler is scoped to the node that raised it. See `shadowedElements`.
+    private func duplicateElement(_ key: String) -> WMPScriptElement? {
+        guard key.hasPrefix("#"), let stableID = Int(key.dropFirst()) else { return nil }
+        return shadowedElements[stableID]
+    }
+
+    /// The receiver key that reaches exactly this element: its id, unless an earlier node of the
+    /// view holds the id, in which case its stable id.
+    func receiverKey(for element: WMPScriptElement) -> String {
+        shadowedElements[element.stableID] === element ? "#\(element.stableID)" : WMPPath.fold(element.id)
     }
 
     func element(_ id: String) -> WMPScriptElement? { elements[WMPPath.fold(id)] }
@@ -371,7 +397,7 @@ final class WMPObjectModel {
     /// markup authored no `id`, and an element's identifier is not unique across views (W89), so
     /// this is the address that always answers.
     func element(stableID: Int) -> WMPScriptElement? {
-        elements.values.first { $0.stableID == stableID }
+        shadowedElements[stableID] ?? elements.values.first { $0.stableID == stableID }
     }
 
     // MARK: Member access
@@ -423,7 +449,8 @@ final class WMPObjectModel {
     func recognises(_ path: String, _ member: String) -> Bool {
         let name = member.lowercased()
         if path.hasPrefix("element:") {
-            guard let element = elements[String(path.dropFirst("element:".count))] else { return false }
+            let key = String(path.dropFirst("element:".count))
+            guard let element = elements[key] ?? duplicateElement(key) else { return false }
             // Deliberately **not** the open property surface the read path answers with. Inside a
             // `with` scope this trap decides whether an identifier belongs to the element or to the
             // globals, and an element that claims every name swallows the skin's own functions:
@@ -1105,7 +1132,7 @@ final class WMPObjectModel {
         // Answered as the element object rather than as its id, because that is what WMP hands
         // back and `.id` is only the member the corpus happens to read first.
         case "srcelement":
-            let target = eventTargetID.flatMap(element) ?? eventTargetStableID.flatMap(element(stableID:))
+            let target = eventTargetStableID.flatMap(element(stableID:)) ?? eventTargetID.flatMap(element)
             guard let element = target, !element.id.isEmpty else {
                 // Absent is not a wrong element: outside an element-raised event, and for a node
                 // the markup left unnamed, there is nothing honest to hand back. The member still

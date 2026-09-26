@@ -13,6 +13,30 @@ and refusing `hoverFontStyle` on a `TEXT` would abort the handler that sets it, 
 the whole of `InitControls`. An unauthored, undrawn property is stored and answers `inert`, so the
 census can rank "properties skins set that nothing renders" instead of losing them.
 
+### An id declared twice in one view: the first declaration owns the name
+
+`WMP0028` is a warning, not a rejection, and **25 of 179 measured archives** (2026-09-26) repeat an
+id inside one view. A script name resolves to the **first** declaration, and every path that maps a
+name to a node must agree: `WMPObjectModel.resetElements` (what a read reaches) and
+`WMPScriptViewPlan.idToStableID` (where a write lands). They disagreed — reads first-wins, writes
+last-wins — and that split is the whole defect `The_Sentinel_v.1.0` was reported with (*"the eq is
+not working"*): its drawer panels are `eq1`…`eq3` and its first three band sliders reuse those ids,
+so `eq1.moveTo(…)` read the panel, moved the slider, and the drawer never opened over the ten bands.
+**Sentinel is also the evidence for first-wins**: the skin only works in WMP if the name reaches the
+panel.
+
+The later node is not lost; it is **shadowed**. `WMPObjectModel.shadowedElements` keeps it by stable
+id, and everything the *host* addresses — a drag's `value`, the `change` event's owner, the
+handler's `with` scope — goes by stable id first and by name second. The scope uses the receiver key
+`element:#<stableID>` (`WMPObjectModel.receiverKey(for:)`) for a shadowed element only. Without that,
+a Sentinel band handler bound the panel's absent `value` and wrote 0 dB on every drag; `MSN` (seven
+sliders all `id="eq2"`, bands 2–8) is the same shape.
+
+**A render sweep cannot see this class.** The change was byte-identical across the corpus because a
+dump draws load-time state and every consequence is in a click, a tween or a drag — and the one
+load-time case, `Cablemusic`'s eight duplicated `<TEXT>` pairs, is two identical nodes at one
+position. Measure it live, or with `WMPEqualizerSliderDragTests` § 5.
+
 ### The `<VIDEOSETTINGS>` element (W103)
 
 **94 uses across 94 of 177 archives**, one per skin, 93 of them in a view of their own — the

@@ -322,4 +322,55 @@ final class WMPEqualizerSliderDragTests: XCTestCase {
                            "eq1", "\(label): and the press reaches it")
         }
     }
+
+    // MARK: - 5: an id declared twice in one view
+
+    /// `The_Sentinel_v.1.0`'s shape: EQ drawer panels `eq1`…`eq3`, then band sliders reusing the
+    /// same ids. The skin's `eq1.moveTo(…)` opens the drawer, so a script name reaches the **first**
+    /// declaration — and a write must land on the node the read came from. Last-wins here sent the
+    /// drawer's move to the slider, the drawer never opened, and all ten bands stayed buried.
+    func testAScriptNameDeclaredTwiceWritesTheNodeItReads() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="100">
+            <SUBVIEW id="eq1" left="0" top="0" width="100" height="30"/>
+            <SLIDER id="eq1" direction="vertical" left="10" top="40" width="6" height="49"
+                    min="-14" max="14"/>
+        </VIEW></THEME>
+        """)
+        let panel = try XCTUnwrap(skin.graph.nodes(id: "eq1").first?.stableID)
+        XCTAssertEqual(WMPScriptViewPlan(skin: skin, viewID: "main").idToStableID["eq1"], panel)
+    }
+
+    /// The other half of the same skin: dragging the band that lost its name to the panel. The
+    /// handler must be handed the slider's value and scoped to the slider, not to the panel the id
+    /// resolves to — otherwise `eq.gainLevel1 = value` writes the panel's (absent) value, which is
+    /// the 0 dB that snapped Sentinel's first three bands back on every drag.
+    func testADuplicateNamedSlidersHandlerIsHandedItsOwnValue() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="100">
+            <EQUALIZERSETTINGS id="eq" enabled="true"/>
+            <SUBVIEW id="eq1" left="0" top="0" width="100" height="30"/>
+            <SLIDER id="eq1" direction="vertical" left="10" top="40" width="6" height="49"
+                    min="-14" max="14" value="wmpprop:eq.gainLevel1"
+                    value_onchange="eq.gainLevel1=value;"/>
+        </VIEW></THEME>
+        """)
+        let band = try XCTUnwrap(skin.graph.nodes(id: "eq1").last?.stableID)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+
+        _ = await runtime.transact(skin: skin, viewID: "main", size: .init(width: 100, height: 100),
+                                   snapshot: WMPHostSnapshot(), event: nil)
+        await runtime.holdElement(stableID: band)
+        await runtime.setWidgetValue(stableID: band, value: 9, viewID: "main")
+        let output = await runtime.transact(
+            skin: skin, viewID: "main", size: .init(width: 100, height: 100),
+            snapshot: WMPHostSnapshot(),
+            event: .init(name: "change", targetID: "eq1", targetStableID: band,
+                         handlers: ["eq.gainLevel1=value;"]))
+
+        XCTAssertEqual(output.hostCommands.map(\.action), ["setEQBand:0"])
+        XCTAssertEqual(output.hostCommands.first?.value, .number(9),
+                       "the slider the pointer is on, not the panel that holds its id")
+    }
 }
