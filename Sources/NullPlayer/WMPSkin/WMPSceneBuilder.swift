@@ -429,7 +429,28 @@ struct WMPSceneBuilder: @unchecked Sendable {
             if let value = overrides.properties[WMPScenePropertyAddress(stableID: node.stableID,
                                                                         property: name.lowercased())],
                let number = value.number, number.isFinite { return CGFloat(number) }
-            return literal(node, name)
+            return literal(node, name) ?? referencedNumber(node, name)
+        }
+
+        /// A `<attr>="jscript:<element>.<property>"` answered from that element's own number.
+        ///
+        /// The runtime evaluates `jscript:` for geometry only, so `Classic`'s metadata readouts —
+        /// `fontsize="jscript:clip_label.fontsize"` against a label's literal `9` — fell to the
+        /// 12pt default and drew three points larger than their labels, running into the pane's
+        /// right edge. The corpus authors this shape for nothing else. Bounded to one hop, like
+        /// `mirroredVisibility`.
+        func referencedNumber(_ node: WMPNode, _ name: String) -> CGFloat? {
+            guard let attribute = node.attribute(named: name),
+                  case let .jScript(source) = attribute.value else { return nil }
+            let parts = source.trimmingCharacters(in: CharacterSet(charactersIn: "; \t\r\n"))
+                .split(separator: ".")
+            guard parts.count == 2,
+                  let target = idToNode[String(parts[0]).lowercased()], target !== node,
+                  String(parts[1]).caseInsensitiveCompare(name) == .orderedSame else { return nil }
+            if let value = overrides.properties[WMPScenePropertyAddress(stableID: target.stableID,
+                                                                        property: name.lowercased())],
+               let number = value.number, number.isFinite { return CGFloat(number) }
+            return literal(target, name)
         }
 
         func literalString(_ node: WMPNode, _ name: String) -> String? {

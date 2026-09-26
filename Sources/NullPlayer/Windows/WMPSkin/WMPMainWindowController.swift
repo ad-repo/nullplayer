@@ -36,6 +36,8 @@ final class WMPSkinWindow: NSWindow {
     /// window's edge, forwarded to the view by hand because `super.sendEvent` would not have
     /// delivered it at all. See the `leftMouseDown` case below.
     private var isForwardingEdgePress = false
+    /// A press on the invisible close target is in flight (`WMPMainView.claimsCloseTarget`).
+    private var isPressingCloseTarget = false
 
     /// **The window edge is ours, and it has to be taken before AppKit takes it (W227).**
     ///
@@ -76,6 +78,17 @@ final class WMPSkinWindow: NSWindow {
         // A press is proof no earlier drag is still running; see `discardStaleResize`.
         if event.type == .leftMouseDown { view.discardStaleResize() }
         switch event.type {
+        // The invisible close (`WMPCloseControl`): pressed and released inside the corner, like a
+        // button, so a press that slides off it closes nothing.
+        case .leftMouseDown where view.claimsCloseTarget(at: event.locationInWindow):
+            isPressingCloseTarget = true
+            return
+        case .leftMouseDragged where isPressingCloseTarget:
+            return
+        case .leftMouseUp where isPressingCloseTarget:
+            isPressingCloseTarget = false
+            if view.claimsCloseTarget(at: event.locationInWindow) { view.onCloseTarget?() }
+            return
         case .leftMouseDown where view.claimsEdgeBandResize(at: event.locationInWindow):
             isResizingFromEdgeBand = view.beginEdgeBandResize(at: event.locationInWindow)
             if isResizingFromEdgeBand { return }
@@ -1077,6 +1090,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         view.resizeGrips = skin.views
             .first { $0.id.caseInsensitiveCompare(scene.viewID) == .orderedSame }
             .map { WMPResizeGrip.grips(in: $0.node, scriptSources: skin.scriptSources) } ?? []
+        // A skin that relied on WMP's title bar for its close gets an invisible one on the player.
+        view.closeTargetEnabled = presentation.isPlayer
+            && !WMPCloseControl.authorsClose(definitionSource: skin.definitionSource,
+                                             scriptSources: skin.scriptSources)
+        view.onCloseTarget = { [weak self, weak presentation] in
+            guard let self, let presentation else { return }
+            self.closeViewWindow(presentation)
+        }
         // The container shape a windowless `<EFFECTS>` is confined to. Decoded through the same
         // store the scene draws from, so it is cached alongside the artwork it comes from.
         view.regionMaskProvider = { [weak store] mask in

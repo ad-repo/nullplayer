@@ -177,6 +177,15 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     /// and the scene carries no script. Empty for the 97 corpus archives that author none, and for
     /// every one of them the edge band behaves exactly as it did before.
     var resizeGrips: [WMPResizeGrip.Grip] = []
+    /// **An invisible close in the top-right corner, for a skin that authors no close at all.**
+    /// Set by the controller from `WMPCloseControl`; see there for why such skins exist. Nothing is
+    /// drawn — the skin's artwork is untouched — and a control the skin draws in that corner keeps
+    /// the press.
+    var closeTargetEnabled = false
+    var onCloseTarget: (() -> Void)?
+    /// The target's side, in view points. It takes the corner from the edge band, whose top-right
+    /// diagonal is the one resize no corpus skin asks for.
+    private static let closeTargetSize: CGFloat = 16
     private var resizeStartFrame = NSRect.zero
     private var resizeStartMouse = NSPoint.zero
     private var widgetViews: [Int: NSView] = [:]
@@ -1271,6 +1280,18 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         let point = skinPoint(fromWindowPoint: windowPoint, sceneSize: scene.canvasSize)
         guard interactiveTarget(at: point) == nil, hitTester?.hitTest(point) == nil else { return false }
         return !edges(at: convert(windowPoint, from: nil)).isEmpty
+    }
+
+    /// Whether a press at this window point is the invisible close target's. Asked by
+    /// `WMPSkinWindow.sendEvent` ahead of the edge band.
+    func claimsCloseTarget(at windowPoint: NSPoint) -> Bool {
+        guard closeTargetEnabled, let scene, resizeEdges.isEmpty else { return false }
+        let local = convert(windowPoint, from: nil)
+        guard local.x >= bounds.maxX - Self.closeTargetSize, local.x <= bounds.maxX,
+              local.y >= bounds.minY, local.y <= bounds.minY + Self.closeTargetSize else { return false }
+        let point = skinPoint(fromWindowPoint: windowPoint, sceneSize: scene.canvasSize)
+        return interactiveTarget(at: point) == nil && hitTester?.hitTest(point) == nil
+            && hitTester?.isGreyedOutControl(at: point) != true
     }
 
     /// One step of a resize in flight, from either path.

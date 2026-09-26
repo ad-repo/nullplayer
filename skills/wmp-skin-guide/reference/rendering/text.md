@@ -58,6 +58,11 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   The object-model half is the same rule: `justification`, `fontFace`, `fontStyle` and `fontSize`
   are **rendered**, so a write to one has to commit as a mutation rather than be stored inert, and
   each was only reaching the scene when the markup happened to author the same attribute.
+  **A `jscript:<id>.<same property>` is read from that element too (2026-09-26).** The runtime
+  evaluates `jscript:` for geometry only, so `Classic`'s `fontsize="jscript:clip_label.fontsize"`
+  fell to the 12pt default beside its 9pt labels and ran its marquee into the pane's edge.
+  `referencedNumber` answers the one-hop shape from the target's override or literal; any other
+  expression still takes the default. `Classic` is the only archive that authors it.
 
 - **A `fontSize` is points at 96 dpi, not skin pixels (2026-09-25).** GDI draws 7 pt as 9.33 px, and
   the engine used the number as a CoreText pixel size, so every `<TEXT>` in the corpus drew at three
@@ -100,6 +105,9 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   `scrolling="false"` clips, and the renderer and `animationCadence` still run a marquee only when
   the measured text overflows its box, so a readout that fits stays still. A short-title playing
   sweep moved no skin; `modernblue`'s artist and title were the report.
+  A running marquee is clipped `marqueeTrailingPad` (4 px) short of its box's right edge — part of
+  the same departure: `Classic`'s readouts end exactly on the info pane's border, and text scrolling
+  out through it read as jammed against the frame (2026-09-26). A static readout is untouched.
 - **An unsized `<TEXT>` is bounded by the surface it is drawn on — also a departure (2026-09-26).**
   WMP sizes a `<TEXT>` with no `width` to its glyphs, so the marquee above never engages: the box
   always fits. `anime` hangs its `wmpprop:player.currentmedia.name` title at `left="400"` with no

@@ -44,6 +44,18 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   `hostedGroundRect` returns the gloss hole, not `bounds`: PeppyMeter (and Cava, Flow) paint their
   ground through it, and a full-window fill showed as square black corners outside the rounded rim. `.wal`
   shares every one of these painters and is unchanged — the gate is false there.
+- **A player the skin gives no close gets an invisible one (2026-09-26).** WMP drew a Windows title
+  bar around a view unless it wrote `titleBar="false"` (about 30 archives do), so a skin that
+  relied on that frame authors no close — `Classic` is a rectangle with a "Return to Full Mode"
+  toggle and nothing else, and here every `.wmz` window is borderless. The reporter rejected a macOS
+  title bar and asked for *"a buttonless target area"*: `WMPCloseControl.authorsClose` scans the
+  definition and every script for any close (`<id>.close(`, bare `close()`, `closeView(`,
+  `<closeButton>`; `player.close()` is not one) and, when there is none, the **player** view sets
+  `WMPMainView.closeTargetEnabled` — an undrawn 16x16 top-right corner, claimed in
+  `WMPSkinWindow.sendEvent` ahead of the edge band, that runs `closeViewWindow` on a press and
+  release inside it. A skin control in that corner keeps the press. The scan is skin-wide because a
+  close is often indirect (the Skins Factory preference relay). Of 185 installed archives it fires
+  on `Classic`, `Alpine7618_v09`, `Cubist`, `Stealth` and the excluded `Darkling`.
 - Borrowed rings use whole-donor rendering with subtraction; fixed panels use nine-slicing.
 - **A ring wears the colour the donor's own `onLoad` chose, not its markup's (W145).** `xsn_sports`
   stacks eight colours of its frame in `plView` and reveals one from `htcpStartupPl()` by writing

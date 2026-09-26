@@ -629,6 +629,12 @@ struct WMPRenderer: @unchecked Sendable {
     /// clear air between the two so a wrapping string does not read as one run-on word.
     private static let marqueeGap: CGFloat = 16
 
+    /// Clear air a running marquee keeps from its box's right edge, in skin pixels. **A departure
+    /// from WMP, like the unauthored-`scrolling` marquee itself:** `Classic` sizes its metadata
+    /// readouts to end exactly on the info pane's border, and a string scrolling out through that
+    /// edge read as text jammed against the frame. A static readout is untouched.
+    private static let marqueeTrailingPad: CGFloat = 4
+
     private func draw(_ text: WMPSceneText, in frame: WMPRect, context: CGContext,
                       clock: TimeInterval) {
         // `fontStyle` is a space- or comma-separated set, not one word: the corpus writes
@@ -676,6 +682,9 @@ struct WMPRenderer: @unchecked Sendable {
         // A marquee only runs when the skin asked for one *and* there is something to reveal;
         // scrolling a string that already fits would just jitter a static readout.
         if text.scrolling, width > frame.width {
+            let padded = max(0, frame.cgRect.width - Self.marqueeTrailingPad)
+            context.clip(to: CGRect(x: frame.cgRect.minX, y: -.greatestFiniteMagnitude / 2,
+                                    width: padded, height: .greatestFiniteMagnitude))
             let period = width + Self.marqueeGap
             let step = text.effectiveScrollDelayMilliseconds / 1_000
             let travelled = (clock / step) * Double(text.scrollAmount)
