@@ -2004,12 +2004,11 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     // colour on a white panel, which reads only against a black default.
                     color: mirroredColor(of: node, names: textColorNames)
                         ?? WMPColor(red: 0, green: 0, blue: 0), alignment: alignment,
-                    // **A departure from WMP, by request:** WMP's default is `false` and clips an
-                    // overflowing readout (`modernblue`'s artist and title). Here an unauthored
-                    // `scrolling` scrolls; the renderer only runs a marquee when the text overflows,
-                    // and a skin that authors or scripts `false` still gets the clip.
-                    scrolling: literalString(node, "scrolling")?.caseInsensitiveCompare("false")
-                        != .orderedSame,
+                    // **A departure from WMP, by request:** WMP clips an overflowing readout unless
+                    // `scrolling` is on (`modernblue`'s artist and title, `Science`'s title, which
+                    // authors `false`). Here every text may scroll, whatever the skin authors or
+                    // scripts; the renderer only runs a marquee when the text overflows its box.
+                    scrolling: true,
                     scrollDelayMilliseconds: Double(literalNumber(node, "scrollingDelay") ?? 100),
                     scrollAmount: max(1, literalNumber(node, "scrollingAmount") ?? 1))
                 emit(WMPPaintCommand(stableID: node.stableID, nodeID: node.xmlID,

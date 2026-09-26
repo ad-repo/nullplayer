@@ -121,11 +121,25 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   default is `right` for these two tags, so a missing `left` case drew `pharaoh`'s
   `justification="Left"` duration flush right, 30 px clear of its `/` (W203).
 
-- **An unauthored `scrolling` scrolls — a deliberate departure from WMP.** WMP defaults it to
-  `false` and clips an overflowing readout; by the user's request here only an authored or scripted
-  `scrolling="false"` clips, and the renderer and `animationCadence` still run a marquee only when
-  the measured text overflows its box, so a readout that fits stays still. A short-title playing
-  sweep moved no skin; `modernblue`'s artist and title were the report.
+- **Every overflowing `<TEXT>` scrolls, whatever `scrolling` says — a deliberate departure from
+  WMP.** WMP defaults it to `false` and clips an overflowing readout. By the user's request an
+  unauthored `scrolling` scrolls (`modernblue`'s artist and title), and since 2026-09-26 an authored
+  or scripted `false` does too (`Science` authors it on its title and artist, and its shadow copies
+  underneath scroll in step because they share the clock); the builder sets `scrolling` true for
+  every text. The renderer and `animationCadence` still run a marquee only when the measured text
+  overflows its box, so a readout that fits stays still. 67 of 180 installed archives author
+  `false` somewhere; the scripted writes in the corpus are all `scrolling = (textWidth > width)`,
+  which the overflow test already answers.
+- **A marquee repaints at `marqueeFramePeriod` (30 fps), not once per `scrollingDelay` — also a
+  departure, by request.** The offset is continuous in the clock, so `scrollingAmount` per
+  `scrollingDelay` stays the speed and only the stepping goes: the 1 px / 100 ms default read as a
+  10 fps stutter. **A frame repaints only the marquee's box over the last frame**
+  (`WMPRenderer.render(reusing:dirty:)`, keyed on the same scene and dirty rect in
+  `WMPViewPresentation.animationFrame`), and keeps the effects silhouette when the box's alpha is
+  unchanged. `WMP_ANIM_TRACE` on `Science`, debug build: 18 ms → 2.4 ms a frame; 85% of the 18 was
+  the silhouette flood fill. The dirty rect is the box widened to the line's full height, because
+  the text clip is horizontal only and a descent below a short box was left behind by a box-sized
+  repaint. `testARepaintOfTheDirtyBoxMatchesAWholeRender` pins repaint == whole render at 1x and 2x.
   A running marquee is clipped `marqueeTrailingPad` (4 px) short of its box's right edge — part of
   the same departure: `Classic`'s readouts end exactly on the info pane's border, and text scrolling
   out through it read as jammed against the frame (2026-09-26). A static readout is untouched.

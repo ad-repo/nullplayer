@@ -3683,11 +3683,17 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         let clock = Date().timeIntervalSince(presentation.animationEpoch)
         let slotClocks = Self.slotClocks(presentation, for: scene, store: store)
         let renderStarted = Date()
+        let backingScale = renderBackingScale(for: presentation)
+        let previous = presentation.animationFrame.flatMap {
+            $0.scene == scene && $0.dirty == dirty ? $0.result : nil
+        }
         guard let rendered = try? await WMPRenderer(imageStore: store)
-            .render(scene: scene, backingScale: renderBackingScale(for: presentation),
-                    clock: clock, slotClocks: slotClocks) else { return }
+            .render(scene: scene, backingScale: backingScale,
+                    clock: clock, slotClocks: slotClocks,
+                    reusing: previous, dirty: dirty) else { return }
         let presentStarted = Date()
         guard presentation.activeScene == scene else { return }
+        presentation.animationFrame = (scene, dirty, rendered)
         view.present(rendered.image, overlay: rendered.overlayImage, silhouette: rendered.silhouetteMask, scene: scene, dirtyBounds: dirty, traceSource: "animation")
         if Self.animationTrace {
             presentation.animationTraceRenderSeconds += presentStarted.timeIntervalSince(renderStarted)

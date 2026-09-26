@@ -72,6 +72,9 @@ final class WMPViewPresentation {
     /// What the running loop is pacing to. A rebuild that produces the same cadence leaves the loop
     /// alone; only a change to it — or a view change, or teardown — restarts one.
     var animationCadence: WMPRenderer.WMPAnimationCadence?
+    /// The loop's last frame, and the scene and dirty rect it was painted for. The next frame of
+    /// exactly that scene and rect repaints only the rect over it; anything else renders whole.
+    var animationFrame: (scene: WMPScene, dirty: WMPRect, result: WMPRenderResult)?
     /// `WMP_ANIM_TRACE` only: what the repaint loop actually achieved, summarised once a second
     /// rather than once a frame. A line per frame is what made the old `INPUT` trace unusable.
     var animationTraceWindowStart = Date()
@@ -202,6 +205,7 @@ final class WMPViewPresentation {
         animationTask = nil
         animationCadence = nil
         animationEndsAt = nil
+        animationFrame = nil
     }
 
     /// Stop everything and release the drawing. The window itself is the materializer's to order out

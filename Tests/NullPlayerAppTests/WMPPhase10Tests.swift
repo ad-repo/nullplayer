@@ -57,10 +57,11 @@ final class WMPPhase10Tests: XCTestCase {
 
         let cadence = try XCTUnwrap(renderer.animationCadence(for: scene),
                                     "a scrolling readout is what schedules its own repaints")
-        XCTAssertEqual(cadence.shortestDelay, 0.05, accuracy: 0.0001)
+        XCTAssertEqual(cadence.shortestDelay, WMPRenderer.marqueeFramePeriod, accuracy: 0.0001,
+                       "a marquee repaints faster than its step, so the default does not stutter")
         XCTAssertNil(cadence.endsAt, "a marquee never plays a last frame")
-        XCTAssertEqual(cadence.bounds, WMPRect(x: 10, y: 4, width: 30, height: 12),
-                       "and it repaints its own box, not the window")
+        XCTAssertEqual(cadence.bounds, WMPRect(x: 10, y: 0, width: 30, height: 20),
+                       "and it repaints its own box and line, not the window")
 
         func column(_ clock: TimeInterval) async throws -> [UInt8] {
             let image = try await renderer.render(scene: scene, clock: clock).image
@@ -71,16 +72,62 @@ final class WMPPhase10Tests: XCTestCase {
         XCTAssertNotEqual(settled, later, "ten steps of 2 px moves the glyphs under the sample")
     }
 
+    /// A marquee frame repaints only its own box over the last one. That repaint has to be the
+    /// same picture a whole render at the same clock draws, at both backing scales.
+    func testARepaintOfTheDirtyBoxMatchesAWholeRender() async throws {
+        let archive = try textFixture(
+            #"value="MMMMMMMMMMMMMMMMMMMMMMMM" scrolling="true" scrollingDelay="50" scrollingAmount="2""#)
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let renderer = WMPRenderer(imageStore: WMPImageStore(provider: skin.archive))
+        let dirty = try XCTUnwrap(renderer.animationCadence(for: scene)).bounds
+        for scale: CGFloat in [1, 2] {
+            let first = try await renderer.render(scene: scene, backingScale: scale, clock: 0)
+            let repainted = try await renderer.render(scene: scene, backingScale: scale,
+                                                      clock: 0.37, reusing: first, dirty: dirty)
+            let whole = try await renderer.render(scene: scene, backingScale: scale, clock: 0.37)
+            func pixels(_ image: CGImage) -> [UInt8] {
+                var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
+                bytes.withUnsafeMutableBytes { buffer in
+                    CGContext(data: buffer.baseAddress, width: image.width, height: image.height,
+                              bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                              space: CGColorSpaceCreateDeviceRGB(),
+                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+                        .draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+                }
+                return bytes
+            }
+            XCTAssertNotEqual(pixels(first.image), pixels(whole.image), "the marquee moved")
+            let a = pixels(repainted.image), b = pixels(whole.image), w = whole.image.width
+            let differing = stride(from: 0, to: a.count, by: 4).filter {
+                a[$0..<$0 + 4] != b[$0..<$0 + 4]
+            }.map { ($0 / 4 % w, $0 / 4 / w) }
+            XCTAssertTrue(differing.isEmpty, "at \(scale)x: \(differing.count) pixels differ, "
+                + "x \(differing.map(\.0).min() ?? -1)...\(differing.map(\.0).max() ?? -1) "
+                + "y \(differing.map(\.1).min() ?? -1)...\(differing.map(\.1).max() ?? -1)")
+        }
+    }
+
     func testTooFastScrollingDelayUsesWMPs85MillisecondDefault() async throws {
         let archive = try textFixture(
             #"value="MMMMMMMMMMMMMMMMMMMMMMMM" scrolling="true" scrollingDelay="10" scrollingAmount="2""#)
         let skin = try await WMPSkinLoader().load(from: archive)
         let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
-        let renderer = WMPRenderer(imageStore: WMPImageStore(provider: skin.archive))
-
-        let cadence = try XCTUnwrap(renderer.animationCadence(for: scene))
-        XCTAssertEqual(cadence.shortestDelay, 0.085, accuracy: 0.0001,
+        let text = try XCTUnwrap(scene.commands.lazy.compactMap { command -> WMPSceneText? in
+            if case let .text(text) = command.paint { return text } else { return nil }
+        }.first)
+        XCTAssertEqual(text.effectiveScrollDelayMilliseconds, 85, accuracy: 0.0001,
                        "WMP rejects delays below 30 ms and uses its 85 ms default")
+    }
+
+    /// `Science` authors `scrolling="false"` on its title, which WMP clips. By request, an
+    /// overflowing text marquees whatever the skin authors.
+    func testAnAuthoredFalseStillScrollsWhenItOverflows() async throws {
+        let archive = try textFixture(#"value="MMMMMMMMMMMMMMMMMMMMMMMM" scrolling="false""#)
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let renderer = WMPRenderer(imageStore: WMPImageStore(provider: skin.archive))
+        XCTAssertNotNil(renderer.animationCadence(for: scene))
     }
 
     /// A string that already fits is not scrolled: jittering a static readout is worse than leaving

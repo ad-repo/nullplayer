@@ -60,12 +60,21 @@ struct WMPRenderer: @unchecked Sendable {
     /// animation. Keeping it here rather than in the scene means a 10 fps GIF costs a re-render and
     /// not a rebuild — a rebuild runs the skin's script transaction, which is not something to do
     /// ten times a second.
+    ///
+    /// `previous` and `dirty` make it a repaint rather than a render: `previous` must be this same
+    /// scene rendered at this scale, and nothing outside `dirty` may have moved since. Everything
+    /// outside `dirty` is then copied from `previous` rather than drawn, and its effects silhouette
+    /// is kept when nothing in `dirty` changed how opaque the window is there. A scrolling title
+    /// repainted the whole window and re-flooded that silhouette 30 times a second to move one
+    /// 194 px box — ~18 ms a frame on `Science` in a debug build, 85% of it the flood.
     func render(scene: WMPScene, backingScale: CGFloat = 1,
                 clock: TimeInterval = 0,
-                slotClocks: [WMPAnimationSlot: TimeInterval] = [:]) async throws -> WMPRenderResult {
+                slotClocks: [WMPAnimationSlot: TimeInterval] = [:],
+                reusing previous: WMPRenderResult? = nil,
+                dirty: WMPRect? = nil) async throws -> WMPRenderResult {
         try await Task.detached(priority: .userInitiated) {
             try renderOffMain(scene: scene, backingScale: backingScale, clock: clock,
-                              slotClocks: slotClocks)
+                              slotClocks: slotClocks, reusing: previous, dirty: dirty)
         }.value
     }
 
@@ -139,9 +148,20 @@ struct WMPRenderer: @unchecked Sendable {
                WMPTextMetrics.width(of: text.value, fontName: text.fontName,
                                     fontSize: text.fontSize, bold: text.bold,
                                     italic: text.italic) > command.frame.width {
-                let delay = text.effectiveScrollDelayMilliseconds / 1_000
+                // Repainted at `marqueeFramePeriod` rather than at the skin's step: the offset is
+                // continuous in the clock, so the speed stays `scrollingAmount` per
+                // `scrollingDelay`, and the default 1 px / 100 ms no longer jerks at 10 fps.
+                let delay = min(text.effectiveScrollDelayMilliseconds / 1_000,
+                                Self.marqueeFramePeriod)
                 shortest = min(shortest ?? delay, delay)
-                bounds = bounds.map { $0.union(visible) } ?? visible
+                // **Its box and the line's full height.** The text clip is horizontal only, so a
+                // glyph's descent draws below a box shorter than its line; bounded by the box, the
+                // repaint left those rows of the old frame on screen under the new one.
+                let line = WMPRect(x: command.frame.x, y: command.frame.y - text.fontSize,
+                                   width: command.frame.width,
+                                   height: command.frame.height + text.fontSize * 2)
+                let reach = command.clipRect.flatMap { line.intersection($0) } ?? line
+                bounds = bounds.map { $0.union(reach) } ?? reach
                 endsAt = nil
                 continue
             }
@@ -201,7 +221,9 @@ struct WMPRenderer: @unchecked Sendable {
     private func renderOffMain(scene: WMPScene, backingScale: CGFloat,
                                clock: TimeInterval = 0,
                                slotClocks: [WMPAnimationSlot: TimeInterval] = [:],
-                               splitAtEffects: Bool = true) throws -> WMPRenderResult {
+                               splitAtEffects: Bool = true,
+                               reusing previous: WMPRenderResult? = nil,
+                               dirty: WMPRect? = nil) throws -> WMPRenderResult {
         guard backingScale > 0, backingScale.isFinite,
               scene.canvasSize.width > 0, scene.canvasSize.height > 0 else {
             throw WMPFailure(WMPDiagnostic(.renderFailed, "Canvas and backing scale must be positive."))
@@ -221,6 +243,18 @@ struct WMPRenderer: @unchecked Sendable {
         // split and this is one pass over the same list as before.
         let layers = splitAtEffects ? scene.effectsLayers : nil
         let below = layers?.below ?? scene.commands
+        // The dirty rect out to whole device pixels, so every pixel in it is redrawn outright and
+        // none is a blend of the old frame and the new one.
+        let repaint: (previous: WMPRenderResult, pixels: CGRect)? = {
+            guard let previous, let dirty, previous.backingScale == backingScale,
+                  previous.image.width == pixelWidth, previous.image.height == pixelHeight,
+                  (previous.overlayImage != nil) == (layers != nil) else { return nil }
+            let pixels = CGRect(x: dirty.x * backingScale, y: dirty.y * backingScale,
+                                width: dirty.width * backingScale,
+                                height: dirty.height * backingScale).integral
+                .intersection(CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
+            return pixels.isEmpty ? nil : (previous, pixels)
+        }()
         // **The visualizer's own backdrop goes under the below layer, never over it** — so a skin
         // that paints its own ground behind the rect still covers this completely and renders
         // byte-identically, and one that paints nothing there stops being a hole (W174). It is
@@ -229,7 +263,8 @@ struct WMPRenderer: @unchecked Sendable {
         // rare one a corpus sweep can arbitrate. See `WMPEffectsGround`.
         let image = try rasterize(below, scene: scene, pixelWidth: pixelWidth,
                                   pixelHeight: pixelHeight, backingScale: backingScale, clock: clock,
-                                  slotClocks: slotClocks, grounds: scene.effectsGrounds)
+                                  slotClocks: slotClocks, grounds: scene.effectsGrounds,
+                                  base: repaint.map { ($0.previous.image, $0.pixels) })
         // **A windowed visualization is not something the skin can draw over.** Its rects are
         // punched out of the overlay after it is rasterized, so the surface hosted underneath shows
         // through and whatever the skin painted *before* the effects node stands where the
@@ -238,10 +273,24 @@ struct WMPRenderer: @unchecked Sendable {
             try rasterize($0.over, scene: scene, pixelWidth: pixelWidth,
                           pixelHeight: pixelHeight, backingScale: backingScale, clock: clock,
                           slotClocks: slotClocks, punchingOut: scene.windowedEffectsRects,
-                          underneath: image)
+                          underneath: image,
+                          base: repaint.flatMap { repaint in
+                              repaint.previous.overlayImage.map { ($0, repaint.pixels) } })
         }
-        let silhouette = layers == nil ? nil
-            : Self.effectsSilhouette(scene: scene, layers: [image, overlay])
+        let silhouette: CGImage?
+        if layers == nil {
+            silhouette = nil
+        } else if let repaint,
+                  Self.alpha(of: repaint.previous.image, in: repaint.pixels)
+                    == Self.alpha(of: image, in: repaint.pixels),
+                  Self.alpha(of: repaint.previous.overlayImage, in: repaint.pixels)
+                    == Self.alpha(of: overlay, in: repaint.pixels) {
+            // The silhouette reads nothing but these layers' alpha, so identical alpha is an
+            // identical silhouette — a marquee over opaque artwork never changes it.
+            silhouette = repaint.previous.silhouetteMask
+        } else {
+            silhouette = Self.effectsSilhouette(scene: scene, layers: [image, overlay])
+        }
         return WMPRenderResult(image: image, overlayImage: overlay, silhouetteMask: silhouette,
             renderMilliseconds: (CFAbsoluteTimeGetCurrent() - started) * 1_000,
             backingScale: backingScale, imageMetrics: imageStore.metrics,
@@ -277,7 +326,8 @@ struct WMPRenderer: @unchecked Sendable {
                            slotClocks: [WMPAnimationSlot: TimeInterval] = [:],
                            punchingOut: [WMPRect] = [],
                            grounds: [WMPEffectsGround] = [],
-                           underneath: CGImage? = nil) throws -> CGImage {
+                           underneath: CGImage? = nil,
+                           base: (image: CGImage, pixels: CGRect)? = nil) throws -> CGImage {
         let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
             | CGImageAlphaInfo.premultipliedLast.rawValue
         guard let context = CGContext(data: nil, width: pixelWidth, height: pixelHeight,
@@ -286,6 +336,19 @@ struct WMPRenderer: @unchecked Sendable {
             throw WMPFailure(WMPDiagnostic(.renderFailed, "Unable to allocate render surface."))
         }
         context.clear(CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
+        if let base {
+            // The last frame, then only its dirty pixels cleared and drawn again. `pixels` is
+            // top-first like the scene; the context is bottom-first until the flip below.
+            let bounds = CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)
+            context.setBlendMode(.copy)
+            context.draw(base.image, in: bounds)
+            context.setBlendMode(.normal)
+            let dirty = CGRect(x: base.pixels.minX,
+                               y: CGFloat(pixelHeight) - base.pixels.maxY,
+                               width: base.pixels.width, height: base.pixels.height)
+            context.clip(to: dirty)
+            context.clear(dirty)
+        }
         context.scaleBy(x: backingScale, y: backingScale)
         context.translateBy(x: 0, y: scene.canvasSize.height)
         context.scaleBy(x: 1, y: -1)
@@ -600,6 +663,19 @@ struct WMPRenderer: @unchecked Sendable {
                        intent: .defaultIntent)
     }
 
+    /// The alpha of `image` inside `pixels` (top-first device pixels), byte for byte.
+    private static func alpha(of image: CGImage?, in pixels: CGRect) -> Data? {
+        guard let image, let cropped = image.cropping(to: pixels) else { return nil }
+        let width = cropped.width, height = cropped.height
+        guard let context = CGContext(data: nil, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
+                bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue),
+              let data = context.data else { return nil }
+        context.setBlendMode(.copy)
+        context.draw(cropped, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return Data(bytes: data, count: context.bytesPerRow * height)
+    }
+
     private static func paintedMask(of images: [CGImage?]) -> CGImage? {
         let images = images.compactMap { $0 }
         guard let first = images.first else { return nil }
@@ -686,6 +762,11 @@ struct WMPRenderer: @unchecked Sendable {
     /// The gap between the tail of a marquee and the head of its repeat, in skin pixels. WMP leaves
     /// clear air between the two so a wrapping string does not read as one run-on word.
     private static let marqueeGap: CGFloat = 16
+
+    /// The longest a running marquee waits between repaints, in seconds. **A departure from WMP,
+    /// by request:** WMP steps a marquee once per `scrollingDelay`, and at its 100 ms default that
+    /// reads as a stutter; here the step only sets the speed.
+    static let marqueeFramePeriod: TimeInterval = 1.0 / 30
 
     /// Clear air a running marquee keeps from its box's right edge, in skin pixels. **A departure
     /// from WMP, like the unauthored-`scrolling` marquee itself:** `Classic` sizes its metadata
