@@ -141,6 +141,10 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     /// `WMP_OPEN_TOP=0` leaves the open top as the skin drew it — the A/B switch for that rule.
     static let closesOpenTop: Bool = ProcessInfo.processInfo.environment["WMP_OPEN_TOP"] != "0"
 
+    /// Whether a panel left with an open side after `closingOpenTop` is refused (W314). **On.**
+    /// `WMP_OPEN_SIDE=0` slices it anyway — the A/B switch for that rule.
+    static let refusesOpenSide: Bool = ProcessInfo.processInfo.environment["WMP_OPEN_SIDE"] != "0"
+
     // MARK: - Derivation
 
     /// The eight places a ring piece can be anchored. A piece is classified by its *alignment*
@@ -1685,8 +1689,51 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         let slices = PanelSlices(image: cropped,
                                  panel: CGSize(width: panel.width, height: panel.height),
                                  margins: margins)
-        guard Self.closesOpenTop else { return slices }
-        return Self.closingOpenTop(slices, scale: backingScale) ?? slices
+        let closed = Self.closesOpenTop
+            ? Self.closingOpenTop(slices, scale: backingScale) ?? slices : slices
+        // **A side still open after that is a drawer assembled from several bitmaps (W314).**
+        // `Compact`'s `playlistDrawer` wears `drawer_right_top.bmp`, 185 of its 261 rows: the rest
+        // of the right rail is a tiled child and the bottom cap another, and its left edge is never
+        // drawn at all because it slides out from under the player. Slicing the parent alone hung
+        // every hosted window below a frame with no bottom and no left side. Refused rather than
+        // assembled: a thrown refusal is donor-wide, so the window keeps palette chrome.
+        if Self.refusesOpenSide,
+           Self.hasOpenSide(closed, scale: backingScale, checkingTop: Self.closesOpenTop) {
+            throw WMPHostedFrameRefusal.panelCannotBeSliced
+        }
+        return closed
+    }
+
+    /// Whether a panel's border band is open along a whole side — under 10% of the strip between
+    /// the other two slice lines opaque, the measure `closingOpenTop` uses for a missing top. The
+    /// top is skipped when that rule is switched off, so `WMP_OPEN_TOP=0` stays its A/B.
+    private static func hasOpenSide(_ slices: PanelSlices, scale: CGFloat, checkingTop: Bool) -> Bool {
+        let m = slices.margins
+        let image = slices.image
+        let width = image.width, height = image.height
+        let top = Int((m.top * scale).rounded()), bottom = height - Int((m.bottom * scale).rounded())
+        let left = Int((m.left * scale).rounded()), right = width - Int((m.right * scale).rounded())
+        guard top > 0, left > 0, top < bottom, left < right, bottom < height, right < width,
+              let rgba = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                   bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let data = rgba.data else { return false }
+        rgba.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        // Row 0 of the buffer is the image's top row.
+        let pixels = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+        func open(rows: Range<Int>, columns: Range<Int>) -> Bool {
+            var opaque = 0
+            for row in rows {
+                for column in columns where pixels[(row * width + column) * 4 + 3] >= 128 {
+                    opaque += 1
+                }
+            }
+            return Double(opaque) < 0.1 * Double(rows.count * columns.count)
+        }
+        return (checkingTop && open(rows: 0..<top, columns: left..<right))
+            || open(rows: bottom..<height, columns: left..<right)
+            || open(rows: top..<bottom, columns: 0..<left)
+            || open(rows: top..<bottom, columns: right..<width)
     }
 
     /// **A drawer with no top edge borrows its bottom edge for one.** `activate`'s playlist tray is

@@ -81,7 +81,7 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   bottom=124`. Both now lend nothing and take palette chrome. Four archives author the attribute;
   `Compact`'s sits beside its real drawer list and `Radio` lends nothing, and both lines are
   byte-identical either side of the change (361x330 and 550x464). **`Compact`'s own frame is broken
-  independently** — its drawer is three bitmaps and only the top one is sliced; that is W314.
+  independently** — its drawer is three bitmaps and only the top one is sliced; see below (W314).
 - **A panel with no top edge borrows its bottom edge (2026-09-26).** `activate`'s
   `playlist_drawer.bmp` is a U: rails and a rounded bottom, and a keyed-out 6px band where the tray
   slides out from under the player. Every hosted window wearing it had no top border and nothing
@@ -93,6 +93,15 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   Panels only; a ring with an open top is not handled. Corpus on 2026-09-26 (180 archives, 45
   panels, 550x464 and 550x890, scale 1 and 2, A/B via `WMP_OPEN_TOP=0`): **one line moves in every
   configuration, `activate`'s**, top-edge gap 0.965 → 0.007 at 1x.
+- **A panel still open on any side after that is refused (W314, 2026-09-26).** `Compact`'s
+  `playlistDrawer` wears `drawer_right_top.bmp`, 185 of its 261 rows — the rest of its right rail
+  and its bottom cap are child subviews, and it has no left edge because it slides out from under
+  the player. `hasOpenSide` measures each band after `closingOpenTop` with the same 90%-transparent
+  rule and throws `panelCannotBeSliced`, so the window keeps palette chrome. Assembling the panel
+  with its artwork children was the other direction; it would still need a missing left side
+  invented, and the reporter accepted the fallback. The top is only checked while `closingOpenTop`
+  is on, so `WMP_OPEN_TOP=0` stays its own A/B; `WMP_OPEN_SIDE=0` is this rule's. Corpus on
+  2026-09-26 (180 archives, 550x464, scale 1 and 2): **one line moves, `Compact`'s**.
 - **How the window and the border share the space: the window is grown (W207, closed 2026-09-16).**
   **The interior keeps its size and the border is added around it** — `HostedWindowBorderLayout`,
   one central rule for the nine registered growth participants listed in `windows/hosting.md`, driven off

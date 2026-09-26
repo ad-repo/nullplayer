@@ -42,7 +42,6 @@ nothing behind them*.
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W314 | `Compact`'s borrowed frame has no bottom or left rail | `Compact` (1 archive; any panel donor assembled from several bitmaps) | **Reported live 2026-09-26** ("compact nullplayer windows are broken"). The donor is `playlistDrawer`, whose `drawer_right_top.bmp` is only the top of a drawer completed by a tiled `drawer_right_tile.bmp` rail and a `drawer_right_bottom.bmp` cap in child subviews; the panel slicer takes the parent's bitmap alone, so the Waveform window's content hangs below a frame with no bottom (`gaps=0.025/0.270/1.000/0.373` at 550x464@2x). The drawer also has no left edge by design — it slides out from under the player. Byte-identical at `e5295678`, so not caused by the `Heart_Butterfly` fix that found it. Direction: render the panel with its artwork children, and treat a missing side like `closingOpenTop` does a missing top — or refuse a donor whose sliced bitmap is not the whole drawer. Capture: `WMP_HOSTED_FRAME=550x464 WMP_HOSTED_FRAME_SCALE=2 WMP_HOSTED_FRAME_DUMP=<dir>` |
 
 ## Harness and tooling
 
