@@ -20,7 +20,7 @@ No Winamp or Windows Media Player skins are distributed with the project
 
 - 21-band EQ (Original/Original-Metal) and 10-band EQ (Classic, Modern)
 - Gapless + Sweet Fades (configurable crossfade), volume normalization, play speed (0.25×–4×), and Reference Tuning (432/440 Hz/custom)
-- SRS audio enhancements in every skin under **Playback > Options > SRS**: WOW stereo widening and TruBass low-frequency enhancement (Off / 25–100%), plus a Headphones profile for TruBass. Remembered across launches, and a Windows Media Player skin's own SRS controls drive the same settings. Independent approximations of the SRS effects, not the licensed algorithms; they apply to local files and HTTP streams, and are unavailable while casting
+- SRS inspired audio enhancements: WOW stereo widening and TruBass low-frequency enhancement plus a Headphones profile for TruBass
 - Stream Ripper — rip and import stream URLs to FLAC, MP3, or MP4 with metadata, cover art, and `.cue` sheets (requires `yt-dlp` + `ffmpeg`)
 - Intelligent radio mix generation for all sources
 - Cast to Sonos (multi-room), Chromecast, DLNA, and AirPlay — local files, server streams, and radio
@@ -62,7 +62,7 @@ No Winamp or Windows Media Player skins are distributed with the project
 - Cava spectrum analyzer — bar spectrum with mono/stereo modes, gradient presets, and configurable smoothing
 - PeppyMeter — skinnable analog VU meter with 25 templates and auto-switch mode
 - Flow network monitor — live throughput graph with selectable interface
-- Sonos Rooms — resizable room mixer with a checkbox and independent volume slider per room (usable before and during a cast), with Refresh and Start/Stop Casting always in reach; open from **Windows > Sonos Rooms** or **Output > Sonos > Sonos Rooms…**
+- Sonos Rooms — resizable room mixer with a checkbox and independent volume slider per room (usable before and during a cast)
 - Compact Mode — menu-bar-only app with embedded mini player (Classic, Original, and Original-Metal)
 
 ### Visualization Support
@@ -95,9 +95,6 @@ NullPlayer's visualizations span its windows, from the in-skin main-window displ
  - **291 test files** under [`Tests/`](Tests/), with a documented testing philosophy (`skills/testing`) that explicitly forbids weakening tests changing app code just to make them pass.
  - **Explicit architectural guardrails** encoded where an agent will read them: skin engines must not cross-import, Winamp Modern (`.wal`) and Windows Media Player (`.wmz`) work must never alter Classic or Original behavior, and the sprite-origin and `Data`-slicing gotchas are stated up front.
  - **App control: agents drive the real app** — the [`app-control`](skills/app-control/SKILL.md) skill lets an agent launch, configure, drive, screenshot, and measure the running debug build across every skin family (Classic, Original, Original-Metal, `.wal`, `.wmz`):
-   - `launch.sh <skin>` builds and launches the debug build on any skin, with a test track playing, and prints PASS only once it has confirmed that skin actually loaded. It never uses the installed app or touches the user's saved preferences.
-   - `winhelper` lists NullPlayer's windows, raises and parks them, captures size-checked window screenshots, and posts real clicks, double-clicks, drags, hovers, and scroll-wheel input. `clickdiff` reports which windows changed after a click.
-   - `menu.applescript` switches skin mode, picks a skin, and closes auxiliary windows through the app's own menus.
    - A routing table picks the cheapest way to answer a question, from a headless probe to handing the user a preloaded interactive session. Canonical test media and launch recipes come with it, plus an [eval case and rubric](skills/app-control/eval/README.md) for comparing agents.
 
 ## Installation
