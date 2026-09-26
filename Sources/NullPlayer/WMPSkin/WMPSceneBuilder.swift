@@ -1445,16 +1445,21 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 return mask
             } ?? bodySilhouette(node, frame: frame)
             let ownGroundShape = try groundShape(node, frame: frame)
-            let hasBackgroundImage = try resource(node, names: ["backgroundImage", "background"]) != nil
+            let backgroundImage = try resource(node, names: ["backgroundImage", "background"])
+            let hasBackgroundImage = backgroundImage != nil
             // **Artwork with no key has no hole, so nothing sits behind it (W310).** `Navigator`'s
             // `config` pane paints the opaque `screenback.bmp` with no `transparencyColor`,
             // `clippingColor` or `clippingImage`, and holds its EQ, links, playlist and video
             // settings panes at `zIndex="-2"`; behind that artwork every one of them was invisible
             // however the script showed it. Those children draw over it in `zIndex` order instead.
             // Three containers in the corpus have this shape (`Navigator`'s and two in `tubeframe`).
+            // **A PNG's own alpha is a hole too.** `Age_of_Mythology_MPXP`'s `visMask` states no
+            // key: `vis_back.png` carries its lens as transparency, and its `zIndex="-15"`
+            // `<EFFECTS>` drew over the headdress and the ring instead of through the lens.
             let artworkHasNoHole = hasBackgroundImage
                 && colors(node, names: ["transparencyColor", "clippingColor"]).isEmpty
                 && node.statedAttribute(named: "clippingImage") == nil
+                && backgroundImage.map { (try? imageStore.carriesOwnTransparency(for: $0.1)) != true } ?? true
             let behindOwnArtwork = artworkHasNoHole ? [] : orderedChildren.prefix { zIndex(of: $0) < 0 }
             // **A plain colour is the ground under every child, however negative its `zIndex`.**
             // Behind-own-artwork is for artwork with a hole in it (`Cerulean`'s `face.bmp`); a

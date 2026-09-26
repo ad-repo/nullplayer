@@ -576,20 +576,28 @@ final class WMPClippingShapeTests: XCTestCase {
     /// **Artwork with no key has no hole, so a negative-`zIndex` child draws over it (W310).**
     /// `Navigator`'s `config` pane paints the opaque `screenback.bmp` with no key and holds its EQ
     /// pane at `zIndex="-2"`; behind the artwork the EQ could never be seen. A keyed parent keeps
-    /// the Cerulean order — its hole is what the child shows through.
+    /// the Cerulean order — its hole is what the child shows through — and so does an unkeyed PNG
+    /// whose own alpha is the hole: `Age_of_Mythology_MPXP`'s `vis_back.png` over its visualizer.
     func testANegativeZIndexChildDrawsOverUnkeyedArtwork() async throws {
-        for (key, childOnTop) in [("", true), (#"transparencyColor="white""#, false)] {
+        var holed: [UInt8] = Array(repeating: 0, count: 4)
+        holed += Array(repeating: [10, 120, 200, 255], count: 63).flatMap { $0 }
+        let cases: [(String, Data, Bool)] = [
+            ("", try flat([10, 120, 200, 255]), true),
+            (#"transparencyColor="white""#, try flat([10, 120, 200, 255]), false),
+            ("", try WMPSkinTestSupport.encodedImage(width: 8, height: 8, rgba: holed), false),
+        ]
+        for (key, back, childOnTop) in cases {
             let skin = try await load(wms: """
             <THEME><VIEW id="main" width="8" height="8">
                 <SUBVIEW id="config" left="0" top="0" width="8" height="8" backgroundImage="back.png" \(key)>
                     <SUBVIEW id="eq" left="0" top="0" width="8" height="8" zIndex="-2" backgroundColor="#0000FF"/>
                 </SUBVIEW>
             </VIEW></THEME>
-            """, images: ["back.png": try flat([10, 120, 200, 255])])
+            """, images: ["back.png": back])
             let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
             let back = try XCTUnwrap(scene.commands.firstIndex { $0.nodeID == "config" })
             let eq = try XCTUnwrap(scene.commands.firstIndex { $0.nodeID == "eq" })
-            XCTAssertEqual(eq > back, childOnTop, "key=\(key)")
+            XCTAssertEqual(eq > back, childOnTop, "key=\(key) childOnTop=\(childOnTop)")
         }
     }
 

@@ -162,6 +162,13 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   over its EQ, links, playlist and video-settings panes, all `zIndex="-2"`, and none of them could
   ever be seen. Three containers in the corpus have this shape (an XML scan of every
   `<VIEW>`/`<SUBVIEW>`); `tubeframe`'s two render byte-identical either way.
+  **An image's own alpha is a key too** (2026-09-26): an unkeyed PNG with transparent pixels has a
+  hole, and its negative children stay behind it. `Age_of_Mythology_MPXP`'s `visMask` states no key
+  over `vis_back.png`, whose lens is alpha, and its `zIndex="-15"` `<EFFECTS>` drew over the
+  headdress and ring instead of through the lens; the MP7 edition of the same skin keys it and was
+  always right. An XML scan of all 180 installed archives found this the only container of the
+  shape, so no sweep was run — and the render sweep could not show it anyway, since the surface is
+  hidden until playback fades `visMask` in.
 
   How it is hosted: **a node's negative-`zIndex` children are walked before it emits its own paints**
   — DFS order cannot express "behind the parent's background" on its own, and getting this wrong is
