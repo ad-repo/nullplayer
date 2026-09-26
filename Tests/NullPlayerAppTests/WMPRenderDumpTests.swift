@@ -1012,6 +1012,15 @@ enum WMPHarness {
             for line in probeLines(scene: scene, skin: skin, imageStore: imageStore) {
                 WMPHarnessOutput.emit(line)
             }
+            // How much of each windowless `<EFFECTS>` rect lies outside the painted window —
+            // what `WMPRenderer.effectsSilhouette` cuts away in the app. Needs the split render,
+            // which the dump itself never makes.
+            if scene.widgets.contains(where: { $0.kind == .effects && !$0.isWindowedEffects }),
+               let result = try? await WMPRenderer(imageStore: imageStore).render(scene: scene) {
+                for line in silhouetteLines(scene: scene, mask: result.silhouetteMask) {
+                    WMPHarnessOutput.emit(line)
+                }
+            }
         }
         if probe.wantsBitmaps {
             let tally = bitmapTally(scene: scene, skin: skin, imageStore: imageStore)
@@ -1183,6 +1192,26 @@ enum WMPHarness {
         }
         lines += Self.paintProbeLines(scene: scene, skin: skin)
         return lines
+    }
+
+    /// `SILHOUETTE <view>/<sid> id= cut=<px> of <px>` per windowless `<EFFECTS>` widget, at 1x.
+    /// `cut=0` is a rect entirely inside the window the skin painted.
+    static func silhouetteLines(scene: WMPScene, mask: CGImage?) -> [String] {
+        let data = mask?.dataProvider?.data as Data?
+        return scene.widgets.filter { $0.kind == .effects && !$0.isWindowedEffects }.map { widget in
+            let rect = widget.clipRect.flatMap { widget.frame.intersection($0) } ?? widget.frame
+            var cut = 0, total = 0
+            if let mask, let data {
+                let x0 = max(0, Int(rect.x)), x1 = min(mask.width, Int(rect.maxX.rounded(.up)))
+                let y0 = max(0, Int(rect.y)), y1 = min(mask.height, Int(rect.maxY.rounded(.up)))
+                if x0 < x1, y0 < y1 {
+                    total = (x1 - x0) * (y1 - y0)
+                    for y in y0..<y1 { for x in x0..<x1 where data[y * mask.bytesPerRow + x] == 0 { cut += 1 } }
+                }
+            }
+            return "SILHOUETTE \(scene.viewID)/\(widget.stableID) id=\(widget.nodeID ?? "-") "
+                + "frame=\(rect) cut=\(cut)" + (total > 0 ? " of \(total)" : "")
+        }
     }
 
     /// How many pixels of a widget's own visible rect the container's silhouette cuts away — the
@@ -1876,7 +1905,8 @@ enum WMPHarness {
             return ["APPKIT \(viewID): SKIPPED renderer produced no image at \(scale)x"]
         }
 
-        view.present(result.image, overlay: result.overlayImage, scene: scene)
+        view.present(result.image, overlay: result.overlayImage,
+                     silhouette: result.silhouetteMask, scene: scene)
         // AppKit runs neither of these on its own for a view that is in no window, and the overlay
         // frames come from `layout()`. Without it every overlay sits at `.zero` and the diff below
         // measures the harness rather than the app.

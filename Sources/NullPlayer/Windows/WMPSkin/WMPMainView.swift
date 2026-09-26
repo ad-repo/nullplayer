@@ -195,6 +195,9 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     /// controller, so the view asks rather than decodes; nil is a skin that authored no shape.
     var regionMaskProvider: ((WMPWidgetRegionMask) -> CGImage?)?
     var videoSurface: WMPVideoSurface?
+    /// `WMPRenderResult.silhouetteMask` for the scene on screen; it changes with every render, so
+    /// it is applied on each present as well as each layout.
+    private var silhouette: CGImage?
     var videoController: (() -> VideoPlayerWindowController?)?
 
     override var isFlipped: Bool { true }
@@ -237,9 +240,10 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     }
 
 
-    func present(_ cgImage: CGImage, overlay: CGImage? = nil, scene: WMPScene,
-                 dirtyBounds: WMPRect? = nil, traceSource: String = "?") {
+    func present(_ cgImage: CGImage, overlay: CGImage? = nil, silhouette: CGImage? = nil,
+                 scene: WMPScene, dirtyBounds: WMPRect? = nil, traceSource: String = "?") {
         let previous = self.scene
+        self.silhouette = silhouette
         image = NSImage(cgImage: cgImage, size: bounds.size)
         overlayView.image = overlay.map { NSImage(cgImage: $0, size: bounds.size) }
         self.scene = scene
@@ -303,6 +307,18 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         // a window whose contents change 12 times a second.
         if !structureUnchanged { setAccessibilityChildren(nil) }
         if dirtyBounds == nil || !structureUnchanged { updateTransparentTopInset(cgImage) }
+        applySilhouette()
+    }
+
+    /// The mask covers the whole canvas, so in each surface's bounds it sits at minus the
+    /// surface's own origin, at this view's size.
+    private func applySilhouette() {
+        for (_, view) in widgetViews {
+            guard let effects = view as? WMPEffectsSurfaceView else { continue }
+            effects.applySilhouette(silhouette, rect: silhouette == nil ? .zero
+                : NSRect(x: -view.frame.minX, y: -view.frame.minY,
+                         width: bounds.width, height: bounds.height))
+        }
     }
 
     private func updateTransparentTopInset(_ cgImage: CGImage) {
@@ -528,6 +544,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             let clip = widget.clippingShape.flatMap(placed)
             effects.applyClippingShape(clip?.0, rect: clip?.1 ?? .zero)
         }
+        applySilhouette()
         videoSurface?.update(in: self, scene: scene, video: currentSnapshot.video,
                              controller: videoController?())
     }

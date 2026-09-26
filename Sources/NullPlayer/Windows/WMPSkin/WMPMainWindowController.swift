@@ -764,7 +764,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                                      height: resolved.canvasSize.height),
                         opener: nil, offset: nil) else { continue }
                     apply(skin: skin, store: store, scene: resolved, image: rendered.image,
-                          overlay: rendered.overlayImage,
+                          overlay: rendered.overlayImage, silhouette: rendered.silhouetteMask,
                           runtime: runtime, overrides: overrides, into: presentation)
                     // **Before the load transaction's commands, so a skin that re-opens its own
                     // panels does not end up with two.** A dispatcher skin reads
@@ -1029,7 +1029,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     }
 
     private func apply(skin: WMPLoadedSkin, store: WMPImageStore, scene: WMPScene, image: CGImage,
-                       overlay: CGImage? = nil,
+                       overlay: CGImage? = nil, silhouette: CGImage? = nil,
                        runtime: WMPScriptRuntime, overrides: WMPSceneOverrides,
                        into presentation: WMPViewPresentation) {
         loadedSkin = skin
@@ -1289,7 +1289,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             setWindowSize(presentation,
                           NSSize(width: scene.canvasSize.width, height: scene.canvasSize.height))
         }
-        view.present(image, overlay: overlay, scene: scene, traceSource: "initial")
+        view.present(image, overlay: overlay, silhouette: silhouette, scene: scene, traceSource: "initial")
         view.refreshHostState(host.snapshot)
         // A mode switch can create this WMP session while audio (or local video) is already
         // playing. `lastScriptSnapshot` is deliberately seeded above so normal host events do not
@@ -1606,7 +1606,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     presentation.mainView?.updateListItems(scriptOutput.listItems)
                     presentation.mainView?.updateWidgetState(scriptOutput.widgetState)
                 }
-                presentation.mainView?.present(result.image, overlay: result.overlayImage, scene: scene, traceSource: "load")
+                presentation.mainView?.present(result.image, overlay: result.overlayImage, silhouette: result.silhouetteMask, scene: scene, traceSource: "load")
                 presentation.mainView?.refreshHostState(self.host.snapshot)
                 if let scriptOutput {
                     let switchedView = self.applyHostCommands(scriptOutput.hostCommands,
@@ -1824,7 +1824,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     viewID: registration.id, size: size, opener: opener, offset: offset,
                     storedTopLeft: savedOrigin) else { return }
                 apply(skin: skin, store: store, scene: scene, image: rendered.image,
-                      overlay: rendered.overlayImage,
+                      overlay: rendered.overlayImage, silhouette: rendered.silhouetteMask,
                       runtime: scriptRuntime, overrides: overrides, into: presentation)
                 if let oldTopLeft {
                     presentation.window.setFrameOrigin(
@@ -2542,7 +2542,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     guard presentation.sceneOverrides == overrides else { continue }
                     presentation.activeScene = scene
                     self?.startAnimation(presentation, for: scene)
-                    presentation.mainView?.present(result.image, overlay: result.overlayImage,
+                    presentation.mainView?.present(result.image, overlay: result.overlayImage, silhouette: result.silhouetteMask,
                                                    scene: scene, dirtyBounds: scene.dirtyBounds,
                                                    traceSource: "interaction")
                     return
@@ -2953,7 +2953,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 presentation.presentedWidgetState = presented.widgetState
                 presentation.mainView?.updateListItems(presented.listItems)
                 presentation.mainView?.updateWidgetState(presented.widgetState)
-                presentation.mainView?.present(result.image, overlay: result.overlayImage, scene: scene, traceSource: "transaction")
+                presentation.mainView?.present(result.image, overlay: result.overlayImage, silhouette: result.silhouetteMask, scene: scene, traceSource: "transaction")
                 self.arbitrateVideoSurface()
             } catch { recordScriptDiagnostics([.init(code: "scene-transaction", message: error.localizedDescription)]) }
         }
@@ -3412,7 +3412,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 self.startAnimation(presentation, for: scene)
                 presentation.mainView?.updateListItems(output.listItems)
                 presentation.mainView?.updateWidgetState(output.widgetState)
-                presentation.mainView?.present(rendered.image, overlay: rendered.overlayImage,
+                presentation.mainView?.present(rendered.image, overlay: rendered.overlayImage, silhouette: rendered.silhouetteMask,
                                                scene: scene, traceSource: "timer")
                 self.arbitrateVideoSurface()
             } catch { self.recordScriptDiagnostics([.init(code: "timer-transaction", message: error.localizedDescription)]) }
@@ -3527,7 +3527,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             presentation.presentedWidgetState = output.widgetState
             presentation.mainView?.updateListItems(output.listItems)
             presentation.mainView?.updateWidgetState(output.widgetState)
-            presentation.mainView?.present(rendered.image, overlay: rendered.overlayImage,
+            presentation.mainView?.present(rendered.image, overlay: rendered.overlayImage, silhouette: rendered.silhouetteMask,
                                            scene: scene, traceSource: "tween")
             arbitrateVideoSurface()
         } catch {
@@ -3659,7 +3659,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     clock: clock, slotClocks: slotClocks) else { return }
         let presentStarted = Date()
         guard presentation.activeScene == scene else { return }
-        view.present(rendered.image, overlay: rendered.overlayImage, scene: scene, dirtyBounds: dirty, traceSource: "animation")
+        view.present(rendered.image, overlay: rendered.overlayImage, silhouette: rendered.silhouetteMask, scene: scene, dirtyBounds: dirty, traceSource: "animation")
         if Self.animationTrace {
             presentation.animationTraceRenderSeconds += presentStarted.timeIntervalSince(renderStarted)
             presentation.animationTracePresentSeconds += Date().timeIntervalSince(presentStarted)

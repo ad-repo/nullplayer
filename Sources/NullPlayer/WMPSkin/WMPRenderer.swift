@@ -15,16 +15,23 @@ struct WMPRenderResult {
     /// with its 73px keyed-out hole composites over the visualizer, rather than the visualizer
     /// covering the bezel — without any shape fitting in the surface view itself.
     let overlayImage: CGImage?
+    /// Where the window exists, for the effects surfaces: an 8-bit grey mask over the whole
+    /// canvas at canvas resolution, 255 inside the window and 0 outside it. Nil when no
+    /// windowless `<EFFECTS>` rect reaches outside the skin, which is almost every scene.
+    /// See `WMPRenderer.effectsSilhouette`.
+    let silhouetteMask: CGImage?
     let renderMilliseconds: Double
     let backingScale: CGFloat
     let imageMetrics: WMPImageStoreMetrics
     let wasRenderedOnMainThread: Bool
 
-    init(image: CGImage, overlayImage: CGImage? = nil, renderMilliseconds: Double,
+    init(image: CGImage, overlayImage: CGImage? = nil, silhouetteMask: CGImage? = nil,
+         renderMilliseconds: Double,
          backingScale: CGFloat, imageMetrics: WMPImageStoreMetrics,
          wasRenderedOnMainThread: Bool) {
         self.image = image
         self.overlayImage = overlayImage
+        self.silhouetteMask = silhouetteMask
         self.renderMilliseconds = renderMilliseconds
         self.backingScale = backingScale
         self.imageMetrics = imageMetrics
@@ -233,7 +240,9 @@ struct WMPRenderer: @unchecked Sendable {
                           slotClocks: slotClocks, punchingOut: scene.windowedEffectsRects,
                           underneath: image)
         }
-        return WMPRenderResult(image: image, overlayImage: overlay,
+        let silhouette = layers == nil ? nil
+            : Self.effectsSilhouette(scene: scene, layers: [image, overlay])
+        return WMPRenderResult(image: image, overlayImage: overlay, silhouetteMask: silhouette,
             renderMilliseconds: (CFAbsoluteTimeGetCurrent() - started) * 1_000,
             backingScale: backingScale, imageMetrics: imageStore.metrics,
             wasRenderedOnMainThread: Thread.isMainThread)
@@ -434,6 +443,109 @@ struct WMPRenderer: @unchecked Sendable {
 
     /// The union of the images' alpha as a clipping mask (255 keeps), top-down like the images.
     /// All of them are the same canvas-sized bitmap, so no scaling is involved.
+    /// `WMP_EFFECTS_SILHOUETTE=0` restores the unconfined surface — the A/B switch for this rule.
+    static let effectsSilhouetteEnabled =
+        ProcessInfo.processInfo.environment["WMP_EFFECTS_SILHOUETTE"] != "0"
+
+    /// **A windowless visualizer is drawn inside the window, never beside it.** A skin that shapes
+    /// itself with `transparencyColor` alone states no shape a surface can be clipped to, so an
+    /// `<EFFECTS>` rect that overhangs its own artwork painted its spectrum straight onto the
+    /// desktop: `livin_it_skate` hangs a 315x292 rect over a diagonal skateboard, and the corner
+    /// of the rect the deck does not cover drew bars outside the board.
+    ///
+    /// **Outside is what the painted pixels do not enclose, not what they do not cover.** A pixel
+    /// is cut only if no layer painted it *and* it is connected to the canvas edge through other
+    /// unpainted pixels. That is the distinction the transparency key alone cannot make and
+    /// `WMPEffectsGround` refuses to guess at: a keyed hole the artwork encloses keeps its
+    /// visualizer, the matte round the outside does not. `pharaoh`'s apex hole and `anemone`'s
+    /// lens are both kept. A windowed rect counts as painted — it is a real window region and the
+    /// overlay is punched out over it on purpose.
+    ///
+    /// Nil unless the cut reaches a windowless rect. Measured with the probe's `SILHOUETTE` line
+    /// over 175 archives: 12 of 82 windowless rects are cut, and every cut is matte outside the
+    /// skin's body — `BubbleSkin`, `HueShifter` and `raveworld` lose the corners of rects far
+    /// larger than the player, the rest a sliver along the edge.
+    static func effectsSilhouette(scene: WMPScene, layers: [CGImage?]) -> CGImage? {
+        guard effectsSilhouetteEnabled else { return nil }
+        let windowless = scene.widgets.filter { $0.kind == .effects && !$0.isWindowedEffects }
+            .compactMap { widget -> WMPRect? in
+                guard let clip = widget.clipRect else { return widget.frame }
+                return widget.frame.intersection(clip)
+            }
+        let images = layers.compactMap { $0 }
+        guard !windowless.isEmpty, !images.isEmpty else { return nil }
+        // **At canvas resolution, not the backing store's.** The fill runs on every render of a
+        // scene with a surface — the skate's display window re-renders ten times a second — and
+        // the clip scales the mask to the surface anyway. A skin's key edge is a canvas pixel.
+        let width = Int(scene.canvasSize.width.rounded(.up))
+        let height = Int(scene.canvasSize.height.rounded(.up))
+        guard width > 0, height > 0,
+              let context = CGContext(data: nil, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let data = context.data else { return nil }
+        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        context.interpolationQuality = .none
+        for image in images { context.draw(image, in: bounds) }
+        let rgba = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+        // Rows are top-first here, as the scene's own coordinates are.
+        func pixels(_ rect: WMPRect) -> (Range<Int>, Range<Int>)? {
+            let x0 = max(0, Int(rect.x.rounded(.down))), x1 = min(width, Int(rect.maxX.rounded(.up)))
+            let y0 = max(0, Int(rect.y.rounded(.down))), y1 = min(height, Int(rect.maxY.rounded(.up)))
+            return x0 < x1 && y0 < y1 ? (x0..<x1, y0..<y1) : nil
+        }
+        // 0 unpainted, 1 painted, 2 outside — over raw memory, because this is per frame and an
+        // array written through a captured closure copied the whole canvas per pixel in a debug
+        // build, which stalled `livin_it_skate`'s display window outright.
+        let count = width * height
+        let state = UnsafeMutablePointer<UInt8>.allocate(capacity: count)
+        let stack = UnsafeMutablePointer<Int>.allocate(capacity: count)
+        defer { stack.deallocate() }
+        // **Half opacity is the edge, not any opacity.** An antialiased rim is partly transparent,
+        // and counting it as painted let the surface show through it as a halo round the skate's
+        // deck and wheels — and through a stray row of faint pixels as a line across the window.
+        for index in 0..<count { state[index] = rgba[index * 4 + 3] < 128 ? 0 : 1 }
+        for rect in scene.windowedEffectsRects {
+            guard let (xs, ys) = pixels(rect) else { continue }
+            for y in ys { for x in xs { state[y * width + x] = 1 } }
+        }
+        var top = 0
+        func edge(_ index: Int) {
+            if state[index] == 0 { state[index] = 2; stack[top] = index; top += 1 }
+        }
+        for x in 0..<width { edge(x); edge((height - 1) * width + x) }
+        for y in 0..<height { edge(y * width); edge(y * width + width - 1) }
+        while top > 0 {
+            top -= 1
+            let index = stack[top], x = index % width
+            if x > 0, state[index - 1] == 0 { state[index - 1] = 2; stack[top] = index - 1; top += 1 }
+            if x < width - 1, state[index + 1] == 0 {
+                state[index + 1] = 2; stack[top] = index + 1; top += 1
+            }
+            if index >= width, state[index - width] == 0 {
+                state[index - width] = 2; stack[top] = index - width; top += 1
+            }
+            if index < count - width, state[index + width] == 0 {
+                state[index + width] = 2; stack[top] = index + width; top += 1
+            }
+        }
+        let reachesARect = windowless.compactMap(pixels).contains { xs, ys in
+            ys.contains { y in xs.contains { state[y * width + $0] == 2 } }
+        }
+        guard reachesARect else { state.deallocate(); return nil }
+        for index in 0..<count { state[index] = state[index] == 2 ? 0 : 255 }
+        let bytes = Data(bytesNoCopy: state, count: count, deallocator: .custom { pointer, _ in
+            pointer.deallocate()
+        })
+        guard let provider = CGDataProvider(data: bytes as CFData) else { return nil }
+        return CGImage(width: width, height: height, bitsPerComponent: 8,
+                       bitsPerPixel: 8, bytesPerRow: width,
+                       space: CGColorSpaceCreateDeviceGray(),
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: false,
+                       intent: .defaultIntent)
+    }
+
     private static func paintedMask(of images: [CGImage?]) -> CGImage? {
         let images = images.compactMap { $0 }
         guard let first = images.first else { return nil }

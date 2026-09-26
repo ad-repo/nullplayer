@@ -84,6 +84,26 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   fully transparent pixels inside each `WIDGET … effects` frame — that is the whole population, and
   it is 17 rects of 95 before the clipping-colour gate takes it to 5.
 
+- **A windowless `<EFFECTS>` surface is clipped to the window the skin painted, and "outside" is
+  what the artwork does not *enclose*** (`WMPRenderer.effectsSilhouette`, 2026-09-25). A skin
+  that shapes itself with `transparencyColor` alone states no `clippingColor` shape, so neither
+  `clippingShape` nor a ground confines its rect, and a rect larger than the artwork painted its
+  spectrum onto the desktop. `livin_it_skate` hangs a 315x292 rect over a diagonal board and drew
+  bars off the deck's lower-left corner. The mask flood-fills the unpainted pixels of the flattened
+  below+over rasters from the canvas edge: those are cut, and an unpainted hole the artwork
+  encloses keeps its visualizer (`pharaoh`'s apex, `anemone`'s lens). **A pixel under half
+  opacity counts as unpainted**: at any-alpha the antialiased rim of the deck and wheels, and a
+  stray faint row, let projectM show through as a halo and a line across the window (live QA,
+  2026-09-25); no corpus rect's cut moved, since keyed art has no partial alpha. Windowed rects count as
+  painted. It is nil unless the cut reaches a windowless rect. Probe (`SILHOUETTE`, 175 archives):
+  12 of 82 windowless rects are cut, every one matte outside the body — `BubbleSkin`, `HueShifter`
+  and `raveworld` lose rect corners, the rest a sliver. **The render sweep cannot see this**: the
+  mask applies to the hosted surface only, so dumps are unchanged. It runs on every render of a
+  scene with a surface, at canvas resolution over raw buffers — the first version wrote arrays
+  through captured closures, took seconds per frame in a debug build, and stalled the skate's
+  display window so its vis never appeared. Accepted live 2026-09-25. Pinned by
+  `WMPEffectsSilhouetteTests`; A/B with `WMP_EFFECTS_SILHOUETTE=0`.
+
 - **A container that paints only a `backgroundColor` grounds all its children, negative `zIndex`
   included.** Behind-own-artwork ordering is for artwork with a hole (`Cerulean`); a colour with no
   image has no hole, so a child drawn behind it is simply gone. `Melvin`'s belly is

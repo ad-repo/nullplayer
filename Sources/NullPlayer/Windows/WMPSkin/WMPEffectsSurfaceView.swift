@@ -56,6 +56,9 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     /// paint. See `WMPWidget.clippingShape`.
     private var clippingShape: CGImage?
     private var clippingShapeRect: CGRect = .zero
+    /// The window as the skin painted it — `WMPRenderResult.silhouetteMask`, over the whole view.
+    private var silhouette: CGImage?
+    private var silhouetteRect: CGRect = .zero
 
     override var isFlipped: Bool { true }
 
@@ -99,6 +102,14 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         guard clippingShape !== mask || clippingShapeRect != rect else { return }
         clippingShape = mask
         clippingShapeRect = rect
+        needsDisplay = true
+    }
+
+    /// As `applyClippingShape`, for the painted silhouette; see `WMPRenderer.effectsSilhouette`.
+    func applySilhouette(_ mask: CGImage?, rect: CGRect) {
+        guard silhouette !== mask || silhouetteRect != rect else { return }
+        silhouette = mask
+        silhouetteRect = rect
         needsDisplay = true
     }
 
@@ -320,6 +331,7 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         if let clippingShape, !clippingShapeRect.isEmpty {
             clip(to: clippingShapeRect, mask: clippingShape)
         }
+        if let silhouette, !silhouetteRect.isEmpty { clip(to: silhouetteRect, mask: silhouette) }
         switch effect.style {
         case .bars: drawBars()
         case .spikes: drawSpikes()
