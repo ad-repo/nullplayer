@@ -29,6 +29,9 @@ struct WMPSceneImage: Hashable, Codable {
     /// A script property as much as an authored one — `Plus! HueShifter`'s "Change Skin Color"
     /// button is `changeHue()` assigning it to five elements. See `WMPImageStore.hueRotated`.
     let hueShift: Double
+    /// The keyed `<SUBVIEW>` this artwork is drawn inside, whose key it also takes over that
+    /// subview's matte and nowhere else. See `WMPSceneMatte`.
+    var matte: WMPSceneMatte?
 
     init(resourcePath: String, sourceRect: WMPRect?, colorKeys: [WMPColor], tiled: Bool,
          interpolation: WMPImageInterpolation, mappingMask: WMPSceneMappingMask?,
@@ -45,6 +48,23 @@ struct WMPSceneImage: Hashable, Codable {
         self.clippingMaskKeys = clippingMaskKeys
         self.hueShift = hueShift
     }
+}
+
+/// A keyed `<SUBVIEW>`'s matte, and the key its children's artwork takes over it.
+///
+/// **A child pixel of the container's key colour, over the container's keyed pixels, is not
+/// drawn.** `robbie`'s `left_ear` keys `#FF0000` out of `robbie_ear_left.bmp` and holds the `vol`
+/// slider, whose three bitmaps are pure `#FF0000` in exactly the pixels the ear keys, under a
+/// `transparencyColor="#FF00FF"` of their own: drawn as authored, a red wedge stood beside the
+/// face. Both halves of the condition are load-bearing, and each alone was measured and refuted:
+/// clipping every child to the container's region cut 17,152 px of legitimate artwork out of
+/// `Gorillaz` and the top edge off `corona`'s `viewTiny`, and keying every child by the
+/// container's colour punched out `Heart_Butterfly`'s and `Sports`' button glyphs, which are drawn
+/// in that colour over opaque artwork.
+struct WMPSceneMatte: Hashable, Codable {
+    /// The container's keyed region, `inverted` — so it clips a draw to the matte.
+    let shape: WMPSceneClipMask
+    let keys: [WMPColor]
 }
 
 /// A `<BUTTONGROUP>`'s mapping image plus the children whose regions this command paints through.
@@ -353,6 +373,8 @@ struct WMPSceneClipMask: Hashable, Codable {
     /// round the window and which are a hole inside it; the ones connected to the edge are the
     /// matte. See `WMPSceneBuilder.bodySilhouette`.
     var exteriorOnly = false
+    /// Whether the mask keeps the keyed pixels instead of cutting them. See `WMPSceneMatte`.
+    var inverted = false
 }
 
 struct WMPPaintCommand: Hashable, Codable {
@@ -390,6 +412,16 @@ struct WMPPaintCommand: Hashable, Codable {
         self.alpha = alpha
         self.inheritedClipMasks = inheritedClipMasks
         self.confinedToPaint = confinedToPaint
+    }
+
+    /// This command with its artwork under `matte`. A fill or text is returned unchanged.
+    func under(_ matte: WMPSceneMatte?) -> WMPPaintCommand {
+        guard let matte, case .image(var image) = paint else { return self }
+        image.matte = matte
+        return WMPPaintCommand(stableID: stableID, nodeID: nodeID, frame: frame, clipRect: clipRect,
+                               zIndex: zIndex, documentOrder: documentOrder, paint: .image(image),
+                               alpha: alpha, inheritedClipMasks: inheritedClipMasks,
+                               confinedToPaint: confinedToPaint)
     }
 
     func inside(_ masks: [WMPSceneClipMask]) -> WMPPaintCommand {

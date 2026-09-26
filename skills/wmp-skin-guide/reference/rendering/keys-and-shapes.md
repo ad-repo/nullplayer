@@ -197,6 +197,25 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   slider end-cap's outline hanging 1-2 px past its body, which the same region rule predicts.
   `WMPClippingShapeTests.testAWindowBodysMatteClipsItsSiblingsButNotItsInteriorHole` pins it.
 
+- **A child pixel of its container's key colour, over the container's keyed matte, is not drawn
+  (`WMPSceneMatte`).** `robbie`'s `left_ear` keys `#FF0000` out of `robbie_ear_left.bmp` and holds
+  the `vol` slider, whose three bitmaps are pure `#FF0000` in exactly the pixels the ear keys, under
+  a `transparencyColor="#FF00FF"` of their own — a red wedge beside the face. The container is a
+  keyed `<SUBVIEW>` whose `backgroundImage` is untiled at its own size and which states no region
+  shape already (`clipMask` nil); a child draw carries the matte only when its artwork holds the key
+  (`WMPImageStore.holdsKey`), and the renderer then splits it in two: plain inside the container's
+  region, also keyed outside it. **Both conditions are load-bearing and each alone was measured and
+  refuted** (2026-09-26): clipping children to the container's exterior matte moved 39 images —
+  17,152 px of `Gorillaz`, `Ursula`'s drawer, `corona`'s `viewTiny` top edge; keying children by the
+  container's colour everywhere punched out `Heart_Butterfly`'s and `Sports`' button glyphs and, on
+  the white-keyed mask containers, `Plus! Hard Boiled`'s and `SlimLine`'s JPEG whites at JPEG
+  tolerance. Splitting every draw under a matte left ±1-level seams on antialiased edges
+  (`QuantumRedshift`, `Windows_XP_Media_Center_Edition`), which is why a child without the key keeps
+  one draw. Sweep (179 archives): `robbie` 468 px and `Charlies_Angels_Full_Throttle`'s `viewPL`
+  resize grip, 58 px of blue — the same idiom, its `f_resizer.png` drawn by a blue-keyed subview and
+  by a magenta-keyed button inside it. `WMPClippingShapeTests
+  .testAChildTakesItsContainersKeyOnlyOverTheContainersMatte` pins it.
+
 - **A mask buffer's row zero is the authored top row.** A `CGImage` drawn into a bitmap context
   arrives that way round — `WMPMappingImage` says so in as many words — so "correcting for
   CoreGraphics" by reversing the rows mirrors the mask and clips the half it should keep. That is

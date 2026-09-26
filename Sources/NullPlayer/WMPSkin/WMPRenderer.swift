@@ -367,12 +367,6 @@ struct WMPRenderer: @unchecked Sendable {
                     context.restoreGState(); continue
                 }
                 let frame = animation?.frameIndex(at: slotClock) ?? 0
-                let decoded = try imageStore.image(for: specification.resourcePath,
-                                                   colorKeys: specification.colorKeys,
-                                                   implicitKey: specification.implicitColorKey,
-                                                   frame: frame,
-                                                   hueShift: specification.hueShift)
-                let sourceImage = crop(specification.sourceRect, from: decoded.image)
                 if let mappingMask = specification.mappingMask,
                    let mask = imageStore.mappingMask(for: mappingMask) {
                     clip(to: command.frame, mask: mask, context: context)
@@ -384,27 +378,59 @@ struct WMPRenderer: @unchecked Sendable {
                                                            keyedOut: specification.clippingMaskKeys)
                     clip(to: command.frame, mask: mask, context: context)
                 }
-                if specification.tiled {
-                    context.clip(to: command.frame.cgRect)
-                    let tileWidth = CGFloat(sourceImage.width), tileHeight = CGFloat(sourceImage.height)
-                    if tileWidth > 0, tileHeight > 0 {
-                        var y = command.frame.y
-                        while y < command.frame.maxY {
-                            var x = command.frame.x
-                            while x < command.frame.maxX {
-                                let tile = WMPRect(x: x, y: y, width: tileWidth, height: tileHeight)
-                                let image = try resampled(sourceImage, of: specification,
-                                                          frame: frame, in: tile, context: context)
-                                drawImage(image, in: tile, context: context)
-                                x += tileWidth
-                            }
-                            y += tileHeight
+                // **Under a keyed container's matte the artwork takes that container's key too**,
+                // and nowhere else — the two draws partition the frame. See `WMPSceneMatte`.
+                let passes: [(keys: [WMPColor], clip: WMPSceneClipMask?)]
+                if let matte = specification.matte {
+                    var region = matte.shape
+                    region.inverted = false
+                    passes = [(specification.colorKeys, region),
+                              (specification.colorKeys + matte.keys, matte.shape)]
+                } else {
+                    passes = [(specification.colorKeys, nil)]
+                }
+                for pass in passes {
+                    if let shape = pass.clip {
+                        context.saveGState()
+                        let mask = try imageStore.regionMask(for: shape)
+                        // Past the container's bitmap there is no matte, so the plain draw keeps it.
+                        if !shape.inverted, let (padded, extent) = Self.pad(mask, frame: shape.frame,
+                                                                            toCover: command.frame) {
+                            clip(to: extent, mask: padded, context: context)
+                        } else {
+                            clip(to: shape.frame, mask: mask, context: context)
                         }
                     }
-                } else {
-                    let image = try resampled(sourceImage, of: specification, frame: frame,
-                                              in: command.frame, context: context)
-                    drawImage(image, in: command.frame, context: context)
+                    defer { if pass.clip != nil { context.restoreGState() } }
+                    let decoded = try imageStore.image(for: specification.resourcePath,
+                                                       colorKeys: pass.keys,
+                                                       implicitKey: specification.implicitColorKey,
+                                                       frame: frame,
+                                                       hueShift: specification.hueShift)
+                    let sourceImage = crop(specification.sourceRect, from: decoded.image)
+                    if specification.tiled {
+                        context.clip(to: command.frame.cgRect)
+                        let tileWidth = CGFloat(sourceImage.width), tileHeight = CGFloat(sourceImage.height)
+                        if tileWidth > 0, tileHeight > 0 {
+                            var y = command.frame.y
+                            while y < command.frame.maxY {
+                                var x = command.frame.x
+                                while x < command.frame.maxX {
+                                    let tile = WMPRect(x: x, y: y, width: tileWidth, height: tileHeight)
+                                    let image = try resampled(sourceImage, of: specification, keys: pass.keys,
+                                                              frame: frame, in: tile, context: context)
+                                    drawImage(image, in: tile, context: context)
+                                    x += tileWidth
+                                }
+                                y += tileHeight
+                            }
+                        }
+                    } else {
+                        let image = try resampled(sourceImage, of: specification, keys: pass.keys,
+                                                  frame: frame,
+                                                  in: command.frame, context: context)
+                        drawImage(image, in: command.frame, context: context)
+                    }
                 }
             case let .text(text):
                 draw(text, in: command.frame, context: context, clock: clock)
@@ -630,8 +656,9 @@ struct WMPRenderer: @unchecked Sendable {
     /// A resample that cannot be produced returns the authored bitmap, which then draws exactly as
     /// it did before: the store answers with the unscaled image past its own pixel ceiling, and the
     /// size check below catches that without having to ask it what it did.
-    private func resampled(_ image: CGImage, of specification: WMPSceneImage, frame: Int,
-                           in destination: WMPRect, context: CGContext) throws -> CGImage {
+    private func resampled(_ image: CGImage, of specification: WMPSceneImage, keys: [WMPColor],
+                           frame: Int, in destination: WMPRect,
+                           context: CGContext) throws -> CGImage {
         let decision = WMPBitmapInterpolationPolicy.decision(
             sourcePixelSize: CGSize(width: image.width, height: image.height),
             destination: destination.cgRect, in: context)
@@ -641,7 +668,7 @@ struct WMPRenderer: @unchecked Sendable {
             return image
         case let .prescale(scale):
             let upscaled = try imageStore.upscaledImage(
-                for: specification.resourcePath, colorKeys: specification.colorKeys,
+                for: specification.resourcePath, colorKeys: keys,
                 implicitKey: specification.implicitColorKey, frame: frame,
                 sourceRect: specification.sourceRect, scale: scale,
                 hueShift: specification.hueShift)

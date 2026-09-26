@@ -148,6 +148,7 @@ final class WMPImageStore: @unchecked Sendable {
     private var clipBytes = 0
     private var regionShapeEntries: [String: Bool] = [:]
     private var shapeMaskEntries: [String: Bool] = [:]
+    private var holdsKeyEntries: [String: Bool] = [:]
     /// One `WMPColor?` per bitmap for `cornerColor`; smaller than a decoded frame, so never evicted.
     private var cornerColorEntries: [String: WMPColor?] = [:]
     /// `filmstripIsDescending` answers, keyed by path, frame count and axis. One bool each:
@@ -1129,6 +1130,40 @@ final class WMPImageStore: @unchecked Sendable {
         return answer
     }
 
+    /// Whether keying `keys` out of this artwork removes anything its own `colorKeys` left — the
+    /// test that puts a draw under a `WMPSceneMatte` only when the matte has something to cut, so
+    /// the rest keep a single draw.
+    func holdsKey(_ keys: [WMPColor], for path: String, colorKeys: [WMPColor],
+                  implicitKey: WMPColor?) throws -> Bool {
+        let canonical = provider.canonicalPath(for: path) ?? path
+        let cacheKey = "\(canonical)|\(colorKeys.map(\.description).joined(separator: ","))|"
+            + "\(implicitKey?.description ?? "")|\(keys.map(\.description).joined(separator: ","))"
+        lock.lock()
+        if let cached = holdsKeyEntries[cacheKey] { lock.unlock(); return cached }
+        lock.unlock()
+        let own = try image(for: canonical, colorKeys: colorKeys, implicitKey: implicitKey).image
+        let both = try image(for: canonical, colorKeys: colorKeys + keys, implicitKey: implicitKey).image
+        let answer = Self.transparentPixelCount(both) > Self.transparentPixelCount(own)
+        lock.lock()
+        holdsKeyEntries[cacheKey] = answer
+        lock.unlock()
+        return answer
+    }
+
+    private static func transparentPixelCount(_ image: CGImage) -> Int {
+        let width = image.width, height = image.height
+        guard width > 0, height > 0 else { return 0 }
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        pixels.withUnsafeMutableBytes { buffer in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                    | CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        return stride(from: 3, to: pixels.count, by: 4).reduce(0) { $0 + (pixels[$1] == 0 ? 1 : 0) }
+    }
+
     private static func hasTransparentPixels(_ image: CGImage) -> Bool {
         let width = image.width, height = image.height
         guard width > 0, height > 0 else { return false }
@@ -1204,8 +1239,8 @@ final class WMPImageStore: @unchecked Sendable {
     /// A container shape's region, honouring `exteriorOnly`.
     func regionMask(for shape: WMPSceneClipMask) throws -> CGImage {
         try mask(for: shape.resourcePath, keyedOut: shape.keyedOut, honoringSourceAlpha: false,
-                 kind: shape.exteriorOnly ? "exterior" : "region",
-                 exteriorOnly: shape.exteriorOnly)
+                 kind: (shape.exteriorOnly ? "exterior" : "region") + (shape.inverted ? "-inverted" : ""),
+                 exteriorOnly: shape.exteriorOnly, inverted: shape.inverted)
     }
 
     /// The 8-bit region mask a `<BUTTONGROUP>` paints one of its sheets through, cached.
@@ -1253,7 +1288,8 @@ final class WMPImageStore: @unchecked Sendable {
     }
 
     private func mask(for path: String, keyedOut: [WMPColor], honoringSourceAlpha: Bool,
-                      kind: String, exteriorOnly: Bool = false) throws -> CGImage {
+                      kind: String, exteriorOnly: Bool = false,
+                      inverted: Bool = false) throws -> CGImage {
         let canonical = provider.canonicalPath(for: path) ?? path
         let keys = keyedOut.map(\.description).joined(separator: ",")
         let key = "\(canonical)|\(kind)=\(keys)"
@@ -1270,7 +1306,7 @@ final class WMPImageStore: @unchecked Sendable {
         let source = try image(for: canonical).image
         let mask = try Self.makeClippingMask(from: source, keyedOut: keyedOut,
                                              honoringSourceAlpha: honoringSourceAlpha,
-                                             exteriorOnly: exteriorOnly)
+                                             exteriorOnly: exteriorOnly, inverted: inverted)
         let bytes = mask.width * mask.height
         lock.lock()
         defer { lock.unlock() }
@@ -1311,7 +1347,8 @@ final class WMPImageStore: @unchecked Sendable {
 
     private static func makeClippingMask(from image: CGImage, keyedOut: [WMPColor],
                                         honoringSourceAlpha: Bool = true,
-                                        exteriorOnly: Bool = false) throws -> CGImage {
+                                        exteriorOnly: Bool = false,
+                                        inverted: Bool = false) throws -> CGImage {
         let width = image.width, height = image.height
         guard width > 0, height > 0 else {
             throw WMPFailure(WMPDiagnostic(.renderFailed, "Clipping image has no pixels."))
@@ -1349,6 +1386,7 @@ final class WMPImageStore: @unchecked Sendable {
             }
         }
         if exteriorOnly { keepInteriorHoles(&alpha, width: width, height: height) }
+        if inverted { for index in alpha.indices { alpha[index] = 255 - alpha[index] } }
         // A **grayscale image**, not a `CGImage` image mask: `clip(to:mask:)` reads the two
         // oppositely — an image mask paints where its samples are 0 — and 255-means-keep is the
         // convention `WMPMappingImage.maskImage` already established, so the two mask paths in this

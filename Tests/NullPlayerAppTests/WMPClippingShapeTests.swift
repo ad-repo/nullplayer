@@ -484,6 +484,40 @@ final class WMPClippingShapeTests: XCTestCase {
                        [173, 204, 49, 255], "an interior keyed hole is not cut from the siblings")
     }
 
+    /// `robbie`: a child pixel of its container's key colour, over the container's keyed matte, is
+    /// not drawn. Neither half alone: a child's other colours still draw over the matte (`corona`,
+    /// `Gorillaz`), and the key colour still draws over opaque artwork (`Heart_Butterfly`'s glyphs).
+    func testAChildTakesItsContainersKeyOnlyOverTheContainersMatte() async throws {
+        let red: [UInt8] = [255, 0, 0, 255], green: [UInt8] = [0, 200, 0, 255]
+        var ear: [UInt8] = [], slider: [UInt8] = []
+        for row in 0..<8 {
+            for column in 0..<8 {
+                ear += column < 2 ? red : [UInt8(60 + column * 20), UInt8(row * 20), 100, 255]
+                slider += row == 0 && column < 4 ? red : green
+            }
+        }
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="8" height="8" backgroundColor="none">
+            <SUBVIEW id="ear" left="0" top="0" width="8" height="8" backgroundImage="ear.png"
+                     transparencyColor="#FF0000">
+                <BUTTON id="vol" left="0" top="0" width="8" height="8" image="vol.png"
+                        transparencyColor="#FF00FF"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """, images: ["ear.png": try WMPSkinTestSupport.encodedImage(width: 8, height: 8, rgba: ear),
+                      "vol.png": try WMPSkinTestSupport.encodedImage(width: 8, height: 8, rgba: slider)])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        XCTAssertNotNil(try imageCommand(scene, nodeID: "vol").matte)
+
+        let rendered = try await renderer(for: skin).render(scene: scene).image
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered, x: 0, yFromTop: 0)[3], 0,
+                       "the key colour over the matte is not drawn")
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered, x: 3, yFromTop: 0), red,
+                       "the key colour over opaque artwork still draws")
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered, x: 0, yFromTop: 1), green,
+                       "another colour over the matte still draws")
+    }
+
     // MARK: - Keys at 16-bit colour
 
     /// `YIL!OMA2K` declares `#6699FF` and its speaker bitmaps hold `#639CFF`, which is `#6699FF`

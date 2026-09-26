@@ -301,9 +301,18 @@ struct WMPSceneBuilder: @unchecked Sendable {
         /// and that parent authored an opaque fill under a keyed background image. See
         /// `WMPEffectsGround` — it is the one other permission a ground takes.
         var behindFilledArtworkStack: [Bool] = []
+        /// The innermost keyed `<SUBVIEW>` the walk is inside, if any. See `WMPSceneMatte`.
+        var matteStack: [WMPSceneMatte?] = []
         func emit(_ command: WMPPaintCommand) {
             guard command.alpha > 0 else { return }
-            commands.append(command.inside(clipMaskStack))
+            var matte = matteStack.last ?? nil
+            if let candidate = matte, case .image(let image) = command.paint {
+                matte = (try? imageStore.holdsKey(candidate.keys, for: image.resourcePath,
+                                                  colorKeys: image.colorKeys,
+                                                  implicitKey: image.implicitColorKey)) == true
+                    ? candidate : nil
+            }
+            commands.append(command.under(matte).inside(clipMaskStack))
         }
         var geometries: [Int: WMPResolvedGeometry] = [:]
         /// Local frames of the drawn `<SUBVIEW>`s already walked under each parent, in paint order —
@@ -866,6 +875,24 @@ struct WMPSceneBuilder: @unchecked Sendable {
             var mask = WMPSceneClipMask(resourcePath: path, keyedOut: keys, frame: frame)
             mask.exteriorOnly = true
             return mask
+        }
+
+        /// The matte a keyed `<SUBVIEW>`'s artwork states for the children drawn inside it: its
+        /// `transparencyColor`-keyed pixels, under the same size and tiling guards `clipMask`
+        /// takes. See `WMPSceneMatte`.
+        func matte(_ node: WMPNode, frame: WMPRect) throws -> WMPSceneMatte? {
+            guard node.kind == .subview, !node.children.isEmpty, !frame.isEmpty,
+                  literalString(node, "backgroundTiled")?.caseInsensitiveCompare("true") != .orderedSame
+            else { return nil }
+            let keys = colors(node, names: ["transparencyColor"])
+            guard !keys.isEmpty,
+                  let path = try resource(node, names: ["backgroundImage", "background"])?.1,
+                  let decoded = try? imageStore.image(for: path),
+                  CGFloat(decoded.image.width) == frame.width,
+                  CGFloat(decoded.image.height) == frame.height else { return nil }
+            var shape = WMPSceneClipMask(resourcePath: path, keyedOut: keys, frame: frame)
+            shape.inverted = true
+            return WMPSceneMatte(shape: shape, keys: keys)
         }
 
         /// Whether a node's `clippingImage` can shape it at all. A mask larger than the node on
@@ -1592,6 +1619,11 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     frame: frame, clipRect: inheritedClip, zIndex: z,
                     documentOrder: node.stableID, paint: .fill(background), alpha: alpha))
             }
+            // A container already shaping its children by a region has nothing more to say here:
+            // `Plus! Hard Boiled`'s white-keyed mask subviews would key white out of every JPEG
+            // they hold, at the JPEG's tolerance.
+            let ownMatte = ownClipMask == nil ? try matte(node, frame: frame) : nil
+            matteStack.append(ownMatte ?? matteStack.last ?? nil)
             if let ownClipMask { clipMaskStack.append(ownClipMask) }
             if let ownGroundShape { groundShapeStack.append(ownGroundShape) }
             behindFilledArtworkStack.append(hasBackgroundImage
@@ -1602,6 +1634,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                          inheritedClip: childClip, parentAlpha: alpha,
                          parentNode: node, parentNodeFrame: frame)
             }
+            matteStack.removeLast()
             behindFilledArtworkStack.removeLast()
             if ownClipMask != nil { clipMaskStack.removeLast() }
             if ownGroundShape != nil { groundShapeStack.removeLast() }
@@ -2142,6 +2175,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 }
             }
 
+            matteStack.append(ownMatte ?? matteStack.last ?? nil)
             if let ownClipMask { clipMaskStack.append(ownClipMask) }
             if let ownGroundShape { groundShapeStack.append(ownGroundShape) }
             behindFilledArtworkStack.append(false)
@@ -2150,6 +2184,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                          inheritedClip: childClip, parentAlpha: alpha,
                          parentNode: node, parentNodeFrame: frame)
             }
+            matteStack.removeLast()
             behindFilledArtworkStack.removeLast()
             if ownClipMask != nil { clipMaskStack.removeLast() }
             if ownGroundShape != nil { groundShapeStack.removeLast() }
