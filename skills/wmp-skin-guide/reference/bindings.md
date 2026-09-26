@@ -22,7 +22,7 @@ Moved verbatim from `SKILL.md` on 2026-09-24. The object model these contracts d
   skin's `OnLoad` function), and it *does* claim the computed properties `readElement` answers from
   the host, which `computedElementProperties` lists beside it — **a computed property added to one
   and not the other is readable qualified and invisible bare**. See
-  `reference/object-model.md` § *An unqualified name in a handler resolves against its own element
+  `reference/object-model/handlers.md` § *An unqualified name in a handler resolves against its own element
   first (W216)*.
 - **An inert member that answers a constant is still a phantom.** `mediacenter` was the largest
   cause of a dead handler in the corpus — 159 `ReferenceError`s across 110 of 179 archives (W37) —
@@ -36,7 +36,7 @@ Moved verbatim from `SKILL.md` on 2026-09-24. The object model these contracts d
   their first missing member now reach their second. Never read one row falling as progress without
   re-measuring the whole table in the same capture, and never read lost pixels as a regression
   before finding the statement that hid them — a script that finally runs is a script that finally
-  hides panes. `reference/harness.md` § *After W37*.
+  hides panes. `reference/harness-history.md` § *After W37*.
 - **A host command is the script's output, not the drawing's, and it is applied when the
   transaction returns rather than after the scene is presented (W88).** The build and the render are
   the slow half of a transaction, so a view timer that fires during them cancels the task — right

@@ -248,7 +248,7 @@ source switch reloads the view rather than raising `CdromMediaChange`), and it o
 in `mainView`'s `m_top_map.png` group — `#0033ff`, window point `154,132`. Fill, source-switch
 refill, preview, play and search all work on Local Files and on Jellyfin's 1,850 playlists with no
 `terminated` line, **except play of any playlist after the first**: the proxy cache in
-`object-model.md` § *Pitfalls this surface taught* handed `playSelPlaylist()` the first playlist
+`object-model/library.md` § *Pitfalls this surface taught* handed `playSelPlaylist()` the first playlist
 ever previewed. Fixed there.
 
 Seen and not fixed, both filed as lower priority: `playSelPlaylist()` ends with

@@ -10,7 +10,7 @@ import XCTest
 /// join it only in `.wmz`, and every other mode must raise exactly what it did before.
 ///
 /// The ordering itself — deferred a turn, `orderFrontRegardless` — needs a window server and was
-/// verified live; `wmp-skin-guide/reference/windows.md` § *Raising the skin's windows together*.
+/// verified live; `wmp-skin-guide/reference/windows/placement.md` § *Raising the skin's windows together*.
 @MainActor
 final class WMPWindowRaiseTests: XCTestCase {
     private func window() -> NSWindow {

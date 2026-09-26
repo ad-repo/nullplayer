@@ -49,7 +49,7 @@ response to clicking it was the button's own sticky-down artwork changing in the
 Found immediately after W161, because the readout only became visible once the shutter cleared.
 `player.status` was `inert()` and empty in the object model *and* absent from
 `WMPObservablePropertyRegistry`, so both resolutions of the path answered nothing. See
-`../object-model.md` § *What a property read answers* rule 6.
+`../object-model/reads.md` § *What a property read answers* rule 6.
 
 ## What was ruled out
 

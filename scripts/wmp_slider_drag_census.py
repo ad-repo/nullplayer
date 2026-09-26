@@ -5,7 +5,7 @@
 
 `grep` calls a cp1252 `.wms` binary — about half the corpus carries a 0xA9 copyright sign in its
 first line — and exits 0 having printed nothing, so every number here is taken by decoding the
-archive entry. See `skills/wmp-skin-guide/reference/harness.md` § *A corpus number taken with `grep`
+archive entry. See `skills/wmp-skin-guide/reference/harness/corpus.md` § *A corpus number taken with `grep`
 is not a corpus number*.
 
 Prints, over the installed corpus minus `scripts/wmp_corpus_exclusions.txt`:

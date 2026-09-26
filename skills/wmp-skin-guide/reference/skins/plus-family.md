@@ -342,7 +342,7 @@ evaluated therefore won every call in **both** views.
 
 So the arriving horizontal view ran `perfectV.js`'s `Init()` → `vidIsRunning` false →
 `EndVideo()` → `switchSkin('perfectVSkin')` → home again, inside the load transaction. The rule and
-what it deliberately leaves shared is `../object-model.md` § *A view runs the functions its own
+what it deliberately leaves shared is `../object-model/handlers.md` § *A view runs the functions its own
 `scriptFile` names*; `WMP_VIEW_SCRIPT_SCOPE=0` is the A/B.
 
 **Two things about this skin are worth keeping.** It was only reachable once W40 landed — before

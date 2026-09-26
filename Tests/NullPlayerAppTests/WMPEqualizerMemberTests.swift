@@ -10,7 +10,7 @@ import XCTest
 ///
 /// **Re-measured 2026-09-22 over 184 archives**, decoding each `.wms`/`.js` the way
 /// `WMPTextDecoder` does and matching `\beq\s*\.\s*(member)` — the script-text scan
-/// `harness.md` § *Grepping the corpus's script text* describes. The census cannot answer this: it
+/// `harness/corpus.md` § *Grepping the corpus's script text* describes. The census cannot answer this: it
 /// matches a *tag*, never a member read.
 ///
 /// | Member | uses | archives | before | now |

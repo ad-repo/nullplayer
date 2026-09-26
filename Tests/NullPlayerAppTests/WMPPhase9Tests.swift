@@ -408,7 +408,7 @@ final class WMPPhase9Tests: XCTestCase {
     /// **This test pins the contract, not the overrun.** Nothing here can make a 120x80 scene take
     /// longer than a timer period, so it does not fail against the old code; the race itself was
     /// reproduced and the fix confirmed in the running app, per
-    /// `skills/wmp-skin-guide/reference/harness.md` § *Driving the app*. What it does hold is that a
+    /// `skills/wmp-skin-guide/reference/harness/live-loop.md` § *Driving the app*. What it does hold is that a
     /// handler which stops its own timer is obeyed and stays obeyed — the ticks stop at one.
     func testATimerHandlerThatStopsItsOwnTimerIsObeyed() async throws {
         let (controller, defaults, cleanup) = try await controller(wms: """

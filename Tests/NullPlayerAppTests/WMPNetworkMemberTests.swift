@@ -10,7 +10,7 @@ import XCTest
 /// **Measured 2026-09-21 over 184 archives and 400 script/markup files**, decoding each the way
 /// `WMPTextDecoder` does (156 UTF-16-BOM / 146 cp1252 / 89 UTF-8 / 9 UTF-8-BOM), matching
 /// `\bnetwork\s*\.\s*(member)`. The census cannot answer this — it matches a *tag*, never a member
-/// read — so this needed the script-text scan `harness.md` § *Grepping the corpus's script text*
+/// read — so this needed the script-text scan `harness/corpus.md` § *Grepping the corpus's script text*
 /// describes:
 ///
 /// | Member | uses | archives | before |

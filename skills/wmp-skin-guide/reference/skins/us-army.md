@@ -33,7 +33,7 @@ artifact link after closing it"*.
 
 - **Toggles open and never close.** `eq` resolved to the host equaliser, `eq.visible = false`
   threw, and the handlers set their flag after that line. `eq` now falls through to the element —
-  `object-model.md` § *The `<EQUALIZERSETTINGS>` element*.
+  `object-model/elements.md` § *The `<EQUALIZERSETTINGS>` element*.
 - **Visualizer over the whole window.** The surface's own `clippingImage` was never read —
   `rendering/hosted-surfaces.md`, the `<EFFECTS>` shape bullets.
 - **Pink block over the Help and Credits text.** The oversized `infomask.gif` was stretched to the
@@ -73,5 +73,5 @@ Window-local coordinates (the window is 370x370). Wait ~8 s after launch: `Init(
 | Info close | 299,69 |
 
 `WMP_RENDER_CLICK='MainPlayer@38,258;38,258'` reproduces the toggle headlessly; the visualizer,
-Help and Credits need the live loop (`../harness.md` § *Driving the app*), because each is a
+Help and Credits need the live loop (`../harness/live-loop.md` § *Driving the app*), because each is a
 post-click state the render dump never reaches.

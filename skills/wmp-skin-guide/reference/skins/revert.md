@@ -15,7 +15,7 @@ block on the left, a 92x67 combined video/visualizer pane on the right, a seek s
 `<BUTTONGROUP>` transport under both.
 
 **`Revert` and `Revert (1)` are the same markup.** They are separate archives and both are kept
-(`harness.md` § *The corpus*), but for every defect below they are one test case, not two. Any reach
+(`harness/corpus.md` § *The corpus*), but for every defect below they are one test case, not two. Any reach
 figure that counts them as two skins is counting one skin twice — W255's census did, and the honest
 number there is **one**.
 

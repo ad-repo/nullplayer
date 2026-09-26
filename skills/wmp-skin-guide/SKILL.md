@@ -86,13 +86,13 @@ owns the code you are changing.
 
 | Read | Before changing | Sections it holds |
 |---|---|---|
-| [reference/windows.md](reference/windows.md) | a window: its hosting, chrome, frame, placement, size, restore, docking, or how a skin is presented in one | *Every NullPlayer window in WMP mode is the skin's or is themed* (the hosting contract, adding a native window); *NullPlayer's own windows beside a skin* (window placement and recovery, sizing, `onLoad` sizing, `isRunningModernUI`, the kept visualization, restored size, the centre stack, raising the skin's windows together); *Presenting a skin in a window* |
+| [reference/windows.md](reference/windows.md) | a window: its hosting, chrome, frame, placement, size, restore, docking, or how a skin is presented in one | a router over `reference/windows/`: the hosting contract, routing and the borrowed frame, NullPlayer's own windows, placement and raising, sizing, mode switching and presentation |
 | [reference/rendering.md](reference/rendering.md) | anything drawn: the scene, images, `backgroundImage`, keying, text, controls, hover/down/latched faces | a router over `reference/rendering/`: artwork, keys and shapes, geometry, paint order, views, compact mode, script timing, text, video, controls, hosted surfaces |
 | [reference/input.md](reference/input.md) | hit testing, mapping images, clicks, keys, transport | *Which control a click reaches*; *Phase 4 input and transport contracts* |
 | [reference/bindings.md](reference/bindings.md) | `WMPScriptRuntime`, expressions, `wmpprop:` bindings, `<TEXT>` sizing | *Script, expression, and binding contracts* |
-| [reference/object-model.md](reference/object-model.md) | a member skin JScript can reach | the host object model and the member-resolution rules; *The library* — `playlistCollection`/`mediaCollection`, choosers, panes and server search (W136) |
+| [reference/object-model.md](reference/object-model.md) | a member skin JScript can reach | the shape, the three resolutions and adding a member; a router over `reference/object-model/`: property reads, elements, the library (W136), methods and tweens, events and the keyboard, handlers and timers, classification and *Verified **not** gaps* |
 | [reference/loading.md](reference/loading.md) | the archive, text decoding, XML tolerance, `WMP00xx` codes | *Loader contracts* and the loader's governing rules |
-| [reference/harness.md](reference/harness.md) | any measurement — every probe flag and corpus script | the probe reference; dated past measurements are in [reference/harness-history.md](reference/harness-history.md) |
+| [reference/harness.md](reference/harness.md) | any measurement — every probe flag and corpus script | a router and flag index over `reference/harness/`: the corpus, probe flags, app flags and probes, driving the app, sweep limits, the line grammar, the scripts, trusting the instrument; dated past measurements are in [reference/harness-history.md](reference/harness-history.md) |
 | [reference/audio-enhancements.md](reference/audio-enhancements.md) | WOW / TruBass | the WMP-only DSP |
 | [reference/skins/](reference/skins/README.md) | an engine-wide change | per-skin dossiers and the counter-evidence table |
 
@@ -118,7 +118,7 @@ the file this table gives for it.
   docking treatment. Never fall back to another skin family's controller or chrome. Missing skin
   chrome uses only an app-authored WMP-neutral fallback. **This shipped on 2026-09-09 and the
   "hide or disable it until it has a host" clause is spent** — `AuxiliaryControllerStyle.wmpUnavailable`
-  is gone. How it works is `reference/windows.md` § *NullPlayer's own windows beside a skin*.
+  is gone. How it works is `reference/windows/native-windows.md` § *NullPlayer's own windows beside a skin*.
 
 
 ## Debugging a live defect
@@ -128,7 +128,7 @@ process section it points at — `winamp-modern-skin-guide/reference/harness.md`
 § *Debugging a live defect* — which is the reference implementation of that workflow. The 2026-09-07
 session that produced the fixes below spent hours rediscovering five rules already written there.
 
-**The reproduction loop itself is `reference/harness.md` § *Driving the app*** — select the skin,
+**The reproduction loop itself is `reference/harness/live-loop.md` § *Driving the app*** — select the skin,
 launch the debug build, ask `WMP_RENDER_PROBE` where the control is and click that frame with a
 `CGEvent`, then capture the window and look at it. (The `INPUT` trace this loop used to read was
 removed on 2026-09-11 for being unreadable live — see `reference/harness.md`.) Three of the four
@@ -150,7 +150,7 @@ line; the picture cannot tell you. See `reference/skins/compact.md`.
 
 **When the report is about a control rather than one skin — "every skin has this button and it does
 nothing" — the route is `scripts/wmp_control_audit.py <member>`, which runs
-`reference/harness.md` § *Auditing one authored control across the whole corpus*, and the live half
+`reference/harness/live-loop.md` § *Auditing one authored control across the whole corpus*, and the live half
 is § *A live pass is a window frame, before and after*.** The census cannot answer that question:
 it drives `onLoad` and a control's demand is in `onClick`, which is how W100 stood at a recorded
 reach of 2 skins against a true 162. A window frame read before and after a `CGEvent` click is the
@@ -162,7 +162,7 @@ The ones that cost the most, in WMP terms:
 
 - **Number the transactions before theorising about one.** Two rounds of inference off the raw
   `INPUT` trace named the wrong cancellation check for W88 and produced a fix that was a no-op; one
-  temporary `txn <n>` pair named the right one in a single launch. `reference/harness.md`
+  temporary `txn <n>` pair named the right one in a single launch. `reference/harness/live-loop.md`
   § *Driving the app*.
 - **A green corpus sweep used to say nothing about AppKit; now it says one thing.**
   `WMP_RENDER_APPKIT=1` runs the real `NSView.draw` of the view and every overlay over it and diffs
@@ -223,7 +223,7 @@ that this section replaced.
   and belongs in that window's WMP path — and if several windows are wrong at once, in what they
   each failed to call. **The picture alone cannot tell these apart**, which is the whole reason the
   fork is worth one capture: § *`gaps=` cannot see a hosted frame that is wrong everywhere but its
-  edges* in `reference/harness.md` is the same lesson learned from the opposite direction, and
+  edges* in `reference/harness/sweep-limits.md` is the same lesson learned from the opposite direction, and
   carries the alpha check that stops a frame full of white paint reading as a frame full of holes.
 - **Then repeat on two more windows under the same skin, and only to confirm the failure is one
   shape.** Ten windows failing the same way against a player view that never does is one contract
@@ -234,7 +234,7 @@ that this section replaced.
 document reached for twice and it answers the wrong question: sweeping the skin axis measures
 *donors*, and a report that the skin's own window is fine has already cleared them. The variance is
 on the window axis. One skin and three hosted windows localise this faster than 185 skins and one
-window, and `reference/harness.md` § *A named skin outranks a corpus sweep* is the general form.
+window, and `reference/harness/sweep-limits.md` § *A named skin outranks a corpus sweep* is the general form.
 The corpus axis is for showing a landed fix did not cost another skin — after there is a fix.
 
 ### Evidence proportional to a hosted-window change

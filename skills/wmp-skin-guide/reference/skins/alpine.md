@@ -30,7 +30,7 @@ under the knob open them through `Alpine.js` (`ShowVIS`/`ShowPL`/`ShowEQ`/`ShowV
 
 - **W303**: *"you can only drag the main window several inches from the screen top"*. The drag clamp
   and AppKit both measured the 412-tall frame, whose top ~258 rows are empty while the drawers are
-  shut. The drawn top is now what reaches the menu bar; see `../windows.md` § *Window placement
+  shut. The drawn top is now what reaches the menu bar; see `../windows/placement.md` § *Window placement
   and recovery*.
 - **W304**: *"the faceplate text is misaligned in multiple ways"*. The LCD's `fontFace="Quartz"` is
   the archive's own `Quartz.TTF`, never loaded, so it drew in Helvetica; see `WMPSkinFonts`. The

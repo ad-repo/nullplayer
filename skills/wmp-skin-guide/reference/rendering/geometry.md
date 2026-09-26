@@ -192,7 +192,7 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   that already behave correctly, and widening it there makes 970 the blast radius instead of the
   denominator. And it is not the resource path, which implements the rule for itself:
   `WMPArchive.resolve` returns nil for an empty path, so `backgroundImage=""` already falls through
-  to the `foregroundImage` behind it. See `reference/harness.md` § *The empty-value class*.
+  to the `foregroundImage` behind it. See `reference/harness-history.md` § *The empty-value class*.
 
 - **A geometry value the grammar cannot read is unstated too, and for extents only** (W240). W241's
   rule one step out: `XBOX`'s `xLogo` authors `width="jsa:centerBox.width"` where the `<video>` two
@@ -208,7 +208,7 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   not the same as matching it, exactly as with `scrollingAmmount`. **The row was ranked on
   `33 of 458` unresolved nodes carrying a bitmap and was really one node**: 13 of 16 name a bitmap
   that cannot resolve, two more clear their own artwork from script, and the 33 was an empty `bg=`
-  field captured by a loose pattern. See `reference/harness.md` § *The residue is a size fallback*.
+  field captured by a loose pattern. See `reference/harness-history.md` § *The residue is a size fallback*.
 
 - **An origin the markup never stated can still have been written by script, and asking the markup
   first meant it never was.** `left`/`top` default to 0 when unauthored — but the check was

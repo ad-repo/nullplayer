@@ -46,7 +46,7 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   signature and no headless one at all**: those readouts are `value=""` in markup and filled by
   `vwPlayer_UpdateMetadata()`, which is gated on `player.openState == 13`, so a render dump of
   `Revert` is blank there and identical either side. Verify by playing a track under the skin —
-  `harness.md` § *The probe flags* on what a clean sweep does not prove.
+  `harness/probe-flags.md` § *The probe flags* on what a clean sweep does not prove.
 
 - **A number a script writes must reach the drawing, and `<TEXT>` is where it did not (W114).**
   `WMPSceneBuilder.literal(_:_:)` reads the attribute and nothing else — geometry has

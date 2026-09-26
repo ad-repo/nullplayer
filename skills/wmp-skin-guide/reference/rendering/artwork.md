@@ -191,7 +191,7 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   drew nothing at all because of it (W75). An override is an authored path string and resolves under
   the same provider rules as markup; one the skin does not contain warns and leaves the authored
   artwork in place; `""` clears the property the way an absent attribute does. The rules and the
-  traps are in `reference/object-model.md` § *What a property read answers, and who wins*.
+  traps are in `reference/object-model/reads.md` § *What a property read answers, and who wins*.
 
 - The immutable scene owns no `CGImage` or cache state. `WMPImageStore` performs bounded ImageIO
   metadata/decode off-main, supports BMP/GIF/JPEG/PNG, and uses a byte-bounded LRU keyed by canonical

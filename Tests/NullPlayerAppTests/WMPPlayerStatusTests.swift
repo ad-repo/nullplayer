@@ -14,7 +14,7 @@ import XCTest
 /// The corpus render sweep over the change moved **14 images and nothing else**, every one of them a
 /// readout that painted nothing now painting `Ready` in the skin's own font. (A fifteenth,
 /// `Scooby-Doo_2/infoView`, differs run to run on its own `Math.random()` — see
-/// `reference/harness.md` § *A sweep has two nondeterministic outputs*.)
+/// `reference/harness/sweep-limits.md` § *A sweep has two nondeterministic outputs*.)
 final class WMPPlayerStatusTests: XCTestCase {
 
     // MARK: - The sentence

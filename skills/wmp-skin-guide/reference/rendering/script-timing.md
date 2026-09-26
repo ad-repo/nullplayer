@@ -95,7 +95,7 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   for an unrelated reason, the user now sees an empty drawer rather than usable controls in the
   wrong place. `onDragEnd` is the input-side sibling, raised from `WMPMainView.mouseUp` for a
   captured slider, and it is one of the two places a seek commits — see W156 above for the other and
-  for how the engine chooses between them. See `reference/object-model.md` § *Methods*, and
+  for how the engine chooses between them. See `reference/object-model/methods.md` § *Methods*, and
   `reference/harness.md` for why an image-only sweep cannot see any of it.
 
 - **An unanswerable `wmpprop:` is not the answer "false", and on `visible` that distinction is a

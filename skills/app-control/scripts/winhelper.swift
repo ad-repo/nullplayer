@@ -96,7 +96,7 @@ func park(pid: Int, name: String, x: Int, y: Int) {
 
 /// The window-frame check: list the windows, click, wait, list them again, and say what changed.
 ///
-/// This is the measurement for "does this control do anything" — `harness.md` § *A live pass is a
+/// This is the measurement for "does this control do anything" — `harness/live-loop.md` § *A live pass is a
 /// window frame, before and after*. Windows are matched by id, so a view switch that replaces its
 /// window reads as one `gone` and one `new`, not as a resize. `--size` narrows only the *before*
 /// listing (to find the skin's canvas); the *after* listing takes every window of the same

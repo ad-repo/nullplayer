@@ -63,7 +63,7 @@ Original or WAL; a setting the other families already own is the opposite case, 
 be scoping a preference the user shares. The only translation is units: WMP states the window in
 **milliseconds** (the corpus writes 7000), `sweetFadeDuration` is seconds, and that conversion lives
 at the host boundary in `WMPAudioEngineHost` and nowhere else. See
-[object-model.md](object-model.md) § *The `eq` object and the element are one surface (W39)*.
+[object-model/elements.md](object-model/elements.md) § *The `eq` object and the element are one surface (W39)*.
 
 `AudioEngine` seeds the controller's active gate from the stored WMP controller family.
 `WindowManager.uiMode` updates it on every mode assignment; host writes also require the WMP family.

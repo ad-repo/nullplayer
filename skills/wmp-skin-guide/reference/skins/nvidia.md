@@ -31,7 +31,7 @@ to settle before anything is worth measuring.
 - **A `<LISTBOX>` that is a playlist chooser, filled from a click rather than a load.**
   `fillListBox()` walks `player.playlistCollection`, not `mediaCollection` — "Now Playing", then a row
   per CD drive, then each saved playlist's `getItemInfo("Title")` — and is answered since W136 from the
-  library browser's selected source (`object-model.md` § *The library*). **Unlike `WoW`, whose
+  library browser's selected source (`object-model/library.md` § *The library*). **Unlike `WoW`, whose
   `onLoadPl()` fills on load, `NVIDIA` fills in `plModeToggle()`** — the Show Playlist click — and only
   while its saved `loadList` preference is `'false'`: reset in the view's load (`nvidia.js:33`), set
   `'true'` at the end of `fillListBox()` (`:694`), so it fills **once per load**. The `"All Music"`/

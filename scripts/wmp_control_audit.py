@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Which authored controls across the `.wmz` corpus reach one handler or member, and where to click
-each one (W267) — `harness.md` § *Auditing one authored control across the whole corpus*, scripted.
+each one (W267) — `harness/live-loop.md` § *Auditing one authored control across the whole corpus*, scripted.
 
   scripts/wmp_control_audit.py [--render <render.txt>] [--sample N] [--skin <archive>] [-v]
                                [--corpus <dir>] <member>

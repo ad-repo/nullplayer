@@ -149,7 +149,7 @@ One `[wmp/place]` line per auxiliary window, once each. **Five windows at load i
 window rather than a wrong-looking one, so read the frames against the screen rather than the
 screenshot. The panel buttons are in `mainView`; find them with
 `WMP_RENDER_PROBE=mainView` and press them with `WMP_RENDER_CLICK='mainView@x,y'` rather than by
-guessing, per `../harness.md` § *Driving the app*. Because every button here writes a preference
+guessing, per `../harness/live-loop.md` § *Driving the app*. Because every button here writes a preference
 that the dispatcher reads back at 100 ms, **a click's effect is up to a tick late by construction**;
 do not read the absence of an immediate change as a dead button, and check
 `theme.loadPreference` state in the defaults namespace before theorising.

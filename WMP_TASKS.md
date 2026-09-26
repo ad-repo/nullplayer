@@ -16,7 +16,7 @@ The only live backlog for the WMP skin subsystem, and a list of open rows — no
   [`docs/wmp-skin/wmp-backlog-notes-archive.md`](docs/wmp-skin/wmp-backlog-notes-archive.md).
 
 **Every Reach below is authored demand, not result, and several are stale — re-measure a row before
-taking it**, especially one whose evidence predates a change to the same subsystem. `harness.md`
+taking it**, especially one whose evidence predates a change to the same subsystem. `harness/instrument.md`
 § *Numbers that are void, and why* lists which classes of count must be re-derived; a corpus number
 taken with bare `grep` is not a corpus number. Only a dumped PNG or a `SCRIPT-DIAG` line sees a
 rendering defect, and no headless instrument here reaches a hover, drag, tab, scroll or playing
@@ -28,7 +28,7 @@ defect*).
 | ID | Item | Reach | Notes |
 |---|---|---|---|
 
-Do not add a name to `handlerNames`/`supportedEvents` without its dispatch site — `object-model.md`
+Do not add a name to `handlerNames`/`supportedEvents` without its dispatch site — `object-model/classification.md`
 § *Recognising an event is not dispatching it*. Candidate gaps already disproved (incl. the author-typo
 list) are in that file § *Verified **not** gaps*; `INERT` members are § *Recognised, answered, and
 nothing behind them*.
@@ -47,7 +47,6 @@ wrong-answer risk a script removes, not skins. Filed 2026-09-24 from the token-r
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W270 | The biggest `.wmz` reference files are still the biggest token cost | `harness.md` ~160 KB, `rendering.md` ~159 KB, `windows.md` ~104 KB, `object-model.md` ~98 KB | Not blocked. Split each behind a routing table the way `SKILL.md` was split on 2026-09-24 (320 KB → 25 KB): move sections verbatim, then check that the non-blank lines before and after are the same multiset and re-point every inbound `§` reference. **`rendering.md` needs subheadings first**: *Static scene and image contracts* is ~1,150 lines of bullets with no heading to route to, so name the bullet groups before moving any. |
 
 ## Found during `.wmz` work, owned elsewhere
 

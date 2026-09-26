@@ -2253,7 +2253,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
     /// skins** carry a mouse handler on a kind `isInteractive` does not list: 326 `<TEXT>` across
     /// 69 skins, 90 `<EFFECTS>` across 81, 21 `<VIDEO>` across 21, and a tail of transport spellings
     /// this engine parses as unknown kinds. Reproduce with `python3 scripts/wmp_input_kinds.py`;
-    /// see `reference/harness.md` § *Input and tooltips the markup authors*.
+    /// see `reference/harness/line-grammar.md` § *Input and tooltips the markup authors*.
     ///
     /// `passthrough="true"` still wins — it is the attribute that says "drawn, not touchable" — so
     /// a decorative overlay does not start swallowing the controls under it.
@@ -2271,7 +2271,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
     /// down, and `toolTip` when the skin authored only one — a mute button reads "Mute" and then
     /// "Sound". The corpus authors 4,789 `upToolTip`, 3,797 `toolTip` and 541 `downToolTip` across
     /// 176, 175 and 105 of the 179 archives; reproduce those with the scan in
-    /// `reference/harness.md` § *Input and tooltips the markup authors*.
+    /// `reference/harness/line-grammar.md` § *Input and tooltips the markup authors*.
     ///
     /// `literal` is the caller's resolver rather than this type's, so a script assignment —
     /// `alx_dl.wms` writes `toolTip='Volume'` from its slider's `onMouseUp` — is read through the

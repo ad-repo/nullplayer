@@ -113,7 +113,7 @@ sliders use the skin's text color.
   and Metal chrome. `.wal` uses the `.sonos` hosted-window registry entry and a chromeless
   `WinampModernHostedSurface`, with the standard hosted drag helper and palette.
   `.wmz` draws the skin's borrowed frame through `SonosWindowChrome`'s `isRunningWMPUI` branch and
-  joins `hostedBorderWindows` in that mode only; the contract is `wmp-skin-guide/reference/windows.md` § *Current
+  joins `hostedBorderWindows` in that mode only; the contract is `wmp-skin-guide/reference/windows/hosting.md` § *Current
   hosting contract*.
 - WindowManager registers `.sonos` as a center-stack sizing policy with a double-height baseline.
   User-expanded height is preserved on restore; the window participates in snapping, scaling,

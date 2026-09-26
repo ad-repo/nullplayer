@@ -49,7 +49,7 @@ letting it outrank a measured row.
 command recorded next to it**, and must carry the date and the archive count it was taken over. The
 measured corpus is **179 of the 180 installed** at the time these scripts were written and 185 by
 2026-09-19; `scripts/wmp_corpus_exclusions.txt` holds the difference and
-`skills/wmp-skin-guide/reference/harness.md` § *The corpus* says why.
+`skills/wmp-skin-guide/reference/harness/corpus.md` § *The corpus* says why.
 
 **Two numbers on this page are produced by the census itself rather than by hand, and the files they
 are written to outrank any row here that disagrees.** `starved.tsv` ranks every view by
@@ -57,14 +57,14 @@ are written to outrank any row here that disagrees.** `starved.tsv` ranks every 
 painted outside any widget frame (W71). **Take work from the top of those, not from the top of a
 paragraph** — and **dump the view before taking the row**, because `starved.tsv` ranks declared-
 but-unresolved nodes rather than missing pixels and a `0 commands` view may be an authored blank.
-What each file does and does not rank, with its measurement history, is `harness.md` § *What the
+What each file does and does not rank, with its measurement history, is `harness/instrument.md` § *What the
 ranking files rank, and what they do not*.
 
 **Load level is a constant: there are no loading rejections left in the corpus.** Every entry below
 is a rendering or runtime defect, and only a dumped PNG or a `SCRIPT-DIAG` line can see one. A row
 whose evidence is a census column is by that fact measuring structure, not result.
 
-**Before quoting or scaling any number on this page, check `harness.md` § *Numbers that are void, and
+**Before quoting or scaling any number on this page, check `harness/instrument.md` § *Numbers that are void, and
 why*.** Six classes of count here must be re-measured rather than carried forward: anything against
 the 14-skin denominator, anything captured before rev `61f8955a`, any `COMPAT`/`UNKNOWN tag` number
 taken before W215 closed on 2026-09-19, the stale view counts, `WMP0035`/`WMP0032`/`WMP0033`, and
@@ -92,13 +92,13 @@ row came to state that `anemone` had no `<equalizerSettings>` and *"not one `sli
 all"* — it has both, ten of them — and how its "19 archives" (really **99 of 184**) and
 `object-model.md`'s "14 name it something other than `eq`" (really **7**) were written. The row's whole
 "two different surfaces" framing rested on that absence, and there was only ever one surface.
-`harness.md` § *A corpus number taken with `grep` is not a corpus number* holds the rule; re-derive
+`harness/corpus.md` § *A corpus number taken with `grep` is not a corpus number* holds the rule; re-derive
 any number on this page whose command was a bare `grep`.
 
 **The "second, separate defect" this tier carried — the named `<EQUALIZERSETTINGS>` — closed with
 W256 rather than taking its own number**, because it was not separate: it is what kept `elvis`'s
 thumb from moving after the drag reached the control. It issued no new number. The corrected reach
-is 7 of 184 archives and the rule is `object-model.md` § *The `eq` object and the element are one
+is 7 of 184 archives and the rule is `object-model/elements.md` § *The `eq` object and the element are one
 surface (W39)*.
 
 **The 2026-09-08 live-QA list was never captured, and that is still the largest known hole on this
@@ -200,7 +200,7 @@ quarters of the corpus rather than all of it. W239 and W73 moved to
 [`LOW_QUALITY_TASKS.md`](LOW_QUALITY_TASKS.md); **W73's caveat is still true and still matters** — a
 clean sweep proves only the default state, and a tab, a hover, a drawer, the window's shape and
 anything driven by live playback remain outside every headless instrument here. It is prose in
-`harness.md` § *The probe flags*, where a reader meets it before trusting a capture.
+`harness/probe-flags.md` § *The probe flags*, where a reader meets it before trusting a capture.
 
 **The tier is empty of rows and stays for the same reason the others do.**
 
@@ -276,7 +276,7 @@ NullPlayer's own content** — not which window a surface lives in (Tier 1e) or 
 measured clean while the window was visibly wrong
 ([`back-to-the-future-trilogy.md`](skills/wmp-skin-guide/reference/skins/back-to-the-future-trilogy.md)
 § *Process lessons this skin taught*). The rules the closed rows established — W207 geometry, W208
-slots, W209/W210/W212 pixels, W230/W238 arrival — are in `reference/windows.md` § *Every NullPlayer window in
+slots, W209/W210/W212 pixels, W230/W238 arrival — are in `reference/windows/hosting.md` § *Every NullPlayer window in
 WMP mode is the skin's or is themed*, with the rows themselves in the archive.
 
 **Empty: W234 was parked in [`skins/blinx.md`](skills/wmp-skin-guide/reference/skins/blinx.md) on 2026-09-21.** The defect is real and reproduces — `Blinx`'s borrowed frame splits at every window larger than the donor's own 475x332 — but it is **not ready to be picked up**: three fixes have been built, measured and reverted, and the remaining direction changes how every hosted window is sized. The row, its measurements and the two live-QA traps are in that dossier, verbatim. Take it out again deliberately, not because it was ranked.
@@ -285,13 +285,13 @@ WMP mode is the skin's or is themed*, with the rows themselves in the archive.
 
 The corpus declares six surfaces; four are hosted. **The tier's rule is that a surface recognised for
 *routing* and not hosted draws the user an empty drawer**, so a hosting row always lands before the
-routing that stands NullPlayer's own window aside. Playlist kinds: `object-model.md` § *Playlist
+routing that stands NullPlayer's own window aside. Playlist kinds: `object-model/elements.md` § *Playlist
 kinds*.
 
 Measured 2026-09-09 over 179 archives and 595 views (`skins` declare it anywhere; `own view` put it
 in a view other than the one they open on). Reproduce with `scripts/wmp_markup_census.sh <outdir>
 EFFECTS WMPEFFECTS VIDEO WMPVIDEO VIDEOSETTINGS NETWORK PLAYLIST EQUALIZERSETTINGS` — **never with an
-ad-hoc script that decodes the `.wms` itself**; `harness.md` § *Counting a tag across the corpus* is
+ad-hoc script that decodes the `.wms` itself**; `harness/corpus.md` § *Counting a tag across the corpus* is
 the trap that rule exists for.
 
 | Surface | views | skins | own view | Hosted today | Row |
@@ -353,7 +353,7 @@ whether the player has the feature before ranking a member as inert**, and **re-
 evidence predates a change to the same subsystem**. The re-measured class, the two members that
 *are* honestly inert, and the rule that an inert value the corpus reads back must be *stored* rather
 than constant are in [the archive](docs/wmp-skin/wmp-backlog-archive.md) and in
-`skills/wmp-skin-guide/reference/object-model.md` § *The `eq` object and the element are one surface
+`skills/wmp-skin-guide/reference/object-model/elements.md` § *The `eq` object and the element are one surface
 (W39)*.
 
 **W42 headed this tier and closed 2026-09-22; it is archived.** All three causes it named
@@ -367,7 +367,7 @@ W163's basename fallback, and `gears` is an element that exists in no `.wms`. **
 own function in the wrong case, 16 of 184 archives, closed in the same change. The measurement, the
 last-resort alias and the three archives that forbid a blanket fold are in
 [the archive](docs/wmp-skin/wmp-backlog-archive.md) and in
-`skills/wmp-skin-guide/reference/object-model.md` § *A skin's own function, called in the wrong
+`skills/wmp-skin-guide/reference/object-model/handlers.md` § *A skin's own function, called in the wrong
 case (W42)*.
 
 **W40 closed 2026-09-22 and is archived** — a script naming an element in another view. Its
@@ -388,7 +388,7 @@ archives**. **A row whose Reach is a count of one idiom is a count of one idiom*
 (196 uses / 89 archives) outweighed the class the row was named for. The scan that produced it, the
 two arbiter corrections the corpus sweep forced, and the `WMP_RENDER_CLICK` reproductions are in
 [the archive](docs/wmp-skin/wmp-backlog-archive.md) and in
-`skills/wmp-skin-guide/reference/object-model.md` § *An unqualified name in a handler resolves
+`skills/wmp-skin-guide/reference/object-model/handlers.md` § *An unqualified name in a handler resolves
 against its own element first (W216)*.
 
 **W41 closed 2026-09-22 and is archived**, and it is this page's own re-measure rule paying twice.
@@ -402,14 +402,14 @@ can read** — an `unimplemented` tally is blind to that entire class, and only 
 it. The spelling, the idiom split and the two secondary defects it left (a playlist item's
 `sourceURL` answering the item's *title*; the local-video path rebuilding `metadata` without it) are
 in [the archive](docs/wmp-skin/wmp-backlog-archive.md) and in
-`skills/wmp-skin-guide/reference/object-model.md` § *`sourceURL` is spelled the way WMP spells it
+`skills/wmp-skin-guide/reference/object-model/handlers.md` § *`sourceURL` is spelled the way WMP spells it
 (W41)*.
 
 **W53 headed this tier and closed 2026-09-22; it is archived.** Its reach was a hand count and short
 in all three numbers (`onkeydown` is **530 uses / 80 archives**, `onkeypress` **422 / 74**, `onkeyup`
 **100 / 33**), and the contract it asked to have decided turned out to be one already measurable:
 every corpus handler compares a Windows virtual key code, so there was no character-versus-code
-question to settle — `object-model.md` § *The keyboard*. **Two things it leaves behind.** *A dispatch
+question to settle — `object-model/events.md` § *The keyboard*. **Two things it leaves behind.** *A dispatch
 site nothing can reach measures exactly like one that does not exist* — the view took first responder
 only on `mouseDown`, so an unclicked window received no key at all and the whole class was invisible;
 the first live run of a working implementation printed nothing. And *a diagnostic placed after the
@@ -435,7 +435,7 @@ sentence, not the diagnosis**.
 An entry here is markup asking for something. **Classification is one line; the dispatch site is the
 real cost, and it is different per event.** Do not add a name to `handlerNames` or `supportedEvents`
 without its dispatch site — the rule, the instrument that made this class visible, and the 4,114-use
-measurement are in `object-model.md` § *Recognising an event is not dispatching it*.
+measurement are in `object-model/classification.md` § *Recognising an event is not dispatching it*.
 
 **W56 headed this tier and closed 2026-09-22; it is archived.** Two of its three events had been
 dispatched since W102 and nobody had measured it — one live run on a real film raised both
@@ -460,12 +460,12 @@ authored `toolTip="Seek"` to `MM:SS / total`. The measurement, the W119 comment 
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| W121 | A handler that reads the `event` object | **30 handlers across the Skins Factory equaliser family**, measured 2026-09-09; unmeasured for the other event kinds | Not blocked, and **smaller than it was: the key half closed 2026-09-22 with W53**, which bound `event.keyCode` — 405 of the 409 `event.` reads in a key handler, measured. What is left is the mouse and `value_onchange` half, where `event.shiftKey` is already answered from the live modifier flags, so **re-measure before taking it**: sweep the corpus's handler attributes for `event.` and split by event kind. Evidence: `object-model.md` § *Event arguments* and § *The keyboard* (W53). |
+| W121 | A handler that reads the `event` object | **30 handlers across the Skins Factory equaliser family**, measured 2026-09-09; unmeasured for the other event kinds | Not blocked, and **smaller than it was: the key half closed 2026-09-22 with W53**, which bound `event.keyCode` — 405 of the 409 `event.` reads in a key handler, measured. What is left is the mouse and `value_onchange` half, where `event.shiftKey` is already answered from the live modifier flags, so **re-measure before taking it**: sweep the corpus's handler attributes for `event.` and split by event kind. Evidence: `object-model/events.md` § *Event arguments* and § *The keyboard* (W53). |
 
 **Verified *not* gaps — check before opening a row here.** The SDK conformance audit (2026-09-11)
 disproved nine candidate gaps, including the author-typo list (`scrollingAmmount`,
 `horizontalAlignemnt`, `donwImage`…) that is the largest single false lead in the whole scan. They
-rank nothing, so they are in `skills/wmp-skin-guide/reference/object-model.md` § *Verified **not**
+rank nothing, so they are in `skills/wmp-skin-guide/reference/object-model/classification.md` § *Verified **not**
 gaps*.
 
 **`INERT` — recognised, answered, and nothing behind them — ranks nothing either** and is in that
@@ -494,9 +494,9 @@ any of this as done.
 | W132 | `hoverDownImage` is never selected | **126 nodes across 62 skins** (`BUTTON` 86, `BUTTONGROUP` 38, `MUTEBUTTON` 2) | Not blocked but **deliberately ranked low**: all 126 also author `downImage`, so the fallback is the right artwork missing only its hover lighting. **The fix is not just a name** — `WMPInteractionState` collapses pressed and sticky-down into one `.down`, so the state machine needs a distinct hover-down face first. Needs the live loop. Evidence: `SKILL.md` § *Drawing the skin's own controls*. |
 | W202 | An `<EFFECTS visible="false">` that a script later makes visible never gets a hosted surface | **57 nodes in 54 archives** declare `visible="false"` on an `<EFFECTS>`/`<WMPEFFECTS>`; **how many a script turns on is unmeasured and is the number to take next** | Not blocked. `pharaoh`'s scarab mode is the reproduction, but **rank it on the corpus population, not on pharaoh** — that hole is small. First step: drive pharaoh in the debug build and **read the log, not the screen**; no second `Setting up ProjectM` line is ever logged for the scarab. Evidence: `skins/pharaoh.md` § *Still open*. |
 | W201 | An animated GIF whose frame image blocks are smaller than its logical screen is drawn at the screen's size | **27 files in 12 archives** of the corpus's 4,303 GIFs (header scan, first frame's image block against the screen descriptor); `pharaoh/pyrevolver.gif` is the extreme at 6.7% of its declared area | Not blocked. **The cause is an observation, not a diagnosis** — screen-versus-block size and the GIF's uninitialised screen area are both candidates and neither has been isolated. **Check `Age_of_Mythology`'s `open_shutter.gif` before changing anything**; it is load-bearing for the one-shot terminator rule. Evidence: `skins/pharaoh.md` § *Still open*. |
-| W66 | A `LISTBOX` has a control and nothing to put in it | **8 skins**, 16 uses, measured 2026-09-07 over 177 archives | **Blocked on a decision, not on drawing work**: what a `.wmz` may see of this player's library. The control draws and reports its selection; it has no rows because nothing answers `player.mediaCollection`, and it is deliberately not faked. **Rank it with whatever answers the media-collection question**, and W136 with it. Evidence: `object-model.md` § *Playlist kinds*. |
+| W66 | A `LISTBOX` has a control and nothing to put in it | **8 skins**, 16 uses, measured 2026-09-07 over 177 archives | **Blocked on a decision, not on drawing work**: what a `.wmz` may see of this player's library. The control draws and reports its selection; it has no rows because nothing answers `player.mediaCollection`, and it is deliberately not faked. **Rank it with whatever answers the media-collection question**, and W136 with it. Evidence: `object-model/elements.md` § *Playlist kinds*. |
 | W204 | The residue of per-view script scope: a *value* a second `scriptFile` overwrites, and the six archives verified only on paper | **7 of 184 archives** name a different `.js` per view where two of them define the same top-level function (`Plus! SlimLine` 17 contested names, `holiday_skin` 22, `Sports` 6, `pharaoh` 2, `portals` 2, `corona`/`9SeriesDefault` 1) — re-derived 2026-09-22 with a BOM-sniffing decoder, which is the whole census: the first pass read two CP1252 files as UTF-16 and reported 3 | **The function half closed 2026-09-22 with W257** — `WMPScriptContext.applyFunctionScope` binds a contested name to the installed view's own programs; see [the archive](docs/wmp-skin/wmp-backlog-archive.md). What is left is deliberately smaller than the row was. **(a)** Top-level `var`s are still one variable in one scope, and no corpus skin has been shown to need otherwise — **measure a case before scoping values**, because two views' `Init`s writing one flag is also how these skins share state. **(b)** Only `Plus! SlimLine` (live) and `holiday_skin` (sweep) were verified; the other five are unverified in a *driven* state. Reproduce with `WMP_RENDER_HOST=playing` and `WMP_VIEW_SCRIPT_SCOPE=0` as the A/B. Evidence: `skins/pharaoh.md` § *Still open*. |
-| W149 | Controls still unreachable after W148, each for a different reason | **11 total**, re-measured 2026-09-12 after W150 (was 16) — `Sports` 7, `anime`, `STALKER`, `T3-Skynet_Media_Player`, `Plus! Professional` | Not blocked, and **smaller than it was: the `<BUTTONGROUP>`-with-no-mapping-children half closed 2026-09-22 with W259**, which took the corpus from 180 occluded rows to 165 and recovered 16 controls. **Re-measure before taking what is left** — the 11 predate it. **Name the node before ranking the count.** Reproduce with `WMP_RENDER_OCCLUDED=1` and read the `reached=rect-only` lines. Evidence: `harness.md` § *The residue `WMP_RENDER_OCCLUDED` does not explain (W149)*. |
+| W149 | Controls still unreachable after W148, each for a different reason | **11 total**, re-measured 2026-09-12 after W150 (was 16) — `Sports` 7, `anime`, `STALKER`, `T3-Skynet_Media_Player`, `Plus! Professional` | Not blocked, and **smaller than it was: the `<BUTTONGROUP>`-with-no-mapping-children half closed 2026-09-22 with W259**, which took the corpus from 180 occluded rows to 165 and recovered 16 controls. **Re-measure before taking what is left** — the 11 predate it. **Name the node before ranking the count.** Reproduce with `WMP_RENDER_OCCLUDED=1` and read the `reached=rect-only` lines. Evidence: `harness/sweep-limits.md` § *The residue `WMP_RENDER_OCCLUDED` does not explain (W149)*. |
 | W203 | `<DURATIONTEXT>` never renders | **2 nodes in 2 archives** (`pharaoh`, `circle`) — a one-line row kept only because it is a *visible* readout on a shipped Microsoft skin | Not blocked. The missing piece is a glyph-height fallback this one tag does not get — `<currentPositionText>` beside it declares no `height` either and resolves to 45x10 — **so a `<DURATIONTEXT>` anywhere is dead, not just this one**. Evidence: `skins/pharaoh.md` § *Still open*. |
 | W123 | A stretched `backgroundImage` and a natural-size foreground image draw the same bitmap at two different sizes | **1 view measured** (`Ice/videoView`); the wider class — every `backgroundImage` whose frame is not its bitmap — is **unmeasured** | Blocked on its own measurement: **measure the class before changing the rule**, and **not with W240**, which closed 2026-09-20: `Radio` left that row when `corner_pieces.bmp` was measured absent from its own archive, so the two never shared a skin and this row stands alone. It cannot be answered by extending W122, and `skins/README.md`'s counter-evidence table comes first. Evidence: `reference/rendering/artwork.md`. |
 | W145 | A borrowed window frame is rendered from markup, so it never follows the theme the skin is *set* to | **`xsn_sports`** measured 2026-09-12; the pattern is stacked variants and is **unmeasured across the corpus** | Not blocked. **The fix is to run the donor view's `load` off-screen** and build the ring with the overrides it commits, keeping every candidate per ring role rather than the first declaration — settling on the chosen colour and **not** animating the phase. Evidence: `skins/xsn-sports.md` § *Defects it found (2026-09-12, borrowed window frames)*. |

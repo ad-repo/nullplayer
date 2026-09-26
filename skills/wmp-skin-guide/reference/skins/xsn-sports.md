@@ -29,7 +29,7 @@ open/shut state persisted through `theme.savePreference`.
   own size; `onLoad="loadVisPrefs()"` restores both, branching on the `--` absent sentinel.
 
 Both counts are markup scans over the installed corpus and must be re-derived with the BOM-aware
-decoder in `../harness.md` § *Counting a tag across the corpus* — a `grep` over these files reads
+decoder in `../harness/corpus.md` § *Counting a tag across the corpus* — a `grep` over these files reads
 UTF-16 as mojibake and returns zero. Measured 2026-09-12 over 180 archives: `windowed="true"` 18
 nodes / 17 skins, `"false"` 114 / 106, absent 52 / 46; `onClose` 373 handlers / 133 skins.
 
@@ -78,7 +78,7 @@ color theme selected in xsn"*, *"on the xsn the issue is there are 2 eq windows"
    Phasing", trademarked in a comment block in `xsn.js`. The frame was built from markup alone, so
    it was variant 1 (gold) forever. **The fix runs the donor's `load` off-screen** over a copy of the
    preferences and draws the ring with the `alphaBlend`/`backgroundImage` it commits, again after
-   every preference write — `windows.md` § *Current hosting contract*. The cycle is on by default
+   every preference write — `windows/hosting.md` § *Current hosting contract*. The cycle is on by default
    (`htcpTimerStatus`, every ~4.4 s on the reporter's settings) and our windows follow it in one step
    each, with no cross-fade. Verified live: skin and Analyzer white, then both orange a cycle later;
    accepted by the reporter (*"all windows are synced with colora"*). The stacked-variant pattern is

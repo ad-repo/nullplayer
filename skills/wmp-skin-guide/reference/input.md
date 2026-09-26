@@ -129,7 +129,7 @@ a dispatch defect — it is a control the pointer never reached at all.
   already applied to `<RETURNBUTTON>`, where `anemone` and `modernblue` spell
   `view.returnToMediaCenter()` themselves. **Why it outlived every headless sweep:**
   `WMP_RENDER_CLICK` runs the authored handler and prints its host command and never applies
-  `action`, so the probe shows one command where the app sent two — `harness.md` § *The probe flags*
+  `action`, so the probe shows one command where the app sent two — `harness/probe-flags.md` § *The probe flags*
   states the gap on the flag itself. The symptoms are shaped like the engine losing a click, not
   doubling one: `play`/`pause`/`stop` are idempotent and hide it, a `sticky` toggle driven this way
   returns to where it started, and only `next`/`previous` show the skip.
@@ -217,7 +217,7 @@ a dispatch defect — it is a control the pointer never reached at all.
 Net over the 180-archive corpus, `WMP_RENDER_HOST=playing`: **112 controls in 33 archives recovered,
 11 lost**. W149 closed all of them as not defects (2026-09-24): each is lost only in the load-time
 layout — a closed drawer, a stacked twin running the same handler, a container whose element still
-answers, a clipped sprite frame — see `harness.md` § *The residue `WMP_RENDER_OCCLUDED` does not
+answers, a clipped sprite frame — see `harness/sweep-limits.md` § *The residue `WMP_RENDER_OCCLUDED` does not
 explain (W149)*.
 
 ## Phase 4 input and transport contracts
@@ -270,5 +270,5 @@ explain (W149)*.
   host. The name is folded to `eq` in `WMPObservablePropertyRegistry.init` for bindings and routed
   in `WMPObjectModel`'s read/write/call for script; `enableSplineTension`, `splineTension` and
   `bypass` stay the element's bookkeeping (W134). Reach **7 of 184 archives**; the full rule and the
-  numbers it replaces are `reference/object-model.md` § *The `eq` object and the element are one
+  numbers it replaces are `reference/object-model/elements.md` § *The `eq` object and the element are one
   surface (W39)*.
