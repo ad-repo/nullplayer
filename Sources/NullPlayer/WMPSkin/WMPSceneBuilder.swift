@@ -1267,7 +1267,16 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     // 573 − 378, the growth since the authored size. The visualizer spilled out of
                     // the window over the transport strip. Nothing moves for a node the script
                     // never wrote, which is every other node in the corpus.
-                    guard isRoot || parentNode == nil || parentNode?.kind == .view else { return 0 }
+                    //
+                    // **Growth after the write still counts.** The runtime records the parent's
+                    // extent at the write, so the delta is how far the parent has grown since —
+                    // zero at the canvas the handler measured, and the drag's share afterwards.
+                    guard isRoot || parentNode == nil || parentNode?.kind == .view else {
+                        guard let base = overrides.scriptAssignedParentExtent[
+                            WMPScenePropertyAddress(stableID: node.stableID, property: name)]
+                        else { return 0 }
+                        return parentExtent - base
+                    }
                     return parentExtent - canvas[keyPath: axis]
                 }
                 // The size the element had when the script assigned its alignment, if it did. The
@@ -2723,6 +2732,14 @@ struct WMPSceneOverrides: Hashable, Codable, Sendable {
     /// window's edges. Keyed by `width`/`height`; the canvas it is anchored at is the alignment's
     /// own, in `scriptAssignedAlignment`.
     var scriptAlignmentExtent: [WMPScenePropertyAddress: CGFloat] = [:]
+    /// **The parent's extent a script-assigned size on a nested node was written against.**
+    /// `scriptAssignedGeometry`'s canvas anchors only a child of the view root; below that, the
+    /// growth that counts is the *parent's* since the write. `Compact`'s `SizeViz()` sets
+    /// `myeffect.height` inside `svVisual`, and with no anchor the visualizer kept that height
+    /// through every later window resize while its width stretched. Keyed by `width`/`height`;
+    /// absent when the parent had no resolved frame or the view resized earlier in the same
+    /// transaction, which leaves the assignment unanchored, as before.
+    var scriptAssignedParentExtent: [WMPScenePropertyAddress: CGFloat] = [:]
     /// **The addresses in `properties` a `wmpprop:`/`wmpenabled:` binding last wrote, not a
     /// script (W301).** Both land in `properties`, and on `visible` the difference decides whether a
     /// node escapes a hidden ancestor — only a script's own `visible = true` does (W263).

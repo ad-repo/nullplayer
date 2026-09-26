@@ -523,6 +523,8 @@ actor WMPScriptRuntime {
     /// Mirrors `WMPSceneOverrides.scriptAlignmentExtent` — the size an element had when the script
     /// assigned its alignment. Kept out of the geometry overrides on purpose; see that field.
     private var scriptAlignmentExtent: [String: [WMPScenePropertyAddress: CGFloat]] = [:]
+    /// Mirrors `WMPSceneOverrides.scriptAssignedParentExtent`, per view scope.
+    private var scriptAssignedParentExtent: [String: [WMPScenePropertyAddress: CGFloat]] = [:]
     private var recentTransactionTimes: [Date] = []
     /// **The tweens in flight, per view scope (W194).** A tween outlives the transaction that
     /// started it — that is the whole of this row — so it is runtime state rather than transaction
@@ -791,6 +793,18 @@ actor WMPScriptRuntime {
         // every geometry mutation this transaction has already made.
         var resolved = geometry
         var canvas = size
+        // A nested node's parent is its nearest ancestor with a resolved frame — the one the
+        // builder measures it against, skipping nodes that take no layout of their own.
+        var parentExtent = scriptAssignedParentExtent[scope] ?? [:]
+        var layoutParent: [Int: Int] = [:]
+        func mapParents(_ node: WMPNode, _ parent: Int?) {
+            let own = geometry[node.stableID] != nil ? node.stableID : parent
+            for child in node.children {
+                if let parent = own { layoutParent[child.stableID] = parent }
+                mapParents(child, own)
+            }
+        }
+        if let rootNode { mapParents(rootNode, nil) }
         for mutation in mutations {
             guard let stableID = plan.idToStableID[WMPPath.fold(mutation.targetID)] else { continue }
             let address = WMPScenePropertyAddress(stableID: stableID,
@@ -801,6 +815,17 @@ actor WMPScriptRuntime {
                 overrides.geometry[address] = CGFloat(value)
                 scriptAssigned[address] = canvas
                 if alignmentExtent[address] != nil { alignmentExtent[address] = CGFloat(value) }
+                // Only while the canvas is the one `geometry` was resolved at: after a resize in
+                // this transaction the parent's frame is stale, and no anchor is better than a
+                // wrong one.
+                if !rootChildIDs.contains(stableID), stableID != rootStableID {
+                    let horizontal = address.property == "left" || address.property == "width"
+                    if canvas == size, let parent = layoutParent[stableID], let frame = resolved[parent] {
+                        parentExtent[address] = horizontal ? frame.width : frame.height
+                    } else {
+                        parentExtent[address] = nil
+                    }
+                }
                 if var frame = resolved[stableID] {
                     switch address.property {
                     case "left": frame.x = CGFloat(value)
@@ -876,6 +901,8 @@ actor WMPScriptRuntime {
         overrides.scriptAssignedAlignment = scriptAligned
         scriptAlignmentExtent[scope] = alignmentExtent
         overrides.scriptAlignmentExtent = alignmentExtent
+        scriptAssignedParentExtent[scope] = parentExtent
+        overrides.scriptAssignedParentExtent = parentExtent
         var assigned = Self.assignedViewSize(skin: skin, viewID: viewID, plan: plan,
                                              mutations: mutations, overrides: overrides,
                                              currentSize: size)
@@ -1443,6 +1470,7 @@ actor WMPScriptRuntime {
         scriptAssignedAlignment.removeValue(forKey: scope)
         deferredResizeMutations.removeValue(forKey: scope)
         scriptAlignmentExtent.removeValue(forKey: scope)
+        scriptAssignedParentExtent.removeValue(forKey: scope)
         propertyRegistries.removeValue(forKey: scope)
         activeTweens.removeValue(forKey: scope)
         context?.discardElements(for: viewID)
@@ -1462,6 +1490,7 @@ actor WMPScriptRuntime {
         scriptAssignedAlignment.removeAll()
         deferredResizeMutations.removeAll()
         scriptAlignmentExtent.removeAll()
+        scriptAssignedParentExtent.removeAll()
         propertyRegistries.removeAll()
         activeTweens.removeAll()
     }

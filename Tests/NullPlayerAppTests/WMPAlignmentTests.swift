@@ -445,6 +445,39 @@ final class WMPAlignmentTests: XCTestCase {
                        + "grew since its markup")
     }
 
+    /// **…but the growth *after* the write still reaches it.** `Compact`'s `SizeViz()` sets
+    /// `myeffect.height` inside `svVisual` when a track starts; dragging the window larger then
+    /// stretched the visualizer's width and left its height at the 215 it was written at, so the
+    /// picture was clipped to the old rect. The runtime records the parent's extent at the write,
+    /// and the delta is the parent's growth since.
+    func testANestedScriptAssignedExtentFollowsItsParentAfterTheWrite() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="320" height="240">
+            <SUBVIEW id="outer" width="320" height="240" verticalAlignment="stretch"
+                     horizontalAlignment="stretch" backgroundColor="#000000">
+                <SUBVIEW id="pane" width="320" height="200" verticalAlignment="stretch"
+                         horizontalAlignment="stretch" backgroundColor="#00FF00"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """)
+        let pane = try stableID(skin, "pane")
+        let height = WMPScenePropertyAddress(stableID: pane, property: "height")
+        var overrides = WMPSceneOverrides.empty
+        // Written as 215 at the authored 320x240, when `outer` was 240 tall.
+        overrides.geometry[height] = 215
+        overrides.scriptAssignedGeometry[height] = WMPSize(width: 320, height: 240)
+        overrides.scriptAssignedParentExtent[height] = 240
+        let builder = WMPSceneBuilder(loadedSkin: skin)
+        let unchanged = try await builder.build(viewID: "main",
+            requestedSize: WMPSize(width: 320, height: 240), overrides: overrides)
+        XCTAssertEqual(try frame(skin, unchanged, "pane").height, 215,
+                       "at the canvas it was written at the write is the answer")
+        let grown = try await builder.build(viewID: "main",
+            requestedSize: WMPSize(width: 320, height: 550), overrides: overrides)
+        XCTAssertEqual(try frame(skin, grown, "pane").height, 215 + 310,
+                       "the 310 `outer` grew since the write")
+    }
+
 
     // MARK: - An expression extent is a baseline read at the authored canvas
 

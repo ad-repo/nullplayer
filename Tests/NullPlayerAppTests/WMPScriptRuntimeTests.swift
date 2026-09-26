@@ -1751,6 +1751,48 @@ final class WMPScriptRuntimeTests: XCTestCase {
                        + "lets an aligned node re-anchor by the growth since then")
     }
 
+    /// A nested node's script-assigned size is anchored at its **parent's** extent at the write —
+    /// the nearest ancestor with a resolved frame — and not anchored at all once the view has
+    /// resized earlier in the same transaction, because the parent's frame is then stale.
+    func testANestedAssignmentRecordsItsParentsExtent() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200">
+            <SUBVIEW id="outer" width="200" height="180">
+                <SUBVIEW id="pane" width="200" height="100"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """)
+        let (runtime, cleanup) = try runtime()
+        defer { cleanup() }
+        let id = { (xmlID: String) in
+            try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == xmlID }?.stableID)
+        }
+        let view = try XCTUnwrap(skin.views.first { $0.id == "main" }?.node.stableID)
+        let outer = try id("outer"), pane = try id("pane")
+        let height = WMPScenePropertyAddress(stableID: pane, property: "height")
+        let geometry = [view: WMPRect(x: 0, y: 0, width: 200, height: 200),
+                        outer: WMPRect(x: 0, y: 0, width: 200, height: 180),
+                        pane: WMPRect(x: 0, y: 0, width: 200, height: 100)]
+
+        _ = await runtime.transact(skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+                                   snapshot: WMPHostSnapshot(), event: nil, geometry: geometry)
+        let written = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "click", targetID: nil, handlers: ["pane.height = 150;"]),
+            geometry: geometry)
+        XCTAssertEqual(written.overrides.scriptAssignedParentExtent[height], 180)
+
+        let afterResize = await runtime.transact(
+            skin: skin, viewID: "main", size: WMPSize(width: 200, height: 200),
+            snapshot: WMPHostSnapshot(),
+            event: WMPJScriptEvent(name: "click", targetID: nil,
+                                   handlers: ["view.height = 300; pane.height = 120;"]),
+            geometry: geometry)
+        XCTAssertNil(afterResize.overrides.scriptAssignedParentExtent[height],
+                     "`outer`'s 180 was measured before the view grew, so it anchors nothing")
+    }
+
     /// **`onClose` is where a `.wmz` saves its state, and it had no dispatch site at all.**
     ///
     /// 373 handlers across 133 of the 180 archives were dead. `xsn_sports` closes with

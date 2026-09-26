@@ -16,6 +16,17 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   strip, and the drawers read as missing underneath it. **The order is the reproduction**: with a
   track already playing the same stretch is correct, because the write happens before the resize
   rather than after it. Nothing moves for a node the script never wrote.
+  **Not re-grown is not frozen: growth *after* the write still counts.** The same skin's
+  `SizeViz()` writes `myeffect.height = svScreen.height - myeffect.top - 24` when a track starts,
+  and with no anchor a nested write took a delta of zero forever — drag the window larger and the
+  visualizer's width stretched while its height stayed 215, the picture clipped to the old rect.
+  `WMPScriptRuntime` now records, for each nested `left`/`top`/`width`/`height` write, the parent's
+  extent on that axis at the write (`WMPSceneOverrides.scriptAssignedParentExtent`; the parent is
+  the nearest ancestor with a resolved frame), and `scriptDelta` returns the parent's growth since.
+  No record — the parent had no frame, or the view had already resized earlier in that
+  transaction, so the frame is stale — keeps the old zero. Corpus sweep 2026-09-26: invariants
+  identical over 179 skins, one image different and that one `Scooby-Doo_2`'s `Math.random()`
+  portrait.
   **An authored `jscript:` binding on a sibling's extent is a different mechanism and was W235** —
   `NVIDIA`'s `visEffects` off `visFrame` — measured not to be this, and closed 2026-09-19 by the
   alignment-baseline half of `c78f32f7`: `ownAuthoredSize` was reading the runtime's own geometry
