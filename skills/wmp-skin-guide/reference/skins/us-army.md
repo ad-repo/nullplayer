@@ -35,12 +35,12 @@ artifact link after closing it"*.
   threw, and the handlers set their flag after that line. `eq` now falls through to the element —
   `object-model.md` § *The `<EQUALIZERSETTINGS>` element*.
 - **Visualizer over the whole window.** The surface's own `clippingImage` was never read —
-  `rendering.md`, the `<EFFECTS>` shape bullets.
+  `rendering/hosted-surfaces.md`, the `<EFFECTS>` shape bullets.
 - **Pink block over the Help and Credits text.** The oversized `infomask.gif` was stretched to the
-  pane and cut a hole in the text, showing `backgroundcolor="pink"` — `rendering.md` § *A
+  pane and cut a hole in the text, showing `backgroundcolor="pink"` — `rendering/keys-and-shapes.md` § *A
   `clippingImage` larger than its node on both axes shapes nothing*.
 - **The Skins Factory link and a scroll arrow left on the face after Info closes.** W263's escape
-  let them draw through the closed `infomode`/`creditsmask` — `rendering.md`, the W263/W308/W309
+  let them draw through the closed `infomode`/`creditsmask` — `rendering/script-timing.md`, the W263/W308/W309
   pass-through bullet.
 
 ## What was ruled out

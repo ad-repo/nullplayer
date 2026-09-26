@@ -1526,7 +1526,7 @@ nothing; reading order out of an `.optionAll` list said the video was in front w
 **A parked video window is a child window, so two invariants are free and worth asserting**: a child
 is always drawn above its parent, and it moves with its parent atomically. If the picture is behind
 the skin, or trails a drag, the parent-child link is gone — do not go looking at VLC. See
-`reference/rendering.md` § the `.wmz` video loan.
+`reference/rendering/video.md` § the `.wmz` video loan.
 
 ## Why an instrument gap outranks a skin-side defect
 

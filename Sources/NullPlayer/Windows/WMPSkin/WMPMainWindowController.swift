@@ -262,7 +262,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// `WMPVideoSurface.update(in:…)` already re-parents the VLC child window to `view.window` on
     /// every tick, so moving it between windows needs an arbiter rather than new plumbing — and
     /// `Halo 2`'s `<VIDEO>` is in `videoView`, a window of its own. The `video reparented` /
-    /// `video reordered above parent` traces in `skills/wmp-skin-guide/reference/rendering.md` § W102 are the check that this is not
+    /// `video reordered above parent` traces in `skills/wmp-skin-guide/reference/rendering/video.md` § W102 are the check that this is not
     /// thrashing: they must fire once per incident, not continuously.
     private let videoSurface = WMPVideoSurface()
 

@@ -18,7 +18,7 @@ import AppKit
 /// swapped back into. Only the second and subsequent views get a window of their own.
 ///
 /// The one thing that stays a child window is the VLC video output, for the reasons in
-/// `skills/wmp-skin-guide/reference/rendering.md` § W102.
+/// `skills/wmp-skin-guide/reference/rendering/video.md` § W102.
 @MainActor
 final class WMPViewWindowMaterializer: NSObject, NSWindowDelegate {
     private weak var controller: WMPMainWindowController?

@@ -130,7 +130,7 @@ canvas needs (`Halo 2`'s panels are 406x209 against a 327x294 player). The recip
   `WinampModernHostedWindowMaterializer` and `WMPViewWindowMaterializer` are the same class twice.
 - **Independent top-level windows, never `addChildWindow`.** A child window is for a foreign
   *rendering surface* glued to a layout tree it must not join — the VLC video output is the only one
-  in the app (`wmp-skin-guide/reference/rendering.md` § W102).
+  in the app (`wmp-skin-guide/reference/rendering/video.md` § W102).
 - **The first view presented binds the controller's existing window.** That window is
   `MainWindowProviding`'s anchor, the frame-restore anchor, the tiler's anchor and the host the
   unskinned fallback is swapped back into; binding to it means none of those move when the skin opens

@@ -149,7 +149,7 @@ which launches had a persisted view.
 place reproduced it on the first try. The fix is in `adoptDispatcher`, which already scanned for the
 windowless dispatcher for its timer for the same reason: when the walk did not visit it, it now runs
 its `load` too and applies the commands against the player, minus the player's own `openView`
-(`rendering.md`, the dispatcher bullet; `app-control/SKILL.md` for the `launch.sh` trap). Verified
+(`rendering/views.md`, the dispatcher bullet; `app-control/SKILL.md` for the `launch.sh` trap). Verified
 live on `Alienware Invader`: `plView` opens at launch from a persisted `mainView`, and `btnPl` closes
 it on the first click and reopens it on the second.
 `WMPWindowlessSuccessorTests.testAPersistedPlayerStillRunsTheDispatchersOnLoad` fails with the fix
@@ -182,7 +182,7 @@ unpredictable"*. Hit testing and value mapping were both right (`WMP_RENDER_CLIC
 pointer); the picture was wrong. `bar.gif` is a dark fill on a light ground, so
 `filmstripIsDescending`'s brightness reading called it reversed, while the light `barhover.gif`
 read forwards — the bar flipped when the pointer left it. A middle-frame reading now takes a
-reversal away (never adds one); `rendering.md`, the filmstrip bullet. Two looser versions were tried
+reversal away (never adds one); `rendering/controls.md`, the filmstrip bullet. Two looser versions were tried
 first and rejected on the census (`WMP_STRIP_TRACE=1`): judging line by line flipped 55 strips,
 judging one pixel per line flipped 8 including `T3-Skynet`'s plainly ascending arcs. As landed,
 exactly one strip in the corpus changes. Verified live with the pointer moved away. `NVIDIA`'s
@@ -232,7 +232,7 @@ window down. `windows.md` § *Window placement and recovery*.
 **W304: the archive's own font was never loaded.** Every LCD readout says `fontFace="Quartz"` and the
 archive ships `Quartz.TTF`; CoreText answered Helvetica, wider than the LCD face, so the readouts
 overran their boxes. `WMPSkinFonts` registers an archive's `.ttf`/`.otf` for the process at load,
-never over an installed family. `rendering.md`, the skin-fonts bullet. Reach: 1 of 180 installed
+never over an installed family. `rendering/text.md`, the skin-fonts bullet. Reach: 1 of 180 installed
 archives ships a font, and only it names Quartz.
 
 **W305: `settings.volume` was a fraction.** `0.2 * 100` is `20.000000000000004`, drawn as `20.0…`
@@ -362,12 +362,12 @@ pass-through read it as a script show. Fixed with `WMPSceneOverrides.boundProper
 `WMPGeometryTests.testABoundVisibleDoesNotEscapeAHiddenContainer`. Sweep with
 `WMP_RENDER_HOST=playing` over the 50 archives binding `visible` to the player: 5 skins moved
 (111/114 images identical), all stray controls from closed panels (`Alpine7618_v09`, `Melvin`,
-`Secura`, `Creed`, `Charlies_Angels_Full_Throttle`), classified in `rendering.md` (W301 note under
+`Secura`, `Creed`, `Charlies_Angels_Full_Throttle`), classified in `rendering/script-timing.md` (W301 note under
 the W263 bullet).
 
 **W302: the second visualizer was covered by artwork declared before it.** With both surfaces live,
 everything after the earliest split went over both, and `vis_panel.bmp`'s opaque black centre
-covered the panel's visualizer. Fixed with `WMPScene.effectsLayers`, per surface (`rendering.md`,
+covered the panel's visualizer. Fixed with `WMPScene.effectsLayers`, per surface (`rendering/paint-order.md`,
 the W302 paragraph). `WMPEffectsOcclusionTests.testASecondSurfaceIsNotCoveredByArtworkBeforeItsOwnSplit`.
 The render sweep cannot see this (a dump is flat); a harness comparison over the 8 two-surface
 views with a playing host found one surface live in each, so nothing else changes at load.
@@ -484,7 +484,7 @@ length's glyphs at x 138–153 of its 108–153 cell.
 **Cause:** `WMPSceneBuilder`'s text-alignment switch named `center` and `right` and let everything
 else take the default, and the default for `CURRENTPOSITIONTEXT`/`DURATIONTEXT` is `right`. So
 `pharaoh`'s explicit `justification="Left"` right-aligned. **Fix:** a `left` case. Rule:
-`rendering.md` (the `STATUSTEXT`/`CURRENTPOSITIONTEXT` bullet); test
+`rendering/text.md` (the `STATUSTEXT`/`CURRENTPOSITIONTEXT` bullet); test
 `testAClockReadoutHonoursAnAuthoredLeftJustification`, which fails without the fix.
 
 **Reach:** one control. Over the 179 archives, 18 clock readouts in 15 skins; only `pharaoh`'s
@@ -550,12 +550,12 @@ was not isolated; W283 (a subview's background art larger than its box stops at 
 likely one. **What the row still holds is a rule, not a defect**: W122's natural-size rule cannot be
 extended to `backgroundImage` without deciding what a stretched background does — `Ice`'s tiles,
 `Vidcolorbox`'s stretch and `LostPlanet`'s 61 px frame tiles disagree. That caveat lives in
-`rendering.md` § *Static scene and image contracts* and the counter-evidence table. Reopen only on a
+`rendering/artwork.md` and the counter-evidence table. Reopen only on a
 live capture that shows a seam.
 
 Row as filed:
 
-| W123 | A stretched `backgroundImage` and a natural-size foreground image draw the same bitmap at two different sizes | **1 view measured** (`Ice/videoView`); the wider class — every `backgroundImage` whose frame is not its bitmap — is **unmeasured** | Blocked on its own measurement: **measure the class before changing the rule**, and not alongside W240 (`Radio` left that row when `corner_pieces.bmp` measured absent from its own archive, so the two never shared a skin). Cannot be answered by extending W122; `skins/README.md`'s counter-evidence table comes first. Evidence: `reference/rendering.md` § *Static scene and image contracts*. |
+| W123 | A stretched `backgroundImage` and a natural-size foreground image draw the same bitmap at two different sizes | **1 view measured** (`Ice/videoView`); the wider class — every `backgroundImage` whose frame is not its bitmap — is **unmeasured** | Blocked on its own measurement: **measure the class before changing the rule**, and not alongside W240 (`Radio` left that row when `corner_pieces.bmp` measured absent from its own archive, so the two never shared a skin). Cannot be answered by extending W122; `skins/README.md`'s counter-evidence table comes first. Evidence: `reference/rendering/artwork.md`. |
 
 ## W273 — clicking one window left a skin's other panels behind (closed 2026-09-25)
 
@@ -618,8 +618,8 @@ backing"*, then *"asimov radio looks wrong"* against the Internet Archive's refe
   which relies on overflow, did not move.
 
 **Verified live** in the debug build: gnome draws its full face with its dark backing, and Asimov
-matches the reference (title strip, no slab). Rules: `rendering.md` (the BMP-key paragraph,
-*A subview's background art larger than its box stops at the box*, *`visible` is not a `<VIEW>`
+matches the reference (title strip, no slab). Rules: `rendering/keys-and-shapes.md` (the BMP-key paragraph), `rendering/artwork.md`
+(*A subview's background art larger than its box stops at the box*), `rendering/views.md` (*`visible` is not a `<VIEW>`
 attribute*); counter-evidence row `gnome`. Tests in `WMPClippingShapeTests`. Asimov's video drawer opening to 470
 confirmed working by the reporter. **Found on the way:** a `-wmpSkinPath` launch over a saved session
 applies the previous skin's frame when both skins' views are the synthesized `view-2`
@@ -650,8 +650,8 @@ Reproduced in the running app and in `WMP_RENDER_DUMP`; each skin was a differen
   `#FF00FF`. A view with no shape of its own now takes one from its lowest whole-canvas keyed body,
   cutting only the matte connected to the bitmap's edge. Sweep: this skin and `Erektorset` (13 px).
 
-The rules and their counter-evidence are in `skills/wmp-skin-guide/reference/rendering.md` and
-`reference/skins/README.md`. Accepted live 2026-09-24.
+The rules and their counter-evidence are in `skills/wmp-skin-guide/reference/rendering/keys-and-shapes.md`
+(W277, W279), `rendering/geometry.md` (W278) and `reference/skins/README.md`. Accepted live 2026-09-24.
 
 ## W271 — a Sonos cast of a Plex FLAC stopped mid-track: another NullPlayer was on the room (closed 2026-09-24)
 
@@ -826,7 +826,7 @@ header costs one of 8-10 rows, so the existing one-line `Title — Artist` row r
 columns the skin asks for. Reopen only with a width-adaptive design (Title + Time always,
 Artist/Album only at >=110 px each). The small halves (`leftStatus`/`rightStatus` 27,
 `dropDownImage` 27/25, `toolbarVisible` 12) were never measured as visible and close with it;
-the attribute list is in `reference/rendering.md` § *Drawing the skin's own controls*.
+the attribute list is in `reference/rendering/hosted-surfaces.md`.
 
 ## W262 — `player.url` unimplemented: closed as not worth implementing (closed 2026-09-24)
 
@@ -2208,7 +2208,7 @@ built at the size it asked for*.
 
 The row as it stood in `WMP_TASKS.md` when it was taken, the last row of Tier 1f:
 
-> | W236 | **Two ids are read as a `fontFace` and a `scrollingDirection`, and answering them with the empty string is not the same as answering them** | **12 uses / 2 ids across 2 archives** (`Revert`, `Revert (1)`), measured 2026-09-19 by the W195 census | Not blocked. These are localisation plumbing, not labels, and `""` is not an answer for an attribute with a real default. First step: measure what the scene does with an empty `fontFace` — if it falls back to the view font the row closes as a note; if not, three readouts on both `Revert` releases draw in the wrong face. Not a W195 defect. Evidence: `reference/rendering.md` § *Static scene and image contracts*, the `res://wmploc.dll` bullet. |
+> | W236 | **Two ids are read as a `fontFace` and a `scrollingDirection`, and answering them with the empty string is not the same as answering them** | **12 uses / 2 ids across 2 archives** (`Revert`, `Revert (1)`), measured 2026-09-19 by the W195 census | Not blocked. These are localisation plumbing, not labels, and `""` is not an answer for an attribute with a real default. First step: measure what the scene does with an empty `fontFace` — if it falls back to the view font the row closes as a note; if not, three readouts on both `Revert` releases draw in the wrong face. Not a W195 defect. Evidence: `reference/rendering/text.md`, the `res://wmploc.dll` bullet. |
 
 **The row's first step decided it, and it came out on the second branch.** An unusable `fontFace`
 does *not* fall back to the view font. `CTFontCreateWithName` never fails: a name it cannot match is
@@ -2823,7 +2823,7 @@ wrong only once you know it should be there. **Neither a probe nor a glance sett
 size; the two together did.** See `measurement-is-not-its-interpretation` and its mirror.
 
 Evidence: `Tests/NullPlayerAppTests/WMPWidgetClipTests.swift`, and
-`skills/wmp-skin-guide/reference/rendering.md` § the overlay bullets.
+`skills/wmp-skin-guide/reference/rendering/hosted-surfaces.md`, the overlay bullets.
 
 ## W238 — every hosted window re-rendered and re-grew when another opened, 2026-09-19
 
@@ -4522,7 +4522,7 @@ confirmation came from the reporter driving the app**, not from the harness.
 |---|---|---|
 | W138 | A paint command's index into `WMPScene.commands` was not stable | Whole corpus; **zero image change** | **Closed 2026-09-11 with W139, which needed it.** `WMPSceneBuilder` ran `commands.removeAll { $0.alpha <= 0 }` *after* the DFS returned, so any index captured during the walk was silently shifted by every zero-alpha command before it — 717 of the corpus's 778 `alphaBlend` uses are exactly `alphaBlend="0"`. Nothing read an index into `commands`, so it had never fired. The filter now runs at each `emit` call site, where alpha is already computed, and the post-hoc `removeAll` is gone. Pure refactor: the same commands survive in the same order. Verified byte-identical over the 180-archive corpus dump (536 PNGs). |
 | W139 | An `<EFFECTS>` surface could never be occluded by the skin's own artwork | **32 `<EFFECTS>` across 30 skins author a negative `zIndex`**; 107 rects carry numeric dimensions, of which **19 square, 83 wider than tall, 5 taller** | **Closed 2026-09-11.** Reported live as "visualizations in `.wmz` skins are circular everywhere". Two independent defects. **(A)** `WMPMainView` blitted the scene as one flattened image and hosted every widget over it with a plain `addSubview`, so no skin artwork could cover the surface; the stand-in was a centred inscribed circle, which approximated Cerulean's real 73px keyed-out hole and was wrong everywhere else. **(B)** `drawSpikes` (the default), `drawBars` and `drawAmbience` drew rays and rings about `bounds.mid` at `min(w,h) * 0.46` and were never clipped at all — removing the clip changed nothing for them. Fix: a node's negative-`zIndex` children are walked **before** it emits its own paints (DFS order cannot express "behind the parent's background", which is what a negative `zIndex` means), `WMPWidget.commandSplitIndex` then records where the walk was when the effects node was visited, `WMPRenderer` emits a second "above" raster from that index, `WMPMainView` hosts the surface between the two layers (`effects` → overlay `NSImageView` → interactive widgets, re-enforced every `synchronizeWidgetViews` pass), and the three polar renderers were re-authored against the rect. The split is an **index, not a zIndex threshold** — `walk` sorts only siblings. **It corrected a rule in `SKILL.md` that was backwards**, which is what had made the circle look like the answer; see § *An `<EFFECTS>` rect is never shaped by this engine*. |
-| W140 | ProjectM, Geiss and Tripex in the `<EFFECTS>` slot | Catalogue goes 5 → **8**; the slot reaches **171 skins** | **Sequenced behind W139 and deliberately a documented reversal** — `SKILL.md` forbade hosting these three, and `WMPEffectsSurfaceView.makeEngineView()` / `applyPreset(to:engine:)` are the dead code left behind by that decision. Its evidence was the black ProjectM panels reported in Asimov Radio and Cerulean, and **those were W139's defect**: an opaque renderer nothing can occlude *is* a black rectangle over the artwork. With the split landed, opacity stops mattering — WMP's own visualizers were opaque too. The reversal is recorded in `reference/rendering.md` § *The ban on hosting ProjectM / Geiss / Tripex … is reversed*. **The work is not re-enabling the dead code.** `VisualizationGLView` is an `NSOpenGLView` that clears to opaque black, drives itself from its own `CVDisplayLink`, and must **not** be mounted live between the two raster layers: a legacy CGL drawable's ordering against sibling `CALayer`s is not guaranteed the way layer z-order is, and its independent clock tears against the overlay's alpha-blended edge. It has to render **offscreen** (FBO + readback, or a small offscreen `NSOpenGLContext`) into a `CGImage` that `draw(_:)` presents like the CPU paths, and **no readback path exists anywhere in `VisualizationGLView.swift`** — `renderFrame()` draws straight to the onscreen drawable. Readback at 60fps for three engines has a real cost; measure it before choosing. Selection stays WMP-session-scoped either way: `WMPEffectSelection` must never write `visualizationEngineType`. |
+| W140 | ProjectM, Geiss and Tripex in the `<EFFECTS>` slot | Catalogue goes 5 → **8**; the slot reaches **171 skins** | **Sequenced behind W139 and deliberately a documented reversal** — `SKILL.md` forbade hosting these three, and `WMPEffectsSurfaceView.makeEngineView()` / `applyPreset(to:engine:)` are the dead code left behind by that decision. Its evidence was the black ProjectM panels reported in Asimov Radio and Cerulean, and **those were W139's defect**: an opaque renderer nothing can occlude *is* a black rectangle over the artwork. With the split landed, opacity stops mattering — WMP's own visualizers were opaque too. The reversal is recorded in `reference/rendering/hosted-surfaces.md` § *The ban on hosting ProjectM / Geiss / Tripex … is reversed*. **The work is not re-enabling the dead code.** `VisualizationGLView` is an `NSOpenGLView` that clears to opaque black, drives itself from its own `CVDisplayLink`, and must **not** be mounted live between the two raster layers: a legacy CGL drawable's ordering against sibling `CALayer`s is not guaranteed the way layer z-order is, and its independent clock tears against the overlay's alpha-blended edge. It has to render **offscreen** (FBO + readback, or a small offscreen `NSOpenGLContext`) into a `CGImage` that `draw(_:)` presents like the CPU paths, and **no readback path exists anywhere in `VisualizationGLView.swift`** — `renderFrame()` draws straight to the onscreen drawable. Readback at 60fps for three engines has a real cost; measure it before choosing. Selection stays WMP-session-scoped either way: `WMPEffectSelection` must never write `visualizationEngineType`. |
 | W50 | `theme.openViewRelative` is not implemented | **2 skins** (`Revert.wmz`, `Revert (1).wmz`, the two releases of the same skin) | **Closed 2026-09-11 with W141**, which is the row it was always waiting on: it was left out of W49 on the explicit grounds that *"it is only worth doing with somewhere for a second window to go, so rank it with whatever answers that question, not before"*, and W141 is that answer. The offset is now the new window's first placement — `dx,dy` skin pixels from the opener's top-left, y flipped and scaled by UI Size, then clamped by `rescuedOrigin` — in place of the tiler, and only on the first show, so a window the user has dragged is never yanked back. It rides the action (`openViewRelative:<dx>,<dy>`) the way `setEQBand:<n>` already does, because a host command carries one value and the view id is it. **A non-finite offset falls back to a plain `openView`** rather than placing a window at NaN. Measured after the change with `scripts/wmp_skin_census.sh`: `theme.openviewrelative` is **absent from the `UNKNOWN member` tally entirely** (it was `×4`), and the whole tally was re-measured in the same capture — its top rows are other backlog items (`view.returnToMediaCenter` 156, `player.launchURL` 135, `player.url` 116, `theme.openDialog` 113) and no new `theme` row appeared behind it. The corpus's own default-state sweep cannot exercise it: `Revert`'s calls are in click handlers, so **the live check is the one that counts**, and it is `Revert` with `WMP_PLACE_TRACE=1`. |
 | W41 (`theme.closeView` half) | `theme.closeView(name)` was unrecognised and aborted the handler that called it | **84 of 180 archives, 183 uses** — measured 2026-09-11, an order of magnitude above the "5 skins" the row carried from a hand count | **Closed 2026-09-11 with W141.** The row was filed as small and was not: a `grep` for the member under-counted it the way W49's own reach was under-counted, and the honest number came from the census. What it cost is not a missing feature but a **truncated handler** — an unrecognised member aborts the handler on that statement, so `Halo 2`'s `checkRemoteViewStatus()` died on `theme.closeView('vidRemoteView')` and never reached the four statements after it, which is why that skin's remote could open panels and never close them. It is now live: it closes the window showing the named view and is a silent no-op when that view is not open; with no argument it keeps the meaning `view.close()` already posted. `theme.closeview` is **absent from the `UNKNOWN member` tally** in the post-change census. **Budget for what a truncated handler was hiding** — 84 skins' worth of statements are running for the first time, and per `reference/skins/README.md` that is where a latent trap fires (the `Cablemusic` `Dictionary(uniqueKeysWithValues:)` crash is the precedent). The post-change capture shows `load ok=179` and no new runtime-error causes; the remaining table is `eq.speakersize` ×18 (W39) and a long tail of ones. |
 | W141 | A skin's extra views could not be windows | **90 of 180 archives call `theme.openView`, 579 times**; `view.close()` 424 uses / 170 skins; `theme.closeView(name)` 183 / 84; `theme.currentViewID` 196 / 68 | **Closed 2026-09-11.** Reported on `Halo 2`, whose playlist, equaliser, visualisation, info and video panels each *replaced* the player instead of opening beside it. WMP opens the named view as an additional window and leaves the opener alone; this engine had exactly one WMP window, so `openView` was reduced to "present the view here and remember the one it covered" (`openedViewStack` / `CoveredView`). **The reduction was not merely a deviation — it was the cause of three separate reported defects**, each of which is deleted by making the second window real rather than fixed on its own: W90 ("closing an interior window closes the whole UI", a covered view being *rebuilt* instead of left alone), W96 ("the skin is empty and shows no player", a panel persisted as the session's view) and W127 (the macOS close control stranding the user on a panel). `WMPViewWindowMaterializer` is modelled directly on `WinampModernHostedWindowMaterializer` — one borderless window per open view, all against **one shared script runtime**, placed once by `WindowManager.tiledOrigin` with `rescuedOrigin` as the never-`nil` fallback, joining the app's docking through a `.wmp`-gated branch of `managedWindowRecords` as a snap target and never a centre-stack member. It is the only one of the three other families whose recipe transfers: a `.wmz` view is an arbitrary authored canvas (Halo's panels are 406x209 against a 327x294 player) with no stack to join. **The first view presented binds the app's own window** and is the player, so the `MainWindowProviding` anchor, the restore anchor, the tiler's anchor and the unskinned fallback host are all unmoved. `WMPViewPresentation` is the seam: everything per-window (scene, overrides, limits, interaction state, the view timer, the animation clock and epoch, the script timer set, pending host events) moved onto it, and the session (loaded skin, image store, script runtime, dispatcher, host, one `WMPVideoSurface`) stayed on the controller. `WMPScriptRuntime` keys its committed overrides **and its observable-property registry** per view — a separate registry is required rather than cosmetic, because the registry only reports values that *moved since it last looked*, so two windows sharing one would each see half the changes. **Deleted, not adapted:** `openedViewStack`, `CoveredView`, `switchView(to:restoring:)`'s whole restoring path, `WMPScriptRuntime.prepareForRestore`, the W127 `windowShouldClose` stack check and the W96 `openedViewStack.isEmpty` guard (now simply "is the player"). **The drawer exception is the thing this must not touch and does not**: Corona's sliding playlist and equaliser and NVIDIA's embedded playlist/video are `<SUBVIEW>`s of the presented view's own canvas, never reach `openView`, and `WMPPhase9Tests.testNVIDIAEmbeddedPlaylistCloseReturnsToAudioMode` stayed green unchanged throughout. Closing the **player** closes the whole skin UI, panels and all — the alternative readings each strand the user, which is the W96 shape. Host refresh fans out to every open window and **skips one with no `wmpprop:`/`wmpenabled:` binding and no authored handler for anything raised**, because the runtime's 120 transactions/second is a session budget and Halo with five panels plus its 10 Hz dispatcher spends about 60 of it. Verification: full suite green (2188 tests); `WMPPhase9Tests` rewritten to the window model with five new cases; census `load ok=179` with `theme.closeview` and `theme.openviewrelative` both absent from the `UNKNOWN member` tally; accepted live by the reporter. **A byte-identical render sweep proves nothing here and was not the arbiter** — this is entirely an AppKit/controller change and a default-state corpus capture cannot see it (W73); a baseline capture was additionally not constructible, because the working tree already carried unrelated in-flight changes to `WMPRenderer`/`WMPScene`/`WMPSceneBuilder` when the work started, so a diff against `HEAD` would have measured those too. |

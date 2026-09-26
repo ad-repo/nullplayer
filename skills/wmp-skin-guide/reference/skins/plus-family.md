@@ -77,7 +77,7 @@ Bionic Dot derivative, on the evidence of an identically named `visMask`/`visEff
 ### W147 — the visualizer was clipped to a rectangle, not the lens
 
 *"the spectrum is just slapped on top of the UI covering controls"*. Same archive entry. The rule
-that came out of it is in `../rendering.md` § *Drawing the skin's own controls*, and **the guard on it
+that came out of it is in `../rendering/hosted-surfaces.md`, and **the guard on it
 is Cerulean** — a two-state keyed container means the opposite of a three-state one.
 
 ### W148 — the controls hovered and did nothing
@@ -158,7 +158,7 @@ pixels each, and a 2x bilinear upscale destroys exactly that. Flat cartoon art s
 `interpolation: .low` for every image, so on a Retina display every bitmap took a bilinear 2x
 upscale. Classic (`SkinRenderer`) and Winamp Modern (`WasabiBitmapInterpolationPolicy`) had both
 already decided this question for their own 1x artwork; the WMP engine was the only one that had
-not. The fix and its three conditions are in `../rendering.md` § *Static scene and image contracts*.
+not. The fix and its three conditions are in `../rendering/artwork.md`.
 
 **The first fix was wrong and the reporter's second sentence is why.** Matching the other two
 engines means `.none` — crisp pixel-doubling, which is right for the pixel art those engines were
@@ -191,7 +191,7 @@ of *four*, and Hard Boiled came back ringing with white halos on every bevel. It
 
 Three independent defects in one report, opened *"combat flight simulator and plus plasma ball have
 a gray box background I suspect should not be showing"* and closed *"this is a huge improvement"*.
-The rules are in `../rendering.md` § *Drawing the skin's own controls*; what the family contributes is
+The rules are in `../rendering/keys-and-shapes.md`; what the family contributes is
 the reach, and the reason two of the three were invisible for a whole phase.
 
 **W167 — `clippingColor="auto"`.** `Plus! Plasma Ball`'s `mainButtons` and `playListPanel` are two of
@@ -286,7 +286,7 @@ own restore path and exercises script assignment → scene → image store → r
 *"the eq in plus hugh shifter is non functional"*. The bands were buried under the drawer's own art.
 `hueshifter_eq` (the eight sliders) and the tray's `<buttonGroup>` are both `zIndex="2"`, the
 subview first, and `eq_tray_MASK.gif` is opaque over the whole band area. `hueshifter_final.jpg`
-shows the green thumbs over the tray. Fixed engine-wide as a tie rule: `../rendering.md`
+shows the green thumbs over the tray. Fixed engine-wide as a tie rule: `../rendering/paint-order.md`
 § *At a `zIndex` tie a `<SUBVIEW>` paints above its non-subview siblings*. **The resting render
 cannot show it**: the drawer is parked behind the body at `left="235"` until `openTray('eqTray')`
 moves it to 395. Author `left="395"` in a copy of the archive to render it open.

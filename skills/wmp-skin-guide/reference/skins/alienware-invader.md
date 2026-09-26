@@ -256,7 +256,7 @@ Seen and not fixed, both filed as lower priority: `playSelPlaylist()` ends with
 to "Now Playing" (W300); and after a relaunch `btnPl` needed two clicks, because `onLoadSkin()`'s
 `theme.openView('plView')` opened nothing while the saved `plViewer` said it was open (W299, fixed
 2026-09-25: the persisted `mainView` start skipped `controlView`'s `onLoad` altogether — see
-`rendering.md` § *A view the skin never shows can still have to keep running*).
+`rendering/views.md` § *A view the skin never shows can still have to keep running*).
 
 ## What is already ruled out
 
