@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.31.0
 
 - **Glossy frames for Winamp Modern fallback windows** — when a Winamp Modern (`.wal`) skin has no
   window frame of its own for NullPlayer's windows (the analyzers, Cava, Flow, PeppyMeter, waveform,
