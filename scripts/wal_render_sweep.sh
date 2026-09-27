@@ -37,10 +37,11 @@
 # Never capture the baseline with `git stash` — it relinks .build under the user's running app. Use
 # a worktree:
 #
-#   git worktree add ../nullplayer-base HEAD
-#   cp -R .build/arm64-apple-macosx/debug/*.framework \
-#         .build/arm64-apple-macosx/debug/*.dylib ../nullplayer-base/.build/arm64-apple-macosx/debug/
+#   scripts/baseline_worktree.sh ../nullplayer-base HEAD
 #   (cd ../nullplayer-base && scripts/wal_render_sweep.sh capture /tmp/sweep/base)
+#
+# Add --allow-dirty only when baseline_worktree.sh says its framework links dirty the tree; it is
+# safe there only.
 
 set -u -o pipefail
 

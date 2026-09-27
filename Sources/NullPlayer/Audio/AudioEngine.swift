@@ -200,6 +200,7 @@ class AudioEngine {
     /// Reference Tuning controller. Owns the pitch-shift nodes used in both the
     /// local AVAudioEngine graph and the AudioStreaming graph.
     let tuningController = PitchTuningController()
+    let wmpWOWController = WMPWOWController(defaults: .standard)
 
     /// Current audio file (for local files)
     private var audioFile: AVAudioFile?
@@ -1191,6 +1192,7 @@ class AudioEngine {
         engine.attach(eqNode)
         engine.attach(mixerNode)  // Class property for graph rebuilding
         engine.attach(tuningController.localPitchNode)
+        engine.attach(wmpWOWController.localNode)
 
         // Get the standard format from the mixer
         let mixerFormat = engine.mainMixerNode.outputFormat(forBus: 0)
@@ -1206,10 +1208,11 @@ class AudioEngine {
         engine.connect(playerNode, to: mixerNode, format: mixerFormat)
         engine.connect(crossfadePlayerNode, to: mixerNode, format: mixerFormat)
 
-        // Connect mixer → pitch → EQ → output
+        // Connect mixer → pitch → EQ → WMP enhancements (dry outside WMP) → output
         engine.connect(mixerNode, to: tuningController.localPitchNode, format: mixerFormat)
         engine.connect(tuningController.localPitchNode, to: eqNode, format: mixerFormat)
-        engine.connect(eqNode, to: engine.mainMixerNode, format: mixerFormat)
+        engine.connect(eqNode, to: wmpWOWController.localNode, format: mixerFormat)
+        engine.connect(wmpWOWController.localNode, to: engine.mainMixerNode, format: mixerFormat)
         
         // Player nodes stay at unity gain (1.0) - volume applied at mainMixerNode
         // This ensures the spectrum tap captures volume-independent audio
@@ -1417,7 +1420,11 @@ class AudioEngine {
             self.engine.connect(self.crossfadePlayerNode, to: self.mixerNode, format: mixerFormat)
             self.engine.connect(self.mixerNode, to: self.tuningController.localPitchNode, format: mixerFormat)
             self.engine.connect(self.tuningController.localPitchNode, to: self.eqNode, format: mixerFormat)
-            self.engine.connect(self.eqNode, to: self.engine.mainMixerNode, format: mixerFormat)
+            if !self.engine.attachedNodes.contains(self.wmpWOWController.localNode) {
+                self.engine.attach(self.wmpWOWController.localNode)
+            }
+            self.engine.connect(self.eqNode, to: self.wmpWOWController.localNode, format: mixerFormat)
+            self.engine.connect(self.wmpWOWController.localNode, to: self.engine.mainMixerNode, format: mixerFormat)
         }, &exceptionError)
 
         guard connected else {
@@ -1445,6 +1452,7 @@ class AudioEngine {
                 self.engine.disconnectNodeOutput(self.tuningController.localPitchNode)
             }
             self.engine.disconnectNodeOutput(self.eqNode)
+            self.engine.disconnectNodeOutput(self.wmpWOWController.localNode)
         }, &exceptionError)
 
         guard disconnected else {
@@ -5017,7 +5025,8 @@ class AudioEngine {
         if streamingPlayer == nil {
             streamingPlayer = StreamingAudioPlayer(
                 eqConfiguration: activeEQConfiguration,
-                pitchNode: tuningController.makeStreamingPitchNode()
+                pitchNode: tuningController.makeStreamingPitchNode(),
+                wowNode: wmpWOWController.makeStreamingNode()
             )
             streamingPlayer?.rate = tuningController.rate
             streamingPlayer?.delegate = self
@@ -5296,7 +5305,17 @@ class AudioEngine {
             NSLog("Streaming gapless transition to: %@", currentTrack?.title ?? "Unknown")
             return
         }
-        
+
+        advanceAfterNaturalTrackEnd()
+    }
+
+    /// WMP video completion follows natural queue rules without audio reporters or gapless state.
+    func wmpVideoTrackDidFinish() {
+        guard currentTrack?.mediaType == .video else { return }
+        advanceAfterNaturalTrackEnd()
+    }
+
+    private func advanceAfterNaturalTrackEnd() {
         if repeatEnabled {
             if shuffleEnabled {
                 // Repeat mode + shuffle: follow the shuffled cycle, reshuffling only after a full pass
@@ -5645,7 +5664,8 @@ class AudioEngine {
         crossfadeStreamingPlayer?.stop()
         crossfadeStreamingPlayer = StreamingAudioPlayer(
             eqConfiguration: activeEQConfiguration,
-            pitchNode: tuningController.makeStreamingPitchNode()
+            pitchNode: tuningController.makeStreamingPitchNode(),
+            wowNode: wmpWOWController.makeStreamingNode()
         )
         crossfadeStreamingPlayer?.rate = tuningController.rate
         crossfadeStreamingPlayer?.balance = balance

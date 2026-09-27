@@ -12,7 +12,7 @@ Read first:
   this document; the Phase 10 findings are folded into it (colour themes, animated-layer ranges, `Map`).
 - `skills/winamp-modern-skin-guide/compatibility.md` — supported/unsupported surface, limits, the
   robustness rules, and the measured-demand lists
-- `TASKS.md` — Phase 10 section, with the one open item
+- `WINAMP5_TASKS.md` — Phase 10 section, with the one open item
 - `~/.claude/plans/i-want-to-support-frolicking-rabbit.md` — "Post-Phase-10 state and next work"
 
 ## 1. What Phase 10 was
@@ -123,7 +123,7 @@ container windows take the same scale.
 
 ## 4. What is open
 
-- **The GUI pass a human has to do** (the only open TASKS.md item): open and close each drawer
+- **The GUI pass a human has to do** (the only open WINAMP5_TASKS.md item): open and close each drawer
   (EQ / VIS / ColorThemes), drag the volume/bass/treble knobs, and switch colour themes. The code paths
   behind these now run — the scripts complete and the methods exist — but no one has watched them
   respond to a real click.

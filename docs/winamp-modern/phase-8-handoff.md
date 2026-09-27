@@ -13,7 +13,7 @@ Read first:
 - `skills/winamp-modern-skin-guide/compatibility.md` — supported/unsupported surface, limits, and the
   measured demand list
 - `skills/winamp-modern-skin-guide/manual-qa-checklist.md` — the GUI pass that has never been run
-- `TASKS.md` — Phases 0A–8 complete
+- `WINAMP5_TASKS.md` — Phases 0A–8 complete
 
 ## 1. What Phase 8 landed
 

@@ -8,6 +8,18 @@ class ContextMenuBuilder {
     /// Keeps menu targets alive when their browser window has not been created yet.
     private static let compactBackdropFallbackPresenter = CavaPresenter(scope: .compactWindow)
     private static let libraryBackdropFallbackPresenter = CavaPresenter(scope: .libraryWindow)
+
+    /// Whether NullPlayer's own windows can be opened in this mode.
+    ///
+    /// True in every family now that `.wmz` hosts them in chrome derived from the active skin
+    /// (`WMPSurfacePalette`). It stays a named question rather than a constant because the answer is
+    /// a per-family policy — see `skin-subsystem-blueprint` § *The auxiliary-window policy is a
+    /// decision, not a default*.
+    static func supportsSkinnedAuxiliaryWindows(for mode: PlayerUIMode) -> Bool {
+        switch mode.controllerFamily {
+        case .classic, .nullPlayerModern, .winampModern, .wmp: return true
+        }
+    }
     
     // MARK: - Main Menu Builder
     
@@ -47,8 +59,8 @@ class ContextMenuBuilder {
         // Compact Mode works in the classic and modern UI. Set apart on its own, above the display
         // toggles. A `.wal` skin supplies its own compact/shade layouts, so showing NullPlayer's
         // alternatives there creates a second, unrelated compact-window model; the menu-bar
-        // Windows menu suppresses them the same way.
-        if wm.uiMode.controllerFamily != .winampModern {
+        // Windows menu suppresses them the same way. WMP skins own their views the same way.
+        if wm.uiMode.controllerFamily != .winampModern, wm.uiMode.controllerFamily != .wmp {
             let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
             compactMode.target = MenuActions.shared
             compactMode.state = wm.compactModeEnabled ? .on : .off
@@ -160,24 +172,26 @@ class ContextMenuBuilder {
     static func buildMenuBarWindowsMenu() -> NSMenu {
         let menu = NSMenu()
         let wm = WindowManager.shared
+        let supportsSkinnedAuxiliaryWindows = supportsSkinnedAuxiliaryWindows(for: wm.uiMode)
 
         menu.addItem(buildWindowItem("Main Window", visible: wm.mainWindowController?.window?.isVisible ?? false, action: #selector(MenuActions.toggleMainWindow)))
-        menu.addItem(buildWindowItem("Equalizer", visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ)))
-        menu.addItem(buildWindowItem("Playlist Editor", visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist)))
-        menu.addItem(buildWindowItem("Spectrum Analyzer", visible: wm.isSpectrumVisible, action: #selector(MenuActions.toggleSpectrum)))
-        menu.addItem(buildWindowItem("Audio Analyzer", visible: wm.isAudioAnalysisVisible, action: #selector(MenuActions.toggleAudioAnalysis)))
-        menu.addItem(buildWindowItem("PeppyMeter", visible: wm.isPeppyMeterVisible, action: #selector(MenuActions.togglePeppyMeter)))
-        menu.addItem(buildWindowItem("Flow", visible: wm.isNetworkMonitorVisible, action: #selector(MenuActions.toggleNetworkMonitor)))
-        menu.addItem(buildWindowItem("Cava", visible: wm.isCavaVisible, action: #selector(MenuActions.toggleCava)))
-        menu.addItem(buildWindowItem("Sonos Rooms", visible: wm.isSonosVisible, action: #selector(MenuActions.toggleSonos)))
-        menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform)))
-        menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser)))
+        menu.addItem(buildSkinOwnableWindowItem("Equalizer", surface: .equalizer, visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildSkinOwnableWindowItem("Playlist Editor", surface: .playlist, visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Spectrum Analyzer", visible: wm.isSpectrumVisible, action: #selector(MenuActions.toggleSpectrum), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Audio Analyzer", visible: wm.isAudioAnalysisVisible, action: #selector(MenuActions.toggleAudioAnalysis), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("PeppyMeter", visible: wm.isPeppyMeterVisible, action: #selector(MenuActions.togglePeppyMeter), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Flow", visible: wm.isNetworkMonitorVisible, action: #selector(MenuActions.toggleNetworkMonitor), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Cava", visible: wm.isCavaVisible, action: #selector(MenuActions.toggleCava), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Sonos Rooms", visible: wm.isSonosVisible, action: #selector(MenuActions.toggleSonos), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Play History", visible: wm.isLibraryHistoryVisible,
-                                     action: #selector(MenuActions.toggleLibraryHistory)))
-        menu.addItem(buildWindowItem("Visualizations", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM)))
-        menu.addItem(buildWindowItem("Video Player", visible: wm.isVideoPlayerVisible,
-                                     action: #selector(MenuActions.toggleVideoPlayer),
-                                     enabled: wm.currentVideoPlayerController != nil))
+                                     action: #selector(MenuActions.toggleLibraryHistory), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Visualizations", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildSkinOwnableWindowItem("Video Player", surface: .video,
+                                                visible: wm.isVideoPlayerVisible,
+                                                action: #selector(MenuActions.toggleVideoPlayer),
+                                                enabled: wm.currentVideoPlayerController != nil))
         menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
 
         #if DEBUG
@@ -196,10 +210,10 @@ class ContextMenuBuilder {
 
         menu.addItem(NSMenuItem.separator())
 
-        // Compact controls belong to the classic and NullPlayer-owned UI families. A `.wal` skin
-        // supplies its own compact/shade layouts, so showing NullPlayer's alternatives here creates
-        // a second, unrelated compact-window model.
-        if wm.uiMode.controllerFamily != .winampModern {
+        // Compact controls belong to the classic and NullPlayer-owned UI families. A `.wal` or
+        // `.wmz` skin supplies its own compact/shade layouts, so showing NullPlayer's alternatives
+        // here creates a second, unrelated compact-window model.
+        if wm.uiMode.controllerFamily != .winampModern, wm.uiMode.controllerFamily != .wmp {
             let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
             compactMode.target = MenuActions.shared
             compactMode.state = wm.compactModeEnabled ? .on : .off
@@ -384,8 +398,42 @@ class ContextMenuBuilder {
         return menu
     }
 
-    /// Builds the Reference Tuning submenu.
-    static func buildReferenceTuningMenu() -> NSMenu {
+    static let srsLevels: [Double] = [25, 50, 75, 100]
+
+    /// WOW and TruBass each read Off unless SRS is enabled and their level is above zero,
+    /// so the menu reflects what is audible whichever of the two a `.wmz` set.
+    static func buildSRSMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        let srs = WindowManager.shared.audioEngine.wmpWOWController
+
+        func levelItem(_ title: String, current: Double, action: Selector) -> NSMenuItem {
+            let root = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let submenu = NSMenu()
+            submenu.autoenablesItems = false
+            let effective = srs.enabled ? current : 0
+            for level in [0] + srsLevels {
+                let item = NSMenuItem(title: level == 0 ? "Off" : "\(Int(level))%", action: action, keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = level
+                item.state = effective == level ? .on : .off
+                submenu.addItem(item)
+            }
+            root.submenu = submenu
+            return root
+        }
+
+        menu.addItem(levelItem("WOW Effect", current: srs.level, action: #selector(MenuActions.setSRSWOWLevel(_:))))
+        menu.addItem(levelItem("TruBass", current: srs.bassLevel, action: #selector(MenuActions.setSRSTruBassLevel(_:))))
+
+        let headphonesItem = NSMenuItem(title: "Headphones", action: #selector(MenuActions.toggleSRSHeadphones), keyEquivalent: "")
+        headphonesItem.target = MenuActions.shared
+        headphonesItem.state = srs.speakerSize == 0 ? .on : .off
+        menu.addItem(headphonesItem)
+        return menu
+    }
+
+        static func buildReferenceTuningMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
@@ -535,8 +583,11 @@ class ContextMenuBuilder {
         let wm = WindowManager.shared
 
         // Winamp Modern (.wal) drives its in-skin visualizer from the main window's own menu,
-        // so the menu-bar entry is suppressed there. Classic and NullPlayer modern keep it.
-        if wm.uiMode.controllerFamily != .winampModern {
+        // so the menu-bar entry is suppressed there. A `.wmz` skin draws its own player and hosts
+        // this player's visuals in its authored effects rect, so WMP suppresses it too.
+        // Classic and NullPlayer modern keep it.
+        let family = wm.uiMode.controllerFamily
+        if family != .winampModern && family != .wmp {
             let mainWindowItem = NSMenuItem(title: "Main Window", action: nil, keyEquivalent: "")
             mainWindowItem.submenu = buildMainVisualizationSubmenu()
             menu.addItem(mainWindowItem)
@@ -696,6 +747,25 @@ class ContextMenuBuilder {
 
     // MARK: - Window Toggle Items
     
+    /// The Equalizer / Playlist / Video Player item, which in `.wmz` mode may be describing the
+    /// *skin's* surface rather than a NullPlayer window.
+    ///
+    /// A skin that declares one of these (171 of the 180 corpus skins declare a playlist, 164 an
+    /// equaliser, 170 a video box) owns it, so there is no window of ours to toggle. When the skin keeps it in
+    /// another view the item still acts — it opens that view, the way the skin's own button does —
+    /// and when it is part of the view already on screen the item is checked and inert, because the
+    /// thing it names is right there.
+    private static func buildSkinOwnableWindowItem(_ title: String, surface: WMPSkinSurface,
+                                                   visible: Bool, action: Selector,
+                                                   enabled: Bool) -> NSMenuItem {
+        let wm = WindowManager.shared
+        guard wm.wmpSkinProvides(surface) else {
+            return buildWindowItem(title, visible: visible, action: action, enabled: enabled)
+        }
+        let onScreen = wm.wmpSkinShowsInActiveView(surface)
+        return buildWindowItem(title, visible: onScreen, action: action, enabled: !onScreen)
+    }
+
     private static func buildWindowItem(_ title: String, visible: Bool, action: Selector, enabled: Bool = true) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = MenuActions.shared
@@ -835,6 +905,11 @@ class ContextMenuBuilder {
         let getMoreSkins = NSMenuItem(title: "Get More Skins...", action: #selector(MenuActions.getMoreClassicSkins), keyEquivalent: "")
         getMoreSkins.target = MenuActions.shared
         classicMenu.addItem(getMoreSkins)
+        
+        // Open Skins Folder...
+        let openClassicFolder = NSMenuItem(title: "Open Skins Folder...", action: #selector(MenuActions.openClassicSkinsFolder), keyEquivalent: "")
+        openClassicFolder.target = MenuActions.shared
+        classicMenu.addItem(openClassicFolder)
         
         classicMenu.addItem(NSMenuItem.separator())
         
@@ -1011,58 +1086,23 @@ class ContextMenuBuilder {
                 winampModernMenu.addItem(NSMenuItem.separator())
             }
 
-            // What this installation is, before what is loaded into it. The ClassicPro engine leads
-            // because it is the **dependency**: a cPro skin needs it imported before it can run at
-            // all, so it belongs above the skins that ask for it rather than below them.
-            let engineInstalled = ClassicProEngineStore.shared.isInstalled
-            let engineItem = NSMenuItem(
-                title: engineInstalled ? "Reimport ClassicPro Engine..." : "Import ClassicPro Engine...",
-                action: #selector(MenuActions.importClassicProEngineFromFile), keyEquivalent: "")
-            engineItem.target = MenuActions.shared
-            if engineInstalled { engineItem.state = .on }
-            winampModernMenu.addItem(engineItem)
+            // Where skins come from, in the order every skin family's menu uses: load one, find
+            // more (WinampHeritage is the archive that still hosts `.wal` skins), and the folder
+            // they land in.
+            let loadItem = NSMenuItem(title: "Load Skin...",
+                                      action: #selector(MenuActions.loadWinampModernSkinFromFile), keyEquivalent: "")
+            loadItem.target = MenuActions.shared
+            winampModernMenu.addItem(loadItem)
 
-            let downloadEngineItem = NSMenuItem(title: "Download ClassicPro Engine...",
-                                                action: #selector(MenuActions.downloadClassicProEngine), keyEquivalent: "")
-            downloadEngineItem.target = MenuActions.shared
-            winampModernMenu.addItem(downloadEngineItem)
-
-            // Whether the installed engine is the build we test against. The engine is third-party
-            // and user-supplied, so an untested build is allowed \u{2014} it just must not be silent.
-            if engineInstalled {
-                let verdict = ClassicProEngineStore.shared.info()?.provenanceVerdict
-                let title: String
-                switch verdict {
-                case .knownGood: title = "Engine: verified 2.01"
-                // An installed engine with unreadable info is untested for the same reason an
-                // unrecognized one is: nothing vouches for what is on disk.
-                case .unrecognized, .none: title = "\u{26A0}\u{FE0E} Engine: untested build"
-                case .treeMismatch: title = "\u{26A0}\u{FE0E} Engine: unexpected contents"
-                }
-                let status = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-                status.isEnabled = false
-                winampModernMenu.addItem(status)
-            }
-
-            // How the user gets `.wal` skins, and where they land — about *this* installation, not
-            // about what is loaded into it. Opening the folder belongs with the import it is the
-            // other half of, not stranded at the bottom of the menu.
-            let importItem = NSMenuItem(title: "Import .wal Skin...",
-                                        action: #selector(MenuActions.loadWinampModernSkinFromFile), keyEquivalent: "")
-            importItem.target = MenuActions.shared
-            winampModernMenu.addItem(importItem)
+            let getMoreItem = NSMenuItem(title: "Get More Skins...",
+                                         action: #selector(MenuActions.getMoreWinampModernSkins), keyEquivalent: "")
+            getMoreItem.target = MenuActions.shared
+            winampModernMenu.addItem(getMoreItem)
 
             let openFolder = NSMenuItem(title: "Open Skins Folder...",
                                         action: #selector(MenuActions.openWinampModernSkinsFolder), keyEquivalent: "")
             openFolder.target = MenuActions.shared
             winampModernMenu.addItem(openFolder)
-
-            // The other half of "where do skins come from": the folder is where they land, this is
-            // where they are found. WinampHeritage is the archive that still hosts `.wal` skins.
-            let getMoreItem = NSMenuItem(title: "Get More Skins...",
-                                         action: #selector(MenuActions.getMoreWinampModernSkins), keyEquivalent: "")
-            getMoreItem.target = MenuActions.shared
-            winampModernMenu.addItem(getMoreItem)
 
             // The bundled placeholder, in the same place and shape Classic gives its bundled
             // Silver: its own entry between "where skins come from" and the user's own library,
@@ -1079,6 +1119,26 @@ class ContextMenuBuilder {
                     defaultItem.state = .on
                 }
                 winampModernMenu.addItem(defaultItem)
+            }
+
+            winampModernMenu.addItem(NSMenuItem.separator())
+            let installed = WinampModernSkinImporter.shared.installedSkins()
+            if installed.isEmpty {
+                let noSkins = NSMenuItem(title: "No skins installed", action: nil, keyEquivalent: "")
+                noSkins.isEnabled = false
+                winampModernMenu.addItem(noSkins)
+            } else {
+                for skin in installed {
+                    let item = NSMenuItem(title: skin.name,
+                                          action: #selector(MenuActions.selectWinampModernSkin(_:)),
+                                          keyEquivalent: "")
+                    item.target = MenuActions.shared
+                    item.representedObject = skin.archiveURL
+                    if WinampModernSkinImporter.shared.selectedSkin()?.archiveURL == skin.archiveURL {
+                        item.state = .on
+                    }
+                    winampModernMenu.addItem(item)
+                }
             }
 
             // Everything configured for the **loaded skin**, in one block: what it can be coloured
@@ -1160,20 +1220,37 @@ class ContextMenuBuilder {
                 for item in skinSpecific { winampModernMenu.addItem(item) }
             }
 
-            let installed = WinampModernSkinImporter.shared.installedSkins()
-            if !installed.isEmpty {
-                winampModernMenu.addItem(NSMenuItem.separator())
-                for skin in installed {
-                    let item = NSMenuItem(title: skin.name,
-                                          action: #selector(MenuActions.selectWinampModernSkin(_:)),
-                                          keyEquivalent: "")
-                    item.target = MenuActions.shared
-                    item.representedObject = skin.archiveURL
-                    if WinampModernSkinImporter.shared.selectedSkin()?.archiveURL == skin.archiveURL {
-                        item.state = .on
-                    }
-                    winampModernMenu.addItem(item)
+            // The ClassicPro engine a cPro skin needs imported before it can run at all. It sits
+            // below the skin list so the top of this menu matches Classic's and Media Player's.
+            winampModernMenu.addItem(NSMenuItem.separator())
+            let engineInstalled = ClassicProEngineStore.shared.isInstalled
+            let engineItem = NSMenuItem(
+                title: engineInstalled ? "Reimport ClassicPro Engine..." : "Import ClassicPro Engine...",
+                action: #selector(MenuActions.importClassicProEngineFromFile), keyEquivalent: "")
+            engineItem.target = MenuActions.shared
+            if engineInstalled { engineItem.state = .on }
+            winampModernMenu.addItem(engineItem)
+
+            let downloadEngineItem = NSMenuItem(title: "Download ClassicPro Engine...",
+                                                action: #selector(MenuActions.downloadClassicProEngine), keyEquivalent: "")
+            downloadEngineItem.target = MenuActions.shared
+            winampModernMenu.addItem(downloadEngineItem)
+
+            // Whether the installed engine is the build we test against. The engine is third-party
+            // and user-supplied, so an untested build is allowed \u{2014} it just must not be silent.
+            if engineInstalled {
+                let verdict = ClassicProEngineStore.shared.info()?.provenanceVerdict
+                let title: String
+                switch verdict {
+                case .knownGood: title = "Engine: verified 2.01"
+                // An installed engine with unreadable info is untested for the same reason an
+                // unrecognized one is: nothing vouches for what is on disk.
+                case .unrecognized, .none: title = "\u{26A0}\u{FE0E} Engine: untested build"
+                case .treeMismatch: title = "\u{26A0}\u{FE0E} Engine: unexpected contents"
                 }
+                let status = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+                status.isEnabled = false
+                winampModernMenu.addItem(status)
             }
 
             winampModernItem.submenu = winampModernMenu
@@ -1181,6 +1258,97 @@ class ContextMenuBuilder {
         }
 
         for item in deferredFamilies { uiMenu.addItem(item) }
+
+        // --- Media Player submenu ---
+        if AppCapabilities.supports(.wmpSkinMode) {
+            let wmpItem = NSMenuItem(title: PlayerUIMode.wmp.displayName, action: nil, keyEquivalent: "")
+            let wmpMenu = NSMenu()
+            wmpMenu.autoenablesItems = false
+            let importer = WMPSkinImporter()
+
+            if activeMode != .wmp {
+                let switchItem = NSMenuItem(title: "Switch to \(PlayerUIMode.wmp.displayName)",
+                                            action: #selector(MenuActions.setWMPMode), keyEquivalent: "")
+                switchItem.target = MenuActions.shared
+                wmpMenu.addItem(switchItem)
+                wmpMenu.addItem(.separator())
+            }
+            // Where skins come from, in the order every skin family's menu uses.
+            let load = NSMenuItem(title: "Load Skin...",
+                                  action: #selector(MenuActions.loadWMPSkinFromFile), keyEquivalent: "")
+            load.target = MenuActions.shared
+            wmpMenu.addItem(load)
+            let getMore = NSMenuItem(title: "Get More Skins...",
+                                     action: #selector(MenuActions.getMoreWMPSkins), keyEquivalent: "")
+            getMore.target = MenuActions.shared
+            wmpMenu.addItem(getMore)
+            let open = NSMenuItem(title: "Open Skins Folder...",
+                                  action: #selector(MenuActions.openWMPSkinsFolder), keyEquivalent: "")
+            open.target = MenuActions.shared
+            wmpMenu.addItem(open)
+            wmpMenu.addItem(.separator())
+
+            let unskinned = NSMenuItem(title: "Default Skin (Unskinned)",
+                                       action: #selector(MenuActions.useUnskinnedWMPPlayer), keyEquivalent: "")
+            unskinned.target = MenuActions.shared
+            unskinned.state = activeMode == .wmp && importer.selectedSkinName == nil ? .on : .off
+            wmpMenu.addItem(unskinned)
+            wmpMenu.addItem(.separator())
+
+            let installed = importer.installedSkins()
+            if installed.isEmpty {
+                let empty = NSMenuItem(title: "No skins installed", action: nil, keyEquivalent: "")
+                empty.isEnabled = false
+                wmpMenu.addItem(empty)
+            } else {
+                for skin in installed {
+                    let item = NSMenuItem(title: skin.name, action: #selector(MenuActions.selectWMPSkin(_:)), keyEquivalent: "")
+                    item.target = MenuActions.shared
+                    item.representedObject = skin.name
+                    if activeMode == .wmp,
+                       importer.selectedSkinName?.caseInsensitiveCompare(skin.name) == .orderedSame {
+                        item.state = .on
+                    }
+                    wmpMenu.addItem(item)
+                }
+            }
+            wmpMenu.addItem(.separator())
+
+            if activeMode == .wmp,
+               let controller = wm.mainWindowController as? WMPMainWindowController,
+               controller.availableViewIDs.count > 1 {
+                let viewsItem = NSMenuItem(title: "Views", action: nil, keyEquivalent: "")
+                let viewsMenu = NSMenu()
+                for viewID in controller.availableViewIDs {
+                    let item = NSMenuItem(title: viewID, action: #selector(MenuActions.selectWMPView(_:)),
+                                          keyEquivalent: "")
+                    item.target = MenuActions.shared
+                    item.representedObject = viewID
+                    item.state = controller.selectedViewID?.caseInsensitiveCompare(viewID) == .orderedSame
+                        ? .on : .off
+                    viewsMenu.addItem(item)
+                }
+                viewsItem.submenu = viewsMenu
+                wmpMenu.addItem(viewsItem)
+            }
+            let report = NSMenuItem(title: "Save Compatibility Report...",
+                                    action: #selector(MenuActions.saveWMPCompatibilityReport),
+                                    keyEquivalent: "")
+            report.target = MenuActions.shared
+            report.isEnabled = activeMode == .wmp
+                && (wm.mainWindowController as? WMPMainWindowController)?.hasCompatibilityReport == true
+            wmpMenu.addItem(report)
+            if let selectedName = importer.selectedSkinName {
+                let remove = NSMenuItem(title: "Remove \u{201c}\(selectedName)\u{201d}...",
+                                        action: #selector(MenuActions.removeSelectedWMPSkin),
+                                        keyEquivalent: "")
+                remove.target = MenuActions.shared
+                wmpMenu.addItem(remove)
+            }
+            if activeMode == .wmp { wmpItem.state = .on }
+            wmpItem.submenu = wmpMenu
+            uiMenu.addItem(wmpItem)
+        }
 
         return uiMenu
     }
@@ -1557,6 +1725,15 @@ class ContextMenuBuilder {
             balanceRoot.toolTip = "Not available while casting"
         }
         optionsMenu.addItem(balanceRoot)
+
+        // SRS submenu: WOW Effect, TruBass and Headphones
+        let srsRoot = NSMenuItem(title: "SRS", action: nil, keyEquivalent: "")
+        srsRoot.submenu = buildSRSMenu()
+        if engine.isAnyCastingActive {
+            srsRoot.isEnabled = false
+            srsRoot.toolTip = "Not available while casting"
+        }
+        optionsMenu.addItem(srsRoot)
 
         optionsMenu.addItem(NSMenuItem.separator())
 
@@ -4594,6 +4771,17 @@ class MenuActions: NSObject {
         NSWorkspace.shared.open(url)
     }
 
+    @objc func openClassicSkinsFolder() {
+        let directory = WindowManager.shared.skinsDirectoryURL
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(directory)
+    }
+
+    @objc func getMoreWMPSkins() {
+        guard let url = URL(string: "https://archive.org/download/windowsmediaplayerskinscollection") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     @objc func downloadClassicProEngine() {
         guard let url = URL(string: "https://www.softpedia.com/get/Multimedia/Audio/Audio-Plugins/ClassicPro.shtml#download") else { return }
         NSWorkspace.shared.open(url)
@@ -4704,6 +4892,112 @@ class MenuActions: NSObject {
         SkinLoadingOverlay.shared.run { wm.reloadUI(to: .winampModern) }
     }
 
+    @objc func setWMPMode() {
+        guard AppCapabilities.supports(.wmpSkinMode) else { return }
+        let wm = WindowManager.shared
+        guard wm.uiMode != .wmp else { return }
+        wm.reloadUI(to: .wmp)
+    }
+
+    @objc func loadWMPSkinFromFile() {
+        guard AppCapabilities.supports(.wmpSkinMode) else { return }
+        if let controller = WindowManager.shared.mainWindowController as? WMPMainWindowController {
+            controller.importSkinFromPanel()
+            return
+        }
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.init(filenameExtension: "wmz")!]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task {
+            do {
+                _ = try await WMPSkinImporter().importSkin(from: url)
+                await MainActor.run { WindowManager.shared.reloadUI(to: .wmp) }
+            } catch {
+                await MainActor.run {
+                    let alert = NSAlert(error: error)
+                    alert.messageText = "Failed to Import WMP Skin"
+                    alert.runModal()
+                }
+            }
+        }
+    }
+
+    @objc func selectWMPSkin(_ sender: NSMenuItem) {
+        guard AppCapabilities.supports(.wmpSkinMode),
+              let name = sender.representedObject as? String else { return }
+        let wm = WindowManager.shared
+        if let controller = wm.mainWindowController as? WMPMainWindowController {
+            controller.selectInstalledSkin(named: name)
+        } else if let skin = WMPSkinImporter().installedSkins().first(where: {
+            $0.name.caseInsensitiveCompare(name) == .orderedSame
+        }) {
+            WMPSkinImporter().select(skin)
+            wm.reloadUI(to: .wmp)
+        }
+    }
+
+    @objc func useUnskinnedWMPPlayer() {
+        guard AppCapabilities.supports(.wmpSkinMode) else { return }
+        let wm = WindowManager.shared
+        WMPSkinImporter().resetSelection()
+        if let controller = wm.mainWindowController as? WMPMainWindowController {
+            controller.resetToUnskinned()
+        } else {
+            wm.reloadUI(to: .wmp)
+        }
+    }
+
+    @objc func selectWMPView(_ sender: NSMenuItem) {
+        guard AppCapabilities.supports(.wmpSkinMode),
+              let viewID = sender.representedObject as? String,
+              let controller = WindowManager.shared.mainWindowController as? WMPMainWindowController else { return }
+        controller.switchView(to: viewID)
+    }
+
+    @objc func saveWMPCompatibilityReport() {
+        guard AppCapabilities.supports(.wmpSkinMode),
+              let controller = WindowManager.shared.mainWindowController as? WMPMainWindowController else { return }
+        controller.saveCompatibilityReportFromPanel()
+    }
+
+    @objc func removeSelectedWMPSkin() {
+        guard AppCapabilities.supports(.wmpSkinMode) else { return }
+        let importer = WMPSkinImporter()
+        guard let name = importer.selectedSkinName else { return }
+        let alert = NSAlert()
+        alert.messageText = "Remove WMP Skin?"
+        alert.informativeText = "\u{201c}\(name)\u{201d} will be removed from NullPlayer. The original downloaded file is not affected."
+        alert.addButton(withTitle: "Remove")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task {
+            do {
+                try await importer.removeSkin(named: name)
+                await MainActor.run {
+                    // The skin's per-skin effects-slot settings go with it; a later re-import
+                    // starts from the app's defaults rather than inheriting a stale record.
+                    WMPVisualizationSettingsStore(defaults: importer.defaults).forget(skin: name)
+                    (WindowManager.shared.mainWindowController as? WMPMainWindowController)?.resetToUnskinned()
+                }
+            } catch {
+                _ = await MainActor.run { NSAlert(error: error).runModal() }
+            }
+        }
+    }
+
+    @objc func openWMPSkinsFolder() {
+        guard AppCapabilities.supports(.wmpSkinMode) else { return }
+        let importer = WMPSkinImporter()
+        do {
+            try importer.ensureDirectoryExists()
+            NSWorkspace.shared.open(importer.directoryURL)
+        } catch {
+            NSAlert(error: error).runModal()
+        }
+    }
+
     /// Reset the active modern/metal skin to its shipped defaults, discarding
     /// persisted per-skin visualization overrides. Only meaningful in a modern-family
     /// mode; the live skin reload refreshes the windows via the skin-changed notification.
@@ -4759,6 +5053,23 @@ class MenuActions: NSObject {
     
     @objc func toggleVolumeNormalization() {
         WindowManager.shared.audioEngine.volumeNormalizationEnabled.toggle()
+    }
+
+    // MARK: - SRS
+
+    @objc func setSRSWOWLevel(_ sender: NSMenuItem) {
+        guard let level = sender.representedObject as? Double else { return }
+        WindowManager.shared.audioEngine.wmpWOWController.setMenuLevel(level, wow: true)
+    }
+
+    @objc func setSRSTruBassLevel(_ sender: NSMenuItem) {
+        guard let level = sender.representedObject as? Double else { return }
+        WindowManager.shared.audioEngine.wmpWOWController.setMenuLevel(level, wow: false)
+    }
+
+    @objc func toggleSRSHeadphones() {
+        let srs = WindowManager.shared.audioEngine.wmpWOWController
+        srs.setSpeakerSize(srs.speakerSize == 0 ? 1 : 0)
     }
 
     // MARK: - Reference Tuning

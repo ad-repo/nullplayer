@@ -93,7 +93,7 @@ which half you are standing on before planning work:
 | S0 ingest/tier | **Partly.** No committed manifest and no Gold/Silver tiering; the census enumerates whatever is installed and emits a **sha256 per row**, which is what makes duplicate archives and a moved corpus visible | — |
 | S1 load census | **Built** — `scripts/wal_skin_census.sh`, one TSV row per archive | [reference/harness.md](reference/harness.md) → *The corpus census* |
 | Regression sweep (§6) | **Built** — `scripts/wal_render_sweep.sh capture` / `compare`, invariants **and** every PNG | [reference/harness.md](reference/harness.md) → *The corpus render sweep* |
-| S2 static MAKI/XML demand | **Not built.** The stand-in is the hand-run `grep` set under *Reproducible reach commands* in `TASKS.md`, which is where every measured Reach number in the backlog comes from | `TASKS.md` |
+| S2 static MAKI/XML demand | **Not built.** The stand-in is the hand-run `grep` set under *Reproducible reach commands* in `WINAMP5_TASKS.md`, which is where every measured Reach number in the backlog comes from | `WINAMP5_TASKS.md` |
 | S3 motion + interaction, S3.5 state space, S4 rank | **Not built.** Provoke motion and interaction by hand | — |
 
 Two rules follow from the built half, and both are already paid for — the full versions, with the
@@ -210,11 +210,11 @@ difference between fixing the defect and fixing the description of it.
 
 ## 4b. Historical ranking (B1–B10, closed; 2026-08-20)
 
-The live list is the tracked **`TASKS.md`**, whose Reach, Effort, and Tier columns are the demand
+The live list is the tracked **`WINAMP5_TASKS.md`**, whose Reach, Effort, and Tier columns are the demand
 index. It is the whole backlog and where new items go; `BB*` remains an identifier family, not a
 separate file. There was once a tracked copy at `docs/winamp-modern/open-items.md` holding the ranked
 reasoning behind B1–B23a; it was **deleted on 2026-08-23** after an audit confirmed nothing in it was
-unique (B19 shipped as `ea4d9472`, B22 as `df9d1028`, and B23a moved to `TASKS.md`). Do not recreate
+unique (B19 shipped as `ea4d9472`, B22 as `df9d1028`, and B23a moved to `WINAMP5_TASKS.md`). Do not recreate
 it. The table below is the head of that ranking, kept here as history so a reader does not have to go
 looking — it is ordered by **bang for buck**, corpus impact ÷ effort:
 
@@ -368,7 +368,7 @@ Two things fall straight out of that, and both are the answer to "what does this
 - **`methods` minus our `signature(for:)` set = a complete per-skin list of API the skin can call
   that we do not implement** — including every branch nobody ever clicked. This is the single
   highest-value measurement available, and it needs a parse, not a run. It is **still not
-  implemented**; the backlog's Reach numbers come from the hand-run greps in `TASKS.md` instead, which
+  implemented**; the backlog's Reach numbers come from the hand-run greps in `WINAMP5_TASKS.md` instead, which
   read the extracted corpus rather than the method tables and are therefore an approximation of it.
 - **`bindings` is the event map.** It says which object handles which events. Composed with the
   instruction stream — walk from a binding's entry point to the next one — you get *per handler* the

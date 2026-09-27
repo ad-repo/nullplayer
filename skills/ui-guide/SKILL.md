@@ -907,7 +907,9 @@ library list, toggled by a **FLOW** button. It is a visual lens over the browser
 
 **Shared component** — `Windows/ModernLibraryBrowser/CoverFlowView.swift` (used by both browsers):
 - A layer-backed `NSView` with a `containerLayer` whose `sublayerTransform` applies perspective
-  (`m34 ≈ -1/900`). Each cover is a `CoverLayer` (a `CALayer` with the artwork as `contents`, a
+  (`m34 ≈ -1/900`). The view's own layer sets `masksToBounds`: the stacked side covers are laid
+  out past its width, and unclipped they drew over the host window's borders in every skin family
+  (W261). Each cover is a `CoverLayer` (a `CALayer` with the artwork as `contents`, a
   gradient-masked flipped reflection sublayer, and a solid-color placeholder). **Never** render
   placeholders with `NSImage.lockFocus` — that bitmap path was a main-thread hang; use the layer's
   `backgroundColor`. The Back cover uses one cheap `CATextLayer`.
@@ -1011,7 +1013,7 @@ placement path defers to this ranking.
 | `groupOffset(union:into:)` | One offset for a whole docked cluster, preserving every relative position |
 
 **Reachability is the top-left corner, not the whole frame.** That corner carries the title bar and
-drag area in all three modes, and the definition deliberately leaves the classic habit of parking a
+drag area in every family, and the definition deliberately leaves the classic habit of parking a
 window mostly past the bottom or right edge intact — that window is *placed*, not stranded, and a
 sweep that yanked it back would be the bug.
 
@@ -1037,10 +1039,30 @@ sites:
   macOS posts it repeatedly while a display reconfigures and the frames are not settled until it stops
 - end of `applyUIScaleLevelChangeIfNeeded`
 - after a `.wal` skin load in `ContextMenuBuilder` (three sites)
+- after a `.wmz` skin load, at the end of `WMPMainWindowController.reloadSelectedSkin`'s load task —
+  **one** site rather than three, because all three WMP menu entry points funnel through that async
+  task and a `ContextMenuBuilder` call would fire before the load finished
 
-Per `CLAUDE.md` this runs in **all three modes deliberately** — it is not justified as a no-op. An
-unreachable window is equally unusable in Classic, Original/Modern and Winamp Modern, and the rule is
-mode-independent. Verify it separately in each.
+**This sweep is gated to the two skin-sized families**, structurally in `ensureAllWindowsOnScreen()`
+and again at every call site. There are **four** families and they divide like this: `.wal` and
+`.wmz` are in the sweep; Classic and Original are deliberately out, because a window parked mostly
+past an edge is a placement they have laid their desktops out around and this sweep reads it as
+damage to repair (B56 is the record of it reaching them).
+
+The gate is `WindowManager.appliesPlacementRecovery`. It is deliberately **not**
+`appliesWinampModernPlacement`, which stays what it says — the `.wal` *arrangement*. A seam that is
+about recovery takes the first; a seam that is about how `.wal` lays its windows out takes the
+second. `.wmz` joined the recovery half on W217 G2/G3 (2026-09-20); before that a display change
+stranded its borderless windows permanently, with no title bar to drag them back by.
+
+**A child window is skipped.** The hosted video output is glued over a skin's `<VIDEO>` box with
+`addChildWindow` in both `.wal` and `.wmz`, and it is in the managed graph. AppKit moves a child with
+its parent, so rescuing one on its own displaces it off the box — or moves it twice, if the parent is
+rescued afterwards.
+
+The rule itself — reachable means the top-left corner is on some screen — is mode-independent, and
+`App/WindowPlacement.swift` is its single definition in every family. Verify a change to it
+separately in each.
 
 ### Restore
 
@@ -1054,6 +1076,21 @@ the same as changed.
 `correctedRestoredFrames` sees the main frame and every sub-frame **together** (they were decoded up
 front at the `applySettingsStateAfterReload` seam for exactly this reason) so one offset can bring the
 whole docked session back.
+
+The correction is gated `appliesPlacementRecovery` at the call site, so the function itself stays
+pure and directly testable. **Whatever it returns for `main` is what the player must actually be
+restored to** — `restoreWindowFrames` computed the correction, used it for every other window, and
+handed the WMP controller the raw saved rect, which measured G2 and then discarded it for the one
+window a `.wmz` session always has.
+
+**And nothing downstream may re-derive the rule.** `.wmz` carried a private one —
+`WMPWindowRestorePolicy.safeFrame`, an 80pt strip and a 24pt bottom margin, picking its screen by
+first intersection — that ran on the corrected frame and clamped it again per window, which is the
+clamping `groupOffset` exists to prevent. It was deleted with W217 G1 (2026-09-20). The lesson
+generalises past the gate: it validated the *saved* rectangle, and in `.wmz` the size that lands is
+the skin's, so it was enforcing a rule on a rectangle that did not survive the next statement. A
+restore path's job is to hand on the corrected top-left; the sweep that runs once the window is at
+its final size is what checks the result.
 
 ### Winamp Modern tiler
 

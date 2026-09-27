@@ -2,7 +2,7 @@ import Foundation
 
 /// The controller family a `PlayerUIMode` is rendered by. This is the explicit, non-binary
 /// replacement for the old "modern vs. classic" boolean: a mode is not merely "modern or not",
-/// it belongs to exactly one of three independently-implemented families.
+/// it belongs to exactly one of four independently-implemented families.
 ///
 /// - `classic`: the original Winamp 2.x-style `MainWindowController` family.
 /// - `nullPlayerModern`: NullPlayer's own modern controllers (`Modern*WindowController`),
@@ -11,10 +11,12 @@ import Foundation
 ///   two — it is neither "classic" nor "NullPlayer modern". Callers must route controller,
 ///   geometry, and auxiliary-window decisions through this enum, never through a boolean that
 ///   would silently fold `winampModern` into one of the other families.
+/// - `wmp`: the Windows Media Player `.wmz`/`.wms` family.
 enum PlayerUIControllerFamily {
     case classic
     case nullPlayerModern
     case winampModern
+    case wmp
 }
 
 enum PlayerUIMode: String, CaseIterable {
@@ -22,6 +24,7 @@ enum PlayerUIMode: String, CaseIterable {
     case modern
     case metal
     case winampModern
+    case wmp
 
     static let userDefaultsKey = "uiMode"
     private static let legacyModernEnabledKey = "modernUIEnabled"
@@ -32,26 +35,27 @@ enum PlayerUIMode: String, CaseIterable {
         case .modern: return ModernSkinFamily.modern.displayName
         case .metal: return ModernSkinFamily.metal.displayName
         case .winampModern: return "Modern"
+        case .wmp: return "Media Player"
         }
     }
 
     /// The controller family that renders this mode. The single source of truth for
-    /// classic vs. NullPlayer-modern vs. Winamp-modern routing.
+    /// classic vs. NullPlayer-modern vs. Winamp-modern vs. WMP routing.
     var controllerFamily: PlayerUIControllerFamily {
         switch self {
         case .classic: return .classic
         case .modern, .metal: return .nullPlayerModern
         case .winampModern: return .winampModern
+        case .wmp: return .wmp
         }
     }
 
     /// Whether this mode uses NullPlayer's own modern controllers (`Modern*WindowController`).
     ///
     /// This is intentionally narrow: it is true **only** for the `nullPlayerModern` family, NOT
-    /// for `winampModern`. `winampModern` is a separate family that (in Phase 1) reuses the
-    /// classic controllers/geometry for auxiliary windows and a dedicated stub main window, so it
-    /// must answer `false` here — folding it into the modern controllers would select the wrong
-    /// window family. Callers that need three-way behavior must switch on `controllerFamily`.
+    /// for `winampModern` or `wmp`. Each of those is a separate family that selects its own
+    /// window controllers, so folding them in here would pick the wrong window family. Callers
+    /// that need multi-way behavior must switch on `controllerFamily`.
     var usesModernControllers: Bool {
         controllerFamily == .nullPlayerModern
     }
@@ -64,14 +68,14 @@ enum PlayerUIMode: String, CaseIterable {
     /// it returns `false` here even though it is a "modern" skin system.
     var usesModernEQLayout: Bool {
         switch self {
-        case .classic, .winampModern: return false
+        case .classic, .winampModern, .wmp: return false
         case .modern, .metal: return true
         }
     }
 
     var modernSkinFamily: ModernSkinFamily? {
         switch self {
-        case .classic, .winampModern: return nil
+        case .classic, .winampModern, .wmp: return nil
         case .modern: return .modern
         case .metal: return .metal
         }
@@ -105,5 +109,19 @@ enum PlayerUIMode: String, CaseIterable {
         forcedMode: PlayerUIMode? = AppPersistence.forcedUIMode
     ) -> Bool {
         forcedMode == nil || forcedMode == requestedMode
+    }
+
+    /// Diagnostic GUI launch override supplied by `-uiMode <mode>` in NSArgumentDomain.
+    /// This remains available in release builds so packaged WMP failures can be reproduced.
+    static var argumentOverride: PlayerUIMode? {
+        return argumentOverride(
+            from: UserDefaults.standard.volatileDomain(forName: "NSArgumentDomain"))
+    }
+
+    static func argumentOverride(from arguments: [String: Any]) -> PlayerUIMode? {
+        guard let rawValue = arguments[userDefaultsKey] as? String,
+              let mode = PlayerUIMode(rawValue: rawValue),
+              mode != .wmp || AppCapabilities.supports(.wmpSkinMode) else { return nil }
+        return mode
     }
 }

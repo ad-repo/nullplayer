@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **SRS audio enhancements for every skin** — the WOW Effect, TruBass and Headphones settings that
+  came with Windows Media Player skins are now global playback options under **Playback Options ▸
+  SRS**, work in every skin, and are remembered across launches. A `.wmz` skin's own SRS controls
+  drive the same settings.
+  - **WOW Effect** widens the stereo image, pushing sound out beyond the speakers while leaving
+    centred vocals and deep bass where they are.
+  - **TruBass** adds a fuller, deeper low end by enhancing the bass already in the music, without
+    simply turning up the lowest frequencies.
+  - **Headphones** tunes TruBass for headphones instead of speakers.
+- **Windows reopen where you left them** — the library browser and the visualizer window once again
+  come back where you moved them when closed and reopened, instead of snapping back beside the player.
+  In Windows Media Player and Winamp Modern skins, the spectrum and audio analyzers, PeppyMeter, Flow,
+  Cava, waveform, Sonos Rooms and the fallback playlist and equalizer do the same, and closing one no
+  longer moves the others. Classic and Original keep their stacked layout.
+- **One layout for every skin menu** — the Classic, Modern and Windows Media Player skin menus now
+  share the same order and wording: **Load Skin...**, **Get More Skins...** and **Open Skins
+  Folder...**, then the family's **Default Skin**, then your installed skins. Windows Media Player
+  gains a **Get More Skins...** link to the Internet Archive's WMP skins collection, and Classic gains
+  **Open Skins Folder...**.
+- **Windows Media Player `.wmz` skins** — a new Windows Media Player mode that runs real WMP 9-12 era
+  skins natively on macOS. Skins look and behave like themselves: their own artwork, shaped windows,
+  animations, hover and pressed states, tooltips, fonts, drawers and multiple views, with the skin's
+  own JScript running in a sandboxed session so its buttons, sliders, timers, keyboard shortcuts and
+  readouts work the way they do in Windows.
 - **Sonos Rooms window with per-room volume** — a new dockable **Sonos Rooms** window lists every
   Sonos room NullPlayer has discovered, with a checkbox to include it in the cast and its own volume
   slider, so each room can be set independently instead of only through the group volume. The list
@@ -23,6 +47,8 @@
   land in `~/iCloud Drive (Archive)`), shows where it went, and re-points it on your say-so, keeping
   play counts and ratings. It then offers to forget tracks whose files are genuinely deleted;
   anything on a disconnected drive or unmounted share is always left alone.
+- **Cover Flow stays inside the library window** — the stacked covers at either side of the
+  carousel no longer spill over the library browser's border, in every skin mode.
 - **One unreadable file no longer stops the playlist** — playback skips past it to the next track,
   and the error now appears in the Modern and Winamp Modern main windows, not only Classic. A track
   on a disconnected NAS still stops playback, as before, instead of starting some other track.

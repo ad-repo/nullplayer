@@ -10,7 +10,7 @@ Read first:
 
 - `~/.claude/plans/i-want-to-support-frolicking-rabbit.md` — source-of-truth plan and locked scope
 - `docs/winamp-modern/phase-6-handoff.md` — the ClassicPro engine import + cPro-Bento boundary Phase 7 hardens
-- `TASKS.md` — Phase 7 is complete; Phase 8 is next
+- `WINAMP5_TASKS.md` — Phase 7 is complete; Phase 8 is next
 
 ## 1. What Phase 7 landed
 

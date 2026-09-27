@@ -1,0 +1,253 @@
+import AVFoundation
+import os
+
+/// Approximation of the forum's stereo butterfly, not licensed SRS DSP.
+/// Widening adds the side signal rather than subtracting the mid: the two reach the
+/// same mid/side ratio, but only this one leaves a centred mix at its original level.
+/// Only side content above `wideningCutoff` is added — low bass carries no usable
+/// image, and widening it spends the headroom that limits everything above it.
+struct WMPWOWKernel {
+    /// Side content below this stays where the mix put it. Airwindows' SRS models
+    /// place their widening bands in the kilohertz; this is the same idea, coarser.
+    static let wideningCutoff: Double = 180
+
+    private(set) var amount: Float = 0
+    private var lowSide: Float = 0
+    private var cutoffCoefficient: Float = 0
+    private var coefficientRate: Double = 0
+
+    /// Reserve headroom for the added side signal, mirroring `boundedAddition`.
+    /// The addition is antisymmetric, so both channels constrain it. Zero always
+    /// lies in the interval for in-range input, so clamping can only shorten the
+    /// widening, never invert it. Already over-range input is widened not at all.
+    static func boundedWidening(_ side: Float, left: Float, right: Float) -> Float {
+        guard abs(left) <= 1, abs(right) <= 1 else { return 0 }
+        return max(max(-1 - left, right - 1), min(min(1 - left, 1 + right), side))
+    }
+
+    mutating func process(left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>,
+                          frames: Int, target: Float, sampleRate: Double) {
+        let step = Float(1 / (0.02 * sampleRate)) // 20 ms full-scale ramp
+        if sampleRate != coefficientRate { // once per rate, never in the sample loop
+            coefficientRate = sampleRate
+            cutoffCoefficient = Float(min(0.5, 2 * Double.pi * Self.wideningCutoff / sampleRate))
+        }
+        for frame in 0..<frames {
+            amount += max(-step, min(step, target - amount))
+            if amount == 0 { // exact dry samples after the ramp, and no stale bass
+                lowSide = 0
+                continue
+            }
+            let l = left[frame], r = right[frame]
+            let side = (l - r) * 0.5
+            lowSide += cutoffCoefficient * (side - lowSide)
+            let widening = Self.boundedWidening((side - lowSide) * amount, left: l, right: r)
+            left[frame] = l + widening
+            right[frame] = r - widening
+        }
+    }
+}
+
+/// One instance per graph. Control writes use a lock; rendering only tries it and
+/// keeps its previous target on contention, never waiting on the UI thread.
+final class WMPWOWAudioUnit: AUAudioUnit, @unchecked Sendable {
+    static let component = AudioComponentDescription(componentType: kAudioUnitType_Effect,
+        componentSubType: 0x6e77776f, componentManufacturer: 0x4e756c6c,
+        componentFlags: 0, componentFlagsMask: 0)
+    private static let registration: Void = {
+        AUAudioUnit.registerSubclass(WMPWOWAudioUnit.self, as: component,
+                                     name: "NullPlayer: WMP WOW", version: 1)
+    }()
+
+    static func makeNode() -> AVAudioUnitEffect {
+        _ = registration
+        return AVAudioUnitEffect(audioComponentDescription: component)
+    }
+
+    private var input: AUAudioUnitBus!
+    private var output: AUAudioUnitBus!
+    private var inputs: AUAudioUnitBusArray!
+    private var outputs: AUAudioUnitBusArray!
+    private var scratch: AVAudioPCMBuffer?
+    private struct Settings { var wow: Float = 0; var bass: Float = 0; var speaker: Int = 0 }
+    private let control = OSAllocatedUnfairLock(initialState: Settings())
+    private var renderTarget = Settings()
+    private var bassDSP = WMPTruBassDSP(sampleRate: 44100)
+    private var renderSampleRate: Double = 44100
+    private var kernel = WMPWOWKernel()
+
+    func setAmount(_ amount: Float, bass: Float = 0, speaker: Int = 0) {
+        control.withLock {
+            $0.wow = amount.isFinite ? max(0, min(WMPWOWController.maximumWidening, amount)) : 0
+            $0.bass = bass.isFinite ? max(0, min(1, bass)) : 0
+            $0.speaker = max(0, min(2, speaker))
+        }
+    }
+
+    override init(componentDescription: AudioComponentDescription,
+                  options: AudioComponentInstantiationOptions = []) throws {
+        try super.init(componentDescription: componentDescription, options: options)
+        let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2)!
+        input = try AUAudioUnitBus(format: format)
+        output = try AUAudioUnitBus(format: format)
+        inputs = AUAudioUnitBusArray(audioUnit: self, busType: .input, busses: [input])
+        outputs = AUAudioUnitBusArray(audioUnit: self, busType: .output, busses: [output])
+    }
+
+    override var inputBusses: AUAudioUnitBusArray { inputs }
+    override var outputBusses: AUAudioUnitBusArray { outputs }
+
+    override func allocateRenderResources() throws {
+        guard input.format == output.format,
+              input.format.commonFormat == .pcmFormatFloat32, !input.format.isInterleaved,
+              let buffer = AVAudioPCMBuffer(pcmFormat: input.format,
+                                           frameCapacity: maximumFramesToRender) else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(kAudioUnitErr_FormatNotSupported))
+        }
+        scratch = buffer
+        kernel = WMPWOWKernel()
+        renderTarget = Settings()
+        renderSampleRate = input.format.sampleRate
+        bassDSP = WMPTruBassDSP(sampleRate: renderSampleRate)
+        try super.allocateRenderResources()
+    }
+
+    override func deallocateRenderResources() {
+        super.deallocateRenderResources()
+        scratch = nil
+    }
+
+    override var internalRenderBlock: AUInternalRenderBlock {
+        { [self] flags, timestamp, frames, _, data, _, pull in
+            guard let pull, let scratch, frames <= scratch.frameCapacity else {
+                return kAudioUnitErr_TooManyFramesToProcess
+            }
+            let buffers = UnsafeMutableAudioBufferListPointer(data)
+            let backing = UnsafeMutableAudioBufferListPointer(scratch.mutableAudioBufferList)
+            guard buffers.count == backing.count else { return kAudioUnitErr_FormatNotSupported }
+            for index in buffers.indices {
+                if buffers[index].mData == nil { buffers[index].mData = backing[index].mData }
+                buffers[index].mDataByteSize = frames * UInt32(MemoryLayout<Float>.size)
+            }
+            let status = pull(flags, timestamp, frames, 0, data)
+            guard status == noErr else { return status }
+            if let value = control.withLockIfAvailable({ $0 }) { renderTarget = value }
+            if renderTarget.wow == 0, renderTarget.bass == 0, kernel.amount == 0, bassDSP.isDry {
+                bassDSP.reset()
+                return noErr
+            }
+            if (1...2).contains(buffers.count), let leftData = buffers[0].mData {
+                let left = leftData.assumingMemoryBound(to: Float.self)
+                let right = buffers.count == 2 ? buffers[1].mData?.assumingMemoryBound(to: Float.self) : nil
+                for i in 0..<Int(frames) {
+                    // Detect bass before widening so the two controls remain independent.
+                    let mid = left[i] * 0.5 + (right?[i] ?? left[i]) * 0.5
+                    let bass = bassDSP.sample(mid: mid, target: renderTarget.bass, speaker: renderTarget.speaker)
+                    if let right {
+                        kernel.process(left: left + i, right: right + i, frames: 1,
+                                       target: renderTarget.wow, sampleRate: renderSampleRate)
+                    }
+                    let l = left[i], r = right?[i] ?? l
+                    let addition = bassDSP.limitedAddition(bass, left: l, right: r)
+                    if addition != 0 {
+                        // Filter decay may produce audio after the upstream source goes silent.
+                        flags.pointee.remove(.unitRenderAction_OutputIsSilence)
+                        left[i] = l + addition
+                        right?[i] = r + addition
+                    }
+                }
+            }
+            return noErr
+        }
+    }
+}
+
+/// Mirrors PitchTuningController's ownership: independent nodes for primary and
+/// crossfade streams, driven from one state, with no changes to the ordinary EQ.
+/// A global playback option: Playback Options ▸ SRS and a `.wmz`'s SRS controls
+/// drive the same state, which persists when the controller is given defaults.
+final class WMPWOWController {
+    /// Side gain at WOW 100 is `1 + maximumWidening`. FFmpeg's `extrastereo` ships
+    /// 2.5 as its default; this sits just under it, and the headroom clamp keeps the
+    /// loud, already-wide frames the extra reach would otherwise push over full scale.
+    static let maximumWidening: Float = 1.4
+
+    private enum Key {
+        static let enabled = "srsEnabled", level = "srsWOWLevel"
+        static let bassLevel = "srsTruBassLevel", speakerSize = "srsSpeakerSize"
+    }
+
+    let localNode = WMPWOWAudioUnit.makeNode()
+    private class WeakNode {
+        weak var node: AVAudioUnitEffect?
+        init(_ node: AVAudioUnitEffect) { self.node = node }
+    }
+    private var streams: [WeakNode] = []
+    private let defaults: UserDefaults?
+    private(set) var enabled = false
+    private(set) var level: Double = 50
+    private(set) var bassLevel: Double = 50
+    private(set) var speakerSize: Int = 0
+
+    init(defaults: UserDefaults? = nil) {
+        self.defaults = defaults
+        if let defaults {
+            enabled = defaults.bool(forKey: Key.enabled)
+            if let value = defaults.object(forKey: Key.level) as? Double, value.isFinite {
+                level = max(0, min(100, value))
+            }
+            if let value = defaults.object(forKey: Key.bassLevel) as? Double, value.isFinite {
+                bassLevel = max(0, min(100, value))
+            }
+            if let value = defaults.object(forKey: Key.speakerSize) as? Int, (0...2).contains(value) {
+                speakerSize = value
+            }
+        }
+        apply()
+    }
+
+    func setEnabled(_ value: Bool) { enabled = value; apply() }
+    func setLevel(_ value: Double) {
+        guard value.isFinite else { return }
+        level = max(0, min(100, value)); apply()
+    }
+    func setBassLevel(_ value: Double) {
+        guard value.isFinite else { return }
+        bassLevel = max(0, min(100, value)); apply()
+    }
+    func setSpeakerSize(_ value: Int) {
+        guard (0...2).contains(value) else { return }
+        speakerSize = value; apply()
+    }
+    /// Playback Options ▸ SRS. One enable flag gates both effects (WMP's `eq.enhancedAudio`), so
+    /// turning one on from Off zeroes the other rather than waking it at a level the menu showed
+    /// as Off, and the flag follows whether either level is above zero.
+    func setMenuLevel(_ value: Double, wow: Bool) {
+        guard value.isFinite else { return }
+        if value > 0, !enabled {
+            if wow { bassLevel = 0 } else { level = 0 }
+        }
+        if wow { level = max(0, min(100, value)) } else { bassLevel = max(0, min(100, value)) }
+        enabled = level > 0 || bassLevel > 0
+        apply()
+    }
+    func makeStreamingNode() -> AVAudioUnitEffect {
+        let node = WMPWOWAudioUnit.makeNode()
+        streams.append(WeakNode(node)); configure(node)
+        return node
+    }
+    private func configure(_ node: AVAudioUnitEffect) {
+        (node.auAudioUnit as? WMPWOWAudioUnit)?.setAmount(
+            enabled ? Float(level / 100 * Double(WMPWOWController.maximumWidening)) : 0,
+            bass: enabled ? Float(bassLevel / 100) : 0, speaker: speakerSize)
+    }
+    private func apply() {
+        configure(localNode)
+        streams.removeAll { $0.node == nil }
+        for entry in streams { if let node = entry.node { configure(node) } }
+        defaults?.set(enabled, forKey: Key.enabled)
+        defaults?.set(level, forKey: Key.level)
+        defaults?.set(bassLevel, forKey: Key.bassLevel)
+        defaults?.set(speakerSize, forKey: Key.speakerSize)
+    }
+}

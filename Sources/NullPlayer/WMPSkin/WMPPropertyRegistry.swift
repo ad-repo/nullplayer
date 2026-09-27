@@ -1,0 +1,291 @@
+import Foundation
+
+struct WMPPropertyTransactionOrigin: Hashable, Sendable { let id: UUID }
+
+struct WMPBoundPropertyChange: Hashable, Sendable {
+    let address: WMPScenePropertyAddress
+    let value: WMPJSONValue
+}
+
+/// One registry owns both wmpprop: and wmpenabled:. Snapshot updates are coalesced into a single
+/// transaction and an echoed origin is ignored to prevent script/host feedback loops.
+struct WMPObservablePropertyRegistry: @unchecked Sendable {
+    private struct Binding {
+        let address: WMPScenePropertyAddress
+        let kind: WMPBindingKind
+        let path: String
+    }
+    private let bindings: [Binding]
+    private var lastValues: [WMPScenePropertyAddress: WMPJSONValue] = [:]
+    private var lastAppliedOrigin: WMPPropertyTransactionOrigin?
+
+    init(graph: WMPObjectGraph) {
+        let equalizerNames = Self.equalizerNames(in: graph)
+        bindings = graph.allNodes.flatMap { node -> [Binding] in
+            let authored = node.attributes.compactMap { attribute -> Binding? in
+                guard case let .binding(kind, path) = attribute.value else { return nil }
+                return Binding(address: .init(stableID: node.stableID,
+                    property: attribute.name.lowercased()), kind: kind,
+                    path: Self.foldingEqualizerName(path, equalizerNames))
+            }
+            return authored + Self.implicit(for: node, authored: authored)
+        }
+    }
+
+    /// The identifiers this skin gave its `<EQUALIZERSETTINGS>` elements, other than `eq` itself.
+    private static func equalizerNames(in graph: WMPObjectGraph) -> Set<String> {
+        Set(graph.allNodes.filter { $0.kind == .equalizerSettings }
+            .compactMap { $0.xmlID?.lowercased() })
+            .subtracting(["eq"])
+    }
+
+    /// **A skin's own name for its `<EQUALIZERSETTINGS>` is another spelling of `eq` (W256).**
+    ///
+    /// Every equaliser path below is matched on the literal first segment `eq`, so a band slider
+    /// bound to `wmpprop:ElvisEQS.gainLevel1` resolved through no host at all: `elviseqs` is not a
+    /// `hostRoot`, the binding was read as naming an element in the skin's own graph, and the thumb
+    /// stayed wherever the markup left it however far the band was dragged. Reported live as "an
+    /// equaliser slider cannot be dragged" on `elvis`. Folding the name here rather than adding a
+    /// case per member keeps one spelling downstream — `eqBand`, every `eq.` case and `hostRoots`
+    /// are untouched. **7 of the 184 measured archives name it something other than `eq`**
+    /// (`scripts/wmp_slider_drag_census.py`); every other skin declares no other name and folds
+    /// nothing.
+    private static func foldingEqualizerName(_ path: String, _ names: Set<String>) -> String {
+        guard !names.isEmpty, let dot = path.firstIndex(of: "."),
+              names.contains(path[path.startIndex..<dot].lowercased()) else { return path }
+        return "eq" + path[dot...]
+    }
+
+    /// **A semantic slider tag is itself a binding, and this is where it becomes one.**
+    ///
+    /// `<SLIDER value="wmpprop:player.settings.balance">` says where the control reads; a
+    /// `<BALANCESLIDER>` says the same thing by being one, which is why a skin that uses the tag
+    /// authors no `value` at all. Measured over the 180-archive corpus: **`BALANCESLIDER` is 16
+    /// uses across 16 skins and exactly one of them authors a `value`; `VOLUMESLIDER` is 31 / 23
+    /// and none do; `SEEKSLIDER` is 18 / 15 and none do.** With no binding to resolve, every one of
+    /// them fell to `WMPSceneBuilder.sliderMetrics`'s last resort — *the value of a slider nobody
+    /// has told anything is its own minimum* — so 15 of the 16 balance sliders in the corpus drew
+    /// their thumb hard left and stayed there, reported as "balance is fully to the left by default
+    /// on all skins". Volume drew empty and seek drew at zero for the same reason; balance is the
+    /// one where the wrong end of the track *means* something.
+    ///
+    /// Both halves of the seek slider are synthesized, because the position WMP puts on it is in
+    /// seconds and the length of the track is what the far end of it stands for. The ranges are the
+    /// other half of the same statement and live in `sliderMetrics`, where a slider's other WMP
+    /// defaults already are.
+    private static func implicit(for node: WMPNode, authored: [Binding]) -> [Binding] {
+        guard let paths = implicitPaths[node.kind] ?? positionSliderPaths(for: node) else { return [] }
+        return paths.compactMap { property, path in
+            // An authored attribute always wins — one corpus `<BALANCESLIDER>` does author its
+            // own `value`, and a skin that states something has not asked for WMP's default.
+            guard node.attribute(named: property) == nil,
+                  !authored.contains(where: { $0.address.property == property }) else { return nil }
+            return Binding(address: .init(stableID: node.stableID, property: property),
+                           kind: .property, path: path)
+        }
+    }
+
+    /// **A slider whose maximum is the media's duration is a position control, and WMP does not
+    /// make a skin say so twice (W120).** `<CUSTOMSLIDER id="seek" min="0"
+    /// max="wmpprop:player.currentMedia.duration" image="seek.png" positionImage="seek_map.png">`
+    /// is the corpus's own seek bar — **73 of them across 61 of the 177 measurable archives author
+    /// exactly that and no `value` at all**, 58 as `<CUSTOMSLIDER>` and 15 as `<SLIDER>`, and
+    /// nothing in any of those skins' scripts ever writes the value either. W118 synthesized the
+    /// binding for the `<SEEKSLIDER>` *tag*; this is the same statement made by the declared
+    /// **range** instead, which is how the Plus!, Xbox, Alienware, BlueCrush, Halo and Catwoman
+    /// families all write it. Without it the filmstrip stayed on frame 0 for the length of the
+    /// track — `Catwoman/mainView` drew `seek.png crop=0,0` at 42 seconds into 137 — and every
+    /// readout the skin chains off that value went with it: Catwoman's clock is four digit strips
+    /// positioned by `value_onchange="drawSeekDigits(value)"`, so a value that never moves is a
+    /// clock that never moves. Reported as "the clock does not work and seek does not work".
+    ///
+    /// The range is the evidence and the tag is not, so this applies to any slider kind: a skin
+    /// that has told the control its far end is the end of the track has said what the control is.
+    /// An authored `value` still wins, which is what the 112 sliders that state their own rely on.
+    private static func positionSliderPaths(for node: WMPNode) -> [(String, String)]? {
+        guard isSlider(node.kind), boundsMaximumToDuration(node) else { return nil }
+        return [("value", "player.controls.currentPosition")]
+    }
+
+    private static func isSlider(_ kind: WMPElementKind) -> Bool {
+        switch kind {
+        case .slider, .seekSlider, .customSlider, .progressBar: return true
+        default: return false
+        }
+    }
+
+    private static func boundsMaximumToDuration(_ node: WMPNode) -> Bool {
+        ["max", "maxValue"].contains {
+            guard let attribute = node.attribute(named: $0),
+                  case let .binding(kind, path) = attribute.value, kind == .property else { return false }
+            return path.trimmingCharacters(in: .whitespaces).lowercased() == "player.currentmedia.duration"
+        }
+    }
+
+    private static let implicitPaths: [WMPElementKind: [(String, String)]] = [
+        .volumeSlider: [("value", "player.settings.volume")],
+        .balanceSlider: [("value", "player.settings.balance")],
+        .seekSlider: [("value", "player.controls.currentPosition"),
+                      ("max", "player.currentMedia.duration")],
+        // These are text widgets, but WMP supplies their values rather than requiring a `value=`
+        // binding in the markup.  Cerulean's elapsed-time cell is one of them.
+        .currentPositionText: [("value", "player.controls.currentPositionString")],
+        .durationText: [("value", "player.currentMedia.durationString")]
+    ]
+
+    /// `holding` are elements the pointer is currently dragging. **Their `value` is the user's for
+    /// the length of the gesture and the host does not get to write it** (W151).
+    ///
+    /// This is what `positionSliderPaths` costs: a slider whose `max` binds to the track duration
+    /// gets an *implicit* `value` binding to `player.controls.currentPosition`, so every
+    /// transaction settles it back to the live playback position — including the very transaction
+    /// raised by the release, which is where a skin like `Plus! Pulsar` reads the control back
+    /// (`onmouseup="player.controls.currentPosition=seekMain.value;"`). Measured live before this
+    /// guard: dragged to 36s, committed 18s, because between the two the binding had settled.
+    /// Only `value` is held; `enabled`, `max` and the rest still settle, so a track that ends
+    /// mid-drag still disables the control.
+    mutating func changes(for snapshot: WMPHostSnapshot, origin: WMPPropertyTransactionOrigin? = nil,
+                          holding: Set<Int> = []) -> [WMPBoundPropertyChange] {
+        if origin != nil && origin == lastAppliedOrigin { return [] }
+        var changes: [WMPBoundPropertyChange] = []
+        for binding in bindings {
+            if !holding.isEmpty, binding.address.property.lowercased() == "value",
+               holding.contains(binding.address.stableID) {
+                // Drop the remembered value too, so the first settle after the gesture is a real
+                // change rather than one suppressed by the equality check below.
+                lastValues[binding.address] = nil
+                continue
+            }
+            // **On `visible`, a path this engine cannot answer is not the answer "false".** `WoW`
+            // authors `<PLAYLIST id="playlist1" visible="wmpprop:plMode.visible">`, and `plMode` is
+            // not one of its elements — the skin is written against a name WMP's own object model
+            // owns. Resolving that to the empty string committed a falsy `visible` override, and
+            // the builder deletes a node whose `visible` override is false: the playlist control,
+            // its rows and its widget were gone, so the playlist read empty however many tracks
+            // were queued. Reported live as "adding to the playlist does not work".
+            //
+            // **The empty string stands for every other property**, deliberately. It is the honest
+            // answer where the value is *content* — a `value="wmpprop:eq.currentPresetTitle"`
+            // readout blanks rather than showing the authored placeholder for ever — and on
+            // `enabled` a control this engine cannot drive should look disabled, which is what
+            // `wmpenabled:` and `enabled="wmpprop:eq.enhancedAudio"` (101 uses across 33 skins)
+            // have always done. Only `visible` destroys content by defaulting, so only `visible`
+            // declines to.
+            let resolved = Self.value(path: binding.path, kind: binding.kind, snapshot: snapshot)
+            guard let value = resolved ?? Self.unansweredValue(for: binding) else { continue }
+            guard lastValues[binding.address] != value else { continue }
+            lastValues[binding.address] = value
+            changes.append(.init(address: binding.address, value: value))
+        }
+        lastAppliedOrigin = origin
+        return changes
+    }
+
+    /// The roots WMP's *host* object model owns. A `wmpprop:` path starting with one of these names
+    /// a player property; anything else names an element in the skin's own graph — `plMode`,
+    /// `mainModeVis`, `plCopySub` — which is a different kind of unanswerable and gets a different
+    /// default. Both spellings of the same idea appear in the corpus, so this is matched on the
+    /// first segment only.
+    private static let hostRoots: Set<String> = [
+        "player", "eq", "theme", "vidset", "mediacenter", "viseffects", "network", "settings",
+        "controls", "wmpprop"
+    ]
+
+    /// What an unanswerable binding commits, or `nil` to commit nothing and leave the markup's own
+    /// value standing. See `changes(for:)`.
+    ///
+    /// Unsupported host paths must not claim an active feature. Implemented paths such as
+    /// `eq.enhancedAudio` resolve from the snapshot before reaching this fallback.
+    /// **An element this skin never declared is not off — it is unknown**, and that
+    /// is where defaulting destroys content: `WoW`'s playlist hangs off `wmpprop:plMode.visible`,
+    /// a name WMP's own UI owns.
+    private static func unansweredValue(for binding: Binding) -> WMPJSONValue? {
+        if binding.kind == .enabled { return .bool(false) }
+        guard binding.address.property == "visible" else { return .string("") }
+        let root = binding.path.split(separator: ".").first.map { $0.lowercased() } ?? ""
+        return hostRoots.contains(root) ? .string("") : nil
+    }
+
+    /// The host value a binding resolves to, or `nil` when this engine does not know the path — see
+    /// `changes(for:)` for why the difference matters.
+    private static func value(path raw: String, kind: WMPBindingKind,
+                              snapshot: WMPHostSnapshot) -> WMPJSONValue? {
+        let path = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if kind == .enabled {
+            let enabled: Bool
+            switch path {
+            case "player.controls.play": enabled = snapshot.isEnabled(.play)
+            case "player.controls.pause": enabled = snapshot.isEnabled(.pause)
+            case "player.controls.stop": enabled = snapshot.isEnabled(.stop)
+            case "player.controls.previous": enabled = snapshot.isEnabled(.previous)
+            case "player.controls.next": enabled = snapshot.isEnabled(.next)
+            case "player.controls.currentposition": enabled = snapshot.isEnabled(.seek)
+            // **WMP names this capability `seek`, and a skin that asks for it by that name was
+            // being told no** (W255). `IWMPControls` carries both `currentPosition` and `seek`, so
+            // the same slider is authored either way; `default: return nil` sends an unanswered
+            // `wmpenabled:` to `.bool(false)`, which is the right default for a control this engine
+            // cannot drive and exactly wrong for one it can. `Revert` pays for it twice over,
+            // because its slider also mirrors its own gate —
+            // `<slider id="seek" enabled="wmpenabled:player.controls.seek"
+            // visible="wmpprop:seek.enabled">` — so a false `enabled` makes `mirroredVisibility`
+            // delete the node outright: not a greyed-out seek bar, **no seek bar at all**, for
+            // music and film alike. Reported live 2026-09-22 as "there are no seek controls for
+            // the movie"; the scene carried 12 nodes and the slider was not among them.
+            case "player.controls.seek": enabled = snapshot.isEnabled(.seek)
+            // The scan pair, unanswered for the same reason and gated on the same quantity — a
+            // transport can scan exactly when it can seek. 3 archives each.
+            case "player.controls.fastforward": enabled = snapshot.isEnabled(.beginScan(.forward))
+            case "player.controls.fastreverse": enabled = snapshot.isEnabled(.beginScan(.reverse))
+            default: return nil
+            }
+            return .bool(enabled)
+        }
+        // The equaliser a `.wmz` shows is its own ten bound sliders, so these paths are what put a
+        // thumb where the engine's gain actually is. 164 corpus skins author them.
+        if let band = WMPTransportAction.eqBand(in: path) {
+            return .number(snapshot.equalizer.gains.indices.contains(band) ? snapshot.equalizer.gains[band] : 0)
+        }
+        switch path {
+        case "eq.enabled", "eq.enable": return .bool(snapshot.equalizer.enabled)
+        // The inverse, which is what an equaliser on/off button binds its `down` state to.
+        case "eq.bypass": return .bool(!snapshot.equalizer.enabled)
+        case "eq.enhancedaudio": return .bool(snapshot.equalizer.enhancedAudio)
+        case "eq.wowlevel": return .number(snapshot.equalizer.wowLevel)
+        case "eq.trubasslevel": return .number(snapshot.equalizer.truBassLevel)
+        case "eq.speakersize": return .number(Double(snapshot.equalizer.speakerSize))
+        case "eq.currentspeakername": return .string(snapshot.equalizer.currentSpeakerName)
+        // The read half of the corpus's crossfade button: `down="wmpprop:eq.crossFade"` on the
+        // same node whose `onClick` writes it, so the lit state has to resolve here as well as in
+        // the object model or the button toggles the fade and never lights. 35 archives.
+        case "eq.crossfade": return .bool(snapshot.equalizer.crossFade)
+        case "eq.crossfadewindow": return .number(snapshot.equalizer.crossFadeWindow)
+        case "eq.normalization": return .bool(snapshot.equalizer.normalization)
+        case "eq.preamp": return .number(snapshot.equalizer.preamp)
+        case "player.controls.currentposition": return .number(snapshot.currentTime)
+        case "player.controls.currentpositionstring": return .string(snapshot.elapsedText)
+        case "player.currentmedia.duration": return .number(snapshot.duration)
+        case "player.currentmedia.imagesourcewidth": return .number(snapshot.video.width)
+        case "player.currentmedia.imagesourceheight": return .number(snapshot.video.height)
+        case "player.currentmedia.durationstring": return .string(snapshot.durationText)
+        case "player.currentmedia.name", "player.currentmedia.getiteminfo('title')": return .string(snapshot.metadata.title)
+        case "player.settings.volume": return .number((snapshot.volume * 100).rounded())
+        case "player.settings.balance": return .number((snapshot.balance * 100).rounded())
+        case "player.settings.mute": return .bool(snapshot.muted)
+        case "player.currentplaylist.count": return .number(Double(snapshot.playlistCount))
+        case "player.playstate": return .string(snapshot.state.rawValue)
+        // `<TEXT value="wmpprop:player.status">` is how a skin paints the status line without a
+        // handler, and the binding has to resolve here or the readout stays empty however live the
+        // object model's member is — the two are separate resolutions of the same path.
+        case "player.status": return .string(snapshot.statusText)
+        // 41 skins bind a seek bar's `foregroundProgress` to one of these, which is how a `.wmz`
+        // draws its buffer bar. Both names appear; WMP scales them 0-100.
+        case "player.network.downloadprogress", "player.network.bufferingprogress":
+            return .number(snapshot.bufferingProgress)
+        // 68 archives bind their `<EFFECTS>` rect's `currentEffectType` and `currentPreset` to
+        // these two paths — the corpus's own selector for what the surface draws (W101).
+        case "mediacenter.effecttype": return .string(snapshot.effects.type)
+        case "mediacenter.effectpreset": return .number(Double(snapshot.effects.preset))
+        default: return nil
+        }
+    }
+}

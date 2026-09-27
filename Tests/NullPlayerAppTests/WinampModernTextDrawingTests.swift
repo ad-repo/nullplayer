@@ -15,7 +15,7 @@ final class WinampModernTextDrawingTests: XCTestCase {
     /// draws with — so `WasabiTextMetrics.measuredWidth(of:font:)`'s memo, which is keyed on the
     /// font alone, is safe to use for the draw path's own `measured`.
     ///
-    /// `TASKS.md` § B106 took the memo for the two call sites that already measured with exactly
+    /// `WINAMP5_TASKS.md` § B106 took the memo for the two call sites that already measured with exactly
     /// `[.font:]` and left `drawText`'s own measure out, because it passes `.foregroundColor` and a
     /// `.paragraphStyle` as well and "the paragraph style cannot change a single-line width" was
     /// believed rather than established. It is true for the reason that it *cannot* be otherwise:

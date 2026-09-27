@@ -15,15 +15,26 @@ while [ $# -gt 0 ]; do
     --only) ONLY="$2"; shift 2;; *) echo "unknown arg $1"; exit 2;;
   esac
 done
-./build.sh >/dev/null
+../../app-control/scripts/build.sh >/dev/null
+# The tools live in `app-control`; this sweep is one of their callers.
+WH=../../app-control/scripts/winhelper
+MENU=../../app-control/scripts/menu.applescript
+# menu.applescript addresses the app by unix id, never by name — see `app-control` Rule zero.
+PID="${NULLPLAYER_PID:-$(pgrep -x NullPlayer | head -1)}"
+if [ -z "$PID" ]; then echo "FAIL  NullPlayer is not running"; exit 1; fi
+if [ "$(pgrep -x NullPlayer | wc -l | tr -d ' ')" -gt 1 ]; then
+  echo "FAIL  more than one NullPlayer is running; set NULLPLAYER_PID to the debug build you launched"; exit 1
+fi
+export NULLPLAYER_PID="$PID"
+
 RAW="$(pwd)/.raw"; mkdir -p "$OUT" "$RAW"
 STAMP=$(date +"%Y%m%d_%H%M%S"); MAN="$OUT/manifest_$STAMP.tsv"
 printf 'label\tsystem\titem\tstatus\twindow_pt\tart_pt\tframing\tfile\n' > "$MAN"
 if [ -z "$LIST" ]; then LIST="$(mktemp)"; ./enumerate_skins.sh > "$LIST"; fi
 
-mw() { ./winhelper windows | awk -F'\t' '$2==0 && $7>0' | sort -t$'\t' -k8,8 | awk -F'\t' '
+mw() { "$WH" windows | awk -F'\t' '$2==0 && $7>0' | sort -t$'\t' -k8,8 | awk -F'\t' '
   { if ($8 ~ /^NullPlayer/ && !b) b=$1"\t"$3"\t"$4"\t"$5"\t"$6; if (!a) a=$1"\t"$3"\t"$4"\t"$5"\t"$6 } END{print (b?b:a)}'; }
-geom() { ./winhelper windows | awk -F'\t' '$2==0 && $7>0' | sort -t$'\t' -k8,8 | head -1 | cut -f5,6; }
+geom() { "$WH" windows | awk -F'\t' '$2==0 && $7>0' | sort -t$'\t' -k8,8 | head -1 | cut -f5,6; }
 rec() { printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" "${7:-}" "${8:-}" >> "$MAN"; }
 
 cursys=""
@@ -35,11 +46,11 @@ while IFS=$'\t' read -r sys sub item label; do
 
   # Switching SYSTEM needs the submenu's "Switch to ..." item; a skin name alone won't do it.
   if [ "$sys" != "$cursys" ]; then
-    osascript menu.applescript mode "$sub" >/dev/null 2>&1; sleep 4; cursys="$sys"
+    osascript "$MENU" mode "$PID" "$sub" >/dev/null 2>&1; sleep 4; cursys="$sys"
   fi
 
   before=$(geom)
-  ok=""; for t in 1 2 3; do osascript menu.applescript skin "$sub" "$item" >/dev/null 2>&1 && { ok=1; break; }; sleep 2; done
+  ok=""; for t in 1 2 3; do osascript "$MENU" skin "$PID" "$sub" "$item" >/dev/null 2>&1 && { ok=1; break; }; sleep 2; done
   [ -z "$ok" ] && { echo "MENU-FAIL"; rec "$label" "$sys" "$item" menu-fail; continue; }
 
   # Wait for the window to CHANGE (proves the new skin took), then for it to settle.
@@ -50,8 +61,8 @@ while IFS=$'\t' read -r sys sub item label; do
   for i in $(seq 1 40); do sleep 0.25; c=$(geom); [ "$c" = "$prev" ] && st=$((st+1)) || st=0; prev="$c"; [ $st -ge 2 ] && break; done
   sleep "$SETTLE"
 
-  [ "$(./winhelper windows | awk -F'\t' '$2==0 && $7>0' | wc -l | tr -d ' ')" -gt 1 ] && \
-    { osascript menu.applescript closeaux >/dev/null 2>&1; sleep 1; }
+  [ "$("$WH" windows | awk -F'\t' '$2==0 && $7>0' | wc -l | tr -d ' ')" -gt 1 ] && \
+    { osascript "$MENU" closeaux "$PID" >/dev/null 2>&1; sleep 1; }
 
   IFS=$'\t' read -r id x y w h < <(mw)
   [ -z "${id:-}" ] && { echo "NO-WINDOW"; rec "$label" "$sys" "$item" no-window; continue; }

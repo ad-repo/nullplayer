@@ -59,7 +59,7 @@ available lesson in how to debug this subsystem.
 
 ## Not a phase handoff
 
-- **`TASKS.md`** (repo root, tracked) — **everything still open.** It is the only backlog;
+- **`WINAMP5_TASKS.md`** (repo root, tracked) — **everything still open.** It is the only backlog;
   start there when deciding what to do next. A tracked copy once lived here as `open-items.md`,
   compiled after Phase 33 and ranked by bang for buck; it was deleted on 2026-08-23 once an audit
   confirmed nothing in it was unique. `triage-playbook.md` §4b keeps the head of its ranking.

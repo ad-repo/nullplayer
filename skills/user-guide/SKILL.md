@@ -14,6 +14,16 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 
 ## Core Features
 
+### Windows Media Player skins
+
+Fresh installs start in NullPlayer's app-authored Windows Media Player mode. Use **Import WMZ…** on
+the unskinned player or **UI > Windows Media Player > Load Skin...** to install a user-supplied
+`.wmz`; **Get More Skins...** opens the Internet Archive's WMP skins collection. The same menu selects
+installed skins and authored views, removes the selected installed copy, exports a compatibility
+report, or returns to **Default Skin (Unskinned)**. Existing users keep
+their saved Classic, Original, Original-Metal, or WMP choice after upgrading. See
+`docs/wmp-skin/user-guide.md` for recovery and security limitations.
+
 ### Windows
 
 | Window | Description | Toggle |
@@ -261,6 +271,7 @@ Import discovery is now unified across classic + modern entry points (main windo
 - **Volume Normalization**: Consistent loudness (-14dB target)
 - **Reference Tuning**: Pitch-shift playback to a different reference frequency. Presets for Off, 432 Hz, 440 Hz, and a Custom… dialog (source/target Hz, ±2400 cents). Applies to local files and HTTP streams; unavailable while casting because remote renderers have no local audio graph to insert the pitch shifter into. Persists across launches; the CLI also accepts `--tuning`, `--tuning-source`, and `--tuning-offset-cents` as session-only overrides.
 - **Playback Speed**: Tempo-preserving speed control from `0.25×` to `4.0×`, with presets plus Custom…. Applies to local files and HTTP streams; unavailable while casting. Persists across launches.
+- **SRS**: **WOW Effect** (stereo widening) and **TruBass** (bass enhancement), each Off / 25% / 50% / 75% / 100%, plus a **Headphones** toggle that tunes TruBass for headphones (off = normal speakers). App-wide in every skin, shared with a `.wmz`'s SRS controls, persisted across launches, unavailable while casting. DSP: `../wmp-skin-guide/reference/audio-enhancements.md`.
 - **Balance**: Stereo pan submenu (slider plus Left / Center / Right presets), backed by `engine.balance` and mirrored by the classic Balance Slider sprite. Gives Original and Original-Metal UI and menu-only/Compact workflows access to balance without a face slider. Persists across launches.
 - **Remember State on Quit**: Restores window layout, audio/EQ state, and playlist contents, but not the selected track, seek position, or playing state. See `../app-state/SKILL.md` for the complete persistence and reset policy.
 
@@ -353,7 +364,7 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - Bundled Original skins: NeonWave (default), Skulls
 
 ### Winamp Modern (`.wal`) Mode
-- **Skins > Modern** lists installed Winamp 5.x `.wal` skins, imported with **Import .wal Skin...**.
+- **Skins > Modern** lists installed Winamp 5.x `.wal` skins, imported with **Load Skin...**; **Get More Skins...** opens WinampHeritage.
 - **Skins > Modern > Default Skin (Black)** is the plain placeholder skin that ships with the app —
   what Modern mode loads on a first run, before any skin is imported. NullPlayer bundles no Winamp
   skins; this one is our own. It gives the mode a working player window (transport, seek, volume,

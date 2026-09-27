@@ -68,8 +68,13 @@ class ProjectMView: NSView, VisualizationMenuTarget {
     // MARK: - Layout Constants
     // Reference to SkinElements.ProjectM.Layout for consistency
     
-    private var Layout: SkinElements.ProjectM.Layout.Type {
-        SkinElements.ProjectM.Layout.self
+    /// Where this window's chrome ends and the visualization begins.
+    ///
+    /// The classic constants, unless the hosting skin lends a window frame of its own — a `.wmz`
+    /// skin that builds its panels out of an eight-piece ring states its content hole exactly
+    /// (`WMPHostedFrameTemplate`).
+    private var Layout: SkinnedSurfaceChrome.Metrics {
+        SkinnedSurfaceChrome.metrics(for: bounds, fallback: .projectM)
     }
 
     // MARK: - Initialization
@@ -138,6 +143,8 @@ class ProjectMView: NSView, VisualizationMenuTarget {
         updateAudioActiveState()
 
         // Observe connected-window highlight changes for drag-mode visual feedback
+        NotificationCenter.default.addObserver(self, selector: #selector(hostedSurfaceStyleDidChange),
+                                               name: .hostedSurfaceStyleDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
                                                name: .connectedWindowHighlightDidChange, object: nil)
     }
@@ -259,10 +266,26 @@ class ProjectMView: NSView, VisualizationMenuTarget {
             context.translateBy(x: 0, y: -Layout.titleBarHeight)
         }
         
-        // Draw window chrome at actual window bounds (no scaling - chrome tiles to fill)
-        renderer.drawProjectMWindow(in: context, bounds: bounds, isActive: isActive,
-                                    pressedButton: pressedButton,
-                                    controlScale: WindowManager.shared.playlistChromeScale)
+        // Draw window chrome at actual window bounds (no scaling - chrome tiles to fill) — or, in a
+        // mode that hosts a foreign skin, that skin's palette and its own window ring.
+        if let style = WindowManager.shared.hostedSurfaceStyle {
+            SkinnedSurfaceChrome(style: style,
+                                 artwork: WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size))
+                .drawSpectrumFamilyWindow(
+                    in: context,
+                    bounds: bounds,
+                    metrics: .projectM,
+                    isActive: isActive,
+                    isClosePressed: pressedButton == .close,
+                    controlScale: WindowManager.shared.playlistChromeScale,
+                    title: "VISUALIZATIONS",
+                    fillBackground: true
+                )
+        } else {
+            renderer.drawProjectMWindow(in: context, bounds: bounds, isActive: isActive,
+                                        pressedButton: pressedButton,
+                                        controlScale: WindowManager.shared.playlistChromeScale)
+        }
         
         context.restoreGState()
 
@@ -270,6 +293,21 @@ class ProjectMView: NSView, VisualizationMenuTarget {
             NSColor.white.withAlphaComponent(0.15).setFill()
             bounds.fill()
         }
+    }
+
+    /// The hosting skin's palette or its borrowed frame has moved — a skin load, a view switch, or
+    /// a ring that has finished rendering for this window's size.
+    @objc private func hostedSurfaceStyleDidChange() {
+        // **A borrowed frame moves the content hole, and a hole that moved is a layout, not a
+        // repaint (W220).** This notification is the only edit some of these windows ever get: the
+        // ring is derived asynchronously for the window's own size, so it lands *after* the view
+        // has laid out against the classic fallback metrics. `needsDisplay` alone redraws the
+        // chrome around subviews still framed for the old hole — on `Visualizations` that is the
+        // whole GL view, which keeps the full window and buries every borrowed piece under the
+        // visualization. Marking the layout dirty costs nothing where a view has no subviews.
+        needsLayout = true
+        updateVisualizationFrame()
+        needsDisplay = true
     }
 
     @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {
@@ -426,18 +464,21 @@ class ProjectMView: NSView, VisualizationMenuTarget {
         }
         // Title bar is at the top, leave room for close button on the right
         return skinPoint.y < Layout.titleBarHeight &&
-               skinPoint.x < bounds.width - 25  // Leave room for close button area
+               skinPoint.x < closeButtonRect.minX  // Leave room for close button area
     }
     
+    /// The close box, from the one place that decides where it goes — inset by a borrowed ring's
+    /// own right border so the glyph the chrome draws is the glyph a click lands on (W178).
+    private var closeButtonRect: NSRect {
+        SkinnedSurfaceChrome.closeButtonRect(in: bounds, captionHeight: Layout.titleBarHeight)
+    }
+
     /// Check if point hits close button
     private func hitTestCloseButton(at skinPoint: NSPoint) -> Bool {
         if WindowManager.shared.hideTitleBars { return false }
-        // Close button is in the right corner of the title bar
-        // The titlebar image is scaled to fit window width, so use a generous hit area
-        // in the top-right corner (entire title bar height, last 25px of width)
-        let titleHeight = Layout.titleBarHeight
-        let closeRect = NSRect(x: bounds.width - 25, y: 0, width: 25, height: titleHeight)
-        return closeRect.contains(skinPoint)
+        // A generous hit area: the whole title bar height, the last 25px of width, moved inside a
+        // borrowed ring's right border where one is lent.
+        return closeButtonRect.contains(skinPoint)
     }
     
     // MARK: - Mouse Events

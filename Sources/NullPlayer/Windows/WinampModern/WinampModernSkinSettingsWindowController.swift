@@ -42,7 +42,7 @@ final class WinampModernSkinSettingsWindowController: NSWindowController {
         buildContent()
         applyStyle()
         NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange),
-                                               name: .winampModernThemeDidChange, object: nil)
+                                               name: .hostedSurfaceStyleDidChange, object: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }

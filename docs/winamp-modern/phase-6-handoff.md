@@ -11,7 +11,7 @@ Read first:
 - `~/.claude/plans/i-want-to-support-frolicking-rabbit.md` — source-of-truth plan and locked scope
 - `docs/winamp-modern/phase-0b-decision-record.md` §1–§3 — the native surface, engine anatomy, and cPro topology this phase implements
 - `docs/winamp-modern/phase-5-handoff.md` — component-host seam and lifecycle inherited here
-- `TASKS.md` — Phase 6 is complete; Phase 7 is next
+- `WINAMP5_TASKS.md` — Phase 6 is complete; Phase 7 is next
 
 ## 1. Phase 6 outcome and boundary
 

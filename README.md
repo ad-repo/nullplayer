@@ -6,22 +6,26 @@
 
 ## Features
 
-NullPlayer is 100% open source and built as a clean-room effort; no Winamp or WACUP source code has been copied or viewed
+NullPlayer is 100% open source and built as a clean-room effort; no Winamp, WACUP, or Windows Media Player source code has been copied or viewed
 
 Nullplayer is the **first and only open-source engine capable of rendering Winamp ClassicPro and Winamp 5 (`.wal`) skins**, letting you run all Winamp skin types on macOS while enjoying modern media ecosystem support
 
-NullPlayer is not affiliated with, endorsed by, or connected to Winamp, Nullsoft, Winamp Group SA, Llama Group, Radionomy Group, Jamendo, Hotmix, Bridger, SHOUTcast, Sonos, Plex, WACUP, Emby, Jellyfin, Google or anyone else
+NullPlayer is also the **only Mac app that runs Windows Media Player (`.wmz`) skins**: the scripted, shaped-window skins from WMP 7 through 12, with their JScript and views and their own EQ, SRS, and visualizer controls, driving NullPlayer's real playback engine
 
-No Winamp skins are distributed with the project
+NullPlayer is not affiliated with, endorsed by, or connected to Winamp, Nullsoft, Microsoft, Winamp Group SA, Llama Group, Radionomy Group, Jamendo, Hotmix, Bridger, SHOUTcast, Sonos, Plex, WACUP, Emby, Jellyfin, Google or anyone else
+
+No Winamp or Windows Media Player skins are distributed with the project
 
 ### General Features
 
 - 21-band EQ (Original/Original-Metal) and 10-band EQ (Classic, Modern)
 - Gapless + Sweet Fades (configurable crossfade), volume normalization, play speed (0.25×–4×), and Reference Tuning (432/440 Hz/custom)
+- SRS inspired audio enhancements: WOW stereo widening and TruBass low-frequency enhancement plus a Headphones profile for TruBass
 - Stream Ripper — rip and import stream URLs to FLAC, MP3, or MP4 with metadata, cover art, and `.cue` sheets (requires `yt-dlp` + `ffmpeg`)
 - Intelligent radio mix generation for all sources
 - Cast to Sonos (multi-room), Chromecast, DLNA, and AirPlay — local files, server streams, and radio
 - Sonos content filtering for unsupported lossless formats and improved playlist support
+- Sonos Rooms window for picking cast rooms and setting each room's volume individually
 - Drag-and-drop, macOS Now Playing integration, and [Discord Music Presence](https://github.com/ungive/discord-music-presence)
 - Headless CLI for querying libraries, playback, and routing to local outputs or cast devices, full color terminal cover art rendering
 
@@ -40,8 +44,9 @@ No Winamp skins are distributed with the project
 - Winamp Modern (`.wal`) skin support (Winamp 5.X and ClassicPro); the ClassicPro Windows plug-in engine is extracted from the user-supplied installer and runs natively on macOS
 - Original mode: JSON-based skin system with color theming, custom assets, procedural backgrounds, and bloom effects and full skinning documentation for authors
 - Original-Metal mode: seven brushed-metal finishes with backlit LCD displays
-- Live skin switching. Cycle through Classic, Modern, Original, and Original-Metal skins with no restart or interuption in playback
-- Full development harness for debugging and reverse engineering Winamp 5 and ClassicPro skins
+- Windows Media Player mode: the only Mac player that runs WMP 7–12 `.wmz` skins, loaded through a bounded, isolated engine with a sandboxed JScript runtime; import, select, remove, and switch views from **Skins > Media Player**, or fall back to a built-in unskinned player
+- Live skin switching. Cycle through Classic, Modern, Original, Original-Metal, and Windows Media Player skins with no restart or interuption in playback
+- Full development harness for debugging and reverse engineering Winamp 5, ClassicPro, and Windows Media Player skins
 - Native nullplayer windows are themed to the host skin
 
 ### Media Support
@@ -57,6 +62,7 @@ No Winamp skins are distributed with the project
 - Cava spectrum analyzer — bar spectrum with mono/stereo modes, gradient presets, and configurable smoothing
 - PeppyMeter — skinnable analog VU meter with 25 templates and auto-switch mode
 - Flow network monitor — live throughput graph with selectable interface
+- Sonos Rooms — resizable room mixer with a checkbox and independent volume slider per room (usable before and during a cast)
 - Compact Mode — menu-bar-only app with embedded mini player (Classic, Original, and Original-Metal)
 
 ### Visualization Support
@@ -71,6 +77,7 @@ NullPlayer's visualizations span its windows, from the in-skin main-window displ
 - **Tripex** — Winamp-era 3D visualization port
 - **Album Art Visualizer** — 30 audio-reactive effects (Core Image) transforming album art in the Library Browser
 - **Winamp Modern (`.wal`) skins** — the skin draws its own in-skin visualizations, including workscope/oscilloscope analyzers and custom engine visuals (e.g. the MMD3 and ClassicPro beat visualizers) 
+- **Windows Media Player (`.wmz`) skins** — a skin's `<EFFECTS>` area renders native Spikes, Bars, Ambience, Cava, or vis_classic visuals inside the rectangle the skin draws for them
 - **Audio Analysis** — Friture-style multi-pane window: Scope, Levels (peak/RMS), Spectrogram, Octave, Pitch, and Delay
 - **PeppyMeter** — skinnable analog VU meter (needle/bar) with 25 templates and a random auto-switch mode
 - **Flow** — live network throughput graph with selectable interface
@@ -80,13 +87,15 @@ NullPlayer's visualizations span its windows, from the in-skin main-window displ
   NullPlayer is built to be worked on by coding agents as well as people. The repo ships the
   context an agent needs instead of making it rediscover the codebase every session.
 
- - **36 subsystem skills** in [`skills/`](skills/) — ~9,000 lines of maintained technical documentation, one owner per subsystem: audio and EQ, each skin engine, every media-server integration, casting, each visualizer, the local library, CLI, and testing. [`AGENTS.md`](AGENTS.md) and [`CLAUDE.md`](CLAUDE.md) route an agent to the owning skill before it touches code, and new subsystem detail goes in that skill — never in a general file.
+ - **40 subsystem skills** in [`skills/`](skills/) — ~44,000 lines of maintained technical documentation, one owner per subsystem: audio and EQ, each skin engine, every media-server integration, casting, each visualizer, the local library, CLI, and testing. The clean-room skin engines add per-skin dossiers (what each problem skin taught the engine and what was ruled out), a canonical probe/harness reference, and a `skin-subsystem-blueprint` for adding a new skin family. [`AGENTS.md`](AGENTS.md) and [`CLAUDE.md`](CLAUDE.md) route an agent to the owning skill before it touches code, and new subsystem detail goes in that skill — never in a general file.
  - **Invocable skills, not just docs** — `/wal-skin-report <skin.wal>` produces a full compatibility report for a Winamp 5 skin; `skin-screenshots` drives the live app to capture one main-window frame per skin across all four skin systems and assembles a slideshow GIF.
  - **Automation-first surfaces** — a headless `--cli` mode for querying libraries, resolving sources, starting playback, and routing to Sonos / Chromecast / DLNA, plus a `--ui-testing`launch mode and accessibility identifiers so the UI can be driven programmatically.
- - **Scripted workflows** — one-command bootstrap, build-and-run, DMG/MAS packaging, third-partynotice generation and validation, `.wal` corpus render sweeps and census, and backlog validation, so an agent verifies its work the same way a maintainer does.
- - **184 test files** under [`Tests/`](Tests/), with a documented testing philosophy (`skills/testing`) that explicitly forbids weakening tests changing app code just to make them pass.
- - **Explicit architectural guardrails** encoded where an agent will read them: skin engines must not cross-import, Winamp Modern (`.wal`) work must never alter Classic or Original behavior, and the sprite-origin and `Data`-slicing gotchas are stated up front.
-
+ - **Scripted workflows** — one-command bootstrap, build-and-run, DMG/MAS packaging, third-partynotice generation and validation, `.wal` and `.wmz` corpus render sweeps and census (with a corpus exclusion list and baseline diffing), and backlog validation, so an agent verifies its work the same way a maintainer does.
+ - **Live-defect workflow** — a `live-ui-testing` process skill for bugs that only show on screen: instrument first, drive the running app with AppleScript and synthesized input, and measure what is actually drawn; every subsystem skill routes its *Debugging a live defect* section there.
+ - **291 test files** under [`Tests/`](Tests/), with a documented testing philosophy (`skills/testing`) that explicitly forbids weakening tests changing app code just to make them pass.
+ - **Explicit architectural guardrails** encoded where an agent will read them: skin engines must not cross-import, Winamp Modern (`.wal`) and Windows Media Player (`.wmz`) work must never alter Classic or Original behavior, and the sprite-origin and `Data`-slicing gotchas are stated up front.
+ - **App control: agents drive the real app** — the [`app-control`](skills/app-control/SKILL.md) skill lets an agent launch, configure, drive, screenshot, and measure the running debug build across every skin family (Classic, Original, Original-Metal, `.wal`, `.wmz`):
+   - A routing table picks the cheapest way to answer a question, from a headless probe to handing the user a preloaded interactive session. Canonical test media and launch recipes come with it, plus an [eval case and rubric](skills/app-control/eval/README.md) for comparing agents.
 
 ## Installation
 
@@ -244,7 +253,7 @@ open Package.swift
 
 | Library | Purpose |
 |---------|---------|
-| [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) | .wsz skin file extraction |
+| [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) | .wsz / .wmz skin file extraction |
 | [SQLite.swift](https://github.com/stephencelis/SQLite.swift) | Media library storage |
 | [AudioStreaming](https://github.com/dimitris-c/AudioStreaming) | HTTP audio streaming for Plex |
 | [FlyingFox](https://github.com/swhitty/FlyingFox) | Embedded HTTP server for local file casting |
@@ -267,7 +276,7 @@ Backups are stored in `~/Library/Application Support/NullPlayer/Backups/`.
 
 ## Skins
 
-NullPlayer has four looks - Modern, Classic, Original, and Original-Metal — selectable from the right-click context menu under **Skins**. Switching between them happens **live, with no restart** — playback, casting, and the open playlist continue uninterrupted while the windows rebuild in the new look:
+NullPlayer has five looks — Modern, Classic, Original, Original-Metal, and Windows Media Player — selectable from the right-click context menu under **Skins**. Switching between them happens **live, with no restart** — playback, casting, and the open playlist continue uninterrupted while the windows rebuild in the new look:
 
 ### Winamp Modern (`.wal`) / ClassicPro
 
@@ -279,9 +288,19 @@ To set up:
 
 1. Open **Skins > Modern > Download ClassicPro Engine...** to fetch `ClassicPro_2.01.exe`.
 2. Import the installer via **Skins > Modern > Import ClassicPro Engine…** (it stays as a single private copy and is not run as a program).
-3. Import a ClassicPro skin via **Skins > Modern > Import .wal Skin...**, then select it from **Skins > Modern**.
+3. Import a ClassicPro skin via **Skins > Modern > Load Skin...**, then select it from **Skins > Modern**.
 
 NullPlayer's Winamp Modern support is built through clean-room reverse engineering, verified against a corpus of real-world skins. The [skin compatibility report](docs/winamp-modern/skin-compatibility.md) is the current corpus of `.wal` skins tested in that effort — every Winamp 5.x skin the engine has been measured against, its compatibility grade, and what is still known to be outstanding on it. It is updated as the engine improves and new skins are measured.
+
+### Windows Media Player (`.wmz`)
+
+NullPlayer is the only Mac app that runs Windows Media Player skins. The `.wmz` skins made for WMP 7 through 12 — shaped windows, multiple views, compact/full modes, and the JScript that animates them — load in a clean-room engine and drive NullPlayer's own playback, EQ, SRS enhancements, and visualizers. A fresh install opens in NullPlayer's built-in unskinned WMP player until you import a skin.
+
+1. Choose **Import WMZ…** on the unskinned player, or **Skins > Media Player > Load Skin...**. **Get More Skins...** in the same menu opens the Internet Archive's Windows Media Player skins collection.
+2. Pick an installed skin from **Skins > Media Player**; a skin with several views lists them under **Views**.
+3. **Default Skin (Unskinned)** returns to the built-in player without deleting anything, and **Save Compatibility Report...** writes a JSON report to attach to a bug report.
+
+Skin scripts run in a restricted, sandboxed object model: ActiveX, registry and shell access, DLLs, WMP plug-ins, and skin-authored HTML are not supported. See the [WMP skin guide](docs/wmp-skin/user-guide.md) and the [compatibility reference](docs/wmp-skin/compatibility.md) for the supported surface.
 
 ### Winamp Classic Mode
 
@@ -574,7 +593,7 @@ Bundled third-party components:
 
 **Swift packages (compiled into the binary)**
 - **SQLite.swift** (MIT) + **swift-toolchain-sqlite** (Apache-2.0) / **SQLite** (public domain) — media library
-- **ZIPFoundation** (MIT) — `.wsz`/`.nps` extraction
+- **ZIPFoundation** (MIT) — `.wsz`/`.nps`/`.wmz` extraction
 - **AudioStreaming** (MIT) — streaming audio engine
 - **FlyingFox** (MIT) — local HTTP server for casting
 

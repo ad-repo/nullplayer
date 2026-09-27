@@ -203,6 +203,140 @@ final class WindowRestoreGeometryTests: XCTestCase {
         XCTAssertEqual(restored.maxY, savedNetworkMonitorFrame.maxY, accuracy: 0.001)
     }
 
+    // MARK: - A restored `.wmz` PeppyMeter / Flow keeps the size the session saved (W214)
+
+    /// The reported case, with its measured numbers. In a `.wmz` session every hosted window
+    /// restores at its saved size plus the borrowed ring (+36 x +34): Cava and Flow 368x145 -> 404x179,
+    /// Waveform 418x262 -> 454x296. PeppyMeter alone did not — saved 380x290, it came back 416x288,
+    /// because 290 is exactly Classic's legacy double height (145x2) and the rule snapped it to
+    /// Classic's 254 floor before the ring was added.
+    func testWMPRestoreKeepsALegacyDoubleHeightPeppyMeter() {
+        let saved = NSRect(x: 1048, y: 840, width: 380, height: 290)
+
+        let restored = WindowManager.normalizedClassicCenterStackRestoredFrame(
+            saved,
+            kind: .peppyMeter,
+            peppyMeterFloor: 254,
+            peppyMeterLegacyDoubleHeight: 290,
+            networkMonitorMinimumHeight: 145,
+            preservingSavedFrame: true
+        )
+
+        XCTAssertEqual(restored, saved, "a .wmz PeppyMeter keeps the height the session left it at")
+    }
+
+    /// The floor is Classic's too, and it has no claim on a `.wmz` window either: the rule is
+    /// "the size the skin's session saved", not "never shrink".
+    func testWMPRestoreKeepsAPeppyMeterShorterThanTheClassicFloor() {
+        let saved = NSRect(x: 1048, y: 900, width: 380, height: 180)
+
+        let restored = WindowManager.normalizedClassicCenterStackRestoredFrame(
+            saved,
+            kind: .peppyMeter,
+            peppyMeterFloor: 254,
+            peppyMeterLegacyDoubleHeight: 290,
+            networkMonitorMinimumHeight: 145,
+            preservingSavedFrame: true
+        )
+
+        XCTAssertEqual(restored, saved)
+    }
+
+    /// Flow is the other window the Classic branch rewrites, and it is gated by the same flag.
+    func testWMPRestoreKeepsANetworkMonitorShorterThanTheClassicMinimum() {
+        let saved = NSRect(x: 680, y: 739, width: 368, height: 96)
+
+        let restored = WindowManager.normalizedClassicCenterStackRestoredFrame(
+            saved,
+            kind: .networkMonitor,
+            peppyMeterFloor: 254,
+            peppyMeterLegacyDoubleHeight: 290,
+            networkMonitorMinimumHeight: 145,
+            preservingSavedFrame: true
+        )
+
+        XCTAssertEqual(restored, saved)
+    }
+
+    /// Classic and Original are unchanged: the legacy double height still snaps to the floor,
+    /// top-anchored, exactly as it did before the gate.
+    func testClassicRestoreStillSnapsALegacyDoublePeppyMeterToTheFloor() {
+        let saved = NSRect(x: 728, y: 431, width: 380, height: 290)
+
+        let restored = WindowManager.normalizedClassicCenterStackRestoredFrame(
+            saved,
+            kind: .peppyMeter,
+            peppyMeterFloor: 254,
+            peppyMeterLegacyDoubleHeight: 290,
+            networkMonitorMinimumHeight: 145,
+            preservingSavedFrame: false
+        )
+
+        XCTAssertEqual(restored.height, 254, accuracy: 0.001)
+        XCTAssertEqual(restored.maxY, saved.maxY, accuracy: 0.001)
+        XCTAssertEqual(restored.width, saved.width, accuracy: 0.001)
+    }
+
+    /// And Classic still floors a short one, and still leaves a deliberately tall one alone.
+    func testClassicRestoreStillFloorsAndPreservesOtherPeppyMeterHeights() {
+        let short = NSRect(x: 728, y: 500, width: 380, height: 180)
+        let tall = NSRect(x: 728, y: 380, width: 380, height: 420)
+
+        let floored = WindowManager.normalizedClassicCenterStackRestoredFrame(
+            short,
+            kind: .peppyMeter,
+            peppyMeterFloor: 254,
+            peppyMeterLegacyDoubleHeight: 290,
+            networkMonitorMinimumHeight: 145,
+            preservingSavedFrame: false
+        )
+        let kept = WindowManager.normalizedClassicCenterStackRestoredFrame(
+            tall,
+            kind: .peppyMeter,
+            peppyMeterFloor: 254,
+            peppyMeterLegacyDoubleHeight: 290,
+            networkMonitorMinimumHeight: 145,
+            preservingSavedFrame: false
+        )
+
+        XCTAssertEqual(floored.height, 254, accuracy: 0.001)
+        XCTAssertEqual(floored.maxY, short.maxY, accuracy: 0.001)
+        XCTAssertEqual(kept.height, 420, accuracy: 0.001)
+    }
+
+    /// Classic still floors Flow, in `.wmz` and Classic alike the other kinds pass straight through.
+    func testClassicRestoreStillFloorsNetworkMonitorAndIgnoresOtherKinds() {
+        let shortFlow = NSRect(x: 728, y: 721, width: 368, height: 96)
+        let cava = NSRect(x: 728, y: 866, width: 368, height: 96)
+
+        let floored = WindowManager.normalizedClassicCenterStackRestoredFrame(
+            shortFlow,
+            kind: .networkMonitor,
+            peppyMeterFloor: 254,
+            peppyMeterLegacyDoubleHeight: 290,
+            networkMonitorMinimumHeight: 145,
+            preservingSavedFrame: false
+        )
+
+        XCTAssertEqual(floored.height, 145, accuracy: 0.001)
+        XCTAssertEqual(floored.maxY, shortFlow.maxY, accuracy: 0.001)
+
+        for preserving in [true, false] {
+            XCTAssertEqual(
+                WindowManager.normalizedClassicCenterStackRestoredFrame(
+                    cava,
+                    kind: .cava,
+                    peppyMeterFloor: 254,
+                    peppyMeterLegacyDoubleHeight: 290,
+                    networkMonitorMinimumHeight: 145,
+                    preservingSavedFrame: preserving
+                ),
+                cava,
+                "only PeppyMeter and NetworkMonitor are rewritten here"
+            )
+        }
+    }
+
     // MARK: - A `.wal` main frame belongs to the skin that saved it
 
     /// The reported case, with its real numbers: Big Bento Modern's main layout is 1536×878 and

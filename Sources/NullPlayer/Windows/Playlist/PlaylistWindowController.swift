@@ -114,8 +114,7 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
     /// Snap playlist width so PLEDIT title bar tiles align cleanly.
     /// In skin coordinates this enforces: width = (N * 25) + 50.
     private func snappedPlaylistWidth(_ width: CGFloat) -> CGFloat {
-        let scaleFromMain = (WindowManager.shared.mainWindowController?.window?.frame.width ?? 0) / Skin.baseMainSize.width
-        let scale = max(0.0001, scaleFromMain > 0 ? scaleFromMain : (Skin.scaleFactor * WindowManager.shared.classicScaleMultiplier))
+        let scale = max(0.0001, WindowManager.shared.playlistChromeScale)
         let minSkinWidth = SkinElements.Playlist.minSize.width
         let skinWidth = max(minSkinWidth, width / scale)
         let snappedTiles = round((skinWidth - 50.0) / 25.0)

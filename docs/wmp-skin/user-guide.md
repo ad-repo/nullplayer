@@ -1,0 +1,83 @@
+# Windows Media Player skin guide
+
+NullPlayer can use user-supplied Windows Media Player `.wmz` skins. It does not bundle Microsoft or
+community skins. A fresh installation opens in NullPlayer's own unskinned WMP player, which provides
+transport, mute, time, minimize, close, and **Import WMZ…** controls without reading artwork or
+preferences from another NullPlayer skin family.
+
+## Import, select, and remove
+
+1. Choose **Import WMZ…** on the unskinned player, or open **UI > Windows Media Player > Load
+   Skin...**. **Get More Skins...** in the same menu opens the Internet Archive's WMP skins collection.
+2. Select a `.wmz` file. NullPlayer validates the complete archive before installing it under
+   `~/Library/Application Support/NullPlayer/WMPSkins/` and switches to WMP mode.
+3. Use **UI > Windows Media Player** to select any installed skin. If it defines multiple views, use
+   the **Views** submenu. Skin-authored compact/full buttons can also request a supported view.
+4. Choose **Remove “name”...** to delete NullPlayer's installed copy of the selected skin. This never
+   deletes the original file you downloaded.
+
+Choose **Default Skin (Unskinned)** at any time to clear the selection without deleting installed
+skins. Classic, Original, Original-Metal, and Windows Media Player can be selected live from the
+**UI** menu.
+
+## Recovery and reset
+
+- A missing, corrupt, rejected, or deleted selected skin leaves the app in WMP mode and shows the
+  unskinned player with a named diagnostic. Import the skin again, choose another installed skin, or
+  select **Default Skin (Unskinned)**.
+- Skin script preferences are isolated by the archive's content hash. Re-importing different bytes
+  does not inherit another skin's namespace.
+- To reset the WMP selection manually, choose **Default Skin (Unskinned)**. To remove all installed
+  copies, use the menu once per selected skin or open the WMP skins folder and remove only `.wmz`
+  files while they are not selected.
+- Existing users retain their persisted Classic, Original, Original-Metal, or WMP mode after an
+  upgrade. Only a profile with no current or legacy mode preference gets the new WMP default.
+
+## Compatibility reports and support
+
+With a valid skin loaded, choose **Save Compatibility Report...**. The JSON report inventories tags,
+attributes, resources, scripts, object-model members, events, and typed diagnostics. It contains no
+archive payload, source text, pixels, screenshot, or local input path. Include this file and any
+visible `WMPnnnn` diagnostic code in a support report; do not redistribute a skin unless its license
+allows it.
+
+For a packaged-build reproduction, advanced users can launch the GUI with the diagnostic hook:
+
+```bash
+/Applications/NullPlayer.app/Contents/MacOS/NullPlayer \
+  -uiMode wmp -wmpSkinPath /absolute/path/to/skin.wmz
+```
+
+The file still passes through the normal validation and installer. The option does not grant skin
+script filesystem access.
+
+## Supported format and deliberate limitations
+
+NullPlayer accepts ZIP-based `.wmz` archives containing the XML/JScript `.wms` format associated
+with Windows Media Player 7 through 12, subject to the implemented subset in
+[`compatibility.md`](compatibility.md). Compatibility is capability-based, not guaranteed by a skin's
+claimed player version. Definitions may use UTF-8, UTF-16LE, UTF-16BE, or legacy Windows-1252.
+
+ActiveX, registry and shell access, DLLs, WMP plug-ins, arbitrary filesystem/network access,
+skin-authored HTML, and native-object reflection are unsupported. Video tags show a
+NullPlayer-owned placeholder; `<EFFECTS>` uses bounded native Spikes, Bars, Ambience, Cava, and
+vis_classic renderers inside the skin-authored rectangle rather than loading Windows effect
+plug-ins. Right-click Cava and vis_classic to use their normal tuning and profile controls; those
+choices are kept separate from their standalone windows. Video playing inside a skin carries NullPlayer's usual
+overlay — play/pause, subtitles, audio tracks and casting — and the skin's video window opens wide
+enough to hold it; right-click the picture as well for track settings, and right-click anywhere else on
+a skin window for NullPlayer's own menu — Snap To Default, Always On Top, Minimize All and Exit —
+which is the way back from a skin whose own controls have ended up somewhere awkward. Closing the
+skin's player window quits NullPlayer, as the Classic and Original close buttons do. A skin's video
+window keeps its own size whatever the film's pixel dimensions are — the picture is scaled to fit
+inside it — and no skin window opens larger than the space your display has. Skin scripts run in a persistent
+in-process JavaScript context on a dedicated serial queue, behind a restricted host object model.
+They do not run in a killable helper process. A script that never returns can stall its script
+queue; there is no process-level timeout recovery for that context.
+
+The library, Flow, PeppyMeter, Spectrum, AudioAnalysis, Cava, waveform, and ProjectM windows are
+available in WMP mode. They wear a frame borrowed from the skin when one is available, or use
+colours derived from the skin otherwise. Playlist and equalizer use the skin's own surface when
+provided, with themed native windows as fallbacks. Video, radio sheets, compact mode, and debug
+windows retain their unskinned presentation. See the
+[current hosting contract](../../skills/wmp-skin-guide/reference/windows.md#current-hosting-contract).

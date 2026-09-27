@@ -1,6 +1,6 @@
 # Local library and playlist playback — open backlog
 
-The two skin backlogs in this repo — `WMP_TASKS.md` for `.wmz` and
+The two skin backlogs in this repo — [`WMP_TASKS.md`](../../WMP_TASKS.md) for `.wmz` and
 [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md) for `.wal` — each say a foreign entry does not belong
 in them, and [`docs/video-playback/backlog.md`](../video-playback/backlog.md) took the shared video
 path for the same reason. This file is for defects in the **local library and the playlist playback

@@ -1,0 +1,17 @@
+# Archives deliberately kept out of the measured `.wmz` corpus.
+#
+# One archive filename per line; `#` starts a comment. An excluded archive is not a defect and must
+# never rank work in WMP_TASKS.md — it is a skin this engine is not for, and a row it generates is
+# demand for a host we are not building. scripts/wmp_skin_census.sh and scripts/wmp_render_sweep.sh
+# both read this file and print what they dropped, so the denominator they report is the corpus they
+# actually measured.
+#
+# Removing a line is a decision, not a cleanup: say why the skin is back in scope.
+
+# Party Mode. `Darkling` is authored against Windows Media Player's Party Mode host (`PartyMode.*` —
+# SetEffectCallback, SetWindowRect, ShowVizMenu), which this player has no equivalent of and will not
+# grow one. Its own `OnLoad` catches the missing host and draws a 322x185 "designed for Party Mode
+# and will not work in Windows Media Player" panel; that is the skin working correctly, and it is
+# what real WMP shows outside Party Mode too. No rendering or runtime work changes the outcome.
+# Verified 2026-09-07: the only archive referencing PartyMode in the 180-skin corpus.
+Darkling.wmz

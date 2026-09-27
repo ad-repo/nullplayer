@@ -57,12 +57,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let skinURL = URL(fileURLWithPath: skinPath)
             windowManager.loadSkin(from: skinURL)
         }
+        // **Live QA needs playback**, and every readout a skin binds to the host — the clock, the
+        // seek thumb, the duration, the title — reads its resting value with an empty playlist. A
+        // pass with nothing playing is a different test, and driving a file in through the GUI
+        // costs a Local Library window and a CGEvent double-click per launch. This is the same
+        // path a Finder open takes (`application(_:openFiles:)`), so it enqueues and plays exactly
+        // as a dropped file does.
+        if let play = ProcessInfo.processInfo.environment["NULLPLAYER_PLAY"] {
+            application(NSApp, openFiles: [play])
+        }
         #endif
         
         // Classic mode: spectrum transparent backgrounds always start off.
         // Waveform transparency is guarded by isRunningModernUI in WaveformAppearancePreferences,
         // so no reset is needed there.
-        if !windowManager.isModernUIEnabled {
+        if windowManager.uiMode.controllerFamily == .classic {
             UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey)
             UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.mainWindow.transparentBgKey)
         }
@@ -75,8 +84,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Restore settings state (skin, volume, EQ, windows). Compact Mode must be
         // entered only after the asynchronous window restoration has completed, so it
         // can capture and hide the actual restored window set.
-        let shouldRestoreCompactMode = UserDefaults.standard.bool(forKey: "compactModeEnabled")
+        let supportsCompactSurfaces = windowManager.uiMode.controllerFamily != .wmp
+        let shouldRestoreCompactMode = supportsCompactSurfaces
+            && UserDefaults.standard.bool(forKey: "compactModeEnabled")
         let shouldRestoreCompactWindow = !shouldRestoreCompactMode
+            && supportsCompactSurfaces
             && UserDefaults.standard.bool(forKey: "compactWindowEnabled")
 
         // Create the main window, but only reveal it when we are NOT launching straight into
@@ -98,6 +110,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         CastManager.shared.startDiscovery()
 
         AppStateManager.shared.restoreSettingsState { [weak self] in
+            self?.loadDiagnosticWMPSkinIfRequested()
             // Everything the launch puts on screen is finally up: the player at its restored frame,
             // the skin's own windows at their final sizes, and any hosted window the session had
             // open. This is the first moment a `.wal` arrangement can be computed — see
@@ -145,6 +158,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
     }
 
+    private func loadDiagnosticWMPSkinIfRequested() {
+        // Run after state restoration so a remembered mode/skin reload cannot cancel this explicit
+        // diagnostic launch request. NSArgumentDomain supplies `-uiMode wmp` and
+        // `-wmpSkinPath /absolute/file.wmz` in debug and packaged release builds.
+        guard windowManager.uiMode == .wmp,
+              let path = UserDefaults.standard.string(forKey: "wmpSkinPath"),
+              path.hasPrefix("/"),
+              let controller = windowManager.mainWindowController as? WMPMainWindowController else { return }
+        controller.importSkin(from: URL(fileURLWithPath: path))
+    }
+
     #if DEBUG
     /// DEBUG-only Phase 1 acceptance loop. Repeatedly live-switches through all four UI modes and
     /// verifies the running main-window controller matches the target mode's controller family
@@ -166,6 +190,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return controller is ModernMainWindowController
             case .winampModern:
                 return controller is WinampModernMainWindowController
+            case .wmp:
+                return controller is WMPMainWindowController
             }
         }
 
@@ -264,6 +290,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Save window positions (always saved, used by snapToDefault)
         windowManager.saveWindowPositions()
+
+        // A `.wmz` saves its state in `onClose`, and quitting never gave it the chance —
+        // see `WMPMainWindowController.flushCloseHandlersOnTermination`. Gated on the WMP
+        // controller: no other skin mode has script handlers to run.
+        (windowManager.mainWindowController as? WMPMainWindowController)?
+            .flushCloseHandlersOnTermination()
 
         // Flush WAL to disk before exit so history survives hard shutdown / reboot
         MediaLibraryStore.shared.checkpoint()

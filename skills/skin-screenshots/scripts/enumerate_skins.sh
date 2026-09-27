@@ -6,9 +6,20 @@
 # the click must match.
 cd "$(dirname "$0")"
 EXCLUDE_FILE="${1:-../exclude.txt}"
+# The tools live in `app-control`; this sweep is one of their callers.
+WH=../../app-control/scripts/winhelper
+MENU=../../app-control/scripts/menu.applescript
+# menu.applescript addresses the app by unix id, never by name — see `app-control` Rule zero.
+PID="${NULLPLAYER_PID:-$(pgrep -x NullPlayer | head -1)}"
+if [ -z "$PID" ]; then echo "FAIL  NullPlayer is not running"; exit 1; fi
+if [ "$(pgrep -x NullPlayer | wc -l | tr -d ' ')" -gt 1 ]; then
+  echo "FAIL  more than one NullPlayer is running; set NULLPLAYER_PID to the debug build you launched"; exit 1
+fi
+export NULLPLAYER_PID="$PID"
+
 non_skin='^(Switch to |Load |Get More |Open |Import |Reimport |Download |Engine: |Skin Colors|Skin Settings|Spectrum Analyzer$)'
 emit() { # $1 system  $2 submenu
-  osascript menu.applescript list "$2" 2>/dev/null | tr ',' '\n' | sed 's/^ *//; s/ *$//' |
+  osascript "$MENU" list "$PID" "$2" 2>/dev/null | tr ',' '\n' | sed 's/^ *//; s/ *$//' |
   while IFS= read -r item; do
     [ -z "$item" ] && continue
     [ "$item" = "missing value" ] && continue

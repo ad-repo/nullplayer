@@ -459,7 +459,50 @@ final class WalXMLDocumentLoader {
             if let text = String(data: body(2), encoding: .utf16BigEndian) { return text }
         }
         if let utf8 = String(data: data, encoding: .utf8) { return utf8 }
+        // A BOM-less UTF-16 file cannot be caught by the fallback either: `isoLatin1` accepts every
+        // byte sequence, so it "succeeds" into null-interleaved mojibake instead of reporting a wrong
+        // guess -- the same shape as B93, one BOM away. Sniff it positionally before conceding.
+        if let littleEndian = sniffBOMlessUTF16(data),
+           let text = String(data: data,
+                             encoding: littleEndian ? .utf16LittleEndian : .utf16BigEndian) {
+            return text
+        }
         return String(data: data, encoding: .isoLatin1)
+    }
+
+    /// Is this BOM-less UTF-16, and if so which way round?
+    ///
+    /// Positional, not statistical: Latin-script UTF-16 markup puts a NUL in every *odd* byte
+    /// (little-endian) or every *even* byte (big-endian) and essentially never in the other, so the
+    /// side that is clean names the byte order. An `iconv`-style "is there a lot of zero" guess
+    /// cannot tell the two ends apart. Requires a `<` as the first non-whitespace unit, so a
+    /// single-byte file that merely happens to carry NULs still falls through to `isoLatin1`.
+    ///
+    /// Kept byte-for-byte equivalent to `WMPTextDecoder.sniffBOMlessUTF16`; the two engines share
+    /// nothing else, and the gap was measured in both.
+    private static func sniffBOMlessUTF16(_ data: Data) -> Bool? {
+        let bytes = [UInt8](data.prefix(4096))
+        guard data.count >= 4, data.count.isMultiple(of: 2), bytes.count.isMultiple(of: 2)
+        else { return nil }
+        var evenNULs = 0, oddNULs = 0
+        for index in bytes.indices where bytes[index] == 0 {
+            if index.isMultiple(of: 2) { evenNULs += 1 } else { oddNULs += 1 }
+        }
+        let littleEndian: Bool
+        if oddNULs > 0, evenNULs == 0 { littleEndian = true }
+        else if evenNULs > 0, oddNULs == 0 { littleEndian = false }
+        else { return nil }
+        guard (littleEndian ? oddNULs : evenNULs) * 5 >= bytes.count * 2 else { return nil }
+        var index = littleEndian ? 0 : 1
+        while index < bytes.count {
+            let unit = bytes[index]
+            if unit == 0x20 || unit == 0x09 || unit == 0x0A || unit == 0x0D {
+                index += 2
+                continue
+            }
+            return unit == 0x3C ? littleEndian : nil
+        }
+        return nil
     }
 
     private static func fold(_ value: String) -> String {

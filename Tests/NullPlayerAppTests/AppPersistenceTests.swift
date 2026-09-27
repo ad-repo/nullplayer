@@ -6,6 +6,7 @@ final class AppPersistenceTests: XCTestCase {
     func testSkinFamilyDisplayNamesUseOriginalBranding() {
         XCTAssertEqual(PlayerUIMode.modern.displayName, "Original")
         XCTAssertEqual(PlayerUIMode.metal.displayName, "Original-Metal")
+        XCTAssertEqual(PlayerUIMode.wmp.displayName, "Media Player")
         XCTAssertEqual(ModernSkinFamily.modern.displayName, "Original")
         XCTAssertEqual(ModernSkinFamily.metal.displayName, "Original-Metal")
     }
@@ -13,8 +14,19 @@ final class AppPersistenceTests: XCTestCase {
     func testOriginalBrandingPreservesCompatibilityIdentifiers() {
         XCTAssertEqual(PlayerUIMode.modern.rawValue, "modern")
         XCTAssertEqual(PlayerUIMode.metal.rawValue, "metal")
+        XCTAssertEqual(PlayerUIMode.wmp.rawValue, "wmp")
         XCTAssertEqual(ModernSkinFamily.modern.skinNameKey, "modernSkinName")
         XCTAssertEqual(ModernSkinFamily.metal.skinNameKey, "metalSkinName")
+    }
+
+    func testControllerFamiliesAndEQLayoutsAreExplicit() {
+        XCTAssertEqual(PlayerUIMode.classic.controllerFamily, .classic)
+        XCTAssertEqual(PlayerUIMode.modern.controllerFamily, .nullPlayerModern)
+        XCTAssertEqual(PlayerUIMode.metal.controllerFamily, .nullPlayerModern)
+        XCTAssertEqual(PlayerUIMode.wmp.controllerFamily, .wmp)
+        XCTAssertFalse(PlayerUIMode.wmp.usesModernControllers)
+        XCTAssertFalse(PlayerUIMode.wmp.usesModernEQLayout)
+        XCTAssertNil(PlayerUIMode.wmp.modernSkinFamily)
     }
 
     func testFullEditionUsesExistingKeysAndHasNoForcedMode() {
@@ -84,6 +96,32 @@ final class AppPersistenceTests: XCTestCase {
                 PlayerUIMode.classic.rawValue
             )
             XCTAssertFalse(defaults.bool(forKey: "modernUIEnabled"))
+        }
+    }
+
+    func testFreshFullEditionDefaultsToClassicWithoutPersistingAMode() {
+        withDefaults { defaults in
+            XCTAssertNil(defaults.object(forKey: PlayerUIMode.userDefaultsKey))
+            XCTAssertEqual(PlayerUIMode.stored(in: defaults, forcedMode: nil), .classic)
+            XCTAssertNil(defaults.object(forKey: PlayerUIMode.userDefaultsKey),
+                         "Resolving the first-launch default must not overwrite a future user choice")
+        }
+    }
+
+    func testUpgradePreservesEveryPersistedModeAndLegacyBoolean() {
+        for mode in PlayerUIMode.allCases {
+            withDefaults { defaults in
+                defaults.set(mode.rawValue, forKey: PlayerUIMode.userDefaultsKey)
+                XCTAssertEqual(PlayerUIMode.stored(in: defaults, forcedMode: nil), mode)
+            }
+        }
+        withDefaults { defaults in
+            defaults.set(false, forKey: "modernUIEnabled")
+            XCTAssertEqual(PlayerUIMode.stored(in: defaults, forcedMode: nil), .classic)
+        }
+        withDefaults { defaults in
+            defaults.set(true, forKey: "modernUIEnabled")
+            XCTAssertEqual(PlayerUIMode.stored(in: defaults, forcedMode: nil), .modern)
         }
     }
 

@@ -16,7 +16,7 @@ Read first:
   cover", and the equalizer bullet under "Synthesizing a missing window"
 - `skills/winamp-modern-skin-guide/skins.md` — Defix's row and its **six** traps
 - `skills/winamp-modern-skin-guide/manual-qa-checklist.md` — the Defix section
-- `TASKS.md` §26 — the itemised list, including everything still owed
+- `WINAMP5_TASKS.md` §26 — the itemised list, including everything still owed
 - `~/.claude/plans/winamp-modern-phase-26-test-backfill.md` — **the test plan; start here**
 
 ## 1. What Phase 26 was

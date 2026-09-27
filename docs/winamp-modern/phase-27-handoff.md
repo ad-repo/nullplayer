@@ -11,7 +11,7 @@ Read first:
 - `skills/winamp-modern-skin-guide/SKILL.md` — engine architecture and the render-dump harness
 - `skills/winamp-modern-skin-guide/compatibility.md` — the supported/unsupported surface
 - `skills/winamp-modern-skin-guide/skins.md` — the per-skin record, Defix section
-- `TASKS.md` — Phase 27 is closed except its live items; this doc is Phase 28's brief
+- `WINAMP5_TASKS.md` — Phase 27 is closed except its live items; this doc is Phase 28's brief
 
 ---
 

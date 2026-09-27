@@ -1518,7 +1518,37 @@ class PlexBrowserView: NSView {
     /// own classic window (Phase 13.8). Set once, at construction.
     private(set) var isEmbeddedInSkin = false
 
-    var Layout: LayoutMetrics { isEmbeddedInSkin ? .embedded : .classic }
+    var Layout: LayoutMetrics {
+        if isEmbeddedInSkin { return .embedded }
+        guard let metrics = hostedFrame?.metrics else {
+            // A `.wmz` session draws the unskinned library without its title bar: the top edge is
+            // a border as thin as the status bar (`SkinnedSurfaceChrome.hidesPaletteTitleBar`).
+            guard SkinnedSurfaceChrome.hidesPaletteTitleBar else { return .classic }
+            var titleless = LayoutMetrics.classic
+            titleless.titleBarHeight = SkinnedSurfaceChrome.glossBorder
+            titleless.leftBorder = SkinnedSurfaceChrome.glossBorder
+            titleless.rightBorder = SkinnedSurfaceChrome.glossBorder
+            titleless.statusBarHeight = SkinnedSurfaceChrome.glossBorder
+            return titleless
+        }
+        // The borrowed frame's own client hole replaces the four chrome numbers and nothing else:
+        // the tab, server, search and status *bars* are this window's own furniture and keep their
+        // heights, so only where the window's edges are moves.
+        var borrowed = LayoutMetrics.classic
+        borrowed.titleBarHeight = metrics.titleHeight
+        borrowed.leftBorder = metrics.leftBorder
+        borrowed.rightBorder = metrics.rightBorder
+        borrowed.statusBarHeight = max(metrics.bottomBorder, LayoutMetrics.classic.statusBarHeight)
+        return borrowed
+    }
+
+    /// The window frame the hosting skin lends this browser, when it lends one — a `.wmz` skin that
+    /// draws its own panels as an eight-piece ring (`WMPHostedFrameTemplate`). Never for an embedded
+    /// browser: a `.wal` holder has already drawn the chrome around it.
+    var hostedFrame: SkinnedSurfaceFrameArtwork? {
+        guard !isEmbeddedInSkin else { return nil }
+        return WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size)
+    }
 
     // MARK: - Winamp Modern styling (Phase 16)
 
@@ -1530,7 +1560,7 @@ class PlexBrowserView: NSView {
     ///
     /// Cached because `drawScaledSkinText` asks for it once per string — ~77 times a frame — and
     /// deriving a style converts seven colours through a colour space. The palette only changes on a
-    /// colour-theme switch, which invalidates this through `winampModernThemeDidChange`.
+    /// colour-theme switch, which invalidates this through `hostedSurfaceStyleDidChange`.
     private var cachedWindowWinampModernStyle: WinampModernSurfaceStyle?
     private var hasResolvedWindowWinampModernStyle = false
 
@@ -1542,7 +1572,7 @@ class PlexBrowserView: NSView {
     var winampModernStyle: WinampModernSurfaceStyle? {
         if isEmbeddedInSkin { return embeddedWinampModernStyle }
         if !hasResolvedWindowWinampModernStyle {
-            cachedWindowWinampModernStyle = WindowManager.shared.winampModernSurfaceStyle
+            cachedWindowWinampModernStyle = WindowManager.shared.hostedSurfaceStyle
             hasResolvedWindowWinampModernStyle = true
         }
         return cachedWindowWinampModernStyle
@@ -1614,6 +1644,7 @@ class PlexBrowserView: NSView {
         let textWidth: (String) -> CGFloat = { CGFloat($0.count) * charWidth }
         let leadingInset = 4 + toolbarItemHorizontalEdgePadding
         let trailingInset = 8 + toolbarItemHorizontalEdgePadding + rightEdgeItemPaddingBoost
+            + cornerCloseInset
         let prefixWidth = textWidth("Source: ")
         let minimumGap: CGFloat = 12
         let remoteLeftWidth: (_ maxServerCharacters: Int, _ serverName: String) -> CGFloat = {
@@ -1897,8 +1928,8 @@ class PlexBrowserView: NSView {
         // directly through `applyWinampModernStyle`; a fallback window has no such handle.
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(winampModernThemeDidChange),
-            name: .winampModernThemeDidChange,
+            selector: #selector(hostedSurfaceStyleDidChange),
+            name: .hostedSurfaceStyleDidChange,
             object: nil
         )
 
@@ -2560,18 +2591,52 @@ class PlexBrowserView: NSView {
                                        controlScale: WindowManager.shared.playlistChromeScale)
     }
 
-    /// The window frame for a fallback browser inside a `.wal` skin (Phase 16).
-    ///
-    /// Flat, palette-coloured, and drawn at **exactly** the classic metrics — same title bar height,
-    /// same 12px side borders, same status bar, and a close glyph inside the same top-right 20×14 box
-    /// `hitTestCloseButton` checks. Nothing about layout, hit testing, or resizing changes; only the
-    /// pixels do.
+    /// Chrome for a palette-themed browser, including WMP despite the historical function name.
+    /// Palette fallback uses classic layout metrics. WMP borrowed artwork instead uses the donor's
+    /// resolved content geometry for layout/hit testing, fills only that hole, and paints the frame
+    /// according to `paintsOverContent`, without adding a title or close glyph.
     private func drawWinampModernChrome(style: WinampModernSurfaceStyle, context: CGContext,
                                         bounds: NSRect, isActive: Bool) {
-        let titleHeight = SkinElements.PlexBrowser.Layout.titleBarHeight
-        let leftBorder = SkinElements.PlexBrowser.Layout.leftBorder
-        let rightBorder = SkinElements.PlexBrowser.Layout.rightBorder
-        let statusHeight = SkinElements.PlexBrowser.Layout.statusBarHeight
+        let titleHeight = Layout.titleBarHeight
+        let leftBorder = Layout.leftBorder
+        let rightBorder = Layout.rightBorder
+        let statusHeight = Layout.statusBarHeight
+
+        // The hosting skin's own window ring, where it lends one. The client hole is filled first
+        // and the artwork drawn over it — these rings are full of keyed-out and rounded corners, so
+        // a slab painted over the whole window would square off everything the skin cut away.
+        if let artwork = hostedFrame {
+            let content = artwork.scaled(to: bounds.size).contentRect
+            context.setFillColor(style.background.cgColor)
+            context.fill(content)
+            context.saveGState()
+            // Solid interior fill has already been erased when paintsOverContent is true, so
+            // preserve the whole bezel, including pixels intruding into the client rectangle.
+            // Otherwise cut the rectangle to keep pictorial interiors (e.g. Scooby Doo) from
+            // painting wallpaper over the browser's content.
+            if !content.isEmpty, !artwork.paintsOverContent {
+                context.beginPath()
+                context.addRect(bounds)
+                context.addRect(content)
+                context.clip(using: .evenOdd)
+            }
+            context.translateBy(x: 0, y: bounds.height)
+            context.scaleBy(x: 1, y: -1)
+            context.interpolationQuality = artwork.wasScaledToFit ? .high : .none
+            context.draw(artwork.image, in: CGRect(origin: .zero, size: bounds.size))
+            context.restoreGState()
+            SkinnedSurfaceChrome.traceBorrowedChrome(bounds: bounds, artwork: artwork,
+                                                     captionHeight: max(0, content.minY),
+                                                     closeWidth: 20)
+            return
+        }
+
+        // Titleless in WMP: the gloss frame, and the close is the corner hit area alone.
+        if closesFromCorner {
+            SkinnedSurfaceChrome.drawGlossFrame(in: context, bounds: bounds, style: style,
+                                                isActive: isActive, fillGround: true)
+            return
+        }
 
         context.setFillColor(style.background.cgColor)
         context.fill(bounds)
@@ -2638,6 +2703,17 @@ class PlexBrowserView: NSView {
     /// that would move the content off the top of the holder.
     private var hidesClassicTitleBar: Bool {
         !isEmbeddedInSkin && WindowManager.shared.hideTitleBars
+    }
+
+    /// True for a titleless WMP library with no borrowed frame: its close is a corner hit area
+    /// over the server bar, so the bar's right-edge items move out from under it.
+    private var closesFromCorner: Bool {
+        !isEmbeddedInSkin && hostedFrame == nil && SkinnedSurfaceChrome.hidesPaletteTitleBar
+    }
+
+    /// How much further the server bar's right-edge items sit in, in unscaled toolbar points.
+    private var cornerCloseInset: CGFloat {
+        closesFromCorner ? max(0, SkinnedSurfaceFrameArtwork.closeHitWidth - Layout.rightBorder) : 0
     }
 
     private var originalWindowSize: NSSize {
@@ -3366,6 +3442,7 @@ class PlexBrowserView: NSView {
         let textY = backingScale < 1.5 ? round(rawTextY) : rawTextY
         let toolbarLeftInset = (4 + toolbarItemHorizontalEdgePadding) * chromeScale
         let toolbarRightInset = (8 + toolbarItemHorizontalEdgePadding + rightEdgeItemPaddingBoost) * chromeScale
+            + cornerCloseInset
         
         // Common prefix for all sources
         let prefix = "Source: "
@@ -7040,8 +7117,12 @@ class PlexBrowserView: NSView {
     
     /// A `.wal` skin switched colour theme; the style is re-derived on each draw, so a repaint is
     /// the whole job.
-    @objc private func winampModernThemeDidChange() {
+    @objc private func hostedSurfaceStyleDidChange() {
         hasResolvedWindowWinampModernStyle = false
+        // A borrowed frame moves the content hole this view lays its list and its controls out
+        // from, and it lands after the first layout pass — see the same note on the rest of the
+        // hosted family (W220).
+        needsLayout = true
         needsDisplay = true
     }
 
@@ -8188,7 +8269,13 @@ class PlexBrowserView: NSView {
         if isEmbeddedInSkin { return false }
         if hidesClassicTitleBar { return false }
         let originalSize = originalWindowSize
-        let closeRect = NSRect(x: originalSize.width - 20, y: 0, width: 20, height: 14)
+        // 20x14 in our own flat chrome. Under a borrowed ring the column spans the skin's caption
+        // band — 7px to 104px across the corpus — and sits inside its right border, which is where
+        // the shared painter draws the glyph: what is clickable is what is drawn (W178).
+        let closeRect = hostedFrame == nil && !closesFromCorner
+            ? NSRect(x: originalSize.width - 20, y: 0, width: 20, height: 14)
+            : SkinnedSurfaceChrome.closeButtonRect(in: NSRect(origin: .zero, size: originalSize),
+                                                   captionHeight: Layout.titleBarHeight, width: 20)
         return closeRect.contains(skinPoint)
     }
     

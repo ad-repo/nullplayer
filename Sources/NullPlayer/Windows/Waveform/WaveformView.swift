@@ -13,10 +13,13 @@ class WaveformView: BaseWaveformView {
 
     override var waveformRect: NSRect {
         if hostedContext != nil { return bounds }
-        let titleHeight = SkinElements.WaveformWindow.Layout.titleBarHeight
-        let leftBorder = SkinElements.WaveformWindow.Layout.leftBorder
-        let rightBorder = SkinElements.WaveformWindow.Layout.rightBorder
-        let bottomBorder = SkinElements.WaveformWindow.Layout.bottomBorder
+        // The classic constants, unless the hosting skin lends a window frame of its own and states
+        // its own content hole — see `WMPHostedFrameTemplate`.
+        let chrome = SkinnedSurfaceChrome.metrics(for: bounds, fallback: .waveform)
+        let titleHeight = chrome.titleHeight
+        let leftBorder = chrome.leftBorder
+        let rightBorder = chrome.rightBorder
+        let bottomBorder = chrome.bottomBorder
 
         // Extra 2px left/right inset prevents visualization content from occluding window borders
         let extraInset: CGFloat = 2
@@ -67,8 +70,8 @@ class WaveformView: BaseWaveformView {
         setAccessibilityLabel("NullPlayer Waveform")
         NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
                                                name: .connectedWindowHighlightDidChange, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(winampModernThemeDidChange),
-                                               name: .winampModernThemeDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(hostedSurfaceStyleDidChange),
+                                               name: .hostedSurfaceStyleDidChange, object: nil)
     }
 
     required init?(coder: NSCoder) {
@@ -80,8 +83,8 @@ class WaveformView: BaseWaveformView {
         setAccessibilityLabel("NullPlayer Waveform")
         NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
                                                name: .connectedWindowHighlightDidChange, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(winampModernThemeDidChange),
-                                               name: .winampModernThemeDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(hostedSurfaceStyleDidChange),
+                                               name: .hostedSurfaceStyleDidChange, object: nil)
     }
 
     deinit {
@@ -120,8 +123,9 @@ class WaveformView: BaseWaveformView {
         context.saveGState()
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
-        if let style = WindowManager.shared.winampModernSurfaceStyle {
-            WinampModernChrome(style: style).drawSpectrumFamilyWindow(
+        if let style = WindowManager.shared.hostedSurfaceStyle {
+            WinampModernChrome(style: style,
+                               artwork: WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size)).drawSpectrumFamilyWindow(
                 in: context,
                 bounds: bounds,
                 metrics: .waveform,
@@ -161,7 +165,15 @@ class WaveformView: BaseWaveformView {
         }
     }
 
-    @objc private func winampModernThemeDidChange() {
+    @objc private func hostedSurfaceStyleDidChange() {
+        // **A borrowed frame moves the content hole, and a hole that moved is a layout, not a
+        // repaint (W220).** This notification is the only edit some of these windows ever get: the
+        // ring is derived asynchronously for the window's own size, so it lands *after* the view
+        // has laid out against the classic fallback metrics. `needsDisplay` alone redraws the
+        // chrome around subviews still framed for the old hole — on `Visualizations` that is the
+        // whole GL view, which keeps the full window and buries every borrowed piece under the
+        // visualization. Marking the layout dirty costs nothing where a view has no subviews.
+        needsLayout = true
         needsDisplay = true
     }
 
@@ -229,12 +241,28 @@ class WaveformView: BaseWaveformView {
     }
 
     private func titleBarRect() -> NSRect {
-        let titleHeight = SkinElements.Playlist.titleHeight
+        // A titleless WMP window drags by its thin top border, as the Original family's does.
+        let titleHeight = SkinnedSurfaceChrome.hidesPaletteTitleBar
+            ? SkinnedSurfaceChrome.metrics(for: bounds, fallback: .waveform).titleHeight
+            : SkinElements.Playlist.titleHeight
         return NSRect(x: 0, y: bounds.height - titleHeight, width: bounds.width, height: titleHeight)
     }
 
+    /// The close target: our own 9x9 box in the classic title bar, and the shared corner hit area
+    /// when a `.wmz` skin has lent this window its ring — nothing of ours is drawn over a ring, so
+    /// the thing the user clicks is the skin's own painted ×, and the target has to cover it
+    /// (`SkinnedSurfaceChrome.closeButtonRect`). The rect comes back in top-left chrome
+    /// coordinates; this view works bottom-left.
     private func closeButtonRect() -> NSRect {
         let titleHeight = SkinElements.Playlist.titleHeight
+        let artwork = WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size)
+        if artwork != nil || SkinnedSurfaceChrome.hidesPaletteTitleBar {
+            let corner = SkinnedSurfaceChrome.closeButtonRect(
+                in: bounds, captionHeight: artwork?.scaled(to: bounds.size).captionHeight ?? 0,
+                artwork: artwork)
+            return NSRect(x: corner.minX, y: bounds.height - corner.maxY,
+                          width: corner.width, height: corner.height)
+        }
         return NSRect(
             x: bounds.width - SkinElements.SpectrumWindow.TitleBarButtons.closeOffset,
             y: bounds.height - titleHeight + 3,

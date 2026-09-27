@@ -6,7 +6,7 @@
 and neither section below should be read as pending. **S0 is partial** (no committed manifest and no
 Gold/Silver tiering; the census emits a sha256 per row instead). **S2, S3, S3.5 and S4 are not
 built**, and the rest of this file is their specification. The stand-in for S2's demand ranking is the
-hand-run grep set under *Reproducible reach commands* in `TASKS.md`.
+hand-run grep set under *Reproducible reach commands* in `WINAMP5_TASKS.md`.
 
 The durable method — defect classes, instrument blind spots, isolating one issue, dispositions,
 regression safety — lives in `skills/winamp-modern-skin-guide/triage-playbook.md`, whose §3 carries

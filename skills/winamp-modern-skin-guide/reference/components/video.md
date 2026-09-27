@@ -165,7 +165,7 @@ host alone disregards a finished film**, through an additive
 - set **false** in `clearLoadedContentState()`, so a new film never inherits the old one's end.
 
 Both `videoSession` and `videoTransport` guard on it. Classic keeps the phantom on purpose — recorded
-as **B107** in `TASKS.md`, not fixed under a `.wal` pass. Cast video is out of scope: `currentVideoTitle`
+as **B107** in `WINAMP5_TASKS.md`, not fixed under a `.wal` pass. Cast video is out of scope: `currentVideoTitle`
 forks to `CastManager.videoCastTitle` for a cast session, which the flag does not cover.
 
 One DEBUG line makes the re-host observable in a running build, and it is load-bearing when a report

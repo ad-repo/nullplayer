@@ -13,7 +13,7 @@ Read first:
 - `docs/winamp-modern/phase-0b-decision-record.md` — measured target capabilities and cPro topology
 - `docs/winamp-modern/phase-2-handoff.md` — archive, VFS, XML, graph, and geometry contracts
 - `docs/winamp-modern/phase-3-handoff.md` — this document
-- `TASKS.md` — Phase 3 complete; Phase 4 is next
+- `WINAMP5_TASKS.md` — Phase 3 complete; Phase 4 is next
 
 ## 1. Phase 3 outcome and boundary
 

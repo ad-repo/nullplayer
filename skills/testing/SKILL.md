@@ -115,10 +115,10 @@ the app. The first measurement identified the real cause in one run.
 ### The loop
 
 ```bash
-pkill -9 -x NullPlayer; sleep 1
-WINAMP_MODERN_PLACE_TRACE=1 .build/arm64-apple-macosx/debug/NullPlayer > /tmp/run.log 2>&1 &
-sleep 12                       # let restore + the layout pass settle
-PID=$(pgrep -x NullPlayer)
+# add --restore when the defect is in *restored* placement; the default launch skips restoration
+WINAMP_MODERN_PLACE_TRACE=1 skills/app-control/scripts/launch.sh /abs/Skin.wal --no-play --log /tmp/run.log
+sleep 12                       # let the layout pass settle
+PID=$(pgrep -x NullPlayer); WH=skills/app-control/scripts/winhelper
 
 # Drive the UI: menu items by name, addressing the debug build by pid — never by app
 # name, which launches the *installed* copy instead.
@@ -126,13 +126,15 @@ osascript -e "tell application \"System Events\" to tell (first process whose un
   to click menu item \"Equalizer\" of menu 1 of menu bar item \"Windows\" of menu bar 1"
 
 # Read the finished layout back, rather than judging it by eye or by screenshot.
-osascript -e "tell application \"System Events\" to tell (first process whose unix id is $PID) \
-  to get {position, size} of every window"
+"$WH" windows --pid "$PID"            # id layer x y w h alpha title, one window per line
 ```
 
-The accessibility dump is flattened — *n* positions then *n* sizes — and its origin is **top-left**,
-unlike AppKit's. Convert once, then check every pair for intersection arithmetically. "It looks fine"
-is not a result; a table of frames is.
+`winhelper windows` lists on-screen windows only, one row each, with a **top-left** origin, unlike
+AppKit's. Convert once, then check every pair for intersection arithmetically. "It looks fine" is
+not a result; a table of frames is. For "did this click change the layout", `winhelper clickdiff
+<x> <y> --pid "$PID"` prints the table before and after and names what moved; `winhelper raise`,
+`park` and `capture` replace hand-written `AXRaise`/`set position`/`screencapture` snippets and
+check what those leave to the reader (`skills/app-control` § *Route C*).
 
 ### What to instrument
 
@@ -273,19 +275,11 @@ if CommandLine.arguments.contains("--ui-testing") {
 }
 ```
 
-### `NULLPLAYER_SKIN` — launch straight into a given classic skin
+### Launching into a given skin or state — see `app-control`
 
-**DEBUG builds only** (`AppDelegate.swift:56`). Set it to the path of a `.wsz` and the app loads that
-skin at launch instead of the stored one, so a skin-specific check needs no clicking through the
-Skins menu and leaves the user's selection alone:
-
-```bash
-NULLPLAYER_SKIN=/abs/path/Skin.wsz ./.build/arm64-apple-macosx/debug/NullPlayer
-```
-
-It loads a **classic** skin only — a `.wal` is selected with `-winampModernSkinPath` and a modern
-skin through its own preference. Useful for the "test with multiple skins" rule above, since a wrong
-skin is one of the commoner reasons a UI check passes locally and fails for someone else.
+`skills/app-control/scripts/launch.sh <skin>` launches the debug build on any skin family, playing,
+and prints a verified `LAUNCH PASS`/`LAUNCH FAIL`. Use it instead of `NULLPLAYER_SKIN` or
+`defaults write` — every one of those fails silently. Details: **`app-control` § Route B**.
 
 ## Running Tests
 

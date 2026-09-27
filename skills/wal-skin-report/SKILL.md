@@ -69,8 +69,7 @@ export OUT=/tmp/walreport && mkdir -p $OUT
 Then a **live pass**, because the harness cannot draw hosted AppKit content and has no component host:
 
 ```sh
-./scripts/kill_build_run.sh   # then switch to this skin, or:
-./.build/debug/NullPlayer -uiMode winampModern -winampModernSkinPath "$WINAMP_MODERN_WAL"
+skills/app-control/scripts/launch.sh "$WINAMP_MODERN_WAL"    # prints LAUNCH PASS when it loaded
 ```
 
 ### Reading the instruments honestly
@@ -190,7 +189,7 @@ the author's screenshot, a user answer). This section is the point of the report
 
 ## 11. Follow-ups
 Proposed `skins/<skin>.md` content plus its `skins.md` row. Capability requests for the demand index, each with this skin as a
-test case. Anything that belongs in `TASKS.md`.
+test case. Anything that belongs in `WINAMP5_TASKS.md`.
 ```
 
 ## 5. Grading

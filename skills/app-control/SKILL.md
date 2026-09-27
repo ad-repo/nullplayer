@@ -1,0 +1,303 @@
+---
+name: app-control
+description: Launch, configure, drive, screenshot and measure the running NullPlayer app. Use when asked to run / launch / start the app, click or drag a control, reproduce a defect on screen, "open skin X", "show me it working", set up a test scenario, capture a window, or hand the user a loaded interactive session. Covers every skin family (Classic, Original, Original-Metal, Winamp Modern .wal, Windows Media Player .wmz) and names the canonical test-data targets.
+---
+
+# Controlling the app
+
+## Rule zero: the app under test is the local debug build, always
+
+**`skills/app-control/scripts/launch.sh <skin>` is the launch command** (Route B); it runs
+`./scripts/kill_build_run.sh --debug`, which is the build-and-run command for a launch with no skin
+to pin. Not `swift build`, not Xcode, not a release build.
+
+Everything here then operates on the binary it produced:
+
+```bash
+BIN=.build/arm64-apple-macosx/debug/NullPlayer     # Intel: .build/x86_64-apple-macosx/debug/…
+```
+
+**Never invoke the installed app.** Not `nullplayer`, not `open -a NullPlayer`, not
+`/Applications/NullPlayer.app/Contents/MacOS/NullPlayer`, not `activate application "NullPlayer"`.
+Its version is unknown, it is not what you changed, and a clean result from it is worthless.
+
+This has teeth:
+
+- `/usr/local/bin/nullplayer` is a shim that `exec`s `/Applications/NullPlayer.app`. Every
+  `nullplayer --cli …` line in `cli` therefore runs the installed build. Read that skill's flags;
+  ignore its invocations.
+- The installed app's defaults domain is `com.nullplayer.app`; the debug binary's is `NullPlayer`.
+  Both exist on this machine with divergent contents.
+- `NULLPLAYER_SKIN` and `NULLPLAYER_PLAY` are `#if DEBUG` only (`App/AppDelegate.swift:56,66`). A
+  release or installed binary ignores them silently.
+
+Two consequences, stated as facts:
+
+1. A recipe that builds any other way is a bug in the recipe. Release exists only for a deliberate
+   profiling measurement, which is out of scope here.
+2. **There is exactly one defaults domain in this skill: `NullPlayer`.** `com.nullplayer.app` is
+   never read or written, so nothing here can damage the user's real preferences.
+
+## Routing
+
+| Route | Use when | Cost |
+|---|---|---|
+| **A — Don't launch the GUI** | The question is about a skin's scene, geometry, hit map, script, or any pure logic | seconds |
+| **B — Launch preconfigured, don't click** | You need the running app in a specific mode / skin / playback state | one launch |
+| **C — Drive it yourself** | The defect needs a click, drag, hover, or a view switch | one launch + CGEvents |
+| **D — Hand the user a loaded session** | Judgment ("does it look right"), contextual menus, anything a synthetic right-click cannot do | interactive |
+| **E — Measure** | Always. Every route ends here | — |
+
+**Not this skill:** `skin-screenshots` is the gallery GIF sweep and nothing else.
+`live-ui-testing` is how not to fool yourself about what you measured. `testing` is `swift test`.
+`cli` is the headless command surface — read its flags, ignore its invocations (Rule zero).
+
+## Route A — don't launch the GUI
+
+Applies when the answer is in a skin's scene, geometry, hit map or script rather than on screen.
+
+1. Pick the headless entry point for the family.
+2. Set the probe flag for the question you are asking.
+3. Read the named line type out of the output.
+
+```bash
+WMP_SKIN="$HOME/Library/Application Support/NullPlayer/WMPSkins/corona.wmz" \
+  WMP_RENDER_PROBE=all WMP_RENDER_HOST=playing \
+  swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus 2>&1 | grep '^PROBE'
+```
+
+| Family | Entry point | Day-one flags | Full flag table |
+|---|---|---|---|
+| `.wmz` | `WMP_SKIN=<file or dir> swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus` | `WMP_RENDER_PROBE`, `WMP_RENDER_CLICK`, `WMP_RENDER_HOST=playing` | `wmp-skin-guide/reference/harness.md` |
+| `.wal` | `WINAMP_MODERN_WAL=<file> swift test --filter WinampModernRenderDumpTests` | `WINAMP_MODERN_RENDER_PROBE` | `winamp-modern-skin-guide/reference/harness.md` |
+| anything else | `swift test` | — | `testing` |
+
+`WMP_SKIN` takes a file **or** a directory, so one command sweeps the whole corpus. The probe
+flags are not copied here; go to the owning reference.
+
+The CLI is also Route A — servers, radio, casting and library queries need no GUI:
+
+```bash
+BIN=.build/arm64-apple-macosx/debug/NullPlayer     # never `nullplayer`
+"$BIN" --cli --list-libraries --source plex --json
+```
+
+**Confirm it took:** the probe printed the line type you asked for (`PROBE`, `CLICK`, `HOVER`), or
+`--json` returned a non-empty array. A probe that prints nothing ran against nothing.
+
+## Route B — launch preconfigured, don't click
+
+**One command launches the debug build on any skin, playing, and verifies it:**
+
+```bash
+skills/app-control/scripts/launch.sh corona                 # .wmz   → -uiMode wmp
+skills/app-control/scripts/launch.sh aquamp                 # .wsz   → -uiMode classic
+skills/app-control/scripts/launch.sh 2222-cPro__Bento       # .wal   → -uiMode winampModern
+skills/app-control/scripts/launch.sh modern:NeonWave        # Original submenu
+skills/app-control/scripts/launch.sh "metal:Brushed Steel"  # Original-Metal submenu
+```
+
+It prints one line — `LAUNCH PASS: wmp skin 'corona'  pid … log /tmp/np.log` — or `LAUNCH FAIL: …`
+and exits 1. **Trust that line and nothing else; do not hand-roll a skin launch.** Every other
+way of doing it (`defaults write` recipes, `NULLPLAYER_SKIN` for a `.wmz`, a bare
+`./.build/debug/NullPlayer`, `kill_build_run.sh` without `--debug`) has launched the wrong skin in
+a past session, silently.
+
+- `<skin>` is a bare installed name (searched across `Skins/`, `WinampModernSkins/`, `WMPSkins/`),
+  `name.ext` to pin a family, or an absolute path. A name found in two families **fails and lists
+  both** rather than guessing. A `.wmz` path outside `WMPSkins/` is imported via `-wmpSkinPath`.
+- `--no-play` skips `NULLPLAYER_PLAY` (default: `audio-long` playing; an exported
+  `NULLPLAYER_PLAY` replaces it). `--log <path>` (default
+  `/tmp/np.log`). App arguments go after `--`; trace env vars are simply exported in front:
+  `WMP_SEEK_TRACE=1 skills/app-control/scripts/launch.sh corona -- -winampModernShowVisualization 1`.
+- It quits any running NullPlayer first — including another session's. Say so before using it
+  while someone else's run is up.
+- **Nothing to restore afterwards.** Session restoration is disabled with the *launch argument*
+  `-rememberStateEnabled NO`, never a `defaults write`, so the saved Remember State is untouched
+  and there is no restore trap to race. (The old recipes' trap ran the instant a non-interactive
+  `read </dev/tty` failed — restoring the previous skin and `rememberStateEnabled=1` while the app
+  was still starting. That was the wrong-skin bug.)
+
+Why each family is selected the way it is — only needed when changing `launch.sh`:
+
+| Family | Mechanism | PASS means |
+|---|---|---|
+| `.wsz`/`.whsz` | `NULLPLAYER_SKIN=<path>` (DEBUG only) | `lastClassicSkinPath` rewritten to that path (deleted first) |
+| `.wal` | `-winampModernSkinPath <path>` (DEBUG only) | log `WinampModern surfaces [<file>.wal]:` |
+| `.wmz` installed | `defaults write wmpSkinName`, `wmpSkinViewID` deleted | `wmpSkinName` is the name **and** the app re-wrote `wmpSkinViewID` (it only does once a scene renders) |
+| `.wmz` elsewhere | `-wmpSkinPath <path>` (imports it) | same |
+| modern / metal | `defaults write modernSkinName\|metalSkinName` | log `ModernSkinLoader: Loaded skin '<name>'` / `Loaded built-in metal skin '<name>'` |
+
+`NULLPLAYER_SKIN` is the classic loader: a `.wmz` there loads nothing and comes up unskinned
+(440x170). Restoration, if left on, rewrites `wmpSkinName` from the saved state before the window
+opens. `launch.sh` exists so neither has to be remembered.
+
+**Deleting `wmpSkinViewID` makes every `.wmz` launch a first launch.** The user's second launch
+onward starts the view walk at the persisted player and skips the views ahead of it, so a defect
+that only shows "after a relaunch" never reproduces through `launch.sh` — W299 measured fine on nine
+launches that way. Reproduce it by killing the app and relaunching the debug binary with
+`wmpSkinViewID` left in place (`./scripts/kill_build_run.sh --debug -- -uiMode wmp
+-rememberStateEnabled NO`, with `NULLPLAYER_PLAY` set if the skin needs playback).
+
+**The mode names do not match the menu.** `-uiMode modern` is the **Original** submenu;
+`-uiMode winampModern` is the **Modern** submenu (`App/PlayerUIMode.swift:33-39`).
+
+**`NULLPLAYER_PLAY` takes audio and `.cue` only** — `mp3 m4a aac wav aiff aif flac ogg alac`
+(`App/AppDelegate.swift:340,357`). An `.m3u` or `.mp4` there is dropped with no log line and reads
+exactly like a playback bug. **Video never goes through it**, and **Windows → Video Player is
+inert** until a video has been opened from a browser (`App/WindowManager.swift:3205`). Media
+recipes (audio/video × local/streaming) are in `reference/launch-recipes.md`.
+
+Launch rules that still apply to anything `launch.sh` does not cover:
+
+- **Redirect, never pipe.** `kill_build_run.sh --log <path>` writes the log; a pipe keeps the
+  script attached. Live traces write to stderr, and a redirected `print` is block-buffered.
+- **The front door un-throttles for you** (`taskpolicy -B`). A hand-rolled `nohup` does not: the
+  app inherits background QoS, timers defer and animation stalls. Confirm with `ps -o nice= -p <pid>`.
+- **The domain is `NullPlayer`.** Never `com.nullplayer.app`.
+- Servers / radio / casting: don't launch the GUI — `"$BIN" --cli …` (Route A).
+
+## Route C — drive it yourself
+
+Applies when the defect needs a click, drag, hover or a view switch. Build the tools once:
+`skills/app-control/scripts/build.sh`.
+
+1. Launch via Route B.
+2. Get the window id and origin from `winhelper windows`.
+3. Get the control's coordinates **from the subsystem's probe** (Route A), never from a screenshot.
+4. Raise the app and drive one throwaway gesture — the first click on an inactive window is
+   consumed activating it.
+5. Mark the log, act, read from the mark.
+
+```bash
+WH=skills/app-control/scripts/winhelper
+PID=$(pgrep -x NullPlayer | head -1)
+read -r WID _ X Y W H _ < <("$WH" windows --pid "$PID" --size 289x283)   # the skin's own canvas
+"$WH" raise "$PID"                                        # exits non-zero unless it is frontmost
+"$WH" click  $((X+320)) $((Y+291))                       # throwaway: activates the window
+"$WH" drag   $((X+320)) $((Y+291)) $((X+400)) $((Y+291)) $((X+500)) $((Y+291))
+```
+
+- **Match the window by its size, never by `head -1`.** A `.wmz` window list can carry a second,
+  transient row for the same app — a different id at a different origin — and a click computed from
+  it lands on the desktop: the gesture posts, the log shows the hover/down repaints of *nothing*,
+  and it reads exactly like a dead control. Two measurement runs on 2026-09-17 were thrown away to
+  it, one of them a "0 redraws" rate that was really a pane that never opened. Pick the row whose
+  `w`/`h` are the skin's own canvas (`$WH windows --size 289x283`, and `--pid` so the installed
+  app's rows never match), and **confirm the state you think you set** from the subsystem's own
+  trace before measuring anything against it.
+
+| Verb | What it posts |
+|---|---|
+| `winhelper windows [--pid <n>] [--size <w>x<h>]` | `id layer x y w h alpha title`, on-screen windows owned by NullPlayer, front to back |
+| `winhelper raise <pid>` | frontmost via System Events **by unix id**; exits non-zero unless that pid is frontmost afterwards |
+| `winhelper park <pid> <title> <x> <y>` | moves the window with that title to a top-left screen point and raises it, then reads the position back; non-zero if no window has that title or it landed elsewhere — use it before `capture` on a window that runs off the screen |
+| `winhelper capture <id> <out.png> [--pid <n>]` | the window's own content (`screencapture -l`), size-checked — see below |
+| `winhelper capture-all <outdir> [--pid <n>] [--size <w>x<h>]` | `capture` for every matching window, one PNG each; non-zero if any is refused |
+| `winhelper click <x> <y>` | `mouseMoved`, then down/up **with `mouseEventClickState = 1`** |
+| `winhelper dblclick <x> <y>` | two clicks, the second at `clickState = 2` |
+| `winhelper clickdiff <x> <y> [--pid <n>] [--size <w>x<h>] [--settle <s>]` | the window-frame check: `before` rows, a `click`, a wait (1 s default), `after` rows, then one `changed`/`gone`/`new` line per window; **exits 2 when nothing changed**. `dblclickdiff` is the same with `dblclick`. `--size` filters only the *before* listing |
+| `winhelper scroll <x> <y> <count> <delta> [line\|precise]` | `count` wheel events at one point; `precise` is a trackpad (points), `line` (the default) a mouse wheel (lines) |
+| `winhelper move <x> <y> …` | `mouseMoved` through the path, 250 ms apart |
+| `winhelper drag <x> <y> …` | press, `leftMouseDragged` through the path, release at the last point |
+| `osascript menu.applescript mode\|skin\|list\|closeaux <pid> …` | the Skins / Windows menu verbs |
+
+- **`clickState` is why clicks used to do nothing.** An event posted without it arrives
+  `clickCount == 0`: any handler gating on `clickCount == 1` ignores it while the window still
+  highlights. Both `click` and `drag` set it. Measured A/B on the same browser row: the pre-fix
+  tool's two rapid clicks opened **0** windows and logged nothing; `dblclick` at the identical
+  point opened the video window and logged `VideoPlayerView: Playing`.
+- **A hover is not a click with the buttons left out.** `onMouseOver`/`onMouseOut` fire on the
+  *edges* between controls, so the path is the test — and the app must be frontmost, or a
+  borderless window gets no `mouseMoved` at all.
+- **`menu.applescript` requires a pid** and resolves `first process whose unix id is <pid>`. There
+  is no name fallback: `process "NullPlayer"` is ambiguous whenever the installed build is also
+  running, which is how it gets driven by accident.
+- **A contextual menu is not drivable. That is Route D.**
+- **`capture` refuses a picture that is not the window.** `screencapture -l` returns a
+  **full-screen** image for an off-screen or stale id, and the **whole docked group** for a window
+  with attached windows (a 197x194 pt `.wmz` pane came back 950x890 pt, it plus two docked
+  neighbours, 2026-09-24). `capture` checks the pixel size against the window's points × scale;
+  a group-sized image is cropped to the window and marked `cropped-from-group`; anything else exits
+  non-zero. It retries three times, 400 ms apart, because a pane that is fading in or resizing
+  changes size between the listing and the shot. `-l` sees the window regardless of occlusion,
+  unlike `-R`, which photographs the screen.
+- **A wheel gesture has two devices and a surface may read only one (W246).** `.line` events carry
+  a line count and `.pixel` events a precise, continuous delta in points — the trackpad's, and the
+  only one `hasPreciseScrollingDeltas` is true for. A list that advances one row per event however
+  hard you flick is reading the delta's *sign*; one that ignores a flick entirely may be reading
+  the other unit. Post both before concluding anything, and remember a scroll is **state the
+  screen holds, not a log line** — capture the window, do not grep for it.
+- **A scroll position can be undone faster than you can capture it.** WMP's playlist was pulled
+  back onto the playing track by every host refresh, ~12 a second, so the gesture *did* land and
+  the picture 80 ms later showed it had not. If a gesture seems not to take, capture immediately
+  after it **and** again a second later: two different pictures mean something is fighting you,
+  not that the event missed.
+
+**Confirm it took:** the subsystem's live trace shows the gesture. A `WMP_SEEK_TRACE=1` drag prints
+one `performSlider` per point and **exactly one** commit; a commit per move is the W156 regression.
+
+## Route D — hand the user a loaded session
+
+Applies to judgment ("does it look right"), contextual menus, and anything a synthetic gesture
+cannot do. **The agent owns the process and the log; the user owns the mouse.**
+
+1. Launch it yourself with `launch.sh` (Route B) and wait for `LAUNCH PASS`. The user runs nothing.
+2. Tell the user it is up, on which skin, and what to look at.
+3. **End your turn.** Do not block, do not sleep, do not background a watcher.
+4. Mark the log's line count. On the user's next message, read from that mark, answer, re-mark,
+   end the turn.
+
+**Confirm it took:** the `LAUNCH PASS` line.
+
+## Route E — measure
+
+Every route ends here.
+
+1. `winhelper windows` for the window id and geometry.
+2. Capture **the window**, not the screen.
+3. Two captures separated in time, compared, for anything that should be changing.
+
+```bash
+WID=$("$WH" windows | awk -F'\t' '$2==0{print $1; exit}')
+screencapture -o -x -l "$WID" /tmp/t1.png; sleep 6
+screencapture -o -x -l "$WID" /tmp/t2.png
+cmp -s /tmp/t1.png /tmp/t2.png && echo "IDENTICAL" || echo "DIFFER"
+```
+
+- **`-l <windowid>` captures the window's own content. `-R <rect>` captures whatever is on top**,
+  which is routinely your terminal. A conclusion drawn from a `-R` capture is worthless.
+- **On a docked window, `-l` returns the whole docked group**, not the window you named. The
+  image spans the union of every docked member, and its origin is the group's, not the window's
+  — so a coordinate read off that capture is wrong by however far the window sits into the
+  group. **Check both dimensions**: a stack docked vertically has the group's height and the
+  window's width, so a width-only check passes while the capture is still the group and every
+  `y` you read is wrong. Divide each capture dimension by 2 (retina) and compare with the row
+  `winhelper windows` gives for that id; if **either** disagrees, map back through the group
+  origin — the smallest `x` and `y` among the docked rows, which is not necessarily one
+  window's corner:
+
+  ```bash
+  "$WH" windows | awk -F'\t' '$2==0 {if(gx==""||$3<gx)gx=$3; if(gy==""||$4<gy)gy=$4} END{print gx,gy}'
+  # screen point for a capture pixel (px,py):  x = gx + px/2 ,  y = gy + py/2
+  ```
+
+  Measured: main + Playlist docked, `winhelper` reports the Playlist as `344x145`, the capture
+  comes back `688x580` — 344 wide (agrees) and 290 tall (the group).
+- **Mark the log before acting and read from the mark.** The startup log is thousands of lines of
+  server chatter; `grep -o "^[^{]*"` strips the JSON bodies.
+- **Take a control.** One capture of a thing that should change proves nothing.
+
+**Confirm it took:** you can name the two artefacts your conclusion rests on.
+
+## Test data
+
+`scripts/testdata.sh ensure | path <name> | list | servers`. Per-row route validity is in
+`reference/test-data.md`. **`audio-long` is the default for anything timed** — a 5-second file
+ends mid-diagnosis and the `stop()` reads as the bug.
+
+## Debugging a live defect
+
+Read `live-ui-testing` for the epistemics — instrument first, what a green sweep cannot see — then
+come back here for the mechanics. The reference implementation of the whole workflow is
+`winamp-modern-skin-guide/reference/harness.md` § *Debugging a live defect*.

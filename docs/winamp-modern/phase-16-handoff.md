@@ -13,7 +13,7 @@ Read first:
 - `skills/winamp-modern-skin-guide/compatibility.md` — the "Classic fallback" bullet in *Where a
   surface lives* says what "classic" does and does not mean now
 - `skills/winamp-modern-skin-guide/manual-qa-checklist.md` §4 — **the open gate** (see §5 below)
-- `TASKS.md` §16 — every step, including two corrections to the plan's own inventory
+- `WINAMP5_TASKS.md` §16 — every step, including two corrections to the plan's own inventory
 - `~/.claude/plans/winamp-modern-fallback-surface-style.md` — the plan, with outcomes
 
 ## 1. What Phase 16 was

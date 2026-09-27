@@ -10,7 +10,7 @@ Read first:
 - `docs/winamp-modern/phase-0a-decision-record.md` — provenance and non-negotiable security limits
 - `docs/winamp-modern/phase-0b-decision-record.md` — measured target capabilities and cPro topology
 - `docs/winamp-modern/phase-2-handoff.md` — this document
-- `TASKS.md` — Phase 2 complete; Phase 3 is next
+- `WINAMP5_TASKS.md` — Phase 2 complete; Phase 3 is next
 
 ## 1. Phase 2 outcome and boundary
 

@@ -11,7 +11,7 @@ Read first:
 - `skills/winamp-modern-skin-guide/SKILL.md` — the durable guide; the Phase 12 findings are folded in
   (the splitter, text width as a layout input, the opcode-104 immediate)
 - `skills/winamp-modern-skin-guide/compatibility.md` — supported surface + measured demand
-- `TASKS.md` §12 — what landed and what is still open
+- `WINAMP5_TASKS.md` §12 — what landed and what is still open
 - `docs/winamp-modern/phase-11-handoff.md` — the queue discipline this phase followed again
 
 ## 1. What Phase 12 was

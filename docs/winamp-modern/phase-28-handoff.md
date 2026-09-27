@@ -16,7 +16,7 @@ Read first:
 
 - `docs/winamp-modern/phase-27-handoff.md` — how the frozen meters were root-caused to Layer FX
 - `skills/winamp-modern-skin-guide/SKILL.md` — engine architecture and the render-dump harness
-- `TASKS.md` §28 — the checklist this phase worked from
+- `WINAMP5_TASKS.md` §28 — the checklist this phase worked from
 
 ---
 
@@ -262,7 +262,7 @@ Ranked next steps:
 - [ ] **Docs**: `compatibility.md` (Layer FX + the math library as supported surface),
       `skins.md` (Defix: all eight styles animate; what is still rough), `SKILL.md` (the probes in
       §2), CHANGELOG under **Unreleased** — no version bump
-- [x] `TASKS.md` §28 checkboxes are still unticked even where the work landed — **done in the Phase 33 sweep** (2026-08-19), which closed every phase's checkboxes and moved what was genuinely open into `open-items.md`
+- [x] `WINAMP5_TASKS.md` §28 checkboxes are still unticked even where the work landed — **done in the Phase 33 sweep** (2026-08-19), which closed every phase's checkboxes and moved what was genuinely open into `open-items.md`
 - [ ] Auxiliary windows never install `graphDidMutate`/`repaintRequested` (`drivesScripts: false`),
       so a script mutation in a speaker window repaints the *main* view instead. Related: the speaker
       cones now get their `onSetVisible`, but whether they animate is **unverified**

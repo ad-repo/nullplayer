@@ -10,7 +10,7 @@ Read first:
 
 - `docs/winamp-modern/phase-28-handoff.md` — the diagnosis this phase acted on, and the harness probes
 - `skills/winamp-modern-skin-guide/SKILL.md` § *The frame budget: what repaints, and what it costs*
-- `TASKS.md` §29
+- `WINAMP5_TASKS.md` §29
 
 ---
 

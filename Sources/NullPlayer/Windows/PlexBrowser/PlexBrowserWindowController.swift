@@ -83,19 +83,6 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
         window.setAccessibilityLabel("Plex Browser Window")
     }
     
-    /// Position the window to the RIGHT of the main window
-    /// Always positions on the right side, even if partially offscreen
-    private func positionWindow() {
-        guard let window = window,
-              let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
-        
-        let mainFrame = mainWindow.frame
-        let newX = mainFrame.maxX  // Always RIGHT of main
-        let newY = mainFrame.maxY - window.frame.height  // Top-aligned
-        
-        window.setFrameOrigin(NSPoint(x: newX, y: newY))
-    }
-    
     private func setupView() {
         browserView = PlexBrowserView(frame: NSRect(origin: .zero, size: Self.defaultSize))
         browserView.controller = self
@@ -112,8 +99,8 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
     // MARK: - Public Methods
     
     override func showWindow(_ sender: Any?) {
-        // Position relative to main window's CURRENT location every time
-        positionWindow()
+        // Positioning is WindowManager.showPlexBrowser's job, and it has already happened: restored,
+        // remembered, or docked right of the stack. Re-docking here overwrote the remembered frame.
         super.showWindow(sender)
         
         // Only refresh servers if we're linked, have no servers, and not already connecting

@@ -20,6 +20,13 @@ The runtime loads, scripts, and renders real skins, but see
 [compatibility.md](compatibility.md) for the exact supported/unsupported surface before assuming any
 behavior works.
 
+**Because the engine is clean-room and incomplete, a corpus sweep compares it against its own last
+guess, not against Winamp.** An engine-wide change that moves skins nobody reported is often
+unlocking behaviour those skins were silently missing — or it is collateral. A diff is unclassified
+until it is judged against the skin's own artwork and script; the method is
+`skin-subsystem-blueprint` § *A sweep diff is unclassified, not a regression*. (Classic and Original
+are the exception: a diff there is always a regression — see below.)
+
 ## The rule that outranks everything below
 
 **Winamp Modern must never change how Classic or Original skins behave.** Those modes work; this one
@@ -196,13 +203,13 @@ top to bottom. Rows are grouped by area; within a group, follow the most specifi
 | Meter moves too little | [reference/harness.md](reference/harness.md) → histogram the frames |
 | GUI-only scripted-control report | [reference/harness.md](reference/harness.md) → *Ask for the live trace first, not fourth* |
 | Frame is fast but the app hangs | [reference/harness.md](reference/harness.md) → *Profiling the running app* |
-| Renderer regression proof | [reference/harness.md](reference/harness.md) → *The golden images* |
-| Proving an engine-wide change broke no other skin | [reference/harness.md](reference/harness.md) → *The corpus render sweep* |
+| Renderer golden images | [reference/harness.md](reference/harness.md) → *The golden images* |
+| Measuring what an engine-wide change reached across the corpus | [reference/harness.md](reference/harness.md) → *The corpus render sweep* |
 | Measure one skin end to end | `/wal-skin-report <skin.wal>` |
 | The GUI verification pass before handing work over | [manual-qa-checklist.md](manual-qa-checklist.md) |
 | One named skin's current state | [skins.md](skins.md) → `skins/<skin>.md` |
-| Choose the next cross-skin capability | [triage-playbook.md](triage-playbook.md), then the ranked Reach table in `TASKS.md` |
-| Current open work | `TASKS.md` — the only live backlog; closed history is [the archive](../../docs/winamp-modern/backlog-archive.md) |
+| Choose the next cross-skin capability | [triage-playbook.md](triage-playbook.md), then the ranked Reach table in `WINAMP5_TASKS.md` |
+| Current open work | `WINAMP5_TASKS.md` — the only live backlog; closed history is [the archive](../../docs/winamp-modern/backlog-archive.md) |
 
 The backward-compatibility map for section-title pointers in old handoffs lives in
 [`docs/winamp-modern/section-title-map.md`](../../docs/winamp-modern/section-title-map.md).
@@ -222,7 +229,7 @@ Routing rules:
 - A `<layout>` or `<container>` changing its own window geometry is core rendering behavior. A
   `<Wasabi:Frame>` changing the division between its children is splitter behavior.
 - Historical handoffs are evidence, not current routing. Resolve their old section titles through
-  the map, then use the focused reference and the live `TASKS.md` ranking.
+  the map, then use the focused reference and the live `WINAMP5_TASKS.md` ranking.
 - When two rows appear plausible, read both section headings before loading either whole file; the
   split is designed so the narrower file normally settles the ownership question immediately.
 
@@ -314,7 +321,9 @@ Both moved out of this router; each is one read away.
   *Where new findings land*. An ad-hoc dump nobody wrote down gets re-derived, and two phases have
   already been lost that way.
 
-**Debugging rules — always paid.** Each is one line here; the worked example that earned it is the
+**Debugging rules — always paid.** These are generalised for every subsystem in
+`skills/live-ui-testing`, which treats this subsystem's harness as its reference implementation;
+read that when the defect is in another engine. Each is one line here; the worked example that earned it is the
 named section of [reference/harness.md](reference/harness.md).
 
 - **Instrument before you reason.** Deducing a mechanism from bytecode plus engine source produced
@@ -346,7 +355,7 @@ named section of [reference/harness.md](reference/harness.md).
 - A fact about one named skin → `skins/<skin>.md` (indexed from [skins.md](skins.md)).
 - A supported/unsupported surface fact → [compatibility.md](compatibility.md).
 - A corpus-scale method or disposition → [triage-playbook.md](triage-playbook.md).
-- A new backlog item → `TASKS.md` with a Reach measurement; move it to the archive in the same change that closes it.
+- A new backlog item → `WINAMP5_TASKS.md` with a Reach measurement; move it to the archive in the same change that closes it.
 - A `/wal-skin-report` run itself → **outside the repo** unless the user asks for it; only what it
   taught you lands in the files above.
 - This file grows **only** when a new *category* appears — then add a row to the routing table.

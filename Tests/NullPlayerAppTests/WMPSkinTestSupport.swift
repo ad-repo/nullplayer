@@ -1,0 +1,227 @@
+import Foundation
+import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
+import ZIPFoundation
+@testable import NullPlayer
+
+struct WMPTestArchiveEntry {
+    let path: String
+    let type: Entry.EntryType
+    let data: Data
+    let compression: CompressionMethod
+
+    init(_ path: String, data: Data = Data(), type: Entry.EntryType = .file,
+         compression: CompressionMethod = .none) {
+        self.path = path
+        self.type = type
+        self.data = data
+        self.compression = compression
+    }
+}
+
+enum WMPSkinTestSupport {
+    static func temporaryDirectory() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WMPSkinTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    static func makeArchive(_ entries: [WMPTestArchiveEntry], filename: String = "fixture.wmz") throws -> URL {
+        let directory = try temporaryDirectory()
+        let url = directory.appendingPathComponent(filename)
+        let archive = try Archive(url: url, accessMode: .create)
+        for entry in entries {
+            try archive.addEntry(with: entry.path, type: entry.type,
+                uncompressedSize: Int64(entry.data.count), compressionMethod: entry.compression) { position, size in
+                let start = Int(position)
+                guard start < entry.data.count else { return Data() }
+                return entry.data.subdata(in: start..<min(start + size, entry.data.count))
+            }
+        }
+        return url
+    }
+
+    static func utf16(_ string: String, littleEndian: Bool, bom: Bool = true) -> Data {
+        var bytes: [UInt8] = bom ? (littleEndian ? [0xFF, 0xFE] : [0xFE, 0xFF]) : []
+        for unit in string.utf16 {
+            if littleEndian { bytes.append(UInt8(unit & 0xFF)); bytes.append(UInt8(unit >> 8)) }
+            else { bytes.append(UInt8(unit >> 8)); bytes.append(UInt8(unit & 0xFF)) }
+        }
+        return Data(bytes)
+    }
+
+    static func failureCode(_ body: () throws -> Any) -> WMPDiagnosticCode? {
+        do { _ = try body(); return nil }
+        catch let failure as WMPFailure { return failure.diagnostics.first?.code }
+        catch { return nil }
+    }
+
+    static func failureCode(_ body: () async throws -> Any) async -> WMPDiagnosticCode? {
+        do { _ = try await body(); return nil }
+        catch let failure as WMPFailure { return failure.diagnostics.first?.code }
+        catch { return nil }
+    }
+
+    static func encodedImage(width: Int, height: Int, rgba: [UInt8], type: UTType = .png) throws -> Data {
+        precondition(rgba.count == width * height * 4)
+        let provider = CGDataProvider(data: Data(rgba) as CFData)!
+        let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+            bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Big.rawValue
+                | CGImageAlphaInfo.last.rawValue), provider: provider,
+            decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, type.identifier as CFString, 1, nil) else {
+            throw NSError(domain: "WMPSkinTestSupport", code: 1)
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else {
+            throw NSError(domain: "WMPSkinTestSupport", code: 2)
+        }
+        return output as Data
+    }
+
+    /// A 1x1 multi-frame GIF, built byte by byte, with an exact frame count and an exact
+    /// per-frame delay in hundredths of a second.
+    ///
+    /// **Neither number survives ImageIO's encoder, which is why this is hand-rolled.** It will not
+    /// write a zero delay — and zero is the value the corpus actually authors, in 768 of its 2,166
+    /// multi-frame GIFs — so a fixture built through it would test the clamp with input the clamp
+    /// never sees. It also *merges frames*: asking `CGImageDestination` for 4 distinct frames
+    /// writes 3, and for 119 writes 4, so a frame count is not a frame count either.
+    ///
+    /// `loops` is the NETSCAPE2.0 loop count — `nil` writes no extension at all, which is the GIF
+    /// grammar's "play once", and `0` is the endless loop 88 of those corpus GIFs declare.
+    ///
+    /// `canvas` is the logical screen size; every frame stays a 1x1 image block at the origin, which
+    /// GIF allows and which keeps the LZW payload one hand-written literal. `terminator` appends the
+    /// idiom `WMPGIFTerminator` exists for — a further 1x1 block whose disposal is *restore to
+    /// background*, which 79 files across 33 corpus archives write after their last real frame.
+    static func animatedGIF(frameCount: Int, delayCentiseconds: Int, loops: Int? = nil,
+                            canvas: Int = 1, terminator: Bool = false) -> Data {
+        precondition(frameCount > 1)
+        func le16(_ value: Int) -> [UInt8] { [UInt8(value & 0xFF), UInt8((value >> 8) & 0xFF)] }
+        var bytes: [UInt8] = Array("GIF89a".utf8)
+        // A 2-entry global colour table, no background, no aspect ratio.
+        bytes += le16(canvas)
+        bytes += le16(canvas)
+        bytes += [0x80, 0x00, 0x00]
+        bytes += [0, 0, 0, 255, 255, 255]
+        if let loops {
+            bytes += [0x21, 0xFF, 0x0B]
+            bytes += Array("NETSCAPE2.0".utf8)
+            bytes += [0x03, 0x01]
+            bytes += le16(loops)
+            bytes += [0x00]
+        }
+        for frame in 0..<frameCount {
+            // Graphic Control Extension: no disposal, no transparency, the authored delay.
+            bytes += [0x21, 0xF9, 0x04, 0x00]
+            bytes += le16(delayCentiseconds)
+            bytes += [0x00, 0x00]
+            // Image descriptor at the origin, no local colour table.
+            bytes += [0x2C]
+            bytes += le16(0)
+            bytes += le16(0)
+            bytes += le16(1)
+            bytes += le16(1)
+            bytes += [0x00]
+            // One pixel, LZW with a 2-bit minimum code size: clear (4), the pixel, end (5), three
+            // bits each, packed least-significant-bit first into two bytes. Frames alternate
+            // between the table's two colours so consecutive frames genuinely differ.
+            let pixel = frame % 2
+            bytes += [0x02, 0x02, UInt8(4 | (pixel << 3) | 0x40), 0x01, 0x00]
+        }
+        if terminator {
+            bytes += [0x21, 0xF9, 0x04, 0x08]           // disposal 2 — restore to background
+            bytes += le16(delayCentiseconds)
+            bytes += [0x00, 0x00]
+            bytes += [0x2C]
+            bytes += le16(0)
+            bytes += le16(0)
+            bytes += le16(1)
+            bytes += le16(1)
+            bytes += [0x00]
+            bytes += [0x02, 0x02, 0x44, 0x01, 0x00]
+        }
+        bytes += [0x3B]
+        return Data(bytes)
+    }
+
+    /// A real 24-bit BMP — no alpha channel, the way the corpus authors its sheets.
+    ///
+    /// `encodedImage(type: .bmp)` cannot stand in for one: it encodes an RGBA `CGImage`, so ImageIO
+    /// writes 32bpp with an alpha mask and `kCGImagePropertyHasAlpha` answers true. That is the
+    /// exact input the implicit transparency key (W78) must *skip*, so a fixture built that way
+    /// tests the opposite of what it looks like it tests.
+    ///
+    /// `rows` are authored top-down here and written bottom-up, as BMP stores them.
+    static func trueColor24Bitmap(width: Int, height: Int, rows: [[(UInt8, UInt8, UInt8)]]) -> Data {
+        func le32(_ value: UInt32) -> Data {
+            Data([UInt8(value & 0xFF), UInt8((value >> 8) & 0xFF),
+                  UInt8((value >> 16) & 0xFF), UInt8((value >> 24) & 0xFF)])
+        }
+        let stride = ((width * 24 + 31) / 32) * 4
+        var pixels = Data()
+        for row in rows.reversed() {
+            for pixel in row { pixels.append(contentsOf: [pixel.2, pixel.1, pixel.0]) }
+            pixels.append(Data(repeating: 0, count: stride - row.count * 3))
+        }
+        let pixelOffset = 14 + 40
+        var data = Data([0x42, 0x4D])
+        data.append(le32(UInt32(pixelOffset + pixels.count)))
+        data.append(le32(0))
+        data.append(le32(UInt32(pixelOffset)))
+        data.append(le32(40))
+        data.append(le32(UInt32(bitPattern: Int32(width))))
+        data.append(le32(UInt32(bitPattern: Int32(height))))
+        data.append(contentsOf: [1, 0, 24, 0])
+        data.append(le32(0))
+        data.append(le32(UInt32(pixels.count)))
+        data.append(le32(2835)); data.append(le32(2835))
+        data.append(le32(0)); data.append(le32(0))
+        data.append(pixels)
+        return data
+    }
+
+    static func rgba(_ image: CGImage, x: Int, yFromTop: Int) -> [UInt8] {
+        let width = image.width, height = image.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        bytes.withUnsafeMutableBytes { buffer in
+            let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                    | CGImageAlphaInfo.premultipliedLast.rawValue)!
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        let offset = (yFromTop * width + x) * 4
+        let alpha = bytes[offset + 3]
+        guard alpha > 0, alpha < 255 else { return Array(bytes[offset..<(offset + 4)]) }
+        func straight(_ value: UInt8) -> UInt8 {
+            UInt8(min(255, (Int(value) * 255 + Int(alpha) / 2) / Int(alpha)))
+        }
+        return [straight(bytes[offset]), straight(bytes[offset + 1]), straight(bytes[offset + 2]), alpha]
+    }
+}
+
+final class WMPMemoryResourceProvider: WMPResourceProviding {
+    let resourcePaths: [String]
+    private let resources: [String: Data]
+    private let canonical: [String: String]
+
+    init(_ resources: [String: Data]) {
+        self.resources = resources
+        resourcePaths = resources.keys.sorted(by: WMPPath.less)
+        canonical = Dictionary(uniqueKeysWithValues: resources.keys.map { (WMPPath.fold($0), $0) })
+    }
+
+    func canonicalPath(for path: String) -> String? { canonical[WMPPath.fold(path)] }
+    func data(for path: String) throws -> Data {
+        guard let canonicalPath = canonicalPath(for: path), let data = resources[canonicalPath] else {
+            throw WMPFailure(WMPDiagnostic(.resourceMissing, "Missing \(path)"))
+        }
+        return data
+    }
+}

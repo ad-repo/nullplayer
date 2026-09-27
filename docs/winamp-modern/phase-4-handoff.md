@@ -12,7 +12,7 @@ Read first:
 - `docs/winamp-modern/phase-0a-decision-record.md` — provenance and security limits
 - `docs/winamp-modern/phase-0b-decision-record.md` — measured target capabilities and component topology
 - `docs/winamp-modern/phase-3-handoff.md` — renderer, MAKI, host, and lifecycle contracts inherited by Phase 4
-- `TASKS.md` — local task ledger; Phase 4 is complete and Phase 5 is next
+- `WINAMP5_TASKS.md` — local task ledger; Phase 4 is complete and Phase 5 is next
 
 ## 1. Phase 4 outcome and boundary
 

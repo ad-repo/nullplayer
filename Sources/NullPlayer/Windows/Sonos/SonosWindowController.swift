@@ -132,6 +132,9 @@ final class SonosWindowView: NSView {
                                                name: .doubleSizeDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(layoutChanged),
                                                name: .connectedWindowHighlightDidChange, object: nil)
+        // A `.wmz` palette arrives after the player renders, so the window first draws before it exists.
+        NotificationCenter.default.addObserver(self, selector: #selector(hostedSurfaceStyleDidChange),
+                                               name: .hostedSurfaceStyleDidChange, object: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -142,6 +145,10 @@ final class SonosWindowView: NSView {
     }
 
     @objc private func layoutChanged() { needsLayout = true; needsDisplay = true }
+    @objc private func hostedSurfaceStyleDidChange() {
+        guard WindowManager.shared.isRunningWMPUI else { return }
+        layoutChanged()
+    }
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
@@ -258,6 +265,13 @@ final class SonosWindowView: NSView {
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    /// A titleless WMP window's close sits over the status line, so it has to win against it.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = superview.map { convert(point, from: $0) } ?? point
+        if hostedContext == nil, SkinnedSurfaceChrome.hidesPaletteTitleBar,
+           chrome.closeRect(bounds).contains(local) { return self }
+        return super.hitTest(point)
+    }
     override func mouseDown(with event: NSEvent) {
         if let hostedContext { hostedDrag.prime(event, context: hostedContext); return }
         let point = convert(event.locationInWindow, from: nil)

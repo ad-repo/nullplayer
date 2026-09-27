@@ -13,7 +13,7 @@ Read first:
 - `skills/winamp-modern-skin-guide/compatibility.md` — supported surface, the per-skin routing table,
   and what is deliberately inert
 - `skills/winamp-modern-skin-guide/manual-qa-checklist.md` — **§4 is the open gate** (see §5 below)
-- `TASKS.md` §13 — every step, with what was measured
+- `WINAMP5_TASKS.md` §13 — every step, with what was measured
 - `~/.claude/plans/i-want-to-support-frolicking-rabbit.md` Appendix A — the risk register, now with
   R1/R4/R6 closed and R3 partly closed
 

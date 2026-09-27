@@ -311,6 +311,17 @@ The Original skin system renders multiple windows:
 
 All windows share palette colors, glow, grid, and font settings. Customize individual windows by prefixing element IDs (e.g., `spectrum_titlebar` vs `titlebar`).
 
+## Debugging a live defect
+
+For anything that only reproduces on screen, read **`skills/live-ui-testing`** before diagnosing —
+instrument first, drive the app yourself, and measure what is drawn rather than reasoning about it.
+Its reference implementation is `winamp-modern-skin-guide/reference/harness.md`
+§ *Debugging a live defect*.
+
+Two that bite this family in particular: window geometry has no useful armchair form (measure it in
+the running app — `testing` § *Window geometry: measure it, never reason about it*), and sprite
+coordinates are top-left while macOS is bottom-left, so an origin bug looks like a sizing bug.
+
 ## Key Source Files
 
 | File | Purpose |

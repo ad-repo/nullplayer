@@ -1,0 +1,111 @@
+import CoreGraphics
+import Foundation
+
+enum WMPColorKey {
+    /// The colour WMP keys out of a bitmap that carries no alpha channel and whose node declares no
+    /// key of its own. It is not written in any markup — it is the default the corpus is authored
+    /// against, and the authors say so by hand: **4,979 of the 6,076 `transparencyColor`
+    /// declarations in the 179-archive corpus (82%, 142 skins) are exactly this colour**, and the
+    /// skins in the W78 class key some siblings and leave the rest to it (`Halo 2` keys `mainBack`,
+    /// `shutterSub` and `shutterStatic` `#ff00ff` and leaves `m_trans_no.png` bare; `Main_Street`
+    /// authors one `transparencyColor` in the whole file). Measure the class with
+    /// `scripts/wmp_implicit_key.py` before widening this rule: **527 references across 66 skins
+    /// and 437 sprites** is what it covers today.
+    ///
+    /// **The sprite's own alpha channel does not veto it (W78a).** W78 shipped with that veto, on
+    /// the reasoning that a PNG or GIF which authored transparency has already said what is
+    /// see-through. The corpus says otherwise: `scripts/wmp_implicit_key.py --alpha` measures the
+    /// complement W78 left behind — 76 references across 21 skins and 62 sprites — and **11 of
+    /// those nodes carry two states of the same button, one exported without an alpha channel and
+    /// one with, holding pixel-for-pixel identical magenta** (`Half-Life_2`'s `m_pause_no.png` /
+    /// `m_pause_hov.gif`, both 1,394; `Harry_Potter…`'s `bottomgroup_no.png` / `bottomgroup_hover.gif`,
+    /// both 5,866). Under the veto the normal state keyed and the hover state did not, so the button
+    /// turned magenta under the pointer — which no author wrote. The alpha channel is an export
+    /// format, not a statement about the key.
+    static let implicitTransparency = WMPColor(red: 255, green: 0, blue: 255)
+
+    /// JPEG chroma quantisation turns a solid #FF00FF matte into a short blue-channel ramp. A 64
+    /// component window clears the whole matte without reaching normal artwork.
+    static let jpegComponentTolerance: UInt8 = 64
+
+    /// A BMP key matches at the 5 bits per channel of a 16-bit (RGB555) Windows display, which
+    /// is what these skins were authored and keyed on. `YIL!OMA2K` declares `#6699FF` and its
+    /// `ySpeakers 1.bmp` and `jButtonsFlat.bmp` hold `#639CFF` — exactly `#6699FF` through
+    /// RGB555 — so an exact compare drew both speakers as solid blue slabs.
+    ///
+    /// **It matches the key's 16-bit representations, not its whole 5-bit bucket.** A display
+    /// stores a channel either truncated or bit-replicated, and nothing else: `#66` becomes `#60`
+    /// or `#63`, and black stays exactly black. The bucket compare also cleared every channel 0-7
+    /// under a black key, and `gnome` paints its face on a flat `(4,4,4)` backing — 24,000 pixels
+    /// of `gnome3a.bmp` went transparent.
+    static let highColorShift = 3
+
+    static func isHighColorMatch(_ key: UInt8, _ value: UInt8) -> Bool {
+        let truncated = (key >> highColorShift) << highColorShift
+        return value == key || value == truncated || value == truncated | (key >> 5)
+    }
+
+    /// Replaces only pixels whose un-premultiplied RGB matches the key. JPEG has no lossless RGB
+    /// representation, so a JPEG colour key permits the bounded compression fringe around its key;
+    /// a BMP key matches at `highColorShift`; PNG and GIF stay exact. Non-matching pixels keep their original alpha, including partial
+    /// alpha from PNG/GIF sources.
+    static func applying(_ key: WMPColor, to image: CGImage) throws -> CGImage {
+        try applying([key], to: image)
+    }
+
+    /// A node may declare more than one key — `clippingColor` cuts the shape of a subview out of its
+    /// own artwork while `transparencyColor` keys the drawing inside it, and the two are different
+    /// colours in most of the corpus. Every declared key clears in one pass.
+    static func applying(_ keys: [WMPColor], to image: CGImage,
+                         componentTolerance: UInt8 = 0,
+                         matchesAtHighColor: Bool = false) throws -> CGImage {
+        guard !keys.isEmpty else { return image }
+        let width = image.width, height = image.height
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
+            | CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let context = CGContext(data: nil, width: width, height: height,
+                                      bitsPerComponent: 8, bytesPerRow: width * 4,
+                                      space: colorSpace, bitmapInfo: bitmapInfo) else {
+            throw WMPFailure(WMPDiagnostic(.imageDecodeFailed,
+                "Unable to allocate a bounded color-key surface."))
+        }
+        context.setBlendMode(.copy)
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let bytes = context.data?.assumingMemoryBound(to: UInt8.self) else {
+            throw WMPFailure(WMPDiagnostic(.imageDecodeFailed,
+                "Unable to access color-key pixels."))
+        }
+        for index in 0..<(width * height) {
+            let offset = index * 4
+            let alpha = bytes[offset + 3]
+            guard alpha > 0 else { continue }
+            let red = unpremultiply(bytes[offset], alpha: alpha)
+            let green = unpremultiply(bytes[offset + 1], alpha: alpha)
+            let blue = unpremultiply(bytes[offset + 2], alpha: alpha)
+            if keys.contains(where: { key in
+                matchesAtHighColor
+                    ? isHighColorMatch(key.red, red) && isHighColorMatch(key.green, green)
+                        && isHighColorMatch(key.blue, blue)
+                    : abs(Int(key.red) - Int(red)) <= Int(componentTolerance)
+                    && abs(Int(key.green) - Int(green)) <= Int(componentTolerance)
+                    && abs(Int(key.blue) - Int(blue)) <= Int(componentTolerance)
+            }) {
+                bytes[offset] = 0
+                bytes[offset + 1] = 0
+                bytes[offset + 2] = 0
+                bytes[offset + 3] = 0
+            }
+        }
+        guard let result = context.makeImage() else {
+            throw WMPFailure(WMPDiagnostic(.imageDecodeFailed,
+                "Unable to create a color-keyed image."))
+        }
+        return result
+    }
+
+    private static func unpremultiply(_ component: UInt8, alpha: UInt8) -> UInt8 {
+        guard alpha < 255 else { return component }
+        return UInt8(min(255, (Int(component) * 255 + Int(alpha) / 2) / Int(alpha)))
+    }
+}

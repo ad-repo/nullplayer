@@ -90,12 +90,38 @@ class PlaylistView: NSView {
 
     // MARK: - Layout Constants
 
-    private struct Layout {
-        static let titleBarHeight: CGFloat = 20
-        static let bottomBarHeight: CGFloat = SkinElements.Playlist.bottomHeight
-        static let scrollbarWidth: CGFloat = 0   // No scrollbar - users scroll with trackpad/wheel
-        static let leftBorder: CGFloat = 12
-        static let rightBorder: CGFloat = 12
+    private struct PlaylistChrome {
+        let titleBarHeight: CGFloat
+        let bottomBarHeight: CGFloat
+        let leftBorder: CGFloat
+        let rightBorder: CGFloat
+
+        static let classic = PlaylistChrome(titleBarHeight: 20,
+                                            bottomBarHeight: SkinElements.Playlist.bottomHeight,
+                                            leftBorder: 12, rightBorder: 12)
+    }
+
+    /// The window frame the hosting skin lends this playlist, when it lends one — a `.wmz` skin that
+    /// builds its own panels out of an eight-piece ring (`WMPHostedFrameTemplate`). Asked for at the
+    /// *effective* size, which is what the whole view is laid out and drawn at.
+    private var hostedFrame: SkinnedSurfaceFrameArtwork? {
+        WindowManager.shared.hostedSurfaceFrameArtwork(for: effectiveWindowSize)
+    }
+
+    /// Where the chrome ends and the track list begins. The borrowed frame's own client hole
+    /// wherever there is one, so the list, its hit testing and its scrolling all move together.
+    private var Layout: PlaylistChrome {
+        guard let metrics = hostedFrame?.metrics else {
+            // A `.wmz` session draws the unskinned playlist without its title bar: the top edge is
+            // a border as thin as the bottom one (`SkinnedSurfaceChrome.hidesPaletteTitleBar`).
+            guard SkinnedSurfaceChrome.hidesPaletteTitleBar, !isEmbedded else { return .classic }
+            let rim = SkinnedSurfaceChrome.glossBorder
+            return PlaylistChrome(titleBarHeight: rim, bottomBarHeight: rim, leftBorder: rim, rightBorder: rim)
+        }
+        return PlaylistChrome(titleBarHeight: metrics.titleHeight,
+                              bottomBarHeight: metrics.bottomBorder,
+                              leftBorder: metrics.leftBorder,
+                              rightBorder: metrics.rightBorder)
     }
 
     // MARK: - Initialization
@@ -138,8 +164,8 @@ class PlaylistView: NSView {
 
         // A `.wal` colour-theme switch recolours this window when it is a Winamp Modern fallback
         // (Phase 16); the style is re-derived on each draw, so a repaint is the whole job.
-        NotificationCenter.default.addObserver(self, selector: #selector(winampModernThemeDidChange),
-                                               name: .winampModernThemeDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(hostedSurfaceStyleDidChange),
+                                               name: .hostedSurfaceStyleDidChange, object: nil)
 
         // Observe playback state changes to restart timer when needed
         NotificationCenter.default.addObserver(self, selector: #selector(playbackStateDidChange),
@@ -439,12 +465,11 @@ class PlaylistView: NSView {
 
     /// Derive render scale from the main window width so point rounding does not
     /// introduce fractional skin-space tile boundaries in playlist chrome.
+    /// The same number `playlistChromeScale` answers — the window's chrome and its rows have to be
+    /// drawn at one scale — which is where the `.wmz` exception to deriving it from the main window
+    /// lives.
     private var scaleFactor: CGFloat {
-        if let mainWidth = WindowManager.shared.mainWindowController?.window?.frame.width,
-           mainWidth > 0 {
-            return mainWidth / Skin.baseMainSize.width
-        }
-        return Skin.scaleFactor * WindowManager.shared.classicScaleMultiplier
+        WindowManager.shared.playlistChromeScale
     }
 
     /// Get the original window size (unscaled base size)
@@ -519,8 +544,11 @@ class PlaylistView: NSView {
 
         // Draw window frame using skin sprites (SkinRenderer tiles to fill the space) — or, for a
         // `.wal` skin's fallback playlist, the flat palette chrome (Phase 16).
-        let style = WindowManager.shared.winampModernSurfaceStyle
-        if let style {
+        let style = WindowManager.shared.hostedSurfaceStyle
+        if let style, let artwork = hostedFrame {
+            drawSkinLentChrome(style: style, artwork: artwork, context: context,
+                               bounds: drawBounds, isActive: isActive)
+        } else if let style {
             drawWinampModernChrome(style: style, context: context, bounds: drawBounds, isActive: isActive)
         } else {
             renderer.drawPlaylistWindow(in: context, bounds: drawBounds, isActive: isActive,
@@ -543,7 +571,15 @@ class PlaylistView: NSView {
 
     // MARK: - Winamp Modern chrome (Phase 16)
 
-    @objc private func winampModernThemeDidChange() {
+    @objc private func hostedSurfaceStyleDidChange() {
+        // **A borrowed frame moves the content hole, and a hole that moved is a layout, not a
+        // repaint (W220).** This notification is the only edit some of these windows ever get: the
+        // ring is derived asynchronously for the window's own size, so it lands *after* the view
+        // has laid out against the classic fallback metrics. `needsDisplay` alone redraws the
+        // chrome around subviews still framed for the old hole — on `Visualizations` that is the
+        // whole GL view, which keeps the full window and buries every borrowed piece under the
+        // visualization. Marking the layout dirty costs nothing where a view has no subviews.
+        needsLayout = true
         needsDisplay = true
     }
 
@@ -554,6 +590,13 @@ class PlaylistView: NSView {
     /// bottom-bar button is painted in the box `hitTestBottomButton` already owns.
     private func drawWinampModernChrome(style: WinampModernSurfaceStyle, context: CGContext,
                                         bounds: NSRect, isActive: Bool) {
+        // Titleless in WMP: the gloss frame, and the close is the corner hit area alone.
+        if SkinnedSurfaceChrome.hidesPaletteTitleBar, !isEmbedded {
+            SkinnedSurfaceChrome.drawGlossFrame(in: context, bounds: bounds, style: style,
+                                                isActive: isActive, fillGround: true)
+            return
+        }
+
         let titleHeight = Layout.titleBarHeight
         let bottomHeight = Layout.bottomBarHeight
         let leftBorder = Layout.leftBorder
@@ -598,6 +641,48 @@ class PlaylistView: NSView {
         // ADD/REM/SEL row and mini transport were removed long ago (`drawBottomBarInfo` and
         // `drawPlaybackTime` are dead code, and `hitTestBottomButton`'s boxes are written for a 38px
         // bar that no longer exists). The bar is a border strip in both looks.
+    }
+
+    /// The playlist wearing the hosting skin's own window ring.
+    ///
+    /// Same title and close control as the flat chrome above, in the band over the ring's client
+    /// hole; the difference is that the frame is a picture the skin drew rather than four bands
+    /// blended from its palette. The client hole is filled first and the ring drawn over it, so the
+    /// rounded and keyed-out corners this artwork is full of still show what is behind them.
+    private func drawSkinLentChrome(style: WinampModernSurfaceStyle,
+                                    artwork: SkinnedSurfaceFrameArtwork,
+                                    context: CGContext, bounds: NSRect, isActive: Bool) {
+        let content = artwork.scaled(to: bounds.size).contentRect
+        context.setFillColor(style.background.cgColor)
+        context.fill(content)
+
+        context.saveGState()
+        context.translateBy(x: 0, y: bounds.height)
+        context.scaleBy(x: 1, y: -1)
+        context.interpolationQuality = artwork.wasScaledToFit ? .high : .none
+        context.draw(artwork.image, in: CGRect(origin: .zero, size: bounds.size))
+        context.restoreGState()
+
+        let caption = max(0, content.minY)
+        guard caption >= WinampModernSurfaceStyle.classicCharHeight else { return }
+        let titleColor = isActive ? style.legibleText(style.currentText, on: style.background)
+                                  : style.legibleDimText(on: style.background)
+        let titleScale: CGFloat = 1.6
+        let title = "PLAYLIST"
+        let titleWidth = WinampModernSurfaceStyle.measuredWidth(title, scale: titleScale)
+        WinampModernSurfaceStyle.drawText(
+            title,
+            at: NSPoint(x: (bounds.width - titleWidth) / 2,
+                        y: (caption - WinampModernSurfaceStyle.classicCharHeight * titleScale) / 2),
+            scale: titleScale, color: titleColor, in: context)
+        if !WindowManager.shared.hideTitleBars {
+            drawWinampModernCloseGlyph(style: style, context: context,
+                                       // The window's own close box, where `hitTestCloseButton`
+                                       // reads it — the ring changes what is behind it, not where
+                                       // it is.
+                                       rect: NSRect(x: bounds.width - 20, y: 0, width: 20, height: 14),
+                                       color: titleColor)
+        }
     }
 
     private func drawWinampModernCloseGlyph(style: WinampModernSurfaceStyle, context: CGContext,
@@ -1118,7 +1203,14 @@ class PlaylistView: NSView {
     private func hitTestCloseButton(at skinPoint: NSPoint) -> Bool {
         if isEmbedded || WindowManager.shared.hideTitleBars { return false }  // embedded/docked-hidden: no close button
         let effectiveSize = effectiveWindowSize
-        let closeRect = NSRect(x: effectiveSize.width - 20, y: 0, width: 20, height: 14)
+        // 20x14 in our own chrome; under a borrowed ring the column spans the skin's caption band
+        // and sits inside its right border, which is where the shared painter draws it (W178).
+        let bounds = NSRect(origin: .zero, size: effectiveSize)
+        let closeRect = WindowManager.shared.hostedSurfaceFrameArtwork(for: effectiveSize) == nil
+            && !SkinnedSurfaceChrome.hidesPaletteTitleBar
+            ? NSRect(x: effectiveSize.width - 20, y: 0, width: 20, height: 14)
+            : SkinnedSurfaceChrome.closeButtonRect(in: bounds, captionHeight: Layout.titleBarHeight,
+                                                   width: 20)
         return closeRect.contains(skinPoint)
     }
 

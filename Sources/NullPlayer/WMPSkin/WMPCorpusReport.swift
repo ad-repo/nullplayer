@@ -1,0 +1,367 @@
+import CryptoKit
+import Foundation
+
+struct WMPCorpusArchiveFacts: Hashable, Codable {
+    let entryCount: Int
+    let compressedBytes: UInt64
+    let uncompressedBytes: UInt64
+    let maximumCompressionRatio: Double
+    let definitionPath: String
+    let textEncoding: WMPTextEncoding
+    let viewCount: Int
+}
+
+struct WMPCorpusRenderMetrics: Hashable, Codable {
+    let viewID: String
+    let canvasSize: WMPSize
+    let resolvedNodeCount: Int
+    let unresolvedNodeCount: Int
+    let commandCount: Int
+    let hitTargetCount: Int
+    let widgetCount: Int
+    let firstRenderMilliseconds: Double
+    let warmRenderMilliseconds: Double
+    let twoXRenderMilliseconds: Double
+    let resizeBuildMilliseconds: Double
+    let hitTestMicroseconds: Double
+    let repaintAreaRatio: Double
+    let peakCacheBytes: Int
+}
+
+enum WMPCorpusConfidence: String, Hashable, Codable {
+    case high
+    case medium
+    case low
+    case rejected
+}
+
+struct WMPCorpusSkinReport: Codable {
+    let filename: String
+    let sha256: String
+    let loadMilliseconds: Double
+    let warmLoadMilliseconds: Double?
+    let archive: WMPCorpusArchiveFacts?
+    let compatibility: WMPCompatibilityReport?
+    let unknownTags: [WMPInventoryItem]
+    let unknownAttributes: [WMPInventoryItem]
+    let unknownMembers: [WMPInventoryItem]
+    let unknownEvents: [WMPInventoryItem]
+    let renderMetrics: [WMPCorpusRenderMetrics]
+    let diagnostics: [WMPDiagnostic]
+    let confidence: WMPCorpusConfidence
+}
+
+struct WMPCorpusReport: Codable {
+    let formatVersion: Int
+    let generatedAt: Date
+    let skinCount: Int
+    let acceptedCount: Int
+    let rejectedCount: Int
+    let skins: [WMPCorpusSkinReport]
+}
+
+/// Opt-in analysis for user-supplied skins. The report contains engine facts and measurements only:
+/// it never writes archives, artwork, screenshots, or render buffers.
+struct WMPCorpusReportHarness: @unchecked Sendable {
+    static let formatVersion = 1
+    private let loader: WMPSkinLoader
+
+    init(loader: WMPSkinLoader = WMPSkinLoader()) {
+        self.loader = loader
+    }
+
+    func analyze(urls: [URL]) async -> WMPCorpusReport {
+        var reports: [WMPCorpusSkinReport] = []
+        for url in urls.sorted(by: { WMPPath.less($0.lastPathComponent, $1.lastPathComponent) }) {
+            reports.append(await analyze(url: url))
+        }
+        return WMPCorpusReport(formatVersion: Self.formatVersion, generatedAt: Date(),
+            skinCount: reports.count, acceptedCount: reports.filter { $0.archive != nil }.count,
+            rejectedCount: reports.filter { $0.archive == nil }.count, skins: reports)
+    }
+
+    func writeReport(for urls: [URL], to outputURL: URL) async throws -> WMPCorpusReport {
+        let report = await analyze(urls: urls)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        let data = try encoder.encode(report)
+        try await Task.detached(priority: .utility) {
+            try FileManager.default.createDirectory(
+                at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: outputURL, options: .atomic)
+        }.value
+        return report
+    }
+
+    private func analyze(url: URL) async -> WMPCorpusSkinReport {
+        let digest = (try? await Task.detached(priority: .utility) {
+            try Self.hashFile(at: url)
+        }.value) ?? "unavailable"
+        let started = CFAbsoluteTimeGetCurrent()
+        do {
+            let skin = try await loader.load(from: url)
+            let loadMilliseconds = Self.elapsed(since: started)
+            let warmStarted = CFAbsoluteTimeGetCurrent()
+            _ = try await loader.load(from: url)
+            let warmLoadMilliseconds = Self.elapsed(since: warmStarted)
+            let facts = Self.archiveFacts(skin)
+            var metrics: [WMPCorpusRenderMetrics] = []
+            var reportDiagnostics = skin.diagnostics
+            for view in skin.views {
+                do {
+                    metrics.append(try await Self.measure(viewID: view.id, skin: skin))
+                } catch let failure as WMPFailure {
+                    reportDiagnostics.append(contentsOf: failure.diagnostics)
+                } catch {
+                    reportDiagnostics.append(WMPDiagnostic(.renderFailed,
+                        "Report measurement failed for view '\(view.id)': \(error.localizedDescription)"))
+                }
+            }
+            let unknownTags = Self.unknown(skin.compatibilityReport.tags, supported: Self.supportedTags)
+            let unknownAttributes = Self.unknown(skin.compatibilityReport.attributes,
+                                                  supported: Self.supportedAttributes,
+                                                  permitsEventPrefix: true)
+            let unknownMembers = skin.compatibilityReport.members.filter { !Self.supports(memberPath: $0.name, in: skin.graph) }
+            let unknownEvents = Self.unknown(skin.compatibilityReport.events, supported: Self.supportedEvents)
+            let confidence = Self.confidence(unknownTags: unknownTags, unknownAttributes: unknownAttributes,
+                unknownMembers: unknownMembers, unknownEvents: unknownEvents,
+                diagnostics: reportDiagnostics, metrics: metrics, viewCount: skin.views.count)
+            return WMPCorpusSkinReport(filename: url.lastPathComponent, sha256: digest,
+                loadMilliseconds: loadMilliseconds, warmLoadMilliseconds: warmLoadMilliseconds,
+                archive: facts, compatibility: skin.compatibilityReport,
+                unknownTags: unknownTags, unknownAttributes: unknownAttributes,
+                unknownMembers: unknownMembers, unknownEvents: unknownEvents,
+                renderMetrics: metrics, diagnostics: reportDiagnostics, confidence: confidence)
+        } catch let failure as WMPFailure {
+            return WMPCorpusSkinReport(filename: url.lastPathComponent, sha256: digest,
+                loadMilliseconds: Self.elapsed(since: started), warmLoadMilliseconds: nil,
+                archive: nil, compatibility: nil,
+                unknownTags: [], unknownAttributes: [], unknownMembers: [], unknownEvents: [],
+                renderMetrics: [], diagnostics: failure.diagnostics, confidence: .rejected)
+        } catch {
+            return WMPCorpusSkinReport(filename: url.lastPathComponent, sha256: digest,
+                loadMilliseconds: Self.elapsed(since: started), warmLoadMilliseconds: nil,
+                archive: nil, compatibility: nil,
+                unknownTags: [], unknownAttributes: [], unknownMembers: [], unknownEvents: [],
+                renderMetrics: [], diagnostics: [WMPDiagnostic(.invalidArchive,
+                    "Corpus analysis failed: \(error.localizedDescription)")], confidence: .rejected)
+        }
+    }
+
+    private static func archiveFacts(_ skin: WMPLoadedSkin) -> WMPCorpusArchiveFacts {
+        let compressed = skin.archive.entries.reduce(UInt64(0)) { $0 &+ $1.compressedSize }
+        let uncompressed = skin.archive.entries.reduce(UInt64(0)) { $0 &+ $1.uncompressedSize }
+        let ratio = skin.archive.entries.reduce(0.0) { result, entry in
+            guard entry.uncompressedSize > 0 else { return result }
+            let value = entry.compressedSize == 0 ? .infinity
+                : Double(entry.uncompressedSize) / Double(entry.compressedSize)
+            return max(result, value)
+        }
+        return WMPCorpusArchiveFacts(entryCount: skin.archive.entries.count,
+            compressedBytes: compressed, uncompressedBytes: uncompressed,
+            maximumCompressionRatio: ratio.isFinite ? ratio : Double(WMPPhase0Limits.entryCompressionRatio),
+            definitionPath: skin.definitionPath, textEncoding: skin.textEncoding,
+            viewCount: skin.views.count)
+    }
+
+    private static func measure(viewID: String, skin: WMPLoadedSkin) async throws -> WMPCorpusRenderMetrics {
+        let store = WMPImageStore(provider: skin.archive)
+        let builder = WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+        let scene = try await builder.build(viewID: viewID)
+        let renderer = WMPRenderer(imageStore: store)
+        let first = try await renderer.render(scene: scene, backingScale: 1)
+        let warm = try await renderer.render(scene: scene, backingScale: 1)
+        let twoX = try await renderer.render(scene: scene, backingScale: 2)
+
+        let resizeStarted = CFAbsoluteTimeGetCurrent()
+        let proposed = scene.resizeLimits.clamp(WMPSize(width: scene.canvasSize.width + 64,
+                                                         height: scene.canvasSize.height + 48))
+        _ = try await builder.build(viewID: viewID, requestedSize: proposed)
+        let resizeMilliseconds = elapsed(since: resizeStarted)
+
+        let hitStarted = CFAbsoluteTimeGetCurrent()
+        let tester = WMPHitTester(hits: scene.hits)
+        let samples = 1_000
+        for index in 0..<samples {
+            let x = scene.canvasSize.width * CGFloat((index * 37) % samples) / CGFloat(samples)
+            let y = scene.canvasSize.height * CGFloat((index * 61) % samples) / CGFloat(samples)
+            _ = tester.hitTest(WMPPoint(x: x, y: y))
+        }
+        let hitMicroseconds = elapsed(since: hitStarted) * 1_000 / Double(samples)
+        let canvasArea = Double(scene.canvasSize.width * scene.canvasSize.height)
+        let dirtyArea = scene.dirtyBounds.map { Double(max(0, $0.width) * max(0, $0.height)) } ?? canvasArea
+        return WMPCorpusRenderMetrics(viewID: viewID, canvasSize: scene.canvasSize,
+            resolvedNodeCount: scene.metrics.resolvedNodeCount,
+            unresolvedNodeCount: scene.metrics.unresolvedNodeCount,
+            commandCount: scene.commands.count, hitTargetCount: scene.hits.count,
+            widgetCount: scene.widgets.count,
+            firstRenderMilliseconds: first.renderMilliseconds,
+            warmRenderMilliseconds: warm.renderMilliseconds,
+            twoXRenderMilliseconds: twoX.renderMilliseconds,
+            resizeBuildMilliseconds: resizeMilliseconds,
+            hitTestMicroseconds: hitMicroseconds,
+            repaintAreaRatio: canvasArea > 0 ? min(1, dirtyArea / canvasArea) : 0,
+            peakCacheBytes: store.metrics.peakCacheBytes)
+    }
+
+    private static func elapsed(since start: CFAbsoluteTime) -> Double {
+        (CFAbsoluteTimeGetCurrent() - start) * 1_000
+    }
+
+    private static func hashFile(at url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while let chunk = try handle.read(upToCount: 1_048_576), !chunk.isEmpty {
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func unknown(_ items: [WMPInventoryItem], supported: Set<String>,
+                                permitsEventPrefix: Bool = false) -> [WMPInventoryItem] {
+        items.filter {
+            let name = $0.name.lowercased()
+            return !supported.contains(name) && !(permitsEventPrefix && name.hasPrefix("on"))
+        }
+    }
+
+    /// Internal for the same reason as `supportedTags` and `supportedEvents`: the probe harness
+    /// classifies the same member paths and must not keep its own copy of this. It did, and the
+    /// copy had already dropped the `mediacenter` case (W215).
+    ///
+    /// `graph` is the skin the path was authored in. `metadata`, `vis`, `ipl` and `ddpl` are not
+    /// host globals — `bindHostGlobals` binds none of them — so where the skin authors an element
+    /// with one of those ids, that element is what the script reaches, and its members are element
+    /// members. Without this, `<TEXT id="metadata">` (108 archives, the `updateMetadata()` idiom)
+    /// filed 463 false `metadata.*` unknowns and pointed the QuickSilver investigation at the
+    /// script (W315). `eq` is left out on purpose: it is bound as a global.
+    static func supports(memberPath path: String, in graph: WMPObjectGraph? = nil) -> Bool {
+        let parts = path.lowercased().split(separator: ".").map(String.init)
+        guard parts.count >= 2 else { return false }
+        if ["metadata", "vis", "ipl", "ddpl"].contains(parts[0]),
+           graph?.nodes(id: parts[0]).isEmpty == false,
+           WMPJScriptCompatibility.supports(object: "element", member: parts[1]) {
+            return true
+        }
+        let object: String
+        let member: String
+        switch parts[0] {
+        case "player" where parts.count >= 3:
+            switch parts[1] {
+            case "controls": object = "controls"; member = parts[2]
+            case "settings": object = "settings"; member = parts[2]
+            case "currentmedia": object = "media"; member = parts[2]
+            case "currentplaylist": object = "playlist"; member = parts[2]
+            case "network": object = "network"; member = parts[2]
+            default: object = "player"; member = parts[1]
+            }
+        case "metadata": object = "metadata"; member = parts[1]
+        case "theme": object = "theme"; member = parts[1]
+        case "view": object = "view"; member = parts[1]
+        case "eq": object = "eq"; member = parts[1]
+        case "mediacenter": object = "mediacenter"; member = parts[1]
+        case "vis": object = "vis"; member = parts[1]
+        case "ipl", "ddpl": object = "playlist"; member = parts[1]
+        default:
+            object = parts[0]; member = parts[1]
+            if WMPJScriptCompatibility.supports(object: "element", member: member) { return true }
+        }
+        return WMPJScriptCompatibility.supports(object: object, member: member)
+    }
+
+    private static func confidence(unknownTags: [WMPInventoryItem], unknownAttributes: [WMPInventoryItem],
+                                   unknownMembers: [WMPInventoryItem], unknownEvents: [WMPInventoryItem],
+                                   diagnostics: [WMPDiagnostic], metrics: [WMPCorpusRenderMetrics],
+                                   viewCount: Int) -> WMPCorpusConfidence {
+        guard metrics.count == viewCount, !metrics.isEmpty,
+              !diagnostics.contains(where: { $0.severity == .error }) else { return .low }
+        let unknownDemand = unknownTags.reduce(0) { $0 + $1.count }
+            + unknownAttributes.reduce(0) { $0 + $1.count }
+            + unknownMembers.reduce(0) { $0 + $1.count }
+            + unknownEvents.reduce(0) { $0 + $1.count }
+        let unresolved = metrics.reduce(0) { $0 + $1.unresolvedNodeCount }
+        if unknownDemand == 0 && unresolved == 0 { return .high }
+        if unknownTags.isEmpty && unresolved <= metrics.reduce(0, { $0 + $1.resolvedNodeCount }) / 10 {
+            return .medium
+        }
+        return .low
+    }
+
+    /// Internal rather than private, for the same reason as `supportedEvents`: the probe harness
+    /// prints the unknown remainder and must not restate this list. It kept a private copy of its
+    /// own through three phases, drifted to 34 entries against 47, and reported 1,197 uses of
+    /// "unimplemented" tags where the honest number is 258 — measured over the 184-archive corpus.
+    /// `customslider` (403 uses), `effects` (187), `pauseelement` (82) and the `*button` halves of
+    /// the transport pairs (213) were all implemented and all tallied as demand (W215).
+    static let supportedTags: Set<String> = [
+        "theme", "view", "subview", "text", "statustext", "currentpositiontext", "durationtext", "image", "button", "buttongroup", "buttonelement",
+        "slider", "volumeslider", "seekslider", "balanceslider", "playlist", "itemsplaylist", "dropdownplaylist",
+        "customslider", "progressbar",
+        "playelement", "pauseelement", "stopelement", "prevelement", "nextelement",
+        "rewelement", "ffwdelement",
+        "playbutton", "pausebutton", "stopbutton", "prevbutton", "nextbutton", "rewbutton",
+        "ffwdbutton", "mutebutton", "repeatbutton", "returnbutton", "shufflebutton",
+        // `effects` and `customslider` are the corpus's spelling of two surfaces this engine has
+        // hosted since Phase 6 and W101, and neither was in this set — so a skin that draws both
+        // was reported as demanding two unimplemented tags. A tally that is wrong in this direction
+        // ranks work that is already done.
+        "equalizersettings", "popup", "effects", "wmpeffects", "video", "wmpvideo",
+        "player", "network", "script"
+    ]
+
+    private static let supportedAttributes: Set<String> = [
+        "id", "name", "title", "accessiblename", "tooltip", "left", "top", "width", "height",
+        "minwidth", "minheight", "maxwidth", "maxheight", "horizontalalignment", "verticalalignment",
+        "zindex", "visible", "enabled", "sticky", "value", "position", "min", "max", "minvalue",
+        "maxvalue", "image", "background", "backgroundimage", "backgroundcolor", "backgroundtiled",
+        "hoverimage", "downimage", "disabledimage", "mappingimage", "mappingcolor", "transparencycolor",
+        "cropleft", "croptop", "cropwidth", "cropheight", "backgroundcropleft", "backgroundcroptop",
+        "backgroundcropwidth", "backgroundcropheight", "tiled", "fonttype", "fontsize", "fontstyle",
+        "foregroundcolor", "color", "justification", "scriptfile"
+    ]
+
+    /// An event belongs here only when the engine **dispatches** it. Being parsed as a handler is
+    /// not enough — a name added for tidiness makes the tally lie, which is what `onmouseover` and
+    /// `onmouseout` demonstrated: classified by `WMPAttributeParser`, never raised, and correctly
+    /// unknown here until `WMPMainView.setHover` raised both edges (W54). They are dispatched now.
+    /// `onmousemove`, `ondblclick`, `onfocus` and `onblur` are the same shape and are still open,
+    /// so they stay off this list and keep ranking as measured demand.
+    /// Internal rather than private: the probe harness prints the unknown remainder and must not
+    /// restate this list, or the tally and the report can disagree about what is implemented.
+    static let supportedEvents: Set<String> = [
+        "onload", "onclose", "ontimer", "onmousedown", "onmouseup", "onclick", "onchange",
+        "onmouseover", "onmouseout",
+        "onresize", "openstatechange", "playstatechange", "status_onchange", "modechange",
+        "buffering_onchange", "reception_onchange", "viewchange",
+        // Aliases of three of the above, accepted by the one matcher that finds handlers, so a
+        // skin authoring either spelling is dispatched. `value_onchange` is honest here for the
+        // user-driven half only; the host-driven half is open work (W51) and is not claimed by
+        // anything else in the engine.
+        "openstate_onchange", "playstate_onchange", "value_onchange",
+        // The completion callbacks (W55), each with its own dispatch site: `onEndMove` and
+        // `onEndAlphaBlend` are raised by `WMPScriptContext.raiseCompletionHandlers` in the
+        // transaction whose `moveTo`/`alphaBlendTo` landed, `onDragEnd` by `WMPMainView.mouseUp`
+        // when a captured slider is released. `onEndResize` is not listed and not implemented:
+        // zero archives author one, so there is nothing to dispatch it for.
+        "onendmove", "onendalphablend", "ondragend", "onvideostart", "onvideoend",
+        // `onPositionChange`, raised as `change` by `WMPMainView` when the user moves a captured
+        // slider and accepted by `handlers(in:event:)`'s alias set (W56).
+        "onpositionchange",
+        // The keyboard (W53), raised by `WMPMainView.keyDown`/`keyUp` against the focused element
+        // and then the view, with `event.keyCode` bound. `onmousemove`, `ondblclick`, `onfocus` and
+        // `onblur` stay off this list for the reason above: no dispatch site.
+        "onkeydown", "onkeypress", "onkeyup",
+        // The five host-driven ambient attribute handlers (W129), raised by
+        // `WMPMainWindowController.refreshHostState` off the snapshot diff. **The rest of the
+        // `<attribute>_onchange` family is deliberately not listed**: the element-side cascade
+        // raises any attribute a script writes, but a name whose attribute this engine moves only
+        // in part — `textWidth_onchange` not at all, `selectedItem_onchange` from a `<LISTBOX>`
+        // click (W136) but not a `<POPUP>` — must keep ranking as measured demand. Listing it
+        // would drop it out of this tally while still doing nothing, which is the state `onResize`
+        // sat in for three phases.
+        "currentposition_onchange", "currentmedia_onchange", "currentplaylist_onchange",
+        "currenteffecttype_onchange", "currentpreset_onchange"
+    ]
+}

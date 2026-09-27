@@ -1,0 +1,2488 @@
+import AppKit
+import CoreGraphics
+import Foundation
+import XCTest
+@testable import NullPlayer
+
+// MARK: - The probe harness
+//
+// `.wmz` had one opt-in PNG dump and a skipped test, which is how 6,044 lines of engine reached a
+// state where only 4 of 14 corpus archives load and `swift test` stayed green throughout. The
+// `.wal` subsystem paid for the lesson first: *a vertical-flip and a wrong crop origin survived
+// 490+ green tests because nothing ever rendered a frame.* Structural cleanliness measures almost
+// nothing.
+//
+// So this file is the instrument, not a test of the engine. It prints one machine-readable line per
+// measured fact, keyed by view, inside a `SKIN <file.wmz>` block, and `scripts/wmp_skin_census.sh`
+// and `scripts/wmp_render_sweep.sh` parse those lines. Every flag is documented once, canonically,
+// in `skills/wmp-skin-guide/reference/harness.md` — add a flag there in the same change that adds
+// it here, and never restate a command anywhere else.
+//
+//   WMP_SKIN=<file-or-directory>   the archive, or a directory swept in one process invocation
+//   WMP_RENDER_DUMP=<dir>          write every view to PNG, per-skin subdirectory in a sweep
+//   WMP_RENDER_PROBE=<view|all>    every scene node: type, id, resolved frame, clip, paint, attrs
+//   WMP_RENDER_BITMAPS=1           resolved bitmap count and every one that failed, with missing=
+//   WMP_RENDER_UNRESOLVED=1        name every node the unresolved count reports, which dimension
+//                                  is missing, and its parent, authored geometry and children
+//   WMP_RENDER_LIMITS=1            will this window come apart on a drag or resize: the scene's
+//                                  canvas against the limits the app gives its window, plus
+//                                  exposed= (is it below the unskinned player's 440x170)
+//   WMP_RENDER_SCRIPTS=1           per program: bytes, declared handlers, whether it evaluated
+//   WMP_RENDER_EXPR=1              every JScript: geometry expression, its value, its order, deps
+//   WMP_CALL_TRACE=1               every host object-model access, and whether it was recognised
+//   WMP_RENDER_CLICK=<view>@x,y[;x,y…]   drive clicks in order and report what each one moved,
+//                                        including a viewSize= line when the handler resized the
+//                                        window (a .wmz compact mode, W113)
+//                                        an entry written x,y>x,y>x,y is a drag along that path
+//   WMP_RENDER_HOVER=<view>@x,y[;x,y…]   walk the pointer through the points and raise the
+//                                        onMouseOut/onMouseOver edges each move crosses
+//   WMP_RENDER_SETTLE=<seconds>    pump the run loop and drive onTimer before measuring
+//   WMP_RENDER_CLOCK=<s>[;<s>…]    seconds into an animation to draw; one PNG per value
+//   WMP_RENDER_SIZE=<W>x<H>        resize before measuring, then re-drive onResize
+//   WMP_RENDER_APPKIT=1            host the scene in the real NSView stack and diff the two images
+//
+// A skin that fails to load prints `SKIN <file> FAILED <error>` and the sweep carries on: one
+// broken archive must not abandon the other thirteen, and with 10 of 14 rejected today a harness
+// that stopped on the first failure would measure nothing at all.
+
+/// One `write(2)` per line, straight to the descriptor, never through stdio.
+///
+/// W35, the reason this exists. In the 180-archive sweep a `CALL` line and the `SKIN` line that
+/// opened the next archive landed inside one another —
+///
+///     CALL vSKIN Windows_XP_Media_Center_Edition.wmz
+///
+/// — and the 5,087 bytes that should have followed the `CALL` (the rest of that skin's trace, two
+/// `PNG` lines and a `RENDER-DUMP`) never reached the file at all. That cost **two** rows: the
+/// containing block is flagged `damaged` and the swallowed skin reads `not-run`, and both skins
+/// measure fine when run alone.
+///
+/// It is byte-identical across two full sweeps and does not reproduce on a two-archive corpus, so
+/// it is the buffered stream rather than anything in the content: what is lost is whatever `stdout`
+/// happened to be holding. `print` writes into that buffer. A lost buffer is lost measurements, and
+/// a silently missing row reads exactly like a skin that stopped drawing — the failure mode this
+/// whole harness exists to escape. Writing each line unbuffered and whole removes the buffer that
+/// can be lost, and `testEmitsEveryLineWholeUnderConcurrentWriters` proves the emitter itself.
+///
+/// The `fflush` keeps stdio's own output (XCTest's case lines) ordered against ours; without it the
+/// two streams would reach the file in different orders and a block boundary could move.
+enum WMPHarnessOutput {
+    private static let lock = NSLock()
+
+    static func emit(_ line: String, to descriptor: Int32 = STDOUT_FILENO) {
+        let bytes = Array((line + "\n").utf8)
+        lock.lock()
+        defer { lock.unlock() }
+        fflush(stdout)
+        bytes.withUnsafeBytes { buffer in
+            var offset = 0
+            while offset < buffer.count {
+                let written = write(descriptor, buffer.baseAddress!.advanced(by: offset),
+                                    buffer.count - offset)
+                if written > 0 {
+                    offset += written
+                } else if written < 0 && (errno == EINTR || errno == EAGAIN) {
+                    continue
+                } else {
+                    // Nothing useful is left to do with a descriptor that will not take bytes; the
+                    // census's short-capture floor is what notices a truncated run.
+                    return
+                }
+            }
+        }
+    }
+}
+
+/// Everything the harness prints for one archive. Held as a value so a directory sweep and a
+/// single-archive run take byte-identical paths and their captures diff cleanly.
+struct WMPProbe {
+    let env: [String: String]
+
+    var wantsProbe: Bool { env["WMP_RENDER_PROBE"] != nil }
+    var wantsBitmaps: Bool { env["WMP_RENDER_BITMAPS"] != nil }
+    /// `RENDER-DUMP`'s `unresolved` is the number `starved.tsv` ranks on and it names nothing, so
+    /// every use of it so far has been followed by opening the `.wms` by hand to guess which nodes
+    /// it counted. This prints them.
+    var wantsUnresolved: Bool { env["WMP_RENDER_UNRESOLVED"] != nil }
+    var wantsLimits: Bool { env["WMP_RENDER_LIMITS"] != nil }
+    var wantsOccluded: Bool { env["WMP_RENDER_OCCLUDED"] != nil }
+    var wantsScripts: Bool { env["WMP_RENDER_SCRIPTS"] != nil }
+    var wantsExpressions: Bool { env["WMP_RENDER_EXPR"] != nil }
+    var wantsCallTrace: Bool { env["WMP_CALL_TRACE"] != nil }
+    /// W71. The harness builds scenes and rasterizes them and never calls an `NSView.draw`, so
+    /// every overlay painted over the artwork, every stale overlay frame and every `dirtyRect` bug
+    /// is invisible to it — the class that produced W43-W46 and, on the reporter's evidence, most
+    /// of what live QA found. `cacheDisplay(in:to:)` runs the real `draw(_:)` of the hosted view
+    /// and every overlay over it into a bitmap, with no window on screen and no screen-recording
+    /// permission, and the diff against the renderer's own image says which half a defect is in.
+    var wantsAppKit: Bool { env["WMP_RENDER_APPKIT"] != nil }
+
+    /// `WMP_HOSTED_FRAME=<W>x<H>` — the window frame this skin lends **NullPlayer's own** windows
+    /// (`WMPHostedFrameTemplate`), measured at that window size.
+    ///
+    /// Every other flag here measures a view of the skin's. This one measures what a skin gives a
+    /// window it never authored, and the numbers that decides are not visible in any of them: the
+    /// ring's client hole is derived from the donor's stretched subview, so the caption band above
+    /// it — where our title and close control go — is whatever that subview's top happens to be,
+    /// and a donor whose panel starts at the very top of its window lends a band with no room in it.
+    var hostedFrameSize: CGSize? {
+        guard let spec = env["WMP_HOSTED_FRAME"] else { return nil }
+        let parts = spec.lowercased().split(separator: "x").compactMap { Double($0) }
+        guard parts.count == 2, parts[0] > 0, parts[1] > 0 else { return nil }
+        return CGSize(width: parts[0], height: parts[1])
+    }
+
+    var requestedSize: WMPSize? {
+        guard let spec = env["WMP_RENDER_SIZE"] else { return nil }
+        let parts = spec.lowercased().split(separator: "x").compactMap { Double($0) }
+        guard parts.count == 2, parts[0] > 0, parts[1] > 0 else { return nil }
+        return WMPSize(width: CGFloat(parts[0]), height: CGFloat(parts[1]))
+    }
+
+    var settleSeconds: TimeInterval {
+        max(0, min(30, Double(env["WMP_RENDER_SETTLE"] ?? "") ?? 0))
+    }
+
+    /// Seconds into an animation to draw. **A render dump is a still, so without this an animation
+    /// is unfalsifiable** — frame zero looks exactly like an engine that never animates. Two pinned
+    /// values of this flag, diffed, are the whole proof that a skin's artwork moves.
+    ///
+    /// Accepts a list: `WMP_RENDER_CLOCK=0;0.5;1` dumps one PNG per value, suffixed with it.
+    var animationClocks: [TimeInterval] {
+        guard let spec = env["WMP_RENDER_CLOCK"] else { return [0] }
+        let values = spec.split(whereSeparator: { $0 == ";" || $0 == "," })
+            .compactMap { Double($0) }.filter { $0.isFinite && $0 >= 0 && $0 <= 3_600 }
+        return values.isEmpty ? [0] : values
+    }
+
+    /// `<view>@x,y[;x,y…]`, where any one entry may instead be a `>`-joined path — `x,y>x,y>x,y` —
+    /// which is a **drag**: press at the first point, move through the rest, release at the last.
+    ///
+    /// Several entries in one run is how a second click is checked to undo the first: state that
+    /// does not survive between them is the defect, not the harness. The drag form is W72: nothing
+    /// in this harness moved the pointer while it was captured, which is exactly where the slider
+    /// math lives, and 163 corpus skins drive volume, seek and ten equaliser bands through it. One
+    /// flag rather than two, because a click is a drag of one point and the two share every line of
+    /// their setup.
+    var gestures: (viewID: String, gestures: [[WMPPoint]])? {
+        guard let spec = env["WMP_RENDER_CLICK"] else { return nil }
+        let halves = spec.split(separator: "@", maxSplits: 1).map(String.init)
+        guard halves.count == 2 else { return nil }
+        func point(_ entry: Substring) -> WMPPoint? {
+            let pair = entry.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard pair.count == 2 else { return nil }
+            return WMPPoint(x: CGFloat(pair[0]), y: CGFloat(pair[1]))
+        }
+        let gestures = halves[1].split(separator: ";").map { entry in
+            entry.split(separator: ">").compactMap(point)
+        }.filter { !$0.isEmpty }
+        return gestures.isEmpty ? nil : (halves[0], gestures)
+    }
+
+    /// `<view>@x,y[;x,y…]` — the path the pointer walks, one hover edge per crossing.
+    ///
+    /// Deliberately not folded into `WMP_RENDER_CLICK`'s `>` drag form: a drag holds a capture and
+    /// asks what the *value* did, and a hover holds nothing and asks which handlers the crossing
+    /// raised. Sharing a flag would make one of the two lie about what it measured.
+    var hoverPath: (viewID: String, points: [WMPPoint])? {
+        guard let spec = env["WMP_RENDER_HOVER"] else { return nil }
+        let halves = spec.split(separator: "@", maxSplits: 1).map(String.init)
+        guard halves.count == 2 else { return nil }
+        let points = halves[1].split(whereSeparator: { $0 == ";" || $0 == ">" }).compactMap { entry -> WMPPoint? in
+            let pair = entry.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard pair.count == 2 else { return nil }
+            return WMPPoint(x: CGFloat(pair[0]), y: CGFloat(pair[1]))
+        }
+        return points.isEmpty ? nil : (halves[0], points)
+    }
+
+    /// The host state the render pass measures against, from `WMP_RENDER_HOST`.
+    ///
+    /// **Every other flag in this harness measures a stopped player with an empty playlist**, and
+    /// that is the one state a `.wmz`'s transport readouts never show a user: the elapsed and
+    /// duration readouts of 108 archives are `<TEXT value="wmpprop:player.controls.\
+    /// currentPositionString">`, and 89 hang a seek slider off `value="wmpprop:player.controls.\
+    /// currentPosition"` with `max="wmpprop:player.currentMedia.duration"`. Against the default
+    /// snapshot every one of those resolves to `0:00` on a zero-length track — which is what an
+    /// engine that never answers those paths at all also draws. A whole class of defect was
+    /// therefore unfalsifiable from any capture: the clock and the progress bar.
+    ///
+    /// `WMP_RENDER_HOST=playing` seeds a plausible mid-track player; a `key=value` list overrides
+    /// any field of it (`WMP_RENDER_HOST='t=63,dur=213,state=paused,vol=0.8'`). Every probe line
+    /// and every dumped PNG in that run is measured against it, so a `HOST` line is printed
+    /// per skin whenever it is seeded — a capture read as a default-state one would be wrong about
+    /// everything.
+    var hostSnapshot: WMPHostSnapshot { Self.hostSnapshot(from: env["WMP_RENDER_HOST"]) }
+
+    /// True when the run is measuring a seeded player rather than a stopped one.
+    var seedsHost: Bool { env["WMP_RENDER_HOST"] != nil }
+
+    static func hostSnapshot(from spec: String?) -> WMPHostSnapshot {
+        guard let spec, !spec.isEmpty else { return WMPHostSnapshot() }
+        // The seeded default: a track a third of the way through a 3:33 album cut, one of three in
+        // the playlist, at half volume and centred. Nothing here is arbitrary in a way that matters
+        // except that no field is left at the value a stopped player already has — a seeded run
+        // whose clock reads `0:00` measures nothing this flag exists to measure.
+        var snapshot = WMPHostSnapshot()
+        snapshot.state = .playing
+        snapshot.currentTime = 63
+        snapshot.duration = 213
+        snapshot.volume = 0.5
+        snapshot.balance = 0
+        snapshot.bufferingProgress = 100
+        snapshot.bitrate = 192_000
+        snapshot.metadata = WMPMediaMetadata(title: "Harness Track", artist: "Harness Artist",
+                                             album: "Harness Album", sourceURL: "file:///harness.mp3")
+        snapshot.playlistIndex = 0
+        snapshot.playlistCount = 3
+        snapshot.playlistItems = (1...3).map {
+            WMPPlaylistItemSnapshot(title: "Harness Track \($0)", artist: "Harness Artist",
+                                    duration: 213)
+        }
+        for pair in spec.split(whereSeparator: { $0 == "," || $0 == ";" }) {
+            let halves = pair.split(separator: "=", maxSplits: 1).map {
+                $0.trimmingCharacters(in: .whitespaces)
+            }
+            guard halves.count == 2 else { continue }
+            let number = Double(halves[1])
+            let truth = halves[1].caseInsensitiveCompare("true") == .orderedSame || halves[1] == "1"
+            switch halves[0].lowercased() {
+            case "state": snapshot.state = WMPHostSnapshot.State(rawValue: halves[1].lowercased()) ?? .playing
+            case "t", "time", "position": snapshot.currentTime = number ?? snapshot.currentTime
+            case "dur", "duration": snapshot.duration = number ?? snapshot.duration
+            case "vol", "volume": snapshot.volume = number ?? snapshot.volume
+            case "bal", "balance": snapshot.balance = number ?? snapshot.balance
+            case "mute", "muted": snapshot.muted = truth
+            case "shuffle": snapshot.shuffle = truth
+            case "repeat": snapshot.repeatMode = truth
+            case "buffering": snapshot.bufferingProgress = number ?? snapshot.bufferingProgress
+            case "bitrate": snapshot.bitrate = number ?? snapshot.bitrate
+            case "title": snapshot.metadata.title = halves[1]
+            case "artist": snapshot.metadata.artist = halves[1]
+            case "album": snapshot.metadata.album = halves[1]
+            case "tracks", "count": snapshot.playlistCount = Int(number ?? 0)
+            case "index": snapshot.playlistIndex = Int(number ?? 0)
+            case "eq": snapshot.equalizer.enabled = truth
+            case "video":
+                let dimensions = halves[1].split(separator: "x").compactMap { Double($0) }
+                if dimensions.count == 2, dimensions.allSatisfy({ $0.isFinite && $0 > 0 }) {
+                    snapshot.video = WMPVideoSnapshot(width: dimensions[0], height: dimensions[1])
+                }
+            default: continue
+            }
+        }
+        return snapshot
+    }
+
+    func probes(_ viewID: String) -> Bool {
+        guard let spec = env["WMP_RENDER_PROBE"] else { return false }
+        return spec.isEmpty || spec == "1" || spec.caseInsensitiveCompare("all") == .orderedSame
+            || spec.caseInsensitiveCompare(viewID) == .orderedSame
+    }
+}
+
+/// The script pass.
+///
+/// It used to be able to be *absent*: the runtime lived in a helper process built beside the test
+/// binary, and when that binary was missing every script-derived line below went quiet — which
+/// reads exactly like a skin with no scripts, and is false for every corpus archive. The runtime is
+/// now in-process, so there is nothing to be missing; `unavailableReason` stays only so the
+/// `runtime=` field of the `SCRIPTS` line keeps its grammar and a future failure has somewhere
+/// honest to be reported.
+struct WMPScriptPass {
+    let session: WMPScriptRuntime?
+    let unavailableReason: String?
+
+    init(archiveData: Data, defaults: UserDefaults) {
+        // The production budget is 0.25 s per transaction. The harness is not measuring latency and
+        // a corpus archive evaluates up to 87 KB of JScript in one pass, so it uses a generous one:
+        // a timeout here would be reported as a script failure the app does not have.
+        session = WMPScriptRuntime(preferences: WMPPreferenceStore(skinData: archiveData,
+                                                                   defaults: defaults),
+                                   executionSeconds: 5)
+        unavailableReason = nil
+    }
+}
+
+final class WMPRenderDumpTests: XCTestCase {
+    private let pixels: [UInt8] = [
+        255, 0, 0, 255,   0, 255, 0, 255,
+        0, 0, 255, 255,   255, 0, 255, 255
+    ]
+
+    func testUprightCropColorKeyNestedClipZOrderAndBackingScale() async throws {
+        let bmp = try WMPSkinTestSupport.encodedImage(width: 2, height: 2, rgba: pixels, type: .bmp)
+        let xml = """
+        <THEME><VIEW id="main" width="8" height="6">
+          <SUBVIEW id="parent" left="1" top="1" width="5" height="4">
+            <IMAGE id="whole" left="1" top="1" width="2" height="2" image="pixel.bmp" transparencyColor="#FF00FF"/>
+            <IMAGE id="crop" left="3" top="1" width="1" height="1" image="pixel.bmp"
+                   cropLeft="1" cropTop="0" cropWidth="1" cropHeight="1"/>
+          </SUBVIEW>
+          <SUBVIEW id="back" left="0" top="0" width="1" height="1" zIndex="1" backgroundColor="#0000FF"/>
+          <SUBVIEW id="front" left="0" top="0" width="1" height="1" zIndex="2" backgroundColor="#FF0000"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("pixel.bmp", data: bmp)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        let one = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
+        XCTAssertFalse(scene.wasBuiltOnMainThread)
+        XCTAssertFalse(one.wasRenderedOnMainThread)
+        XCTAssertEqual(WMPSkinTestSupport.rgba(one.image, x: 0, yFromTop: 0), [255, 0, 0, 255])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(one.image, x: 2, yFromTop: 2), [255, 0, 0, 255])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(one.image, x: 3, yFromTop: 2), [0, 255, 0, 255])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(one.image, x: 2, yFromTop: 3), [0, 0, 255, 255])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(one.image, x: 3, yFromTop: 3), [0, 0, 0, 0])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(one.image, x: 4, yFromTop: 2), [0, 255, 0, 255])
+
+        let two = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 2)
+        XCTAssertEqual(two.image.width, 16)
+        XCTAssertEqual(two.image.height, 12)
+        XCTAssertEqual(WMPSkinTestSupport.rgba(two.image, x: 4, yFromTop: 4), [255, 0, 0, 255])
+    }
+
+    /// A subview commonly declares `clippingColor` — the colour cut out of its own artwork to shape
+    /// the window — *and* `transparencyColor`, as two different colours. Keying only one of them
+    /// leaves the other painted as a flat slab (W8).
+    func testClippingAndTransparencyColorsAreBothKeyedOut() async throws {
+        let bmp = try WMPSkinTestSupport.encodedImage(width: 2, height: 2, rgba: pixels, type: .bmp)
+        let xml = """
+        <THEME><VIEW id="main" width="2" height="2">
+          <IMAGE id="both" left="0" top="0" width="2" height="2" image="pixel.bmp"
+                 transparencyColor="#FF00FF" clippingColor="#FF0000"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("pixel.bmp", data: bmp)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        guard case let .image(specification)? = scene.commands.first(where: { $0.nodeID == "both" })?.paint else {
+            return XCTFail("The keyed image command is missing from the scene.")
+        }
+        XCTAssertEqual(specification.colorKeys, [WMPColor(red: 255, green: 0, blue: 255),
+                                                 WMPColor(red: 255, green: 0, blue: 0)])
+        let rendered = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 0, yFromTop: 0), [0, 0, 0, 0])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 1, yFromTop: 1), [0, 0, 0, 0])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 1, yFromTop: 0), [0, 255, 0, 255])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 0, yFromTop: 1), [0, 0, 255, 255])
+    }
+
+    /// **The implicit key, in all four directions (W78, W78a).** A node declaring nothing keys
+    /// magenta out of a sprite whatever alpha it authored — the BMP arm and the RGBA-PNG arm are
+    /// the same answer, which is W78a: the corpus holds eleven buttons whose normal state exported
+    /// without an alpha channel and whose hover state exported with one, magenta identical in both,
+    /// and under W78's original alpha veto such a button turned magenta under the pointer. A node
+    /// declaring another colour keys magenta as well — `MSN`'s `funb`/`wlb` key `#ff0000` over
+    /// hover faces holding magenta in the same pixels — and a mapping image is never keyed at
+    /// all, or a `#FF00FF` mapping colour would vanish from its own map and stop answering the
+    /// pointer. Without the mapping arm, "the default works" and "the default eats artwork" print
+    /// the same pass.
+    func testImplicitMagentaKeyAppliesToArtworkWhateverAlphaItAuthored() async throws {
+        // A real 24-bit BMP, not an ImageIO one: see `trueColor24Bitmap`. The PNG beside it is RGBA
+        // and is the arm W78a inverted.
+        let bmp = WMPSkinTestSupport.trueColor24Bitmap(width: 2, height: 2,
+            rows: [[(255, 0, 0), (0, 255, 0)], [(0, 0, 255), (255, 0, 255)]])
+        let png = try WMPSkinTestSupport.encodedImage(width: 2, height: 2, rgba: pixels, type: .png)
+        let xml = """
+        <THEME><VIEW id="main" width="6" height="2">
+          <IMAGE id="bare" left="0" top="0" width="2" height="2" image="pixel.bmp"/>
+          <IMAGE id="alpha" left="2" top="0" width="2" height="2" image="pixel.png"/>
+          <IMAGE id="keyed" left="4" top="0" width="2" height="2" image="pixel.bmp" transparencyColor="#00FF00"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("pixel.bmp", data: bmp),
+            WMPTestArchiveEntry("pixel.png", data: png)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        func specification(_ nodeID: String) -> WMPSceneImage? {
+            guard case let .image(image)? = scene.commands.first(where: { $0.nodeID == nodeID })?.paint
+            else { return nil }
+            return image
+        }
+        // The builder decides on the markup alone: every drawn node carries the implicit key,
+        // declared key or not.
+        XCTAssertEqual(specification("bare")?.implicitColorKey, WMPColorKey.implicitTransparency)
+        XCTAssertEqual(specification("alpha")?.implicitColorKey, WMPColorKey.implicitTransparency)
+        XCTAssertEqual(specification("keyed")?.implicitColorKey, WMPColorKey.implicitTransparency)
+        XCTAssertEqual(specification("keyed")?.colorKeys, [WMPColor(red: 0, green: 255, blue: 0)])
+
+        let rendered = try await WMPRenderer(imageStore: store).render(scene: scene, backingScale: 1)
+        // The magenta pixel is the bottom-right of the 2x2 source in every one of the three. The
+        // alpha-carrying sprite clears exactly like the bare one, and the node that declared a
+        // different key clears it too.
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 1, yFromTop: 1), [0, 0, 0, 0])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 3, yFromTop: 1), [0, 0, 0, 0])
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 5, yFromTop: 1), [0, 0, 0, 0])
+        // …and the colour the third node did key is gone, so the arm is not passing by accident.
+        XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: 5, yFromTop: 0), [0, 0, 0, 0])
+        // Nothing else moved: the red pixel is untouched in all three.
+        for x in [0, 2, 4] {
+            XCTAssertEqual(WMPSkinTestSupport.rgba(rendered.image, x: x, yFromTop: 0), [255, 0, 0, 255])
+        }
+    }
+
+    /// The half of the rule that has no pixels: a mapping image is read for its colours, so keying
+    /// magenta out of one would delete a `#FF00FF` region from its own map and the button under the
+    /// pointer would stop answering.
+    func testAMagentaMappingColorStillAnswersThePointer() async throws {
+        let map = WMPSkinTestSupport.trueColor24Bitmap(width: 2, height: 2,
+            rows: [[(255, 0, 0), (0, 255, 0)], [(0, 0, 255), (255, 0, 255)]])
+        let art = map
+        let xml = """
+        <THEME><VIEW id="main" width="2" height="2">
+          <BUTTONGROUP id="group" left="0" top="0" image="art.bmp" mappingImage="map.bmp">
+            <BUTTONELEMENT id="magentaButton" mappingColor="#FF00FF"/>
+          </BUTTONGROUP>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("art.bmp", data: art),
+            WMPTestArchiveEntry("map.bmp", data: map)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        // The magenta pixel of the map is its bottom-right, which is (1,1) from the top.
+        let hit = WMPHitTester(hits: scene.hits).hitTest(WMPPoint(x: 1.5, y: 1.5))
+        XCTAssertEqual(hit?.nodeID, "magentaButton")
+    }
+
+    func testTextCounterTransformKeepsGlyphsUprightInTopFrame() async throws {
+        let xml = """
+        <THEME><VIEW id="main" width="80" height="40">
+          <TEXT id="label" left="2" top="2" width="50" height="16" value="Ab"
+                fontType="Arial" fontSize="12" foregroundColor="#FFFFFF"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8))])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        let result = try await WMPRenderer(imageStore: store).render(scene: scene)
+        var topAlpha = 0, bottomAlpha = 0
+        for y in 0..<40 {
+            for x in 0..<80 {
+                let alpha = WMPSkinTestSupport.rgba(result.image, x: x, yFromTop: y)[3]
+                if y < 20 { topAlpha += alpha > 0 ? 1 : 0 }
+                else { bottomAlpha += alpha > 0 ? 1 : 0 }
+            }
+        }
+        XCTAssertGreaterThan(topAlpha, 0)
+        XCTAssertEqual(bottomAlpha, 0)
+    }
+
+    // MARK: - Instrument proofs
+    //
+    // Three `.wal` harness blind spots each made a real defect look absent, so a probe is not
+    // trusted about absence until it has been shown reporting a presence. These run on every plain
+    // `swift test`; if one of them stops holding, the corresponding sweep column is lying.
+
+    /// `WMP_RENDER_BITMAPS` separates "art is absent" (Class C) from "art draws wrong" (Class B),
+    /// and it can only do that if it actually notices an absence. Rename the asset the markup asks
+    /// for and the probe must name it.
+    func testRenderBitmapsProbeReportsAMissingAsset() async throws {
+        let bmp = try WMPSkinTestSupport.encodedImage(width: 2, height: 2, rgba: pixels, type: .bmp)
+        let xml = """
+        <THEME><VIEW id="main" width="8" height="6">
+          <IMAGE id="present" left="0" top="0" width="2" height="2" image="pixel.bmp"/>
+          <IMAGE id="absent" left="4" top="0" width="2" height="2" image="renamed.bmp"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("pixel.bmp", data: bmp)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        let tally = WMPHarness.bitmapTally(scene: scene, skin: skin, imageStore: store)
+        XCTAssertEqual(tally.resolved, 1)
+        XCTAssertEqual(tally.missing, ["renamed.bmp"])
+    }
+
+    /// The probe must name the nodes the renderer actually drew, with the frames it drew them at —
+    /// "a node exists" says nothing about where it landed, which is the whole Class B distinction.
+    func testRenderProbeReportsResolvedFramesForEveryDrawnNode() async throws {
+        let xml = """
+        <THEME><VIEW id="main" width="40" height="20">
+          <SUBVIEW id="pane" left="4" top="2" width="20" height="10" backgroundColor="#102030"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8))])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        let lines = WMPHarness.probeLines(scene: scene, skin: skin, imageStore: store)
+        let pane = try XCTUnwrap(lines.first { $0.contains("id=pane") })
+        XCTAssertTrue(pane.contains("frame=4,2 20x10"), pane)
+        XCTAssertTrue(pane.contains("paint=fill:#102030"), pane)
+    }
+
+    /// `WMP_RENDER_EXPR` is the layout engine's only witness for the 13 of 14 corpus skins that
+    /// compute geometry in JScript. An expression that silently answers 0 is the difference between
+    /// a skin and a blank window, so the probe must report both the value and the fact it resolved.
+    func testExpressionProbeReportsSourceAndResolvedValue() async throws {
+        let xml = """
+        <THEME><VIEW id="main" width="100" height="40">
+          <SUBVIEW id="pane" left="0" top="0" width="jscript:view.width - 20" height="10"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8))])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let lines = WMPHarness.expressionLines(scene: scene, skin: skin, viewID: "main", output: nil)
+        let width = try XCTUnwrap(lines.first { $0.contains("pane.width") })
+        XCTAssertTrue(width.contains("view.width - 20"), width)
+        XCTAssertTrue(width.contains("-> 80"), width)
+    }
+
+    /// The same probe, pointed at its own blind spot: a two-view skin must report each view's
+    /// expressions **under that view and nowhere else**.
+    ///
+    /// This is the check that was missing. Both evaluators are scoped to one `VIEW` — the live plan
+    /// collects the view's own subtree, and the static resolver rejects a reference that leaves it —
+    /// so a probe iterating the whole graph printed every sibling view's expressions under this
+    /// view's name, permanently unresolved and permanently unordered, purely because they were asked
+    /// of the wrong evaluator. Corpus-wide that manufactured 34,300 rows reading `#-` / `live=-`
+    /// against 7,700 real ones, and it was read as an engine defect starving 82% of the corpus. A
+    /// probe that answers for the wrong view is a probe reporting a defect it created.
+    func testExpressionProbeReportsOnlyTheDumpedViewsOwnExpressions() async throws {
+        let xml = """
+        <THEME>
+          <VIEW id="main" width="100" height="40">
+            <SUBVIEW id="pane" left="0" top="0" width="jscript:view.width - 20" height="10"/>
+          </VIEW>
+          <VIEW id="other" width="60" height="30">
+            <SUBVIEW id="sidebar" left="0" top="0" width="jscript:view.width - 5" height="10"/>
+          </VIEW>
+        </THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8))])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let builder = WMPSceneBuilder(loadedSkin: skin)
+
+        let main = WMPHarness.expressionLines(scene: try await builder.build(viewID: "main"),
+                                              skin: skin, viewID: "main", output: nil)
+        XCTAssertEqual(main.count, 1, main.joined(separator: "\n"))
+        XCTAssertTrue(main[0].contains("pane.width"), main[0])
+        XCTAssertTrue(main[0].contains("-> 80"), main[0])
+
+        let other = WMPHarness.expressionLines(scene: try await builder.build(viewID: "other"),
+                                               skin: skin, viewID: "other", output: nil)
+        XCTAssertEqual(other.count, 1, other.joined(separator: "\n"))
+        XCTAssertTrue(other[0].contains("sidebar.width"), other[0])
+        XCTAssertTrue(other[0].contains("-> 55"), other[0])
+    }
+
+    /// The emitter itself, because a lost line is the one defect this harness cannot report on.
+    ///
+    /// The AppKit probe (W71) proves itself in both directions before anything trusts it about a
+    /// skin.
+    ///
+    /// **A probe that reports nothing has to be shown it can see something**, or "no defect" and
+    /// "blind instrument" are the same output — three `.wal` harness blind spots each made a real
+    /// defect look absent. So: a scene with nothing hosted over it must diff to exactly zero (the
+    /// renderer's image is what the view blits, and any non-zero there is the instrument's own
+    /// colour management or scaling, both of which produced false 34% and 47% readings on the way
+    /// to this line), and a scene carrying a `PLAYLIST` must diff *inside* that widget's frame,
+    /// because an `NSView` overlay is drawn there and the scene image contains none of it.
+    @MainActor
+    func testAppKitProbeSeesAnOverlayAndReportsNothingWithoutOne() async throws {
+        let bmp = try WMPSkinTestSupport.encodedImage(width: 2, height: 2, rgba: pixels, type: .bmp)
+
+        func lines(_ viewName: String, _ body: String) async throws -> [String] {
+            let xml = "<THEME><VIEW id=\"main\" width=\"60\" height=\"40\">\(body)</VIEW></THEME>"
+            let url = try WMPSkinTestSupport.makeArchive([
+                WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+                WMPTestArchiveEntry("pixel.bmp", data: bmp)
+            ])
+            let skin = try await WMPSkinLoader().load(from: url)
+            let store = WMPImageStore(provider: skin.archive)
+            let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+            return await WMPHarness.appKitLines(scene: scene, viewID: viewName, imageStore: store)
+        }
+
+        let plain = try await lines("plain", "<IMAGE id=\"art\" left=\"0\" top=\"0\" width=\"60\" height=\"40\" image=\"pixel.bmp\"/>")
+        let plainSummary = try XCTUnwrap(plain.first)
+        XCTAssertTrue(plainSummary.contains("differing=0/"),
+                      "artwork with nothing hosted over it must diff to zero: \(plainSummary)")
+        XCTAssertTrue(plainSummary.contains("outside=0 "), plainSummary)
+        XCTAssertEqual(plain.count, 1, "no overlay means no per-widget line: \(plain)")
+
+        let hosted = try await lines("hosted", """
+        <IMAGE id="art" left="0" top="0" width="60" height="40" image="pixel.bmp"/>
+        <PLAYLIST id="pl" left="10" top="10" width="40" height="20"/>
+        """)
+        let hostedSummary = try XCTUnwrap(hosted.first)
+        XCTAssertFalse(hostedSummary.contains("differing=0/"),
+                       "an NSView overlay is not in the scene image and must show as differing: \(hostedSummary)")
+        XCTAssertTrue(hostedSummary.contains("hosted=1/"), hostedSummary)
+        // Attributed to the widget, not counted as an unexplained wash: `outside` is the number
+        // that ranks work, so a hosted overlay drawing inside its own frame must not inflate it.
+        XCTAssertTrue(hostedSummary.contains("outside=0 "),
+                      "an overlay inside its own frame is hosting working, not a defect: \(hostedSummary)")
+        XCTAssertTrue(hosted.contains { $0.contains("playlist id=pl") }, hosted.joined(separator: "\n"))
+    }
+
+    /// W35 lost 5,087 bytes of one skin's measurements mid-line in a 180-archive sweep, and the
+    /// only reason anyone knew is that the collision left a visible splice for the census to flag.
+    /// A loss that had landed on a line boundary would have read as a skin that simply drew less.
+    /// So: many writers, lines longer than any stdio buffer, and every line has to come back whole
+    /// and exactly once.
+    func testEmitsEveryLineWholeUnderConcurrentWriters() throws {
+        let file = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("wmp-emit-\(UUID().uuidString).txt")
+        FileManager.default.createFile(atPath: file.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        let writers = 8, perWriter = 200
+        DispatchQueue.concurrentPerform(iterations: writers) { writer in
+            for index in 0..<perWriter {
+                // Every fourth line is 9 KB — past any stdio buffer, so a line that survives whole
+                // proves the partial-write loop and not just that the line happened to fit.
+                let padding = index % 4 == 0 ? String(repeating: "x", count: 9_000) : "value"
+                WMPHarnessOutput.emit("CALL writer\(writer) line\(index) \(padding)",
+                                      to: handle.fileDescriptor)
+            }
+        }
+        try handle.close()
+
+        let lines = try String(contentsOf: file, encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: false).dropLast()
+        XCTAssertEqual(lines.count, writers * perWriter, "lines were lost or split")
+        var seen = Set<String>()
+        for line in lines {
+            XCTAssertTrue(line.hasPrefix("CALL writer"), "a line was spliced: \(line.prefix(60))")
+            let identity = line.split(separator: " ").prefix(3).joined(separator: " ")
+            XCTAssertTrue(seen.insert(identity).inserted, "duplicated: \(identity)")
+        }
+        XCTAssertEqual(seen.count, writers * perWriter)
+    }
+
+    // MARK: - The corpus sweep
+
+    /// `WMP_SKIN` accepts a file **or a directory**. Directory mode sweeps the whole corpus in one
+    /// process invocation: the `.wal` sweep does 79 archives in ~5 minutes where a shell loop over
+    /// them took 25, and the startups were nearly all of the difference. One invocation also cannot
+    /// be invalidated halfway — a sweep is a build, and an edit landing mid-loop silently wrote
+    /// *empty* captures that then diffed as "everything changed".
+    func testSweepsSkinOrCorpus() async throws {
+        let env = ProcessInfo.processInfo.environment
+        // WMP_TEST_WMZ is the flag this harness shipped with. Kept as an alias so the Phase 0–8
+        // handoff docs' invocations still run; WMP_SKIN is the documented name.
+        guard let path = env["WMP_SKIN"] ?? env["WMP_TEST_WMZ"], !path.isEmpty else {
+            throw XCTSkip("Set WMP_SKIN to a .wmz file or a directory of them. "
+                + "See skills/wmp-skin-guide/reference/harness.md.")
+        }
+        let root = URL(fileURLWithPath: path)
+        var isDirectory: ObjCBool = false
+        FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+        // The enumeration rule, applied: `-type f` and a case-insensitive extension. A corpus is
+        // allowed to hold a directory, and `.WMZ` is a real spelling.
+        let archives: [URL] = isDirectory.boolValue
+            ? ((try? FileManager.default.contentsOfDirectory(at: root,
+                    includingPropertiesForKeys: [.isRegularFileKey])) ?? [])
+                .filter { $0.pathExtension.lowercased() == "wmz"
+                    && (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+                .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+            : [root]
+        guard !archives.isEmpty else { throw XCTSkip("No .wmz archives under \(path).") }
+
+        let dumpRoot = (env["WMP_RENDER_DUMP"] ?? env["WMP_RENDER_DUMP_DIR"]).map {
+            URL(fileURLWithPath: $0, isDirectory: true)
+        }
+        if let dumpRoot {
+            try FileManager.default.createDirectory(at: dumpRoot, withIntermediateDirectories: true)
+        }
+        // The harness must not write the user's real preferences: `theme.savePreference` is the
+        // second-ranked host call in the corpus (116 occurrences) and a sweep would persist every
+        // skin's idea of its own state into the app the user then launches.
+        let suite = "wmp.harness.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite) ?? .standard
+        addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+
+        let probe = WMPProbe(env: env)
+        WMPHarnessOutput.emit("HARNESS \(archives.count) archive(s) from \(path)")
+        for archive in archives {
+            // The sweep's own frame. Every other line is keyed by view, which is not unique across
+            // skins, so without this a directory run is an unattributable wall of text. Printed for
+            // a single archive too, so one skin's capture and its row in a sweep stay identical.
+            WMPHarnessOutput.emit("SKIN \(archive.lastPathComponent)")
+            let dump = dumpRoot.map { root -> URL in
+                archives.count > 1
+                    ? root.appendingPathComponent(archive.deletingPathExtension().lastPathComponent,
+                                                  isDirectory: true)
+                    : root
+            }
+            do {
+                try await WMPHarness.measure(archive: archive, dump: dump, probe: probe, defaults: defaults)
+            } catch {
+                // One unloadable archive must not abandon the rest — with 10 of 14 rejected today,
+                // stopping here would measure nothing. The failure is printed where the diff sees it.
+                WMPHarnessOutput.emit("SKIN \(archive.lastPathComponent) FAILED \(WMPHarness.oneLine(error))")
+            }
+            fflush(stdout)
+        }
+        // The harness asserts nothing about the corpus: 10 of 14 archives are expected to fail
+        // today, and a red test would stop the sweep from producing the rows that rank the work.
+        // The census and the sweep read the printed lines; this only proves the run completed.
+        XCTAssertFalse(archives.isEmpty)
+    }
+}
+
+// MARK: - Line production
+
+/// Every line the harness prints, in one place, so the grammar the census and sweep parse has a
+/// single definition. Nothing here is used by the app.
+enum WMPHarness {
+
+    static func oneLine(_ error: Error) -> String {
+        let text = (error as? WMPFailure)?.errorDescription ?? "\(error)"
+        return text.replacingOccurrences(of: "\n", with: " · ")
+    }
+
+    static func measure(archive: URL, dump: URL?, probe: WMPProbe, defaults: UserDefaults) async throws {
+        let started = CFAbsoluteTimeGetCurrent()
+        let skin = try await WMPSkinLoader().load(from: archive)
+        let loadMilliseconds = (CFAbsoluteTimeGetCurrent() - started) * 1_000
+        let archiveData = (try? Data(contentsOf: archive)) ?? Data()
+
+        let bytes = skin.archive.entries.reduce(UInt64(0)) { $0 &+ $1.uncompressedSize }
+        WMPHarnessOutput.emit("LOAD definition=\(skin.definitionPath) encoding=\(skin.textEncoding.rawValue) "
+            + "entries=\(skin.archive.entries.count) bytes=\(bytes) views=\(skin.views.count) "
+            + "nodes=\(skin.graph.allNodes.count) scripts=\(skin.scripts.count) "
+            + "resources=\(skin.resources.count) loadms=\(String(format: "%.1f", loadMilliseconds))")
+        if probe.seedsHost {
+            // Printed per skin rather than once per run: these lines are read out of a per-skin
+            // block by `wmp_render_sweep.sh`, and a capture measured against a playing player that
+            // looks like a default-state one is wrong about every readout in it.
+            let seeded = probe.hostSnapshot
+            WMPHarnessOutput.emit("HOST state=\(seeded.state.rawValue) "
+                + "position=\(WMPNumber.format(CGFloat(seeded.currentTime)))(\(seeded.elapsedText)) "
+                + "duration=\(WMPNumber.format(CGFloat(seeded.duration)))(\(seeded.durationText)) "
+                + "volume=\(WMPNumber.format(CGFloat(seeded.volume))) "
+                + "balance=\(WMPNumber.format(CGFloat(seeded.balance))) "
+                + "tracks=\(seeded.playlistCount) title=\(seeded.metadata.title) "
+                + "video=\(seeded.video.width)x\(seeded.video.height)")
+        }
+        for line in findingLines(skin.diagnostics) { WMPHarnessOutput.emit(line) }
+        for line in compatibilityLines(skin) { WMPHarnessOutput.emit(line) }
+
+        let pass = WMPScriptPass(archiveData: archiveData, defaults: defaults)
+        if let reason = pass.unavailableReason {
+            // Printed once per archive whether or not WMP_RENDER_SCRIPTS asked, because every
+            // script-derived line below goes quiet without it and quiet reads as "no scripts".
+            WMPHarnessOutput.emit("SCRIPTS programs=\(skin.scripts.count) runtime=unavailable (\(reason))")
+        }
+        if probe.wantsScripts { for line in scriptLines(skin: skin, pass: pass) { WMPHarnessOutput.emit(line) } }
+        if let size = probe.hostedFrameSize {
+            WMPHarnessOutput.emit(await hostedFrameLine(skin: skin, size: size))
+        }
+
+        let store = WMPImageStore(provider: skin.archive)
+        let builder = WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+        for view in skin.views {
+            do {
+                try await measure(view: view.id, skin: skin, builder: builder, imageStore: store,
+                                  pass: pass, dump: dump, probe: probe)
+            } catch {
+                WMPHarnessOutput.emit("RENDER-DUMP \(view.id) FAILED \(oneLine(error))")
+            }
+        }
+        if let session = pass.session { await session.teardown() }
+    }
+
+    /// `HOSTED-FRAME` — the ring this skin lends one of NullPlayer's own windows, at one window
+    /// size, and the four insets our chrome lays that window out from.
+    ///
+    /// `caption=` is the number this exists for. The title and close control of a hosted window are
+    /// drawn in the band above the borrowed client hole, so a donor whose stretched subview starts
+    /// at the top of its own window lends a band that cannot hold them — and that is a property of
+    /// the skin, not of the window, so it is measurable only by deriving the frame the way the app
+    /// does. The player view is ranked last by `derive`, and the app ranks the view it is
+    /// presenting; here that is the skin's declared startup view, falling back to document order,
+    /// which is where the app's own candidate walk starts.
+    static func hostedFrameLine(skin: WMPLoadedSkin, size: CGSize) async -> String {
+        let player = WMPDeclaredHostState.authoredStartupViewID(in: skin) ?? skin.views.first?.id
+        guard let template = WMPHostedFrameTemplate.derive(from: skin, playerViewID: player) else {
+            return "HOSTED-FRAME none"
+        }
+        let store = WMPImageStore(provider: skin.archive)
+        let builder = WMPSceneBuilder(loadedSkin: skin, imageStore: store)
+        let renderer = WMPRenderer(imageStore: store)
+        let backing = CGFloat(Double(ProcessInfo.processInfo.environment["WMP_HOSTED_FRAME_SCALE"] ?? "") ?? 1)
+        var refusal = ""
+        var artwork: SkinnedSurfaceFrameArtwork?
+        do {
+            artwork = try await template.artwork(builder: builder, renderer: renderer, size: size,
+                                                 backingScale: backing)
+        } catch WMPHostedFrameRefusal.ringDoesNotClose {
+            refusal = " refused=ring-open"
+        } catch WMPHostedFrameRefusal.panelCannotBeSliced {
+            refusal = " refused=panel-unslicable"
+        } catch {
+            artwork = nil
+        }
+        // **Which donor class lent it (W207).** `ring=` is the eight-piece ring's piece count;
+        // `panel=` is a one-piece panel nine-sliced at its own hole, and the two are different
+        // enough that a line reading `ring=0` would be a lie about what was borrowed. The slice
+        // lines are the `left=`/`right=`/`top=`/`bottom=` insets already on this line.
+        let donor = template.panelNodeID != nil ? "panel=sliced" : "ring=\(template.ringNodeIDs.count)"
+        // A panel has no donor floor to report — it is sliced, so it fits any window wider than its
+        // own borders, and those borders are the `left=`/`right=`/`caption=`/`bottom=` fields below.
+        let floor = template.panelNodeID != nil ? ""
+            : " min=\(WMPNumber.format(template.minimumSize.width))x\(WMPNumber.format(template.minimumSize.height))"
+        let head = "HOSTED-FRAME view=\(template.viewID) \(donor) "
+            + "size=\(WMPNumber.format(size.width))x\(WMPNumber.format(size.height))" + floor
+        guard let artwork else { return head + " artwork=none" + refusal }
+        // **`WMP_HOSTED_FRAME_DUMP=<dir>` writes the borrowed frame as a PNG.** Nothing in a render
+        // dump contains it — the ring is assembled from pieces the donor draws for itself, and a
+        // nine-sliced panel (W207) is assembled by us — so the numbers on this line were the only
+        // evidence a frame was right, and they cannot see a seam landing in the wrong place.
+        if let directory = ProcessInfo.processInfo.environment["WMP_HOSTED_FRAME_DUMP"],
+           let destination = URL(string: "file://" + directory) {
+            try? FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+            let file = destination.appendingPathComponent("\(template.viewID)-frame.png")
+            if let png = NSBitmapImageRep(cgImage: artwork.image)
+                .representation(using: .png, properties: [:]) {
+                try? png.write(to: file)
+            }
+        }
+        let metrics = artwork.metrics
+        // **`gaps=` is the only field on this line that can see a ring that came apart (W209).**
+        // Top/left/bottom/right, each the longest unbroken run of *bare* edge as a fraction of that
+        // edge — see `WMPHostedFrameTemplate.edgeGaps`. Every other number here is derived from
+        // markup that resolves perfectly for a donor whose pieces only meet at the skin's own
+        // layout, which is exactly the class of defect this reports.
+        let measured = WMPHostedFrameTemplate.edgeGaps(artwork.image, scale: backing)
+        let gaps = measured?.map { String(format: "%.3f", $0) }.joined(separator: "/") ?? "none"
+        return head + " caption=\(WMPNumber.format(artwork.captionHeight))"
+            + " corner=\(artwork.trailingCornerWidth.map(WMPNumber.format) ?? "none")"
+            + " left=\(WMPNumber.format(metrics.leftBorder))"
+            + " right=\(WMPNumber.format(metrics.rightBorder))"
+            + " bottom=\(WMPNumber.format(metrics.bottomBorder))"
+            + " content=\(WMPNumber.format(artwork.contentRect.minX)),\(WMPNumber.format(artwork.contentRect.minY))"
+            + " \(WMPNumber.format(artwork.contentRect.width))x\(WMPNumber.format(artwork.contentRect.height))"
+            + " scaled=\(artwork.wasScaledToFit ? "yes" : "no")"
+            + " gaps=\(gaps)"
+            // `whole=yes` is a frame whose interior fill came away, so it is painted over the
+            // content entire rather than having the client rect cut out of it (W209).
+            + " whole=\(artwork.paintsOverContent ? "yes" : "no")"
+    }
+
+    private static func measure(view viewID: String, skin: WMPLoadedSkin, builder: WMPSceneBuilder,
+                                imageStore: WMPImageStore, pass: WMPScriptPass,
+                                dump: URL?, probe: WMPProbe) async throws {
+        // A view opens at its own size and is then dragged, so that is the order this measures in:
+        // `onLoad` runs against the layout the skin authored, and `WMP_RENDER_SIZE` is a second
+        // pass over it. For an expression-driven layout that is a different layout, not the same
+        // one scaled, and the skin's `onResize` is how it gets there.
+        var scene = try await builder.build(viewID: viewID)
+
+        var output: WMPScriptOutput?
+        // Every transaction's diagnostics, not the last one's: a settle loop or a resize pass
+        // replaces `output`, and reporting only what survived it dropped every `onLoad` error.
+        var diagnostics: [WMPJScriptDiagnostic] = []
+        if let session = pass.session {
+            await session.discardView(viewID)
+            // The load pass: the skin's programs evaluate, every `JScript:` geometry expression
+            // resolves, and the view's own `onLoad` handlers run — exactly what the app's first
+            // transaction does. Driving `onLoad` here is not optional detail: it is where a skin
+            // sets up its panes, and a harness that skipped it measured a skin nobody sees.
+            output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
+                                            snapshot: probe.hostSnapshot,
+                                            event: eventFor(name: "onLoad", skin: skin, viewID: viewID),
+                                            geometry: scene.scriptGeometry)
+            diagnostics += output?.diagnostics ?? []
+            if probe.hostSnapshot.video.hasVideo {
+                let readyScene = try await builder.build(viewID: viewID, requestedSize: scene.canvasSize,
+                                                         overrides: output?.overrides ?? .empty)
+                output = await session.transact(skin: skin, viewID: viewID, size: readyScene.canvasSize,
+                    snapshot: probe.hostSnapshot,
+                    event: eventFor(name: "onVideoStart", skin: skin, viewID: viewID),
+                    geometry: readyScene.scriptGeometry)
+                diagnostics += output?.diagnostics ?? []
+                scene = readyScene
+                WMPHarnessOutput.emit("VIDEO \(viewID): ready \(probe.hostSnapshot.video.width)x\(probe.hostSnapshot.video.height)")
+            }
+            if let requested = probe.requestedSize {
+                // A resize is a second layout pass, not a re-scale: the expressions run again
+                // against the new `view.width`/`view.height`, and then the skin's own `onResize`
+                // runs against the frames that came out — dispatched to the objects whose box
+                // actually moved, exactly as `WMPMainWindowController` does it on a real drag.
+                //
+                // The transaction runs whether or not a handler exists, exactly as the app's
+                // `renderCurrentSize` does: an expression is re-read from `view.width` on every
+                // resize, and a view with no `onResize` still relies on that.
+                let resized = try await builder.build(viewID: viewID, requestedSize: requested,
+                                                      overrides: output?.overrides ?? .empty)
+                let event = WMPMainWindowController.resizeEvent(in: skin, viewID: viewID,
+                                                                before: scene, after: resized)
+                WMPHarnessOutput.emit("RESIZE \(viewID): "
+                    + "\(WMPNumber.format(scene.canvasSize.width))x\(WMPNumber.format(scene.canvasSize.height))"
+                    + " -> \(WMPNumber.format(resized.canvasSize.width))x\(WMPNumber.format(resized.canvasSize.height))"
+                    + ", handlers=\(event?.handlers.count ?? 0)")
+                output = await session.transact(skin: skin, viewID: viewID,
+                                                size: resized.canvasSize,
+                                                snapshot: probe.hostSnapshot, event: event,
+                                                geometry: resized.scriptGeometry)
+                diagnostics += output?.diagnostics ?? []
+                scene = resized
+            }
+            if probe.settleSeconds > 0, let timer = eventFor(name: "onTimer", skin: skin, viewID: viewID) {
+                // The view's own timer, run for real rather than fired once.
+                //
+                // A `.wmz` animates through `view.timerInterval`: Corona's compact view registers a
+                // timed event and writes the interval it wants, and its player view declares
+                // `timerInterval="4000"` in markup to drive its transport readouts. A single
+                // `onTimer` call cannot reach the end of an animation that takes twenty of them, so
+                // this drives the loop the app drives, at the period the skin asks for, honouring
+                // every `setViewTimerInterval` the handlers post back.
+                // Seeded from the markup, then from whatever the load pass already asked for:
+                // Corona's compact view declares `timerInterval="0"` and its `OnTinyLoad` turns the
+                // timer on, so reading only the attribute measures a skin that never animates.
+                var interval = WMPMainWindowController.authoredTimerInterval(in: skin, viewID: viewID)
+                for command in output?.hostCommands ?? [] where command.action == "setViewTimerInterval" {
+                    interval = Int(command.value?.number ?? 0)
+                }
+                let deadline = Date().addingTimeInterval(probe.settleSeconds)
+                while Date() < deadline {
+                    let period = max(WMPPhase0Limits.minimumTimerPeriodMilliseconds, interval)
+                    guard interval > 0 else { break }
+                    // `RunLoop.run(until:)` returns immediately with no input sources attached,
+                    // which turned this into a busy loop that tripped the runtime's own 120/s rate
+                    // limit and measured nothing.
+                    try? await Task.sleep(nanoseconds: UInt64(period) * 1_000_000)
+                    output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
+                                                    snapshot: probe.hostSnapshot, event: timer,
+                                                    geometry: scene.scriptGeometry)
+                    diagnostics += output?.diagnostics ?? []
+                    // Rebuild between ticks: an animation reads the geometry it is drawn at, and a
+                    // loop that fed it the same starting frame every time would freeze on the first
+                    // step while still looking like it was running.
+                    if let overrides = output?.overrides, overrides != .empty,
+                       let rebuilt = try? await builder.build(viewID: viewID,
+                                                              requestedSize: probe.requestedSize,
+                                                              overrides: overrides) {
+                        scene = rebuilt
+                    }
+                    for command in output?.hostCommands ?? []
+                    where command.action == "setViewTimerInterval" {
+                        interval = Int(command.value?.number ?? 0)
+                    }
+                }
+                if interval == 0, output == nil {
+                    output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
+                                                    snapshot: probe.hostSnapshot, event: timer,
+                                                    geometry: scene.scriptGeometry)
+                    diagnostics += output?.diagnostics ?? []
+                }
+            }
+            if let output, output.overrides != .empty {
+                scene = try await builder.build(viewID: viewID, requestedSize: probe.requestedSize,
+                                                overrides: output.overrides)
+            }
+            // A timer handler that throws does so on every tick; print each diagnostic once.
+            var reported = Set<WMPJScriptDiagnostic>()
+            for diagnostic in diagnostics where reported.insert(diagnostic).inserted {
+                WMPHarnessOutput.emit("SCRIPT-DIAG \(viewID) [\(diagnostic.code)] \(diagnostic.message)")
+            }
+        }
+
+        WMPHarnessOutput.emit("RENDER-DUMP \(viewID): \(WMPNumber.format(scene.canvasSize.width))x"
+            + "\(WMPNumber.format(scene.canvasSize.height)), \(scene.metrics.resolvedNodeCount) nodes, "
+            + "\(scene.commands.count) commands, \(scene.hits.count) hits, "
+            + "\(scene.widgets.count) widgets, \(scene.metrics.unresolvedNodeCount) unresolved")
+
+        if probe.probes(viewID) {
+            for line in probeLines(scene: scene, skin: skin, imageStore: imageStore) {
+                WMPHarnessOutput.emit(line)
+            }
+            // How much of each windowless `<EFFECTS>` rect lies outside the painted window —
+            // what `WMPRenderer.effectsSilhouette` cuts away in the app. Needs the split render,
+            // which the dump itself never makes.
+            if scene.widgets.contains(where: { $0.kind == .effects && !$0.isWindowedEffects }),
+               let result = try? await WMPRenderer(imageStore: imageStore).render(scene: scene) {
+                for line in silhouetteLines(scene: scene, mask: result.silhouetteMask) {
+                    WMPHarnessOutput.emit(line)
+                }
+            }
+        }
+        if probe.wantsBitmaps {
+            let tally = bitmapTally(scene: scene, skin: skin, imageStore: imageStore)
+            WMPHarnessOutput.emit("BITMAPS \(viewID): resolved=\(tally.resolved) missing=\(tally.missing.joined(separator: " "))")
+        }
+        if probe.wantsUnresolved {
+            for line in unresolvedLines(scene: scene, skin: skin) { WMPHarnessOutput.emit(line) }
+        }
+        if probe.wantsLimits { WMPHarnessOutput.emit(Self.limitsLine(scene: scene, viewID: viewID)) }
+        if probe.wantsOccluded {
+            for line in occludedLines(scene: scene, skin: skin) { WMPHarnessOutput.emit(line) }
+        }
+        if probe.wantsExpressions {
+            for line in expressionLines(scene: scene, skin: skin, viewID: viewID, output: output) { WMPHarnessOutput.emit(line) }
+        }
+        if probe.wantsCallTrace {
+            for line in callTraceLines(viewID: viewID, output: output, unavailable: pass.unavailableReason) {
+                WMPHarnessOutput.emit(line)
+            }
+        }
+        if let driven = probe.gestures, driven.viewID.caseInsensitiveCompare(viewID) == .orderedSame {
+            scene = await drive(gestures: driven.gestures, on: scene, viewID: viewID, skin: skin,
+                                builder: builder, pass: pass, probe: probe)
+        }
+        if let hover = probe.hoverPath, hover.viewID.caseInsensitiveCompare(viewID) == .orderedSame {
+            scene = await drive(hover: hover.points, on: scene, viewID: viewID, skin: skin,
+                                builder: builder, pass: pass, probe: probe)
+        }
+        if probe.wantsAppKit {
+            for line in await appKitLines(scene: scene, viewID: viewID, imageStore: imageStore) {
+                WMPHarnessOutput.emit(line)
+            }
+        }
+        if let dump {
+            try FileManager.default.createDirectory(at: dump, withIntermediateDirectories: true)
+            let renderer = WMPRenderer(imageStore: imageStore)
+            if let cadence = renderer.animationCadence(for: scene) {
+                WMPHarnessOutput.emit("ANIMATION \(viewID): shortestDelay="
+                    + "\(WMPNumber.format(CGFloat(cadence.shortestDelay))) bounds=\(cadence.bounds)")
+            }
+            for clock in probe.animationClocks {
+                // A refused write is reported as a `PNG` outcome, never as a second `RENDER-DUMP`
+                // line. The view has already reported its stats above; letting this throw printed
+                // `RENDER-DUMP <view> FAILED` after it, so the one windowless-view class the
+                // renderer correctly refuses (`WMP0035`, 76 views corpus-wide) made every block
+                // holding one print more `RENDER-DUMP ` lines than its `LOAD` line declared
+                // `views=`. Both sweep and census read that arithmetic as a lost log block and
+                // dropped 48 of 184 archives from the invariants comparison (W245). `RENDER-DUMP`
+                // is now one line per view per outcome: stats, or FAILED when the scene never
+                // built at all.
+                do {
+                    let record = try await renderer.dump(scene: scene, to: dump, clock: clock)
+                    WMPHarnessOutput.emit("PNG \(viewID): \(record.pngFilename)")
+                } catch {
+                    WMPHarnessOutput.emit("PNG \(viewID) FAILED \(oneLine(error))")
+                }
+            }
+        }
+    }
+
+    // MARK: Findings and compatibility
+
+    static func findingLines(_ diagnostics: [WMPDiagnostic]) -> [String] {
+        var counts: [String: (WMPDiagnostic, Int)] = [:]
+        for diagnostic in diagnostics {
+            let key = "\(diagnostic.code.rawValue)|\(diagnostic.message)"
+            counts[key] = (diagnostic, (counts[key]?.1 ?? 0) + 1)
+        }
+        return counts.values.sorted {
+            $0.0.code.rawValue == $1.0.code.rawValue ? $0.0.message < $1.0.message
+                : $0.0.code.rawValue < $1.0.code.rawValue
+        }.map { diagnostic, count in
+            "FINDING [\(diagnostic.severity.rawValue)] \(diagnostic.code.rawValue) ×\(count) "
+                + diagnostic.message.replacingOccurrences(of: "\n", with: " ")
+        }
+    }
+
+    /// **Will this window come apart if the user drags or resizes it?** — answered from the scene
+    /// alone, with no window and no gesture.
+    ///
+    /// The artwork is rasterized at the *scene's* size while the hosted surfaces and
+    /// `WMPMainView.skinPoint(from:sceneSize:)` are derived from `bounds / canvasSize`, so a window
+    /// forced to a size its scene is not separates the two: the visualization stretches, the skin
+    /// does not, and every control moves out from under the pointer. `WMPWindowSizeLimits` is what
+    /// the app will give the window — the same derivation the controller uses, deliberately not a
+    /// second copy — so a canvas outside those limits is a window that **will** be forced, and the
+    /// verdict says which way. `ok` is the invariant holding.
+    ///
+    /// It cannot see the disagreement itself, which lives in the window layer and needs the live
+    /// `WMP_SIZE_TRACE`; it enumerates the scenes where the disagreement is guaranteed, which is the
+    /// half a corpus sweep can own. Before W213 every view smaller than 440x170 in either axis was
+    /// one edge drag from being snapped to it.
+    static func limitsLine(scene: WMPScene, viewID: String) -> String {
+        let limits = WMPWindowSizeLimits.forScene(scene)
+        func size(_ value: WMPSize?) -> String {
+            value.map { "\(WMPNumber.format($0.width))x\(WMPNumber.format($0.height))" } ?? "none"
+        }
+        // **`exposed=` is the field with predictive value, and `verdict=` is the invariant.** Both
+        // sides of the verdict are derived from this scene, so it can only ever say `ok` while the
+        // app takes its floor from the scene — which is the point, and is also why a green column
+        // is not on its own evidence of anything. `exposed=` is the independent number: how far the
+        // view is below the *unskinned* player's 440x170, the constant that used to be every skin
+        // window's floor. **483 of the corpus's 630 views are below it in at least one axis**, so a
+        // constant floor leaking back in does not break one skin, it breaks three quarters of them.
+        let exposed = scene.canvasSize.width < WMPMainWindowController.unskinnedSize.width
+            || scene.canvasSize.height < WMPMainWindowController.unskinnedSize.height
+        return "LIMITS \(viewID): canvas=\(size(scene.canvasSize)) floor=\(size(limits.minimum)) "
+            + "ceiling=\(size(limits.maximum)) resizable=\(scene.isResizable ? "yes" : "no") "
+            + "exposed=\(exposed ? "yes" : "no") "
+            + "verdict=\(limits.breakage(for: scene.canvasSize)?.rawValue ?? "ok")"
+    }
+
+    /// The static half of the demand tally: what the markup and the scripts *ask for*, minus what
+    /// the engine claims to implement. It ranks Class A work. It is not a substitute for
+    /// `WMP_CALL_TRACE`, which is the only thing that catches a member that is recognised and
+    /// answers wrong.
+    static func compatibilityLines(_ skin: WMPLoadedSkin) -> [String] {
+        let report = skin.compatibilityReport
+        let tags = report.tags.filter { !WMPCorpusReportHarness.supportedTags.contains($0.name) }
+        let members = report.members.filter { !WMPCorpusReportHarness.supports(memberPath: $0.name, in: skin.graph) }
+        // Events were collected and compared all along and never printed, so the largest single
+        // block of Class A demand in the corpus was invisible to the only instrument that ranks it:
+        // `onResize` sat unrecognised through three phases with 47 uses across 19 archives, and
+        // `value_onchange` still does with 2,207 across 174. A tally nothing emits is not a tally.
+        let events = report.events.filter { !WMPCorpusReportHarness.supportedEvents.contains($0.name) }
+        let missing = skin.resources.filter { $0.status == .missing }.count
+        let unsupported = skin.resources.filter { $0.status == .unsupported }.count
+        var lines = ["COMPAT unknown-tags=\(tags.count) unknown-members=\(members.count) "
+            + "unknown-events=\(events.count) "
+            + "resources-missing=\(missing) resources-unsupported=\(unsupported)"]
+        lines += tags.sorted { $0.count > $1.count }.map { "UNKNOWN tag \($0.name) ×\($0.count)" }
+        lines += events.sorted { $0.count > $1.count }.prefix(40)
+            .map { "UNKNOWN event \($0.name) ×\($0.count)" }
+        lines += members.sorted { $0.count > $1.count }.prefix(40)
+            .map { "UNKNOWN member \($0.name) ×\($0.count)" }
+        return lines
+    }
+
+    // MARK: The scene probe
+
+    /// Type, id, resolved frame, clip, paint and authored attributes for every node the scene
+    /// actually placed. A node existing says nothing about where it is drawn; this is the line that
+    /// says where.
+    static func probeLines(scene: WMPScene, skin: WMPLoadedSkin,
+                           imageStore: WMPImageStore) -> [String] {
+        var lines = scene.widgets.map { widget in
+            "WIDGET \(scene.viewID)/\(widget.stableID) \(widget.kind) id=\(widget.nodeID ?? "-") "
+                + "frame=\(widget.frame) clip=\(widget.clipRect.map(String.init(describing:)) ?? "-") "
+                + "visible=\(widget.clipRect.flatMap { widget.frame.intersection($0) }.map(String.init(describing:)) ?? "none")"
+                // The inherited `alphaBlend`. A widget at `alpha=0` is one its container has faded
+                // out and `WMPMainView` hosts no surface for — and without this field the line was
+                // indistinguishable from a hosted one, which is how `Plus! Bionic Dot` read as a
+                // correctly placed `<EFFECTS>` while drawing a rectangle over the face.
+                + (widget.alpha < 1 ? " alpha=\(WMPNumber.format(widget.alpha))" : "")
+                // The container shape a windowless `<EFFECTS>` is confined to. Absent means the
+                // surface fills its rect, which for a skin that masks rather than overpaints is
+                // the spectrum-slab defect this field exists to make visible.
+                + (widget.regionMask.map { " mask=\($0.resourcePath)"
+                    + "@\($0.frame) keys=\($0.keyedOut.map(\.description).joined(separator: ","))" } ?? "")
+                // The window's own silhouette, and how much of this rect it removes. `mask=` above
+                // is the other idiom and the two are independent — a container that occludes by
+                // paint states no `mask=` at all, and `offshape=` is the only field that says the
+                // rect reaches past the skin. Cerulean is why: `face.bmp` hid its visualizer by
+                // painting over it, and paint stops at the pixels `clippingColor` cut away, so 104
+                // px of spectrum stood outside the right of the head with every other field clean.
+                + (widget.clippingShape.map { " shape=\($0.resourcePath)@\($0.frame)"
+                    + " keys=\($0.keyedOut.map(\.description).joined(separator: ","))"
+                    + " offshape=\(offShapePixels(widget: widget, shape: $0, imageStore: imageStore))" } ?? "")
+        }
+        lines += Self.paintProbeLines(scene: scene, skin: skin)
+        return lines
+    }
+
+    /// `SILHOUETTE <view>/<sid> id= cut=<px> of <px>` per windowless `<EFFECTS>` widget, at 1x.
+    /// `cut=0` is a rect entirely inside the window the skin painted.
+    static func silhouetteLines(scene: WMPScene, mask: CGImage?) -> [String] {
+        let data = mask?.dataProvider?.data as Data?
+        return scene.widgets.filter { $0.kind == .effects && !$0.isWindowedEffects }.map { widget in
+            let rect = widget.clipRect.flatMap { widget.frame.intersection($0) } ?? widget.frame
+            var cut = 0, total = 0
+            if let mask, let data {
+                let x0 = max(0, Int(rect.x)), x1 = min(mask.width, Int(rect.maxX.rounded(.up)))
+                let y0 = max(0, Int(rect.y)), y1 = min(mask.height, Int(rect.maxY.rounded(.up)))
+                if x0 < x1, y0 < y1 {
+                    total = (x1 - x0) * (y1 - y0)
+                    for y in y0..<y1 { for x in x0..<x1 where data[y * mask.bytesPerRow + x] == 0 { cut += 1 } }
+                }
+            }
+            return "SILHOUETTE \(scene.viewID)/\(widget.stableID) id=\(widget.nodeID ?? "-") "
+                + "frame=\(rect) cut=\(cut)" + (total > 0 ? " of \(total)" : "")
+        }
+    }
+
+    /// How many pixels of a widget's own visible rect the container's silhouette cuts away — the
+    /// area a hosted surface paints into and the skin does not.
+    ///
+    /// Counted against the mask the app clips through (`WMPImageStore.regionMask`, 255 keeps), in
+    /// the mask's own pixels, so a `clippingImage` authored at a size other than its frame is
+    /// scaled the way the clip is. A widget entirely inside the silhouette reads `offshape=0`,
+    /// which is every skin that states a shape and respects it.
+    static func offShapePixels(widget: WMPWidget, shape: WMPWidgetRegionMask,
+                               imageStore: WMPImageStore) -> Int {
+        let rect = widget.clipRect.flatMap { widget.frame.intersection($0) } ?? widget.frame
+        guard !rect.isEmpty, !shape.frame.isEmpty,
+              let mask = try? imageStore.regionMask(for: shape.resourcePath,
+                                                    keyedOut: shape.keyedOut),
+              let data = mask.dataProvider?.data as Data?, mask.bitsPerPixel == 8 else { return 0 }
+        let width = mask.width, height = mask.height, stride = mask.bytesPerRow
+        guard width > 0, height > 0, data.count >= stride * height else { return 0 }
+        let xScale = CGFloat(width) / shape.frame.width, yScale = CGFloat(height) / shape.frame.height
+        let x0 = max(0, Int(((rect.x - shape.frame.x) * xScale).rounded(.down)))
+        let x1 = min(width, Int(((rect.maxX - shape.frame.x) * xScale).rounded(.up)))
+        let y0 = max(0, Int(((rect.y - shape.frame.y) * yScale).rounded(.down)))
+        let y1 = min(height, Int(((rect.maxY - shape.frame.y) * yScale).rounded(.up)))
+        guard x0 < x1, y0 < y1 else { return 0 }
+        return data.withUnsafeBytes { buffer -> Int in
+            var cut = 0
+            for y in y0..<y1 {
+                let row = y * stride
+                for x in x0..<x1 where buffer.load(fromByteOffset: row + x, as: UInt8.self) == 0 {
+                        cut += 1
+                    }
+            }
+            return cut
+        }
+    }
+
+    /// One line per node the scene could not place, in the order the builder gave up on them.
+    ///
+    /// `unresolved` is the numerator of `starved.tsv` and it names nothing, so a high ratio has
+    /// always been followed by reading the `.wms` and guessing. The authored tag and the missing
+    /// attribute together are what separates the two populations that number conflates: a node
+    /// whose geometry an unrun script owes it, and a node whose kind this engine sizes wrong.
+    static func unresolvedLines(scene: WMPScene, skin: WMPLoadedSkin) -> [String] {
+        let nodesByID = Dictionary(skin.graph.allNodes.map { ($0.stableID, $0) }) { first, _ in first }
+        let unresolvedIDs = Set(scene.unresolved.map { $0.stableID })
+        return scene.unresolved.map { entry in
+            let node = nodesByID[entry.stableID]
+            return "UNRESOLVED \(scene.viewID)/\(entry.stableID) "
+                + "\(node?.authoredTagName ?? "?") id=\(entry.nodeID ?? "-") "
+                + "\(entry.attribute)=\(condense(entry.authoredValue)) "
+                + lineage(of: node, unresolved: unresolvedIDs)
+        }
+    }
+
+    /// The three fields W231 needs and the count alone cannot say: where the node sits in the
+    /// graph, what geometry it actually authored, and what it is carrying.
+    ///
+    /// `unresolved` is a flat tally, so 180 `<SUBVIEW>` nodes could be 180 independent failures or
+    /// a handful of containers each dragging its subtree in with it — and the same number is what
+    /// `starved.tsv` ranks on either way. `parent=` and `kids=` answer that in both directions on
+    /// one line: `parent=…:unresolved` says this node was already accounted for upstream, and
+    /// `kids=n/m unresolved` says how much of the tally below it is this node's doing.
+    ///
+    /// `geom=` is the question W111 turned on, asked of a box instead of an object: a `<SUBVIEW>`
+    /// authoring no placement at all is a grouping wrapper the skin never meant to size, and
+    /// counting it as starved is the same misclassification the string table was. `bg=` is part of
+    /// that answer rather than decoration — WMP's ambient size default is zero *or the bitmap's
+    /// size*, so a wrapper with a `backgroundImage` had a size available to it and one without
+    /// never did.
+    private static func lineage(of node: WMPNode?, unresolved: Set<Int>) -> String {
+        guard let node else { return "parent=? geom=? kids=?" }
+
+        let parentField: String
+        if let parent = node.parent {
+            let state = unresolved.contains(parent.stableID) ? "unresolved" : "resolved"
+            parentField = "\(parent.authoredTagName)#\(parent.xmlID ?? "-")@\(parent.stableID):\(state)"
+        } else {
+            parentField = "-:root"
+        }
+
+        let authored = geometryNames.compactMap { name -> String? in
+            guard let attribute = node.attribute(named: name) else { return nil }
+            return "\(name)=\(attribute.rawValue)"
+        }
+
+        let background = ["backgroundImage", "image"].lazy
+            .compactMap { node.attribute(named: $0)?.rawValue }
+            .first
+
+        var kids = "none"
+        if !node.children.isEmpty {
+            var tally: [String: Int] = [:]
+            for child in node.children { tally[child.authoredTagName.lowercased(), default: 0] += 1 }
+            let shape = tally.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+                .map { "\($0.key)x\($0.value)" }.joined(separator: ",")
+            let starved = node.children.filter { unresolved.contains($0.stableID) }.count
+            kids = "\(starved)/\(node.children.count) unresolved \(shape)"
+        }
+
+        return "parent=\(parentField) "
+            + "geom=\(authored.isEmpty ? "none" : authored.joined(separator: ",")) "
+            + "bg=\(background.map(condense) ?? "-") "
+            + "kids=\(kids)"
+    }
+
+    /// Every attribute that can place or size a node, in the spelling the corpus authors. Matched
+    /// case-insensitively by `attribute(named:)`, so one spelling covers the Plus! family's
+    /// capitalisation as well.
+    private static let geometryNames = [
+        "width", "height", "left", "top", "right", "bottom",
+        "horizontalAlignment", "verticalAlignment"
+    ]
+
+    /// Every control the pointer cannot reach anywhere in its own frame, with and without
+    /// artwork coverage.
+    ///
+    /// A hit target is *unreachable* when no pixel of its frame hit-tests back to it: something in
+    /// front answers everywhere, so the control is drawn, hovers nothing and clicks nothing. The
+    /// point of reporting it twice is that the two rules disagree, and the disagreement is the
+    /// measurement: `covered=` is what `WMPHitTester` does now (a control is its artwork), `rect=`
+    /// re-tests the same scene with every coverage mask dropped, which is what it did before.
+    /// `reached=rect-only` is a control this rule *lost* and that column has to stay empty.
+    ///
+    /// Sampling is the target's own frame on a bounded grid plus, for a mapping child, the first
+    /// pixel the mapping image gives that colour — a `<BUTTONELEMENT>` owns an arbitrary region of
+    /// its group's rect and a grid alone can miss a thin one.
+    static func occludedLines(scene: WMPScene, skin: WMPLoadedSkin) -> [String] {
+        let covered = WMPHitTester(hits: scene.hits)
+        // The rule this engine used before: flat `zIndex` across the view, and no coverage.
+        let flat: [WMPHitMetadata] = scene.hits.map { $0.withoutCoverage() }
+        let ordered: [WMPHitMetadata] = flat.sorted { (lhs: WMPHitMetadata, rhs: WMPHitMetadata) -> Bool in
+            if lhs.zIndex != rhs.zIndex { return lhs.zIndex < rhs.zIndex }
+            return lhs.documentOrder < rhs.documentOrder
+        }
+        var restamped: [WMPHitMetadata] = []
+        for (offset, hit) in ordered.enumerated() { restamped.append(hit.restamped(paintOrder: offset)) }
+        let rect = WMPHitTester(hits: restamped)
+        var lines: [String] = []
+        for hit in scene.hits where hit.enabled {
+            let children: [(id: Int, label: String, seed: WMPPoint?)] = hit.mappingTargets.isEmpty
+                ? [(hit.stableID, hit.nodeID ?? "-", nil)]
+                : hit.mappingTargets.filter(\.enabled).map { child in
+                    (child.stableID, child.nodeID ?? "-",
+                     hit.mappingImage?.firstPixel(for: child.stableID).map { point in
+                        WMPPoint(x: hit.frame.x + point.x * hit.frame.width
+                                    / CGFloat(max(1, hit.mappingImage?.width ?? 1)) + 0.5,
+                                 y: hit.frame.y + point.y * hit.frame.height
+                                    / CGFloat(max(1, hit.mappingImage?.height ?? 1)) + 0.5)
+                     })
+                }
+            for child in children {
+                var points = samplePoints(in: hit.frame)
+                if let seed = child.seed { points.append(seed) }
+                let byCovered = points.contains { covered.hitTest($0)?.stableID == child.id }
+                let byRect = points.contains { rect.hitTest($0)?.stableID == child.id }
+                guard !(byCovered && byRect) else { continue }
+                let reached = byCovered ? "covered-only" : (byRect ? "rect-only" : "neither")
+                // Name what answers instead. A control lost to this rule is only a defect if the
+                // thing in front of it is something the user can see there.
+                let blockers = Set(points.compactMap { point -> String? in
+                    guard let front = covered.hitTest(point), front.stableID != child.id else { return nil }
+                    return "\(front.nodeID ?? "-")#\(front.stableID):\(front.kind)"
+                })
+                lines.append("OCCLUDED \(scene.viewID)/\(child.id) \(hit.kind) id=\(child.label) "
+                    + "frame=\(hit.frame) z=\(hit.zIndex) reached=\(reached) "
+                    + "by=[\(blockers.sorted().joined(separator: " "))]")
+            }
+        }
+        let lost = lines.filter { $0.contains("reached=rect-only") }.count
+        let recovered = lines.filter { $0.contains("reached=covered-only") }.count
+        let neither = lines.filter { $0.contains("reached=neither") }.count
+        let masks = scene.hits.filter { $0.coverage != nil }.count
+        lines.append("OCCLUDED \(scene.viewID): recovered=\(recovered) lost=\(lost) "
+            + "unreachable-either-way=\(neither) masks=\(masks) of \(scene.hits.count) hits")
+        return lines
+    }
+
+    /// A 17x17 grid over the frame, inset half a step so no sample lands on an edge two controls
+    /// share. Bounded on purpose: this runs over every view of a 180-archive sweep.
+    private static func samplePoints(in frame: WMPRect) -> [WMPPoint] {
+        guard frame.width > 0, frame.height > 0 else { return [] }
+        let steps = 17
+        return (0..<steps).flatMap { row in
+            (0..<steps).map { column in
+                WMPPoint(x: frame.x + (CGFloat(column) + 0.5) * frame.width / CGFloat(steps),
+                         y: frame.y + (CGFloat(row) + 0.5) * frame.height / CGFloat(steps))
+            }
+        }
+    }
+
+    private static func paintProbeLines(scene: WMPScene, skin: WMPLoadedSkin) -> [String] {
+        let nodesByID = Dictionary(skin.graph.allNodes.map { ($0.stableID, $0) }) { first, _ in first }
+        return scene.commands.map { command in
+            let node = nodesByID[command.stableID]
+            let paint: String
+            switch command.paint {
+            case let .fill(color): paint = "fill:\(color)"
+            case let .image(image):
+                let crop = image.sourceRect.map { " crop=\($0)" } ?? ""
+                let key = image.colorKeys.map { " colorKey=\($0)" }.joined()
+                paint = "image:\(image.resourcePath)\(crop)\(key)\(image.tiled ? " tiled" : "")"
+            case let .text(text): paint = "text:\(text.value)"
+            }
+            let attributes = (node?.attributes ?? []).prefix(12)
+                .map { "\($0.name)=\(condense($0.rawValue))" }.joined(separator: " ")
+            return "PROBE \(scene.viewID)/\(command.stableID) \(node?.kind.description ?? "?") "
+                + "id=\(command.nodeID ?? "-") frame=\(command.frame) "
+                + "clip=\(command.clipRect.map(String.init(describing:)) ?? "-") z=\(command.zIndex) "
+                + "paint=\(paint) attrs=[\(attributes)]"
+        }
+    }
+
+    // MARK: Bitmaps
+
+    /// Separates "art is absent" (Class C, small) from "art draws wrong" (Class B, expensive). A
+    /// path counts as resolved only when the store actually decoded it: a resource that resolves in
+    /// the archive and then fails to decode is missing as far as the screen is concerned.
+    static func bitmapTally(scene: WMPScene, skin: WMPLoadedSkin,
+                            imageStore: WMPImageStore) -> (resolved: Int, missing: [String]) {
+        var resolved = Set<String>(), missing = Set<String>()
+        for command in scene.commands {
+            guard case let .image(image) = command.paint else { continue }
+            if (try? imageStore.image(for: image.resourcePath, colorKeys: image.colorKeys)) != nil {
+                resolved.insert(image.resourcePath)
+            } else {
+                missing.insert(image.resourcePath)
+            }
+        }
+        // A resource the loader could not resolve at all never reaches a paint command, so the scan
+        // above cannot see it. Those are exactly the renamed and absent assets this probe exists to
+        // name, so they are added from the registration list. An authored path that is *empty* is
+        // named `<empty>` rather than inserted blank: a blank entry disappears into the space-
+        // separated list and the probe would under-report by one with nothing to show for it.
+        for registration in skin.resources where registration.status != .available {
+            let authored = registration.authoredPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            missing.insert(authored.isEmpty ? "<empty:\(registration.attributeName)>" : authored)
+        }
+        return (resolved.count, missing.sorted(by: WMPPath.less))
+    }
+
+    // MARK: Expressions
+
+    /// 13 of 14 corpus skins compute their geometry in JScript, so this is the layout engine's
+    /// witness. Both evaluators are reported: the static grammar in `WMPInitialLayoutExpression`
+    /// that the scene builder uses today, and — when the script runtime ran — the value the real
+    /// context produced, with the dependency order it was evaluated in.
+    ///
+    /// **Only the dumped view's own subtree.** WMP ids are scoped to a `VIEW`, and both evaluators
+    /// are too: `WMPScriptViewPlan` collects expressions from the view and its descendants, and
+    /// `WMPInitialLayoutResolver` refuses a reference that leaves the view it was built for. A probe
+    /// walking `graph.allNodes` therefore printed every *other* view's expressions under this view's
+    /// name, where by construction neither evaluator can answer — one row per expression per view in
+    /// the skin. That read as an engine defect and was the probe: 34,300 of the 34,314 rows that
+    /// reported `#-` / `live=-` across the 179-archive corpus were a sibling view's expression,
+    /// already ordered and evaluated under its own view. Scope this the way the engine is scoped.
+    static func expressionLines(scene: WMPScene, skin: WMPLoadedSkin, viewID: String,
+                                output: WMPScriptOutput?) -> [String] {
+        guard let view = skin.views.first(where: { $0.id.caseInsensitiveCompare(viewID) == .orderedSame })?.node
+        else { return [] }
+        var included = Set<Int>()
+        func include(_ node: WMPNode) { included.insert(node.stableID); node.children.forEach(include) }
+        include(view)
+        var resolver = WMPInitialLayoutResolver(graph: skin.graph, view: view, canvas: scene.canvasSize)
+        let order = Dictionary(uniqueKeysWithValues: output?.expressionOrder.enumerated()
+            .map { ($0.element.lowercased(), $0.offset) } ?? [])
+        let results = Dictionary(output?.expressions.map { ($0.key.lowercased(), $0) } ?? []) { first, _ in first }
+
+        var lines: [String] = []
+        for node in skin.graph.allNodes where included.contains(node.stableID) {
+            for attribute in node.attributes {
+                let name = attribute.name.lowercased()
+                guard ["left", "top", "width", "height"].contains(name) else { continue }
+                let source: String
+                switch attribute.value {
+                case let .jScript(text): source = text
+                case let .binding(kind, path) where kind == .property: source = path
+                default: continue
+                }
+                let id = node === view ? "view" : (node.xmlID ?? "node\(node.stableID)")
+                let key = "\(id).\(name)"
+                let statically: String
+                if let property = WMPInitialLayoutResolver.Property(rawValue: name) {
+                    switch resolver.resolve(node, property: property) {
+                    case let .value(value): statically = WMPNumber.format(value)
+                    case let .unresolved(reason): statically = "UNRESOLVED(\(reason))"
+                    }
+                } else { statically = "UNRESOLVED(no property)" }
+                let result = results[key.lowercased()]
+                let live = result.map { entry -> String in
+                    if let error = entry.error { return "ERROR(\(condense(error)))" }
+                    return entry.value?.number.map { WMPNumber.format(CGFloat($0)) }
+                        ?? entry.value?.string ?? "null"
+                } ?? "-"
+                let deps = result?.dependencies.joined(separator: ",") ?? ""
+                let position = order[key.lowercased()].map { "#\($0)" } ?? "#-"
+                lines.append("EXPR \(scene.viewID)/\(key) \(position): \(condense(source)) "
+                    + "-> \(statically) live=\(live) deps=[\(deps)]")
+            }
+        }
+        return lines
+    }
+
+    // MARK: Scripts
+
+    /// Read this before believing anything about what a skin contains. All 14 corpus archives ship
+    /// JScript; a skin whose handlers never ran looks identical, from the outside, to one that has
+    /// none.
+    static func scriptLines(skin: WMPLoadedSkin, pass: WMPScriptPass) -> [String] {
+        let total = skin.scriptSources.values.reduce(0) { $0 + $1.utf8.count }
+        let state = pass.unavailableReason.map { "unavailable (\($0))" } ?? "available"
+        var lines = ["SCRIPTS programs=\(skin.scripts.count) bytes=\(total) runtime=\(state)"]
+        for registration in skin.scripts.sorted(by: { WMPPath.less($0.authoredPath, $1.authoredPath) }) {
+            guard let path = registration.resolvedPath, let source = skin.scriptSources[path] else {
+                lines.append("SCRIPT \(registration.authoredPath): status=\(registration.status.rawValue)")
+                continue
+            }
+            let handlers = declaredHandlers(in: source)
+            lines.append("SCRIPT \(registration.authoredPath): bytes=\(source.utf8.count) "
+                + "handlers=[\(handlers.joined(separator: ","))]")
+        }
+        // Handlers declared on the markup itself, which is where a skin puts its transport wiring.
+        var inline: [String: Int] = [:]
+        for node in skin.graph.allNodes {
+            for attribute in node.attributes {
+                guard case .handler = attribute.value else { continue }
+                inline[attribute.name.lowercased(), default: 0] += 1
+            }
+        }
+        if !inline.isEmpty {
+            lines.append("SCRIPT inline: " + tally(inline))
+        }
+        return lines
+    }
+
+    /// A `name×count` tally, highest count first, **ties broken on the name**. The tie-break is the
+    /// whole point: the caller counts into a dictionary, and `sorted` on the count alone leaves
+    /// equal counts in hash order, which Swift randomizes per process. Two captures of one
+    /// unchanged binary then differ in ~19 `SCRIPT inline:` lines that hold the same tally in a
+    /// different sequence, and `wmp_render_sweep.sh compare` reports them as changed — noise a real
+    /// regression can hide in.
+    static func tally(_ counts: [String: Int]) -> String {
+        counts.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+            .map { "\($0.key)×\($0.value)" }.joined(separator: " ")
+    }
+
+    private static func declaredHandlers(in source: String) -> [String] {
+        let pattern = #"function\s+([A-Za-z_$][A-Za-z0-9_$]*)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let range = NSRange(source.startIndex..<source.endIndex, in: source)
+        var names: [String] = []
+        for match in regex.matches(in: source, range: range) {
+            guard let swiftRange = Range(match.range(at: 1), in: source) else { continue }
+            let name = String(source[swiftRange])
+            if !names.contains(name) { names.append(name) }
+        }
+        return names
+    }
+
+    /// Exactly what the app dispatches, through the app's own selector — including its view scope,
+    /// so the harness cannot measure a skin the app never runs.
+    private static func eventFor(name: String, skin: WMPLoadedSkin, viewID: String) -> WMPJScriptEvent? {
+        let handlers = WMPMainWindowController.handlers(in: skin, event: name, targetID: nil,
+                                                        viewID: viewID)
+        guard !handlers.isEmpty else { return nil }
+        return WMPJScriptEvent(name: name, targetID: viewID, handlers: handlers)
+    }
+
+    // MARK: Call trace
+
+    /// Every host object-model access with what answered and whether the member was recognised. The
+    /// ranked `UNRECOGNISED` tail is the Class A backlog; the recognised lines are the only place a
+    /// member answering a plausible-but-wrong default is visible at all.
+    static func callTraceLines(viewID: String, output: WMPScriptOutput?,
+                               unavailable: String?) -> [String] {
+        guard let output else {
+            return ["CALLS \(viewID): none (\(unavailable ?? "no script transaction"))"]
+        }
+        var lines = output.calls.map { call in
+            "CALL \(viewID) \(call.path) \(call.kind.rawValue) "
+                + "value=\(call.value?.string ?? "null") \(Self.resolutionText(call.resolution))"
+        }
+        var counts: [String: (Int, WMPMemberResolution)] = [:]
+        for call in output.calls {
+            let existing = counts[call.path] ?? (0, .live)
+            // The worst resolution any of them got: a member that answers live once and
+            // unrecognised once is not a working member.
+            let worst: WMPMemberResolution
+            if existing.1 == .unrecognised || call.resolution == .unrecognised { worst = .unrecognised }
+            else if existing.1 == .inert || call.resolution == .inert { worst = .inert }
+            else { worst = .live }
+            counts[call.path] = (existing.0 + 1, worst)
+        }
+        lines += counts.sorted { $0.value.0 == $1.value.0 ? $0.key < $1.key : $0.value.0 > $1.value.0 }
+            .map { "CALLS \(viewID) \($0.key) ×\($0.value.0) \(Self.resolutionText($0.value.1))" }
+        return lines
+    }
+
+    /// `INERT` is its own word on purpose. A member that is recognised and answers a plausible
+    /// default is the most expensive phantom bug this engine can carry — it disappears from the
+    /// demand tally and reads as working — so the ones that have no host behind them say so.
+    static func resolutionText(_ resolution: WMPMemberResolution) -> String {
+        switch resolution {
+        case .live: return "ok"
+        case .inert: return "INERT"
+        case .unrecognised: return "UNRECOGNISED"
+        }
+    }
+
+    // MARK: Clicks
+
+    /// Why every candidate under the pointer refused the click, one `refused=` line each.
+    ///
+    /// **A `MISS` on its own names nothing, and the two instruments either side of it cannot fill
+    /// the gap (W152).** `WMP_RENDER_OCCLUDED` enumerates targets that *have* a hit entry and asks
+    /// who answers instead, so a control that never reached the hit map is invisible to it, and a
+    /// bare `MISS` is equally silent about a control that did reach it and then declined. Both read
+    /// as "the engine lost this control" and neither is necessarily that: `digitaldj/DigitalDJ`'s
+    /// whole transport strip misses every click because the skin's own `loadDJ()` disables it until
+    /// the user picks an access level on its splash — `enabled=false` on the group, one line, and
+    /// hours of theory about the hit map before it.
+    ///
+    /// A point with no candidates at all prints nothing, which is the honest answer: nothing the
+    /// skin declared is there. `reached=` names the first rule that refused, in the order
+    /// `WMPHitTester` applies them.
+    private static func missReasons(at point: WMPPoint, in scene: WMPScene) -> [String] {
+        scene.hits.filter { $0.frame.contains(point) }.map { hit in
+            let reason: String
+            if !hit.enabled { reason = "disabled" }
+            else if !(hit.clipRect.map { $0.contains(point) } ?? true) { reason = "clipped" }
+            else if !(hit.coverage?.covers(point, in: hit.frame) ?? true) { reason = "not-drawn-here" }
+            else if let mapping = hit.mappingImage {
+                guard let child = mapping.node(at: point, in: hit.frame) else {
+                    reason = "unmapped-pixel"
+                    return "refused=\(hit.nodeID ?? "-")#\(hit.stableID) kind=\(hit.kind) \(reason)"
+                }
+                guard let target = hit.mappingTargets.first(where: { $0.stableID == child }) else {
+                    reason = "mapped-to-unregistered#\(child)"
+                    return "refused=\(hit.nodeID ?? "-")#\(hit.stableID) kind=\(hit.kind) \(reason)"
+                }
+                reason = target.enabled ? "answered#\(child)" : "child-disabled#\(child)"
+            } else { reason = "answered" }
+            return "refused=\(hit.nodeID ?? "-")#\(hit.stableID) kind=\(hit.kind) \(reason)"
+        }
+    }
+
+    /// Several points in order, because a second click undoing the first is the thing worth
+    /// checking: under a runtime that cannot hold state between events it does not, and that is the
+    /// defect this probe is here to make visible rather than infer.
+    private static func drive(gestures: [[WMPPoint]], on scene: WMPScene, viewID: String,
+                              skin: WMPLoadedSkin, builder: WMPSceneBuilder,
+                              pass: WMPScriptPass, probe: WMPProbe) async -> WMPScene {
+        var scene = scene
+        let nodesByID = Dictionary(skin.graph.allNodes.map { ($0.stableID, $0) }) { first, _ in first }
+        var previous = WMPSceneOverrides.empty
+        // The sticky latches the pointer has set, in the order a user sets them: WMP flips a
+        // `sticky="true"` button's `down` on release *before* it raises the `onClick`, and the
+        // drawer idiom reads it back (W206). Without it this probe drove every such handler down
+        // its `else` branch, exactly as the app did.
+        var latched: Set<Int> = []
+        for gesture in gestures {
+            guard gesture.count == 1 else {
+                scene = await drag(path: gesture, on: scene, viewID: viewID, skin: skin,
+                                   builder: builder, pass: pass, probe: probe, nodes: nodesByID)
+                continue
+            }
+            let point = gesture[0]
+            let where_ = "\(viewID)@\(WMPNumber.format(point.x)),\(WMPNumber.format(point.y))"
+            guard let target = WMPHitTester(hits: scene.hits).hitTest(point) else {
+                WMPHarnessOutput.emit("CLICK \(where_) MISS")
+                for line in Self.missReasons(at: point, in: scene) {
+                    WMPHarnessOutput.emit("CLICK \(where_) \(line)")
+                }
+                continue
+            }
+            let node = nodesByID[target.stableID]
+            let handlers: [String] = (node?.attributes ?? []).compactMap { attribute in
+                guard case let .handler(event, source) = attribute.value,
+                      event.caseInsensitiveCompare("onClick") == .orderedSame else { return nil }
+                return source
+            }
+            WMPHarnessOutput.emit("CLICK \(where_) hit=\(target.nodeID ?? "-")#\(target.stableID) kind=\(target.kind) "
+                + "action=\(target.action.map(String.init(describing:)) ?? "-") "
+                + "sticky=\(target.sticky) handlers=\(handlers.count)")
+            guard let session = pass.session, !handlers.isEmpty else { continue }
+            if target.sticky {
+                latched.formSymmetricDifference([target.stableID])
+                await session.setWidgetDown(stableID: target.stableID,
+                                            down: latched.contains(target.stableID),
+                                            viewID: viewID)
+            }
+            let output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
+                snapshot: probe.hostSnapshot,
+                event: WMPJScriptEvent(name: "onClick", targetID: target.nodeID, handlers: handlers),
+                geometry: scene.scriptGeometry)
+            // A handler that writes a latch by name owns it from here, as in the app.
+            for (address, value) in output.overrides.properties
+            where address.property.caseInsensitiveCompare("down") == .orderedSame {
+                guard scene.hits.contains(where: { $0.stableID == address.stableID && $0.sticky })
+                else { continue }
+                if value.truth { latched.insert(address.stableID) }
+                else { latched.remove(address.stableID) }
+            }
+            // Every attribute changed anywhere in the graph, not only on the object that was hit:
+            // a skin's click handler routinely moves a sibling pane, and a probe that reported only
+            // the target would call that click inert.
+            for line in changeLines(from: previous, to: output.overrides, nodes: nodesByID) {
+                WMPHarnessOutput.emit("CLICK \(where_) \(line)")
+            }
+            previous = output.overrides
+            // **A `.wmz` compact mode is a script resizing its own window** (W113), and that arrives
+            // as `WMPScriptOutput.viewSize` rather than as a host command — so a click that shrank
+            // the player used to print no command at all and read exactly like an inert one. The
+            // line is the only headless evidence that separates a compact toggle that resized from
+            // one that merely hid half its artwork inside a window that never moved.
+            if let size = output.viewSize {
+                WMPHarnessOutput.emit("CLICK \(where_) viewSize=\(WMPNumber.format(size.width))x\(WMPNumber.format(size.height))")
+            }
+            for command in output.hostCommands {
+                WMPHarnessOutput.emit("CLICK \(where_) command=\(command.action) value=\(command.value?.string ?? "-")")
+            }
+            for diagnostic in output.diagnostics {
+                WMPHarnessOutput.emit("CLICK \(where_) [\(diagnostic.code)] \(diagnostic.message)")
+            }
+            // The compatibility surface taken *after* driving the event: a member is only demanded
+            // once the handler that reaches it has run.
+            if probe.wantsCallTrace {
+                let unrecognised = Set(output.calls.filter { !$0.recognised }.map(\.path)).sorted()
+                WMPHarnessOutput.emit("CLICK \(where_) unrecognised=[\(unrecognised.joined(separator: ","))]")
+            }
+            if let rebuilt = try? await builder.build(viewID: viewID, requestedSize: probe.requestedSize,
+                                                      overrides: output.overrides) {
+                scene = rebuilt
+                // Widgets are on this line because the defects this probe is pointed at are
+                // increasingly "did the control the click was supposed to reveal actually get
+                // hosted" — a drawer that opens onto nothing changes no command count (W55, W97).
+                WMPHarnessOutput.emit("CLICK \(where_) after: \(rebuilt.commands.count) commands, "
+                    + "\(rebuilt.widgets.count) widgets[\(Self.widgetTally(rebuilt.widgets))], "
+                    + "\(rebuilt.metrics.unresolvedNodeCount) unresolved")
+            }
+        }
+        return scene
+    }
+
+
+    /// Widget kinds and how many of each, so a `CLICK` that reveals a control says *which* kind
+    /// arrived. Corona's drawer turns on a `PLAYLIST` and a `DROPDOWNPLAYLIST` in one handler, and
+    /// a bare count cannot tell you which of the two the engine actually hosted (W55, W97).
+    private static func widgetTally(_ widgets: [WMPWidget]) -> String {
+        var counts: [String: Int] = [:]
+        for widget in widgets { counts["\(widget.kind)", default: 0] += 1 }
+        return counts.sorted { $0.key < $1.key }.map { "\($0.key)×\($0.value)" }.joined(separator: " ")
+    }
+
+    // MARK: Hover (W54)
+
+    /// Walk the pointer through `points` and raise the edges each move crosses.
+    ///
+    /// A hover is two events, not one: the pointer leaving `volumeText` and entering `seekText` is
+    /// an `onMouseOut` on the first and an `onMouseOver` on the second, in that order, and a skin
+    /// that fades a readout in on entry leaves it on screen forever if only the entry is raised.
+    /// Nothing is raised while the pointer stays inside the same node, which is why the line
+    /// reports the crossing rather than the point.
+    ///
+    /// Handler selection goes through `WMPMainWindowController.handlers(in:event:…)` — the same
+    /// call the app dispatches through — so this probe cannot pass while the app misses.
+    @MainActor
+    private static func drive(hover points: [WMPPoint], on scene: WMPScene, viewID: String,
+                              skin: WMPLoadedSkin, builder: WMPSceneBuilder,
+                              pass: WMPScriptPass, probe: WMPProbe) async -> WMPScene {
+        var scene = scene
+        let nodesByID = Dictionary(skin.graph.allNodes.map { ($0.stableID, $0) }) { first, _ in first }
+        var previous = WMPSceneOverrides.empty
+        var hovered: WMPHitTarget?
+        for point in points {
+            let where_ = "\(viewID)@\(WMPNumber.format(point.x)),\(WMPNumber.format(point.y))"
+            let target = WMPHitTester(hits: scene.hits).hitTest(point)
+            guard hovered?.stableID != target?.stableID else {
+                WMPHarnessOutput.emit("HOVER \(where_) inside=\(hovered?.nodeID ?? "-")"
+                    + "#\(hovered.map { String($0.stableID) } ?? "-") — no edge")
+                continue
+            }
+            let left = hovered
+            hovered = target
+            var edges: [(event: String, target: WMPHitTarget)] = []
+            if let left { edges.append(("onMouseOut", left)) }
+            if let target { edges.append(("onMouseOver", target)) }
+            for (event, edge) in edges {
+                let handlers = WMPMainWindowController.handlers(in: skin, event: event,
+                    targetID: edge.nodeID, targetStableID: edge.stableID, viewID: viewID)
+                WMPHarnessOutput.emit("HOVER \(where_) \(event) \(edge.nodeID ?? "-")#\(edge.stableID) "
+                    + "kind=\(edge.kind) handlers=\(handlers.count)")
+                guard let session = pass.session, !handlers.isEmpty else { continue }
+                let output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
+                    snapshot: probe.hostSnapshot,
+                    event: WMPJScriptEvent(name: event, targetID: edge.nodeID, handlers: handlers),
+                    geometry: scene.scriptGeometry)
+                for line in changeLines(from: previous, to: output.overrides, nodes: nodesByID) {
+                    WMPHarnessOutput.emit("HOVER \(where_) \(event) \(line)")
+                }
+                previous = output.overrides
+                for diagnostic in output.diagnostics {
+                    WMPHarnessOutput.emit("HOVER \(where_) \(event) [\(diagnostic.code)] \(diagnostic.message)")
+                }
+                if probe.wantsCallTrace {
+                    let unrecognised = Set(output.calls.filter { !$0.recognised }.map(\.path)).sorted()
+                    WMPHarnessOutput.emit("HOVER \(where_) \(event) unrecognised=[\(unrecognised.joined(separator: ","))]")
+                }
+                if let rebuilt = try? await builder.build(viewID: viewID,
+                        requestedSize: probe.requestedSize, overrides: output.overrides) {
+                    scene = rebuilt
+                    WMPHarnessOutput.emit("HOVER \(where_) \(event) after: \(rebuilt.commands.count) commands, "
+                        + "\(rebuilt.metrics.unresolvedNodeCount) unresolved")
+                }
+            }
+            if edges.isEmpty { WMPHarnessOutput.emit("HOVER \(where_) MISS") }
+        }
+        return scene
+    }
+
+    // MARK: The AppKit half (W71)
+
+    /// Render the scene twice — once with `WMPRenderer`, once through the **real** `NSView` stack —
+    /// and report where the two disagree.
+    ///
+    /// The harness's whole blind spot was that it never called an `NSView.draw`. `WMPMainView` is
+    /// what the user sees: the scene image drawn into it, plus every AppKit overlay hosted over the
+    /// artwork — playlist, dropdown playlist, popup, edit box, list box, effects. A skin can dump a
+    /// perfect PNG and still be wrong on screen, which is exactly what W43 was (an overlay filling
+    /// `dirtyRect` rather than `bounds`, and AppKit hands a layer-backed view a dirty rect larger
+    /// than itself). `cacheDisplay(in:to:)` runs those `draw(_:)` methods into a bitmap with no
+    /// window on screen and no screen-recording permission, so this scales to the whole corpus.
+    ///
+    /// **The number that ranks work is `outside`, not `differing`.** An overlay is *supposed* to
+    /// paint inside its own widget frame — that is what a widget is — so a difference there is the
+    /// hosting doing its job. A difference outside every widget frame is an overlay painting where
+    /// nothing declared one, and that is the W43 class. `worst=` is its bounding box, which is
+    /// where to look.
+    ///
+    /// Window shape and shadow stay outside this: they live in the window server, and remain a
+    /// short genuinely manual list.
+    /// The renderer's two layers composited back into one image — what a scene with no
+    /// `<EFFECTS>` produces directly, and the only fair baseline for the `blit=` comparison.
+    static func flatten(_ result: WMPRenderResult, pixelWidth: Int, pixelHeight: Int) -> CGImage? {
+        guard let overlay = result.overlayImage else { return result.image }
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue
+            | CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let context = CGContext(data: nil, width: pixelWidth, height: pixelHeight,
+            bitsPerComponent: 8, bytesPerRow: pixelWidth * 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: bitmapInfo) else { return nil }
+        let rect = CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)
+        context.draw(result.image, in: rect)
+        context.draw(overlay, in: rect)
+        return context.makeImage()
+    }
+
+    @MainActor
+    static func appKitLines(scene: WMPScene, viewID: String, imageStore: WMPImageStore) async -> [String] {
+        let width = Int(scene.canvasSize.width.rounded()), height = Int(scene.canvasSize.height.rounded())
+        guard width > 0, height > 0, width * height <= 16_000_000 else {
+            return ["APPKIT \(viewID): SKIPPED canvas=\(width)x\(height)"]
+        }
+        let view = WMPMainView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        // **The same provider the controller installs.** Without it this probe hosts every effects
+        // surface unmasked and reports a clean `outside=0` for a skin whose visualizer is a slab —
+        // a silent instrument, which is worse than no instrument. It cost one wrong reading before
+        // it was wired: the shaped green fill in the capture was the skin's own artwork drawn over
+        // an unclipped rect, and read as the mask working.
+        view.regionMaskProvider = { [weak imageStore] mask in
+            try? imageStore?.regionMask(for: mask.resourcePath, keyedOut: mask.keyedOut)
+        }
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+            return ["APPKIT \(viewID): SKIPPED no bitmap rep"]
+        }
+        // **The rep is at the display's backing scale, not the view's point size**, and so is the
+        // image the app presents: `WMPMainWindowController.renderBackingScale` renders at the
+        // window's scale. Two mistakes hide here and both were made on the way to this line —
+        // indexing a 2x rep in points reads the top-left quarter and calls it the window (34% of
+        // Corona "differing"), and presenting a 1x image into a 2x rep diffs AppKit's upscaler
+        // against the renderer (47%). Neither is a defect in the app; both look exactly like one.
+        let scale = max(1, rep.pixelsWide / max(1, width))
+        let pixelWidth = rep.pixelsWide, pixelHeight = rep.pixelsHigh
+        // **A scene with an `<EFFECTS>` comes back as two layers**, either side of the index the
+        // walk had reached at the effects node (W139): the artwork below the surface and the
+        // artwork above it. Presenting only the first would host half a skin and measure the
+        // harness, so both go in — and `rendered` below, the blit baseline, is the two flattened
+        // back together, which is the single image a split-free scene produces on its own.
+        guard let result = try? await WMPRenderer(imageStore: imageStore)
+                .render(scene: scene, backingScale: CGFloat(scale)),
+              let rendered = flatten(result, pixelWidth: pixelWidth, pixelHeight: pixelHeight),
+              let renderedPixels = pixels(of: rendered, width: pixelWidth, height: pixelHeight) else {
+            return ["APPKIT \(viewID): SKIPPED renderer produced no image at \(scale)x"]
+        }
+
+        view.present(result.image, overlay: result.overlayImage,
+                     silhouette: result.silhouetteMask, scene: scene)
+        // AppKit runs neither of these on its own for a view that is in no window, and the overlay
+        // frames come from `layout()`. Without it every overlay sits at `.zero` and the diff below
+        // measures the harness rather than the app.
+        view.layoutSubtreeIfNeeded()
+        view.displayIfNeeded()
+
+        // **The baseline is a second AppKit pass with the overlays hidden, not the renderer's own
+        // image.** `cacheDisplay` composites through the display's colour space and the renderer's
+        // context does not, so a straight comparison of the two is a colour conversion as much as
+        // a measurement: it shifted Corona by a dozen levels (6.8% "differing" on the skin the
+        // reporter called working) and a saturated red by 64 (61% on a four-colour fixture). Both
+        // readings are the instrument, not the app. Two passes through the *same* path cancel that
+        // exactly — what is left between them is precisely what the AppKit layer adds over the
+        // artwork, which is the question W71 asks.
+        // **Only the widget surfaces are hidden.** The artwork overlay is part of the skin's own
+        // picture, not something AppKit adds over it; hiding it here would report every pixel a
+        // skin draws above its visualizer as an overlay defect.
+        let overlays = view.hostedWidgetViews
+        overlays.forEach { $0.isHidden = true }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        guard let bareImage = rep.cgImage,
+              let bare = pixels(of: bareImage, width: pixelWidth, height: pixelHeight) else {
+            return ["APPKIT \(viewID): SKIPPED rep had no data"]
+        }
+        overlays.forEach { $0.isHidden = false }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        guard let hostedImage = rep.cgImage,
+              let hosted = pixels(of: hostedImage, width: pixelWidth, height: pixelHeight) else {
+            return ["APPKIT \(viewID): SKIPPED rep had no data on the second pass"]
+        }
+        let scenePixels = bare
+
+        if let debug = ProcessInfo.processInfo.environment["WMP_RENDER_APPKIT_DUMP"] {
+            let base = URL(fileURLWithPath: debug, isDirectory: true)
+            try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+            if let data = NSBitmapImageRep(cgImage: rendered).representation(using: .png, properties: [:]) {
+                try? data.write(to: base.appendingPathComponent("\(viewID)-scene.png"))
+            }
+            if let data = rep.representation(using: .png, properties: [:]) {
+                try? data.write(to: base.appendingPathComponent("\(viewID)-hosted.png"))
+            }
+        }
+        // Widget frames in the same top-left pixel space as both buffers. The scene's coordinates
+        // are already top-left (`WMPMainView.isFlipped`), and the view is hosted 1:1 here, so no
+        // scale is involved — a scaled window is a different measurement and gets its own run
+        // through `WMP_RENDER_SIZE`.
+        // **Only a widget that actually hosts an `NSView` explains a difference.** `WMPMainView`
+        // builds overlays for these kinds and no others — a `.slider` and a `.text` are drawn by
+        // the renderer into the same image the view then blits, so a difference inside a slider's
+        // frame is not hosting doing its job, it is a defect, and attributing it to the widget it
+        // happens to sit inside would file it as expected. Keep this list in step with
+        // `WMPMainView.synchronizeWidgetViews`; a kind that leaves that list must leave this one.
+        let hostedKinds: Set<WMPWidgetKind> = [.playlist, .dropdownPlaylist, .popup,
+                                               .editBox, .listBox, .effects]
+        let widgetRects = scene.widgets.filter { hostedKinds.contains($0.kind) }
+            .map { widget -> (WMPWidget, WMPRect) in
+                let rect = widget.clipRect.flatMap { widget.frame.intersection($0) } ?? widget.frame
+                return (widget, WMPRect(x: rect.x * CGFloat(scale), y: rect.y * CGFloat(scale),
+                                        width: rect.width * CGFloat(scale),
+                                        height: rect.height * CGFloat(scale)))
+            }
+        var differing = 0, outside = 0, worstDelta = 0
+        var perWidget = [Int: Int]()
+        var minX = pixelWidth, minY = pixelHeight, maxX = -1, maxY = -1
+
+        for y in 0..<pixelHeight {
+            for x in 0..<pixelWidth {
+                let a = (y * pixelWidth + x) * 4
+                let b = a
+                // Alpha first: a transparent pixel in both is the same pixel whatever its RGB, and
+                // most of a `.wmz` canvas is transparent — Corona's player block is the right 346
+                // of 596. Comparing RGB under zero alpha reported the whole surround as differing.
+                let alphaA = Int(scenePixels[a + 3]), alphaB = Int(hosted[b + 3])
+                var different = abs(alphaA - alphaB) > TOLERANCE
+                if !different, alphaA > 0 {
+                    for channel in 0..<3 where abs(Int(scenePixels[a + channel]) - Int(hosted[b + channel])) > TOLERANCE {
+                        different = true
+                    }
+                }
+                guard different else { continue }
+                differing += 1
+                // How *far* apart, not only that they differ. An overlay painting over artwork
+                // moves a channel by hundreds; premultiplied rounding on an antialiased edge moves
+                // it by tens, and the two are indistinguishable from a count alone.
+                var delta = abs(alphaA - alphaB)
+                for channel in 0..<3 {
+                    delta = max(delta, abs(Int(scenePixels[a + channel]) - Int(hosted[b + channel])))
+                }
+                worstDelta = max(worstDelta, delta)
+                let point = WMPPoint(x: CGFloat(x) + 0.5, y: CGFloat(y) + 0.5)
+                if let index = widgetRects.firstIndex(where: { $0.1.contains(point) }) {
+                    perWidget[index, default: 0] += 1
+                } else {
+                    outside += 1
+                    minX = min(minX, x); minY = min(minY, y)
+                    maxX = max(maxX, x); maxY = max(maxY, y)
+                }
+            }
+        }
+
+        // The blit itself, reported separately and never mixed into the numbers above: does
+        // `WMPMainView.draw` put the renderer's image on screen unchanged? Its `max-delta` is
+        // colour management as much as drawing — a saturated primary round-trips through the
+        // display profile up to ~64 levels off — so read the *shape* of it, not the level: a wrong
+        // rect, a flip or a scale moves whole regions, and this line is how they would be seen.
+        var blitDiffering = 0, blitDelta = 0
+        for index in stride(from: 0, to: pixelWidth * pixelHeight * 4, by: 4) {
+            var delta = abs(Int(renderedPixels[index + 3]) - Int(bare[index + 3]))
+            if renderedPixels[index + 3] > 0 {
+                for channel in 0..<3 {
+                    delta = max(delta, abs(Int(renderedPixels[index + channel]) - Int(bare[index + channel])))
+                }
+            }
+            if delta > TOLERANCE { blitDiffering += 1; blitDelta = max(blitDelta, delta) }
+        }
+
+        let total = pixelWidth * pixelHeight
+        var lines = ["APPKIT \(viewID): \(width)x\(height)@\(scale)x differing=\(differing)/\(total) "
+            + "(\(percent(differing, total))) hosted=\(widgetRects.count)/\(scene.widgets.count) "
+            + "outside=\(outside) (\(percent(outside, total))) max-delta=\(worstDelta) "
+            + "blit=\(blitDiffering) (\(percent(blitDiffering, total))) blit-max-delta=\(blitDelta)"
+            + (maxX >= 0 ? " worst=\(minX / scale),\(minY / scale) "
+                + "\((maxX - minX + 1) / scale)x\((maxY - minY + 1) / scale)" : "")]
+        for (index, count) in perWidget.sorted(by: { $0.value > $1.value }).prefix(8) {
+            let (widget, rect) = widgetRects[index]
+            lines.append("APPKIT \(viewID)/\(widget.stableID) \(widget.kind.rawValue) "
+                + "id=\(widget.nodeID ?? "-") frame=\(rectText(widget.frame)) "
+                + "differing=\(count) (\(percent(count, max(1, Int(rect.width * rect.height)))))")
+        }
+        view.prepareForUITeardown()
+        return lines
+    }
+
+    /// Colour management, not drawing, is what a loose tolerance buys off: `cacheDisplay` composites
+    /// through the display's colour space and the renderer's context does not, so identical artwork
+    /// lands a few levels apart. Anything this probe is for — an overlay over the artwork, a wash
+    /// across the window, a control at a stale frame — moves whole channels, not four levels.
+    private static let TOLERANCE = 12
+
+    private static func percent(_ part: Int, _ whole: Int) -> String {
+        whole > 0 ? String(format: "%.2f%%", 100 * Double(part) / Double(whole)) : "-"
+    }
+
+    /// Top-row-first RGBA8. `NSBitmapImageRep` is top-first and a `CGContext` is bottom-first, so
+    /// one of the two has to be flipped before they can be compared at all; flipping here keeps the
+    /// reported rectangles in the scene's own coordinates.
+    private static func pixels(of image: CGImage, width: Int, height: Int) -> [UInt8]? {
+        var buffer = [UInt8](repeating: 0, count: width * height * 4)
+        let ok: Bool = buffer.withUnsafeMutableBytes { raw -> Bool in
+            guard let context = CGContext(data: raw.baseAddress, width: width, height: height,
+                                          bitsPerComponent: 8, bytesPerRow: width * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        return ok ? buffer : nil
+    }
+
+    // MARK: Drags
+
+    /// Press, move along a path with the pointer captured, release — W72.
+    ///
+    /// `WMP_RENDER_CLICK` pressed and released and nothing ever moved between the two, so the
+    /// slider math the whole Phase 5 rewrite lives in was measured by nobody: 163 corpus skins
+    /// drive volume, seek and ten equaliser bands through a drag, and the harness could not tell a
+    /// thumb that follows the pointer from one that jumps to the press point and stays there.
+    ///
+    /// It computes the value the way `WMPMainView.performSlider` does — the same `WMPSliderMetrics`
+    /// and the same `positionMap` short-circuit, read out of the scene rather than reimplemented —
+    /// and then rebuilds. **The two claims it can settle are the two the flag exists for**: the
+    /// value moves monotonically with the pointer along the control's own axis, and the drawn thumb
+    /// moves with it. A value that tracks while the thumb does not is a rendering defect; a thumb
+    /// that tracks a value nothing else sees is a binding defect. Both were previously invisible.
+    private static func drag(path: [WMPPoint], on scene: WMPScene, viewID: String,
+                             skin: WMPLoadedSkin, builder: WMPSceneBuilder, pass: WMPScriptPass,
+                             probe: WMPProbe, nodes: [Int: WMPNode]) async -> WMPScene {
+        var scene = scene
+        let start = path[0]
+        let where_ = "\(viewID)@\(WMPNumber.format(start.x)),\(WMPNumber.format(start.y))"
+            + ">\(WMPNumber.format(path[path.count - 1].x)),\(WMPNumber.format(path[path.count - 1].y))"
+        guard let target = WMPHitTester(hits: scene.hits).hitTest(start) else {
+            WMPHarnessOutput.emit("DRAG \(where_) MISS")
+            return scene
+        }
+        // The captured target, exactly as the view holds it from `mouseDown` to `mouseUp`: a drag
+        // that left the control's frame would otherwise re-hit-test onto whatever is under the
+        // pointer, which is the one thing a captured drag never does.
+        let widget = scene.widgets.first { $0.stableID == target.stableID }
+        let isSlider = target.kind.lowercased().contains("slider")
+            || [WMPTransportAction.seek, .volume, .balance].contains(where: { $0 == target.action })
+        WMPHarnessOutput.emit("DRAG \(where_) hit=\(target.nodeID ?? "-")#\(target.stableID) "
+            + "kind=\(target.kind) slider=\(isSlider) "
+            + "direction=\(widget?.direction.map(String.init(describing:)) ?? "-") "
+            + "min=\(WMPNumber.format(CGFloat(widget?.minimumValue ?? 0))) "
+            + "max=\(WMPNumber.format(CGFloat(widget?.maximumValue ?? 0))) "
+            + "border=\(WMPNumber.format(widget?.borderSize ?? 0)) steps=\(path.count)")
+        guard isSlider else {
+            // Not a defect: a drag that starts on a button is how a `.wmz` moves its own window.
+            // Reported rather than skipped, so a mis-aimed probe reads as mis-aimed.
+            WMPHarnessOutput.emit("DRAG \(where_) not-a-slider — no value tracking to measure")
+            return scene
+        }
+
+        var values: [Double] = []
+        var thumbs: [WMPRect] = []
+        for (step, point) in path.enumerated() {
+            let live = scene.widgets.first { $0.stableID == target.stableID }
+            let minimum = live?.minimumValue ?? 0, maximum = live?.maximumValue ?? 100
+            let metrics = WMPSliderMetrics(direction: live?.direction ?? .horizontal,
+                                           minimum: minimum, maximum: maximum,
+                                           value: live?.value ?? minimum,
+                                           borderSize: live?.borderSize ?? 0)
+            let map = scene.hits.first { $0.stableID == target.stableID }?.positionMap
+            let mapped = map?.fraction(at: point, in: target.frame)
+            let value = mapped.map { minimum + $0 * (maximum - minimum) }
+                ?? metrics.value(at: point, in: target.frame, thumbSize: live?.thumbSize ?? .zero)
+            values.append(value)
+
+            if let session = pass.session {
+                await session.setWidgetValue(stableID: target.stableID, value: value, viewID: viewID)
+                // **The app's own matcher, not a second one.** A harness that looks up handlers by
+                // its own rule measures a different engine: `value_onchange` is authored by 175 of
+                // 179 archives and is accepted for `change` by
+                // `WMPMainWindowController.handlers(in:event:…)`, so a private lookup here would
+                // report every one of those sliders as having no handler.
+                let handlers = await MainActor.run {
+                    WMPMainWindowController.handlers(in: skin, event: "change", targetID: nil,
+                                                     targetStableID: target.stableID, viewID: viewID)
+                }
+                let output = await session.transact(skin: skin, viewID: viewID,
+                    size: scene.canvasSize, snapshot: probe.hostSnapshot,
+                    event: handlers.isEmpty ? nil
+                        : WMPJScriptEvent(name: "onChange", targetID: target.nodeID, handlers: handlers),
+                    geometry: scene.scriptGeometry)
+                for diagnostic in output.diagnostics {
+                    WMPHarnessOutput.emit("DRAG \(where_) [\(diagnostic.code)] \(diagnostic.message)")
+                }
+                if let rebuilt = try? await builder.build(viewID: viewID,
+                                                          requestedSize: probe.requestedSize,
+                                                          overrides: output.overrides) {
+                    scene = rebuilt
+                }
+            }
+            // What the renderer will actually paint the thumb at. The scene builder appends the
+            // thumb last for a slider node, so the last command carrying that stable id *is* the
+            // thumb; the track and any progress fill precede it.
+            let thumb = scene.commands.last { $0.stableID == target.stableID }?.frame
+            thumbs.append(thumb ?? .zero)
+            WMPHarnessOutput.emit("DRAG \(where_) step=\(step) at=\(WMPNumber.format(point.x)),"
+                + "\(WMPNumber.format(point.y)) value=\(WMPNumber.format(CGFloat(value))) "
+                + "drawn=\(scene.widgets.first { $0.stableID == target.stableID }?.value.map { WMPNumber.format(CGFloat($0)) } ?? "-") "
+                + "thumb=\(thumb.map(rectText) ?? "-")")
+        }
+
+        // **The release, which is where a seek is actually committed** (W55). `WMPMainView.mouseUp`
+        // raises `dragend` for a captured slider, so a drag driven here that stopped at the last
+        // move would measure a different engine — and `onDragEnd` is authored only on sliders, 111
+        // of its 141 sources being `player.controls.currentPosition = value`. The host command it
+        // posts is the thing to read: that is the seek this drag asked for.
+        if let session = pass.session {
+            let handlers = await MainActor.run {
+                WMPMainWindowController.handlers(in: skin, event: "dragend", targetID: nil,
+                                                 targetStableID: target.stableID, viewID: viewID)
+            }
+            if !handlers.isEmpty {
+                let output = await session.transact(skin: skin, viewID: viewID,
+                    size: scene.canvasSize, snapshot: probe.hostSnapshot,
+                    event: WMPJScriptEvent(name: "onDragEnd", targetID: target.nodeID,
+                                           handlers: handlers),
+                    geometry: scene.scriptGeometry)
+                WMPHarnessOutput.emit("DRAG \(where_) dragend handlers=\(handlers.count) "
+                    + "commands=[\(output.hostCommands.map { "\($0.action)=\($0.value?.string ?? "-")" }.joined(separator: ","))]")
+                for diagnostic in output.diagnostics {
+                    WMPHarnessOutput.emit("DRAG \(where_) dragend [\(diagnostic.code)] \(diagnostic.message)")
+                }
+            }
+        }
+
+        // Monotonic **against the pointer**, not in the abstract: a vertical slider's value rises
+        // as `y` falls, so the expected sign comes from the path, and a drag that doubles back is
+        // reported as `mixed` rather than failed.
+        let vertical = (scene.widgets.first { $0.stableID == target.stableID }?.direction ?? .horizontal) == .vertical
+        let axis = path.map { vertical ? -$0.y : $0.x }
+        let travel = thumbs.dropFirst().enumerated().reduce(CGFloat(0)) { total, entry in
+            let previous = thumbs[entry.offset]
+            return total + abs(entry.element.x - previous.x) + abs(entry.element.y - previous.y)
+        }
+        WMPHarnessOutput.emit("DRAG \(where_) value \(WMPNumber.format(CGFloat(values[0]))) -> "
+            + "\(WMPNumber.format(CGFloat(values[values.count - 1]))) "
+            + "follows-pointer=\(agreement(values: values, axis: axis)) "
+            + "thumb-travel=\(WMPNumber.format(travel))")
+        return scene
+    }
+
+    /// `yes` when every step the pointer moved along the axis moved the value the same way, `no`
+    /// when one moved it the other way, `flat` when the value never changed at all — which is the
+    /// failure a `yes`/`no` answer would hide, because a slider stuck at one value is trivially
+    /// non-decreasing.
+    private static func agreement(values: [Double], axis: [CGFloat]) -> String {
+        var sawAgreement = false
+        for index in 1..<max(values.count, 2) where index < values.count {
+            let pointer = axis[index] - axis[index - 1]
+            let value = values[index] - values[index - 1]
+            guard abs(pointer) > 0.001 else { continue }
+            if abs(value) < 0.000_1 { continue }
+            if (pointer > 0) != (value > 0) { return "no" }
+            sawAgreement = true
+        }
+        return sawAgreement ? "yes" : "flat"
+    }
+
+    private static func rectText(_ rect: WMPRect) -> String {
+        "\(WMPNumber.format(rect.x)),\(WMPNumber.format(rect.y)) "
+            + "\(WMPNumber.format(rect.width))x\(WMPNumber.format(rect.height))"
+    }
+
+    private static func changeLines(from before: WMPSceneOverrides, to after: WMPSceneOverrides,
+                                    nodes: [Int: WMPNode]) -> [String] {
+        var changes: [String] = []
+        for (address, value) in after.geometry.sorted(by: { addressOrder($0.key, $1.key) })
+        where before.geometry[address] != value {
+            changes.append("\(name(address, nodes))=\(WMPNumber.format(value))")
+        }
+        for (address, value) in after.properties.sorted(by: { addressOrder($0.key, $1.key) })
+        where before.properties[address] != value {
+            changes.append("\(name(address, nodes))=\(condense(value.string ?? "null"))")
+        }
+        guard !changes.isEmpty else { return ["changed=[]"] }
+        return ["changed=[\(changes.joined(separator: " "))]"]
+    }
+
+    private static func addressOrder(_ lhs: WMPScenePropertyAddress, _ rhs: WMPScenePropertyAddress) -> Bool {
+        lhs.stableID == rhs.stableID ? lhs.property < rhs.property : lhs.stableID < rhs.stableID
+    }
+
+    private static func name(_ address: WMPScenePropertyAddress, _ nodes: [Int: WMPNode]) -> String {
+        "\(nodes[address.stableID]?.xmlID ?? "node\(address.stableID)").\(address.property)"
+    }
+
+    // MARK: Shared
+
+    private static func condense(_ value: String) -> String {
+        let flat = value.replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\t", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        return flat.count <= 80 ? flat : String(flat.prefix(77)) + "…"
+    }
+}
+
+extension WMPHitMetadata {
+    /// The same target with its artwork mask dropped — how `occludedLines` rebuilds the rectangle
+    /// hit testing this engine did before `WMPHitCoverage`, so one sweep reports both what the
+    /// rule recovered and what, if anything, it lost.
+    func restamped(paintOrder: Int) -> WMPHitMetadata {
+        WMPHitMetadata(stableID: stableID, nodeID: nodeID, kind: kind, frame: frame,
+            clipRect: clipRect, zIndex: zIndex, documentOrder: documentOrder,
+            paintOrder: paintOrder, action: action, sticky: sticky, enabled: enabled,
+            mappingImage: mappingImage, mappingTargets: mappingTargets, coverage: coverage,
+            cursor: cursor, tabStop: tabStop, positionMap: positionMap, toolTip: toolTip)
+    }
+
+    func withoutCoverage() -> WMPHitMetadata {
+        WMPHitMetadata(stableID: stableID, nodeID: nodeID, kind: kind, frame: frame,
+            clipRect: clipRect, zIndex: zIndex, documentOrder: documentOrder,
+            paintOrder: paintOrder, action: action,
+            sticky: sticky, enabled: enabled, mappingImage: mappingImage,
+            mappingTargets: mappingTargets, coverage: nil, cursor: cursor,
+            tabStop: tabStop, positionMap: positionMap, toolTip: toolTip)
+    }
+}
+
+/// The two rules that decide which control a click reaches, both reported against `Plus! Pulsar`
+/// as "seems to ignore most clicks despite showing hover graphics".
+/// The sweep is a regression diff, so every line it prints has to be a function of the skin alone.
+final class WMPHarnessDeterminismTests: XCTestCase {
+    /// Equal counts must order by name. They came out of a dictionary in hash order, which Swift
+    /// randomizes per process, so two captures of one unchanged binary reported ~19 `SCRIPT inline:`
+    /// lines as changed while holding an identical tally. Asserting the whole string rather than
+    /// "sorted somehow" is deliberate: the format is what `compare` diffs.
+    func testEqualCountsOrderByName() {
+        let counts = ["onclick": 25, "value_onchange": 10, "enabled_onchange": 10,
+                      "ontimer": 2, "onload": 2, "onclose": 2]
+        XCTAssertEqual(WMPHarness.tally(counts),
+                       "onclick×25 enabled_onchange×10 value_onchange×10 onclose×2 onload×2 ontimer×2")
+    }
+
+    /// The same tally built in a different insertion order is the same line. A dictionary's
+    /// enumeration depends on its history as well as its seed, and a skin's handlers are counted in
+    /// document order, which differs between two skins holding the same totals.
+    func testInsertionOrderDoesNotReachTheOutput() {
+        let names = ["onclick", "onmouseover", "onmouseout", "onload", "ontimer", "onclose"]
+        var forward: [String: Int] = [:]
+        for name in names { forward[name] = 4 }
+        var reverse: [String: Int] = [:]
+        for name in names.reversed() { reverse[name] = 4 }
+        XCTAssertEqual(WMPHarness.tally(forward), WMPHarness.tally(reverse))
+        XCTAssertEqual(WMPHarness.tally(forward),
+                       "onclick×4 onclose×4 onload×4 onmouseout×4 onmouseover×4 ontimer×4")
+    }
+}
+
+final class WMPHitOrderingTests: XCTestCase {
+    /// **`zIndex` orders siblings, so a subview's rank beats its child's literal.** Pulsar lays a
+    /// `<SUBVIEW zIndex="5">` holding a `<CUSTOMSLIDER zIndex="55">` straight across a
+    /// `<SUBVIEW zIndex="10">` holding its equalizer and playlist buttons. Comparing `55` with `0`
+    /// across the whole view handed every one of those clicks to the slider.
+    func testASubviewsZIndexOutranksADeeperChildsLargerLiteral() async throws {
+        let art = WMPSkinTestSupport.trueColor24Bitmap(width: 2, height: 2,
+            rows: [[(255, 0, 0), (255, 0, 0)], [(255, 0, 0), (255, 0, 0)]])
+        let xml = """
+        <THEME><VIEW id="main" width="20" height="20">
+          <SUBVIEW id="under" zIndex="5" left="0" top="0" width="20" height="20">
+            <BUTTON id="slider" zIndex="55" left="0" top="0" width="20" height="20"
+                    image="art.bmp" onClick="a()"/>
+          </SUBVIEW>
+          <SUBVIEW id="over" zIndex="10" left="0" top="0" width="20" height="20">
+            <BUTTON id="button" left="4" top="4" width="8" height="8" image="art.bmp" onClick="b()"/>
+          </SUBVIEW>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("art.bmp", data: art)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        let tester = WMPHitTester(hits: scene.hits)
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 8, y: 8))?.nodeID, "button")
+        // Outside the button, the node underneath still answers — this reorders, it does not mask.
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 18, y: 18))?.nodeID, "slider")
+    }
+
+    /// **A control is its artwork, not its rectangle.** `Navigator`'s progress slider spans the
+    /// whole player and cuts holes in itself exactly where the close and full-mode buttons sit.
+    func testAClickOnAKeyedOutPixelFallsThroughToTheControlBeneath() async throws {
+        // Left column magenta (the implicit transparency key), right column red.
+        let holed = WMPSkinTestSupport.trueColor24Bitmap(width: 2, height: 1,
+            rows: [[(255, 0, 255), (255, 0, 0)]])
+        let solid = WMPSkinTestSupport.trueColor24Bitmap(width: 1, height: 1, rows: [[(0, 255, 0)]])
+        let xml = """
+        <THEME><VIEW id="main" width="20" height="10">
+          <BUTTON id="under" left="0" top="0" width="20" height="10" image="solid.bmp" onClick="a()"/>
+          <BUTTON id="over" left="0" top="0" width="20" height="10" image="holed.bmp" onClick="b()"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("holed.bmp", data: holed),
+            WMPTestArchiveEntry("solid.bmp", data: solid)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        let tester = WMPHitTester(hits: scene.hits)
+        // Left half of `over` is keyed away, so the click belongs to what is drawn underneath.
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 4, y: 5))?.nodeID, "under")
+        // Right half is painted, so `over` keeps it.
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 15, y: 5))?.nodeID, "over")
+    }
+
+    /// A sprite with nothing opaque in it is a hit catcher, not a shape: `holiday_skin`, `Grinch`
+    /// and `Josie_and_the_Pussycats` build whole transports out of fully transparent buttons laid
+    /// over artwork their parent draws. Coverage must only ever subtract from a node that is drawn.
+    func testAFullyTransparentButtonKeepsItsWholeRect() async throws {
+        let clear = WMPSkinTestSupport.trueColor24Bitmap(width: 2, height: 1,
+            rows: [[(255, 0, 255), (255, 0, 255)]])
+        let xml = """
+        <THEME><VIEW id="main" width="20" height="10">
+          <BUTTON id="catcher" left="0" top="0" width="20" height="10" image="clear.bmp" onClick="a()"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("clear.bmp", data: clear)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        XCTAssertEqual(WMPHitTester(hits: scene.hits).hitTest(WMPPoint(x: 10, y: 5))?.nodeID, "catcher")
+    }
+
+    /// **A `CUSTOMSLIDER`'s position map says which pixels are the control, and the colours the
+    /// node keys out are not among them.** `Plus! Pulsar`'s `seek_map.png` marks the 66% of its
+    /// square that is not the arc as opaque `#ff00ff`; averaged as a luminance that is a fraction
+    /// of `0.667`, so clicking anywhere in the dead corners seeked to 67% of the track.
+    func testAKeyedColourInAPositionMapIsNotPartOfTheControl() async throws {
+        // Left half a real ramp, right half the transparency colour.
+        let map = WMPSkinTestSupport.trueColor24Bitmap(width: 4, height: 1,
+            rows: [[(0, 0, 0), (128, 128, 128), (255, 0, 255), (255, 0, 255)]])
+        let art = WMPSkinTestSupport.trueColor24Bitmap(width: 4, height: 1,
+            rows: [[(9, 9, 9), (9, 9, 9), (9, 9, 9), (9, 9, 9)]])
+        let xml = """
+        <THEME><VIEW id="main" width="40" height="10">
+          <BUTTON id="under" left="0" top="0" width="40" height="10" image="art.bmp" onClick="a()"/>
+          <CUSTOMSLIDER id="seek" left="0" top="0" width="40" height="10" min="0" max="100"
+                        image="art.bmp" positionImage="map.bmp" transparencyColor="#FF00FF"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("art.bmp", data: art),
+            WMPTestArchiveEntry("map.bmp", data: map)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        let tester = WMPHitTester(hits: scene.hits)
+        // The ramped half is the control…
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 5, y: 5))?.nodeID, "seek")
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 15, y: 5))?.nodeID, "seek")
+        // …and the keyed half belongs to what is underneath, rather than reading as a fraction.
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 25, y: 5))?.nodeID, "under")
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 35, y: 5))?.nodeID, "under")
+        let map2 = try store.positionMap(for: "map.bmp", keyedOut: [WMPColor(red: 255, green: 0, blue: 255)])
+        let frame = WMPRect(x: 0, y: 0, width: 40, height: 10)
+        XCTAssertEqual(map2.fraction(at: WMPPoint(x: 5, y: 5), in: frame), 0)
+        XCTAssertNil(map2.fraction(at: WMPPoint(x: 35, y: 5), in: frame))
+    }
+
+    /// The map is the authority, **not the artwork** — a filmstrip's opaque area is a property of
+    /// whichever frame the current value selects. Pulsar's seek arc loses 577 of its own pixels to
+    /// the sprite's soft edges, and they are the ones nearest the band a pointer aims for.
+    func testASlidersRegionComesFromItsMapNotItsCurrentFilmstripFrame() async throws {
+        // The map claims all four columns; the artwork keys out the outer two.
+        let map = WMPSkinTestSupport.trueColor24Bitmap(width: 4, height: 1,
+            rows: [[(0, 0, 0), (85, 85, 85), (170, 170, 170), (255, 255, 255)]])
+        let art = WMPSkinTestSupport.trueColor24Bitmap(width: 4, height: 1,
+            rows: [[(255, 0, 255), (9, 9, 9), (9, 9, 9), (255, 0, 255)]])
+        let xml = """
+        <THEME><VIEW id="main" width="40" height="10">
+          <CUSTOMSLIDER id="seek" left="0" top="0" width="40" height="10" min="0" max="100"
+                        image="art.bmp" positionImage="map.bmp" transparencyColor="#FF00FF"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("art.bmp", data: art),
+            WMPTestArchiveEntry("map.bmp", data: map)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        let tester = WMPHitTester(hits: scene.hits)
+        for x in [5.0, 15.0, 25.0, 35.0] {
+            XCTAssertEqual(tester.hitTest(WMPPoint(x: x, y: 5))?.nodeID, "seek",
+                           "the map claims x=\(x); the sprite's transparency must not overrule it")
+        }
+    }
+
+    /// `<EFFECTS>` is a fallback target, never a blocker: `Alienware Invader` draws its rating
+    /// stars over a visualizer declared after them, and ranking by paint order alone ate all five.
+    func testAVisualizerNeverBlocksAControlDrawnOverIt() async throws {
+        let art = WMPSkinTestSupport.trueColor24Bitmap(width: 1, height: 1, rows: [[(255, 0, 0)]])
+        let xml = """
+        <THEME><VIEW id="main" width="20" height="20">
+          <SUBVIEW id="panel" zIndex="28" left="0" top="0" width="20" height="20">
+            <BUTTON id="star" zIndex="31" left="4" top="4" width="8" height="8"
+                    image="art.bmp" onClick="rate()"/>
+          </SUBVIEW>
+          <EFFECTS id="vis" zIndex="30" left="0" top="0" width="20" height="20" onClick="next()"/>
+        </VIEW></THEME>
+        """
+        let url = try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("theme.wms", data: Data(xml.utf8)),
+            WMPTestArchiveEntry("art.bmp", data: art)
+        ])
+        let skin = try await WMPSkinLoader().load(from: url)
+        let store = WMPImageStore(provider: skin.archive)
+        let scene = try await WMPSceneBuilder(loadedSkin: skin, imageStore: store).build(viewID: "main")
+        let tester = WMPHitTester(hits: scene.hits)
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 8, y: 8))?.nodeID, "star")
+        // And the visualizer still answers where nothing is drawn over it.
+        XCTAssertEqual(tester.hitTest(WMPPoint(x: 18, y: 18))?.nodeID, "vis")
+    }
+}

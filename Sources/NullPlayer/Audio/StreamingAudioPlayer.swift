@@ -214,7 +214,8 @@ class StreamingAudioPlayer {
         eqConfiguration: EQConfiguration = .forModernUI(
             PlayerUIMode.stored().usesModernEQLayout
         ),
-        pitchNode: AVAudioUnitTimePitch? = nil
+        pitchNode: AVAudioUnitTimePitch? = nil,
+        wowNode: AVAudioUnitEffect? = nil
     ) {
         self.eqConfiguration = eqConfiguration
         self.pitchNode = pitchNode
@@ -245,6 +246,8 @@ class StreamingAudioPlayer {
             player.attach(node: pitchNode)
         }
         
+        if let wowNode { player.attach(node: wowNode) }
+
         // Set up spectrum analysis
         setupSpectrumAnalyzer()
         

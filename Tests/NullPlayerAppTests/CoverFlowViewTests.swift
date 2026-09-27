@@ -16,6 +16,12 @@ final class CoverFlowViewTests: XCTestCase {
         }
     }
 
+    /// W261: the stacked side covers sit past the view's width, so the view must clip them or they
+    /// draw over the host window's borders.
+    func testCarouselClipsToItsOwnBounds() {
+        XCTAssertEqual(CoverFlowView().layer?.masksToBounds, true)
+    }
+
     func testDiscreteVerticalWheelMovesCarousel() throws {
         let view = CoverFlowView()
         view.setItems(items(count: 20))

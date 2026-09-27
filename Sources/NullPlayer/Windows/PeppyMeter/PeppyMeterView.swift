@@ -13,8 +13,14 @@ final class PeppyMeterView: NSView {
     private var hostedDrag = WinampModernHostedWindowDrag()
     private var hostedPresenter: PeppyMeterPresenter?
 
-    private var chromeLayout: SkinElements.SpectrumWindow.Layout.Type {
-        SkinElements.SpectrumWindow.Layout.self
+    /// Where this window's chrome ends and its content begins.
+    ///
+    /// The classic constants, unless the hosting skin lends a window frame of its own — a `.wmz`
+    /// skin that builds its panels out of an eight-piece ring states its content hole exactly, and
+    /// laying our surface out inside it is what makes the borrowed frame a window rather than a
+    /// picture (`WMPHostedFrameTemplate`).
+    private var chromeLayout: SkinnedSurfaceChrome.Metrics {
+        SkinnedSurfaceChrome.metrics(for: bounds, fallback: .spectrumFamily)
     }
 
     private var presenter: PeppyMeterPresenter? { controller?.presenter ?? hostedPresenter }
@@ -44,8 +50,8 @@ final class PeppyMeterView: NSView {
             name: .connectedWindowHighlightDidChange,
             object: nil
         )
-        NotificationCenter.default.addObserver(self, selector: #selector(winampModernThemeDidChange),
-                                               name: .winampModernThemeDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(hostedSurfaceStyleDidChange),
+                                               name: .hostedSurfaceStyleDidChange, object: nil)
     }
 
     private func contentAreaRect() -> NSRect {
@@ -73,7 +79,15 @@ final class PeppyMeterView: NSView {
         // Fast path: a content-only redraw (driven by requestMeterRedraw) repaints just the
         // meter and returns before the isHighlighted tint below. Skip it while highlighted so
         // the connected-window tint isn't wiped out of the content area on every VU tick.
-        if !isFullscreen && !isHighlighted && contentRect.insetBy(dx: -1, dy: -1).contains(dirtyRect) {
+        // **A borrowed WMP frame is painted over the content, so a content-only redraw erases it
+        // (W209).** These animation-tick fast paths repaint the surface and return before the
+        // chrome overlay, which is correct while the chrome is a border *around* the content and
+        // wrong the moment any of it overlaps: the frame's inner bezel was painted black by every
+        // tick, which is the notch and the ragged edge reported on 2026-09-16 and the reason no
+        // change to the artwork made any difference on screen. Full redraw wherever a skin lent a
+        // frame; every other case keeps the fast path exactly as it was.
+        if !isFullscreen, !isHighlighted, contentRect.insetBy(dx: -1, dy: -1).contains(dirtyRect),
+           WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size) == nil {
             if let presenter {
                 drawMeterContent(in: contentRect, presenter: presenter, context: context)
             }
@@ -87,8 +101,10 @@ final class PeppyMeterView: NSView {
                 drawMeterContent(in: bounds, presenter: presenter, context: context)
             }
         } else {
+            // The ground is the content hole wherever a skin lent this window a frame — see
+            // `SkinnedSurfaceChrome.hostedGroundRect`.
             NSColor.black.setFill()
-            bounds.fill()
+            SkinnedSurfaceChrome.hostedGroundRect(in: bounds).fill()
 
             if let presenter {
                 drawMeterContent(in: contentRect, presenter: presenter, context: context)
@@ -100,8 +116,9 @@ final class PeppyMeterView: NSView {
             if WindowManager.shared.hideTitleBars {
                 context.translateBy(x: 0, y: -chromeLayout.titleBarHeight)
             }
-            if let style = WindowManager.shared.winampModernSurfaceStyle {
-                WinampModernChrome(style: style).drawSpectrumFamilyWindow(
+            if let style = WindowManager.shared.hostedSurfaceStyle {
+                WinampModernChrome(style: style,
+                               artwork: WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size)).drawSpectrumFamilyWindow(
                     in: context,
                     bounds: bounds,
                     metrics: .spectrumFamily,
@@ -152,7 +169,15 @@ final class PeppyMeterView: NSView {
         needsDisplay = true
     }
 
-    @objc private func winampModernThemeDidChange() {
+    @objc private func hostedSurfaceStyleDidChange() {
+        // **A borrowed frame moves the content hole, and a hole that moved is a layout, not a
+        // repaint (W220).** This notification is the only edit some of these windows ever get: the
+        // ring is derived asynchronously for the window's own size, so it lands *after* the view
+        // has laid out against the classic fallback metrics. `needsDisplay` alone redraws the
+        // chrome around subviews still framed for the old hole — on `Visualizations` that is the
+        // whole GL view, which keeps the full window and buries every borrowed piece under the
+        // visualization. Marking the layout dirty costs nothing where a view has no subviews.
+        needsLayout = true
         needsDisplay = true
     }
 
@@ -171,16 +196,22 @@ final class PeppyMeterView: NSView {
         return skinPoint
     }
 
+    /// The close box, from the one place that decides where it goes — inset by a borrowed ring's
+    /// own right border so the glyph the chrome draws is the glyph a click lands on (W178).
+    private var closeButtonRect: NSRect {
+        SkinnedSurfaceChrome.closeButtonRect(in: bounds, captionHeight: chromeLayout.titleBarHeight)
+    }
+
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
         if WindowManager.shared.hideTitleBars {
             return point.y >= chromeLayout.titleBarHeight && point.y < chromeLayout.titleBarHeight + 6
         }
-        return point.y < chromeLayout.titleBarHeight && point.x < bounds.width - 25
+        return point.y < chromeLayout.titleBarHeight && point.x < closeButtonRect.minX
     }
 
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
         guard !WindowManager.shared.hideTitleBars else { return false }
-        return NSRect(x: bounds.width - 25, y: 0, width: 25, height: chromeLayout.titleBarHeight).contains(point)
+        return closeButtonRect.contains(point)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }

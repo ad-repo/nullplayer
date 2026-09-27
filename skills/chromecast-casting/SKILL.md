@@ -338,7 +338,7 @@ casting, which matters because DLNA has no status channel — the session goes `
 after LOAD (see *Discovery*), so nothing else tells you whether the renderer accepted the request.
 
 ```bash
-NULLPLAYER_UPNP_LOG=1 ./.build/arm64-apple-macosx/debug/NullPlayer > /tmp/upnp.log 2>&1
+NULLPLAYER_UPNP_LOG=1 ./scripts/kill_build_run.sh --debug --log /tmp/upnp.log
 ```
 
 ### Common Issues

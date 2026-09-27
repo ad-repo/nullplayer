@@ -13,7 +13,7 @@ Read first:
   `Map` image-inspection surface, the `isInvalid` probe idiom, the CoreText nil rule).
 - `skills/winamp-modern-skin-guide/compatibility.md` — supported/unsupported surface, the measured
   demand lists, and the open crash report
-- `TASKS.md` — Phase 11 sections, including §11.5 (what is still missing) and §11.6 (the crash)
+- `WINAMP5_TASKS.md` — Phase 11 sections, including §11.5 (what is still missing) and §11.6 (the crash)
 - `~/.claude/plans/i-want-to-support-frolicking-rabbit.md` — "Post-Phase-11 state and next work"
 
 ## 1. What Phase 11 was

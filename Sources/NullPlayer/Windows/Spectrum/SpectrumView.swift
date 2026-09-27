@@ -36,8 +36,14 @@ class SpectrumView: NSView {
     
     // MARK: - Layout Constants
     
-    private var Layout: SkinElements.SpectrumWindow.Layout.Type {
-        SkinElements.SpectrumWindow.Layout.self
+    /// Where this window's chrome ends and its content begins.
+    ///
+    /// The classic constants, unless the hosting skin lends a window frame of its own — a `.wmz`
+    /// skin that builds its panels out of an eight-piece ring states its content hole exactly, and
+    /// laying our surface out inside it is what makes the borrowed frame a window rather than a
+    /// picture (`WMPHostedFrameTemplate`).
+    private var Layout: SkinnedSurfaceChrome.Metrics {
+        SkinnedSurfaceChrome.metrics(for: bounds, fallback: .spectrumFamily)
     }
 
     // MARK: - Initialization
@@ -73,8 +79,8 @@ class SpectrumView: NSView {
                                                name: .visClassicProfileCommand, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
                                                name: .connectedWindowHighlightDidChange, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(winampModernThemeDidChange),
-                                               name: .winampModernThemeDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(hostedSurfaceStyleDidChange),
+                                               name: .hostedSurfaceStyleDidChange, object: nil)
         WindowManager.shared.audioEngine.addSpectrumConsumer("spectrumView")
     }
     
@@ -180,8 +186,9 @@ class SpectrumView: NSView {
             context.translateBy(x: 0, y: -Layout.titleBarHeight)
         }
 
-        if let style = WindowManager.shared.winampModernSurfaceStyle {
-            WinampModernChrome(style: style).drawSpectrumFamilyWindow(
+        if let style = WindowManager.shared.hostedSurfaceStyle {
+            WinampModernChrome(style: style,
+                               artwork: WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size)).drawSpectrumFamilyWindow(
                 in: context,
                 bounds: bounds,
                 metrics: .spectrumFamily,
@@ -262,7 +269,15 @@ class SpectrumView: NSView {
         needsDisplay = true
     }
 
-    @objc private func winampModernThemeDidChange() {
+    @objc private func hostedSurfaceStyleDidChange() {
+        // **A borrowed frame moves the content hole, and a hole that moved is a layout, not a
+        // repaint (W220).** This notification is the only edit some of these windows ever get: the
+        // ring is derived asynchronously for the window's own size, so it lands *after* the view
+        // has laid out against the classic fallback metrics. `needsDisplay` alone redraws the
+        // chrome around subviews still framed for the old hole — on `Visualizations` that is the
+        // whole GL view, which keeps the full window and buries every borrowed piece under the
+        // visualization. Marking the layout dirty costs nothing where a view has no subviews.
+        needsLayout = true
         needsDisplay = true
     }
     
@@ -305,6 +320,12 @@ class SpectrumView: NSView {
     
     // MARK: - Hit Testing
     
+    /// The close box, from the one place that decides where it goes — inset by a borrowed ring's
+    /// own right border so the glyph the chrome draws is the glyph a click lands on (W178).
+    private var closeButtonRect: NSRect {
+        SkinnedSurfaceChrome.closeButtonRect(in: bounds, captionHeight: Layout.titleBarHeight)
+    }
+
     private func hitTestTitleBar(at skinPoint: NSPoint) -> Bool {
         if isFullscreen { return false }
         if WindowManager.shared.hideTitleBars {
@@ -312,15 +333,13 @@ class SpectrumView: NSView {
             return skinPoint.y >= Layout.titleBarHeight && skinPoint.y < Layout.titleBarHeight + 6
         }
         return skinPoint.y < Layout.titleBarHeight &&
-               skinPoint.x < bounds.width - 25
+               skinPoint.x < closeButtonRect.minX
     }
     
     private func hitTestCloseButton(at skinPoint: NSPoint) -> Bool {
         if isFullscreen { return false }
         if WindowManager.shared.hideTitleBars { return false }
-        let titleHeight = Layout.titleBarHeight
-        let closeRect = NSRect(x: bounds.width - 25, y: 0, width: 25, height: titleHeight)
-        return closeRect.contains(skinPoint)
+        return closeButtonRect.contains(skinPoint)
     }
     
     // MARK: - Mouse Events

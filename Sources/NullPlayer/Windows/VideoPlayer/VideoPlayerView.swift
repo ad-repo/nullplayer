@@ -129,6 +129,24 @@ class VideoPlayerView: NSView {
 
     /// The stream's own pixel size, or `.zero` before the decoder knows it.
     var presentationSize: CGSize { mediaPlayer?.videoSize ?? .zero }
+
+    /// Decoder-confirmed output, rather than a filename extension or a requested media type.
+    var hasVideoOutput: Bool { mediaPlayer?.hasVideoOut == true }
+
+    /// Used only by the WMP controller family. Coordinates are top-left in this flipped view.
+    var wmpVideoRect: CGRect? {
+        didSet { needsLayout = true }
+    }
+
+    func setWMPVideoAspectRatio(_ size: CGSize?) {
+        if let size, size.width > 0, size.height > 0 {
+            "\(Int(size.width.rounded())):\(Int(size.height.rounded()))".withCString {
+                mediaPlayer?.videoAspectRatio = UnsafeMutablePointer(mutating: $0)
+            }
+        } else {
+            mediaPlayer?.videoAspectRatio = nil
+        }
+    }
     
     /// Center overlay for click-to-play/pause (large centered icons)
     private var centerOverlayView: VideoCenterOverlayView?
@@ -681,7 +699,11 @@ class VideoPlayerView: NSView {
         let controlBarHeight: CGFloat = 40
         
         // Video fills entire view
-        playerHostView.frame = bounds
+        if WindowManager.shared.uiMode.controllerFamily == .wmp, let wmpVideoRect {
+            playerHostView.frame = wmpVideoRect
+        } else {
+            playerHostView.frame = bounds
+        }
         
         // Control bar at bottom, when it is in the hierarchy at all.
         if controlBarView.superview != nil {

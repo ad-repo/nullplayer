@@ -18,11 +18,11 @@ if [ "${ni:-0}" -ne 0 ]; then
 else echo "ok    nice=0"; fi
 
 # 2. Accessibility / menu bar reachable.
-if osascript -e 'tell application "System Events" to tell process "NullPlayer" to get name of menu bar item "Skins" of menu bar 1' >/dev/null 2>&1
+if osascript -e "tell application \"System Events\" to tell (first process whose unix id is $pid) to get name of menu bar item \"Skins\" of menu bar 1" >/dev/null 2>&1
 then echo "ok    Skins menu reachable"; else echo "FAIL  menu bar unreachable (Accessibility permission?)"; fail=1; fi
 
 # 3. Exactly one window. More than one means aux windows are open.
-n=$(./winhelper windows | awk -F'\t' '$2==0 && $7>0' | wc -l | tr -d ' ')
+n=$(../../app-control/scripts/winhelper windows | awk -F'\t' '$2==0 && $7>0' | wc -l | tr -d ' ')
 echo "$( [ "$n" -eq 1 ] && echo ok || echo warn )    $n on-screen window(s)"
 
 # 4. Things this CANNOT check - the operator must confirm by looking:

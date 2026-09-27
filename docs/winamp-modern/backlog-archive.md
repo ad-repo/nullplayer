@@ -1,6 +1,6 @@
 # Winamp Modern backlog archive
 
-Closed backlog history moved from `TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`TASKS.md`](../../TASKS.md).
+Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 ## B146 — a user override for the `.wal` palette (Skin Colors) — closed 2026-09-06
 
@@ -58,7 +58,7 @@ to give the user a way to outrank it. See
 ## B117(b) — streaming starved the `.wal` analyzer — closed 2026-09-04
 
 Half of a two-part item. **B117(a)** — WMP11-BlueVU's window repainting at ~7 fps — is still open and
-keeps the `B117` row in [`TASKS.md`](../../TASKS.md); only the closed half moved here.
+keeps the `B117` row in [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md); only the closed half moved here.
 
 ### B117(b)
 
@@ -1084,7 +1084,7 @@ the figures are written into `reference/performance.md`.
       windows — in the palette of the skin that just went away. Closing and reopening the window is
       the only cure, because that rebuilds the view.
 
-      Reported and closed the same day, so it was never ranked in `TASKS.md`.
+      Reported and closed the same day, so it was never ranked in `WINAMP5_TASKS.md`.
 
       **Cause.** Those windows are painted from `WinampModernSurfaceStyle`, derived from the loaded
       skin's `WasabiPalette`. None of them holds a reference to the skin controller, so the only
@@ -1194,7 +1194,7 @@ ending in a total encoding has no failing branch, so a new encoding has to be se
 chain, never appended to it. See `skills/winamp-modern-skin-guide/reference/loading.md` → *A byte
 order mark decides the encoding*.
 
-**M27** (moved here 2026-09-01 while closing B92; it was left in `TASKS.md` when B93 closed, citing nothing). find every `.xml` whose first two bytes are `ff fe` or `fe ff`. Measured 2026-08-31: **3 files** — `cpro2_dark_aluminum_final_by_victhor/colorthemes.xml` (fatal, it is on the include path) and `languages/Wasabi.xml` in both **Big Bento Modern** and **Big Bento Modern Windows 10 edition**, which load fine because nothing includes those. So the count overstates the blast radius: what matters is whether a UTF-16 file is reachable from `skin.xml`. **Closed 2026-09-01 with B93**; kept as the record of how the reach was bounded. The count is a floor rather than a reach — Windows XML tooling emits UTF-16 by default, so this arrives without an author deciding on it.
+**M27** (moved here 2026-09-01 while closing B92; it was left in `WINAMP5_TASKS.md` when B93 closed, citing nothing). find every `.xml` whose first two bytes are `ff fe` or `fe ff`. Measured 2026-08-31: **3 files** — `cpro2_dark_aluminum_final_by_victhor/colorthemes.xml` (fatal, it is on the include path) and `languages/Wasabi.xml` in both **Big Bento Modern** and **Big Bento Modern Windows 10 edition**, which load fine because nothing includes those. So the count overstates the blast radius: what matters is whether a UTF-16 file is reachable from `skin.xml`. **Closed 2026-09-01 with B93**; kept as the record of how the reach was bounded. The count is a floor rather than a reach — Windows XML tooling emits UTF-16 by default, so this arrives without an author deciding on it.
 
 ---
 
@@ -1270,7 +1270,7 @@ order mark decides the encoding*.
       reaches the graph. Tests: `WinampModernB96Tests`. Rule written up in
       [`reference/loading.md`](../../skills/winamp-modern-skin-guide/reference/loading.md).
 
-      **Reach command (was M30 in `TASKS.md`).** per skin tree, case-fold the `id=` of every `<container>` and keep the duplicates. Measured 2026-08-31: **Ebonite_2_1** (`sc.alphaframe`) and **WMP11-BlueVU** (`meter`). That grep finds only the literal-duplicate half; the **double-include** half does not show up in it and must be found from the render dump, where one declaration prints twice in `RENDER-DUMP containers` — **jvc.tape.v0.5**, whose `xml/pledit.xml` is included from both `skin.xml:17` and `xml/amp.xml:9`. Three skins between the two shapes. **Corrected 2026-09-01 while closing B96:** the live reach is **2**. Ebonite's second `sc.alphaframe` is in `wasabi/standardframe/Copy of standardframe.xml`, an authoring leftover no `<include>` names, so it never reaches the graph — a reminder that this grep reads the *tree*, not the include closure.
+      **Reach command (was M30 in `WINAMP5_TASKS.md`).** per skin tree, case-fold the `id=` of every `<container>` and keep the duplicates. Measured 2026-08-31: **Ebonite_2_1** (`sc.alphaframe`) and **WMP11-BlueVU** (`meter`). That grep finds only the literal-duplicate half; the **double-include** half does not show up in it and must be found from the render dump, where one declaration prints twice in `RENDER-DUMP containers` — **jvc.tape.v0.5**, whose `xml/pledit.xml` is included from both `skin.xml:17` and `xml/amp.xml:9`. Three skins between the two shapes. **Corrected 2026-09-01 while closing B96:** the live reach is **2**. Ebonite's second `sc.alphaframe` is in `wasabi/standardframe/Copy of standardframe.xml`, an authoring leftover no `<include>` names, so it never reaches the graph — a reminder that this grep reads the *tree*, not the include closure.
 
 ## B94 — a path-shaped `image=` resolves nothing, so a skin draws none of its own art — closed 2026-09-01
 
@@ -2481,7 +2481,7 @@ Detail in `skills/winamp-modern-skin-guide/reference/components/visualization.md
 
 ## BB9 — the Multi Content View's three visualization placements — closed 2026-08-29
 
-Closed by the side-by-side layout: while the stretched pane is up the file-info text lines stay hidden, the cover takes its slot, the mini pane joins it when its own check box is ticked, and the spectrum is narrowed to what they leave (`WinampModernBentoMultiContentView`). The skin's 700 ms one-shot is untouched — the overlap it caused is answered by the layout rather than by fighting the timer. Two things the original entry could not have known: `Album Art` and `Visualization ` are one either/or in the skin, so the cover is unconditional on this page; and narrowing the pane took it under the 3:1 letterbox ratio, so the holder routing now asks the pane before the box. Detail in `skills/winamp-modern-skin-guide/skins/big-bento-modern.md` → *BB9*. One thing came out still open and is **BB34** in `TASKS.md`: the mini pane's ProjectM surface never starts, so that pane draws black. `swift test` 1442 pass (12 new, `WinampModernBentoMultiContentViewTests`).
+Closed by the side-by-side layout: while the stretched pane is up the file-info text lines stay hidden, the cover takes its slot, the mini pane joins it when its own check box is ticked, and the spectrum is narrowed to what they leave (`WinampModernBentoMultiContentView`). The skin's 700 ms one-shot is untouched — the overlap it caused is answered by the layout rather than by fighting the timer. Two things the original entry could not have known: `Album Art` and `Visualization ` are one either/or in the skin, so the cover is unconditional on this page; and narrowing the pane took it under the 3:1 letterbox ratio, so the holder routing now asks the pane before the box. Detail in `skills/winamp-modern-skin-guide/skins/big-bento-modern.md` → *BB9*. One thing came out still open and is **BB34** in `WINAMP5_TASKS.md`: the mini pane's ProjectM surface never starts, so that pane draws black. `swift test` 1442 pass (12 new, `WinampModernBentoMultiContentViewTests`).
 
 The entry as it stood when it closed:
 
@@ -2526,7 +2526,7 @@ The entry as it stood when it closed:
       288×60 group of four `<vis>` boxes at `x=436`, declared in `player-normal-group.xml:255`. It is
       not one of BB9's three `{0000000A}` holders and is not routed by
       `WinampModernVisualizationHolder` at all — these are real `<vis>` elements the renderer draws
-      itself. Two things came out of it, both engine-wide and both in `TASKS.md`: **B43**
+      itself. Two things came out of it, both engine-wide and both in `WINAMP5_TASKS.md`: **B43**
       (`fliph`/`flipv` were ignored, so the intended mirrored butterfly drew as two identical blocks
       with a seam) and **B44** (the divider position was not persisted, which is the only reason this
       went undiscovered for the whole B35–BB22 run; a dragged divider now survives a relaunch, though
@@ -2747,7 +2747,7 @@ so that is a layer-sizing question, not a placement one.
 
 ## B66 — the Wasabi standard form widgets are inert shells — closed 2026-08-29 (Phase 81)
 
-**Reach measured by** (was `M20` in `TASKS.md`): `rg -i -o '<[[:space:]]*Wasabi:(Text|CheckBox|HSlider|RadioGroup|EditBox|CustomDropDownList)[[:space:]]' "$corpus" --glob '*.xml'`
+**Reach measured by** (was `M20` in `WINAMP5_TASKS.md`): `rg -i -o '<[[:space:]]*Wasabi:(Text|CheckBox|HSlider|RadioGroup|EditBox|CustomDropDownList)[[:space:]]' "$corpus" --glob '*.xml'`
 
 Closed together with B67; the two were one change, because B67 is what made B66 visible on impulse
 and B66 is what made B67's boxes worth having on Styx.
@@ -2807,7 +2807,7 @@ The original entry, verbatim:
 
 ## B67 — a `<Wasabi:TitleBox>` with no declared height was invisible — closed 2026-08-29 (Phase 81)
 
-**Reach measured by** (was `M21` in `TASKS.md`): `rg -i -o '<[[:space:]]*Wasabi:TitleBox[^>]*>' "$corpus" --glob '*.xml'`, then keep only the matches with no `h=` attribute.
+**Reach measured by** (was `M21` in `WINAMP5_TASKS.md`): `rg -i -o '<[[:space:]]*Wasabi:TitleBox[^>]*>' "$corpus" --glob '*.xml'`, then keep only the matches with no `h=` attribute.
 
 The height is now **measured, not guessed** — the entry's own instruction. It is the body's content
 height plus the inset the body already sits in (`WasabiTitleBox.contentInset`, 18 above and 6 below),
@@ -2833,9 +2833,9 @@ The original entry, verbatim:
 
 ## B41 (implementation) — `getMonitorWidth` / `getMonitorHeight` answer the player's own display — shipped 2026-08-26
 
-**Reach measured by** (was `M7` in `TASKS.md`): `rg -a -i -o 'getMonitorWidth|getMonitorHeight' "$corpus"`
+**Reach measured by** (was `M7` in `WINAMP5_TASKS.md`): `rg -a -i -o 'getMonitorWidth|getMonitorHeight' "$corpus"`
 
-Moved out of `TASKS.md`, where it had been sitting as a closed `- [x]` item under an otherwise open
+Moved out of `WINAMP5_TASKS.md`, where it had been sitting as a closed `- [x]` item under an otherwise open
 entry. **B41 itself remains open** for its manual two-display check; only this half is done.
 
 `getMonitorWidth()` / `getMonitorHeight()` are zero-argument integer System methods. The runtime's
@@ -3095,13 +3095,13 @@ collision avoidance; the reasoning and the measurements that ruled the alternati
 skin's windows go". Verified in the running app on Defix and Anaheim, 2026-08-28. Regression
 coverage: `WinampModernWindowTilingTests` (8 cases; the property test caught a real overlap bug
 in the right-edge clamp that the manual pass missed). Remaining verification is tracked as B56a
-in [`TASKS.md`](../../TASKS.md).
+in [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 ---
 
 ## BB5 — Substitute `@HAVE_LIBRARY@` across markup — closed 2026-08-27
 
-**Reach measured by** (was `M8` in `TASKS.md`): `rg -i -o '@HAVE_LIBRARY@' "$corpus"`
+**Reach measured by** (was `M8` in `WINAMP5_TASKS.md`): `rg -i -o '@HAVE_LIBRARY@' "$corpus"`
 
 ### BB5
 
@@ -3110,7 +3110,7 @@ in [`TASKS.md`](../../TASKS.md).
       (`<script … param="@HAVE_LIBRARY@">` here; `default_visible="@HAVE_LIBRARY@"` on the
       media-library container in Styx, Shield_Amp, S7Reflex, Defix). Winamp substitutes `1`; doing so
       is a *behaviour* change — four skins would start opening a library window — and needs its own
-      live QA. **If this is picked up, move it to `TASKS.md` first**: four of the five skins it
+      live QA. **If this is picked up, move it to `WINAMP5_TASKS.md` first**: four of the five skins it
       affects are not Bento.
 
 The earlier Defix repair substituted the macro only when binding a script parameter. BB5 moves the
@@ -3172,7 +3172,7 @@ Reach command: `rg -i -o 'wasabi\.(panel|objectframe\.group)' "$corpus" --glob '
 
 ## BB10 — Typed Skin Settings fallback widgets — closed 2026-08-27
 
-**Reach measured by** (was `M3` in `TASKS.md`): `rg -a -i -o 'newAttribute' "$corpus"`
+**Reach measured by** (was `M3` in `WINAMP5_TASKS.md`): `rg -a -i -o 'newAttribute' "$corpus"`
 
 ### BB10
 
@@ -4418,7 +4418,7 @@ which differs between two runs of the same binary. B38.1 and B38.2 confirmed liv
 
 ## BB6 — The album art is drawn twice — closed 2026-08-24
 
-- [x] **BB6. The album art is drawn twice. Fixed 2026-08-24 — as `B42` in `TASKS.md`, because it
+- [x] **BB6. The album art is drawn twice. Fixed 2026-08-24 — as `B42` in `WINAMP5_TASKS.md`, because it
       is not a Bento defect.** The cause was `relatw`/`relath` greater than 1 falling back to absolute
       geometry, so the oversized dimmed backdrop drew at its literal `99×100` as a small crisp second
       copy. Reached 5 skins beyond this family. Rule: `reference/loading.md` → the `relat*` flags are

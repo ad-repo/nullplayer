@@ -509,7 +509,7 @@ final class WinampModernMainView: NSView {
         for surface in visualizationSurfaces.values { surface.applyPalette(renderer.palette) }
         let style = WinampModernSurfaceStyle(palette: renderer.palette)
         for surface in hostedWindowSurfaces.values { surface.applyPalette(style) }
-        NotificationCenter.default.post(name: .winampModernThemeDidChange, object: nil)
+        NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
         needsDisplay = true
     }
 

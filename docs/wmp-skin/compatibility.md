@@ -1,0 +1,115 @@
+# WMP skin compatibility
+
+This is the checked compatibility surface for the public WMP skin mode. A member not listed
+here is not dynamically bridged to AppKit, Objective-C, `AudioEngine`, the filesystem, or the
+network. Unsupported reads return a stable empty/zero value plus a diagnostic; unsupported commands
+are ignored with a diagnostic.
+
+NullPlayer supports ZIP-based `.wmz` archives containing the XML/JScript `.wms` format used by
+Windows Media Player 7 through 12 when a skin stays within the capabilities below. The version label
+is not a blanket compatibility promise: malformed XML, unsafe archives, legacy code-page text, and
+Windows-only object-model features are rejected or diagnosed even when Windows Media Player accepted
+them. UTF-8, UTF-16LE, UTF-16BE, and deterministic legacy Windows-1252 definitions are supported.
+
+## Phase 6 object model
+
+| Object | Supported members |
+|---|---|
+| `player` | `controls`, `settings`, `currentMedia`, `currentPlaylist`, `network`, `playState`, `status` |
+| `player.controls` | `play`, `pause`, `stop`, `previous`, `next`, `fastForward`, `fastReverse`, `currentPosition`, `currentPositionString` |
+| `player.settings` | `volume`, `balance`, `mute`, `getMode`, `setMode`, `getString`, `setString` |
+| media / metadata | `name`, `duration`, `durationString`, `getItemInfo`; title, artist, album |
+| playlist | `count`, bounded `item(index)` snapshots (`name`, `duration`, artist metadata), `attributeCount`, `getAttributeName` |
+| network | `bufferingProgress`, `receptionQuality`, `bandWidth` (`bandWidth` is currently zero) |
+| `eq` | live `enabled` and ten gain-level properties, remapped to/from NullPlayer's active 10/21-band layout; `enhancedAudio`, `wowLevel`, `truBassLevel`, `speakerSize`, and read-only `currentSpeakerName` |
+| `vis` | bounded `currentEffect` / `currentPreset` state; WMP effects render native Spikes, Bars, Ambience, Cava, or vis_classic in the authored rect |
+| `theme` | live `currentViewID`; assignment requests a controlled switch to an authored view |
+| `view` / elements | `left`, `top`, `width`, `height`, `visible`, `enabled`, `value`, `text`, `down` |
+| popup | `show` is recognized but modal script UI is not executed |
+
+The implemented host-command vocabulary is transport, scan, seek, volume, balance, mute, shuffle,
+repeat, playlist play/remove/move, EQ enable/gain/preamp, WOW/TruBass enable/levels/speaker size, and view switching. Numeric values are
+finite-checked and clamped again at the main-actor host boundary.
+
+WOW and TruBass are WMP-only approximations for local and HTTP audio playback. They do not process
+remote casting or VLC video audio. The design, defaults, and limits are documented in
+[the enhancement reference](../../skills/wmp-skin-guide/reference/audio-enhancements.md).
+
+## Phase 6 tags and native surfaces
+
+| Tag/capability | Status |
+|---|---|
+| `TEXT`, `IMAGE`, `SUBVIEW` | Rendered; text publishes static-text accessibility, authored labels and tooltips |
+| `SLIDER` | Pointer capture, keyboard adjustment, bounded value mutation, and change events |
+| `VOLUMESLIDER`, `SEEKSLIDER`, `BALANCESLIDER` | Live typed host controls with keyboard/pointer accessibility |
+| `PLAYLIST` | Live bounded list, selection, scrolling, double-click/Return play, and Delete mutation |
+| `DROPDOWNPLAYLIST` | Live bounded selection and play |
+| `EQUALIZERSETTINGS` | AppKit 10-band/preamp surface backed by live EQ with 10↔21-band remapping |
+| `POPUP` | Safe host-owned preset menu only; arbitrary script modal UI remains denied |
+| `WMPEFFECTS` | Native Spikes/Bars/Ambience/Cava/vis_classic visualizer; its audio consumers exist only while the active view contains the surface |
+| `VIDEO`, `WMPVIDEO` | Documented app-authored placeholder; plug-ins and ActiveX remain denied |
+| Multiple `VIEW`s | Controlled `theme.currentViewID` transaction, per-skin/view size, safe top-left, accessibility replacement |
+
+NullPlayer's library, Flow, PeppyMeter, Spectrum, AudioAnalysis, Cava, waveform, and ProjectM
+windows are available in WMP mode. They use the active skin's borrowed frame when available and
+WMP-derived palette chrome otherwise. Playlist and equalizer route to the skin's own surface when
+provided; native fallbacks also receive WMP theming but are excluded from border growth because
+their layouts use classic sprite geometry. Video, radio sheets, compact mode, and debug windows
+have no skin chrome and are outside this theming policy. See the
+[current hosting contract](../../skills/wmp-skin-guide/reference/windows.md#current-hosting-contract).
+
+## Expressions and bindings
+
+- JScript geometry expressions execute in the skin session's own `JSContext` (`WMPScriptRuntime`),
+  where they can call the skin's own functions and read live element state. The exact member surface
+  is `skills/wmp-skin-guide/reference/object-model.md`.
+- Reads are captured as dependencies. Resolvable expressions commit in stable topological order.
+- Missing IDs, cycles, non-finite/negative sizes, depth overflow, and pass overflow do not partially
+  mutate the visible scene.
+- Resize publishes the proposed view size to a script transaction, resolves dependencies, and swaps
+  one completed immutable scene. Drawing continues with the previous scene while work is pending.
+- `wmpprop:` and `wmpenabled:` share one coalescing registry. Transaction origins suppress echoes.
+
+## Events, timers, and preferences
+
+Script files load in archive/document registration order. Inline handlers support load, close,
+timer, open/play/status/mode/buffering/reception changes, mouse down/up/click, and change dispatch.
+Host-state handlers are collected in that order in one coalesced transaction. Timers are owned by
+the host, capped at 256 active requests, and clamped to an 8 ms minimum period.
+
+Preferences are stored under a SHA-256 skin-content namespace. A value is limited to 64 KiB and a
+skin to 512 entries. Reset removes only that skin namespace.
+
+## Deliberate denials
+
+ActiveX, registry, shell/process APIs, arbitrary URLs, skin-authored HTML, filesystem/network
+handles, native-object reflection, modal script UI, WMP plug-ins, DLLs, and Objective-C bridging are
+not available: every capability reachable from skin code is a member on `WMPObjectModel`, and each
+one is a value read off an immutable host snapshot or a typed command posted back to the main actor.
+An unrecognised member aborts the one handler that touched it and is counted as measured demand; a
+runaway script is stopped by the in-context execution-time limit and costs its own transaction.
+Teardown drops the context, cancels timers, and keeps the last valid scene. See Amendment 2 in
+`phase-0-decision-record.md`.
+
+## Phase 7 corpus findings
+
+The opt-in local corpus contained 14 user-supplied skins spanning several WMP styles. The Phase 7
+report harness accepted and measured 4 archives and rejected 10 with typed diagnostics. Reports
+contain only archive hashes/facts, compatibility demand, diagnostics, and numeric render metrics;
+they never contain source archives, artwork, screenshots, render buffers, or local corpus paths.
+
+- Unmarked legacy text falls back only to Windows-1252, the system-ANSI encoding commonly used by
+  WMP 7-10 skin tools. NullPlayer does not guess among ANSI code pages.
+- Three archives contain duplicate XML attributes, which are not well-formed XML, and fail with
+  `WMP0027`. NullPlayer does not silently choose one authored value.
+- Empty optional image attributes are compatibility-defaulted as a `WMP0023` warning. They no
+  longer reject the surrounding skin; direct provider escapes remain hard failures.
+- The accepted corpus exercises full/tiny views, transport elements, multiple auxiliary-style
+  views, 1×/2× render surfaces, resize layout, mapping/hit testing, and bounded cache reuse.
+- Remaining demand includes custom controls such as `CUSTOMSLIDER`, `EDITBOX`, `LISTBOX`, legacy
+  `EFFECTS`/video settings, additional playlist variants, appearance-only attributes, and denied
+  object-model members. These appear explicitly as unknowns and reduce report confidence instead of
+  being guessed or bridged dynamically.
+
+Run `WMPPhase7Tests.testOptInLocalCorpusProducesTypedReport` with `WMP_CORPUS_PATH` to use an external
+directory and `WMP_CORPUS_REPORT_DIR` to retain the JSON report outside the repository.

@@ -14,7 +14,7 @@ Read first:
 - `skills/winamp-modern-skin-guide/compatibility.md` — supported surface for text content, `vis mode`,
   and the hit-test region rule; the oscilloscope's approximation is in *Not supported / degraded*
 - `skills/winamp-modern-skin-guide/manual-qa-checklist.md` §1 — three new MMD3 lines, **the open gate**
-- `TASKS.md` §17 (local, gitignored) — the step list with the measured root causes
+- `WINAMP5_TASKS.md` §17 (local, gitignored) — the step list with the measured root causes
 
 ## 1. What Phase 17 was
 

@@ -310,6 +310,8 @@ class AppStateManager {
         // Modern-family skin names
         var modernSkinName: String?
         var metalSkinName: String?
+        var wmpSkinName: String?
+        var wmpViewID: String?
         
         // Audio output device
         var selectedOutputDeviceUID: String?
@@ -322,7 +324,7 @@ class AppStateManager {
         var savedInModernMode: Bool = false
         
         // Version for future compatibility
-        var stateVersion: Int = 3
+        var stateVersion: Int = 4
         
         // MARK: - Custom Decoding for Backward Compatibility
         
@@ -337,7 +339,7 @@ class AppStateManager {
             case customSkinPath
             case projectMPresetIndex
             // v2 fields
-            case uiScaleLevel, isDoubleSize, modernSkinName, metalSkinName, selectedOutputDeviceUID
+            case uiScaleLevel, isDoubleSize, modernSkinName, metalSkinName, wmpSkinName, wmpViewID, selectedOutputDeviceUID
             case browserBrowseMode, uiMode, savedInModernMode
             case winampModernSkinName
             case mainScreenVisibleFrame
@@ -441,6 +443,8 @@ class AppStateManager {
             isDoubleSize = decodedScaleLevel != .p100
             modernSkinName = try container.decodeIfPresent(String.self, forKey: .modernSkinName)
             metalSkinName = try container.decodeIfPresent(String.self, forKey: .metalSkinName)
+            wmpSkinName = try container.decodeIfPresent(String.self, forKey: .wmpSkinName)
+            wmpViewID = try container.decodeIfPresent(String.self, forKey: .wmpViewID)
             selectedOutputDeviceUID = try container.decodeIfPresent(String.self, forKey: .selectedOutputDeviceUID)
             browserBrowseMode = try container.decodeIfPresent(Int.self, forKey: .browserBrowseMode)
             uiMode = try container.decodeIfPresent(String.self, forKey: .uiMode)
@@ -501,12 +505,14 @@ class AppStateManager {
             isDoubleSize: Bool = false,
             modernSkinName: String? = nil,
             metalSkinName: String? = nil,
+            wmpSkinName: String? = nil,
+            wmpViewID: String? = nil,
             selectedOutputDeviceUID: String? = nil,
             browserBrowseMode: Int? = nil,
             uiMode: String? = nil,
             savedInModernMode: Bool = false,
             winampModernSkinName: String? = nil,
-            stateVersion: Int = 3
+            stateVersion: Int = 4
         ) {
             self.isPlaylistVisible = isPlaylistVisible
             self.isEqualizerVisible = isEqualizerVisible
@@ -560,6 +566,8 @@ class AppStateManager {
             self.isDoubleSize = effectiveScaleLevel != .p100
             self.modernSkinName = modernSkinName
             self.metalSkinName = metalSkinName
+            self.wmpSkinName = wmpSkinName
+            self.wmpViewID = wmpViewID
             self.selectedOutputDeviceUID = selectedOutputDeviceUID
             self.browserBrowseMode = browserBrowseMode
             self.uiMode = uiMode
@@ -692,6 +700,10 @@ class AppStateManager {
             isDoubleSize: wm.isDoubleSize,
             modernSkinName: UserDefaults.standard.string(forKey: ModernSkinFamily.modern.skinNameKey),
             metalSkinName: UserDefaults.standard.string(forKey: ModernSkinFamily.metal.skinNameKey),
+            wmpSkinName: wm.uiMode == .wmp
+                ? UserDefaults.standard.string(forKey: WMPSkinImporter.selectedSkinNameKey) : nil,
+            wmpViewID: wm.uiMode == .wmp
+                ? UserDefaults.standard.string(forKey: WMPSkinImporter.selectedViewIDKey) : nil,
             selectedOutputDeviceUID: UserDefaults.standard.string(forKey: "selectedOutputDeviceUID"),
             browserBrowseMode: browserBrowseMode,
             uiMode: wm.uiMode.rawValue,
@@ -806,7 +818,23 @@ class AppStateManager {
     /// Apply settings state (skin, volume, EQ, windows) - no playlist
     private func applySettingsState(_ state: AppState, completion: (() -> Void)? = nil) {
         let wm = WindowManager.shared
-        let restoredMode = state.restoredUIMode
+        // A diagnostic command-line mode selection is an explicit launch override. Session restoration
+        // may restore state within that mode, but must not replace the requested controller family.
+        let restoredMode = PlayerUIMode.argumentOverride ?? state.restoredUIMode
+
+        if restoredMode == .wmp, state.restoredUIMode == .wmp {
+            let importer = WMPSkinImporter()
+            if let name = state.wmpSkinName {
+                importer.defaults.set(name, forKey: WMPSkinImporter.selectedSkinNameKey)
+                if let viewID = state.wmpViewID {
+                    importer.defaults.set(viewID, forKey: WMPSkinImporter.selectedViewIDKey)
+                } else {
+                    importer.defaults.removeObject(forKey: WMPSkinImporter.selectedViewIDKey)
+                }
+            } else {
+                importer.resetSelection()
+            }
+        }
 
         // reloadUI(to:) can defer the actual mode swap until Compact Mode teardown completes.
         // The rest of the restore reads wm.uiMode / wm.isRunningModernFamilyUI and rebuilds
@@ -826,7 +854,6 @@ class AppStateManager {
         let wm = WindowManager.shared
         let engine = wm.audioEngine
 
-        let runningModernMode = wm.isRunningModernFamilyUI
         let runningMode = wm.uiMode
         
         NSLog("AppStateManager: Restoring settings state - volume: %.2f", state.volume)
@@ -862,7 +889,7 @@ class AppStateManager {
         // Restore the classic skin only while running the classic UI. Loading it in
         // modern mode applies classic visualization defaults and couples the two
         // otherwise-independent skin systems.
-        if !runningModernMode, let skinPath = state.customSkinPath {
+        if runningMode.controllerFamily == .classic, let skinPath = state.customSkinPath {
             let skinURL = URL(fileURLWithPath: skinPath)
             if FileManager.default.fileExists(atPath: skinPath) {
                 wm.restoreClassicSkin(from: skinURL)
@@ -878,6 +905,11 @@ class AppStateManager {
         }
         if let family = runningMode.modernSkinFamily {
             ModernSkinEngine.shared.loadPreferredSkin(for: family)
+        }
+        if runningMode == .wmp {
+            // Selection preferences are restored before the mode swap. Reload here as well for
+            // the no-swap case, where the existing WMP controller may still hold the old archive.
+            (wm.mainWindowController as? WMPMainWindowController)?.reloadSelectedSkin()
         }
         
         // Restore audio output device
@@ -925,13 +957,18 @@ class AppStateManager {
             }
         }
 
-        // Winamp Modern only, and gated at the call site so `correctedRestoredFrames` stays a pure,
+        // Winamp Modern and WMP, gated at the call site so `correctedRestoredFrames` stays a pure,
         // directly-testable function. Classic and Original restore the frames they saved, verbatim —
         // a window parked mostly past an edge there is a *placement*, and this sweep would move it.
         //
         // A session saved on a screen that is not here any more is suspect even when its frames
         // happen to land on a present one, so the correction runs unconditionally in that case.
-        let appliesPlacementCorrection = wm.appliesWinampModernPlacement
+        //
+        // `.wmz` joined on W217 G2: its auxiliary origins were rescued one window at a time inside
+        // the materializer's `place()`, which is exactly the per-window clamping the whole-session
+        // group offset exists to prevent — a docked WMP cluster restored onto a smaller desktop came
+        // back overlapping instead of touching.
+        let appliesPlacementCorrection = wm.appliesPlacementRecovery
         let screenContextChanged = appliesPlacementCorrection
             && Self.savedScreenIsMissing(state.mainScreenVisibleFrame,
                                          screens: Self.currentScreenFrames())
@@ -1053,10 +1090,10 @@ class AppStateManager {
             // once — anything the frame correction could not anticipate (a skin clamping its own
             // size after the fact, a stack that grew when UI Size was restored) is caught here.
             //
-            // Winamp Modern only: in the other families nothing resized the windows behind the
+            // Winamp Modern and WMP: in the other families nothing resized the windows behind the
             // session's back, so there is nothing for the sweep to catch and everything for it to
             // disturb.
-            if wm.appliesWinampModernPlacement {
+            if wm.appliesPlacementRecovery {
                 wm.ensureAllWindowsOnScreen()
             }
         }
@@ -1328,6 +1365,13 @@ class AppStateManager {
         
         // Main window exists at this point, so we can restore its frame directly
         if let frameString = state.mainWindowFrame,
+           let controller = wm.mainWindowController as? WMPMainWindowController {
+            // The session-wide correction, not the raw saved rect (W217 G2). It differs only in
+            // position, and only when the session came back stranded — the size is still the
+            // skin's to decide, inside `restoreFrame`.
+            controller.restoreFrame(correctedMainFrame ?? NSRectFromString(frameString),
+                                    skinName: state.wmpSkinName, viewID: state.wmpViewID)
+        } else if let frameString = state.mainWindowFrame,
            let controller = wm.mainWindowController,
            let window = controller.window {
             // `correctedMainFrame` is the saved rect after the whole-session on-screen correction;

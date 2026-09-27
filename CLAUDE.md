@@ -5,6 +5,7 @@
 ```bash
 ./scripts/bootstrap.sh      # Download frameworks (first time)
 ./scripts/kill_build_run.sh # Build and run
+skills/app-control/scripts/launch.sh <skin>  # Debug build on a given skin, verified — agents always use this
 ./scripts/build_dmg.sh      # Build distributable DMG
 swift test                  # Run unit tests
 ```
@@ -16,7 +17,11 @@ See `docs/development-workflow.md` for build details, log monitoring, and versio
 Technical documentation lives in `skills/`. Read the owning skill before changing a subsystem.
 
 - `ui-guide`: UI geometry/rendering; `audio-system`: playback/EQ; `app-state`: restoration and persistence; `user-guide`: features and menus
+- `skin-subsystem-blueprint`: adding/extending a skin family — shared seams, isolation, harness, docs layout.
+  `.wal` and `.wmz` are clean-room reverse engineering: a sweep diff there is unclassified, not a
+  regression — it may be newly unlocked behaviour (Classic/Original diffs are always regressions)
 - `original-skin-guide`: Original skins; `winamp-modern-skin-guide`: `.wal` support, a slim router over `reference/`; `wal-skin-report`: `/wal-skin-report <skin.wal>`
+- `wmp-skin-guide`: Windows Media Player `.wmz`/`.wms` loading, rendering, scripting, menus, state, and WMP-owned windows
 - `plex-integration`, `jellyfin-integration`, `subsonic-integration`, `emby-integration`: media servers
 - `sonos-casting`, `chromecast-casting`: casting protocols and debugging
 - `stream-ripper`: URL ripping; `youtube-source`: YouTube audio; `cue-sheets`: cue playback/splitting; `radio-streaming`: radio
@@ -24,6 +29,10 @@ Technical documentation lives in `skills/`. Read the owning skill before changin
 - `peppymeter`: analog VU; `cava`: bar spectrum; `flow`: network meter; `gpu-vis-modes`: shaders; `album-art-visualizer`: ART effects
 - `projectm-milkdrop`: MilkDrop; `metal-gotchas`: Metal rules
 - `geiss-port`, `tripex-port`, `vis-classic-guide`: visualization ports and compatibility
+- `app-control`: launching, configuring, driving and measuring the running app; test-data targets
+- Backlogs: `WMP_TASKS.md` (`.wmz`), `WINAMP5_TASKS.md` (`.wal`), `docs/video-playback/backlog.md`
+  (shared video), `docs/local-library/backlog.md` (library scanning and playlist playback)
+- `live-ui-testing`: process skill for screen-only defects — instrument first, drive the app yourself, measure what is drawn
 - `testing`: UI test workflows; `non-retina-fixes`: 1x display fixes; `local-library`: SQLite and scanning; `cli`: headless mode
 - `skin-screenshots`: per-skin main-window captures across all skin systems, and slideshow GIFs
 
@@ -73,6 +82,10 @@ Run `swift test`. For UI or playback work, manually exercise local and server pl
 - Skin sprites use a top-left origin; macOS uses bottom-left. See `ui-guide`.
 - Slicing `Data` preserves original indices; always use `data.startIndex`.
 - Read the owning skill before changing a subsystem. Put new subsystem details in that skill, never here.
+- For a defect that only reproduces on screen, read `live-ui-testing` before diagnosing, and
+  `winamp-modern-skin-guide/reference/harness.md` § *Debugging a live defect* — the reference
+  implementation of that workflow. Every subsystem skill must carry a *Debugging a live defect*
+  section routing there; a new subsystem adds one on day one. See `skin-subsystem-blueprint`.
 - Never diff against local `main` — it goes stale and silently sweeps other people's merged work
   into the result. Review and diff a branch against `origin/main` (`git fetch origin` first, then
   `git diff origin/main...HEAD`); for a PR, take the diff from `gh pr diff <N>`, which is

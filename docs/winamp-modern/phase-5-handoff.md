@@ -11,7 +11,7 @@ Read first:
 - `~/.claude/plans/i-want-to-support-frolicking-rabbit.md` — source-of-truth plan and locked scope
 - `docs/winamp-modern/phase-0b-decision-record.md` §3 — the cPro-Bento component/window topology this phase implements
 - `docs/winamp-modern/phase-4-handoff.md` — renderer/MAKI/host/lifecycle contracts inherited by Phase 5
-- `TASKS.md` — Phase 5 is complete; Phase 6 is next
+- `WINAMP5_TASKS.md` — Phase 5 is complete; Phase 6 is next
 
 ## 1. Phase 5 outcome and boundary
 

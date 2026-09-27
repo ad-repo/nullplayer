@@ -291,6 +291,9 @@ enum VisualizationPreferences {
         // The `.wal` `<vis>` box has no notification target: it is repainted by the skin window's
         // own visualization clock, not by the `visClassicProfileCommand` broadcast.
         case .winampModernVisBox: return "winampModernVisBox"
+        // WMP's effect slot owns its repaint through `WMPEffectsSurfaceView`, so it likewise does
+        // not subscribe to the standalone analyzer's command broadcast.
+        case .wmpEffects: return "wmpEffects"
         }
     }
 

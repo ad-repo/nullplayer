@@ -113,7 +113,7 @@ class EQView: NSView {
         // A `.wal` colour-theme switch recolours this window when it is a Winamp Modern fallback
         // (Phase 16); the style is re-derived on each draw, so a repaint is the whole job.
         NotificationCenter.default.addObserver(self, selector: #selector(skinDidChange),
-                                               name: .winampModernThemeDidChange, object: nil)
+                                               name: .hostedSurfaceStyleDidChange, object: nil)
     }
     
     /// Handle track change for Auto EQ
@@ -349,6 +349,35 @@ class EQView: NSView {
         return Metrics(width: bounds.width / scaleFactor)
     }
 
+    /// The window frame the hosting skin lends this equalizer, when it lends one — a `.wmz` skin
+    /// that draws its own panels as an eight-piece ring (`WMPHostedFrameTemplate`).
+    ///
+    /// Never while this view is mounted in a `.wal` holder: there the skin's own frame is already
+    /// around it and the holder decides where the body goes.
+    private var borrowedFrame: SkinnedSurfaceFrameArtwork? {
+        guard hostedContext == nil else { return nil }
+        return WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size)
+    }
+
+    /// Where the equalizer's *body* — the classic layout minus its title bar — is drawn inside a
+    /// borrowed ring, in the flipped top-left coordinates everything here draws in.
+    ///
+    /// One value read by both the drawing and `convertToOriginalCoordinates`, for the same reason
+    /// `Metrics` is: a transform applied in one and not inverted in the other is an equalizer whose
+    /// sliders move when you click them.
+    private var borrowedBody: (origin: NSPoint, scale: CGFloat)? {
+        guard let content = borrowedFrame?.scaled(to: bounds.size).contentRect,
+              content.width > 0, content.height > 0 else { return nil }
+        let scale = min(content.width / Self.hostedContentSize.width,
+                        content.height / Self.hostedContentSize.height)
+        guard scale > 0 else { return nil }
+        // Centred in the hole, the way the classic path centres in the window.
+        let drawn = NSSize(width: Self.hostedContentSize.width * scale,
+                           height: Self.hostedContentSize.height * scale)
+        return (NSPoint(x: content.minX + (content.width - drawn.width) / 2,
+                        y: content.minY + (content.height - drawn.height) / 2), scale)
+    }
+
     /// Calculate scale factor based on current bounds vs original size
     private var scaleFactor: CGFloat {
         // Hosted: the width is the skin frame's to give, so only the height sets the scale and the
@@ -356,6 +385,7 @@ class EQView: NSView {
         if hostedContext != nil {
             return bounds.height / Self.hostedContentSize.height
         }
+        if let borrowedBody { return borrowedBody.scale }
         let originalSize = Skin.baseEQSize
         let scaleX = bounds.width / originalSize.width
         let scaleY = bounds.height / originalSize.height
@@ -375,6 +405,13 @@ class EQView: NSView {
             let fromTop = bounds.height - point.y
             return NSPoint(x: point.x / scale,
                            y: Self.hostedContentSize.height - fromTop / scale)
+        }
+
+        // The same inversion, offset by where the borrowed ring's client hole put the body.
+        if let borrowedBody {
+            let fromTop = bounds.height - point.y - borrowedBody.origin.y
+            return NSPoint(x: (point.x - borrowedBody.origin.x) / borrowedBody.scale,
+                           y: Self.hostedContentSize.height - fromTop / borrowedBody.scale)
         }
 
         if scale == 1.0 {
@@ -413,13 +450,37 @@ class EQView: NSView {
         // Mounted in a `.wal` skin's own frame (B55): the frame draws the chrome, so this view draws
         // the controls only, scaled into the client area the holder gave it.
         if hostedContext != nil {
-            let style = WindowManager.shared.winampModernSurfaceStyle ?? .fallback
+            let style = WindowManager.shared.hostedSurfaceStyle ?? .fallback
             context.scaleBy(x: scale, y: scale)
             context.translateBy(x: 0, y: -Layout.titleBarHeight)
             let layoutWidth = scale > 0 ? bounds.width / scale : Skin.baseEQSize.width
             drawWinampModernNormalMode(
                 style: style, context: context, isActive: true,
                 drawBounds: NSRect(x: 0, y: 0, width: layoutWidth, height: Skin.baseEQSize.height),
+                drawsChrome: false)
+            context.restoreGState()
+            return
+        }
+
+        // The hosting skin's own window ring, where it lends one: the ring is the chrome, and the
+        // equalizer's body is drawn into the client hole the skin states — the same shape as the
+        // `.wal` holder path above, with the hole in place of the holder.
+        if let artwork = borrowedFrame, let placement = borrowedBody,
+           let style = WindowManager.shared.hostedSurfaceStyle {
+            let content = artwork.scaled(to: bounds.size).contentRect
+            context.setFillColor(style.background.cgColor)
+            context.fill(content)
+            context.saveGState()
+            context.interpolationQuality = artwork.wasScaledToFit ? .high : .none
+            context.draw(artwork.image, in: CGRect(origin: .zero, size: bounds.size))
+            context.restoreGState()
+            context.translateBy(x: placement.origin.x, y: placement.origin.y)
+            context.scaleBy(x: placement.scale, y: placement.scale)
+            context.translateBy(x: 0, y: -Layout.titleBarHeight)
+            drawWinampModernNormalMode(
+                style: style, context: context, isActive: window?.isKeyWindow ?? true,
+                drawBounds: NSRect(x: 0, y: 0, width: Self.hostedContentSize.width,
+                                   height: Skin.baseEQSize.height),
                 drawsChrome: false)
             context.restoreGState()
             return
@@ -455,7 +516,7 @@ class EQView: NSView {
 
         // Draw normal mode — the flat palette version when this window is a `.wal` skin's fallback
         // equalizer (Phase 16), the classic sprites otherwise.
-        if let style = WindowManager.shared.winampModernSurfaceStyle {
+        if let style = WindowManager.shared.hostedSurfaceStyle {
             drawWinampModernNormalMode(style: style, context: context, isActive: isActive,
                                        drawBounds: drawBounds, drawsChrome: true)
         } else {
@@ -523,7 +584,13 @@ class EQView: NSView {
         context.setFillColor(style.background.cgColor)
         context.fill(body)
 
-        if drawsChrome {
+        // A `.wmz` session draws the unskinned equalizer without a title bar
+        // (`SkinnedSurfaceChrome.hidesPaletteTitleBar`). Its body is a fixed 275x116 layout, so the
+        // band stays as ground inside a thin gloss rim, with the close target in its top-right corner.
+        if drawsChrome, SkinnedSurfaceChrome.hidesPaletteTitleBar {
+            SkinnedSurfaceChrome.drawGlossFrame(in: context, bounds: drawBounds, border: 3, style: style,
+                                                isActive: isActive, fillGround: false)
+        } else if drawsChrome {
             context.setFillColor(style.barBackground.cgColor)
             context.fill(NSRect(x: 0, y: 0, width: drawBounds.width, height: Layout.titleBarHeight))
             context.setStrokeColor(style.border.cgColor)
@@ -671,6 +738,23 @@ class EQView: NSView {
         return true
     }
     
+    /// Whether a click landed on this window's close control.
+    ///
+    /// Our own enlarged box in the classic title bar, and the shared corner hit area when a `.wmz`
+    /// skin has lent the window its ring: nothing of ours is drawn over a ring, so what the user
+    /// clicks is the skin's own painted ×, and `SkinnedSurfaceChrome.closeButtonRect` is the target
+    /// that covers it. Its rect is in top-left chrome coordinates over the *window*, not in the
+    /// equalizer's own 275-wide skin space, so the view point is what it is tested against.
+    private func hitsCloseControl(viewPoint: NSPoint, skinPoint: NSPoint) -> Bool {
+        if let artwork = borrowedFrame {
+            let corner = SkinnedSurfaceChrome.closeButtonRect(
+                in: bounds, captionHeight: artwork.scaled(to: bounds.size).captionHeight,
+                artwork: artwork)
+            return corner.contains(NSPoint(x: viewPoint.x, y: bounds.height - viewPoint.y))
+        }
+        return Layout.closeHitRect.contains(skinPoint)
+    }
+
     override func mouseDown(with event: NSEvent) {
         let viewPoint = convert(event.locationInWindow, from: nil)
         let point = convertToOriginalCoordinates(viewPoint)
@@ -681,7 +765,7 @@ class EQView: NSView {
         // Close button (checked first for priority, enlarged hit area) - skip when title bars hidden,
         // and when the skin's own frame owns the chrome (B55).
         if hostedContext == nil && !WindowManager.shared.hideTitleBars
-            && Layout.closeHitRect.contains(skinPoint) {
+            && hitsCloseControl(viewPoint: viewPoint, skinPoint: skinPoint) {
             pressedButton = .close
             needsDisplay = true
             return
@@ -798,7 +882,7 @@ class EQView: NSView {
         if let pressed = pressedButton {
             switch pressed {
             case .close:
-                if Layout.closeHitRect.contains(skinPoint) {
+                if hitsCloseControl(viewPoint: viewPoint, skinPoint: skinPoint) {
                     window?.close()
                 }
             case .eqPresets:

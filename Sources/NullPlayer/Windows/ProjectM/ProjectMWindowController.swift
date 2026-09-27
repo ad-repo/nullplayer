@@ -62,8 +62,8 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
     
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
-        // Position after window is shown to ensure correct frame dimensions
-        positionWindow()
+        // Positioning is WindowManager.showProjectM's job, done before this call. Re-docking here
+        // overwrote the remembered frame.
         // Restart rendering (may have been stopped by windowWillClose or hide)
         projectMView.startRendering()
     }
@@ -78,21 +78,6 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
         projectMView.resumeRenderingAfterWindowTransition()
     }
 
-    /// Position the window to the LEFT of the main window
-    /// Always positions on the left side, even if partially offscreen
-    private func positionWindow() {
-        guard let window = window else { return }
-        guard let mainWindow = WindowManager.shared.mainWindowController?.window else {
-            window.center()
-            return
-        }
-        
-        let mainFrame = mainWindow.frame
-        let newX = mainFrame.minX - window.frame.width  // Always LEFT of main
-        let newY = mainFrame.maxY - window.frame.height  // Top-aligned
-        
-        window.setFrameOrigin(NSPoint(x: newX, y: newY))
-    }
     
     private func setupView() {
         projectMView = ProjectMView(frame: NSRect(origin: .zero, size: SkinElements.ProjectM.defaultSize))

@@ -299,6 +299,7 @@ class VisualizationGLView: NSOpenGLView {
     }
     
     private func cleanupOpenGL() {
+        releaseOffscreenTargetsWithCurrentContext()
         // Nothing to clean up - projectM manages its own resources
     }
 
@@ -440,7 +441,12 @@ class VisualizationGLView: NSOpenGLView {
     ///
     /// This method can be called from any thread - it will defer the actual switch
     /// to the render thread to ensure proper OpenGL context.
-    func switchEngine(to type: VisualizationType, forceReload: Bool = false) {
+    /// `persistPreference` is false for a host that is **not** the app's visualization setting.
+    /// A `.wmz` skin cycling its `<EFFECTS>` slot is one: `visualizationEngineType` belongs to the
+    /// standalone Visualizations window and the menu bar, and a skin is not entitled to rewrite it
+    /// (`WMPEffectSelection`). Everything else about the switch is identical.
+    func switchEngine(to type: VisualizationType, forceReload: Bool = false,
+                      persistPreference: Bool = true) {
         // Skip if already using this engine type
         guard forceReload || type != currentEngineType else {
             NSLog("VisualizationGLView: Already using %@", type.displayName)
@@ -457,7 +463,9 @@ class VisualizationGLView: NSOpenGLView {
         currentEngineType = type
 
         // Save preference
-        UserDefaults.standard.set(type.rawValue, forKey: "visualizationEngineType")
+        if persistPreference {
+            UserDefaults.standard.set(type.rawValue, forKey: "visualizationEngineType")
+        }
 
         // Repopulate per-engine scoped settings (low power, PCM gain, beat sensitivity)
         // from the new engine's stored values, falling back to defaults on first use.
@@ -864,6 +872,126 @@ class VisualizationGLView: NSOpenGLView {
     }
 
     /// Render a frame using the current visualization engine
+    // MARK: - Offscreen presentation (W140)
+
+    /// **Rendering into a `CGImage` instead of onto a drawable.**
+    ///
+    /// A WMP `<EFFECTS>` rect is a box inside the skin's own window, composited *between* two
+    /// raster layers of the skin's artwork. A live `NSOpenGLView` cannot go there: a legacy CGL
+    /// drawable's ordering against sibling `CALayer`s is not guaranteed the way normal layer
+    /// z-order is, and this view's own `CVDisplayLink` clock tears against the overlay's
+    /// alpha-blended edge. So the host keeps the view out of the hierarchy entirely, never starts
+    /// its display link, and pulls frames from here on its own clock.
+    ///
+    /// Opacity stops mattering once the artwork composites over the rect — WMP's own visualizers
+    /// were opaque too. What produced the black panels reported in Asimov Radio and Cerulean was
+    /// the missing occlusion (W139), not the engine.
+    private var offscreenFramebuffer: GLuint = 0
+    private var offscreenTexture: GLuint = 0
+    private var offscreenDepthbuffer: GLuint = 0
+    private var offscreenPixelSize = (width: 0, height: 0)
+    private var offscreenPixels: [UInt8] = []
+
+    /// One frame at exactly this pixel size, read back synchronously. Returns nil whenever the
+    /// context, the framebuffer or the engine is not ready — the caller then draws nothing, which
+    /// leaves the skin's own artwork standing.
+    ///
+    /// Rows come back bottom-first, which is what a flipped AppKit host wants: the `CGImage` treats
+    /// row 0 as its top, and drawing that through a flipped CTM reverses it back. This is why the
+    /// GL path needs *no* y-flip where vis_classic's top-first BGRA does.
+    func renderOffscreenImage(pixelWidth: Int, pixelHeight: Int) -> CGImage? {
+        guard pixelWidth > 0, pixelHeight > 0,
+              pixelWidth * pixelHeight <= 16_000_000,
+              let context = openGLContext else { return nil }
+        guard engineLock.try() else { return nil }
+        defer { engineLock.unlock() }
+        context.makeCurrentContext()
+        guard let cgl = context.cglContextObj else { return nil }
+        CGLLockContext(cgl)
+        defer { CGLUnlockContext(cgl) }
+        guard prepareOffscreenTargets(width: pixelWidth, height: pixelHeight) else { return nil }
+
+        // The engine is created on whichever thread holds the context current, and this is that
+        // thread for an offscreen host. `bounds` is what `initializeEngineOnRenderThread` measures,
+        // so the host sets the view's frame to the pixel size before asking for a frame.
+        if engineNeedsSetup { initializeEngineOnRenderThread() }
+
+        glBindFramebuffer(GLenum(GL_FRAMEBUFFER), offscreenFramebuffer)
+        glViewport(0, 0, GLsizei(pixelWidth), GLsizei(pixelHeight))
+        let (pcm, spectrum) = dataLock.withLock { (localPCM, localSpectrum) }
+        if let eng = engine, eng.isAvailable {
+            renderEngine(engine: eng, pcm: pcm, spectrum: spectrum,
+                         width: pixelWidth, height: pixelHeight)
+        } else {
+            glClearColor(0.0, 0.0, 0.0, 1.0)
+            glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
+        }
+        glFlush()
+        glPixelStorei(GLenum(GL_PACK_ALIGNMENT), 1)
+        offscreenPixels.withUnsafeMutableBytes { buffer in
+            glReadPixels(0, 0, GLsizei(pixelWidth), GLsizei(pixelHeight),
+                         GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), buffer.baseAddress)
+        }
+        glBindFramebuffer(GLenum(GL_FRAMEBUFFER), 0)
+
+        let bytes = offscreenPixels.withUnsafeBufferPointer { Data($0) }
+        guard let provider = CGDataProvider(data: bytes as CFData) else { return nil }
+        let info = CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue)
+            .union(.byteOrder32Big)
+        return CGImage(width: pixelWidth, height: pixelHeight, bitsPerComponent: 8,
+                       bitsPerPixel: 32, bytesPerRow: pixelWidth * 4,
+                       space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: info,
+                       provider: provider, decode: nil, shouldInterpolate: false,
+                       intent: .defaultIntent)
+    }
+
+    /// Caller holds the engine lock and the CGL lock, with the context current.
+    private func prepareOffscreenTargets(width: Int, height: Int) -> Bool {
+        if offscreenFramebuffer != 0, offscreenPixelSize == (width, height) { return true }
+        releaseOffscreenTargetsWithCurrentContext()
+        offscreenPixelSize = (width, height)
+        offscreenPixels = [UInt8](repeating: 0, count: width * height * 4)
+
+        glGenFramebuffers(1, &offscreenFramebuffer)
+        glBindFramebuffer(GLenum(GL_FRAMEBUFFER), offscreenFramebuffer)
+        glGenTextures(1, &offscreenTexture)
+        glBindTexture(GLenum(GL_TEXTURE_2D), offscreenTexture)
+        glTexImage2D(GLenum(GL_TEXTURE_2D), 0, GL_RGBA8, GLsizei(width), GLsizei(height), 0,
+                     GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), nil)
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MIN_FILTER), GL_LINEAR)
+        glTexParameteri(GLenum(GL_TEXTURE_2D), GLenum(GL_TEXTURE_MAG_FILTER), GL_LINEAR)
+        glFramebufferTexture2D(GLenum(GL_FRAMEBUFFER), GLenum(GL_COLOR_ATTACHMENT0),
+                               GLenum(GL_TEXTURE_2D), offscreenTexture, 0)
+        // A depth buffer because an engine is free to use one; ProjectM and Tripex both do.
+        glGenRenderbuffers(1, &offscreenDepthbuffer)
+        glBindRenderbuffer(GLenum(GL_RENDERBUFFER), offscreenDepthbuffer)
+        glRenderbufferStorage(GLenum(GL_RENDERBUFFER), GLenum(GL_DEPTH24_STENCIL8),
+                              GLsizei(width), GLsizei(height))
+        glFramebufferRenderbuffer(GLenum(GL_FRAMEBUFFER), GLenum(GL_DEPTH_STENCIL_ATTACHMENT),
+                                  GLenum(GL_RENDERBUFFER), offscreenDepthbuffer)
+        let status = glCheckFramebufferStatus(GLenum(GL_FRAMEBUFFER))
+        glBindFramebuffer(GLenum(GL_FRAMEBUFFER), 0)
+        guard status == GLenum(GL_FRAMEBUFFER_COMPLETE) else {
+            NSLog("VisualizationGLView: offscreen framebuffer incomplete (0x%x) at %dx%d",
+                  status, width, height)
+            releaseOffscreenTargetsWithCurrentContext()
+            return false
+        }
+        return true
+    }
+
+    private func releaseOffscreenTargetsWithCurrentContext() {
+        if offscreenTexture != 0 { glDeleteTextures(1, &offscreenTexture); offscreenTexture = 0 }
+        if offscreenDepthbuffer != 0 {
+            glDeleteRenderbuffers(1, &offscreenDepthbuffer); offscreenDepthbuffer = 0
+        }
+        if offscreenFramebuffer != 0 {
+            glDeleteFramebuffers(1, &offscreenFramebuffer); offscreenFramebuffer = 0
+        }
+        offscreenPixelSize = (0, 0)
+        offscreenPixels = []
+    }
+
     private func renderEngine(engine: VisualizationEngine, pcm: [Float], spectrum: [Float], width: Int, height: Int) {
         // Update viewport size if changed
         engine.setViewportSize(width: width, height: height)
