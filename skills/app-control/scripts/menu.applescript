@@ -2,6 +2,7 @@
 --   mode <pid> <submenu>          click that submenu's "Switch to ..." item if present
 --   skin <pid> <submenu> <item>   select a skin (does NOT switch system - use mode first)
 --   list <pid> <submenu>          the submenu's item names
+--   current <pid> <submenu>       the checked (loaded) skin in that submenu, or empty
 --   closeaux <pid>                toggle off every checked window except Main Window
 --   windowitems <pid>             one line per window-toggle item: index|name|enabled|checked
 --   toggle <pid> <index> <name>   click Windows item <index>, refusing if its name is not <name>
@@ -19,12 +20,39 @@
 -- Selecting a skin name only changes the skin WITHIN the active system. Switching
 -- systems requires the "Switch to ..." item, which is only present when you are
 -- outside that system. Getting this wrong silently re-photographs the old system.
+-- **Menus are closed through Accessibility, never with Escape.** A menu opened by an AX click on
+-- a background app stays open until that app is told to cancel it; `key code 53` goes to the
+-- *frontmost* app (the terminal), so the menu stayed up, held the app in menu tracking, and every
+-- later toggle silently did nothing (2026-09-27, alongside a hung Finder and Dock). And any
+-- error half-way through a verb — a skin or submenu name that is not there — left its menu open
+-- the same way, so the verb runs inside `try` and closes every menu before re-raising.
+on closeMenus(targetPid)
+  tell application "System Events"
+    tell (first process whose unix id is targetPid)
+      repeat with mbi in menu bar items of menu bar 1
+        try
+          perform action "AXCancel" of menu 1 of mbi
+        end try
+      end repeat
+    end tell
+  end tell
+end closeMenus
+
 on run argv
-  set act to item 1 of argv
   if (count of argv) < 2 then
     error "menu.applescript: a target pid is required (app-control Rule zero: drive the debug build you launched, never `process \"NullPlayer\"` by name)" number 1
   end if
   set targetPid to (item 2 of argv) as integer
+  try
+    return drive(argv, targetPid)
+  on error msg number n
+    closeMenus(targetPid)
+    error msg number n
+  end try
+end run
+
+on drive(argv, targetPid)
+  set act to item 1 of argv
   tell application "System Events"
     tell (first process whose unix id is targetPid)
       if act is "closeaux" then
@@ -47,7 +75,7 @@ on run argv
             end if
           end repeat
           if hit is 0 then
-            key code 53
+            my closeMenus(targetPid)
             return closed
           end if
           set closed to closed & (item hit of nms) & ","
@@ -56,7 +84,7 @@ on run argv
         end repeat
         -- Some skins declare windows that cannot be closed (fixed EQ/playlist).
         -- Give up rather than loop: the main window shot is still valid.
-        key code 53
+        my closeMenus(targetPid)
         return closed & "(gave-up)"
 
       else if act is "windowitems" then
@@ -66,7 +94,7 @@ on run argv
         set nms to name of every menu item of mm
         set ens to enabled of every menu item of mm
         set mks to value of attribute "AXMenuItemMarkChar" of every menu item of mm
-        key code 53
+        my closeMenus(targetPid)
         set out to {}
         set blockNo to 1
         set n to count of nms
@@ -106,7 +134,7 @@ on run argv
         set mm to menu 1 of menu bar item "Windows" of menu bar 1
         set nm to name of menu item idx of mm
         if nm is not want then
-          key code 53
+          my closeMenus(targetPid)
           error "menu.applescript toggle: Windows item " & idx & " is '" & nm & "', not '" & want & "'" number 2
         end if
         click menu item idx of mm
@@ -129,9 +157,9 @@ on run argv
             end if
           end if
         end repeat
-        key code 53
+        my closeMenus(targetPid)
         delay 0.2
-        key code 53
+        my closeMenus(targetPid)
         return "already"
 
       else if act is "list" then
@@ -141,10 +169,27 @@ on run argv
         click menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
         delay 0.6
         set nms to name of every menu item of menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
-        key code 53
+        my closeMenus(targetPid)
         delay 0.2
-        key code 53
+        my closeMenus(targetPid)
         return nms
+
+      else if act is "current" then
+        -- The checked skin in a submenu: which skin a mode switch landed on.
+        set subName to item 3 of argv
+        click menu bar item "Skins" of menu bar 1
+        delay 0.4
+        click menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
+        delay 0.6
+        set sm to menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
+        set nms to name of every menu item of sm
+        set mks to value of attribute "AXMenuItemMarkChar" of every menu item of sm
+        my closeMenus(targetPid)
+        repeat with i from 1 to count of nms
+          set mk to item i of mks
+          if mk is not missing value and mk is not "" then return item i of nms
+        end repeat
+        return ""
 
       else if act is "skin" then
         set subName to item 3 of argv
@@ -158,4 +203,4 @@ on run argv
       end if
     end tell
   end tell
-end run
+end drive

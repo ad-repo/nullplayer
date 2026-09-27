@@ -205,6 +205,11 @@ read -r WID _ X Y W H _ < <("$WH" windows --pid "$PID" --size 289x283)   # the s
 | `osascript menu.applescript toggle <pid> <index> <name>` | clicks Windows item `index`, erroring (exit non-zero, nothing clicked) if its name is no longer `name` |
 | `winhelper screens` | each display's `visibleFrame` as `x y w h scale`, in the same top-left points as `windows` |
 
+- **A press lands only on NullPlayer.** `click`, `dblclick`, `clickdiff`, `scroll` and the first
+  point of `drag` exit 1 and post nothing unless the frontmost window under that point belongs to
+  NullPlayer. An empty lookup reads as 0 in shell arithmetic: on 2026-09-27 an unchecked
+  `read … < <(winhelper windows | grep …)` clicked the menu bar and dragged from the screen's
+  top-left corner, and hung Finder and the Dock. Check the lookup anyway (`[ -n "$X" ] || exit 1`).
 - **`clickState` is why clicks used to do nothing.** An event posted without it arrives
   `clickCount == 0`: any handler gating on `clickCount == 1` ignores it while the window still
   highlights. Both `click` and `drag` set it. Measured A/B on the same browser row: the pre-fix
@@ -213,6 +218,11 @@ read -r WID _ X Y W H _ < <("$WH" windows --pid "$PID" --size 289x283)   # the s
 - **A hover is not a click with the buttons left out.** `onMouseOver`/`onMouseOut` fire on the
   *edges* between controls, so the path is the test — and the app must be frontmost, or a
   borderless window gets no `mouseMoved` at all.
+- **`menu.applescript` closes menus through Accessibility (`AXCancel`), never with Escape.**
+  `key code 53` goes to the *frontmost* app, so a menu opened on the background debug build stayed
+  up, held it in menu tracking, and every later toggle silently did nothing; a verb that errors
+  half-way closes its menus too. A NullPlayer row at a layer other than 0 in `winhelper windows`
+  is an open menu — nothing driven while one is up can be trusted.
 - **`menu.applescript` requires a pid** and resolves `first process whose unix id is <pid>`. There
   is no name fallback: `process "NullPlayer"` is ambiguous whenever the installed build is also
   running, which is how it gets driven by accident.
@@ -292,6 +302,30 @@ cmp -s /tmp/t1.png /tmp/t2.png && echo "IDENTICAL" || echo "DIFFER"
 - **Take a control.** One capture of a thing that should change proves nothing.
 
 **Confirm it took:** you can name the two artefacts your conclusion rests on.
+
+### Skin window-size isolation (user-level regression test)
+
+`skills/app-control/scripts/size-isolation-test.sh [<wmz A> <wmz B>]` (default `Ice anemone`) checks
+that no skin inherits another's window sizes, through the menus and real resizes. Steps: resize the
+analyser under A, switch to B in place, back to A, then switch mode to Classic and back. One
+PASS/FAIL line per check, then `SIZE-ISOLATION PASS|FAIL`, with a matching exit status. It takes the
+machine for about two minutes and saves and restores the debug defaults domain. Run it after any
+change to `HostedWindowBorderLayout`, the mode-switch rebuild, or a native window's default size.
+
+`skills/app-control/scripts/skin-mode-switch-test.sh "<window>" [--expected <census windows.tsv>…]`
+is the cross-mode form. The window stays **open** through a chain that enters every mode from
+another (Classic, Original, Metal, `.wal`, `.wmz`) and switches skin within each. It is resized
+before every switch, and after each one:
+- the window must still be open;
+- it must not keep the previous size (a leak);
+- back in a `.wmz` skin, it must have that skin's own size;
+- in Classic, it must be at the classic default;
+- with `--expected`, a switch into a new mode must land on that skin's fresh-launch census size.
+
+Within Classic, and within Original/Metal (one family in the code), an open window keeps the user's
+stretch across a skin change, as it always has. Pick windows by how their size is decided:
+`Spectrum Analyzer` (stack), `Visualizations` (side window), `Sonos Rooms` (own show path). About
+3–4 minutes each.
 
 ### Window census
 
