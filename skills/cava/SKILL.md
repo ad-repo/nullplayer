@@ -324,6 +324,17 @@ they choose **Match Skin** or explicitly switch/reset skins. A same-skin app rel
   - **Classic standalone** (`CavaView`): the "Winamp Green" preset — green, like the classic Winamp spectrum.
   - **Classic inline** (`MainWindowView`): the active skin's ordered `visColors` palette, from the one-third point to its brightest endpoint. Starting above index 0 keeps short, quiet bars visible because Cava fills each whole bar with one intensity-derived color.
   - **Modern standalone and inline** (`ModernCavaView` / `ModernMainWindowView`): `skin.config.palette.resolvedPrimary()` → `resolvedAccent()`, so they match each modern skin's palette automatically.
+  - **Hosted standalone, `.wal` / `.wmz`** (`CavaView`): `hostedStyle ?? WindowManager.shared.hostedSurfaceStyle`
+    → `visualizationLow` (`dimText`) → `visualizationHigh` (`currentText`), pushed at setup, from
+    `applyPalette` and on `.hostedSurfaceStyleDidChange`. The style is nil in Classic and Original,
+    which keep "Winamp Green". This writes the same `.cavaWindow` in-memory default as Classic and
+    Modern; each view re-pushes on setup, so a family switch re-derives it.
+  - **`.wal` `<vis>` box** (`.winampModernVisBox`): the box's own `colorband` first → last.
+  - **WMP `<EFFECTS>`** (`.wmpEffects`, `WMPEffectsSurfaceView`): the hosted surface style, dim text →
+    current text, pushed at init, when the Cava effect starts, and on `.hostedSurfaceStyleDidChange`
+    (posted when the presented view changes the palette).
+  The low end is dim text rather than the background for the same reason Classic inline starts at the
+  one-third point: short, quiet bars stay visible.
 - `setSkinDefaultColors(low:high:)` is the plain-NSColor bridge that keeps `CavaSettings` free of skin imports. The default is in-memory (recomputed each session), not persisted — only the user override and the `hasCustomColors` flag persist.
 
 ### Color Persistence
@@ -358,3 +369,11 @@ Modern Cava view reads corner radius from the current skin config and applies vi
 - **Want waveform/frequency detail?** Spectrum Analyzer
 - **Want multi-pane analysis (scope+levels+spec)?** Audio Analysis Window
 - **Want network throughput?** Flow
+
+## Debugging a live defect
+
+Read **`skills/live-ui-testing`** before diagnosing anything that only reproduces on screen, and
+`winamp-modern-skin-guide/reference/harness.md` § *Debugging a live defect*, the reference
+implementation of that workflow. Launch with `skills/app-control/scripts/launch.sh <skin>`, drive the
+Windows menu by pid, and capture the window with `winhelper capture` — measure the pixels drawn, not
+the log line that says what should have been drawn.

@@ -148,9 +148,24 @@ enum VisualizationPreferences {
         // "Lavender Pink Tips") on a classic reset. Modern and metal UIs both resolve
         // correctly from ModernSkinEngine.currentSkin (it tracks the active modern/metal
         // finish), so only classic needs to divert.
-        if !WindowManager.shared.isRunningModernUI {
+        //
+        // `.wal` and `.wmz` answer false to `isRunningModernUI` too, and used to take Classic's
+        // "Purple Neon" here. They keep Classic's mode and fit-to-width keys, but the Spectrum
+        // window's profile goes back to *this skin's* match: forget the skin it was matched for and
+        // re-run the matcher, which overwrites the profile key before the reset posts its reload.
+        switch WindowManager.shared.runningControllerFamily {
+        case .classic:
             WindowManager.shared.writeClassicVisualizationDefaultKeys(for: scope, defaults: defaults)
             return
+        case .winampModern, .wmp:
+            WindowManager.shared.writeClassicVisualizationDefaultKeys(for: scope, defaults: defaults)
+            if scope == .spectrumWindow || scope == .all {
+                VisClassicProfileMatcher.forgetAppliedSkin(for: [.spectrumWindow], defaults: defaults)
+                WindowManager.shared.applyHostedVisClassicSkinDefault(notify: false, defaults: defaults)
+            }
+            return
+        case .nullPlayerModern:
+            break
         }
 
         let skin = ModernSkinEngine.shared.currentSkin

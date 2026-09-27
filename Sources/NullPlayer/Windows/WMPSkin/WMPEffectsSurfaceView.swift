@@ -24,6 +24,7 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private var engineView: VisualizationGLView?
     private var pcmObserver: NSObjectProtocol?
     private var selectionObserver: NSObjectProtocol?
+    private var surfaceStyleObserver: NSObjectProtocol?
     private var isTornDown = false
     /// Preset/effect auto-cycling, through the same stored keys NullPlayer's own visualization
     /// window and the `.wal` surface use, so a cycle set in one place is the cycle in all of them.
@@ -73,12 +74,46 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         selectionObserver = NotificationCenter.default.addObserver(
             forName: WMPEffectSelection.didChange, object: nil, queue: .main
         ) { [weak self] _ in MainActor.assumeIsolated { self?.applySelection() } }
+        // The controller posts this when the presented view (and so the palette) changes.
+        surfaceStyleObserver = NotificationCenter.default.addObserver(
+            forName: .hostedSurfaceStyleDidChange, object: nil, queue: .main
+        ) { [weak self] _ in MainActor.assumeIsolated { self?.hostedSurfaceStyleDidChange() } }
+        applySkinDefaultColors()
     }
 
     required init?(coder: NSCoder) { nil }
 
+    /// The Cava default follows the skin's surface style (`WMPSurfacePalette.surfaceStyle`), from
+    /// its dim text up to its current-track accent. A user pick still wins through
+    /// `CavaSettings.effectiveLow/HighColor`, which the presenter reads every frame.
+    private func applySkinDefaultColors() {
+        guard let style = WindowManager.shared.hostedSurfaceStyle else { return }
+        CavaSettings.setSkinDefaultColors(low: style.visualizationLow, high: style.visualizationHigh,
+                                          scope: .wmpEffects)
+    }
+
+    private func hostedSurfaceStyleDidChange() {
+        guard !isTornDown else { return }
+        applySkinDefaultColors()
+        applyVisClassicSkinDefault()
+        if let bridge = visClassicBridge, let name = VisClassicBridge.lastProfileName(for: .wmpEffects),
+           bridge.currentProfileName != name {
+            bridge.loadProfile(named: name)
+        }
+        needsDisplay = true
+    }
+
+    /// The slot's default vis_classic profile is the bundled one nearest the skin's surface style,
+    /// once per skin, so a user's pick survives a relaunch (`VisClassicProfileMatcher`).
+    private func applyVisClassicSkinDefault() {
+        guard let style = WindowManager.shared.hostedSurfaceStyle,
+              let identity = WindowManager.shared.hostedSkinIdentity else { return }
+        VisClassicProfileMatcher.applySkinDefault(for: .wmpEffects, skinIdentity: identity,
+                                                  low: style.visualizationLow, high: style.visualizationHigh)
+    }
+
     deinit {
-        for observer in [pcmObserver, selectionObserver].compactMap({ $0 }) {
+        for observer in [pcmObserver, selectionObserver, surfaceStyleObserver].compactMap({ $0 }) {
             NotificationCenter.default.removeObserver(observer)
         }
     }
@@ -121,10 +156,10 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private func teardown() {
         guard !isTornDown else { return }
         isTornDown = true
-        for observer in [pcmObserver, selectionObserver].compactMap({ $0 }) {
+        for observer in [pcmObserver, selectionObserver, surfaceStyleObserver].compactMap({ $0 }) {
             NotificationCenter.default.removeObserver(observer)
         }
-        pcmObserver = nil; selectionObserver = nil
+        pcmObserver = nil; selectionObserver = nil; surfaceStyleObserver = nil
         cycleTimer?.invalidate(); cycleTimer = nil
         engineFrameTimer?.invalidate(); engineFrameTimer = nil
         cavaPresenter.stop()
@@ -180,6 +215,7 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         if isActive {
             switch effect.style {
             case .cava:
+                applySkinDefaultColors()
                 cavaPresenter.start()
             case .visClassic:
                 visClassicWaveform.start()
@@ -403,6 +439,7 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
             return nil
         }
         made.setReferenceWidth(width)
+        applyVisClassicSkinDefault()
         made.reloadPersistedSettings()
         // This is an overlay, not a standalone analyzer canvas. Profiles may specify a black
         // background for their window, but that must not cover the WMP skin's authored lens.

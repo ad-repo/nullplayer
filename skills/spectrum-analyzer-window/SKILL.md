@@ -18,7 +18,12 @@ Dedicated Metal-based spectrum analyzer providing larger, more detailed view tha
 - **Bar Count**: 84 bars (vs 19 in main window)
 - **Rendering**: Metal GPU shaders at 60Hz
 - **Window Geometry**: default 275×116 at 1×; supports horizontal + vertical stretching with skin minimum size constraints
-- **Color Source**: skin's `viscolor.txt` (24-color palette)
+- **Color Source**: skin's `viscolor.txt` (24-color palette). Under a `.wal` / `.wmz` skin,
+  `SpectrumView.applyHostedSpectrumColors` sets `spectrumColors` to
+  `SkinnedSurfaceStyle.visualizationRamp()` (24 steps, dim text → current text) — at setup, from
+  `applyPalette` and on `.hostedSurfaceStyleDidChange`; nil returns to `visColors`. Applied at setup
+  because a `.wmz` window opened after the palette resolved gets neither of the other two. vis_classic
+  ignores `spectrumColors`: its skin match is a profile choice (`vis-classic-guide` §7).
 
 ## Docking
 
@@ -88,3 +93,11 @@ Bar fall speed:
 - `Visualization/VisClassicBridge.swift` — Swift bridge to C vis_classic core
 - `Sources/CVisClassicCore/` — portable C/C++ vis_classic core + C API
 - `App/SpectrumWindowProviding.swift` — protocol abstracting classic/modern
+
+## Debugging a live defect
+
+Read **`skills/live-ui-testing`** before diagnosing anything that only reproduces on screen, and
+`winamp-modern-skin-guide/reference/harness.md` § *Debugging a live defect*, the reference
+implementation of that workflow. Launch with `skills/app-control/scripts/launch.sh <skin>`, drive the
+Windows menu by pid, and capture the window with `winhelper capture` — measure the pixels drawn, not
+the log line that says what should have been drawn.

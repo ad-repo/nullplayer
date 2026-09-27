@@ -178,6 +178,9 @@ final class VisClassicVisRenderer: NSObject, WasabiSpectrumAnalyzerRenderer {
     /// The buffer the core last ran its FFT over — see `draw`.
     private var lastProcessed: [UInt8] = []
     private static let decayWindow: CFTimeInterval = 2.0
+    /// The skin this renderer last matched a default profile for — so the match runs once per skin,
+    /// not once per frame.
+    private var matchedSkinIdentity: String?
 
     /// Always, for any mode the skin is not switching off: this *is* a PCM visualization, and its
     /// input is the tap.
@@ -205,6 +208,7 @@ final class VisClassicVisRenderer: NSObject, WasabiSpectrumAnalyzerRenderer {
         let scale = deviceScale(of: context)
         let width = max(1, Int((frame.width * scale).rounded()))
         let height = max(1, Int((frame.height * scale).rounded()))
+        applySkinDefaultProfileIfNeeded(style: input.style)
         guard let core = bridge(width: width, height: height) else { return }
 
         let left = input.waveform.left
@@ -312,6 +316,34 @@ final class VisClassicVisRenderer: NSObject, WasabiSpectrumAnalyzerRenderer {
     /// changes this box's width continuously while the user drags — and tearing down a C++ core per
     /// pixel of drag would be the cost of a resize, not of a visualization. Only the reference width
     /// follows, which is what the band layout is measured against.
+    /// The box's default profile is the bundled one nearest its own colours — the same colorband
+    /// first→last its Cava takes — once per skin, so a user's pick survives a relaunch
+    /// (`VisClassicProfileMatcher`). Bands that are shading rather than bar colour fall back to the
+    /// hosted surface style.
+    private func applySkinDefaultProfileIfNeeded(style: WasabiVisStyle) {
+        guard let identity = WindowManager.shared.hostedSkinIdentity, identity != matchedSkinIdentity,
+              let target = Self.profileTarget(for: style) else { return }
+        matchedSkinIdentity = identity
+        VisClassicProfileMatcher.applySkinDefault(for: Self.scope, skinIdentity: identity,
+                                                  low: target.low, high: target.high)
+        // Another box's renderer may have written the match first; either way a live core is
+        // brought to the stored profile rather than kept on the last skin's.
+        if let bridge, let name = VisClassicBridge.lastProfileName(for: Self.scope),
+           bridge.currentProfileName != name {
+            bridge.loadProfile(named: name)
+        }
+    }
+
+    private static func profileTarget(for style: WasabiVisStyle) -> (low: NSColor, high: NSColor)? {
+        if let low = style.bandColors.first.flatMap({ NSColor(cgColor: $0) }),
+           let high = style.bandColors.last.flatMap({ NSColor(cgColor: $0) }),
+           !VisClassicProfileMatcher.isDegenerateTarget(low: low, high: high) {
+            return (low, high)
+        }
+        guard let surface = WindowManager.shared.hostedSurfaceStyle else { return nil }
+        return (surface.visualizationLow, surface.visualizationHigh)
+    }
+
     private func bridge(width: Int, height: Int) -> VisClassicBridge? {
         if let bridge {
             if bridgeSize.width != width {

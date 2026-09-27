@@ -104,6 +104,18 @@ class SpectrumView: NSView {
             view.autoresizingMask = []  // Manual frame updates
             addSubview(view)
         }
+        applyHostedSpectrumColors()
+    }
+
+    /// Inside a `.wal` / `.wmz` skin the bars follow the hosted surface style; nil (Classic and
+    /// Original) returns them to the classic skin's `visColors`. Applied at setup too, because a
+    /// `.wmz` window opened after the palette resolved gets neither `applyPalette` nor a change post.
+    private func applyHostedSpectrumColors(_ style: WinampModernSurfaceStyle? = nil) {
+        guard let analyzer = spectrumAnalyzerView else { return }
+        let ramp = (style ?? WindowManager.shared.hostedSurfaceStyle)?.visualizationRamp()
+        if ramp != nil || analyzer.spectrumColors != nil {
+            analyzer.spectrumColors = ramp
+        }
     }
     
     private func calculateContentArea() -> NSRect {
@@ -279,6 +291,7 @@ class SpectrumView: NSView {
         // visualization. Marking the layout dirty costs nothing where a view has no subviews.
         needsLayout = true
         needsDisplay = true
+        applyHostedSpectrumColors()
     }
     
     func setFullscreen(_ enabled: Bool) {
@@ -866,7 +879,10 @@ class SpectrumView: NSView {
 
 extension SpectrumView: WinampModernHostedSurface {
     var view: NSView { self }
-    func applyPalette(_ style: WinampModernSurfaceStyle) { needsDisplay = true }
+    func applyPalette(_ style: WinampModernSurfaceStyle) {
+        applyHostedSpectrumColors(style)
+        needsDisplay = true
+    }
     func applySkinScale(_ scale: CGFloat) {
         updateSpectrumFrame()
         needsDisplay = true

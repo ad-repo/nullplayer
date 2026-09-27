@@ -69,6 +69,12 @@ This scope controls independent persistence keys for:
 
 `VisClassicBridge.ensureProfilesBootstrapped()` copies bundled profiles into user profile directory only if user directory is empty.
 
+Because a user copy shadows the bundled profile of the same name, a bundled profile whose *file*
+changes leaves stale copies behind. `migrateUserCopiesToRGBProfiles()` (once, flag
+`visClassicProfilesRGBMigrationV1`) replaces a user copy that is exactly the channel-swapped old
+version of a bundled profile — the Metal profiles when the channel order was fixed (§5.3). Anything
+else in the user folder is left alone.
+
 Directories:
 - bundled: app resources `vis_classic/profiles`
 - user: `~/Library/Application Support/NullPlayer/vis_classic/profiles`
@@ -91,6 +97,14 @@ Window-scoped keys:
 - `visClassicTransparentBg.spectrumWindow`
 - `visClassicOpacity.mainWindow`
 - `visClassicOpacity.spectrumWindow`
+
+Once-per-skin auto-match keys (§7) — the `.wal` / `.wmz` archive path the scope's profile was last
+matched for:
+- `visClassicSkinDefaultAppliedFor.spectrumWindow`
+- `visClassicSkinDefaultAppliedFor.winampModernVisBox`
+- `visClassicSkinDefaultAppliedFor.wmpEffects`
+- (`visClassicSkinDefaultAppliedFor.mainWindow` exists for symmetry; the main-window bridge never
+  renders under `.wal` / `.wmz`, so nothing writes it)
 
 Legacy fallback keys:
 - `visClassicLastProfileName`
@@ -250,8 +264,16 @@ All loaded from `[Classic Analyzer]` INI section:
   - free-form profile description string
 
 Color sections:
-- `[BarColours]` indices `0..255` with `B G R` values
-- `[PeakColours]` indices `0..255` with `B G R` values
+- `[BarColours]` indices `0..255` with `R G B` values
+- `[PeakColours]` indices `0..255` with `R G B` values
+
+**Channel order is `R G B` as drawn.** The original plugin (`WACUP/vis_classic`, `File.cpp`) reads the
+three numbers into variables named `r g b` and stores `RGB(b, g, r)` into a COLORREF — but that
+COLORREF goes straight into a 32-bit DIB, whose byte order undoes the swap; its built-in default,
+`bmpRGB(204 + i/5, i, 0)`, is the red→yellow of "Default Red & Yellow". The port first took the
+variable names at face value (`parseBGR`) and drew every bundled profile with red and blue exchanged
+("Flames" blue); `parseRGB` and the saver now use `R G B`. The seven `Metal *` profiles had been
+authored by eye against the swap and were rewritten so they still draw as authored.
 
 ## 5.4 Known compatibility notes in this port
 
@@ -273,20 +295,50 @@ Most influential knobs:
 
 This is why two profiles can feel like different analyzers even with similar palettes.
 
-## 7. Assigning Profiles to Skins (Future Default vis_classic)
+## 7. Default Profile per Skin Family
 
-If making `vis_classic` the default and assigning skin-specific profiles:
+| Family | Default profile | Where |
+|---|---|---|
+| Classic | always `"Purple Neon"` | `WindowManager.classicVisClassicProfileName` / `writeClassicVisualizationDefaultKeys` |
+| Original (modern / metal) | per skin, hand-picked | `skin.json` → `visualization.visClassic.mainWindowProfile` / `spectrumWindowProfile` |
+| Winamp Modern (`.wal`) | the bundled profile nearest the skin's colours | `VisClassicProfileMatcher` |
+| WMP (`.wmz`) | the bundled profile nearest the skin's colours | `VisClassicProfileMatcher` |
 
-1. Keep existing window-scoped vis_classic preference model.
-2. Add a skin-identity -> profile-name mapping layer above current profile restore.
-3. Resolve skin identity deterministically:
-   - bundled skin name, or
-   - absolute loaded skin path hash for external skins
-4. Apply mapping on skin change and at startup before first vis_classic frame render.
-5. Fall back in this order:
-   - mapped profile if present
-   - scoped last-profile key
-   - first available profile
+### 7.1 The matcher
+
+`Visualization/VisClassicProfileMatcher.swift`, pure and tested (`HostedVisSkinColorsTests`):
+- **Candidates**: bundled profiles only (never the user folder), minus `Current Settings` and any
+  profile whose bars are near-black (LCD draws only peaks). Parsed once per session.
+- **Summary**: `low` = mean of `[BarColours]` 32–127, `high` = mean of 128–255, in Lab.
+- **Score**: `ΔE(low) + 2·ΔE(high)`, ΔE with lightness at half weight (`kL = 2`); ties by name. At full
+  lightness weight a mid-brown profile beat every red and pink one. A bundled `Red` profile (Green's
+  ramp in red) exists because nothing else was red.
+- **Targets**: the Spectrum window and `<EFFECTS>` use the hosted surface style (`visualizationLow` /
+  `visualizationHigh` = dim text → current text). The `.wal` `<vis>` box uses its own `colorband`
+  first → last, and falls back to the surface style when those are shading, not bar colour
+  (`isDegenerateTarget`: both near-black, like Rika's `colorallbands="0,0,0"`, or both near-white,
+  the undeclared default).
+
+### 7.2 Once per skin
+
+`applySkinDefault(for:skinIdentity:…)` writes the match to `scope.lastProfileNameKey` only when the
+skin identity (the archive path, `WindowManager.hostedSkinIdentity`) differs from
+`scope.skinDefaultAppliedForKey`, so a user's pick survives a same-skin relaunch and a new skin
+re-picks — Original's `preservePersistedProfiles`, keyed on identity. A `.wal` colour-theme switch
+keeps the identity and does not re-pick. Hooks, and how each reaches a live bridge:
+- `.spectrumWindow`: `WindowManager.applyHostedVisClassicSkinDefault` on
+  `.hostedSurfaceStyleDidChange`; reloads `sharedVisClassicBridge` and posts
+  `.visClassicProfileCommand` `load` / `spectrumWindow` for a visible window.
+- `.wmpEffects`: `WMPEffectsSurfaceView` before its bridge is built and on the style notification;
+  loads its own bridge directly (nothing listens to the notification for this target).
+- `.winampModernVisBox`: `VisClassicVisRenderer.draw`, gated on a per-renderer last-seen identity;
+  loads its own bridge when the stored name differs (several boxes, one scope).
+- `.mainWindow`: not hooked — no embedded analyzer exists under `.wal` / `.wmz`.
+
+**Instrument**: a DEBUG build logs every match —
+`VisClassicProfileMatcher: <lastProfileNameKey> -> "<name>" (score <n>) for <archive path>` — in the
+app log (`/tmp/np.log` under `launch.sh`). No log line on a relaunch is the once-per-skin rule
+working, not a missing hook.
 
 Avoid collapsing scope into one global profile key; main and spectrum windows intentionally persist independently.
 
@@ -317,6 +369,14 @@ the outgoing family's shared profile keys:
   (Launch / session-restore keeps the default `true` so a user's last-session choices survive;
   a *live* family switch passes `false`.)
 - Entering classic: `writeClassicVisualizationDefaultKeys(for: .all)`.
+- Entering `.wal` / `.wmz`: `VisClassicProfileMatcher.forgetAppliedSkin(for: [.spectrumWindow])`, so
+  the shared Spectrum key (still holding Classic's or Original's profile) is re-matched once the
+  skin's style resolves.
+
+`applyClassicVisualizationDefaults` — which runs at every launch in every mode, because the classic
+skin is loaded regardless — is gated by `appliesClassicVisualizationDefaults(family:)`, true for
+`.classic` only. It used to admit `.wal` (which answers false to `isRunningModernUI` and
+`isRunningWMPUI` alike), so every `.wal` launch reset the Spectrum window to vis_classic / "Purple Neon".
 
 Preserving instead (the old `loadPreferredSkin(for:)` default of `true`) carried classic's
 `vis_classic` mode and `"Purple Neon"` profile into a modern skin instead of applying Cava and
@@ -349,8 +409,9 @@ choices survive.
 
 ### 8.3 Reset must resolve defaults from the active UI
 
-`VisualizationPreferences.applyCurrentSkinDefaults` branches on
-`WindowManager.shared.isRunningModernUI`. In classic UI it must call
-`writeClassicVisualizationDefaultKeys`; reading `ModernSkinEngine.currentSkin` there applies
-the wrong (modern default skin's) profile. `.mainWindow` / `.spectrumWindow` / `.all` scopes
+`VisualizationPreferences.applyCurrentSkinDefaults` switches on
+`WindowManager.shared.runningControllerFamily`. Classic calls `writeClassicVisualizationDefaultKeys`;
+reading `ModernSkinEngine.currentSkin` there applies the wrong (modern default skin's) profile.
+`.wal` / `.wmz` write the same mode and fit keys, then forget the Spectrum scope's skin identity and
+re-run the matcher, so a reset returns the skin's match rather than "Purple Neon". `.mainWindow` / `.spectrumWindow` / `.all` scopes
 are all honored.

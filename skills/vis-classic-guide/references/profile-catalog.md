@@ -2,9 +2,9 @@
 
 Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_classic/profiles/`.
 
-- Total profiles: **24**
+- Total profiles: **32**
 - Source format: `[Classic Analyzer]`, `[BarColours]`, `[PeakColours]`
-- Color values in INI are BGR; this catalog displays RGB.
+- Color values in INI are R G B as drawn (the original plugin's `RGB(b, g, r)` naming is undone by its DIB byte order).
 
 ## Option Legend
 
@@ -77,15 +77,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#550921` (85, 9, 33) | `#664C17` (102, 76, 23) | `#758C0E` (117, 140, 14) | `#73A309` (115, 163, 9) | `#72BA04` (114, 186, 4) |
-| PeakColours | `#400000` (64, 0, 0) | `#6F4040` (111, 64, 64) | `#9F8080` (159, 128, 128) | `#CFC0C0` (207, 192, 192) | `#FFFFFF` (255, 255, 255) |
+| BarColours | `#210955` (33, 9, 85) | `#174C66` (23, 76, 102) | `#0E8C75` (14, 140, 117) | `#09A373` (9, 163, 115) | `#04BA72` (4, 186, 114) |
+| PeakColours | `#000040` (0, 0, 64) | `#40406F` (64, 64, 111) | `#80809F` (128, 128, 159) | `#C0C0CF` (192, 192, 207) | `#FFFFFF` (255, 255, 255) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 26.9..157.6 |
-| `Peak luminance range` | 13.6..255.0 |
+| `Bar luminance range` | 19.6..142.1 |
+| `Peak luminance range` | 4.6..255.0 |
 
 ## BackAMP StoneAge
 
@@ -129,15 +129,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#B36F5E` (179, 111, 94) | `#E3A756` (227, 167, 86) | `#D1E051` (209, 224, 81) | `#ABCE86` (171, 206, 134) | `#A164FF` (161, 100, 255) |
-| PeakColours | `#6A5700` (106, 87, 0) | `#871075` (135, 16, 117) | `#DD9445` (221, 148, 69) | `#F9D8A9` (249, 216, 169) | `#FFFFFF` (255, 255, 255) |
+| BarColours | `#5E6FB3` (94, 111, 179) | `#56A7E3` (86, 167, 227) | `#51E0D1` (81, 224, 209) | `#86CEAB` (134, 206, 171) | `#FF64A1` (255, 100, 161) |
+| PeakColours | `#00576A` (0, 87, 106) | `#751087` (117, 16, 135) | `#4594DD` (69, 148, 221) | `#A9D8F9` (169, 216, 249) | `#FFFFFF` (255, 255, 255) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 124.2..225.5 |
-| `Peak luminance range` | 46.5..255.0 |
+| `Bar luminance range` | 112.1..211.9 |
+| `Peak luminance range` | 44.2..255.0 |
 
 ## Blue Flames
 
@@ -181,15 +181,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#CA006A` (202, 0, 106) | `#A45317` (164, 83, 23) | `#BA9800` (186, 152, 0) | `#E8CB00` (232, 203, 0) | `#C1FF00` (193, 255, 0) |
-| PeakColours | `#A6005E` (166, 0, 94) | `#F50070` (245, 0, 112) | `#FF9F21` (255, 159, 33) | `#E6EC00` (230, 236, 0) | `#C1FF00` (193, 255, 0) |
+| BarColours | `#6A00CA` (106, 0, 202) | `#1753A4` (23, 83, 164) | `#0098BA` (0, 152, 186) | `#00CBE8` (0, 203, 232) | `#00FFC1` (0, 255, 193) |
+| PeakColours | `#5E00A6` (94, 0, 166) | `#7000F5` (112, 0, 245) | `#219FFF` (33, 159, 255) | `#00ECE6` (0, 236, 230) | `#00FFC1` (0, 255, 193) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 50.6..223.4 |
-| `Peak luminance range` | 42.1..223.4 |
+| `Bar luminance range` | 37.1..196.3 |
+| `Peak luminance range` | 32.0..196.3 |
 
 ## Blue on Dark-Orange
 
@@ -233,15 +233,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#CA2332` (202, 35, 50) | `#CF1B54` (207, 27, 84) | `#D41377` (212, 19, 119) | `#D90C9A` (217, 12, 154) | `#DF05BD` (223, 5, 189) |
-| PeakColours | `#0984BF` (9, 132, 191) | `#166494` (22, 100, 148) | `#234469` (35, 68, 105) | `#30243E` (48, 36, 62) | `#3E0514` (62, 5, 20) |
+| BarColours | `#3223CA` (50, 35, 202) | `#541BCF` (84, 27, 207) | `#7713D4` (119, 19, 212) | `#9A0CD9` (154, 12, 217) | `#BD05DF` (189, 5, 223) |
+| PeakColours | `#BF8409` (191, 132, 9) | `#946416` (148, 100, 22) | `#694423` (105, 68, 35) | `#3E2430` (62, 36, 48) | `#14053E` (20, 5, 62) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 64.1..71.6 |
-| `Peak luminance range` | 18.0..110.1 |
+| `Bar luminance range` | 49.5..59.9 |
+| `Peak luminance range` | 12.2..135.7 |
 
 ## Blue on Grey
 
@@ -285,15 +285,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#CA2332` (202, 35, 50) | `#CF1B54` (207, 27, 84) | `#D41377` (212, 19, 119) | `#D90C9A` (217, 12, 154) | `#DF05BD` (223, 5, 189) |
-| PeakColours | `#868E88` (134, 142, 136) | `#736B6A` (115, 107, 106) | `#61494D` (97, 73, 77) | `#4F2630` (79, 38, 48) | `#3E0514` (62, 5, 20) |
+| BarColours | `#3223CA` (50, 35, 202) | `#541BCF` (84, 27, 207) | `#7713D4` (119, 19, 212) | `#9A0CD9` (154, 12, 217) | `#BD05DF` (189, 5, 223) |
+| PeakColours | `#888E86` (136, 142, 134) | `#6A6B73` (106, 107, 115) | `#4D4961` (77, 73, 97) | `#30264F` (48, 38, 79) | `#14053E` (20, 5, 62) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 64.1..71.6 |
-| `Peak luminance range` | 18.2..139.9 |
+| `Bar luminance range` | 49.5..59.9 |
+| `Peak luminance range` | 12.3..140.1 |
 
 ## ChaNinja
 
@@ -337,15 +337,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#443537` (68, 53, 55) | `#5F4A4C` (95, 74, 76) | `#7A6062` (122, 96, 98) | `#AB9597` (171, 149, 151) | `#FFFFFF` (255, 255, 255) |
-| PeakColours | `#4E3D40` (78, 61, 64) | `#7A6D6F` (122, 109, 111) | `#A69E9F` (166, 158, 159) | `#D3CFCF` (211, 207, 207) | `#FFFFFF` (255, 255, 255) |
+| BarColours | `#373544` (55, 53, 68) | `#4C4A5F` (76, 74, 95) | `#62607A` (98, 96, 122) | `#9795AB` (151, 149, 171) | `#FFFFFF` (255, 255, 255) |
+| PeakColours | `#403D4E` (64, 61, 78) | `#6F6D7A` (111, 109, 122) | `#9F9EA6` (159, 158, 166) | `#CFCFD3` (207, 207, 211) | `#FFFFFF` (255, 255, 255) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 56.3..255.0 |
-| `Peak luminance range` | 64.8..255.0 |
+| `Bar luminance range` | 54.5..255.0 |
+| `Peak luminance range` | 62.9..255.0 |
 
 ## City Night
 
@@ -389,15 +389,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#453D37` (69, 61, 55) | `#6A635F` (106, 99, 95) | `#8F8987` (143, 137, 135) | `#C7C4C3` (199, 196, 195) | `#FFFFFF` (255, 255, 255) |
-| PeakColours | `#545351` (84, 83, 81) | `#567279` (86, 114, 121) | `#5991A1` (89, 145, 161) | `#5CB1C9` (92, 177, 201) | `#5FD0F1` (95, 208, 241) |
+| BarColours | `#373D45` (55, 61, 69) | `#5F636A` (95, 99, 106) | `#87898F` (135, 137, 143) | `#C3C4C7` (195, 196, 199) | `#FFFFFF` (255, 255, 255) |
+| PeakColours | `#515354` (81, 83, 84) | `#797256` (121, 114, 86) | `#A19159` (161, 145, 89) | `#C9B15C` (201, 177, 92) | `#F1D05F` (241, 208, 95) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 62.3..255.0 |
-| `Peak luminance range` | 83.1..186.4 |
+| `Bar luminance range` | 60.3..255.0 |
+| `Peak luminance range` | 82.6..206.9 |
 
 ## Classic
 
@@ -441,15 +441,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#00BD00` (0, 189, 0) | `#00FD6E` (0, 253, 110) | `#00FFDE` (0, 255, 222) | `#0096FF` (0, 150, 255) | `#0000FF` (0, 0, 255) |
-| PeakColours | `#00BD00` (0, 189, 0) | `#00FD6E` (0, 253, 110) | `#00FFDD` (0, 255, 221) | `#0094FF` (0, 148, 255) | `#0000FF` (0, 0, 255) |
+| BarColours | `#00BD00` (0, 189, 0) | `#6EFD00` (110, 253, 0) | `#DEFF00` (222, 255, 0) | `#FF9600` (255, 150, 0) | `#FF0000` (255, 0, 0) |
+| PeakColours | `#00BD00` (0, 189, 0) | `#6EFD00` (110, 253, 0) | `#DDFF00` (221, 255, 0) | `#FF9400` (255, 148, 0) | `#FF0000` (255, 0, 0) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 18.4..200.8 |
-| `Peak luminance range` | 18.4..200.8 |
+| `Bar luminance range` | 54.2..236.6 |
+| `Peak luminance range` | 54.2..236.6 |
 
 ## Classic LED
 
@@ -493,15 +493,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#00FF00` (0, 255, 0) | `#00FF00` (0, 255, 0) | `#00FF00` (0, 255, 0) | `#00DBFF` (0, 219, 255) | `#0000FF` (0, 0, 255) |
-| PeakColours | `#00FF00` (0, 255, 0) | `#00FF00` (0, 255, 0) | `#00FF00` (0, 255, 0) | `#00DBFF` (0, 219, 255) | `#0000FF` (0, 0, 255) |
+| BarColours | `#00FF00` (0, 255, 0) | `#00FF00` (0, 255, 0) | `#00FF00` (0, 255, 0) | `#FFDB00` (255, 219, 0) | `#FF0000` (255, 0, 0) |
+| PeakColours | `#00FF00` (0, 255, 0) | `#00FF00` (0, 255, 0) | `#00FF00` (0, 255, 0) | `#FFDB00` (255, 219, 0) | `#FF0000` (255, 0, 0) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 18.4..182.4 |
-| `Peak luminance range` | 18.4..182.4 |
+| `Bar luminance range` | 54.2..210.8 |
+| `Peak luminance range` | 54.2..210.8 |
 
 ## Current Settings
 
@@ -545,15 +545,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#B36F5E` (179, 111, 94) | `#E3A756` (227, 167, 86) | `#D1E051` (209, 224, 81) | `#ABCE86` (171, 206, 134) | `#A164FF` (161, 100, 255) |
-| PeakColours | `#6A5700` (106, 87, 0) | `#871075` (135, 16, 117) | `#DD9445` (221, 148, 69) | `#F9D8A9` (249, 216, 169) | `#FFFFFF` (255, 255, 255) |
+| BarColours | `#5E6FB3` (94, 111, 179) | `#56A7E3` (86, 167, 227) | `#51E0D1` (81, 224, 209) | `#86CEAB` (134, 206, 171) | `#FF64A1` (255, 100, 161) |
+| PeakColours | `#00576A` (0, 87, 106) | `#751087` (117, 16, 135) | `#4594DD` (69, 148, 221) | `#A9D8F9` (169, 216, 249) | `#FFFFFF` (255, 255, 255) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 124.2..225.5 |
-| `Peak luminance range` | 46.5..255.0 |
+| `Bar luminance range` | 112.1..211.9 |
+| `Peak luminance range` | 44.2..255.0 |
 
 ## Default Red & Yellow
 
@@ -597,15 +597,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#0000CC` (0, 0, 204) | `#0040D8` (0, 64, 216) | `#0080E5` (0, 128, 229) | `#00C0F2` (0, 192, 242) | `#00FFFF` (0, 255, 255) |
-| PeakColours | `#00005C` (0, 0, 92) | `#8080AE` (128, 128, 174) | `#FFFFFF` (255, 255, 255) | `#FFFFFF` (255, 255, 255) | `#FFFFFF` (255, 255, 255) |
+| BarColours | `#CC0000` (204, 0, 0) | `#D84000` (216, 64, 0) | `#E58000` (229, 128, 0) | `#F2C000` (242, 192, 0) | `#FFFF00` (255, 255, 0) |
+| PeakColours | `#5C0000` (92, 0, 0) | `#AE8080` (174, 128, 128) | `#FFFFFF` (255, 255, 255) | `#FFFFFF` (255, 255, 255) | `#FFFFFF` (255, 255, 255) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 14.7..200.8 |
-| `Peak luminance range` | 6.6..255.0 |
+| `Bar luminance range` | 43.4..236.6 |
+| `Peak luminance range` | 19.6..255.0 |
 
 ## Flames
 
@@ -649,15 +649,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#0044B7` (0, 68, 183) | `#007AEA` (0, 122, 234) | `#00D3FF` (0, 211, 255) | `#00C9FF` (0, 201, 255) | `#0079B9` (0, 121, 185) |
-| PeakColours | `#000048` (0, 0, 72) | `#0036A5` (0, 54, 165) | `#006DE8` (0, 109, 232) | `#00C9FF` (0, 201, 255) | `#FFFFFF` (255, 255, 255) |
+| BarColours | `#B74400` (183, 68, 0) | `#EA7A00` (234, 122, 0) | `#FFD300` (255, 211, 0) | `#FFC900` (255, 201, 0) | `#B97900` (185, 121, 0) |
+| PeakColours | `#480000` (72, 0, 0) | `#A53600` (165, 54, 0) | `#E86D00` (232, 109, 0) | `#FFC900` (255, 201, 0) | `#FFFFFF` (255, 255, 255) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 61.8..200.8 |
-| `Peak luminance range` | 5.2..255.0 |
+| `Bar luminance range` | 87.5..236.6 |
+| `Peak luminance range` | 15.3..255.0 |
 
 ## flock darkmateria
 
@@ -701,15 +701,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#D5D3D1` (213, 211, 209) | `#D5D3D1` (213, 211, 209) | `#D5D3D1` (213, 211, 209) | `#D5D3D1` (213, 211, 209) | `#D5D3D1` (213, 211, 209) |
-| PeakColours | `#75716A` (117, 113, 106) | `#75716A` (117, 113, 106) | `#75716A` (117, 113, 106) | `#75716A` (117, 113, 106) | `#75716A` (117, 113, 106) |
+| BarColours | `#D1D3D5` (209, 211, 213) | `#D1D3D5` (209, 211, 213) | `#D1D3D5` (209, 211, 213) | `#D1D3D5` (209, 211, 213) | `#D1D3D5` (209, 211, 213) |
+| PeakColours | `#6A7175` (106, 113, 117) | `#6A7175` (106, 113, 117) | `#6A7175` (106, 113, 117) | `#6A7175` (106, 113, 117) | `#6A7175` (106, 113, 117) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 211.3..211.3 |
-| `Peak luminance range` | 113.3..113.3 |
+| `Bar luminance range` | 210.7..210.7 |
+| `Peak luminance range` | 111.8..111.8 |
 
 ## Green
 
@@ -805,15 +805,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#BA1BDC` (186, 27, 220) | `#AF7DA1` (175, 125, 161) | `#794B69` (121, 75, 105) | `#7B3CB4` (123, 60, 180) | `#EBAD67` (235, 173, 103) |
-| PeakColours | `#09206A` (9, 32, 106) | `#6D3D9B` (109, 61, 155) | `#8A6DAA` (138, 109, 170) | `#50B38B` (80, 179, 139) | `#18F86E` (24, 248, 110) |
+| BarColours | `#DC1BBA` (220, 27, 186) | `#A17DAF` (161, 125, 175) | `#694B79` (105, 75, 121) | `#B43C7B` (180, 60, 123) | `#67ADEB` (103, 173, 235) |
+| PeakColours | `#6A2009` (106, 32, 9) | `#9B3D6D` (155, 61, 109) | `#AA6D8A` (170, 109, 138) | `#8BB350` (139, 179, 80) | `#6EF818` (110, 248, 24) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 39.1..181.1 |
-| `Peak luminance range` | 32.5..190.4 |
+| `Bar luminance range` | 58.9..167.9 |
+| `Peak luminance range` | 46.1..202.5 |
 
 ## LCD
 
@@ -909,15 +909,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#373737` (55, 55, 55) | `#622F38` (98, 47, 56) | `#6D2E45` (109, 46, 69) | `#FFEAF3` (255, 234, 243) | `#FFFFFF` (255, 255, 255) |
-| PeakColours | `#3C3C3C` (60, 60, 60) | `#890852` (137, 8, 82) | `#C678A5` (198, 120, 165) | `#FFFFFF` (255, 255, 255) | `#FFFFFF` (255, 255, 255) |
+| BarColours | `#373737` (55, 55, 55) | `#382F62` (56, 47, 98) | `#452E6D` (69, 46, 109) | `#F3EAFF` (243, 234, 255) | `#FFFFFF` (255, 255, 255) |
+| PeakColours | `#3C3C3C` (60, 60, 60) | `#520889` (82, 8, 137) | `#A578C6` (165, 120, 198) | `#FFFFFF` (255, 255, 255) | `#FFFFFF` (255, 255, 255) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 54.3..255.0 |
-| `Peak luminance range` | 37.6..255.0 |
+| `Bar luminance range` | 52.2..255.0 |
+| `Peak luminance range` | 28.8..255.0 |
 
 ## Matches
 
@@ -961,15 +961,379 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#FFFFFF` (255, 255, 255) | `#EDFFFF` (237, 255, 255) | `#DCFFFF` (220, 255, 255) | `#CAFFFF` (202, 255, 255) | `#0000B1` (0, 0, 177) |
-| PeakColours | `#00003E` (0, 0, 62) | `#00003E` (0, 0, 62) | `#00003E` (0, 0, 62) | `#00003E` (0, 0, 62) | `#00003E` (0, 0, 62) |
+| BarColours | `#FFFFFF` (255, 255, 255) | `#FFFFED` (255, 255, 237) | `#FFFFDC` (255, 255, 220) | `#FFFFCA` (255, 255, 202) | `#B10000` (177, 0, 0) |
+| PeakColours | `#3E0000` (62, 0, 0) | `#3E0000` (62, 0, 0) | `#3E0000` (62, 0, 0) | `#3E0000` (62, 0, 0) | `#3E0000` (62, 0, 0) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 12.7..255.0 |
-| `Peak luminance range` | 4.5..4.5 |
+| `Bar luminance range` | 37.4..255.0 |
+| `Peak luminance range` | 13.2..13.2 |
+
+## Metal Aluminum
+
+- File: `Sources/NullPlayer/Resources/vis_classic/profiles/Metal Aluminum.ini`
+- Description: Metal analyzer tuned to the Aluminum finish.
+
+### Technical Settings
+
+| Key | Value |
+|---|---|
+| `Falloff` | 12 |
+| `PeakChange` | 80 |
+| `Bar Width` | 3 |
+| `X-Spacing` | 1 |
+| `Y-Spacing` | 1 |
+| `BackgroundDraw` | 2 (Dark solid) |
+| `BarColourStyle` | 0 (BarColourClassic) |
+| `PeakColourStyle` | 1 (PeakColourLevel) |
+| `Effect` | 0 |
+| `Peak Effect` | 0 |
+| `ReverseLeft` | 1 (On) |
+| `ReverseRight` | 0 (Off) |
+| `Mono` | 1 (On) |
+| `Bar Level` | 1 (Average) |
+| `FFTEqualize` | 1 (On) |
+| `FFTEnvelope` | 20 |
+| `FFTScale` | 200 |
+| `FitToWidth` | (not set) |
+| `Message` | Metal analyzer tuned to the Aluminum finish. |
+
+### Derived Behavior
+
+- Dynamics: `Falloff=12` -> moderate decay.
+- Peak behavior: `PeakChange=80` -> medium peak hold.
+- Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
+- Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
+- Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=1`.
+- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
+
+### Palette Snapshot
+
+| Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
+|---|---|---|---|---|---|
+| BarColours | `#4D5761` (77, 87, 97) | `#757F89` (117, 127, 137) | `#9CA6B0` (156, 166, 176) | `#C4CED8` (196, 206, 216) | `#EBF5FF` (235, 245, 255) |
+| PeakColours | `#EBF5FF` (235, 245, 255) | `#F0F8FF` (240, 248, 255) | `#F5FAFF` (245, 250, 255) | `#FAFDFF` (250, 253, 255) | `#FFFFFF` (255, 255, 255) |
+
+| Palette Metric | Value |
+|---|---|
+| `BarColours entries` | 256 |
+| `PeakColours entries` | 256 |
+| `Bar luminance range` | 85.6..243.6 |
+| `Peak luminance range` | 243.6..255.0 |
+
+## Metal Anodized Black
+
+- File: `Sources/NullPlayer/Resources/vis_classic/profiles/Metal Anodized Black.ini`
+- Description: Metal analyzer tuned to the Anodized Black finish.
+
+### Technical Settings
+
+| Key | Value |
+|---|---|
+| `Falloff` | 12 |
+| `PeakChange` | 80 |
+| `Bar Width` | 3 |
+| `X-Spacing` | 1 |
+| `Y-Spacing` | 1 |
+| `BackgroundDraw` | 2 (Dark solid) |
+| `BarColourStyle` | 0 (BarColourClassic) |
+| `PeakColourStyle` | 1 (PeakColourLevel) |
+| `Effect` | 0 |
+| `Peak Effect` | 0 |
+| `ReverseLeft` | 1 (On) |
+| `ReverseRight` | 0 (Off) |
+| `Mono` | 1 (On) |
+| `Bar Level` | 1 (Average) |
+| `FFTEqualize` | 1 (On) |
+| `FFTEnvelope` | 20 |
+| `FFTScale` | 200 |
+| `FitToWidth` | (not set) |
+| `Message` | Metal analyzer tuned to the Anodized Black finish. |
+
+### Derived Behavior
+
+- Dynamics: `Falloff=12` -> moderate decay.
+- Peak behavior: `PeakChange=80` -> medium peak hold.
+- Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
+- Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
+- Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=1`.
+- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
+
+### Palette Snapshot
+
+| Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
+|---|---|---|---|---|---|
+| BarColours | `#8C9199` (140, 145, 153) | `#A6ABB3` (166, 171, 179) | `#BFC4CC` (191, 196, 204) | `#D9DEE6` (217, 222, 230) | `#F2F7FF` (242, 247, 255) |
+| PeakColours | `#F2F7FF` (242, 247, 255) | `#F5F9FF` (245, 249, 255) | `#F9FBFF` (249, 251, 255) | `#FCFDFF` (252, 253, 255) | `#FFFFFF` (255, 255, 255) |
+
+| Palette Metric | Value |
+|---|---|
+| `BarColours entries` | 256 |
+| `PeakColours entries` | 256 |
+| `Bar luminance range` | 144.5..246.5 |
+| `Peak luminance range` | 246.5..255.0 |
+
+## Metal Brass
+
+- File: `Sources/NullPlayer/Resources/vis_classic/profiles/Metal Brass.ini`
+- Description: Metal analyzer tuned to the Brass finish.
+
+### Technical Settings
+
+| Key | Value |
+|---|---|
+| `Falloff` | 12 |
+| `PeakChange` | 80 |
+| `Bar Width` | 3 |
+| `X-Spacing` | 1 |
+| `Y-Spacing` | 1 |
+| `BackgroundDraw` | 2 (Dark solid) |
+| `BarColourStyle` | 0 (BarColourClassic) |
+| `PeakColourStyle` | 1 (PeakColourLevel) |
+| `Effect` | 0 |
+| `Peak Effect` | 0 |
+| `ReverseLeft` | 1 (On) |
+| `ReverseRight` | 0 (Off) |
+| `Mono` | 1 (On) |
+| `Bar Level` | 1 (Average) |
+| `FFTEqualize` | 1 (On) |
+| `FFTEnvelope` | 20 |
+| `FFTScale` | 200 |
+| `FitToWidth` | (not set) |
+| `Message` | Metal analyzer tuned to the Brass finish. |
+
+### Derived Behavior
+
+- Dynamics: `Falloff=12` -> moderate decay.
+- Peak behavior: `PeakChange=80` -> medium peak hold.
+- Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
+- Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
+- Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=1`.
+- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
+
+### Palette Snapshot
+
+| Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
+|---|---|---|---|---|---|
+| BarColours | `#663D0F` (102, 61, 15) | `#8C6529` (140, 101, 41) | `#B38C42` (179, 140, 66) | `#D9B45C` (217, 180, 92) | `#FFDB75` (255, 219, 117) |
+| PeakColours | `#FFDB75` (255, 219, 117) | `#FFE498` (255, 228, 152) | `#FFEDBA` (255, 237, 186) | `#FFF6DD` (255, 246, 221) | `#FFFFFF` (255, 255, 255) |
+
+| Palette Metric | Value |
+|---|---|
+| `BarColours entries` | 256 |
+| `PeakColours entries` | 256 |
+| `Bar luminance range` | 66.4..219.3 |
+| `Peak luminance range` | 219.3..255.0 |
+
+## Metal Bronze
+
+- File: `Sources/NullPlayer/Resources/vis_classic/profiles/Metal Bronze.ini`
+- Description: Metal analyzer tuned to the Bronze finish.
+
+### Technical Settings
+
+| Key | Value |
+|---|---|
+| `Falloff` | 12 |
+| `PeakChange` | 80 |
+| `Bar Width` | 3 |
+| `X-Spacing` | 1 |
+| `Y-Spacing` | 1 |
+| `BackgroundDraw` | 2 (Dark solid) |
+| `BarColourStyle` | 0 (BarColourClassic) |
+| `PeakColourStyle` | 1 (PeakColourLevel) |
+| `Effect` | 0 |
+| `Peak Effect` | 0 |
+| `ReverseLeft` | 1 (On) |
+| `ReverseRight` | 0 (Off) |
+| `Mono` | 1 (On) |
+| `Bar Level` | 1 (Average) |
+| `FFTEqualize` | 1 (On) |
+| `FFTEnvelope` | 20 |
+| `FFTScale` | 200 |
+| `FitToWidth` | (not set) |
+| `Message` | Metal analyzer tuned to the Bronze finish. |
+
+### Derived Behavior
+
+- Dynamics: `Falloff=12` -> moderate decay.
+- Peak behavior: `PeakChange=80` -> medium peak hold.
+- Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
+- Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
+- Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=1`.
+- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
+
+### Palette Snapshot
+
+| Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
+|---|---|---|---|---|---|
+| BarColours | `#8C754C` (140, 117, 76) | `#A99161` (169, 145, 97) | `#C6AE75` (198, 174, 117) | `#E3CA8A` (227, 202, 138) | `#FFE69E` (255, 230, 158) |
+| PeakColours | `#FFE69E` (255, 230, 158) | `#FFECB6` (255, 236, 182) | `#FFF3CF` (255, 243, 207) | `#FFF9E7` (255, 249, 231) | `#FFFFFF` (255, 255, 255) |
+
+| Palette Metric | Value |
+|---|---|
+| `BarColours entries` | 256 |
+| `PeakColours entries` | 256 |
+| `Bar luminance range` | 118.9..230.1 |
+| `Peak luminance range` | 230.1..255.0 |
+
+## Metal Brushed Steel
+
+- File: `Sources/NullPlayer/Resources/vis_classic/profiles/Metal Brushed Steel.ini`
+- Description: Metal analyzer tuned to the Brushed Steel finish.
+
+### Technical Settings
+
+| Key | Value |
+|---|---|
+| `Falloff` | 12 |
+| `PeakChange` | 80 |
+| `Bar Width` | 3 |
+| `X-Spacing` | 1 |
+| `Y-Spacing` | 1 |
+| `BackgroundDraw` | 2 (Dark solid) |
+| `BarColourStyle` | 0 (BarColourClassic) |
+| `PeakColourStyle` | 1 (PeakColourLevel) |
+| `Effect` | 0 |
+| `Peak Effect` | 0 |
+| `ReverseLeft` | 1 (On) |
+| `ReverseRight` | 0 (Off) |
+| `Mono` | 1 (On) |
+| `Bar Level` | 1 (Average) |
+| `FFTEqualize` | 1 (On) |
+| `FFTEnvelope` | 20 |
+| `FFTScale` | 200 |
+| `FitToWidth` | (not set) |
+| `Message` | Metal analyzer tuned to the Brushed Steel finish. |
+
+### Derived Behavior
+
+- Dynamics: `Falloff=12` -> moderate decay.
+- Peak behavior: `PeakChange=80` -> medium peak hold.
+- Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
+- Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
+- Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=1`.
+- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
+
+### Palette Snapshot
+
+| Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
+|---|---|---|---|---|---|
+| BarColours | `#1A576B` (26, 87, 107) | `#3E7D90` (62, 125, 144) | `#61A2B5` (97, 162, 181) | `#85C8DA` (133, 200, 218) | `#A8EDFF` (168, 237, 255) |
+| PeakColours | `#A8EDFF` (168, 237, 255) | `#BEF2FF` (190, 242, 255) | `#D4F6FF` (212, 246, 255) | `#EAFBFF` (234, 251, 255) | `#FFFFFF` (255, 255, 255) |
+
+| Palette Metric | Value |
+|---|---|
+| `BarColours entries` | 256 |
+| `PeakColours entries` | 256 |
+| `Bar luminance range` | 75.5..223.6 |
+| `Peak luminance range` | 223.6..255.0 |
+
+## Metal Copper
+
+- File: `Sources/NullPlayer/Resources/vis_classic/profiles/Metal Copper.ini`
+- Description: Metal analyzer tuned to the Copper finish.
+
+### Technical Settings
+
+| Key | Value |
+|---|---|
+| `Falloff` | 12 |
+| `PeakChange` | 80 |
+| `Bar Width` | 3 |
+| `X-Spacing` | 1 |
+| `Y-Spacing` | 1 |
+| `BackgroundDraw` | 2 (Dark solid) |
+| `BarColourStyle` | 0 (BarColourClassic) |
+| `PeakColourStyle` | 1 (PeakColourLevel) |
+| `Effect` | 0 |
+| `Peak Effect` | 0 |
+| `ReverseLeft` | 1 (On) |
+| `ReverseRight` | 0 (Off) |
+| `Mono` | 1 (On) |
+| `Bar Level` | 1 (Average) |
+| `FFTEqualize` | 1 (On) |
+| `FFTEnvelope` | 20 |
+| `FFTScale` | 200 |
+| `FitToWidth` | (not set) |
+| `Message` | Metal analyzer tuned to the Copper finish. |
+
+### Derived Behavior
+
+- Dynamics: `Falloff=12` -> moderate decay.
+- Peak behavior: `PeakChange=80` -> medium peak hold.
+- Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
+- Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
+- Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=1`.
+- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
+
+### Palette Snapshot
+
+| Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
+|---|---|---|---|---|---|
+| BarColours | `#B27552` (178, 117, 82) | `#C58B61` (197, 139, 97) | `#D9A171` (217, 161, 113) | `#ECB780` (236, 183, 128) | `#FFCC8F` (255, 204, 143) |
+| PeakColours | `#FFCC8F` (255, 204, 143) | `#FFD9AB` (255, 217, 171) | `#FFE6C7` (255, 230, 199) | `#FFF2E3` (255, 242, 227) | `#FFFFFF` (255, 255, 255) |
+
+| Palette Metric | Value |
+|---|---|
+| `BarColours entries` | 256 |
+| `PeakColours entries` | 256 |
+| `Bar luminance range` | 127.4..210.4 |
+| `Peak luminance range` | 210.4..255.0 |
+
+## Metal Gunmetal
+
+- File: `Sources/NullPlayer/Resources/vis_classic/profiles/Metal Gunmetal.ini`
+- Description: Metal analyzer tuned to the Gunmetal finish.
+
+### Technical Settings
+
+| Key | Value |
+|---|---|
+| `Falloff` | 12 |
+| `PeakChange` | 80 |
+| `Bar Width` | 3 |
+| `X-Spacing` | 1 |
+| `Y-Spacing` | 1 |
+| `BackgroundDraw` | 2 (Dark solid) |
+| `BarColourStyle` | 0 (BarColourClassic) |
+| `PeakColourStyle` | 1 (PeakColourLevel) |
+| `Effect` | 0 |
+| `Peak Effect` | 0 |
+| `ReverseLeft` | 1 (On) |
+| `ReverseRight` | 0 (Off) |
+| `Mono` | 1 (On) |
+| `Bar Level` | 1 (Average) |
+| `FFTEqualize` | 1 (On) |
+| `FFTEnvelope` | 20 |
+| `FFTScale` | 200 |
+| `FitToWidth` | (not set) |
+| `Message` | Metal analyzer tuned to the Gunmetal finish. |
+
+### Derived Behavior
+
+- Dynamics: `Falloff=12` -> moderate decay.
+- Peak behavior: `PeakChange=80` -> medium peak hold.
+- Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
+- Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
+- Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=1`.
+- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
+
+### Palette Snapshot
+
+| Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
+|---|---|---|---|---|---|
+| BarColours | `#8C99A8` (140, 153, 168) | `#A4B0BE` (164, 176, 190) | `#BCC7D4` (188, 199, 212) | `#D4DEEA` (212, 222, 234) | `#EBF5FF` (235, 245, 255) |
+| PeakColours | `#EBF5FF` (235, 245, 255) | `#F0F8FF` (240, 248, 255) | `#F5FAFF` (245, 250, 255) | `#FAFDFF` (250, 253, 255) | `#FFFFFF` (255, 255, 255) |
+
+| Palette Metric | Value |
+|---|---|
+| `BarColours entries` | 256 |
+| `PeakColours entries` | 256 |
+| `Bar luminance range` | 151.3..243.6 |
+| `Peak luminance range` | 243.6..255.0 |
 
 ## Northern Lights
 
@@ -1013,15 +1377,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#E36A26` (227, 106, 38) | `#D95D68` (217, 93, 104) | `#DB9686` (219, 150, 134) | `#E3E8AC` (227, 232, 172) | `#FFDBDB` (255, 219, 219) |
-| PeakColours | `#910000` (145, 0, 0) | `#FA0000` (250, 0, 0) | `#FF3B9A` (255, 59, 154) | `#FFBBDC` (255, 187, 220) | `#FFFFFF` (255, 255, 255) |
+| BarColours | `#266AE3` (38, 106, 227) | `#685DD9` (104, 93, 217) | `#8696DB` (134, 150, 219) | `#ACE8E3` (172, 232, 227) | `#DBDBFF` (219, 219, 255) |
+| PeakColours | `#000091` (0, 0, 145) | `#0000FA` (0, 0, 250) | `#9A3BFF` (154, 59, 255) | `#DCBBFF` (220, 187, 255) | `#FFFFFF` (255, 255, 255) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 103.0..227.1 |
-| `Peak luminance range` | 30.8..255.0 |
+| `Bar luminance range` | 82.5..221.6 |
+| `Peak luminance range` | 10.5..255.0 |
 
 ## poo
 
@@ -1065,15 +1429,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#226897` (34, 104, 151) | `#226897` (34, 104, 151) | `#226897` (34, 104, 151) | `#226897` (34, 104, 151) | `#226897` (34, 104, 151) |
-| PeakColours | `#226897` (34, 104, 151) | `#226897` (34, 104, 151) | `#226897` (34, 104, 151) | `#226897` (34, 104, 151) | `#226897` (34, 104, 151) |
+| BarColours | `#976822` (151, 104, 34) | `#976822` (151, 104, 34) | `#976822` (151, 104, 34) | `#976822` (151, 104, 34) | `#976822` (151, 104, 34) |
+| PeakColours | `#976822` (151, 104, 34) | `#976822` (151, 104, 34) | `#976822` (151, 104, 34) | `#976822` (151, 104, 34) | `#976822` (151, 104, 34) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 0.0..92.5 |
-| `Peak luminance range` | 92.5..92.5 |
+| `Bar luminance range` | 0.0..108.9 |
+| `Peak luminance range` | 108.9..108.9 |
 
 ## Purple Neon
 
@@ -1117,15 +1481,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#D74861` (215, 72, 97) | `#D46B4C` (212, 107, 76) | `#D28E38` (210, 142, 56) | `#D0B224` (208, 178, 36) | `#CFD511` (207, 213, 17) |
-| PeakColours | `#6A0026` (106, 0, 38) | `#FF5F8C` (255, 95, 140) | `#F99172` (249, 145, 114) | `#F3C459` (243, 196, 89) | `#EEF641` (238, 246, 65) |
+| BarColours | `#6148D7` (97, 72, 215) | `#4C6BD4` (76, 107, 212) | `#388ED2` (56, 142, 210) | `#24B2D0` (36, 178, 208) | `#11D5CF` (17, 213, 207) |
+| PeakColours | `#26006A` (38, 0, 106) | `#8C5FFF` (140, 95, 255) | `#7291F9` (114, 145, 249) | `#59C4F3` (89, 196, 243) | `#41F6EE` (65, 246, 238) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 103.9..197.6 |
-| `Peak luminance range` | 25.3..231.2 |
+| `Bar luminance range` | 87.4..170.9 |
+| `Peak luminance range` | 15.7..206.9 |
 
 ## Rainbow
 
@@ -1169,8 +1533,8 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#FF00FF` (255, 0, 255) | `#FF4100` (255, 65, 0) | `#7DFF00` (125, 255, 0) | `#00FFC3` (0, 255, 195) | `#0000FF` (0, 0, 255) |
-| PeakColours | `#FF0000` (255, 0, 0) | `#FFFF00` (255, 255, 0) | `#00FF00` (0, 255, 0) | `#00FFFF` (0, 255, 255) | `#0000FF` (0, 0, 255) |
+| BarColours | `#FF00FF` (255, 0, 255) | `#0041FF` (0, 65, 255) | `#00FF7D` (0, 255, 125) | `#C3FF00` (195, 255, 0) | `#FF0000` (255, 0, 0) |
+| PeakColours | `#0000FF` (0, 0, 255) | `#00FFFF` (0, 255, 255) | `#00FF00` (0, 255, 0) | `#FFFF00` (255, 255, 0) | `#FF0000` (255, 0, 0) |
 
 | Palette Metric | Value |
 |---|---|
@@ -1178,6 +1542,58 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `PeakColours entries` | 256 |
 | `Bar luminance range` | 18.4..236.6 |
 | `Peak luminance range` | 18.4..236.6 |
+
+## Red
+
+- File: `Sources/NullPlayer/Resources/vis_classic/profiles/Red.ini`
+- Description: The Green profile in red: a single-hue ramp for skins with a red accent.
+
+### Technical Settings
+
+| Key | Value |
+|---|---|
+| `Falloff` | 12 |
+| `PeakChange` | 80 |
+| `Bar Width` | 3 |
+| `X-Spacing` | 1 |
+| `Y-Spacing` | 2 |
+| `BackgroundDraw` | 3 (Dark grid) |
+| `BarColourStyle` | 0 (BarColourClassic) |
+| `PeakColourStyle` | 2 (PeakColourLevelFade) |
+| `Effect` | 0 |
+| `Peak Effect` | 0 |
+| `ReverseLeft` | 1 (On) |
+| `ReverseRight` | 0 (Off) |
+| `Mono` | 1 (On) |
+| `Bar Level` | 1 (Average) |
+| `FFTEqualize` | 1 (On) |
+| `FFTEnvelope` | 20 |
+| `FFTScale` | 200 |
+| `FitToWidth` | (not set) |
+| `Message` | The Green profile in red: a single-hue ramp for skins with a red accent. |
+
+### Derived Behavior
+
+- Dynamics: `Falloff=12` -> moderate decay.
+- Peak behavior: `PeakChange=80` -> medium peak hold.
+- Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
+- Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
+- Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=2`.
+- Style maps: `BackgroundDraw=3` (`Dark grid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=2` (`PeakColourLevelFade`).
+
+### Palette Snapshot
+
+| Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
+|---|---|---|---|---|---|
+| BarColours | `#7D0000` (125, 0, 0) | `#9D0000` (157, 0, 0) | `#BE0000` (190, 0, 0) | `#DE0000` (222, 0, 0) | `#FF0000` (255, 0, 0) |
+| PeakColours | `#4D0000` (77, 0, 0) | `#6D0000` (109, 0, 0) | `#8E0000` (142, 0, 0) | `#AF0000` (175, 0, 0) | `#D00000` (208, 0, 0) |
+
+| Palette Metric | Value |
+|---|---|
+| `BarColours entries` | 256 |
+| `PeakColours entries` | 256 |
+| `Bar luminance range` | 26.6..54.2 |
+| `Peak luminance range` | 16.4..44.2 |
 
 ## Trippy
 
@@ -1221,15 +1637,15 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#A3A389` (163, 163, 137) | `#5BB94A` (91, 185, 74) | `#79E2B6` (121, 226, 182) | `#76499D` (118, 73, 157) | `#D800E2` (216, 0, 226) |
-| PeakColours | `#D44C17` (212, 76, 23) | `#D6898D` (214, 137, 141) | `#9C6832` (156, 104, 50) | `#30C3B0` (48, 195, 176) | `#E54E19` (229, 78, 25) |
+| BarColours | `#89A3A3` (137, 163, 163) | `#4AB95B` (74, 185, 91) | `#B6E279` (182, 226, 121) | `#9D4976` (157, 73, 118) | `#E200D8` (226, 0, 216) |
+| PeakColours | `#174CD4` (23, 76, 212) | `#8D89D6` (141, 137, 214) | `#32689C` (50, 104, 156) | `#B0C330` (176, 195, 48) | `#194EE5` (25, 78, 229) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 62.2..205.6 |
-| `Peak luminance range` | 64.9..210.4 |
+| `Bar luminance range` | 63.6..224.3 |
+| `Peak luminance range` | 57.9..194.5 |
 
 ## Twilight
 
@@ -1273,12 +1689,12 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 | Palette | idx 0 | idx 64 | idx 128 | idx 192 | idx 255 |
 |---|---|---|---|---|---|
-| BarColours | `#C3FCFC` (195, 252, 252) | `#BFF3FD` (191, 243, 253) | `#8EA1DB` (142, 161, 219) | `#44396B` (68, 57, 107) | `#2F1A40` (47, 26, 64) |
-| PeakColours | `#2F1A40` (47, 26, 64) | `#2F1A40` (47, 26, 64) | `#2F1A40` (47, 26, 64) | `#2F1A40` (47, 26, 64) | `#2F1A40` (47, 26, 64) |
+| BarColours | `#FCFCC3` (252, 252, 195) | `#FDF3BF` (253, 243, 191) | `#DBA18E` (219, 161, 142) | `#6B3944` (107, 57, 68) | `#401A2F` (64, 26, 47) |
+| PeakColours | `#401A2F` (64, 26, 47) | `#401A2F` (64, 26, 47) | `#401A2F` (64, 26, 47) | `#401A2F` (64, 26, 47) | `#401A2F` (64, 26, 47) |
 
 | Palette Metric | Value |
 |---|---|
 | `BarColours entries` | 256 |
 | `PeakColours entries` | 256 |
-| `Bar luminance range` | 33.2..239.9 |
-| `Peak luminance range` | 33.2..33.2 |
+| `Bar luminance range` | 35.6..247.9 |
+| `Peak luminance range` | 35.6..35.6 |

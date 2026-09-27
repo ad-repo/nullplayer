@@ -396,6 +396,18 @@ class WindowManager {
         return isModernUIEnabled
     }
 
+    /// The family of the running main window controller, or the persisted mode before one exists.
+    /// A four-way answer, where `isRunningModernUI` / `isRunningWMPUI` fold `.wal` into Classic.
+    var runningControllerFamily: PlayerUIControllerFamily {
+        switch mainWindowController {
+        case is WinampModernMainWindowController: return .winampModern
+        case is WMPMainWindowController: return .wmp
+        case is ModernMainWindowController: return .nullPlayerModern
+        case is MainWindowController: return .classic
+        default: return uiMode.controllerFamily
+        }
+    }
+
     var isRunningWMPUI: Bool {
         if mainWindowController is WMPMainWindowController { return true }
         return mainWindowController == nil && uiMode.controllerFamily == .wmp
@@ -880,6 +892,48 @@ class WindowManager {
             selector: #selector(handleScreenParametersDidChange(_:)),
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
+        )
+        // `.wal` / `.wmz`: the Spectrum window's default vis_classic profile follows the skin.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleHostedSurfaceStyleDidChange(_:)),
+            name: .hostedSurfaceStyleDidChange,
+            object: nil
+        )
+    }
+
+    @objc private func handleHostedSurfaceStyleDidChange(_ notification: Notification) {
+        applyHostedVisClassicSkinDefault(notify: true)
+    }
+
+    /// The loaded `.wal` / `.wmz` archive path — the skin identity the once-per-skin vis_classic
+    /// default is keyed on. Nil in Classic and Original.
+    var hostedSkinIdentity: String? {
+        switch uiMode.controllerFamily {
+        case .classic, .nullPlayerModern: return nil
+        case .winampModern:
+            return (mainWindowController as? WinampModernMainWindowController)?.loadedSkinURL?.path
+        case .wmp:
+            return (mainWindowController as? WMPMainWindowController)?.loadedSkinURL?.path
+        }
+    }
+
+    /// Gives the Spectrum window's vis_classic scope the bundled profile nearest the hosted skin's
+    /// `dimText → currentText`, once per skin (`VisClassicProfileMatcher`). Nil style or identity —
+    /// Classic, Original, or a skin still loading — does nothing. `notify` pushes the pick into a
+    /// visible window; a hidden one picks it up from the key when it next acquires its bridge.
+    func applyHostedVisClassicSkinDefault(notify: Bool, defaults: UserDefaults = .standard) {
+        guard let style = hostedSurfaceStyle, let identity = hostedSkinIdentity,
+              let match = VisClassicProfileMatcher.applySkinDefault(
+                for: .spectrumWindow, skinIdentity: identity,
+                low: style.visualizationLow, high: style.visualizationHigh,
+                defaults: defaults) else { return }
+        sharedVisClassicBridge?.reloadPersistedSettings()
+        guard notify else { return }
+        NotificationCenter.default.post(
+            name: .visClassicProfileCommand,
+            object: nil,
+            userInfo: ["command": "load", "profileName": match.name, "target": "spectrumWindow"]
         )
     }
 
@@ -4936,14 +4990,11 @@ class WindowManager {
     ///
     /// **W214.** `isRunningModernUI` answers a two-way question in a four-family world: it is
     /// `false` for `.wmz` as much as for `.classic`, so a guard written to mean "not Modern"
-    /// admitted a WMP session. Pure so both sides of the gate can be pinned without a running
-    /// window — gate the rule, not the predicate, as `normalizedClassicCenterStackRestoredFrame`
-    /// does.
-    static func appliesClassicVisualizationDefaults(
-        isRunningModernUI: Bool,
-        isRunningWMPUI: Bool
-    ) -> Bool {
-        !isRunningModernUI && !isRunningWMPUI
+    /// admitted a WMP session — and a `.wal` one. Only Classic takes Classic's defaults: `.wal` and
+    /// `.wmz` pick their vis_classic profile from the skin's colours (`VisClassicProfileMatcher`).
+    /// Pure so every family can be pinned without a running window.
+    static func appliesClassicVisualizationDefaults(family: PlayerUIControllerFamily) -> Bool {
+        family == .classic
     }
 
     private func applyClassicVisualizationDefaults(notify: Bool) {
@@ -4957,11 +5008,10 @@ class WindowManager {
         // session's own vis keys to classic's defaults and post the live profile-load
         // commands — measured on screen as the Spectrum Analyzer flipping from "Enhanced" to
         // vis_classic / "Purple Neon" while the WMP window never changed at all. Gate on the
-        // mode: `.classic` and `.winampModern` are untouched, only `.wmz` is excluded.
-        guard Self.appliesClassicVisualizationDefaults(
-            isRunningModernUI: isRunningModernUI,
-            isRunningWMPUI: isRunningWMPUI
-        ) else { return }
+        // family: only `.classic` takes these. `.wal` used to take them too — and since the classic
+        // skin loads at every launch in every mode, every `.wal` launch reset the Spectrum window to
+        // "Purple Neon". `.wal` and `.wmz` now match a profile to the skin instead.
+        guard Self.appliesClassicVisualizationDefaults(family: runningControllerFamily) else { return }
 
         let classicProfile = Self.classicVisClassicProfileName
         writeClassicVisualizationDefaultKeys(for: .all, defaults: .standard)
@@ -8330,6 +8380,12 @@ class WindowManager {
     /// defaults when entering classic. The classic `currentSkin` is loaded once at init and
     /// survives across switches, so no classic skin reload is needed here.
     private func prepareUIRuntime(for targetMode: PlayerUIMode) {
+        if targetMode.controllerFamily == .wmp || targetMode.controllerFamily == .winampModern {
+            // Entering `.wal` / `.wmz` is a skin change for the shared Spectrum window profile key,
+            // which still holds whatever Classic ("Purple Neon") or Original left there. Forget the
+            // skin it was matched for, so the skin's own match is written once its style resolves.
+            VisClassicProfileMatcher.forgetAppliedSkin(for: [.spectrumWindow])
+        }
         if targetMode.controllerFamily == .wmp {
             // WMP runtime state is loaded by its dedicated controller. Do not consult or mutate
             // Classic/Original skin engines, modern engines, or their appearance bridges here.

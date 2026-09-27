@@ -2,6 +2,24 @@
 
 ## 0.31.0
 
+- **Visualizations take their colours from Winamp Modern and Windows Media Player skins** — with a
+  `.wal` or `.wmz` skin, the Cava, Spectrum Analyzer and Waveform windows now take their default
+  colours from the skin, as they already do in Classic and Original. So does Cava in a Windows Media
+  Player skin's visualization area. A colour preset you pick still wins, and **Match Skin** goes back
+  to the skin's colours. In the Waveform window the playhead now always stands out from the played
+  part.
+- **vis_classic picks a profile to suit the skin** — in Winamp Modern and Windows Media Player skins,
+  vis_classic in the Spectrum Analyzer, in a `.wal` skin's own visualizer and in a `.wmz` skin's
+  visualization area now starts on the bundled profile whose colours are closest to the skin's,
+  instead of Classic's "Purple Neon". A profile you choose yourself is kept until you switch skins,
+  and resetting visualizations goes back to the skin's match. The first launch after updating
+  replaces your current vis_classic profile in these skins once.
+- **vis_classic profiles show their real colours** — every bundled vis_classic profile was being
+  drawn with red and blue swapped, so "Flames" came out blue and "Default Red & Yellow" blue and
+  cyan. They now look as their authors intended, in every skin; the Metal profiles look the same as
+  before. This changes the look of Classic's default, "Purple Neon".
+- **New "Red" vis_classic profile** — a single-colour red to go with "Green".
+
 - **Glossy frames for Winamp Modern fallback windows** — when a Winamp Modern (`.wal`) skin has no
   window frame of its own for NullPlayer's windows (the analyzers, Cava, Flow, PeppyMeter, waveform,
   library, playlist, equalizer and Sonos Rooms), they now wear the same glossy, title-bar-free frame

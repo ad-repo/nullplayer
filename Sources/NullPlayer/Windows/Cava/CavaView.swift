@@ -95,7 +95,12 @@ final class CavaView: NSView {
     /// Classic Cava follows the classic palette: green (like the Winamp spectrum). Only affects the
     /// default — a user-picked color scheme overrides it (see CavaSettings.hasCustomColors).
     private func applySkinDefaultColors() {
-        if let green = CavaSettings.scheme(named: "Winamp Green") {
+        // Inside a `.wal` / `.wmz` skin the default follows the hosted surface style, from the dim
+        // text up to the current-track accent — dim rather than the background, so short, quiet bars
+        // stay visible. Nil in Classic and Original, which keep the "Winamp Green" preset.
+        if let style = hostedStyle ?? WindowManager.shared.hostedSurfaceStyle {
+            CavaSettings.setSkinDefaultColors(low: style.visualizationLow, high: style.visualizationHigh)
+        } else if let green = CavaSettings.scheme(named: "Winamp Green") {
             CavaSettings.setSkinDefaultColors(low: green.low, high: green.high)
         }
     }
@@ -203,6 +208,7 @@ final class CavaView: NSView {
         // visualization. Marking the layout dirty costs nothing where a view has no subviews.
         needsLayout = true
         needsDisplay = true
+        applySkinDefaultColors()
     }
 
     private func convertToSkinCoordinates(_ point: NSPoint) -> NSPoint {
@@ -324,6 +330,7 @@ extension CavaView: WinampModernHostedCavaSurface {
 
     func applyPalette(_ style: WinampModernSurfaceStyle) {
         hostedStyle = style
+        applySkinDefaultColors()
         needsDisplay = true
     }
 

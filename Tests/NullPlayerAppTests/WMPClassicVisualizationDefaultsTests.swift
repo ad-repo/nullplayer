@@ -21,43 +21,28 @@ final class WMPClassicVisualizationDefaultsTests: XCTestCase {
     /// so the old `guard !isRunningModernUI` admitted a `.wmz` session.
     func testWMPSessionIsNotGivenClassicVisualizationDefaults() {
         XCTAssertFalse(
-            WindowManager.appliesClassicVisualizationDefaults(
-                isRunningModernUI: false,
-                isRunningWMPUI: true
-            ),
+            WindowManager.appliesClassicVisualizationDefaults(family: .wmp),
             "a .wmz session keeps the visualization it was given"
         )
     }
 
     /// Classic is what the rule is for and is unchanged.
     func testClassicSessionStillGetsClassicVisualizationDefaults() {
-        XCTAssertTrue(
-            WindowManager.appliesClassicVisualizationDefaults(
-                isRunningModernUI: false,
-                isRunningWMPUI: false
-            )
-        )
+        XCTAssertTrue(WindowManager.appliesClassicVisualizationDefaults(family: .classic))
     }
 
     /// Original (`.modern`/`.metal`) was already excluded and stays excluded.
     func testOriginalSessionIsStillExcluded() {
-        XCTAssertFalse(
-            WindowManager.appliesClassicVisualizationDefaults(
-                isRunningModernUI: true,
-                isRunningWMPUI: false
-            )
-        )
+        XCTAssertFalse(WindowManager.appliesClassicVisualizationDefaults(family: .nullPlayerModern))
     }
 
-    /// Winamp Modern reuses Classic's providers and reached this rule before the gate. It must
-    /// keep reaching it: the change is `.wmz`-only.
-    func testWinampModernSessionIsUnchangedByTheGate() {
-        XCTAssertTrue(
-            WindowManager.appliesClassicVisualizationDefaults(
-                isRunningModernUI: false,
-                isRunningWMPUI: false
-            ),
-            ".wal answers false to both predicates and takes the Classic branch, as before"
+    /// Winamp Modern used to reach this rule too — it answers false to both old predicates — and
+    /// since the classic skin loads at every launch, every `.wal` launch reset the Spectrum window
+    /// to "Purple Neon". `.wal` now matches a profile to the skin (`VisClassicProfileMatcher`).
+    func testWinampModernSessionIsExcludedSoItsProfileFollowsTheSkin() {
+        XCTAssertFalse(
+            WindowManager.appliesClassicVisualizationDefaults(family: .winampModern),
+            ".wal picks its vis_classic default from the skin, not Classic's Purple Neon"
         )
     }
 
