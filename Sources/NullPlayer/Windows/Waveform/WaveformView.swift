@@ -32,7 +32,10 @@ class WaveformView: BaseWaveformView {
     }
 
     override var waveformColors: WaveformRenderColors {
-        if let style = hostedStyle {
+        // A `.wmz` window (or a `.wal` one without a mounted frame) never gets `applyPalette`, so
+        // fall back to the hosted surface style the chrome already draws with. Nil in Classic and
+        // Original, which keep the greens below.
+        if let style = hostedStyle ?? WindowManager.shared.hostedSurfaceStyle {
             return WaveformRenderColors(
                 background: style.background,
                 backgroundMode: .opaque,
@@ -41,7 +44,7 @@ class WaveformView: BaseWaveformView {
                 waveform: style.text,
                 playedWaveform: style.currentText,
                 cuePoint: style.dimText,
-                playhead: style.selectionText,
+                playhead: Self.playheadColor(for: style),
                 text: style.text,
                 selection: style.selectionBackground
             )
@@ -59,6 +62,21 @@ class WaveformView: BaseWaveformView {
             text: NSColor(calibratedRed: 0.0, green: 0.8, blue: 0.0, alpha: 1.0),
             selection: NSColor.white
         )
+    }
+
+    /// The playhead sits on the boundary between the played and the unplayed waveform, so it has to
+    /// stand clear of both. The skin's selection text when it does; otherwise whichever of the skin's
+    /// roles (or black / white) contrasts best with the weaker of the two. BLAKK draws played and
+    /// selection text both white, which hid the line inside the played portion.
+    static func playheadColor(for style: SkinnedSurfaceStyle) -> NSColor {
+        let surfaces = [style.currentText, style.text]
+        func worstContrast(_ color: NSColor) -> CGFloat {
+            surfaces.map { SkinnedSurfaceStyle.contrastRatio(color, $0) }.min() ?? 0
+        }
+        if worstContrast(style.selectionText) >= 2 { return style.selectionText }
+        let candidates = [style.selectionText, style.selectionBackground, style.treeSelection,
+                          style.currentText, style.text, .white, .black]
+        return candidates.max { worstContrast($0) < worstContrast($1) } ?? style.selectionText
     }
 
     override init(frame frameRect: NSRect) {

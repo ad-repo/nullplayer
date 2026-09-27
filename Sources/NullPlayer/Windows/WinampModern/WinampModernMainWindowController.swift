@@ -638,6 +638,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// (Phase 16). Nil before a skin loads and while the placeholder is showing, which is exactly
     /// when a fallback window should keep its own defaults rather than guess at a theme.
     var currentPalette: WasabiPalette? { skinView?.renderer.palette }
+    /// The loaded `.wal` archive — the skin's identity for once-per-skin defaults.
+    var loadedSkinURL: URL? { loadedSkin?.archive.sourceURL }
 
     // MARK: - Text Size (B50)
 

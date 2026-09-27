@@ -29,6 +29,17 @@ final class VisClassicBridge {
             }
         }
 
+        /// The `.wal`/`.wmz` skin this scope's profile was last auto-matched for
+        /// (`VisClassicProfileMatcher`), so a same-skin relaunch keeps a user's pick.
+        var skinDefaultAppliedForKey: String {
+            switch self {
+            case .spectrumWindow: return "visClassicSkinDefaultAppliedFor.spectrumWindow"
+            case .mainWindow: return "visClassicSkinDefaultAppliedFor.mainWindow"
+            case .winampModernVisBox: return "visClassicSkinDefaultAppliedFor.winampModernVisBox"
+            case .wmpEffects: return "visClassicSkinDefaultAppliedFor.wmpEffects"
+            }
+        }
+
         var fitToWidthKey: String {
             switch self {
             case .spectrumWindow: return "visClassicFitToWidth.spectrumWindow"
@@ -452,7 +463,56 @@ final class VisClassicBridge {
         return nil
     }
 
+    /// Rewrites a profile's colour triples with their first and third numbers exchanged — the
+    /// difference between the old `B G R` reading of a profile and the correct `R G B` one.
+    static func swappingColourChannels(inProfileText text: String) -> String {
+        let colourSections: Set<String> = ["[barcolours]", "[peakcolours]", "[volumecolours]"]
+        var inColours = false
+        let lines = text.components(separatedBy: "\n").map { rawLine -> String in
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.hasPrefix("[") {
+                inColours = colourSections.contains(line.lowercased())
+                return rawLine
+            }
+            guard inColours, let eq = line.firstIndex(of: "=") else { return rawLine }
+            let parts = line[line.index(after: eq)...].split(separator: " ")
+            guard parts.count == 3 else { return rawLine }
+            let ending = rawLine.hasSuffix("\r") ? "\r" : ""
+            return "\(line[..<eq])=\(parts[2]) \(parts[1]) \(parts[0])\(ending)"
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static let rgbProfileMigrationKey = "visClassicProfilesRGBMigrationV1"
+
+    /// Once: the bundled Metal profiles were authored while profiles were read as `B G R`, and were
+    /// rewritten to `R G B` when that was fixed. A user-folder copy (the bootstrap copies every
+    /// bundled profile, and a user copy shadows the bundled one by name) that is exactly the old
+    /// channel-swapped version of a bundled profile is replaced with the bundled one. Anything else
+    /// in the user folder is left alone.
+    private func migrateUserCopiesToRGBProfiles() {
+        guard !defaults.bool(forKey: Self.rgbProfileMigrationKey) else { return }
+        defaults.set(true, forKey: Self.rgbProfileMigrationKey)
+        let fm = FileManager.default
+        guard let bundled = Self.bundledProfilesDirectory,
+              let bundledProfiles = try? fm.contentsOfDirectory(at: bundled, includingPropertiesForKeys: nil) else {
+            return
+        }
+        for src in bundledProfiles where src.pathExtension.lowercased() == "ini" {
+            let dst = Self.userProfilesDirectory.appendingPathComponent(src.lastPathComponent)
+            guard let bundledData = try? Data(contentsOf: src),
+                  let userData = try? Data(contentsOf: dst) else { continue }
+            let bundledText = String(decoding: bundledData, as: UTF8.self)
+            let userText = String(decoding: userData, as: UTF8.self)
+            guard userText != bundledText,
+                  Self.swappingColourChannels(inProfileText: userText) == bundledText else { continue }
+            try? fm.removeItem(at: dst)
+            try? fm.copyItem(at: src, to: dst)
+        }
+    }
+
     private func ensureProfilesBootstrapped() {
+        migrateUserCopiesToRGBProfiles()
         let fm = FileManager.default
         let userDir = Self.userProfilesDirectory
 

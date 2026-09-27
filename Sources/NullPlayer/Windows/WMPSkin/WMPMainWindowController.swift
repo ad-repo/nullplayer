@@ -215,6 +215,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// `WMPSurfacePalette`. Nil whenever the app-authored unskinned player is up, which is what makes
     /// `WindowManager.hostedSurfaceStyle` nil there and sends those windows back to their own drawing.
     private(set) var currentSurfacePalette: WMPSurfacePalette?
+    /// The loaded `.wmz` archive — the skin's identity for once-per-skin defaults.
+    var loadedSkinURL: URL? { loadedSkin?.archive.sourceURL }
 
     /// The skin's own window *shape* for those same windows, where it draws one — see
     /// `WMPHostedFrameTemplate`. The palette above is what a `.wmz` could always lend us; this is

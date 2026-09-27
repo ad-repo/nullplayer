@@ -319,3 +319,20 @@ struct SkinnedSurfaceStyle: Equatable {
         return width
     }
 }
+
+extension SkinnedSurfaceStyle {
+    /// The low and high ends of a skin-following visualization gradient: `dimText` → `currentText`.
+    /// The low end is the dim text rather than the background so short, quiet bars stay visible.
+    var visualizationLow: NSColor { dimText }
+    var visualizationHigh: NSColor { currentText }
+
+    /// A `count`-step `visualizationLow` → `visualizationHigh` ramp for the spectrum analyzer's
+    /// `spectrumColors` override — the hosted counterpart of `ModernSkin.spectrumColors()`, which
+    /// `Windows/Spectrum/` cannot import.
+    func visualizationRamp(count: Int = 24) -> [NSColor] {
+        guard count > 1 else { return [visualizationHigh] }
+        return (0..<count).map { i in
+            Self.blend(visualizationLow, toward: visualizationHigh, by: CGFloat(i) / CGFloat(count - 1))
+        }
+    }
+}

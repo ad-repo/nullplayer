@@ -68,10 +68,15 @@ static inline bool parseInt(const std::string &s, int &out) {
     }
 }
 
-static inline bool parseBGR(const std::string &s, RGB &out) {
+// Profile colours are `R G B` as they appear on screen. The original plugin's source reads them
+// into variables named `r g b` and stores `RGB(b, g, r)` into a COLORREF, but that COLORREF goes
+// straight into a 32-bit DIB whose byte order undoes the swap — its built-in default,
+// `bmpRGB(204 + i/5, i, 0)`, is the red→yellow of "Default Red & Yellow". Reading them as B G R
+// drew every bundled profile with red and blue exchanged.
+static inline bool parseRGB(const std::string &s, RGB &out) {
     std::istringstream iss(s);
-    int b = 0, g = 0, r = 0;
-    if (!(iss >> b >> g >> r)) {
+    int r = 0, g = 0, b = 0;
+    if (!(iss >> r >> g >> b)) {
         return false;
     }
     out.b = static_cast<uint8_t>(clampInt(b, 0, 255));
@@ -407,16 +412,16 @@ public:
 
         out << "[BarColours]\n";
         for (int i = 0; i < kColorCount; ++i) {
-            out << i << "=" << static_cast<int>(barColors_[i].b) << " "
+            out << i << "=" << static_cast<int>(barColors_[i].r) << " "
                 << static_cast<int>(barColors_[i].g) << " "
-                << static_cast<int>(barColors_[i].r) << "\n";
+                << static_cast<int>(barColors_[i].b) << "\n";
         }
 
         out << "[PeakColours]\n";
         for (int i = 0; i < kColorCount; ++i) {
-            out << i << "=" << static_cast<int>(peakColors_[i].b) << " "
+            out << i << "=" << static_cast<int>(peakColors_[i].r) << " "
                 << static_cast<int>(peakColors_[i].g) << " "
-                << static_cast<int>(peakColors_[i].r) << "\n";
+                << static_cast<int>(peakColors_[i].b) << "\n";
         }
 
         out << "[VolumeFunction]\n";
@@ -975,7 +980,7 @@ public:
             }
 
             RGB c;
-            if (!parseBGR(value, c)) {
+            if (!parseRGB(value, c)) {
                 continue;
             }
 
