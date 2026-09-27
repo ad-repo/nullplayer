@@ -455,6 +455,11 @@ class WindowManager {
 
     private var compactWindowController: CompactModeWindowController?
 
+    /// Save Compact Mode's floating frame, on quit.
+    func persistCompactFloatingFrame() {
+        compactWindowController?.persistFloatingFrameForStateSaving()
+    }
+
     /// Backdrop used by the modern/metal compact surface. Classic always resolves to Off.
     var compactBackdropMode: BrowserBackdropMode {
         guard isRunningModernUI else { return .off }
@@ -1357,6 +1362,100 @@ class WindowManager {
         MainActor.assumeIsolated { hostedBorderLayout?.prepare(window) }
     }
 
+    // MARK: - Whose sizes these are
+
+    /// **Which skin's sizes the hosted windows are at.** `HostedWindowBorderLayout` reseeds every
+    /// window's interior when this changes, so no skin inherits another's. Per family everywhere
+    /// but `.wmz`, where it is the skin whose border is live — a staged switch changes it only on
+    /// commit. Nil while a `.wmz` player has not been built.
+    var hostedInteriorScope: String? {
+        switch uiMode.controllerFamily {
+        case .classic: return "classic"
+        case .nullPlayerModern: return "original"
+        case .winampModern: return "wal"
+        case .wmp:
+            guard let controller = mainWindowController as? WMPMainWindowController else { return nil }
+            return MainActor.assumeIsolated { controller.hostedInteriorScope }
+        }
+    }
+
+    /// The `.wmz` skin a hosted window's interior is stored under. Nil in every other family:
+    /// only a `.wmz` lends a border, so only a `.wmz` has an interior worth keeping.
+    var hostedInteriorSkinKey: String? {
+        guard uiMode.controllerFamily == .wmp,
+              let controller = mainWindowController as? WMPMainWindowController else { return nil }
+        return MainActor.assumeIsolated { controller.hostedInteriorSkinKey }
+    }
+
+    /// Whether a `.wmz` skin switch is staging: the old skin still answers, so nothing measured now
+    /// belongs to the skin whose name is already selected.
+    var hostedSurfaceIsStagingSwitch: Bool {
+        guard uiMode.controllerFamily == .wmp,
+              let controller = mainWindowController as? WMPMainWindowController else { return false }
+        return MainActor.assumeIsolated { controller.hostedFrames.isStagingSwitch }
+    }
+
+    // MARK: - Default sizes
+
+    /// **Match Main Window Width** (Windows menu). Off by default: NullPlayer's own windows open at
+    /// the classic width in every mode. On, their default width follows the main window's, which
+    /// is what they always did — and what a `.wal` or `.wmz` player's own width makes too wide or
+    /// too narrow. It sets the default only; a size saved for the skin still wins. Global, not per
+    /// skin.
+    var matchesMainWindowWidth: Bool {
+        get { UserDefaults.standard.bool(forKey: "matchMainWindowWidth") }
+        set { UserDefaults.standard.set(newValue, forKey: "matchMainWindowWidth") }
+    }
+
+    /// **The width every NullPlayer-native window opens at when nothing is saved for it**: the
+    /// classic width, 275 skin pixels at the current UI size, whatever skin is loaded. Not the main
+    /// window's — a `.wal` or `.wmz` player is whatever width its skin says, and the analyser opened
+    /// 500, 596 and 750 wide beside three of them. Classic's main window is always this width, so
+    /// the two readings agree there.
+    var nativeWindowDefaultWidth: CGFloat {
+        if matchesMainWindowWidth, let width = mainWindowController?.window?.frame.width, width > 0 {
+            return width
+        }
+        return Skin.baseMainSize.width * Skin.scaleFactor * classicScaleMultiplier
+    }
+
+    /// **The size a NullPlayer-native window opens at in every mode**, where nothing is saved for
+    /// it: `nativeWindowDefaultWidth` by the window's classic default height. The one table the
+    /// classic `resetToDefaultFrame()`s and a hosted window's reseed on a skin switch both read.
+    /// Nil for a window that is not one of them.
+    func nativeWindowDefaultSize(for window: NSWindow) -> CGSize? {
+        let scale = classicScaleMultiplier
+        let width = nativeWindowDefaultWidth
+        switch window {
+        case spectrumWindowController?.window, cavaWindowController?.window,
+             audioAnalysisWindowController?.window, networkMonitorWindowController?.window:
+            return CGSize(width: width, height: SkinElements.SpectrumWindow.windowSize.height * scale)
+        case peppyMeterWindowController?.window:
+            return CGSize(width: width, height: (SkinElements.PeppyMeterWindow.windowSize.height * scale).rounded())
+        case waveformWindowController?.window:
+            return CGSize(width: width, height: SkinElements.WaveformWindow.minSize.height * scale)
+        case projectMWindowController?.window:
+            return SkinElements.ProjectM.defaultSize
+        case plexBrowserWindowController?.window:
+            return PlexBrowserWindowController.defaultSize
+        case sonosWindowController?.window:
+            return CGSize(width: width, height: 270 * scale)
+        default:
+            return nil
+        }
+    }
+
+    /// **An in-mode skin switch starts every window's placement afresh.** A `.wal` or `.wmz` skin
+    /// switch keeps the windows, so without this each reopened "where left" at the previous skin's
+    /// frame. The same caches a mode switch drops (`teardownModeDependentWindows`).
+    func forgetSkinWindowPlacement() {
+        placedFreeFloatingWindows.removeAllObjects()
+        lastPlexBrowserFrame = nil
+        lastPlexBrowserFrameWasDocked = false
+        lastProjectMFrame = nil
+        lastProjectMFrameWasDocked = false
+    }
+
     /// Whether the loaded `.wal` skin registered any settings of its own (Phase 27.3). Safe default
     /// in every other mode, per the mode-guarding rule in CLAUDE.md — the menu asks this before it
     /// offers an entry point, so a skin that registers nothing shows no menu item at all.
@@ -1682,6 +1781,7 @@ class WindowManager {
         let frame = WindowManager.winampModernHostedOpeningFrame(
             window.frame,
             mainFrame: mainWindow.frame,
+            width: nativeWindowDefaultWidth,
             minimumWidth: window.contentMinSize.width,
             maximumWidth: max(window.contentMaxSize.width, window.contentMinSize.width))
         guard frame != window.frame else { return }
@@ -1692,10 +1792,11 @@ class WindowManager {
     /// Returns `frame` unchanged whenever the rule does not apply.
     static func winampModernHostedOpeningFrame(_ frame: NSRect,
                                                mainFrame: NSRect,
+                                               width preferred: CGFloat? = nil,
                                                minimumWidth: CGFloat,
                                                maximumWidth: CGFloat) -> NSRect {
         guard mainFrame.width > 0 else { return frame }
-        let width = max(min(mainFrame.width, maximumWidth), minimumWidth)
+        let width = max(min(preferred ?? mainFrame.width, maximumWidth), minimumWidth)
         guard width > 0, width != frame.width else { return frame }
         var matched = frame
         matched.size.width = width
@@ -4398,8 +4499,7 @@ class WindowManager {
         } else if keepsLeftFrame {
             // Free-floating family: where the user left it.
         } else if created {
-            let width = mainWindowController?.window?.frame.width ?? 360
-            window.setContentSize(NSSize(width: width, height: 270 * uiScaleLevel.scaleFactor))
+            window.setContentSize(nativeWindowDefaultSize(for: window) ?? NSSize(width: 360, height: 260))
             if isRunningModernUI { applyDefaultCenterStackFrameForCurrentHT(window, kind: .sonos) }
             positionSubWindow(window)
         } else if !window.isVisible, sonosWindowController?.wasDockedWhenHidden == true {
@@ -5937,7 +6037,9 @@ class WindowManager {
         guard isRunningModernUI, let mainWindow = mainWindowController?.window else { return }
         var frame = window.frame
         let topY = frame.maxY
-        frame.size.width = mainWindow.frame.width
+        // The equalizer is pinned to the player's width (`applyCenterStackSizingConstraints`);
+        // every other window opens at the native default width.
+        frame.size.width = kind == .equalizer ? mainWindow.frame.width : nativeWindowDefaultWidth
         frame.size.height = targetCenterStackHeight(for: kind,
                                                     currentHeight: frame.height,
                                                     titleBarDelta: 0,
@@ -6081,20 +6183,25 @@ class WindowManager {
     /// Default side-window height when only the main window is visible.
     /// Uses the center-stack baseline height in modern UI.
     ///
-    /// The `×4` is calibrated for a *thin strip* of a main window — classic's 116pt, giving the 464pt
+    /// The `×4` is calibrated for a *thin strip* of a main window — classic's 145pt, giving the 580pt
     /// column this app has always opened a side window at — so that it spans roughly the stack the
     /// user is about to build under it. A `.wal` skin's main window is its own full-size canvas
     /// instead, and multiplying *that* by four is nonsense: Lobe's is 300pt, so the product is
     /// 1200pt, and 2400pt at 2× UI Size; cPro-Bento's is taller still. The `.winampModern` family
     /// therefore measures from classic's strip rather than from the skin, so every skin opens the
-    /// same familiar column whatever size its own window happens to be (B28).
+    /// same familiar column whatever size its own window happens to be (B28). A `.wmz` player is
+    /// the same kind of canvas — corona's 468pt opened the library 890pt tall — so it does too:
+    /// a native window's default size is its classic one in every mode.
     ///
     /// The result is anchored at the main window's *top* edge and grows downward, so it is clamped
     /// to the display afterwards — nothing else stopped it running off the bottom.
     private func defaultSideWindowHeight(mainFrame: NSRect) -> CGFloat {
         let baseline: CGFloat
-        if mainWindowController is WinampModernMainWindowController {
-            baseline = SkinElements.mainWindowSize.height * uiScaleLevel.scaleFactor
+        if mainWindowController is WinampModernMainWindowController
+            || mainWindowController is WMPMainWindowController {
+            // Classic's own strip, 145pt at 100% — the height `Skin.mainWindowSize` gives the
+            // library and visualization windows their default size from.
+            baseline = Skin.mainWindowSize.height * uiScaleLevel.scaleFactor
         } else if isRunningModernUI {
             baseline = expectedMainHeightForCurrentHT(mainWindowController?.window)
         } else {
@@ -7791,6 +7898,9 @@ class WindowManager {
         adjacencyCache.removeAll(keepingCapacity: true)
         edgeOcclusionSegmentsCache.removeAll(keepingCapacity: true)
         sharpCornersCache.removeAll(keepingCapacity: true)
+        // The same for the hosted-window interiors: a new window at a reused address must not
+        // match a released one's.
+        MainActor.assumeIsolated { hostedBorderLayout?.forgetAllWindows() }
 
         NSLog("WindowManager: teardownModeDependentWindows — complete")
     }
@@ -7822,6 +7932,9 @@ class WindowManager {
         /// Live ProjectM preset index, carried across the rebuild so the visualization stays on the
         /// exact preset the user was viewing rather than reverting to the saved startup default.
         var projectMPresetIndex: Int?
+        /// The family the frames were taken in. A frame's size belongs to it (rule 1 of the
+        /// size-isolation plan), so a rebuild in another family keeps only the position.
+        var family: PlayerUIControllerFamily?
     }
 
     private func captureModeDependentLayout() -> ModeDependentLayoutSnapshot {
@@ -7852,7 +7965,8 @@ class WindowManager {
             cava: snapWindow(cavaWindow),
             sonos: snapWindow(sonosWindow),
             waveform: snapWindow(waveformWindow),
-            projectMPresetIndex: restorableProjectMPresetIndex()
+            projectMPresetIndex: restorableProjectMPresetIndex(),
+            family: uiMode.controllerFamily
         )
     }
 
@@ -7906,6 +8020,16 @@ class WindowManager {
             )
         }
 
+        // **A window's size belongs to the family that drew it.** Across families a NullPlayer
+        // window opens exactly as a fresh open in the new family would — its default size and
+        // placement, which Original's stack and a `.wal` skin frame each decide their own way. The
+        // whole frame carried an anemone-grown 498x278 analyser into Classic, and a Classic resize
+        // back out into `.wmz` (measured 2026-09-27). A window that was not docked gets its position
+        // back from `restoreDetachedWindowFrames`. Within one family — Recreate Windows, the Compact
+        // Window round trip — the frame is the user's and is kept.
+        let crossesFamily = snapshot.family.map { $0 != uiMode.controllerFamily } ?? false
+        func carried(_ frame: NSRect?) -> NSRect? { crossesFamily ? nil : frame }
+
         if let playlist = snapshot.playlist, playlist.visible {
             showPlaylist(at: playlist.frame)
         }
@@ -7914,22 +8038,26 @@ class WindowManager {
         }
         if let library = snapshot.library, library.visible {
             let normalFrame = library.normalFrame ?? library.frame
-            showPlexBrowser(at: normalFrame)
+            showPlexBrowser(at: carried(normalFrame))
         }
         if let spectrum = snapshot.spectrum, spectrum.visible {
-            showSpectrum(at: spectrum.frame)
+            showSpectrum(at: carried(spectrum.frame))
         }
-        if snapshot.audioAnalysis?.visible == true { showAudioAnalysis(at: snapshot.audioAnalysis?.frame) }
-        if snapshot.peppyMeter?.visible == true { showPeppyMeter(at: snapshot.peppyMeter?.frame) }
-        if snapshot.networkMonitor?.visible == true { showNetworkMonitor(at: snapshot.networkMonitor?.frame) }
-        if snapshot.cava?.visible == true { showCava(at: snapshot.cava?.frame) }
-        if snapshot.sonos?.visible == true { showSonos(at: snapshot.sonos?.frame) }
+        if snapshot.audioAnalysis?.visible == true {
+            showAudioAnalysis(at: carried(snapshot.audioAnalysis?.frame))
+        }
+        if snapshot.peppyMeter?.visible == true { showPeppyMeter(at: carried(snapshot.peppyMeter?.frame)) }
+        if snapshot.networkMonitor?.visible == true {
+            showNetworkMonitor(at: carried(snapshot.networkMonitor?.frame))
+        }
+        if snapshot.cava?.visible == true { showCava(at: carried(snapshot.cava?.frame)) }
+        if snapshot.sonos?.visible == true { showSonos(at: carried(snapshot.sonos?.frame)) }
         if let waveform = snapshot.waveform, waveform.visible {
-            showWaveform(at: waveform.frame)
+            showWaveform(at: carried(waveform.frame))
         }
         if let projectM = snapshot.projectM, projectM.visible {
             showProjectM(
-                at: projectM.frame,
+                at: carried(projectM.frame),
                 restoringPresetIndex: snapshot.projectMPresetIndex
             )
         }
@@ -8251,23 +8379,31 @@ class WindowManager {
         )
     }
 
-    private func restoreDetachedWindowFrames(_ frames: DetachedWindowFrames) {
-        let restorations: [(NSRect?, NSWindow?)] = [
-            (frames.equalizer, equalizerWindow),
-            (frames.playlist, playlistWindowController?.window),
-            (frames.spectrum, spectrumWindow),
-            (frames.waveform, waveformWindow),
-            (frames.audioAnalysis, audioAnalysisWindow),
-            (frames.peppyMeter, peppyMeterWindow),
-            (frames.networkMonitor, networkMonitorWindow),
-            (frames.cava, cavaWindow),
-            (frames.sonos, sonosWindow),
-            (frames.library, plexBrowserWindowController?.window),
-            (frames.projectM, projectMWindowController?.window),
+    /// `crossesFamily`: the frames were taken in another family. A NullPlayer-native window then
+    /// keeps only its position — its size belongs to the family that drew it, and the rebuild has
+    /// already opened it at this family's default. A `.wmz`-grown analyser is never docked, so
+    /// without this its 498x278 came back in Classic (measured 2026-09-27).
+    private func restoreDetachedWindowFrames(_ frames: DetachedWindowFrames, crossesFamily: Bool = false) {
+        let restorations: [(NSRect?, NSWindow?, native: Bool)] = [
+            (frames.equalizer, equalizerWindow, false),
+            (frames.playlist, playlistWindowController?.window, false),
+            (frames.spectrum, spectrumWindow, true),
+            (frames.waveform, waveformWindow, true),
+            (frames.audioAnalysis, audioAnalysisWindow, true),
+            (frames.peppyMeter, peppyMeterWindow, true),
+            (frames.networkMonitor, networkMonitorWindow, true),
+            (frames.cava, cavaWindow, true),
+            (frames.sonos, sonosWindow, true),
+            (frames.library, plexBrowserWindowController?.window, true),
+            (frames.projectM, projectMWindowController?.window, true),
         ]
         withProgrammaticWindowFrameChange {
-            for (frame, window) in restorations {
-                guard let frame, let window, window.isVisible else { continue }
+            for (frame, window, native) in restorations {
+                guard var frame, let window, window.isVisible else { continue }
+                if crossesFamily && native {
+                    let size = window.frame.size
+                    frame = NSRect(x: frame.minX, y: frame.maxY - size.height, width: size.width, height: size.height)
+                }
                 window.setFrame(frame, display: true)
             }
         }
@@ -8330,7 +8466,8 @@ class WindowManager {
             cava: convScaled(snapshot.cava),
             sonos: convScaled(snapshot.sonos),
             waveform: convScaled(snapshot.waveform),
-            projectMPresetIndex: restorableProjectMPresetIndex()
+            projectMPresetIndex: restorableProjectMPresetIndex(),
+            family: uiMode.controllerFamily
         )
     }
 
@@ -8344,6 +8481,7 @@ class WindowManager {
         let t0 = CACurrentMediaTime()
         teardownModeDependentWindows()
         let tTorn = CACurrentMediaTime()
+        let crossesFamily = targetMode.controllerFamily != uiMode.controllerFamily
 
         // Persist the mode before recreate — show*() reads it to choose controllers.
         uiMode = targetMode
@@ -8361,7 +8499,7 @@ class WindowManager {
         if restoreScaleLevel != .p100, targetMode.controllerFamily != .wmp {
             uiScaleLevel = restoreScaleLevel
         }
-        restoreDetachedWindowFrames(preservedDetachedFrames)
+        restoreDetachedWindowFrames(preservedDetachedFrames, crossesFamily: crossesFamily)
 
         // Restore Compact Mode last so it captures the freshly rebuilt window set, not stale state.
         if reenterCompact { enterCompactMode() }
@@ -8503,89 +8641,5 @@ class WindowManager {
         coordinatedMiniaturizedWindows.removeAll()
         // Reinstate persistent docked-child relationships for Spaces following
         updateDockedChildWindows()
-    }
-    
-    // MARK: - State Persistence
-
-    /// Compatibility-only legacy frame channel.
-    ///
-    /// NullPlayer saves these keys on quit but no longer restores them during launch;
-    /// `AppStateManager` owns current window restoration. Keep the namespaced writer and
-    /// reader for downstream consumers and legacy migration rather than treating these
-    /// keys as the primary geometry store.
-    func saveWindowPositions() {
-        let defaults = UserDefaults.standard
-        compactWindowController?.persistFloatingFrameForStateSaving()
-        
-        if let frame = mainWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("MainWindowFrame"))
-        }
-        if let frame = playlistWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("PlaylistWindowFrame"))
-        }
-        if let frame = equalizerWindow?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("EqualizerWindowFrame"))
-        }
-        if let frame = plexBrowserWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("PlexBrowserWindowFrame"))
-        }
-        if let frame = videoPlayerWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("VideoPlayerWindowFrame"))
-        }
-        if let frame = projectMWindowController?.window?.frame {
-            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("ProjectMWindowFrame"))
-        }
-        if let frame = spectrumWindowFrame {
-            defaults.set(NSStringFromRect(frame), forKey: AppPersistence.key("SpectrumWindowFrame"))
-        }
-    }
-    
-    /// Re-apply the frames saved in `UserDefaults`.
-    ///
-    /// Every rect goes through `onScreen` on the way in. These are raw saved coordinates and nothing
-    /// else validates them: a session saved on a display that is no longer attached came back at
-    /// coordinates that do not exist any more, which is one of the ways a window ended up
-    /// unreachable at launch.
-    func restoreWindowPositions() {
-        let defaults = UserDefaults.standard
-        // Winamp Modern only: outside it, a saved frame is re-applied exactly as it was saved.
-        let rescuesOffScreenFrames = appliesWinampModernPlacement
-        let screens = visibleScreenFrames()
-        func onScreen(_ frame: NSRect) -> NSRect {
-            guard rescuesOffScreenFrames,
-                  !WindowPlacement.isReachable(frame, screens: screens),
-                  let host = WindowPlacement.hostScreen(for: frame, screens: screens)
-            else { return frame }
-            return WindowPlacement.rescued(frame, into: host)
-        }
-        
-        if let frameString = defaults.string(forKey: AppPersistence.key("MainWindowFrame")),
-           let window = mainWindowController?.window {
-            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
-        }
-        if let frameString = defaults.string(forKey: AppPersistence.key("PlaylistWindowFrame")),
-           let window = playlistWindowController?.window {
-            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
-        }
-        if let frameString = defaults.string(forKey: AppPersistence.key("EqualizerWindowFrame")),
-           let window = equalizerWindowController?.window {
-            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
-        }
-        if let frameString = defaults.string(forKey: AppPersistence.key("PlexBrowserWindowFrame")),
-           let window = plexBrowserWindowController?.window {
-            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
-        }
-        if let frameString = defaults.string(forKey: AppPersistence.key("VideoPlayerWindowFrame")),
-           let window = videoPlayerWindowController?.window {
-            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
-        }
-        if let frameString = defaults.string(forKey: AppPersistence.key("ProjectMWindowFrame")),
-           let window = projectMWindowController?.window {
-            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
-        }
-        if let frameString = defaults.string(forKey: AppPersistence.key("SpectrumWindowFrame")),
-           let window = spectrumWindow {
-            window.setFrame(onScreen(NSRectFromString(frameString)), display: true)
-        }
     }
 }

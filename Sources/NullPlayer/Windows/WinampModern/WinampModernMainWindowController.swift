@@ -184,6 +184,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // NullPlayer's own feature windows the user has open, in whichever chrome the outgoing skin
         // gave them. The incoming skin gets asked about each of them again once it is up.
         let reopenHostedWindows = WindowManager.shared.openWinampModernHostedWindowIDs()
+        // A new skin places NullPlayer's windows afresh rather than where the last skin left them.
+        WindowManager.shared.forgetSkinWindowPlacement()
         tearDownSkin()
         // A `setScale` that arrives while the skin is loading cannot be acted on: `loadSkin` runs
         // from this controller's own initializer, so `WindowManager.mainWindowController` is not

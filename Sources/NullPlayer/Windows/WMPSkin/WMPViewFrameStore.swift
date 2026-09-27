@@ -44,13 +44,13 @@ struct WMPViewFrameStore {
     /// The auxiliary views this skin had open when the session ended, in the order they were opened.
     /// The player's own view is not one of them — that is `WMPSkinImporter.selectedViewIDKey`.
     func openViews(skin: String) -> [String] {
-        defaults.dictionary(forKey: Self.openViewsKey)?[skinKey(skin)] as? [String] ?? []
+        defaults.dictionary(forKey: Self.openViewsKey)?[Self.skinKey(skin)] as? [String] ?? []
     }
 
     func setOpenViews(_ views: [String], skin: String) {
         var values = defaults.dictionary(forKey: Self.openViewsKey) ?? [:]
-        if views.isEmpty { values.removeValue(forKey: skinKey(skin)) }
-        else { values[skinKey(skin)] = views }
+        if views.isEmpty { values.removeValue(forKey: Self.skinKey(skin)) }
+        else { values[Self.skinKey(skin)] = views }
         defaults.set(values, forKey: Self.openViewsKey)
     }
 
@@ -58,7 +58,9 @@ struct WMPViewFrameStore {
         "\(skin.utf8.count):\(skin.lowercased())|\(view.lowercased())"
     }
 
-    private func skinKey(_ skin: String) -> String {
+    /// A skin's identity in every per-skin key: also what `HostedWindowBorderLayout` stores a hosted
+    /// window's interior under, so both halves of a `.wmz` skin's geometry agree on who it belongs to.
+    static func skinKey(_ skin: String) -> String {
         "\(skin.utf8.count):\(skin.lowercased())"
     }
 }

@@ -218,6 +218,21 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// The loaded `.wmz` archive — the skin's identity for once-per-skin defaults.
     var loadedSkinURL: URL? { loadedSkin?.archive.sourceURL }
 
+    /// The key a hosted window's interior is stored under for this skin — `WMPViewFrameStore`'s, so
+    /// a skin's view sizes and its hosted windows' sizes belong to the same identity. Nil with no
+    /// skin loaded (the unskinned fallback), which stores nothing.
+    var hostedInteriorSkinKey: String? {
+        guard loadedSkin != nil, let name = importer.selectedSkinName, !name.isEmpty else { return nil }
+        return WMPViewFrameStore.skinKey(name)
+    }
+
+    /// Which skin's border the hosted windows are wearing: the live frame provider's skin, which a
+    /// staged switch changes only on commit. A skin that lends no frame is told apart by name.
+    var hostedInteriorScope: String {
+        if let token = hostedFrames.liveSkinToken { return "wmz:\(token.hashValue)" }
+        return "wmz-unframed:\(hostedInteriorSkinKey ?? "")"
+    }
+
     /// The skin's own window *shape* for those same windows, where it draws one — see
     /// `WMPHostedFrameTemplate`. The palette above is what a `.wmz` could always lend us; this is
     /// the eight-piece ring that 85 of the 180 corpus archives build their panels out of, rendered
@@ -951,6 +966,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             do {
                 _ = try await importer.importSkin(from: url)
                 try Task.checkCancellation()
+                WindowManager.shared.forgetSkinWindowPlacement()
                 reloadSelectedSkin()
             } catch is CancellationError {
                 return
@@ -968,12 +984,15 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             return
         }
         importer.select(skin)
+        // A new skin places NullPlayer's windows afresh rather than where the last skin left them.
+        WindowManager.shared.forgetSkinWindowPlacement()
         reloadSelectedSkin()
     }
 
     func resetToUnskinned() {
         loadTask?.cancel()
         importer.resetSelection()
+        WindowManager.shared.forgetSkinWindowPlacement()
         presentUnskinned(message: nil)
     }
 

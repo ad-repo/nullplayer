@@ -45,7 +45,7 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
         if let mainWindow = WindowManager.shared.mainWindowController?.window {
             let mainFrame = mainWindow.frame
             let playlistHeight = Skin.playlistMinSize.height * WindowManager.shared.classicScaleMultiplier
-            let playlistWidth = snappedPlaylistWidth(mainFrame.width)
+            let playlistWidth = snappedPlaylistWidth(WindowManager.shared.nativeWindowDefaultWidth)
             
             // Keep default width aligned to main, but allow horizontal stretching.
             window.minSize = NSSize(width: Skin.playlistMinSize.width, height: playlistHeight)
@@ -99,7 +99,7 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
         guard let window, let mainWindow = WindowManager.shared.mainWindowController?.window else { return }
         let mainFrame = mainWindow.frame
         let playlistHeight = Skin.playlistMinSize.height * WindowManager.shared.classicScaleMultiplier
-        let playlistWidth = snappedPlaylistWidth(mainFrame.width)
+        let playlistWidth = snappedPlaylistWidth(WindowManager.shared.nativeWindowDefaultWidth)
         window.minSize = NSSize(width: Skin.playlistMinSize.width, height: playlistHeight)
         window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         let newFrame = NSRect(

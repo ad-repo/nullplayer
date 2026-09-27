@@ -13,7 +13,7 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
     private static let minSize = NSSize(width: SkinElements.SpectrumWindow.minSize.width, height: 300)
     
     /// Default window size - height matches 4 stacked main windows (main + EQ + playlist + spectrum)
-    private static var defaultSize: NSSize {
+    static var defaultSize: NSSize {
         let height = Skin.mainWindowSize.height * 4  // Match combined height of 4 windows
         return NSSize(width: 550, height: height)
     }

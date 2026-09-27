@@ -159,6 +159,13 @@ final class WMPHostedFrameProvider {
     /// resolving and a window's frame read back during that gap is read against the wrong border.
     var lendsFrame: Bool { live?.template != nil }
 
+    /// The live skin's identity: changes exactly when a switch commits, which is when the border
+    /// every hosted window wears changes. Nil while no skin lends a frame.
+    var liveSkinToken: ObjectIdentifier? { live.map(ObjectIdentifier.init) }
+
+    /// Whether a skin is on its way in while the old one goes on answering.
+    var isStagingSwitch: Bool { staged != nil }
+
     // MARK: - Adopting a skin
 
     /// Adopt a newly presented skin. Answers whether the skin has a frame to lend at all, which is

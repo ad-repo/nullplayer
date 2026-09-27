@@ -81,7 +81,7 @@ class WaveformWindowController: NSWindowController, WaveformWindowProviding {
         let waveformHeight = SkinElements.WaveformWindow.minSize.height * WindowManager.shared.classicScaleMultiplier
         window.minSize = NSSize(width: SkinElements.WaveformWindow.minSize.width, height: waveformHeight)
         let newFrame = NSRect(x: mainFrame.minX, y: mainFrame.minY - waveformHeight,
-                              width: mainFrame.width, height: waveformHeight)
+                              width: WindowManager.shared.nativeWindowDefaultWidth, height: waveformHeight)
         window.setFrame(newFrame, display: false)
     }
 

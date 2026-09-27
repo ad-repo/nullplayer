@@ -288,8 +288,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Save app state if "Remember State" is enabled
         AppStateManager.shared.saveState()
         
-        // Save window positions (always saved, used by snapToDefault)
-        windowManager.saveWindowPositions()
+        // Compact Mode's floating frame is its own store, saved on quit whatever Remember State says.
+        windowManager.persistCompactFloatingFrame()
 
         // A `.wmz` saves its state in `onClose`, and quitting never gave it the chance —
         // see `WMPMainWindowController.flushCloseHandlersOnTermination`. Gated on the WMP
