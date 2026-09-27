@@ -72,7 +72,7 @@ final class AudioAnalysisWindowController: NSWindowController, AudioAnalysisWind
         )
         window.setFrame(
             NSRect(x: mainWindow.frame.minX, y: mainWindow.frame.minY - height,
-                   width: mainWindow.frame.width, height: height),
+                   width: WindowManager.shared.nativeWindowDefaultWidth, height: height),
             display: false
         )
     }

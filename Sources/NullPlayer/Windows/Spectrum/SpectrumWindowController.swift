@@ -93,7 +93,7 @@ class SpectrumWindowController: NSWindowController, SpectrumWindowProviding {
         let mainFrame = mainWindow.frame
         let scaleMultiplier = WindowManager.shared.classicScaleMultiplier
         let defaultHeight = SkinElements.SpectrumWindow.windowSize.height * scaleMultiplier
-        let defaultWidth = mainFrame.width
+        let defaultWidth = WindowManager.shared.nativeWindowDefaultWidth
 
         window.minSize = NSSize(
             width: SkinElements.SpectrumWindow.minSize.width,

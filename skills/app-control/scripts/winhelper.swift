@@ -46,6 +46,27 @@ func fail(_ message: String) -> Never {
     exit(1)
 }
 
+/// **Refuse to press anywhere but a NullPlayer window.** A click, scroll or drag is a real system-wide
+/// event and lands on whatever is under it. A lookup that matched nothing (`read … < <(winhelper
+/// windows | grep …)`) leaves its coordinates empty, shell arithmetic reads them as 0, and on
+/// 2026-09-27 that posted a click into the menu bar at (100,60) and a drag from the screen's top-left
+/// corner (-2,-2), which hung Finder and the Dock. So the frontmost on-screen window at the press
+/// point, across every app, must be NullPlayer's, or nothing is posted and this exits 1.
+func requireNullPlayer(at p: CGPoint, verb: String) {
+    let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+    for w in list {
+        guard let b = w[kCGWindowBounds as String] as? [String: Any],
+              let x = b["X"] as? Double, let y = b["Y"] as? Double,
+              let width = b["Width"] as? Double, let height = b["Height"] as? Double,
+              (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+              CGRect(x: x, y: y, width: width, height: height).contains(p) else { continue }
+        let owner = w[kCGWindowOwnerName as String] as? String ?? "?"
+        if owner == "NullPlayer" { return }
+        fail("\(verb) refused: (\(Int(p.x)),\(Int(p.y))) is on \(owner), not a NullPlayer window — nothing posted")
+    }
+    fail("\(verb) refused: no window at (\(Int(p.x)),\(Int(p.y))) — nothing posted")
+}
+
 /// Bring one process to the front through System Events, by unix id, and prove it took.
 ///
 /// `NSRunningApplication.activate()` from a background process is refused by recent macOS — it
@@ -353,16 +374,19 @@ case "clickdiff", "dblclickdiff":
     guard f.rest.count == 2, let x = Double(f.rest[0]), let y = Double(f.rest[1]) else {
         fail("usage: winhelper \(args[1]) <x> <y> [--pid <n>] [--size <w>x<h>] [--settle <seconds>]")
     }
+    requireNullPlayer(at: CGPoint(x: x, y: y), verb: args[1])
     clickdiff(x, y, pid: f.pid, size: f.size, settle: settle, double: args[1] == "dblclickdiff")
 case "click":
     guard args.count == 4, let x = Double(args[2]), let y = Double(args[3]) else {
         FileHandle.standardError.write("usage: winhelper click <x> <y>\n".data(using: .utf8)!); exit(1)
     }
+    requireNullPlayer(at: CGPoint(x: x, y: y), verb: "click")
     click(x, y)
 case "dblclick":
     guard args.count == 4, let x = Double(args[2]), let y = Double(args[3]) else {
         FileHandle.standardError.write("usage: winhelper dblclick <x> <y>\n".data(using: .utf8)!); exit(1)
     }
+    requireNullPlayer(at: CGPoint(x: x, y: y), verb: "dblclick")
     dblclick(x, y)
 case "scroll":
     guard args.count >= 6, let x = Double(args[2]), let y = Double(args[3]),
@@ -371,11 +395,15 @@ case "scroll":
             "usage: winhelper scroll <x> <y> <count> <delta> [line|precise]\n".data(using: .utf8)!)
         exit(1)
     }
+    requireNullPlayer(at: CGPoint(x: x, y: y), verb: "scroll")
     scroll(x, y, count: count, delta: delta, precise: args.count > 6 && args[6] == "precise")
 case "move":
     move(pairs("move", args.dropFirst(2), minimum: 2))
 case "drag":
-    drag(pairs("drag", args.dropFirst(2), minimum: 4))
+    // Only the press is checked: a resize drag ends outside the window by design.
+    let points = pairs("drag", args.dropFirst(2), minimum: 4)
+    requireNullPlayer(at: points[0], verb: "drag")
+    drag(points)
 default:
     FileHandle.standardError.write(
         "usage: winhelper windows|screens|raise|park|capture|capture-all|click|dblclick|clickdiff|dblclickdiff|scroll|move|drag\n".data(using: .utf8)!)

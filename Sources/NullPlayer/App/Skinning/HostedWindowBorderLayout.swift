@@ -47,6 +47,11 @@ final class HostedWindowBorderLayout {
     private var observers: [NSObjectProtocol] = []
     /// Windows kept invisible until the skin can dress them (W250), by identity.
     private var holds: [ObjectIdentifier: Hold] = [:]
+    /// The skin `interiors` were built under — `WindowManager.hostedInteriorScope`. **A window's
+    /// interior belongs to the skin that produced it**: one carried across a skin switch is saved
+    /// under the next skin's key the first time the user touches the window, and from then on every
+    /// skin inherits every other's sizes. `nil` until the first settled pass.
+    private var scope: String?
 
     init() {
         // **Guarded like its siblings below, and for the same reason (W238).** This one is posted
@@ -104,6 +109,10 @@ final class HostedWindowBorderLayout {
                     guard let self, let window = note.object as? NSWindow else { return }
                     self.reveal(ObjectIdentifier(window), reason: "closed")
                     self.liveResize(window, began: false)
+                    // A closed window's interior dies with it: a `.wmz` one is persisted, and every
+                    // other mode resets to its default on show. Left here, a later window at the
+                    // same address would inherit it.
+                    self.forget(window)
                 }
             })
     }
@@ -123,6 +132,7 @@ final class HostedWindowBorderLayout {
     /// Grow (or give back) every hosted window so that its interior keeps the size it asked for and
     /// the current border is added around it.
     func apply() {
+        syncScope()
         let border = WindowManager.shared.hostedSurfaceBorderInsets
         Self.traceRun(border)
         for entry in WindowManager.shared.hostedBorderWindows {
@@ -180,11 +190,17 @@ final class HostedWindowBorderLayout {
     /// a border that is not in play yet. A `.wmz` skin switch renders these before it commits, and
     /// the commit's `apply()` then resizes each window to exactly the size that was rendered.
     func openTargets(border: SkinnedSurfaceChrome.Metrics) -> [CGSize] {
+        // **The incoming skin's interiors, not the outgoing one's.** Only a staged switch asks, and
+        // the commit's `apply()` reseeds every window from the same two places (`syncScope`), so the
+        // sizes rendered here are the sizes the windows land at.
         WindowManager.shared.hostedBorderWindows.compactMap { entry in
             guard let window = entry.window, window.isVisible,
                   window.frame.width > 0, window.frame.height > 0 else { return nil }
-            return Self.outerSize(interior: seededInterior(for: window, fallback: entry.fallback).size,
-                                  border: border)
+            let interior = Self.defaultsKey(forIdentifier: window.accessibilityIdentifier())
+                .flatMap(Self.storedInterior(forKey:))
+                ?? Self.defaultInterior(for: window, fallback: entry.fallback)
+                ?? seededInterior(for: window, fallback: entry.fallback).size
+            return Self.outerSize(interior: interior, border: border)
         }
     }
 
@@ -210,13 +226,11 @@ final class HostedWindowBorderLayout {
         guard let border else { return }
         // **A window that is already open is asked for the size it is at, not the size defaults
         // remembers it by.** The stored interior is a reading from some earlier session and it can
-        // be points away from the live one, which is exactly the case a skin *switch* is: the cache
-        // has just been emptied under a window that is on screen this instant. Measured on
-        // `ALXVortex` 2026-09-20 — the prewarm queued 550x887 from defaults while the library stood
-        // at 550x890, so the one window that needed a frame was the one window that did not get
-        // one: 49 draws on palette chrome, then 587 on a stretched copy of the ring built for 887,
-        // then its own render. The loop above has just grown these windows to this border, so their
-        // frames *are* the target.
+        // be points away from the live one. Measured on `ALXVortex` 2026-09-20 — the prewarm queued
+        // 550x887 from defaults while the library stood at 550x890, so the one window that needed a
+        // frame was the one window that did not get one. After a skin switch the loop above has
+        // reseeded every open window from the *new* skin's stored interior (or its default) and
+        // grown it to this border, so their frames are the new skin's targets.
         //
         // Include both the computed target and the actual frame; the provider deduplicates them.
         // W249 inferred a docking refusal from a trace printed BEFORE apply(size:to:). Live
@@ -233,7 +247,7 @@ final class HostedWindowBorderLayout {
         }
         // Then the windows that are not open, which is all defaults can speak for.
         sizes += Self.recentlyOpened().compactMap { identifier in
-            Self.storedInterior(forKey: "hostedInteriorSize2.\(identifier)")
+            Self.defaultsKey(forIdentifier: identifier).flatMap(Self.storedInterior(forKey:))
                 .map { Self.outerSize(interior: $0, border: border) }
         }
         guard !sizes.isEmpty else { return }
@@ -297,6 +311,7 @@ final class HostedWindowBorderLayout {
     /// `showWindow(nil)`**. Guarded on the window not yet being visible, so a second call on a
     /// window already up is a no-op rather than a resize the user did not ask for.
     func prepare(_ window: NSWindow) {
+        syncScope()
         guard !window.isVisible,
               window.frame.width > 0, window.frame.height > 0,
               let entry = WindowManager.shared.hostedBorderWindows.first(where: { $0.window === window })
@@ -520,14 +535,87 @@ final class HostedWindowBorderLayout {
         isApplying = false
     }
 
+    // MARK: - Which skin the interiors belong to
+
+    /// **A skin switch moves every hosted window to the new skin's size**, visible or not: its
+    /// stored interior under that skin, else its default. `apply()`'s loop then resizes each one to
+    /// interior + new border in the same pass that re-borders it, through `apply(size:to:)`, so the
+    /// resize is recorded in `lastApplied` and never saved as the user's.
+    ///
+    /// **Never reseeded from the frame.** `frame − drawnBorder` read against a just-emptied cache is
+    /// the W207 fixed point; the store and the default depend on no frame, so none can form.
+    ///
+    /// Flipped only once the new skin's borders are settled: a `.wmz` switch is staged, and the old
+    /// skin answers with its own border until every window flips — flipping earlier resizes once
+    /// against the old border and again when the new one lands.
+    private func syncScope() {
+        guard WindowManager.shared.hostedSurfaceBordersAreSettled,
+              let current = WindowManager.shared.hostedInteriorScope, current != scope else { return }
+        let previous = scope
+        scope = current
+        // The first settled pass is a window's first sight, which `seededInterior` handles.
+        guard previous != nil else { return }
+        for entry in WindowManager.shared.hostedBorderWindows {
+            guard let window = entry.window else { continue }
+            let key = ObjectIdentifier(window)
+            lastApplied[key] = nil
+            guard let size = restored(for: window)
+                    ?? Self.defaultInterior(for: window, fallback: entry.fallback) else {
+                interiors[key] = nil
+                continue
+            }
+            let border = SkinnedSurfaceChrome.paletteMetrics(entry.fallback)
+            let minimum = interiors[key]?.minimum ?? Self.interiorSize(outer: window.minSize, border: border)
+            interiors[key] = Interior(size: size, minimum: minimum)
+        }
+    }
+
+    /// The interior of a window's default size: the size it opens at with nothing saved, less the
+    /// chrome it draws for itself there.
+    private static func defaultInterior(for window: NSWindow,
+                                        fallback: SkinnedSurfaceChrome.Metrics) -> CGSize? {
+        WindowManager.shared.nativeWindowDefaultSize(for: window).map {
+            interiorSize(outer: $0, border: SkinnedSurfaceChrome.paletteMetrics(fallback))
+        }
+    }
+
+    /// Drop what is known about one window.
+    private func forget(_ window: NSWindow) {
+        let key = ObjectIdentifier(window)
+        interiors[key] = nil
+        lastApplied[key] = nil
+    }
+
+    /// Drop what is known about every window — a mode switch releases them all, and a new window
+    /// at a reused address must not match a stale entry.
+    func forgetAllWindows() {
+        interiors.removeAll()
+        lastApplied.removeAll()
+        scope = nil
+    }
+
     // MARK: - What the interior is
 
     /// The user just resized a window: whatever is inside the border now is the interior they chose,
     /// and it is what the next skin's border gets laid around.
     private func windowDidResize(_ window: NSWindow?) {
+        // **A hidden window is never resized by the user.** A show path resets a window to its
+        // default before it is ordered front, and a donor-grown window reset that way read back as
+        // `default − donorBorder` — anemone's 166x145 of border left a 344x145 analyser a 178x0
+        // interior, saved under the skin (measured 2026-09-27).
+        //
+        // **Forgotten, not ignored.** Ignoring it kept the interior the window had before it was
+        // hidden, and `prepare` then grew the reset window straight back to it: a Classic analyser
+        // stretched, toggled off and on reopened stretched rather than at its default (measured
+        // 2026-09-27). Forgotten, `seededInterior` reads it afresh on show — the frame the show path
+        // set where the window wears its own chrome, the stored size or the default under a donor.
         guard !isApplying, let window,
               let entry = WindowManager.shared.hostedBorderWindows.first(where: { $0.window === window })
         else { return }
+        guard window.isVisible else {
+            forget(window)
+            return
+        }
         let key = ObjectIdentifier(window)
         if let applied = lastApplied[key],
            abs(applied.width - window.frame.width) <= 2, abs(applied.height - window.frame.height) <= 2 {
@@ -579,7 +667,14 @@ final class HostedWindowBorderLayout {
         if let known = interiors[key] { return known }
         let border = Self.drawnBorder(of: window, fallback: fallback)
         let minimum = Self.interiorSize(outer: window.minSize, border: border)
-        let size = restored(for: window) ?? Self.interiorSize(outer: window.frame.size, border: border)
+        // **Under a donor, a window with nothing saved for this skin opens at its default** — not
+        // at `frame − drawnBorder`, which is the W207 fixed point whenever the skin has a frame
+        // rendered at the size the window happens to be. The frame is read only where the window
+        // wears its own chrome, and there it is the size the show path just set.
+        let size = restored(for: window)
+            ?? (WindowManager.shared.hostedSurfaceBorderInsets != nil
+                ? Self.defaultInterior(for: window, fallback: fallback) : nil)
+            ?? Self.interiorSize(outer: window.frame.size, border: border)
         let interior = Interior(size: size, minimum: minimum)
         interiors[key] = interior
         return interior
@@ -613,28 +708,32 @@ final class HostedWindowBorderLayout {
 
     // MARK: - Across launches
 
-    /// Keyed by the accessibility identifier every one of these windows already sets, so the stored
-    /// interior follows the window rather than a controller instance.
-    private static func defaultsKey(for window: NSWindow) -> String? {
-        let id = window.accessibilityIdentifier()
-        guard !id.isEmpty else { return nil }
-        // Versioned: the unsuffixed key holds interiors written before the rule above existed, and
-        // those are the poisoned ones. A new name discards them without a migration.
-        return "hostedInteriorSize2.\(id)"
+    /// **Keyed by the `.wmz` skin that lends the border, then by window** — the accessibility
+    /// identifier every one of these windows already sets, so the stored interior follows the window
+    /// rather than a controller instance. The one place the key is built: the prewarm asks for the
+    /// same keys the rule writes.
+    ///
+    /// **Read and written only while a `.wmz` skin lends a border** (`persist`, `restored`).
+    /// Classic, Original and `.wal` measure against their own chrome and reset to their default on
+    /// show; a stored interior read there is another skin's size — the window census measured a
+    /// classic analyser at 762x167 from one — and one written there is the same leak the other way.
+    ///
+    /// Versioned: `…2` was one key for every skin and every mode, and its values are exactly that
+    /// leak. A new name discards them without a migration, as `…2` did the unsuffixed key.
+    private static func defaultsKey(forIdentifier id: String) -> String? {
+        guard !id.isEmpty, let skin = WindowManager.shared.hostedInteriorSkinKey else { return nil }
+        return "hostedInteriorSize3.\(skin).\(id)"
     }
 
     private func persist(_ size: CGSize, for window: NSWindow) {
-        guard let key = Self.defaultsKey(for: window) else { return }
+        guard WindowManager.shared.hostedSurfaceBorderInsets != nil,
+              !WindowManager.shared.hostedSurfaceIsStagingSwitch,
+              let key = Self.defaultsKey(forIdentifier: window.accessibilityIdentifier()) else { return }
         UserDefaults.standard.set(["w": size.width, "h": size.height], forKey: key)
     }
 
     private func restored(for window: NSWindow) -> CGSize? {
-        guard let key = Self.defaultsKey(for: window),
-              let stored = UserDefaults.standard.dictionary(forKey: key),
-              let width = (stored["w"] as? Double).map({ CGFloat($0) }),
-              let height = (stored["h"] as? Double).map({ CGFloat($0) }),
-              width > 0, height > 0
-        else { return nil }
-        return CGSize(width: width, height: height)
+        guard WindowManager.shared.hostedSurfaceBorderInsets != nil else { return nil }
+        return Self.defaultsKey(forIdentifier: window.accessibilityIdentifier()).flatMap(Self.storedInterior(forKey:))
     }
 }
