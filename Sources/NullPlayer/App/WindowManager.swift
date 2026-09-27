@@ -1407,13 +1407,18 @@ class WindowManager {
         set { UserDefaults.standard.set(newValue, forKey: "matchMainWindowWidth") }
     }
 
-    /// **The width every NullPlayer-native window opens at when nothing is saved for it**: the
-    /// classic width, 275 skin pixels at the current UI size, whatever skin is loaded. Not the main
-    /// window's — a `.wal` or `.wmz` player is whatever width its skin says, and the analyser opened
-    /// 500, 596 and 750 wide beside three of them. Classic's main window is always this width, so
-    /// the two readings agree there.
+    /// **The width every NullPlayer-native window opens at when nothing is saved for it.** Beside a
+    /// `.wal` or `.wmz` player, the classic width — 275 skin pixels at the current UI size. Not the
+    /// main window's: that player is whatever width its skin says, and the analyser opened 500, 596
+    /// and 750 wide beside three of them.
+    ///
+    /// **Classic and Original keep the main window's width**, as they always have: Classic's player
+    /// is the classic width anyway, and an Original skin's `window.scale` sizes its player and its
+    /// stack together — a fixed width there left the stack misaligned with the player and the EQ.
     var nativeWindowDefaultWidth: CGFloat {
-        if matchesMainWindowWidth, let width = mainWindowController?.window?.frame.width, width > 0 {
+        let family = uiMode.controllerFamily
+        if matchesMainWindowWidth || family == .classic || family == .nullPlayerModern,
+           let width = mainWindowController?.window?.frame.width, width > 0 {
             return width
         }
         return Skin.baseMainSize.width * Skin.scaleFactor * classicScaleMultiplier

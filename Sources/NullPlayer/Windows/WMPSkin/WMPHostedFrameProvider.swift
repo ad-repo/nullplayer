@@ -126,7 +126,12 @@ final class WMPHostedFrameProvider {
         }
     }
 
-    private var live: Slot?
+    private var live: Slot? {
+        didSet { if live !== oldValue { liveGeneration &+= 1 } }
+    }
+    /// Counts every change of `live`. An object's address is not an identity: a slot freed by one
+    /// switch can be reallocated at the same address by the next.
+    private var liveGeneration = 0
     private var staged: Staged?
 
     /// How many hosted windows are being dragged (step A). While positive, a miss is coalesced into
@@ -161,7 +166,7 @@ final class WMPHostedFrameProvider {
 
     /// The live skin's identity: changes exactly when a switch commits, which is when the border
     /// every hosted window wears changes. Nil while no skin lends a frame.
-    var liveSkinToken: ObjectIdentifier? { live.map(ObjectIdentifier.init) }
+    var liveSkinToken: Int? { live == nil ? nil : liveGeneration }
 
     /// Whether a skin is on its way in while the old one goes on answering.
     var isStagingSwitch: Bool { staged != nil }

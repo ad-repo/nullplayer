@@ -603,9 +603,19 @@ final class HostedWindowBorderLayout {
         // default before it is ordered front, and a donor-grown window reset that way read back as
         // `default − donorBorder` — anemone's 166x145 of border left a 344x145 analyser a 178x0
         // interior, saved under the skin (measured 2026-09-27).
-        guard !isApplying, let window, window.isVisible,
+        //
+        // **Forgotten, not ignored.** Ignoring it kept the interior the window had before it was
+        // hidden, and `prepare` then grew the reset window straight back to it: a Classic analyser
+        // stretched, toggled off and on reopened stretched rather than at its default (measured
+        // 2026-09-27). Forgotten, `seededInterior` reads it afresh on show — the frame the show path
+        // set where the window wears its own chrome, the stored size or the default under a donor.
+        guard !isApplying, let window,
               let entry = WindowManager.shared.hostedBorderWindows.first(where: { $0.window === window })
         else { return }
+        guard window.isVisible else {
+            forget(window)
+            return
+        }
         let key = ObjectIdentifier(window)
         if let applied = lastApplied[key],
            abs(applied.width - window.frame.width) <= 2, abs(applied.height - window.frame.height) <= 2 {

@@ -231,11 +231,15 @@ class ContextMenuBuilder {
         menu.addItem(alwaysOnTop)
 
         // Where NullPlayer's own windows open: the classic width, or the width of whatever player
-        // the skin draws. A default only — a size saved for the skin still wins.
-        let matchWidth = NSMenuItem(title: "Match Main Window Width", action: #selector(MenuActions.toggleMatchMainWindowWidth), keyEquivalent: "")
-        matchWidth.target = MenuActions.shared
-        matchWidth.state = wm.matchesMainWindowWidth ? .on : .off
-        menu.addItem(matchWidth)
+        // the skin draws. A default only — a size saved for the skin still wins. `.wal` and `.wmz`
+        // only: Classic and Original always match (`nativeWindowDefaultWidth`).
+        let family = wm.uiMode.controllerFamily
+        if family == .winampModern || family == .wmp {
+            let matchWidth = NSMenuItem(title: "Match Main Window Width", action: #selector(MenuActions.toggleMatchMainWindowWidth), keyEquivalent: "")
+            matchWidth.target = MenuActions.shared
+            matchWidth.state = wm.matchesMainWindowWidth ? .on : .off
+            menu.addItem(matchWidth)
+        }
 
         if wm.isModernUIEnabled {
             let hideTitleBars = NSMenuItem(title: "Hide Title Bars", action: #selector(MenuActions.toggleHideTitleBars), keyEquivalent: "")

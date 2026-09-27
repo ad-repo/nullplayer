@@ -229,7 +229,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// Which skin's border the hosted windows are wearing: the live frame provider's skin, which a
     /// staged switch changes only on commit. A skin that lends no frame is told apart by name.
     var hostedInteriorScope: String {
-        if let token = hostedFrames.liveSkinToken { return "wmz:\(token.hashValue)" }
+        if let token = hostedFrames.liveSkinToken { return "wmz:\(token)" }
         return "wmz-unframed:\(hostedInteriorSkinKey ?? "")"
     }
 
