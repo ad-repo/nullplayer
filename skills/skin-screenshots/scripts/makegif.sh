@@ -25,15 +25,31 @@ else
 fi
 for feat in ${FEATURES[@]+"${FEATURES[@]}"}; do
   ff="${feat%:*}"; times="${feat##*:}"
+  [[ "$feat" == *:* && "$times" =~ ^[0-9]+$ ]] && (( 10#$times > 0 )) ||
+    { echo "invalid --feature $feat (want FILE:N, N a positive integer)" >&2; exit 2; }
+  times=$(( 10#$times ))
   [ -f "$ff" ] || { echo "feature frame not found: $ff"; exit 1; }
+  # A path to a frame in $IN names the same entry as its bare name in the list.
+  [ "$(cd "$(dirname "$ff")" && pwd -P)" = "$(pwd -P)" ] && ff="$(basename "$ff")"
+  # Slices can be empty when there are fewer frames than copies, so insertion points are counted,
+  # never overwritten, and every one of the N copies is printed.
   list=$(echo "$list" | grep -vxF "$ff" | awk -v f="$ff" -v k="$times" -v seed="$RANDOM" '
-    { a[NR]=$0 } END { srand(seed)
-      for (j=0; j<k; j++) { lo=int(NR*j/k)+1; hi=int(NR*(j+1)/k); at[lo+int(rand()*(hi-lo+1))]=1 }
-      for (r=1; r<=NR; r++) { if (r in at) print f; print a[r] } }')
+    NF { a[++m]=$0 } END { srand(seed)
+      if (m == 0) { for (j=0; j<k; j++) print f; exit }
+      for (j=0; j<k; j++) { lo=int(m*j/k)+1; hi=int(m*(j+1)/k); if (hi < lo) hi=lo
+        at[lo+int(rand()*(hi-lo+1))]++ }
+      for (r=1; r<=m; r++) { for (c=0; c<at[r]; c++) print f; print a[r] } }')
 done
 n=$(echo "$list" | grep -c .)
 [ "$n" -eq 0 ] && { echo "no frames in $IN"; exit 1; }
-if [ -n "$DELAY" ]; then total=$(( DELAY * n )); else total=$(( SEC * 100 )); fi
+# Digits only, and at most 100000cs (1000s) a frame, so the arithmetic is base 10 and cannot wrap.
+if [ -n "$DELAY" ]; then
+  [[ "$DELAY" =~ ^[0-9]+$ ]] && (( ${#DELAY} <= 6 && 10#$DELAY <= 100000 )) ||
+    { echo "invalid --delay $DELAY (want centiseconds, 0-100000)" >&2; exit 2; }
+  total=$(( 10#$DELAY * n ))
+else
+  total=$(( SEC * 100 ))
+fi
 base=$(( total / n )); rem=$(( total - base * n ))
 args=(); i=0
 while IFS= read -r f; do

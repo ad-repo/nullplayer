@@ -17,8 +17,9 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   around saved interiors using donor reference insets.
 - **Sonos Rooms is one controller for all four families, so its entry is gated on
   `isRunningWMPUI`** — every other participant has a family-specific controller and is listed
-  unconditionally. Its chrome (`SonosWindowChrome`) branches on `isRunningWMPUI` ahead of the `.wal`
-  palette, so Classic, Original and `.wal` run the code they ran before. Reported 2026-09-23 as the
+  unconditionally. Its chrome (`SonosWindowChrome`) branches on `SkinnedSurfaceChrome.hidesPaletteTitleBar`
+  ahead of the `.wal` palette: `.wmz`, and since 2026-09-26 `.wal` once its palette has loaded, take
+  the titleless gloss path; Classic and Original never reach it. Reported 2026-09-23 as the
   window "wearing the classic skin": it asked only for `winampModernSurfaceStyle`, which is nil in
   `.wmz`, and fell through to Classic sprites. **Palette alone was rejected the same day** as
   "fallback chrome" — a window inside this rule takes the borrowed frame, the growth entry and the
@@ -31,7 +32,7 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   (2026-09-25).** The reporter's words: no title bar, *"similar to original no titlebars"*, no
   setting, keep the top-right close, and — because *"the skins all have shine to them"* — glossy, in
   *"the theme colors"*. `SkinnedSurfaceChrome.hidesPaletteTitleBar` is the gate (the WMP family,
-  never a flag); `paletteMetrics` turns every fallback into a uniform `glossBorder` (6pt), and
+  and since 2026-09-26 `.wal` once its palette has loaded — never a flag); `paletteMetrics` turns every fallback into a uniform `glossBorder` (6pt), and
   layout, drawing and `HostedWindowBorderLayout` all read it so the three agree.
   `drawGlossFrame` is the one painter: a rounded rim graded light-to-dark from the palette's
   `barBackground`, a white sheen and specular edge, the outline in `style.border` unaltered, an inset
@@ -40,7 +41,8 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   un-drawn 40×26 corner hit area a borrowed frame gets (`closeButtonRect`), so views whose content
   is a subview that eats clicks (Audio Analyzer's SwiftUI panes, Sonos's status line) override
   `hitTest` to claim it; the library moves its server-bar right-edge items in by `cornerCloseInset`.
-  The EQ is a fixed 275x116 layout, so its old band stays as ground inside a thinner rim.
+  The EQ is a fixed 275x116 layout, so its old band stays as ground inside a thinner rim, clipped
+  to `glossOutline` so it does not show as square corners outside the rounded rim.
   `hostedGroundRect` returns the gloss hole, not `bounds`: PeppyMeter (and Cava, Flow) paint their
   ground through it, and a full-window fill showed as square black corners outside the rounded rim. `.wal`
   shares every one of these painters and, since 2026-09-26, the gate too: it is true in `.wal` once

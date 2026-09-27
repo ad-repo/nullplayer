@@ -560,8 +560,10 @@ session — resolves through this one catalog in this one order:
    skin's own `<Wasabi:StandardFrame:…>` around a `<component>` of that kind. Only in the
    separate-window arrangement, and only when a frame qualifies (see below).
 4. **Classic fallback** — NullPlayer's own window, **with a diagnostic naming the prerequisite that
-   failed**. Geometry is unchanged from the classic windows — same title-bar height, borders, and
-   button boxes — so only the pixels differ.
+   failed**. Until the skin's palette loads, geometry is unchanged from the classic windows — same
+   title-bar height, borders, and button boxes — so only the pixels differ. Once it has loaded,
+   `SkinnedSurfaceChrome.hidesPaletteTitleBar` is true and the window wears the titleless 6pt gloss
+   rim instead (see *NullPlayer-owned hosted windows are lazy*).
 
 Which skin lands on which step is measured per skin: see the routing table in
 [compatibility.md](../compatibility.md#hosted-components).
@@ -712,8 +714,11 @@ every skin-owned step has declined (B55, above).
   `WinampModernMainWindowController.skinOwnedWindows` (auxiliary containers, then materialized hosted
   windows in `WinampModernHostedWindowID` order) in `.wal` as it does WMP's panels in `.wmz`, and the
   raise uses `orderFrontRegardless` in both. Both `.wal` `windowDidBecomeKey`s (the controller's, for
-  the player and its containers, and the hosted materializer's) defer the raise one turn and then
-  restack glued frames, since raising everything can bury a frame under its client. Classic,
+  the player and its containers, and the hosted materializer's) defer the raise one turn. Raising
+  everything can bury a glued frame under its client, so `bringAllWindowsToFront` itself calls
+  `restackGluedWindows()` in `.wal` — NullPlayer's own windows (EQ, playlist, library, Sonos…) raise
+  through it synchronously from their own `windowDidBecomeKey`, and would otherwise leave a frame
+  buried. Classic,
   Original and NullPlayer Modern raise the same list as before.
 - Window size is per registry entry and then clamped by the selected skin frame's hard resize limits.
   Center-stack sizing is a preference inside those bounds, not a replacement geometry; PeppyMeter
@@ -1174,8 +1179,11 @@ not looking at.
   remainder. **This is load-bearing**: the views lay themselves out as
   `text.count * charWidth * scale` in ~77 places in the browser alone, so a font that measured
   differently would leave every one of those boxes wrong. `drawText` counter-flips about the cell.
-- Chrome is redrawn at the **same metrics** as the classic version — same title-bar height, same 12px
-  borders, same button boxes the hit tests already own — so only pixels change, never geometry.
+- Embedded surfaces redraw their chrome at the **same metrics** as the classic version — same
+  title-bar height, same 12px borders, same button boxes the hit tests already own — so only pixels
+  change, never geometry. Standalone fallback windows keep those metrics only until the palette
+  loads; after that `SkinnedSurfaceChrome.hidesPaletteTitleBar` gives them the titleless 6pt gloss
+  rim (`glossBorder`), and layout, drawing and hit testing all read the same metrics.
 - Reaching it: embedded surfaces are pushed a style through the existing
   `WinampModernLibrarySurface.applyPalette` seam; fallback windows read
   `WindowManager.winampModernSurfaceStyle`, which is **nil in every other mode** (and nil until a

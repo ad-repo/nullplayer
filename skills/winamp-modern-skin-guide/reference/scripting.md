@@ -862,7 +862,7 @@ pair (leader = the window read, follower = the window written) as `windowsGluedO
 `WinampModernMainWindowController.restackGluedWindows` uses it to re-raise the follower — otherwise the
 client buries its own border and title, and what is left on screen is a bare client box with the
 frame's right edge and one resizer grip poking out past it. It runs on every window open, on every key
-change (after the deferred raise-all, which can bury a frame — `components.md`) and once after launch settles (keying it to `windowDidBecomeKey` alone missed the case that
+change, after every `.wal` raise-all (`WindowManager.bringAllWindowsToFront` calls it, since raising can bury a frame — `components.md`) and once after launch settles (keying it to `windowDidBecomeKey` alone missed the case that
 matters: at launch the frame is shown *before* the client). The re-raise is one runloop turn late on
 purpose — a `windowDidBecomeKey` notification is delivered *during* the ordering that raised the
 window, and an `order(.above:)` issued inside it is undone by the rest of that pass.
