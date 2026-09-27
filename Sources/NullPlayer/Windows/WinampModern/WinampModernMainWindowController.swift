@@ -2644,7 +2644,21 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// not reach, and the title strip went black. The pairing is the skin's, not ours, so it comes
     /// from the runtime, which learns it from the `frame.resize(client.getLeft(), …)` idiom itself.
     func windowDidBecomeKey(_ notification: Notification) {
-        restackGluedWindows()
+        // Deferred a turn, like `.wmz` (W273): raised while a click is still activating the app, the
+        // window server takes only some of the reorders. The glued frames are restacked after it,
+        // since raising every window can bury one under its client.
+        let keyWindow = notification.object as? NSWindow
+        DispatchQueue.main.async { [weak self, weak keyWindow] in
+            guard let self, let keyWindow, keyWindow.isKeyWindow else { return }
+            WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: keyWindow)
+            restackGluedWindows()
+        }
+    }
+
+    /// The skin's windows that are not the player: its containers and the hosted windows it has
+    /// materialized, bottom first. `WindowManager.bringAllWindowsToFront` raises them with the app's.
+    var skinOwnedWindows: [NSWindow] {
+        auxiliaryContainers.map(\.window) + (hostedWindowMaterializer?.materializedWindows.map(\.window) ?? [])
     }
 
     /// Put every script-glued frame back on top of the window it is drawn on.

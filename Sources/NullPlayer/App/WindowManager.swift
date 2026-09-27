@@ -5521,8 +5521,8 @@ class WindowManager {
         // raised the equalizer above the playlist, and the video window above the visualizer and the
         // library, in Classic.
         //
-        // A `.wal` skin's own windows are not in this list because they are not stacked by it: the
-        // hosted graph orders them itself.
+        // A `.wmz` or `.wal` skin's own windows are not controllers, so they are not in this list;
+        // `raiseOrder` appends them in those two modes only.
         let appWindows: [NSWindow?] = [
             mainWindowController?.window,
             equalizerWindowController?.window,
@@ -5539,19 +5539,27 @@ class WindowManager {
             plexBrowserWindowController?.window
         ]
 
-        // `.wmz`-only: ordered front regardless of activation. A click from another app starts this
-        // raise while the activation is still settling, and a plain `orderFront` then left some of
-        // a skin's panels behind the other app's window (W273).
-        let raisesWMPPanels = uiMode.controllerFamily == .wmp
-        let windows = Self.raiseOrder(appWindows, family: uiMode.controllerFamily, wmpPanels: {
-            (self.mainWindowController as? WMPMainWindowController)?.materializedAuxiliaryWindows ?? []
+        // `.wmz`/`.wal`-only: ordered front regardless of activation. A click from another app starts
+        // this raise while the activation is still settling, and a plain `orderFront` then left some
+        // of a skin's panels behind the other app's window (W273).
+        let family = uiMode.controllerFamily
+        let raisesSkinWindows = family == .wmp || family == .winampModern
+        let windows = Self.raiseOrder(appWindows, family: family, skinWindows: {
+            switch family {
+            case .wmp:
+                return (self.mainWindowController as? WMPMainWindowController)?.materializedAuxiliaryWindows ?? []
+            case .winampModern:
+                return (self.mainWindowController as? WinampModernMainWindowController)?.skinOwnedWindows ?? []
+            default:
+                return []
+            }
         })
 
         let topWindow = preferredTopWindow ?? NSApp.keyWindow
 
         for window in windows {
             if let window = window, window.isVisible, window !== topWindow {
-                if raisesWMPPanels {
+                if raisesSkinWindows {
                     window.orderFrontRegardless()
                 } else {
                     window.orderFront(nil)
@@ -5565,12 +5573,13 @@ class WindowManager {
     }
     
     /// The windows `bringAllWindowsToFront` orders front, bottom first. A `.wmz` skin's
-    /// `theme.openView` panels are windows of their own, so in that mode they follow the app's
-    /// windows, in the order the skin opened them; every other mode raises `appWindows` unchanged.
+    /// `theme.openView` panels and a `.wal` skin's container and hosted windows are windows of their
+    /// own, so in those two modes they follow the app's windows; every other mode raises
+    /// `appWindows` unchanged.
     static func raiseOrder(_ appWindows: [NSWindow?], family: PlayerUIControllerFamily,
-                           wmpPanels: () -> [NSWindow]) -> [NSWindow?] {
-        guard family == .wmp else { return appWindows }
-        return appWindows + wmpPanels().map { $0 }
+                           skinWindows: () -> [NSWindow]) -> [NSWindow?] {
+        guard family == .wmp || family == .winampModern else { return appWindows }
+        return appWindows + skinWindows().map { $0 }
     }
 
     /// Find visible center-stack windows that are docked below the main window
