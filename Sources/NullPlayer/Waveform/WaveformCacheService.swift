@@ -31,9 +31,14 @@ actor WaveformCacheService {
     private let decoder = PropertyListDecoder()
     private let cacheRootURL: URL?
     private var inFlight: [String: Task<WaveformSnapshot, Never>] = [:]
+    /// Replaces the decode for tests, so they can hold a generation open and observe how loads share
+    /// or cancel it. Takes the source URL; production leaves it nil.
+    private let generatorOverride: (@Sendable (URL) async throws -> WaveformSnapshot)?
 
-    init(cacheDirectoryURL: URL? = nil) {
+    init(cacheDirectoryURL: URL? = nil,
+         generatorOverride: (@Sendable (URL) async throws -> WaveformSnapshot)? = nil) {
         self.cacheRootURL = cacheDirectoryURL
+        self.generatorOverride = generatorOverride
         encoder.outputFormat = .binary
     }
 
@@ -48,6 +53,13 @@ actor WaveformCacheService {
         do {
             let descriptor = try cacheDescriptor(for: track)
             let cacheURL = try cacheURL(for: descriptor.cacheKey)
+
+            // Only one track is shown at a time, so a load for a different key means the user moved
+            // on: stop the old generation rather than let every skipped track finish its decode — or,
+            // for a Plex stream, its full download.
+            for (key, task) in inFlight where key != descriptor.cacheKey {
+                task.cancel()
+            }
 
             if forceRegeneration {
                 try? fileManager.removeItem(at: cacheURL)
@@ -71,14 +83,17 @@ actor WaveformCacheService {
             // start its own decode — or, for a Plex stream, its own full download — while cancelling
             // the last. A second caller now waits on the one already running, and the running one is
             // unstructured so a caller's cancellation cannot throw away work that is nearly done: it
-            // finishes, is cached, and the next load is a cache hit.
-            if let running = inFlight[descriptor.cacheKey] {
+            // finishes, is cached, and the next load is a cache hit. It is cancelled only when a
+            // different track is loaded (above). A cancelled task still winding down is not joined.
+            if let running = inFlight[descriptor.cacheKey], !running.isCancelled {
                 return await running.value
             }
             let task = Task { await self.generateAndPersist(descriptor: descriptor, cacheURL: cacheURL) }
             inFlight[descriptor.cacheKey] = task
             let result = await task.value
-            inFlight[descriptor.cacheKey] = nil
+            if inFlight[descriptor.cacheKey] == task {
+                inFlight[descriptor.cacheKey] = nil
+            }
             return result
         } catch is CancellationError {
             return .failed("Waveform generation cancelled")
@@ -219,6 +234,12 @@ actor WaveformCacheService {
                   CFAbsoluteTimeGetCurrent() - started)
             return generated
         } catch {
+            if Task.isCancelled {
+                NSLog("WaveformCacheService: Waveform generation cancelled for %@ after %.2fs",
+                      descriptor.sourcePath.redactingSensitiveURLQueryItems,
+                      CFAbsoluteTimeGetCurrent() - started)
+                return .failed("Waveform generation cancelled")
+            }
             NSLog("WaveformCacheService: Waveform generation failed for %@ after %.2fs: %@",
                   descriptor.sourcePath.redactingSensitiveURLQueryItems,
                   CFAbsoluteTimeGetCurrent() - started,
@@ -228,13 +249,19 @@ actor WaveformCacheService {
     }
 
     private func generateSnapshot(with descriptor: CacheDescriptor) async throws -> WaveformSnapshot {
+        if let generatorOverride {
+            return try await generatorOverride(descriptor.sourceURL)
+        }
         if descriptor.sourceURL.isFileURL {
             return try await generateLocalSnapshot(with: descriptor)
         }
         return try await generateServiceSnapshot(with: descriptor)
     }
 
-    private func generateLocalSnapshot(with descriptor: CacheDescriptor) async throws -> WaveformSnapshot {
+    /// `nonisolated` because the read loop never suspends: on the actor it would hold it for the whole
+    /// decode, so the next track's `loadSnapshot` could neither return a cache hit nor cancel this one
+    /// until it finished. The decode reads only its arguments.
+    private nonisolated func generateLocalSnapshot(with descriptor: CacheDescriptor) async throws -> WaveformSnapshot {
         try Task.checkCancellation()
 
         let audioFile: AVAudioFile
@@ -335,7 +362,7 @@ actor WaveformCacheService {
         return try await generateServiceSnapshotViaDownload(with: descriptor)
     }
 
-    private func generateServiceSnapshotViaAssetReader(with descriptor: CacheDescriptor) async throws -> WaveformSnapshot {
+    private nonisolated func generateServiceSnapshotViaAssetReader(with descriptor: CacheDescriptor) async throws -> WaveformSnapshot {
         try Task.checkCancellation()
 
         let duration = descriptor.durationHint ?? 0
@@ -513,7 +540,7 @@ actor WaveformCacheService {
         }
     }
 
-    private func loadAssetValues(for asset: AVAsset, keys: [String]) async throws {
+    private nonisolated func loadAssetValues(for asset: AVAsset, keys: [String]) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             asset.loadValuesAsynchronously(forKeys: keys) {
                 for key in keys {

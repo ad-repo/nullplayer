@@ -369,7 +369,10 @@ The waveform window shares the audio engine but intentionally does not share the
   reloads on track change, on show and on every rebuild (a skin switch rebuilds it), and each reload
   used to start its own decode — for a Plex stream its own full download — while cancelling the last.
   The shared task is unstructured, so a caller's cancellation does not discard nearly-finished work;
-  it completes and is cached.
+  it completes and is cached. What cancels it is a `loadSnapshot` for a *different* key (the user
+  moved on), so skipping through Plex tracks does not leave a full download running per track. The
+  decode loops (`generateLocalSnapshot`, the asset-reader path) are `nonisolated`: they never
+  suspend, and on the actor they would block that cancel, and every cache hit, until they finished.
 - Every generation logs `WaveformCacheService: Generated waveform for <source> in N.NNs` (or
   `…generation failed for <source> after N.NNs: <error>`) — grep that first when a waveform is slow.
 - Persists snapshots under `~/Library/Application Support/NullPlayer/WaveformCache/`
