@@ -431,6 +431,11 @@ enum WasabiSurfaceSynthesizer {
                                + "that instantiates its content")
                 continue
             }
+            guard !paintsOnlyTooltipArt(definition, definitions: definitions) else {
+                reasons.append("\(flavour.rawValue): '\(flavour.groupIdentifier)' is painted only with "
+                               + "tooltip artwork")
+                continue
+            }
             let frame = Frame(groupIdentifier: flavour.groupIdentifier,
                               xuiTag: flavour.xuiTag,
                               hasArtwork: hasArtwork(definition, definitions: definitions, depth: 0),
@@ -451,7 +456,8 @@ enum WasabiSurfaceSynthesizer {
                 $0.xuiTag.caseInsensitiveCompare(exemplar.tag) == .orderedSame
             }) else { return nil }
             let candidate = candidates[index]
-            guard let definition = definitions[fold(candidate.groupIdentifier)] else { return nil }
+            guard let definition = definitions[fold(candidate.groupIdentifier)],
+                  !paintsOnlyTooltipArt(definition, definitions: definitions) else { return nil }
             return (Int(borderWeight(exemplar)), exemplar.rank, index,
                     Frame(groupIdentifier: candidate.groupIdentifier,
                           xuiTag: candidate.xuiTag,
@@ -842,6 +848,48 @@ enum WasabiSurfaceSynthesizer {
         guard let parent = definition.attribute("inherit_group"),
               let inherited = definitions[fold(parent)] else { return false }
         return hasArtwork(inherited, definitions: definitions, depth: depth + 1)
+    }
+
+    /// A frame whose every bitmap is `wasabi.tooltip.*` is not the skin's window chrome: tooltip art
+    /// is the one thing skins never style. ClassicPro engine `one`'s `wasabi.frame.layout` is the
+    /// measured case — a grid of tooltip bitmaps, so every cPro skin on that engine drew our windows
+    /// as a cream box unrelated to its player. Rejecting it leaves those windows to NullPlayer's own
+    /// fallback chrome. Engine `two` paints `cpro2.genframe.*` and is kept.
+    private static func paintsOnlyTooltipArt(_ definition: WalXMLNode,
+                                             definitions: [String: WalXMLNode]) -> Bool {
+        var art: Set<String> = []
+        var visited: Set<String> = []
+        collectArt(definition, definitions: definitions, depth: 0, art: &art, visited: &visited)
+        return !art.isEmpty && art.allSatisfy { $0.hasPrefix("wasabi.tooltip.") }
+    }
+
+    private static let artAttributes = ["image", "background", "downimage", "hoverimage",
+                                        "topleft", "top", "topright", "left", "middle", "right",
+                                        "bottomleft", "bottom", "bottomright"]
+
+    /// Every bitmap id the frame paints, through `inherit_group` and through a child `<group id=…>`
+    /// that names another groupdef — the frame's chrome usually lives in the latter.
+    private static func collectArt(_ node: WalXMLNode, definitions: [String: WalXMLNode], depth: Int,
+                                   art: inout Set<String>, visited: inout Set<String>) {
+        guard depth <= maximumInheritanceDepth else { return }
+        for name in artAttributes {
+            if let value = node.attribute(name)?.trimmingCharacters(in: .whitespaces), !value.isEmpty {
+                art.insert(fold(value))
+            }
+        }
+        var referenced: [String] = []
+        if let parent = node.attribute("inherit_group") { referenced.append(parent) }
+        if node.name.caseInsensitiveCompare("group") == .orderedSame, let id = node.attribute("id") {
+            referenced.append(id)
+        }
+        for id in referenced {
+            let key = fold(id)
+            guard let target = definitions[key], target !== node, visited.insert(key).inserted else { continue }
+            collectArt(target, definitions: definitions, depth: depth + 1, art: &art, visited: &visited)
+        }
+        for child in node.children {
+            collectArt(child, definitions: definitions, depth: depth + 1, art: &art, visited: &visited)
+        }
     }
 
     // MARK: - Node construction
