@@ -3,6 +3,14 @@
 --   skin <pid> <submenu> <item>   select a skin (does NOT switch system - use mode first)
 --   list <pid> <submenu>          the submenu's item names
 --   closeaux <pid>                toggle off every checked window except Main Window
+--   windowitems <pid>             one line per window-toggle item: index|name|enabled|checked
+--   toggle <pid> <index> <name>   click Windows item <index>, refusing if its name is not <name>
+--
+-- `windowitems` reads block 1 of the Windows menu up to its first separator, minus Main Window,
+-- Debug Console and Recreate Windows (Debug) (a modal alert), then the next block only when it is a
+-- `.wal` skin's own windows, i.e. when it does not open with Compact Mode or Always On Top. `index`
+-- is the item's position in the menu as read; the menu is rebuilt on every open, so `toggle`
+-- re-checks the name.
 --
 -- The pid is required and there is no name fallback. `process "NullPlayer"` is ambiguous
 -- whenever the installed /Applications build is also running, and resolving it by name is
@@ -50,6 +58,59 @@ on run argv
         -- Give up rather than loop: the main window shot is still valid.
         key code 53
         return closed & "(gave-up)"
+
+      else if act is "windowitems" then
+        click menu bar item "Windows" of menu bar 1
+        delay 0.35
+        set mm to menu 1 of menu bar item "Windows" of menu bar 1
+        set nms to name of every menu item of mm
+        set ens to enabled of every menu item of mm
+        set mks to value of attribute "AXMenuItemMarkChar" of every menu item of mm
+        key code 53
+        set out to {}
+        set blockNo to 1
+        set n to count of nms
+        set i to 1
+        repeat while i ≤ n
+          set nm to item i of nms
+          if nm is missing value or nm is "" then
+            -- A separator ends block 1; the next block counts only if it is a .wal skin's windows.
+            if blockNo is 2 or i = n then exit repeat
+            set nx to item (i + 1) of nms
+            if nx is "Compact Mode" or nx is "Always On Top" then exit repeat
+            set blockNo to 2
+          else if nm is not "Main Window" and nm is not "Recreate Windows (Debug)" and nm is not "Debug Console" then
+            set mk to item i of mks
+            if mk is missing value or mk is "" then
+              set ck to "0"
+            else
+              set ck to "1"
+            end if
+            if item i of ens then
+              set en to "1"
+            else
+              set en to "0"
+            end if
+            set end of out to (i as text) & "|" & nm & "|" & en & "|" & ck
+          end if
+          set i to i + 1
+        end repeat
+        set AppleScript's text item delimiters to linefeed
+        return out as text
+
+      else if act is "toggle" then
+        set idx to (item 3 of argv) as integer
+        set want to item 4 of argv
+        click menu bar item "Windows" of menu bar 1
+        delay 0.35
+        set mm to menu 1 of menu bar item "Windows" of menu bar 1
+        set nm to name of menu item idx of mm
+        if nm is not want then
+          key code 53
+          error "menu.applescript toggle: Windows item " & idx & " is '" & nm & "', not '" & want & "'" number 2
+        end if
+        click menu item idx of mm
+        return "ok"
 
       else if act is "mode" then
         set subName to item 3 of argv

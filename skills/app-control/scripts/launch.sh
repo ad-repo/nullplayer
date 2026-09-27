@@ -100,7 +100,9 @@ confirmed() {
     winampModern) grep -qF "WinampModern surfaces [$(basename "$FILE")]" "$LOG" ;;
     wmp)          [ "$(defaults read $D wmpSkinName 2>/dev/null)" = "$NAME" ] \
                     && defaults read $D wmpSkinViewID >/dev/null 2>&1 ;;
-    modern)       grep -qF "ModernSkinLoader: Loaded skin '$NAME'" "$LOG" ;;
+    # Selected by folder name, but the log prints skin.json's meta.name, which can differ
+    # ("Bubblegum Retro" loads as 'BubblegumRetro'): match the loaded directory instead.
+    modern)       grep -F "ModernSkinLoader: Loaded skin '" "$LOG" | grep -qF "/$NAME" ;;
     metal)        grep -qF "Loaded built-in metal skin '$NAME'" "$LOG" ;;
   esac
 }

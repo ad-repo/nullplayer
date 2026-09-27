@@ -313,6 +313,14 @@ func filters(_ raw: ArraySlice<String>) -> (pid: Int?, size: (Int, Int)?, rest: 
 switch args.count > 1 ? args[1] : "" {
 case "windows":
     let f = filters(args.dropFirst(2)); windows(pid: f.pid, size: f.size)
+case "screens":
+    // Each display's visibleFrame (menu bar and Dock excluded) in the same top-left global points
+    // as `windows`, plus its backing scale: the space `WindowPlacement.isReachable` measures in.
+    let top = NSScreen.screens.first?.frame.maxY ?? 0
+    for s in NSScreen.screens {
+        let v = s.visibleFrame
+        print("\(Int(v.minX))\t\(Int(top - v.maxY))\t\(Int(v.width))\t\(Int(v.height))\t\(s.backingScaleFactor)")
+    }
 case "raise":
     guard args.count == 3, let pid = Int(args[2]) else { fail("usage: winhelper raise <pid>") }
     raise(pid: pid)
@@ -370,6 +378,6 @@ case "drag":
     drag(pairs("drag", args.dropFirst(2), minimum: 4))
 default:
     FileHandle.standardError.write(
-        "usage: winhelper windows|raise|park|capture|capture-all|click|dblclick|clickdiff|dblclickdiff|scroll|move|drag\n".data(using: .utf8)!)
+        "usage: winhelper windows|screens|raise|park|capture|capture-all|click|dblclick|clickdiff|dblclickdiff|scroll|move|drag\n".data(using: .utf8)!)
     exit(1)
 }
