@@ -126,7 +126,7 @@ Why each family is selected the way it is — only needed when changing `launch.
 | `.wal` | `-winampModernSkinPath <path>` (DEBUG only) | log `WinampModern surfaces [<file>.wal]:` |
 | `.wmz` installed | `defaults write wmpSkinName`, `wmpSkinViewID` deleted | `wmpSkinName` is the name **and** the app re-wrote `wmpSkinViewID` (it only does once a scene renders) |
 | `.wmz` elsewhere | `-wmpSkinPath <path>` (imports it) | same |
-| modern / metal | `defaults write modernSkinName\|metalSkinName` | log `ModernSkinLoader: Loaded skin '<name>'` / `Loaded built-in metal skin '<name>'` |
+| modern / metal | `defaults write modernSkinName\|metalSkinName` | a `ModernSkinLoader: Loaded skin` log line whose path ends in the `<name>` folder (the quoted name is `skin.json`'s `meta.name`, which differs for `Bubblegum Retro`, `EmeraldForge`, `Sakura Minimal`) / `Loaded built-in metal skin '<name>'` |
 
 `NULLPLAYER_SKIN` is the classic loader: a `.wmz` there loads nothing and comes up unskinned
 (440x170). Restoration, if left on, rewrites `wmpSkinName` from the saved state before the window
@@ -201,6 +201,9 @@ read -r WID _ X Y W H _ < <("$WH" windows --pid "$PID" --size 289x283)   # the s
 | `winhelper move <x> <y> …` | `mouseMoved` through the path, 250 ms apart |
 | `winhelper drag <x> <y> …` | press, `leftMouseDragged` through the path, release at the last point |
 | `osascript menu.applescript mode\|skin\|list\|closeaux <pid> …` | the Skins / Windows menu verbs |
+| `osascript menu.applescript windowitems <pid>` | one `index\|name\|enabled\|checked` line per Windows-menu window toggle — block 1 minus Main Window, Debug Console and Recreate Windows (Debug), plus a `.wal` skin's own windows |
+| `osascript menu.applescript toggle <pid> <index> <name>` | clicks Windows item `index`, erroring (exit non-zero, nothing clicked) if its name is no longer `name` |
+| `winhelper screens` | each display's `visibleFrame` as `x y w h scale`, in the same top-left points as `windows` |
 
 - **`clickState` is why clicks used to do nothing.** An event posted without it arrives
   `clickCount == 0`: any handler gating on `clickCount == 1` ignores it while the window still
@@ -289,6 +292,78 @@ cmp -s /tmp/t1.png /tmp/t2.png && echo "IDENTICAL" || echo "DIFFER"
 - **Take a control.** One capture of a thing that should change proves nothing.
 
 **Confirm it took:** you can name the two artefacts your conclusion rests on.
+
+### Window census
+
+Where each Windows-menu window opens and how big it is, per skin, in one command. **To run one for
+a user, go through the `window-census` skill**, which covers what to confirm first, the worker
+hand-off and what to report. This section is the instrument.
+
+```bash
+skills/app-control/scripts/window-census.sh aquamp corona 2222-cPro__Bento modern:NeonWave "metal:Brushed Steel" [--shots] [--out <dir>] [--no-play]
+skills/app-control/scripts/window-census.sh --all wal,wmz          # every installed skin of those families
+skills/app-control/scripts/window-census.sh --list all             # print the skin list, launch nothing
+```
+
+Families are `classic`, `original`, `metal`, `wal`, `wmz` and `all`. Classic, `.wal` and `.wmz`
+skins come from the `Application Support/NullPlayer` skin folders as `name.ext`, so the extension
+pins the family. Original skins are the bundled `Resources/Skins/*` plus user `ModernSkins/`
+folders, and Metal skins are `builtInMetalSkinNames` plus user `MetalSkins/`.
+
+It launches each skin with `launch.sh` (playing, so the vis windows have signal), closes every
+auxiliary window, records that **baseline**, then for each `windowitems` line toggles the item
+on, waits for a stable listing, records the diff, and toggles it off again. **Every item is
+measured on its own from the same baseline**, so a row does not depend on the order and two runs
+give the same rows apart from window ids. A stable listing is two identical `winhelper windows`
+reads 250 ms apart, **alpha excluded** (a `.wmz` pane fades in), capped at 4 s. Stdout is one
+`CENSUS <skin>: main WxH, N opened, N no-window, N unreachable, N residue` line per skin. A corpus
+run takes about a minute per skin, so hand it to a worker and run it in the foreground.
+
+**Skins are isolated from each other.** The app saves window sizes in its defaults, and some of
+those keys are shared by every skin (`hostedInteriorSize2.*`; see
+`~/.claude/plans/skin-window-size-isolation.md`), so without protection a skin opens at sizes the
+previous one left. The census saves the debug `NullPlayer` domain once to
+`<out>/defaults-baseline.plist`. Before every skin it quits the debug build (never the installed
+app) and puts that copy back, and it does the same on exit. The restore is `defaults delete` and
+then `defaults import`, because `defaults import` alone *merges*. Rows are therefore comparable
+within a census. They are not factory sizes while the baseline still holds shared size keys.
+
+Output (default `/tmp/np-window-census/<timestamp>/`). Every TSV has one header row, no comment
+lines and one value per column:
+
+| File | One row per | Columns |
+|---|---|---|
+| `windows.tsv` | window: the baseline windows (`role` `main`/`baseline`), then each item's (`role=item`); an item that opens several windows gets several rows, largest first, and a window-less item one row with empty geometry | `run skin family role item status enabled win_id x y w h title reachable overlap_main residue shot notes` |
+| `skins.tsv` | skin, including launch failures (`launch_ok=0`, `error`) | `run skin family launch_ok main_w main_h max_w max_h max_item items opened no_window other unreachable residue error` |
+| `meta.tsv` | setting | `key value`: screens' visible frames and scale, UI size, the defaults baseline |
+
+`report.md` is rebuilt from the three files on every run. `--shots` adds `shots/<skin>/<item>.png`
+(one `winhelper capture` per opened window, `unavailable` when capture refuses) and `shots.zip`.
+**Resume:** pointing `--out` at an existing census appends to it, skips skins already in
+`skins.tsv` (including failed ones) and reuses the same defaults baseline. If the app exits
+mid-skin, the remaining items read `app-exited`.
+
+- Coordinates and sizes are **top-left global points**, the same as `winhelper windows`.
+- The Windows-menu items read exclude Main Window, Debug Console and Recreate Windows (Debug).
+- `status` is what the click did, from the id diff:
+  - `opened`: new visible rows. The largest one fills the row, and any others go in `side_effects`.
+  - `open-at-baseline`: the only effect was a `gone` row, so the item was already open.
+  - `skin-view`: the item replaced or changed an existing window without opening one, which is how
+    a `.wmz` skin shows its own panel. A view that doesn't switch back is noted, not counted as
+    residue.
+  - `no-window`: no window changed. This includes a panel drawn inside the skin's own window
+    without changing its frame. `2222-cPro__Bento`'s Equalizer, Playlist Editor and Library
+    Browser read this way.
+  - `transient`: a window flashed up at alpha 0 or vanished before the listing settled.
+  - `menu-changed`: the item's name no longer matched its index.
+- `residue` is `1` on an item whose second toggle didn't bring back the baseline's geometry.
+- `reachable` is `WindowPlacement.isReachable` recomputed over `winhelper screens`: `1` when the
+  top-left corner is inside some `visibleFrame`, with the left and top edges inclusive. A window
+  parked past the bottom or right edge is placed, not stranded. `overlap_main` (pt²) is for
+  information only, because the app deliberately prefers overlapping a window to hiding it.
+- **The enabled flag is trustworthy.** `buildMenuBarWindowsMenu` sets `autoenablesItems = false`,
+  so a disabled item (Video Player with no video, EQ and Playlist under `.wmz`) really is disabled.
+  The census records it as `no-window` without clicking it.
 
 ## Test data
 

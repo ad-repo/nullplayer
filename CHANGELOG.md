@@ -97,6 +97,12 @@
   faster the first time it is opened, so a long local track or a Plex track that used to take up to
   half a minute now shows almost at once (a server track still has to download first). Switching
   skins or reopening the window while a waveform is still being built no longer starts it again.
+- **Developer tooling: window census** — a new script,
+  `skills/app-control/scripts/window-census.sh`, measures where each of NullPlayer's windows opens
+  and how big it is for every installed skin (Classic, Original, Metal, Winamp Modern and Windows
+  Media Player), and writes the results to spreadsheet-ready tables. Each skin is measured from the
+  same saved settings, so one skin's window sizes do not carry over to the next. The app itself is
+  unchanged.
 
 ## 0.30.0
 

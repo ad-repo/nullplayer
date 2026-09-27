@@ -35,6 +35,7 @@ Technical documentation lives in `skills/`. Read the owning skill before changin
 - `live-ui-testing`: process skill for screen-only defects — instrument first, drive the app yourself, measure what is drawn
 - `testing`: UI test workflows; `non-retina-fixes`: 1x display fixes; `local-library`: SQLite and scanning; `cli`: headless mode
 - `skin-screenshots`: per-skin main-window captures across all skin systems, and slideshow GIFs
+- `window-census`: every sub-window's default size and position, per skin or across the corpus
 
 ## Architecture
 
