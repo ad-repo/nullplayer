@@ -696,6 +696,25 @@ every skin-owned step has declined (B55, above).
   metrics, so a gloss rim then would misplace their content. Sonos's chrome keys its palette path on
   the same gate. Only skins whose standard frames all fail synthesis reach this route; `canum` is the
   measured case (playlist, library and every hosted window). Skins that lend a frame are unchanged.
+- **A frame painted only with tooltip art is not a frame (2026-09-27).** ClassicPro engine `one`
+  (`load.xml`) builds `wasabi.frame.layout` — the body of all four of its standard frames — from a grid
+  of `wasabi.tooltip.*` bitmaps and draws its `~`/`x` as text, so borrowed, it put our windows in a
+  cream tooltip box that has nothing to do with the player (reported on `211786-Cpro_Winamp_Modern`:
+  *"the titlebar color is different than the main window"*). Tooltip art is the one thing skins never
+  style, so `WasabiSurfaceSynthesizer.paintsOnlyTooltipArt` rejects a frame whose every bitmap —
+  followed through `inherit_group` and child `<group id=…>` references — is `wasabi.tooltip.*`, in
+  both the contract and the exemplar paths; the windows then take the gloss route above. Reach: the
+  11 installed engine-`one` cPro skins. Engine `two` (`load-two_alpha.xml`) paints
+  `cpro2.genframe.*` and keeps its frame; no non-cPro skin matches. `WinampModernTooltipFrameTests`.
+- **Clicking any window raises all of them (2026-09-27)** — the `.wal` port of W273
+  (`wmp-skin-guide/reference/windows/placement.md` § *Raising the skin's windows together*). A skin's
+  containers and hosted windows are not controllers, so `WindowManager.raiseOrder` appends
+  `WinampModernMainWindowController.skinOwnedWindows` (auxiliary containers, then materialized hosted
+  windows in `WinampModernHostedWindowID` order) in `.wal` as it does WMP's panels in `.wmz`, and the
+  raise uses `orderFrontRegardless` in both. Both `.wal` `windowDidBecomeKey`s (the controller's, for
+  the player and its containers, and the hosted materializer's) defer the raise one turn and then
+  restack glued frames, since raising everything can bury a frame under its client. Classic,
+  Original and NullPlayer Modern raise the same list as before.
 - Window size is per registry entry and then clamped by the selected skin frame's hard resize limits.
   Center-stack sizing is a preference inside those bounds, not a replacement geometry; PeppyMeter
   therefore retains its larger authored height instead of collapsing to the spectrum-family size.
