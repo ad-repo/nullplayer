@@ -5570,6 +5570,13 @@ class WindowManager {
         if let topWindow = topWindow, topWindow.isVisible {
             topWindow.orderFront(nil)
         }
+
+        // Raising a `.wal` skin's containers in list order can put a script-glued frame behind the
+        // window it is drawn on. Every caller raises through here — NullPlayer's own windows as well
+        // as the skin's — so the frames are put back here, not in each caller's `windowDidBecomeKey`.
+        if family == .winampModern {
+            (mainWindowController as? WinampModernMainWindowController)?.restackGluedWindows()
+        }
     }
     
     /// The windows `bringAllWindowsToFront` orders front, bottom first. A `.wmz` skin's

@@ -2645,13 +2645,16 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// from the runtime, which learns it from the `frame.resize(client.getLeft(), …)` idiom itself.
     func windowDidBecomeKey(_ notification: Notification) {
         // Deferred a turn, like `.wmz` (W273): raised while a click is still activating the app, the
-        // window server takes only some of the reorders. The glued frames are restacked after it,
-        // since raising every window can bury one under its client.
+        // window server takes only some of the reorders. The raise restacks the glued frames itself;
+        // a window that lost the keyboard in that turn skips the raise but still gets the restack.
         let keyWindow = notification.object as? NSWindow
         DispatchQueue.main.async { [weak self, weak keyWindow] in
-            guard let self, let keyWindow, keyWindow.isKeyWindow else { return }
-            WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: keyWindow)
-            restackGluedWindows()
+            guard let self else { return }
+            if let keyWindow, keyWindow.isKeyWindow {
+                WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: keyWindow)
+            } else {
+                restackGluedWindows()
+            }
         }
     }
 
@@ -2673,8 +2676,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     ///
     /// One runloop turn late on purpose: a `windowDidBecomeKey` notification is delivered *during* the
     /// ordering that raised the window, and an `order(.above:)` issued inside it is undone by the rest
-    /// of that pass.
-    private func restackGluedWindows() {
+    /// of that pass. `WindowManager.bringAllWindowsToFront` calls it after every `.wal` raise.
+    func restackGluedWindows() {
         guard let scripts = skinView?.scripts, !scripts.windowsGluedOver.isEmpty else {
             if Self.tracesGlue { NSLog("GLUE-TRACE restack: no pairs recorded") }
             return

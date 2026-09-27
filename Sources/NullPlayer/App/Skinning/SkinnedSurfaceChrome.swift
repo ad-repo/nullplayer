@@ -123,6 +123,14 @@ struct SkinnedSurfaceChrome {
     ///
     /// Drawn in the flipped top-left space every chrome path here uses. `content` is the hole; the
     /// caller fills or draws it. `fillGround` paints the hole in the palette background first.
+    /// The gloss frame's outer rounded edge. A view that paints ground under the rim rather than
+    /// inside its hole (the equalizer) clips to this, or its fill shows as square corners outside it.
+    static func glossOutline(in bounds: CGRect) -> CGPath {
+        let outer = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let radius = min(glossRadius, outer.width / 2, outer.height / 2)
+        return CGPath(roundedRect: outer, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    }
+
     static func drawGlossFrame(in context: CGContext, bounds: CGRect, border: CGFloat = glossBorder,
                                style: SkinnedSurfaceStyle, isActive: Bool, fillGround: Bool) {
         guard bounds.width > 2, bounds.height > 2 else { return }
@@ -130,7 +138,7 @@ struct SkinnedSurfaceChrome {
         let hole = bounds.insetBy(dx: border, dy: border)
         let radius = min(glossRadius, outer.width / 2, outer.height / 2)
         let innerRadius = max(0, min(radius - border + 2, hole.width / 2, hole.height / 2))
-        let outerPath = CGPath(roundedRect: outer, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        let outerPath = glossOutline(in: bounds)
         let holePath = CGPath(roundedRect: hole, cornerWidth: innerRadius, cornerHeight: innerRadius,
                               transform: nil)
         let base = isActive ? style.barBackground : style.background.blended(withFraction: 0.5,
