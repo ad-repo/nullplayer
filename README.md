@@ -87,16 +87,16 @@ NullPlayer's visualizations span its windows, from the in-skin main-window displ
   NullPlayer is built to be worked on by coding agents as well as people. The repo ships the
   context an agent needs instead of making it rediscover the codebase every session.
 
- - **40 subsystem skills** in [`skills/`](skills/) — ~44,000 lines of maintained technical documentation, one owner per subsystem: audio and EQ, each skin engine, every media-server integration, casting, each visualizer, the local library, CLI, and testing. The clean-room skin engines add per-skin dossiers (what each problem skin taught the engine and what was ruled out), a canonical probe/harness reference, and a `skin-subsystem-blueprint` for adding a new skin family. [`AGENTS.md`](AGENTS.md) and [`CLAUDE.md`](CLAUDE.md) route an agent to the owning skill before it touches code, and new subsystem detail goes in that skill — never in a general file.
+ - **40 subsystem skills** in [`skills/`](skills/) — ~44,000 lines of maintained technical documentation, one owner per subsystem: audio and EQ, each skin engine, every media-server integration, casting, each visualizer, the local library, CLI, and testing. The clean-room skin engines add per-skin dossiers (what each problem skin taught the engine and what was ruled out), a canonical probe/harness reference, and a `skin-subsystem-blueprint` for adding a new skin family.
  - **Invocable skills, not just docs** — `/wal-skin-report <skin.wal>` produces a full compatibility report for a Winamp 5 skin; `skin-screenshots` drives the live app to capture one main-window frame per skin across all four skin systems and assembles a slideshow GIF.
  - **Automation-first surfaces** — a headless `--cli` mode for querying libraries, resolving sources, starting playback, and routing to Sonos / Chromecast / DLNA, plus a `--ui-testing`launch mode and accessibility identifiers so the UI can be driven programmatically.
  - **Scripted workflows** — one-command bootstrap, build-and-run, DMG/MAS packaging, third-partynotice generation and validation, `.wal` and `.wmz` corpus render sweeps and census (with a corpus exclusion list and baseline diffing), and backlog validation, so an agent verifies its work the same way a maintainer does.
  - **Live-defect workflow** — a `live-ui-testing` process skill for bugs that only show on screen: instrument first, drive the running app with AppleScript and synthesized input, and measure what is actually drawn; every subsystem skill routes its *Debugging a live defect* section there.
  - **291 test files** under [`Tests/`](Tests/), with a documented testing philosophy (`skills/testing`) that explicitly forbids weakening tests changing app code just to make them pass.
- - **Explicit architectural guardrails** encoded where an agent will read them: skin engines must not cross-import, Winamp Modern (`.wal`) and Windows Media Player (`.wmz`) work must never alter Classic or Original behavior, and the sprite-origin and `Data`-slicing gotchas are stated up front.
+ - **Explicit architectural guardrails** encoded where an agent will read them: skin engines must not cross-import, Winamp Modern (`.wal`) and Windows Media Player (`.wmz`) work must never alter Classic or Original behavior, the sprite-origin and `Data`-slicing gotchas are stated up front.
  - **App control: agents drive the real app** — the [`app-control`](skills/app-control/SKILL.md) skill lets an agent launch, configure, drive, screenshot, and measure the running debug build across every skin family (Classic, Original, Original-Metal, `.wal`, `.wmz`):
-   - A routing table picks the cheapest way to answer a question, from a headless probe to handing the user a preloaded interactive session. Canonical test media and launch recipes come with it, plus an [eval case and rubric](skills/app-control/eval/README.md) for comparing agents.
-
+- **Token friendly agent routing** A routing table picks the cheapest way to answer a question, from a headless probe to handing the user a preloaded interactive session. Canonical test media and launch recipes come with it.
+  
 ## Installation
 
 Download the latest DMG:
