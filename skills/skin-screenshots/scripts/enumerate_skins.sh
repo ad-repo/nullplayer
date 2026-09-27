@@ -17,7 +17,7 @@ if [ "$(pgrep -x NullPlayer | wc -l | tr -d ' ')" -gt 1 ]; then
 fi
 export NULLPLAYER_PID="$PID"
 
-non_skin='^(Switch to |Load |Get More |Open |Import |Reimport |Download |Engine: |Skin Colors|Skin Settings|Spectrum Analyzer$)'
+non_skin='^(Switch to |Load |Get More |Open |Import |Reimport |Download |Engine: |Skin Colors|Skin Settings|Spectrum Analyzer$|Default Skin \(Unskinned\)$|Views$|Save Compatibility Report|Remove )'
 emit() { # $1 system  $2 submenu
   osascript "$MENU" list "$PID" "$2" 2>/dev/null | tr ',' '\n' | sed 's/^ *//; s/ *$//' |
   while IFS= read -r item; do
@@ -28,5 +28,5 @@ emit() { # $1 system  $2 submenu
     printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$item" "$label"
   done
 }
-{ emit classic "Classic"; emit original "Original"; emit original-metal "Original-Metal"; emit modern "Modern"; } |
+{ emit classic "Classic"; emit original "Original"; emit original-metal "Original-Metal"; emit modern "Modern"; emit wmp "Media Player"; } |
 if [ -s "$EXCLUDE_FILE" ]; then grep -vFf "$EXCLUDE_FILE"; else cat; fi
