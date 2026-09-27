@@ -8,9 +8,9 @@
 
 NullPlayer is 100% open source and built as a clean-room effort; no Winamp, WACUP, or Windows Media Player source code has been copied or viewed
 
-Nullplayer is the **first and only open-source engine capable of rendering Winamp ClassicPro and Winamp 5 (`.wal`) skins**, letting you run all Winamp skin types on macOS while enjoying modern media ecosystem support
+Nullplayer is the **first macOS and only open-source engine capable of rendering Winamp ClassicPro and Winamp 5 (`.wal`) skins**, letting you run all Winamp skin types on macOS while enjoying modern media ecosystem support
 
-NullPlayer is also the **only Mac app that runs Windows Media Player (`.wmz`) skins**: the scripted, shaped-window skins from WMP 7 through 12, with their JScript and views and their own EQ, SRS, and visualizer controls, driving NullPlayer's real playback engine
+NullPlayer is also the **first macOS and only open-source engine capable of rendering Windows Media Player (`.wmz`) skins**:from WMP 7, 7.1, XP (8), 9, 10, 11 and 12. It supports their views, JScript, and EQ, SRS and visualizer controls, all driving NullPlayer's playback engine. Skin scripts run sandboxed in an isolated JavaScriptCore context with no ActiveX, registry, shell, DLL, plug-in or HTML access.
 
 NullPlayer is not affiliated with, endorsed by, or connected to Winamp, Nullsoft, Microsoft, Winamp Group SA, Llama Group, Radionomy Group, Jamendo, Hotmix, Bridger, SHOUTcast, Sonos, Plex, WACUP, Emby, Jellyfin, Google or anyone else
 
