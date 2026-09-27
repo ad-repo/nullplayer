@@ -1521,7 +1521,7 @@ class PlexBrowserView: NSView {
     var Layout: LayoutMetrics {
         if isEmbeddedInSkin { return .embedded }
         guard let metrics = hostedFrame?.metrics else {
-            // A `.wmz` session draws the unskinned library without its title bar: the top edge is
+            // A `.wmz` or `.wal` session draws the unskinned library without its title bar: the top edge is
             // a border as thin as the status bar (`SkinnedSurfaceChrome.hidesPaletteTitleBar`).
             guard SkinnedSurfaceChrome.hidesPaletteTitleBar else { return .classic }
             var titleless = LayoutMetrics.classic

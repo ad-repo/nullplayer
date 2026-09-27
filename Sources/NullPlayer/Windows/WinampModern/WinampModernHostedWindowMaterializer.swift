@@ -381,9 +381,15 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
         guard let window = notification.object as? NSWindow,
               let instance = instance(for: window) else { return }
         instance.view.needsDisplay = true
-        WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
-        // Raising this window put any frame glued over it behind it; the controller puts it back.
-        windowDidSettle(instance)
+        // A turn later, once a click-activation has finished (W273).
+        DispatchQueue.main.async { [weak self, weak window] in
+            guard let self, let window, let instance = self.instance(for: window) else { return }
+            if window.isKeyWindow {
+                WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
+            }
+            // Raising this window put any frame glued over it behind it; the controller puts it back.
+            self.windowDidSettle(instance)
+        }
     }
 
     func windowDidResignKey(_ notification: Notification) {

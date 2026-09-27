@@ -1,17 +1,18 @@
 ---
 name: skin-screenshots
-description: Capture one centred main-window screenshot per skin across every skin system (Classic, Original, Original-Metal, Modern/.wal) and assemble them into a fixed-duration slideshow GIF. Use when producing marketing imagery, a skin gallery, or any before/after visual comparison across the skin corpus.
+description: Capture one centred main-window screenshot per skin across every skin system (Classic, Original, Original-Metal, Modern/.wal, Media Player/.wmz) and assemble them into a fixed-duration slideshow GIF. Use when producing marketing imagery, a skin gallery, or any before/after visual comparison across the skin corpus.
 ---
 
 # Skin screenshot sweep
 
-> **Scope.** This skill produces a **gallery GIF** and nothing else. It sweeps four skin
-> families — Classic, Original, Original-Metal and Modern. The **Media Player** (`.wmz`)
-> submenu is deliberately not in the sweep; that is the intended scope, not a gap. To launch, configure, drive,
+> **Scope.** This skill produces a **gallery GIF** and nothing else. It sweeps five skin
+> families — Classic, Original, Original-Metal, Modern and Media Player (`.wmz`):
+> `enumerate_skins.sh` emits every skin in those five Skins submenus, and `capture.sh` photographs
+> each entry it emits. To launch, configure, drive,
 > screenshot or test the running app — for any reason other than assembling that GIF — see
 > **`app-control`**. It owns `winhelper` and `menu.applescript`, which this sweep only borrows.
 
-Photographs the **main window only**, one frame per skin, across all four skin systems, centres each
+Photographs the **main window only**, one frame per skin, across all five skin systems, centres each
 on an identical white frame, and builds a slideshow GIF whose cycle is exactly the length you ask for.
 
 Everything is in `scripts/`. Run them in this order:
@@ -23,6 +24,9 @@ cd skills/skin-screenshots/scripts
 ./capture.sh --list /tmp/skins.tsv --frame 800  # ~8s per skin; writes a manifest
 ./makegif.sh --seconds 30 --size 500 --order random
 ```
+
+`makegif.sh --delay CS` fixes the per-frame delay (in centiseconds) instead of the cycle length, and
+`--feature FILE:N` (repeatable) makes one frame appear N times in total, spread through the sequence.
 
 `capture.sh` with no `--list` enumerates for you. Both write to `~/Documents/shots` by default.
 

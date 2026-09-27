@@ -89,13 +89,19 @@ struct SkinnedSurfaceChrome {
         WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size)?.metrics ?? paletteMetrics(fallback)
     }
 
-    /// **A `.wmz` session draws our unskinned windows without a title bar.** Where the skin lends
-    /// no frame, the palette chrome keeps its side and bottom borders, and its top edge becomes a
-    /// border as thin as the bottom one — the Original family's *Hide Title Bars*, but always on and
-    /// with no setting, because a WMP skin has no title bar of its own to match. The close control
-    /// stays, as the same top-right corner hit area a borrowed frame gets (`closeButtonRect`).
-    /// `.wal` shares this painter and keeps its title bar: the gate is the WMP family, never a flag.
-    static var hidesPaletteTitleBar: Bool { WindowManager.shared.isRunningWMPUI }
+    /// **A `.wmz` or `.wal` session draws our unskinned windows without a title bar.** Where the
+    /// skin lends no frame, the palette chrome keeps its side and bottom borders, and its top edge
+    /// becomes a border as thin as the bottom one — the Original family's *Hide Title Bars*, but
+    /// always on and with no setting. The close control stays, as the same top-right corner hit area
+    /// a borrowed frame gets (`closeButtonRect`). `.wal` wears the same gloss frame (2026-09-26) once
+    /// its palette has loaded; before that its windows draw classic sprites and keep their classic
+    /// metrics. The gate is the skin family, never a flag, so Classic and Original never reach it.
+    static var hidesPaletteTitleBar: Bool {
+        let manager = WindowManager.shared
+        if manager.isRunningWMPUI { return true }
+        return manager.uiMode.controllerFamily == .winampModern
+            && (manager.mainWindowController as? WinampModernMainWindowController)?.currentPalette != nil
+    }
 
     /// The border a window wears when no frame is lent: `fallback`, less its title bar in WMP.
     /// Layout, drawing and `HostedWindowBorderLayout` all read it, so the three agree.
@@ -117,6 +123,14 @@ struct SkinnedSurfaceChrome {
     ///
     /// Drawn in the flipped top-left space every chrome path here uses. `content` is the hole; the
     /// caller fills or draws it. `fillGround` paints the hole in the palette background first.
+    /// The gloss frame's outer rounded edge. A view that paints ground under the rim rather than
+    /// inside its hole (the equalizer) clips to this, or its fill shows as square corners outside it.
+    static func glossOutline(in bounds: CGRect) -> CGPath {
+        let outer = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let radius = min(glossRadius, outer.width / 2, outer.height / 2)
+        return CGPath(roundedRect: outer, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    }
+
     static func drawGlossFrame(in context: CGContext, bounds: CGRect, border: CGFloat = glossBorder,
                                style: SkinnedSurfaceStyle, isActive: Bool, fillGround: Bool) {
         guard bounds.width > 2, bounds.height > 2 else { return }
@@ -124,7 +138,7 @@ struct SkinnedSurfaceChrome {
         let hole = bounds.insetBy(dx: border, dy: border)
         let radius = min(glossRadius, outer.width / 2, outer.height / 2)
         let innerRadius = max(0, min(radius - border + 2, hole.width / 2, hole.height / 2))
-        let outerPath = CGPath(roundedRect: outer, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        let outerPath = glossOutline(in: bounds)
         let holePath = CGPath(roundedRect: hole, cornerWidth: innerRadius, cornerHeight: innerRadius,
                               transform: nil)
         let base = isActive ? style.barBackground : style.background.blended(withFraction: 0.5,

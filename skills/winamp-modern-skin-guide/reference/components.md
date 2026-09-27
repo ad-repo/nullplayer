@@ -560,8 +560,10 @@ session — resolves through this one catalog in this one order:
    skin's own `<Wasabi:StandardFrame:…>` around a `<component>` of that kind. Only in the
    separate-window arrangement, and only when a frame qualifies (see below).
 4. **Classic fallback** — NullPlayer's own window, **with a diagnostic naming the prerequisite that
-   failed**. Geometry is unchanged from the classic windows — same title-bar height, borders, and
-   button boxes — so only the pixels differ.
+   failed**. Until the skin's palette loads, geometry is unchanged from the classic windows — same
+   title-bar height, borders, and button boxes — so only the pixels differ. Once it has loaded,
+   `SkinnedSurfaceChrome.hidesPaletteTitleBar` is true and the window wears the titleless 6pt gloss
+   rim instead (see *NullPlayer-owned hosted windows are lazy*).
 
 Which skin lands on which step is measured per skin: see the routing table in
 [compatibility.md](../compatibility.md#hosted-components).
@@ -612,7 +614,7 @@ registered, inheritance-validated, instantiated, and script-bound exactly like t
   curve — inside the skin's own standard frame, where the synthesized `<component guid:eq>` holder
   would have mounted the stub. So the order the equalizer actually resolves in is **embedded →
   declared → hosted window in the skin's frame → NullPlayer's own window**, and only the last of
-  those wears the flat palette chrome. Both routes still agree because both end at
+  those wears the palette chrome (the gloss frame, as above). Both routes still agree because both end at
   `WindowManager.toggleEqualizer()`, which consults the coordinator, then the materializer, then the
   standalone controller — in that order, from one place.
   `EQView` draws the classic layout in a *hosted* mode: no title bar, no close button and no window
@@ -685,6 +687,39 @@ every skin-owned step has declined (B55, above).
 - The hosted surface is chromeless: the Wasabi standard frame owns close, resize, keyboard, and
   artwork. The same existing feature view draws its shared `.wal`-palette fallback chrome only when
   it remains inside the standalone controller. **It does not own the drag** — see below.
+- **That fallback chrome is the WMP gloss frame, with no title bar (2026-09-26).** Reported as
+  *"replace the chrome default window style with the same style used in wmp mode"*: the flat
+  palette title bar and bands are gone, and every standalone fallback — the spectrum family,
+  waveform, ProjectM, library, playlist, equalizer and Sonos Rooms — wears
+  `SkinnedSurfaceChrome.drawGlossFrame` with the undrawn top-right close target, exactly as `.wmz`
+  does (`wmp-skin-guide/reference/windows/hosting.md`). The gate is
+  `SkinnedSurfaceChrome.hidesPaletteTitleBar`: the WMP family, or `.winampModern` **with a loaded
+  palette** — before the palette arrives these windows draw classic sprites and must keep classic
+  metrics, so a gloss rim then would misplace their content. Sonos's chrome keys its palette path on
+  the same gate. Only skins whose standard frames all fail synthesis reach this route; `canum` is the
+  measured case (playlist, library and every hosted window). Skins that lend a frame are unchanged.
+- **A frame painted only with tooltip art is not a frame (2026-09-27).** ClassicPro engine `one`
+  (`load.xml`) builds `wasabi.frame.layout` — the body of all four of its standard frames — from a grid
+  of `wasabi.tooltip.*` bitmaps and draws its `~`/`x` as text, so borrowed, it put our windows in a
+  cream tooltip box that has nothing to do with the player (reported on `211786-Cpro_Winamp_Modern`:
+  *"the titlebar color is different than the main window"*). Tooltip art is the one thing skins never
+  style, so `WasabiSurfaceSynthesizer.paintsOnlyTooltipArt` rejects a frame whose every bitmap —
+  followed through `inherit_group` and child `<group id=…>` references — is `wasabi.tooltip.*`, in
+  both the contract and the exemplar paths; the windows then take the gloss route above. Reach: the
+  11 installed engine-`one` cPro skins. Engine `two` (`load-two_alpha.xml`) paints
+  `cpro2.genframe.*` and keeps its frame; no non-cPro skin matches. `WinampModernTooltipFrameTests`.
+- **Clicking any window raises all of them (2026-09-27)** — the `.wal` port of W273
+  (`wmp-skin-guide/reference/windows/placement.md` § *Raising the skin's windows together*). A skin's
+  containers and hosted windows are not controllers, so `WindowManager.raiseOrder` appends
+  `WinampModernMainWindowController.skinOwnedWindows` (auxiliary containers, then materialized hosted
+  windows in `WinampModernHostedWindowID` order) in `.wal` as it does WMP's panels in `.wmz`, and the
+  raise uses `orderFrontRegardless` in both. Both `.wal` `windowDidBecomeKey`s (the controller's, for
+  the player and its containers, and the hosted materializer's) defer the raise one turn. Raising
+  everything can bury a glued frame under its client, so `bringAllWindowsToFront` itself calls
+  `restackGluedWindows()` in `.wal` — NullPlayer's own windows (EQ, playlist, library, Sonos…) raise
+  through it synchronously from their own `windowDidBecomeKey`, and would otherwise leave a frame
+  buried. Classic,
+  Original and NullPlayer Modern raise the same list as before.
 - Window size is per registry entry and then clamped by the selected skin frame's hard resize limits.
   Center-stack sizing is a preference inside those bounds, not a replacement geometry; PeppyMeter
   therefore retains its larger authored height instead of collapsing to the spectrum-family size.
@@ -1144,8 +1179,11 @@ not looking at.
   remainder. **This is load-bearing**: the views lay themselves out as
   `text.count * charWidth * scale` in ~77 places in the browser alone, so a font that measured
   differently would leave every one of those boxes wrong. `drawText` counter-flips about the cell.
-- Chrome is redrawn at the **same metrics** as the classic version — same title-bar height, same 12px
-  borders, same button boxes the hit tests already own — so only pixels change, never geometry.
+- Embedded surfaces redraw their chrome at the **same metrics** as the classic version — same
+  title-bar height, same 12px borders, same button boxes the hit tests already own — so only pixels
+  change, never geometry. Standalone fallback windows keep those metrics only until the palette
+  loads; after that `SkinnedSurfaceChrome.hidesPaletteTitleBar` gives them the titleless 6pt gloss
+  rim (`glossBorder`), and layout, drawing and hit testing all read the same metrics.
 - Reaching it: embedded surfaces are pushed a style through the existing
   `WinampModernLibrarySurface.applyPalette` seam; fallback windows read
   `WindowManager.winampModernSurfaceStyle`, which is **nil in every other mode** (and nil until a

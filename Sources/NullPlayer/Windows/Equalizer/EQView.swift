@@ -581,13 +581,22 @@ class EQView: NSView {
             ? drawBounds
             : NSRect(x: 0, y: Layout.titleBarHeight, width: drawBounds.width,
                      height: drawBounds.height - Layout.titleBarHeight)
+        // Under the gloss rim the band is clipped to the rim's rounded outline, or it shows as square
+        // corners outside it.
+        let glossy = drawsChrome && SkinnedSurfaceChrome.hidesPaletteTitleBar
+        context.saveGState()
+        if glossy {
+            context.addPath(SkinnedSurfaceChrome.glossOutline(in: drawBounds))
+            context.clip()
+        }
         context.setFillColor(style.background.cgColor)
         context.fill(body)
+        context.restoreGState()
 
-        // A `.wmz` session draws the unskinned equalizer without a title bar
+        // A `.wmz` or `.wal` session draws the unskinned equalizer without a title bar
         // (`SkinnedSurfaceChrome.hidesPaletteTitleBar`). Its body is a fixed 275x116 layout, so the
         // band stays as ground inside a thin gloss rim, with the close target in its top-right corner.
-        if drawsChrome, SkinnedSurfaceChrome.hidesPaletteTitleBar {
+        if glossy {
             SkinnedSurfaceChrome.drawGlossFrame(in: context, bounds: drawBounds, border: 3, style: style,
                                                 isActive: isActive, fillGround: false)
         } else if drawsChrome {

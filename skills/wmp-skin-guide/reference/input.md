@@ -191,6 +191,14 @@ a dispatch defect — it is a control the pointer never reached at all.
   literal `enabled="false"`, and `WMPHitTester.isGreyedOutControl(at:)` makes `mouseDown` swallow a
   press on one. Pinned by `testPressOnABindingDisabledControlDoesNotDragTheWindow`, which also keeps
   the authored case draggable.
+- **The view itself is never a press target (2026-09-26).** `authorsInputHandler` makes any node
+  with a mouse handler a hit, and that includes the root `<VIEW>` — which sits under every control,
+  so it answered every press nothing else took and `WALL-E` could not be dragged from anywhere
+  (`raw=view#mainView … interactive=yes` on every press under `WMP_CLICK_TRACE=1`). The view stays
+  in the hit map so its `onMouseOver`/`onMouseOut` still fire; `WMPMainView.mouseDown` drops a
+  `view` target and drags the window instead. **Reach: 2 of 179 archives** — `WALL-E`'s `mainView`
+  and `Revert`'s `vwPlayer`, both hover-only; no corpus view authors `onClick`/`onMouseDown`.
+  Pinned by `testPressOnAViewWithAHoverHandlerDragsTheWindow`.
 - **`host.snapshot` is computed live and carries the clock, so never diff it across a transaction
   (W157).** `WMPAudioEngineHost.snapshot` reads `engine.currentTime` on every access; two readings
   taken either side of a 10 ms transaction always differ while a track plays. `dispatchScriptTransaction`

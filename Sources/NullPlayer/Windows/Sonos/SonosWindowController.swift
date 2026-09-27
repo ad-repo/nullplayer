@@ -146,7 +146,7 @@ final class SonosWindowView: NSView {
 
     @objc private func layoutChanged() { needsLayout = true; needsDisplay = true }
     @objc private func hostedSurfaceStyleDidChange() {
-        guard WindowManager.shared.isRunningWMPUI else { return }
+        guard [.wmp, .winampModern].contains(WindowManager.shared.uiMode.controllerFamily) else { return }
         layoutChanged()
     }
 

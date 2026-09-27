@@ -7,7 +7,8 @@ import XCTest
 /// `bringAllWindowsToFront` raises a fixed list of NullPlayer's controllers, and a skin's
 /// `theme.openView` panels are not controllers, so clicking the player left `WoW`'s EQ, vis and info
 /// panels behind whatever other app covered them. The list is shared by every mode, so the panels
-/// join it only in `.wmz`, and every other mode must raise exactly what it did before.
+/// join it only in `.wmz` — and a `.wal` skin's containers and hosted windows only in `.wal` — and
+/// every other mode must raise exactly what it did before.
 ///
 /// The ordering itself — deferred a turn, `orderFrontRegardless` — needs a window server and was
 /// verified live; `wmp-skin-guide/reference/windows/placement.md` § *Raising the skin's windows together*.
@@ -18,7 +19,7 @@ final class WMPWindowRaiseTests: XCTestCase {
                  backing: .buffered, defer: true)
     }
 
-    func testOnlyWMPAppendsTheSkinsPanels() {
+    func testOnlyWMPAndWinampModernAppendTheSkinsWindows() {
         let player = window(), equalizer = window()
         let appWindows: [NSWindow?] = [player, nil, equalizer]
         let panels = [window(), window()]
@@ -26,19 +27,19 @@ final class WMPWindowRaiseTests: XCTestCase {
         let families: [PlayerUIControllerFamily] = [.classic, .nullPlayerModern, .winampModern, .wmp]
         for family in families {
             var asked = false
-            let order = WindowManager.raiseOrder(appWindows, family: family, wmpPanels: {
+            let order = WindowManager.raiseOrder(appWindows, family: family, skinWindows: {
                 asked = true
                 return panels
             })
-            if family == .wmp {
+            if family == .wmp || family == .winampModern {
                 XCTAssertEqual(order.map { $0.map(ObjectIdentifier.init) },
                                (appWindows + panels.map { $0 }).map { $0.map(ObjectIdentifier.init) },
-                               "the panels follow the app's windows, in the order the skin opened them")
+                               "\(family): the skin's windows follow the app's windows, in order")
             } else {
                 XCTAssertEqual(order.map { $0.map(ObjectIdentifier.init) },
                                appWindows.map { $0.map(ObjectIdentifier.init) },
                                "\(family) must raise exactly the app's own windows")
-                XCTAssertFalse(asked, "\(family) must not even look for a .wmz controller's panels")
+                XCTAssertFalse(asked, "\(family) must not even look for a skin's own windows")
             }
         }
     }

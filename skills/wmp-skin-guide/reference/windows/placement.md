@@ -115,7 +115,8 @@ driving the app.
 included, with the clicked window on top.** `WindowManager.bringAllWindowsToFront` raises a fixed
 list of NullPlayer's controllers. The panels are not controllers, so `WindowManager.raiseOrder`
 appends `materializedAuxiliaryWindows` after that list, in the order the skin opened them. It does
-this in `.wmz` only; every other family raises the list unchanged. Before this, clicking `WoW`'s
+this in `.wmz` and, since 2026-09-27, `.wal` (a skin's containers and hosted windows —
+`winamp-modern-skin-guide/reference/components.md`); every other family raises the list unchanged. Before this, clicking `WoW`'s
 player left its EQ, vis and info panels behind whatever other app covered them.
 
 Adding the panels to the list was not enough, and the live loop showed why. With a cover window from

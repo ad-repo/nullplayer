@@ -601,7 +601,12 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     override func mouseDown(with event: NSEvent) {
         guard let scene else { return }
         let point = skinPoint(from: event, sceneSize: scene.canvasSize)
-        let target = interactiveTarget(at: point)
+        // **The view itself is the window, and a press on it moves the window.** A `<VIEW>` that
+        // authors a mouse handler is a hit target so its `onMouseOver`/`onMouseOut` fire, and it
+        // sits under every other control — so as a press target it caught every press that no
+        // control took, and the player could not be dragged at all. `WALL-E`'s `mainView` and
+        // `Revert`'s `vwPlayer` are the corpus's only two, both hover-only.
+        let target = interactiveTarget(at: point).flatMap { Self.isView($0) ? nil : $0 }
         #if DEBUG
         if ProcessInfo.processInfo.environment["WMP_CLICK_TRACE"] == "1" {
             let raw = hitTester?.hitTest(point)
@@ -623,7 +628,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         // `main_button` backdrop draggable.
         // A control a binding has switched off is the same case, and is not in `hitTest` at all:
         // `KungFuChaos`' speaker button with SRS WOW off dragged the docked group and outlined it.
-        if target == nil, hitTester?.hitTest(point) != nil
+        if target == nil, hitTester?.hitTest(point).map({ !Self.isView($0) }) == true
             || hitTester?.isGreyedOutControl(at: point) == true { return }
         // The edge band is consulted only where hit testing found no control, so a button sitting
         // against the window edge keeps every pixel it had. **The window claims this first**, and
@@ -1383,6 +1388,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         return window.convertToScreen(convert(local, to: nil))
     }
 
+    private static func isView(_ target: WMPHitTarget) -> Bool { target.kind.lowercased() == "view" }
     private static func isSlider(_ action: WMPTransportAction) -> Bool { action == .seek || action == .volume || action == .balance }
     /// **A `<PROGRESSBAR>` is a slider the pointer moves.** 12 of the corpus's 14 are seek bars —
     /// `max` bound to the duration and `onmouseup="player.controls.currentPosition=progress.value;"`

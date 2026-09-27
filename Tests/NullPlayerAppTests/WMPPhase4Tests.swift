@@ -558,6 +558,46 @@ final class WMPPhase4Tests: XCTestCase {
         XCTAssertNotEqual(window.frame.origin, origin, "An authored enabled=\"false\" still drags")
     }
 
+    /// `WALL-E`'s `mainView` authors `onMouseOver`/`onMouseOut`, which makes the view a hit target
+    /// under every control — and it caught every press, so the player could not be dragged.
+    func testPressOnAViewWithAHoverHandlerDragsTheWindow() throws {
+        let viewHit = WMPHitMetadata(stableID: 1, nodeID: "mainView", kind: "view",
+            frame: WMPRect(x: 0, y: 0, width: 100, height: 50), clipRect: nil, zIndex: 0,
+            documentOrder: 0, action: nil, sticky: false, enabled: true, mappingImage: nil,
+            mappingTargets: [])
+        let button = hit(id: 2, z: 1, order: 1, frame: WMPRect(x: 10, y: 10, width: 20, height: 10))
+        let window = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 100, height: 50),
+                              styleMask: [.borderless], backing: .buffered, defer: true)
+        let view = WMPMainView(frame: NSRect(x: 0, y: 0, width: 100, height: 50))
+        window.contentView = view
+        let scene = WMPScene(viewID: "mainView", canvasSize: WMPSize(width: 100, height: 50),
+            resizeLimits: WMPResizeLimits(minimum: WMPSize(width: 100, height: 50), maximum: nil),
+            commands: [], hits: [viewHit, button], geometries: [:],
+            unresolved: [], diagnostics: [], dirtyBounds: nil,
+            metrics: WMPSceneMetrics(resolvedNodeCount: 2, unresolvedNodeCount: 0,
+                                     visibleBounds: nil), wasBuiltOnMainThread: false)
+        let context = CGContext(data: nil, width: 100, height: 50, bitsPerComponent: 8,
+            bytesPerRow: 400, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        view.present(context.makeImage()!, scene: scene)
+
+        func event(_ type: NSEvent.EventType, _ point: NSPoint) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                clickCount: 1, pressure: 1))
+        }
+        let origin = window.frame.origin
+        view.mouseDown(with: try event(.leftMouseDown, NSPoint(x: 20, y: 35)))
+        view.mouseDragged(with: try event(.leftMouseDragged, NSPoint(x: 60, y: 45)))
+        view.mouseUp(with: try event(.leftMouseUp, NSPoint(x: 60, y: 45)))
+        XCTAssertEqual(window.frame.origin, origin, "A control over the view keeps its press")
+
+        view.mouseDown(with: try event(.leftMouseDown, NSPoint(x: 60, y: 25)))
+        view.mouseDragged(with: try event(.leftMouseDragged, NSPoint(x: 80, y: 35)))
+        view.mouseUp(with: try event(.leftMouseUp, NSPoint(x: 80, y: 35)))
+        XCTAssertNotEqual(window.frame.origin, origin, "A press on the view itself drags")
+    }
+
     private func hit(id: Int, z: Int, order: Int, frame: WMPRect) -> WMPHitMetadata {
         WMPHitMetadata(stableID: id, nodeID: "node\(id)", kind: "button", frame: frame,
             clipRect: nil, zIndex: z, documentOrder: order, action: .play, sticky: false,

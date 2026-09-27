@@ -2644,7 +2644,24 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// not reach, and the title strip went black. The pairing is the skin's, not ours, so it comes
     /// from the runtime, which learns it from the `frame.resize(client.getLeft(), …)` idiom itself.
     func windowDidBecomeKey(_ notification: Notification) {
-        restackGluedWindows()
+        // Deferred a turn, like `.wmz` (W273): raised while a click is still activating the app, the
+        // window server takes only some of the reorders. The raise restacks the glued frames itself;
+        // a window that lost the keyboard in that turn skips the raise but still gets the restack.
+        let keyWindow = notification.object as? NSWindow
+        DispatchQueue.main.async { [weak self, weak keyWindow] in
+            guard let self else { return }
+            if let keyWindow, keyWindow.isKeyWindow {
+                WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: keyWindow)
+            } else {
+                restackGluedWindows()
+            }
+        }
+    }
+
+    /// The skin's windows that are not the player: its containers and the hosted windows it has
+    /// materialized, bottom first. `WindowManager.bringAllWindowsToFront` raises them with the app's.
+    var skinOwnedWindows: [NSWindow] {
+        auxiliaryContainers.map(\.window) + (hostedWindowMaterializer?.materializedWindows.map(\.window) ?? [])
     }
 
     /// Put every script-glued frame back on top of the window it is drawn on.
@@ -2659,8 +2676,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     ///
     /// One runloop turn late on purpose: a `windowDidBecomeKey` notification is delivered *during* the
     /// ordering that raised the window, and an `order(.above:)` issued inside it is undone by the rest
-    /// of that pass.
-    private func restackGluedWindows() {
+    /// of that pass. `WindowManager.bringAllWindowsToFront` calls it after every `.wal` raise.
+    func restackGluedWindows() {
         guard let scripts = skinView?.scripts, !scripts.windowsGluedOver.isEmpty else {
             if Self.tracesGlue { NSLog("GLUE-TRACE restack: no pairs recorded") }
             return
