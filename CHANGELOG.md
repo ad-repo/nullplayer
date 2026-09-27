@@ -75,6 +75,10 @@
   a Jellyfin or Emby `api_key` when playing video). Credentials are now redacted from logs across
   Plex, Subsonic/Navidrome, Jellyfin, Emby, radio and casting, and casting failure alerts no longer
   show raw error details.
+- **Waveforms appear much sooner** — the waveform window builds a track's waveform about 20 times
+  faster the first time it is opened, so a long local track or a Plex track that used to take up to
+  half a minute now shows almost at once (a server track still has to download first). Switching
+  skins or reopening the window while a waveform is still being built no longer starts it again.
 
 ## 0.30.0
 

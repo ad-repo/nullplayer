@@ -359,6 +359,19 @@ The waveform window shares the audio engine but intentionally does not share the
 
 - `WaveformCacheService` opens the active file with `AVAudioFile`
 - Decodes PCM in chunks and stores max absolute amplitude into 4096 buckets
+- **The reduction is vectorised, never per sample.** `WaveformBucketAccumulator.addSamples` takes a
+  chunk of one channel and runs one `vDSP_maxmgv` per bucket it spans; call it once per channel.
+  The per-frame `add(frameAmplitude:at:)` path (a format lookup and a throwing generic call per
+  sample) cost 26x the decode itself — 3.9 s for a 7-minute FLAC, 11.5 s for a 20-minute MP3 in a
+  debug build, against 0.19 s and 0.56 s now. It remains only as the fallback for non-Float32 buffers,
+  and `WaveformBucketAccumulatorTests` pins the two paths to identical buckets.
+- **One generation per cache key.** `loadSnapshot` shares an in-flight `Task` per key: the window
+  reloads on track change, on show and on every rebuild (a skin switch rebuilds it), and each reload
+  used to start its own decode — for a Plex stream its own full download — while cancelling the last.
+  The shared task is unstructured, so a caller's cancellation does not discard nearly-finished work;
+  it completes and is cached.
+- Every generation logs `WaveformCacheService: Generated waveform for <source> in N.NNs` (or
+  `…generation failed for <source> after N.NNs: <error>`) — grep that first when a waveform is slow.
 - Persists snapshots under `~/Library/Application Support/NullPlayer/WaveformCache/`
 - Cache key is based on canonical path + file size + modification date
 
@@ -372,7 +385,9 @@ The waveform window shares the audio engine but intentionally does not share the
   - `WaveformCacheService` can prerender remote waveforms and persist them as seekable snapshots
   - Service cache key: `WaveformCacheService.serviceCacheKey(serviceIdentity:duration:bitrate:sampleRate:)`
   - Live placeholders or unknown-duration streams skip prerender and stay on live accumulation
-  - Generation tries `AVAssetReader` first, then falls back to URL download + local decode
+  - Generation tries `AVAssetReader` first, then falls back to URL download + local decode. For a
+    Plex HTTP stream the reader always fails (`Failed to create asset reader: Operation Stopped`), so
+    the real cost is the download plus the local decode above
   - Once a seekable service prerender is ready, `BaseWaveformView` freezes on that snapshot and ignores subsequent live 576-sample chunks for the same track
 
 ### Consumer Gating

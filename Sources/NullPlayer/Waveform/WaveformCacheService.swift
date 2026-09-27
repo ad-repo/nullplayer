@@ -30,6 +30,7 @@ actor WaveformCacheService {
     private let encoder = PropertyListEncoder()
     private let decoder = PropertyListDecoder()
     private let cacheRootURL: URL?
+    private var inFlight: [String: Task<WaveformSnapshot, Never>] = [:]
 
     init(cacheDirectoryURL: URL? = nil) {
         self.cacheRootURL = cacheDirectoryURL
@@ -65,19 +66,20 @@ actor WaveformCacheService {
                 )
             }
 
-            let generated: WaveformSnapshot
-            do {
-                generated = try await generateSnapshot(with: descriptor)
-            } catch {
-                throw waveformError("Waveform decode failed", underlying: error)
+            // **One generation per track at a time.** The window reloads on every track change, on
+            // show, and whenever it is rebuilt (a skin switch rebuilds it), and each reload used to
+            // start its own decode — or, for a Plex stream, its own full download — while cancelling
+            // the last. A second caller now waits on the one already running, and the running one is
+            // unstructured so a caller's cancellation cannot throw away work that is nearly done: it
+            // finishes, is cached, and the next load is a cache hit.
+            if let running = inFlight[descriptor.cacheKey] {
+                return await running.value
             }
-
-            do {
-                try persist(snapshot: generated, to: cacheURL)
-            } catch {
-                throw waveformError("Waveform cache write failed", underlying: error)
-            }
-            return generated
+            let task = Task { await self.generateAndPersist(descriptor: descriptor, cacheURL: cacheURL) }
+            inFlight[descriptor.cacheKey] = task
+            let result = await task.value
+            inFlight[descriptor.cacheKey] = nil
+            return result
         } catch is CancellationError {
             return .failed("Waveform generation cancelled")
         } catch {
@@ -197,6 +199,34 @@ actor WaveformCacheService {
         )
     }
 
+    private func generateAndPersist(descriptor: CacheDescriptor, cacheURL: URL) async -> WaveformSnapshot {
+        let started = CFAbsoluteTimeGetCurrent()
+        do {
+            let generated: WaveformSnapshot
+            do {
+                generated = try await generateSnapshot(with: descriptor)
+            } catch {
+                throw waveformError("Waveform decode failed", underlying: error)
+            }
+
+            do {
+                try persist(snapshot: generated, to: cacheURL)
+            } catch {
+                throw waveformError("Waveform cache write failed", underlying: error)
+            }
+            NSLog("WaveformCacheService: Generated waveform for %@ in %.2fs",
+                  descriptor.sourcePath.redactingSensitiveURLQueryItems,
+                  CFAbsoluteTimeGetCurrent() - started)
+            return generated
+        } catch {
+            NSLog("WaveformCacheService: Waveform generation failed for %@ after %.2fs: %@",
+                  descriptor.sourcePath.redactingSensitiveURLQueryItems,
+                  CFAbsoluteTimeGetCurrent() - started,
+                  error.localizedDescription.redactingSensitiveURLQueryItems)
+            return .failed("Waveform unavailable: \(error.localizedDescription)")
+        }
+    }
+
     private func generateSnapshot(with descriptor: CacheDescriptor) async throws -> WaveformSnapshot {
         if descriptor.sourceURL.isFileURL {
             return try await generateLocalSnapshot(with: descriptor)
@@ -249,6 +279,17 @@ actor WaveformCacheService {
             let frameLength = Int(buffer.frameLength)
             if frameLength == 0 {
                 break
+            }
+
+            // `AVAudioFile` hands back deinterleaved Float32, so the common case is one vectorised
+            // pass per channel per chunk. Per frame it cost a format lookup and a throwing generic
+            // call per sample — 26x the decode itself on a 7-minute FLAC, ~12 s on a 20-minute MP3.
+            if let channels = buffer.floatChannelData, !processingFormat.isInterleaved {
+                for channel in 0..<channelCount {
+                    accumulator.addSamples(channels[channel], count: frameLength, startingAt: frameIndex)
+                }
+                frameIndex += Int64(frameLength)
+                continue
             }
 
             for frame in 0..<frameLength {
