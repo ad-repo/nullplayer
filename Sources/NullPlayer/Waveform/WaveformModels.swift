@@ -1,3 +1,4 @@
+import Accelerate
 import AppKit
 import Foundation
 
@@ -78,6 +79,31 @@ struct WaveformBucketAccumulator {
         let normalized = min(max(frameAmplitude, 0), 1)
         let bucket = min(bucketCount - 1, Int((frameIndex * Int64(bucketCount)) / totalFrames))
         maxima[bucket] = max(maxima[bucket], normalized)
+    }
+
+    /// The first frame that lands in `bucket` under `add(frameAmplitude:at:)`'s mapping.
+    private func firstFrame(ofBucket bucket: Int) -> Int64 {
+        (Int64(bucket) * totalFrames + Int64(bucketCount) - 1) / Int64(bucketCount)
+    }
+
+    /// Adds `count` consecutive frames of one channel, starting at `frameIndex`, in one pass per
+    /// bucket — the same result as calling `add(frameAmplitude: abs(sample), at:)` for every frame,
+    /// without paying a call per sample. `samples` steps `stride` floats per frame, so an interleaved
+    /// buffer is fed one channel at a time; call once per channel for the per-frame channel maximum.
+    mutating func addSamples(_ samples: UnsafePointer<Float>, count: Int, stride: Int = 1,
+                             startingAt frameIndex: Int64) {
+        guard bucketCount > 0, count > 0 else { return }
+        var offset = 0
+        while offset < count {
+            let frame = frameIndex + Int64(offset)
+            let bucket = min(bucketCount - 1, Int((frame * Int64(bucketCount)) / totalFrames))
+            let bucketEnd = bucket == bucketCount - 1 ? Int64.max : firstFrame(ofBucket: bucket + 1)
+            let length = Int(min(Int64(count - offset), max(1, bucketEnd - frame)))
+            var peak: Float = 0
+            vDSP_maxmgv(samples + offset * stride, vDSP_Stride(stride), &peak, vDSP_Length(length))
+            maxima[bucket] = max(maxima[bucket], min(max(peak, 0), 1))
+            offset += length
+        }
     }
 
     func makeSamples() -> [UInt16] {
