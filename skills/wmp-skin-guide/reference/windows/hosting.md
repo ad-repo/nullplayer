@@ -43,7 +43,9 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   The EQ is a fixed 275x116 layout, so its old band stays as ground inside a thinner rim.
   `hostedGroundRect` returns the gloss hole, not `bounds`: PeppyMeter (and Cava, Flow) paint their
   ground through it, and a full-window fill showed as square black corners outside the rounded rim. `.wal`
-  shares every one of these painters and is unchanged — the gate is false there.
+  shares every one of these painters and, since 2026-09-26, the gate too: it is true in `.wal` once
+  the skin's palette has loaded (see `winamp-modern-skin-guide/reference/components.md` §
+  *NullPlayer-owned hosted windows are lazy*). Classic and Original never reach it.
 - **A player the skin gives no close gets an invisible one (2026-09-26).** WMP drew a Windows title
   bar around a view unless it wrote `titleBar="false"` (about 30 archives do), so a skin that
   relied on that frame authors no close — `Classic` is a rectangle with a "Return to Full Mode"

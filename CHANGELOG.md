@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Glossy frames for Winamp Modern fallback windows** — when a Winamp Modern (`.wal`) skin has no
+  window frame of its own for NullPlayer's windows (the analyzers, Cava, Flow, PeppyMeter, waveform,
+  library, playlist, equalizer and Sonos Rooms), they now wear the same glossy, title-bar-free frame
+  in the skin's colours that Windows Media Player skins use, with the close button in the top-right
+  corner. Skins that supply their own frames are unchanged.
 - **SRS audio enhancements for every skin** — the WOW Effect, TruBass and Headphones settings that
   came with Windows Media Player skins are now global playback options under **Playback Options ▸
   SRS**, work in every skin, and are remembered across launches. A `.wmz` skin's own SRS controls

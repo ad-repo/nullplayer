@@ -112,7 +112,7 @@ class PlaylistView: NSView {
     /// wherever there is one, so the list, its hit testing and its scrolling all move together.
     private var Layout: PlaylistChrome {
         guard let metrics = hostedFrame?.metrics else {
-            // A `.wmz` session draws the unskinned playlist without its title bar: the top edge is
+            // A `.wmz` or `.wal` session draws the unskinned playlist without its title bar: the top edge is
             // a border as thin as the bottom one (`SkinnedSurfaceChrome.hidesPaletteTitleBar`).
             guard SkinnedSurfaceChrome.hidesPaletteTitleBar, !isEmbedded else { return .classic }
             let rim = SkinnedSurfaceChrome.glossBorder

@@ -612,7 +612,7 @@ registered, inheritance-validated, instantiated, and script-bound exactly like t
   curve — inside the skin's own standard frame, where the synthesized `<component guid:eq>` holder
   would have mounted the stub. So the order the equalizer actually resolves in is **embedded →
   declared → hosted window in the skin's frame → NullPlayer's own window**, and only the last of
-  those wears the flat palette chrome. Both routes still agree because both end at
+  those wears the palette chrome (the gloss frame, as above). Both routes still agree because both end at
   `WindowManager.toggleEqualizer()`, which consults the coordinator, then the materializer, then the
   standalone controller — in that order, from one place.
   `EQView` draws the classic layout in a *hosted* mode: no title bar, no close button and no window
@@ -685,6 +685,17 @@ every skin-owned step has declined (B55, above).
 - The hosted surface is chromeless: the Wasabi standard frame owns close, resize, keyboard, and
   artwork. The same existing feature view draws its shared `.wal`-palette fallback chrome only when
   it remains inside the standalone controller. **It does not own the drag** — see below.
+- **That fallback chrome is the WMP gloss frame, with no title bar (2026-09-26).** Reported as
+  *"replace the chrome default window style with the same style used in wmp mode"*: the flat
+  palette title bar and bands are gone, and every standalone fallback — the spectrum family,
+  waveform, ProjectM, library, playlist, equalizer and Sonos Rooms — wears
+  `SkinnedSurfaceChrome.drawGlossFrame` with the undrawn top-right close target, exactly as `.wmz`
+  does (`wmp-skin-guide/reference/windows/hosting.md`). The gate is
+  `SkinnedSurfaceChrome.hidesPaletteTitleBar`: the WMP family, or `.winampModern` **with a loaded
+  palette** — before the palette arrives these windows draw classic sprites and must keep classic
+  metrics, so a gloss rim then would misplace their content. Sonos's chrome keys its palette path on
+  the same gate. Only skins whose standard frames all fail synthesis reach this route; `canum` is the
+  measured case (playlist, library and every hosted window). Skins that lend a frame are unchanged.
 - Window size is per registry entry and then clamped by the selected skin frame's hard resize limits.
   Center-stack sizing is a preference inside those bounds, not a replacement geometry; PeppyMeter
   therefore retains its larger authored height instead of collapsing to the spectrum-family size.

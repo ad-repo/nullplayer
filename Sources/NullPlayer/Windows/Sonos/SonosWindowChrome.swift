@@ -4,8 +4,9 @@ import AppKit
 struct SonosWindowChrome {
     let window: NSWindow?
     private var modern: Bool { WindowManager.shared.isModernUIEnabled }
-    /// A `.wmz` session: the skin's palette, and its borrowed frame wherever it lends one.
-    private var wmp: Bool { WindowManager.shared.isRunningWMPUI }
+    /// A `.wmz` session, or a `.wal` one with its palette loaded: the skin's palette in the titleless
+    /// gloss frame, and a `.wmz`'s borrowed frame wherever it lends one.
+    private var wmp: Bool { SkinnedSurfaceChrome.hidesPaletteTitleBar }
     private var classicScale: CGFloat { WindowManager.shared.playlistChromeScale }
     private var wmpMetrics: SkinnedSurfaceChrome.Metrics {
         SkinnedSurfaceChrome.metrics(for: CGRect(origin: .zero, size: window?.frame.size ?? .zero),

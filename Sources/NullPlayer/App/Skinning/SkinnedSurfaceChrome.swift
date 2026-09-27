@@ -89,13 +89,19 @@ struct SkinnedSurfaceChrome {
         WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size)?.metrics ?? paletteMetrics(fallback)
     }
 
-    /// **A `.wmz` session draws our unskinned windows without a title bar.** Where the skin lends
-    /// no frame, the palette chrome keeps its side and bottom borders, and its top edge becomes a
-    /// border as thin as the bottom one — the Original family's *Hide Title Bars*, but always on and
-    /// with no setting, because a WMP skin has no title bar of its own to match. The close control
-    /// stays, as the same top-right corner hit area a borrowed frame gets (`closeButtonRect`).
-    /// `.wal` shares this painter and keeps its title bar: the gate is the WMP family, never a flag.
-    static var hidesPaletteTitleBar: Bool { WindowManager.shared.isRunningWMPUI }
+    /// **A `.wmz` or `.wal` session draws our unskinned windows without a title bar.** Where the
+    /// skin lends no frame, the palette chrome keeps its side and bottom borders, and its top edge
+    /// becomes a border as thin as the bottom one — the Original family's *Hide Title Bars*, but
+    /// always on and with no setting. The close control stays, as the same top-right corner hit area
+    /// a borrowed frame gets (`closeButtonRect`). `.wal` wears the same gloss frame (2026-09-26) once
+    /// its palette has loaded; before that its windows draw classic sprites and keep their classic
+    /// metrics. The gate is the skin family, never a flag, so Classic and Original never reach it.
+    static var hidesPaletteTitleBar: Bool {
+        let manager = WindowManager.shared
+        if manager.isRunningWMPUI { return true }
+        return manager.uiMode.controllerFamily == .winampModern
+            && (manager.mainWindowController as? WinampModernMainWindowController)?.currentPalette != nil
+    }
 
     /// The border a window wears when no frame is lent: `fallback`, less its title bar in WMP.
     /// Layout, drawing and `HostedWindowBorderLayout` all read it, so the three agree.
