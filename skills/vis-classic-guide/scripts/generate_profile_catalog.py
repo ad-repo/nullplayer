@@ -99,7 +99,7 @@ def parse_ini(path: Path) -> Tuple[Dict[str, str], Dict[int, Tuple[int, int, int
             continue
 
         try:
-            b, g, r = (max(0, min(255, int(parts[0]))), max(0, min(255, int(parts[1]))), max(0, min(255, int(parts[2]))))
+            r, g, b = (max(0, min(255, int(parts[0]))), max(0, min(255, int(parts[1]))), max(0, min(255, int(parts[2]))))
         except ValueError:
             continue
 
@@ -285,7 +285,7 @@ def build_markdown() -> str:
     lines.append("")
     lines.append(f"- Total profiles: **{len(profile_files)}**")
     lines.append("- Source format: `[Classic Analyzer]`, `[BarColours]`, `[PeakColours]`")
-    lines.append("- Color values in INI are BGR; this catalog displays RGB.")
+    lines.append("- Color values in INI are R G B as drawn (the original plugin's `RGB(b, g, r)` naming is undone by its DIB byte order).")
     lines.append("")
 
     lines.append("## Option Legend")
