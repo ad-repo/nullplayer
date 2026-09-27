@@ -6,7 +6,12 @@
   window frame of its own for NullPlayer's windows (the analyzers, Cava, Flow, PeppyMeter, waveform,
   library, playlist, equalizer and Sonos Rooms), they now wear the same glossy, title-bar-free frame
   in the skin's colours that Windows Media Player skins use, with the close button in the top-right
-  corner. Skins that supply their own frames are unchanged.
+  corner. Skins that supply their own frames are unchanged. ClassicPro skins whose frame is only
+  borrowed tooltip artwork (the cream box with `~` and `x`) now count as having no frame, so their
+  windows match the player too.
+- **Clicking any Winamp Modern window brings them all forward** — clicking one `.wal` window now
+  raises every one of the skin's windows and NullPlayer's own, even when you click in from another
+  app, the way Windows Media Player skins already did.
 - **SRS audio enhancements for every skin** — the WOW Effect, TruBass and Headphones settings that
   came with Windows Media Player skins are now global playback options under **Playback Options ▸
   SRS**, work in every skin, and are remembered across launches. A `.wmz` skin's own SRS controls
