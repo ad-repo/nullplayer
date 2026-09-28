@@ -1106,7 +1106,8 @@ want of a free slot — it returns the last slot rescued onto the region, becaus
 
 **Regression risk:** Itemskin (B69) overlays a script-positioned *pinned* frame window exactly on each
 component window. Pinned moves bypass the clamp by design, so tiler changes can separate the pair —
-test Itemskin explicitly.
+test Itemskin explicitly. The sweep carries each recorded frame with its window (B156); test Ebonite
+too, whose script also carries its frames itself.
 
 ## Related Documentation
 

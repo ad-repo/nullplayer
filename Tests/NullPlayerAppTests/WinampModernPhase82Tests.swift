@@ -172,6 +172,54 @@ final class WinampModernPhase82Tests: XCTestCase {
         XCTAssertFalse(moved)
     }
 
+    // MARK: - B156: a window that is not on screen lends no position
+
+    /// Itemskin's frame script answers its content window's `onSetVisible(1)` with `syncContent()`
+    /// before it shows the frame. The frame has never been placed — a new dynamic container sits at
+    /// the screen's bottom-left — and pinning the content there put the Spectrum Analyzer 74pt below
+    /// the screen, over the slot the tiler had just given it. The size half still applies.
+    func testAWindowReadWhileOffScreenDoesNotMoveTheWindowWrittenTo() throws {
+        let (runtime, program) = try makeRuntime()
+        runtime.containerOriginQuery = { id in
+            id.caseInsensitiveCompare("content") == .orderedSame
+                ? CGPoint(x: 1309, y: 318) : CGPoint(x: 0, y: 1032)
+        }
+        runtime.containerVisibilityQuery = { id in id.caseInsensitiveCompare("content") == .orderedSame }
+        var moved = false
+        runtime.containerMoveRequested = { _, _, _ in moved = true }
+        var sizes: [CGSize] = []
+        runtime.layoutResizeRequested = { sizes.append($1) }
+
+        let chrome = try XCTUnwrap(object(runtime, type: "layout", id: "normal"))
+        let content = try XCTUnwrap(object(runtime, type: "layout", id: "contentNormal"))
+        let read = try readOrigin(runtime, program, of: chrome)
+        try resize(runtime, program, content, to: CGRect(origin: read, size: CGSize(width: 383, height: 211)))
+
+        XCTAssertFalse(moved, "the hidden frame's origin is not a place to put the content")
+        XCTAssertEqual(sizes.last, CGSize(width: 383, height: 211))
+    }
+
+    /// The other direction is unchanged once the window read *is* on screen: the frame is shown and
+    /// its timer puts it on the content, which is how the pair settles.
+    func testAWindowReadWhileOnScreenStillPinsTheWindowWrittenTo() throws {
+        let (runtime, program) = try makeRuntime()
+        runtime.containerOriginQuery = { id in
+            id.caseInsensitiveCompare("content") == .orderedSame
+                ? CGPoint(x: 1309, y: 318) : CGPoint(x: 0, y: 1032)
+        }
+        runtime.containerVisibilityQuery = { id in id.caseInsensitiveCompare("content") == .orderedSame }
+        var moves: [(WasabiObjectID, CGPoint, Bool)] = []
+        runtime.containerMoveRequested = { moves.append(($0, $1, $2)) }
+
+        let content = try XCTUnwrap(object(runtime, type: "layout", id: "contentNormal"))
+        let chrome = try XCTUnwrap(object(runtime, type: "layout", id: "normal"))
+        let read = try readOrigin(runtime, program, of: content)
+        try resize(runtime, program, chrome, to: CGRect(origin: read, size: CGSize(width: 383, height: 211)))
+
+        XCTAssertEqual(moves.first?.1, CGPoint(x: 1309, y: 318))
+        XCTAssertTrue(moves.first?.2 ?? false)
+    }
+
     // MARK: - onMove
 
     /// `onMove()` is addressed at the window objects only — a move changes nothing inside the scene,

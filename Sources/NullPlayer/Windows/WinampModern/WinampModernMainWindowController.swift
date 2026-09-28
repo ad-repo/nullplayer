@@ -1909,7 +1909,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 NSLog("[place/tile] %@ %@ -> %@", container.containerID,
                       NSStringFromRect(container.window.frame), NSStringFromRect(slot))
             }
-            container.window.setFrameOrigin(slot.origin)
+            moveCarryingGluedWindow(container.window, to: slot.origin, trace: trace)
             placedAuxiliaryWindows.insert(container.containerID)
             manager.releaseClosedWindowSlots(under: container.window)
         }
@@ -1919,7 +1919,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 NSLog("[place/tile] hosted %@ -> %@",
                       NSStringFromRect(window.frame), NSStringFromRect(slot))
             }
-            window.setFrameOrigin(slot.origin)
+            moveCarryingGluedWindow(window, to: slot.origin, trace: trace)
             manager.releaseClosedWindowSlots(under: window)
         }
         for window in trailing where window.isVisible {
@@ -1931,6 +1931,43 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             window.setFrameOrigin(slot.origin)
             manager.releaseClosedWindowSlots(under: window)
         }
+    }
+
+    /// Move a window the tiler has placed, and the window a script keeps glued over it with it (B156).
+    ///
+    /// Itemskin's frame is a second window its script parks on the content window from a 10 ms
+    /// timer, and the same script pulls the content back onto the frame from the frame's own
+    /// `onResize`/`onMove`. A UI Size change rescales every window and tiles them in one pass, and the
+    /// frame's `onResize` can be dispatched before its timer has carried it after the content. It then
+    /// read the frame where the content *used* to be and dragged the content back there, off its
+    /// slot and sometimes below the screen. Moved together, there is no stale frame to read.
+    private func moveCarryingGluedWindow(_ window: NSWindow, to origin: NSPoint, trace: Bool) {
+        let follower = gluedWindow(over: window)
+        // The offset is taken before the move and re-applied after it, rather than the move's delta
+        // added on: a skin whose script follows the move synchronously has already carried its frame
+        // by the time `setFrameOrigin` returns (Ebonite's `onMove` does), and a second delta threw it
+        // off by the whole distance.
+        let offset = follower.map {
+            NSPoint(x: $0.frame.minX - window.frame.minX, y: $0.frame.minY - window.frame.minY)
+        }
+        window.setFrameOrigin(origin)
+        guard let follower, let offset, follower !== window, follower.isVisible else { return }
+        let carried = NSPoint(x: origin.x + offset.x, y: origin.y + offset.y)
+        guard follower.frame.origin != carried else { return }
+        if trace {
+            NSLog("[place/tile] glued %@ -> %@", NSStringFromRect(follower.frame),
+                  NSStringFromPoint(carried))
+        }
+        follower.setFrameOrigin(carried)
+    }
+
+    /// The window a script keeps glued over `window`, if it has recorded one. See `windowsGluedOver`.
+    private func gluedWindow(over window: NSWindow) -> NSWindow? {
+        guard let scripts = skinView?.scripts,
+              let leaderID = viewsByContainer.first(where: { $0.value.window === window })?.key,
+              let followerID = scripts.windowGluedOver(leaderID)
+        else { return nil }
+        return viewsByContainer[followerID]?.window
     }
 
     /// A closed window whose remembered frame lies under `frame` is placed afresh on its next open:

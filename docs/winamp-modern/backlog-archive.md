@@ -3,6 +3,38 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B156 — an Itemskin script puts a tiled window back where it was — closed 2026-09-28
+
+| B156 | **An Itemskin script puts a tiled window back where it was, mostly below the screen.** Measured 2026-09-28 while closing B153. Itemskin (B69) pins a frame window over each component window. With the playlist, Media Library, Spectrum Analyzer and Waveform open, Windows → UI Size → 150% tiles the library at `{762, 258}`. The next line in the trace is `[place/script] o247 -> {0, -69} (was {762, 258})`: the skin's own `resize()` moves it to its pre-tile origin, with 69pt of its 206pt below the visible frame. Opening the Spectrum Analyzer from the menu at 100% does the same (`o337 -> {0, -74}`). The pinned pairs stay glued, so it is the pair that moves. Not established: whether the script is replaying a position it read before the tiler ran (compare the `onMove` write-back in `reference/scripting.md`) or doing its own arithmetic, and whether Winamp would park it there too. Reproduce with `WINAMP_MODERN_PLACE_TRACE=1 skills/app-control/scripts/launch.sh Itemskin`, toggle those windows from the Windows menu, set UI Size to 150%, and read `winhelper windows` | 1 skin measured | S | Agent-measured |
+
+### B156
+
+- [x] **B156. A window that is not on screen lends no position, and the tiler carries a glued frame
+      with its window.** **Closed 2026-09-28.** Two mechanisms, both in Itemskin's
+      `Wasabi:StandardFrame:*` scripts, which glue a dynamic frame window over each content window.
+      **First open.** The AVS frame script answers the content's `onSetVisible(1)` with
+      `content.resize(frame.getLeft(), frame.getTop(), …)` before it shows the frame. The frame had
+      never been placed, so it sat at the screen's bottom-left, and B69's borrowed-origin pin parked
+      the content there: the Spectrum Analyzer went from its tiled `{762, 254}` to `{0, -74}`, 74pt
+      below the screen, and the Waveform landed on it. The reported `o247 -> {0, -69}` is the same
+      spot for a 206pt window. `borrowedWindowOrigin` now answers `.offScreen` when the window read
+      is not on screen (`containerVisibilityQuery`), and that write keeps its window's origin; its
+      size still applies. **UI Size change.** The sweep moved each content window and left its frame
+      behind for the script's 10 ms timer, and the frame's own `onResize`, dispatched in between, ran
+      `syncContent` and dragged the content back onto the stale frame: `PLEdit` tiled to `{762, 464}`,
+      then `o233 -> {762, 533}`. Which pair lost changed from run to run. `arrangeWindows` now moves
+      the recorded follower (`windowsGluedOver`) with its window, at the offset it had before the
+      move, so a skin that follows synchronously (Ebonite's `onMove`) is not moved twice. Measured
+      live: Itemskin with the playlist, library, analyzer and waveform open, 100% → 150% → 100%, no
+      script move and every pair in its slot; Ebonite_2_1 the same. Without the first half, in the
+      same binary, both hosted windows opened at `{0, -74}`. The run found B158. Unit tests:
+      `WinampModernPhase82Tests.testAWindowReadWhileOffScreenDoesNotMoveTheWindowWrittenTo` and
+      `testAWindowReadWhileOnScreenStillPinsTheWindowWrittenTo`. What is left: on first open the
+      content still jumps to the unplaced frame and back inside one call chain, because a pinned
+      `resize()` applies its size before its origin and the frame's nested `onResize` reads the frame
+      mid-write. It ends in the right place. The rules are in `reference/scripting.md` → *Writing
+      back the position a window just read* and `reference/components.md` → *Where a skin's windows go*.
+
 ## B157 — a window opened from the menu can land well below the window above it — closed 2026-09-28
 
 | B157 | **A window opened from the menu can land well below the window above it.** Measured 2026-09-28 while closing B154, on Sony_Walkman at 100%. `tiledOrigin(for:avoiding:)` walks slots in the opening window's own height, starting under the player, and takes the first one clear of what is on screen. With the equalizer (164pt) open under the player, the playlist (145pt) tried y=399, then y=544, which still overlaps the equalizer, and landed at y=689: 126pt below the equalizer's bottom edge. With the playlist open first, the equalizer landed 19pt below it. The launch sweep and Snap To Default stack flush, because they tile every window in one pass; only a later open walks. A likely fix is to make the next candidate slot start at the bottom edge of whatever the last candidate hit, instead of stepping in the new window's own height. The walk is shared with `.wmz`. Reproduce with `WINAMP_MODERN_PLACE_TRACE=1 skills/app-control/scripts/launch.sh Sony_Walkman`: close every window, open Equalizer, then Playlist Editor from the Windows menu, and read `winhelper windows` | every `.wal` session that opens a window from the menu while another is open | S | Agent-measured |

@@ -246,8 +246,14 @@ extension WinampModernScriptRuntime {
                                        CGSize(width: CGFloat(arguments[2].integerValue),
                                               height: CGFloat(arguments[3].integerValue)))
             }
-            applyContainerGeometry(object, reportedOrigin: reportedBeforeResize,
-                                   desktopOrigin: borrowed)
+            switch borrowed {
+            case .desktop(let origin):
+                applyContainerGeometry(object, reportedOrigin: reportedBeforeResize, desktopOrigin: origin)
+            case .offScreen:
+                applyContainerGeometry(object, keepsOrigin: true)
+            case nil:
+                applyContainerGeometry(object, reportedOrigin: reportedBeforeResize)
+            }
             noteGeometryChange()
             notifyGraphDidMutate()
             return .null

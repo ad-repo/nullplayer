@@ -314,6 +314,17 @@ overlapping on purpose keeps its frame. `.wal` only; WMP keeps the plain rule. A
 must never position its window: `WindowManager` places it first (W248), and a second placement there
 overwrote the remembered frame for the library and Visualizations windows in every mode.
 
+**The sweep moves a glued frame with its window (B156).** Itemskin and Ebonite keep a dynamic frame
+window over each content window from script, and the pair is recorded in `windowsGluedOver`
+([scripting.md](scripting.md) → *Writing back the position a window just read*). The sweep skips the
+dynamic frames and tiles only the content. Leaving each frame for Itemskin's 10 ms timer to carry was
+not enough: a UI Size change dispatches the frame's `onResize` in between, the script's
+`syncContent()` read the frame at the content's *old* spot and dragged the content back there, off
+its slot and sometimes below the screen. `moveCarryingGluedWindow` puts the follower at the offset it
+had from its window before the move. It does not add the move's delta, because Ebonite's `onMove`
+has already carried the frame by the time `setFrameOrigin` returns, and a second delta threw it off
+by the whole distance. `[place/tile] glued` traces each carry.
+
 Four attempts to solve this per-window failed before the sweep, and the reasons are the load-bearing
 part of this section:
 

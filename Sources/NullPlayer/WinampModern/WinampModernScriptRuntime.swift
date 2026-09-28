@@ -1287,12 +1287,24 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// origin for a layout, already the desktop origin for a container — so the pair is what
     /// recognises those coordinates being handed straight back to `resize()` on *another* window.
     /// See `borrowedWindowOrigin`.
-    private var lastWindowOriginRead: (objectID: WasabiObjectID, reported: CGPoint, desktop: CGPoint)?
+    private var lastWindowOriginRead: (objectID: WasabiObjectID, reported: CGPoint, desktop: CGPoint,
+                                       onScreen: Bool)?
 
     /// Remember a window object's position read, for `borrowedWindowOrigin` to recognise.
     func noteWindowOriginRead(of object: WasabiObject) {
         guard Self.isWindowObject(object), let desktop = windowOrigin(of: object) else { return }
-        lastWindowOriginRead = (object.stableID, reportedOrigin(of: object), desktop)
+        // No answer (the headless harness) counts as on screen, as it did before B156.
+        let onScreen = enclosingWindowID(of: object).flatMap { containerVisibilityQuery?($0) } != false
+        lastWindowOriginRead = (object.stableID, reportedOrigin(of: object), desktop, onScreen)
+    }
+
+    /// What a `resize()` on a window object asks for when its coordinates are another window's.
+    enum BorrowedWindowOrigin: Equatable {
+        /// That window's desktop origin: the write is a pinned move there.
+        case desktop(CGPoint)
+        /// The window read was not on screen, so it had no position to lend. The write keeps its
+        /// window where it is (B156).
+        case offScreen
     }
 
     /// **One window placed at another window's position** — the desktop origin a `resize()` is
@@ -1312,7 +1324,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// exact pair another window object just reported, and only when that window is not this one.
     /// A value the script did not read stays a plain move, as it does for B61.
     func borrowedWindowOrigin(matching requested: CGPoint,
-                                      writtenOn object: WasabiObject) -> CGPoint? {
+                                      writtenOn object: WasabiObject) -> BorrowedWindowOrigin? {
         guard Self.isWindowObject(object), let read = lastWindowOriginRead,
               read.objectID != object.stableID
         else { return nil }
@@ -1349,7 +1361,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
            isDynamicallyClaimed(follower.stableID), !isDynamicallyClaimed(leader.stableID) {
             windowsGluedOver[leader.stableID] = follower.stableID
         }
-        return CGPoint(x: read.desktop.x + CGFloat(deltaX), y: read.desktop.y + CGFloat(deltaY))
+        // **A window that is not on screen has no position to lend** (B156). Itemskin's frame script
+        // answers its content window's `onSetVisible(1)` with `syncContent()` *before* it shows the
+        // frame, so the frame read is one the host has never placed: a new dynamic container sits at
+        // the screen's bottom-left, a closed one where its content used to be. Taken as a pin, that
+        // parked the content there over whatever slot the tiler had just given it, mostly below the
+        // screen. The script's 10 ms timer puts the frame on the content once it is shown, which is
+        // the direction the pair is meant to settle in.
+        guard read.onScreen else { return .offScreen }
+        return .desktop(CGPoint(x: read.desktop.x + CGFloat(deltaX), y: read.desktop.y + CGFloat(deltaY)))
     }
 
     /// Which container's window is kept parked on which other container's window — leader → follower,

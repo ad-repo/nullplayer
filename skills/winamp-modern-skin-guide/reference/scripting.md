@@ -952,6 +952,21 @@ two a script asked `newDynamicContainer` for (`isDynamicallyClaimed`); the clien
 declares and the user opens. Only that direction is kept. `WINAMP_MODERN_GLUE_TRACE=1` prints the
 pairs and every restack — see [harness.md](harness.md).
 
+**A window that is not on screen has no position to lend** (B156). The read carries whether its
+window was visible (`containerVisibilityQuery`), and a round trip off one that was not answers
+`.offScreen`. The write then keeps its window where it is, and only its size applies. Itemskin's AVS
+frame script answers the content window's `onSetVisible(1)` with `syncContent()` *before* it shows
+the frame, so the frame it reads has never been placed: a new dynamic container sits at the screen's
+bottom-left. Pinned there, every hosted window it frames opened 74pt below the screen, over the slot
+the tiler had just given it. Its timer puts the frame on the content once both are shown, which is
+the direction the pair is meant to settle in. The harness answers no visibility, which counts as on
+screen, so headless behaviour is unchanged.
+
+**The host moves a glued pair together** (B156). The frame's own `onResize`/`onMove` pull the content
+onto the frame, so a host move of the content alone is undone by the next such event if it comes
+before the frame's timer. A UI Size change does exactly that. See [components.md](components.md) →
+*Where a skin's windows go*.
+
 ### `onSetVisible` — a window a script closes has to be *reopened*, not just ordered in
 
 `onSetVisible` is dispatched per container by `notifyContainerVisibility`, and two rules about it are

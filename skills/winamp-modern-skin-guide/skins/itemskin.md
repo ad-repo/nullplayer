@@ -88,6 +88,14 @@ with an `xuitag` and a `scripts/standardframe*.maki`. Each of those scripts:
 - **A pinned move must not be clamped on screen.** The tiler had already put `MLibrary`'s right edge
   past the visible frame; clamping the frame window — the only one of the pair a script moves — left it
   82px short of its content, which reads as a rendering offset rather than a placement one.
+- **Its frame script syncs the content onto a frame it has not shown yet.** The AVS frame script's
+  `onSetVisible(1)` runs `syncContent()` before it calls `show()` on the frame. The frame then still
+  sits wherever the host created it, the screen's bottom-left for a new one, and pinning the content
+  there put every hosted window it frames below the screen. The frame's `onResize` does the same
+  after a UI Size change if the host has moved the content and not the frame. Both are fixed in the
+  host (B156): a window that is not on screen lends no position, and the tiler moves a glued frame
+  with its window. See [`reference/scripting.md`](../reference/scripting.md) → *Writing back the
+  position a window just read*.
 - **Its notifier preferences point `background=` at a file, not at an id.**
   `<layout background="notifier\config.png">` (`notifier/notifier.xml:98`), written from the skin
   root while the declaration sits in `notifier/`. It is the corpus's only path-form layout background,
