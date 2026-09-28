@@ -28,6 +28,17 @@ Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entri
       (Original — its side windows are `[.borderless]` too, so this fixes Original as well) and
       2222-cPro__Bento (`.wal`, main + Sonos). No unit test: the behaviour is AppKit's window server.
 
+      **Follow-up, same day (reporter on Halo 2 `.wmz`): the windows came back one at a time**, each
+      from its own Dock tile. Minimize All now records the windows it sent on their own and restores
+      them with the main window (`restoreMinimizeAllCompanions`). Instrumenting the notification order
+      exposed two traps behind that, both there before: every key change mid-sequence ran
+      `bringAllWindowsToFront`, whose `orderFront` cancelled a window still waiting to minimize (a
+      second Minimize All left the player up), and the Dock posts a spurious `didDeminiaturize` for
+      the main window during its own minimize. The raise is now skipped while the sequence runs, and
+      the restore waits for the main window's `didMiniaturize`. Verified on all four modes with two
+      cycles each: Minimize All, restore the player (everything returns); Minimize All, restore Sonos
+      from its tile (only Sonos returns), then the player (the rest return).
+
       Original row:
 
 | B18 | **Classic minimize-all ignores the window's mask.** `miniaturizeAllManagedWindows` (`App/WindowManager.swift:8653`) calls `miniaturize(nil)` on windows whose style mask lacks `.miniaturizable` — the bug modern's minimize had. Classic parity item, outside the `.wal` subsystem | — · engine integration, outside the corpus | S | Measured |

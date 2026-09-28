@@ -108,7 +108,7 @@
 - **Minimize All minimizes every window** — **Windows → Minimize All Windows** and Classic's
   minimize button left any window not docked to the player on screen, and Sonos Rooms (and every
   Original-skin side window) never minimized even when docked. Every open window now goes to the
-  Dock, in every skin mode.
+  Dock, in every skin mode, and restoring the player brings them all back.
 - **Cover Flow stays inside the library window** — the stacked covers at either side of the
   carousel no longer spill over the library browser's border, in every skin mode.
 - **One unreadable file no longer stops the playlist** — playback skips past it to the next track,

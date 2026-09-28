@@ -2728,6 +2728,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     func windowDidDeminiaturize(_ notification: Notification) {
         guard let restored = notification.object as? NSWindow else { return }
         repaint(restored)
+        if restored === window { WindowManager.shared.restoreMinimizeAllCompanions(mainWindow: restored) }
     }
 
     func windowDidChangeOcclusionState(_ notification: Notification) {

@@ -839,6 +839,18 @@ class WindowManager {
     /// Windows that were attached as children for coordinated minimize (for restore)
     private var coordinatedMiniaturizedWindows: [NSWindow] = []
 
+    /// Windows Minimize All sent to the Dock on their own; they come back with the main window.
+    private var minimizeAllCompanionWindows: [NSWindow] = []
+    /// Set once the main window reaches the Dock after a Minimize All. Until then its restore is
+    /// not the user's: the main window turning key mid-sequence runs `bringAllWindowsToFront`, and
+    /// the Dock answers with a `didDeminiaturize` before the main window has even left.
+    private var minimizeAllMainWindowReachedDock = false
+    private var minimizeAllMainWindowObserver: NSObjectProtocol?
+    /// True while Minimize All's animations run. Each window leaving hands key to another, whose
+    /// `windowDidBecomeKey` raises everything, and an `orderFront` on a window waiting to minimize
+    /// cancels it.
+    private var isMinimizingAll = false
+
     /// Windows currently in miniaturize animation; suppress drag/group movement for these.
     private var miniaturizingWindowIds = Set<ObjectIdentifier>()
     /// Coalesces the burst of `didChangeScreenParameters` a display reconfiguration produces.
@@ -5778,6 +5790,8 @@ class WindowManager {
             }
         })
 
+        if isMinimizingAll { return }
+
         let topWindow = preferredTopWindow ?? NSApp.keyWindow
 
         for window in windows {
@@ -8668,14 +8682,49 @@ class WindowManager {
         // A window docked to the main window rides into the Dock as its child (see
         // `attachDockedWindowsForMiniaturize`). Every other window goes first: a `miniaturize`
         // sent while the main window's own animation is running is dropped.
-        for window in windowsToMiniaturize where window !== mainWindow
-            && window.parent !== mainWindow
-            && !dockedToMain.contains(where: { $0 === window }) {
+        let companions = windowsToMiniaturize.filter { window in
+            window !== mainWindow && window.parent !== mainWindow
+                && !dockedToMain.contains(where: { $0 === window })
+        }
+        isMinimizingAll = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            self?.isMinimizingAll = false
+        }
+        for window in companions {
             window.miniaturize(nil)
         }
 
         if mainIsVisible {
+            minimizeAllCompanionWindows = companions
+            minimizeAllMainWindowReachedDock = false
+            if let observer = minimizeAllMainWindowObserver {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            minimizeAllMainWindowObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didMiniaturizeNotification, object: mainWindow, queue: .main
+            ) { [weak self] _ in
+                guard let self else { return }
+                self.minimizeAllMainWindowReachedDock = true
+                self.isMinimizingAll = false
+                if let observer = self.minimizeAllMainWindowObserver {
+                    NotificationCenter.default.removeObserver(observer)
+                    self.minimizeAllMainWindowObserver = nil
+                }
+            }
             mainWindow?.miniaturize(nil)
+        }
+    }
+
+    /// Bring back the windows Minimize All sent to the Dock beside the main window, so one restore
+    /// undoes it. A window already restored from its own Dock tile is skipped.
+    func restoreMinimizeAllCompanions(mainWindow: NSWindow) {
+        guard mainWindow === mainWindowController?.window,
+              minimizeAllMainWindowReachedDock else { return }
+        minimizeAllMainWindowReachedDock = false
+        let companions = minimizeAllCompanionWindows
+        minimizeAllCompanionWindows.removeAll()
+        for window in companions where window.isMiniaturized {
+            window.deminiaturize(nil)
         }
     }
     
@@ -8729,5 +8778,6 @@ class WindowManager {
         coordinatedMiniaturizedWindows.removeAll()
         // Reinstate persistent docked-child relationships for Spaces following
         updateDockedChildWindows()
+        restoreMinimizeAllCompanions(mainWindow: mainWindow)
     }
 }
