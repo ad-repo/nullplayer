@@ -39,6 +39,7 @@ their saved Classic, Original, Original-Metal, or WMP choice after upgrading. Se
 | **Visualizations** | Visualization engine host for ProjectM, Geiss and Tripex (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
 
 In every UI mode — Classic, Original, Original-Metal, and Winamp Modern — **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab shows:
+- **Listening heatmap** — daily listening over the last year, in the current skin's colours (and the colour theme's, for Winamp Modern and Windows Media Player skins)
 - **Play Time** summary (day/week/month/year/all-time)
 - **Top Artists** (music only)
 - **Top Movies** and **Top TV Shows** (separate sections; TV groups by show name)

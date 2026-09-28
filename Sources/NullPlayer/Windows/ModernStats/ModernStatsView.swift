@@ -23,7 +23,8 @@ class ModernStatsView: NSView {
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
 
-        let contentView = StatsContentView(agent: agent, skinTextColor: Color(skin.textColor))
+        let contentView = StatsContentView(agent: agent, skinTextColor: Color(skin.textColor),
+                                           heatmapTheme: ContributionHeatmapTheme(modernSkin: skin))
         hostingView = NSHostingView(rootView: contentView)
         hostingView.appearance = skinAppearance(for: skin)
         hostingView.autoresizingMask = [.width, .height]
@@ -135,7 +136,8 @@ class ModernStatsView: NSView {
     @objc private func modernSkinDidChange() {
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
-        hostingView.rootView = StatsContentView(agent: agent, skinTextColor: Color(skin.textColor))
+        hostingView.rootView = StatsContentView(agent: agent, skinTextColor: Color(skin.textColor),
+                                           heatmapTheme: ContributionHeatmapTheme(modernSkin: skin))
         hostingView.appearance = skinAppearance(for: skin)
         needsDisplay = true
     }

@@ -1582,6 +1582,7 @@ class PlexBrowserView: NSView {
     func applyWinampModernStyle(_ style: WinampModernSurfaceStyle) {
         guard embeddedWinampModernStyle != style else { return }
         embeddedWinampModernStyle = style
+        refreshHistoryHostingColors()
         needsDisplay = true
     }
 
@@ -2743,11 +2744,20 @@ class PlexBrowserView: NSView {
         return NSAppearance(named: brightness < 0.5 ? .darkAqua : .aqua)
     }
 
+    /// The Data tab's content, coloured from the playlist colours — the classic skin's, or the
+    /// `.wal`/`.wmz` surface style's (which follows the colour theme).
+    private func makeHistoryRootView(_ colors: PlaylistColors) -> StatsContentView {
+        StatsContentView(agent: historyAgent,
+                         skinTextColor: Color(nsColor: colors.normalText),
+                         headerTitle: "Library Data",
+                         heatmapTheme: ContributionHeatmapTheme(background: colors.normalBackground,
+                                                                text: colors.normalText,
+                                                                accent: colors.currentText))
+    }
+
     private func makeHistoryHostingView() -> NSHostingView<StatsContentView> {
         let colors = currentPlaylistColors()
-        let rootView = StatsContentView(agent: historyAgent,
-                                        skinTextColor: Color(nsColor: colors.normalText),
-                                        headerTitle: "Library Data")
+        let rootView = makeHistoryRootView(colors)
         let hostingView = NSHostingView(rootView: rootView)
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = colors.normalBackground.cgColor
@@ -7097,14 +7107,17 @@ class PlexBrowserView: NSView {
     }
     
     func skinDidChange() {
-        let colors = currentPlaylistColors()
-        historyHostingView?.rootView = StatsContentView(agent: historyAgent,
-                                                        skinTextColor: Color(nsColor: colors.normalText),
-                                                        headerTitle: "Library Data")
-        historyHostingView?.layer?.backgroundColor = colors.normalBackground.cgColor
-        historyHostingView?.appearance = classicAppearance(for: colors.normalBackground)
+        refreshHistoryHostingColors()
         updateHistoryHostingFrame()
         needsDisplay = true
+    }
+
+    private func refreshHistoryHostingColors() {
+        guard let historyHostingView else { return }
+        let colors = currentPlaylistColors()
+        historyHostingView.rootView = makeHistoryRootView(colors)
+        historyHostingView.layer?.backgroundColor = colors.normalBackground.cgColor
+        historyHostingView.appearance = classicAppearance(for: colors.normalBackground)
     }
 
     @objc private func playHistoryDidChange() {
@@ -7119,6 +7132,9 @@ class PlexBrowserView: NSView {
     /// the whole job.
     @objc private func hostedSurfaceStyleDidChange() {
         hasResolvedWindowWinampModernStyle = false
+        // A colour-theme switch recolours the Data tab too. Classic windows resolve no style, and
+        // their Data tab is recoloured by `skinDidChange` instead.
+        if winampModernStyle != nil { refreshHistoryHostingColors() }
         // A borrowed frame moves the content hole this view lays its list and its controls out
         // from, and it lands after the first layout pass — see the same note on the rest of the
         // hosted family (W220).

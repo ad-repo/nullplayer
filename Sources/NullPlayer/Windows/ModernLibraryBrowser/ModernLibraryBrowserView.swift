@@ -1079,7 +1079,8 @@ class ModernLibraryBrowserView: NSView {
         let skin = currentSkin()
         let rootView = StatsContentView(agent: historyAgent,
                                         skinTextColor: Color(skin.textColor),
-                                        headerTitle: "Library Data")
+                                        headerTitle: "Library Data",
+                                        heatmapTheme: ContributionHeatmapTheme(modernSkin: skin))
         let hostingView = NSHostingView(rootView: rootView)
         hostingView.wantsLayer = true
         let background = contentFill(skin.backgroundColor)
@@ -7657,7 +7658,8 @@ class ModernLibraryBrowserView: NSView {
         renderer = ModernSkinRenderer(skin: skin)
         historyHostingView?.rootView = StatsContentView(agent: historyAgent,
                                                         skinTextColor: Color(skin.textColor),
-                                                        headerTitle: "Library Data")
+                                                        headerTitle: "Library Data",
+                                                        heatmapTheme: ContributionHeatmapTheme(modernSkin: skin))
         historyHostingView?.appearance = skinAppearance(for: skin)
         updateHistoryHostingBackground()
         backdropView?.reload()
