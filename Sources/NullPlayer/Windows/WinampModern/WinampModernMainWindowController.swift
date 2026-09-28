@@ -184,6 +184,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // NullPlayer's own feature windows the user has open, in whichever chrome the outgoing skin
         // gave them. The incoming skin gets asked about each of them again once it is up.
         let reopenHostedWindows = WindowManager.shared.openWinampModernHostedWindowIDs()
+        // And the playlist, library and equalizer: a skin switch opens and closes nothing.
+        let surfaceVisibility = WindowManager.shared.winampModernSurfaceVisibility()
         // A new skin places NullPlayer's windows afresh rather than where the last skin left them.
         WindowManager.shared.forgetSkinWindowPlacement()
         tearDownSkin()
@@ -316,6 +318,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             scheduleFramePositionReassert()
             // After the materializer exists, so `handlesHostedWindow` answers for *this* skin.
             WindowManager.shared.rehomeWinampModernHostedWindows(reopenHostedWindows)
+            WindowManager.shared.restoreWinampModernSurfaceVisibility(surfaceVisibility)
             #if DEBUG
             // `WINAMP_MODERN_DEBUG_CLICK=x,y[;x,y…]` drives clicks at skin points a few seconds after
             // launch — the only way to reproduce a click-path defect that lives in the *window* layer,

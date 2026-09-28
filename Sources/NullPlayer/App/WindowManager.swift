@@ -1875,6 +1875,74 @@ class WindowManager {
         }
     }
 
+    /// Whether each routed surface — playlist, library, equalizer — is open right now, captured by
+    /// the `.wal` controller immediately *before* a skin switch tears the outgoing skin down.
+    ///
+    /// A skin switch must neither open nor close these windows, but each skin decides its own
+    /// containers' visibility at load (`default_visible`, or what the user last did *in that skin*),
+    /// so a library open under one skin came up closed under the next. An embedded surface is part
+    /// of the player window and has no state of its own to carry, so it is left out; so is an
+    /// equalizer on the hosted-window route, which `rehomeWinampModernHostedWindows` already carries.
+    ///
+    /// Empty unless a `.wal` skin is already up — a mode switch into `.wal` and the launch load are
+    /// not skin switches, and the previous mode's windows are the mode-switch snapshot's business.
+    func winampModernSurfaceVisibility() -> [WinampModernComponentKind: Bool] {
+        guard uiMode.controllerFamily == .winampModern, let coordinator = winampModernSurfaces else { return [:] }
+        var states: [WinampModernComponentKind: Bool] = [:]
+        for kind in [WinampModernComponentKind.playlist, .library, .equalizer] {
+            if coordinator.handles(kind) {
+                guard !coordinator.isEmbedded(kind) else { continue }
+                states[kind] = coordinator.isSurfaceVisible(kind)
+            } else {
+                if kind == .equalizer { continue }
+                states[kind] = classicSurfaceWindow(kind)?.isVisible == true
+            }
+        }
+        return states
+    }
+
+    /// Put the routed surfaces back the way `winampModernSurfaceVisibility` found them, now that
+    /// the incoming skin is up and has opened whatever *it* opens at load. Called only from the
+    /// `.wal` controller, after `rehomeWinampModernHostedWindows`.
+    func restoreWinampModernSurfaceVisibility(_ states: [WinampModernComponentKind: Bool]) {
+        guard uiMode.controllerFamily == .winampModern, !states.isEmpty,
+              let coordinator = winampModernSurfaces else { return }
+        for (kind, wasOpen) in states {
+            let skinOwned = coordinator.handles(kind)
+            // The outgoing skin had no surface of its own, so NullPlayer's window is still up — a
+            // plain `NSWindow` the teardown never touched. The two must never be up at once.
+            if skinOwned, classicSurfaceWindow(kind)?.isVisible == true {
+                showClassicSurfaceForWinampModern(kind, showOnly: false)
+            }
+            let isOpen: Bool
+            switch kind {
+            case .playlist: isOpen = isPlaylistVisible
+            case .library: isOpen = isPlexBrowserVisible
+            default: isOpen = isEqualizerVisible
+            }
+            if wasOpen, !isOpen {
+                switch kind {
+                case .playlist: showPlaylist()
+                case .library: showPlexBrowser()
+                default: showEqualizer()
+                }
+            } else if !wasOpen, isOpen, skinOwned, !coordinator.isEmbedded(kind) {
+                // The incoming skin opened its own at load; the user had it closed.
+                routeWinampModernSurface(kind, toggle: true)
+            }
+        }
+    }
+
+    /// NullPlayer's own window for a routed surface — the one the classic fallback shows.
+    private func classicSurfaceWindow(_ kind: WinampModernComponentKind) -> NSWindow? {
+        switch kind {
+        case .playlist: return playlistWindowController?.window
+        case .library: return plexBrowserWindowController?.window
+        case .equalizer: return equalizerWindowController?.window
+        default: return nil
+        }
+    }
+
     /// The materializer's deterministic fallback. The recursion guard makes the existing public
     /// paths construct exactly their old standalone controllers without consulting the failed route.
     func showClassicHostedWindowForWinampModern(_ id: WinampModernHostedWindowID, showOnly: Bool) {
