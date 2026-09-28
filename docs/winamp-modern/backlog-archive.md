@@ -29,6 +29,35 @@ Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entri
 
       **M24:** for each `.wal` (and the ClassicPro engine tree), collect `id=` from every `<layer>` and every `<text>`, then keep the `autowidthsource="…"` values that name a layer and not a text. Measured 2026-08-31: The_Nokia_5220_XpressMusic 12 of 12 and winampmodern566 12 of 18.
 
+## B60 — the embedded library and video surfaces had no body drag — closed 2026-09-28
+
+### B60
+
+- [x] **B60. Fixed 2026-09-28.** Measured first, as the row asked:
+
+      - **Library.** `PlexBrowserView.mouseDown` runs a press through its own hit tests and ends at
+        `hitTestTitleBar`, which is off when embedded, so a press on the blank area below the last
+        row did nothing at all.
+      - **Video.** The picture is a child window parked over the box, so a press lands on
+        `VideoPlayerView` there, and that view skips `performDrag` while parked (moving the child
+        would slide it off the box). Nothing reached the skin's window either.
+
+      Both now prime `WinampModernHostedWindowDrag` through a new `prime(_:window:)`: the library
+      against its own window (the skin's), the video against `window?.parent`, whose move the child
+      follows. Prime-then-move, 3pt threshold, `windowWillMove` — the B57 idiom, so docking and
+      snapping are unchanged. Both paths are gated on `isEmbeddedInSkin`; Classic and Original
+      never reach them.
+
+      **Verified live on cPro-Bento:** a `drag` from the empty Search page moved the player
+      (762,293)→(822,333), exactly the +60,+40 travel; a `drag` from a list row and a plain click
+      left it where it was. With `long-film` playing in the Video tab, a `drag` on the picture moved
+      the player and the parked picture together by +50,+30 and the picture stayed on its box; a
+      `dblclick` on it logged `togglePlayPause` and moved nothing.
+
+      Original row:
+
+| B60 | **The hosted library and video surfaces have no body drag.** `WinampModernLibrarySurfaceView`'s blank area below the last row could be a handle and is not; `WinampModernVideoSurfaceView` overrides no `mouseDown` and its picture is a child window, so whether a press reaches anything is unverified — measure it in the app. `WinampModernBrowserSurfaceView` is out of scope (the page owns the mouse) | — · every skin with a usable standard frame | M | Live-reported |
+
 ## B148 — Winamp's "Text Ticker Speed" preference was unregistered — closed 2026-09-28
 
 | B148 | **Winamp's own "Text Ticker Speed" preference is unregistered.** `OneDirectionText` reads `Config.getItemByGuid("{9149C445-3C30-4e04-8433-5A518ED0FDDE}").getAttribute("Text Ticker Speed")` and sets its move timer to `20/stringToFloat(value)`; unanswered, the value is `""`, the delay is infinite and the ticker never scrolls. Register the host config item with a default, the way Winamp's own preferences would. The default value is unknown — confirm it before choosing one; `"0"` means "don't scroll" to this script | 2 skins (Shield_Amp, Ebonite_2_1) | S | Live-reported |

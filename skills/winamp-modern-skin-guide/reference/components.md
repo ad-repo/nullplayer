@@ -973,9 +973,22 @@ Two things follow for any new hosted surface:
   hosted `waveformRect` is the whole view, so every press there seeks; its handle is the frame strip,
   exactly as it is that view's own title bar when standalone. Do not invent one.
 
-Not covered by B57, and still open: `WinampModernVisualizationSurfaceView` swallows single clicks the
-same way but sits inside the skin's *own* window, so its drag has to route through the parent's skin
-hit test rather than a `hostedContext` (B58); and the hosted library and video surfaces (B60).
+**A surface embedded in the skin's *own* window moves that window** (B60). It has no
+`hostedContext`, so it primes the same helper with the window named outright —
+`prime(_:window:)`:
+
+- **The embedded library** (`PlexBrowserView` with `isEmbeddedInSkin`) primes on whatever press
+  falls through every one of its own hit tests — the blank area below the last row, an empty
+  Search page — against its own `window`, which is the skin's. Rows, tabs, the scrollbar and the
+  alphabet index all claim their presses first.
+- **The parked video picture** (`VideoPlayerView` with `isEmbeddedInSkin`) primes against
+  `window?.parent`: its own window is the child pinned over the box and must not move, so the drag
+  moves the skin's window and the picture follows it as a child. A double-click still toggles
+  play/pause and moves nothing.
+
+Measured on cPro-Bento: a drag from the library's blank area and one from the playing picture each
+moved the player by exactly the pointer's travel, with the picture still on its box; a drag that
+starts on a row moves nothing.
 
 #### A press that only acts on the button up is still a drag handle (B59)
 

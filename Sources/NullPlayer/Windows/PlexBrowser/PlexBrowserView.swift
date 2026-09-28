@@ -1445,6 +1445,9 @@ class PlexBrowserView: NSView {
     /// Window dragging state
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
+    /// Embedded in a `.wal` holder there is no title bar of ours, so background the browser does not
+    /// consume — the blank area below the last row — moves the skin's window instead (B60).
+    private var embeddedWindowDrag = WinampModernHostedWindowDrag()
     
     /// Scrollbar dragging state
     private var isDraggingScrollbar = false
@@ -9201,6 +9204,8 @@ class PlexBrowserView: NSView {
             if let window = window {
                 WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
             }
+        } else if isEmbeddedInSkin {
+            embeddedWindowDrag.prime(event, window: window)
         }
     }
     private func handleServerBarClick(at skinPoint: NSPoint, event: NSEvent) {
@@ -10358,6 +10363,8 @@ class PlexBrowserView: NSView {
             return
         }
         
+        if embeddedWindowDrag.drag(event) { return }
+
         // Handle window dragging - snaps to other windows but doesn't dock
         if isDraggingWindow, let window = window {
             let currentPoint = event.locationInWindow
@@ -10390,6 +10397,7 @@ class PlexBrowserView: NSView {
         if isDraggingWindow {
             isDraggingWindow = false
         }
+        embeddedWindowDrag.end()
         
         // End scrollbar dragging
         isDraggingScrollbar = false

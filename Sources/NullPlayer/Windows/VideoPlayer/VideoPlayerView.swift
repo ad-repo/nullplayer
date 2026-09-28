@@ -91,14 +91,15 @@ class VideoPlayerView: NSView {
     private var initialMouseLocation: NSPoint?
     private var initialWindowFrame: NSRect?
     private let resizeMargin: CGFloat = 8  // Width of resize zones at edges
+    private var parkedWindowDrag = WinampModernHostedWindowDrag()
 
     /// True while this view is lent to a `.wal` skin's own video window (B20).
     ///
     /// Two behaviours here belong to the free-floating window this view normally fills and to nothing
     /// else. The **resize zones** are an 8px margin at the view's own edges, which inside a skin's
     /// video box sit in the middle of the skin's own chrome. And the **drag**, which would slide the
-    /// parked window off the box it is filling. The skin's window still moves and resizes normally
-    /// from its own frame, and the picture follows it.
+    /// parked window off the box it is filling — so a drag on the picture moves the skin's window
+    /// instead (B60), which the picture follows as a child window.
     var isEmbeddedInSkin = false {
         didSet {
             guard isEmbeddedInSkin != oldValue else { return }
@@ -611,9 +612,14 @@ class VideoPlayerView: NSView {
         // performDrag only moves the window if the pointer actually moves, so a
         // plain click still just shows the overlay.
         showCenterOverlay()
-        // Parked over a skin's video box, this window is a child window pinned to that box: a drag
-        // would slide the picture out of the hole it is filling.
-        if !isEmbeddedInSkin { window?.performDrag(with: event) }
+        // Parked over a skin's video box, this window is a child window pinned to that box: moving
+        // it would slide the picture out of the hole it is filling. The picture is still the body of
+        // the skin's window, so the drag moves that parent instead, and the child follows (B60).
+        if isEmbeddedInSkin {
+            parkedWindowDrag.prime(event, window: window?.parent)
+        } else {
+            window?.performDrag(with: event)
+        }
     }
     
     override func mouseDragged(with event: NSEvent) {
@@ -621,9 +627,11 @@ class VideoPlayerView: NSView {
             performResize()
             return
         }
+        parkedWindowDrag.drag(event)
     }
     
     override func mouseUp(with event: NSEvent) {
+        parkedWindowDrag.end()
         if isResizing {
             isResizing = false
             resizeZone = .none

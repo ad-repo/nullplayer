@@ -33,6 +33,9 @@
 - **Song tickers scroll in Shield Amp and Ebonite** — a long title now scrolls across the song
   display at Winamp's speed instead of standing still, and stays inside the display instead of
   running over the rest of the player.
+- **Drag a Winamp Modern player by its library or video** — in skins that show the media library or
+  a video inside the player, dragging the empty space below the library's list, or the video
+  picture itself, now moves the window.
 - **Winamp Modern 5.66's menu bar works** — File, Play, Options, View and Help in the
   winampmodern566 skin now open their menus when clicked; before, clicking them did nothing.
 
