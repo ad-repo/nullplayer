@@ -40,7 +40,7 @@ and read back with `winhelper windows`. The third found a defect, which was fixe
 Not pursued: on Sony_Walkman the skin's equalizer is sometimes visible during load and then
 hidden. The launch sweep places it, so reopening it returns it to that remembered slot
 (`reopensWhereLeft`) even when the playlist has taken the slot since. It was seen in 3 of 4 runs.
-The mechanism has not been confirmed.
+The mechanism has not been confirmed. Filed as B154.
 
 ## B111 — an unchanged `setActivated` dispatched `onToggle` — closed 2026-09-28
 
