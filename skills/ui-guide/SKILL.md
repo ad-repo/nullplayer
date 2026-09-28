@@ -1098,7 +1098,9 @@ its final size is what checks the result.
 `WinampModernTiler.nextSlot` clamps its slot back onto the region on both axes. This **reverses** the
 original design, which let columns march right rather than overlap. For a skin wider than half the
 display (EPS, Big Bento, cPro-Bento) column 2 began past `region.maxX`, so every window after the
-first column was placed entirely off screen. `tiledOrigin` correspondingly never returns `nil` for
+first column was placed entirely off screen. The clamp is the last resort, though (B153): a clamped
+slot that would land on a placed window goes to the columns left of the player first, and only
+when neither side fits does it take whichever clamp overlaps less. `tiledOrigin` correspondingly never returns `nil` for
 want of a free slot — it returns the last slot rescued onto the region, because both call sites read
 `nil` as "leave it where it is" and where it is was the problem.
 

@@ -2242,6 +2242,13 @@ class WindowManager {
         private var columnX: CGFloat
         private var columnWidth: CGFloat
         private var cursorY: CGFloat
+        /// The columns left of the player, which fill right-to-left from its left edge: the right
+        /// edge of the next one, its widest member so far, and its cursor.
+        private var leftColumnMaxX: CGFloat
+        private var leftColumnWidth: CGFloat = 0
+        private var leftCursorY: CGFloat
+        /// Every slot handed out so far, and the player: what a clamped slot must not land on.
+        private var placed: [NSRect]
 
         /// The player is the anchor and never moves: it owns the top of the first column, and the
         /// first slot is flush beneath it.
@@ -2250,6 +2257,9 @@ class WindowManager {
             self.columnX = playerFrame.minX
             self.columnWidth = playerFrame.width
             self.cursorY = playerFrame.minY
+            self.leftColumnMaxX = playerFrame.minX
+            self.leftCursorY = region.maxY
+            self.placed = [playerFrame]
         }
 
         /// The next slot for a window of `size`, advancing the cursor past it.
@@ -2259,26 +2269,84 @@ class WindowManager {
                 columnWidth = 0
                 cursorY = region.maxY
             }
-            var slot = NSRect(x: columnX, y: cursorY - size.height,
-                              width: size.width, height: size.height)
-            // The ranking here used to be the other way round — non-overlap the invariant, staying on
-            // screen only the preference — on the reasoning that pulling a column back can only move
-            // it *left*, into the column already there. That is true, and it is the wrong trade. A
-            // window hanging off the right edge has no title bar to grab and no visible way back; a
-            // window on top of another is a nuisance the user fixes with one drag. With a skin wider
-            // than half the display (EPS, Big Bento, cPro-Bento) column 2 starts past `region.maxX`,
-            // so *every* window after the first column was placed entirely off screen and the app was
-            // unusable for anyone who did not know Snap To Default exists. So: overlapping windows are
-            // preferable to hidden ones, and the slot comes back onto the region on both axes.
+            var slot = clampedToBottom(NSRect(x: columnX, y: cursorY - size.height,
+                                              width: size.width, height: size.height))
+            // Overlapping windows are preferable to hidden ones, so a slot past the right edge comes
+            // back onto the region. With a skin wider than half the display (EPS, Big Bento,
+            // cPro-Bento) column 2 starts past `region.maxX`, and before the clamp *every* window
+            // after the first column opened off screen. But a clamp can only pull a slot left, into
+            // what is already there — at 125% UI Size a centred Sony_Walkman player had the library
+            // pulled 69pt over it (B153) while the whole width left of the player stood empty. So
+            // the clamp is the last resort: first the clamped slot if it lands on nothing, then the
+            // columns left of the player, and only then whichever clamp covers less.
             if slot.maxX > region.maxX {
-                slot.origin.x = max(region.minX, region.maxX - size.width)
-            }
-            if slot.minY < region.minY {
-                slot.origin.y = region.minY
+                let clamped = NSRect(x: max(region.minX, region.maxX - size.width), y: slot.minY,
+                                     width: size.width, height: size.height)
+                if overlap(of: clamped) == 0 {
+                    slot = clamped
+                } else if let left = nextLeftSlot(for: size) {
+                    placed.append(left)
+                    return left
+                } else {
+                    let leftClamped = clampedToBottom(NSRect(
+                        x: region.minX, y: leftSlotTop(for: size) - size.height,
+                        width: size.width, height: size.height))
+                    if overlap(of: leftClamped) < overlap(of: clamped) {
+                        _ = nextLeftSlot(for: size, clampingTo: leftClamped)
+                        placed.append(leftClamped)
+                        return leftClamped
+                    }
+                    slot = clamped
+                }
             }
             cursorY = slot.minY
             columnWidth = max(columnWidth, size.width)
+            placed.append(slot)
             return slot
+        }
+
+        /// A window taller than the region keeps its top on screen rather than its bottom.
+        private func clampedToBottom(_ slot: NSRect) -> NSRect {
+            var slot = slot
+            if slot.minY < region.minY { slot.origin.y = region.minY }
+            return slot
+        }
+
+        /// The top of the left column a window of `size` would go in, wrapping to a fresh column.
+        private func leftSlotTop(for size: NSSize) -> CGFloat {
+            leftCursorY - size.height < region.minY ? region.maxY : leftCursorY
+        }
+
+        /// The next slot left of the player, or `nil` when it would leave the region or land on a
+        /// window already placed, advancing the left cursor past what it returns. `clampingTo` takes
+        /// a slot already pulled onto the region instead.
+        private mutating func nextLeftSlot(for size: NSSize,
+                                           clampingTo forced: NSRect? = nil) -> NSRect? {
+            var maxX = leftColumnMaxX
+            var width = leftColumnWidth
+            var top = leftCursorY
+            if top - size.height < region.minY {
+                maxX -= width
+                width = 0
+                top = region.maxY
+            }
+            let slot = forced ?? clampedToBottom(NSRect(x: maxX - size.width, y: top - size.height,
+                                                         width: size.width, height: size.height))
+            guard forced != nil || (slot.minX >= region.minX && overlap(of: slot) == 0) else {
+                return nil
+            }
+            leftColumnMaxX = maxX
+            leftColumnWidth = max(width, size.width)
+            leftCursorY = slot.minY
+            return slot
+        }
+
+        /// How much of `slot` lies on windows already placed.
+        private func overlap(of slot: NSRect) -> CGFloat {
+            placed.reduce(0) { total, other in
+                let shared = other.intersection(slot)
+                return total + (shared.isNull ? 0 : shared.width * shared.height)
+            }
         }
     }
 

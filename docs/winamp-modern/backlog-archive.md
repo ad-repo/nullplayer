@@ -3,6 +3,25 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B153 — the `.wal` tiler's right-edge clamp pulls a window onto the player — closed 2026-09-28
+
+| B153 | **The `.wal` tiler's right-edge clamp pulls a window onto the player.** Measured 2026-09-28 on Sony_Walkman (player centred at x=762 on an 1800pt display, playlist, analyzer and library open). At 125% UI Size the library (688pt wide) gets column 2 at x=1192. That runs past the edge, so `WinampModernTiler.nextSlot` clamps it to x=1112, 69pt over the player and the playlist. At 150% it is 290×159 over the player. Launch, Snap To Default and the B56a UI-Size re-layout all produce the same result. The clamp was chosen over windows placed wholly off-screen (see the comment in `nextSlot`). Covering the player is worse than overhanging the edge, though: a window with most of its width still on screen is reachable and hides nothing. The likely fix is to clamp only as far as reachability needs, or to try the space left of the player first. The tiler is shared with `.wmz` through `tiledOrigin`. Reproduce with `launch.sh Sony_Walkman`, open those three from the Windows menu, then Windows → UI Size → 125% | any `.wal` session with a wide window and a centred player at a large UI Size | M | Agent-measured |
+
+### B153
+
+- [x] **B153. The clamp is the last resort.** **Closed 2026-09-28.** `WinampModernTiler.nextSlot`
+      keeps its clamp, but uses it only when the clamped slot lands on nothing. Otherwise the window
+      goes to the columns left of the player, which fill right-to-left from its left edge, top down.
+      When neither side fits, it takes whichever clamp, right-hand or onto the region's left edge,
+      overlaps the windows already placed less. Measured live on Sony_Walkman with the playlist,
+      analyzer and library open, in one binary with a temporary A/B switch. At 125% the library went
+      from x=1112 (69pt over the player) to x=74–762, clear of everything. At 150% it went from
+      x=974 (291pt over the player) to x=0 (64pt). At 100% nothing moved. Itemskin, whose pinned
+      frame windows are the tiler's standing regression risk (`ui-guide`), kept every pair glued
+      through the left-hand path at 150% and 200%. The run also found B156. Tests are in
+      `WinampModernWindowTilingTests` (`testAClampThatWouldCoverThePlayerGoesLeftOfItInstead`,
+      `testWithNoRoomOnEitherSideTheClampCoversLess`, `testAClampThatCoversNothingStaysInItsColumn`).
+
 ## B151 — a gap between the VU face and the frame in WMP11-BlueVU's VU Meters — closed 2026-09-28
 
 | B151 | **A gap between the VU face and the frame in WMP11-BlueVU's VU Meters window.** Reported 2026-09-28 from the live session. With *VU Meters Large* open (`Meter`, 438x207), a light band shows between the meter artwork (`scale` at 10,27 and the needles) and the window's `Wasabi:StandardFrame:NoStatus`, most visible along the top and left edges. The meter should sit flush against the frame. The likely cause is the frame's client area and the layer's absolute x/y disagreeing, or the frame drawing an inset the skin does not expect. Not yet measured. Reproduce with `WINAMP_MODERN_SHOW_WINDOWS=Meter`, or headlessly with `RENDER_SHOW=Meter`, and compare against the skin's `vuscreenshot.png` | 1 skin reported | S | Live-reported |

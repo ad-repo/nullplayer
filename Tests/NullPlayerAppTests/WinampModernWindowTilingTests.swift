@@ -137,6 +137,57 @@ final class WinampModernWindowTilingTests: XCTestCase {
         }
     }
 
+    // MARK: - B153: the clamp is the last resort
+
+    /// Sony_Walkman at 125% UI Size on an 1800pt display, with the player where Snap To Default
+    /// centres it and the equalizer, playlist, analyzer and library open. Column 2 starts at x=1192,
+    /// so the library runs off the right edge. The clamp pulled it back to x=1112, 69pt over the
+    /// player, while the 762pt left of the player stood empty. It goes there now.
+    func testAClampThatWouldCoverThePlayerGoesLeftOfItInstead() {
+        let region = NSRect(x: 0, y: 0, width: 1800, height: 1130)
+        let player = NSRect(x: 762, y: 743, width: 419, height: 133)
+        var tiler = WindowManager.WinampModernTiler(playerFrame: player, region: region)
+        var placed = [player]
+        for size in [NSSize(width: 419, height: 205), NSSize(width: 419, height: 182),
+                     NSSize(width: 430, height: 182), NSSize(width: 688, height: 496)] {
+            let slot = tiler.nextSlot(for: size)
+            XCTAssertTrue(region.contains(slot), "\(NSStringFromRect(slot)) left the region")
+            for other in placed {
+                XCTAssertFalse(slot.intersects(other),
+                               "\(NSStringFromRect(slot)) overlaps \(NSStringFromRect(other))")
+            }
+            placed.append(slot)
+        }
+        XCTAssertEqual(placed.last, NSRect(x: 74, y: 634, width: 688, height: 496),
+                       "flush against the player's left edge, at the top of the region")
+    }
+
+    /// The same session at 150%: the library is 826pt wide and fits on neither side. Something has
+    /// to overlap, so it takes the clamp that covers less. Pulled onto the left edge it covers 64pt
+    /// of the player's width; pulled back from the right it covered 291pt.
+    func testWithNoRoomOnEitherSideTheClampCoversLess() {
+        let region = NSRect(x: 0, y: 0, width: 1800, height: 1130)
+        let player = NSRect(x: 762, y: 717, width: 503, height: 159)
+        var tiler = WindowManager.WinampModernTiler(playerFrame: player, region: region)
+        for size in [NSSize(width: 503, height: 246), NSSize(width: 503, height: 219),
+                     NSSize(width: 516, height: 219)] {
+            _ = tiler.nextSlot(for: size)
+        }
+        let library = tiler.nextSlot(for: NSSize(width: 826, height: 596))
+        XCTAssertTrue(region.contains(library))
+        XCTAssertEqual(library.minX, region.minX)
+        XCTAssertEqual(library.intersection(player).width, 64)
+    }
+
+    /// A clamp that lands on nothing is still the answer: the slot stays in its own column, under a
+    /// player parked near the right edge, rather than jumping across to the left.
+    func testAClampThatCoversNothingStaysInItsColumn() {
+        let player = NSRect(x: 1300, y: 620, width: 300, height: 380)
+        var tiler = WindowManager.WinampModernTiler(playerFrame: player, region: region)
+        let slot = tiler.nextSlot(for: NSSize(width: 400, height: 200))
+        XCTAssertEqual(slot, NSRect(x: 1200, y: 420, width: 400, height: 200))
+    }
+
     /// A window wider than the whole region cannot be made to fit, so it aligns to the left edge —
     /// where the controls are — rather than hanging off the right.
     func testAWindowWiderThanTheRegionAlignsToItsLeftEdge() {

@@ -321,11 +321,16 @@ part of this section:
   at x 1120–1920, overlapping by 108px before any NullPlayer window is counted. Honouring them "when
   the slot is free" cannot produce a clean layout for such a skin — check whether a skin's authored
   arrangement is self-consistent before building on it.
-- **Never clamp a column back onto the screen.** A right-edge clamp can only move a column *left*,
-  into the one already there — on a 1600pt region it dragged the media library from x=852 to x=760 and
-  straight through its neighbour. When the screen is full, a window hanging off the right is the honest
-  answer; non-overlap is the invariant, staying on screen is the preference. `WinampModernWindowTilingTests`
-  pins this.
+- **Off the right edge, the clamp is the last resort (B153).** Overlap beats a hidden window, so a
+  slot past `region.maxX` comes back onto the screen. Before the clamp, a skin wider than half the
+  display (EPS, Big Bento) opened every window after column 1 off screen. But a clamp can only pull a
+  slot *left*, into what is already there. At 125% on an 1800pt display it pulled Sony_Walkman's
+  library 69pt over a centred player, while the 762pt left of the player stood empty. So there are
+  three tries, in order. The first is the clamped slot, if it lands on nothing. The second is the
+  columns left of the player, which fill right-to-left from its left edge, top down. Last comes
+  whichever clamp, right-hand or onto the left edge, overlaps less. At 150% the library fits on
+  neither side, and the left clamp covers 64pt of the player where the right one covered 291pt.
+  `WinampModernWindowTilingTests` pins all three.
 - **The notifier is not part of the arrangement.** A corner toast is host-driven and transient, and
   keeps its corner.
 
@@ -359,9 +364,8 @@ launch tiling therefore no longer holds. Measured on Sony_Walkman at 100% → 15
 overlapped, including the equalizer 53pt into the player. `applyUIScaleLevelChangeIfNeeded` now runs
 `arrangeWinampModernScene` after an applied change. That is the Snap To Default layout, except the
 player stays where it is. It is gated on `.winampModern`, so Classic and Original keep their re-stack
-(zero `[place/tile]` lines on aquamp). The one overlap left is the right-edge clamp above: at 125% or
-150% on an 1800pt display, a centred player leaves no room on its right for the library, which is
-pulled back onto the player. Launch and Snap To Default do the same.
+(zero `[place/tile]` lines on aquamp). A centred player at 125% or 150% leaves no room on its right
+for the library, so it goes left of the player (B153, above). Launch and Snap To Default do the same.
 
 Verify in the running app, never on paper: `WINAMP_MODERN_PLACE_TRACE=1` prints every placement
 decision ([harness.md](harness.md)), and the finished layout is read back through the accessibility
