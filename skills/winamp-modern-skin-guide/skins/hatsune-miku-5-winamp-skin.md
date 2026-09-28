@@ -4,7 +4,7 @@
 
 - **File:** `hatsune_miku_5_winamp_by_kaza_sou_d6izotp.wal` · 889,998 B · SHA-256 `d7a69173912dd147…` · author "kazasou feat. msdzero", version 1.0
 - **Measured:** 2026-09-06 · harness `a916b38a` — **headless structural pass only**, see *Not measured*
-- **Grade: F (provisional · confidence: low)** — from a headless pass; nobody has used this skin. The main player window renders nothing — 2.2% of its canvas is opaque (b145). A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+- **Grade: B (provisional · confidence: low)** — from a headless pass; nobody has used this skin. The main player window was confirmed drawing in the running app 2026-09-27 (B145 closed: the earlier "renders nothing" reading was a measurement artifact). A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
 - **Skinned:** `fully-skinned` · compatibility level `degraded` (a diagnostic count, not a quality signal)
 
 **Known outstanding:**
@@ -28,7 +28,7 @@ artwork      153 resolved, 0 unresolved ids
 findings     0 errors, 28 warnings, 0 info
 ```
 
-**Its main player window draws nothing** — 2.2% of the canvas is opaque, while every other window this skin declares renders fully. Open as **B145**; this skin is on the live-pass shortlist.
+**Its main player window draws.** The 2026-09-06 pass recorded it as empty (B145); a re-dump and a live `launch.sh` + `capture` on 2026-09-27 both show the full player, so that reading was stale.
 
 The archive ships the author's own `screenshot.png`; the 2026-09-06 comparison pass found our render recognisably the same skin at rest.
 

@@ -2,6 +2,316 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
+
+## B145 — three Miku-family skins render an empty main window — closed 2026-09-27
+
+**Not a defect; closed without a code change.** Filed from the 2026-09-06 headless grading pass:
+`Love is War Miku.wal` and `Love Is War Miku V2.wal` at 0.0% opaque in `main/normal`,
+`hatsune_miku_5_winamp_by_kaza_sou_d6izotp.wal` at 2.2%.
+
+Re-measured 2026-09-27 on `69f124f1`:
+
+| Skin | unsettled (alpha > 0) | `RENDER_SETTLE=2` | live (`launch.sh` + `capture`) |
+|---|---:|---:|---|
+| Love is War Miku | 0.0% | 49.3% | full player |
+| Love Is War Miku V2 | 80.1% | 81.5% | full player |
+| hatsune_miku_5 | 65.7% | 71.9% | full player |
+
+Love is War Miku's `opening.maki` fades every layer in from alpha 0 on a 300 ms timer, so an unsettled
+dump is transparent. The other two render headless even unsettled; their 2026-09-06 readings are
+stale. Reproduce with `WINAMP_MODERN_RENDER_SETTLE=<0|2> WINAMP_MODERN_WAL=<archive>
+WINAMP_MODERN_RENDER_DUMP=<dir> swift test --filter WinampModernRenderDumpTests` and count the alpha
+of `main-normal.png`. The three skins' F grades were lifted, and they came off
+`skills/skin-screenshots/exclude.txt`.
+
+## B110 — a skin's window frame can be a second window — implementation record
+
+**Not closed.** Implemented and live-verified by the agent 2026-09-03; the reporter's confirmation is
+still open as a row in `WINAMP5_TASKS.md` → *Awaiting manual QA*. The record moved here 2026-09-27
+because the task file holds tasks, not history. How the mechanism works is in
+`skills/winamp-modern-skin-guide/reference/components.md` and `reference/harness.md`.
+
+| B110 | **A skin's window frame can be a *second window*, and `newDynamicContainer` only ever answers with the one instance.** Ebonite's standard frame opens `newDynamicContainer("sc.alphaframe")` in `wasabi/standardframe/standardframe.m` and keeps it on top of the client with `frame_layout.resize(comp_layout.getLeft(), comp_layout.getTop(), comp_layout.getWidth(), comp_layout.getHeight())` — the visible border (10 left / 17 right / 30 top / 30 bottom, plus RGB-tinted variants) is drawn by that overlay, not by the client window. So the client group is deliberately short: `w="-17" relatw="1" h="-20" relath="1"`, 233x230 of a 250x250 window. We create that window from load and never show it, and we answer `newDynamicContainer` with the already-instantiated container whoever asks, so the margin stays empty — reported 2026-09-03 as "there is no right hand pad". **Implemented 2026-09-03, awaiting the reporter's live confirmation** | 5 skins measured ([M31]); 8 archives build a live copy after the fix | L | Live-reported |
+
+### B110
+
+- [ ] **B110. A skin's window frame can be a second window, and `newDynamicContainer` only ever
+      answers with the one instance.** Reported 2026-09-03 on Ebonite_2_1 while closing B78: *"there
+      is no right hand pad"*. Root-caused the same day from the skin's own MAKI **source**, which it
+      ships beside the compiled form.
+
+      **What the skin does.** `wasabi/standardframe/standardframe.m`:
+
+      ```c
+      frame_cont   = newDynamicContainer("sc.alphaframe");
+      frame_layout = frame_cont.getLayout("scdef");
+      ...
+      frame_layout.resize(comp_layout.getLeft(), comp_layout.getTop(),
+                          comp_layout.getWidth(), comp_layout.getHeight());
+      ```
+
+      One overlay window per framed window, parked on the client's exact rect, carrying the border
+      art — `window.topleft` / `top` / `topright` / `left` / `right` / `bottomleft` / `bottom` /
+      `bottomright` at 10 left, 17 right, 30 top, 30 bottom, each with `.red` / `.green` / `.blue`
+      variants the RGB config fades between, plus the resizer grips and the window title. The client
+      window's own group is short by exactly that margin (`w="-17" relatw="1" h="-20" relath="1"` —
+      233x230 inside a 250x250 window), because the overlay is what fills it.
+
+      **What we did.** `System.newDynamicContainer(id)` answered with the **already-instantiated**
+      container of that id, so all five of Ebonite's frame programs drove one container. The window
+      itself **was** created — `setupAuxiliaryContainers` builds one per declared non-main container —
+      and simply never shown: `CGWindowListCopyWindowInfo` showing nothing is what an ordered-out
+      window looks like, not a missing one. (The first draft of this entry said we materialize no
+      window for it; that was wrong.) The margin was simply empty — which is also what exposed the
+      zero-area browser surface closed alongside B78.
+
+      **Two halves, and the second is the harder one.**
+      1. **Instancing.** A fresh instance per call, addressed by the object the script holds rather
+         than by id. A skin that opens one overlay per window needs three or four live at once, and
+         the current single instance would have them fighting over one container.
+      2. **A window that tracks another window.** `syncFrame()` / `syncContent()` copy geometry both
+         ways — the frame follows the client, and dragging the frame moves the client — plus
+         `LAYOUT_PROPS` (alpha, linkwidth/linkheight, minimum/maximum, taskbar) copied across, and
+         the skin's own resize handling. This is window management, so it is squarely under the
+         Classic-safety rule: gate on `uiMode.controllerFamily == .winampModern` and change no shared
+         placement path without saying so.
+
+      **Reach: 5 skins ([M31])**, all from the same leech-derived standardframe — Ebonite,
+      MoonLight, Itemskin, K-jr and Pure Inspired. Itemskin's frames were already noticed from the
+      other side and closed as B69 ("its frames are a *second* container per window"), which is this
+      same idiom seen through the hosted-surface probe. **4-drelictionreleasepic is not one of them**
+      — it draws its frame inline in the same window; see the corrected [M31].
+
+      **Before starting:** write the plan to `~/.claude/plans/` and have it reviewed. Window geometry
+      has no useful armchair form (B56), so the loop is the `testing` skill's measure-it-live one,
+      with `WINAMP_MODERN_PLACE_TRACE=1`.
+
+      **Plan:** `~/.claude/plans/write-the-plan-do-tender-island.md` (revised 2026-09-03 after a
+      fact-check; it corrects the reach and the "we materialize no window" claim above). Gated —
+      step 1 is a candidate whole fix and scopes the rest.
+
+      - [x] 1. `isDynamic()` on a container, then **measure on Ebonite**. **Measured 2026-09-03:**
+            `isDynamic` alone was not enough — the next statement is `system.onScriptLoaded()`, a
+            script calling its **own** startup body, which had no dispatchable arity, so the handler
+            still died one statement before `frame_layout.show()`. With both landed the frame window
+            **is on screen and drawn**: border, "Playlist Editor" title, close button and both
+            resizer grips (`WinampModernContainer_sc.alphaframe`, exactly over the client's rect).
+            It also settles the decision point: Ebonite runs **five** standardframe programs against
+            the one aliased container, so the playlist, library and frame windows all end up at one
+            rect (320x250 @ 822,561). Instancing is required.
+      - [x] 2. Real instancing for `newDynamicContainer` — **per calling program**. The first program
+            to ask keeps the declared container (so every single-holder caller is unchanged); a second
+            program asking for the same id gets a live copy built from the container's own XML, with a
+            distinct id (`sc.alphaframe#2`) and its opening layout realized. The same program asking
+            twice gets the copy it already holds, so Ebonite's close-on-hide/rebuild-on-show cycle
+            leaks nothing. Cap 12 per id
+      - [x] 3. Window identity: **not** the planned re-key of `auxiliaryContainers` to `WasabiObjectID`.
+            A copy is given a distinct container *id* instead, so all 17 `first(where: { $0.containerID
+            == id })` sites keep working unchanged and accessibility ids are unique — the plan's stated
+            reasons for the re-key, at a fraction of the risk it flagged ("where a silent misroute
+            would hide"). Copies carry `nullplayer_dynamic_instance=<declared id>`, the sibling of
+            `nullplayer_synthesized`
+      - [x] 4. A window per copy: the recipe is factored out of `setupAuxiliaryContainers` into
+            `makeAuxiliaryContainer`, and the hook that calls it is wired in `wireContainerCallbacks`,
+            **before** `scripts.start()` — Ebonite asks for all five copies from `onScriptLoaded`, and
+            wired with the surface coordinator (after `start()`) every copy came up windowless. Copies
+            are excluded from `arrangeWindows()`, `place()`, `snapTargetWindows()`, the window menu and
+            visibility persistence
+      - [x] 5. Client -> frame sync via B69's `borrowedWindowOrigin` — worked as the plan predicted.
+            Measured: dragging the frame's title bar moved both windows to (875,688) together
+      - [x] 6. `onUserResize` (arity 4), fired from `windowDidResize` only while `inLiveResize`, and the
+            ±1 clamp — handled with a **one-pixel tolerance** in `borrowedWindowOrigin`, the offset
+            carried through to the desktop origin so the jiggle still happens. Measured: growing by the
+            grip took both windows to 385x377; shrinking past the clamp took both to 258x258 **in
+            place**, with no jump to the screen corner
+      - [x] 7. Z-order: clicking the client buried its own frame (title strip went black, border
+            survived only where the client's group does not reach). The pairing is the skin's, so it is
+            learned from the `frame.resize(client.getLeft(), …)` idiom itself (`windowsGluedOver`) and
+            `windowDidBecomeKey` re-raises the follower one runloop turn later — inside the
+            notification the raise is undone by the rest of that pass. Alpha and `isActive` needed
+            nothing: both already resolve per window id
+      - [x] 8. Click-through measured, not assumed: a click in the frame's transparent middle reached
+            the library client and switched it to Albums
+      - [x] 9. Correct the B110/M31 backlog facts (reach 5 of 70, not 4 of 61; 4-drelictionreleasepic
+            draws its frame inline; K-jr and Pure Inspired are in the cohort; 16 skins call
+            `newDynamicContainer`; the frame window is created and never shown)
+
+      **Verification (2026-09-03).** `swift test` 1743 pass + 12 new B110 tests. Corpus render sweep
+      over 70 archives against a worktree baseline: every invariant change is an additive `#N` copy
+      line, 588 of 590 images identical; `Ebonite_2_1/sc.alphaframe-scdef.png` changed size 640x400 ->
+      250x250 (the declared container is now the *playlist's* frame rather than whichever program wrote
+      last, which is the fix), and `Anexa/main-shade.png` differs **against a second capture of the same
+      build**, the run-to-run flake `reference/harness.md` already records. The four already-working
+      pair skins — MoonLight, Itemskin, K-jr, Pure Inspired — build no copies and their dumps are
+      unchanged. Ten open/close cycles of the playlist leave the window count where it started.
+
+      **Two defects the reporter's own session found that none of the above caught (2026-09-03), both
+      fixed:**
+
+      - **The playlist frame did not appear at all** ("all others do"). The first program to ask is
+        answered with the *declared* container, so Ebonite's playlist frame is the one frame that is
+        not a copy — and the load-time visibility hook was keyed on "is a copy". Its client is restored
+        visible at launch and its `frame_layout.show()` runs inside `scripts.start()`, so that one show
+        was dropped. The test is now **"has a script claimed this container through
+        `newDynamicContainer`"**, asked of the runtime. It must *not* be the `dynamic="1"` attribute:
+        a corpus scan found several skins declaring their real `Pledit`, `MLibrary` and `AVS` windows
+        that way, and excluding those from tiling, snapping and the window menu would lose windows
+        people open.
+      - **The client was drawn over its own frame** ("1/2 of the window is one style and the other
+        half is another"), and this took **two** passes. First: re-raising the frame on
+        `windowDidBecomeKey` alone is not enough, because at launch the frame is shown *before* the
+        client — `restackGluedWindows()` now runs on every window open, on every key change and once
+        after launch settles. That still looked identical, and `WINAMP_MODERN_GLUE_TRACE=1` (added for
+        it, documented in `reference/harness.md`) named the real cause in one run: a standard frame
+        writes the origin **both** ways — `syncFrame()` puts the frame on the client and `syncContent()`
+        puts the client back on the frame — so `borrowedWindowOrigin` recorded the pair in *both*
+        directions and the restack loop fought itself, whichever direction it handled last winning. The
+        record is now written in one direction only: the follower must be a container a script claimed
+        through `newDynamicContainer`, the leader must not be.
+
+      **Three further defects from the reporter's live session (2026-09-03), all fixed and confirmed
+      by them:**
+
+      - **The top and left borders read flat black** where the right and bottom read as glossy
+        chrome. Not a window problem: the client window was painting under those two borders because
+        B78 (`d14504f1`) had made Ebonite's four `sysregion="-2"` frame strips paint as artwork
+        instead of cutting the region. That commit's own message says why — *"the client area drawn
+        over it overhung a frame that was not there"* — and *"this does not give Ebonite its right and
+        bottom pads; that margin is reserved for an overlay window the skin opens itself, filed as
+        B110"*. B110 built that window, so the premise is gone and the commit is reverted: read as
+        silhouettes those strips cut the client to exactly the frame's opening (top 30, left 10, right
+        17, bottom 30 — that frame's inner rect to the pixel).
+      - **An opaque bar across the frame's titlebar and under its status row**, each stopping short of
+        the right edge. The group's `sysregion="1"` backdrop layer was restoring region its own
+        siblings had just cut. **A group's own cut-out is not undone from inside it** — the
+        cross-group restore S7Reflex needs is untouched. Written up in
+        `reference/rendering/hit-testing.md`; the corpus sweep moves one other image, Shield_Amp's
+        notifier by 125 px, in the same direction.
+      - **The frame came away from NullPlayer's own windows** (Flow, Cava, PeppyMeter) when dragged by
+        the frame — dragging the contents always worked. Two causes, both in the hosted-window path
+        and written up in `reference/components.md`: the materializer is its own window delegate and
+        never announced a move to the skin's script (nor did the reveal, where the placement actually
+        happens, off screen); and `moveContainerWindow` could not resolve a hosted window at all, so
+        `syncContent()` — the write that pulls the client along — landed nowhere.
+
+      **Verification of those three (2026-09-03):** `swift test` full suite green, with two new
+      `WinampModernHostedWindowTests` and a new `WinampModernPhase88Tests` case for the sibling rule
+      (its S7Reflex fixture corrected to nest the cut in a group, which is that skin's actual shape).
+      Corpus sweep over 69 skins: 582 of 590 images identical — Ebonite's five framed windows plus its
+      frame, the known `Anexa/main-shade` flake, and Shield_Amp's 125 px corner. Live: frame dragged,
+      client followed to (895,682); window opened, closed, reopened and dragged, frame glued each
+      time.
+
+**Reach command ([M31]):**
+
+- <a id="m31"></a>**M31:** over the **70-skin corpus** (66 net of byte-identical re-adds), `strings` every `.maki` for `newDynamicContainer` and pair the hits with the `dynamic="1"` containers the tree declares. **Re-measured 2026-09-03 while closing B110, correcting the first pass:** **16 skins call it**, not 12, and **5 use it for the per-window frame-overlay idiom**, not 4 — Ebonite_2_1 (`sc.alphaframe`), MoonLight, Itemskin, **K-jr** and **Pure Inspired** (`cont.clear.pl` / `.ml` / `.dl` / `.vd`, one per hosted window kind; K-jr's and Pure Inspired's `standardframe*.maki` are byte-identical to MoonLight's, `cmp` exit 0). All five descend from the same leech-derived `standardframe`, and MoonLight and Itemskin also appear in B78's alpha sweep with the same short client group and 1x1-texture border strips. **4-drelictionreleasepic is not one of them** — the first pass listed it in error: its `scripts/standardframe.m` contains no `newDynamicContainer` at all and does `content = newGroup(groupid); content.init(frameGroup)`, so its frame draws **inline in the same window**; its only `newDynamicContainer` is in `scripts/notifier.maki`. The other callers want instancing for their own windows rather than for chrome: Big Bento (`searchresults`, `Hsearchresults`, `browserpro`), jvc.tape, multipass, the two Love is War Miku variants, hatsune_miku_5, winampmodern566, Defix Hi-END 200, impulse_by_a_t_o_m_i_c and 4-dreliction's notifier. **After B110 landed, 8 archives actually build a live copy** in the render sweep — Ebonite (4), cPro2 Dark Aluminum (2, `searchresults`), Defix Hi-END 200 (2, `browserpro`), the four Big Bento Modern variants and WMP11-BlueVU (1 each) — the rest keep aliasing the declared container because only one program per id ever asks.
+
+## B111 — an unchanged `setActivated` dispatched `onToggle` — implementation record
+
+**Not closed.** Fixed and verified from the call trace 2026-09-04; the reporter's live check is
+still open as a row in `WINAMP5_TASKS.md` → *Awaiting manual QA*. The rule is documented in
+`compatibility/maki-surface.md` → *A write that changes nothing is not an event*.
+
+| B111 | **An unchanged `setActivated` dispatched `onToggle`, and it silenced the player on Itemskin.** Reported 2026-09-04 as *"in the itemskin skin the audio does not work — this is the only skin with that symptom"*. `scripts/playerVolumeExtra.maki` answers `onVolumeChanged` by deactivating the mute and ATT buttons, which are already off; each button's `onToggle` **false** branch is `setVolume(savedVolume)`, an uninitialised `0`, and `setVolume` re-raises `onVolumeChanged`. So the host volume went to zero at load, no drag could lift it, and the zero was persisted into the next launch. Wasabi notifies only on an actual change; ours notified unconditionally. **Fixed 2026-09-04** — `setActivated` sends `onToggle`/`onActivate` only when the activation moves (`setActivatedNoCallback` stays the silent write for one that did). **Awaiting the reporter's live confirmation** | 1 of 70 skins binds `onToggle` to the volume; the dispatch rule is engine-wide | S | Live-reported |
+
+### B111
+
+- [ ] **B111. An unchanged `setActivated` dispatched `onToggle`.** Reported 2026-09-04: *"in the
+      itemskin skin the audio does not work"*, and only that skin. Root-caused the same day from
+      `WINAMP_MODERN_CALL_TRACE=1` in the running app.
+
+      **What the skin does.** `scripts/playerVolumeExtra.maki`, on the main and mini layouts:
+
+      ```c
+      onVolumeChanged(v) { if (!muted) { att.setActivated(0); mute.setActivated(0); } muted = 0; }
+      mute.onToggle(on)  { if (on) { savedVolume = getVolume(); setVolume(0); }
+                           else      setVolume(savedVolume); }
+      ```
+
+      Both buttons are already off, so in Winamp those two writes do nothing. `volume.mute` is
+      declared `<Togglebutton id="volume.mute" />` — no image, no action, no coordinates, a 0×0
+      object a user cannot click — so nothing else in the skin ever reaches that handler.
+
+      **What we did.** `WinampModernScriptRuntimeObject.swift`'s `setactivated` case wrote the state
+      and then dispatched `ontoggle` + `onactivate` unconditionally. Every volume change therefore ran
+      both `onToggle`s' false branch, `setVolume(savedVolume)` with `savedVolume` still `0`; `setVolume`
+      re-raised `onVolumeChanged` (bounded by the re-entrancy guard, but the write had landed). Trace
+      from the app, on a fresh launch:
+
+      ```
+      AppStateManager: Restoring settings state - volume: 0.00
+      CALL-TRACE setxmlparam(ghost,0) on Togglebutton#volume.att
+      CALL-TRACE setvolume(0)             <- nobody asked
+      CALL-TRACE setactivated(0) on Togglebutton#volume.att
+      CALL-TRACE setvolume(0)
+      ```
+
+      **The fix.** `setActivated` compares the wanted activation against the object's own `activated`
+      and notifies only when it moves. `toggleActivation` (a real click) always changes state and is
+      unaffected; `setActivatedNoCallback` keeps its job, the silent write for a state that *did*
+      move. Documented in `compatibility/maki-surface.md` → *A write that changes nothing is not an
+      event*, with the reporting lesson in `skins/itemskin.md`.
+
+      **Verification (2026-09-04).** `swift test --filter WinampModern`: 1290 pass, 12 skipped, 0
+      failures — including the two tests that pin `setActivated`'s notification, both of which drive a
+      real state change. Debug build relaunched on Itemskin: the `setvolume(0)` cascade is gone
+      (`grep -c setvolume` on the call trace: **0**, against 4 before).
+
+      **Remaining live check.** The reporter's persisted volume is still `0.00` — residue saved by the
+      bug, which does not clear itself. Raise the volume once, confirm it holds through a drag and
+      survives a relaunch, and confirm playback is audible. See the checklist entry in
+      `manual-qa-checklist.md`.
+
+## B117(a) — WMP11-BlueVU repaints at ~7 fps — folded into B119 2026-09-27
+
+**Not closed as fixed.** Its cause is B119's per-frame warp, and it held no separate work, so its
+row was removed from the ranking; it closes when B119 does. Kept here for the dead ends.
+
+| B117 | **WMP11-BlueVU's spectrum jumped and its marquee is low-fps — two separate defects.** (b) the streaming analyzer was starved of buffers: **fixed and live-confirmed 2026-09-04**, [archived](docs/winamp-modern/backlog-archive.md#b117b--streaming-starved-the-wal-analyzer--closed-2026-09-04). (a) the window repaints at ~7 fps: **open**, cause found by B118 (the per-frame layer warp), fix tracked as **B119**. See [detail](#b117) | 2 skins measured; (b) reached every streaming consumer | — | Measured |
+
+### B117
+
+- [ ] **B117(a). The window repaints at ~7 fps, and the marquee with it.** Measured, not disputed:
+      the frame interval clusters at 120–145 ms against an expected 33 ms, and `WM-VIS-STALL` is
+      median 131 / p90 300 after B117(b). cPro-Bento on the same build is median 60 / p90 68, so it
+      is skin-specific. The marquee shares the repaint, which is why the symptom is not audio-shaped.
+
+      **The cause is found and the fix is B119** — the per-frame layer warp in
+      `WasabiLayerFXMesh.resample` and the paint that follows it. This item closes when B119 does;
+      it holds no separate work.
+
+      **Dead ends — do not re-file.** Scene-memo thrash from the twelve
+      `animatedlayer#beatleft/beatright` that write `frame` ~100x/s: `frame` is already scene-neutral
+      (`WasabiObjectGraph.isSceneNeutral`), and partitioning all 169 `MUTATION_TRACE` windows gives
+      **148 of 150 `writers=12` windows at `resolves=0`**. That claim came from pairing a `writes=`
+      line with a `resolves:` line out of a **different** window — the trace prints them separately,
+      so read whole windows rather than grepping the two apart. `RESIZE_TRACE` is clean, so it is not
+      B52's resize storm either.
+
+## Batch note on the 12 skins added 2026-08-30 / 2026-08-31 — moved 2026-09-27
+
+History, not a task; moved out of `WINAMP5_TASKS.md`'s *Item detail* preamble verbatim.
+
+The batch measurement of the **12 skins added 2026-08-30 and 2026-08-31** — profiled 2026-08-31 with
+`WinampModernRenderDumpTests` under `RENDER_BITMAPS` + `RENDER_SCRIPTS=bindings`, every layout PNG
+read — is now fully closed out. Grades from that batch: `cpro2_dark_aluminum` and `canum` did not
+load (**F**, fixed 2026-09-01 by B93 and B92; `cpro2_dark_aluminum` has since been measured and
+driven end to end — it is the corpus's only ClassicPro engine-`two` skin and needed five further
+fixes, see [skins/cpro2-dark-aluminum.md](skills/winamp-modern-skin-guide/skins/cpro2-dark-aluminum.md)),
+`Winamp 3.0 Default` loaded blank (**F**, fixed
+2026-09-01 — it was a standard frame whose content group never entered the graph), `Darjah 1` **D**,
+`cpro_interface` / `nullsoft_media_player_10` / `jvc.tape` **C**, and `WMP11-BlueVU` / `MMD3-4-5` /
+`EPS_High-End` / `TRON Legacy` / `Firefox` **B**. **No live pass was run** on that batch, so none of
+it has been driven under the mouse, and the harness's absence of a component host means an empty
+*pane* is not evidence — only an empty *window* is.
+
+**Not open, and not a defect:**
+
+- The Windows 10 edition's zero-byte `window/no_alb_art_shade.png` is the skin's own bug. It degrades
+  to a warning and that one placeholder draws nothing, which is the correct outcome.
+- The wide-window pane split (B38.5). `from="left"` anchors the divider to the left edge and the right
+  pane absorbs the extra width — see B38 below.
+
 ## B146 — a user override for the `.wal` palette (Skin Colors) — closed 2026-09-06
 
 Closed as a **feature**, not a fix: the reported skin was rendering correctly, and the resolution was
@@ -367,6 +677,10 @@ keeps the `B117` row in [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md); only the c
 
 | B116 | **`inherit_group` concatenates the base's children with the derived group's instead of letting a same-`id` child replace the inherited one, so the window frame is built twice.** Found by inspection while investigating WMP11-BlueVU 2026-09-04, not reported. `WasabiSkinInitializer.swift:350-372` merges *attributes* with the derived winning (`attributes.merge(definition.defaultAttributes) { _, new in new }`) but appends *children* twice — `children.append(contentsOf: parent.templateChildren)` then `children.append(contentsOf: definition.templateChildren)` — with nothing keyed on `id`. WMP11's `<groupdef id="wasabi.standardframe.my" inherit_group="wasabi.standardframe.nostatusbar">` redeclares `wasabi.frame.layout` at `h="-69"` to leave room for its 69px panel; the base's is `h="-12"`. `RENDER_PROBE main/normal` shows **both** — 354x135 *and* 354x78 — each dragging a duplicate `frame.top.middle` subtree (edge strips, titlebar, caption buttons) drawn every frame. Visually subtle because the duplicates land mostly on top of each other; structurally wrong and wasted draw work. Note only the same-`id` child is meant to be replaced — a base child the derived group does not redeclare (WMP11's `frame.bottom`) still draws, which is why the reference screenshot keeps its bottom border | **3 of 69 skins, 8 same-id overrides** — Sony_Walkman (6), canum_winamp (1), WMP11-BlueVU (1), all in `wasabi.standardframe.*` ([M33]). Lower bound: the probe resolves one level of inheritance only | M | Live-reported |
 
+**Reach command ([M33]), moved from `WINAMP5_TASKS.md` 2026-09-27:**
+
+- <a id="m33"></a>**M33:** parse every `<groupdef>` in the corpus for its `id`, its `inherit_group` and its direct children's `id`s, then report the groupdefs whose own child ids intersect their base's. Measured 2026-09-04 (~40 lines of Python: `os.walk` the skin, regex `<groupdef\b(.*?)>(.*?)</groupdef>` with `re.S`, pull `id`/`inherit_group` from the head and every child's `id` from the body, then intersect each derived group's child ids with its base's): **42 of 69 skins use `inherit_group` at all**, and **3 redeclare a same-`id` child** — Sony_Walkman (6: `component.bottom.left/middle/right`, `region.bottom.left/right`, `wasabi.frame.layout`), canum_winamp (1: `wasabi.frame.layout`), WMP11-BlueVU (1: `wasabi.frame.layout`). All 8 are in `wasabi.standardframe.*` groups, which is why the symptom is always a doubled window frame. **Lower bound:** the probe resolves one level of inheritance only (the base must itself be a declared groupdef), so a chain longer than two is not counted.
+
 ### B116
 
 - [x] **B116. `inherit_group` appended the base's children instead of letting a same-`id` child
@@ -446,6 +760,10 @@ keeps the `B117` row in [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md); only the c
 ## B114 — a `desktopalpha="0"` layout has no opaque backing — closed 2026-09-04
 
 | B114 | **A `desktopalpha="0"` layout has no opaque backing, so a skin that paints only a translucent sheen shows the window's own light backing.** Reported 2026-09-04 on WMP11-BlueVU as *"missing backgrounds on the timer and track display"*. The skin ships **deliberately empty** spacers for that area — `glass_bg_left_left.png`, `glass_bg_left_right.png`, `glass_bg_right.png` are alpha 0/0/0 across every pixel — and `RENDER_PROBE main/normal` confirms no node covers `x 8…196, y 25…78`. The dumped pixel at (20,30) is `(180,180,180, a=112)`: the `Glass.Left` sheen composited over nothing. In Winamp the black comes from the *window*: `<layout id="normal" desktopalpha="0">` means no per-pixel alpha, so unpainted pixels are black and the skin leans on that. `desktopalpha` appears nowhere in the renderer — only as a MAKI method name in `WinampModernScriptRuntimeSystem.swift:326`. **Verified:** compositing the existing dump over black reproduces the skin's shipped `screenshot.png`. **The trap:** an opaque fill makes the window's *shape* matter, and this layout is `sysregion`-shaped with rounded corners — fill the whole rect and every region-shaped player in the corpus squares off. So the fill has to respect the region, and the change wants the corpus render sweep (`scripts/wal_render_sweep.sh`), not a one-skin check. The nearby precedent is the `background=` fallback at `WasabiRenderer.swift:2154`, whose two bounds ("only when the skin asked", "only a layout") are the shape to copy | 26 of 69 corpus skins declare `desktopalpha="0"` somewhere ([M32]); how many *rely* on it for a backing is unmeasured | M | Live-reported |
+
+**Reach command ([M32]), moved from `WINAMP5_TASKS.md` 2026-09-27:**
+
+- <a id="m32"></a>**M32:** `for d in "$corpus"/*/; do n=$(grep -rlio 'desktopalpha="0"' "$d" | wc -l); [ "$n" != 0 ] && echo "$n ${d}"; done` over the extracted 69-directory corpus. Measured 2026-09-04: **26 skins** declare it in at least one file — WMP11-BlueVU (7), impulse_by_a_t_o_m_i_c (6), Nullsoft.Winamp.2000.SP4.Lite and Itemskin (5), Pure Inspired x2, multipass, MoonLight, K-jr x2, Anaheim_Player_01 (4 each), Ujola Cat and Shield_Amp (2), then 13 with one apiece. **This counts declarations, not dependence** — most of these layouts paint their own chrome edge to edge and did not change when B114 landed. The narrowing is now done: with B114 landed the corpus render sweep (2026-09-04) moves **2 of 590 images** — WMP11-BlueVU's display area and a 7-pixel anti-aliasing fringe on EPS High-End's left speaker. An earlier, wrong version of that fix moved 34, which is what a *fill* rather than a region costs. See [`docs/winamp-modern/backlog-archive.md`](docs/winamp-modern/backlog-archive.md) -> B114.
 
 ### B114
 

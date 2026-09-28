@@ -2,7 +2,7 @@
 
 *Per-skin status. Index: [skins.md](../skins.md) · engine-wide surface: [compatibility.md](../compatibility.md) · how a section gets written: `/wal-skin-report <skin.wal>`.*
 
-- **Grade: F (provisional · confidence: low)** — from a headless pass; nobody has driven this skin. The main player window renders nothing — 0.0% of its canvas is opaque (b145). A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+- **Grade: B (provisional · confidence: low)** — from a headless pass; nobody has driven this skin. The main player window was confirmed drawing in the running app 2026-09-27 (B145 closed: the earlier "renders nothing" reading was a measurement artifact). A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
 
 **Known outstanding:**
 
@@ -24,7 +24,9 @@ embedded (a second panel over the same box, swapped by `maineq.maki`). Compatibi
 - **Opening animation.** `opening.maki` fades the panel and character in on a 300 ms timer and slides
   them to their final positions (`setTargetX/Y` + `gotoTarget`): display panel to `y=84`, character to
   `x=129`. The XML positions are only where the animation *starts* — a dump without
-  `WINAMP_MODERN_RENDER_SETTLE` shows a window the user never sees.
+  `WINAMP_MODERN_RENDER_SETTLE` shows a window the user never sees — **0.0% opaque**, because the
+  fade starts every layer at alpha 0. That reading was filed as B145 and graded the skin F; with
+  `RENDER_SETTLE=2` the same dump is the full player.
 - **Display text** — song ticker (scrolling, "Artist - Title") and the large time readout, in Arial
   Bold at the sizes the skin asked for, centred in their boxes, with fixed-pitch digit cells and the
   narrow colon cell (`forcefixed`, `timecolonwidth`). Phase 23.

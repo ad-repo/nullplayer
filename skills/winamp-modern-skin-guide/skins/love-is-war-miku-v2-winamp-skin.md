@@ -4,7 +4,7 @@
 
 - **File:** `Love Is War Miku V2.wal` · 810,934 B · SHA-256 `067316d2074438d2…` · author "maxim cryseria", version 1.0
 - **Measured:** 2026-09-06 · harness `a916b38a` — **headless structural pass only**, see *Not measured*
-- **Grade: F (provisional · confidence: low)** — from a headless pass; nobody has used this skin. The main player window renders nothing — 0.0% of its canvas is opaque (b145). A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+- **Grade: B (provisional · confidence: low)** — from a headless pass; nobody has used this skin. The main player window was confirmed drawing in the running app 2026-09-27 (B145 closed: the earlier "renders nothing" reading was a measurement artifact). A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
 - **Skinned:** `fully-skinned` · compatibility level `degraded` (a diagnostic count, not a quality signal)
 
 **Known outstanding:**
@@ -29,7 +29,7 @@ artwork      131 resolved, 2 unresolved ids (player.volbg, player.volume)
 findings     0 errors, 19 warnings, 0 info
 ```
 
-**Its main player window draws nothing** — 0.0% of the canvas is opaque, while every other window this skin declares renders fully. Open as **B145**; this skin is on the live-pass shortlist.
+**Its main player window draws.** The 2026-09-06 pass recorded it as empty (B145); a re-dump and a live `launch.sh` + `capture` on 2026-09-27 both show the full player, so that reading was stale.
 
 **Worth a look:** looks wrong: missing player.volbg and player.volume bitmap resources, per lines 44-45
 

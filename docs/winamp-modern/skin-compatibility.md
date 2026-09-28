@@ -5,7 +5,7 @@ known to be outstanding on it. **Measured 2026-09-06** against `a916b38a`, over 
 installed on the test machine — **75 distinct skins**, because four archives are byte-identical copies
 circulating under a second filename.
 
-Current picture: **47 B · 25 C · 3 F**, of which 6 letters come from a
+Current picture: **50 B · 25 C**, of which 6 letters come from a
 person using the skin and 69 are provisional (below).
 
 ## How the grades were arrived at, and how far to trust them
@@ -171,7 +171,6 @@ show any of them.
   with it. This is why the stock Winamp Modern skin's title-bar menus do not open (B79).
 - The Options entry in a skin's menu bar opens a thin NullPlayer menu rather than the full set of
   player options (B84).
-- Three Miku-family skins draw an empty main player window while every other window works (B145).
 
 **Performance and animation**
 
