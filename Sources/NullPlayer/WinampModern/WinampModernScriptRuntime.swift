@@ -562,13 +562,27 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // the whole SUI tab strip as `label.getAutoWidth() + 20` per tab, and run before the tab
         // labels arrived as params it sized all five to that bare 20px, stacked at the left edge.
         //
-        // Object-owned scripts keep the order they had: all of them, then the params (a XUI object's
-        // handler binds to the script group `onScriptLoaded` populates, so its own params can never
-        // come first — see `deliverXUIParams`).
+        // Object-owned scripts start **one owner at a time**, each followed by its own XUI params (B71).
+        // Wasabi configures an object completely — script loaded, then params — before the next one
+        // in the document is created, so a layout's `<script>` declared after a
+        // `<Wasabi:StandardFrame:* content="…">` finds the frame's content already built. Defix's
+        // detached visualizer is the measured case: `visrb2.maki` resolves eleven names inside
+        // `VISCON.component.gp`, and with every param deferred to the end it bound all eleven to
+        // null. Params still follow their own owner's `onScriptLoaded` — a XUI handler binds to
+        // the script group that event populates (see `deliverXUIParams`).
         let skinLevel = programs.filter { isSkinLevel($0) }
         let owned = programs.filter { !isSkinLevel($0) }
-        if !owned.isEmpty { _ = try dispatchSystem(event: "onscriptloaded", to: owned) }
-        deliverXUIParams(forSubtreeOf: loadedSkin.runtime.graph.roots)
+        var owners: [WasabiObjectID] = []
+        var programsByOwner: [WasabiObjectID: [MakiProgram]] = [:]
+        for program in owned {
+            guard let ownerID = program.ownerID else { continue }
+            if programsByOwner[ownerID] == nil { owners.append(ownerID) }
+            programsByOwner[ownerID, default: []].append(program)
+        }
+        for ownerID in owners {
+            _ = try dispatchSystem(event: "onscriptloaded", to: programsByOwner[ownerID] ?? [])
+            if let owner = loadedSkin.runtime.graph.object(withID: ownerID) { deliverXUIParams(for: owner) }
+        }
         if !skinLevel.isEmpty { _ = try dispatchSystem(event: "onscriptloaded", to: skinLevel) }
         dispatchColorManagerLoaded()
         dispatchColdStartLayoutShown()
@@ -645,10 +659,6 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// use for them and forwarding them to the text inside is the whole point of the tag.
     static func isConsumedBeforeXUIParams(_ name: String) -> Bool {
         WasabiGeometrySpec.geometryAttributes.contains(name.lowercased())
-    }
-
-    private func deliverXUIParams(forSubtreeOf objects: [WasabiObject]) {
-        for object in objects { deliverXUIParams(forSubtreeOf: object) }
     }
 
     private func deliverXUIParams(forSubtreeOf object: WasabiObject) {

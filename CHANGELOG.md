@@ -24,6 +24,12 @@
   before. This changes the look of Classic's default, "Purple Neon".
 - **New "Red" vis_classic profile** — a single-colour red to go with "Green".
 
+- **Defix's detached visualizer can be reattached** — in the Defix Hi-END 200 Winamp Modern skin,
+  the detached visualizer window's **Reattach Visualizer** and **Random** buttons now work. The
+  window's button bar shows while the window is focused and hides otherwise, as the skin intends.
+  The same fix stops S7Reflex drawing its stereo and mono indicators on top of each other, and
+  lines up the titlebar streaks in winampmodern566.
+
 - **ClassicPro track info shows up** — in ClassicPro-based Winamp Modern skins such as cPro2 Dark
   Aluminum, the track-info panel under the library now lists the playing track's title, artist,
   rating, decoder, file size, filename and format instead of staying empty.

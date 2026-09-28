@@ -3,6 +3,68 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B71 — a layout script loaded before the standard frame beside it had a client area — closed 2026-09-28
+
+### B71
+
+- [x] **B71. Fixed 2026-09-28.** Two faults were stacked on Defix's detached visualizer (`VISCON`),
+      and the second only showed once the first was gone.
+
+      **(1) Startup order.** `start()` ran every object-owned `onScriptLoaded`, then delivered every
+      XUI param in one pass. `visrb2.maki` is the `VISCON` layout's own script, declared after the
+      `<Wasabi:StandardFrame:Static content="VISCON.component.gp">` whose `content` param builds
+      everything it looks up, so `RENDER_SCRIPTS=bindings` printed `-> null` for all eleven names.
+      `start()` now goes owner by owner, in program order: that owner's `onScriptLoaded`, then its
+      own params (`deliverXUIParams(for:)`). A XUI object still hears `onScriptLoaded` before its
+      params, and the skin-level `<scripts>` block still runs last. After the change every
+      `visrb2` binding resolves into `VISCON.component.gp`.
+
+      **(2) `leftClick()` was not a press.** Reattach's handler is `vis.DTTB.leftClick()`, on a
+      ghosted togglebutton bound `cfgattrib="{F1036C9C-…};Detach Vis Window"`. The runtime's
+      `leftclick` dispatched `onLeftClick` and the markup action and nothing else, so the attribute
+      never moved (`CALL-TRACE leftclick() on ToggleButton#vis.DTTB`, then silence). It now flips a
+      togglebutton and writes a `cfgattrib` control the way `performAction` does for the mouse.
+
+      **The "auto-hide" half of the row was the skin working.** The 2026-08-29 attempt read the bar
+      vanishing and Options going missing as breakage. `visrb2` shows the bar only while the window is
+      active (a 300 ms timer on `layout.isActive()`), and below 610px wide its `onResize` hides
+      Random / Presets / Options by design. Measured live: the bar shows with VISCON focused and hides
+      (visualizer full height) when the main window is focused.
+
+      **Verified live** (`launch.sh`, `winhelper clickdiff`, `WINAMP_MODERN_CALL_TRACE=1`, playing):
+      focus VISCON, click Reattach → `gone 406x360`, `new 800x600` (the SUI, visualizer in its tab);
+      SUI Detach → VISCON back; a second Reattach → gone again. Before: `unchanged`, exit 2.
+
+      **Corpus render sweep** (baseline at HEAD before editing, 79 skins, 671 images), classified:
+      Defix `VISCON-normal` — intended (bar hidden at load, visualizer 302 tall); S7Reflex
+      `main-normal` — its `ST` and `MO` readouts no longer draw over each other (unlocked); winampmodern566
+      (five windows) and its `nullsoft_media_player_10_forked` copy — the titlebar streaks now sit
+      where `titlebar.maki` puts them for the frame's `padtitleleft="10"`/`padtitleright="25"`
+      (left from x=20, right ending 25px short of the titlebar; before they disagreed with the
+      script's own arithmetic) (unlocked); Anexa `main-shade` — its wall clock. The `leftClick`
+      change moved no image. Invariant lines that looked moved for WMP11-BlueVU, winampmodern566 and
+      Big Bento Modern were log interleaving; each run alone against a HEAD worktree was identical.
+      Classic and Original do not run this code. Tests: three in
+      `WinampModernPhase25RegressionTests` (order, `cfgattrib` press, plain toggle press); full
+      `swift test` green (2806 before the three were added).
+
+      Original row:
+
+| B71 | **A layout script loads before the standard frame beside it has a client area**, so every name it resolves is null. Measured on Defix's detached visualizer. See [detail](#b71) | — · seen on Defix's detached visualizer; corpus reach unmeasured | L | Live-reported |
+
+      Original detail:
+
+      **B71. A layout's own script loads before the standard frame beside it has a client area.**
+      `WinampModernScriptRuntime.start()` dispatches `onScriptLoaded` to every program and only then
+      delivers XUI params, and a `<Wasabi:StandardFrame:*>` has no client area until its `content`
+      param arrives. On Defix's detached visualizer, `visrb2.maki` binds eleven names
+      (`vis.DTB`, `vis.random`, `VIS_Menu`, …) and `RENDER_SCRIPTS=bindings` prints `-> null` for each.
+      **Tried and reverted once (2026-08-29):** delivering each owner's params right after its own
+      `onScriptLoaded` makes the bindings live, and then `visrb2`'s auto-hide (hide the control bar at
+      load, re-show from a 300 ms timer gated on `layout.isActive()`, relayout on `onResize`) left
+      Reattach dead and the Options button gone. So: (1) the ordering change, behind the corpus render
+      sweep; (2) the auto-hide/relayout behaviour, which has no measurement yet.
+
 ## B18 — Classic minimize-all left windows on screen — closed 2026-09-28
 
 ### B18

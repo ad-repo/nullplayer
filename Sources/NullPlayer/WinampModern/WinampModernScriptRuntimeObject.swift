@@ -622,8 +622,17 @@ extension WinampModernScriptRuntime {
             notifyObjectDidMutate(object)
             return .null
         case "leftclick":
+            // `leftClick()` is a press, so a togglebutton flips and a `cfgattrib` control writes its
+            // attribute, exactly as `WinampModernMainView.performAction` does for the mouse (B71).
+            // Defix's detached visualizer is the measured case: its Reattach and Random buttons are
+            // plain groups whose script answers a click with `leftClick()` on a ghosted
+            // `cfgattrib` togglebutton, and with only `onLeftClick` dispatched the attribute never
+            // moved and neither button did anything.
             _ = try dispatch(object: object, event: "onleftclick")
-            actionRequested?(object.attributes["action"] ?? "", object.attributes["param"])
+            _ = toggleActivation(of: object)
+            let action = object.attributes["action"]
+            actionRequested?(action ?? "", object.attributes["param"])
+            if action == nil { _ = toggleConfigAttribute(of: object) }
             return .null
         case "settargetx": return setTarget("targetx", object: object, value: arguments[0])
         case "settargety": return setTarget("targety", object: object, value: arguments[0])

@@ -63,15 +63,19 @@ Two live defects sit on that bar, and they are unrelated to each other:
 
 - **Previous / Next / Options work as of B70.** They are `<Defix:Bottom.bar.button action="VIS_Prev">`
   wrappers over a `mousetrap`, and the command never crossed the `embed_xui` seam.
-- **Reattach Visualizer and Random still do nothing — B71, open.** `visrb2.maki` owns them, and it
-  loads before the standard frame beside it has instantiated `VISCON.component.gp`, so all eleven of
-  its `findObject` lookups answer null and `bind onleftbuttonup v50 -> null`. Fixing that is a
-  reordering of script startup for the whole corpus, and it exposes a second layer — the same script
-  hides the bar at load and re-shows it from a 300 ms timer gated on `layout.isActive()`. Tried and
-  reverted 2026-08-29.
-- **`Presets` is unreachable at the default width** and that one is the skin's own: `x="249" w="84"`
-  sits underneath the right-anchored `Reattach Visualizer` (`x="-150" w="150"`) until the window is
-  widened past 406.
+- **Reattach Visualizer works as of B71** (verified live 2026-09-28: Reattach closes VISCON into the
+  SUI, the SUI's Detach brings it back, twice round). Two faults were stacked on it: `visrb2.maki`
+  started before the standard frame beside it had built `VISCON.component.gp`, so its eleven
+  `findObject` lookups answered null; and it answers the click with `vis.DTTB.leftClick()` on a
+  ghosted `cfgattrib` togglebutton, which wrote nothing. Random goes through the same
+  `leftClick()` route to `vis.random.active`.
+- **The bar is the skin's own auto-hide, not a defect.** `visrb2` hides the whole bar at load and
+  re-shows it from a 300 ms timer only while the window is active (`layout.isActive()`), setting the
+  visualizer to full height while it is not — so the bar is there while VISCON is the focused window
+  and gone otherwise. Its `onResize` also hides **Random, Presets and Options below 610px wide** and
+  slides the backing grid across the gap, so at the default 406 the bar is Previous / Next /
+  Reattach by design; widen the window to get the rest. (The reverted 2026-08-29 attempt read that
+  as "Options gone".)
 
 The same `Bottom.bar.button` wrapper carries the **playlist window's** `PE_Add`/`PE_Rem`/`PE_Sel`/
 `PE_Misc`/`PE_List`, which were dead for the identical reason and work as of B70.

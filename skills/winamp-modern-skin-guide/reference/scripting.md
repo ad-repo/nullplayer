@@ -125,12 +125,22 @@ Three ordering rules make or break this:
 - It must run **after** `onScriptLoaded`. The handler binds to the script-group variable that
   `getScriptGroup()` populates during `onScriptLoaded`; dispatched earlier, no binding matches and
   every param is silently dropped.
+- **Each owner is configured before the next one starts** (B71). Wasabi builds an object completely —
+  script loaded, then params — before it creates the next one in the document, so a layout's own
+  `<script>` declared after a `<Wasabi:StandardFrame:* content="…">` finds the frame's content
+  already built. `start()` walks the object-owned programs grouped by owner, in program order, and for
+  each owner runs `onScriptLoaded` and then that owner's `deliverXUIParams(for:)`. Deferring every
+  param to one pass after every `onScriptLoaded` (the old order) is wrong: Defix's detached visualizer
+  declares `visrb2.maki` after its standard frame, and all eleven of its `findObject` lookups into
+  `VISCON.component.gp` answered null, so Reattach and Random were dead. The corpus sweep of that
+  change moved two other skins, both toward their own scripts: S7Reflex stopped drawing its `ST` and
+  `MO` readouts on top of each other, and winampmodern566's titlebar streaks landed at the
+  `padtitleleft`/`padtitleright` its frame hands `titlebar.maki`.
 - A **skin-level `<scripts>` block loads last** — after every object's `onScriptLoaded` *and* after the
   params. It sits at the end of `skin.xml`, which is where Winamp reads it, and it is the one script
   that may assume the rest of the skin is configured. Defix's lays out its whole SUI tab strip as
   `label.getAutoWidth() + 20` per tab; run before the labels arrived as params, all five tabs came out
-  at that bare 20px, stacked at the left edge. `start()` therefore runs object-owned scripts, then
-  `deliverXUIParams`, then the skin-level ones — do not collapse it back into one pass.
+  at that bare 20px, stacked at the left edge.
 - **Geometry never reaches the script.** Wasabi hands a tag's attributes to `GuiObject::setXmlParam`
   first and only scripts what that leaves unclaimed, which is why a XUI wrapper can afford to forward
   everything it is given straight to the control it wraps. ClassicPro's `ModernSongticker.maki` is
@@ -574,6 +584,16 @@ Two related rules that fell out of the same investigation:
   `0`, Big Bento's pages opened by computing `scrollToPercent(99 - 0)` — 99%, their own bottom — and
   seven of its nine settings pages launched scrolled to the end of themselves. Only a slider with no
   `action` is seeded; a seek or volume slider is told its position by the host.
+
+#### `leftClick()` is a press, not just an event
+
+A script's `obj.leftClick()` does what the mouse does to that object (B71): `onLeftClick`, then a
+togglebutton flips (`toggleActivation`), then the object's `action=`, and — when it has no action — a
+`cfgattrib` control writes its attribute (`toggleConfigAttribute`). That is the order
+`WinampModernMainView.performAction` runs for a real click; keep the two in step. Skins use it to
+route a click through an invisible proxy: Defix's detached visualizer answers Reattach and Random
+with `leftClick()` on a ghosted `cfgattrib` togglebutton (`vis.DTTB`, `vis.random.active`), and while
+`leftClick` dispatched only `onLeftClick` the attribute never moved and both buttons were dead.
 
 #### Scrolling: `scrollToPercent` is a viewport offset, not a layout change
 
