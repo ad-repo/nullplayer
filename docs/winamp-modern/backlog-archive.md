@@ -3,6 +3,25 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B152 — WMP11-BlueVU's VU needle warp cost ten points of main thread over a control — closed 2026-09-28
+
+| B152 | **WMP11-BlueVU still costs ~10 points more main thread than cPro-Bento, all of it the VU needle warp.** Release, *VU Meters Large* open, music playing: 42.0% busy against cPro-Bento's 31.8%, with `drawWarped` at 18.0%. The visible meter re-warps both needles at the skin's own ~100 Hz, under the 120 Hz display. The main window's whole-window repaint is fixed (2026-09-28, `gotoframe` repaints the layer's own rect; the player now paints 25% of its area instead of 100%). What is left is making the warp cheaper per frame. Throttling it below the skin's cadence would give up visible smoothness, so that is a decision for the user, not a fix. Method: [`performance.md`](../../skills/winamp-modern-skin-guide/reference/performance.md) *A beat meter repainted the whole player* | 1 skin measured | M | Live-reported |
+
+### B152
+
+- [x] **B152. WMP11-BlueVU's VU needle warp.** **Closed 2026-09-28.** The needles are rotations, and
+      a rotation is affine at any grid size, so an affine, non-wrapping mesh is now drawn as the
+      layer's own image through the inverse map (`WasabiLayerFXMesh.affineSourceTransform`). The
+      per-pixel resample now handles only meshes that bend or wrap. The skin's ~100 Hz cadence is
+      untouched, so there was no throttling decision to put to the user. Release, *VU Meters Large*
+      open, music playing, same binary with an A/B switch, two runs each: busy **32.1/35.5% →
+      18.7/18.5%**, `drawWarped` **18.3/20.0% → 0.1/0.0%**, against cPro-Bento's 24.7% the same
+      day. The needles also draw sharper, sampled once at device resolution. Checked live: the
+      meter's needles pivot on the hub and move with the music, and a red tint on the transform
+      draw landed on Defix's reels and turned between captures. The account is in
+      [`performance.md`](../../skills/winamp-modern-skin-guide/reference/performance.md)
+      *A rotation needs no resample*.
+
 ## B119 — WMP11-BlueVU's per-frame warp cost three quarters of the main thread — closed 2026-09-28
 
 | B119 | **WMP11-BlueVU spends ~75% of the main thread where a normal skin spends ~50%**, painting two warped FX layers every frame. The CPU resample half is fixed; the Core Graphics paint (~26% against a control's ~5%) is open. Closing this also closes B117(a), the skin's ~7 fps marquee. See [detail](#b119) | 2 skins measured; every skin with an animating `<layer>` FX mesh | M | Live-reported |
