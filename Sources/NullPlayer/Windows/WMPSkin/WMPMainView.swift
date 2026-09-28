@@ -41,6 +41,9 @@ func wmpWidgetTrace(_ message: @autoclosure () -> String) {
     let t = Date().timeIntervalSince1970
     FileHandle.standardError.write(Data((String(format: "[wmp/widget] %.3f ", t) + message() + "\n").utf8))
 }
+#else
+/// Release: the resize trace's call sites are unguarded, so it compiles to nothing rather than away.
+@inline(__always) func wmpResizeTrace(_ message: @autoclosure () -> String) {}
 #endif
 
 /// Which window edges a borderless-window resize drag is moving.
