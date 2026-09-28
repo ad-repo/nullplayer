@@ -3,6 +3,24 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B158 — closing a hosted window slides the one below it up — closed 2026-09-28
+
+| B158 | **Closing a `.wal` hosted window slides the window below it up, and the closed one reopens on top of it.** Measured 2026-09-28 while closing B156, on Itemskin at 100%. With the Spectrum Analyzer tiled at top-left y=704 and the Waveform under it at y=915, closing the analyzer from the Windows menu moves the Waveform up to y=704. Reopening the analyzer puts it back at its remembered y=704, exactly over the Waveform. The move is the host's: `hostedWindowVisibilityDidChange` (`App/WindowManager.swift:1826`) calls `slideUpWindowsBelow` on every hosted close, although `handleCenterStackWindowWillClose` skips it for `.wal` and `.wmz` because those windows reopen where they were left (`components.md`). B154's slot release does not help, because the slide is not a placement and never calls `releaseClosedWindowSlots(under:)`. Whether the fix is to skip the slide for `.wal` or to release the slot the slide gives away is not decided. Reproduce with `WINAMP_MODERN_PLACE_TRACE=1 skills/app-control/scripts/launch.sh Itemskin`: open Spectrum Analyzer then Waveform, close Spectrum Analyzer, reopen it, and read `winhelper windows` | every `.wal` session that closes a hosted window with another under it | S | Agent-measured |
+
+### B158
+
+- [x] **B158. A hosted close no longer slides the windows below it.** **Closed 2026-09-28.**
+      `hostedWindowVisibilityDidChange` called `slideUpWindowsBelow` on every hosted close, the one
+      `.wal` path `handleCenterStackWindowWillClose`'s WMP/`.wal` skip did not cover. The call is
+      gone; only the `.wal` controller calls that method, so Classic and Original are untouched. The
+      slide is skipped rather than made to release the closed window's slot, because a `.wal` window
+      reopens where it was left and a close moving its neighbours breaks that rule on its own.
+      Measured live on Itemskin at 100%: before, the Waveform moved from y=915 to y=704 when the
+      Spectrum Analyzer closed, and the analyzer reopened at y=704 over it; after, the Waveform stays
+      at y=915 with its glued frame, and the analyzer reopens at y=704. Cycling the Waveform after
+      that moves nothing. No unit test: the path is `WindowManager.shared` over live windows. The
+      rule is in `reference/components.md` → *A NullPlayer window is tiled once*.
+
 ## B156 — an Itemskin script puts a tiled window back where it was — closed 2026-09-28
 
 | B156 | **An Itemskin script puts a tiled window back where it was, mostly below the screen.** Measured 2026-09-28 while closing B153. Itemskin (B69) pins a frame window over each component window. With the playlist, Media Library, Spectrum Analyzer and Waveform open, Windows → UI Size → 150% tiles the library at `{762, 258}`. The next line in the trace is `[place/script] o247 -> {0, -69} (was {762, 258})`: the skin's own `resize()` moves it to its pre-tile origin, with 69pt of its 206pt below the visible frame. Opening the Spectrum Analyzer from the menu at 100% does the same (`o337 -> {0, -74}`). The pinned pairs stay glued, so it is the pair that moves. Not established: whether the script is replaying a position it read before the tiler ran (compare the `onMove` write-back in `reference/scripting.md`) or doing its own arithmetic, and whether Winamp would park it there too. Reproduce with `WINAMP_MODERN_PLACE_TRACE=1 skills/app-control/scripts/launch.sh Itemskin`, toggle those windows from the Windows menu, set UI Size to 150%, and read `winhelper windows` | 1 skin measured | S | Agent-measured |

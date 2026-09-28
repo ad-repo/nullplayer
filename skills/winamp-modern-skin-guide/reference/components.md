@@ -302,8 +302,9 @@ never walks this way, since it tiles every window in one pass. `.wmz` shares the
 `.wal` only) records each window the first time a `show*` path places it — a launch restore counts —
 and every reopen after that skips the reset-to-default and `positionSubWindow`, so the window stays
 where the user left it. `handleCenterStackWindowWillClose` skips `slideUpWindowsBelow` in the same
-families. Classic and Original re-stack on every open, by design. The skin's own containers keep
-the same rule through `placedAuxiliaryWindows`. **"Where left" lapses when the host gives the spot
+families, and `hostedWindowVisibilityDidChange` never slides: a hosted close that slid the window
+below into its spot made the reopened window land exactly over it (B158). Classic and Original
+re-stack on every open, by design. The skin's own containers keep the same rule through `placedAuxiliaryWindows`. **"Where left" lapses when the host gives the spot
 away (B154).** The tiler avoids only windows on screen, so a closed window's slot goes to the next
 window that opens. On Sony_Walkman the launch-placed equalizer, once closed, reopened exactly over
 the playlist that had taken its slot. So every host placement — `place`, the sweep, and

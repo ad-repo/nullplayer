@@ -27,7 +27,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
 | B147 | **The library window follows the main window's height in a `.wal` session.** `toggleHideTitleBars` (`App/WindowManager.swift:511`) resizes the side-docked library and projectM windows by the main window's height delta — Original centre-stack behaviour. Its guard `isRunningModernUI` (`:390`) does not name `WinampModernMainWindowController`, so `.wal` falls through to the stale `isModernUIEnabled` preference. **Gate the resize itself on the mode; do not add the controller to the predicate**, whose other callers would all inherit the answer. Classic and Original byte-identical. The `.wmz` half is W237 in [`WMP_TASKS.md`](WMP_TASKS.md) | every `.wal` session with the library open | S | Live-reported |
-| B158 | **Closing a `.wal` hosted window slides the window below it up, and the closed one reopens on top of it.** Measured 2026-09-28 while closing B156, on Itemskin at 100%. With the Spectrum Analyzer tiled at top-left y=704 and the Waveform under it at y=915, closing the analyzer from the Windows menu moves the Waveform up to y=704. Reopening the analyzer puts it back at its remembered y=704, exactly over the Waveform. The move is the host's: `hostedWindowVisibilityDidChange` (`App/WindowManager.swift:1826`) calls `slideUpWindowsBelow` on every hosted close, although `handleCenterStackWindowWillClose` skips it for `.wal` and `.wmz` because those windows reopen where they were left (`components.md`). B154's slot release does not help, because the slide is not a placement and never calls `releaseClosedWindowSlots(under:)`. Whether the fix is to skip the slide for `.wal` or to release the slot the slide gives away is not decided. Reproduce with `WINAMP_MODERN_PLACE_TRACE=1 skills/app-control/scripts/launch.sh Itemskin`: open Spectrum Analyzer then Waveform, close Spectrum Analyzer, reopen it, and read `winhelper windows` | every `.wal` session that closes a hosted window with another under it | S | Agent-measured |
 
 ### Awaiting manual QA
 
@@ -43,9 +42,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 Triaged 2026-09-27 against the `app-control` tools: `launch.sh`, `winhelper`
 (`click`/`dblclick`/`drag`/`move`/`scroll`/`clickdiff`/`capture`/`screens`), `menu.applescript`,
 the window census and the render-dump harness. The ranking above still sets the order.
-
-B158: the repro is the Windows menu and `winhelper windows`, and both halves of the fix read back
-from `[place]` lines.
 
 **Partly verifiable.** B147: the fix is autonomous, but *Hide Title Bars* is only in the context
 menu, so the live toggle is Route D. B66 and B85: the drop-down and the drawer menu may be

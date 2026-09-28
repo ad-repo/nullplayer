@@ -1823,7 +1823,9 @@ class WindowManager {
 
     func hostedWindowVisibilityDidChange(id: WinampModernHostedWindowID, visible: Bool,
                                          transitionFrame: NSRect) {
-        if !visible { slideUpWindowsBelow(closingFrame: transitionFrame) }
+        // No slide-up on close (B158): a hosted window reopens where it was left, so sliding the
+        // window below into its spot put the reopened one exactly over it. Same rule as
+        // `handleCenterStackWindowWillClose` for `.wal` and `.wmz`.
         notifyMainWindowVisibilityChanged()
         _ = tightenClassicCenterStackIfNeeded()
         postLayoutChangeNotification()
