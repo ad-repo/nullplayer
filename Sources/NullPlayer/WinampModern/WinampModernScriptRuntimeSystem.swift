@@ -631,16 +631,21 @@ extension WinampModernScriptRuntime {
     /// anything the skin gave an `action` or a `cfgattrib`; layers, including the mover grip, carry
     /// neither and stay. The skin's own window is untouched — it holds the declared container, which
     /// a hosted caller is never given.
+    ///
+    /// A strip that held nothing but those controls is then dropped (B159).
     private func adoptChromeForHostedWindow(_ container: WasabiObject, for hosted: WasabiObject) {
+        var hidden: [WasabiObject] = []
         func hideControls(_ object: WasabiObject) {
             for child in object.children {
                 if child.attributes["action"] != nil || child.attributes["cfgattrib"] != nil {
                     _ = child.setAttribute("visible", value: "0")
+                    hidden.append(child)
                 }
                 hideControls(child)
             }
         }
         hideControls(container)
+        liftHostedClient(into: container, for: hosted, pastHiddenControls: hidden)
         // …and record the floor the chrome itself will not go below, which is the only reliable
         // statement of how big a window wearing it has to be. It cannot be found in the markup ahead
         // of time: which chrome container a frame script instantiates is the script's decision, made
@@ -662,10 +667,106 @@ extension WinampModernScriptRuntime {
         hostedChromeFloors[hosted.stableID] = floor
     }
 
+    /// Drop the top strip a hosted window's borrowed chrome kept for controls we hid.
+    ///
+    /// Itemskin's visualizer frame is 26pt thick on three sides and 40pt on top, where its own window
+    /// puts `VIS_Prev`, `VIS_Next`, Random, `Vis_Menu` and a close button, and its bitmap is solid
+    /// black there. With the controls hidden, every NullPlayer window wearing it showed a 13pt black
+    /// bar above its contents. So when every hidden control sat in that strip and nothing still drawn
+    /// starts inside it, the top border becomes as thick as the thickest of the other three sides.
+    /// Anything else leaves the frame as the skin's exemplar drew it: Pure Inspired's thick bottom is
+    /// border artwork, not a vacated strip.
+    ///
+    /// Both windows change. The chrome is a second window drawn **over** the contents, so moving the
+    /// client alone left it under the same opaque band. In our copy the top pieces are cut to the new
+    /// edge — tiled vertically, which draws the bitmap 1:1 and clips it where stretching would squash
+    /// the bevel — and the side pieces start there. The client keeps the size the registry states,
+    /// and the window is that much shorter: the materializer applies `hostedChromeLift` to a window it
+    /// is still building, `hostedChromeLiftApplied` reaches one already on screen.
+    private func liftHostedClient(into chrome: WasabiObject, for hosted: WasabiObject,
+                                  pastHiddenControls hidden: [WasabiObject]) {
+        func isLayout(_ object: WasabiObject?) -> Bool {
+            object?.typeName.caseInsensitiveCompare("layout") == .orderedSame
+        }
+        func number(_ object: WasabiObject, _ name: String) -> Double? {
+            object.attributes[name].flatMap(Double.init)
+        }
+        guard !hidden.isEmpty,
+              let chromeLayout = chrome.children.first(where: { isLayout($0) }),
+              let hostedLayout = hosted.children.first(where: { isLayout($0) }),
+              let contentID = hosted.xmlID.map({ "\($0).content" }),
+              let client = hostedLayout.children.first(where: {
+                  $0.xmlID?.caseInsensitiveCompare(contentID) == .orderedSame
+              }),
+              client.attributes["relatw"] == "1", client.attributes["relath"] == "1",
+              client.attributes["relatx"] != "1", client.attributes["relaty"] != "1",
+              let x = number(client, "x"), let y = number(client, "y"),
+              let w = number(client, "w"), let h = number(client, "h"),
+              w < 0, h < 0
+        else { return }
+        // The client tucks under the border (`clientBleed`); the chrome's edges are that far out.
+        let bleed = WasabiSurfaceSynthesizer.clientBleed
+        let stripBottom = y + bleed
+        let top = max(x, -w - x, -h - y)
+        guard top < y else { return }
+        let lift = y - top
+        let edge = top + bleed
+        // Top-anchored, in the chrome layout's own coordinates — which are the client's, since the
+        // frame script keeps the chrome window the hosted window's size.
+        func topAnchored(_ object: WasabiObject) -> Double? {
+            object.attributes["relaty"] == "1" ? nil : number(object, "y")
+        }
+        func startsInStrip(_ object: WasabiObject) -> Bool {
+            guard let start = topAnchored(object) else { return false }
+            return start > 0 && start < stripBottom
+        }
+        guard hidden.allSatisfy({ $0.parent === chromeLayout && startsInStrip($0) }) else { return }
+        let hiddenIDs = Set(hidden.map(\.stableID))
+        let drawn = chromeLayout.children.filter {
+            !hiddenIDs.contains($0.stableID) && $0.attributes["visible"] != "0"
+        }
+        // A top piece starts at 0 and a side piece at the strip's bottom; the mover grip is an
+        // imageless layer. Anything else starting in the strip is something the skin still draws.
+        let stillDrawn = drawn.contains { child in
+            startsInStrip(child)
+                && (child.typeName.caseInsensitiveCompare("layer") != .orderedSame
+                    || child.attributes["image"] != nil)
+        }
+        guard !stillDrawn else { return }
+        for piece in drawn where piece.attributes["image"] != nil && piece.attributes["relath"] != "1" {
+            guard topAnchored(piece) == 0 else { continue }
+            _ = piece.setAttribute("h", value: String(Int(edge)))
+            _ = piece.setAttribute("tiley", value: "1")
+        }
+        for piece in drawn where piece.attributes["image"] != nil && topAnchored(piece) == stripBottom {
+            _ = piece.setAttribute("y", value: String(Int(edge)))
+            if let height = number(piece, "h") {
+                _ = piece.setAttribute("h", value: String(Int(height + lift)))
+            }
+        }
+        // The client keeps its size in a window `lift` shorter: its top moves up, its bottom inset
+        // stays, so `h` grows by what the canvas is about to lose.
+        _ = client.setAttribute("y", value: String(Int(top)))
+        _ = client.setAttribute("h", value: String(Int(h + lift)))
+        for name in ["minimum_h", "default_h", "h"] {
+            if let height = number(hostedLayout, name) {
+                _ = hostedLayout.setAttribute(name, value: String(Int(height - lift)))
+            }
+        }
+        hostedChromeLifts[hosted.stableID] = CGFloat(lift)
+        hostedChromeLiftApplied?(hosted.stableID, CGFloat(lift))
+    }
+
     /// The size floor the chrome a hosted window's frame script built imposes on it, once that script
     /// has run. Nil for a window whose frame draws inline.
     func hostedChromeFloor(of container: WasabiObject) -> CGSize? {
         hostedChromeFloors[container.stableID]
+    }
+
+    /// How much shorter a hosted window is than its synthesized layout, because its borrowed chrome
+    /// dropped a strip that held only controls we hide. Nil when nothing was dropped.
+    func hostedChromeLift(of container: WasabiObject) -> CGFloat? {
+        hostedChromeLifts[container.stableID]
     }
 
     /// Whether a script has taken this container as a `newDynamicContainer` — a window Winamp creates

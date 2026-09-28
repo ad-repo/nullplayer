@@ -943,6 +943,13 @@ final class WasabiSceneRenderer {
 
     private var protectiveMinimumCache: [String: CGSize] = [:]
 
+    /// Forget the size floors measured against the layout's old bounds, after something rewrote its
+    /// `minimum_h`/`default_h` — a hosted window whose borrowed chrome dropped a strip.
+    func layoutBoundsDidChange() {
+        protectiveMinimumCache.removeAll()
+        contentFloorCache = nil
+    }
+
     /// The smallest canvas at which the scene still lays itself out the way its author drew it.
     ///
     /// R1's second half: a skin's declared `minimum_w`/`minimum_h` is written for Winamp, where a

@@ -2,6 +2,7 @@
 
 ## 0.31.0
 
+- **No black bar on Itemskin's NullPlayer windows** — in the Itemskin Winamp Modern skin, windows such as the Spectrum Analyzer and Waveform had an empty black bar across the top of the frame, left where the skin's own visualizer buttons go. The bar is gone and the windows are that much shorter.
 - **Closing a Winamp Modern window no longer moves the one below it** — in a `.wal` skin, closing a window such as the Spectrum Analyzer from the Windows menu slid the window under it up into its place. Reopening the first window then put it right on top. The other windows now stay where they are.
 - **Itemskin's windows stay where they are placed** — in the Itemskin Winamp Modern skin, opening the Spectrum Analyzer or Waveform put it mostly below the bottom of the screen, and changing the UI Size could pull the playlist, library or a visualizer window back to where it had been, on top of its neighbours. Each window now opens in its own free spot and keeps it, with the skin's frame drawn around it.
 - **Winamp Modern windows open right under the one above** — in a `.wal` skin, opening a window from the Windows menu while another was open under the player could leave a large empty gap between them. On Sony_Walkman, the playlist opened well below the equalizer. It now opens directly beneath it. Windows Media Player skins get the same fix.

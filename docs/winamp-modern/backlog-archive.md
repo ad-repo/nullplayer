@@ -3,6 +3,30 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B159 — Itemskin's NullPlayer windows have a black bar on top — closed 2026-09-28
+
+| B159 | **Itemskin's NullPlayer windows have an unneeded black bar on top.** Reported 2026-09-28. Every NullPlayer-owned window on Itemskin (Spectrum Analyzer, Waveform, Cava, …) shows a 13pt black band between the frame's top bevel and its contents. They wear a copy of the skin's AVS frame, whose 40pt top border holds the visualizer's buttons over a solid black bitmap; the copy hides the buttons and leaves the band | 1 skin measured | S | Live-reported |
+
+### B159
+
+- [x] **B159. A borrowed frame drops a strip that held only the controls we hide, and the window
+      shrinks by it.** **Closed 2026-09-28.** `liftHostedClient`, called from
+      `adoptChromeForHostedWindow`, cuts the copy's top pieces to the thickest other side
+      (`tiley="1"`), starts its side pieces there, moves the client up and takes the same 13pt off
+      the hosted window. The client keeps its registry size. Moving the client alone changed nothing
+      on screen, because the chrome is a second window drawn over it, opaque. The first shrink
+      attempt clamped back to 211 on the renderer's cached protective minimum, so
+      `layoutBoundsDidChange()` clears it before the resize. Itemskin adopts its chrome at show
+      time, after the materializer's check, so `hostedChromeLiftApplied` resizes a window already
+      built. Measured live on Itemskin at 100%: before, the Spectrum Analyzer and Waveform were
+      383x211 with the band. After, both are 383x198, the Waveform tiles flush at y=902, the bars
+      reach the top bevel, three close/reopen cycles stay at 198, and a drag by the top bevel moves
+      the pair. The `WINAMP_MODERN_DRAG_HOSTED_PNG` render of K-jr, MoonLight and Pure Inspired is
+      byte-identical. That probe builds its content renderer before the scripts run, so its
+      Itemskin dump shows the chrome trimmed but not the client moved. Hosted/Chrome/Frame tests
+      green (213). Not run: a UI Size change with the windows open. The rule is in
+      `reference/components.md` → *A strip that held only the hidden controls goes*.
+
 ## B158 — closing a hosted window slides the one below it up — closed 2026-09-28
 
 | B158 | **Closing a `.wal` hosted window slides the window below it up, and the closed one reopens on top of it.** Measured 2026-09-28 while closing B156, on Itemskin at 100%. With the Spectrum Analyzer tiled at top-left y=704 and the Waveform under it at y=915, closing the analyzer from the Windows menu moves the Waveform up to y=704. Reopening the analyzer puts it back at its remembered y=704, exactly over the Waveform. The move is the host's: `hostedWindowVisibilityDidChange` (`App/WindowManager.swift:1826`) calls `slideUpWindowsBelow` on every hosted close, although `handleCenterStackWindowWillClose` skips it for `.wal` and `.wmz` because those windows reopen where they were left (`components.md`). B154's slot release does not help, because the slide is not a placement and never calls `releaseClosedWindowSlots(under:)`. Whether the fix is to skip the slide for `.wal` or to release the slot the slide gives away is not decided. Reproduce with `WINAMP_MODERN_PLACE_TRACE=1 skills/app-control/scripts/launch.sh Itemskin`: open Spectrum Analyzer then Waveform, close Spectrum Analyzer, reopen it, and read `winhelper windows` | every `.wal` session that closes a hosted window with another under it | S | Agent-measured |

@@ -122,6 +122,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// script that resized itself at startup resized the player instead.
     var layoutSwitchRequested: ((WasabiObjectID, String) -> Bool)?
     var layoutResizeRequested: ((WasabiObjectID, CGSize) -> Void)?
+    /// A hosted window's borrowed chrome dropped a strip after the window was built — Itemskin
+    /// creates its chrome when the window is shown — so the window is this many points shorter.
+    var hostedChromeLiftApplied: ((WasabiObjectID, CGFloat) -> Void)?
     /// A script moving its own *window*, in Winamp's screen coordinates (top-left origin, the space
     /// `getViewportWidth`/`getViewportHeight` answer in). A container's `x`/`y` are the window's
     /// position on the desktop, not a box inside a scene, so unlike every other geometry write these
@@ -176,6 +179,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     var dynamicContainerInstances: [String: [ObjectIdentifier: WasabiObjectID]] = [:]
     /// Per hosted window, the floor its borrowed chrome imposes — see `adoptChromeForHostedWindow`.
     var hostedChromeFloors: [WasabiObjectID: CGSize] = [:]
+    /// Per hosted window, the height its borrowed chrome gave back — see `liftHostedClient`.
+    var hostedChromeLifts: [WasabiObjectID: CGFloat] = [:]
     /// The other half of the pair: what the container's window state *is*, asked of the host, for
     /// `toggle()` and `isVisible()`. The graph's `visible` attribute cannot answer it — the window is
     /// shown and hidden by routes that never write the attribute — so a script that asks drifts out

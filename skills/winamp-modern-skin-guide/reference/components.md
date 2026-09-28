@@ -821,6 +821,21 @@ Four rules, each learned from a render that came out wrong first:
   only a copy, and in that copy every object carrying an `action` or a `cfgattrib` is hidden
   (`WinampModernScriptRuntime.adoptChromeForHostedWindow`). Border layers and the mover grip carry
   neither and stay.
+- **A strip that held only the hidden controls goes, and the window shrinks by it (B159).**
+  Itemskin's AVS frame is 26pt on three sides and 40pt on top, and its bitmap is solid black under
+  the buttons, so our windows wore a 13pt black bar. `liftHostedClient` (called from
+  `adoptChromeForHostedWindow`) acts only when every hidden control is a direct child of the chrome
+  layout starting inside the top strip and nothing still drawn starts there. It cuts the copy's top
+  pieces to the thickest other side (`tiley="1"`, which draws 1:1 and clips where a plain layer would
+  squash the bevel), starts the side pieces there, moves the client up, and takes the same height
+  off the hosted layout's `minimum_h`/`default_h`. The client keeps its registry size. **Moving
+  the client alone does nothing:** the chrome window is drawn over it, opaque. The shrink has two
+  consumers because the chrome can be adopted at either time: the materializer applies
+  `hostedChromeLift` to a window it is still building, and `hostedChromeLiftApplied` resizes one
+  already on screen (Itemskin adopts at show time). Both call `WasabiSceneRenderer.layoutBoundsDidChange()`
+  first; without it the cached protective minimum clamps the canvas back to the old height. Pure
+  Inspired's thick bottom is border artwork, not a vacated strip, and is left alone. K-jr, MoonLight
+  and Pure Inspired render byte-identical.
 - **A full-bleed component states nothing.** MoonLight's video window is `w="0" h="0" relatw="1"
   relath="1"`: the contents fill the window and the chrome overlaps them. Read as a zero-thickness
   border it won "thinnest" and gave Cava a 410x281 frame clipped into a 343x220 window. An exemplar

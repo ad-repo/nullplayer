@@ -2140,6 +2140,14 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         scripts.layoutResizeRequested = { [weak self] container, size in
             self?.viewsByContainer[container]?.applyCanvasResize(size)
         }
+        scripts.hostedChromeLiftApplied = { [weak self] container, lift in
+            // Registered only once materialized; a window still being built takes the lift from
+            // the materializer instead, so it is never applied twice.
+            guard let view = self?.viewsByContainer[container] else { return }
+            view.renderer.layoutBoundsDidChange()
+            let canvas = view.renderer.canvasSize
+            view.applyCanvasResize(CGSize(width: canvas.width, height: canvas.height - lift))
+        }
         scripts.containerMoveRequested = { [weak self] container, point, pinned in
             self?.moveContainerWindow(container, to: point, pinned: pinned)
         }

@@ -68,6 +68,11 @@ with an `xuitag` and a `scripts/standardframe*.maki`. Each of those scripts:
   (B110) and was not — that call was answered correctly throughout. See
   [`reference/scripting.md`](../reference/scripting.md) → *`onSetVisible` — a window a script closes
   has to be reopened*.
+- **Our windows drop the AVS frame's button strip (B159).** In the copy a hosted window wears, the
+  vis buttons are hidden, the 40pt top border is cut to 27pt, and the window is 13pt shorter, so a
+  Spectrum Analyzer is 383x198 at 100%, not 383x211. The skin's own visualizer window keeps its
+  buttons and its strip. See `reference/components.md` → *A strip that held only the hidden
+  controls goes*.
 - **Its library now wears the *AVS* frame, and `cont.clear.ml` is dead.** The borrowed-frame pass
   (3edf3765, 2026-09-04) rewrote `MLibrary`'s `Wasabi:StandardFrame:ML` to `:AVS` because the ML
   frame costs rows on every screen for a window whose contents are entirely ours. So a probe that
