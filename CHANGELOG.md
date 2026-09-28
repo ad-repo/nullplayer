@@ -2,6 +2,7 @@
 
 ## 0.31.0
 
+- **Winamp Modern windows no longer reopen on top of each other** — in a `.wal` skin, closing a window such as the equalizer and then opening another could put the new one in the closed window's place. Reopening the first window then covered it completely. A reopened window now keeps its old position only if nothing has been put there since, and otherwise finds a free spot. A window you moved yourself still reopens where you left it.
 - **Winamp Modern windows no longer open on top of the player when the screen runs out** — with a large UI Size and the player in the middle of the screen, a wide window such as the library had no room on the player's right, so it was pulled back over the player. It now goes into the empty space to the player's left. If it fits on neither side, it is placed where it covers the least.
 - **No more see-through gaps inside Winamp Modern skin windows** — in the WMP11-BlueVU skin, a thin band of desktop showed between the VU Meters' artwork and the window frame. The About and library windows had the same problem across larger areas. Empty space inside a skin's standard window frame is now filled black, as it is in Winamp.
 - **Winamp Modern windows no longer pile up when you change UI Size** — changing the UI size with a `.wal` skin left its windows on top of each other: the equalizer slid up into the player, and the playlist sat over the equalizer. The windows are now laid out again around the player after every UI Size change, the same way Snap To Default arranges them.

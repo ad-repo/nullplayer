@@ -1911,6 +1911,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             }
             container.window.setFrameOrigin(slot.origin)
             placedAuxiliaryWindows.insert(container.containerID)
+            manager.releaseClosedWindowSlots(under: container.window)
         }
         for window in manager.winampModernHostedWindowsForArrangement() where window.isVisible {
             let slot = tiler.nextSlot(for: window.frame.size)
@@ -1919,6 +1920,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                       NSStringFromRect(window.frame), NSStringFromRect(slot))
             }
             window.setFrameOrigin(slot.origin)
+            manager.releaseClosedWindowSlots(under: window)
         }
         for window in trailing where window.isVisible {
             let slot = tiler.nextSlot(for: window.frame.size)
@@ -1927,6 +1929,18 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                       NSStringFromRect(window.frame), NSStringFromRect(slot))
             }
             window.setFrameOrigin(slot.origin)
+            manager.releaseClosedWindowSlots(under: window)
+        }
+    }
+
+    /// A closed window whose remembered frame lies under `frame` is placed afresh on its next open:
+    /// the host has just tiled `except` onto its spot (B154). See
+    /// `WindowManager.releaseClosedWindowSlots(under:)`, the only caller.
+    func releaseClosedContainerSlots(under frame: NSRect, except window: NSWindow) {
+        for container in auxiliaryContainers
+        where container.window !== window && !container.window.isVisible
+            && !container.window.isMiniaturized && container.window.frame.intersects(frame) {
+            placedAuxiliaryWindows.remove(container.containerID)
         }
     }
 
@@ -1969,6 +1983,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                   NSStringFromSize(size), NSStringFromPoint(origin), occupied.count)
         }
         container.window.setFrameOrigin(origin)
+        manager.releaseClosedWindowSlots(under: container.window)
     }
 
     /// A script parking its own window on the desktop (`container.resize(x, y, w, h)`, or the

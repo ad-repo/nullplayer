@@ -226,6 +226,12 @@ read -r WID _ X Y W H _ < <("$WH" windows --pid "$PID" --size 289x283)   # the s
 - **`menu.applescript` requires a pid** and resolves `first process whose unix id is <pid>`. There
   is no name fallback: `process "NullPlayer"` is ambiguous whenever the installed build is also
   running, which is how it gets driven by accident.
+- **A menu toggle is a user decision, and it outlives the process.** `toggle` and `closeaux`
+  (which `window-census.sh` runs first) write a `.wal` skin's remembered window visibility, and
+  `launch.sh` turns off session restore but not that. So a window the last run closed stays closed
+  on the next launch, and one it left open comes back. B154 was filed as "the equalizer is shown
+  during load and then hidden". The hiding was the harness's own `closeaux`. Before blaming the
+  app for a window that appears or vanishes, check what the previous run's toggles left behind.
 - **A contextual menu is not drivable. That is Route D.**
 - **`capture` refuses a picture that is not the window.** `screencapture -l` returns a
   **full-screen** image for an off-screen or stale id, and the **whole docked group** for a window

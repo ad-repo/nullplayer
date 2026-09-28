@@ -2442,6 +2442,25 @@ class WindowManager {
         return false
     }
 
+    /// The host just tiled `window` onto the frame it now has, so a closed window whose remembered
+    /// frame lies under it has lost that spot and is placed afresh on its next open (B154).
+    ///
+    /// "Reopens where left" assumes the spot is still the closed window's. The tiler only avoids
+    /// windows on screen, so it hands a closed window's slot to the next window that opens — measured
+    /// on Sony_Walkman, the equalizer reopened exactly over the playlist that took its slot. Only a
+    /// host placement calls this, never a drag, so a window the user left overlapping on purpose
+    /// keeps its frame. `.wal` only; WMP shares `reopensWhereLeft` and keeps the rule unchanged.
+    func releaseClosedWindowSlots(under window: NSWindow) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        let frame = window.frame
+        for closed in placedFreeFloatingWindows.allObjects
+        where closed !== window && !closed.isVisible && !closed.isMiniaturized
+            && closed.frame.intersects(frame) {
+            placedFreeFloatingWindows.remove(closed)
+        }
+        winampModernHostedController?.releaseClosedContainerSlots(under: frame, except: window)
+    }
+
     private func positionSubWindow(_ window: NSWindow, preferBelowEQ: Bool = false) {
         guard let mainWindow = mainWindowController?.window else { return }
         
@@ -2473,6 +2492,7 @@ class WindowManager {
                 isSnappingWindow = true
                 window.setFrameOrigin(origin)
                 isSnappingWindow = false
+                releaseClosedWindowSlots(under: window)
                 let traceKey = uiMode.controllerFamily == .wmp
                     ? "WMP_PLACE_TRACE" : "WINAMP_MODERN_PLACE_TRACE"
                 if ProcessInfo.processInfo.environment[traceKey] == "1" {

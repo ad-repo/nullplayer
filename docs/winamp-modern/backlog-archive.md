@@ -3,6 +3,30 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B154 — Sony_Walkman's equalizer reopens over the playlist — closed 2026-09-28
+
+| B154 | **Sony_Walkman's equalizer reopens on top of the playlist.** Seen 2026-09-28 in 3 of 4 debug launches while closing B56a. The launch sweep logs `[place/tile] eq … -> {{762, 606}, …}`, so the skin's declared `eq` container is visible during load, but the Windows menu shows Equalizer unchecked once launch settles. Open Playlist Editor and then Equalizer from the Windows menu: the playlist takes the first slot under the player (top-left y=399), and the EQ comes back at the slot the launch sweep gave it (also y=399), 335×146 over the playlist. It keeps that slot because `reopensWhereLeft` counts the launch placement as a user placement. Not confirmed: what hides the EQ (a skin script or the host), and whether a window that was only visible during load should count as placed at all. Reproduce with `WINAMP_MODERN_PLACE_TRACE=1 skills/app-control/scripts/launch.sh Sony_Walkman`, then toggle the items with `menu.applescript toggle` and read `winhelper windows` | 1 skin measured; the reopen rule is engine-wide | S | Agent-measured |
+
+### B154
+
+- [x] **B154. The host gives a closed window's spot away, so the window forgets it.** **Closed
+      2026-09-28.** The equalizer was not hidden by the skin or the host. `eq` is
+      `default_visible="0"`, so it opens at load only when the user last left it open, and the
+      B56a runs had closed it with `menu.applescript closeaux`. The mechanism is then deterministic,
+      and it reproduced on the first try. The launch sweep places the equalizer and records it in
+      `placedAuxiliaryWindows`, the skin-container twin of `reopensWhereLeft`. Closing it frees its
+      slot, and the tiler, which avoids only windows on screen, gives that slot to the playlist.
+      The equalizer's reopen skips placement and lands exactly on the playlist at y=399. The fix is
+      `WindowManager.releaseClosedWindowSlots(under:)`. Every host placement (`place`, the sweep,
+      and `positionSubWindow`'s tiling branch) calls it, and it forgets the placement of every
+      closed window that the new frame covers, in both registries. It is gated on `.winampModern`.
+      Verified live on Sony_Walkman: the equalizer now reopens at y=563, clear of the playlist. In
+      the reverse order, the playlist reopens clear of the equalizer that took its slot. A plain
+      close and reopen keeps the frame, and so does an equalizer the user dragged over the playlist
+      on purpose. The gaps those reopens leave (19pt and 126pt) are the walk, filed as B157. The
+      rule is in `reference/components.md` → *Where a skin's windows go*. No unit test: it depends
+      on live window visibility inside a loaded controller.
+
 ## B153 — the `.wal` tiler's right-edge clamp pulls a window onto the player — closed 2026-09-28
 
 | B153 | **The `.wal` tiler's right-edge clamp pulls a window onto the player.** Measured 2026-09-28 on Sony_Walkman (player centred at x=762 on an 1800pt display, playlist, analyzer and library open). At 125% UI Size the library (688pt wide) gets column 2 at x=1192. That runs past the edge, so `WinampModernTiler.nextSlot` clamps it to x=1112, 69pt over the player and the playlist. At 150% it is 290×159 over the player. Launch, Snap To Default and the B56a UI-Size re-layout all produce the same result. The clamp was chosen over windows placed wholly off-screen (see the comment in `nextSlot`). Covering the player is worse than overhanging the edge, though: a window with most of its width still on screen is reachable and hides nothing. The likely fix is to clamp only as far as reachability needs, or to try the space left of the player first. The tiler is shared with `.wmz` through `tiledOrigin`. Reproduce with `launch.sh Sony_Walkman`, open those three from the Windows menu, then Windows → UI Size → 125% | any `.wal` session with a wide window and a centred player at a large UI Size | M | Agent-measured |

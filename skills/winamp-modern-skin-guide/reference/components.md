@@ -298,7 +298,15 @@ it lands where the arrangement would have put it without disturbing anything alr
 `.wal` only) records each window the first time a `show*` path places it — a launch restore counts —
 and every reopen after that skips the reset-to-default and `positionSubWindow`, so the window stays
 where the user left it. `handleCenterStackWindowWillClose` skips `slideUpWindowsBelow` in the same
-families. Classic and Original re-stack on every open, by design. A controller's own `showWindow`
+families. Classic and Original re-stack on every open, by design. The skin's own containers keep
+the same rule through `placedAuxiliaryWindows`. **"Where left" lapses when the host gives the spot
+away (B154).** The tiler avoids only windows on screen, so a closed window's slot goes to the next
+window that opens. On Sony_Walkman the launch-placed equalizer, once closed, reopened exactly over
+the playlist that had taken its slot. So every host placement — `place`, the sweep, and
+`positionSubWindow`'s tiling branch — calls `WindowManager.releaseClosedWindowSlots(under:)`, which
+forgets the placement of every *closed* window whose frame the new one covers, in both registries.
+That window is tiled afresh on its next open. A drag never calls it, so a window the user left
+overlapping on purpose keeps its frame. `.wal` only; WMP keeps the plain rule. A controller's own `showWindow`
 must never position its window: `WindowManager` places it first (W248), and a second placement there
 overwrote the remembered frame for the library and Visualizations windows in every mode.
 
