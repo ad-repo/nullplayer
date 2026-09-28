@@ -30,6 +30,9 @@
 - **Song titles show in more Winamp Modern skins** — Shield Amp and Ebonite now show the playing
   track's title in their song display, which was blank. A skin script that divides by zero now
   carries on instead of stopping, as it would in Winamp.
+- **Song tickers scroll in Shield Amp and Ebonite** — a long title now scrolls across the song
+  display at Winamp's speed instead of standing still, and stays inside the display instead of
+  running over the rest of the player.
 
 - **Glossy frames for Winamp Modern fallback windows** — when a Winamp Modern (`.wal`) skin has no
   window frame of its own for NullPlayer's windows (the analyzers, Cava, Flow, PeppyMeter, waveform,

@@ -114,6 +114,36 @@ final class WinampModernPhase24Tests: XCTestCase {
                        "an inferred box passes the inherited clip straight through")
     }
 
+    /// An `xuitag` instance is its `groupdef`, so a declared one clips like any group (B149).
+    /// Shield_Amp's `<OneDirectionText w="293">` drew its ~900px moving title across the whole player.
+    func testADeclaredXUITagInstanceClipsItsChildren() throws {
+        let renderer = try makeRenderer(xml: xuiTagSkin(instance: #"x="10" y="50" w="50" h="10""#))
+        let overhang = try XCTUnwrap(node(in: renderer, xmlID: "ticker.text"))
+        XCTAssertEqual(overhang.clip, CGRect(x: 10, y: 50, width: 50, height: 10))
+    }
+
+    /// …on the same terms: without a declared box it is sized by the renderer and does not clip.
+    func testAnXUITagInstanceWithNoDeclaredBoxStillDoesNotClip() throws {
+        let renderer = try makeRenderer(xml: xuiTagSkin(instance: #"x="10" y="50""#))
+        let overhang = try XCTUnwrap(node(in: renderer, xmlID: "ticker.text"))
+        XCTAssertEqual(overhang.clip, CGRect(x: 0, y: 0, width: 100, height: 100))
+    }
+
+    private func xuiTagSkin(instance attributes: String) -> String {
+        """
+        <WasabiXML>
+          <groupdef id="synthetic.ticker" xuitag="Synthetic:Ticker">
+            <layer id="ticker.text" x="-20" y="0" w="200" h="10"/>
+          </groupdef>
+          <container id="Main">
+            <layout id="normal" w="100" h="100">
+              <Synthetic:Ticker id="ticker" \(attributes)/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """
+    }
+
     // MARK: - `rectrgn` owns the whole rect
 
     func testRectrgnObjectHitsThroughATransparentBitmapPixel() throws {

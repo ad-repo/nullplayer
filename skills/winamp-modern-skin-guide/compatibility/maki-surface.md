@@ -33,7 +33,8 @@ By area:
   given point, in the window-client space `clientToScreenX/Y` answer in (Phase 24). Both block and
   answer the picked id (0 = cancelled)
 - **Events dispatched to scripts** — see the table below
-- **Timers**: bounded scheduling (see limits)
+- **Timers**: bounded scheduling (see limits); `setDelay` re-arms a running timer and `getDelay`
+  answers the delay as set, as Wasabi's `STimer` does (B148, `reference/scripting.md`)
 - **Animated layers**: `getLength`, `gotoFrame`, `getCurFrame`, `setStartFrame`, `setEndFrame`,
   `getStartFrame`, `getEndFrame`, `setSpeed`, `setAutoReplay`, `play`/`stop`, `isPlaying` — the play
   head is a pure function of the

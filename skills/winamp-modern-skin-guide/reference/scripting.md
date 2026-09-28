@@ -299,6 +299,37 @@ Engines are written to run against skins that omit optional pieces, and they ask
 - **`getCurCfgVal()`** — the value of the config attribute the object is bound to via
   `cfgattrib="{GUID};Name"`. The GUID is the section key, the same addressing `getItemByGuid` uses.
 
+#### Winamp's own preferences answer Winamp's defaults
+
+A skin may read a preference **Winamp** registers, not one of its own: `getItemByGuid` addresses
+the item, and nothing in the archive ever calls `newAttribute` for it. Winamp registers these at
+startup, so an unset one there reads its default, never `""`.
+`WinampModernConfigBridge.hostDefault(section:key:)` is that table, consulted by
+`ConfigAttribute.getData` when the store has no value. The GUID is matched case-insensitively,
+because the corpus spells `{9149C445-3C30-4e04-…}` both ways. It answers exactly one entry today:
+
+| Item | Attribute | Answer | Source |
+|---|---|---|---|
+| *Skins and UI Tweaks* `{9149C445-3C30-4e04-8433-5A518ED0FDDE}` | `Text Ticker Speed` | `"0.333333"` | gen_ff `wasabicfg.h` `DEFAULT_TEXTSPEED 1.0f/3.0f`, stored through `%f` (`StringPrintfW(double)`) |
+
+Shield_Amp's and Ebonite_2_1's shared `OneDirectionText` sets its step to `20/stringToFloat(value)`,
+which is 60 ms (B148). The same item's `Enable desktop alpha` (8 markup bindings) and
+`Enable tooltips` (4) are **deliberately unanswered**: each switches a skin branch nobody has
+measured here. Add an entry only with Winamp's own default in hand, read from its source, never
+chosen.
+
+#### `Timer.setDelay` re-arms a running timer; `getDelay` answers it
+
+Wasabi's `STimer::setDelay` re-arms a started timer at the new delay, and `getDelay` returns the delay
+as set (`Src/Wasabi/api/script/objects/timer.cpp`). Skins change pace from inside their own
+`onTimer`. `OneDirectionText` starts on its `firstdelay` (1000 ms on Shield_Amp) and switches to the
+60 ms step on the first tick, when `getDelay() == FirstDelay`. `getDelay` was unimplemented, so that
+tick aborted before it moved anything. A timer's `onTimer` is dispatched with `try?`, so **the abort
+printed nothing**: `CALL_TRACE` showed the handler's last call and then the next tick. `setDelay`
+also only stored the value, so the step would have stayed at one pixel a second (B148). Wasabi's
+default delay is 1000 ms; ours is still 5000 for a timer `start`ed without one. No corpus skin
+has been seen to depend on it.
+
 #### Monitor dimensions are logical desktop coordinates
 
 `System.getMonitorWidth()` / `getMonitorHeight()` answer the whole display containing the skin's

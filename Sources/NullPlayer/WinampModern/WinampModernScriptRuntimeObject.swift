@@ -803,6 +803,15 @@ extension WinampModernScriptRuntime {
         }
     }
 
+    /// Arms (or re-arms) a script `Timer` to fire `onTimer` every `delayMilliseconds`.
+    private func scheduleTimer(id: UInt64, delayMilliseconds: Int32) throws {
+        let reference = MakiObjectReference(.dynamic(id))
+        _ = try timers.schedule(id: id, period: TimeInterval(max(8, delayMilliseconds)) / 1_000) { [weak self] in
+            guard let self else { return }
+            _ = try? self.dispatch(target: reference, event: "ontimer", arguments: [])
+        }
+    }
+
     func invokeDynamic(method: String, id: UInt64, arguments: [MakiValue],
                                program: MakiProgram) throws -> MakiValue {
         guard var state = dynamicObjects[id] else { return .null }
@@ -1000,20 +1009,23 @@ extension WinampModernScriptRuntime {
             case "getstring": return .string(loadedSkin.configuration.string(section: section, key: key))
             default: return .integer(value)
             }
+        // Wasabi's `STimer::setDelay` re-arms a started timer at the new delay, and skins rely on it
+        // from inside their own `onTimer`: Shield_Amp's `OneDirectionText` starts its ticker on a
+        // 1000 ms first delay, then drops to the 60 ms step on the first tick. Storing the value
+        // without re-arming left the ticker stepping once a second (B148).
         case "setdelay":
-            state.delayMilliseconds = max(8, arguments[0].integerValue)
+            state.delayMilliseconds = arguments[0].integerValue
             dynamicObjects[id] = state
+            if timers.contains(id: id) { try scheduleTimer(id: id, delayMilliseconds: state.delayMilliseconds) }
             return .null
+        // The delay as set, unclamped — the same script compares it against its own first delay.
+        case "getdelay": return .integer(state.delayMilliseconds)
         case "start":
-            let reference = MakiObjectReference(.dynamic(id))
             if MakiInterpreter.tracesExecution {
                 print("MAKI timer start id=\(id) delay=\(state.delayMilliseconds) "
                       + "by=\(MakiInterpreter.traceStack.last ?? "-")")
             }
-            _ = try timers.schedule(id: id, period: TimeInterval(state.delayMilliseconds) / 1_000) { [weak self] in
-                guard let self else { return }
-                _ = try? self.dispatch(target: reference, event: "ontimer", arguments: [])
-            }
+            try scheduleTimer(id: id, delayMilliseconds: state.delayMilliseconds)
             return .boolean(true)
         case "stop":
             if MakiInterpreter.tracesExecution {
@@ -1036,7 +1048,9 @@ extension WinampModernScriptRuntime {
             return dynamicValue(role: .configAttribute(section: section, key: key))
         case "getdata":
             guard case .configAttribute(let section, let key) = state.role else { return .string("") }
-            let data = loadedSkin.configuration.string(section: section, key: key)
+            let data = loadedSkin.configuration.string(
+                section: section, key: key,
+                default: WinampModernConfigBridge.hostDefault(section: section, key: key) ?? "")
             if Self.tracesEveryCall {
                 print("CALL-TRACE getdata[\(section);\(key)] -> \(data)")
             }

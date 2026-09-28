@@ -4577,8 +4577,13 @@ final class WasabiSceneRenderer {
     /// failure than the overhang it would prevent. `fitparent` counts as declared: it states the
     /// group's size outright (the parent's, on whichever axis the group does not size itself), so the
     /// clip it produces is the one the children already had.
+    ///
+    /// An `xuitag` instance is a group too — `<OneDirectionText>` is its `groupdef`, instantiated
+    /// under the tag's name — so it clips on the same terms. Shield_Amp's 293px songticker drew its
+    /// 900px moving text across the whole player body without it (B149).
     private func isSizedGroup(_ object: WasabiObject) -> Bool {
-        guard object.typeName.caseInsensitiveCompare("group") == .orderedSame else { return false }
+        guard object.typeName.caseInsensitiveCompare("group") == .orderedSame
+                || loadedSkin.runtime.types.isXUITag(object.typeName) else { return false }
         if object.attributes["fitparent"] == "1" { return true }
         // A `background` bitmap is a declaration, not a guess: the skin named the artwork the group
         // is the size of, on both axes, so the box it produces is as much the author's as `w`/`h`.

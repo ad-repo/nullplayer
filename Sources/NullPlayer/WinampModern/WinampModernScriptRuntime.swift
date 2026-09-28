@@ -2681,6 +2681,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         "setdata": .init(argumentCount: 1, returnKind: .null),
         "ondatachanged": .init(argumentCount: 0, returnKind: .null),
         "setdelay": .init(argumentCount: 1, returnKind: .null),
+        "getdelay": .init(argumentCount: 0, returnKind: .integer),
         "start": .init(argumentCount: 0, returnKind: .boolean),
         "stop": .init(argumentCount: 0, returnKind: .null),
         "isrunning": .init(argumentCount: 0, returnKind: .boolean),

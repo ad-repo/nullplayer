@@ -3,6 +3,67 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B148 — Winamp's "Text Ticker Speed" preference was unregistered — closed 2026-09-28
+
+| B148 | **Winamp's own "Text Ticker Speed" preference is unregistered.** `OneDirectionText` reads `Config.getItemByGuid("{9149C445-3C30-4e04-8433-5A518ED0FDDE}").getAttribute("Text Ticker Speed")` and sets its move timer to `20/stringToFloat(value)`; unanswered, the value is `""`, the delay is infinite and the ticker never scrolls. Register the host config item with a default, the way Winamp's own preferences would. The default value is unknown — confirm it before choosing one; `"0"` means "don't scroll" to this script | 2 skins (Shield_Amp, Ebonite_2_1) | S | Live-reported |
+
+### B148
+
+- [x] **B148. Fixed 2026-09-28.** Three links, found one behind the other in the running app with
+      `WINAMP_MODERN_CALL_TRACE=1`:
+
+      1. **The preference.** Winamp's default was read from its published source, not chosen: item
+         *Skins and UI Tweaks* `{9149C445-…}` (`Src/Wasabi/api/config/uioptions.cpp`), gen_ff
+         `DEFAULT_TEXTSPEED 1.0f/3.0f`, stored through `%f`, so `"0.333333"`.
+         `WinampModernConfigBridge.hostDefault` answers it from `getData` when the store is unset
+         (GUID case-insensitive). The ticker's `Delay` is now 60 (`setdelay(61)` = `FirstDelay`).
+      2. **`Timer.getDelay()`** was unimplemented. The tick handler aborted on
+         `moveText.GetDelay() == FirstDelay` before moving anything, and silently, because `onTimer`
+         dispatch is `try?`.
+      3. **`Timer.setDelay`** stored the value without re-arming a running timer. Wasabi's
+         `STimer::setDelay` re-arms it, so the 60 ms step would otherwise have stayed on the 1000 ms
+         `firstdelay`.
+
+      **Verified live:** Shield_Amp, two `capture`s taken 1.5 s apart differ in the ticker band, with a
+      measured shift of 29px at 1x over ~1.7 s ≈ 59 ms per step. Ebonite_2_1 also scrolls. Tests:
+      `WinampModernB148Tests`; full `swift test` green. The row's second check (`ontimer` in
+      `RENDER_SCRIPTS`' `ran=`) cannot be met by any fix: `ran=` records owner-object events only, and a
+      `Timer` is a dynamic object (`harness.md`).
+
+      Original row:
+
+| B148 | **Winamp's own "Text Ticker Speed" preference is unregistered.** `OneDirectionText` reads `Config.getItemByGuid("{9149C445-3C30-4e04-8433-5A518ED0FDDE}").getAttribute("Text Ticker Speed")` and sets its move timer to `20/stringToFloat(value)`; unanswered, the value is `""`, the delay is infinite and the ticker never scrolls. Register the host config item with a default, the way Winamp's own preferences would. The default value is unknown — confirm it before choosing one; `"0"` means "don't scroll" to this script | 2 skins (Shield_Amp, Ebonite_2_1) | S | Live-reported |
+
+## B149 — an `xuitag` instance did not clip its children — closed 2026-09-28
+
+| B149 | **An `xuitag` groupdef instance does not clip its children.** `clipsChildren` (`WasabiRenderer.swift`) clips only objects whose type is `group`, so Shield_Amp's 293px `OneDirectionText#SongTicker` draws its 1606px moving text clipped to the whole layout, over the rounded body and past its fade layers. Extending the rule reaches every custom widget in the corpus, so it wants a render sweep and a classification of each diff | 1 skin measured (Shield_Amp; Ebonite_2_1's ticker is the same widget, unmeasured); corpus reach unmeasured | S | Live-reported |
+
+### B149
+
+- [x] **B149. Fixed 2026-09-28.** `isSizedGroup` (`WasabiRenderer.swift`) now counts an object whose
+      type is a registered `xuitag` as a group, on the same declared-box terms. Found as a consequence of
+      B148, which set the overhanging ticker moving.
+
+      **Corpus sweep** (`wal_render_sweep.sh`, 79 archives, xctest domain reset before each half),
+      every diff classified:
+      - Shield_Amp `main-normal`, Ebonite_2_1 `compact`/`full`/`narrow`/`stick`: the ticker clipped
+        to its widget. This is the fix.
+      - Big Bento Modern ×4 `main-normal`: 2px ≤6/255 at x 631–632, a glyph's left fringe cut at an
+        info line's box. Faithful.
+      - Anexa `main-shade`: the documented wall-clock hands.
+      - `MLibrary/normal` protective minimum 414→354 (S7Reflex, nullsoft_media_player_10_forked) and
+        452→354 (winampmodern566, whose lines the compare skipped): their title widgets now clip rather
+        than overflow, so the floor returns to the skin's declared `minimum_w`. Rendered at 354, the only
+        difference is the caption cut to its bar. Classified as faithful, since Winamp clips every group.
+
+      **Verified live:** Shield_Amp scrolls with its moving region confined to x 26…319 (x 52…638 at 2x).
+      Tests: `WinampModernPhase24Tests.testADeclaredXUITagInstanceClipsItsChildren` and
+      `…WithNoDeclaredBoxStillDoesNotClip`.
+
+      Original row:
+
+| B149 | **An `xuitag` groupdef instance does not clip its children.** `clipsChildren` (`WasabiRenderer.swift`) clips only objects whose type is `group`, so Shield_Amp's 293px `OneDirectionText#SongTicker` draws its 1606px moving text clipped to the whole layout, over the rounded body and past its fade layers. Extending the rule reaches every custom widget in the corpus, so it wants a render sweep and a classification of each diff | 1 skin measured (Shield_Amp; Ebonite_2_1's ticker is the same widget, unmeasured); corpus reach unmeasured | S | Live-reported |
+
 ## B65 — a division by zero abandoned the whole handler — closed 2026-09-28
 
 | B65 | **A division by zero abandons the whole handler, where Winamp carries on.** `MakiBytecode.swift` opcode 67 throws `invalidScript`; MAKI's `/` is a float divide, so Winamp yields infinity and runs on. See [detail](#b65) | 2 skins / 3 sites measured (Shield_Amp; cPro2's InfoViewer `onResize` with nothing playing, since B99); corpus reach unmeasured | S | Live-reported |
