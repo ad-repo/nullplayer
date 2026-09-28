@@ -33,6 +33,11 @@
 - **Song tickers scroll in Shield Amp and Ebonite** — a long title now scrolls across the song
   display at Winamp's speed instead of standing still, and stays inside the display instead of
   running over the rest of the player.
+- **No more unreadable library text in Winamp Modern skins** — NullPlayer's own library and windows
+  inside a Winamp Modern skin now always draw their text in a colour that can be read on the
+  background. cPro-Bento's Bafana theme drew the source name, item count and selected tab black on
+  black; 19 skins in all get more readable text, using the skin's own colours wherever one works.
+  Colours you set yourself in Skin Colors are still drawn as chosen.
 - **Drag a Winamp Modern player by its library or video** — in skins that show the media library or
   a video inside the player, dragging the empty space below the library's list, or the video
   picture itself, now moves the window.

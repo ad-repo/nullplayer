@@ -20,7 +20,9 @@ extension SkinnedSurfaceStyle {
             selectionText: palette.selectionText,
             treeText: palette.treeText,
             treeSelection: palette.treeSelection,
-            selectionTextWasChosenByUser: palette.isOverridden(.selectionText)
+            selectionTextWasChosenByUser: palette.isOverridden(.selectionText),
+            textWasChosenByUser: palette.isOverridden(.listText),
+            currentTextWasChosenByUser: palette.isOverridden(.currentText)
         ))
     }
 

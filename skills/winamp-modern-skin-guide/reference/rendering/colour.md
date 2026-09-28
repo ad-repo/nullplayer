@@ -62,6 +62,20 @@ than inventing, and which is **nil in classic mode** — so classic cannot be re
   that gives us anything usable is never overridden.
 - `selectedText` is the stored role for a highlighted row: `currentText` → `selectionText` →
   `listText` → `contentBackground`, judged against `selectionBackground`.
+- **`text` and `currentText` are guarded too, against `background`** (2026-09-28). Every label a
+  surface draws lands on the content background or a bar 10% away from it — rows, the browser's
+  source name, item count, selected tab and alphabet index — so the style no longer hands out either
+  role raw. `text` tries `listText` → `currentText` → `selectionText`; `currentText` tries
+  `currentText` → `selectionText` → the guarded `text`. Reported live as *black text on a black
+  background* on cPro-Bento's **Bafana** theme, whose `n.Color.ListCur` gamma `-4096,-4096,-4096`
+  crushes the playing colour to 0,0,0 over a 0,9,0 list: the resolution is faithful, the pairing is
+  the author's, and NullPlayer's own surface still must not draw it. **This is NullPlayer's surfaces
+  only**: `WasabiRenderer.legibleRowColor` still leaves the skin's own unselected playlist rows
+  alone (B113). Corpus reach, `WINAMP_MODERN_RENDER_PALETTE=1` over the 80 archives on their saved
+  themes: 19 distinct skins move. Most get another colour of their own (Big Bento Light's orange
+  playing text → its slate, Pure Inspired's black → 240,240,240); the visible hue change is
+  Wiimote's grey list text → its blue. `.wmz` is untouched — `WMPSurfacePalette` already guards
+  both roles against the same ground, so the second guard always answers the first candidate.
 - `legibleDimText(on:)` is for inactive titles and hints. `dimText` is a 40% blend toward the
   background, so a naive guard fails it almost everywhere and would snap every inactive title to full
   strength — erasing the active/inactive distinction corpus-wide to fix five skins. It backs the
@@ -341,13 +355,14 @@ being chosen per window.
 Reported as *"winampmodern566's Media Library is unreadable"* on one of its colour themes. **It is not
 a defect.** That skin ships **88** `<gammaset>`s, nearly all of them re-tint the list group
 (`ListText`, `ListBackground`, `ListSelBackground`, `ListTextSelected`, `ListColumnText`), and some of
-those tints simply pair badly. The engine resolved exactly what the author wrote, and the sections
-above say why nothing automatic will rescue it: B48 and B122 guard only *selected* and *current* rows,
-and B113 records the deliberate decision to leave a plain row on its own plate alone. That leaves a
-whole class of **bad-but-authored** pairing the engine will never fix and should not.
-
-So the fix is not another guard. It is letting the user say what they want, and then getting out of
-the way.
+those tints simply pair badly. The engine resolved exactly what the author wrote. When this was
+written, B48 and B122 guarded only *selected* and *current* rows, and B113 left a plain row on its own
+plate alone, so the fix was not another guard but letting the user say what they want, and then
+getting out of the way. **Since 2026-09-28 NullPlayer's own surfaces do guard plain and playing text
+against their background** (B48 section above) — the user's ruling was that unreadable text on a
+surface we draw should never happen — so on the library a bad-but-authored *text* pairing is now
+rescued automatically. The skin's own playlist rows (B113) and any non-text pairing (a selection bar
+the user can barely see) are still left to this override.
 
 **The choke point is `WasabiPalette.make(overrides:resolve:)`.** An override for a role wins *before*
 its id chain is walked; everything downstream — the derived roles, `WinampModernSurfaceStyle`'s chrome

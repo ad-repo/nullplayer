@@ -40,14 +40,18 @@ struct SkinnedSurfaceRoles: Equatable {
     let selectionText: NSColor
     let treeText: NSColor
     let treeSelection: NSColor
-    /// True when the user set `selectionText` by hand, in which case the legibility guard below
-    /// stands aside rather than overruling a number they were just shown.
+    /// True when the user set that role by hand, in which case the legibility guard below stands
+    /// aside rather than overruling a number they were just shown.
     let selectionTextWasChosenByUser: Bool
+    let textWasChosenByUser: Bool
+    let currentTextWasChosenByUser: Bool
 
     init(background: NSColor, text: NSColor, currentText: NSColor,
          selectionBackground: NSColor, selectionText: NSColor,
          treeText: NSColor, treeSelection: NSColor,
-         selectionTextWasChosenByUser: Bool = false) {
+         selectionTextWasChosenByUser: Bool = false,
+         textWasChosenByUser: Bool = false,
+         currentTextWasChosenByUser: Bool = false) {
         self.background = background
         self.text = text
         self.currentText = currentText
@@ -56,6 +60,8 @@ struct SkinnedSurfaceRoles: Equatable {
         self.treeText = treeText
         self.treeSelection = treeSelection
         self.selectionTextWasChosenByUser = selectionTextWasChosenByUser
+        self.textWasChosenByUser = textWasChosenByUser
+        self.currentTextWasChosenByUser = currentTextWasChosenByUser
     }
 }
 
@@ -89,8 +95,18 @@ struct SkinnedSurfaceStyle: Equatable {
 
     init(roles: SkinnedSurfaceRoles) {
         background = roles.background
-        text = roles.text
-        currentText = roles.currentText
+        // Text lands on the content background everywhere a surface draws it — rows, the server and
+        // tab bars (a 10% blend away), the status line — so both text roles have to be readable
+        // there. A colour theme can darken a skin's text into its own background: cPro-Bento's
+        // Bafana theme resolves `wasabi.list.text.current` to 0,0,0 over a 0,9,0 list, and the
+        // browser drew its source name, item count and selected tab in it, black on black.
+        let text = roles.textWasChosenByUser ? roles.text
+            : Self.legible(preferring: [roles.text, roles.currentText, roles.selectionText],
+                           on: roles.background)
+        self.text = text
+        currentText = roles.currentTextWasChosenByUser ? roles.currentText
+            : Self.legible(preferring: [roles.currentText, roles.selectionText, text],
+                           on: roles.background)
         selectionBackground = roles.selectionBackground
         selectionText = roles.selectionText
         treeText = roles.treeText
@@ -99,10 +115,10 @@ struct SkinnedSurfaceStyle: Equatable {
         // Every derived role is background↔text blend, never a fixed grey: on a light skin the
         // chrome has to get *darker* than the content, on a dark one lighter, and only the skin's
         // own two ends know which way that is.
-        barBackground = Self.blend(roles.background, toward: roles.text, by: 0.10)
-        border = Self.blend(roles.background, toward: roles.text, by: 0.28)
-        divider = Self.blend(roles.background, toward: roles.text, by: 0.18)
-        dimText = Self.blend(roles.text, toward: roles.background, by: 0.40)
+        barBackground = Self.blend(roles.background, toward: text, by: 0.10)
+        border = Self.blend(roles.background, toward: text, by: 0.28)
+        divider = Self.blend(roles.background, toward: text, by: 0.18)
+        dimText = Self.blend(text, toward: roles.background, by: 0.40)
         pressedFill = Self.blend(roles.background, toward: roles.selectionBackground, by: 0.55)
 
         // A skin resolves every role from its own markup, and neither Wasabi nor a `.wms` ever checks
