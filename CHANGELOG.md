@@ -2,78 +2,98 @@
 
 ## 0.31.0
 
-- **The library stays docked to a Winamp Modern player** — in the `.wal` skins that use NullPlayer's own library window, such as Sony_Walkman and Winamp 3.0 Default, opening a window such as Cava could push the library a few pixels away from the player, leaving a gap. The library now stays where it is. Classic and Original skins are unchanged: there, the library still grows and shrinks with the windows stacked under the player.
-- **Winamp Modern skins without a transparency setting now draw as Winamp does** — a skin window that doesn't ask for see-through edges now gets a solid shape: its outline is cut from the artwork and the translucent parts inside are drawn over black. Before, those parts let the desktop show through. You'll see this mostly in notification pop-ups and a few shaped players such as Wiimote and PokemonDS. Skins that ask for soft edges, including every one with a drop shadow, look the same as before.
-- **No black bar on Itemskin's NullPlayer windows** — in the Itemskin Winamp Modern skin, windows such as the Spectrum Analyzer and Waveform had an empty black bar across the top of the frame, left where the skin's own visualizer buttons go. The bar is gone and the windows are that much shorter.
-- **Closing a Winamp Modern window no longer moves the one below it** — in a `.wal` skin, closing a window such as the Spectrum Analyzer from the Windows menu slid the window under it up into its place. Reopening the first window then put it right on top. The other windows now stay where they are.
-- **Itemskin's windows stay where they are placed** — in the Itemskin Winamp Modern skin, opening the Spectrum Analyzer or Waveform put it mostly below the bottom of the screen, and changing the UI Size could pull the playlist, library or a visualizer window back to where it had been, on top of its neighbours. Each window now opens in its own free spot and keeps it, with the skin's frame drawn around it.
-- **Winamp Modern windows open right under the one above** — in a `.wal` skin, opening a window from the Windows menu while another was open under the player could leave a large empty gap between them. On Sony_Walkman, the playlist opened well below the equalizer. It now opens directly beneath it. Windows Media Player skins get the same fix.
-- **Winamp Modern windows no longer reopen on top of each other** — in a `.wal` skin, closing a window such as the equalizer and then opening another could put the new one in the closed window's place. Reopening the first window then covered it completely. A reopened window now keeps its old position only if nothing has been put there since, and otherwise finds a free spot. A window you moved yourself still reopens where you left it.
-- **Winamp Modern windows no longer open on top of the player when the screen runs out** — with a large UI Size and the player in the middle of the screen, a wide window such as the library had no room on the player's right, so it was pulled back over the player. It now goes into the empty space to the player's left. If it fits on neither side, it is placed where it covers the least.
-- **No more see-through gaps inside Winamp Modern skin windows** — in the WMP11-BlueVU skin, a thin band of desktop showed between the VU Meters' artwork and the window frame. The About and library windows had the same problem across larger areas. Empty space inside a skin's standard window frame is now filled black, as it is in Winamp.
-- **Winamp Modern windows no longer pile up when you change UI Size** — changing the UI size with a `.wal` skin left its windows on top of each other: the equalizer slid up into the player, and the playlist sat over the equalizer. The windows are now laid out again around the player after every UI Size change, the same way Snap To Default arranges them.
-- **Itemskin's volume control works** — in the Itemskin Winamp Modern skin, clicking or dragging the volume bar did nothing, so a volume stuck at zero could not be raised and the skin played silently. The bar now responds anywhere along its length, and the seek bar shows the song's progress instead of the volume. BLAKK's seek bars and Bio-Nid's volume knob also respond to clicks now.
-- **No more hairline seams in Winamp Modern skins at in-between UI sizes** — at UI sizes such as 105% or 125% on a Retina display, thin light lines could show where the pieces of a skin's frame and panels meet. The pieces now meet exactly, so the lines are gone. Sliders, knobs and progress bars placed between whole pixels now also sit on a whole pixel.
-- **Winamp Modern VU needles use less CPU and look sharper** — skins that rotate artwork, such as the swinging needles in WMP11-BlueVU's VU Meters, now draw it in a single step instead of recalculating every pixel, which roughly halves the app's main-thread load while the meters are open.
-- **Winamp Modern skins with an animated level meter use less CPU** — a skin that steps an animated meter many times a second (WMP11-BlueVU's beat display) now redraws just that meter instead of the whole player window.
-- **Winamp Modern skins with hidden windows use far less CPU** — a skin's closed windows no longer redraw in the background. The WMP11-BlueVU skin's VU meters had been animating unseen, costing about a third of the app's main thread while music played.
-- **The listening heatmap matches your skin** — the heatmap in the library's Data tab now takes its
-  colours from the current skin in every skin mode instead of always using GitHub green, and follows
-  a Winamp Modern or Windows Media Player skin's colour theme when you switch it. Switching colour
-  theme now recolours the rest of the Data tab too.
+- **Windows Media Player `.wmz` skins** — a new Windows Media Player mode that runs real WMP 9-12 era
+  skins natively on macOS. Skins look and behave like themselves: their own artwork, shaped windows,
+  animations, hover and pressed states, tooltips, fonts, drawers and multiple views, with the skin's
+  own JScript running in a sandboxed session so its buttons, sliders, timers, keyboard shortcuts and
+  readouts work the way they do in Windows.
+- **SRS audio enhancements for every skin** — the WOW Effect, TruBass and Headphones settings that
+  came with Windows Media Player skins are now global playback options under **Playback Options ▸
+  SRS**, work in every skin, and are remembered across launches. A `.wmz` skin's own SRS controls
+  drive the same settings.
+  - **WOW Effect** widens the stereo image, pushing sound out beyond the speakers while leaving
+    centred vocals and deep bass where they are.
+  - **TruBass** adds a fuller, deeper low end by enhancing the bass already in the music, without
+    simply turning up the lowest frequencies.
+  - **Headphones** tunes TruBass for headphones instead of speakers.
+- **Sonos Rooms window with per-room volume** — a new dockable **Sonos Rooms** window lists every
+  Sonos room NullPlayer has discovered, with a checkbox to include it in the cast and its own volume
+  slider, so each room can be set independently instead of only through the group volume. The list
+  scrolls for any number of rooms, with **Refresh** and **Start/Stop Casting** always visible at the
+  bottom. Open it from **Windows → Sonos Rooms** or **Output → Sonos → Sonos Rooms…**; the existing
+  Sonos submenu still works as before and shares the same room selection. The window docks, resizes
+  and restores like the other windows, follows Compact Mode, and is skinned in Classic, Original,
+  Original-Metal and Winamp Modern (`.wal`) skins. The player's main volume slider still controls
+  the whole group.
+- **Server credentials no longer appear in logs** — playback, artwork, radio and casting diagnostics
+  could record access tokens in full URLs and error messages (for example a Plex `X-Plex-Token`, or
+  a Jellyfin or Emby `api_key` when playing video). Credentials are now redacted from logs across
+  Plex, Subsonic/Navidrome, Jellyfin, Emby, radio and casting, and casting failure alerts no longer
+  show raw error details.
+- **Local playback recovers after a long idle** — after the Mac sat idle for a long time, local
+  playback could get stuck, silently retrying a broken audio engine every quarter-second. NullPlayer
+  now rebuilds the audio engine instead, restoring your output device (falling back to the system
+  default if it is gone), EQ and pitch settings, and resuming the loaded track where it was. Retries
+  back off and stop after six attempts; pressing Play or changing the output device tries again.
+  Pausing or stopping during recovery is respected, and streaming playback is unaffected.
+- **One unreadable file no longer stops the playlist** — playback skips past it to the next track,
+  and the error now appears in the Modern and Winamp Modern main windows, not only Classic. A track
+  on a disconnected NAS still stops playback, as before, instead of starting some other track.
+- **Sonos no longer receives audio above its 48 kHz limit** — the compatibility gate now rejects
+  any track with a known or resolved sample rate above 48 kHz, even when its URL extension or MIME
+  type is unrecognized. Local files with unusual extensions are probed before casting, and Plex
+  tracks with missing rate metadata are resolved from the server (GH #422).
+- **Local library copes with moved folders and missing files** — **Library → Find Missing Files…**
+  finds a watch folder that has moved (for example when iCloud Drive is turned off and its files
+  land in `~/iCloud Drive (Archive)`), shows where it went, and re-points it on your say-so, keeping
+  play counts and ratings. It then offers to forget tracks whose files are genuinely deleted;
+  anything on a disconnected drive or unmounted share is always left alone.
+- **Playlists with relative paths play again** — `.m3u` and `.pls` entries written as bare file
+  names or paths next to the playlist were being read as web addresses and could not play.
+- **Waveforms appear much sooner** — the waveform window builds a track's waveform about 20 times
+  faster the first time it is opened, so a long local track or a Plex track that used to take up to
+  half a minute now shows almost at once (a server track still has to download first). Switching
+  skins or reopening the window while a waveform is still being built no longer starts it again.
+- **Download your complete Play History as a CSV** — the Library Data and Play History views now
+  include a download button that exports every recorded event, including older and skipped plays,
+  rather than only the 200 recent entries visible in the table. Available in every UI mode.
+- **Minimize All minimizes every window** — **Windows → Minimize All Windows** and Classic's
+  minimize button left any window not docked to the player on screen, and Sonos Rooms (and every
+  Original-skin side window) never minimized even when docked. Every open window now goes to the
+  Dock, in every skin mode, and restoring the player brings them all back.
+- **Windows reopen where you left them** — the library browser and the visualizer window once again
+  come back where you moved them when closed and reopened, instead of snapping back beside the player.
+  In Windows Media Player and Winamp Modern skins, the spectrum and audio analyzers, PeppyMeter, Flow,
+  Cava, waveform, Sonos Rooms and the fallback playlist and equalizer do the same, and closing one no
+  longer moves the others. Classic and Original keep their stacked layout.
 - **Visualizations take their colours from Winamp Modern and Windows Media Player skins** — with a
   `.wal` or `.wmz` skin, the Cava, Spectrum Analyzer and Waveform windows now take their default
   colours from the skin, as they already do in Classic and Original. So does Cava in a Windows Media
   Player skin's visualization area. A colour preset you pick still wins, and **Match Skin** goes back
   to the skin's colours. In the Waveform window the playhead now always stands out from the played
   part.
+- **vis_classic profiles show their real colours** — every bundled vis_classic profile was being
+  drawn with red and blue swapped, so "Flames" came out blue and "Default Red & Yellow" blue and
+  cyan. They now look as their authors intended, in every skin; the Metal profiles look the same as
+  before. This changes the look of Classic's default, "Purple Neon".
 - **vis_classic picks a profile to suit the skin** — in Winamp Modern and Windows Media Player skins,
   vis_classic in the Spectrum Analyzer, in a `.wal` skin's own visualizer and in a `.wmz` skin's
   visualization area now starts on the bundled profile whose colours are closest to the skin's,
   instead of Classic's "Purple Neon". A profile you choose yourself is kept until you switch skins,
   and resetting visualizations goes back to the skin's match. The first launch after updating
   replaces your current vis_classic profile in these skins once.
-- **vis_classic profiles show their real colours** — every bundled vis_classic profile was being
-  drawn with red and blue swapped, so "Flames" came out blue and "Default Red & Yellow" blue and
-  cyan. They now look as their authors intended, in every skin; the Metal profiles look the same as
-  before. This changes the look of Classic's default, "Purple Neon".
-- **New "Red" vis_classic profile** — a single-colour red to go with "Green".
-
-- **Defix's detached visualizer can be reattached** — in the Defix Hi-END 200 Winamp Modern skin,
-  the detached visualizer window's **Reattach Visualizer** and **Random** buttons now work. The
-  window's button bar shows while the window is focused and hides otherwise, as the skin intends.
-  The same fix stops S7Reflex drawing its stereo and mono indicators on top of each other, and
-  lines up the titlebar streaks in winampmodern566.
-- **winampmodern566's menu bar lights up** — in the winampmodern566 Winamp Modern skin, pointing at
-  File, Play, Options, View or Help now highlights the entry, and it shows as pressed while its menu
-  is open.
-
-- **ClassicPro track info shows up** — in ClassicPro-based Winamp Modern skins such as cPro2 Dark
-  Aluminum, the track-info panel under the library now lists the playing track's title, artist,
-  rating, decoder, file size, filename and format instead of staying empty.
-- **Song titles show in more Winamp Modern skins** — Shield Amp and Ebonite now show the playing
-  track's title in their song display, which was blank. A skin script that divides by zero now
-  carries on instead of stopping, as it would in Winamp.
-- **Big Bento Modern's small visualizer plays** — with the Multi Content View's mini visualization
-  pane turned on, the pane now shows the visualization as soon as the player opens, instead of
-  staying black.
-- **Song tickers scroll in Shield Amp and Ebonite** — a long title now scrolls across the song
-  display at Winamp's speed instead of standing still, and stays inside the display instead of
-  running over the rest of the player.
-- **ClassicPro's Now Playing widget shows the song straight away** — opening the Now Playing
-  widget while a track plays now shows its title, artist and album at once, instead of staying
-  blank until the next track.
-- **No more unreadable library text in Winamp Modern skins** — NullPlayer's own library and windows
-  inside a Winamp Modern skin now always draw their text in a colour that can be read on the
-  background. cPro-Bento's Bafana theme drew the source name, item count and selected tab black on
-  black; 19 skins in all get more readable text, using the skin's own colours wherever one works.
-  Colours you set yourself in Skin Colors are still drawn as chosen.
-- **Drag a Winamp Modern player by its library or video** — in skins that show the media library or
-  a video inside the player, dragging the empty space below the library's list, or the video
-  picture itself, now moves the window.
-- **Winamp Modern 5.66's menu bar works** — File, Play, Options, View and Help in the
-  winampmodern566 skin now open their menus when clicked; before, clicking them did nothing.
-
+- **The listening heatmap matches your skin** — the heatmap in the library's Data tab now takes its
+  colours from the current skin in every skin mode instead of always using GitHub green, and follows
+  a Winamp Modern or Windows Media Player skin's colour theme when you switch it. Switching colour
+  theme now recolours the rest of the Data tab too.
+- **One layout for every skin menu** — the Classic, Modern and Windows Media Player skin menus now
+  share the same order and wording: **Load Skin...**, **Get More Skins...** and **Open Skins
+  Folder...**, then the family's **Default Skin**, then your installed skins. Windows Media Player
+  gains a **Get More Skins...** link to the Internet Archive's WMP skins collection, and Classic gains
+  **Open Skins Folder...**.
+- **Winamp Modern skins with hidden windows use far less CPU** — a skin's closed windows no longer redraw in the background. The WMP11-BlueVU skin's VU meters had been animating unseen, costing about a third of the app's main thread while music played.
+- **Winamp Modern VU needles use less CPU and look sharper** — skins that rotate artwork, such as the swinging needles in WMP11-BlueVU's VU Meters, now draw it in a single step instead of recalculating every pixel, which roughly halves the app's main-thread load while the meters are open.
+- **Winamp Modern skins with an animated level meter use less CPU** — a skin that steps an animated meter many times a second (WMP11-BlueVU's beat display) now redraws just that meter instead of the whole player window.
 - **Glossy frames for Winamp Modern fallback windows** — when a Winamp Modern (`.wal`) skin has no
   window frame of its own for NullPlayer's windows (the analyzers, Cava, Flow, PeppyMeter, waveform,
   library, playlist, equalizer and Sonos Rooms), they now wear the same glossy, title-bar-free frame
@@ -84,77 +104,54 @@
 - **Clicking any Winamp Modern window brings them all forward** — clicking one `.wal` window now
   raises every one of the skin's windows and NullPlayer's own, even when you click in from another
   app, the way Windows Media Player skins already did.
-- **SRS audio enhancements for every skin** — the WOW Effect, TruBass and Headphones settings that
-  came with Windows Media Player skins are now global playback options under **Playback Options ▸
-  SRS**, work in every skin, and are remembered across launches. A `.wmz` skin's own SRS controls
-  drive the same settings.
-  - **WOW Effect** widens the stereo image, pushing sound out beyond the speakers while leaving
-    centred vocals and deep bass where they are.
-  - **TruBass** adds a fuller, deeper low end by enhancing the bass already in the music, without
-    simply turning up the lowest frequencies.
-  - **Headphones** tunes TruBass for headphones instead of speakers.
-- **Windows reopen where you left them** — the library browser and the visualizer window once again
-  come back where you moved them when closed and reopened, instead of snapping back beside the player.
-  In Windows Media Player and Winamp Modern skins, the spectrum and audio analyzers, PeppyMeter, Flow,
-  Cava, waveform, Sonos Rooms and the fallback playlist and equalizer do the same, and closing one no
-  longer moves the others. Classic and Original keep their stacked layout.
-- **One layout for every skin menu** — the Classic, Modern and Windows Media Player skin menus now
-  share the same order and wording: **Load Skin...**, **Get More Skins...** and **Open Skins
-  Folder...**, then the family's **Default Skin**, then your installed skins. Windows Media Player
-  gains a **Get More Skins...** link to the Internet Archive's WMP skins collection, and Classic gains
-  **Open Skins Folder...**.
-- **Windows Media Player `.wmz` skins** — a new Windows Media Player mode that runs real WMP 9-12 era
-  skins natively on macOS. Skins look and behave like themselves: their own artwork, shaped windows,
-  animations, hover and pressed states, tooltips, fonts, drawers and multiple views, with the skin's
-  own JScript running in a sandboxed session so its buttons, sliders, timers, keyboard shortcuts and
-  readouts work the way they do in Windows.
-- **Sonos Rooms window with per-room volume** — a new dockable **Sonos Rooms** window lists every
-  Sonos room NullPlayer has discovered, with a checkbox to include it in the cast and its own volume
-  slider, so each room can be set independently instead of only through the group volume. The list
-  scrolls for any number of rooms, with **Refresh** and **Start/Stop Casting** always visible at the
-  bottom. Open it from **Windows → Sonos Rooms** or **Output → Sonos → Sonos Rooms…**; the existing
-  Sonos submenu still works as before and shares the same room selection. The window docks, resizes
-  and restores like the other windows, follows Compact Mode, and is skinned in Classic, Original,
-  Original-Metal and Winamp Modern (`.wal`) skins. The player's main volume slider still controls
-  the whole group.
-- **Download your complete Play History as a CSV** — the Library Data and Play History views now
-  include a download button that exports every recorded event, including older and skipped plays,
-  rather than only the 200 recent entries visible in the table. Available in every UI mode.
-- **Sonos no longer receives audio above its 48 kHz limit** — the compatibility gate now rejects
-  any track with a known or resolved sample rate above 48 kHz, even when its URL extension or MIME
-  type is unrecognized. Local files with unusual extensions are probed before casting, and Plex
-  tracks with missing rate metadata are resolved from the server (GH #422).
-- **Local library copes with moved folders and missing files** — **Library → Find Missing Files…**
-  finds a watch folder that has moved (for example when iCloud Drive is turned off and its files
-  land in `~/iCloud Drive (Archive)`), shows where it went, and re-points it on your say-so, keeping
-  play counts and ratings. It then offers to forget tracks whose files are genuinely deleted;
-  anything on a disconnected drive or unmounted share is always left alone.
-- **Minimize All minimizes every window** — **Windows → Minimize All Windows** and Classic's
-  minimize button left any window not docked to the player on screen, and Sonos Rooms (and every
-  Original-skin side window) never minimized even when docked. Every open window now goes to the
-  Dock, in every skin mode, and restoring the player brings them all back.
+- **Winamp Modern windows no longer pile up when you change UI Size** — changing the UI size with a `.wal` skin left its windows on top of each other: the equalizer slid up into the player, and the playlist sat over the equalizer. The windows are now laid out again around the player after every UI Size change, the same way Snap To Default arranges them.
+- **Winamp Modern windows no longer reopen on top of each other** — in a `.wal` skin, closing a window such as the equalizer and then opening another could put the new one in the closed window's place. Reopening the first window then covered it completely. A reopened window now keeps its old position only if nothing has been put there since, and otherwise finds a free spot. A window you moved yourself still reopens where you left it.
+- **Winamp Modern windows no longer open on top of the player when the screen runs out** — with a large UI Size and the player in the middle of the screen, a wide window such as the library had no room on the player's right, so it was pulled back over the player. It now goes into the empty space to the player's left. If it fits on neither side, it is placed where it covers the least.
+- **Closing a Winamp Modern window no longer moves the one below it** — in a `.wal` skin, closing a window such as the Spectrum Analyzer from the Windows menu slid the window under it up into its place. Reopening the first window then put it right on top. The other windows now stay where they are.
+- **Winamp Modern windows open right under the one above** — in a `.wal` skin, opening a window from the Windows menu while another was open under the player could leave a large empty gap between them. On Sony_Walkman, the playlist opened well below the equalizer. It now opens directly beneath it. Windows Media Player skins get the same fix.
+- **The library stays docked to a Winamp Modern player** — in the `.wal` skins that use NullPlayer's own library window, such as Sony_Walkman and Winamp 3.0 Default, opening a window such as Cava could push the library a few pixels away from the player, leaving a gap. The library now stays where it is. Classic and Original skins are unchanged: there, the library still grows and shrinks with the windows stacked under the player.
+- **No more unreadable library text in Winamp Modern skins** — NullPlayer's own library and windows
+  inside a Winamp Modern skin now always draw their text in a colour that can be read on the
+  background. cPro-Bento's Bafana theme drew the source name, item count and selected tab black on
+  black; 19 skins in all get more readable text, using the skin's own colours wherever one works.
+  Colours you set yourself in Skin Colors are still drawn as chosen.
+- **Winamp Modern skins without a transparency setting now draw as Winamp does** — a skin window that doesn't ask for see-through edges now gets a solid shape: its outline is cut from the artwork and the translucent parts inside are drawn over black. Before, those parts let the desktop show through. You'll see this mostly in notification pop-ups and a few shaped players such as Wiimote and PokemonDS. Skins that ask for soft edges, including every one with a drop shadow, look the same as before.
+- **No more hairline seams in Winamp Modern skins at in-between UI sizes** — at UI sizes such as 105% or 125% on a Retina display, thin light lines could show where the pieces of a skin's frame and panels meet. The pieces now meet exactly, so the lines are gone. Sliders, knobs and progress bars placed between whole pixels now also sit on a whole pixel.
+- **No more see-through gaps inside Winamp Modern skin windows** — in the WMP11-BlueVU skin, a thin band of desktop showed between the VU Meters' artwork and the window frame. The About and library windows had the same problem across larger areas. Empty space inside a skin's standard window frame is now filled black, as it is in Winamp.
+- **Drag a Winamp Modern player by its library or video** — in skins that show the media library or
+  a video inside the player, dragging the empty space below the library's list, or the video
+  picture itself, now moves the window.
 - **Cover Flow stays inside the library window** — the stacked covers at either side of the
   carousel no longer spill over the library browser's border, in every skin mode.
-- **One unreadable file no longer stops the playlist** — playback skips past it to the next track,
-  and the error now appears in the Modern and Winamp Modern main windows, not only Classic. A track
-  on a disconnected NAS still stops playback, as before, instead of starting some other track.
-- **Playlists with relative paths play again** — `.m3u` and `.pls` entries written as bare file
-  names or paths next to the playlist were being read as web addresses and could not play.
-- **Local playback recovers after a long idle** — after the Mac sat idle for a long time, local
-  playback could get stuck, silently retrying a broken audio engine every quarter-second. NullPlayer
-  now rebuilds the audio engine instead, restoring your output device (falling back to the system
-  default if it is gone), EQ and pitch settings, and resuming the loaded track where it was. Retries
-  back off and stop after six attempts; pressing Play or changing the output device tries again.
-  Pausing or stopping during recovery is respected, and streaming playback is unaffected.
-- **Server credentials no longer appear in logs** — playback, artwork, radio and casting diagnostics
-  could record access tokens in full URLs and error messages (for example a Plex `X-Plex-Token`, or
-  a Jellyfin or Emby `api_key` when playing video). Credentials are now redacted from logs across
-  Plex, Subsonic/Navidrome, Jellyfin, Emby, radio and casting, and casting failure alerts no longer
-  show raw error details.
-- **Waveforms appear much sooner** — the waveform window builds a track's waveform about 20 times
-  faster the first time it is opened, so a long local track or a Plex track that used to take up to
-  half a minute now shows almost at once (a server track still has to download first). Switching
-  skins or reopening the window while a waveform is still being built no longer starts it again.
+- **New "Red" vis_classic profile** — a single-colour red to go with "Green".
+- **Big Bento Modern's small visualizer plays** — with the Multi Content View's mini visualization
+  pane turned on, the pane now shows the visualization as soon as the player opens, instead of
+  staying black.
+- **Song titles show in more Winamp Modern skins** — Shield Amp and Ebonite now show the playing
+  track's title in their song display, which was blank. A skin script that divides by zero now
+  carries on instead of stopping, as it would in Winamp.
+- **Song tickers scroll in Shield Amp and Ebonite** — a long title now scrolls across the song
+  display at Winamp's speed instead of standing still, and stays inside the display instead of
+  running over the rest of the player.
+- **ClassicPro track info shows up** — in ClassicPro-based Winamp Modern skins such as cPro2 Dark
+  Aluminum, the track-info panel under the library now lists the playing track's title, artist,
+  rating, decoder, file size, filename and format instead of staying empty.
+- **ClassicPro's Now Playing widget shows the song straight away** — opening the Now Playing
+  widget while a track plays now shows its title, artist and album at once, instead of staying
+  blank until the next track.
+- **Itemskin's volume control works** — in the Itemskin Winamp Modern skin, clicking or dragging the volume bar did nothing, so a volume stuck at zero could not be raised and the skin played silently. The bar now responds anywhere along its length, and the seek bar shows the song's progress instead of the volume. BLAKK's seek bars and Bio-Nid's volume knob also respond to clicks now.
+- **Itemskin's windows stay where they are placed** — in the Itemskin Winamp Modern skin, opening the Spectrum Analyzer or Waveform put it mostly below the bottom of the screen, and changing the UI Size could pull the playlist, library or a visualizer window back to where it had been, on top of its neighbours. Each window now opens in its own free spot and keeps it, with the skin's frame drawn around it.
+- **No black bar on Itemskin's NullPlayer windows** — in the Itemskin Winamp Modern skin, windows such as the Spectrum Analyzer and Waveform had an empty black bar across the top of the frame, left where the skin's own visualizer buttons go. The bar is gone and the windows are that much shorter.
+- **Defix's detached visualizer can be reattached** — in the Defix Hi-END 200 Winamp Modern skin,
+  the detached visualizer window's **Reattach Visualizer** and **Random** buttons now work. The
+  window's button bar shows while the window is focused and hides otherwise, as the skin intends.
+  The same fix stops S7Reflex drawing its stereo and mono indicators on top of each other, and
+  lines up the titlebar streaks in winampmodern566.
+- **Winamp Modern 5.66's menu bar works** — File, Play, Options, View and Help in the
+  winampmodern566 skin now open their menus when clicked; before, clicking them did nothing.
+- **winampmodern566's menu bar lights up** — in the winampmodern566 Winamp Modern skin, pointing at
+  File, Play, Options, View or Help now highlights the entry, and it shows as pressed while its menu
+  is open.
 - **Developer tooling: window census** — a new script,
   `skills/app-control/scripts/window-census.sh`, measures where each of NullPlayer's windows opens
   and how big it is for every installed skin (Classic, Original, Metal, Winamp Modern and Windows
