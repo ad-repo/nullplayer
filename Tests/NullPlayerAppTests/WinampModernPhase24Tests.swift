@@ -934,7 +934,7 @@ final class WinampModernPhase24Tests: XCTestCase {
         """
         <WasabiXML>
           <container id="Main">
-            <layout id="normal" w="\(size)" h="\(size)">
+            <layout id="normal" w="\(size)" h="\(size)" desktopalpha="1">
         \(body)
             </layout>
           </container>

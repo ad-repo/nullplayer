@@ -1284,8 +1284,17 @@ final class WasabiSceneRenderer {
     /// every pixel at alpha 0 is outside it. In a premultiplied buffer that is one byte per pixel —
     /// the colours are *already* the composite over black, and only the alpha channel has to be
     /// promoted. Which is why this needs a buffer it can read, and the window context is not one.
+    ///
+    /// **A layout that says nothing is a region too, unless it names an `alphabackground`** (B155).
+    /// `desktopalpha` is Wasabi's opt in, and the corpus writes it that way: meridian's round,
+    /// soft-shadowed player says `1` while its rectangular shade says nothing. `alphabackground` is
+    /// the other opt in — Ujola Cat's cat declares it and no `desktopalpha`, and the skin's own
+    /// Winamp screenshot shows that window's soft edges over the wallpaper with no black halo.
+    /// Reading those as regions put black fringes round the drop shadows of 14 skins.
     private var layoutWantsOpaqueBacking: Bool {
-        guard let raw = layout.attributes["desktopalpha"] else { return false }
+        guard let raw = layout.attributes["desktopalpha"] else {
+            return layout.attributes["alphabackground"] == nil
+        }
         return Int(raw.trimmingCharacters(in: .whitespaces)) == 0
     }
 

@@ -3,6 +3,51 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B155 — a layout that declares no `desktopalpha` keeps per-pixel alpha — closed 2026-09-28
+
+| B155 | **A layout that declares no `desktopalpha` keeps per-pixel alpha, which is probably not Winamp's default.** The renderer applies the B114 region rule (painted pixels opaque over black, alpha-0 pixels outside the window) only to `desktopalpha="0"` (`WasabiRenderer.layoutWantsOpaqueBacking`). Winamp most likely gives every layout without `desktopalpha="1"` a region instead of per-pixel alpha, so soft edges and translucent sheens there land on black. B151 met this and scoped around it: its standard-frame backing runs in undeclared layouts, but the alpha promotion does not. Making undeclared mean `0` moves the renders listed at [M34], and none of them has been classified. Some will be fixes (translucent panels floating on the desktop). Some may be regressions, where the corpus relies on the soft edges it has today: drop shadows and anti-aliased silhouettes turning into black fringes. The first job is to confirm Winamp's default from a primary source or a skin's shipped screenshot, then classify the sweep against each skin's own artwork | 92 of 671 renders, 44 skins [M34] | M | Measured |
+
+### B155
+
+- [x] **B155. A layout that says nothing is a region, unless it names an `alphabackground`.**
+      **Closed 2026-09-28.** `WasabiRenderer.layoutWantsOpaqueBacking` now answers true for an
+      undeclared `desktopalpha` when the layout has no `alphabackground`. A declared value still wins.
+      The evidence comes from the corpus. No primary Nullsoft text was reachable: the Winamp wiki is
+      offline, the forums refuse fetches, and `std.mi` only declares `setDesktopAlpha`.
+      - **Default off.** The wiki's search-indexed description calls the flag the layout's request to
+        be drawn with desktop alpha, which makes it an opt-in. meridian's round, soft-shadowed player
+        says `desktopalpha="1"` while its rectangular shade says nothing. Every notifier that ships a
+        `desktopalpha` layout keeps `normal` as the fallback for a desktop without alpha.
+      - **`alphabackground` opts in.** The blanket rule (M34 below) moved 92 of 671 images in 44
+        skins. The worst diffs were drop shadows and soft silhouettes turning into black fringes:
+        Diablo IV Skills, Rika, Lobe, Firefox, Formamp, Shield_Amp, Sony_Walkman, T800, canum,
+        Ujola Cat, Anexa, BLAKK, Bio-Nid and Styx. Every one of those skins has undeclared layouts
+        that carry `alphabackground`. Ujola Cat's cat layout is one, and the skin's own Winamp
+        screenshot shows that window's soft edges over the desktop wallpaper, with no black halo.
+      - **Sweep after the fix**, at `339a8ce3` with the four re-adds left out: **66 of 671 images
+        changed**, and none are shadows. They are notifiers' `normal` layouts, which are the no-alpha
+        fallback by construction (Love is War Miku ×2, hatsune_miku_5, winampmodern566, six cPro
+        skins, Ebonite, Styx). The rest are a 1px dark fringe on anti-aliased silhouettes (Wiimote,
+        PokemonDS, SingItKitty, jvc.tape, S7Reflex) and corner pixels on frames (Hal's Eye, Core-X5,
+        the cPro2 Stylers, MMD3-4-5, multipass, Enkera, meridian's shade). The fringe has the same
+        shape B114 accepted on EPS's declared-`0` speaker. Anexa's shade diff is its wall-clock
+        analog clock.
+      - **Live**, debug build via `launch.sh`: Wiimote's window has 0 partially transparent pixels.
+        Ujola Cat's cat window (192×222) keeps 27,321 of them.
+      - Tests are in `WinampModernB114Tests` (`testALayoutThatSaysNothingIsARegion`,
+        `testAnAlphaBackgroundLayoutKeepsPerPixelAlpha`, `testADeclaredZeroOutranksAnAlphaBackground`).
+        Three older fixtures measure an object's own alpha, so they now declare `desktopalpha="1"`:
+        Phase22 `render`, Phase24 `skin`, and Phase34 `makeScene`.
+      - The measurement that filed it:
+
+- <a id="m34"></a>**M34:** in `WasabiRenderer.layoutWantsOpaqueBacking`, temporarily return `true`
+  when `desktopalpha` is absent, then run `scripts/wal_render_sweep.sh capture <curr> --allow-dirty`
+  and `compare` it against a capture of the unmodified tree. Leave out the four byte-identical
+  re-adds. Measured 2026-09-28 at `7331c363`: **92 of 671 images in 44 skins** changed. Diablo has 6;
+  PokemonDS, jvc.tape.v0.5 and Core-X5 have 5 each; Wiimote has 4. The rest are spread thin,
+  including 13 cPro skins' main, shade and notifier windows. Anexa's 3 include its analog clock,
+  which differs from run to run.
+
 ## B159 — Itemskin's NullPlayer windows have a black bar on top — closed 2026-09-28
 
 | B159 | **Itemskin's NullPlayer windows have an unneeded black bar on top.** Reported 2026-09-28. Every NullPlayer-owned window on Itemskin (Spectrum Analyzer, Waveform, Cava, …) shows a 13pt black band between the frame's top bevel and its contents. They wear a copy of the skin's AVS frame, whose 40pt top border holds the visualizer's buttons over a solid black bitmap; the copy hides the buttons and leaves the band | 1 skin measured | S | Live-reported |

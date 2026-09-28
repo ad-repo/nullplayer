@@ -36,10 +36,41 @@ final class WinampModernB114Tests: XCTestCase {
         XCTAssertEqual(Int(over.red), 180 * 112 / 255, accuracy: 3,
                        "180 at 112/255 over black, which is the sheen the skin drew")
 
-        let unbacked = try makeScene(layoutAttributes: "", resources: Self.sheenBitmap,
+        let unbacked = try makeScene(layoutAttributes: #"desktopalpha="1""#, resources: Self.sheenBitmap,
                                      markup: Self.sheenLayer, art: Self.sheenArt)
         let alone = try XCTUnwrap(unbacked.pixel(x: 30, y: 20))
-        XCTAssertEqual(Int(alone.alpha), 112, "and without the flag it is still just a sheen")
+        XCTAssertEqual(Int(alone.alpha), 112, "and with per-pixel alpha it is still just a sheen")
+    }
+
+    // MARK: - B155: a layout that says nothing
+
+    /// A layout that declares no `desktopalpha` is a region too. The flag is Wasabi's opt in to
+    /// desktop alpha, and the corpus uses it that way: meridian's round, soft-shadowed player says
+    /// `desktopalpha="1"` while its rectangular shade strip says nothing, and every notifier that
+    /// ships a `desktopalpha` layout keeps `normal` as the fallback for a desktop without alpha.
+    func testALayoutThatSaysNothingIsARegion() throws {
+        let scene = try makeScene(layoutAttributes: "", resources: Self.sheenBitmap,
+                                  markup: Self.sheenLayer, art: Self.sheenArt)
+        XCTAssertEqual(Int(try XCTUnwrap(scene.pixel(x: 30, y: 20)).alpha), 255)
+    }
+
+    /// `alphabackground` is the other opt in. Ujola Cat's cat declares it and no `desktopalpha`, and
+    /// the skin's own Winamp screenshot shows that window's soft edges over the desktop wallpaper
+    /// with no black halo. Reading it as a region put black fringes round 14 skins' drop shadows.
+    func testAnAlphaBackgroundLayoutKeepsPerPixelAlpha() throws {
+        let scene = try makeScene(layoutAttributes: #"alphabackground="sheen""#,
+                                  resources: Self.sheenBitmap,
+                                  markup: Self.sheenLayer, art: Self.sheenArt)
+        XCTAssertEqual(Int(try XCTUnwrap(scene.pixel(x: 30, y: 20)).alpha), 112)
+    }
+
+    /// A declared flag outranks `alphabackground`: Diablo IV Skills' video window says
+    /// `desktopalpha="0"` and means it.
+    func testADeclaredZeroOutranksAnAlphaBackground() throws {
+        let scene = try makeScene(layoutAttributes: #"desktopalpha="0" alphabackground="sheen""#,
+                                  resources: Self.sheenBitmap,
+                                  markup: Self.sheenLayer, art: Self.sheenArt)
+        XCTAssertEqual(Int(try XCTUnwrap(scene.pixel(x: 30, y: 20)).alpha), 255)
     }
 
     /// The EPS High-End case, which is what makes this a region rather than a fill: a pixel the skin
@@ -61,8 +92,8 @@ final class WinampModernB114Tests: XCTestCase {
 
     // MARK: - The guards
 
-    /// A layout that says nothing keeps the per-pixel alpha it has always had. Most of the corpus is
-    /// this case and none of it may grow a rectangle.
+    /// A layout that says nothing is a region, not a rectangle: a pixel it never painted stays out
+    /// of the window. Most of the corpus is this case and none of it may grow a rectangle.
     func testALayoutThatDeclaresNoDesktopAlphaStaysTransparent() throws {
         let scene = try makeScene(layoutAttributes: "")
         XCTAssertEqual(Int(try XCTUnwrap(scene.pixel(x: 30, y: 20)).alpha), 0)
@@ -96,7 +127,7 @@ final class WinampModernB114Tests: XCTestCase {
     func testTheOpaquePathIsPixelExactAtRetinaScale() throws {
         let scene = try makeScene(layoutAttributes: #"desktopalpha="0""#, resources: Self.sheenBitmap,
                                   markup: Self.sheenLayer, art: Self.sheenArt)
-        let plain = try makeScene(layoutAttributes: "", resources: Self.sheenBitmap,
+        let plain = try makeScene(layoutAttributes: #"desktopalpha="1""#, resources: Self.sheenBitmap,
                                   markup: Self.sheenLayer, art: Self.sheenArt)
         let opaque = try XCTUnwrap(scene.pixel(x: 30, y: 20, scale: 2))
         let reference = try XCTUnwrap(plain.pixel(x: 30, y: 20, scale: 2))

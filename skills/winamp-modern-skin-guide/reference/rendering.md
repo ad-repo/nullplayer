@@ -244,8 +244,8 @@ the fill landed underneath existing chrome.
 
 `<layout desktopalpha="0">` says the window has **no per-pixel alpha**. The rule is Win32's region:
 every pixel the skin painted is inside the window and **opaque**, every pixel at alpha 0 is
-**outside** it. `desktopalpha="1"` is the opt in to per-pixel alpha and a layout that says nothing
-keeps the transparency it has always had.
+**outside** it. `desktopalpha="1"` is the opt in to per-pixel alpha. A layout that says nothing is a
+region too, unless it names an `alphabackground` (B155, below).
 
 WMP11-BlueVU is the reported case, and its shape is worth recognising: `glass_bg_left_left.png`,
 `glass_bg_left_right.png` and `glass_bg_right.png` are **alpha 0 in every pixel**, deliberately, and
@@ -310,14 +310,34 @@ regression without each one:
   Ebonite cuts its client window down to the opening in a separate frame window (B110), and a
   backing laid black strips under that frame's edges.
 
-**An undeclared `desktopalpha` still keeps per-pixel alpha.** Treating it as `0`, which is probably
-Winamp's own default, moved 154 of 671 images in 59 skins, and those diffs have not been classified.
 
 Corpus sweep, 671 renders: **30 changed**. The real changes are WMP11-BlueVU's standard-frame windows
 (Meter, Meter#2, Pledit, both About boxes, the library, and 2px inside `main`), DewyTears' synthesized
 playlist and library bands, and corneramp_redux's framed windows, whose interiors had been bare
 desktop. The rest are Big Bento's About (maxdelta 3), three cPro2 Styler pixels (maxdelta 2), and
 Anexa's analog clock, which differs from run to run.
+
+#### An undeclared `desktopalpha` is a region, unless the layout names an `alphabackground` (B155, 2026-09-28)
+
+`desktopalpha` is an opt in, so a layout that says nothing gets B114's region.
+`alphabackground` is the other opt in: a layout that names one keeps per-pixel alpha. A declared
+value outranks both.
+
+**Blanket `0` is wrong, and Ujola Cat is the proof.** Its cat layout declares `alphabackground` and
+no `desktopalpha`. The skin's own Winamp screenshot shows that window's soft edges over the desktop
+wallpaper, with no black halo. Reading every undeclared layout as `0` moved 92 of 671 images, and
+the worst were drop shadows turned into black fringes across 14 skins. Every one of those skins
+carries `alphabackground` on its undeclared layouts.
+
+**The evidence for default-off comes from the corpus.** No Nullsoft text on the subject was
+reachable. meridian's round, soft-shadowed player says `desktopalpha="1"` while its rectangular shade
+says nothing. Every notifier that ships a `desktopalpha` layout keeps `normal` as the fallback for a
+desktop without alpha. If a new report shows a soft-edged undeclared layout drawing a black fringe
+in Winamp, check its XML for an opt in this rule does not know about before widening it.
+
+Corpus sweep, 671 renders: **66 changed**, and none are shadows. They are notifiers' `normal`
+layouts, a 1px dark fringe on anti-aliased silhouettes (Wiimote, PokemonDS, SingItKitty, jvc.tape),
+and corner pixels on frames. The fringe is the same shape B114 accepted on EPS.
 
 #### Layer fill modes
 

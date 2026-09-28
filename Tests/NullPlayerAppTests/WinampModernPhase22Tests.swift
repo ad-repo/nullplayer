@@ -107,7 +107,7 @@ final class WinampModernPhase22Tests: XCTestCase {
         let xml = """
         <WasabiXML>
           <container id="main">
-            <layout id="normal" w="64" h="20">
+            <layout id="normal" w="64" h="20" desktopalpha="1">
               <vis id="vis" x="0" y="0" w="64" h="20" \(visAttributes)/>
             </layout>
           </container>
