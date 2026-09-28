@@ -18,9 +18,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 ### Measured capability gaps
 
-| Id | Item | Reach | Effort | Tier |
-|---|---|---:|:---:|---|
-| B18 | **Classic minimize-all ignores the window's mask.** `miniaturizeAllManagedWindows` (`App/WindowManager.swift:8653`) calls `miniaturize(nil)` on windows whose style mask lacks `.miniaturizable` — the bug modern's minimize had. Classic parity item, outside the `.wal` subsystem | — · engine integration, outside the corpus | S | Measured |
+None open.
 
 ### Live-reported draw defects
 
@@ -51,7 +49,6 @@ the window census and the render-dump harness. The ranking above still sets the 
 
 | Id | What the agent can do alone | How it is verified |
 |---|---|---|
-| B18 | Fix the classic minimize mask | Classic skin, minimize-all from the menu bar; the `windows` rows disappear and come back on restore |
 | B71 | Reorder script startup, then handle visrb2's auto-hide | Corpus render sweep; Defix detached vis: `click` Reattach, and `clickdiff` shows the window change |
 | B150 | Size the state art, once the rule is settled | winampmodern566: `move` onto a menu entry and `capture` the titlebar — the hover art draws under the label; corpus render sweep for the engine-wide half |
 | B80 | Add a partial-repaint mode to the harness, then fix the seam | Count partial-alpha rows at a fractional scale; live: set UI Size from the menu, `move` over controls, `capture` |

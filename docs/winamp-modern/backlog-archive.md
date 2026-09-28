@@ -3,6 +3,36 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B18 — Classic minimize-all left windows on screen — closed 2026-09-28
+
+### B18
+
+- [x] **B18. Fixed 2026-09-28.** The row named half the cause. Reproduced live on aquamp (Classic),
+      nothing playing, driving **Windows → Minimize All Windows** by `AXPress` on the menu item:
+      with Sonos Rooms undocked, the main window went to the Dock and Sonos stayed up
+      (`AXMinimized=false`). Sonos is a `BorderlessWindow` built `[.borderless]`, so AppKit ignored
+      its `miniaturize`.
+
+      **Inserting `.miniaturizable` alone did not fix it** (`mask=4` logged, Sonos still up). An
+      undocked Equalizer — a `ResizableWindow`, which always had the mask — stayed up the same way:
+      `miniaturizeAllManagedWindows` sent the main window first, and a `miniaturize` sent while its
+      animation runs is dropped. Docked windows only ever went because they ride along as children.
+
+      `miniaturizeAllManagedWindows` now inserts the mask where it is missing, sends every window not
+      docked to the main window (`findDockedWindows`, or already its child) first, and the main window
+      last. A/B in one binary with a temporary env switch skipping the mask: the reordering alone
+      fixes the Equalizer, and Sonos (`mask=0`) still stays up, so both halves are needed.
+
+      **Verified live**, undocked Sonos + undocked Equalizer + docked Playlist, Minimize All, then
+      restore: all windows reach the Dock and come back at their frames on aquamp (Classic), NeonWave
+      (Original — its side windows are `[.borderless]` too, so this fixes Original as well) and
+      2222-cPro__Bento (`.wal`, main + Sonos). No unit test: the behaviour is AppKit's window server.
+
+      Original row:
+
+| B18 | **Classic minimize-all ignores the window's mask.** `miniaturizeAllManagedWindows` (`App/WindowManager.swift:8653`) calls `miniaturize(nil)` on windows whose style mask lacks `.miniaturizable` — the bug modern's minimize had. Classic parity item, outside the `.wal` subsystem | — · engine integration, outside the corpus | S | Measured |
+
+
 ## B123 — `System.getMousePos*` stays in window space — closed 2026-09-28 (decided against)
 
 ### B123

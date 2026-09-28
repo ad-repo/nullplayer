@@ -129,15 +129,14 @@ on drive(argv, targetPid)
       else if act is "toggle" then
         set idx to (item 3 of argv) as integer
         set want to item 4 of argv
-        click menu bar item "Windows" of menu bar 1
-        delay 0.35
+        -- AXPress on the item with the menu closed. Opening the menu and `click`ing the item left
+        -- the menu up with nothing run (2026-09-28): the item fired only when pressed unopened.
         set mm to menu 1 of menu bar item "Windows" of menu bar 1
         set nm to name of menu item idx of mm
         if nm is not want then
-          my closeMenus(targetPid)
           error "menu.applescript toggle: Windows item " & idx & " is '" & nm & "', not '" & want & "'" number 2
         end if
-        click menu item idx of mm
+        perform action "AXPress" of menu item idx of mm
         return "ok"
 
       else if act is "mode" then

@@ -202,7 +202,7 @@ read -r WID _ X Y W H _ < <("$WH" windows --pid "$PID" --size 289x283)   # the s
 | `winhelper drag <x> <y> …` | press, `leftMouseDragged` through the path, release at the last point |
 | `osascript menu.applescript mode\|skin\|list\|closeaux <pid> …` | the Skins / Windows menu verbs |
 | `osascript menu.applescript windowitems <pid>` | one `index\|name\|enabled\|checked` line per Windows-menu window toggle — block 1 minus Main Window, Debug Console and Recreate Windows (Debug), plus a `.wal` skin's own windows |
-| `osascript menu.applescript toggle <pid> <index> <name>` | clicks Windows item `index`, erroring (exit non-zero, nothing clicked) if its name is no longer `name` |
+| `osascript menu.applescript toggle <pid> <index> <name>` | presses (`AXPress`, menu unopened) Windows item `index`, erroring (exit non-zero, nothing clicked) if its name is no longer `name` |
 | `winhelper screens` | each display's `visibleFrame` as `x y w h scale`, in the same top-left points as `windows` |
 
 - **A press lands only on NullPlayer.** `click`, `dblclick`, `clickdiff`, `scroll` and the first

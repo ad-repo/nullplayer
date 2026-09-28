@@ -8648,19 +8648,34 @@ class WindowManager {
     }
 
     /// Miniaturize all visible, managed player windows.
-    /// Main window is miniaturized first so existing docked-window miniaturize
-    /// coordination remains intact, then any remaining visible windows follow.
+    /// Windows not docked to the main window go first; the main window goes last and
+    /// carries its docked group with it through the coordinated-miniaturize path.
     func miniaturizeAllManagedWindows() {
         let windowsToMiniaturize = visibleWindows().filter { !$0.isMiniaturized }
         guard !windowsToMiniaturize.isEmpty else { return }
 
-        let mainWindow = mainWindowController?.window
-        if let mainWindow, windowsToMiniaturize.contains(where: { $0 === mainWindow }) {
-            mainWindow.miniaturize(nil)
+        // AppKit ignores `miniaturize` on a window whose mask lacks `.miniaturizable`, and several
+        // `.borderless` windows (Sonos Rooms, Original's auxiliary windows) are built without it.
+        // On a borderless window the flag draws nothing; it only lets the window into the Dock.
+        for window in windowsToMiniaturize where !window.styleMask.contains(.miniaturizable) {
+            window.styleMask.insert(.miniaturizable)
         }
 
-        for window in windowsToMiniaturize where window !== mainWindow {
+        let mainWindow = mainWindowController?.window
+        let mainIsVisible = mainWindow.map { main in windowsToMiniaturize.contains { $0 === main } } ?? false
+        let dockedToMain = mainIsVisible ? mainWindow.map(findDockedWindows(to:)) ?? [] : []
+
+        // A window docked to the main window rides into the Dock as its child (see
+        // `attachDockedWindowsForMiniaturize`). Every other window goes first: a `miniaturize`
+        // sent while the main window's own animation is running is dropped.
+        for window in windowsToMiniaturize where window !== mainWindow
+            && window.parent !== mainWindow
+            && !dockedToMain.contains(where: { $0 === window }) {
             window.miniaturize(nil)
+        }
+
+        if mainIsVisible {
+            mainWindow?.miniaturize(nil)
         }
     }
     

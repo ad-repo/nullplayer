@@ -105,6 +105,10 @@
   land in `~/iCloud Drive (Archive)`), shows where it went, and re-points it on your say-so, keeping
   play counts and ratings. It then offers to forget tracks whose files are genuinely deleted;
   anything on a disconnected drive or unmounted share is always left alone.
+- **Minimize All minimizes every window** — **Windows → Minimize All Windows** and Classic's
+  minimize button left any window not docked to the player on screen, and Sonos Rooms (and every
+  Original-skin side window) never minimized even when docked. Every open window now goes to the
+  Dock, in every skin mode.
 - **Cover Flow stays inside the library window** — the stacked covers at either side of the
   carousel no longer spill over the library browser's border, in every skin mode.
 - **One unreadable file no longer stops the playlist** — playback skips past it to the next track,
