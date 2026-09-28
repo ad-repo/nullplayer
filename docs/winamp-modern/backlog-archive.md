@@ -3,6 +3,45 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B56a — Window tiling follow-ups — closed 2026-09-28
+
+**Closed 2026-09-28** from the agent-verifiable list. All three checks were run in the debug build
+and read back with `winhelper windows`. The third found a defect, which was fixed in the same change.
+
+| B56a | Window tiling follow-ups | A skin whose playlist is a classic fallback; a Classic/Original regression pass; the arrangement after a live UI-Size change (expect `arrangeWindows()` to need re-running) |
+
+### B56a
+
+- [x] **A skin whose playlist is a classic fallback.** A corpus render sweep
+      (`RENDER-DUMP catalog`) found two: `Sony_Walkman` and `canum_winamp_by_burnsplayguitar`. On
+      Sony_Walkman, the skin's declared equalizer plus the fallback Playlist, Library and Spectrum,
+      opened from the Windows menu, gave five disjoint frames.
+- [x] **The arrangement after a live UI-Size change.** It needed re-running, as expected. Before
+      the fix, 100% → 150% on Sony_Walkman gave four overlapping pairs:
+      - `applyUIScale` grows the skin's containers from their bottom-left, which put the equalizer
+        53pt into the player;
+      - `applyDoubleSize`'s classic stack put the fallback playlist flush under the player, on top
+        of the equalizer;
+      - the analyzer ran 13pt into the library.
+
+      `applyUIScaleLevelChangeIfNeeded` now runs `arrangeWinampModernScene`, which it shares with
+      Snap To Default, after an applied change, gated on `.winampModern`. That scene no longer joins
+      the classic-fallback windows through `tiledOrigin` one at a time: that put the playlist 190pt
+      below the equalizer, because each walk restarts at the player and avoids sibling frames that
+      are about to move. They now go through `arrangeWindows(then:)` in the same sweep. After the
+      fix, the windows sit flush in one column at 100%, 125% and 150% and back, with no overlap at
+      100%. The overlap left at 125%/150% is the tiler's right-edge clamp, filed as B153.
+- [x] **Classic/Original regression pass.** `window-census.sh aquamp modern:NeonWave` shows the
+      classic stack in both: stack windows at the main window's bottom edge, the library docked
+      right, Visualizations docked left, 0 unreachable, 0 residue. A UI-Size change on aquamp
+      printed zero `[place/tile]` lines, re-stacked the classic way, and came back to the original
+      frames at 100%.
+
+Not pursued: on Sony_Walkman the skin's equalizer is sometimes visible during load and then
+hidden. The launch sweep places it, so reopening it returns it to that remembered slot
+(`reopensWhereLeft`) even when the playlist has taken the slot since. It was seen in 3 of 4 runs.
+The mechanism has not been confirmed.
+
 ## B111 — an unchanged `setActivated` dispatched `onToggle` — closed 2026-09-28
 
 **Closed 2026-09-28** from the agent-verifiable list, on the row's own check (persisted volume

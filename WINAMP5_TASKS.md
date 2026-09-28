@@ -26,6 +26,7 @@ None open.
 |---|---|---:|:---:|---|
 | B147 | **The library window follows the main window's height in a `.wal` session.** `toggleHideTitleBars` (`App/WindowManager.swift:511`) resizes the side-docked library and projectM windows by the main window's height delta — Original centre-stack behaviour. Its guard `isRunningModernUI` (`:390`) does not name `WinampModernMainWindowController`, so `.wal` falls through to the stale `isModernUIEnabled` preference. **Gate the resize itself on the mode; do not add the controller to the predicate**, whose other callers would all inherit the answer. Classic and Original byte-identical. The `.wmz` half is W237 in [`WMP_TASKS.md`](WMP_TASKS.md) | every `.wal` session with the library open | S | Live-reported |
 | B151 | **A gap between the VU face and the frame in WMP11-BlueVU's VU Meters window.** Reported 2026-09-28 from the live session. With *VU Meters Large* open (`Meter`, 438x207), a light band shows between the meter artwork (`scale` at 10,27 and the needles) and the window's `Wasabi:StandardFrame:NoStatus`, most visible along the top and left edges. The meter should sit flush against the frame. The likely cause is the frame's client area and the layer's absolute x/y disagreeing, or the frame drawing an inset the skin does not expect. Not yet measured. Reproduce with `WINAMP_MODERN_SHOW_WINDOWS=Meter`, or headlessly with `RENDER_SHOW=Meter`, and compare against the skin's `vuscreenshot.png` | 1 skin reported | S | Live-reported |
+| B153 | **The `.wal` tiler's right-edge clamp pulls a window onto the player.** Measured 2026-09-28 on Sony_Walkman (player centred at x=762 on an 1800pt display, playlist, analyzer and library open). At 125% UI Size the library (688pt wide) gets column 2 at x=1192. That runs past the edge, so `WinampModernTiler.nextSlot` clamps it to x=1112, 69pt over the player and the playlist. At 150% it is 290×159 over the player. Launch, Snap To Default and the B56a UI-Size re-layout all produce the same result. The clamp was chosen over windows placed wholly off-screen (see the comment in `nextSlot`). Covering the player is worse than overhanging the edge, though: a window with most of its width still on screen is reachable and hides nothing. The likely fix is to clamp only as far as reachability needs, or to try the space left of the player first. The tiler is shared with `.wmz` through `tiledOrigin`. Reproduce with `launch.sh Sony_Walkman`, open those three from the Windows menu, then Windows → UI Size → 125% | any `.wal` session with a wide window and a centred player at a large UI Size | M | Agent-measured |
 
 ### Awaiting manual QA
 
@@ -35,7 +36,6 @@ None open.
 | B85 | The Widgets Manager's three place buttons | On a cPro skin: drawer menu -> *Widgets Manager*, then **show in main / drawer / side** on a row. Uninstall and support are expected to stay inert |
 | B66 | The Wasabi drop-down's persistence | On Styx's Config, pick a `Position` drop-down entry, reopen the window, confirm the pick survived |
 | B110 | Ebonite's frame overlay windows ([record](docs/winamp-modern/backlog-archive.md#b110--a-skins-window-frame-can-be-a-second-window--implementation-record)) | Reporter's confirmation that Ebonite's frames draw, stay glued and stack correctly |
-| B56a | Window tiling follow-ups | A skin whose playlist is a classic fallback; a Classic/Original regression pass; the arrangement after a live UI-Size change (expect `arrangeWindows()` to need re-running) |
 
 ## Agent-verifiable without user input
 
@@ -43,9 +43,7 @@ Triaged 2026-09-27 against the `app-control` tools: `launch.sh`, `winhelper`
 (`click`/`dblclick`/`drag`/`move`/`scroll`/`clickdiff`/`capture`/`screens`), `menu.applescript`,
 the window census and the render-dump harness. The ranking above still sets the order.
 
-| Id | What the agent can do alone | How it is verified |
-|---|---|---|
-| B56a | The three tiling checks | `windows` geometry before and after a UI-Size change from the menu bar; Classic/Original census rows unchanged |
+None open.
 
 **Partly verifiable.** B147: the fix is autonomous, but *Hide Title Bars* is only in the context
 menu, so the live toggle is Route D. B66 and B85: the drop-down and the drawer menu may be

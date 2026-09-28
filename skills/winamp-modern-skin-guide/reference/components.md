@@ -345,9 +345,23 @@ two. Three details are load-bearing:
   top-left on screen.
 - **The sweep does not own everything.** A classic-fallback playlist or library window and the
   standalone video window hang off their own controllers, not off `winampModernHostedController`.
-  They join afterwards through `tiledOrigin(for:avoiding:)` — the first free slot in the same
-  sequence, exactly the way a window opened after the arrangement does.
+  They are handed to `arrangeWindows(then:)` and laid out by the same tiler, flush after the skin's
+  own windows. Not `tiledOrigin(for:avoiding:)` per window: that walk restarts at the player for
+  each window and steps in that window's own height, and it avoids siblings' frames that are about
+  to move. Measured on Sony_Walkman after a UI-Size change, it left the playlist 190pt below the
+  equalizer.
 - **The notifier is excluded for free**, because `arrangeWindows()` already claims it and skips it.
+
+**A live UI-Size change re-runs the arrangement too (B56a).** Every window changes size.
+`applyUIScale` grows the skin's containers from their bottom-left corner, and `applyDoubleSize`
+re-stacks the classic-fallback windows under the player as if this mode had a centre stack. The
+launch tiling therefore no longer holds. Measured on Sony_Walkman at 100% → 150%: four pairs
+overlapped, including the equalizer 53pt into the player. `applyUIScaleLevelChangeIfNeeded` now runs
+`arrangeWinampModernScene` after an applied change. That is the Snap To Default layout, except the
+player stays where it is. It is gated on `.winampModern`, so Classic and Original keep their re-stack
+(zero `[place/tile]` lines on aquamp). The one overlap left is the right-edge clamp above: at 125% or
+150% on an 1800pt display, a centred player leaves no room on its right for the library, which is
+pulled back onto the player. Launch and Snap To Default do the same.
 
 Verify in the running app, never on paper: `WINAMP_MODERN_PLACE_TRACE=1` prints every placement
 decision ([harness.md](harness.md)), and the finished layout is read back through the accessibility

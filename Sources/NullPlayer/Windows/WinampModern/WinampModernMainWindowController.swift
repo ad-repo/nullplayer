@@ -1892,9 +1892,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// the player is not yet at its restored frame and no window is yet at its final size, so nothing
     /// decided then can be right. See `WindowManager.WinampModernTiler`.
     ///
-    /// Only the skin's own windows and the hosted windows are laid out. The player is the anchor and
-    /// never moves: its frame is restored user state.
-    func arrangeWindows() {
+    /// Only the skin's own windows and the hosted windows are laid out, then `trailing` — windows
+    /// this controller does not own (a classic-fallback playlist or library) that a full re-layout
+    /// wants in the same sweep, flush after the rest. The player is the anchor and never moves: its
+    /// frame is restored user state.
+    func arrangeWindows(then trailing: [NSWindow] = []) {
         let manager = WindowManager.shared
         guard var tiler = manager.winampModernTiler() else { return }
         let trace = ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1"
@@ -1914,6 +1916,14 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             let slot = tiler.nextSlot(for: window.frame.size)
             if trace {
                 NSLog("[place/tile] hosted %@ -> %@",
+                      NSStringFromRect(window.frame), NSStringFromRect(slot))
+            }
+            window.setFrameOrigin(slot.origin)
+        }
+        for window in trailing where window.isVisible {
+            let slot = tiler.nextSlot(for: window.frame.size)
+            if trace {
+                NSLog("[place/tile] trailing %@ -> %@",
                       NSStringFromRect(window.frame), NSStringFromRect(slot))
             }
             window.setFrameOrigin(slot.origin)

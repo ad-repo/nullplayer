@@ -5312,6 +5312,7 @@ class WindowManager {
             pendingUIScaleLevel = nil
         }
 
+        var resizedWindows = false
         repeat {
             pendingUIScaleLevel = nil
             let targetLevel = uiScaleLevel
@@ -5319,8 +5320,19 @@ class WindowManager {
 
             applyDoubleSize(previousScale: appliedUIScaleLevel.scaleFactor, targetLevel: targetLevel)
             appliedUIScaleLevel = targetLevel
+            resizedWindows = true
             NotificationCenter.default.post(name: .doubleSizeDidChange, object: nil)
         } while pendingUIScaleLevel != nil && uiScaleLevel != appliedUIScaleLevel
+
+        // Winamp Modern has no centre stack, and every window just changed size, so the tiling the
+        // launch sweep produced no longer holds; lay it out again around the player (B56a). Gated
+        // on the mode: the other families keep exactly the path they ran before.
+        if resizedWindows, uiMode.controllerFamily == .winampModern,
+           let player = mainWindowController?.window {
+            isSnappingWindow = true
+            arrangeWinampModernScene(player: player)
+            isSnappingWindow = false
+        }
 
         // Growing the UI is the most reliable way to push the bottom of a stack, or the right of a
         // wide skin, past the edge of the display — every window is re-sized around the main window
@@ -6482,34 +6494,7 @@ class WindowManager {
         playerWindow.setFrame(Self.recenteredPlayerFrame(size: playerWindow.frame.size, in: region),
                               display: true, animate: false)
 
-        // The generated arrangement: the skin's own containers, then the hosted windows.
-        winampModernHostedController?.arrangeWindows()
-
-        // Anything that sweep does not own — a classic-fallback playlist or library window, the
-        // standalone video window — joins the same tiling in the first free slot, exactly the way a
-        // window opened after the arrangement does.
-        var arranged = Set<ObjectIdentifier>([ObjectIdentifier(playerWindow)])
-        if let controller = winampModernHostedController {
-            for window in controller.materializedAuxiliaryWindows {
-                arranged.insert(ObjectIdentifier(window))
-            }
-        }
-        for window in winampModernHostedWindowsForArrangement() {
-            arranged.insert(ObjectIdentifier(window))
-        }
-
-        var leftovers = snapTargetWindows()
-        if let videoWindow = videoPlayerWindowController?.window, videoWindow.isVisible {
-            leftovers.append(videoWindow)
-        }
-        for window in leftovers where !arranged.contains(ObjectIdentifier(window)) {
-            arranged.insert(ObjectIdentifier(window))
-            guard let origin = tiledOrigin(for: window.frame.size,
-                                           avoiding: occupiedWindowFrames(excluding: window))
-                    ?? rescuedOrigin(for: window)
-            else { continue }
-            window.setFrameOrigin(origin)
-        }
+        arrangeWinampModernScene(player: playerWindow)
 
         // The contract this command has to keep is that **one** press recovers everything. It used to
         // take several — and sometimes never worked — because it re-ran the same unclamped tiler and
@@ -6524,6 +6509,38 @@ class WindowManager {
         }
 
         postLayoutChangeNotification()
+    }
+
+    /// Every `.wal` window laid out around the player where it stands: the generated arrangement,
+    /// then whatever it does not own. Shared by Snap To Default, which re-centres the player first,
+    /// and a live UI-Size change (B56a), which resizes every window and so invalidates the tiling
+    /// the launch sweep produced — the skin's containers grow from their bottom-left, and the
+    /// classic-fallback windows are re-stacked by `applyDoubleSize` as though this mode had a
+    /// centre stack. Measured on Sony_Walkman at 100% → 150%: four overlapping pairs, the equalizer
+    /// 53pt into the player.
+    private func arrangeWinampModernScene(player playerWindow: NSWindow) {
+        // Anything the controller's sweep does not own — a classic-fallback playlist or library
+        // window, the standalone video window — is laid out by the same sweep, flush after the skin's
+        // own windows. Not `tiledOrigin` per window: that restarts the walk at the player for each
+        // one and avoids the frames its siblings are about to leave, which after a UI-Size change are
+        // `applyDoubleSize`'s stale classic stack — it put the playlist 190pt below the equalizer.
+        var arranged = Set<ObjectIdentifier>([ObjectIdentifier(playerWindow)])
+        if let controller = winampModernHostedController {
+            for window in controller.materializedAuxiliaryWindows {
+                arranged.insert(ObjectIdentifier(window))
+            }
+        }
+        for window in winampModernHostedWindowsForArrangement() {
+            arranged.insert(ObjectIdentifier(window))
+        }
+
+        var leftovers = snapTargetWindows()
+        if let videoWindow = videoPlayerWindowController?.window, videoWindow.isVisible {
+            leftovers.append(videoWindow)
+        }
+        leftovers.removeAll { arranged.contains(ObjectIdentifier($0)) }
+
+        winampModernHostedController?.arrangeWindows(then: leftovers)
     }
 
     /// Snap To Default for Windows Media Player (W217 / G4).
