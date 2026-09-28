@@ -103,7 +103,9 @@ By area:
   own namespaced configuration, never real Winamp settings. Unset reads 0/""/false, which is also the
   right answer for the one item ClassicPro asks about (`"frequencies"` = 0, the classic EQ frequencies
   NullPlayer's `EQConfiguration.classic10` uses). The setters are deliberately absent
-- **Children**: `getNumChildren`, `enumChildren(i)`
+- **Children**: `getNumChildren`, `enumChildren(i)`, and the stock `Group.getNumObjects()` /
+  `Group.enumObject(i)` — the group's own GUI objects in declaration order (`<script>` is never one);
+  out of range is NULL. ClassicPro's InfoViewer indexes that order (B99)
 - **`System.getCurrentTrackRating()`** — always 0 (unrated). NullPlayer's playback `Track` carries no
   user rating (the library's rating is in `MediaLibrary`, which is not on the host adapter), so the
   ClassicPro ratings widget draws no stars rather than aborting its script

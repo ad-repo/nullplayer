@@ -87,8 +87,10 @@ extension WinampModernScriptRuntime {
             _ = layoutSwitchRequested?(object.stableID, arguments[0].stringValue)
             _ = try dispatch(object: object, event: "onswitchtolayout", arguments: [objectValue(next)])
             return .null
-        case "getnumchildren": return .integer(Int32(clamping: object.children.count))
-        case "enumchildren":
+        // `<script>` never enters the graph, so `children` is exactly the group's GUI objects in
+        // declaration order — the index ClassicPro's InfoViewer relies on (`a==11` is its rating).
+        case "getnumchildren", "getnumobjects": return .integer(Int32(clamping: object.children.count))
+        case "enumchildren", "enumobject":
             let index = Int(arguments[0].integerValue)
             guard object.children.indices.contains(index) else { return .null }
             return objectValue(object.children[index])

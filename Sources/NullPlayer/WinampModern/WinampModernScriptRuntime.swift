@@ -2855,6 +2855,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // A group's children, which ClassicPro walks to find the widgets a component bucket loaded.
         "getnumchildren": .init(argumentCount: 0, returnKind: .integer),
         "enumchildren": .init(argumentCount: 1, returnKind: .object),
+        // `Group.getNumObjects` / `Group.enumObject` (`std.mi`) — the stock spelling of the same walk.
+        // ClassicPro's InfoViewer (`auto_arange.m`) lays out its tag lines with it.
+        "getnumobjects": .init(argumentCount: 0, returnKind: .integer),
+        "enumobject": .init(argumentCount: 1, returnKind: .object),
         "explorefile": .init(argumentCount: 1, returnKind: .null),
         "openfile": .init(argumentCount: 2, returnKind: .null),
         "findfiles": .init(argumentCount: 3, returnKind: .integer),

@@ -24,6 +24,10 @@
   before. This changes the look of Classic's default, "Purple Neon".
 - **New "Red" vis_classic profile** — a single-colour red to go with "Green".
 
+- **ClassicPro track info shows up** — in ClassicPro-based Winamp Modern skins such as cPro2 Dark
+  Aluminum, the track-info panel under the library now lists the playing track's title, artist,
+  rating, decoder, file size, filename and format instead of staying empty.
+
 - **Glossy frames for Winamp Modern fallback windows** — when a Winamp Modern (`.wal`) skin has no
   window frame of its own for NullPlayer's windows (the analyzers, Cava, Flow, PeppyMeter, waveform,
   library, playlist, equalizer and Sonos Rooms), they now wear the same glossy, title-bar-free frame

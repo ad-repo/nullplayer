@@ -3,6 +3,31 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B99 — `enumObject` / `getNumObjects` were unimplemented — closed 2026-09-27
+
+| B99 | **`enumObject` / `getNumObjects` are unimplemented.** ClassicPro's InfoViewer (`xui/CentroSUI/_v2/InfoViewer/InfoViewer.xml`) walks its object list with them, and dispatch fails closed, so each call abandons the whole handler. Measured on cPro2 Dark Aluminum 2026-09-01: `enumObject` x12, `getNumObjects` x2 | 1 skin measured; the `_v2` SUI is shared by any engine-`two` skin | M | Measured |
+
+### B99
+
+- [x] **B99. ClassicPro's InfoViewer drew empty. Fixed and confirmed live by A/B 2026-09-27.**
+
+      `auto_arange.m` counts its tag lines with `g.getNumObjects()` in `onScriptLoaded` and lays them
+      out by index with `g.enumObject(a)` in `onResize` / `onAction`; unanswered, all three handlers
+      aborted. Both now answer the same walk as `getNumChildren` / `enumChildren`: the group's own
+      children in declaration order (`<script>` never enters the graph, so `a==11` is the rating group
+      as the script assumes). Out of range is NULL.
+
+      **Verified.** `RENDER_SCRIPTS=1` on cPro2 Dark Aluminum: unsupported-method findings
+      `enumobject` x13 / `getnumobjects` x2 -> 0 (`enumitem` x1 remains, widgets manager, separate).
+      Live, `audio-long` playing, one binary with a temporary kill-switch: off, the track-info pane
+      under the library is empty; on, it draws Title, Artist, Rating, Decoder, Filesize, Filename and
+      Format. Tests: `WinampModernB99Tests`.
+
+      **What the fix uncovered.** Headless, with nothing playing, every line hides itself, the first
+      visible object is the zero-height rating group, and `onResize` now stops on
+      `(g.getHeight()-3)/custom.getHeight()` — B65's division by zero. Cosmetic leftovers seen live:
+      no gap between *Decoder*/*Filename* and their values; the *Rating* line draws larger.
+
 ## B145 — three Miku-family skins render an empty main window — closed 2026-09-27
 
 **Not a defect; closed without a code change.** Filed from the 2026-09-06 headless grading pass:

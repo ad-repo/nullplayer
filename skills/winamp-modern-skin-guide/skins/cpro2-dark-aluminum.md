@@ -2,13 +2,13 @@
 
 *Per-skin status. Index: [skins.md](../skins.md) · engine-wide surface: [compatibility.md](../compatibility.md) · how a section gets written: `/wal-skin-report <skin.wal>`.*
 
-- **Grade: C (provisional · confidence: medium)** — from a headless pass; nobody has driven this skin. Calls 3 unimplemented maki method(s) ×32 (`enumitem`, `enumobject`, `getnumobjects`); dispatch is fail-closed, so each call abandons its whole handler. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
+- **Grade: C (provisional · confidence: medium)** — from a headless pass; nobody has driven this skin. Calls 1 unimplemented maki method(s) ×2 (`enumitem`); dispatch is fail-closed, so each call abandons its whole handler. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
 
 **Known outstanding:**
 
 - 3 bitmap id(s) it references do not resolve, leaving a visible gap: `cpro2.eq.auto.overlay.0`, `cpro2.eq.on.overlay.0`, `cpro2.xfade.overlay.0`
 - 1 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `s.button.mute.over.0`
-- unimplemented MAKI: `enumitem` ×2, `enumobject` ×26, `getnumobjects` ×4
+- unimplemented MAKI: `enumitem` ×2 (`enumobject` / `getnumobjects` answered since B99, 2026-09-27)
 - 8 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click
 - 3 error-severity load finding(s)
 
@@ -51,7 +51,8 @@ bitmaps            main/normal: 80 resolved, 1 unresolved (beatvis.overlay)
                    main/shade:  42 resolved, 1 unresolved (s.button.mute.over.0)
 compatibility      unsupported — 4 error findings, all one class: unimplemented MAKI methods
                    enumObject ×12 · getNumObjects ×2 · enumItem ×1 · onLeaveArea ×1
-                   (onLeaveArea answered since B100, 2026-09-04)
+                   (onLeaveArea answered since B100, 2026-09-04; enumObject / getNumObjects
+                   since B99, 2026-09-27)
 VIS box            main/normal two.playback.visobject(14,74,71,17) mode=1 Spectrum Analyzer
                    main/shade  shade.vis(351,4,39,14)             mode=1
 PLAYLIST holder    PlaylistPro.wdh(596,116,196,457) text=12.5px row=14px scale=auto(114%)
@@ -96,13 +97,18 @@ Visualization, Web Reader, Now Playing.
   nothing else — the SUI collapses to zero height and its tabs go with it, as in the author's own
   render. Fixed 2026-09-05 (B127); see the trap below.
 
+- **The track-info pane under the library draws its tag lines** (Title, Artist, Rating, Decoder, …).
+  `CentroSUI/_v2/InfoViewer`'s `auto_arange.m` walks its lines with `getNumObjects`/`enumObject`;
+  unanswered, all three of its handlers aborted and the pane drew empty. Fixed 2026-09-27 (B99),
+  confirmed live by A/B. Still open there: no gap between *Decoder*/*Filename* and their values, and
+  the *Rating* line draws larger than the rest. With nothing playing every line hides itself, the
+  first visible object is the zero-height rating group, and `onResize` now stops on a division by zero
+  instead (B65's class).
 - **The seek bar and the volume bar light under the pointer**, in the same colour the play controls
   glow. Fixed 2026-09-05 (B129); see the trap below.
 
 ### Not implemented
 
-- **`enumObject` / `getNumObjects`** (×14 combined) — `CentroSUI/_v2/InfoViewer` walks its own object
-  list with them. Highest measured demand this skin has.
 - **`enumItem`** — `xml/widgets-manager-cpro2.xml`.
 - **Aero-snap is inert by design.** `snapAdjust` is accepted and returns `.null`. Snapping a window
   to a screen edge is a Windows shell behaviour with no macOS counterpart worth emulating.
