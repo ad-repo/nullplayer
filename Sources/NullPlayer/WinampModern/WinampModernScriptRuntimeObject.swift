@@ -488,9 +488,13 @@ extension WinampModernScriptRuntime {
             notifyObjectDidMutate(object)
             return .null
         case "gotoframe", "setframe":
-            _ = object.setAttribute("frame", value: String(max(0, arguments[0].integerValue)))
-            _ = object.setAttribute("playing", value: "0")
-            notifyObjectDidMutate(object)
+            let moved = object.setAttribute("frame", value: String(max(0, arguments[0].integerValue)))
+            // Stopping a self-playing layer changes the animation clock's set, which only the full
+            // notification re-reads. A step of an already-stopped layer is a cell swap — `frame` is
+            // scene-neutral — so it repaints the layer's own rect: a beat meter stepping 12 layers
+            // every 10 ms made each step a whole-window relayout and repaint (B152).
+            if object.setAttribute("playing", value: "0") { notifyObjectDidMutate(object) }
+            else if moved { requestRepaint(for: object) }
             return .null
         case "getcurframe": return .integer(Int32(animationFrame(of: object)))
         case "getlength": return .integer(Int32(clamping: animationFrameCount(of: object)))

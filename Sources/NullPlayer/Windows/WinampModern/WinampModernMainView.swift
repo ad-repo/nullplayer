@@ -575,7 +575,12 @@ final class WinampModernMainView: NSView {
         // The light path a warped layer takes 30 times a second: repaint, nothing else.
         scripts.repaintRequested = { [weak self] in self?.needsDisplay = true }
         // Lighter still when the runtime can name what moved — only that rect is repainted.
-        scripts.objectRepaintRequested = { [weak self] object in self?.setNeedsDisplay(for: object) }
+        // Scoped like the auxiliary sink: an object in another container has no geometry in this
+        // scene, and `setNeedsDisplay(for:)` would answer that with a whole-window repaint.
+        scripts.objectRepaintRequested = { [weak self] object in
+            guard let self, self.owns(object) else { return }
+            self.setNeedsDisplay(for: object)
+        }
         scripts.actionRequested = { [weak self] action, parameter in
             self?.performAction(action: action, parameter: parameter)
         }
@@ -911,6 +916,7 @@ final class WinampModernMainView: NSView {
         #if DEBUG
         Self.reportDrawFormatOnce(context: context, view: self)
         #endif
+        if Self.paintRateProbe { recordPaint(dirtyRect) }
         // Only what is being repainted is cleared: a partial repaint (a meter that moved) must not
         // blank the rest of the window it is not going to draw again.
         context.clear(dirtyRect)
@@ -923,6 +929,39 @@ final class WinampModernMainView: NSView {
         renderer.draw(in: context, pressed: pressedObject?.stableID,
                       hovered: hoveredObject?.stableID)
         context.restoreGState()
+    }
+
+    /// `WINAMP_MODERN_PAINT_RATE=1` — paints per second per window, and how much of the window each
+    /// one covered: `dirty=` is the mean share of `dirtyRect` (the union AppKit hands `draw`),
+    /// `rects=` the mean share of the rects actually being drawn. Printed every two seconds. Release
+    /// builds too, because the question it answers — is a periodic update repainting the whole
+    /// window? — is a release-profile question (B152).
+    static let paintRateProbe = ProcessInfo.processInfo.environment["WINAMP_MODERN_PAINT_RATE"] == "1"
+    private var paintRateWindow: (start: CFTimeInterval, paints: Int, dirty: CGFloat, rects: CGFloat)?
+
+    private func recordPaint(_ dirtyRect: NSRect) {
+        let area = max(1, bounds.width * bounds.height)
+        var drawn: UnsafePointer<NSRect>?
+        var count = 0
+        getRectsBeingDrawn(&drawn, count: &count)
+        let rectsArea = (0..<count).reduce(CGFloat(0)) { sum, i in
+            let rect = drawn![i].intersection(bounds)
+            return sum + rect.width * rect.height
+        }
+        let now = CACurrentMediaTime()
+        var window = paintRateWindow ?? (now, 0, 0, 0)
+        window.paints += 1
+        window.dirty += dirtyRect.intersection(bounds).width * dirtyRect.intersection(bounds).height / area
+        window.rects += rectsArea / area
+        let elapsed = now - window.start
+        if elapsed >= 2 {
+            let n = CGFloat(window.paints)
+            NSLog("[paint/rate] window=%@ paints/s=%.1f dirty=%.0f%% rects=%.0f%%",
+                  self.window?.title ?? "<none>", Double(n) / elapsed,
+                  Double(window.dirty / n * 100), Double(window.rects / n * 100))
+            window = (now, 0, 0, 0)
+        }
+        paintRateWindow = window
     }
 
     #if DEBUG

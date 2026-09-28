@@ -446,3 +446,34 @@ window's own full repaints. That remainder is B152.
 **Minimizing an animating window is the live check for the catch-up path.** Set `AXMinimized` on
 the window through System Events, addressed by pid. Its paint rate drops while it is minimized. After
 restoring it, the rate should come back and two captures half a second apart should differ.
+
+#### A beat meter repainted the whole player (B152, 2026-09-28)
+
+`gotoframe` on an `<animatedlayer>` ended in `notifyObjectDidMutate`, which is the main window's
+`graphDidMutate`: `invalidateRectCaches`, `needsLayout` and a whole-window `needsDisplay`. It did
+that on every call, including a step to the frame the layer already showed. WMP11-BlueVU's
+`beatvisualization.maki` steps 12 beat layers every 10 ms (six styles × left/right, five of the six
+hidden), so the player repainted its whole area at the display's full 120 Hz whenever music played.
+`frame` was already scene-neutral (B104), so the memoized scene survived. It was the notification
+that was too big.
+
+A step of an already-stopped layer now takes `requestRepaint(for:)`, the object-targeted seam the
+alpha fade uses. An unchanged frame repaints nothing. Stopping a self-playing layer still takes the
+full notification, because the animation clock's set changes. Alongside it, the main window's
+`objectRepaintRequested` is scoped with `owns(object)`, as the auxiliary sink already was. An object
+in another container has no geometry in the main scene, and `setNeedsDisplay(for:)` answers
+that with a whole-window repaint.
+
+Release, *VU Meters Large* open, music playing, hands off, same binary with an A/B switch,
+`WINAMP_MODERN_PAINT_RATE=1` beside a 10 s `sample`:
+
+| | before | after | cPro-Bento, B119's day |
+|---|---|---|---|
+| main-thread busy | 48.5% | **42.0%** | 31.8% |
+| main window | 120 paints/s, 100% | 88 paints/s, **25%** | |
+| `WinampModernMainView.draw` | 29.6% | 25.7% | |
+| `drawWarped` | 16.0% | 18.0% | 0.0% |
+
+The 25% is the beat meter's own box, which genuinely animates. What is left of the gap is the VU
+needle warp in the meter window, still open as B152.
+

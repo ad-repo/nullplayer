@@ -89,6 +89,7 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_DRAW_PROFILE_TOP=<n>` | widen that report. Eight rows name the worst offender; a *distribution* — one object or two hundred? — needs the tail, and on a large skin the answer is usually the tail |
 | `WINAMP_MODERN_FX_TRACE=1` | every `fx_*` call with its receiver: which layers a skin warps, and **when** it switches them on |
 | `WINAMP_MODERN_DRAW_FORMAT=1` | **live**, not headless: what the window actually composites in, printed once per view on its first `draw(_:)` — the context's `bpc=`/`bitmapInfo=`, the backing layer's `contentsFormat`, the window's depth limit and gamut, the screen's EDR headroom, and the window's and screen's colour spaces. Two findings came out of it, both for B119(2). **`bpc=0`** — the context `draw(_:)` is handed is a *display list*, not a bitmap, so everything the renderer records is scaled and colour-matched later, at replay, and `context.ctm` is **1.0 even at 100% on a Retina display**. And `layerFormat=RGBA8` with `edrMax=1.0`, which is what ruled out a structurally f16 backing store |
+| `WINAMP_MODERN_PAINT_RATE=1` | **live, and release builds too** — the one `WINAMP_MODERN_*` probe that survives a release binary, because the question it answers is a release-profile question. Every 2 s, per window: `paints/s=`, then `dirty=` (the mean share of the window covered by the `dirtyRect` AppKit hands `draw`) and `rects=` (the mean share of the rects actually being drawn). A periodic update that repaints the whole window reads `dirty=100%` at the clock's rate. That is how B152 found WMP11-BlueVU's player at `paints/s=120 dirty=100%` and confirmed the fix at `88 / 25%`. Read it beside `sample`: it says *what* is repainting, and the profile says what that costs. `window=` is blank for a skin window with no title |
 | `WINAMP_MODERN_SEEK_TRACE=1` | **live**, not headless: each time the posted play position moves, every object the seek bar is made of together — id, type, action, `value=`, the value it resolves to, and its frame — over one header line carrying the host's clock and state. **All of them, in one place, is the point**: a seek bar is routinely more than one object, and a skin that draws two thumbs is two objects disagreeing, which no single value can show. It is what found B107's second thumb — cPro_MMD stacks `seeker` and `seeker2` on the identical frame `{{10,434},{480,20}}`, and they agreed for exactly as long as they shared a clock |
 | `WINAMP_MODERN_CALL_TRACE=1` | every MAKI method call with its arguments and result |
 | `WINAMP_MODERN_ACTION_TRACE=1` | **runs in the app as well as the harness.** Every `sendAction` with its **receiver**: `ACTION hide_comp param=pe -> group#sui.content`. `CALL_TRACE` prints the same call without saying who it was addressed to, and the receiver is the whole question for a script-to-script message, because a handler only hears an action bound to *that* object. Big Bento's side playlist narrows the SUI content from an action sent to `sui.content` on open and had no counterpart on close (BB30) — a pair that is invisible in every other probe |
@@ -538,7 +539,7 @@ way that no headless probe could have shown; see
 [performance.md](performance.md) → *Profile the process, don't reason about the frame*.
 
 **A perf number is only a perf number on a `release` build, and `sample` is the only instrument that
-survives there.** Every `WINAMP_MODERN_*` probe is `#if DEBUG`, so a release build answers "no
+survives there.** Every `WINAMP_MODERN_*` probe except `WINAMP_MODERN_PAINT_RATE` is `#if DEBUG`, so a release build answers "no
 problem found" whether or not there was one — and debug is not a fixed offset from release, it is a
 different verdict: `71ffd874` recorded 96.2% main-thread busy in debug where release was 60.7%, and
 the whole post-B106 chase turned out to be that gap. Build with `./scripts/kill_build_run.sh` (no
@@ -563,8 +564,9 @@ ignored silently by a release binary, and it loads whatever skin was last select
 three B119 runs measured *multipass* instead of WMP11-BlueVU before a screen capture caught it. In
 release:
 
-- **Skin:** pass `-winampModernSkinName <archive name without .wal>`, an argument-domain
-  override of the selected-skin key.
+- **Skin:** pass `-uiMode winampModern -winampModernSkinName <archive name without .wal>`, both
+  argument-domain overrides. Without `-uiMode`, a session last left in another mode opens there: on
+  2026-09-28 a B152 run measured a `.wmz` skin at 4% busy before a capture caught it.
 - **Track:** send the process an `odoc` Apple Event by pid (`NSAppleEventDescriptor(processIdentifier:)`
   with `kAEOpenDocuments`). This is the Finder-open path, the same one `NULLPLAYER_PLAY` takes.
 - **A container that is `default_visible="0"`:** write the skin's own
