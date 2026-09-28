@@ -3,6 +3,37 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B82 — a runtime-instantiated subtree was never told the current track — closed 2026-09-28
+
+### B82
+
+- [x] **B82. Fixed 2026-09-28.** Reproduced live first on cPro WMP12 (`221955-cPro__Winamp_Media_Player_12`,
+      last widget Now Playing) with `WINAMP_MODERN_CALL_TRACE=1`, track playing. The widget instance
+      made at load *did* hear the window's opening `onTitleChange` and filled its lines; clicking
+      **NOW** builds a fresh instance (`CustomObject.setXmlParam("groupid", …)`, a second
+      `findobject(sc.nowplaying.line1)` in the trace), and that one ran no `setAllTags` at all — so the
+      album line, shown by default, was empty for the rest of the song.
+
+      `WinampModernScriptRuntime.startScripts(addedBeneath:)` now ends with `seedPlaybackState(to:)`:
+      once the skin has started (`hasStartedScripts`), the **new programs only** get `onTitleChange`
+      with the current title (when there is one) and `onPlay` when playing. Scoped, because a
+      skin-wide replay would reach `beat.m`, which resets its VU maximum on every title. Before the
+      skin has started nothing is seeded: the window's first track update reaches those programs.
+
+      **`onAlbumArtLoaded` is not seeded because nothing in the app dispatches it yet**, at load or on a
+      track change — that is a missing event for every `<AlbumArt>`, not a seeding gap.
+
+      **Verified live:** same skin, NOW clicked mid-track — `capture` shows the title, artist and
+      album lines (before: blank). Corpus render sweep with an in-binary A/B switch: 670 of 671 images
+      identical; the one difference (Anexa `main-shade`) differs between two runs with the fix off too,
+      so it is noise. The sweep renders the default state, which brings no subtree up mid-session, so
+      it proves only that the default state did not move. Tests: `WinampModernB82Tests` (3 of 4 fail
+      with the seed removed; the fourth pins the scoping); full `swift test` green (2806).
+
+      Original row:
+
+| B82 | **A runtime-instantiated subtree is never told the current playback state.** A widget brought up mid-session gets `onScriptLoaded` and a seeding `onResize`, but no `onTitleChange` / `onPlay` / `onAlbumArtLoaded`, so it stays blank until the next track change. Measured on ClassicPro's Now Playing widget: its three `SC:FadeText` lines stay empty. The seeding pass runs once in `WinampModernMainView.scriptsDidStart()` | 5 cPro skins ship widgets; any skin using `<CustomObject>` or `GroupList.instantiate` | M | Live-reported |
+
 ## BB34 — an embedded visualization pane never started its engine — closed 2026-09-28
 
 | BB34 | **An embedded visualization pane's engine never starts.** Big Bento Modern's Multi Content View mini pane draws black; the last line is `WINAMP-MODERN-VIS: resume … visible=0 … rendering=0`. **Re-measure first** — BB35's fix gives a detached surface a route back and may have cured it. 6 corpus skins embed a holder in the player (B23a), not 1 | — · seen on Big Bento Modern's mini pane | M | Live-reported |

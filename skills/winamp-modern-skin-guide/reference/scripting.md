@@ -180,6 +180,14 @@ tabI.init(tabHolder);              // moved where it actually belongs
 - That nested `onScriptLoaded` is dispatched to a **subset** of programs while the outer one is still
   on the stack, so the re-entrancy guard is keyed by dispatch scope as well as by (target, event) —
   otherwise the outer dispatch swallows it and every runtime-created control comes up unbound.
+- **A subtree started mid-session is told what is playing** (B82). A script loaded with the skin hears
+  the window's opening `onTitleChange`/`onPlay` from its first track update; one started later would
+  hear nothing until the next track. So `startScripts(addedBeneath:)` ends by seeding the *new*
+  programs only — `onTitleChange(current title)` when there is a title, `onPlay` when playing — once
+  `hasStartedScripts` is set. Never skin-wide: `beat.m` resets its VU maximum on every title it hears.
+  The measured case is ClassicPro's Now Playing widget, rebuilt on every NOW-tab click
+  (`CustomObject` `groupid`), whose three `SC:FadeText` lines are filled only from `onTitleChange`.
+  `onAlbumArtLoaded` is not seeded because the app dispatches it nowhere yet.
 
 #### `GroupList.instantiate` — the list that builds its own entries
 

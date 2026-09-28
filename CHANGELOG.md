@@ -36,6 +36,9 @@
 - **Song tickers scroll in Shield Amp and Ebonite** — a long title now scrolls across the song
   display at Winamp's speed instead of standing still, and stays inside the display instead of
   running over the rest of the player.
+- **ClassicPro's Now Playing widget shows the song straight away** — opening the Now Playing
+  widget while a track plays now shows its title, artist and album at once, instead of staying
+  blank until the next track.
 - **No more unreadable library text in Winamp Modern skins** — NullPlayer's own library and windows
   inside a Winamp Modern skin now always draw their text in a colour that can be read on the
   background. cPro-Bento's Bafana theme drew the source name, item count and selected tab black on

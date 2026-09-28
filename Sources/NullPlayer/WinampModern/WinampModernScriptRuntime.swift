@@ -1032,6 +1032,28 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         programs.append(contentsOf: added)
         try dispatchSystem(event: "onscriptloaded", to: added)
         deliverXUIParams(forSubtreeOf: root)
+        seedPlaybackState(to: added)
+    }
+
+    /// Tell a subtree started **mid-session** what is already playing (B82).
+    ///
+    /// A script that loads with the skin hears the opening `onTitleChange` and `onPlay` from the
+    /// window's first track update. One brought up later — a widget, a `GroupList` entry, a hosted
+    /// window — would otherwise hear nothing until the next track: ClassicPro's Now Playing widget
+    /// fills its three `SC:FadeText` lines only from `onTitleChange`, and the NOW tab builds a fresh
+    /// instance on every click, so the lines stayed empty for the rest of the song.
+    ///
+    /// Scoped to the new programs. A skin-wide dispatch would replay the title to every running
+    /// script, and `beat.m` resets its VU maximum on each one. Before the skin has started this is
+    /// left to that first update, which reaches these programs too.
+    private func seedPlaybackState(to added: [MakiProgram]) {
+        guard loadedSkin.runtime.hasStartedScripts else { return }
+        let title = host.trackDisplayTitle
+        if !title.isEmpty {
+            _ = try? dispatch(target: MakiObjectReference(.system), event: "ontitlechange",
+                              arguments: [.string(title)], in: added)
+        }
+        if host.playbackState == .playing { _ = try? dispatchSystem(event: "onplay", to: added) }
     }
 
     /// Start a subtree inserted by the host after global skin startup. The ordering is the same as

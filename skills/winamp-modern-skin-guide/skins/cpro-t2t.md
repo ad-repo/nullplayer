@@ -132,6 +132,5 @@ a skin is unfalsifiable.
   10ms timer off `getLeftVuMeter`/`getRightVuMeter` (both implemented), and every headless render
   shows the promo logo instead because `refreshView()` does that whenever the transport is stopped.
   Needs a live playing pass.
-- **B78** the embedded playlist surface may overflow a small holder; **B82** a widget brought up
-  mid-session is not told the current track, so Now Playing's three text lines stay blank until the
-  next track change.
+- **B78** the embedded playlist surface may overflow a small holder. (B82, Now Playing's text lines
+  blank when the widget is opened mid-track, is fixed.)
