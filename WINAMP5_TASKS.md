@@ -35,7 +35,7 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | B74 | **T800's five memory slots share one storage key.** See [detail](#b74) | 1 skin / 5 buttons collapsing to 1 slot ([M22]) | L | Live-reported |
 | B82 | **A runtime-instantiated subtree is never told the current playback state.** A widget brought up mid-session gets `onScriptLoaded` and a seeding `onResize`, but no `onTitleChange` / `onPlay` / `onAlbumArtLoaded`, so it stays blank until the next track change. Measured on ClassicPro's Now Playing widget: its three `SC:FadeText` lines stay empty. The seeding pass runs once in `WinampModernMainView.scriptsDidStart()` | 5 cPro skins ship widgets; any skin using `<CustomObject>` or `GroupList.instantiate` | M | Live-reported |
 | B80 | **Horizontal seams at fractional UI Sizes.** Hairlines along band boundaries on cPro at 105%. Affects exactly the sizes fractional at 2x backing (90/105/110/115/125/135/175). See [detail](#b80) | 7 of 13 UI Sizes; every skin ([M25]) | M | Live-reported |
-| B79 | **`autowidthsource` naming a bitmap label sizes its group to nothing.** `autoWidth` answers only for `<text>`, `<songticker>` and check boxes, so winampmodern566's `<groupdef id="menugroup.file" autowidthsource="File.txt">` resolves 0 wide and its titlebar menus have no hit target. Fix: give an object with resolved artwork its bitmap's width. Moves group sizing engine-wide, so it wants a corpus sweep | 2 skins / 24 declarations ([M24]) | S | Live-reported |
+| B150 | **A `<Menu>` entry's hover and pressed art draws nothing.** winampmodern566's `menu:button_hover` / `menu:button_pressed` groupdefs state no `w`, so each resolves 0 wide inside the entry it belongs to (`RENDER_GEOMETRY=menugroup.file`: `File.hover.btn frame=(1,18,0,16)`); `WasabiMenuBar.apply` swaps their visibility and nothing sizes them. Winamp's rule is unconfirmed — whether the `<Menu>` sizes its state objects to its own box or a group with no `w` fills its parent — and the second would move every such group in the corpus, so settle it first | 1 skin measured (winampmodern566; The_Nokia_5220 ships the groupdefs but instantiates none) | S | Live-reported |
 
 ### Awaiting manual QA
 
@@ -56,7 +56,6 @@ the window census and the render-dump harness. The ranking above still sets the 
 
 | Id | What the agent can do alone | How it is verified |
 |---|---|---|
-| B79 | Size an `autowidthsource` bitmap label from its artwork | Corpus render sweep; on winampmodern566, `clickdiff` on a titlebar menu entry shows a new layer≠0 row (a menu opened) |
 | B60 | Add a body drag on the library blank area and the video surface | `drag` + `windows` origin delta; the video is opened with `dblclick` on a browser row |
 | BB34 | Re-measure first | Big Bento Modern, tick the mini pane with `click`, then take two `capture`s and check they are not black and not identical |
 | B82 | Seed a runtime-instantiated subtree with the current track | cPro Now Playing widget opened with `click` mid-track; `capture` shows the title, artist and album lines |
@@ -64,6 +63,7 @@ the window census and the render-dump harness. The ranking above still sets the 
 | B74 | Confirm the `<Wasabi:Button>` object model, then key each slot separately | T800: hold `drag` for ≥2.5 s on each slot, then check the `defaults` keys and the recall `playTrack` log lines |
 | B18 | Fix the classic minimize mask | Classic skin, minimize-all from the menu bar; the `windows` rows disappear and come back on restore |
 | B71 | Reorder script startup, then handle visrb2's auto-hide | Corpus render sweep; Defix detached vis: `click` Reattach, and `clickdiff` shows the window change |
+| B150 | Size the state art, once the rule is settled | winampmodern566: `move` onto a menu entry and `capture` the titlebar — the hover art draws under the label; corpus render sweep for the engine-wide half |
 | B80 | Add a partial-repaint mode to the harness, then fix the seam | Count partial-alpha rows at a fractional scale; live: set UI Size from the menu, `move` over controls, `capture` |
 | B119 | Try a lower FX repaint rate, or clip the warp extent | Hands-off release `sample` of WMP11-BlueVU against cPro-Bento, per `harness.md` |
 | B111 | Drag the volume up, relaunch | Persisted volume ≠ 0 after relaunch, and the log shows no `setvolume(0)` cascade (audibility is not checked) |
@@ -92,7 +92,6 @@ A command lives here only while an open item cites it; closing the item moves th
 archive entry.
 
 - <a id="m25"></a>**M25:** device scale is UI Size x the display's backing factor, so on a 2x panel the fractional stops are 90, 105, 110, 115, 125, 135 and 175 % — 7 of the 13 `UIScaleLevel` cases. To check a *full* draw, `WINAMP_MODERN_RENDER_SCALE=<factor> WINAMP_MODERN_RENDER_DUMP=/tmp/s WINAMP_MODERN_WAL=<skin> swift test --filter WinampModernRenderDumpTests`, then count rows whose alpha is strictly between transparent and opaque.
-- <a id="m24"></a>**M24:** for each `.wal` (and the ClassicPro engine tree), collect `id=` from every `<layer>` and every `<text>`, then keep the `autowidthsource="…"` values that name a layer and not a text. Measured 2026-08-31: The_Nokia_5220_XpressMusic 12 of 12 and winampmodern566 12 of 18.
 - <a id="m22"></a>**M22:** `rg -i -o '<[[:space:]]*Wasabi:Button[^>]*>' "$corpus" --glob '*.xml'`, then keep the matches with neither `action=` nor `text=` — the ones only a script drives.
 
 ## Item detail

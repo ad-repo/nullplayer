@@ -2047,7 +2047,12 @@ final class WasabiSceneRenderer {
             // The inset corrects a real measurement. A source that measures nothing — S7Reflex's
             // config tabs are `<text default="">` filled in by a script that has not run — wants a
             // collapsed group, not a group the width of its own padding.
-            guard let width = autoWidth(of: source) else { return nil }
+            //
+            // A source that is not text is sized by its artwork (B79): winampmodern566 and
+            // The_Nokia_5220 point every `menugroup.*` at a `<layer id="File.txt" image=…>`, and
+            // answering nil left each group 0 wide, so the `<Menu>` filling it had no hit target.
+            // Same order as the script's `getAutoWidth()` — a declared width, then the bitmap.
+            guard let width = autoWidth(of: source) ?? artworkWidth(of: source) else { return nil }
             guard width > 0 else { return width }
             return width + WasabiGeometrySpec.autoWidthInset(of: source.attributes)
         }
@@ -2063,6 +2068,14 @@ final class WasabiSceneRenderer {
         guard type == "text" || type == "songticker" else { return nil }
         return resources.metrics.width(of: object,
                                        text: WasabiTextMetrics.content(of: object, host: host))
+    }
+
+    /// The width an `autowidthsource` that is not text answers: its declared width when positive,
+    /// otherwise the bitmap it draws at rest. `nil` when it has neither.
+    private func artworkWidth(of object: WasabiObject) -> CGFloat? {
+        if let declared = Double(object.attributes["w"] ?? ""), declared > 0 { return CGFloat(declared) }
+        let bitmapID = resolvedBitmapID(for: object, pressed: false, hovered: false)
+        return resources.bitmap(identifier: bitmapID).map { CGFloat($0.width) }
     }
 
     /// How tall a `<Wasabi:TitleBox>` that declares no height has to be, or `nil` when its body says

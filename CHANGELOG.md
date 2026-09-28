@@ -33,6 +33,8 @@
 - **Song tickers scroll in Shield Amp and Ebonite** — a long title now scrolls across the song
   display at Winamp's speed instead of standing still, and stays inside the display instead of
   running over the rest of the player.
+- **Winamp Modern 5.66's menu bar works** — File, Play, Options, View and Help in the
+  winampmodern566 skin now open their menus when clicked; before, clicking them did nothing.
 
 - **Glossy frames for Winamp Modern fallback windows** — when a Winamp Modern (`.wal`) skin has no
   window frame of its own for NullPlayer's windows (the analyzers, Cava, Flow, PeppyMeter, waveform,

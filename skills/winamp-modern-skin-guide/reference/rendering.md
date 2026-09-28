@@ -873,10 +873,16 @@ implemented.
 `WasabiMenuBar` owns the model; `ContextMenuBuilder.winampModernMenuBarMenu(for:)` owns the routing
 and is gated on `uiMode.controllerFamily == .winampModern`.
 
-**A group whose `autowidthsource` names a bitmap label sizes to nothing**, so its `<Menu>` inherits a
-zero box and cannot be clicked — `autoWidth` answers only for `<text>`, `<songticker>` and check
-boxes. winampmodern566 and The_Nokia_5220 are both affected (12 declarations each); ClassicPro is
-not, because it points `autowidthsource` at a `<text>`. Open as **B79**.
+**A group whose `autowidthsource` names a bitmap label is that bitmap wide** (B79, 2026-09-28), and
+the `<Menu w="0" relatw="1">` filling it inherits that box. Before, the renderer answered only for
+`<text>`, `<songticker>` and check boxes, so winampmodern566's five entries resolved 0 wide and none
+could be clicked — while the script's `getAutoWidth()` already answered the bitmap, so
+`menualign.maki` spaced the labels correctly over empty hit targets. ClassicPro was never affected: it
+points `autowidthsource` at a `<text>`.
+
+**The entry's hover and pressed art still draws nothing** (B150). `menu:button_hover`/`_pressed`
+state no width, so they resolve 0 wide inside the entry; `WasabiMenuBar.apply` only swaps their
+visibility.
 
 ## A declared-empty group clips to nothing — it is a reveal window
 

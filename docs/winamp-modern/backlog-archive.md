@@ -3,6 +3,32 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B79 — `autowidthsource` naming a bitmap label sized its group to nothing — closed 2026-09-28
+
+| B79 | **`autowidthsource` naming a bitmap label sizes its group to nothing.** `autoWidth` answers only for `<text>`, `<songticker>` and check boxes, so winampmodern566's `<groupdef id="menugroup.file" autowidthsource="File.txt">` resolves 0 wide and its titlebar menus have no hit target. Fix: give an object with resolved artwork its bitmap's width. Moves group sizing engine-wide, so it wants a corpus sweep | 2 skins / 24 declarations ([M24]) | S | Live-reported |
+
+### B79
+
+- [x] **B79. Fixed 2026-09-28.** The renderer's `autoWidth` (`WasabiRenderer.swift`) now answers a
+      non-text `autowidthsource` from `artworkWidth(of:)`: its declared `w` when positive, else the
+      bitmap it draws at rest — the order the script's `getAutoWidth()` already used, so the drawn box
+      and the number `menualign.maki` spaces the labels by are one again.
+
+      **Verified.** `RENDER_GEOMETRY=menugroup.*` on winampmodern566: the five entries resolve 31 / 35
+      / 51 / 38 / 37 wide at x = 1 / 32 / 67 / 118 / 156, each `<Menu>` filling its group (all 0
+      before). Live, debug build: `clickdiff` on *File* shows a new layer-101 row, and the capture is
+      Winamp's File menu under the entry. Corpus sweep (80 archives): no image moved but Anexa's
+      wall-clock `main-shade` and Styx's `Preferences-normal`, whose Hold Time slider read the
+      `Styx.Stay` private int the base run had itself written into the xctest domain — with the key
+      deleted, the change renders Styx byte-identical to the base (the trap in `harness.md`).
+      Tests: `WinampModernB79Tests` (three of four fail with the fix removed).
+
+      **Reach, corrected.** The_Nokia_5220 ships the same `window_menus.xml` groupdefs but no layout
+      instantiates them, so winampmodern566 is the one skin this reaches on screen. What the fix
+      uncovered: the entries' hover and pressed art is 0 wide and draws nothing — B150.
+
+      **M24:** for each `.wal` (and the ClassicPro engine tree), collect `id=` from every `<layer>` and every `<text>`, then keep the `autowidthsource="…"` values that name a layer and not a text. Measured 2026-08-31: The_Nokia_5220_XpressMusic 12 of 12 and winampmodern566 12 of 18.
+
 ## B148 — Winamp's "Text Ticker Speed" preference was unregistered — closed 2026-09-28
 
 | B148 | **Winamp's own "Text Ticker Speed" preference is unregistered.** `OneDirectionText` reads `Config.getItemByGuid("{9149C445-3C30-4e04-8433-5A518ED0FDDE}").getAttribute("Text Ticker Speed")` and sets its move timer to `20/stringToFloat(value)`; unanswered, the value is `""`, the delay is infinite and the ticker never scrolls. Register the host config item with a default, the way Winamp's own preferences would. The default value is unknown — confirm it before choosing one; `"0"` means "don't scroll" to this script | 2 skins (Shield_Amp, Ebonite_2_1) | S | Live-reported |

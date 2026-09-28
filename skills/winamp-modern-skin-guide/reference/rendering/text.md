@@ -10,7 +10,8 @@ scripts first.
 
 Two auto-sizing rules in the renderer, both only when the object declares no `w`: a group with
 `autowidthsource="<id>"` takes the width of the descendant it names, and a `<text>` takes its own
-content's width.
+content's width. A source that is not text answers its declared `w`, else the bitmap it draws at
+rest (B79) — the same order as `getAutoWidth()`.
 
 > **The source's width is not the group's width** (B68). The source then resolves its own geometry
 > *inside* the group, so a group sized to the bare measurement leaves the source short by whatever
