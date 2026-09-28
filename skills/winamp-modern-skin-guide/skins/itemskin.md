@@ -68,6 +68,11 @@ with an `xuitag` and a `scripts/standardframe*.maki`. Each of those scripts:
   (B110) and was not — that call was answered correctly throughout. See
   [`reference/scripting.md`](../reference/scripting.md) → *`onSetVisible` — a window a script closes
   has to be reopened*.
+- **Our windows drop the AVS frame's button strip (B159).** In the copy a hosted window wears, the
+  vis buttons are hidden, the 40pt top border is cut to 27pt, and the window is 13pt shorter, so a
+  Spectrum Analyzer is 383x198 at 100%, not 383x211. The skin's own visualizer window keeps its
+  buttons and its strip. See `reference/components.md` → *A strip that held only the hidden
+  controls goes*.
 - **Its library now wears the *AVS* frame, and `cont.clear.ml` is dead.** The borrowed-frame pass
   (3edf3765, 2026-09-04) rewrote `MLibrary`'s `Wasabi:StandardFrame:ML` to `:AVS` because the ML
   frame costs rows on every screen for a window whose contents are entirely ours. So a probe that
@@ -88,6 +93,14 @@ with an `xuitag` and a `scripts/standardframe*.maki`. Each of those scripts:
 - **A pinned move must not be clamped on screen.** The tiler had already put `MLibrary`'s right edge
   past the visible frame; clamping the frame window — the only one of the pair a script moves — left it
   82px short of its content, which reads as a rendering offset rather than a placement one.
+- **Its frame script syncs the content onto a frame it has not shown yet.** The AVS frame script's
+  `onSetVisible(1)` runs `syncContent()` before it calls `show()` on the frame. The frame then still
+  sits wherever the host created it, the screen's bottom-left for a new one, and pinning the content
+  there put every hosted window it frames below the screen. The frame's `onResize` does the same
+  after a UI Size change if the host has moved the content and not the frame. Both are fixed in the
+  host (B156): a window that is not on screen lends no position, and the tiler moves a glued frame
+  with its window. See [`reference/scripting.md`](../reference/scripting.md) → *Writing back the
+  position a window just read*.
 - **Its notifier preferences point `background=` at a file, not at an id.**
   `<layout background="notifier\config.png">` (`notifier/notifier.xml:98`), written from the skin
   root while the declaration sits in `notifier/`. It is the corpus's only path-form layout background,
@@ -108,6 +121,15 @@ with an `xuitag` and a `scripts/standardframe*.maki`. Each of those scripts:
   (`<Togglebutton id="volume.mute" />` has no image, action or coordinates — a 0×0 object nobody can
   click), and the disassembly is innocent too, because the skin never calls `setVolume` at load.
   `WINAMP_MODERN_CALL_TRACE=1` in the running app is what named it.
+- **Its volume display is a hollow outline that a script region makes solid.** `pl-volume.png` paints
+  only a one-pixel frame. `volume2.maki` gives the `vol` layer `loadFromBitmap("volumeregion")`, an
+  opaque black 65x13 bitmap, and tracks the pointer with `inRegion`/`getValue` against
+  `pl-volume-anim-map.png`. Until the hit test honoured the region, every click inside the frame fell
+  through, so even after B111's `setActivated` fix the persisted `0.00` could not be dragged up. The
+  seek grid had also been reading the hidden `hidvol` slider; see
+  [`reference/rendering.md`](../reference/rendering.md) → *`<ProgressGrid>`*. Verified live on
+  2026-09-28 by seeding a saved volume of 0: drag to 0.57, relaunch, 0.57 restored, with no
+  `setvolume` at load.
 - **Its gold list colour is the tell for B113.** Reported 2026-09-04 as *"is there a filter in front
   of the displays?"* — library, playlist and readouts all a dark, muddy olive. Two wrong answers
   before the right one: the skin's first `<gammaset>` is an empty `(default)`, which looks like a

@@ -141,6 +141,44 @@ final class WinampModernPhase68Tests: XCTestCase {
         }
     }
 
+    /// cPro-Bento under its Bafana colour theme, from `WINAMP_MODERN_RENDER_THEME=Bafana
+    /// WINAMP_MODERN_RENDER_PALETTE=1`. The theme's `n.Color.ListCur` gamma is `-4096,-4096,-4096`,
+    /// so the playing colour resolves to pure black over a 0,9,0 list — and the embedded browser drew
+    /// its source name, item count and selected tab in it.
+    private var bentoBafanaPalette: WasabiPalette {
+        WasabiPalette(listText: rgb(255, 255, 255), currentText: rgb(0, 0, 0),
+                      selectionText: rgb(0, 0, 0), selectionBackground: rgb(0, 0, 0),
+                      contentBackground: rgb(0, 9, 0),
+                      treeText: rgb(255, 255, 255), treeSelection: rgb(0, 0, 0))
+    }
+
+    func testBothTextRolesAreReadableOnTheContentBackground() {
+        for palette in [bentoBafanaPalette, bigBentoPalette, WasabiPalette.fallback] {
+            let style = WinampModernSurfaceStyle(palette: palette)
+            for role in [style.text, style.currentText] {
+                XCTAssertGreaterThanOrEqual(
+                    WinampModernSurfaceStyle.contrastRatio(role, style.background),
+                    WinampModernSurfaceStyle.minimumContrast)
+            }
+        }
+        // A skin whose own colours already clear keeps them.
+        let bento = WinampModernSurfaceStyle(palette: bigBentoPalette)
+        XCTAssertEqual(bento.text, bigBentoPalette.listText)
+        XCTAssertEqual(bento.currentText, bigBentoPalette.currentText)
+    }
+
+    func testAHandPickedTextColourIsNotOverruled() {
+        // B146's rule, extended to the two text roles: the Skin Colors panel showed the user the
+        // contrast, so their pick is drawn even when it fails.
+        let style = SkinnedSurfaceStyle(roles: SkinnedSurfaceRoles(
+            background: rgb(0, 9, 0), text: rgb(10, 10, 10), currentText: rgb(0, 0, 0),
+            selectionBackground: rgb(0, 0, 0), selectionText: rgb(255, 255, 255),
+            treeText: rgb(255, 255, 255), treeSelection: rgb(0, 0, 0),
+            textWasChosenByUser: true, currentTextWasChosenByUser: true))
+        XCTAssertEqual(style.text, rgb(10, 10, 10))
+        XCTAssertEqual(style.currentText, rgb(0, 0, 0))
+    }
+
     func testDimTextStaysDimmerThanThePrimaryWhereverAWeakerDimStillClears() {
         // Guarding `dimText` naively snaps it to full strength on nearly every skin, because it is a
         // 40% blend toward the background — that would erase the active/inactive title distinction

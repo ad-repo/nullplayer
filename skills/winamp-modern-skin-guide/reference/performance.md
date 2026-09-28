@@ -168,8 +168,9 @@ LSB, from a single native tiling pass rounding differently than N individually-r
 RGB and check the magnitude before calling that a regression.
 
 The main thread still carries what genuinely belongs to it: MAKI timer ticks and the interpreter (the
-VM and the graph are single-threaded by construction), and the warp's pixel loop inside `draw`
-(~1.9 ms for Defix's two 264×264 reels). Both are measured, bounded and, at 30 Hz, comfortably inside
+VM and the graph are single-threaded by construction), and the warp's pixel loop inside `draw` for a
+mesh that genuinely bends. Every corpus FX layer is a rotation, which B152 took off the pixel loop
+entirely (*A rotation needs no resample* below). Both are measured, bounded and comfortably inside
 the frame. What is *not* allowed there is arithmetic that could have happened elsewhere:
 `WinampModernLevelMeter` and `PeppyMeterLevelModel` both measure on the audio-posting thread and hop
 two doubles, and the FX mesh is evaluated by the animation clock before it invalidates rather than by
@@ -414,3 +415,99 @@ the unit test on **Courier** alone, one or two pixels per string: AppKit's strin
 `CTLineDraw` rasterize a glyph edge slightly differently. `CGContext`'s
 `setShouldSubpixelQuantizePositions` closes it and is not in the public CoreGraphics headers, which
 is not a trade worth making for one pixel of one face.
+
+#### A hidden window still paints (B119, 2026-09-28)
+
+A skin's scripts run whether or not their window is on screen, and **AppKit still displays an
+ordered-out window that has been invalidated**. WMP11-BlueVU ships two VU meter containers, both
+`default_visible="0"`. Its `vu.maki` runs a 10 ms timer that calls `fx_update()` on each needle, so
+the *VU Meters Small* window, which nobody had opened, re-warped both needles ~100 times a second.
+`nullplayer.about` and `Pledit` painted too, at ~100 and ~31 a second, all hidden.
+
+`WinampModernMainView.isOnScreen` gates the two animation paths: the auxiliary repaint sink and
+`repaintAnimatingObjects`. A window that is not visible records `repaintDeferredWhileHidden`, and
+`occlusionDidChange` redraws it whole when it comes back. The value is **cached** from
+`NSWindow.didChangeOcclusionStateNotification`. The first draft asked `window.occlusionState` on
+every call, and at ~2,100 script notifications per second per view that one getter was **40%** of
+the main thread, more than the paint it saved.
+
+Release build, *VU Meters Large* open, a music file playing, hands off, 10 s `sample`, same binary
+with an A/B switch:
+
+| | before | after | cPro-Bento, same day |
+|---|---|---|---|
+| main-thread busy | 81.4% | **48.3%** | 31.8% |
+| `drawWarped` | 21.9% | 17.2% | 0.0% |
+| `CGDisplayListDrawInContextDelegate` | 19.0% | **0.0%** | 1.7% |
+
+The CG paint B119 was filed against belonged to the hidden windows. What is left is the visible
+meter, repainting at the skin's own ~100 Hz, which is under this display's 120 Hz, and the main
+window's own full repaints. That remainder is B152.
+
+**Minimizing an animating window is the live check for the catch-up path.** Set `AXMinimized` on
+the window through System Events, addressed by pid. Its paint rate drops while it is minimized. After
+restoring it, the rate should come back and two captures half a second apart should differ.
+
+#### A beat meter repainted the whole player (B152, 2026-09-28)
+
+`gotoframe` on an `<animatedlayer>` ended in `notifyObjectDidMutate`, which is the main window's
+`graphDidMutate`: `invalidateRectCaches`, `needsLayout` and a whole-window `needsDisplay`. It did
+that on every call, including a step to the frame the layer already showed. WMP11-BlueVU's
+`beatvisualization.maki` steps 12 beat layers every 10 ms (six styles × left/right, five of the six
+hidden), so the player repainted its whole area at the display's full 120 Hz whenever music played.
+`frame` was already scene-neutral (B104), so the memoized scene survived. It was the notification
+that was too big.
+
+A step of an already-stopped layer now takes `requestRepaint(for:)`, the object-targeted seam the
+alpha fade uses. An unchanged frame repaints nothing. Stopping a self-playing layer still takes the
+full notification, because the animation clock's set changes. Alongside it, the main window's
+`objectRepaintRequested` is scoped with `owns(object)`, as the auxiliary sink already was. An object
+in another container has no geometry in the main scene, and `setNeedsDisplay(for:)` answers
+that with a whole-window repaint.
+
+Release, *VU Meters Large* open, music playing, hands off, same binary with an A/B switch,
+`WINAMP_MODERN_PAINT_RATE=1` beside a 10 s `sample`:
+
+| | before | after | cPro-Bento, B119's day |
+|---|---|---|---|
+| main-thread busy | 48.5% | **42.0%** | 31.8% |
+| main window | 120 paints/s, 100% | 88 paints/s, **25%** | |
+| `WinampModernMainView.draw` | 29.6% | 25.7% | |
+| `drawWarped` | 16.0% | 18.0% | 0.0% |
+
+The 25% is the beat meter's own box, which genuinely animates. What was left of the gap was the VU
+needle warp in the meter window. The next section covers it.
+
+#### A rotation needs no resample (B152, 2026-09-28)
+
+WMP11-BlueVU's needles ask for a 10×10 grid and answer `fx_onGetPixelR` with `r + angle`. That is
+a rotation about the layer's centre, and **a rotation is affine however fine the grid**. The
+bilinear interpolation of an affine mesh *is* that affine map, so the per-pixel loop was computing,
+pixel by pixel, what one Core Graphics draw does under a transform. `WasabiLayerFXMesh.affineSourceTransform`
+fits the map from three corners and checks every vertex against it (to 1e-4 of the layer). If every
+vertex fits and the mesh does not wrap, `drawWarped` draws the layer's own image through the
+inverse map, clipped to its box. There is no pixel loop, no intermediate raster and no new
+`CGImage` per frame. A mesh that bends, or one that wraps, still takes `resample`.
+
+It also draws **sharper**. The resample rasterized the warp at the layer's point size and then
+scaled it up to the backing store. The transform draw samples the source once, at device
+resolution.
+
+Release, *VU Meters Large* open, music playing, hands off, 10 s `sample`, same binary with an
+A/B switch, run twice each way:
+
+| | resample | affine draw | cPro-Bento, same day |
+|---|---|---|---|
+| main-thread busy | 32.1%, 35.5% | **18.7%, 18.5%** | 24.7% |
+| `drawWarped` | 18.3%, 20.0% | **0.1%, 0.0%** | 0.0% |
+| `WinampModernMainView.draw` | 25.9%, 28.3% | 9.7%, 10.2% | 16.8% |
+
+The meter window painted at ~100–110/s both ways, so the saving is per frame, not fewer frames.
+
+**Defix's reels look still, and that is right.** Defix's `CasR` is a translucent tape pack with a
+hub. The cassette artwork covers the hub, so only the rotationally symmetric pack shows through,
+and an exact rotation of it changes no pixel. The resample's output did change frame to frame,
+by up to 170/255 in a channel, but that was resampling shimmer, not motion. Tinting the transform
+draw red, live, showed it landing on both reels and turning between captures. If a "still reel"
+report comes in, check what the skin's own art covers before suspecting the warp.
+

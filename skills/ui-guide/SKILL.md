@@ -970,6 +970,7 @@ Complex snapping logic in `WindowManager`:
 - Multi-monitor: Screen edge snapping is skipped if it would cause docked windows to end up on different screens
 - `Snap to Default` centers main window on its current screen (not always the primary display); measures against `visibleFrame` and top-anchors a stack too tall to fit. One press recovers everything and a second is a no-op — see **Off-Screen Window Recovery**
 - Coordinated minimize: uses `addChildWindow`/`removeChildWindow` in `windowWillMiniaturize`/`windowDidDeminiaturize` to temporarily make docked windows children of the main window so they animate into the dock together. Child relationships are removed on restore.
+- **Minimize All** (`miniaturizeAllManagedWindows`, Windows menu and the classic minimize button) sends every window *not* docked to the main window first, then the main window, which carries its docked group. The order matters: a `miniaturize` sent while the main window's animation runs is dropped, so an undocked window used to stay on screen. It also inserts `.miniaturizable` first, because AppKit ignores `miniaturize` without it and Sonos Rooms and Original's auxiliary windows are `[.borderless]` only. The windows it sent on their own are recorded, and `restoreMinimizeAllCompanions` brings them back when the main window is restored (called from `detachDockedWindowsAfterDeminiaturize`, and from the `.wal` main controller's `windowDidDeminiaturize`); one restored first from its own Dock tile is skipped. Two traps it guards: while the sequence runs, `bringAllWindowsToFront` is a no-op (`isMinimizingAll`) — each window leaving hands key to another, and its raise `orderFront`s a window still waiting to minimize, which cancels that minimize; and the restore only counts once the main window's `didMiniaturize` has arrived, because the Dock posts a spurious `didDeminiaturize` for it mid-sequence.
 - **Center stack collapse**: `slideUpWindowsBelow(closingFrame:)` in `WindowManager` slides docked windows up when a stack window is hidden. Called from `toggleEqualizer/Playlist/Spectrum/Waveform` — capture the frame BEFORE `orderOut`, then call it. Uses BFS over `dockThreshold`-adjacent windows (by vertical gap + horizontal overlap). Must set `isSnappingWindow = true` during moves to prevent the docking feedback loop.
 
 ### Hold-Duration Drag Model
@@ -1097,13 +1098,16 @@ its final size is what checks the result.
 `WinampModernTiler.nextSlot` clamps its slot back onto the region on both axes. This **reverses** the
 original design, which let columns march right rather than overlap. For a skin wider than half the
 display (EPS, Big Bento, cPro-Bento) column 2 began past `region.maxX`, so every window after the
-first column was placed entirely off screen. `tiledOrigin` correspondingly never returns `nil` for
+first column was placed entirely off screen. The clamp is the last resort, though (B153): a clamped
+slot that would land on a placed window goes to the columns left of the player first, and only
+when neither side fits does it take whichever clamp overlaps less. `tiledOrigin` correspondingly never returns `nil` for
 want of a free slot — it returns the last slot rescued onto the region, because both call sites read
 `nil` as "leave it where it is" and where it is was the problem.
 
 **Regression risk:** Itemskin (B69) overlays a script-positioned *pinned* frame window exactly on each
 component window. Pinned moves bypass the clamp by design, so tiler changes can separate the pair —
-test Itemskin explicitly.
+test Itemskin explicitly. The sweep carries each recorded frame with its window (B156); test Ebonite
+too, whose script also carries its frames itself.
 
 ## Related Documentation
 

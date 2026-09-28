@@ -77,6 +77,10 @@ skills/app-control/scripts/launch.sh "$WINAMP_MODERN_WAL"    # prints LAUNCH PAS
 - A blank area in a dump is **not** a missing feature. The embedded **library** is a live AppKit view
   the harness cannot draw; the embedded **playlist/EQ** are renderer-drawn but come out empty because
   the harness sets no `componentHost`. Check `HOLDERS` before concluding anything.
+- A **whole window** blank in a dump is not "renders nothing" until it is re-dumped with
+  `WINAMP_MODERN_RENDER_SETTLE=2`. A skin that fades in from a timer (Love is War Miku's
+  `opening.maki`) dumps 0.0% opaque unsettled and draws in full once settled; B145 graded three skins
+  F off unsettled or stale dumps, and all three draw in the app.
 - The load-time report is clean for anything only a click reaches. Use the report `RENDER_CLICK`
   prints **after** the click.
 - `RENDER_XUI`'s `onscriptloaded=false` does **not** mean the script never ran — use `RENDER_SCRIPTS`.

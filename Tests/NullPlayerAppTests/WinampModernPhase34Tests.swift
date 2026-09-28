@@ -355,7 +355,7 @@ final class WinampModernPhase34Tests: XCTestCase {
           </elements>
           \(gammasets)
           <container id="main">
-            <layout id="normal" w="16" h="16">
+            <layout id="normal" w="16" h="16" desktopalpha="1">
         \(body)
             </layout>
           </container>

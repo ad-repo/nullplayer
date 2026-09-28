@@ -244,8 +244,8 @@ the fill landed underneath existing chrome.
 
 `<layout desktopalpha="0">` says the window has **no per-pixel alpha**. The rule is Win32's region:
 every pixel the skin painted is inside the window and **opaque**, every pixel at alpha 0 is
-**outside** it. `desktopalpha="1"` is the opt in to per-pixel alpha and a layout that says nothing
-keeps the transparency it has always had.
+**outside** it. `desktopalpha="1"` is the opt in to per-pixel alpha. A layout that says nothing is a
+region too, unless it names an `alphabackground` (B155, below).
 
 WMP11-BlueVU is the reported case, and its shape is worth recognising: `glass_bg_left_left.png`,
 `glass_bg_left_right.png` and `glass_bg_right.png` are **alpha 0 in every pixel**, deliberately, and
@@ -288,6 +288,57 @@ Cost after all three: **3.63 ms/frame** against 2.81, debug. Corpus sweep, 590 r
 — WMP11-BlueVU's display area, and 7 pixels at maxdelta 2 on EPS's left speaker where the
 silhouette's anti-aliased fringe goes opaque.
 
+#### A standard frame's box is window (B151, 2026-09-28)
+
+A `Wasabi:StandardFrame:*` whose groupdef carries `sysregion="1"` says "all of this box is window",
+including every pixel the frame leaves empty, and Winamp's region draws those pixels black. WMP11-BlueVU's
+*VU Meters* are the reported case. The frame's client area runs from (8,25) to (429,198), the meter
+face (`scale` at 10,27, 418×170) stops 2px short on every side, and the skin paints nothing in
+that ring. Its layout declares no `desktopalpha` at all, so neither B114's alpha promotion nor its
+region applied, and the ring drew as a band of desktop between the frame and the face. Its
+`region.png` is alpha 0 in every pixel too, so the `-2` corners cut nothing and no region is built.
+Look for this shape before assuming the geometry is off.
+
+`regionBoxes()` names those boxes, and `drawScene` fills them black under the scene in every
+layout that has not opted in with `desktopalpha="1"`. It has two bounds, and the sweep caught a
+regression without each one:
+
+- **Standard frames only.** Backing every artwork-less `sysregion="1"` object moved 98 images.
+  S7Reflex's player and Lobe's pods grew black slabs across the desktop, because a plain positive
+  group there is a drawer or a silhouette's wrapper, not a window body.
+- **Not when the layout has a real region cut.** In that case the skin has drawn the shape itself.
+  Ebonite cuts its client window down to the opening in a separate frame window (B110), and a
+  backing laid black strips under that frame's edges.
+
+
+Corpus sweep, 671 renders: **30 changed**. The real changes are WMP11-BlueVU's standard-frame windows
+(Meter, Meter#2, Pledit, both About boxes, the library, and 2px inside `main`), DewyTears' synthesized
+playlist and library bands, and corneramp_redux's framed windows, whose interiors had been bare
+desktop. The rest are Big Bento's About (maxdelta 3), three cPro2 Styler pixels (maxdelta 2), and
+Anexa's analog clock, which differs from run to run.
+
+#### An undeclared `desktopalpha` is a region, unless the layout names an `alphabackground` (B155, 2026-09-28)
+
+`desktopalpha` is an opt in, so a layout that says nothing gets B114's region.
+`alphabackground` is the other opt in: a layout that names one keeps per-pixel alpha. A declared
+value outranks both.
+
+**Blanket `0` is wrong, and Ujola Cat is the proof.** Its cat layout declares `alphabackground` and
+no `desktopalpha`. The skin's own Winamp screenshot shows that window's soft edges over the desktop
+wallpaper, with no black halo. Reading every undeclared layout as `0` moved 92 of 671 images, and
+the worst were drop shadows turned into black fringes across 14 skins. Every one of those skins
+carries `alphabackground` on its undeclared layouts.
+
+**The evidence for default-off comes from the corpus.** No Nullsoft text on the subject was
+reachable. meridian's round, soft-shadowed player says `desktopalpha="1"` while its rectangular shade
+says nothing. Every notifier that ships a `desktopalpha` layout keeps `normal` as the fallback for a
+desktop without alpha. If a new report shows a soft-edged undeclared layout drawing a black fringe
+in Winamp, check its XML for an opt in this rule does not know about before widening it.
+
+Corpus sweep, 671 renders: **66 changed**, and none are shadows. They are notifiers' `normal`
+layouts, a 1px dark fringe on anti-aliased silhouettes (Wiimote, PokemonDS, SingItKitty, jvc.tape),
+and corner pixels on frames. The fringe is the same shape B114 accepted on EPS.
+
 #### Layer fill modes
 
 - **Default (no `tile`)**: the bitmap **stretches** to the layer's rect. Resizable window chrome
@@ -297,6 +348,33 @@ silhouette's anti-aliased fringe goes opaque.
 - **`tile`/`tilex`/`tiley`**: repeat the bitmap instead. Bento-style frames tile their
   top/bottom/left/right/center strips. Tiles are blitted 1:1 with interpolation off, or the resampled
   edges leave a visible seam grid.
+
+#### Abutting pieces share a pixel edge (B80)
+
+Every bitmap and tiled layer is drawn to a rect whose edges have been rounded to the nearest
+**device pixel** (`snappedToPixelGrid` in `WasabiRendererSprites.swift`). At a fractional device
+scale — any UI Size that is not a multiple of 50% on a 2x panel: 90, 105, 110, 115, 125, 135, 175 —
+the edge two abutting pieces share lands inside a pixel. Each piece covers part of it, and source-over
+does not add the two coverages back to opaque, so the pixel stays translucent: a hairline along every
+boundary between a skin's frame pieces and bands. Rounding the *shared edge value* sends it to the
+same pixel from both sides. Winamp lays out in integer pixels, so a piece landing on a whole pixel is
+also the nearer answer.
+
+- **Measured, corpus of 80 `.wal`, full draws:** at 2.1, 589 seams in 204 of 671 layouts before and
+  27 in 16 after; at 2.5, 269 in 157 before and 18 in 12 after. Live on Cpro_Winamp_Modern at 105%: 4
+  seams to 0, before and after a hover sweep. What is left is standard-frame bottoms (WMP11-BlueVU),
+  NullPlayer-hosted chrome and a few fills — none of which go through `drawImage`/`drawTiled`.
+- **At 1:1 it moves anything laid out at a fractional skin position:** 142 of 671 renders changed
+  in the corpus sweep, every one inspected a slider thumb, knob, progress-fill end or bitmap label
+  that now sits on a whole pixel rather than straddling two. At any integral scale an on-grid edge
+  does not move.
+- **The grid is the real pixel grid, not the context's.** A `.wal` view's `draw` runs at **CTM 1.0**
+  on a 2x panel: AppKit records it into a display list and replays that at the backing scale. So
+  the view sets `devicePixelsPerContextUnit` to the backing factor over the CTM it was handed, and
+  the opaque-backing buffer sets it back to 1 for its own bitmap. Snapping to the context's own unit
+  would have moved every edge to a whole *point* — up to a full device pixel off.
+- `WINAMP_MODERN_PIXEL_SNAP=0` turns it off; `WINAMP_MODERN_RENDER_SEAMS=1` counts what is left
+  (`reference/harness.md`).
 
 #### Bitmap interpolation follows UI Size × backing scale, not the asset's stretch
 
@@ -349,7 +427,11 @@ edge it grows from) and is deliberately not folded in.
 `left` cap + stretched (or tiled) `middle` + `right` cap, growing from the edge `orientation` names
 (`right`/`down` anchor at the near edge, `left`/`up` at the far one). It carries no `action` of its
 own, so the value comes from the sibling that does — the `<slider>` drawn over the same rect — and
-both go through the renderer's one `normalizedValue(of:)`.
+both go through the renderer's one `normalizedValue(of:)`. **With more than one action slider among
+the siblings, the rect decides** (`valueSibling(of:frame:)`, largest overlap). Itemskin declares a
+hidden `<slider id="hidvol" action="VOLUME">` at (900,300) *before* the `Seeker` its seek grid sits
+under. Taking the first slider painted the volume into the seek bar, and it only showed once the
+volume could be raised at all (B111).
 
 Skins pair the two and give the slider a thumb that is deliberately invisible: Love is War Miku's seek
 "thumb" is a **1×1 pixel**, and the grid is the only thing that shows a position anywhere in the
@@ -873,10 +955,28 @@ implemented.
 `WasabiMenuBar` owns the model; `ContextMenuBuilder.winampModernMenuBarMenu(for:)` owns the routing
 and is gated on `uiMode.controllerFamily == .winampModern`.
 
-**A group whose `autowidthsource` names a bitmap label sizes to nothing**, so its `<Menu>` inherits a
-zero box and cannot be clicked — `autoWidth` answers only for `<text>`, `<songticker>` and check
-boxes. winampmodern566 and The_Nokia_5220 are both affected (12 declarations each); ClassicPro is
-not, because it points `autowidthsource` at a `<text>`. Open as **B79**.
+**A group whose `autowidthsource` names a bitmap label is that bitmap wide** (B79, 2026-09-28), and
+the `<Menu w="0" relatw="1">` filling it inherits that box. Before, the renderer answered only for
+`<text>`, `<songticker>` and check boxes, so winampmodern566's five entries resolved 0 wide and none
+could be clicked — while the script's `getAutoWidth()` already answered the bitmap, so
+`menualign.maki` spaced the labels correctly over empty hit targets. ClassicPro was never affected: it
+points `autowidthsource` at a `<text>`.
+
+**A state object that states no size is the entry's size** (B150, 2026-09-28). winampmodern566's
+`<menu:button_hover id="File.hover.btn" x="0" y="0"/>` is a groupdef with only `h="16"`, holding a
+three-slice cut to stretch (`w="-7" relatw="1"`); at 0 wide, hover and press drew nothing. `append`
+now gives an object that `WasabiMenuBar.owningMenu(of:)` names as `normal`/`hover`/`down` the
+`<Menu>`'s resolved box on each axis it leaves unstated — and on no other.
+
+The rule is inferred from the corpus, not from Winamp's source, and was chosen for its reach. The
+alternative — any group with no `w` fills its parent — would move every such group in every skin.
+Every other `<Menu>` in the corpus (Big Bento ×2, nsmp10, impulse, cPro Venus, NWA2000) states its
+state objects' geometry outright, Big Bento's inset a few pixels from the entry's own box, so an
+entry that imposed its box on them would override what those skins wrote. Only winampmodern566 and
+The_Nokia_5220 (which instantiates none) leave it unstated.
+
+The default-state sweep cannot see this: the art is hidden at rest. `RENDER_HOVER=<menu id>` makes
+the view's state swap, so the hover frame can be dumped (see [harness.md](harness.md)).
 
 ## A declared-empty group clips to nothing — it is a reveal window
 

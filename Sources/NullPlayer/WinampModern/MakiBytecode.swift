@@ -718,11 +718,15 @@ protocol MakiMethodDispatching: AnyObject {
     /// A script `delete`d an object it made with `new`. Anything the host was holding for it (a
     /// timer, a decoded map) can go.
     func releaseObject(_ reference: MakiObjectReference)
+    /// Something the script did that Winamp runs on through but a skin author would want named —
+    /// the handler carries on, so it cannot travel as a thrown `WalFailure`.
+    func report(_ diagnostic: WalDiagnostic)
 }
 
 extension MakiMethodDispatching {
     func nullReceiverResult(for method: String) -> MakiValue { .null }
     func releaseObject(_ reference: MakiObjectReference) {}
+    func report(_ diagnostic: WalDiagnostic) {}
 }
 
 final class MakiInterpreter {
@@ -1030,7 +1034,14 @@ final class MakiInterpreter {
                     case 65: result = numericResult(lhs, rhs, operation: -)
                     case 66: result = numericResult(lhs, rhs, operation: *)
                     case 67:
-                        guard rhs.doubleValue != 0 else { throw failure(.invalidScript, "MAKI division by zero.") }
+                        // A zero divisor is reported and **not** thrown: the IEEE answer (±inf, or NaN
+                        // for 0/0) exists, and throwing abandoned the rest of the handler. Shield_Amp's
+                        // songticker divides by a `getData()` no script in its archive registers, and
+                        // never initialised. An Int store of the result clamps (see `integerValue`).
+                        if rhs.doubleValue == 0 {
+                            dispatcher.report(WalDiagnostic(.invalidScript, "MAKI division by zero.",
+                                                            severity: .warning, location: program.source))
+                        }
                         // Division is the one operator that is **always** real, whatever the operands
                         // are. MAKI is statically typed and its compiler emits no cast: multipass's
                         // seek bar is `Float pct = mapValue / 255 * 100;` over two Ints, and the

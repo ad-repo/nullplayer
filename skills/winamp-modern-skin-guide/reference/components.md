@@ -292,15 +292,39 @@ its frame is restored user state.
 
 Two entry points, one slot sequence: `arrangeWindows()` lays out everything at once, and
 `tiledOrigin(for:avoiding:)` gives a window opened later the first slot clear of what is on screen, so
-it lands where the arrangement would have put it without disturbing anything already placed.
+it lands where the arrangement would have put it without disturbing anything already placed. **A
+slot that lands on a window restarts the walk flush under that window** (`WinampModernTiler.skip(past:)`,
+B157). Stepping in the opening window's own height instead left a 126pt gap on Sony_Walkman: a 145pt
+playlist under a 164pt equalizer tried two slots on the equalizer and took the third. The launch sweep
+never walks this way, since it tiles every window in one pass. `.wmz` shares the walk.
 
 **A NullPlayer window is tiled once, not on every open.** `WindowManager.reopensWhereLeft` (WMP and
 `.wal` only) records each window the first time a `show*` path places it — a launch restore counts —
 and every reopen after that skips the reset-to-default and `positionSubWindow`, so the window stays
 where the user left it. `handleCenterStackWindowWillClose` skips `slideUpWindowsBelow` in the same
-families. Classic and Original re-stack on every open, by design. A controller's own `showWindow`
+families, and `hostedWindowVisibilityDidChange` never slides: a hosted close that slid the window
+below into its spot made the reopened window land exactly over it (B158). Classic and Original
+re-stack on every open, by design. The skin's own containers keep the same rule through `placedAuxiliaryWindows`. **"Where left" lapses when the host gives the spot
+away (B154).** The tiler avoids only windows on screen, so a closed window's slot goes to the next
+window that opens. On Sony_Walkman the launch-placed equalizer, once closed, reopened exactly over
+the playlist that had taken its slot. So every host placement — `place`, the sweep, and
+`positionSubWindow`'s tiling branch — calls `WindowManager.releaseClosedWindowSlots(under:)`, which
+forgets the placement of every *closed* window whose frame the new one covers, in both registries.
+That window is tiled afresh on its next open. A drag never calls it, so a window the user left
+overlapping on purpose keeps its frame. `.wal` only; WMP keeps the plain rule. A controller's own `showWindow`
 must never position its window: `WindowManager` places it first (W248), and a second placement there
 overwrote the remembered frame for the library and Visualizations windows in every mode.
+
+**The sweep moves a glued frame with its window (B156).** Itemskin and Ebonite keep a dynamic frame
+window over each content window from script, and the pair is recorded in `windowsGluedOver`
+([scripting.md](scripting.md) → *Writing back the position a window just read*). The sweep skips the
+dynamic frames and tiles only the content. Leaving each frame for Itemskin's 10 ms timer to carry was
+not enough: a UI Size change dispatches the frame's `onResize` in between, the script's
+`syncContent()` read the frame at the content's *old* spot and dragged the content back there, off
+its slot and sometimes below the screen. `moveCarryingGluedWindow` puts the follower at the offset it
+had from its window before the move. It does not add the move's delta, because Ebonite's `onMove`
+has already carried the frame by the time `setFrameOrigin` returns, and a second delta threw it off
+by the whole distance. `[place/tile] glued` traces each carry.
 
 Four attempts to solve this per-window failed before the sweep, and the reasons are the load-bearing
 part of this section:
@@ -321,11 +345,16 @@ part of this section:
   at x 1120–1920, overlapping by 108px before any NullPlayer window is counted. Honouring them "when
   the slot is free" cannot produce a clean layout for such a skin — check whether a skin's authored
   arrangement is self-consistent before building on it.
-- **Never clamp a column back onto the screen.** A right-edge clamp can only move a column *left*,
-  into the one already there — on a 1600pt region it dragged the media library from x=852 to x=760 and
-  straight through its neighbour. When the screen is full, a window hanging off the right is the honest
-  answer; non-overlap is the invariant, staying on screen is the preference. `WinampModernWindowTilingTests`
-  pins this.
+- **Off the right edge, the clamp is the last resort (B153).** Overlap beats a hidden window, so a
+  slot past `region.maxX` comes back onto the screen. Before the clamp, a skin wider than half the
+  display (EPS, Big Bento) opened every window after column 1 off screen. But a clamp can only pull a
+  slot *left*, into what is already there. At 125% on an 1800pt display it pulled Sony_Walkman's
+  library 69pt over a centred player, while the 762pt left of the player stood empty. So there are
+  three tries, in order. The first is the clamped slot, if it lands on nothing. The second is the
+  columns left of the player, which fill right-to-left from its left edge, top down. Last comes
+  whichever clamp, right-hand or onto the left edge, overlaps less. At 150% the library fits on
+  neither side, and the left clamp covers 64pt of the player where the right one covered 291pt.
+  `WinampModernWindowTilingTests` pins all three.
 - **The notifier is not part of the arrangement.** A corner toast is host-driven and transient, and
   keeps its corner.
 
@@ -345,9 +374,31 @@ two. Three details are load-bearing:
   top-left on screen.
 - **The sweep does not own everything.** A classic-fallback playlist or library window and the
   standalone video window hang off their own controllers, not off `winampModernHostedController`.
-  They join afterwards through `tiledOrigin(for:avoiding:)` — the first free slot in the same
-  sequence, exactly the way a window opened after the arrangement does.
+  They are handed to `arrangeWindows(then:)` and laid out by the same tiler, flush after the skin's
+  own windows. Not `tiledOrigin(for:avoiding:)` per window: that walk restarts at the player for
+  each window and steps in that window's own height, and it avoids siblings' frames that are about
+  to move. Measured on Sony_Walkman after a UI-Size change, it left the playlist 190pt below the
+  equalizer.
+- **The classic-fallback library is the tiler's, not the centre stack's (B147).** It is
+  `plexBrowserWindowController`, the one window of this mode that Classic's side-dock refit
+  (`refitDockedPlexBrowserToVerticalStack`, run from every `updateDockedChildWindows`) can reach.
+  Nine of 79 skins get it (a library the skin neither embeds, declares nor can be synthesized into;
+  the `RENDER-DUMP arrangement` line's `library` is in none of the three lists). Ungated, a Cava tiled
+  under the library joined the docked cluster and widened it, the refit re-derived the dock edge
+  from it, and the library moved 9pt off the player (Sony_Walkman, x 1097 → 1106). The refit and
+  the remembered-frame reopen are both gated off in `.wal`, as W237 gated them in `.wmz`. Every other
+  skin's library is a skin window, and `plexBrowserWindowController` is nil.
 - **The notifier is excluded for free**, because `arrangeWindows()` already claims it and skips it.
+
+**A live UI-Size change re-runs the arrangement too (B56a).** Every window changes size.
+`applyUIScale` grows the skin's containers from their bottom-left corner, and `applyDoubleSize`
+re-stacks the classic-fallback windows under the player as if this mode had a centre stack. The
+launch tiling therefore no longer holds. Measured on Sony_Walkman at 100% → 150%: four pairs
+overlapped, including the equalizer 53pt into the player. `applyUIScaleLevelChangeIfNeeded` now runs
+`arrangeWinampModernScene` after an applied change. That is the Snap To Default layout, except the
+player stays where it is. It is gated on `.winampModern`, so Classic and Original keep their re-stack
+(zero `[place/tile]` lines on aquamp). A centred player at 125% or 150% leaves no room on its right
+for the library, so it goes left of the player (B153, above). Launch and Snap To Default do the same.
 
 Verify in the running app, never on paper: `WINAMP_MODERN_PLACE_TRACE=1` prints every placement
 decision ([harness.md](harness.md)), and the finished layout is read back through the accessibility
@@ -779,6 +830,21 @@ Four rules, each learned from a render that came out wrong first:
   only a copy, and in that copy every object carrying an `action` or a `cfgattrib` is hidden
   (`WinampModernScriptRuntime.adoptChromeForHostedWindow`). Border layers and the mover grip carry
   neither and stay.
+- **A strip that held only the hidden controls goes, and the window shrinks by it (B159).**
+  Itemskin's AVS frame is 26pt on three sides and 40pt on top, and its bitmap is solid black under
+  the buttons, so our windows wore a 13pt black bar. `liftHostedClient` (called from
+  `adoptChromeForHostedWindow`) acts only when every hidden control is a direct child of the chrome
+  layout starting inside the top strip and nothing still drawn starts there. It cuts the copy's top
+  pieces to the thickest other side (`tiley="1"`, which draws 1:1 and clips where a plain layer would
+  squash the bevel), starts the side pieces there, moves the client up, and takes the same height
+  off the hosted layout's `minimum_h`/`default_h`. The client keeps its registry size. **Moving
+  the client alone does nothing:** the chrome window is drawn over it, opaque. The shrink has two
+  consumers because the chrome can be adopted at either time: the materializer applies
+  `hostedChromeLift` to a window it is still building, and `hostedChromeLiftApplied` resizes one
+  already on screen (Itemskin adopts at show time). Both call `WasabiSceneRenderer.layoutBoundsDidChange()`
+  first; without it the cached protective minimum clamps the canvas back to the old height. Pure
+  Inspired's thick bottom is border artwork, not a vacated strip, and is left alone. K-jr, MoonLight
+  and Pure Inspired render byte-identical.
 - **A full-bleed component states nothing.** MoonLight's video window is `w="0" h="0" relatw="1"
   relath="1"`: the contents fill the window and the chrome overlaps them. Read as a zero-thickness
   border it won "thinnest" and gave Cava a 410x281 frame clipped into a 343x220 window. An exemplar
@@ -973,9 +1039,22 @@ Two things follow for any new hosted surface:
   hosted `waveformRect` is the whole view, so every press there seeks; its handle is the frame strip,
   exactly as it is that view's own title bar when standalone. Do not invent one.
 
-Not covered by B57, and still open: `WinampModernVisualizationSurfaceView` swallows single clicks the
-same way but sits inside the skin's *own* window, so its drag has to route through the parent's skin
-hit test rather than a `hostedContext` (B58); and the hosted library and video surfaces (B60).
+**A surface embedded in the skin's *own* window moves that window** (B60). It has no
+`hostedContext`, so it primes the same helper with the window named outright —
+`prime(_:window:)`:
+
+- **The embedded library** (`PlexBrowserView` with `isEmbeddedInSkin`) primes on whatever press
+  falls through every one of its own hit tests — the blank area below the last row, an empty
+  Search page — against its own `window`, which is the skin's. Rows, tabs, the scrollbar and the
+  alphabet index all claim their presses first.
+- **The parked video picture** (`VideoPlayerView` with `isEmbeddedInSkin`) primes against
+  `window?.parent`: its own window is the child pinned over the box and must not move, so the drag
+  moves the skin's window and the picture follows it as a child. A double-click still toggles
+  play/pause and moves nothing.
+
+Measured on cPro-Bento: a drag from the library's blank area and one from the playing picture each
+moved the player by exactly the pointer's travel, with the picture still on its box; a drag that
+starts on a row moves nothing.
 
 #### A press that only acts on the button up is still a drag handle (B59)
 

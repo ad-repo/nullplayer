@@ -199,6 +199,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         isLoadingSkin = true
         defer {
             isLoadingSkin = false
+            #if DEBUG
+            // `WINAMP_MODERN_UI_SIZE=<percent>` — UI Size is only in the context menu, which cannot
+            // be driven, so a fractional-scale defect (B80) had no launch route of its own.
+            if let percent = ProcessInfo.processInfo.environment["WINAMP_MODERN_UI_SIZE"].flatMap(Double.init) {
+                pendingUIScaleRequest = CGFloat(percent / 100)
+            }
+            #endif
             if let pending = pendingUIScaleRequest {
                 pendingUIScaleRequest = nil
                 DispatchQueue.main.async { [weak self] in self?.applyUIScaleRequest(pending) }
@@ -1885,9 +1892,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// the player is not yet at its restored frame and no window is yet at its final size, so nothing
     /// decided then can be right. See `WindowManager.WinampModernTiler`.
     ///
-    /// Only the skin's own windows and the hosted windows are laid out. The player is the anchor and
-    /// never moves: its frame is restored user state.
-    func arrangeWindows() {
+    /// Only the skin's own windows and the hosted windows are laid out, then `trailing` — windows
+    /// this controller does not own (a classic-fallback playlist or library) that a full re-layout
+    /// wants in the same sweep, flush after the rest. The player is the anchor and never moves: its
+    /// frame is restored user state.
+    func arrangeWindows(then trailing: [NSWindow] = []) {
         let manager = WindowManager.shared
         guard var tiler = manager.winampModernTiler() else { return }
         let trace = ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1"
@@ -1900,8 +1909,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 NSLog("[place/tile] %@ %@ -> %@", container.containerID,
                       NSStringFromRect(container.window.frame), NSStringFromRect(slot))
             }
-            container.window.setFrameOrigin(slot.origin)
+            moveCarryingGluedWindow(container.window, to: slot.origin, trace: trace)
             placedAuxiliaryWindows.insert(container.containerID)
+            manager.releaseClosedWindowSlots(under: container.window)
         }
         for window in manager.winampModernHostedWindowsForArrangement() where window.isVisible {
             let slot = tiler.nextSlot(for: window.frame.size)
@@ -1909,7 +1919,65 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 NSLog("[place/tile] hosted %@ -> %@",
                       NSStringFromRect(window.frame), NSStringFromRect(slot))
             }
+            moveCarryingGluedWindow(window, to: slot.origin, trace: trace)
+            manager.releaseClosedWindowSlots(under: window)
+        }
+        for window in trailing where window.isVisible {
+            let slot = tiler.nextSlot(for: window.frame.size)
+            if trace {
+                NSLog("[place/tile] trailing %@ -> %@",
+                      NSStringFromRect(window.frame), NSStringFromRect(slot))
+            }
             window.setFrameOrigin(slot.origin)
+            manager.releaseClosedWindowSlots(under: window)
+        }
+    }
+
+    /// Move a window the tiler has placed, and the window a script keeps glued over it with it (B156).
+    ///
+    /// Itemskin's frame is a second window its script parks on the content window from a 10 ms
+    /// timer, and the same script pulls the content back onto the frame from the frame's own
+    /// `onResize`/`onMove`. A UI Size change rescales every window and tiles them in one pass, and the
+    /// frame's `onResize` can be dispatched before its timer has carried it after the content. It then
+    /// read the frame where the content *used* to be and dragged the content back there, off its
+    /// slot and sometimes below the screen. Moved together, there is no stale frame to read.
+    private func moveCarryingGluedWindow(_ window: NSWindow, to origin: NSPoint, trace: Bool) {
+        let follower = gluedWindow(over: window)
+        // The offset is taken before the move and re-applied after it, rather than the move's delta
+        // added on: a skin whose script follows the move synchronously has already carried its frame
+        // by the time `setFrameOrigin` returns (Ebonite's `onMove` does), and a second delta threw it
+        // off by the whole distance.
+        let offset = follower.map {
+            NSPoint(x: $0.frame.minX - window.frame.minX, y: $0.frame.minY - window.frame.minY)
+        }
+        window.setFrameOrigin(origin)
+        guard let follower, let offset, follower !== window, follower.isVisible else { return }
+        let carried = NSPoint(x: origin.x + offset.x, y: origin.y + offset.y)
+        guard follower.frame.origin != carried else { return }
+        if trace {
+            NSLog("[place/tile] glued %@ -> %@", NSStringFromRect(follower.frame),
+                  NSStringFromPoint(carried))
+        }
+        follower.setFrameOrigin(carried)
+    }
+
+    /// The window a script keeps glued over `window`, if it has recorded one. See `windowsGluedOver`.
+    private func gluedWindow(over window: NSWindow) -> NSWindow? {
+        guard let scripts = skinView?.scripts,
+              let leaderID = viewsByContainer.first(where: { $0.value.window === window })?.key,
+              let followerID = scripts.windowGluedOver(leaderID)
+        else { return nil }
+        return viewsByContainer[followerID]?.window
+    }
+
+    /// A closed window whose remembered frame lies under `frame` is placed afresh on its next open:
+    /// the host has just tiled `except` onto its spot (B154). See
+    /// `WindowManager.releaseClosedWindowSlots(under:)`, the only caller.
+    func releaseClosedContainerSlots(under frame: NSRect, except window: NSWindow) {
+        for container in auxiliaryContainers
+        where container.window !== window && !container.window.isVisible
+            && !container.window.isMiniaturized && container.window.frame.intersects(frame) {
+            placedAuxiliaryWindows.remove(container.containerID)
         }
     }
 
@@ -1952,6 +2020,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                   NSStringFromSize(size), NSStringFromPoint(origin), occupied.count)
         }
         container.window.setFrameOrigin(origin)
+        manager.releaseClosedWindowSlots(under: container.window)
     }
 
     /// A script parking its own window on the desktop (`container.resize(x, y, w, h)`, or the
@@ -2070,6 +2139,14 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         scripts.layoutResizeRequested = { [weak self] container, size in
             self?.viewsByContainer[container]?.applyCanvasResize(size)
+        }
+        scripts.hostedChromeLiftApplied = { [weak self] container, lift in
+            // Registered only once materialized; a window still being built takes the lift from
+            // the materializer instead, so it is never applied twice.
+            guard let view = self?.viewsByContainer[container] else { return }
+            view.renderer.layoutBoundsDidChange()
+            let canvas = view.renderer.canvasSize
+            view.applyCanvasResize(CGSize(width: canvas.width, height: canvas.height - lift))
         }
         scripts.containerMoveRequested = { [weak self] container, point, pinned in
             self?.moveContainerWindow(container, to: point, pinned: pinned)
@@ -2728,6 +2805,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     func windowDidDeminiaturize(_ notification: Notification) {
         guard let restored = notification.object as? NSWindow else { return }
         repaint(restored)
+        if restored === window { WindowManager.shared.restoreMinimizeAllCompanions(mainWindow: restored) }
     }
 
     func windowDidChangeOcclusionState(_ notification: Notification) {

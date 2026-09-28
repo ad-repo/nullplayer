@@ -2,6 +2,1128 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
+
+## B147 — the library follows the centre stack in a `.wal` session — closed 2026-09-28
+
+| B147 | **The library window follows the main window's height in a `.wal` session.** `toggleHideTitleBars` (`App/WindowManager.swift:511`) resizes the side-docked library and projectM windows by the main window's height delta — Original centre-stack behaviour. Its guard `isRunningModernUI` (`:390`) does not name `WinampModernMainWindowController`, so `.wal` falls through to the stale `isModernUIEnabled` preference. **Gate the resize itself on the mode; do not add the controller to the predicate**, whose other callers would all inherit the answer. Classic and Original byte-identical. The `.wmz` half is W237 in [`WMP_TASKS.md`](../../WMP_TASKS.md) | every `.wal` session with the library open | S | Live-reported |
+
+### B147
+
+- [x] **B147. The classic-fallback library is the tiler's, and Classic's side-dock refit no longer
+      moves it.** **Closed 2026-09-28.** The row's suspect was not the path, and its premise was
+      wrong. `toggleHideTitleBars` returns at its guard in `.wal`. `isModernUIEnabled` is derived
+      from `uiMode`, which is the running mode and not a stale preference, and the menu item is
+      shown only when it is true. The live path is W237's: `refitDockedPlexBrowserToVerticalStack`,
+      reached from `hostedWindowVisibilityDidChange` and every other `updateDockedChildWindows`
+      caller.
+      - **Reach: 9 of 79 skins, not every session.** On the other 70 the library is a skin window
+        (embedded, declared or synthesized), and a temporary log showed
+        `plexBrowserWindowController?.window == nil` on BLAKK. On the nine whose `RENDER-DUMP
+        arrangement` line puts `library` in none of those lists (Sony_Walkman, Winamp 3.0 Default,
+        TRON___Legacy, jvc.tape.v0.5, Overdrive_2, canum, Darjah 1, HeadAMP, MMD3-4-5), the library
+        is NullPlayer's own window, and the refit is live.
+      - **What it did:** on Sony_Walkman, a Cava tiled under the library joined the docked cluster
+        and widened it. The refit then re-derived the dock edge from it, and the library moved from
+        x 1097 to 1106, 9pt off the player. The height held only because the skin's equalizer is an
+        auxiliary window, not a centre-stack member, so the stack was the player alone and the
+        target was `defaultSideWindowHeight`, which the library already had.
+      - **Fix:** the refit and the remembered-frame reopen (`preservingRememberedHeight`) are also
+        gated on `uiMode.controllerFamily == .winampModern`. `isRunningModernUI` is untouched.
+      - **Measured live, one binary, library open → Cava open/close/open → library close/reopen →
+        Cava close:** Sony_Walkman held 1097, 550x580 throughout. aquamp (Classic) and NeonWave
+        (Original) went 580 → 290 → 580 and reopened at 290, the same as W237 measured.
+      - Not covered: a centre-stack window docked directly under a `.wal` player. The tiler did not
+        put one there on Sony_Walkman, and the library is gated anyway. No headless test: the
+        change is a gate with no pure seam, and `WMPLibraryStackSizingTests` already pins the reopen
+        arithmetic.
+
+## B155 — a layout that declares no `desktopalpha` keeps per-pixel alpha — closed 2026-09-28
+
+| B155 | **A layout that declares no `desktopalpha` keeps per-pixel alpha, which is probably not Winamp's default.** The renderer applies the B114 region rule (painted pixels opaque over black, alpha-0 pixels outside the window) only to `desktopalpha="0"` (`WasabiRenderer.layoutWantsOpaqueBacking`). Winamp most likely gives every layout without `desktopalpha="1"` a region instead of per-pixel alpha, so soft edges and translucent sheens there land on black. B151 met this and scoped around it: its standard-frame backing runs in undeclared layouts, but the alpha promotion does not. Making undeclared mean `0` moves the renders listed at [M34], and none of them has been classified. Some will be fixes (translucent panels floating on the desktop). Some may be regressions, where the corpus relies on the soft edges it has today: drop shadows and anti-aliased silhouettes turning into black fringes. The first job is to confirm Winamp's default from a primary source or a skin's shipped screenshot, then classify the sweep against each skin's own artwork | 92 of 671 renders, 44 skins [M34] | M | Measured |
+
+### B155
+
+- [x] **B155. A layout that says nothing is a region, unless it names an `alphabackground`.**
+      **Closed 2026-09-28.** `WasabiRenderer.layoutWantsOpaqueBacking` now answers true for an
+      undeclared `desktopalpha` when the layout has no `alphabackground`. A declared value still wins.
+      The evidence comes from the corpus. No primary Nullsoft text was reachable: the Winamp wiki is
+      offline, the forums refuse fetches, and `std.mi` only declares `setDesktopAlpha`.
+      - **Default off.** The wiki's search-indexed description calls the flag the layout's request to
+        be drawn with desktop alpha, which makes it an opt-in. meridian's round, soft-shadowed player
+        says `desktopalpha="1"` while its rectangular shade says nothing. Every notifier that ships a
+        `desktopalpha` layout keeps `normal` as the fallback for a desktop without alpha.
+      - **`alphabackground` opts in.** The blanket rule (M34 below) moved 92 of 671 images in 44
+        skins. The worst diffs were drop shadows and soft silhouettes turning into black fringes:
+        Diablo IV Skills, Rika, Lobe, Firefox, Formamp, Shield_Amp, Sony_Walkman, T800, canum,
+        Ujola Cat, Anexa, BLAKK, Bio-Nid and Styx. Every one of those skins has undeclared layouts
+        that carry `alphabackground`. Ujola Cat's cat layout is one, and the skin's own Winamp
+        screenshot shows that window's soft edges over the desktop wallpaper, with no black halo.
+      - **Sweep after the fix**, at `339a8ce3` with the four re-adds left out: **66 of 671 images
+        changed**, and none are shadows. They are notifiers' `normal` layouts, which are the no-alpha
+        fallback by construction (Love is War Miku ×2, hatsune_miku_5, winampmodern566, six cPro
+        skins, Ebonite, Styx). The rest are a 1px dark fringe on anti-aliased silhouettes (Wiimote,
+        PokemonDS, SingItKitty, jvc.tape, S7Reflex) and corner pixels on frames (Hal's Eye, Core-X5,
+        the cPro2 Stylers, MMD3-4-5, multipass, Enkera, meridian's shade). The fringe has the same
+        shape B114 accepted on EPS's declared-`0` speaker. Anexa's shade diff is its wall-clock
+        analog clock.
+      - **Live**, debug build via `launch.sh`: Wiimote's window has 0 partially transparent pixels.
+        Ujola Cat's cat window (192×222) keeps 27,321 of them.
+      - Tests are in `WinampModernB114Tests` (`testALayoutThatSaysNothingIsARegion`,
+        `testAnAlphaBackgroundLayoutKeepsPerPixelAlpha`, `testADeclaredZeroOutranksAnAlphaBackground`).
+        Three older fixtures measure an object's own alpha, so they now declare `desktopalpha="1"`:
+        Phase22 `render`, Phase24 `skin`, and Phase34 `makeScene`.
+      - The measurement that filed it:
+
+- <a id="m34"></a>**M34:** in `WasabiRenderer.layoutWantsOpaqueBacking`, temporarily return `true`
+  when `desktopalpha` is absent, then run `scripts/wal_render_sweep.sh capture <curr> --allow-dirty`
+  and `compare` it against a capture of the unmodified tree. Leave out the four byte-identical
+  re-adds. Measured 2026-09-28 at `7331c363`: **92 of 671 images in 44 skins** changed. Diablo has 6;
+  PokemonDS, jvc.tape.v0.5 and Core-X5 have 5 each; Wiimote has 4. The rest are spread thin,
+  including 13 cPro skins' main, shade and notifier windows. Anexa's 3 include its analog clock,
+  which differs from run to run.
+
+## B159 — Itemskin's NullPlayer windows have a black bar on top — closed 2026-09-28
+
+| B159 | **Itemskin's NullPlayer windows have an unneeded black bar on top.** Reported 2026-09-28. Every NullPlayer-owned window on Itemskin (Spectrum Analyzer, Waveform, Cava, …) shows a 13pt black band between the frame's top bevel and its contents. They wear a copy of the skin's AVS frame, whose 40pt top border holds the visualizer's buttons over a solid black bitmap; the copy hides the buttons and leaves the band | 1 skin measured | S | Live-reported |
+
+### B159
+
+- [x] **B159. A borrowed frame drops a strip that held only the controls we hide, and the window
+      shrinks by it.** **Closed 2026-09-28.** `liftHostedClient`, called from
+      `adoptChromeForHostedWindow`, cuts the copy's top pieces to the thickest other side
+      (`tiley="1"`), starts its side pieces there, moves the client up and takes the same 13pt off
+      the hosted window. The client keeps its registry size. Moving the client alone changed nothing
+      on screen, because the chrome is a second window drawn over it, opaque. The first shrink
+      attempt clamped back to 211 on the renderer's cached protective minimum, so
+      `layoutBoundsDidChange()` clears it before the resize. Itemskin adopts its chrome at show
+      time, after the materializer's check, so `hostedChromeLiftApplied` resizes a window already
+      built. Measured live on Itemskin at 100%: before, the Spectrum Analyzer and Waveform were
+      383x211 with the band. After, both are 383x198, the Waveform tiles flush at y=902, the bars
+      reach the top bevel, three close/reopen cycles stay at 198, and a drag by the top bevel moves
+      the pair. The `WINAMP_MODERN_DRAG_HOSTED_PNG` render of K-jr, MoonLight and Pure Inspired is
+      byte-identical. That probe builds its content renderer before the scripts run, so its
+      Itemskin dump shows the chrome trimmed but not the client moved. Hosted/Chrome/Frame tests
+      green (213). Not run: a UI Size change with the windows open. The rule is in
+      `reference/components.md` → *A strip that held only the hidden controls goes*.
+
+## B158 — closing a hosted window slides the one below it up — closed 2026-09-28
+
+| B158 | **Closing a `.wal` hosted window slides the window below it up, and the closed one reopens on top of it.** Measured 2026-09-28 while closing B156, on Itemskin at 100%. With the Spectrum Analyzer tiled at top-left y=704 and the Waveform under it at y=915, closing the analyzer from the Windows menu moves the Waveform up to y=704. Reopening the analyzer puts it back at its remembered y=704, exactly over the Waveform. The move is the host's: `hostedWindowVisibilityDidChange` (`App/WindowManager.swift:1826`) calls `slideUpWindowsBelow` on every hosted close, although `handleCenterStackWindowWillClose` skips it for `.wal` and `.wmz` because those windows reopen where they were left (`components.md`). B154's slot release does not help, because the slide is not a placement and never calls `releaseClosedWindowSlots(under:)`. Whether the fix is to skip the slide for `.wal` or to release the slot the slide gives away is not decided. Reproduce with `WINAMP_MODERN_PLACE_TRACE=1 skills/app-control/scripts/launch.sh Itemskin`: open Spectrum Analyzer then Waveform, close Spectrum Analyzer, reopen it, and read `winhelper windows` | every `.wal` session that closes a hosted window with another under it | S | Agent-measured |
+
+### B158
+
+- [x] **B158. A hosted close no longer slides the windows below it.** **Closed 2026-09-28.**
+      `hostedWindowVisibilityDidChange` called `slideUpWindowsBelow` on every hosted close, the one
+      `.wal` path `handleCenterStackWindowWillClose`'s WMP/`.wal` skip did not cover. The call is
+      gone; only the `.wal` controller calls that method, so Classic and Original are untouched. The
+      slide is skipped rather than made to release the closed window's slot, because a `.wal` window
+      reopens where it was left and a close moving its neighbours breaks that rule on its own.
+      Measured live on Itemskin at 100%: before, the Waveform moved from y=915 to y=704 when the
+      Spectrum Analyzer closed, and the analyzer reopened at y=704 over it; after, the Waveform stays
+      at y=915 with its glued frame, and the analyzer reopens at y=704. Cycling the Waveform after
+      that moves nothing. No unit test: the path is `WindowManager.shared` over live windows. The
+      rule is in `reference/components.md` → *A NullPlayer window is tiled once*.
+
+## B156 — an Itemskin script puts a tiled window back where it was — closed 2026-09-28
+
+| B156 | **An Itemskin script puts a tiled window back where it was, mostly below the screen.** Measured 2026-09-28 while closing B153. Itemskin (B69) pins a frame window over each component window. With the playlist, Media Library, Spectrum Analyzer and Waveform open, Windows → UI Size → 150% tiles the library at `{762, 258}`. The next line in the trace is `[place/script] o247 -> {0, -69} (was {762, 258})`: the skin's own `resize()` moves it to its pre-tile origin, with 69pt of its 206pt below the visible frame. Opening the Spectrum Analyzer from the menu at 100% does the same (`o337 -> {0, -74}`). The pinned pairs stay glued, so it is the pair that moves. Not established: whether the script is replaying a position it read before the tiler ran (compare the `onMove` write-back in `reference/scripting.md`) or doing its own arithmetic, and whether Winamp would park it there too. Reproduce with `WINAMP_MODERN_PLACE_TRACE=1 skills/app-control/scripts/launch.sh Itemskin`, toggle those windows from the Windows menu, set UI Size to 150%, and read `winhelper windows` | 1 skin measured | S | Agent-measured |
+
+### B156
+
+- [x] **B156. A window that is not on screen lends no position, and the tiler carries a glued frame
+      with its window.** **Closed 2026-09-28.** Two mechanisms, both in Itemskin's
+      `Wasabi:StandardFrame:*` scripts, which glue a dynamic frame window over each content window.
+      **First open.** The AVS frame script answers the content's `onSetVisible(1)` with
+      `content.resize(frame.getLeft(), frame.getTop(), …)` before it shows the frame. The frame had
+      never been placed, so it sat at the screen's bottom-left, and B69's borrowed-origin pin parked
+      the content there: the Spectrum Analyzer went from its tiled `{762, 254}` to `{0, -74}`, 74pt
+      below the screen, and the Waveform landed on it. The reported `o247 -> {0, -69}` is the same
+      spot for a 206pt window. `borrowedWindowOrigin` now answers `.offScreen` when the window read
+      is not on screen (`containerVisibilityQuery`), and that write keeps its window's origin; its
+      size still applies. **UI Size change.** The sweep moved each content window and left its frame
+      behind for the script's 10 ms timer, and the frame's own `onResize`, dispatched in between, ran
+      `syncContent` and dragged the content back onto the stale frame: `PLEdit` tiled to `{762, 464}`,
+      then `o233 -> {762, 533}`. Which pair lost changed from run to run. `arrangeWindows` now moves
+      the recorded follower (`windowsGluedOver`) with its window, at the offset it had before the
+      move, so a skin that follows synchronously (Ebonite's `onMove`) is not moved twice. Measured
+      live: Itemskin with the playlist, library, analyzer and waveform open, 100% → 150% → 100%, no
+      script move and every pair in its slot; Ebonite_2_1 the same. Without the first half, in the
+      same binary, both hosted windows opened at `{0, -74}`. The run found B158. Unit tests:
+      `WinampModernPhase82Tests.testAWindowReadWhileOffScreenDoesNotMoveTheWindowWrittenTo` and
+      `testAWindowReadWhileOnScreenStillPinsTheWindowWrittenTo`. What is left: on first open the
+      content still jumps to the unplaced frame and back inside one call chain, because a pinned
+      `resize()` applies its size before its origin and the frame's nested `onResize` reads the frame
+      mid-write. It ends in the right place. The rules are in `reference/scripting.md` → *Writing
+      back the position a window just read* and `reference/components.md` → *Where a skin's windows go*.
+
+## B157 — a window opened from the menu can land well below the window above it — closed 2026-09-28
+
+| B157 | **A window opened from the menu can land well below the window above it.** Measured 2026-09-28 while closing B154, on Sony_Walkman at 100%. `tiledOrigin(for:avoiding:)` walks slots in the opening window's own height, starting under the player, and takes the first one clear of what is on screen. With the equalizer (164pt) open under the player, the playlist (145pt) tried y=399, then y=544, which still overlaps the equalizer, and landed at y=689: 126pt below the equalizer's bottom edge. With the playlist open first, the equalizer landed 19pt below it. The launch sweep and Snap To Default stack flush, because they tile every window in one pass; only a later open walks. A likely fix is to make the next candidate slot start at the bottom edge of whatever the last candidate hit, instead of stepping in the new window's own height. The walk is shared with `.wmz`. Reproduce with `WINAMP_MODERN_PLACE_TRACE=1 skills/app-control/scripts/launch.sh Sony_Walkman`: close every window, open Equalizer, then Playlist Editor from the Windows menu, and read `winhelper windows` | every `.wal` session that opens a window from the menu while another is open | S | Agent-measured |
+
+### B157
+
+- [x] **B157. A slot that lands on a window restarts the walk under it.** **Closed 2026-09-28.**
+      `tiledOrigin(for:avoiding:)` now calls `WinampModernTiler.skip(past:)` with the windows a
+      rejected slot hit, which moves whichever cursor produced that slot (the player's column or
+      the columns left of it) to the lowest bottom edge among them. Every slot whose top is above
+      that edge would overlap it too, so nothing clear is skipped. Reproduced first on
+      Sony_Walkman at 100%: equalizer open under the player at top-left y=399, Playlist Editor from
+      the Windows menu landed at y=689. After the fix it lands at y=563, flush under the
+      equalizer, and Waveform then Spectrum Analyzer stack flush below it (y=708, 853). The launch
+      sweep and Snap To Default do not walk, so they are unchanged. The walk is shared with `.wmz`,
+      which gets the same fix; Classic and Original never reach it. Unit test:
+      `WinampModernWindowTilingTests.testASlotThatLandsOnAWindowRestartsUnderIt`. The rule is in
+      `reference/components.md` → *Where a skin's windows go*.
+
+## B154 — Sony_Walkman's equalizer reopens over the playlist — closed 2026-09-28
+
+| B154 | **Sony_Walkman's equalizer reopens on top of the playlist.** Seen 2026-09-28 in 3 of 4 debug launches while closing B56a. The launch sweep logs `[place/tile] eq … -> {{762, 606}, …}`, so the skin's declared `eq` container is visible during load, but the Windows menu shows Equalizer unchecked once launch settles. Open Playlist Editor and then Equalizer from the Windows menu: the playlist takes the first slot under the player (top-left y=399), and the EQ comes back at the slot the launch sweep gave it (also y=399), 335×146 over the playlist. It keeps that slot because `reopensWhereLeft` counts the launch placement as a user placement. Not confirmed: what hides the EQ (a skin script or the host), and whether a window that was only visible during load should count as placed at all. Reproduce with `WINAMP_MODERN_PLACE_TRACE=1 skills/app-control/scripts/launch.sh Sony_Walkman`, then toggle the items with `menu.applescript toggle` and read `winhelper windows` | 1 skin measured; the reopen rule is engine-wide | S | Agent-measured |
+
+### B154
+
+- [x] **B154. The host gives a closed window's spot away, so the window forgets it.** **Closed
+      2026-09-28.** The equalizer was not hidden by the skin or the host. `eq` is
+      `default_visible="0"`, so it opens at load only when the user last left it open, and the
+      B56a runs had closed it with `menu.applescript closeaux`. The mechanism is then deterministic,
+      and it reproduced on the first try. The launch sweep places the equalizer and records it in
+      `placedAuxiliaryWindows`, the skin-container twin of `reopensWhereLeft`. Closing it frees its
+      slot, and the tiler, which avoids only windows on screen, gives that slot to the playlist.
+      The equalizer's reopen skips placement and lands exactly on the playlist at y=399. The fix is
+      `WindowManager.releaseClosedWindowSlots(under:)`. Every host placement (`place`, the sweep,
+      and `positionSubWindow`'s tiling branch) calls it, and it forgets the placement of every
+      closed window that the new frame covers, in both registries. It is gated on `.winampModern`.
+      Verified live on Sony_Walkman: the equalizer now reopens at y=563, clear of the playlist. In
+      the reverse order, the playlist reopens clear of the equalizer that took its slot. A plain
+      close and reopen keeps the frame, and so does an equalizer the user dragged over the playlist
+      on purpose. The gaps those reopens leave (19pt and 126pt) are the walk, filed as B157. The
+      rule is in `reference/components.md` → *Where a skin's windows go*. No unit test: it depends
+      on live window visibility inside a loaded controller.
+
+## B153 — the `.wal` tiler's right-edge clamp pulls a window onto the player — closed 2026-09-28
+
+| B153 | **The `.wal` tiler's right-edge clamp pulls a window onto the player.** Measured 2026-09-28 on Sony_Walkman (player centred at x=762 on an 1800pt display, playlist, analyzer and library open). At 125% UI Size the library (688pt wide) gets column 2 at x=1192. That runs past the edge, so `WinampModernTiler.nextSlot` clamps it to x=1112, 69pt over the player and the playlist. At 150% it is 290×159 over the player. Launch, Snap To Default and the B56a UI-Size re-layout all produce the same result. The clamp was chosen over windows placed wholly off-screen (see the comment in `nextSlot`). Covering the player is worse than overhanging the edge, though: a window with most of its width still on screen is reachable and hides nothing. The likely fix is to clamp only as far as reachability needs, or to try the space left of the player first. The tiler is shared with `.wmz` through `tiledOrigin`. Reproduce with `launch.sh Sony_Walkman`, open those three from the Windows menu, then Windows → UI Size → 125% | any `.wal` session with a wide window and a centred player at a large UI Size | M | Agent-measured |
+
+### B153
+
+- [x] **B153. The clamp is the last resort.** **Closed 2026-09-28.** `WinampModernTiler.nextSlot`
+      keeps its clamp, but uses it only when the clamped slot lands on nothing. Otherwise the window
+      goes to the columns left of the player, which fill right-to-left from its left edge, top down.
+      When neither side fits, it takes whichever clamp, right-hand or onto the region's left edge,
+      overlaps the windows already placed less. Measured live on Sony_Walkman with the playlist,
+      analyzer and library open, in one binary with a temporary A/B switch. At 125% the library went
+      from x=1112 (69pt over the player) to x=74–762, clear of everything. At 150% it went from
+      x=974 (291pt over the player) to x=0 (64pt). At 100% nothing moved. Itemskin, whose pinned
+      frame windows are the tiler's standing regression risk (`ui-guide`), kept every pair glued
+      through the left-hand path at 150% and 200%. The run also found B156. Tests are in
+      `WinampModernWindowTilingTests` (`testAClampThatWouldCoverThePlayerGoesLeftOfItInstead`,
+      `testWithNoRoomOnEitherSideTheClampCoversLess`, `testAClampThatCoversNothingStaysInItsColumn`).
+
+## B151 — a gap between the VU face and the frame in WMP11-BlueVU's VU Meters — closed 2026-09-28
+
+| B151 | **A gap between the VU face and the frame in WMP11-BlueVU's VU Meters window.** Reported 2026-09-28 from the live session. With *VU Meters Large* open (`Meter`, 438x207), a light band shows between the meter artwork (`scale` at 10,27 and the needles) and the window's `Wasabi:StandardFrame:NoStatus`, most visible along the top and left edges. The meter should sit flush against the frame. The likely cause is the frame's client area and the layer's absolute x/y disagreeing, or the frame drawing an inset the skin does not expect. Not yet measured. Reproduce with `WINAMP_MODERN_SHOW_WINDOWS=Meter`, or headlessly with `RENDER_SHOW=Meter`, and compare against the skin's `vuscreenshot.png` | 1 skin reported | S | Live-reported |
+
+### B151
+
+- [x] **B151. A standard frame's box is window.** **Closed 2026-09-28.** The frame and the layer
+      agree: the frame's client area is (8,25)–(429,198), and the meter face stops 2px inside it on
+      every side. The band was **transparent** pixels. The skin paints nothing in that ring, the
+      layout declares no `desktopalpha`, and the skin's `region.png` is alpha 0 throughout, so no
+      region is built. In Winamp, the frame groupdef's `sysregion="1"` puts that box inside the window,
+      and an empty pixel there draws black. The fix is `regionBoxes()`: a `Wasabi:StandardFrame:*`
+      box is backed black in any layout without `desktopalpha="1"`, unless the layout cuts a real
+      region. Both bounds were measured, and both are written up in
+      `skills/winamp-modern-skin-guide/reference/rendering.md` → *A standard frame's box is window*.
+      Corpus sweep, 671 renders: **30 changed**, all classified. The looser rules moved 98 (every
+      positive box) and 154 (undeclared `desktopalpha` treated as `0`). Checked live at 2x with
+      `WINAMP_MODERN_SHOW_WINDOWS=Meter`: no non-opaque pixel is left in the client area, and the
+      window matches the skin's `vuscreenshot.png`. Tests are in `WinampModernB114Tests`
+      (`testTheRingInsideAStandardFrameIsBackedBlack` and its two guards).
+
+## B56a — Window tiling follow-ups — closed 2026-09-28
+
+**Closed 2026-09-28** from the agent-verifiable list. All three checks were run in the debug build
+and read back with `winhelper windows`. The third found a defect, which was fixed in the same change.
+
+| B56a | Window tiling follow-ups | A skin whose playlist is a classic fallback; a Classic/Original regression pass; the arrangement after a live UI-Size change (expect `arrangeWindows()` to need re-running) |
+
+### B56a
+
+- [x] **A skin whose playlist is a classic fallback.** A corpus render sweep
+      (`RENDER-DUMP catalog`) found two: `Sony_Walkman` and `canum_winamp_by_burnsplayguitar`. On
+      Sony_Walkman, the skin's declared equalizer plus the fallback Playlist, Library and Spectrum,
+      opened from the Windows menu, gave five disjoint frames.
+- [x] **The arrangement after a live UI-Size change.** It needed re-running, as expected. Before
+      the fix, 100% → 150% on Sony_Walkman gave four overlapping pairs:
+      - `applyUIScale` grows the skin's containers from their bottom-left, which put the equalizer
+        53pt into the player;
+      - `applyDoubleSize`'s classic stack put the fallback playlist flush under the player, on top
+        of the equalizer;
+      - the analyzer ran 13pt into the library.
+
+      `applyUIScaleLevelChangeIfNeeded` now runs `arrangeWinampModernScene`, which it shares with
+      Snap To Default, after an applied change, gated on `.winampModern`. That scene no longer joins
+      the classic-fallback windows through `tiledOrigin` one at a time: that put the playlist 190pt
+      below the equalizer, because each walk restarts at the player and avoids sibling frames that
+      are about to move. They now go through `arrangeWindows(then:)` in the same sweep. After the
+      fix, the windows sit flush in one column at 100%, 125% and 150% and back, with no overlap at
+      100%. The overlap left at 125%/150% is the tiler's right-edge clamp, filed as B153.
+- [x] **Classic/Original regression pass.** `window-census.sh aquamp modern:NeonWave` shows the
+      classic stack in both: stack windows at the main window's bottom edge, the library docked
+      right, Visualizations docked left, 0 unreachable, 0 residue. A UI-Size change on aquamp
+      printed zero `[place/tile]` lines, re-stacked the classic way, and came back to the original
+      frames at 100%.
+
+Not pursued: on Sony_Walkman the skin's equalizer is sometimes visible during load and then
+hidden. The launch sweep places it, so reopening it returns it to that remembered slot
+(`reopensWhereLeft`) even when the playlist has taken the slot since. It was seen in 3 of 4 runs.
+The mechanism has not been confirmed. Filed as B154.
+
+## B111 — an unchanged `setActivated` dispatched `onToggle` — closed 2026-09-28
+
+**Closed 2026-09-28** from the agent-verifiable list, on the row's own check (persisted volume
+≠ 0 after a relaunch, no `setvolume(0)` cascade; audibility was not checked). That check found two
+more defects standing between the user and the fix, both fixed in the same change; see *Live
+verification* at the end. Fixed and verified from the call trace 2026-09-04. The rule is
+documented in `compatibility/maki-surface.md` → *A write that changes nothing is not an event*.
+
+| B111 | **An unchanged `setActivated` dispatched `onToggle`, and it silenced the player on Itemskin.** Reported 2026-09-04 as *"in the itemskin skin the audio does not work — this is the only skin with that symptom"*. `scripts/playerVolumeExtra.maki` answers `onVolumeChanged` by deactivating the mute and ATT buttons, which are already off; each button's `onToggle` **false** branch is `setVolume(savedVolume)`, an uninitialised `0`, and `setVolume` re-raises `onVolumeChanged`. So the host volume went to zero at load, no drag could lift it, and the zero was persisted into the next launch. Wasabi notifies only on an actual change; ours notified unconditionally. **Fixed 2026-09-04** — `setActivated` sends `onToggle`/`onActivate` only when the activation moves (`setActivatedNoCallback` stays the silent write for one that did). **Closed 2026-09-28** after a live drag-and-relaunch check | 1 of 70 skins binds `onToggle` to the volume; the dispatch rule is engine-wide | S | Live-reported |
+
+### B111
+
+- [x] **B111. An unchanged `setActivated` dispatched `onToggle`.** Reported 2026-09-04: *"in the
+      itemskin skin the audio does not work"*, and only that skin. Root-caused the same day from
+      `WINAMP_MODERN_CALL_TRACE=1` in the running app.
+
+      **What the skin does.** `scripts/playerVolumeExtra.maki`, on the main and mini layouts:
+
+      ```c
+      onVolumeChanged(v) { if (!muted) { att.setActivated(0); mute.setActivated(0); } muted = 0; }
+      mute.onToggle(on)  { if (on) { savedVolume = getVolume(); setVolume(0); }
+                           else      setVolume(savedVolume); }
+      ```
+
+      Both buttons are already off, so in Winamp those two writes do nothing. `volume.mute` is
+      declared `<Togglebutton id="volume.mute" />` — no image, no action, no coordinates, a 0×0
+      object a user cannot click — so nothing else in the skin ever reaches that handler.
+
+      **What we did.** `WinampModernScriptRuntimeObject.swift`'s `setactivated` case wrote the state
+      and then dispatched `ontoggle` + `onactivate` unconditionally. Every volume change therefore ran
+      both `onToggle`s' false branch, `setVolume(savedVolume)` with `savedVolume` still `0`; `setVolume`
+      re-raised `onVolumeChanged` (bounded by the re-entrancy guard, but the write had landed). Trace
+      from the app, on a fresh launch:
+
+      ```
+      AppStateManager: Restoring settings state - volume: 0.00
+      CALL-TRACE setxmlparam(ghost,0) on Togglebutton#volume.att
+      CALL-TRACE setvolume(0)             <- nobody asked
+      CALL-TRACE setactivated(0) on Togglebutton#volume.att
+      CALL-TRACE setvolume(0)
+      ```
+
+      **The fix.** `setActivated` compares the wanted activation against the object's own `activated`
+      and notifies only when it moves. `toggleActivation` (a real click) always changes state and is
+      unaffected; `setActivatedNoCallback` keeps its job, the silent write for a state that *did*
+      move. Documented in `compatibility/maki-surface.md` → *A write that changes nothing is not an
+      event*, with the reporting lesson in `skins/itemskin.md`.
+
+      **Verification (2026-09-04).** `swift test --filter WinampModern`: 1290 pass, 12 skipped, 0
+      failures — including the two tests that pin `setActivated`'s notification, both of which drive a
+      real state change. Debug build relaunched on Itemskin: the `setvolume(0)` cascade is gone
+      (`grep -c setvolume` on the call trace: **0**, against 4 before).
+
+      **Live verification (2026-09-28).** The saved state was seeded with the reporter's `volume: 0.00`
+      and Itemskin relaunched with `WINAMP_MODERN_CALL_TRACE=1`: the restore read `0.00` and **no**
+      `setvolume` followed. The check then hit two more defects:
+
+      - **The volume could not be raised from the skin at all.** Itemskin's volume display `vol` is a
+        hollow outline (`pl-volume.png`, a one-pixel frame), and `volume2.maki` makes the whole strip
+        live with `loadFromBitmap("volumeregion")` + `setRegion`. The hit test sampled the outline
+        alone, so every click inside it fell through (`WINAMP_MODERN_DEBUG_CLICK=60,44` named
+        `layer#-`, the plate behind it). A script region now **adds** to the hit area and never
+        removes from it (`scriptRegionContains`), so T800's clipped volume strip keeps its claim.
+      - **The seek bar showed the volume.** `valueSibling` took the first sibling slider with an
+        action, which on Itemskin is the hidden `hidvol` (VOLUME) declared before `Seeker`. It was
+        invisible while the volume was stuck at 0. With several candidates, the rect now decides.
+
+      **Result.** Drag 6 → 75 → 146 (`inregion`/`getvalue`/`setvolume` per step), bar at 57%, seek
+      grid empty at 0:03. Quit saved `volume: 0.57`, the relaunch restored `0.57` with zero
+      `setvolume` calls at load, and the next quit saved `0.57` again. `swift test`: 2823 pass, 18
+      skipped, 0 failures, including `WinampModernB111Tests` (each fix's test fails with that fix
+      removed). Corpus sweep: 669 of 671 images identical, the two diffs being Anexa's wall-clock
+      `main-shade` and Itemskin's seek grid. `RENDER_CLICKABLE`: falls only (Itemskin `vol`, BLAKK's
+      two seek bars, Bio-Nid's `VolumeAnim`), each confirmed with `RENDER_CLICK` as unlocked
+      behaviour. BLAKK's seek bar now seeks to the clicked point and Bio-Nid's knob sets the volume.
+
+## B80 — Seams at fractional UI Sizes were a full-draw conflation, not the partial repaint — closed 2026-09-28
+
+| B80 | **Horizontal seams at fractional UI Sizes.** Hairlines along band boundaries on cPro at 105%. Affects exactly the sizes fractional at 2x backing (90/105/110/115/125/135/175). See [detail](#b80) | 7 of 13 UI Sizes; every skin ([M25]) | M | Live-reported |
+
+### B80
+
+- [x] **B80. Horizontal seams at fractional UI Sizes.** A *full* draw is clean at 2.0 and 2.1 device
+      scale (zero partially-transparent rows), so the defect is the **targeted-repaint** path:
+      `draw(_:)` clears `dirtyRect` and redraws clipped to it, and a partly-cleared boundary row keeps
+      a hairline until a full repaint. Backing-aligning the invalidation rect in `setNeedsDisplay(_:)`
+      was tried and did not cure it. Suspect the hosted surfaces, which are real `NSView` subviews
+      with their own invalidation. The cPro2 "clicking recolours a region" report was a different
+      defect (closed); do not re-chase the region-scale probe. The harness has no partial-repaint
+      mode, which is most of this task (M25).
+
+      **Closed 2026-09-28.** The defect is not the targeted-repaint path. It was measured with the
+      two harness additions this row asked for: a partial-repaint mode (`RENDER_PARTIAL`) and a seam
+      counter that checks **both axes** (`RENDER_SEAMS`). A full draw at 2.1 was never clean. The
+      original check counted rows only, and every cPro skin had four *vertical* seams in the full
+      draw: `cpro.bg.left` meeting the body at x=6, and the top and bottom bands split at x=143 and
+      x=157. The replayed partial repaint added no seam, and neither did a live hover sweep at 105%.
+      The mechanism is conflation. Two abutting pieces each partly cover the pixel their shared edge
+      lands in, and source-over leaves that pixel translucent. **Fix:** bitmap and tiled draws round
+      their rect edges to the device pixel grid (`snappedToPixelGrid`). The grid is found from the
+      backing factor, because live `draw` runs at CTM 1.0 inside a display list
+      (`WINAMP_MODERN_DIRTY_TRACE`). Corpus of 80, full draws: at 2.1, **589 seams in 204 layouts →
+      27 in 16**; at 2.5, **269 in 157 → 18 in 12**. Live, Cpro_Winamp_Modern at 105%: **4 → 0**,
+      the same before and after a hover sweep. At 1:1, 142 of 671 renders moved. Every one inspected
+      was a thumb, knob, fill end or label at a fractional position that now sits on a whole pixel.
+      The residue is standard-frame bottoms, NullPlayer-hosted chrome and fills, which do not go
+      through the sprite path. The horizontal band seams the reporter saw on 2026-08-31 did not
+      reproduce on today's tree by any of the three routes. A/B switch: `WINAMP_MODERN_PIXEL_SNAP=0`.
+      The account is in `rendering.md` *Abutting pieces share a pixel edge*.
+
+      The reach command this row cited:
+
+      - <a id="m25"></a>**M25:** device scale is UI Size x the display's backing factor, so on a 2x panel the fractional stops are 90, 105, 110, 115, 125, 135 and 175 % — 7 of the 13 `UIScaleLevel` cases. To check a *full* draw, `WINAMP_MODERN_RENDER_SCALE=<factor> WINAMP_MODERN_RENDER_DUMP=/tmp/s WINAMP_MODERN_WAL=<skin> swift test --filter WinampModernRenderDumpTests`, then count rows whose alpha is strictly between transparent and opaque.
+
+## B152 — WMP11-BlueVU's VU needle warp cost ten points of main thread over a control — closed 2026-09-28
+
+| B152 | **WMP11-BlueVU still costs ~10 points more main thread than cPro-Bento, all of it the VU needle warp.** Release, *VU Meters Large* open, music playing: 42.0% busy against cPro-Bento's 31.8%, with `drawWarped` at 18.0%. The visible meter re-warps both needles at the skin's own ~100 Hz, under the 120 Hz display. The main window's whole-window repaint is fixed (2026-09-28, `gotoframe` repaints the layer's own rect; the player now paints 25% of its area instead of 100%). What is left is making the warp cheaper per frame. Throttling it below the skin's cadence would give up visible smoothness, so that is a decision for the user, not a fix. Method: [`performance.md`](../../skills/winamp-modern-skin-guide/reference/performance.md) *A beat meter repainted the whole player* | 1 skin measured | M | Live-reported |
+
+### B152
+
+- [x] **B152. WMP11-BlueVU's VU needle warp.** **Closed 2026-09-28.** The needles are rotations, and
+      a rotation is affine at any grid size, so an affine, non-wrapping mesh is now drawn as the
+      layer's own image through the inverse map (`WasabiLayerFXMesh.affineSourceTransform`). The
+      per-pixel resample now handles only meshes that bend or wrap. The skin's ~100 Hz cadence is
+      untouched, so there was no throttling decision to put to the user. Release, *VU Meters Large*
+      open, music playing, same binary with an A/B switch, two runs each: busy **32.1/35.5% →
+      18.7/18.5%**, `drawWarped` **18.3/20.0% → 0.1/0.0%**, against cPro-Bento's 24.7% the same
+      day. The needles also draw sharper, sampled once at device resolution. Checked live: the
+      meter's needles pivot on the hub and move with the music, and a red tint on the transform
+      draw landed on Defix's reels and turned between captures. The account is in
+      [`performance.md`](../../skills/winamp-modern-skin-guide/reference/performance.md)
+      *A rotation needs no resample*.
+
+## B119 — WMP11-BlueVU's per-frame warp cost three quarters of the main thread — closed 2026-09-28
+
+| B119 | **WMP11-BlueVU spends ~75% of the main thread where a normal skin spends ~50%**, painting two warped FX layers every frame. The CPU resample half is fixed; the Core Graphics paint (~26% against a control's ~5%) is open. Closing this also closes B117(a), the skin's ~7 fps marquee. See [detail](#b119) | 2 skins measured; every skin with an animating `<layer>` FX mesh | M | Live-reported |
+
+### B119
+
+- [x] **B119. WMP11-BlueVU's per-frame warp costs three quarters of the main thread.** The skin
+      warps two layers — 300x300 and 180x180 — on every frame.
+
+      **Baseline** (release build, local file playing, hands off, 10 s `sample` each, cPro-Bento as
+      the control on the same build minutes apart):
+
+      | | WMP11 before | WMP11 after (1) | control |
+      |---|---|---|---|
+      | main-thread **busy** | 77.9% | 68.6% | ~49% |
+      | `resample` (our CPU warp) | 24.1% | **10.6%** | 0.0% |
+      | `CGDisplayListDrawInContextDelegate` (the paint) | 21.3% | **23.0%** | ~5% |
+
+      **(1) The CPU mesh resample is fixed** (2026-09-04); the doc comment on `resample` is the
+      account. **(2) Core Graphics painting the warped image is open.** The warp mints a new
+      `CGImage` every frame, marked into the backing store under `CA::Transaction::commit ->
+      CGDisplayListDrawInContextDelegate`.
+
+      **Ruled out — do not re-try:** an f16 backing store (`WINAMP_MODERN_DRAW_FORMAT=1` reports
+      `RGBA8`); emitting the warp at device resolution in the destination's colour space (measured
+      worse, 23.0% -> 26.4%, reverted); unrelated compositing (the control paints ~5%); widening
+      `warpedImageCache` (every miss is genuine).
+
+      **To try:** repaint the FX layers fewer times a second (compare the animation clock with the
+      skin's own cadence, `WINAMP_MODERN_RENDER_FX_SPIN`), or paint less of them (is the warp extent
+      larger than what is visible?).
+
+      **Constraints.** `drawWarped` is shared with Defix's reels and needles, so a fix wants a corpus
+      render sweep and `RENDER_TIME`/`RENDER_FX` on Defix as a second control. Classic and Original
+      must not move. **Done when** WMP11's busy fraction converges on the control's ~50%, measured as
+      above and parsed per [`harness.md`](../../skills/winamp-modern-skin-guide/reference/harness.md).
+
+      **Closed 2026-09-28.** The paint was not the visible warp. It was **hidden windows painting.**
+      WMP11 ships two VU meter containers, both `default_visible="0"`, and `vu.maki`'s 10 ms timer
+      calls `fx_update()` whether or not the window is up. AppKit still displays an ordered-out
+      window that has been invalidated, so the never-opened *VU Meters Small* re-warped both needles
+      ~100 times a second, and `nullplayer.about` and `Pledit` painted at ~100 and ~31.
+      `WinampModernMainView.isOnScreen`, cached from the occlusion notification, now gates the
+      auxiliary repaint sink and `repaintAnimatingObjects`, and a window that comes back redraws
+      whole. Release, *VU Meters Large* open, music playing, same binary with an A/B switch:
+      busy **81.4% → 48.3%**, `CGDisplayListDrawInContextDelegate` **19.0% → 0.0%**, `drawWarped`
+      21.9% → 17.2%. Minimize and restore was checked live: the paint rate drops while the window is
+      minimized and comes back afterwards, and captures show the needles moving. The account is in
+      `performance.md` *A hidden window still paints*.
+
+      **Against the done-when:** 48.3% matches the ~50% control this row quoted, but the same-day
+      cPro-Bento control read **31.8%**, so a real gap is left. It is filed as **B152**: the main
+      window repaints whole ~115 times a second, and the visible meter warps at the skin's 100 Hz.
+      **B117(a)** was folded into this row. Its symptom was measured on debug and has not been
+      re-measured there; the release main window now paints at ~115/s.
+
+      **Dead end:** routing the main view's repaint for an object it does not own away from the
+      whole-window fallback moved nothing (busy 84.0% both ways), so it was reverted.
+
+
+## B150 — a `<Menu>` entry's hover and pressed art sized to nothing — closed 2026-09-28
+
+| B150 | **A `<Menu>` entry's hover and pressed art draws nothing.** winampmodern566's `menu:button_hover` / `menu:button_pressed` groupdefs state no `w`, so each resolves 0 wide inside the entry it belongs to (`RENDER_GEOMETRY=menugroup.file`: `File.hover.btn frame=(1,18,0,16)`); `WasabiMenuBar.apply` swaps their visibility and nothing sizes them. Winamp's rule is unconfirmed — whether the `<Menu>` sizes its state objects to its own box or a group with no `w` fills its parent — and the second would move every such group in the corpus, so settle it first | 1 skin measured (winampmodern566; The_Nokia_5220 ships the groupdefs but instantiates none) | S | Live-reported |
+
+### B150
+
+- [x] **B150. Fixed 2026-09-28.** `append` (`WasabiRenderer.swift`) gives an object that
+      `WasabiMenuBar.owningMenu(of:)` names as a `<Menu>`'s `normal`/`hover`/`down` the entry's
+      resolved box, on each axis the object leaves unstated and on no other.
+
+      **The rule, settled against the corpus.** Every other `<Menu>` in the 80 archives — Big Bento
+      Modern ×2, nsmp10, impulse, cPro Venus, NWA2000 — states its state objects' geometry
+      outright, and Big Bento's are inset a few pixels from the entry's box. An entry that imposed
+      its box would override what those skins wrote; "a group with no `w` fills its parent" would
+      move every such group. Only winampmodern566 and The_Nokia_5220 (which instantiates none) leave
+      it unstated, so the rule reaches exactly them.
+
+      **Verified.** `RENDER_GEOMETRY=File.hover.btn,File.down.btn` on winampmodern566: 31x16 at
+      (1,18), their three-slice children 4 / 24 / 3 wide (0 wide before). Live, debug build,
+      playing: `winhelper move` onto *File* lights the entry's 31px box and nothing else; moving off
+      restores the rest frame pixel-for-pixel; a press on *Play* shows the darker pressed art while
+      its menu is open. `RENDER_HOVER` now makes the `<Menu>` swap too, so the hover frame dumps
+      headlessly. Corpus sweep (baseline worktree at HEAD, 80 archives, 671 images): only Anexa's
+      wall-clock `main-shade` moved; winampmodern566, damaged in both logs, identical when run
+      alone. The art is hidden at rest, so the default-state sweep cannot see the fix itself.
+      Tests: `WinampModernB150Tests` (the hover test fails with the fix removed; the other two guard
+      declared geometry and unowned groups).
+
+## B71 — a layout script loaded before the standard frame beside it had a client area — closed 2026-09-28
+
+### B71
+
+- [x] **B71. Fixed 2026-09-28.** Two faults were stacked on Defix's detached visualizer (`VISCON`),
+      and the second only showed once the first was gone.
+
+      **(1) Startup order.** `start()` ran every object-owned `onScriptLoaded`, then delivered every
+      XUI param in one pass. `visrb2.maki` is the `VISCON` layout's own script, declared after the
+      `<Wasabi:StandardFrame:Static content="VISCON.component.gp">` whose `content` param builds
+      everything it looks up, so `RENDER_SCRIPTS=bindings` printed `-> null` for all eleven names.
+      `start()` now goes owner by owner, in program order: that owner's `onScriptLoaded`, then its
+      own params (`deliverXUIParams(for:)`). A XUI object still hears `onScriptLoaded` before its
+      params, and the skin-level `<scripts>` block still runs last. After the change every
+      `visrb2` binding resolves into `VISCON.component.gp`.
+
+      **(2) `leftClick()` was not a press.** Reattach's handler is `vis.DTTB.leftClick()`, on a
+      ghosted togglebutton bound `cfgattrib="{F1036C9C-…};Detach Vis Window"`. The runtime's
+      `leftclick` dispatched `onLeftClick` and the markup action and nothing else, so the attribute
+      never moved (`CALL-TRACE leftclick() on ToggleButton#vis.DTTB`, then silence). It now flips a
+      togglebutton and writes a `cfgattrib` control the way `performAction` does for the mouse.
+
+      **The "auto-hide" half of the row was the skin working.** The 2026-08-29 attempt read the bar
+      vanishing and Options going missing as breakage. `visrb2` shows the bar only while the window is
+      active (a 300 ms timer on `layout.isActive()`), and below 610px wide its `onResize` hides
+      Random / Presets / Options by design. Measured live: the bar shows with VISCON focused and hides
+      (visualizer full height) when the main window is focused.
+
+      **Verified live** (`launch.sh`, `winhelper clickdiff`, `WINAMP_MODERN_CALL_TRACE=1`, playing):
+      focus VISCON, click Reattach → `gone 406x360`, `new 800x600` (the SUI, visualizer in its tab);
+      SUI Detach → VISCON back; a second Reattach → gone again. Before: `unchanged`, exit 2.
+
+      **Corpus render sweep** (baseline at HEAD before editing, 79 skins, 671 images), classified:
+      Defix `VISCON-normal` — intended (bar hidden at load, visualizer 302 tall); S7Reflex
+      `main-normal` — its `ST` and `MO` readouts no longer draw over each other (unlocked); winampmodern566
+      (five windows) and its `nullsoft_media_player_10_forked` copy — the titlebar streaks now sit
+      where `titlebar.maki` puts them for the frame's `padtitleleft="10"`/`padtitleright="25"`
+      (left from x=20, right ending 25px short of the titlebar; before they disagreed with the
+      script's own arithmetic) (unlocked); Anexa `main-shade` — its wall clock. The `leftClick`
+      change moved no image. Invariant lines that looked moved for WMP11-BlueVU, winampmodern566 and
+      Big Bento Modern were log interleaving; each run alone against a HEAD worktree was identical.
+      Classic and Original do not run this code. Tests: three in
+      `WinampModernPhase25RegressionTests` (order, `cfgattrib` press, plain toggle press); full
+      `swift test` green (2806 before the three were added).
+
+      Original row:
+
+| B71 | **A layout script loads before the standard frame beside it has a client area**, so every name it resolves is null. Measured on Defix's detached visualizer. See [detail](#b71) | — · seen on Defix's detached visualizer; corpus reach unmeasured | L | Live-reported |
+
+      Original detail:
+
+      **B71. A layout's own script loads before the standard frame beside it has a client area.**
+      `WinampModernScriptRuntime.start()` dispatches `onScriptLoaded` to every program and only then
+      delivers XUI params, and a `<Wasabi:StandardFrame:*>` has no client area until its `content`
+      param arrives. On Defix's detached visualizer, `visrb2.maki` binds eleven names
+      (`vis.DTB`, `vis.random`, `VIS_Menu`, …) and `RENDER_SCRIPTS=bindings` prints `-> null` for each.
+      **Tried and reverted once (2026-08-29):** delivering each owner's params right after its own
+      `onScriptLoaded` makes the bindings live, and then `visrb2`'s auto-hide (hide the control bar at
+      load, re-show from a 300 ms timer gated on `layout.isActive()`, relayout on `onResize`) left
+      Reattach dead and the Options button gone. So: (1) the ordering change, behind the corpus render
+      sweep; (2) the auto-hide/relayout behaviour, which has no measurement yet.
+
+## B18 — Classic minimize-all left windows on screen — closed 2026-09-28
+
+### B18
+
+- [x] **B18. Fixed 2026-09-28.** The row named half the cause. Reproduced live on aquamp (Classic),
+      nothing playing, driving **Windows → Minimize All Windows** by `AXPress` on the menu item:
+      with Sonos Rooms undocked, the main window went to the Dock and Sonos stayed up
+      (`AXMinimized=false`). Sonos is a `BorderlessWindow` built `[.borderless]`, so AppKit ignored
+      its `miniaturize`.
+
+      **Inserting `.miniaturizable` alone did not fix it** (`mask=4` logged, Sonos still up). An
+      undocked Equalizer — a `ResizableWindow`, which always had the mask — stayed up the same way:
+      `miniaturizeAllManagedWindows` sent the main window first, and a `miniaturize` sent while its
+      animation runs is dropped. Docked windows only ever went because they ride along as children.
+
+      `miniaturizeAllManagedWindows` now inserts the mask where it is missing, sends every window not
+      docked to the main window (`findDockedWindows`, or already its child) first, and the main window
+      last. A/B in one binary with a temporary env switch skipping the mask: the reordering alone
+      fixes the Equalizer, and Sonos (`mask=0`) still stays up, so both halves are needed.
+
+      **Verified live**, undocked Sonos + undocked Equalizer + docked Playlist, Minimize All, then
+      restore: all windows reach the Dock and come back at their frames on aquamp (Classic), NeonWave
+      (Original — its side windows are `[.borderless]` too, so this fixes Original as well) and
+      2222-cPro__Bento (`.wal`, main + Sonos). No unit test: the behaviour is AppKit's window server.
+
+      **Follow-up, same day (reporter on Halo 2 `.wmz`): the windows came back one at a time**, each
+      from its own Dock tile. Minimize All now records the windows it sent on their own and restores
+      them with the main window (`restoreMinimizeAllCompanions`). Instrumenting the notification order
+      exposed two traps behind that, both there before: every key change mid-sequence ran
+      `bringAllWindowsToFront`, whose `orderFront` cancelled a window still waiting to minimize (a
+      second Minimize All left the player up), and the Dock posts a spurious `didDeminiaturize` for
+      the main window during its own minimize. The raise is now skipped while the sequence runs, and
+      the restore waits for the main window's `didMiniaturize`. Verified on all four modes with two
+      cycles each: Minimize All, restore the player (everything returns); Minimize All, restore Sonos
+      from its tile (only Sonos returns), then the player (the rest return).
+
+      Original row:
+
+| B18 | **Classic minimize-all ignores the window's mask.** `miniaturizeAllManagedWindows` (`App/WindowManager.swift:8653`) calls `miniaturize(nil)` on windows whose style mask lacks `.miniaturizable` — the bug modern's minimize had. Classic parity item, outside the `.wal` subsystem | — · engine integration, outside the corpus | S | Measured |
+
+
+## B123 — `System.getMousePos*` stays in window space — closed 2026-09-28 (decided against)
+
+### B123
+
+- [x] **B123. Decided against 2026-09-28, on a live A/B.** A screen-space `getMousePos*` on its own
+      contradicts the rest of the engine's model of "screen": `clientToScreen*`, `getViewportLeft/Top`
+      and a `<layout>`'s `getLeft()`/`getTop()` all answer in the window's canvas, and skins do
+      arithmetic across those calls. Moving the cursor alone breaks the skins that pair it with them.
+
+      **Corpus callers** (80 archives + the ClassicPro engine, `grep -ail getmousepos` over every
+      `.maki`): Lobe and Rika do **not** call it — their knobs read the mouse event's x/y only, so the
+      row's constraint never applied to them. mmd3 / MMD3-4-5's knobs use only cursor *differences*
+      (`x - WinX`, `x - lmx`), which no origin change can move. multipass's `mouseIsOverGuiObject`
+      compares the cursor with `layoutMainNormal.getLeft()/getTop()`, which answer 0 here on purpose
+      (`reference/scripting.md`). The remaining callers are Big Bento's and cPro's desktop-snap
+      emulation (`sc_aerosnap`, `shadesize`, `layout.maki`), tooltips placed with the (also canvas)
+      viewport, and cursor deltas.
+
+      **Measured live, multipass, playing, one debug binary with a temporary env switch:**
+      window-space (today) — cursor off the player, drawers shut; cursor on the player, both drawers
+      slide out (`getmouseposx() -> 110`). Screen-space — cursor on the player, drawers shut
+      (`-> 872`); cursor at screen (110, 110), ~650 pt from the window, drawers open. The screen
+      reading inverts the skin's only hover behaviour.
+
+      The single symptom on file, cPro2's Aero-snap preview firing on `getMousePosX() < 1`, is already
+      closed by suppressing the host-provided desktop effects
+      (`WinampModernContainerTopology.isHostProvidedDesktopEffect`).
+
+      **Reopen only as one change that moves the whole "screen" model together** — cursor,
+      `clientToScreen*`, viewport and layout origin — and re-measure multipass's drawers, mmd3's knobs
+      and Big Bento's search popup (BB31) live before landing it. No code changed.
+
+      Original row:
+
+| B123 | **`System.getMousePos*` answers in window space; Winamp answers in screen space.** cPro2's `layout.m` opens its Aero-snap preview on `getMousePosX() < 1`; the B101 suppression hides that one symptom. **Constraint:** `WinampModernMainView.currentMousePositionInSkinPixels` is window-space on purpose — Lobe, Rika and mmd3's knobs were fixed by it (`reference/scripting.md`) — so re-measure each of those live before a screen-space reading lands | 1 skin measured; every skin whose script reads the cursor | M | Live-reported |
+
+## B82 — a runtime-instantiated subtree was never told the current track — closed 2026-09-28
+
+### B82
+
+- [x] **B82. Fixed 2026-09-28.** Reproduced live first on cPro WMP12 (`221955-cPro__Winamp_Media_Player_12`,
+      last widget Now Playing) with `WINAMP_MODERN_CALL_TRACE=1`, track playing. The widget instance
+      made at load *did* hear the window's opening `onTitleChange` and filled its lines; clicking
+      **NOW** builds a fresh instance (`CustomObject.setXmlParam("groupid", …)`, a second
+      `findobject(sc.nowplaying.line1)` in the trace), and that one ran no `setAllTags` at all — so the
+      album line, shown by default, was empty for the rest of the song.
+
+      `WinampModernScriptRuntime.startScripts(addedBeneath:)` now ends with `seedPlaybackState(to:)`:
+      once the skin has started (`hasStartedScripts`), the **new programs only** get `onTitleChange`
+      with the current title (when there is one) and `onPlay` when playing. Scoped, because a
+      skin-wide replay would reach `beat.m`, which resets its VU maximum on every title. Before the
+      skin has started nothing is seeded: the window's first track update reaches those programs.
+
+      **`onAlbumArtLoaded` is not seeded because nothing in the app dispatches it yet**, at load or on a
+      track change — that is a missing event for every `<AlbumArt>`, not a seeding gap.
+
+      **Verified live:** same skin, NOW clicked mid-track — `capture` shows the title, artist and
+      album lines (before: blank). Corpus render sweep with an in-binary A/B switch: 670 of 671 images
+      identical; the one difference (Anexa `main-shade`) differs between two runs with the fix off too,
+      so it is noise. The sweep renders the default state, which brings no subtree up mid-session, so
+      it proves only that the default state did not move. Tests: `WinampModernB82Tests` (3 of 4 fail
+      with the seed removed; the fourth pins the scoping); full `swift test` green (2806).
+
+      Original row:
+
+| B82 | **A runtime-instantiated subtree is never told the current playback state.** A widget brought up mid-session gets `onScriptLoaded` and a seeding `onResize`, but no `onTitleChange` / `onPlay` / `onAlbumArtLoaded`, so it stays blank until the next track change. Measured on ClassicPro's Now Playing widget: its three `SC:FadeText` lines stay empty. The seeding pass runs once in `WinampModernMainView.scriptsDidStart()` | 5 cPro skins ship widgets; any skin using `<CustomObject>` or `GroupList.instantiate` | M | Live-reported |
+
+## BB34 — an embedded visualization pane never started its engine — closed 2026-09-28
+
+| BB34 | **An embedded visualization pane's engine never starts.** Big Bento Modern's Multi Content View mini pane draws black; the last line is `WINAMP-MODERN-VIS: resume … visible=0 … rendering=0`. **Re-measure first** — BB35's fix gives a detached surface a route back and may have cured it. 6 corpus skins embed a holder in the player (B23a), not 1 | — · seen on Big Bento Modern's mini pane | M | Live-reported |
+
+### BB34
+
+- [x] **BB34. Fixed 2026-09-28.** Re-measured first, as the row asked: BB35 had **not** cured it.
+      Big Bento Modern with the mini pane ticked (`Visualization ` = 1, `Album Art` = 0), playing:
+      the pane was 0 non-black pixels of 121,104 in two `capture`s 3 s apart, and
+      `WINAMP_MODERN_SURFACE_TRACE=1` showed one `mount` and no double-registration — so not BB35's
+      route. Both `WINAMP-MODERN-VIS: resume` lines read `visible=0 … rendering=0`: the second is
+      `setSceneVisible(true)`'s ask, made on the assumption that the player's window is on screen by
+      then, which at launch it is not yet. The engine's own occlusion observer restarts only a link
+      it stopped for occlusion, so nothing asked again.
+
+      `WinampModernVisualizationSurfaceView` now watches its own window's
+      `didChangeOcclusionStateNotification` (re-registered in `viewDidMoveToWindow`) and calls
+      `resumeRendering()` when the window turns visible with the engine stopped. `.wal`-only type, so
+      Classic and Original never reach it.
+
+      **Verified.** Same launch after the fix: a third line, `resume … visible=1 … rendering=1`,
+      follows the window coming on screen; the pane is 120,409 of 121,104 pixels non-black, the two
+      captures differ, and the picture is Tripex. `swift test`: 2802 tests, 0 failures.
+
+## B79 — `autowidthsource` naming a bitmap label sized its group to nothing — closed 2026-09-28
+
+| B79 | **`autowidthsource` naming a bitmap label sizes its group to nothing.** `autoWidth` answers only for `<text>`, `<songticker>` and check boxes, so winampmodern566's `<groupdef id="menugroup.file" autowidthsource="File.txt">` resolves 0 wide and its titlebar menus have no hit target. Fix: give an object with resolved artwork its bitmap's width. Moves group sizing engine-wide, so it wants a corpus sweep | 2 skins / 24 declarations ([M24]) | S | Live-reported |
+
+### B79
+
+- [x] **B79. Fixed 2026-09-28.** The renderer's `autoWidth` (`WasabiRenderer.swift`) now answers a
+      non-text `autowidthsource` from `artworkWidth(of:)`: its declared `w` when positive, else the
+      bitmap it draws at rest — the order the script's `getAutoWidth()` already used, so the drawn box
+      and the number `menualign.maki` spaces the labels by are one again.
+
+      **Verified.** `RENDER_GEOMETRY=menugroup.*` on winampmodern566: the five entries resolve 31 / 35
+      / 51 / 38 / 37 wide at x = 1 / 32 / 67 / 118 / 156, each `<Menu>` filling its group (all 0
+      before). Live, debug build: `clickdiff` on *File* shows a new layer-101 row, and the capture is
+      Winamp's File menu under the entry. Corpus sweep (80 archives): no image moved but Anexa's
+      wall-clock `main-shade` and Styx's `Preferences-normal`, whose Hold Time slider read the
+      `Styx.Stay` private int the base run had itself written into the xctest domain — with the key
+      deleted, the change renders Styx byte-identical to the base (the trap in `harness.md`).
+      Tests: `WinampModernB79Tests` (three of four fail with the fix removed).
+
+      **Reach, corrected.** The_Nokia_5220 ships the same `window_menus.xml` groupdefs but no layout
+      instantiates them, so winampmodern566 is the one skin this reaches on screen. What the fix
+      uncovered: the entries' hover and pressed art is 0 wide and draws nothing — B150.
+
+      **M24:** for each `.wal` (and the ClassicPro engine tree), collect `id=` from every `<layer>` and every `<text>`, then keep the `autowidthsource="…"` values that name a layer and not a text. Measured 2026-08-31: The_Nokia_5220_XpressMusic 12 of 12 and winampmodern566 12 of 18.
+
+## B60 — the embedded library and video surfaces had no body drag — closed 2026-09-28
+
+### B60
+
+- [x] **B60. Fixed 2026-09-28.** Measured first, as the row asked:
+
+      - **Library.** `PlexBrowserView.mouseDown` runs a press through its own hit tests and ends at
+        `hitTestTitleBar`, which is off when embedded, so a press on the blank area below the last
+        row did nothing at all.
+      - **Video.** The picture is a child window parked over the box, so a press lands on
+        `VideoPlayerView` there, and that view skips `performDrag` while parked (moving the child
+        would slide it off the box). Nothing reached the skin's window either.
+
+      Both now prime `WinampModernHostedWindowDrag` through a new `prime(_:window:)`: the library
+      against its own window (the skin's), the video against `window?.parent`, whose move the child
+      follows. Prime-then-move, 3pt threshold, `windowWillMove` — the B57 idiom, so docking and
+      snapping are unchanged. Both paths are gated on `isEmbeddedInSkin`; Classic and Original
+      never reach them.
+
+      **Verified live on cPro-Bento:** a `drag` from the empty Search page moved the player
+      (762,293)→(822,333), exactly the +60,+40 travel; a `drag` from a list row and a plain click
+      left it where it was. With `long-film` playing in the Video tab, a `drag` on the picture moved
+      the player and the parked picture together by +50,+30 and the picture stayed on its box; a
+      `dblclick` on it logged `togglePlayPause` and moved nothing.
+
+      Original row:
+
+| B60 | **The hosted library and video surfaces have no body drag.** `WinampModernLibrarySurfaceView`'s blank area below the last row could be a handle and is not; `WinampModernVideoSurfaceView` overrides no `mouseDown` and its picture is a child window, so whether a press reaches anything is unverified — measure it in the app. `WinampModernBrowserSurfaceView` is out of scope (the page owns the mouse) | — · every skin with a usable standard frame | M | Live-reported |
+
+## B148 — Winamp's "Text Ticker Speed" preference was unregistered — closed 2026-09-28
+
+| B148 | **Winamp's own "Text Ticker Speed" preference is unregistered.** `OneDirectionText` reads `Config.getItemByGuid("{9149C445-3C30-4e04-8433-5A518ED0FDDE}").getAttribute("Text Ticker Speed")` and sets its move timer to `20/stringToFloat(value)`; unanswered, the value is `""`, the delay is infinite and the ticker never scrolls. Register the host config item with a default, the way Winamp's own preferences would. The default value is unknown — confirm it before choosing one; `"0"` means "don't scroll" to this script | 2 skins (Shield_Amp, Ebonite_2_1) | S | Live-reported |
+
+### B148
+
+- [x] **B148. Fixed 2026-09-28.** Three links, found one behind the other in the running app with
+      `WINAMP_MODERN_CALL_TRACE=1`:
+
+      1. **The preference.** Winamp's default was read from its published source, not chosen: item
+         *Skins and UI Tweaks* `{9149C445-…}` (`Src/Wasabi/api/config/uioptions.cpp`), gen_ff
+         `DEFAULT_TEXTSPEED 1.0f/3.0f`, stored through `%f`, so `"0.333333"`.
+         `WinampModernConfigBridge.hostDefault` answers it from `getData` when the store is unset
+         (GUID case-insensitive). The ticker's `Delay` is now 60 (`setdelay(61)` = `FirstDelay`).
+      2. **`Timer.getDelay()`** was unimplemented. The tick handler aborted on
+         `moveText.GetDelay() == FirstDelay` before moving anything, and silently, because `onTimer`
+         dispatch is `try?`.
+      3. **`Timer.setDelay`** stored the value without re-arming a running timer. Wasabi's
+         `STimer::setDelay` re-arms it, so the 60 ms step would otherwise have stayed on the 1000 ms
+         `firstdelay`.
+
+      **Verified live:** Shield_Amp, two `capture`s taken 1.5 s apart differ in the ticker band, with a
+      measured shift of 29px at 1x over ~1.7 s ≈ 59 ms per step. Ebonite_2_1 also scrolls. Tests:
+      `WinampModernB148Tests`; full `swift test` green. The row's second check (`ontimer` in
+      `RENDER_SCRIPTS`' `ran=`) cannot be met by any fix: `ran=` records owner-object events only, and a
+      `Timer` is a dynamic object (`harness.md`).
+
+      Original row:
+
+| B148 | **Winamp's own "Text Ticker Speed" preference is unregistered.** `OneDirectionText` reads `Config.getItemByGuid("{9149C445-3C30-4e04-8433-5A518ED0FDDE}").getAttribute("Text Ticker Speed")` and sets its move timer to `20/stringToFloat(value)`; unanswered, the value is `""`, the delay is infinite and the ticker never scrolls. Register the host config item with a default, the way Winamp's own preferences would. The default value is unknown — confirm it before choosing one; `"0"` means "don't scroll" to this script | 2 skins (Shield_Amp, Ebonite_2_1) | S | Live-reported |
+
+## B149 — an `xuitag` instance did not clip its children — closed 2026-09-28
+
+| B149 | **An `xuitag` groupdef instance does not clip its children.** `clipsChildren` (`WasabiRenderer.swift`) clips only objects whose type is `group`, so Shield_Amp's 293px `OneDirectionText#SongTicker` draws its 1606px moving text clipped to the whole layout, over the rounded body and past its fade layers. Extending the rule reaches every custom widget in the corpus, so it wants a render sweep and a classification of each diff | 1 skin measured (Shield_Amp; Ebonite_2_1's ticker is the same widget, unmeasured); corpus reach unmeasured | S | Live-reported |
+
+### B149
+
+- [x] **B149. Fixed 2026-09-28.** `isSizedGroup` (`WasabiRenderer.swift`) now counts an object whose
+      type is a registered `xuitag` as a group, on the same declared-box terms. Found as a consequence of
+      B148, which set the overhanging ticker moving.
+
+      **Corpus sweep** (`wal_render_sweep.sh`, 79 archives, xctest domain reset before each half),
+      every diff classified:
+      - Shield_Amp `main-normal`, Ebonite_2_1 `compact`/`full`/`narrow`/`stick`: the ticker clipped
+        to its widget. This is the fix.
+      - Big Bento Modern ×4 `main-normal`: 2px ≤6/255 at x 631–632, a glyph's left fringe cut at an
+        info line's box. Faithful.
+      - Anexa `main-shade`: the documented wall-clock hands.
+      - `MLibrary/normal` protective minimum 414→354 (S7Reflex, nullsoft_media_player_10_forked) and
+        452→354 (winampmodern566, whose lines the compare skipped): their title widgets now clip rather
+        than overflow, so the floor returns to the skin's declared `minimum_w`. Rendered at 354, the only
+        difference is the caption cut to its bar. Classified as faithful, since Winamp clips every group.
+
+      **Verified live:** Shield_Amp scrolls with its moving region confined to x 26…319 (x 52…638 at 2x).
+      Tests: `WinampModernPhase24Tests.testADeclaredXUITagInstanceClipsItsChildren` and
+      `…WithNoDeclaredBoxStillDoesNotClip`.
+
+      Original row:
+
+| B149 | **An `xuitag` groupdef instance does not clip its children.** `clipsChildren` (`WasabiRenderer.swift`) clips only objects whose type is `group`, so Shield_Amp's 293px `OneDirectionText#SongTicker` draws its 1606px moving text clipped to the whole layout, over the rounded body and past its fade layers. Extending the rule reaches every custom widget in the corpus, so it wants a render sweep and a classification of each diff | 1 skin measured (Shield_Amp; Ebonite_2_1's ticker is the same widget, unmeasured); corpus reach unmeasured | S | Live-reported |
+
+## B65 — a division by zero abandoned the whole handler — closed 2026-09-28
+
+| B65 | **A division by zero abandons the whole handler, where Winamp carries on.** `MakiBytecode.swift` opcode 67 throws `invalidScript`; MAKI's `/` is a float divide, so Winamp yields infinity and runs on. See [detail](#b65) | 2 skins / 3 sites measured (Shield_Amp; cPro2's InfoViewer `onResize` with nothing playing, since B99); corpus reach unmeasured | S | Live-reported |
+
+### B65
+
+- [x] **B65. Fixed 2026-09-28.** Opcode 67 answers the IEEE quotient (±inf, NaN for 0/0) and
+      reports `[warning] invalidScript MAKI division by zero.` through the new
+      `MakiMethodDispatching.report` instead of throwing. Integer modulo still fails closed. The
+      integer case needed no separate answer: the divide was already always real (multipass's seek
+      bar), and a store into an Int clamps through `integerValue`.
+
+      **Reach, measured** with a `RENDER_SCRIPTS=1` pass over the 80-archive corpus: 6 skins,
+      4 sites — the four cPro2 skins' InfoViewer (`onAction`/`onResize`), Ebonite_2_1's
+      `OneDirectionText` and `SC-Cover`, Shield_Amp's `OneDirectionText`. After: 7 `[warning]`
+      findings, 0 `[error]`; handlers reporting `failed=` fell from 50 to 38, and no new failure
+      appeared. PNG diffs: Shield_Amp and Ebonite (four layouts) now draw their song titles;
+      Anexa's shade differs only in its wall-clock hands. Tests: `WinampModernB65Tests`.
+
+      **The row's live criterion — "the songticker scrolls" — is not met, and is not B65's.** The
+      ticker's delay is `20/stringToFloat("")` = infinity, so its move timer never fires (B148). Its
+      text is also clipped to the layout rather than the widget (B149). Live `capture` was not
+      available in this session: `screencapture -l` was refused.
+
+      Original detail:
+
+### B65
+
+- [ ] **B65. A division by zero abandons the whole handler.** Shield_Amp's songticker never
+      initialises: its `OneDirectionText` widget reads `{9149C445-…};Text Ticker Speed`, which no
+      script in that archive registers, so `getData()` answers `""` and `20/stringToFloat("")`
+      divides by zero. Fail-closed is right for a missing method; it is wrong for arithmetic, where
+      the IEEE answer exists.
+      **Before changing it:** confirm what Winamp produces for the integer case as well as the float
+      one (opcode 67 sees both), and measure reach with a `RENDER_SCRIPTS=1` corpus sweep counting
+      `division by zero`. Keep the warning.
+
+## B99 — `enumObject` / `getNumObjects` were unimplemented — closed 2026-09-27
+
+| B99 | **`enumObject` / `getNumObjects` are unimplemented.** ClassicPro's InfoViewer (`xui/CentroSUI/_v2/InfoViewer/InfoViewer.xml`) walks its object list with them, and dispatch fails closed, so each call abandons the whole handler. Measured on cPro2 Dark Aluminum 2026-09-01: `enumObject` x12, `getNumObjects` x2 | 1 skin measured; the `_v2` SUI is shared by any engine-`two` skin | M | Measured |
+
+### B99
+
+- [x] **B99. ClassicPro's InfoViewer drew empty. Fixed and confirmed live by A/B 2026-09-27.**
+
+      `auto_arange.m` counts its tag lines with `g.getNumObjects()` in `onScriptLoaded` and lays them
+      out by index with `g.enumObject(a)` in `onResize` / `onAction`; unanswered, all three handlers
+      aborted. Both now answer the same walk as `getNumChildren` / `enumChildren`: the group's own
+      children in declaration order (`<script>` never enters the graph, so `a==11` is the rating group
+      as the script assumes). Out of range is NULL.
+
+      **Verified.** `RENDER_SCRIPTS=1` on cPro2 Dark Aluminum: unsupported-method findings
+      `enumobject` x13 / `getnumobjects` x2 -> 0 (`enumitem` x1 remains, widgets manager, separate).
+      Live, `audio-long` playing, one binary with a temporary kill-switch: off, the track-info pane
+      under the library is empty; on, it draws Title, Artist, Rating, Decoder, Filesize, Filename and
+      Format. Tests: `WinampModernB99Tests`.
+
+      **What the fix uncovered.** Headless, with nothing playing, every line hides itself, the first
+      visible object is the zero-height rating group, and `onResize` now stops on
+      `(g.getHeight()-3)/custom.getHeight()` — B65's division by zero. Cosmetic leftovers seen live:
+      no gap between *Decoder*/*Filename* and their values; the *Rating* line draws larger.
+
+## B145 — three Miku-family skins render an empty main window — closed 2026-09-27
+
+**Not a defect; closed without a code change.** Filed from the 2026-09-06 headless grading pass:
+`Love is War Miku.wal` and `Love Is War Miku V2.wal` at 0.0% opaque in `main/normal`,
+`hatsune_miku_5_winamp_by_kaza_sou_d6izotp.wal` at 2.2%.
+
+Re-measured 2026-09-27 on `69f124f1`:
+
+| Skin | unsettled (alpha > 0) | `RENDER_SETTLE=2` | live (`launch.sh` + `capture`) |
+|---|---:|---:|---|
+| Love is War Miku | 0.0% | 49.3% | full player |
+| Love Is War Miku V2 | 80.1% | 81.5% | full player |
+| hatsune_miku_5 | 65.7% | 71.9% | full player |
+
+Love is War Miku's `opening.maki` fades every layer in from alpha 0 on a 300 ms timer, so an unsettled
+dump is transparent. The other two render headless even unsettled; their 2026-09-06 readings are
+stale. Reproduce with `WINAMP_MODERN_RENDER_SETTLE=<0|2> WINAMP_MODERN_WAL=<archive>
+WINAMP_MODERN_RENDER_DUMP=<dir> swift test --filter WinampModernRenderDumpTests` and count the alpha
+of `main-normal.png`. The three skins' F grades were lifted, and they came off
+`skills/skin-screenshots/exclude.txt`.
+
+## B110 — a skin's window frame can be a second window — implementation record
+
+**Not closed.** Implemented and live-verified by the agent 2026-09-03; the reporter's confirmation is
+still open as a row in `WINAMP5_TASKS.md` → *Awaiting manual QA*. The record moved here 2026-09-27
+because the task file holds tasks, not history. How the mechanism works is in
+`skills/winamp-modern-skin-guide/reference/components.md` and `reference/harness.md`.
+
+| B110 | **A skin's window frame can be a *second window*, and `newDynamicContainer` only ever answers with the one instance.** Ebonite's standard frame opens `newDynamicContainer("sc.alphaframe")` in `wasabi/standardframe/standardframe.m` and keeps it on top of the client with `frame_layout.resize(comp_layout.getLeft(), comp_layout.getTop(), comp_layout.getWidth(), comp_layout.getHeight())` — the visible border (10 left / 17 right / 30 top / 30 bottom, plus RGB-tinted variants) is drawn by that overlay, not by the client window. So the client group is deliberately short: `w="-17" relatw="1" h="-20" relath="1"`, 233x230 of a 250x250 window. We create that window from load and never show it, and we answer `newDynamicContainer` with the already-instantiated container whoever asks, so the margin stays empty — reported 2026-09-03 as "there is no right hand pad". **Implemented 2026-09-03, awaiting the reporter's live confirmation** | 5 skins measured ([M31]); 8 archives build a live copy after the fix | L | Live-reported |
+
+### B110
+
+- [ ] **B110. A skin's window frame can be a second window, and `newDynamicContainer` only ever
+      answers with the one instance.** Reported 2026-09-03 on Ebonite_2_1 while closing B78: *"there
+      is no right hand pad"*. Root-caused the same day from the skin's own MAKI **source**, which it
+      ships beside the compiled form.
+
+      **What the skin does.** `wasabi/standardframe/standardframe.m`:
+
+      ```c
+      frame_cont   = newDynamicContainer("sc.alphaframe");
+      frame_layout = frame_cont.getLayout("scdef");
+      ...
+      frame_layout.resize(comp_layout.getLeft(), comp_layout.getTop(),
+                          comp_layout.getWidth(), comp_layout.getHeight());
+      ```
+
+      One overlay window per framed window, parked on the client's exact rect, carrying the border
+      art — `window.topleft` / `top` / `topright` / `left` / `right` / `bottomleft` / `bottom` /
+      `bottomright` at 10 left, 17 right, 30 top, 30 bottom, each with `.red` / `.green` / `.blue`
+      variants the RGB config fades between, plus the resizer grips and the window title. The client
+      window's own group is short by exactly that margin (`w="-17" relatw="1" h="-20" relath="1"` —
+      233x230 inside a 250x250 window), because the overlay is what fills it.
+
+      **What we did.** `System.newDynamicContainer(id)` answered with the **already-instantiated**
+      container of that id, so all five of Ebonite's frame programs drove one container. The window
+      itself **was** created — `setupAuxiliaryContainers` builds one per declared non-main container —
+      and simply never shown: `CGWindowListCopyWindowInfo` showing nothing is what an ordered-out
+      window looks like, not a missing one. (The first draft of this entry said we materialize no
+      window for it; that was wrong.) The margin was simply empty — which is also what exposed the
+      zero-area browser surface closed alongside B78.
+
+      **Two halves, and the second is the harder one.**
+      1. **Instancing.** A fresh instance per call, addressed by the object the script holds rather
+         than by id. A skin that opens one overlay per window needs three or four live at once, and
+         the current single instance would have them fighting over one container.
+      2. **A window that tracks another window.** `syncFrame()` / `syncContent()` copy geometry both
+         ways — the frame follows the client, and dragging the frame moves the client — plus
+         `LAYOUT_PROPS` (alpha, linkwidth/linkheight, minimum/maximum, taskbar) copied across, and
+         the skin's own resize handling. This is window management, so it is squarely under the
+         Classic-safety rule: gate on `uiMode.controllerFamily == .winampModern` and change no shared
+         placement path without saying so.
+
+      **Reach: 5 skins ([M31])**, all from the same leech-derived standardframe — Ebonite,
+      MoonLight, Itemskin, K-jr and Pure Inspired. Itemskin's frames were already noticed from the
+      other side and closed as B69 ("its frames are a *second* container per window"), which is this
+      same idiom seen through the hosted-surface probe. **4-drelictionreleasepic is not one of them**
+      — it draws its frame inline in the same window; see the corrected [M31].
+
+      **Before starting:** write the plan to `~/.claude/plans/` and have it reviewed. Window geometry
+      has no useful armchair form (B56), so the loop is the `testing` skill's measure-it-live one,
+      with `WINAMP_MODERN_PLACE_TRACE=1`.
+
+      **Plan:** `~/.claude/plans/write-the-plan-do-tender-island.md` (revised 2026-09-03 after a
+      fact-check; it corrects the reach and the "we materialize no window" claim above). Gated —
+      step 1 is a candidate whole fix and scopes the rest.
+
+      - [x] 1. `isDynamic()` on a container, then **measure on Ebonite**. **Measured 2026-09-03:**
+            `isDynamic` alone was not enough — the next statement is `system.onScriptLoaded()`, a
+            script calling its **own** startup body, which had no dispatchable arity, so the handler
+            still died one statement before `frame_layout.show()`. With both landed the frame window
+            **is on screen and drawn**: border, "Playlist Editor" title, close button and both
+            resizer grips (`WinampModernContainer_sc.alphaframe`, exactly over the client's rect).
+            It also settles the decision point: Ebonite runs **five** standardframe programs against
+            the one aliased container, so the playlist, library and frame windows all end up at one
+            rect (320x250 @ 822,561). Instancing is required.
+      - [x] 2. Real instancing for `newDynamicContainer` — **per calling program**. The first program
+            to ask keeps the declared container (so every single-holder caller is unchanged); a second
+            program asking for the same id gets a live copy built from the container's own XML, with a
+            distinct id (`sc.alphaframe#2`) and its opening layout realized. The same program asking
+            twice gets the copy it already holds, so Ebonite's close-on-hide/rebuild-on-show cycle
+            leaks nothing. Cap 12 per id
+      - [x] 3. Window identity: **not** the planned re-key of `auxiliaryContainers` to `WasabiObjectID`.
+            A copy is given a distinct container *id* instead, so all 17 `first(where: { $0.containerID
+            == id })` sites keep working unchanged and accessibility ids are unique — the plan's stated
+            reasons for the re-key, at a fraction of the risk it flagged ("where a silent misroute
+            would hide"). Copies carry `nullplayer_dynamic_instance=<declared id>`, the sibling of
+            `nullplayer_synthesized`
+      - [x] 4. A window per copy: the recipe is factored out of `setupAuxiliaryContainers` into
+            `makeAuxiliaryContainer`, and the hook that calls it is wired in `wireContainerCallbacks`,
+            **before** `scripts.start()` — Ebonite asks for all five copies from `onScriptLoaded`, and
+            wired with the surface coordinator (after `start()`) every copy came up windowless. Copies
+            are excluded from `arrangeWindows()`, `place()`, `snapTargetWindows()`, the window menu and
+            visibility persistence
+      - [x] 5. Client -> frame sync via B69's `borrowedWindowOrigin` — worked as the plan predicted.
+            Measured: dragging the frame's title bar moved both windows to (875,688) together
+      - [x] 6. `onUserResize` (arity 4), fired from `windowDidResize` only while `inLiveResize`, and the
+            ±1 clamp — handled with a **one-pixel tolerance** in `borrowedWindowOrigin`, the offset
+            carried through to the desktop origin so the jiggle still happens. Measured: growing by the
+            grip took both windows to 385x377; shrinking past the clamp took both to 258x258 **in
+            place**, with no jump to the screen corner
+      - [x] 7. Z-order: clicking the client buried its own frame (title strip went black, border
+            survived only where the client's group does not reach). The pairing is the skin's, so it is
+            learned from the `frame.resize(client.getLeft(), …)` idiom itself (`windowsGluedOver`) and
+            `windowDidBecomeKey` re-raises the follower one runloop turn later — inside the
+            notification the raise is undone by the rest of that pass. Alpha and `isActive` needed
+            nothing: both already resolve per window id
+      - [x] 8. Click-through measured, not assumed: a click in the frame's transparent middle reached
+            the library client and switched it to Albums
+      - [x] 9. Correct the B110/M31 backlog facts (reach 5 of 70, not 4 of 61; 4-drelictionreleasepic
+            draws its frame inline; K-jr and Pure Inspired are in the cohort; 16 skins call
+            `newDynamicContainer`; the frame window is created and never shown)
+
+      **Verification (2026-09-03).** `swift test` 1743 pass + 12 new B110 tests. Corpus render sweep
+      over 70 archives against a worktree baseline: every invariant change is an additive `#N` copy
+      line, 588 of 590 images identical; `Ebonite_2_1/sc.alphaframe-scdef.png` changed size 640x400 ->
+      250x250 (the declared container is now the *playlist's* frame rather than whichever program wrote
+      last, which is the fix), and `Anexa/main-shade.png` differs **against a second capture of the same
+      build**, the run-to-run flake `reference/harness.md` already records. The four already-working
+      pair skins — MoonLight, Itemskin, K-jr, Pure Inspired — build no copies and their dumps are
+      unchanged. Ten open/close cycles of the playlist leave the window count where it started.
+
+      **Two defects the reporter's own session found that none of the above caught (2026-09-03), both
+      fixed:**
+
+      - **The playlist frame did not appear at all** ("all others do"). The first program to ask is
+        answered with the *declared* container, so Ebonite's playlist frame is the one frame that is
+        not a copy — and the load-time visibility hook was keyed on "is a copy". Its client is restored
+        visible at launch and its `frame_layout.show()` runs inside `scripts.start()`, so that one show
+        was dropped. The test is now **"has a script claimed this container through
+        `newDynamicContainer`"**, asked of the runtime. It must *not* be the `dynamic="1"` attribute:
+        a corpus scan found several skins declaring their real `Pledit`, `MLibrary` and `AVS` windows
+        that way, and excluding those from tiling, snapping and the window menu would lose windows
+        people open.
+      - **The client was drawn over its own frame** ("1/2 of the window is one style and the other
+        half is another"), and this took **two** passes. First: re-raising the frame on
+        `windowDidBecomeKey` alone is not enough, because at launch the frame is shown *before* the
+        client — `restackGluedWindows()` now runs on every window open, on every key change and once
+        after launch settles. That still looked identical, and `WINAMP_MODERN_GLUE_TRACE=1` (added for
+        it, documented in `reference/harness.md`) named the real cause in one run: a standard frame
+        writes the origin **both** ways — `syncFrame()` puts the frame on the client and `syncContent()`
+        puts the client back on the frame — so `borrowedWindowOrigin` recorded the pair in *both*
+        directions and the restack loop fought itself, whichever direction it handled last winning. The
+        record is now written in one direction only: the follower must be a container a script claimed
+        through `newDynamicContainer`, the leader must not be.
+
+      **Three further defects from the reporter's live session (2026-09-03), all fixed and confirmed
+      by them:**
+
+      - **The top and left borders read flat black** where the right and bottom read as glossy
+        chrome. Not a window problem: the client window was painting under those two borders because
+        B78 (`d14504f1`) had made Ebonite's four `sysregion="-2"` frame strips paint as artwork
+        instead of cutting the region. That commit's own message says why — *"the client area drawn
+        over it overhung a frame that was not there"* — and *"this does not give Ebonite its right and
+        bottom pads; that margin is reserved for an overlay window the skin opens itself, filed as
+        B110"*. B110 built that window, so the premise is gone and the commit is reverted: read as
+        silhouettes those strips cut the client to exactly the frame's opening (top 30, left 10, right
+        17, bottom 30 — that frame's inner rect to the pixel).
+      - **An opaque bar across the frame's titlebar and under its status row**, each stopping short of
+        the right edge. The group's `sysregion="1"` backdrop layer was restoring region its own
+        siblings had just cut. **A group's own cut-out is not undone from inside it** — the
+        cross-group restore S7Reflex needs is untouched. Written up in
+        `reference/rendering/hit-testing.md`; the corpus sweep moves one other image, Shield_Amp's
+        notifier by 125 px, in the same direction.
+      - **The frame came away from NullPlayer's own windows** (Flow, Cava, PeppyMeter) when dragged by
+        the frame — dragging the contents always worked. Two causes, both in the hosted-window path
+        and written up in `reference/components.md`: the materializer is its own window delegate and
+        never announced a move to the skin's script (nor did the reveal, where the placement actually
+        happens, off screen); and `moveContainerWindow` could not resolve a hosted window at all, so
+        `syncContent()` — the write that pulls the client along — landed nowhere.
+
+      **Verification of those three (2026-09-03):** `swift test` full suite green, with two new
+      `WinampModernHostedWindowTests` and a new `WinampModernPhase88Tests` case for the sibling rule
+      (its S7Reflex fixture corrected to nest the cut in a group, which is that skin's actual shape).
+      Corpus sweep over 69 skins: 582 of 590 images identical — Ebonite's five framed windows plus its
+      frame, the known `Anexa/main-shade` flake, and Shield_Amp's 125 px corner. Live: frame dragged,
+      client followed to (895,682); window opened, closed, reopened and dragged, frame glued each
+      time.
+
+**Reach command ([M31]):**
+
+- <a id="m31"></a>**M31:** over the **70-skin corpus** (66 net of byte-identical re-adds), `strings` every `.maki` for `newDynamicContainer` and pair the hits with the `dynamic="1"` containers the tree declares. **Re-measured 2026-09-03 while closing B110, correcting the first pass:** **16 skins call it**, not 12, and **5 use it for the per-window frame-overlay idiom**, not 4 — Ebonite_2_1 (`sc.alphaframe`), MoonLight, Itemskin, **K-jr** and **Pure Inspired** (`cont.clear.pl` / `.ml` / `.dl` / `.vd`, one per hosted window kind; K-jr's and Pure Inspired's `standardframe*.maki` are byte-identical to MoonLight's, `cmp` exit 0). All five descend from the same leech-derived `standardframe`, and MoonLight and Itemskin also appear in B78's alpha sweep with the same short client group and 1x1-texture border strips. **4-drelictionreleasepic is not one of them** — the first pass listed it in error: its `scripts/standardframe.m` contains no `newDynamicContainer` at all and does `content = newGroup(groupid); content.init(frameGroup)`, so its frame draws **inline in the same window**; its only `newDynamicContainer` is in `scripts/notifier.maki`. The other callers want instancing for their own windows rather than for chrome: Big Bento (`searchresults`, `Hsearchresults`, `browserpro`), jvc.tape, multipass, the two Love is War Miku variants, hatsune_miku_5, winampmodern566, Defix Hi-END 200, impulse_by_a_t_o_m_i_c and 4-dreliction's notifier. **After B110 landed, 8 archives actually build a live copy** in the render sweep — Ebonite (4), cPro2 Dark Aluminum (2, `searchresults`), Defix Hi-END 200 (2, `browserpro`), the four Big Bento Modern variants and WMP11-BlueVU (1 each) — the rest keep aliasing the declared container because only one program per id ever asks.
+
+## B117(a) — WMP11-BlueVU repaints at ~7 fps — folded into B119 2026-09-27
+
+**Not closed as fixed.** Its cause is B119's per-frame warp, and it held no separate work, so its
+row was removed from the ranking; it closes when B119 does. Kept here for the dead ends.
+
+| B117 | **WMP11-BlueVU's spectrum jumped and its marquee is low-fps — two separate defects.** (b) the streaming analyzer was starved of buffers: **fixed and live-confirmed 2026-09-04**, [archived](docs/winamp-modern/backlog-archive.md#b117b--streaming-starved-the-wal-analyzer--closed-2026-09-04). (a) the window repaints at ~7 fps: **open**, cause found by B118 (the per-frame layer warp), fix tracked as **B119**. See [detail](#b117) | 2 skins measured; (b) reached every streaming consumer | — | Measured |
+
+### B117
+
+- [ ] **B117(a). The window repaints at ~7 fps, and the marquee with it.** Measured, not disputed:
+      the frame interval clusters at 120–145 ms against an expected 33 ms, and `WM-VIS-STALL` is
+      median 131 / p90 300 after B117(b). cPro-Bento on the same build is median 60 / p90 68, so it
+      is skin-specific. The marquee shares the repaint, which is why the symptom is not audio-shaped.
+
+      **The cause is found and the fix is B119** — the per-frame layer warp in
+      `WasabiLayerFXMesh.resample` and the paint that follows it. This item closes when B119 does;
+      it holds no separate work.
+
+      **Dead ends — do not re-file.** Scene-memo thrash from the twelve
+      `animatedlayer#beatleft/beatright` that write `frame` ~100x/s: `frame` is already scene-neutral
+      (`WasabiObjectGraph.isSceneNeutral`), and partitioning all 169 `MUTATION_TRACE` windows gives
+      **148 of 150 `writers=12` windows at `resolves=0`**. That claim came from pairing a `writes=`
+      line with a `resolves:` line out of a **different** window — the trace prints them separately,
+      so read whole windows rather than grepping the two apart. `RESIZE_TRACE` is clean, so it is not
+      B52's resize storm either.
+
+## Batch note on the 12 skins added 2026-08-30 / 2026-08-31 — moved 2026-09-27
+
+History, not a task; moved out of `WINAMP5_TASKS.md`'s *Item detail* preamble verbatim.
+
+The batch measurement of the **12 skins added 2026-08-30 and 2026-08-31** — profiled 2026-08-31 with
+`WinampModernRenderDumpTests` under `RENDER_BITMAPS` + `RENDER_SCRIPTS=bindings`, every layout PNG
+read — is now fully closed out. Grades from that batch: `cpro2_dark_aluminum` and `canum` did not
+load (**F**, fixed 2026-09-01 by B93 and B92; `cpro2_dark_aluminum` has since been measured and
+driven end to end — it is the corpus's only ClassicPro engine-`two` skin and needed five further
+fixes, see [skins/cpro2-dark-aluminum.md](skills/winamp-modern-skin-guide/skins/cpro2-dark-aluminum.md)),
+`Winamp 3.0 Default` loaded blank (**F**, fixed
+2026-09-01 — it was a standard frame whose content group never entered the graph), `Darjah 1` **D**,
+`cpro_interface` / `nullsoft_media_player_10` / `jvc.tape` **C**, and `WMP11-BlueVU` / `MMD3-4-5` /
+`EPS_High-End` / `TRON Legacy` / `Firefox` **B**. **No live pass was run** on that batch, so none of
+it has been driven under the mouse, and the harness's absence of a component host means an empty
+*pane* is not evidence — only an empty *window* is.
+
+**Not open, and not a defect:**
+
+- The Windows 10 edition's zero-byte `window/no_alb_art_shade.png` is the skin's own bug. It degrades
+  to a warning and that one placeholder draws nothing, which is the correct outcome.
+- The wide-window pane split (B38.5). `from="left"` anchors the divider to the left edge and the right
+  pane absorbs the extra width — see B38 below.
+
 ## B146 — a user override for the `.wal` palette (Skin Colors) — closed 2026-09-06
 
 Closed as a **feature**, not a fix: the reported skin was rendering correctly, and the resolution was
@@ -367,6 +1489,10 @@ keeps the `B117` row in [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md); only the c
 
 | B116 | **`inherit_group` concatenates the base's children with the derived group's instead of letting a same-`id` child replace the inherited one, so the window frame is built twice.** Found by inspection while investigating WMP11-BlueVU 2026-09-04, not reported. `WasabiSkinInitializer.swift:350-372` merges *attributes* with the derived winning (`attributes.merge(definition.defaultAttributes) { _, new in new }`) but appends *children* twice — `children.append(contentsOf: parent.templateChildren)` then `children.append(contentsOf: definition.templateChildren)` — with nothing keyed on `id`. WMP11's `<groupdef id="wasabi.standardframe.my" inherit_group="wasabi.standardframe.nostatusbar">` redeclares `wasabi.frame.layout` at `h="-69"` to leave room for its 69px panel; the base's is `h="-12"`. `RENDER_PROBE main/normal` shows **both** — 354x135 *and* 354x78 — each dragging a duplicate `frame.top.middle` subtree (edge strips, titlebar, caption buttons) drawn every frame. Visually subtle because the duplicates land mostly on top of each other; structurally wrong and wasted draw work. Note only the same-`id` child is meant to be replaced — a base child the derived group does not redeclare (WMP11's `frame.bottom`) still draws, which is why the reference screenshot keeps its bottom border | **3 of 69 skins, 8 same-id overrides** — Sony_Walkman (6), canum_winamp (1), WMP11-BlueVU (1), all in `wasabi.standardframe.*` ([M33]). Lower bound: the probe resolves one level of inheritance only | M | Live-reported |
 
+**Reach command ([M33]), moved from `WINAMP5_TASKS.md` 2026-09-27:**
+
+- <a id="m33"></a>**M33:** parse every `<groupdef>` in the corpus for its `id`, its `inherit_group` and its direct children's `id`s, then report the groupdefs whose own child ids intersect their base's. Measured 2026-09-04 (~40 lines of Python: `os.walk` the skin, regex `<groupdef\b(.*?)>(.*?)</groupdef>` with `re.S`, pull `id`/`inherit_group` from the head and every child's `id` from the body, then intersect each derived group's child ids with its base's): **42 of 69 skins use `inherit_group` at all**, and **3 redeclare a same-`id` child** — Sony_Walkman (6: `component.bottom.left/middle/right`, `region.bottom.left/right`, `wasabi.frame.layout`), canum_winamp (1: `wasabi.frame.layout`), WMP11-BlueVU (1: `wasabi.frame.layout`). All 8 are in `wasabi.standardframe.*` groups, which is why the symptom is always a doubled window frame. **Lower bound:** the probe resolves one level of inheritance only (the base must itself be a declared groupdef), so a chain longer than two is not counted.
+
 ### B116
 
 - [x] **B116. `inherit_group` appended the base's children instead of letting a same-`id` child
@@ -446,6 +1572,10 @@ keeps the `B117` row in [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md); only the c
 ## B114 — a `desktopalpha="0"` layout has no opaque backing — closed 2026-09-04
 
 | B114 | **A `desktopalpha="0"` layout has no opaque backing, so a skin that paints only a translucent sheen shows the window's own light backing.** Reported 2026-09-04 on WMP11-BlueVU as *"missing backgrounds on the timer and track display"*. The skin ships **deliberately empty** spacers for that area — `glass_bg_left_left.png`, `glass_bg_left_right.png`, `glass_bg_right.png` are alpha 0/0/0 across every pixel — and `RENDER_PROBE main/normal` confirms no node covers `x 8…196, y 25…78`. The dumped pixel at (20,30) is `(180,180,180, a=112)`: the `Glass.Left` sheen composited over nothing. In Winamp the black comes from the *window*: `<layout id="normal" desktopalpha="0">` means no per-pixel alpha, so unpainted pixels are black and the skin leans on that. `desktopalpha` appears nowhere in the renderer — only as a MAKI method name in `WinampModernScriptRuntimeSystem.swift:326`. **Verified:** compositing the existing dump over black reproduces the skin's shipped `screenshot.png`. **The trap:** an opaque fill makes the window's *shape* matter, and this layout is `sysregion`-shaped with rounded corners — fill the whole rect and every region-shaped player in the corpus squares off. So the fill has to respect the region, and the change wants the corpus render sweep (`scripts/wal_render_sweep.sh`), not a one-skin check. The nearby precedent is the `background=` fallback at `WasabiRenderer.swift:2154`, whose two bounds ("only when the skin asked", "only a layout") are the shape to copy | 26 of 69 corpus skins declare `desktopalpha="0"` somewhere ([M32]); how many *rely* on it for a backing is unmeasured | M | Live-reported |
+
+**Reach command ([M32]), moved from `WINAMP5_TASKS.md` 2026-09-27:**
+
+- <a id="m32"></a>**M32:** `for d in "$corpus"/*/; do n=$(grep -rlio 'desktopalpha="0"' "$d" | wc -l); [ "$n" != 0 ] && echo "$n ${d}"; done` over the extracted 69-directory corpus. Measured 2026-09-04: **26 skins** declare it in at least one file — WMP11-BlueVU (7), impulse_by_a_t_o_m_i_c (6), Nullsoft.Winamp.2000.SP4.Lite and Itemskin (5), Pure Inspired x2, multipass, MoonLight, K-jr x2, Anaheim_Player_01 (4 each), Ujola Cat and Shield_Amp (2), then 13 with one apiece. **This counts declarations, not dependence** — most of these layouts paint their own chrome edge to edge and did not change when B114 landed. The narrowing is now done: with B114 landed the corpus render sweep (2026-09-04) moves **2 of 590 images** — WMP11-BlueVU's display area and a 7-pixel anti-aliasing fringe on EPS High-End's left speaker. An earlier, wrong version of that fix moved 34, which is what a *fill* rather than a region costs. See [`docs/winamp-modern/backlog-archive.md`](docs/winamp-modern/backlog-archive.md) -> B114.
 
 ### B114
 

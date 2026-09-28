@@ -272,8 +272,10 @@ the first time.
   `setFrameOrigin`, `viewDidMoveToWindow`) so the parked window follows whatever moves it. Pushing
   placement from the layout pass alone leaves the picture behind on every path that moves the box
   without one.
-- **Drag and resize zones are off while parked.** Both belong to the free-floating window; inside a
-  skin's box they slide or stretch the picture out of the hole it is filling.
+- **Resize zones are off while parked, and the drag moves the parent.** Both belong to the
+  free-floating window; inside a skin's box they would slide or stretch the picture out of the hole
+  it is filling. A drag on the picture moves the *skin's* window instead, and the picture follows as
+  its child (B60, `components.md` → *A frame supplies chrome, not a drag surface*).
 - **`VID_1X` / `VID_2X`** were inert before this (nothing read `presentationSize`). They size the
   *skin's* window so the box is the stream's own pixel size times N, clamped to the visible screen as
   well as the layout's range — Winamp's 1x on a 1080p film is a ~1940pt window, which is faithful but

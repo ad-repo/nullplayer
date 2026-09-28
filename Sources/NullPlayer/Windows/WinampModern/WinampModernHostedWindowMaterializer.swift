@@ -234,11 +234,16 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
             // second window states that window's own floor there and nowhere else — MoonLight's video
             // chrome is 410x281 around a 330x220 window, so nothing in the markup pairs the two sizes
             // ahead of time. A window smaller than its own frame renders with the border clipped off
-            // it, so it is grown here, once, before anything measures the canvas.
-            if let floor = scripts.hostedChromeFloor(of: createdRoot) {
+            // it, so it is grown here, once, before anything measures the canvas. A chrome that
+            // dropped a strip of controls we hide gives that height back first (`hostedChromeLift`).
+            let floor = scripts.hostedChromeFloor(of: createdRoot)
+            let lift = scripts.hostedChromeLift(of: createdRoot) ?? 0
+            if floor != nil || lift > 0 {
                 let canvas = renderer.canvasSize
+                let floor = floor ?? .zero
+                if lift > 0 { renderer.layoutBoundsDidChange() }
                 let grown = CGSize(width: max(canvas.width, floor.width),
-                                   height: max(canvas.height, floor.height))
+                                   height: max(canvas.height - lift, floor.height))
                 if grown != canvas {
                     _ = renderer.resize(to: grown)
                     let scale = max(skinScale(), 0.01)

@@ -214,3 +214,174 @@ Reopen only if a `.cur`/`.ani` decoder arrives for some other reason, at which p
 **The row, verbatim:**
 
 > | W67 | `.cur` and `.ani` cursors | **~70 uses**, a handful of skins (`resize.cur` 26, `over.ani` 23, `sizetopright.cur` 12, `size2_m.cur` 6) | The remainder after the named cursors landed: Windows cursor formats, which no macOS decoder reads. They resolve to no cursor rather than to a wrong one. Worth doing only with a `.cur`/`.ani` decoder, and worth almost nothing without one. |
+
+## `.wal` — Winamp Modern
+
+Moved from `WINAMP5_TASKS.md` 2026-09-27.
+
+### BB14 — Animated layout and tab transitions
+
+**Why it was moved:** self-described as not needed. The row says **nothing in this family depends
+on this** and that it was filed only so the absence is recorded. That is documentation, not a task.
+Reopen only when a skin is measured depending on an animated layout or tab switch.
+
+**The row and detail, verbatim:**
+
+> | BB14 | Animated layout/tab transitions beyond existing object tweens | 0 known dependent skins; existing tween calls are not evidence for this missing surface ([M4]) | L | Measured |
+>
+> ### BB14
+>
+> - [ ] **BB14. Animated layout and tab transitions, and easing beyond linear.** Our layout and tab
+>       switches are instant visibility swaps. Sprite `<AnimatedLayer>`, the
+>       `setTarget*`/`setTargetSpeed`/`gotoTarget`/`cancelTarget`/`onTargetReached` tween machine and
+>       timers are all implemented and are what Bento's own animations are built from, so **nothing in
+>       this family depends on this**. Filed so the absence is recorded rather than rediscovered.
+>
+> - <a id="m4"></a>**M4:** source audit recorded in the item; `setTarget*` calls exercise the already implemented object tween machine and must not be counted as demand for animated layout/tab transitions.
+
+### B84 — `WA5:Options` mapping
+
+**Why it was moved:** a decision, not a defect, in its own words ("A decision, not a defect: pick a
+mapping or build an Options menu for it"). To revive it, pick the answer and open that as the row:
+map it to `buildMenu()`, or build an Options menu.
+
+**The row, verbatim:**
+
+> | B84 | **`WA5:Options` maps to the Skins/UI menu, which is thin.** B77 routed a skin's own menu bar to NullPlayer's menus; `WA5:File`/`Play`/`Windows`/`Help` have clear counterparts, but Winamp's Options menu (preferences, time display, skins, always-on-top) has none. It currently opens `buildMenuBarUIMenu()` — 4 items, mostly skin families. The fatter candidate is `buildMenu()`, the player's own context menu, which duplicates the Exit already on `WA5:File`. A decision, not a defect: pick a mapping or build an Options menu for it | 6 skins declare a `<Menu>` bar | S | Live-reported |
+
+### B75 — T800 runs its duplicated script twice
+
+**Why it was moved:** a question, not work. The row says Winamp probably doubles this too, so it may
+be the skin's own bug, and says to decide that before adding a rule. To revive it, establish what
+Winamp does with two `<script>` declarations of the same file. Note the counter-example: Big Bento's
+`mcvcore` declares `System.onScriptLoaded` twice with different bodies on purpose.
+
+**The row and detail, verbatim:**
+
+> | B75 | A skin that includes the same script twice runs every handler twice | 1 skin measured (T800); corpus reach unmeasured | M | Live-reported |
+>
+> ### B75
+>
+> - [ ] **B75. A skin that includes the same script twice runs every handler twice.** T800 declares
+>       `<script file="scripts/quicksongpick.maki"/>` in **both** `skin.xml:27` and
+>       `xml/player-normal.xml:302`. Two programs are parsed, both bind the same five buttons, and
+>       every press runs both — so one click on a memory slot calls `System.playFile` twice and
+>       enqueues the track twice (live: `playTrack: index 16` immediately followed by `index 17`).
+>       Both bodies are byte-identical (`body=88323` in `RENDER_SCRIPTS=bindings`).
+>
+>       The dispatcher already drops a handler whose **body is a byte-for-byte repeat** of an earlier
+>       one, but only *within one program*; two programs from the same source are a different case.
+>       Winamp probably doubles this too, so this may be the skin's own bug rather than ours — decide
+>       that before adding a cross-program rule. Note the counter-example already recorded in
+>       `MakiProgram`: Big Bento's `mcvcore` declares `System.onScriptLoaded` twice with **different**
+>       bodies on purpose, and a rule that keeps only one broke it.
+
+### B74 — T800's memory slots, blocked on a Winamp object model nobody can confirm
+
+**Why it was moved (2026-09-28):** a question, not work. The row gated its fix on confirming what
+`<Wasabi:Button>` is in Winamp, and that cannot be confirmed from anything available:
+
+- **The mechanism is measured.** `RENDER_DISASM=@player-normal.xml` on T800: `onLeftButtonDown`
+  stores `<receiver>.getParent().getId()` as the key that both the record timer (`setPrivateString`)
+  and the recall in `onLeftButtonUp` (`getPrivateString` → `playFile`) use. The receiver is the
+  class-bound `Mem1`…`Mem5` object — flat, directly in `player.main.cms`.
+- **No corpus skin defines `<Wasabi:Button>` as a group** (0 of 79 declare `xuitag="Wasabi:Button"`),
+  and Winamp's own `freeform/xml/wasabi/xml/xui/` as mirrored in the webamp repo has groupdefs only
+  for `browser`, `standardframe` and `text` — which suggests a native object, not a wrapper.
+- **webamp-modern models it flat as well** (`SkinEngine_WAL.ts` → one `WasabiButton`), so it would
+  collapse the slots the same way.
+- **Making it a group would not fix it here anyway:** the engine forwards an embedded control's
+  pointer events to the `embed_xui` owner, so the receiver would still be the wrapper and its parent
+  still `player.main.cms`.
+- **The only evidence for per-slot keys is the author's intent** — the skin page says "5 song Memory
+  buttons", and the script prints `Song recorded: <key>`. Only T800's five declarations are
+  script-driven (the old [M22] scan: `<Wasabi:Button>` with neither `action=` nor `text=`; Styx's
+  `top.middle` is script-bound but never calls `getParent()`).
+
+**To revive it,** either find a primary source for what `getParent()` answers on a `<Wasabi:Button>`
+event receiver, or decide to match the author's intent with a T800-only rule (the receiver's parent
+answers the `<Wasabi:Button>` itself). The second is emulation of intent, not of Winamp; say so in
+the row. Enabling it orphans the one song saved under the shared `player_main_cms` key.
+
+**The row and detail, verbatim:**
+
+> | B74 | **T800's five memory slots share one storage key.** See [detail](#b74) | 1 skin / 5 buttons collapsing to 1 slot ([M22]) | L | Live-reported |
+>
+> ### B74
+>
+> - [ ] **B74. T800's five memory slots all write one storage key.** `quicksongpick.maki` keys each
+>       slot on `getParent().getID()`, and all five buttons sit directly in `groupdef player.main.cms`,
+>       so every slot reads and writes `winampModern.config.T800.T800.player_main_cms`; the skin prints
+>       `Song recorded: player.main.cms` where it should print `Mem3`.
+>       **Likely cause, unconfirmed:** `wasabi.button` is an identifier-only shell
+>       (`WasabiSkinInitializer.swift`), so `<Wasabi:Button id="Mem3">` is one flat object. In Wasabi
+>       the tag is a standard-library group, and if the script's receiver is a control inside it,
+>       `getParent()` is `Mem3`. Making it a real group touches all 32 `<Wasabi:Button>` declarations
+>       and the B14/B66 form widgets, so confirm the object model first.
+>       Recording needs a hold of ~2.5 s, and the confirmation is written inside the jaw — neither is a
+>       defect.
+>
+> - <a id="m22"></a>**M22:** `rg -i -o '<[[:space:]]*Wasabi:Button[^>]*>' "$corpus" --glob '*.xml'`, then keep the matches with neither `action=` nor `text=` — the ones only a script drives.
+
+### B58 — In-skin visualization surface swallows single clicks
+
+**Why it was moved:** its mechanism does not match the code. The row says
+`WinampModernVisualizationSurfaceView`'s `mouseDown` handles only `clickCount >= 2`. As of
+2026-09-27 that class has no `mouseDown`; the double-click handler is on `VisualizationFullscreenWindow`
+(`WinampModernVisualizationSurfaceView.swift:540`), and the in-skin GL view's `hitTest` returns nil
+so clicks reach the skin (`:17`). The defect may not exist. To revive it, `winhelper drag` from the
+vis in a skin's own player window; if the window does not move, file what that measures.
+
+**The row and detail, verbatim:**
+
+> | B58 | In-skin visualization surface swallows single clicks | — · every skin with a `<vis>` the host fills | S | Live-reported |
+>
+> ### B58
+>
+> - [ ] **B58. `WinampModernVisualizationSurfaceView` swallows single clicks.** Found while fixing B57
+>       (2026-08-28). Its `mouseDown` handles `clickCount >= 2` and nothing else, so a single press on
+>       the visualization inside the skin's *own* player window does nothing — including not dragging
+>       the window. Same defect class as B57, different mechanism: this surface has no
+>       `hostedContext`, so the drag would have to route through the parent `WinampModernMainView`'s
+>       skin hit test, and what `shouldDragWindow` answers for the holder underneath it is the open
+>       question. Do not copy `WinampModernHostedWindowDrag` in without checking that.
+
+### B24, B26, B28, B30, B31 — pending live verifications from 2026-08-25
+
+**Why they were moved:** stale past the point of trust. They were written a month before the move,
+and the surfaces, window sizing and glued frames they touch have changed many times since, so a
+tick against them would verify something that is no longer the code they describe. To revive one,
+re-run the check fresh with `app-control` and open it as a new row only if it fails.
+
+**The rows and detail, verbatim:**
+
+> | B24 | cPro-Bento library/playlist remount cycle | — · verification only | S | Verification |
+> | B26 | Lobe and Ebonite container behavior | — · verification only | S | Verification |
+> | B28 | Component frame sizing on Lobe and cPro-Bento | — · verification only | S | Verification |
+> | B30 | Lobe/Styx/mmd3 control geometry | — · verification only | S | Verification |
+> | B31 | Lobe playlist content | — · verification only | S | Verification |
+>
+> - [ ] **B24 verify:** Live on cPro-Bento: Media Library → Playlist → Media Library → Playlist, and
+>       the Video tab
+> - [ ] **B26 verify on Lobe:** the `CT` button opens the window, the picker lists 43, Switch applies one
+> - Already verified: **B26 on BLAKK, 2026-08-25.** It opens on its first declared layout (`boombox`,
+>       436×160 — it has no `normal`), and the full cycle works from its own Switch Player Mode button:
+>       boombox 436×160 → `stick` 650×30 → `remote` 160×280 → boombox, each matching its declared size
+>       and rendering completely (the remote shows art, 965 KBPS/44 KHZ, time, spectrum, transport).
+>       The button is script-bound through `configure.maki`'s `bboxswitch.onLeftClick`, not an
+>       `action="SWITCH"`, so this also exercises `switchToLayout` from a MAKI handler.
+> - [ ] **B26 verify on Ebonite_2_1 — half done, 2026-08-25.** It **opens**: 197×297, its first
+>       declared layout `full` (it has no `normal` either). Its five other layouts
+>       (`compact`/`stick`/`mini`/`minivert`/`narrow`) were **not** exercised. They hang off
+>       `<SC:WindowModeButton>` at `full` (188,24,9,5) with `lclick="switchto:compact"` and a
+>       right-click menu of all five (`xml/player-full.xml:7`), each layout's own button chaining to
+>       the next. Note this skin's own colour defect is fixed but separate (see the Ebonite note in
+>       `skills/winamp-modern-skin-guide/skins.md`).
+> - [ ] **B28 verify:** Live on Lobe **and** on a tall skin (cPro-Bento), for the visualization and
+>       library windows, at 1× and 2×. Note Lobe cannot exercise the library half — its catalog reads
+>       `library=synthesized:nullplayer.library`, so the surface coordinator opens the skin's own
+>       synthesized window and never reaches `rightDockedSideFrame`. That half needs a skin whose
+>       catalog reads `library=classic(...)`
+> - [ ] **B30 verify on LOBE:** drag the dial and the volume strip
+> - [ ] **B30 verify on Styx** (volume) and **mmd3** (knobs unchanged — its group is at the origin)
+> - [ ] **B31 verify on Lobe:** the Pledit window shows playlist content

@@ -275,9 +275,9 @@ path dead. Measured on `corona`: `.wmz` 547x890 throughout, Classic 580 → 290,
 580 → 290 → 580. `Tests/NullPlayerAppTests/WMPLibraryStackSizingTests.swift` pins the reopen
 arithmetic; the live path has no headless probe.
 
-**The `.wal` half of W237 is B147 and is not answered by this.** `WinampModernMainWindowController`
-is not named in `isRunningModernUI`, so a `.wal` session still answers whichever value the user last
-left in the persisted preference.
+**The `.wal` half of W237 is B147, closed the same way:** both gates also name
+`uiMode.controllerFamily == .winampModern`. See `winamp-modern-skin-guide/reference/components.md`
+→ *The classic-fallback library is the tiler's*.
 
 **`WMPWindowRestorePolicy.safeFrame` was a second, weaker definition of "on screen"** (an 80pt strip,
 a 24pt bottom margin, and `first(where: intersects)` rather than `hostScreen`). It was deleted with

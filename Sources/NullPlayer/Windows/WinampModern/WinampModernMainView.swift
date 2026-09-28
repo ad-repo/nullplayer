@@ -303,6 +303,10 @@ final class WinampModernMainView: NSView {
 
     private func repaintAnimatingObjects() {
         guard !isTornDown else { return }
+        guard isOnScreen else {
+            repaintDeferredWhileHidden = true
+            return
+        }
         let rects = animatingRects()
         // A scene with a great many moving parts is cheaper to repaint in one pass than to invalidate
         // piece by piece.
@@ -526,8 +530,14 @@ final class WinampModernMainView: NSView {
             guard let self, !self.isTornDown else { return }
             // Scoped: a warped layer on the *main* window fires this 30 times a second, and this
             // window has no business repainting for it.
+            if let object, !self.owns(object) { return }
+            // A window nobody can see does not paint for the skin's animation: it catches up in one
+            // pass when it comes back (`occlusionDidChange`).
+            guard self.isOnScreen else {
+                self.repaintDeferredWhileHidden = true
+                return
+            }
             if let object {
-                guard self.owns(object) else { return }
                 self.setNeedsDisplay(for: object)
                 return
             }
@@ -565,7 +575,12 @@ final class WinampModernMainView: NSView {
         // The light path a warped layer takes 30 times a second: repaint, nothing else.
         scripts.repaintRequested = { [weak self] in self?.needsDisplay = true }
         // Lighter still when the runtime can name what moved — only that rect is repainted.
-        scripts.objectRepaintRequested = { [weak self] object in self?.setNeedsDisplay(for: object) }
+        // Scoped like the auxiliary sink: an object in another container has no geometry in this
+        // scene, and `setNeedsDisplay(for:)` would answer that with a whole-window repaint.
+        scripts.objectRepaintRequested = { [weak self] object in
+            guard let self, self.owns(object) else { return }
+            self.setNeedsDisplay(for: object)
+        }
         scripts.actionRequested = { [weak self] action, parameter in
             self?.performAction(action: action, parameter: parameter)
         }
@@ -861,13 +876,49 @@ final class WinampModernMainView: NSView {
                     self.needsDisplay = true
                 })
         }
+        activeStateObservers.append(NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main) { [weak self] _ in
+                self?.occlusionDidChange()
+            })
+        occlusionDidChange()
         needsDisplay = true
+    }
+
+    /// Whether any of this view's window is visible: ordered in, not minimized, on the current Space
+    /// and not wholly covered (B119).
+    ///
+    /// A skin's hidden windows kept painting. Their scripts run whether or not anyone can see them —
+    /// WMP11-BlueVU's never-opened *VU Meters Small* re-warped both needles ~100 times a second — and
+    /// AppKit still displays an ordered-out window that has been invalidated. Measured on a release
+    /// build with *VU Meters Large* open and music playing: main-thread busy **81.4% → 48.3%**, and
+    /// `CGDisplayListDrawInContextDelegate` 19.0% → 0.0%.
+    ///
+    /// **Cached** from the occlusion notification rather than asked per call: this is read on every
+    /// script notification, thousands of times a second, and a first draft that asked the window
+    /// each time cost 40% of the main thread on its own — more than the paint it saved.
+    private var isOnScreen = false
+
+    /// Repaints a hidden window skipped; the next time it shows, it redraws whole.
+    private var repaintDeferredWhileHidden = false
+
+    private func occlusionDidChange() {
+        isOnScreen = window?.occlusionState.contains(.visible) ?? false
+        guard !isTornDown, isOnScreen, repaintDeferredWhileHidden else { return }
+        repaintDeferredWhileHidden = false
+        invalidateRectCaches()
+        needsLayout = true
+        needsDisplay = true
+        updateAnimationTimer()
     }
 
     override func draw(_ dirtyRect: NSRect) {
         guard !isTornDown, let context = NSGraphicsContext.current?.cgContext else { return }
         #if DEBUG
         Self.reportDrawFormatOnce(context: context, view: self)
+        #endif
+        if Self.paintRateProbe { recordPaint(dirtyRect) }
+        #if DEBUG
+        if Self.dirtyTrace { traceDirty(dirtyRect, context: context) }
         #endif
         // Only what is being repainted is cleared: a partial repaint (a meter that moved) must not
         // blank the rest of the window it is not going to draw again.
@@ -876,11 +927,76 @@ final class WinampModernMainView: NSView {
         // cached on the notification: a window can lose key without either notification reaching us
         // (the app deactivating, a sheet), and the read is one Boolean.
         renderer.isWindowActive = window?.isKeyWindow ?? true
+        // Measured before `skinScale` is applied: a display-list context arrives at CTM 1.0 and is
+        // replayed at the backing scale, a bitmap one already carries it (B80).
+        let contextScale = abs(context.ctm.a)
+        renderer.devicePixelsPerContextUnit = contextScale > 0
+            ? max(1, (window?.backingScaleFactor ?? 1) / contextScale) : 1
         context.saveGState()
         if skinScale != 1 { context.scaleBy(x: skinScale, y: skinScale) }
         renderer.draw(in: context, pressed: pressedObject?.stableID,
                       hovered: hoveredObject?.stableID)
         context.restoreGState()
+    }
+
+    /// `WINAMP_MODERN_PAINT_RATE=1` — paints per second per window, and how much of the window each
+    /// one covered: `dirty=` is the mean share of `dirtyRect` (the union AppKit hands `draw`),
+    /// `rects=` the mean share of the rects actually being drawn. Printed every two seconds. Release
+    /// builds too, because the question it answers — is a periodic update repainting the whole
+    /// window? — is a release-profile question (B152).
+    #if DEBUG
+    /// `WINAMP_MODERN_DIRTY_TRACE=1` — every partial paint's dirty rect, drawn rects and clip in
+    /// **device pixels**, with `FRACTIONAL` when an edge is off the pixel grid (B80). A whole-window
+    /// paint is not printed.
+    static let dirtyTrace = ProcessInfo.processInfo.environment["WINAMP_MODERN_DIRTY_TRACE"] == "1"
+
+    private func traceDirty(_ dirtyRect: NSRect, context: CGContext) {
+        guard dirtyRect.intersection(bounds) != bounds else { return }
+        let backing = window?.backingScaleFactor ?? 1
+        func device(_ rect: NSRect) -> String {
+            let edges = [rect.minX, rect.minY, rect.maxX, rect.maxY].map { $0 * backing }
+            let off = edges.contains { abs($0 - $0.rounded()) > 0.001 }
+            return edges.map { String(format: "%.2f", $0) }.joined(separator: ",") + (off ? " FRACTIONAL" : "")
+        }
+        var drawn: UnsafePointer<NSRect>?
+        var count = 0
+        getRectsBeingDrawn(&drawn, count: &count)
+        let rects = (0..<count).compactMap { drawn?[$0] }.map(device).joined(separator: " | ")
+        let clip = context.boundingBoxOfClipPath
+        let ctm = context.ctm
+        NSLog("DIRTY %@ bounds=%@ dirty=[%@] rects=[%@] clipCTM=[%@] ctm=(%.3f,%.3f,%.3f,%.3f)",
+              window?.title ?? "-", device(bounds), device(dirtyRect), rects,
+              device(clip.applying(ctm).applying(CGAffineTransform(scaleX: 1 / backing, y: 1 / backing))),
+              ctm.a, ctm.d, ctm.tx, ctm.ty)
+    }
+    #endif
+
+    static let paintRateProbe = ProcessInfo.processInfo.environment["WINAMP_MODERN_PAINT_RATE"] == "1"
+    private var paintRateWindow: (start: CFTimeInterval, paints: Int, dirty: CGFloat, rects: CGFloat)?
+
+    private func recordPaint(_ dirtyRect: NSRect) {
+        let area = max(1, bounds.width * bounds.height)
+        var drawn: UnsafePointer<NSRect>?
+        var count = 0
+        getRectsBeingDrawn(&drawn, count: &count)
+        let rectsArea = (0..<count).reduce(CGFloat(0)) { sum, i in
+            let rect = drawn![i].intersection(bounds)
+            return sum + rect.width * rect.height
+        }
+        let now = CACurrentMediaTime()
+        var window = paintRateWindow ?? (now, 0, 0, 0)
+        window.paints += 1
+        window.dirty += dirtyRect.intersection(bounds).width * dirtyRect.intersection(bounds).height / area
+        window.rects += rectsArea / area
+        let elapsed = now - window.start
+        if elapsed >= 2 {
+            let n = CGFloat(window.paints)
+            NSLog("[paint/rate] window=%@ paints/s=%.1f dirty=%.0f%% rects=%.0f%%",
+                  self.window?.title ?? "<none>", Double(n) / elapsed,
+                  Double(window.dirty / n * 100), Double(window.rects / n * 100))
+            window = (now, 0, 0, 0)
+        }
+        paintRateWindow = window
     }
 
     #if DEBUG

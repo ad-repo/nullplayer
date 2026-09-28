@@ -36,10 +36,41 @@ final class WinampModernB114Tests: XCTestCase {
         XCTAssertEqual(Int(over.red), 180 * 112 / 255, accuracy: 3,
                        "180 at 112/255 over black, which is the sheen the skin drew")
 
-        let unbacked = try makeScene(layoutAttributes: "", resources: Self.sheenBitmap,
+        let unbacked = try makeScene(layoutAttributes: #"desktopalpha="1""#, resources: Self.sheenBitmap,
                                      markup: Self.sheenLayer, art: Self.sheenArt)
         let alone = try XCTUnwrap(unbacked.pixel(x: 30, y: 20))
-        XCTAssertEqual(Int(alone.alpha), 112, "and without the flag it is still just a sheen")
+        XCTAssertEqual(Int(alone.alpha), 112, "and with per-pixel alpha it is still just a sheen")
+    }
+
+    // MARK: - B155: a layout that says nothing
+
+    /// A layout that declares no `desktopalpha` is a region too. The flag is Wasabi's opt in to
+    /// desktop alpha, and the corpus uses it that way: meridian's round, soft-shadowed player says
+    /// `desktopalpha="1"` while its rectangular shade strip says nothing, and every notifier that
+    /// ships a `desktopalpha` layout keeps `normal` as the fallback for a desktop without alpha.
+    func testALayoutThatSaysNothingIsARegion() throws {
+        let scene = try makeScene(layoutAttributes: "", resources: Self.sheenBitmap,
+                                  markup: Self.sheenLayer, art: Self.sheenArt)
+        XCTAssertEqual(Int(try XCTUnwrap(scene.pixel(x: 30, y: 20)).alpha), 255)
+    }
+
+    /// `alphabackground` is the other opt in. Ujola Cat's cat declares it and no `desktopalpha`, and
+    /// the skin's own Winamp screenshot shows that window's soft edges over the desktop wallpaper
+    /// with no black halo. Reading it as a region put black fringes round 14 skins' drop shadows.
+    func testAnAlphaBackgroundLayoutKeepsPerPixelAlpha() throws {
+        let scene = try makeScene(layoutAttributes: #"alphabackground="sheen""#,
+                                  resources: Self.sheenBitmap,
+                                  markup: Self.sheenLayer, art: Self.sheenArt)
+        XCTAssertEqual(Int(try XCTUnwrap(scene.pixel(x: 30, y: 20)).alpha), 112)
+    }
+
+    /// A declared flag outranks `alphabackground`: Diablo IV Skills' video window says
+    /// `desktopalpha="0"` and means it.
+    func testADeclaredZeroOutranksAnAlphaBackground() throws {
+        let scene = try makeScene(layoutAttributes: #"desktopalpha="0" alphabackground="sheen""#,
+                                  resources: Self.sheenBitmap,
+                                  markup: Self.sheenLayer, art: Self.sheenArt)
+        XCTAssertEqual(Int(try XCTUnwrap(scene.pixel(x: 30, y: 20)).alpha), 255)
     }
 
     /// The EPS High-End case, which is what makes this a region rather than a fill: a pixel the skin
@@ -61,8 +92,8 @@ final class WinampModernB114Tests: XCTestCase {
 
     // MARK: - The guards
 
-    /// A layout that says nothing keeps the per-pixel alpha it has always had. Most of the corpus is
-    /// this case and none of it may grow a rectangle.
+    /// A layout that says nothing is a region, not a rectangle: a pixel it never painted stays out
+    /// of the window. Most of the corpus is this case and none of it may grow a rectangle.
     func testALayoutThatDeclaresNoDesktopAlphaStaysTransparent() throws {
         let scene = try makeScene(layoutAttributes: "")
         XCTAssertEqual(Int(try XCTUnwrap(scene.pixel(x: 30, y: 20)).alpha), 0)
@@ -96,7 +127,7 @@ final class WinampModernB114Tests: XCTestCase {
     func testTheOpaquePathIsPixelExactAtRetinaScale() throws {
         let scene = try makeScene(layoutAttributes: #"desktopalpha="0""#, resources: Self.sheenBitmap,
                                   markup: Self.sheenLayer, art: Self.sheenArt)
-        let plain = try makeScene(layoutAttributes: "", resources: Self.sheenBitmap,
+        let plain = try makeScene(layoutAttributes: #"desktopalpha="1""#, resources: Self.sheenBitmap,
                                   markup: Self.sheenLayer, art: Self.sheenArt)
         let opaque = try XCTUnwrap(scene.pixel(x: 30, y: 20, scale: 2))
         let reference = try XCTUnwrap(plain.pixel(x: 30, y: 20, scale: 2))
@@ -105,7 +136,49 @@ final class WinampModernB114Tests: XCTestCase {
                        "the colours are untouched — only the alpha channel is promoted")
     }
 
+    // MARK: - B151: a standard frame's box is window
+
+    /// WMP11-BlueVU's VU Meters: a `Wasabi:StandardFrame` whose groupdef carries `sysregion="1"`, and
+    /// a face 2px short of its client area on every side. The ring between them is inside the window
+    /// and draws black — even though the layout declares no `desktopalpha` at all.
+    func testTheRingInsideAStandardFrameIsBackedBlack() throws {
+        let scene = try makeScene(layoutAttributes: "", resources: Self.frameResources,
+                                  markup: Self.frameMarkup, art: Self.frameArt)
+        let ring = try XCTUnwrap(scene.pixel(x: 1, y: 20))
+        XCTAssertEqual(Int(ring.alpha), 255, "the ring is window")
+        XCTAssertEqual(Int(ring.red), 0, "and nothing painted it, so it is black")
+        let face = try XCTUnwrap(scene.pixel(x: 60, y: 20))
+        XCTAssertEqual(Int(face.red), 180, accuracy: 1, "the face itself is untouched")
+    }
+
+    /// `desktopalpha="1"` opts in to per-pixel alpha, so the ring stays out of the window.
+    func testADesktopAlphaOneStandardFrameKeepsItsRingTransparent() throws {
+        let scene = try makeScene(layoutAttributes: #"desktopalpha="1""#, resources: Self.frameResources,
+                                  markup: Self.frameMarkup, art: Self.frameArt)
+        XCTAssertEqual(Int(try XCTUnwrap(scene.pixel(x: 1, y: 20)).alpha), 0)
+    }
+
+    /// Only a standard frame is its box. A plain `sysregion="1"` group is usually a drawer or a
+    /// silhouette's wrapper — S7Reflex and Lobe grew black slabs across the desktop when every
+    /// such group was backed.
+    func testAPlainSysregionGroupIsNotBacked() throws {
+        let scene = try makeScene(
+            layoutAttributes: "", resources: Self.sheenBitmap,
+            markup: #"<group id="drawer" x="0" y="0" w="120" h="40" sysregion="1"/>"#
+                + #"<layer id="face" x="2" y="2" w="116" h="36" image="sheen"/>"#,
+            art: Self.sheenArt)
+        XCTAssertEqual(Int(try XCTUnwrap(scene.pixel(x: 1, y: 20)).alpha), 0)
+    }
+
     // MARK: - Fixture
+
+    /// B151's shape: a skin-defined standard frame that paints nothing, and a face inset 2px.
+    private static let frameResources = sheenBitmap + """
+        <groupdef id="frame" xuitag="Wasabi:StandardFrame:NoStatus" sysregion="1"/>
+        """
+    private static let frameMarkup = #"<Wasabi:StandardFrame:NoStatus id="frame" x="0" y="0" w="0" h="0" relatw="1" relath="1"/>"#
+        + #"<layer id="face" x="2" y="2" w="116" h="36" image="sheen"/>"#
+    private static let frameArt = sheenArt
 
     /// WMP11-BlueVU's shape: a translucent sheen laid over the whole window and nothing beneath it.
     private static let sheenBitmap = #"<bitmap id="sheen" file="sheen.png"/>"#

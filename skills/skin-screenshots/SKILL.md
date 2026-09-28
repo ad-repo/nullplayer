@@ -122,8 +122,7 @@ At `--frame 800` seven Modern skins exceed the frame even after trimming: the fo
 jvc.tape.v0.5 (1284×340). They are recorded as `skipped-too-big` in the manifest. Raise `--frame`
 to include them — the frame is the GIF's canvas, so raising it shrinks every other skin within it.
 
-`../exclude.txt` holds skins to skip outright; it currently carries the three `.wal` skins graded **F**
-in `docs/winamp-modern/skin-compatibility.md`, which do not render.
+`../exclude.txt` holds skins to skip outright; it is currently empty.
 
 ## GIF timing
 

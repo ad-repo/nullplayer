@@ -22,6 +22,11 @@ extension WasabiSceneRenderer {
     @discardableResult
     func drawWarped(_ image: CGImage, in rect: CGRect, mesh: WasabiLayerFXMesh,
                             context: CGContext) -> Bool {
+        if !mesh.wrap, let sourceFromDestination = mesh.affineSourceTransform {
+            drawAffineWarp(image, in: rect, sourceFromDestination: sourceFromDestination,
+                           bilinear: mesh.bilinear, context: context)
+            return true
+        }
         let width = min(Self.maximumWarpExtent, max(1, Int(rect.width.rounded())))
         let height = min(Self.maximumWarpExtent, max(1, Int(rect.height.rounded())))
         let key = WarpSourceKey(image: ObjectIdentifier(image), width: width, height: height)
@@ -44,6 +49,31 @@ extension WasabiSceneRenderer {
         warpedImageCache[key] = (image, mesh, warped)
         drawImage(warped, in: rect, context: context)
         return true
+    }
+
+    /// An affine warp drawn as the layer's own image through the inverse of the mesh's map.
+    ///
+    /// No pixel loop, no intermediate raster: Core Graphics resamples the source once, at the
+    /// device resolution, straight into the scene. The resample path rasterized the warp at the
+    /// layer's point size and then scaled it up again, so this is also sharper on a Retina display.
+    /// Outside the layer's own image nothing is drawn, as with a mesh that does not wrap, and the
+    /// clip keeps the draw inside the layer's box as the resample's destination raster did.
+    private func drawAffineWarp(_ image: CGImage, in rect: CGRect,
+                                sourceFromDestination: CGAffineTransform,
+                                bilinear: Bool, context: CGContext) {
+        context.saveGState()
+        context.clip(to: rect)
+        // Destination-normalized space: 0…1 over the layer's box, top-left origin, as the scene is.
+        context.translateBy(x: rect.minX, y: rect.minY)
+        context.scaleBy(x: rect.width, y: rect.height)
+        // Source-normalized space, where the layer's image is the unit square.
+        context.concatenate(sourceFromDestination.inverted())
+        // The image's first row belongs at the top of that square, the flip `drawImage` makes.
+        context.translateBy(x: 0, y: 1)
+        context.scaleBy(x: 1, y: -1)
+        context.interpolationQuality = bilinear ? .medium : .none
+        context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        context.restoreGState()
     }
 
     /// The layer's own image rasterized at the size it draws at, in top-left row order — the space

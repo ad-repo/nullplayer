@@ -34,6 +34,12 @@ findings     3 errors, 25 warnings, 0 info
 
 The archive ships the author's own `screenshot.png`; the 2026-09-06 comparison pass found our render recognisably the same skin at rest.
 
+**The VU Meters' standard frame leaves a 2px ring empty around the face** (B151, fixed 2026-09-28).
+Neither `Meter` layout declares `desktopalpha`, and `player/Frame/region.png` is alpha 0 throughout,
+so its `-2` corners cut nothing. The ring is black only because the frame groupdef's `sysregion="1"`
+makes its box window. The same rule fills the About boxes, the playlist and the library. See
+`reference/rendering.md` → *A standard frame's box is window*.
+
 ### Not measured
 
 No live pass, no `RENDER_CLICK`, no motion ladder, no menu walk, and no coverage figure. Every number above is a **declaration count from one headless render at rest** — it says a thing exists, never that it is drawn right or that it responds. evidence gap: log is structural only — cannot verify UI rendering, synthesized library window appearance, or control functionality

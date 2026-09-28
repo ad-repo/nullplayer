@@ -69,6 +69,23 @@ enum WasabiMenuBar {
         return changed
     }
 
+    /// The `<Menu>` that names `object` as one of its three state objects, or `nil`.
+    ///
+    /// Searched among the object's own siblings — the scope every `<Menu>` in the corpus writes its
+    /// ids in — and confirmed by identity through `stateObject`, so an id reused in another entry
+    /// never answers.
+    static func owningMenu(of object: WasabiObject) -> WasabiObject? {
+        guard let identifier = object.xmlID, let parent = object.parent else { return nil }
+        for sibling in parent.children where sibling !== object && isMenu(sibling) {
+            for state in State.allStates
+            where sibling.attributes[state.rawValue]?.caseInsensitiveCompare(identifier) == .orderedSame
+                && stateObject(state, of: sibling) === object {
+                return sibling
+            }
+        }
+        return nil
+    }
+
     /// The host menu this entry opens — `menu="WA5:File"` → `"WA5:File"`. `nil` for a `<Menu>` that
     /// names none, which is an entry with nothing behind it rather than a defect.
     static func hostMenuIdentifier(of object: WasabiObject) -> String? {

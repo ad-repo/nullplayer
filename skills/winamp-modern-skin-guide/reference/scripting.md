@@ -83,6 +83,15 @@ MAKI's casts are System methods (`System.Integer(v)`, `Float`, `String`, `Boolea
 reaches for them wherever it mixes a float with an int-typed API — which is exactly where the volume
 path runs.
 
+**Division is IEEE and never aborts (B65).** Opcode 67 is always a real divide, so a zero divisor
+answers ±infinity (NaN for 0/0), reports a `[warning] invalidScript MAKI division by zero.` through
+`MakiMethodDispatching.report`, and the handler runs on. Before this it threw and took the handler with
+it: 6 corpus skins lost a handler that way (Shield_Amp and Ebonite's `OneDirectionText`, Ebonite's
+`SC-Cover`, four cPro2 skins' InfoViewer). A store into an Int clamps through `integerValue`, so an
+infinite `Delay` becomes `Int32.max`: a timer armed with it is a timer that never fires. That is
+the *script's* arithmetic, not a defect of the divide. Integer modulo (68) has no IEEE answer and
+still fails closed.
+
 **Opcodes are exercised at the same rate as methods** — that is, barely, until a script gets far
 enough to use one. `delete` (opcode 97) consumed its operand for eight phases before anything reached
 it. `delete obj` is an **expression**: the compiler emits `push; delete; pop`, so the opcode must
@@ -116,12 +125,22 @@ Three ordering rules make or break this:
 - It must run **after** `onScriptLoaded`. The handler binds to the script-group variable that
   `getScriptGroup()` populates during `onScriptLoaded`; dispatched earlier, no binding matches and
   every param is silently dropped.
+- **Each owner is configured before the next one starts** (B71). Wasabi builds an object completely —
+  script loaded, then params — before it creates the next one in the document, so a layout's own
+  `<script>` declared after a `<Wasabi:StandardFrame:* content="…">` finds the frame's content
+  already built. `start()` walks the object-owned programs grouped by owner, in program order, and for
+  each owner runs `onScriptLoaded` and then that owner's `deliverXUIParams(for:)`. Deferring every
+  param to one pass after every `onScriptLoaded` (the old order) is wrong: Defix's detached visualizer
+  declares `visrb2.maki` after its standard frame, and all eleven of its `findObject` lookups into
+  `VISCON.component.gp` answered null, so Reattach and Random were dead. The corpus sweep of that
+  change moved two other skins, both toward their own scripts: S7Reflex stopped drawing its `ST` and
+  `MO` readouts on top of each other, and winampmodern566's titlebar streaks landed at the
+  `padtitleleft`/`padtitleright` its frame hands `titlebar.maki`.
 - A **skin-level `<scripts>` block loads last** — after every object's `onScriptLoaded` *and* after the
   params. It sits at the end of `skin.xml`, which is where Winamp reads it, and it is the one script
   that may assume the rest of the skin is configured. Defix's lays out its whole SUI tab strip as
   `label.getAutoWidth() + 20` per tab; run before the labels arrived as params, all five tabs came out
-  at that bare 20px, stacked at the left edge. `start()` therefore runs object-owned scripts, then
-  `deliverXUIParams`, then the skin-level ones — do not collapse it back into one pass.
+  at that bare 20px, stacked at the left edge.
 - **Geometry never reaches the script.** Wasabi hands a tag's attributes to `GuiObject::setXmlParam`
   first and only scripts what that leaves unclaimed, which is why a XUI wrapper can afford to forward
   everything it is given straight to the control it wraps. ClassicPro's `ModernSongticker.maki` is
@@ -171,6 +190,14 @@ tabI.init(tabHolder);              // moved where it actually belongs
 - That nested `onScriptLoaded` is dispatched to a **subset** of programs while the outer one is still
   on the stack, so the re-entrancy guard is keyed by dispatch scope as well as by (target, event) —
   otherwise the outer dispatch swallows it and every runtime-created control comes up unbound.
+- **A subtree started mid-session is told what is playing** (B82). A script loaded with the skin hears
+  the window's opening `onTitleChange`/`onPlay` from its first track update; one started later would
+  hear nothing until the next track. So `startScripts(addedBeneath:)` ends by seeding the *new*
+  programs only — `onTitleChange(current title)` when there is a title, `onPlay` when playing — once
+  `hasStartedScripts` is set. Never skin-wide: `beat.m` resets its VU maximum on every title it hears.
+  The measured case is ClassicPro's Now Playing widget, rebuilt on every NOW-tab click
+  (`CustomObject` `groupid`), whose three `SC:FadeText` lines are filled only from `onTitleChange`.
+  `onAlbumArtLoaded` is not seeded because the app dispatches it nowhere yet.
 
 #### `GroupList.instantiate` — the list that builds its own entries
 
@@ -271,6 +298,14 @@ Styx's volume knob was the same). mmd3's own knob group is at (0, 0), which is w
 conventions agreed there and this survived 50 phases. Converted once, in
 `WinampModernMainView.dispatch`, so every mouse event (and the `RENDER_CLICK` probe) uses it.
 
+**`System.getMousePos*` is the window's canvas, not the desktop — and stays so.** Winamp answers in
+screen space, but so do its `clientToScreen*`, viewport and layout `getLeft()`, and here all of those
+answer in the canvas; skins do arithmetic across them. multipass opens its drawers on
+`getMousePosX() >= layoutMainNormal.getLeft()` and friends: measured live 2026-09-28 with a
+screen-space cursor, the drawers stayed shut on hover and opened with the pointer in the screen's
+top-left corner (B123, archived). Only desktop-snap emulation wants true screen space, and those
+windows are suppressed. Moving the cursor alone is wrong; move the whole "screen" model or nothing.
+
 A `Map` is also a general **image-inspection** object, not only a knob lookup: `getWidth`/`getHeight`
 size things from artwork, and `getARGBValue(x, y, channel)` reads whole pixels — ClassicPro derives
 its visualization colour bands this way (`colorbandpeak="r,g,b"` from channels **2, 1, 0**, i.e. the
@@ -289,6 +324,37 @@ Engines are written to run against skins that omit optional pieces, and they ask
   over to bitmaps that do not exist — visible as holes punched through the window's edges.
 - **`getCurCfgVal()`** — the value of the config attribute the object is bound to via
   `cfgattrib="{GUID};Name"`. The GUID is the section key, the same addressing `getItemByGuid` uses.
+
+#### Winamp's own preferences answer Winamp's defaults
+
+A skin may read a preference **Winamp** registers, not one of its own: `getItemByGuid` addresses
+the item, and nothing in the archive ever calls `newAttribute` for it. Winamp registers these at
+startup, so an unset one there reads its default, never `""`.
+`WinampModernConfigBridge.hostDefault(section:key:)` is that table, consulted by
+`ConfigAttribute.getData` when the store has no value. The GUID is matched case-insensitively,
+because the corpus spells `{9149C445-3C30-4e04-…}` both ways. It answers exactly one entry today:
+
+| Item | Attribute | Answer | Source |
+|---|---|---|---|
+| *Skins and UI Tweaks* `{9149C445-3C30-4e04-8433-5A518ED0FDDE}` | `Text Ticker Speed` | `"0.333333"` | gen_ff `wasabicfg.h` `DEFAULT_TEXTSPEED 1.0f/3.0f`, stored through `%f` (`StringPrintfW(double)`) |
+
+Shield_Amp's and Ebonite_2_1's shared `OneDirectionText` sets its step to `20/stringToFloat(value)`,
+which is 60 ms (B148). The same item's `Enable desktop alpha` (8 markup bindings) and
+`Enable tooltips` (4) are **deliberately unanswered**: each switches a skin branch nobody has
+measured here. Add an entry only with Winamp's own default in hand, read from its source, never
+chosen.
+
+#### `Timer.setDelay` re-arms a running timer; `getDelay` answers it
+
+Wasabi's `STimer::setDelay` re-arms a started timer at the new delay, and `getDelay` returns the delay
+as set (`Src/Wasabi/api/script/objects/timer.cpp`). Skins change pace from inside their own
+`onTimer`. `OneDirectionText` starts on its `firstdelay` (1000 ms on Shield_Amp) and switches to the
+60 ms step on the first tick, when `getDelay() == FirstDelay`. `getDelay` was unimplemented, so that
+tick aborted before it moved anything. A timer's `onTimer` is dispatched with `try?`, so **the abort
+printed nothing**: `CALL_TRACE` showed the handler's last call and then the next tick. `setDelay`
+also only stored the value, so the step would have stayed at one pixel a second (B148). Wasabi's
+default delay is 1000 ms; ours is still 5000 for a timer `start`ed without one. No corpus skin
+has been seen to depend on it.
 
 #### Monitor dimensions are logical desktop coordinates
 
@@ -518,6 +584,16 @@ Two related rules that fell out of the same investigation:
   `0`, Big Bento's pages opened by computing `scrollToPercent(99 - 0)` — 99%, their own bottom — and
   seven of its nine settings pages launched scrolled to the end of themselves. Only a slider with no
   `action` is seeded; a seek or volume slider is told its position by the host.
+
+#### `leftClick()` is a press, not just an event
+
+A script's `obj.leftClick()` does what the mouse does to that object (B71): `onLeftClick`, then a
+togglebutton flips (`toggleActivation`), then the object's `action=`, and — when it has no action — a
+`cfgattrib` control writes its attribute (`toggleConfigAttribute`). That is the order
+`WinampModernMainView.performAction` runs for a real click; keep the two in step. Skins use it to
+route a click through an invisible proxy: Defix's detached visualizer answers Reattach and Random
+with `leftClick()` on a ghosted `cfgattrib` togglebutton (`vis.DTTB`, `vis.random.active`), and while
+`leftClick` dispatched only `onLeftClick` the attribute never moved and both buttons were dead.
 
 #### Scrolling: `scrollToPercent` is a viewport offset, not a layout change
 
@@ -875,6 +951,21 @@ came back on top of its own chrome after it had already been fixed once. The fra
 two a script asked `newDynamicContainer` for (`isDynamicallyClaimed`); the client is a window the skin
 declares and the user opens. Only that direction is kept. `WINAMP_MODERN_GLUE_TRACE=1` prints the
 pairs and every restack — see [harness.md](harness.md).
+
+**A window that is not on screen has no position to lend** (B156). The read carries whether its
+window was visible (`containerVisibilityQuery`), and a round trip off one that was not answers
+`.offScreen`. The write then keeps its window where it is, and only its size applies. Itemskin's AVS
+frame script answers the content window's `onSetVisible(1)` with `syncContent()` *before* it shows
+the frame, so the frame it reads has never been placed: a new dynamic container sits at the screen's
+bottom-left. Pinned there, every hosted window it frames opened 74pt below the screen, over the slot
+the tiler had just given it. Its timer puts the frame on the content once both are shown, which is
+the direction the pair is meant to settle in. The harness answers no visibility, which counts as on
+screen, so headless behaviour is unchanged.
+
+**The host moves a glued pair together** (B156). The frame's own `onResize`/`onMove` pull the content
+onto the frame, so a host move of the content alone is undone by the next such event if it comes
+before the frame's timer. A UI Size change does exactly that. See [components.md](components.md) →
+*Where a skin's windows go*.
 
 ### `onSetVisible` — a window a script closes has to be *reopened*, not just ordered in
 

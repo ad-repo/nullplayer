@@ -63,6 +63,10 @@ struct WasabiLayerFXMesh: Equatable {
     /// rotation is affine in x/y, so even a 1×1 grid (Defix's cassette reels) reproduces one exactly,
     /// and a genuinely non-affine warp gets the fidelity of the grid the skin asked for.
     ///
+    /// An affine mesh never gets here: `drawWarped` draws it through `affineSourceTransform` instead
+    /// (B152), and every FX layer in the measured corpus is a rotation. What still arrives is a mesh
+    /// that genuinely bends, or one that wraps.
+    ///
     /// **This is a per-frame `width × height` loop on the main thread** for any layer whose mesh
     /// moves — B118 measured the `Double` form this replaces at **24.1%** of a release build's main
     /// thread on WMP11-BlueVU, against a control skin's 0.0% — so the shape below is deliberate, and
@@ -195,6 +199,39 @@ struct WasabiLayerFXMesh: Equatable {
     @inline(__always)
     private static func tapPixel(_ source: UnsafeRawPointer, _ byteOffset: Int) -> SIMD4<UInt32> {
         SIMD4<UInt32>(truncatingIfNeeded: source.loadUnaligned(fromByteOffset: byteOffset, as: SIMD4<UInt8>.self))
+    }
+
+    /// The whole mesh as one affine map from destination to source, in normalized layer
+    /// coordinates, when every vertex lies on it. `nil` for a mesh that genuinely bends, or one
+    /// that collapses the layer onto a line.
+    ///
+    /// A rotation about the layer's centre is affine however fine the grid, so this is the shape of
+    /// every FX layer in the measured corpus: WMP11-BlueVU's needles ask for 10×10 and answer
+    /// `r + angle`, Defix's reels ask for 1×1. An affine warp needs no resample at all. The
+    /// interpolated mesh *is* that map, so the layer can be drawn once through it.
+    var affineSourceTransform: CGAffineTransform? {
+        guard columns >= 2, rows >= 2, sources.count == columns * rows else { return nil }
+        let origin = sources[0]
+        let across = sources[columns - 1]
+        let down = sources[(rows - 1) * columns]
+        let transform = CGAffineTransform(a: across.x - origin.x, b: across.y - origin.y,
+                                          c: down.x - origin.x, d: down.y - origin.y,
+                                          tx: origin.x, ty: origin.y)
+        // A tenth of a pixel on the largest layer the warp will draw (`maximumWarpExtent`).
+        let tolerance: CGFloat = 1e-4
+        guard abs(transform.a * transform.d - transform.b * transform.c) > 1e-9 else { return nil }
+        for row in 0..<rows {
+            for column in 0..<columns {
+                let point = sources[row * columns + column]
+                guard point.x.isFinite, point.y.isFinite else { return nil }
+                let expected = CGPoint(x: CGFloat(column) / CGFloat(columns - 1),
+                                       y: CGFloat(row) / CGFloat(rows - 1)).applying(transform)
+                if abs(point.x - expected.x) > tolerance || abs(point.y - expected.y) > tolerance {
+                    return nil
+                }
+            }
+        }
+        return transform
     }
 
     /// A mesh that samples every destination pixel from its own position — the layer drawn as-is.

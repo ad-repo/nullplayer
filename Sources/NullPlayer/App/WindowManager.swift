@@ -839,6 +839,18 @@ class WindowManager {
     /// Windows that were attached as children for coordinated minimize (for restore)
     private var coordinatedMiniaturizedWindows: [NSWindow] = []
 
+    /// Windows Minimize All sent to the Dock on their own; they come back with the main window.
+    private var minimizeAllCompanionWindows: [NSWindow] = []
+    /// Set once the main window reaches the Dock after a Minimize All. Until then its restore is
+    /// not the user's: the main window turning key mid-sequence runs `bringAllWindowsToFront`, and
+    /// the Dock answers with a `didDeminiaturize` before the main window has even left.
+    private var minimizeAllMainWindowReachedDock = false
+    private var minimizeAllMainWindowObserver: NSObjectProtocol?
+    /// True while Minimize All's animations run. Each window leaving hands key to another, whose
+    /// `windowDidBecomeKey` raises everything, and an `orderFront` on a window waiting to minimize
+    /// cancels it.
+    private var isMinimizingAll = false
+
     /// Windows currently in miniaturize animation; suppress drag/group movement for these.
     private var miniaturizingWindowIds = Set<ObjectIdentifier>()
     /// Coalesces the burst of `didChangeScreenParameters` a display reconfiguration produces.
@@ -1811,7 +1823,9 @@ class WindowManager {
 
     func hostedWindowVisibilityDidChange(id: WinampModernHostedWindowID, visible: Bool,
                                          transitionFrame: NSRect) {
-        if !visible { slideUpWindowsBelow(closingFrame: transitionFrame) }
+        // No slide-up on close (B158): a hosted window reopens where it was left, so sliding the
+        // window below into its spot put the reopened one exactly over it. Same rule as
+        // `handleCenterStackWindowWillClose` for `.wal` and `.wmz`.
         notifyMainWindowVisibilityChanged()
         _ = tightenClassicCenterStackIfNeeded()
         postLayoutChangeNotification()
@@ -2230,6 +2244,15 @@ class WindowManager {
         private var columnX: CGFloat
         private var columnWidth: CGFloat
         private var cursorY: CGFloat
+        /// The columns left of the player, which fill right-to-left from its left edge: the right
+        /// edge of the next one, its widest member so far, and its cursor.
+        private var leftColumnMaxX: CGFloat
+        private var leftColumnWidth: CGFloat = 0
+        private var leftCursorY: CGFloat
+        /// Every slot handed out so far, and the player: what a clamped slot must not land on.
+        private var placed: [NSRect]
+        /// Which cursor the last slot advanced, for `skip(past:)`.
+        private var lastSlotWasLeft = false
 
         /// The player is the anchor and never moves: it owns the top of the first column, and the
         /// first slot is flush beneath it.
@@ -2238,6 +2261,9 @@ class WindowManager {
             self.columnX = playerFrame.minX
             self.columnWidth = playerFrame.width
             self.cursorY = playerFrame.minY
+            self.leftColumnMaxX = playerFrame.minX
+            self.leftCursorY = region.maxY
+            self.placed = [playerFrame]
         }
 
         /// The next slot for a window of `size`, advancing the cursor past it.
@@ -2247,26 +2273,99 @@ class WindowManager {
                 columnWidth = 0
                 cursorY = region.maxY
             }
-            var slot = NSRect(x: columnX, y: cursorY - size.height,
-                              width: size.width, height: size.height)
-            // The ranking here used to be the other way round — non-overlap the invariant, staying on
-            // screen only the preference — on the reasoning that pulling a column back can only move
-            // it *left*, into the column already there. That is true, and it is the wrong trade. A
-            // window hanging off the right edge has no title bar to grab and no visible way back; a
-            // window on top of another is a nuisance the user fixes with one drag. With a skin wider
-            // than half the display (EPS, Big Bento, cPro-Bento) column 2 starts past `region.maxX`,
-            // so *every* window after the first column was placed entirely off screen and the app was
-            // unusable for anyone who did not know Snap To Default exists. So: overlapping windows are
-            // preferable to hidden ones, and the slot comes back onto the region on both axes.
+            var slot = clampedToBottom(NSRect(x: columnX, y: cursorY - size.height,
+                                              width: size.width, height: size.height))
+            // Overlapping windows are preferable to hidden ones, so a slot past the right edge comes
+            // back onto the region. With a skin wider than half the display (EPS, Big Bento,
+            // cPro-Bento) column 2 starts past `region.maxX`, and before the clamp *every* window
+            // after the first column opened off screen. But a clamp can only pull a slot left, into
+            // what is already there — at 125% UI Size a centred Sony_Walkman player had the library
+            // pulled 69pt over it (B153) while the whole width left of the player stood empty. So
+            // the clamp is the last resort: first the clamped slot if it lands on nothing, then the
+            // columns left of the player, and only then whichever clamp covers less.
             if slot.maxX > region.maxX {
-                slot.origin.x = max(region.minX, region.maxX - size.width)
-            }
-            if slot.minY < region.minY {
-                slot.origin.y = region.minY
+                let clamped = NSRect(x: max(region.minX, region.maxX - size.width), y: slot.minY,
+                                     width: size.width, height: size.height)
+                if overlap(of: clamped) == 0 {
+                    slot = clamped
+                } else if let left = nextLeftSlot(for: size) {
+                    placed.append(left)
+                    lastSlotWasLeft = true
+                    return left
+                } else {
+                    let leftClamped = clampedToBottom(NSRect(
+                        x: region.minX, y: leftSlotTop(for: size) - size.height,
+                        width: size.width, height: size.height))
+                    if overlap(of: leftClamped) < overlap(of: clamped) {
+                        _ = nextLeftSlot(for: size, clampingTo: leftClamped)
+                        placed.append(leftClamped)
+                        lastSlotWasLeft = true
+                        return leftClamped
+                    }
+                    slot = clamped
+                }
             }
             cursorY = slot.minY
             columnWidth = max(columnWidth, size.width)
+            placed.append(slot)
+            lastSlotWasLeft = false
             return slot
+        }
+
+        /// The last slot landed on `obstacles`, so the next one starts flush under the lowest of
+        /// them rather than one window-height further down (B157). Every slot whose top is above
+        /// that edge would overlap it too, so nothing clear is skipped.
+        mutating func skip(past obstacles: [NSRect]) {
+            guard let bottom = obstacles.map(\.minY).min() else { return }
+            if lastSlotWasLeft {
+                leftCursorY = min(leftCursorY, bottom)
+            } else {
+                cursorY = min(cursorY, bottom)
+            }
+        }
+
+        /// A window taller than the region keeps its top on screen rather than its bottom.
+        private func clampedToBottom(_ slot: NSRect) -> NSRect {
+            var slot = slot
+            if slot.minY < region.minY { slot.origin.y = region.minY }
+            return slot
+        }
+
+        /// The top of the left column a window of `size` would go in, wrapping to a fresh column.
+        private func leftSlotTop(for size: NSSize) -> CGFloat {
+            leftCursorY - size.height < region.minY ? region.maxY : leftCursorY
+        }
+
+        /// The next slot left of the player, or `nil` when it would leave the region or land on a
+        /// window already placed, advancing the left cursor past what it returns. `clampingTo` takes
+        /// a slot already pulled onto the region instead.
+        private mutating func nextLeftSlot(for size: NSSize,
+                                           clampingTo forced: NSRect? = nil) -> NSRect? {
+            var maxX = leftColumnMaxX
+            var width = leftColumnWidth
+            var top = leftCursorY
+            if top - size.height < region.minY {
+                maxX -= width
+                width = 0
+                top = region.maxY
+            }
+            let slot = forced ?? clampedToBottom(NSRect(x: maxX - size.width, y: top - size.height,
+                                                         width: size.width, height: size.height))
+            guard forced != nil || (slot.minX >= region.minX && overlap(of: slot) == 0) else {
+                return nil
+            }
+            leftColumnMaxX = maxX
+            leftColumnWidth = max(width, size.width)
+            leftCursorY = slot.minY
+            return slot
+        }
+
+        /// How much of `slot` lies on windows already placed.
+        private func overlap(of slot: NSRect) -> CGFloat {
+            placed.reduce(0) { total, other in
+                let shared = other.intersection(slot)
+                return total + (shared.isNull ? 0 : shared.width * shared.height)
+            }
         }
     }
 
@@ -2307,7 +2406,8 @@ class WindowManager {
     /// The first tiling slot that is clear of `occupied` — how a window opened *after* the initial
     /// arrangement joins it without disturbing anything already placed. Walks the same slot sequence
     /// `arrangeWinampModernWindows` uses, so a window opened later lands where the arrangement would
-    /// have put it.
+    /// have put it — except that a slot landing on a window restarts the walk flush under that
+    /// window, so a window taller than the one opening cannot push it a gap further down (B157).
     ///
     /// Never answers `nil` for want of a free slot. Both call sites treat `nil` as "leave the window
     /// where it is", and where it is may be off screen — that is the state this whole path exists to
@@ -2319,10 +2419,12 @@ class WindowManager {
         for _ in 0..<64 {
             let slot = tiler.nextSlot(for: size)
             lastSlot = slot
-            if !occupied.contains(where: { $0.intersects(slot) }) { return slot.origin }
+            let hits = occupied.filter { $0.intersects(slot) }
+            if hits.isEmpty { return slot.origin }
             if slot.minX + size.width >= tiler.region.maxX && slot.minY <= tiler.region.minY {
                 break
             }
+            tiler.skip(past: hits)
         }
         guard let lastSlot else { return nil }
         return WindowPlacement.rescued(lastSlot, into: tiler.region).origin
@@ -2362,6 +2464,25 @@ class WindowManager {
         return false
     }
 
+    /// The host just tiled `window` onto the frame it now has, so a closed window whose remembered
+    /// frame lies under it has lost that spot and is placed afresh on its next open (B154).
+    ///
+    /// "Reopens where left" assumes the spot is still the closed window's. The tiler only avoids
+    /// windows on screen, so it hands a closed window's slot to the next window that opens — measured
+    /// on Sony_Walkman, the equalizer reopened exactly over the playlist that took its slot. Only a
+    /// host placement calls this, never a drag, so a window the user left overlapping on purpose
+    /// keeps its frame. `.wal` only; WMP shares `reopensWhereLeft` and keeps the rule unchanged.
+    func releaseClosedWindowSlots(under window: NSWindow) {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        let frame = window.frame
+        for closed in placedFreeFloatingWindows.allObjects
+        where closed !== window && !closed.isVisible && !closed.isMiniaturized
+            && closed.frame.intersects(frame) {
+            placedFreeFloatingWindows.remove(closed)
+        }
+        winampModernHostedController?.releaseClosedContainerSlots(under: frame, except: window)
+    }
+
     private func positionSubWindow(_ window: NSWindow, preferBelowEQ: Bool = false) {
         guard let mainWindow = mainWindowController?.window else { return }
         
@@ -2393,6 +2514,7 @@ class WindowManager {
                 isSnappingWindow = true
                 window.setFrameOrigin(origin)
                 isSnappingWindow = false
+                releaseClosedWindowSlots(under: window)
                 let traceKey = uiMode.controllerFamily == .wmp
                     ? "WMP_PLACE_TRACE" : "WINAMP_MODERN_PLACE_TRACE"
                 if ProcessInfo.processInfo.environment[traceKey] == "1" {
@@ -2553,6 +2675,7 @@ class WindowManager {
                         reDerived: dockedFrame,
                         remembered: frame,
                         preservingRememberedHeight: isRunningWMPUI
+                            || uiMode.controllerFamily == .winampModern
                     ), display: true)
                 } else {
                     window.setFrame(frame, display: true)
@@ -5300,6 +5423,7 @@ class WindowManager {
             pendingUIScaleLevel = nil
         }
 
+        var resizedWindows = false
         repeat {
             pendingUIScaleLevel = nil
             let targetLevel = uiScaleLevel
@@ -5307,8 +5431,19 @@ class WindowManager {
 
             applyDoubleSize(previousScale: appliedUIScaleLevel.scaleFactor, targetLevel: targetLevel)
             appliedUIScaleLevel = targetLevel
+            resizedWindows = true
             NotificationCenter.default.post(name: .doubleSizeDidChange, object: nil)
         } while pendingUIScaleLevel != nil && uiScaleLevel != appliedUIScaleLevel
+
+        // Winamp Modern has no centre stack, and every window just changed size, so the tiling the
+        // launch sweep produced no longer holds; lay it out again around the player (B56a). Gated
+        // on the mode: the other families keep exactly the path they ran before.
+        if resizedWindows, uiMode.controllerFamily == .winampModern,
+           let player = mainWindowController?.window {
+            isSnappingWindow = true
+            arrangeWinampModernScene(player: player)
+            isSnappingWindow = false
+        }
 
         // Growing the UI is the most reliable way to push the bottom of a stack, or the right of a
         // wide skin, past the edge of the display — every window is re-sized around the main window
@@ -5778,6 +5913,8 @@ class WindowManager {
             }
         })
 
+        if isMinimizingAll { return }
+
         let topWindow = preferredTopWindow ?? NSApp.keyWindow
 
         for window in windows {
@@ -5982,8 +6119,8 @@ class WindowManager {
     /// Classic and Original take the re-derived docked frame whole — its height is the centre
     /// stack's, and following the stack is their rule. A `.wmz` session takes only the dock edge
     /// and keeps the height the user left it at, anchored at the top, because the library wears
-    /// the skin's borrowed frame and the centre stack has no claim on its size. The `.wal` half
-    /// of that is tracked separately as B147 and is deliberately not answered here.
+    /// the skin's borrowed frame and the centre stack has no claim on its size. A `.wal` session
+    /// keeps it for the same reason (B147): the stack there is not the library's to follow.
     static func dockedLibraryReopenFrame(reDerived: NSRect,
                                          remembered: NSRect,
                                          preservingRememberedHeight: Bool) -> NSRect {
@@ -6003,8 +6140,11 @@ class WindowManager {
         // which is true for WMP) and through every other `updateDockedChildWindows` caller, so
         // the library grew and shrank with our fallback EQ/playlist/spectrum windows. Gate the
         // resize, not `isRunningModernUI` — that predicate answers a four-family question for
-        // ~15 other call sites (W214). The `.wal` half is B147.
+        // ~15 other call sites (W214). `.wal` too (B147): a skin that draws no library of its own
+        // gets this window, its place is the `.wal` tiler's, and the refit re-derived its dock edge
+        // from a cluster a Cava tiled under the library had widened — a 9pt gap on Sony_Walkman.
         guard !isRunningWMPUI else { return }
+        guard uiMode.controllerFamily != .winampModern else { return }
         guard let window = plexBrowserWindowController?.window, window.isVisible else { return }
         guard sideFrameIsRightDockedToCurrentStack(window.frame) else { return }
         guard let frame = rightDockedSideFrame(for: window, width: window.frame.width),
@@ -6468,34 +6608,7 @@ class WindowManager {
         playerWindow.setFrame(Self.recenteredPlayerFrame(size: playerWindow.frame.size, in: region),
                               display: true, animate: false)
 
-        // The generated arrangement: the skin's own containers, then the hosted windows.
-        winampModernHostedController?.arrangeWindows()
-
-        // Anything that sweep does not own — a classic-fallback playlist or library window, the
-        // standalone video window — joins the same tiling in the first free slot, exactly the way a
-        // window opened after the arrangement does.
-        var arranged = Set<ObjectIdentifier>([ObjectIdentifier(playerWindow)])
-        if let controller = winampModernHostedController {
-            for window in controller.materializedAuxiliaryWindows {
-                arranged.insert(ObjectIdentifier(window))
-            }
-        }
-        for window in winampModernHostedWindowsForArrangement() {
-            arranged.insert(ObjectIdentifier(window))
-        }
-
-        var leftovers = snapTargetWindows()
-        if let videoWindow = videoPlayerWindowController?.window, videoWindow.isVisible {
-            leftovers.append(videoWindow)
-        }
-        for window in leftovers where !arranged.contains(ObjectIdentifier(window)) {
-            arranged.insert(ObjectIdentifier(window))
-            guard let origin = tiledOrigin(for: window.frame.size,
-                                           avoiding: occupiedWindowFrames(excluding: window))
-                    ?? rescuedOrigin(for: window)
-            else { continue }
-            window.setFrameOrigin(origin)
-        }
+        arrangeWinampModernScene(player: playerWindow)
 
         // The contract this command has to keep is that **one** press recovers everything. It used to
         // take several — and sometimes never worked — because it re-ran the same unclamped tiler and
@@ -6510,6 +6623,38 @@ class WindowManager {
         }
 
         postLayoutChangeNotification()
+    }
+
+    /// Every `.wal` window laid out around the player where it stands: the generated arrangement,
+    /// then whatever it does not own. Shared by Snap To Default, which re-centres the player first,
+    /// and a live UI-Size change (B56a), which resizes every window and so invalidates the tiling
+    /// the launch sweep produced — the skin's containers grow from their bottom-left, and the
+    /// classic-fallback windows are re-stacked by `applyDoubleSize` as though this mode had a
+    /// centre stack. Measured on Sony_Walkman at 100% → 150%: four overlapping pairs, the equalizer
+    /// 53pt into the player.
+    private func arrangeWinampModernScene(player playerWindow: NSWindow) {
+        // Anything the controller's sweep does not own — a classic-fallback playlist or library
+        // window, the standalone video window — is laid out by the same sweep, flush after the skin's
+        // own windows. Not `tiledOrigin` per window: that restarts the walk at the player for each
+        // one and avoids the frames its siblings are about to leave, which after a UI-Size change are
+        // `applyDoubleSize`'s stale classic stack — it put the playlist 190pt below the equalizer.
+        var arranged = Set<ObjectIdentifier>([ObjectIdentifier(playerWindow)])
+        if let controller = winampModernHostedController {
+            for window in controller.materializedAuxiliaryWindows {
+                arranged.insert(ObjectIdentifier(window))
+            }
+        }
+        for window in winampModernHostedWindowsForArrangement() {
+            arranged.insert(ObjectIdentifier(window))
+        }
+
+        var leftovers = snapTargetWindows()
+        if let videoWindow = videoPlayerWindowController?.window, videoWindow.isVisible {
+            leftovers.append(videoWindow)
+        }
+        leftovers.removeAll { arranged.contains(ObjectIdentifier($0)) }
+
+        winampModernHostedController?.arrangeWindows(then: leftovers)
     }
 
     /// Snap To Default for Windows Media Player (W217 / G4).
@@ -8648,19 +8793,69 @@ class WindowManager {
     }
 
     /// Miniaturize all visible, managed player windows.
-    /// Main window is miniaturized first so existing docked-window miniaturize
-    /// coordination remains intact, then any remaining visible windows follow.
+    /// Windows not docked to the main window go first; the main window goes last and
+    /// carries its docked group with it through the coordinated-miniaturize path.
     func miniaturizeAllManagedWindows() {
         let windowsToMiniaturize = visibleWindows().filter { !$0.isMiniaturized }
         guard !windowsToMiniaturize.isEmpty else { return }
 
-        let mainWindow = mainWindowController?.window
-        if let mainWindow, windowsToMiniaturize.contains(where: { $0 === mainWindow }) {
-            mainWindow.miniaturize(nil)
+        // AppKit ignores `miniaturize` on a window whose mask lacks `.miniaturizable`, and several
+        // `.borderless` windows (Sonos Rooms, Original's auxiliary windows) are built without it.
+        // On a borderless window the flag draws nothing; it only lets the window into the Dock.
+        for window in windowsToMiniaturize where !window.styleMask.contains(.miniaturizable) {
+            window.styleMask.insert(.miniaturizable)
         }
 
-        for window in windowsToMiniaturize where window !== mainWindow {
+        let mainWindow = mainWindowController?.window
+        let mainIsVisible = mainWindow.map { main in windowsToMiniaturize.contains { $0 === main } } ?? false
+        let dockedToMain = mainIsVisible ? mainWindow.map(findDockedWindows(to:)) ?? [] : []
+
+        // A window docked to the main window rides into the Dock as its child (see
+        // `attachDockedWindowsForMiniaturize`). Every other window goes first: a `miniaturize`
+        // sent while the main window's own animation is running is dropped.
+        let companions = windowsToMiniaturize.filter { window in
+            window !== mainWindow && window.parent !== mainWindow
+                && !dockedToMain.contains(where: { $0 === window })
+        }
+        isMinimizingAll = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            self?.isMinimizingAll = false
+        }
+        for window in companions {
             window.miniaturize(nil)
+        }
+
+        if mainIsVisible {
+            minimizeAllCompanionWindows = companions
+            minimizeAllMainWindowReachedDock = false
+            if let observer = minimizeAllMainWindowObserver {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            minimizeAllMainWindowObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didMiniaturizeNotification, object: mainWindow, queue: .main
+            ) { [weak self] _ in
+                guard let self else { return }
+                self.minimizeAllMainWindowReachedDock = true
+                self.isMinimizingAll = false
+                if let observer = self.minimizeAllMainWindowObserver {
+                    NotificationCenter.default.removeObserver(observer)
+                    self.minimizeAllMainWindowObserver = nil
+                }
+            }
+            mainWindow?.miniaturize(nil)
+        }
+    }
+
+    /// Bring back the windows Minimize All sent to the Dock beside the main window, so one restore
+    /// undoes it. A window already restored from its own Dock tile is skipped.
+    func restoreMinimizeAllCompanions(mainWindow: NSWindow) {
+        guard mainWindow === mainWindowController?.window,
+              minimizeAllMainWindowReachedDock else { return }
+        minimizeAllMainWindowReachedDock = false
+        let companions = minimizeAllCompanionWindows
+        minimizeAllCompanionWindows.removeAll()
+        for window in companions where window.isMiniaturized {
+            window.deminiaturize(nil)
         }
     }
     
@@ -8714,5 +8909,6 @@ class WindowManager {
         coordinatedMiniaturizedWindows.removeAll()
         // Reinstate persistent docked-child relationships for Spaces following
         updateDockedChildWindows()
+        restoreMinimizeAllCompanions(mainWindow: mainWindow)
     }
 }

@@ -229,6 +229,58 @@ final class WinampModernPhase25RegressionTests: XCTestCase {
         XCTAssertLessThan(lastParam, skinLevel, "the skin-level block runs after the params land")
     }
 
+    /// B71 — a layout's own `<script>`, declared after a XUI object beside it, starts after that
+    /// object's params have landed. Wasabi configures each object completely before the next one is
+    /// created; Defix's detached visualizer declares `visrb2.maki` after a standard frame whose
+    /// `content` param builds everything the script looks up, and with all params deferred to the end
+    /// of startup its eleven `findObject` calls answered null.
+    func testALayoutScriptStartsAfterTheXUIParamsOfTheObjectsBeforeIt() throws {
+        let runtime = try makeRuntime(xml: Self.layoutOrderXML,
+                                      files: [("owned.maki", Self.makeScript()),
+                                              ("layout.maki", Self.makeScript())])
+        let widget = try object(named: "widget", in: runtime)
+        var order: [String] = []
+        runtime.dispatchObserver = { event, program, _ in
+            order.append("\(event)@\(program.ownerID == widget.stableID ? "widget" : "layout")")
+        }
+
+        try runtime.start()
+
+        let firstParam = try XCTUnwrap(order.firstIndex(of: "onsetxuiparam@widget"),
+                                       "the widget's attributes are delivered as params")
+        let layoutLoaded = try XCTUnwrap(order.firstIndex(of: "onscriptloaded@layout"))
+        XCTAssertLessThan(try XCTUnwrap(order.firstIndex(of: "onscriptloaded@widget")), firstParam,
+                          "a XUI object still hears its own onScriptLoaded before its params")
+        XCTAssertLessThan(firstParam, layoutLoaded,
+                          "the layout's script starts only once the widget is configured")
+    }
+
+    // MARK: - B71 `leftClick()` is a press
+
+    /// Defix's Reattach and Random buttons answer a click with `leftClick()` on a ghosted
+    /// `cfgattrib` togglebutton. Dispatching only `onLeftClick` left the attribute where it was.
+    func testLeftClickOnACfgattribToggleWritesTheAttribute() throws {
+        let runtime = try makeRuntime(xml: Self.leftClickXML)
+        let bound = try object(named: "bound", in: runtime)
+        let before = try XCTUnwrap(runtime.configInteger(of: bound))
+
+        _ = try runtime.invoke(method: "leftClick", on: MakiObjectReference(.gui(bound.stableID)),
+                               arguments: [], program: Self.makeProgram())
+
+        XCTAssertEqual(runtime.configInteger(of: bound), before == 0 ? 1 : 0)
+    }
+
+    /// A plain togglebutton flips, exactly as the mouse flips it in `performAction`.
+    func testLeftClickOnAPlainToggleFlipsIt() throws {
+        let runtime = try makeRuntime(xml: Self.leftClickXML)
+        let plain = try object(named: "plain", in: runtime)
+
+        _ = try runtime.invoke(method: "leftClick", on: MakiObjectReference(.gui(plain.stableID)),
+                               arguments: [], program: Self.makeProgram())
+
+        XCTAssertEqual(plain.attributes["activated"], "1")
+    }
+
     // MARK: - 25.5 / BB5 `@HAVE_LIBRARY@` is a markup macro, not a path variable
 
     /// Defix reads `stringToInteger(getParam())` as "is there a media library?". Reading the literal
@@ -333,6 +385,32 @@ final class WinampModernPhase25RegressionTests: XCTestCase {
         </layout>
       </container>
       <scripts><script file="skinlevel.maki"/></scripts>
+    </WasabiXML>
+    """
+
+    private static let layoutOrderXML = """
+    <WasabiXML>
+      <groupdef id="synthetic.widget" xuitag="Synthetic:Widget">
+        <script file="owned.maki"/>
+      </groupdef>
+      <container id="Main">
+        <layout id="normal" w="40" h="20">
+          <Synthetic:Widget id="widget" content="synthetic.content"/>
+          <script file="layout.maki"/>
+        </layout>
+      </container>
+    </WasabiXML>
+    """
+
+    private static let leftClickXML = """
+    <WasabiXML>
+      <container id="Main">
+        <layout id="normal" w="40" h="20">
+          <togglebutton id="bound" x="0" y="0" w="8" h="8"
+                        cfgattrib="{B71B71B7-0000-0000-0000-000000000071};Detach"/>
+          <togglebutton id="plain" x="8" y="0" w="8" h="8"/>
+        </layout>
+      </container>
     </WasabiXML>
     """
 

@@ -457,6 +457,14 @@ final class WasabiResourceCache {
         return image
     }
 
+    /// Whether one map pixel, counted from the region's top-left, is inside the region. The mask is
+    /// stored bottom-up for the flipped scene context, so the row is read from the other end.
+    func regionContains(_ region: WasabiRegionClip, x: Int, y: Int) -> Bool {
+        guard let mask = regionMask(region), x >= 0, y >= 0, x < mask.width, y < mask.height,
+              let data = mask.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return false }
+        return bytes[(mask.height - 1 - y) * mask.bytesPerRow + x] != 0
+    }
+
     /// The map bitmap behind a region, gamma-free. `loadMap` takes either a declared id or a path,
     /// and the runtime records whichever it resolved.
     private func rawMapImage(_ region: WasabiRegionClip) -> CGImage? {
@@ -703,6 +711,14 @@ final class WasabiSceneRenderer {
     /// `isKeyWindow` before each paint. Defaults to active so the headless harness — which has no
     /// window at all — measures the state a skin is designed around.
     var isWindowActive = true
+    /// How many real device pixels one unit of the context's own device space is (B80). A bitmap
+    /// context's device space *is* its pixels, so this is 1 there — the harness, the opaque-backing
+    /// buffer. A layer-backed view on current macOS records `draw` into a display list at CTM 1.0
+    /// and has it replayed at the backing scale, so there the view sets the backing factor, or the
+    /// pixel grid `snappedToPixelGrid` aims at is a point, not a pixel.
+    var devicePixelsPerContextUnit: CGFloat = 1
+    /// `WINAMP_MODERN_PIXEL_SNAP=0` is the A/B switch for `snappedToPixelGrid`.
+    static let snapsToPixelGrid = ProcessInfo.processInfo.environment["WINAMP_MODERN_PIXEL_SNAP"] != "0"
     private(set) var layout: WasabiObject
     /// The layout's canvas, in skin pixels.
     ///
@@ -926,6 +942,13 @@ final class WasabiSceneRenderer {
     }
 
     private var protectiveMinimumCache: [String: CGSize] = [:]
+
+    /// Forget the size floors measured against the layout's old bounds, after something rewrote its
+    /// `minimum_h`/`default_h` — a hosted window whose borrowed chrome dropped a strip.
+    func layoutBoundsDidChange() {
+        protectiveMinimumCache.removeAll()
+        contentFloorCache = nil
+    }
 
     /// The smallest canvas at which the scene still lays itself out the way its author drew it.
     ///
@@ -1261,9 +1284,25 @@ final class WasabiSceneRenderer {
     /// every pixel at alpha 0 is outside it. In a premultiplied buffer that is one byte per pixel —
     /// the colours are *already* the composite over black, and only the alpha channel has to be
     /// promoted. Which is why this needs a buffer it can read, and the window context is not one.
+    ///
+    /// **A layout that says nothing is a region too, unless it names an `alphabackground`** (B155).
+    /// `desktopalpha` is Wasabi's opt in, and the corpus writes it that way: meridian's round,
+    /// soft-shadowed player says `1` while its rectangular shade says nothing. `alphabackground` is
+    /// the other opt in — Ujola Cat's cat declares it and no `desktopalpha`, and the skin's own
+    /// Winamp screenshot shows that window's soft edges over the wallpaper with no black halo.
+    /// Reading those as regions put black fringes round the drop shadows of 14 skins.
     private var layoutWantsOpaqueBacking: Bool {
-        guard let raw = layout.attributes["desktopalpha"] else { return false }
+        guard let raw = layout.attributes["desktopalpha"] else {
+            return layout.attributes["alphabackground"] == nil
+        }
         return Int(raw.trimmingCharacters(in: .whitespaces)) == 0
+    }
+
+    /// Whether a `sysregion="1"` box is backed black: every layout that has not opted in to
+    /// per-pixel alpha with `desktopalpha="1"` (B151). See `regionBoxes()`.
+    private var layoutBacksRegionBoxes: Bool {
+        guard let raw = layout.attributes["desktopalpha"] else { return true }
+        return Int(raw.trimmingCharacters(in: .whitespaces)) != 1
     }
 
     /// The scratch buffer the opaque path renders through, kept across frames.
@@ -1337,6 +1376,10 @@ final class WasabiSceneRenderer {
             buffer = made
         }
 
+        // The buffer's device space is its pixels, whatever the window's context says.
+        let pixelsPerUnit = devicePixelsPerContextUnit
+        devicePixelsPerContextUnit = 1
+        defer { devicePixelsPerContextUnit = pixelsPerUnit }
         buffer.saveGState()
         buffer.scaleBy(x: scale, y: scale)
         buffer.translateBy(x: -rect.minX, y: -rect.minY)
@@ -1400,6 +1443,13 @@ final class WasabiSceneRenderer {
         context.saveGState()
         context.translateBy(x: 0, y: canvasSize.height)
         context.scaleBy(x: 1, y: -1)
+        if layoutBacksRegionBoxes {
+            let boxes = regionBoxes()
+            if !boxes.isEmpty {
+                context.setFillColor(gray: 0, alpha: 1)
+                context.fill(boxes)
+            }
+        }
         context.interpolationQuality = .high
         if Self.profilesDrawing {
             for node in sceneNodes() {
@@ -2047,7 +2097,12 @@ final class WasabiSceneRenderer {
             // The inset corrects a real measurement. A source that measures nothing — S7Reflex's
             // config tabs are `<text default="">` filled in by a script that has not run — wants a
             // collapsed group, not a group the width of its own padding.
-            guard let width = autoWidth(of: source) else { return nil }
+            //
+            // A source that is not text is sized by its artwork (B79): winampmodern566 and
+            // The_Nokia_5220 point every `menugroup.*` at a `<layer id="File.txt" image=…>`, and
+            // answering nil left each group 0 wide, so the `<Menu>` filling it had no hit target.
+            // Same order as the script's `getAutoWidth()` — a declared width, then the bitmap.
+            guard let width = autoWidth(of: source) ?? artworkWidth(of: source) else { return nil }
             guard width > 0 else { return width }
             return width + WasabiGeometrySpec.autoWidthInset(of: source.attributes)
         }
@@ -2063,6 +2118,14 @@ final class WasabiSceneRenderer {
         guard type == "text" || type == "songticker" else { return nil }
         return resources.metrics.width(of: object,
                                        text: WasabiTextMetrics.content(of: object, host: host))
+    }
+
+    /// The width an `autowidthsource` that is not text answers: its declared width when positive,
+    /// otherwise the bitmap it draws at rest. `nil` when it has neither.
+    private func artworkWidth(of object: WasabiObject) -> CGFloat? {
+        if let declared = Double(object.attributes["w"] ?? ""), declared > 0 { return CGFloat(declared) }
+        let bitmapID = resolvedBitmapID(for: object, pressed: false, hovered: false)
+        return resources.bitmap(identifier: bitmapID).map { CGFloat($0.width) }
     }
 
     /// How tall a `<Wasabi:TitleBox>` that declares no height has to be, or `nil` when its body says
@@ -2217,6 +2280,24 @@ final class WasabiSceneRenderer {
             if object.attributes["h"] == nil, intrinsic.height == 0 {
                 intrinsic.height = Double(background.height)
             }
+        }
+        // A `<Menu>`'s hover or pressed art that states no size of its own is the entry's size (B150).
+        // winampmodern566 and The_Nokia_5220 write `<menu:button_hover id="File.hover.btn" x="0"
+        // y="0"/>` into a groupdef with only `h="16"`, and the art inside is a three-slice cut to
+        // stretch (`w="-7" relatw="1"`) — so at 0 wide, hovering or pressing an entry drew nothing.
+        // Only an unstated axis is filled: every other `<Menu>` in the corpus (Big Bento, nsmp10,
+        // impulse, cPro Venus, NWA2000) gives its state objects explicit geometry, some deliberately
+        // different from the entry's box, and that stays theirs.
+        if !isRoot, object.attributes["w"] == nil || object.attributes["h"] == nil,
+           intrinsic.width == 0 || intrinsic.height == 0,
+           let menu = WasabiMenuBar.owningMenu(of: object) {
+            let entry = geometry(of: menu).resolve(
+                in: WasabiRect(x: Double(parentFrame.minX), y: Double(parentFrame.minY),
+                               width: Double(parentFrame.width), height: Double(parentFrame.height)),
+                intrinsicSize: .zero
+            )
+            if object.attributes["w"] == nil, intrinsic.width == 0 { intrinsic.width = max(0, entry.width) }
+            if object.attributes["h"] == nil, intrinsic.height == 0 { intrinsic.height = max(0, entry.height) }
         }
         let resolved: CGRect
         if isRoot {
@@ -3354,12 +3435,27 @@ final class WasabiSceneRenderer {
     }
 
     /// The sibling whose value a bare `<ProgressGrid>` shows: the slider drawn over the same rect.
-    func valueSibling(of object: WasabiObject) -> WasabiObject? {
+    ///
+    /// With one candidate that is the answer. With several, the rect decides: Itemskin's player
+    /// declares a hidden `<slider id="hidvol" action="VOLUME">` at (900,300) *before* the `Seeker`
+    /// its seek grid sits under, and taking the first slider painted the volume into the seek bar.
+    func valueSibling(of object: WasabiObject, frame: CGRect) -> WasabiObject? {
         guard let parent = object.parent else { return nil }
-        return parent.children.first {
+        let candidates = parent.children.filter {
             $0 !== object && $0.attributes["action"] != nil &&
                 $0.typeName.caseInsensitiveCompare("slider") == .orderedSame
         }
+        guard candidates.count > 1 else { return candidates.first }
+        let nodes = sceneNodes()
+        func overlap(_ candidate: WasabiObject) -> CGFloat {
+            guard let other = nodes.first(where: { $0.object === candidate })?.frame else { return 0 }
+            let shared = other.intersection(frame)
+            return shared.isNull ? 0 : shared.width * shared.height
+        }
+        guard let best = candidates.max(by: { overlap($0) < overlap($1) }), overlap(best) > 0 else {
+            return candidates.first
+        }
+        return best
     }
 
     private func drawSlider(_ object: WasabiObject, frame: CGRect, context: CGContext,
@@ -4577,8 +4673,13 @@ final class WasabiSceneRenderer {
     /// failure than the overhang it would prevent. `fitparent` counts as declared: it states the
     /// group's size outright (the parent's, on whichever axis the group does not size itself), so the
     /// clip it produces is the one the children already had.
+    ///
+    /// An `xuitag` instance is a group too — `<OneDirectionText>` is its `groupdef`, instantiated
+    /// under the tag's name — so it clips on the same terms. Shield_Amp's 293px songticker drew its
+    /// 900px moving text across the whole player body without it (B149).
     private func isSizedGroup(_ object: WasabiObject) -> Bool {
-        guard object.typeName.caseInsensitiveCompare("group") == .orderedSame else { return false }
+        guard object.typeName.caseInsensitiveCompare("group") == .orderedSame
+                || loadedSkin.runtime.types.isXUITag(object.typeName) else { return false }
         if object.attributes["fitparent"] == "1" { return true }
         // A `background` bitmap is a declaration, not a guess: the skin named the artwork the group
         // is the size of, on both axes, so the box it produces is as much the author's as `w`/`h`.

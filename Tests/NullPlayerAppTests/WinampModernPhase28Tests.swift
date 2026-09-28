@@ -192,6 +192,58 @@ final class WinampModernPhase28Tests: XCTestCase {
         XCTAssertEqual(rotated[0], 0, "and nothing is left where it came from")
     }
 
+    /// A rotation is affine however fine its grid, and a mesh that bends is not. The affine answer
+    /// is what lets a VU needle skip the per-pixel resample (B152).
+    func testARotationMeshIsAffineAndABentOneIsNot() {
+        XCTAssertNotNil(makeRotationMesh(radians: 0.7).affineSourceTransform)
+        var bent = makeRotationMesh(radians: 0).sources
+        bent[4 * 9 + 4].x += 0.05  // the centre vertex pulled sideways
+        let mesh = WasabiLayerFXMesh(columns: 9, rows: 9, sources: bent, wrap: false, bilinear: false)
+        XCTAssertNil(mesh.affineSourceTransform)
+    }
+
+    /// The affine draw must put the same pixels where the resampler does. The layer is drawn into
+    /// a top-row-first context, the scene's own orientation, so a flipped or mirrored needle fails.
+    func testAnAffineWarpDrawsWhatTheResampleDraws() throws {
+        let size = 64
+        // Opaque in the top-left quadrant only, so any flip or mirror moves the quadrant.
+        var source = [UInt8](repeating: 0, count: size * size * 4)
+        for y in 0..<(size / 2) {
+            for x in 0..<(size / 2) {
+                let index = (y * size + x) * 4
+                source[index] = 255; source[index + 3] = 255
+            }
+        }
+        let image = try XCTUnwrap(source.withUnsafeMutableBytes { bytes -> CGImage? in
+            CGContext(data: bytes.baseAddress, width: size, height: size, bitsPerComponent: 8,
+                      bytesPerRow: size * 4, space: CGColorSpaceCreateDeviceRGB(),
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage()
+        })
+        let renderer = try makeRenderer()
+        for radians in [Double.pi / 2, 0.7] {
+            let mesh = makeRotationMesh(radians: radians)
+            let expected = try XCTUnwrap(mesh.resample(source: source, width: size, height: size))
+            var drawn = [UInt8](repeating: 0, count: size * size * 4)
+            try drawn.withUnsafeMutableBytes { bytes in
+                let context = try XCTUnwrap(CGContext(
+                    data: bytes.baseAddress, width: size, height: size, bitsPerComponent: 8,
+                    bytesPerRow: size * 4, space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+                context.translateBy(x: 0, y: CGFloat(size))
+                context.scaleBy(x: 1, y: -1)
+                XCTAssertTrue(renderer.drawWarped(image, in: CGRect(x: 0, y: 0, width: size, height: size),
+                                                  mesh: mesh, context: context))
+            }
+            // The two sample differently along the quadrant's edges; everywhere else they agree.
+            var disagreeing = 0
+            for index in stride(from: 3, to: drawn.count, by: 4)
+            where abs(Int(drawn[index]) - Int(expected[index])) > 128 {
+                disagreeing += 1
+            }
+            XCTAssertLessThan(disagreeing, size * size / 50, "rotation \(radians)")
+        }
+    }
+
     /// A mesh that does not describe a grid at all cannot resample, and says so rather than
     /// half-filling the destination.
     func testResampleRejectsAMalformedMesh() {

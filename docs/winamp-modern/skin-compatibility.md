@@ -5,7 +5,7 @@ known to be outstanding on it. **Measured 2026-09-06** against `a916b38a`, over 
 installed on the test machine — **75 distinct skins**, because four archives are byte-identical copies
 circulating under a second filename.
 
-Current picture: **47 B · 25 C · 3 F**, of which 6 letters come from a
+Current picture: **50 B · 25 C**, of which 6 letters come from a
 person using the skin and 69 are provisional (below).
 
 ## How the grades were arrived at, and how far to trust them
@@ -78,10 +78,10 @@ this skin at all — usually because the skin predates the feature, not because 
 | **cPro - Venus ALPHA Port**<br>`cPro_Venus_Alpha_port_by_Victhor_v1.3.1.wal` | RPeterClark - Victhor | C<br><sub>provisional</sub> | Fully skinned | 3 bitmap id(s) it references do not resolve, leaving a visible gap: `info.vol.bg`, `vol.bg`, `volume.bg2`; unimplemented MAKI: `enumitem` ×4; 10 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 1 error-severity load finding(s) |
 | **cPro - WMP12**<br>`221955-cPro__Winamp_Media_Player_12.wal` | — | C<br><sub>provisional</sub> | Fully skinned | unimplemented MAKI: `enumitem` ×4; 12 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 1 error-severity load finding(s) |
 | **cPro - XPS**<br>`cPro_T2T-by-MAC.wal` | — | **C**<br><sub>live, as of 2026-08-31</sub> | Fully skinned | 15 bitmap id(s) it references do not resolve, leaving a visible gap: `custom.repeat.0`, `custom.shuffle.0`, `custom.winamp`, `player.o.bottom`, `player.o.bottomleft`, `player.o.bottomright`…; unimplemented MAKI: `enumitem` ×4; 12 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 1 error-severity load finding(s) |
-| **cPro2 - Dark Aluminum**<br>`cpro2_dark_aluminum_final_by_victhor_d6necra.wal` | Victor Brocaz | C<br><sub>provisional</sub> | Fully skinned | 3 bitmap id(s) it references do not resolve, leaving a visible gap: `cpro2.eq.auto.overlay.0`, `cpro2.eq.on.overlay.0`, `cpro2.xfade.overlay.0`; 1 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `s.button.mute.over.0`; unimplemented MAKI: `enumitem` ×2, `enumobject` ×26, `getnumobjects` ×4; 8 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 3 error-severity load finding(s) |
-| **cPro2 - Styler**<br>`cPro2_Styler_by_Victhor.wal` | Victor Brocaz | C<br><sub>provisional</sub> | Fully skinned | 6 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `playback.button.mute.over.0`, `playback.button.rep.over.0`, `playback.button.shuf.over.0`, `s.button.mute.over.0`; unimplemented MAKI: `enumitem` ×2, `enumobject` ×14, `getnumobjects` ×4; 9 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 3 error-severity load finding(s) |
-| **cPro2 - Styler // Radiance version**<br>`cPro2_Styler_Radiance_by_Victhor.wal` | Victor Brocaz | C<br><sub>provisional</sub> | Fully skinned | 6 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `playback.button.mute.over.0`, `playback.button.rep.over.0`, `playback.button.shuf.over.0`, `s.button.mute.over.0`; unimplemented MAKI: `enumitem` ×2, `enumobject` ×14, `getnumobjects` ×4; 9 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 3 error-severity load finding(s) |
-| **cPro2 - Styler // Touchscreen version**<br>`cPro2_Styler_Touchscreen_by_Victhor.wal` | Victor Brocaz | C<br><sub>provisional</sub> | Fully skinned | 6 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `playback.button.mute.over.0`, `playback.button.rep.over.0`, `playback.button.shuf.over.0`, `s.button.mute.over.0`; unimplemented MAKI: `enumitem` ×2, `enumobject` ×14, `getnumobjects` ×4; 9 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 3 error-severity load finding(s) |
+| **cPro2 - Dark Aluminum**<br>`cpro2_dark_aluminum_final_by_victhor_d6necra.wal` | Victor Brocaz | C<br><sub>provisional</sub> | Fully skinned | 3 bitmap id(s) it references do not resolve, leaving a visible gap: `cpro2.eq.auto.overlay.0`, `cpro2.eq.on.overlay.0`, `cpro2.xfade.overlay.0`; 1 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `s.button.mute.over.0`; unimplemented MAKI: `enumitem` ×2; 8 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 3 error-severity load finding(s) |
+| **cPro2 - Styler**<br>`cPro2_Styler_by_Victhor.wal` | Victor Brocaz | C<br><sub>provisional</sub> | Fully skinned | 6 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `playback.button.mute.over.0`, `playback.button.rep.over.0`, `playback.button.shuf.over.0`, `s.button.mute.over.0`; unimplemented MAKI: `enumitem` ×2; 9 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 3 error-severity load finding(s) |
+| **cPro2 - Styler // Radiance version**<br>`cPro2_Styler_Radiance_by_Victhor.wal` | Victor Brocaz | C<br><sub>provisional</sub> | Fully skinned | 6 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `playback.button.mute.over.0`, `playback.button.rep.over.0`, `playback.button.shuf.over.0`, `s.button.mute.over.0`; unimplemented MAKI: `enumitem` ×2; 9 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 3 error-severity load finding(s) |
+| **cPro2 - Styler // Touchscreen version**<br>`cPro2_Styler_Touchscreen_by_Victhor.wal` | Victor Brocaz | C<br><sub>provisional</sub> | Fully skinned | 6 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `playback.button.mute.over.0`, `playback.button.rep.over.0`, `playback.button.shuf.over.0`, `s.button.mute.over.0`; unimplemented MAKI: `enumitem` ×2; 9 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 3 error-severity load finding(s) |
 | **cPro_Insomnic**<br>`cPro_Insomnis_by_zrco.wal` | — | **B**<br><sub>live, as of 2026-08-31</sub> | Fully skinned | 13 bitmap id(s) it references do not resolve, leaving a visible gap: `player.o.bottom`, `player.o.bottomleft`, `player.o.bottomright`, `player.o.center`, `player.o.left`, `player.o.right`…; unimplemented MAKI: `enumitem` ×4; 12 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 1 error-severity load finding(s) |
 | **cPro_Winamp Modern**<br>`211786-Cpro_Winamp_Modern.wal` | — | C<br><sub>provisional</sub> | Fully skinned | 13 bitmap id(s) it references do not resolve, leaving a visible gap: `player.o.bottom`, `player.o.bottomleft`, `player.o.bottomright`, `player.o.center`, `player.o.left`, `player.o.right`…; unimplemented MAKI: `enumitem` ×4; 12 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 1 error-severity load finding(s) |
 | **D-Reliction**<br>`4-drelictionreleasepic.wal` | — | C<br><sub>provisional</sub> | Fully skinned | 3 bitmap id(s) it references do not resolve, leaving a visible gap: `Layer`, `notifier.bg.inner`, `player.Beat`; unimplemented MAKI: `isobjectvalid` ×6; 30 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 3 error-severity load finding(s) |
@@ -146,8 +146,6 @@ show any of them.
 - A skin whose window border is built by a second, overlapping window can load its inner layout before
   that border has a client area to sit in, leaving the border half-built until something else redraws
   it. Seen on Defix's detached visualizer (B71).
-- At UI sizes that are not a whole multiple — 105%, for instance — hairline seams can appear along the
-  boundaries between bands of the player window when only part of it repaints (B80).
 
 **Controls and interaction**
 
@@ -162,16 +160,12 @@ show any of them.
 
 - A widget brought up part-way through a session is not told what is already playing, so anything it
   draws from the track — cover art, title, elapsed time — stays blank until the next track (B82).
-- A visualization pane embedded inside a larger panel may never start its engine (BB34).
-- Some ClassicPro skins' information panel is empty: it walks its own object list with two script
-  calls NullPlayer does not implement, and an unimplemented call abandons the whole handler (B99).
 - One arithmetic fault inside a script — a division by zero, which Winamp tolerates — abandons the
   rest of that handler here. Seen on Shield_Amp's song ticker (B65).
 - A group sized from a picture rather than a text label collapses to nothing and takes its contents
   with it. This is why the stock Winamp Modern skin's title-bar menus do not open (B79).
 - The Options entry in a skin's menu bar opens a thin NullPlayer menu rather than the full set of
   player options (B84).
-- Three Miku-family skins draw an empty main player window while every other window works (B145).
 
 **Performance and animation**
 

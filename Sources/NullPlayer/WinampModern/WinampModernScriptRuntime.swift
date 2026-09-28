@@ -122,6 +122,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// script that resized itself at startup resized the player instead.
     var layoutSwitchRequested: ((WasabiObjectID, String) -> Bool)?
     var layoutResizeRequested: ((WasabiObjectID, CGSize) -> Void)?
+    /// A hosted window's borrowed chrome dropped a strip after the window was built — Itemskin
+    /// creates its chrome when the window is shown — so the window is this many points shorter.
+    var hostedChromeLiftApplied: ((WasabiObjectID, CGFloat) -> Void)?
     /// A script moving its own *window*, in Winamp's screen coordinates (top-left origin, the space
     /// `getViewportWidth`/`getViewportHeight` answer in). A container's `x`/`y` are the window's
     /// position on the desktop, not a box inside a scene, so unlike every other geometry write these
@@ -176,6 +179,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     var dynamicContainerInstances: [String: [ObjectIdentifier: WasabiObjectID]] = [:]
     /// Per hosted window, the floor its borrowed chrome imposes — see `adoptChromeForHostedWindow`.
     var hostedChromeFloors: [WasabiObjectID: CGSize] = [:]
+    /// Per hosted window, the height its borrowed chrome gave back — see `liftHostedClient`.
+    var hostedChromeLifts: [WasabiObjectID: CGFloat] = [:]
     /// The other half of the pair: what the container's window state *is*, asked of the host, for
     /// `toggle()` and `isVisible()`. The graph's `visible` attribute cannot answer it — the window is
     /// shown and hidden by routes that never write the attribute — so a script that asks drifts out
@@ -562,13 +567,27 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // the whole SUI tab strip as `label.getAutoWidth() + 20` per tab, and run before the tab
         // labels arrived as params it sized all five to that bare 20px, stacked at the left edge.
         //
-        // Object-owned scripts keep the order they had: all of them, then the params (a XUI object's
-        // handler binds to the script group `onScriptLoaded` populates, so its own params can never
-        // come first — see `deliverXUIParams`).
+        // Object-owned scripts start **one owner at a time**, each followed by its own XUI params (B71).
+        // Wasabi configures an object completely — script loaded, then params — before the next one
+        // in the document is created, so a layout's `<script>` declared after a
+        // `<Wasabi:StandardFrame:* content="…">` finds the frame's content already built. Defix's
+        // detached visualizer is the measured case: `visrb2.maki` resolves eleven names inside
+        // `VISCON.component.gp`, and with every param deferred to the end it bound all eleven to
+        // null. Params still follow their own owner's `onScriptLoaded` — a XUI handler binds to
+        // the script group that event populates (see `deliverXUIParams`).
         let skinLevel = programs.filter { isSkinLevel($0) }
         let owned = programs.filter { !isSkinLevel($0) }
-        if !owned.isEmpty { _ = try dispatchSystem(event: "onscriptloaded", to: owned) }
-        deliverXUIParams(forSubtreeOf: loadedSkin.runtime.graph.roots)
+        var owners: [WasabiObjectID] = []
+        var programsByOwner: [WasabiObjectID: [MakiProgram]] = [:]
+        for program in owned {
+            guard let ownerID = program.ownerID else { continue }
+            if programsByOwner[ownerID] == nil { owners.append(ownerID) }
+            programsByOwner[ownerID, default: []].append(program)
+        }
+        for ownerID in owners {
+            _ = try dispatchSystem(event: "onscriptloaded", to: programsByOwner[ownerID] ?? [])
+            if let owner = loadedSkin.runtime.graph.object(withID: ownerID) { deliverXUIParams(for: owner) }
+        }
         if !skinLevel.isEmpty { _ = try dispatchSystem(event: "onscriptloaded", to: skinLevel) }
         dispatchColorManagerLoaded()
         dispatchColdStartLayoutShown()
@@ -645,10 +664,6 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// use for them and forwarding them to the text inside is the whole point of the tag.
     static func isConsumedBeforeXUIParams(_ name: String) -> Bool {
         WasabiGeometrySpec.geometryAttributes.contains(name.lowercased())
-    }
-
-    private func deliverXUIParams(forSubtreeOf objects: [WasabiObject]) {
-        for object in objects { deliverXUIParams(forSubtreeOf: object) }
     }
 
     private func deliverXUIParams(forSubtreeOf object: WasabiObject) {
@@ -1032,6 +1047,28 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         programs.append(contentsOf: added)
         try dispatchSystem(event: "onscriptloaded", to: added)
         deliverXUIParams(forSubtreeOf: root)
+        seedPlaybackState(to: added)
+    }
+
+    /// Tell a subtree started **mid-session** what is already playing (B82).
+    ///
+    /// A script that loads with the skin hears the opening `onTitleChange` and `onPlay` from the
+    /// window's first track update. One brought up later — a widget, a `GroupList` entry, a hosted
+    /// window — would otherwise hear nothing until the next track: ClassicPro's Now Playing widget
+    /// fills its three `SC:FadeText` lines only from `onTitleChange`, and the NOW tab builds a fresh
+    /// instance on every click, so the lines stayed empty for the rest of the song.
+    ///
+    /// Scoped to the new programs. A skin-wide dispatch would replay the title to every running
+    /// script, and `beat.m` resets its VU maximum on each one. Before the skin has started this is
+    /// left to that first update, which reaches these programs too.
+    private func seedPlaybackState(to added: [MakiProgram]) {
+        guard loadedSkin.runtime.hasStartedScripts else { return }
+        let title = host.trackDisplayTitle
+        if !title.isEmpty {
+            _ = try? dispatch(target: MakiObjectReference(.system), event: "ontitlechange",
+                              arguments: [.string(title)], in: added)
+        }
+        if host.playbackState == .playing { _ = try? dispatchSystem(event: "onplay", to: added) }
     }
 
     /// Start a subtree inserted by the host after global skin startup. The ordering is the same as
@@ -1255,12 +1292,24 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// origin for a layout, already the desktop origin for a container — so the pair is what
     /// recognises those coordinates being handed straight back to `resize()` on *another* window.
     /// See `borrowedWindowOrigin`.
-    private var lastWindowOriginRead: (objectID: WasabiObjectID, reported: CGPoint, desktop: CGPoint)?
+    private var lastWindowOriginRead: (objectID: WasabiObjectID, reported: CGPoint, desktop: CGPoint,
+                                       onScreen: Bool)?
 
     /// Remember a window object's position read, for `borrowedWindowOrigin` to recognise.
     func noteWindowOriginRead(of object: WasabiObject) {
         guard Self.isWindowObject(object), let desktop = windowOrigin(of: object) else { return }
-        lastWindowOriginRead = (object.stableID, reportedOrigin(of: object), desktop)
+        // No answer (the headless harness) counts as on screen, as it did before B156.
+        let onScreen = enclosingWindowID(of: object).flatMap { containerVisibilityQuery?($0) } != false
+        lastWindowOriginRead = (object.stableID, reportedOrigin(of: object), desktop, onScreen)
+    }
+
+    /// What a `resize()` on a window object asks for when its coordinates are another window's.
+    enum BorrowedWindowOrigin: Equatable {
+        /// That window's desktop origin: the write is a pinned move there.
+        case desktop(CGPoint)
+        /// The window read was not on screen, so it had no position to lend. The write keeps its
+        /// window where it is (B156).
+        case offScreen
     }
 
     /// **One window placed at another window's position** — the desktop origin a `resize()` is
@@ -1280,7 +1329,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// exact pair another window object just reported, and only when that window is not this one.
     /// A value the script did not read stays a plain move, as it does for B61.
     func borrowedWindowOrigin(matching requested: CGPoint,
-                                      writtenOn object: WasabiObject) -> CGPoint? {
+                                      writtenOn object: WasabiObject) -> BorrowedWindowOrigin? {
         guard Self.isWindowObject(object), let read = lastWindowOriginRead,
               read.objectID != object.stableID
         else { return nil }
@@ -1317,7 +1366,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
            isDynamicallyClaimed(follower.stableID), !isDynamicallyClaimed(leader.stableID) {
             windowsGluedOver[leader.stableID] = follower.stableID
         }
-        return CGPoint(x: read.desktop.x + CGFloat(deltaX), y: read.desktop.y + CGFloat(deltaY))
+        // **A window that is not on screen has no position to lend** (B156). Itemskin's frame script
+        // answers its content window's `onSetVisible(1)` with `syncContent()` *before* it shows the
+        // frame, so the frame read is one the host has never placed: a new dynamic container sits at
+        // the screen's bottom-left, a closed one where its content used to be. Taken as a pin, that
+        // parked the content there over whatever slot the tiler had just given it, mostly below the
+        // screen. The script's 10 ms timer puts the frame on the content once it is shown, which is
+        // the direction the pair is meant to settle in.
+        guard read.onScreen else { return .offScreen }
+        return .desktop(CGPoint(x: read.desktop.x + CGFloat(deltaX), y: read.desktop.y + CGFloat(deltaY)))
     }
 
     /// Which container's window is kept parked on which other container's window — leader → follower,
@@ -2681,6 +2738,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         "setdata": .init(argumentCount: 1, returnKind: .null),
         "ondatachanged": .init(argumentCount: 0, returnKind: .null),
         "setdelay": .init(argumentCount: 1, returnKind: .null),
+        "getdelay": .init(argumentCount: 0, returnKind: .integer),
         "start": .init(argumentCount: 0, returnKind: .boolean),
         "stop": .init(argumentCount: 0, returnKind: .null),
         "isrunning": .init(argumentCount: 0, returnKind: .boolean),
@@ -2855,6 +2913,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         // A group's children, which ClassicPro walks to find the widgets a component bucket loaded.
         "getnumchildren": .init(argumentCount: 0, returnKind: .integer),
         "enumchildren": .init(argumentCount: 1, returnKind: .object),
+        // `Group.getNumObjects` / `Group.enumObject` (`std.mi`) — the stock spelling of the same walk.
+        // ClassicPro's InfoViewer (`auto_arange.m`) lays out its tag lines with it.
+        "getnumobjects": .init(argumentCount: 0, returnKind: .integer),
+        "enumobject": .init(argumentCount: 1, returnKind: .object),
         "explorefile": .init(argumentCount: 1, returnKind: .null),
         "openfile": .init(argumentCount: 2, returnKind: .null),
         "findfiles": .init(argumentCount: 3, returnKind: .integer),
@@ -2971,6 +3033,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// that does not exist.
     func nullReceiverResult(for method: String) -> MakiValue {
         method.lowercased() == "isinvalid" ? .boolean(true) : .null
+    }
+
+    func report(_ diagnostic: WalDiagnostic) {
+        loadedSkin.runtime.record(diagnostic)
     }
 
     func releaseObject(_ reference: MakiObjectReference) {

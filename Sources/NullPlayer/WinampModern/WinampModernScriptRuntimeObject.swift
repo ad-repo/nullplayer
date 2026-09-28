@@ -87,8 +87,10 @@ extension WinampModernScriptRuntime {
             _ = layoutSwitchRequested?(object.stableID, arguments[0].stringValue)
             _ = try dispatch(object: object, event: "onswitchtolayout", arguments: [objectValue(next)])
             return .null
-        case "getnumchildren": return .integer(Int32(clamping: object.children.count))
-        case "enumchildren":
+        // `<script>` never enters the graph, so `children` is exactly the group's GUI objects in
+        // declaration order — the index ClassicPro's InfoViewer relies on (`a==11` is its rating).
+        case "getnumchildren", "getnumobjects": return .integer(Int32(clamping: object.children.count))
+        case "enumchildren", "enumobject":
             let index = Int(arguments[0].integerValue)
             guard object.children.indices.contains(index) else { return .null }
             return objectValue(object.children[index])
@@ -244,8 +246,14 @@ extension WinampModernScriptRuntime {
                                        CGSize(width: CGFloat(arguments[2].integerValue),
                                               height: CGFloat(arguments[3].integerValue)))
             }
-            applyContainerGeometry(object, reportedOrigin: reportedBeforeResize,
-                                   desktopOrigin: borrowed)
+            switch borrowed {
+            case .desktop(let origin):
+                applyContainerGeometry(object, reportedOrigin: reportedBeforeResize, desktopOrigin: origin)
+            case .offScreen:
+                applyContainerGeometry(object, keepsOrigin: true)
+            case nil:
+                applyContainerGeometry(object, reportedOrigin: reportedBeforeResize)
+            }
             noteGeometryChange()
             notifyGraphDidMutate()
             return .null
@@ -486,9 +494,13 @@ extension WinampModernScriptRuntime {
             notifyObjectDidMutate(object)
             return .null
         case "gotoframe", "setframe":
-            _ = object.setAttribute("frame", value: String(max(0, arguments[0].integerValue)))
-            _ = object.setAttribute("playing", value: "0")
-            notifyObjectDidMutate(object)
+            let moved = object.setAttribute("frame", value: String(max(0, arguments[0].integerValue)))
+            // Stopping a self-playing layer changes the animation clock's set, which only the full
+            // notification re-reads. A step of an already-stopped layer is a cell swap — `frame` is
+            // scene-neutral — so it repaints the layer's own rect: a beat meter stepping 12 layers
+            // every 10 ms made each step a whole-window relayout and repaint (B152).
+            if object.setAttribute("playing", value: "0") { notifyObjectDidMutate(object) }
+            else if moved { requestRepaint(for: object) }
             return .null
         case "getcurframe": return .integer(Int32(animationFrame(of: object)))
         case "getlength": return .integer(Int32(clamping: animationFrameCount(of: object)))
@@ -620,8 +632,17 @@ extension WinampModernScriptRuntime {
             notifyObjectDidMutate(object)
             return .null
         case "leftclick":
+            // `leftClick()` is a press, so a togglebutton flips and a `cfgattrib` control writes its
+            // attribute, exactly as `WinampModernMainView.performAction` does for the mouse (B71).
+            // Defix's detached visualizer is the measured case: its Reattach and Random buttons are
+            // plain groups whose script answers a click with `leftClick()` on a ghosted
+            // `cfgattrib` togglebutton, and with only `onLeftClick` dispatched the attribute never
+            // moved and neither button did anything.
             _ = try dispatch(object: object, event: "onleftclick")
-            actionRequested?(object.attributes["action"] ?? "", object.attributes["param"])
+            _ = toggleActivation(of: object)
+            let action = object.attributes["action"]
+            actionRequested?(action ?? "", object.attributes["param"])
+            if action == nil { _ = toggleConfigAttribute(of: object) }
             return .null
         case "settargetx": return setTarget("targetx", object: object, value: arguments[0])
         case "settargety": return setTarget("targety", object: object, value: arguments[0])
@@ -798,6 +819,15 @@ extension WinampModernScriptRuntime {
         case "callme": return .null
         default:
             throw unsupported(method, program: program)
+        }
+    }
+
+    /// Arms (or re-arms) a script `Timer` to fire `onTimer` every `delayMilliseconds`.
+    private func scheduleTimer(id: UInt64, delayMilliseconds: Int32) throws {
+        let reference = MakiObjectReference(.dynamic(id))
+        _ = try timers.schedule(id: id, period: TimeInterval(max(8, delayMilliseconds)) / 1_000) { [weak self] in
+            guard let self else { return }
+            _ = try? self.dispatch(target: reference, event: "ontimer", arguments: [])
         }
     }
 
@@ -998,20 +1028,23 @@ extension WinampModernScriptRuntime {
             case "getstring": return .string(loadedSkin.configuration.string(section: section, key: key))
             default: return .integer(value)
             }
+        // Wasabi's `STimer::setDelay` re-arms a started timer at the new delay, and skins rely on it
+        // from inside their own `onTimer`: Shield_Amp's `OneDirectionText` starts its ticker on a
+        // 1000 ms first delay, then drops to the 60 ms step on the first tick. Storing the value
+        // without re-arming left the ticker stepping once a second (B148).
         case "setdelay":
-            state.delayMilliseconds = max(8, arguments[0].integerValue)
+            state.delayMilliseconds = arguments[0].integerValue
             dynamicObjects[id] = state
+            if timers.contains(id: id) { try scheduleTimer(id: id, delayMilliseconds: state.delayMilliseconds) }
             return .null
+        // The delay as set, unclamped — the same script compares it against its own first delay.
+        case "getdelay": return .integer(state.delayMilliseconds)
         case "start":
-            let reference = MakiObjectReference(.dynamic(id))
             if MakiInterpreter.tracesExecution {
                 print("MAKI timer start id=\(id) delay=\(state.delayMilliseconds) "
                       + "by=\(MakiInterpreter.traceStack.last ?? "-")")
             }
-            _ = try timers.schedule(id: id, period: TimeInterval(state.delayMilliseconds) / 1_000) { [weak self] in
-                guard let self else { return }
-                _ = try? self.dispatch(target: reference, event: "ontimer", arguments: [])
-            }
+            try scheduleTimer(id: id, delayMilliseconds: state.delayMilliseconds)
             return .boolean(true)
         case "stop":
             if MakiInterpreter.tracesExecution {
@@ -1034,7 +1067,9 @@ extension WinampModernScriptRuntime {
             return dynamicValue(role: .configAttribute(section: section, key: key))
         case "getdata":
             guard case .configAttribute(let section, let key) = state.role else { return .string("") }
-            let data = loadedSkin.configuration.string(section: section, key: key)
+            let data = loadedSkin.configuration.string(
+                section: section, key: key,
+                default: WinampModernConfigBridge.hostDefault(section: section, key: key) ?? "")
             if Self.tracesEveryCall {
                 print("CALL-TRACE getdata[\(section);\(key)] -> \(data)")
             }

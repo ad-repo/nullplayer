@@ -587,6 +587,16 @@ ticker beneath it. A group with **no** declared box does *not* clip: its rect is
 inferred, and clipping children to a guess erases content that is really there. Across the 15
 measured skins the rule changes four rendered images and leaves 13 skins byte-identical.
 
+**An `xuitag` instance is a group** (B149, 2026-09-28): `<OneDirectionText w="293" …>` is its
+`groupdef` instantiated under the tag's name, so it clips on the same declared-box terms. Before
+this, Shield_Amp's songticker drew its ~900px moving title across the whole player body. Measured
+across the 79-archive corpus sweep, it changed Shield_Amp and Ebonite_2_1's four tickers (the fix)
+and a 2px glyph fringe at the left edge of Big Bento's info lines (≤6/255). It also lowered the
+protective `MLibrary` minimum from 414 or 452 to the declared 354 in S7Reflex,
+nullsoft_media_player_10_forked and winampmodern566. Their library title widgets had been
+overflowing at narrow widths. Now they clip, as they would in Winamp, where 354 is the floor. The
+only visible change at 354 is the caption cut to its bar ("Med…").
+
 `layoutMinimumSize` is **not** just the layout's `minimum_w`/`minimum_h`. Those numbers are written
 for Winamp, where every group clips its children; we clip a declared group and inherit otherwise, so
 past a certain size a child that no longer fits can still paint over its siblings. The

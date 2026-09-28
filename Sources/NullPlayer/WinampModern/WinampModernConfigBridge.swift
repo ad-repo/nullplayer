@@ -88,6 +88,28 @@ enum WinampModernConfigBridge {
         }
     }
 
+    /// Winamp's own preferences that a script reads but NullPlayer has no setting for, answered with
+    /// the value Winamp registers them at. Winamp registers these whether or not a skin does, so an
+    /// unset read is `""` here and never is there. Keyed by `(item GUID, attribute name)`.
+    ///
+    /// - `Text Ticker Speed` (*Skins and UI Tweaks*, `{9149C445-…}`): gen_ff's `DEFAULT_TEXTSPEED` is
+    ///   `1.0f/3.0f`, stored through `%f`. Shield_Amp's and Ebonite_2_1's shared `OneDirectionText`
+    ///   sets its move timer to `20/stringToFloat(value)` — 60 ms — and a `""` made it infinite (B148).
+    ///
+    /// The same item's `Enable desktop alpha` and `Enable tooltips` are read by 12 markup bindings
+    /// and deliberately **not** answered: each would switch a skin branch nobody has measured here.
+    private static let hostDefaults: [(section: String, key: String, value: String)] = [
+        ("{9149C445-3C30-4e04-8433-5A518ED0FDDE}", "Text Ticker Speed", "0.333333")
+    ]
+
+    /// The value Winamp would answer for one of its own unset preferences, or nil for anything else.
+    static func hostDefault(section: String, key: String) -> String? {
+        hostDefaults.first {
+            $0.section.caseInsensitiveCompare(section) == .orderedSame
+                && $0.key.caseInsensitiveCompare(key) == .orderedSame
+        }?.value
+    }
+
     private static func clampedSeconds(_ value: Int32) -> Int32 {
         min(max(value, crossfadeSecondsRange.lowerBound), crossfadeSecondsRange.upperBound)
     }

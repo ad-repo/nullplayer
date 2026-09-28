@@ -45,8 +45,8 @@ chased.
 
 No `RENDER_CLICK`, no motion ladder, no coverage figure. The 2026-09-05 live pass covered the
 titlebars and the window sizes and nothing else.
-Its `<Menu>` bar was not exercised and may be subject to **B79** (a group whose `autowidthsource`
-names a bitmap sizes to nothing).
+Its `<Menu>` bar was not exercised. B79 (a group whose `autowidthsource` names a bitmap sized to
+nothing) is fixed as of 2026-09-28, so re-measure it before assuming either way.
 
 
 ### Three engine defects it was the first skin to reach (2026-09-05)

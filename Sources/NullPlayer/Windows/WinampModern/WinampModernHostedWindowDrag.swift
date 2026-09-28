@@ -31,7 +31,14 @@ struct WinampModernHostedWindowDrag {
 
     /// Arm a press the surface did not consume. Harmless when the view is not hosted.
     mutating func prime(_ event: NSEvent, context: WinampModernHostedSurfaceContext?) {
-        guard let window = context?.nativeWindow() else { return }
+        prime(event, window: context?.nativeWindow())
+    }
+
+    /// Arm a press against a window named outright. A surface embedded in the skin's *own* window
+    /// (the library browser in its holder, the video picture parked over its box) has no hosted
+    /// context: the window it moves is the skin's, not one of its own (B60).
+    mutating func prime(_ event: NSEvent, window: NSWindow?) {
+        guard let window else { return }
         primedWindow = window
         startPoint = event.locationInWindow
         isMoving = false

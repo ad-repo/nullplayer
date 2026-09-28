@@ -95,6 +95,60 @@ final class WinampModernRenderPixelTests: XCTestCase {
         XCTAssertEqual(group.frame, CGRect(x: 0, y: 0, width: 16, height: 16))
     }
 
+    /// Two layers that abut at x=6 leave no translucent column at a fractional device scale (B80).
+    /// At 2.1 their shared edge is x=12.6 in device pixels: each layer covered part of column 12 and
+    /// source-over left it at alpha ~0.8 — the hairline along every band boundary at UI Size 105%.
+    func testAbuttingLayersLeaveNoSeamAtAFractionalScale() throws {
+        let xml = """
+        <WasabiXML>
+          <elements>
+            <bitmap id="band.red" file="sheet.png" x="0" y="0" w="16" h="4"/>
+            <bitmap id="band.green" file="sheet.png" x="0" y="4" w="16" h="4"/>
+          </elements>
+          <container id="Main">
+            <layout id="normal" w="16" h="16">
+              <layer id="left" image="band.red" x="0" y="0" w="6" h="16"/>
+              <layer id="right" image="band.green" x="6" y="0" w="10" h="16"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """
+        let loaded = try WinampModernSkinLoader().load(from: try makeArchive(xml: xml))
+        defer { loaded.teardown() }
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: RenderHost())
+        defer { renderer.teardown() }
+
+        let side = 34  // 16 x 2.1, rounded up
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        try pixels.withUnsafeMutableBytes { bytes in
+            let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: side, height: side,
+                                                  bitsPerComponent: 8, bytesPerRow: side * 4,
+                                                  space: CGColorSpaceCreateDeviceRGB(),
+                                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.scaleBy(x: 2.1, y: 2.1)
+            renderer.draw(in: context)
+        }
+        for y in 1..<32 {
+            XCTAssertEqual(pixels[(y * side + 12) * 4 + 3], 255, "column 12 must be opaque at row \(y)")
+        }
+    }
+
+    /// The snap moves an edge onto the device grid, leaves an on-grid edge alone, and aims at the
+    /// real pixel grid when the context's own unit is a point (a display-list context at CTM 1.0).
+    func testPixelGridSnap() {
+        let rect = CGRect(x: 6, y: 0, width: 10, height: 4)
+        XCTAssertEqual(WasabiSceneRenderer.snapped(rect, ctm: CGAffineTransform(scaleX: 2, y: 2),
+                                                   devicePixelsPerUnit: 1), rect)
+        let fractional = WasabiSceneRenderer.snapped(rect, ctm: CGAffineTransform(scaleX: 2.1, y: 2.1),
+                                                     devicePixelsPerUnit: 1)
+        XCTAssertEqual(fractional.minX * 2.1, 13, accuracy: 1e-9)
+        XCTAssertEqual(fractional.maxX * 2.1, 34, accuracy: 1e-9)
+        // 105% on a 2x panel recorded at CTM 1.05: x=6 is device 12.6, so it lands on 13, not on 6.
+        let points = WasabiSceneRenderer.snapped(rect, ctm: CGAffineTransform(scaleX: 1.05, y: 1.05),
+                                                 devicePixelsPerUnit: 2)
+        XCTAssertEqual(points.minX * 1.05 * 2, 13, accuracy: 1e-9)
+    }
+
     // MARK: - Helpers
 
     private func render(xml: String, size: CGSize) throws -> [UInt8] {

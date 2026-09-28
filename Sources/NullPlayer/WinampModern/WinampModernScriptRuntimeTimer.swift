@@ -59,9 +59,10 @@ extension WinampModernScriptRuntime {
     ///
     /// `desktopOrigin` overrides the position half: the caller has recognised the coordinates as
     /// another window's, and re-expressed them in the desktop space this move is answered in. See
-    /// `borrowedWindowOrigin`.
+    /// `borrowedWindowOrigin`. `keepsOrigin` drops the position half altogether: the coordinates
+    /// were read off a window that is not on screen (B156).
     func applyContainerGeometry(_ object: WasabiObject, reportedOrigin: CGPoint? = nil,
-                                        desktopOrigin: CGPoint? = nil) {
+                                        desktopOrigin: CGPoint? = nil, keepsOrigin: Bool = false) {
         // A **layout** is its window as much as the container is — a `noparent` popup is placed and
         // sized by writing `x`/`y`/`w`/`h` on the layout, in screen coordinates the script builds with
         // `clientToScreenX/Y`. Big Bento's playlist search does exactly that before showing its
@@ -80,7 +81,9 @@ extension WinampModernScriptRuntime {
            let height = Double(object.attributes["h"] ?? ""), width > 0, height > 0 {
             layoutResizeRequested?(target.stableID, CGSize(width: width, height: height))
         }
-        if let desktopOrigin {
+        if keepsOrigin {
+            return
+        } else if let desktopOrigin {
             containerMoveRequested?(target.stableID, desktopOrigin, true)
         } else if let x = Double(object.attributes["x"] ?? ""),
                   let y = Double(object.attributes["y"] ?? "") {
