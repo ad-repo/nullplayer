@@ -414,3 +414,35 @@ the unit test on **Courier** alone, one or two pixels per string: AppKit's strin
 `CTLineDraw` rasterize a glyph edge slightly differently. `CGContext`'s
 `setShouldSubpixelQuantizePositions` closes it and is not in the public CoreGraphics headers, which
 is not a trade worth making for one pixel of one face.
+
+#### A hidden window still paints (B119, 2026-09-28)
+
+A skin's scripts run whether or not their window is on screen, and **AppKit still displays an
+ordered-out window that has been invalidated**. WMP11-BlueVU ships two VU meter containers, both
+`default_visible="0"`. Its `vu.maki` runs a 10 ms timer that calls `fx_update()` on each needle, so
+the *VU Meters Small* window, which nobody had opened, re-warped both needles ~100 times a second.
+`nullplayer.about` and `Pledit` painted too, at ~100 and ~31 a second, all hidden.
+
+`WinampModernMainView.isOnScreen` gates the two animation paths: the auxiliary repaint sink and
+`repaintAnimatingObjects`. A window that is not visible records `repaintDeferredWhileHidden`, and
+`occlusionDidChange` redraws it whole when it comes back. The value is **cached** from
+`NSWindow.didChangeOcclusionStateNotification`. The first draft asked `window.occlusionState` on
+every call, and at ~2,100 script notifications per second per view that one getter was **40%** of
+the main thread, more than the paint it saved.
+
+Release build, *VU Meters Large* open, a music file playing, hands off, 10 s `sample`, same binary
+with an A/B switch:
+
+| | before | after | cPro-Bento, same day |
+|---|---|---|---|
+| main-thread busy | 81.4% | **48.3%** | 31.8% |
+| `drawWarped` | 21.9% | 17.2% | 0.0% |
+| `CGDisplayListDrawInContextDelegate` | 19.0% | **0.0%** | 1.7% |
+
+The CG paint B119 was filed against belonged to the hidden windows. What is left is the visible
+meter, repainting at the skin's own ~100 Hz, which is under this display's 120 Hz, and the main
+window's own full repaints. That remainder is B152.
+
+**Minimizing an animating window is the live check for the catch-up path.** Set `AXMinimized` on
+the window through System Events, addressed by pid. Its paint rate drops while it is minimized. After
+restoring it, the rate should come back and two captures half a second apart should differ.

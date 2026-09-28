@@ -24,7 +24,7 @@ None open.
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B119 | **WMP11-BlueVU spends ~75% of the main thread where a normal skin spends ~50%**, painting two warped FX layers every frame. The CPU resample half is fixed; the Core Graphics paint (~26% against a control's ~5%) is open. Closing this also closes B117(a), the skin's ~7 fps marquee. See [detail](#b119) | 2 skins measured; every skin with an animating `<layer>` FX mesh | M | Live-reported |
+| B152 | **WMP11-BlueVU still costs ~16 points more main thread than cPro-Bento.** What B119 left: release, *VU Meters Large* open, music playing, 48.3% busy against cPro-Bento's 31.8% on the same day. Two parts: the visible meter re-warps both needles at the skin's own ~100 Hz (`drawWarped` 17.2%, still under the 120 Hz display), and the main window repaints ~115 times a second over its **whole** area (`dirtyRect` covers 100% of the window). Start with why the main window's repaint is not targeted; its 12 `beatleft`/`beatright` animated layers are the suspects. Throttling the warp below the skin's cadence would give up visible smoothness, so it is last. Method: [`performance.md`](skills/winamp-modern-skin-guide/reference/performance.md) *A hidden window still paints* | 1 skin measured | M | Live-reported |
 | B147 | **The library window follows the main window's height in a `.wal` session.** `toggleHideTitleBars` (`App/WindowManager.swift:511`) resizes the side-docked library and projectM windows by the main window's height delta — Original centre-stack behaviour. Its guard `isRunningModernUI` (`:390`) does not name `WinampModernMainWindowController`, so `.wal` falls through to the stale `isModernUIEnabled` preference. **Gate the resize itself on the mode; do not add the controller to the predicate**, whose other callers would all inherit the answer. Classic and Original byte-identical. The `.wmz` half is W237 in [`WMP_TASKS.md`](WMP_TASKS.md) | every `.wal` session with the library open | S | Live-reported |
 | B151 | **A gap between the VU face and the frame in WMP11-BlueVU's VU Meters window.** Reported 2026-09-28 from the live session. With *VU Meters Large* open (`Meter`, 438x207), a light band shows between the meter artwork (`scale` at 10,27 and the needles) and the window's `Wasabi:StandardFrame:NoStatus`, most visible along the top and left edges. The meter should sit flush against the frame. The likely cause is the frame's client area and the layer's absolute x/y disagreeing, or the frame drawing an inset the skin does not expect. Not yet measured. Reproduce with `WINAMP_MODERN_SHOW_WINDOWS=Meter`, or headlessly with `RENDER_SHOW=Meter`, and compare against the skin's `vuscreenshot.png` | 1 skin reported | S | Live-reported |
 | B80 | **Horizontal seams at fractional UI Sizes.** Hairlines along band boundaries on cPro at 105%. Affects exactly the sizes fractional at 2x backing (90/105/110/115/125/135/175). See [detail](#b80) | 7 of 13 UI Sizes; every skin ([M25]) | M | Live-reported |
@@ -49,7 +49,7 @@ the window census and the render-dump harness. The ranking above still sets the 
 | Id | What the agent can do alone | How it is verified |
 |---|---|---|
 | B80 | Add a partial-repaint mode to the harness, then fix the seam | Count partial-alpha rows at a fractional scale; live: set UI Size from the menu, `move` over controls, `capture` |
-| B119 | Try a lower FX repaint rate, or clip the warp extent | Hands-off release `sample` of WMP11-BlueVU against cPro-Bento, per `harness.md` |
+| B152 | Find what makes the main window's repaint whole-window, then target it | Hands-off release `sample` of WMP11-BlueVU against cPro-Bento, recipe in `harness.md` *Driving a release run without the reporter* |
 | B111 | Drag the volume up, relaunch | Persisted volume ≠ 0 after relaunch, and the log shows no `setvolume(0)` cascade (audibility is not checked) |
 | B56a | The three tiling checks | `windows` geometry before and after a UI-Size change from the menu bar; Classic/Original census rows unchanged |
 
@@ -78,39 +78,6 @@ archive entry.
 - <a id="m25"></a>**M25:** device scale is UI Size x the display's backing factor, so on a 2x panel the fractional stops are 90, 105, 110, 115, 125, 135 and 175 % — 7 of the 13 `UIScaleLevel` cases. To check a *full* draw, `WINAMP_MODERN_RENDER_SCALE=<factor> WINAMP_MODERN_RENDER_DUMP=/tmp/s WINAMP_MODERN_WAL=<skin> swift test --filter WinampModernRenderDumpTests`, then count rows whose alpha is strictly between transparent and opaque.
 
 ## Item detail
-
-### B119
-
-- [ ] **B119. WMP11-BlueVU's per-frame warp costs three quarters of the main thread.** The skin
-      warps two layers — 300x300 and 180x180 — on every frame.
-
-      **Baseline** (release build, local file playing, hands off, 10 s `sample` each, cPro-Bento as
-      the control on the same build minutes apart):
-
-      | | WMP11 before | WMP11 after (1) | control |
-      |---|---|---|---|
-      | main-thread **busy** | 77.9% | 68.6% | ~49% |
-      | `resample` (our CPU warp) | 24.1% | **10.6%** | 0.0% |
-      | `CGDisplayListDrawInContextDelegate` (the paint) | 21.3% | **23.0%** | ~5% |
-
-      **(1) The CPU mesh resample is fixed** (2026-09-04); the doc comment on `resample` is the
-      account. **(2) Core Graphics painting the warped image is open.** The warp mints a new
-      `CGImage` every frame, marked into the backing store under `CA::Transaction::commit ->
-      CGDisplayListDrawInContextDelegate`.
-
-      **Ruled out — do not re-try:** an f16 backing store (`WINAMP_MODERN_DRAW_FORMAT=1` reports
-      `RGBA8`); emitting the warp at device resolution in the destination's colour space (measured
-      worse, 23.0% -> 26.4%, reverted); unrelated compositing (the control paints ~5%); widening
-      `warpedImageCache` (every miss is genuine).
-
-      **To try:** repaint the FX layers fewer times a second (compare the animation clock with the
-      skin's own cadence, `WINAMP_MODERN_RENDER_FX_SPIN`), or paint less of them (is the warp extent
-      larger than what is visible?).
-
-      **Constraints.** `drawWarped` is shared with Defix's reels and needles, so a fix wants a corpus
-      render sweep and `RENDER_TIME`/`RENDER_FX` on Defix as a second control. Classic and Original
-      must not move. **Done when** WMP11's busy fraction converges on the control's ~50%, measured as
-      above and parsed per [`harness.md`](skills/winamp-modern-skin-guide/reference/harness.md).
 
 ### B80
 

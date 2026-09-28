@@ -3,6 +3,66 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B119 — WMP11-BlueVU's per-frame warp cost three quarters of the main thread — closed 2026-09-28
+
+| B119 | **WMP11-BlueVU spends ~75% of the main thread where a normal skin spends ~50%**, painting two warped FX layers every frame. The CPU resample half is fixed; the Core Graphics paint (~26% against a control's ~5%) is open. Closing this also closes B117(a), the skin's ~7 fps marquee. See [detail](#b119) | 2 skins measured; every skin with an animating `<layer>` FX mesh | M | Live-reported |
+
+### B119
+
+- [x] **B119. WMP11-BlueVU's per-frame warp costs three quarters of the main thread.** The skin
+      warps two layers — 300x300 and 180x180 — on every frame.
+
+      **Baseline** (release build, local file playing, hands off, 10 s `sample` each, cPro-Bento as
+      the control on the same build minutes apart):
+
+      | | WMP11 before | WMP11 after (1) | control |
+      |---|---|---|---|
+      | main-thread **busy** | 77.9% | 68.6% | ~49% |
+      | `resample` (our CPU warp) | 24.1% | **10.6%** | 0.0% |
+      | `CGDisplayListDrawInContextDelegate` (the paint) | 21.3% | **23.0%** | ~5% |
+
+      **(1) The CPU mesh resample is fixed** (2026-09-04); the doc comment on `resample` is the
+      account. **(2) Core Graphics painting the warped image is open.** The warp mints a new
+      `CGImage` every frame, marked into the backing store under `CA::Transaction::commit ->
+      CGDisplayListDrawInContextDelegate`.
+
+      **Ruled out — do not re-try:** an f16 backing store (`WINAMP_MODERN_DRAW_FORMAT=1` reports
+      `RGBA8`); emitting the warp at device resolution in the destination's colour space (measured
+      worse, 23.0% -> 26.4%, reverted); unrelated compositing (the control paints ~5%); widening
+      `warpedImageCache` (every miss is genuine).
+
+      **To try:** repaint the FX layers fewer times a second (compare the animation clock with the
+      skin's own cadence, `WINAMP_MODERN_RENDER_FX_SPIN`), or paint less of them (is the warp extent
+      larger than what is visible?).
+
+      **Constraints.** `drawWarped` is shared with Defix's reels and needles, so a fix wants a corpus
+      render sweep and `RENDER_TIME`/`RENDER_FX` on Defix as a second control. Classic and Original
+      must not move. **Done when** WMP11's busy fraction converges on the control's ~50%, measured as
+      above and parsed per [`harness.md`](../../skills/winamp-modern-skin-guide/reference/harness.md).
+
+      **Closed 2026-09-28.** The paint was not the visible warp. It was **hidden windows painting.**
+      WMP11 ships two VU meter containers, both `default_visible="0"`, and `vu.maki`'s 10 ms timer
+      calls `fx_update()` whether or not the window is up. AppKit still displays an ordered-out
+      window that has been invalidated, so the never-opened *VU Meters Small* re-warped both needles
+      ~100 times a second, and `nullplayer.about` and `Pledit` painted at ~100 and ~31.
+      `WinampModernMainView.isOnScreen`, cached from the occlusion notification, now gates the
+      auxiliary repaint sink and `repaintAnimatingObjects`, and a window that comes back redraws
+      whole. Release, *VU Meters Large* open, music playing, same binary with an A/B switch:
+      busy **81.4% → 48.3%**, `CGDisplayListDrawInContextDelegate` **19.0% → 0.0%**, `drawWarped`
+      21.9% → 17.2%. Minimize and restore was checked live: the paint rate drops while the window is
+      minimized and comes back afterwards, and captures show the needles moving. The account is in
+      `performance.md` *A hidden window still paints*.
+
+      **Against the done-when:** 48.3% matches the ~50% control this row quoted, but the same-day
+      cPro-Bento control read **31.8%**, so a real gap is left. It is filed as **B152**: the main
+      window repaints whole ~115 times a second, and the visible meter warps at the skin's 100 Hz.
+      **B117(a)** was folded into this row. Its symptom was measured on debug and has not been
+      re-measured there; the release main window now paints at ~115/s.
+
+      **Dead end:** routing the main view's repaint for an object it does not own away from the
+      whole-window fallback moved nothing (busy 84.0% both ways), so it was reverted.
+
+
 ## B150 — a `<Menu>` entry's hover and pressed art sized to nothing — closed 2026-09-28
 
 | B150 | **A `<Menu>` entry's hover and pressed art draws nothing.** winampmodern566's `menu:button_hover` / `menu:button_pressed` groupdefs state no `w`, so each resolves 0 wide inside the entry it belongs to (`RENDER_GEOMETRY=menugroup.file`: `File.hover.btn frame=(1,18,0,16)`); `WasabiMenuBar.apply` swaps their visibility and nothing sizes them. Winamp's rule is unconfirmed — whether the `<Menu>` sizes its state objects to its own box or a group with no `w` fills its parent — and the second would move every such group in the corpus, so settle it first | 1 skin measured (winampmodern566; The_Nokia_5220 ships the groupdefs but instantiates none) | S | Live-reported |

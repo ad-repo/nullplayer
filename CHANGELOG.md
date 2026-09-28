@@ -2,6 +2,7 @@
 
 ## 0.31.0
 
+- **Winamp Modern skins with hidden windows use far less CPU** — a skin's closed windows no longer redraw in the background. The WMP11-BlueVU skin's VU meters had been animating unseen, costing about a third of the app's main thread while music played.
 - **The listening heatmap matches your skin** — the heatmap in the library's Data tab now takes its
   colours from the current skin in every skin mode instead of always using GitHub green, and follows
   a Winamp Modern or Windows Media Player skin's colour theme when you switch it. Switching colour

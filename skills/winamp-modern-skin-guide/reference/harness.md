@@ -557,6 +557,24 @@ frame that carries it multiplies recursion and closures. B118's WMP11-BlueVU num
 exactly this shape: 77.9% busy, `drawScene` 52.8%, `drawWarped` 25.0%, against cPro-Bento's 49.6% /
 31.1% / 0.1% on the same build and the same local file.
 
+**Driving a release run without the reporter.** Everything that picks the skin or the track at
+launch is `#if DEBUG`: `-winampModernSkinPath`, `NULLPLAYER_SKIN` and `NULLPLAYER_PLAY` are all
+ignored silently by a release binary, and it loads whatever skin was last selected. On 2026-09-28,
+three B119 runs measured *multipass* instead of WMP11-BlueVU before a screen capture caught it. In
+release:
+
+- **Skin:** pass `-winampModernSkinName <archive name without .wal>`, an argument-domain
+  override of the selected-skin key.
+- **Track:** send the process an `odoc` Apple Event by pid (`NSAppleEventDescriptor(processIdentifier:)`
+  with `kAEOpenDocuments`). This is the Finder-open path, the same one `NULLPLAYER_PLAY` takes.
+- **A container that is `default_visible="0"`:** write the skin's own
+  `winampModern.config.<skin>._nullplayer_windows.<container>` key to `1` in the `NullPlayer`
+  domain, and put it back afterwards.
+- **Content that drives the meters:** the `testdata.sh` sweeps leave a VU needle parked at rest.
+  A meter measured with nothing moving is a different test, so play real music.
+
+Confirm the skin with `winhelper windows` (the window sizes) or a capture before quoting a number.
+
 ### Driving a click in the *running app*
 
 `WINAMP_MODERN_DEBUG_CLICK=[<container>@]<x>,<y>[;…]` (DEBUG builds) clicks skin points a few seconds

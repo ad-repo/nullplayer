@@ -303,6 +303,10 @@ final class WinampModernMainView: NSView {
 
     private func repaintAnimatingObjects() {
         guard !isTornDown else { return }
+        guard isOnScreen else {
+            repaintDeferredWhileHidden = true
+            return
+        }
         let rects = animatingRects()
         // A scene with a great many moving parts is cheaper to repaint in one pass than to invalidate
         // piece by piece.
@@ -526,8 +530,14 @@ final class WinampModernMainView: NSView {
             guard let self, !self.isTornDown else { return }
             // Scoped: a warped layer on the *main* window fires this 30 times a second, and this
             // window has no business repainting for it.
+            if let object, !self.owns(object) { return }
+            // A window nobody can see does not paint for the skin's animation: it catches up in one
+            // pass when it comes back (`occlusionDidChange`).
+            guard self.isOnScreen else {
+                self.repaintDeferredWhileHidden = true
+                return
+            }
             if let object {
-                guard self.owns(object) else { return }
                 self.setNeedsDisplay(for: object)
                 return
             }
@@ -861,7 +871,39 @@ final class WinampModernMainView: NSView {
                     self.needsDisplay = true
                 })
         }
+        activeStateObservers.append(NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main) { [weak self] _ in
+                self?.occlusionDidChange()
+            })
+        occlusionDidChange()
         needsDisplay = true
+    }
+
+    /// Whether any of this view's window is visible: ordered in, not minimized, on the current Space
+    /// and not wholly covered (B119).
+    ///
+    /// A skin's hidden windows kept painting. Their scripts run whether or not anyone can see them —
+    /// WMP11-BlueVU's never-opened *VU Meters Small* re-warped both needles ~100 times a second — and
+    /// AppKit still displays an ordered-out window that has been invalidated. Measured on a release
+    /// build with *VU Meters Large* open and music playing: main-thread busy **81.4% → 48.3%**, and
+    /// `CGDisplayListDrawInContextDelegate` 19.0% → 0.0%.
+    ///
+    /// **Cached** from the occlusion notification rather than asked per call: this is read on every
+    /// script notification, thousands of times a second, and a first draft that asked the window
+    /// each time cost 40% of the main thread on its own — more than the paint it saved.
+    private var isOnScreen = false
+
+    /// Repaints a hidden window skipped; the next time it shows, it redraws whole.
+    private var repaintDeferredWhileHidden = false
+
+    private func occlusionDidChange() {
+        isOnScreen = window?.occlusionState.contains(.visible) ?? false
+        guard !isTornDown, isOnScreen, repaintDeferredWhileHidden else { return }
+        repaintDeferredWhileHidden = false
+        invalidateRectCaches()
+        needsLayout = true
+        needsDisplay = true
+        updateAnimationTimer()
     }
 
     override func draw(_ dirtyRect: NSRect) {
