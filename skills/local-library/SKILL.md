@@ -349,6 +349,14 @@ Both `ModernLibraryBrowserView` and `PlexBrowserView` (classic) embed a Data tab
 In `PlexBrowserView`, the tab is the `.history` case (displayed as "Data"). It is implemented via an `NSHostingView<StatsContentView>` created in `makeHistoryHostingView()` and reused across tab switches. The agent is a private `let historyAgent = PlayHistoryAgent()` instance on the view. Skin text color is forwarded on tab selection and on skin reload.
 
 **Charts in the Data tab overview:**
+- Listening heatmap (`ContributionHeatmapView`, GitHub-style, trailing year) — coloured from the skin
+  in every mode through `ContributionHeatmapTheme`: `PlexBrowserView` builds it from
+  `currentPlaylistColors()` (the classic skin's playlist colours, or the `.wal`/`.wmz` surface style,
+  hot end = `currentText`), the Modern library and stats window from `init(modernSkin:)` (hot end =
+  the spectrum top, so metal finishes stay bright). An accent under 1.8:1 against the background
+  falls back to the text colour. A `.wal`/`.wmz` colour-theme switch recolours the tab through
+  `applyWinampModernStyle` / `hostedSurfaceStyleDidChange`; with no theme the view falls back to
+  GitHub light/dark.
 - Play Time summary (day/week/month/year/all-time)
 - Top Artists (music only — excludes radio)
 - Top Movies / Top TV Shows (content-type specific)

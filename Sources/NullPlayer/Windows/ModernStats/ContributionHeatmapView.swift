@@ -1,60 +1,133 @@
+import AppKit
 import SwiftUI
 
-/// A GitHub-style contribution heatmap of daily listening activity over the trailing year.
-///
-/// Rendered as a self-contained card using a light or dark GitHub-style contribution palette based
-/// on the surrounding skin's appearance. Each cell's shade tracks the minutes listened that day.
-struct ContributionHeatmapView: View {
-    @ObservedObject var agent: PlayHistoryAgent
-    @State private var model: HeatmapModel
-    @Environment(\.colorScheme) private var colorScheme
+/// Colours for `ContributionHeatmapView`: an empty-day shade, four intensity steps, and the card
+/// chrome around the grid.
+struct ContributionHeatmapTheme {
+    let l0: Color
+    let l1: Color
+    let l2: Color
+    let l3: Color
+    let l4: Color
+    let card: Color
+    let border: Color
+    let text: Color
+    let label: Color
 
-    // MARK: GitHub-style adaptive palette
-    private struct Palette {
-        let l0: Color
-        let l1: Color
-        let l2: Color
-        let l3: Color
-        let l4: Color
-        let card: Color
-        let border: Color
-        let text: Color
-        let label: Color
+    static let githubLight = ContributionHeatmapTheme(
+        l0: Color(red: 235/255, green: 237/255, blue: 240/255),
+        l1: Color(red: 155/255, green: 233/255, blue: 168/255),
+        l2: Color(red: 64/255, green: 196/255, blue: 99/255),
+        l3: Color(red: 48/255, green: 161/255, blue: 78/255),
+        l4: Color(red: 33/255, green: 110/255, blue: 57/255),
+        card: .white,
+        border: Color(red: 208/255, green: 215/255, blue: 222/255),
+        text: Color(red: 31/255, green: 35/255, blue: 40/255),
+        label: Color(red: 89/255, green: 99/255, blue: 110/255)
+    )
 
-        static let light = Palette(
-            l0: Color(red: 235/255, green: 237/255, blue: 240/255),
-            l1: Color(red: 155/255, green: 233/255, blue: 168/255),
-            l2: Color(red: 64/255, green: 196/255, blue: 99/255),
-            l3: Color(red: 48/255, green: 161/255, blue: 78/255),
-            l4: Color(red: 33/255, green: 110/255, blue: 57/255),
-            card: .white,
-            border: Color(red: 208/255, green: 215/255, blue: 222/255),
-            text: Color(red: 31/255, green: 35/255, blue: 40/255),
-            label: Color(red: 89/255, green: 99/255, blue: 110/255)
-        )
+    static let githubDark = ContributionHeatmapTheme(
+        l0: Color(red: 22/255, green: 27/255, blue: 34/255),
+        l1: Color(red: 14/255, green: 68/255, blue: 41/255),
+        l2: Color(red: 0/255, green: 109/255, blue: 50/255),
+        l3: Color(red: 38/255, green: 166/255, blue: 65/255),
+        l4: Color(red: 57/255, green: 211/255, blue: 83/255),
+        card: Color(red: 13/255, green: 17/255, blue: 23/255),
+        border: Color(red: 48/255, green: 54/255, blue: 61/255),
+        text: Color(red: 240/255, green: 246/255, blue: 252/255),
+        label: Color(red: 139/255, green: 148/255, blue: 158/255)
+    )
+}
 
-        static let dark = Palette(
-            l0: Color(red: 22/255, green: 27/255, blue: 34/255),
-            l1: Color(red: 14/255, green: 68/255, blue: 41/255),
-            l2: Color(red: 0/255, green: 109/255, blue: 50/255),
-            l3: Color(red: 38/255, green: 166/255, blue: 65/255),
-            l4: Color(red: 57/255, green: 211/255, blue: 83/255),
-            card: Color(red: 13/255, green: 17/255, blue: 23/255),
-            border: Color(red: 48/255, green: 54/255, blue: 61/255),
-            text: Color(red: 240/255, green: 246/255, blue: 252/255),
-            label: Color(red: 139/255, green: 148/255, blue: 158/255)
+extension ContributionHeatmapTheme {
+    /// A theme built from the current skin's own colours, so the heatmap follows whatever skin —
+    /// and, for `.wal`/`.wmz`, whatever colour theme — the window is drawn in.
+    ///
+    /// The empty-day shade is a step from `background` toward `text` (so it reads on light and dark
+    /// skins alike); the four intensity steps ramp from there to `accent`. An accent that would be
+    /// near-invisible on the background falls back to the text colour, so the busiest days always
+    /// stand out.
+    init(background: NSColor, text: NSColor, accent: NSColor,
+         label: NSColor? = nil, border: NSColor? = nil) {
+        let bg = Self.rgb(background)
+        let fg = Self.rgb(text)
+        let hot = Self.contrastRatio(accent, bg) >= 1.8 ? Self.rgb(accent) : fg
+        let empty = Self.blend(bg, toward: fg, by: 0.10)
+        self.init(
+            l0: Color(nsColor: empty),
+            l1: Color(nsColor: Self.blend(empty, toward: hot, by: 0.35)),
+            l2: Color(nsColor: Self.blend(empty, toward: hot, by: 0.60)),
+            l3: Color(nsColor: Self.blend(empty, toward: hot, by: 0.80)),
+            l4: Color(nsColor: hot),
+            card: Color(nsColor: background),
+            border: Color(nsColor: border ?? Self.blend(bg, toward: fg, by: 0.28)),
+            text: Color(nsColor: fg),
+            label: Color(nsColor: label ?? Self.blend(fg, toward: bg, by: 0.40))
         )
     }
 
-    private var palette: Palette { colorScheme == .dark ? .dark : .light }
+    /// Opaque device-RGB, so blending and luminance never read components off a catalog or
+    /// greyscale colour (which traps).
+    private static func rgb(_ color: NSColor) -> NSColor {
+        (color.usingColorSpace(.deviceRGB) ?? NSColor(deviceRed: 0, green: 0, blue: 0, alpha: 1))
+            .withAlphaComponent(1)
+    }
+
+    private static func blend(_ from: NSColor, toward to: NSColor, by t: CGFloat) -> NSColor {
+        let a = rgb(from), b = rgb(to)
+        return NSColor(deviceRed: a.redComponent + (b.redComponent - a.redComponent) * t,
+                       green: a.greenComponent + (b.greenComponent - a.greenComponent) * t,
+                       blue: a.blueComponent + (b.blueComponent - a.blueComponent) * t,
+                       alpha: 1)
+    }
+
+    private static func contrastRatio(_ a: NSColor, _ b: NSColor) -> CGFloat {
+        func luminance(_ color: NSColor) -> CGFloat {
+            let c = rgb(color)
+            func linear(_ v: CGFloat) -> CGFloat { v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+            return 0.2126 * linear(c.redComponent) + 0.7152 * linear(c.greenComponent)
+                + 0.0722 * linear(c.blueComponent)
+        }
+        let la = luminance(a), lb = luminance(b)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+    }
+}
+
+extension ContributionHeatmapTheme {
+    /// A Modern skin's palette. The hot end is the skin's spectrum top, which already carries the
+    /// metal-finish substitution for skins whose chrome accent is a dark metal tone.
+    init(modernSkin skin: ModernSkin) {
+        self.init(background: skin.backgroundColor,
+                  text: skin.textColor,
+                  accent: skin.spectrumColors().last ?? skin.primaryColor,
+                  label: skin.textDimColor,
+                  border: skin.borderColor)
+    }
+}
+
+/// A GitHub-style contribution heatmap of daily listening activity over the trailing year.
+///
+/// Rendered as a self-contained card. With no `theme` it uses a light or dark GitHub-style palette
+/// based on the surrounding skin's appearance; a host with a colour theme of its own (a `.wal` or
+/// `.wmz` skin) passes one derived from it. Each cell's shade tracks the minutes listened that day.
+struct ContributionHeatmapView: View {
+    @ObservedObject var agent: PlayHistoryAgent
+    var theme: ContributionHeatmapTheme?
+    @State private var model: HeatmapModel
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: ContributionHeatmapTheme {
+        theme ?? (colorScheme == .dark ? .githubDark : .githubLight)
+    }
 
     private let cellSize: CGFloat = 11
     private let gap: CGFloat = 3
     private let weekdayLabelWidth: CGFloat = 28
     private var colWidth: CGFloat { cellSize + gap }
 
-    init(agent: PlayHistoryAgent) {
+    init(agent: PlayHistoryAgent, theme: ContributionHeatmapTheme? = nil) {
         self.agent = agent
+        self.theme = theme
         _model = State(initialValue: Self.buildModel(from: agent.dailyActivity))
     }
 

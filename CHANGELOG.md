@@ -2,6 +2,10 @@
 
 ## 0.31.0
 
+- **The listening heatmap matches your skin** — the heatmap in the library's Data tab now takes its
+  colours from the current skin in every skin mode instead of always using GitHub green, and follows
+  a Winamp Modern or Windows Media Player skin's colour theme when you switch it. Switching colour
+  theme now recolours the rest of the Data tab too.
 - **Visualizations take their colours from Winamp Modern and Windows Media Player skins** — with a
   `.wal` or `.wmz` skin, the Cava, Spectrum Analyzer and Waveform windows now take their default
   colours from the skin, as they already do in Classic and Original. So does Cava in a Windows Media

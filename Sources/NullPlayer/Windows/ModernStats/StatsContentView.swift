@@ -7,6 +7,7 @@ struct StatsContentView: View {
     @ObservedObject var agent: PlayHistoryAgent
     var skinTextColor: Color = .primary
     var headerTitle: String = "Play History"
+    var heatmapTheme: ContributionHeatmapTheme?
     @State private var selectedTab = 0
 
     var body: some View {
@@ -39,7 +40,7 @@ struct StatsContentView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             if selectedTab == 0 {
-                StatsOverviewView(agent: agent, skinTextColor: skinTextColor)
+                StatsOverviewView(agent: agent, skinTextColor: skinTextColor, heatmapTheme: heatmapTheme)
             } else {
                 StatsHistoryTableView(agent: agent)
             }
@@ -120,11 +121,12 @@ struct FilterChip: View {
 struct StatsOverviewView: View {
     @ObservedObject var agent: PlayHistoryAgent
     var skinTextColor: Color = .primary
+    var heatmapTheme: ContributionHeatmapTheme?
 
     var body: some View {
         ScrollView(.vertical) {
             VStack(spacing: 16) {
-                ContributionHeatmapView(agent: agent)
+                ContributionHeatmapView(agent: agent, theme: heatmapTheme)
 
                 PlayTimeSummarySection(agent: agent, skinTextColor: skinTextColor)
 
