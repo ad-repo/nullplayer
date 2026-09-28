@@ -18,7 +18,9 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 ### Measured capability gaps
 
-None open.
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B155 | **A layout that declares no `desktopalpha` keeps per-pixel alpha, which is probably not Winamp's default.** The renderer applies the B114 region rule (painted pixels opaque over black, alpha-0 pixels outside the window) only to `desktopalpha="0"` (`WasabiRenderer.layoutWantsOpaqueBacking`). Winamp most likely gives every layout without `desktopalpha="1"` a region instead of per-pixel alpha, so soft edges and translucent sheens there land on black. B151 met this and scoped around it: its standard-frame backing runs in undeclared layouts, but the alpha promotion does not. Making undeclared mean `0` moves the renders listed at [M34], and none of them has been classified. Some will be fixes (translucent panels floating on the desktop). Some may be regressions, where the corpus relies on the soft edges it has today: drop shadows and anti-aliased silhouettes turning into black fringes. The first job is to confirm Winamp's default from a primary source or a skin's shipped screenshot, then classify the sweep against each skin's own artwork | 92 of 671 renders, 44 skins [M34] | M | Measured |
 
 ### Live-reported draw defects
 
@@ -66,6 +68,14 @@ count is not comparable to a new one. **Four are byte-identical re-adds** of ins
 
 A command lives here only while an open item cites it; closing the item moves the command into its
 archive entry.
+
+- <a id="m34"></a>**M34:** in `WasabiRenderer.layoutWantsOpaqueBacking`, temporarily return `true`
+  when `desktopalpha` is absent, then run `scripts/wal_render_sweep.sh capture <curr> --allow-dirty`
+  and `compare` it against a capture of the unmodified tree. Leave out the four byte-identical
+  re-adds. Measured 2026-09-28 at `7331c363`: **92 of 671 images in 44 skins** changed. Diablo has 6;
+  PokemonDS, jvc.tape.v0.5 and Core-X5 have 5 each; Wiimote has 4. The rest are spread thin,
+  including 13 cPro skins' main, shade and notifier windows. Anexa's 3 include its analog clock,
+  which differs from run to run.
 
 
 ## Backlog hygiene check
