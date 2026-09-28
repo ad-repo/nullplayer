@@ -288,6 +288,14 @@ Styx's volume knob was the same). mmd3's own knob group is at (0, 0), which is w
 conventions agreed there and this survived 50 phases. Converted once, in
 `WinampModernMainView.dispatch`, so every mouse event (and the `RENDER_CLICK` probe) uses it.
 
+**`System.getMousePos*` is the window's canvas, not the desktop — and stays so.** Winamp answers in
+screen space, but so do its `clientToScreen*`, viewport and layout `getLeft()`, and here all of those
+answer in the canvas; skins do arithmetic across them. multipass opens its drawers on
+`getMousePosX() >= layoutMainNormal.getLeft()` and friends: measured live 2026-09-28 with a
+screen-space cursor, the drawers stayed shut on hover and opened with the pointer in the screen's
+top-left corner (B123, archived). Only desktop-snap emulation wants true screen space, and those
+windows are suppressed. Moving the cursor alone is wrong; move the whole "screen" model or nothing.
+
 A `Map` is also a general **image-inspection** object, not only a knob lookup: `getWidth`/`getHeight`
 size things from artwork, and `getARGBValue(x, y, channel)` reads whole pixels — ClassicPro derives
 its visualization colour bands this way (`colorbandpeak="r,g,b"` from channels **2, 1, 0**, i.e. the

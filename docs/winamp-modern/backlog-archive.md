@@ -3,6 +3,42 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B123 — `System.getMousePos*` stays in window space — closed 2026-09-28 (decided against)
+
+### B123
+
+- [x] **B123. Decided against 2026-09-28, on a live A/B.** A screen-space `getMousePos*` on its own
+      contradicts the rest of the engine's model of "screen": `clientToScreen*`, `getViewportLeft/Top`
+      and a `<layout>`'s `getLeft()`/`getTop()` all answer in the window's canvas, and skins do
+      arithmetic across those calls. Moving the cursor alone breaks the skins that pair it with them.
+
+      **Corpus callers** (80 archives + the ClassicPro engine, `grep -ail getmousepos` over every
+      `.maki`): Lobe and Rika do **not** call it — their knobs read the mouse event's x/y only, so the
+      row's constraint never applied to them. mmd3 / MMD3-4-5's knobs use only cursor *differences*
+      (`x - WinX`, `x - lmx`), which no origin change can move. multipass's `mouseIsOverGuiObject`
+      compares the cursor with `layoutMainNormal.getLeft()/getTop()`, which answer 0 here on purpose
+      (`reference/scripting.md`). The remaining callers are Big Bento's and cPro's desktop-snap
+      emulation (`sc_aerosnap`, `shadesize`, `layout.maki`), tooltips placed with the (also canvas)
+      viewport, and cursor deltas.
+
+      **Measured live, multipass, playing, one debug binary with a temporary env switch:**
+      window-space (today) — cursor off the player, drawers shut; cursor on the player, both drawers
+      slide out (`getmouseposx() -> 110`). Screen-space — cursor on the player, drawers shut
+      (`-> 872`); cursor at screen (110, 110), ~650 pt from the window, drawers open. The screen
+      reading inverts the skin's only hover behaviour.
+
+      The single symptom on file, cPro2's Aero-snap preview firing on `getMousePosX() < 1`, is already
+      closed by suppressing the host-provided desktop effects
+      (`WinampModernContainerTopology.isHostProvidedDesktopEffect`).
+
+      **Reopen only as one change that moves the whole "screen" model together** — cursor,
+      `clientToScreen*`, viewport and layout origin — and re-measure multipass's drawers, mmd3's knobs
+      and Big Bento's search popup (BB31) live before landing it. No code changed.
+
+      Original row:
+
+| B123 | **`System.getMousePos*` answers in window space; Winamp answers in screen space.** cPro2's `layout.m` opens its Aero-snap preview on `getMousePosX() < 1`; the B101 suppression hides that one symptom. **Constraint:** `WinampModernMainView.currentMousePositionInSkinPixels` is window-space on purpose — Lobe, Rika and mmd3's knobs were fixed by it (`reference/scripting.md`) — so re-measure each of those live before a screen-space reading lands | 1 skin measured; every skin whose script reads the cursor | M | Live-reported |
+
 ## B82 — a runtime-instantiated subtree was never told the current track — closed 2026-09-28
 
 ### B82

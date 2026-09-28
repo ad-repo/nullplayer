@@ -26,7 +26,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B123 | **`System.getMousePos*` answers in window space; Winamp answers in screen space.** cPro2's `layout.m` opens its Aero-snap preview on `getMousePosX() < 1`; the B101 suppression hides that one symptom. **Constraint:** `WinampModernMainView.currentMousePositionInSkinPixels` is window-space on purpose — Lobe, Rika and mmd3's knobs were fixed by it (`reference/scripting.md`) — so re-measure each of those live before a screen-space reading lands | 1 skin measured; every skin whose script reads the cursor | M | Live-reported |
 | B119 | **WMP11-BlueVU spends ~75% of the main thread where a normal skin spends ~50%**, painting two warped FX layers every frame. The CPU resample half is fixed; the Core Graphics paint (~26% against a control's ~5%) is open. Closing this also closes B117(a), the skin's ~7 fps marquee. See [detail](#b119) | 2 skins measured; every skin with an animating `<layer>` FX mesh | M | Live-reported |
 | B147 | **The library window follows the main window's height in a `.wal` session.** `toggleHideTitleBars` (`App/WindowManager.swift:511`) resizes the side-docked library and projectM windows by the main window's height delta — Original centre-stack behaviour. Its guard `isRunningModernUI` (`:390`) does not name `WinampModernMainWindowController`, so `.wal` falls through to the stale `isModernUIEnabled` preference. **Gate the resize itself on the mode; do not add the controller to the predicate**, whose other callers would all inherit the answer. Classic and Original byte-identical. The `.wmz` half is W237 in [`WMP_TASKS.md`](WMP_TASKS.md) | every `.wal` session with the library open | S | Live-reported |
 | B71 | **A layout script loads before the standard frame beside it has a client area**, so every name it resolves is null. Measured on Defix's detached visualizer. See [detail](#b71) | — · seen on Defix's detached visualizer; corpus reach unmeasured | L | Live-reported |
@@ -53,7 +52,6 @@ the window census and the render-dump harness. The ranking above still sets the 
 
 | Id | What the agent can do alone | How it is verified |
 |---|---|---|
-| B123 | Re-measure Lobe and mmd3 knobs under a screen-space cursor reading (Rika is not installed) | `drag` each knob or dial and `capture` before and after, on both builds, via an A/B env switch |
 | B74 | Confirm the `<Wasabi:Button>` object model, then key each slot separately | T800: hold `drag` for ≥2.5 s on each slot, then check the `defaults` keys and the recall `playTrack` log lines |
 | B18 | Fix the classic minimize mask | Classic skin, minimize-all from the menu bar; the `windows` rows disappear and come back on restore |
 | B71 | Reorder script startup, then handle visrb2's auto-hide | Corpus render sweep; Defix detached vis: `click` Reattach, and `clickdiff` shows the window change |

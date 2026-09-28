@@ -210,7 +210,9 @@ Visualization, Web Reader, Now Playing.
   `CLICK changed group#two.info.seeker.hover.layer … alpha=0 -> alpha=255`.
 - **The snap preview fires with the pointer nowhere near a screen edge.** `layout.m` tests
   `System.getMousePosX() < 1` — the *screen's* left edge in Winamp — and ours answers in the window's
-  canvas space, so it is true whenever the pointer is left of the player. B123.
+  canvas space, so it is true whenever the pointer is left of the player. The preview window is
+  suppressed (`isHostProvidedDesktopEffect`); the cursor stays window-space on purpose — see
+  `reference/scripting.md` → *`System.getMousePos*` is the window's canvas, not the desktop*.
 
 - **Nothing lays out until `System.onShowLayout` fires.** This was never dispatched anywhere in the
   codebase, and the failure is silent and total: `two.screen` keeps its declared `y=0`, so the title
