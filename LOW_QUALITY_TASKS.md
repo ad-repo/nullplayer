@@ -276,6 +276,53 @@ Winamp does with two `<script>` declarations of the same file. Note the counter-
 >       `MakiProgram`: Big Bento's `mcvcore` declares `System.onScriptLoaded` twice with **different**
 >       bodies on purpose, and a rule that keeps only one broke it.
 
+### B74 — T800's memory slots, blocked on a Winamp object model nobody can confirm
+
+**Why it was moved (2026-09-28):** a question, not work. The row gated its fix on confirming what
+`<Wasabi:Button>` is in Winamp, and that cannot be confirmed from anything available:
+
+- **The mechanism is measured.** `RENDER_DISASM=@player-normal.xml` on T800: `onLeftButtonDown`
+  stores `<receiver>.getParent().getId()` as the key that both the record timer (`setPrivateString`)
+  and the recall in `onLeftButtonUp` (`getPrivateString` → `playFile`) use. The receiver is the
+  class-bound `Mem1`…`Mem5` object — flat, directly in `player.main.cms`.
+- **No corpus skin defines `<Wasabi:Button>` as a group** (0 of 79 declare `xuitag="Wasabi:Button"`),
+  and Winamp's own `freeform/xml/wasabi/xml/xui/` as mirrored in the webamp repo has groupdefs only
+  for `browser`, `standardframe` and `text` — which suggests a native object, not a wrapper.
+- **webamp-modern models it flat as well** (`SkinEngine_WAL.ts` → one `WasabiButton`), so it would
+  collapse the slots the same way.
+- **Making it a group would not fix it here anyway:** the engine forwards an embedded control's
+  pointer events to the `embed_xui` owner, so the receiver would still be the wrapper and its parent
+  still `player.main.cms`.
+- **The only evidence for per-slot keys is the author's intent** — the skin page says "5 song Memory
+  buttons", and the script prints `Song recorded: <key>`. Only T800's five declarations are
+  script-driven (the old [M22] scan: `<Wasabi:Button>` with neither `action=` nor `text=`; Styx's
+  `top.middle` is script-bound but never calls `getParent()`).
+
+**To revive it,** either find a primary source for what `getParent()` answers on a `<Wasabi:Button>`
+event receiver, or decide to match the author's intent with a T800-only rule (the receiver's parent
+answers the `<Wasabi:Button>` itself). The second is emulation of intent, not of Winamp; say so in
+the row. Enabling it orphans the one song saved under the shared `player_main_cms` key.
+
+**The row and detail, verbatim:**
+
+> | B74 | **T800's five memory slots share one storage key.** See [detail](#b74) | 1 skin / 5 buttons collapsing to 1 slot ([M22]) | L | Live-reported |
+>
+> ### B74
+>
+> - [ ] **B74. T800's five memory slots all write one storage key.** `quicksongpick.maki` keys each
+>       slot on `getParent().getID()`, and all five buttons sit directly in `groupdef player.main.cms`,
+>       so every slot reads and writes `winampModern.config.T800.T800.player_main_cms`; the skin prints
+>       `Song recorded: player.main.cms` where it should print `Mem3`.
+>       **Likely cause, unconfirmed:** `wasabi.button` is an identifier-only shell
+>       (`WasabiSkinInitializer.swift`), so `<Wasabi:Button id="Mem3">` is one flat object. In Wasabi
+>       the tag is a standard-library group, and if the script's receiver is a control inside it,
+>       `getParent()` is `Mem3`. Making it a real group touches all 32 `<Wasabi:Button>` declarations
+>       and the B14/B66 form widgets, so confirm the object model first.
+>       Recording needs a hold of ~2.5 s, and the confirmation is written inside the jaw — neither is a
+>       defect.
+>
+> - <a id="m22"></a>**M22:** `rg -i -o '<[[:space:]]*Wasabi:Button[^>]*>' "$corpus" --glob '*.xml'`, then keep the matches with neither `action=` nor `text=` — the ones only a script drives.
+
 ### B58 — In-skin visualization surface swallows single clicks
 
 **Why it was moved:** its mechanism does not match the code. The row says
