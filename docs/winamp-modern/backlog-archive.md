@@ -3,6 +3,27 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B151 — a gap between the VU face and the frame in WMP11-BlueVU's VU Meters — closed 2026-09-28
+
+| B151 | **A gap between the VU face and the frame in WMP11-BlueVU's VU Meters window.** Reported 2026-09-28 from the live session. With *VU Meters Large* open (`Meter`, 438x207), a light band shows between the meter artwork (`scale` at 10,27 and the needles) and the window's `Wasabi:StandardFrame:NoStatus`, most visible along the top and left edges. The meter should sit flush against the frame. The likely cause is the frame's client area and the layer's absolute x/y disagreeing, or the frame drawing an inset the skin does not expect. Not yet measured. Reproduce with `WINAMP_MODERN_SHOW_WINDOWS=Meter`, or headlessly with `RENDER_SHOW=Meter`, and compare against the skin's `vuscreenshot.png` | 1 skin reported | S | Live-reported |
+
+### B151
+
+- [x] **B151. A standard frame's box is window.** **Closed 2026-09-28.** The frame and the layer
+      agree: the frame's client area is (8,25)–(429,198), and the meter face stops 2px inside it on
+      every side. The band was **transparent** pixels. The skin paints nothing in that ring, the
+      layout declares no `desktopalpha`, and the skin's `region.png` is alpha 0 throughout, so no
+      region is built. In Winamp, the frame groupdef's `sysregion="1"` puts that box inside the window,
+      and an empty pixel there draws black. The fix is `regionBoxes()`: a `Wasabi:StandardFrame:*`
+      box is backed black in any layout without `desktopalpha="1"`, unless the layout cuts a real
+      region. Both bounds were measured, and both are written up in
+      `skills/winamp-modern-skin-guide/reference/rendering.md` → *A standard frame's box is window*.
+      Corpus sweep, 671 renders: **30 changed**, all classified. The looser rules moved 98 (every
+      positive box) and 154 (undeclared `desktopalpha` treated as `0`). Checked live at 2x with
+      `WINAMP_MODERN_SHOW_WINDOWS=Meter`: no non-opaque pixel is left in the client area, and the
+      window matches the skin's `vuscreenshot.png`. Tests are in `WinampModernB114Tests`
+      (`testTheRingInsideAStandardFrameIsBackedBlack` and its two guards).
+
 ## B56a — Window tiling follow-ups — closed 2026-09-28
 
 **Closed 2026-09-28** from the agent-verifiable list. All three checks were run in the debug build

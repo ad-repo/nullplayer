@@ -224,6 +224,31 @@ extension WasabiSceneRenderer {
         }
     }
 
+    /// The boxes a `Wasabi:StandardFrame:*` with `sysregion="1"` and no artwork of its own puts
+    /// **inside** the window, in the scene's top-left space and clipped as drawn (B151).
+    ///
+    /// Such a frame is its box: its groupdef says "all of this is window", pixels the frame leaves
+    /// empty included, and Winamp's region draws those black. WMP11-BlueVU's VU Meters are the case —
+    /// the frame's client area is 2px wider than the meter face on every side, and with nothing
+    /// painted in that ring it drew as a band of desktop between the frame and the face.
+    ///
+    /// Two bounds, each a measured regression without it. **Standard frames only**: a plain
+    /// `sysregion="1"` group is as often a drawer or a silhouette's wrapper, and backing every one
+    /// laid black slabs across S7Reflex and Lobe. **Not when the skin cut a real region**: then it
+    /// has drawn the window's shape itself — Ebonite cuts its client window down to the opening in a
+    /// separate frame window, and a backing grew black strips under that frame's edges.
+    func regionBoxes() -> [CGRect] {
+        guard windowRegion() == nil else { return [] }
+        return regionCuts().compactMap { cut in
+            guard cut.additive, cut.bitmapID == nil,
+                  cut.object.typeName.lowercased().hasPrefix("wasabi:standardframe:"),
+                  cut.object.attributes["background"].map({ resources.bitmap(identifier: $0) == nil }) ?? true
+            else { return nil }
+            let box = cut.frame.intersection(cut.clip)
+            return box.isNull || box.isEmpty ? nil : box
+        }
+    }
+
     /// The window's shape, as the bite the skin's `sysregion` objects take out of it: an image whose
     /// alpha is the *cut* coverage — transparent where the window stays, opaque where it goes.
     ///

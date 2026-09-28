@@ -105,7 +105,49 @@ final class WinampModernB114Tests: XCTestCase {
                        "the colours are untouched — only the alpha channel is promoted")
     }
 
+    // MARK: - B151: a standard frame's box is window
+
+    /// WMP11-BlueVU's VU Meters: a `Wasabi:StandardFrame` whose groupdef carries `sysregion="1"`, and
+    /// a face 2px short of its client area on every side. The ring between them is inside the window
+    /// and draws black — even though the layout declares no `desktopalpha` at all.
+    func testTheRingInsideAStandardFrameIsBackedBlack() throws {
+        let scene = try makeScene(layoutAttributes: "", resources: Self.frameResources,
+                                  markup: Self.frameMarkup, art: Self.frameArt)
+        let ring = try XCTUnwrap(scene.pixel(x: 1, y: 20))
+        XCTAssertEqual(Int(ring.alpha), 255, "the ring is window")
+        XCTAssertEqual(Int(ring.red), 0, "and nothing painted it, so it is black")
+        let face = try XCTUnwrap(scene.pixel(x: 60, y: 20))
+        XCTAssertEqual(Int(face.red), 180, accuracy: 1, "the face itself is untouched")
+    }
+
+    /// `desktopalpha="1"` opts in to per-pixel alpha, so the ring stays out of the window.
+    func testADesktopAlphaOneStandardFrameKeepsItsRingTransparent() throws {
+        let scene = try makeScene(layoutAttributes: #"desktopalpha="1""#, resources: Self.frameResources,
+                                  markup: Self.frameMarkup, art: Self.frameArt)
+        XCTAssertEqual(Int(try XCTUnwrap(scene.pixel(x: 1, y: 20)).alpha), 0)
+    }
+
+    /// Only a standard frame is its box. A plain `sysregion="1"` group is usually a drawer or a
+    /// silhouette's wrapper — S7Reflex and Lobe grew black slabs across the desktop when every
+    /// such group was backed.
+    func testAPlainSysregionGroupIsNotBacked() throws {
+        let scene = try makeScene(
+            layoutAttributes: "", resources: Self.sheenBitmap,
+            markup: #"<group id="drawer" x="0" y="0" w="120" h="40" sysregion="1"/>"#
+                + #"<layer id="face" x="2" y="2" w="116" h="36" image="sheen"/>"#,
+            art: Self.sheenArt)
+        XCTAssertEqual(Int(try XCTUnwrap(scene.pixel(x: 1, y: 20)).alpha), 0)
+    }
+
     // MARK: - Fixture
+
+    /// B151's shape: a skin-defined standard frame that paints nothing, and a face inset 2px.
+    private static let frameResources = sheenBitmap + """
+        <groupdef id="frame" xuitag="Wasabi:StandardFrame:NoStatus" sysregion="1"/>
+        """
+    private static let frameMarkup = #"<Wasabi:StandardFrame:NoStatus id="frame" x="0" y="0" w="0" h="0" relatw="1" relath="1"/>"#
+        + #"<layer id="face" x="2" y="2" w="116" h="36" image="sheen"/>"#
+    private static let frameArt = sheenArt
 
     /// WMP11-BlueVU's shape: a translucent sheen laid over the whole window and nothing beneath it.
     private static let sheenBitmap = #"<bitmap id="sheen" file="sheen.png"/>"#

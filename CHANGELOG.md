@@ -2,6 +2,7 @@
 
 ## 0.31.0
 
+- **No more see-through gaps inside Winamp Modern skin windows** — in the WMP11-BlueVU skin, a thin band of desktop showed between the VU Meters' artwork and the window frame. The About and library windows had the same problem across larger areas. Empty space inside a skin's standard window frame is now filled black, as it is in Winamp.
 - **Winamp Modern windows no longer pile up when you change UI Size** — changing the UI size with a `.wal` skin left its windows on top of each other: the equalizer slid up into the player, and the playlist sat over the equalizer. The windows are now laid out again around the player after every UI Size change, the same way Snap To Default arranges them.
 - **Itemskin's volume control works** — in the Itemskin Winamp Modern skin, clicking or dragging the volume bar did nothing, so a volume stuck at zero could not be raised and the skin played silently. The bar now responds anywhere along its length, and the seek bar shows the song's progress instead of the volume. BLAKK's seek bars and Bio-Nid's volume knob also respond to clicks now.
 - **No more hairline seams in Winamp Modern skins at in-between UI sizes** — at UI sizes such as 105% or 125% on a Retina display, thin light lines could show where the pieces of a skin's frame and panels meet. The pieces now meet exactly, so the lines are gone. Sliders, knobs and progress bars placed between whole pixels now also sit on a whole pixel.

@@ -1282,6 +1282,13 @@ final class WasabiSceneRenderer {
         return Int(raw.trimmingCharacters(in: .whitespaces)) == 0
     }
 
+    /// Whether a `sysregion="1"` box is backed black: every layout that has not opted in to
+    /// per-pixel alpha with `desktopalpha="1"` (B151). See `regionBoxes()`.
+    private var layoutBacksRegionBoxes: Bool {
+        guard let raw = layout.attributes["desktopalpha"] else { return true }
+        return Int(raw.trimmingCharacters(in: .whitespaces)) != 1
+    }
+
     /// The scratch buffer the opaque path renders through, kept across frames.
     ///
     /// One canvas-sized allocation per frame is 2.5 MB at Retina scale on a 752x414 player, and this
@@ -1420,6 +1427,13 @@ final class WasabiSceneRenderer {
         context.saveGState()
         context.translateBy(x: 0, y: canvasSize.height)
         context.scaleBy(x: 1, y: -1)
+        if layoutBacksRegionBoxes {
+            let boxes = regionBoxes()
+            if !boxes.isEmpty {
+                context.setFillColor(gray: 0, alpha: 1)
+                context.fill(boxes)
+            }
+        }
         context.interpolationQuality = .high
         if Self.profilesDrawing {
             for node in sceneNodes() {

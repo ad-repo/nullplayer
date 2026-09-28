@@ -288,6 +288,37 @@ Cost after all three: **3.63 ms/frame** against 2.81, debug. Corpus sweep, 590 r
 — WMP11-BlueVU's display area, and 7 pixels at maxdelta 2 on EPS's left speaker where the
 silhouette's anti-aliased fringe goes opaque.
 
+#### A standard frame's box is window (B151, 2026-09-28)
+
+A `Wasabi:StandardFrame:*` whose groupdef carries `sysregion="1"` says "all of this box is window",
+including every pixel the frame leaves empty, and Winamp's region draws those pixels black. WMP11-BlueVU's
+*VU Meters* are the reported case. The frame's client area runs from (8,25) to (429,198), the meter
+face (`scale` at 10,27, 418×170) stops 2px short on every side, and the skin paints nothing in
+that ring. Its layout declares no `desktopalpha` at all, so neither B114's alpha promotion nor its
+region applied, and the ring drew as a band of desktop between the frame and the face. Its
+`region.png` is alpha 0 in every pixel too, so the `-2` corners cut nothing and no region is built.
+Look for this shape before assuming the geometry is off.
+
+`regionBoxes()` names those boxes, and `drawScene` fills them black under the scene in every
+layout that has not opted in with `desktopalpha="1"`. It has two bounds, and the sweep caught a
+regression without each one:
+
+- **Standard frames only.** Backing every artwork-less `sysregion="1"` object moved 98 images.
+  S7Reflex's player and Lobe's pods grew black slabs across the desktop, because a plain positive
+  group there is a drawer or a silhouette's wrapper, not a window body.
+- **Not when the layout has a real region cut.** In that case the skin has drawn the shape itself.
+  Ebonite cuts its client window down to the opening in a separate frame window (B110), and a
+  backing laid black strips under that frame's edges.
+
+**An undeclared `desktopalpha` still keeps per-pixel alpha.** Treating it as `0`, which is probably
+Winamp's own default, moved 154 of 671 images in 59 skins, and those diffs have not been classified.
+
+Corpus sweep, 671 renders: **30 changed**. The real changes are WMP11-BlueVU's standard-frame windows
+(Meter, Meter#2, Pledit, both About boxes, the library, and 2px inside `main`), DewyTears' synthesized
+playlist and library bands, and corneramp_redux's framed windows, whose interiors had been bare
+desktop. The rest are Big Bento's About (maxdelta 3), three cPro2 Styler pixels (maxdelta 2), and
+Anexa's analog clock, which differs from run to run.
+
 #### Layer fill modes
 
 - **Default (no `tile`)**: the bitmap **stretches** to the layer's rect. Resizable window chrome
