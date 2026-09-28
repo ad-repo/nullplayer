@@ -292,7 +292,11 @@ its frame is restored user state.
 
 Two entry points, one slot sequence: `arrangeWindows()` lays out everything at once, and
 `tiledOrigin(for:avoiding:)` gives a window opened later the first slot clear of what is on screen, so
-it lands where the arrangement would have put it without disturbing anything already placed.
+it lands where the arrangement would have put it without disturbing anything already placed. **A
+slot that lands on a window restarts the walk flush under that window** (`WinampModernTiler.skip(past:)`,
+B157). Stepping in the opening window's own height instead left a 126pt gap on Sony_Walkman: a 145pt
+playlist under a 164pt equalizer tried two slots on the equalizer and took the third. The launch sweep
+never walks this way, since it tiles every window in one pass. `.wmz` shares the walk.
 
 **A NullPlayer window is tiled once, not on every open.** `WindowManager.reopensWhereLeft` (WMP and
 `.wal` only) records each window the first time a `show*` path places it — a launch restore counts —

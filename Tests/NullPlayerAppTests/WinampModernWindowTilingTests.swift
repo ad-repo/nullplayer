@@ -204,4 +204,22 @@ final class WinampModernWindowTilingTests: XCTestCase {
         XCTAssertFalse(tall.intersects(player))
         XCTAssertEqual(tall.maxY, region.maxY, "no room under the player, so it starts a column")
     }
+
+    /// B157, Sony_Walkman's measured frames: with the equalizer (164pt) open under the player, the
+    /// playlist (145pt) used to walk in its own height — first slot on the equalizer, second still
+    /// on it, third a 126pt gap below it. A slot that lands on a window now restarts the walk flush
+    /// under that window.
+    func testASlotThatLandsOnAWindowRestartsUnderIt() {
+        let region = NSRect(x: 0, y: 0, width: 1800, height: 1100)
+        let player = NSRect(x: 762, y: 701, width: 335, height: 106)
+        let equalizer = NSRect(x: 762, y: 537, width: 335, height: 164)
+        let size = NSSize(width: 335, height: 145)
+        var tiler = WindowManager.WinampModernTiler(playerFrame: player, region: region)
+        let first = tiler.nextSlot(for: size)
+        XCTAssertTrue(first.intersects(equalizer))
+        tiler.skip(past: [equalizer])
+        let second = tiler.nextSlot(for: size)
+        XCTAssertEqual(second, NSRect(x: 762, y: 392, width: 335, height: 145))
+        XCTAssertFalse(second.intersects(equalizer))
+    }
 }

@@ -2249,6 +2249,8 @@ class WindowManager {
         private var leftCursorY: CGFloat
         /// Every slot handed out so far, and the player: what a clamped slot must not land on.
         private var placed: [NSRect]
+        /// Which cursor the last slot advanced, for `skip(past:)`.
+        private var lastSlotWasLeft = false
 
         /// The player is the anchor and never moves: it owns the top of the first column, and the
         /// first slot is flush beneath it.
@@ -2286,6 +2288,7 @@ class WindowManager {
                     slot = clamped
                 } else if let left = nextLeftSlot(for: size) {
                     placed.append(left)
+                    lastSlotWasLeft = true
                     return left
                 } else {
                     let leftClamped = clampedToBottom(NSRect(
@@ -2294,6 +2297,7 @@ class WindowManager {
                     if overlap(of: leftClamped) < overlap(of: clamped) {
                         _ = nextLeftSlot(for: size, clampingTo: leftClamped)
                         placed.append(leftClamped)
+                        lastSlotWasLeft = true
                         return leftClamped
                     }
                     slot = clamped
@@ -2302,7 +2306,20 @@ class WindowManager {
             cursorY = slot.minY
             columnWidth = max(columnWidth, size.width)
             placed.append(slot)
+            lastSlotWasLeft = false
             return slot
+        }
+
+        /// The last slot landed on `obstacles`, so the next one starts flush under the lowest of
+        /// them rather than one window-height further down (B157). Every slot whose top is above
+        /// that edge would overlap it too, so nothing clear is skipped.
+        mutating func skip(past obstacles: [NSRect]) {
+            guard let bottom = obstacles.map(\.minY).min() else { return }
+            if lastSlotWasLeft {
+                leftCursorY = min(leftCursorY, bottom)
+            } else {
+                cursorY = min(cursorY, bottom)
+            }
         }
 
         /// A window taller than the region keeps its top on screen rather than its bottom.
@@ -2387,7 +2404,8 @@ class WindowManager {
     /// The first tiling slot that is clear of `occupied` — how a window opened *after* the initial
     /// arrangement joins it without disturbing anything already placed. Walks the same slot sequence
     /// `arrangeWinampModernWindows` uses, so a window opened later lands where the arrangement would
-    /// have put it.
+    /// have put it — except that a slot landing on a window restarts the walk flush under that
+    /// window, so a window taller than the one opening cannot push it a gap further down (B157).
     ///
     /// Never answers `nil` for want of a free slot. Both call sites treat `nil` as "leave the window
     /// where it is", and where it is may be off screen — that is the state this whole path exists to
@@ -2399,10 +2417,12 @@ class WindowManager {
         for _ in 0..<64 {
             let slot = tiler.nextSlot(for: size)
             lastSlot = slot
-            if !occupied.contains(where: { $0.intersects(slot) }) { return slot.origin }
+            let hits = occupied.filter { $0.intersects(slot) }
+            if hits.isEmpty { return slot.origin }
             if slot.minX + size.width >= tiler.region.maxX && slot.minY <= tiler.region.minY {
                 break
             }
+            tiler.skip(past: hits)
         }
         guard let lastSlot else { return nil }
         return WindowPlacement.rescued(lastSlot, into: tiler.region).origin

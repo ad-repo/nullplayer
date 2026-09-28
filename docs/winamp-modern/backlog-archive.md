@@ -3,6 +3,25 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B157 — a window opened from the menu can land well below the window above it — closed 2026-09-28
+
+| B157 | **A window opened from the menu can land well below the window above it.** Measured 2026-09-28 while closing B154, on Sony_Walkman at 100%. `tiledOrigin(for:avoiding:)` walks slots in the opening window's own height, starting under the player, and takes the first one clear of what is on screen. With the equalizer (164pt) open under the player, the playlist (145pt) tried y=399, then y=544, which still overlaps the equalizer, and landed at y=689: 126pt below the equalizer's bottom edge. With the playlist open first, the equalizer landed 19pt below it. The launch sweep and Snap To Default stack flush, because they tile every window in one pass; only a later open walks. A likely fix is to make the next candidate slot start at the bottom edge of whatever the last candidate hit, instead of stepping in the new window's own height. The walk is shared with `.wmz`. Reproduce with `WINAMP_MODERN_PLACE_TRACE=1 skills/app-control/scripts/launch.sh Sony_Walkman`: close every window, open Equalizer, then Playlist Editor from the Windows menu, and read `winhelper windows` | every `.wal` session that opens a window from the menu while another is open | S | Agent-measured |
+
+### B157
+
+- [x] **B157. A slot that lands on a window restarts the walk under it.** **Closed 2026-09-28.**
+      `tiledOrigin(for:avoiding:)` now calls `WinampModernTiler.skip(past:)` with the windows a
+      rejected slot hit, which moves whichever cursor produced that slot (the player's column or
+      the columns left of it) to the lowest bottom edge among them. Every slot whose top is above
+      that edge would overlap it too, so nothing clear is skipped. Reproduced first on
+      Sony_Walkman at 100%: equalizer open under the player at top-left y=399, Playlist Editor from
+      the Windows menu landed at y=689. After the fix it lands at y=563, flush under the
+      equalizer, and Waveform then Spectrum Analyzer stack flush below it (y=708, 853). The launch
+      sweep and Snap To Default do not walk, so they are unchanged. The walk is shared with `.wmz`,
+      which gets the same fix; Classic and Original never reach it. Unit test:
+      `WinampModernWindowTilingTests.testASlotThatLandsOnAWindowRestartsUnderIt`. The rule is in
+      `reference/components.md` → *Where a skin's windows go*.
+
 ## B154 — Sony_Walkman's equalizer reopens over the playlist — closed 2026-09-28
 
 | B154 | **Sony_Walkman's equalizer reopens on top of the playlist.** Seen 2026-09-28 in 3 of 4 debug launches while closing B56a. The launch sweep logs `[place/tile] eq … -> {{762, 606}, …}`, so the skin's declared `eq` container is visible during load, but the Windows menu shows Equalizer unchecked once launch settles. Open Playlist Editor and then Equalizer from the Windows menu: the playlist takes the first slot under the player (top-left y=399), and the EQ comes back at the slot the launch sweep gave it (also y=399), 335×146 over the playlist. It keeps that slot because `reopensWhereLeft` counts the launch placement as a user placement. Not confirmed: what hides the EQ (a skin script or the host), and whether a window that was only visible during load should count as placed at all. Reproduce with `WINAMP_MODERN_PLACE_TRACE=1 skills/app-control/scripts/launch.sh Sony_Walkman`, then toggle the items with `menu.applescript toggle` and read `winhelper windows` | 1 skin measured; the reopen rule is engine-wide | S | Agent-measured |
