@@ -880,9 +880,21 @@ could be clicked — while the script's `getAutoWidth()` already answered the bi
 `menualign.maki` spaced the labels correctly over empty hit targets. ClassicPro was never affected: it
 points `autowidthsource` at a `<text>`.
 
-**The entry's hover and pressed art still draws nothing** (B150). `menu:button_hover`/`_pressed`
-state no width, so they resolve 0 wide inside the entry; `WasabiMenuBar.apply` only swaps their
-visibility.
+**A state object that states no size is the entry's size** (B150, 2026-09-28). winampmodern566's
+`<menu:button_hover id="File.hover.btn" x="0" y="0"/>` is a groupdef with only `h="16"`, holding a
+three-slice cut to stretch (`w="-7" relatw="1"`); at 0 wide, hover and press drew nothing. `append`
+now gives an object that `WasabiMenuBar.owningMenu(of:)` names as `normal`/`hover`/`down` the
+`<Menu>`'s resolved box on each axis it leaves unstated — and on no other.
+
+The rule is inferred from the corpus, not from Winamp's source, and was chosen for its reach. The
+alternative — any group with no `w` fills its parent — would move every such group in every skin.
+Every other `<Menu>` in the corpus (Big Bento ×2, nsmp10, impulse, cPro Venus, NWA2000) states its
+state objects' geometry outright, Big Bento's inset a few pixels from the entry's own box, so an
+entry that imposed its box on them would override what those skins wrote. Only winampmodern566 and
+The_Nokia_5220 (which instantiates none) leave it unstated.
+
+The default-state sweep cannot see this: the art is hidden at rest. `RENDER_HOVER=<menu id>` makes
+the view's state swap, so the hover frame can be dumped (see [harness.md](harness.md)).
 
 ## A declared-empty group clips to nothing — it is a reveal window
 

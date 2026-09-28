@@ -1475,6 +1475,12 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 let hovered = (env["WINAMP_MODERN_RENDER_HOVER"] ?? "").isEmpty ? nil
                     : loaded.runtime.graph.objects(xmlID: env["WINAMP_MODERN_RENDER_HOVER"]!)
                         .first { renderer.resolvedGeometry(of: $0) != nil }?.stableID
+                // A `<Menu>` entry's hover is not a draw parameter but a visibility swap the view
+                // makes over the entry's own state objects (B150), so it is made here too.
+                if let hovered, let object = loaded.runtime.graph.object(withID: hovered),
+                   WasabiMenuBar.isMenu(object) {
+                    WasabiMenuBar.apply(.hover, to: object)
+                }
                 renderer.draw(in: context, hovered: hovered)
                 // WINAMP_MODERN_RENDER_TIME=<frames> repaints the whole scene that many times and
                 // reports the per-frame cost — the measurement behind "does this skin hold 30 Hz?",

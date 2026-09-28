@@ -27,7 +27,6 @@ None open.
 | B119 | **WMP11-BlueVU spends ~75% of the main thread where a normal skin spends ~50%**, painting two warped FX layers every frame. The CPU resample half is fixed; the Core Graphics paint (~26% against a control's ~5%) is open. Closing this also closes B117(a), the skin's ~7 fps marquee. See [detail](#b119) | 2 skins measured; every skin with an animating `<layer>` FX mesh | M | Live-reported |
 | B147 | **The library window follows the main window's height in a `.wal` session.** `toggleHideTitleBars` (`App/WindowManager.swift:511`) resizes the side-docked library and projectM windows by the main window's height delta — Original centre-stack behaviour. Its guard `isRunningModernUI` (`:390`) does not name `WinampModernMainWindowController`, so `.wal` falls through to the stale `isModernUIEnabled` preference. **Gate the resize itself on the mode; do not add the controller to the predicate**, whose other callers would all inherit the answer. Classic and Original byte-identical. The `.wmz` half is W237 in [`WMP_TASKS.md`](WMP_TASKS.md) | every `.wal` session with the library open | S | Live-reported |
 | B80 | **Horizontal seams at fractional UI Sizes.** Hairlines along band boundaries on cPro at 105%. Affects exactly the sizes fractional at 2x backing (90/105/110/115/125/135/175). See [detail](#b80) | 7 of 13 UI Sizes; every skin ([M25]) | M | Live-reported |
-| B150 | **A `<Menu>` entry's hover and pressed art draws nothing.** winampmodern566's `menu:button_hover` / `menu:button_pressed` groupdefs state no `w`, so each resolves 0 wide inside the entry it belongs to (`RENDER_GEOMETRY=menugroup.file`: `File.hover.btn frame=(1,18,0,16)`); `WasabiMenuBar.apply` swaps their visibility and nothing sizes them. Winamp's rule is unconfirmed — whether the `<Menu>` sizes its state objects to its own box or a group with no `w` fills its parent — and the second would move every such group in the corpus, so settle it first | 1 skin measured (winampmodern566; The_Nokia_5220 ships the groupdefs but instantiates none) | S | Live-reported |
 
 ### Awaiting manual QA
 
@@ -48,7 +47,6 @@ the window census and the render-dump harness. The ranking above still sets the 
 
 | Id | What the agent can do alone | How it is verified |
 |---|---|---|
-| B150 | Size the state art, once the rule is settled | winampmodern566: `move` onto a menu entry and `capture` the titlebar — the hover art draws under the label; corpus render sweep for the engine-wide half |
 | B80 | Add a partial-repaint mode to the harness, then fix the seam | Count partial-alpha rows at a fractional scale; live: set UI Size from the menu, `move` over controls, `capture` |
 | B119 | Try a lower FX repaint rate, or clip the warp extent | Hands-off release `sample` of WMP11-BlueVU against cPro-Bento, per `harness.md` |
 | B111 | Drag the volume up, relaunch | Persisted volume ≠ 0 after relaunch, and the log shows no `setvolume(0)` cascade (audibility is not checked) |

@@ -3,6 +3,34 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B150 — a `<Menu>` entry's hover and pressed art sized to nothing — closed 2026-09-28
+
+| B150 | **A `<Menu>` entry's hover and pressed art draws nothing.** winampmodern566's `menu:button_hover` / `menu:button_pressed` groupdefs state no `w`, so each resolves 0 wide inside the entry it belongs to (`RENDER_GEOMETRY=menugroup.file`: `File.hover.btn frame=(1,18,0,16)`); `WasabiMenuBar.apply` swaps their visibility and nothing sizes them. Winamp's rule is unconfirmed — whether the `<Menu>` sizes its state objects to its own box or a group with no `w` fills its parent — and the second would move every such group in the corpus, so settle it first | 1 skin measured (winampmodern566; The_Nokia_5220 ships the groupdefs but instantiates none) | S | Live-reported |
+
+### B150
+
+- [x] **B150. Fixed 2026-09-28.** `append` (`WasabiRenderer.swift`) gives an object that
+      `WasabiMenuBar.owningMenu(of:)` names as a `<Menu>`'s `normal`/`hover`/`down` the entry's
+      resolved box, on each axis the object leaves unstated and on no other.
+
+      **The rule, settled against the corpus.** Every other `<Menu>` in the 80 archives — Big Bento
+      Modern ×2, nsmp10, impulse, cPro Venus, NWA2000 — states its state objects' geometry
+      outright, and Big Bento's are inset a few pixels from the entry's box. An entry that imposed
+      its box would override what those skins wrote; "a group with no `w` fills its parent" would
+      move every such group. Only winampmodern566 and The_Nokia_5220 (which instantiates none) leave
+      it unstated, so the rule reaches exactly them.
+
+      **Verified.** `RENDER_GEOMETRY=File.hover.btn,File.down.btn` on winampmodern566: 31x16 at
+      (1,18), their three-slice children 4 / 24 / 3 wide (0 wide before). Live, debug build,
+      playing: `winhelper move` onto *File* lights the entry's 31px box and nothing else; moving off
+      restores the rest frame pixel-for-pixel; a press on *Play* shows the darker pressed art while
+      its menu is open. `RENDER_HOVER` now makes the `<Menu>` swap too, so the hover frame dumps
+      headlessly. Corpus sweep (baseline worktree at HEAD, 80 archives, 671 images): only Anexa's
+      wall-clock `main-shade` moved; winampmodern566, damaged in both logs, identical when run
+      alone. The art is hidden at rest, so the default-state sweep cannot see the fix itself.
+      Tests: `WinampModernB150Tests` (the hover test fails with the fix removed; the other two guard
+      declared geometry and unowned groups).
+
 ## B71 — a layout script loaded before the standard frame beside it had a client area — closed 2026-09-28
 
 ### B71

@@ -29,6 +29,9 @@
   window's button bar shows while the window is focused and hides otherwise, as the skin intends.
   The same fix stops S7Reflex drawing its stereo and mono indicators on top of each other, and
   lines up the titlebar streaks in winampmodern566.
+- **winampmodern566's menu bar lights up** — in the winampmodern566 Winamp Modern skin, pointing at
+  File, Play, Options, View or Help now highlights the entry, and it shows as pressed while its menu
+  is open.
 
 - **ClassicPro track info shows up** — in ClassicPro-based Winamp Modern skins such as cPro2 Dark
   Aluminum, the track-info panel under the library now lists the playing track's title, artist,

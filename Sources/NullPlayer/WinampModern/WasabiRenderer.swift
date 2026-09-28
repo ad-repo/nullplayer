@@ -2231,6 +2231,24 @@ final class WasabiSceneRenderer {
                 intrinsic.height = Double(background.height)
             }
         }
+        // A `<Menu>`'s hover or pressed art that states no size of its own is the entry's size (B150).
+        // winampmodern566 and The_Nokia_5220 write `<menu:button_hover id="File.hover.btn" x="0"
+        // y="0"/>` into a groupdef with only `h="16"`, and the art inside is a three-slice cut to
+        // stretch (`w="-7" relatw="1"`) — so at 0 wide, hovering or pressing an entry drew nothing.
+        // Only an unstated axis is filled: every other `<Menu>` in the corpus (Big Bento, nsmp10,
+        // impulse, cPro Venus, NWA2000) gives its state objects explicit geometry, some deliberately
+        // different from the entry's box, and that stays theirs.
+        if !isRoot, object.attributes["w"] == nil || object.attributes["h"] == nil,
+           intrinsic.width == 0 || intrinsic.height == 0,
+           let menu = WasabiMenuBar.owningMenu(of: object) {
+            let entry = geometry(of: menu).resolve(
+                in: WasabiRect(x: Double(parentFrame.minX), y: Double(parentFrame.minY),
+                               width: Double(parentFrame.width), height: Double(parentFrame.height)),
+                intrinsicSize: .zero
+            )
+            if object.attributes["w"] == nil, intrinsic.width == 0 { intrinsic.width = max(0, entry.width) }
+            if object.attributes["h"] == nil, intrinsic.height == 0 { intrinsic.height = max(0, entry.height) }
+        }
         let resolved: CGRect
         if isRoot {
             resolved = parentFrame
