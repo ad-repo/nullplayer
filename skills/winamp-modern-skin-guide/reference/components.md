@@ -379,6 +379,15 @@ two. Three details are load-bearing:
   each window and steps in that window's own height, and it avoids siblings' frames that are about
   to move. Measured on Sony_Walkman after a UI-Size change, it left the playlist 190pt below the
   equalizer.
+- **The classic-fallback library is the tiler's, not the centre stack's (B147).** It is
+  `plexBrowserWindowController`, the one window of this mode that Classic's side-dock refit
+  (`refitDockedPlexBrowserToVerticalStack`, run from every `updateDockedChildWindows`) can reach.
+  Nine of 79 skins get it (a library the skin neither embeds, declares nor can be synthesized into;
+  the `RENDER-DUMP arrangement` line's `library` is in none of the three lists). Ungated, a Cava tiled
+  under the library joined the docked cluster and widened it, the refit re-derived the dock edge
+  from it, and the library moved 9pt off the player (Sony_Walkman, x 1097 → 1106). The refit and
+  the remembered-frame reopen are both gated off in `.wal`, as W237 gated them in `.wmz`. Every other
+  skin's library is a skin window, and `plexBrowserWindowController` is nil.
 - **The notifier is excluded for free**, because `arrangeWindows()` already claims it and skips it.
 
 **A live UI-Size change re-runs the arrangement too (B56a).** Every window changes size.

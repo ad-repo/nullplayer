@@ -3,6 +3,40 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B147 — the library follows the centre stack in a `.wal` session — closed 2026-09-28
+
+| B147 | **The library window follows the main window's height in a `.wal` session.** `toggleHideTitleBars` (`App/WindowManager.swift:511`) resizes the side-docked library and projectM windows by the main window's height delta — Original centre-stack behaviour. Its guard `isRunningModernUI` (`:390`) does not name `WinampModernMainWindowController`, so `.wal` falls through to the stale `isModernUIEnabled` preference. **Gate the resize itself on the mode; do not add the controller to the predicate**, whose other callers would all inherit the answer. Classic and Original byte-identical. The `.wmz` half is W237 in [`WMP_TASKS.md`](../../WMP_TASKS.md) | every `.wal` session with the library open | S | Live-reported |
+
+### B147
+
+- [x] **B147. The classic-fallback library is the tiler's, and Classic's side-dock refit no longer
+      moves it.** **Closed 2026-09-28.** The row's suspect was not the path, and its premise was
+      wrong. `toggleHideTitleBars` returns at its guard in `.wal`. `isModernUIEnabled` is derived
+      from `uiMode`, which is the running mode and not a stale preference, and the menu item is
+      shown only when it is true. The live path is W237's: `refitDockedPlexBrowserToVerticalStack`,
+      reached from `hostedWindowVisibilityDidChange` and every other `updateDockedChildWindows`
+      caller.
+      - **Reach: 9 of 79 skins, not every session.** On the other 70 the library is a skin window
+        (embedded, declared or synthesized), and a temporary log showed
+        `plexBrowserWindowController?.window == nil` on BLAKK. On the nine whose `RENDER-DUMP
+        arrangement` line puts `library` in none of those lists (Sony_Walkman, Winamp 3.0 Default,
+        TRON___Legacy, jvc.tape.v0.5, Overdrive_2, canum, Darjah 1, HeadAMP, MMD3-4-5), the library
+        is NullPlayer's own window, and the refit is live.
+      - **What it did:** on Sony_Walkman, a Cava tiled under the library joined the docked cluster
+        and widened it. The refit then re-derived the dock edge from it, and the library moved from
+        x 1097 to 1106, 9pt off the player. The height held only because the skin's equalizer is an
+        auxiliary window, not a centre-stack member, so the stack was the player alone and the
+        target was `defaultSideWindowHeight`, which the library already had.
+      - **Fix:** the refit and the remembered-frame reopen (`preservingRememberedHeight`) are also
+        gated on `uiMode.controllerFamily == .winampModern`. `isRunningModernUI` is untouched.
+      - **Measured live, one binary, library open → Cava open/close/open → library close/reopen →
+        Cava close:** Sony_Walkman held 1097, 550x580 throughout. aquamp (Classic) and NeonWave
+        (Original) went 580 → 290 → 580 and reopened at 290, the same as W237 measured.
+      - Not covered: a centre-stack window docked directly under a `.wal` player. The tiler did not
+        put one there on Sony_Walkman, and the library is gated anyway. No headless test: the
+        change is a gate with no pure seam, and `WMPLibraryStackSizingTests` already pins the reopen
+        arithmetic.
+
 ## B155 — a layout that declares no `desktopalpha` keeps per-pixel alpha — closed 2026-09-28
 
 | B155 | **A layout that declares no `desktopalpha` keeps per-pixel alpha, which is probably not Winamp's default.** The renderer applies the B114 region rule (painted pixels opaque over black, alpha-0 pixels outside the window) only to `desktopalpha="0"` (`WasabiRenderer.layoutWantsOpaqueBacking`). Winamp most likely gives every layout without `desktopalpha="1"` a region instead of per-pixel alpha, so soft edges and translucent sheens there land on black. B151 met this and scoped around it: its standard-frame backing runs in undeclared layouts, but the alpha promotion does not. Making undeclared mean `0` moves the renders listed at [M34], and none of them has been classified. Some will be fixes (translucent panels floating on the desktop). Some may be regressions, where the corpus relies on the soft edges it has today: drop shadows and anti-aliased silhouettes turning into black fringes. The first job is to confirm Winamp's default from a primary source or a skin's shipped screenshot, then classify the sweep against each skin's own artwork | 92 of 671 renders, 44 skins [M34] | M | Measured |

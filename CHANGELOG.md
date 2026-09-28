@@ -2,6 +2,7 @@
 
 ## 0.31.0
 
+- **The library stays docked to a Winamp Modern player** — in the `.wal` skins that use NullPlayer's own library window, such as Sony_Walkman and Winamp 3.0 Default, opening a window such as Cava could push the library a few pixels away from the player, leaving a gap. The library now stays where it is. Classic and Original skins are unchanged: there, the library still grows and shrinks with the windows stacked under the player.
 - **Winamp Modern skins without a transparency setting now draw as Winamp does** — a skin window that doesn't ask for see-through edges now gets a solid shape: its outline is cut from the artwork and the translucent parts inside are drawn over black. Before, those parts let the desktop show through. You'll see this mostly in notification pop-ups and a few shaped players such as Wiimote and PokemonDS. Skins that ask for soft edges, including every one with a drop shadow, look the same as before.
 - **No black bar on Itemskin's NullPlayer windows** — in the Itemskin Winamp Modern skin, windows such as the Spectrum Analyzer and Waveform had an empty black bar across the top of the frame, left where the skin's own visualizer buttons go. The bar is gone and the windows are that much shorter.
 - **Closing a Winamp Modern window no longer moves the one below it** — in a `.wal` skin, closing a window such as the Spectrum Analyzer from the Windows menu slid the window under it up into its place. Reopening the first window then put it right on top. The other windows now stay where they are.

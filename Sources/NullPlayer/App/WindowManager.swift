@@ -2675,6 +2675,7 @@ class WindowManager {
                         reDerived: dockedFrame,
                         remembered: frame,
                         preservingRememberedHeight: isRunningWMPUI
+                            || uiMode.controllerFamily == .winampModern
                     ), display: true)
                 } else {
                     window.setFrame(frame, display: true)
@@ -6118,8 +6119,8 @@ class WindowManager {
     /// Classic and Original take the re-derived docked frame whole — its height is the centre
     /// stack's, and following the stack is their rule. A `.wmz` session takes only the dock edge
     /// and keeps the height the user left it at, anchored at the top, because the library wears
-    /// the skin's borrowed frame and the centre stack has no claim on its size. The `.wal` half
-    /// of that is tracked separately as B147 and is deliberately not answered here.
+    /// the skin's borrowed frame and the centre stack has no claim on its size. A `.wal` session
+    /// keeps it for the same reason (B147): the stack there is not the library's to follow.
     static func dockedLibraryReopenFrame(reDerived: NSRect,
                                          remembered: NSRect,
                                          preservingRememberedHeight: Bool) -> NSRect {
@@ -6139,8 +6140,11 @@ class WindowManager {
         // which is true for WMP) and through every other `updateDockedChildWindows` caller, so
         // the library grew and shrank with our fallback EQ/playlist/spectrum windows. Gate the
         // resize, not `isRunningModernUI` — that predicate answers a four-family question for
-        // ~15 other call sites (W214). The `.wal` half is B147.
+        // ~15 other call sites (W214). `.wal` too (B147): a skin that draws no library of its own
+        // gets this window, its place is the `.wal` tiler's, and the refit re-derived its dock edge
+        // from a cluster a Cava tiled under the library had widened — a 9pt gap on Sony_Walkman.
         guard !isRunningWMPUI else { return }
+        guard uiMode.controllerFamily != .winampModern else { return }
         guard let window = plexBrowserWindowController?.window, window.isVisible else { return }
         guard sideFrameIsRightDockedToCurrentStack(window.frame) else { return }
         guard let frame = rightDockedSideFrame(for: window, width: window.frame.width),

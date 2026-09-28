@@ -25,7 +25,6 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B147 | **The library window follows the main window's height in a `.wal` session.** `toggleHideTitleBars` (`App/WindowManager.swift:511`) resizes the side-docked library and projectM windows by the main window's height delta — Original centre-stack behaviour. Its guard `isRunningModernUI` (`:390`) does not name `WinampModernMainWindowController`, so `.wal` falls through to the stale `isModernUIEnabled` preference. **Gate the resize itself on the mode; do not add the controller to the predicate**, whose other callers would all inherit the answer. Classic and Original byte-identical. The `.wmz` half is W237 in [`WMP_TASKS.md`](WMP_TASKS.md) | every `.wal` session with the library open | S | Live-reported |
 
 ### Awaiting manual QA
 
@@ -42,9 +41,8 @@ Triaged 2026-09-27 against the `app-control` tools: `launch.sh`, `winhelper`
 (`click`/`dblclick`/`drag`/`move`/`scroll`/`clickdiff`/`capture`/`screens`), `menu.applescript`,
 the window census and the render-dump harness. The ranking above still sets the order.
 
-**Partly verifiable.** B147: the fix is autonomous, but *Hide Title Bars* is only in the context
-menu, so the live toggle is Route D. B66 and B85: the drop-down and the drawer menu may be
-contextual menus; if a synthetic press does not open them, they are Route D.
+**Partly verifiable.** B66 and B85: the drop-down and the drawer menu may be contextual menus; if
+a synthetic press does not open them, they are Route D.
 
 **Needs the user.** B41 needs a second display (`winhelper screens` shows one). B110 waits on the
 reporter's confirmation.
