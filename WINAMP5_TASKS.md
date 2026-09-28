@@ -35,7 +35,6 @@ None open.
 | B85 | The Widgets Manager's three place buttons | On a cPro skin: drawer menu -> *Widgets Manager*, then **show in main / drawer / side** on a row. Uninstall and support are expected to stay inert |
 | B66 | The Wasabi drop-down's persistence | On Styx's Config, pick a `Position` drop-down entry, reopen the window, confirm the pick survived |
 | B110 | Ebonite's frame overlay windows ([record](docs/winamp-modern/backlog-archive.md#b110--a-skins-window-frame-can-be-a-second-window--implementation-record)) | Reporter's confirmation that Ebonite's frames draw, stay glued and stack correctly |
-| B111 | Itemskin's silenced audio ([record](docs/winamp-modern/backlog-archive.md#b111--an-unchanged-setactivated-dispatched-ontoggle--implementation-record)) | The persisted volume is `0.00` residue: raise it once, confirm it holds through a drag and a relaunch, and that playback is audible |
 | B56a | Window tiling follow-ups | A skin whose playlist is a classic fallback; a Classic/Original regression pass; the arrangement after a live UI-Size change (expect `arrangeWindows()` to need re-running) |
 
 ## Agent-verifiable without user input
@@ -46,7 +45,6 @@ the window census and the render-dump harness. The ranking above still sets the 
 
 | Id | What the agent can do alone | How it is verified |
 |---|---|---|
-| B111 | Drag the volume up, relaunch | Persisted volume ≠ 0 after relaunch, and the log shows no `setvolume(0)` cascade (audibility is not checked) |
 | B56a | The three tiling checks | `windows` geometry before and after a UI-Size change from the menu bar; Classic/Original census rows unchanged |
 
 **Partly verifiable.** B147: the fix is autonomous, but *Hide Title Bars* is only in the context

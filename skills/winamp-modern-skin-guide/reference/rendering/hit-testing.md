@@ -14,8 +14,18 @@ mask:)`, and the mask is decoded **without** the colour theme's gamma: a map's c
 artwork, and skins routinely put maps in a `gammagroup` (T800 puts its in `Background`) which would
 move every threshold. The mask is placed at its **natural size** at the object's origin, not
 stretched to the object's rect — a region is a set of map pixels. A map that cannot be resolved
-leaves the object unclipped, and regions deliberately do not affect hit testing: T800 drags its
-volume by tracking the mouse across the whole strip, most of which the region has clipped away.
+leaves the object unclipped.
+
+**A region adds to what a click can reach and never takes anything away**
+(`WasabiSceneRenderer.scriptRegionContains`). A point is the object's if its artwork paints there
+*or* its region covers it. Both halves were paid for. The *add* half is Itemskin (B111): its volume
+display `vol` is a hollow 65x7 outline, and `volume2.maki` makes the whole strip live with
+`loadFromBitmap("volumeregion")` + `setRegion`, a solid bitmap. Tested against the outline alone,
+every click inside it fell through to the window, so the skin's only volume control was dead. The
+*never removes* half is T800, which drags its volume across the whole strip while a threshold region
+clips most of it away. The corpus gate (`RENDER_CLICKABLE=1`, 2026-09-28) moved three skins, all
+falls and all unlocked: Itemskin's `vol`, BLAKK's two seek bars (`blakk.bb.seek-empty`,
+`blakk.remote.seekempty`, which now seek to the clicked point) and Bio-Nid's `VolumeAnim`.
 
 #### Hit testing: who owns a point
 

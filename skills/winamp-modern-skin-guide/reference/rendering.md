@@ -376,7 +376,11 @@ edge it grows from) and is deliberately not folded in.
 `left` cap + stretched (or tiled) `middle` + `right` cap, growing from the edge `orientation` names
 (`right`/`down` anchor at the near edge, `left`/`up` at the far one). It carries no `action` of its
 own, so the value comes from the sibling that does — the `<slider>` drawn over the same rect — and
-both go through the renderer's one `normalizedValue(of:)`.
+both go through the renderer's one `normalizedValue(of:)`. **With more than one action slider among
+the siblings, the rect decides** (`valueSibling(of:frame:)`, largest overlap). Itemskin declares a
+hidden `<slider id="hidvol" action="VOLUME">` at (900,300) *before* the `Seeker` its seek grid sits
+under. Taking the first slider painted the volume into the seek bar, and it only showed once the
+volume could be raised at all (B111).
 
 Skins pair the two and give the slider a thumb that is deliberately invisible: Love is War Miku's seek
 "thumb" is a **1×1 pixel**, and the grid is the only thing that shows a position anywhere in the

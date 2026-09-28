@@ -129,7 +129,8 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   (`<bitmap file="$solid" color="r,g,b">`) — a skin may declare the same id as both, and the bitmap can
   win the registry. Phase 24
 - `<ProgressGrid>`: `left`/`middle`/`right` over the filled span, growing from `orientation`'s edge,
-  valued from the sibling `<slider>` that carries the `action`. Skins pair the two and make the thumb
+  valued from the sibling `<slider>` that carries the `action` (the one over the grid's rect when
+  there are several). Skins pair the two and make the thumb
   invisible (a 1×1 pixel), so the grid is the only position indicator they draw
 - `<text>` metrics: `fontsize` is a **pixel height** (em ≈ 0.8 ×), `font=` resolves a declared
   `<truetypefont>`, an archive path, **or** an installed family name, `bold`/`italic` are honoured, the

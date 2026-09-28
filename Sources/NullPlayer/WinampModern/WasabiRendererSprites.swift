@@ -281,7 +281,7 @@ extension WasabiSceneRenderer {
     /// pairing them by rect is the whole idiom.
     func drawProgressGrid(_ object: WasabiObject, frame: CGRect, context: CGContext) {
         guard frame.width > 0, frame.height > 0 else { return }
-        let source = object.attributes["action"] != nil ? object : (valueSibling(of: object) ?? object)
+        let source = object.attributes["action"] != nil ? object : (valueSibling(of: object, frame: frame) ?? object)
         let clamped = normalizedValue(of: source)
         let left = resources.bitmap(identifier: object.attributes["left"])
         let middle = resources.bitmap(identifier: object.attributes["middle"])

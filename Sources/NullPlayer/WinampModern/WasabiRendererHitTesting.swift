@@ -26,7 +26,8 @@ extension WasabiSceneRenderer {
             // same point) worked — which reads as "two of my buttons are broken", not as a hit test
             // disagreeing with a declared region.
             if object.attributes["rectrgn"] != "1",
-               let bitmap = resources.bitmap(identifier: node.bitmapID) {
+               let bitmap = resources.bitmap(identifier: node.bitmapID),
+               !scriptRegionContains(object, frame: node.frame, point: point) {
                 // An animated layer's artwork is a *strip*, and mapping the point across the whole
                 // sheet would sample whichever frame happened to line up with that row. Its region is
                 // the union of its frames instead — a point is clickable if **any** frame paints
@@ -47,6 +48,21 @@ extension WasabiSceneRenderer {
             return object
         }
         return nil
+    }
+
+    /// Whether a point is inside the region a script gave this object.
+    ///
+    /// A script region only ever **adds** to what the artwork already claims. Itemskin's volume
+    /// display is a hollow 65x7 outline (`pl.volume`), and `volume2.maki` makes the whole strip
+    /// clickable with `region.loadFromBitmap("volumeregion"); vol.setRegion(region)` — a solid
+    /// bitmap. Tested against the artwork alone, every click inside the outline fell through to the
+    /// window behind it, so the skin's only volume control was dead (B111). It never removes: T800
+    /// drags its volume across the whole strip while a threshold region clips most of it away.
+    func scriptRegionContains(_ object: WasabiObject, frame: CGRect, point: CGPoint) -> Bool {
+        guard let region = WasabiRegionClip(object: object) else { return false }
+        return resources.regionContains(region,
+                                        x: Int((point.x - frame.minX).rounded(.down)) - region.offsetX,
+                                        y: Int((point.y - frame.minY).rounded(.down)) - region.offsetY)
     }
 
     func containsVisiblePixel(at point: CGPoint) -> Bool {

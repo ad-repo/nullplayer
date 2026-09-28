@@ -457,6 +457,14 @@ final class WasabiResourceCache {
         return image
     }
 
+    /// Whether one map pixel, counted from the region's top-left, is inside the region. The mask is
+    /// stored bottom-up for the flipped scene context, so the row is read from the other end.
+    func regionContains(_ region: WasabiRegionClip, x: Int, y: Int) -> Bool {
+        guard let mask = regionMask(region), x >= 0, y >= 0, x < mask.width, y < mask.height,
+              let data = mask.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return false }
+        return bytes[(mask.height - 1 - y) * mask.bytesPerRow + x] != 0
+    }
+
     /// The map bitmap behind a region, gamma-free. `loadMap` takes either a declared id or a path,
     /// and the runtime records whichever it resolved.
     private func rawMapImage(_ region: WasabiRegionClip) -> CGImage? {
@@ -3397,12 +3405,27 @@ final class WasabiSceneRenderer {
     }
 
     /// The sibling whose value a bare `<ProgressGrid>` shows: the slider drawn over the same rect.
-    func valueSibling(of object: WasabiObject) -> WasabiObject? {
+    ///
+    /// With one candidate that is the answer. With several, the rect decides: Itemskin's player
+    /// declares a hidden `<slider id="hidvol" action="VOLUME">` at (900,300) *before* the `Seeker`
+    /// its seek grid sits under, and taking the first slider painted the volume into the seek bar.
+    func valueSibling(of object: WasabiObject, frame: CGRect) -> WasabiObject? {
         guard let parent = object.parent else { return nil }
-        return parent.children.first {
+        let candidates = parent.children.filter {
             $0 !== object && $0.attributes["action"] != nil &&
                 $0.typeName.caseInsensitiveCompare("slider") == .orderedSame
         }
+        guard candidates.count > 1 else { return candidates.first }
+        let nodes = sceneNodes()
+        func overlap(_ candidate: WasabiObject) -> CGFloat {
+            guard let other = nodes.first(where: { $0.object === candidate })?.frame else { return 0 }
+            let shared = other.intersection(frame)
+            return shared.isNull ? 0 : shared.width * shared.height
+        }
+        guard let best = candidates.max(by: { overlap($0) < overlap($1) }), overlap(best) > 0 else {
+            return candidates.first
+        }
+        return best
     }
 
     private func drawSlider(_ object: WasabiObject, frame: CGRect, context: CGContext,

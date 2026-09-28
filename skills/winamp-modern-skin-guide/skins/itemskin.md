@@ -108,6 +108,15 @@ with an `xuitag` and a `scripts/standardframe*.maki`. Each of those scripts:
   (`<Togglebutton id="volume.mute" />` has no image, action or coordinates — a 0×0 object nobody can
   click), and the disassembly is innocent too, because the skin never calls `setVolume` at load.
   `WINAMP_MODERN_CALL_TRACE=1` in the running app is what named it.
+- **Its volume display is a hollow outline that a script region makes solid.** `pl-volume.png` paints
+  only a one-pixel frame. `volume2.maki` gives the `vol` layer `loadFromBitmap("volumeregion")`, an
+  opaque black 65x13 bitmap, and tracks the pointer with `inRegion`/`getValue` against
+  `pl-volume-anim-map.png`. Until the hit test honoured the region, every click inside the frame fell
+  through, so even after B111's `setActivated` fix the persisted `0.00` could not be dragged up. The
+  seek grid had also been reading the hidden `hidvol` slider; see
+  [`reference/rendering.md`](../reference/rendering.md) → *`<ProgressGrid>`*. Verified live on
+  2026-09-28 by seeding a saved volume of 0: drag to 0.57, relaunch, 0.57 restored, with no
+  `setvolume` at load.
 - **Its gold list colour is the tell for B113.** Reported 2026-09-04 as *"is there a filter in front
   of the displays?"* — library, playlist and readouts all a dark, muddy olive. Two wrong answers
   before the right one: the skin's first `<gammaset>` is an empty `(default)`, which looks like a

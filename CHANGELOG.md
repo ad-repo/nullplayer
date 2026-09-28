@@ -2,6 +2,7 @@
 
 ## 0.31.0
 
+- **Itemskin's volume control works** — in the Itemskin Winamp Modern skin, clicking or dragging the volume bar did nothing, so a volume stuck at zero could not be raised and the skin played silently. The bar now responds anywhere along its length, and the seek bar shows the song's progress instead of the volume. BLAKK's seek bars and Bio-Nid's volume knob also respond to clicks now.
 - **No more hairline seams in Winamp Modern skins at in-between UI sizes** — at UI sizes such as 105% or 125% on a Retina display, thin light lines could show where the pieces of a skin's frame and panels meet. The pieces now meet exactly, so the lines are gone. Sliders, knobs and progress bars placed between whole pixels now also sit on a whole pixel.
 - **Winamp Modern VU needles use less CPU and look sharper** — skins that rotate artwork, such as the swinging needles in WMP11-BlueVU's VU Meters, now draw it in a single step instead of recalculating every pixel, which roughly halves the app's main-thread load while the meters are open.
 - **Winamp Modern skins with an animated level meter use less CPU** — a skin that steps an animated meter many times a second (WMP11-BlueVU's beat display) now redraws just that meter instead of the whole player window.
