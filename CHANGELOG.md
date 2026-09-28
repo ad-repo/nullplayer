@@ -27,6 +27,9 @@
 - **ClassicPro track info shows up** — in ClassicPro-based Winamp Modern skins such as cPro2 Dark
   Aluminum, the track-info panel under the library now lists the playing track's title, artist,
   rating, decoder, file size, filename and format instead of staying empty.
+- **Song titles show in more Winamp Modern skins** — Shield Amp and Ebonite now show the playing
+  track's title in their song display, which was blank. A skin script that divides by zero now
+  carries on instead of stopping, as it would in Winamp.
 
 - **Glossy frames for Winamp Modern fallback windows** — when a Winamp Modern (`.wal`) skin has no
   window frame of its own for NullPlayer's windows (the analyzers, Cava, Flow, PeppyMeter, waveform,

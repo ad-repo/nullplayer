@@ -30,7 +30,8 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 | B119 | **WMP11-BlueVU spends ~75% of the main thread where a normal skin spends ~50%**, painting two warped FX layers every frame. The CPU resample half is fixed; the Core Graphics paint (~26% against a control's ~5%) is open. Closing this also closes B117(a), the skin's ~7 fps marquee. See [detail](#b119) | 2 skins measured; every skin with an animating `<layer>` FX mesh | M | Live-reported |
 | B147 | **The library window follows the main window's height in a `.wal` session.** `toggleHideTitleBars` (`App/WindowManager.swift:511`) resizes the side-docked library and projectM windows by the main window's height delta — Original centre-stack behaviour. Its guard `isRunningModernUI` (`:390`) does not name `WinampModernMainWindowController`, so `.wal` falls through to the stale `isModernUIEnabled` preference. **Gate the resize itself on the mode; do not add the controller to the predicate**, whose other callers would all inherit the answer. Classic and Original byte-identical. The `.wmz` half is W237 in [`WMP_TASKS.md`](WMP_TASKS.md) | every `.wal` session with the library open | S | Live-reported |
 | B60 | **The hosted library and video surfaces have no body drag.** `WinampModernLibrarySurfaceView`'s blank area below the last row could be a handle and is not; `WinampModernVideoSurfaceView` overrides no `mouseDown` and its picture is a child window, so whether a press reaches anything is unverified — measure it in the app. `WinampModernBrowserSurfaceView` is out of scope (the page owns the mouse) | — · every skin with a usable standard frame | M | Live-reported |
-| B65 | **A division by zero abandons the whole handler, where Winamp carries on.** `MakiBytecode.swift` opcode 67 throws `invalidScript`; MAKI's `/` is a float divide, so Winamp yields infinity and runs on. See [detail](#b65) | 2 skins / 3 sites measured (Shield_Amp; cPro2's InfoViewer `onResize` with nothing playing, since B99); corpus reach unmeasured | S | Live-reported |
+| B148 | **Winamp's own "Text Ticker Speed" preference is unregistered.** `OneDirectionText` reads `Config.getItemByGuid("{9149C445-3C30-4e04-8433-5A518ED0FDDE}").getAttribute("Text Ticker Speed")` and sets its move timer to `20/stringToFloat(value)`; unanswered, the value is `""`, the delay is infinite and the ticker never scrolls. Register the host config item with a default, the way Winamp's own preferences would. The default value is unknown — confirm it before choosing one; `"0"` means "don't scroll" to this script | 2 skins (Shield_Amp, Ebonite_2_1) | S | Live-reported |
+| B149 | **An `xuitag` groupdef instance does not clip its children.** `clipsChildren` (`WasabiRenderer.swift`) clips only objects whose type is `group`, so Shield_Amp's 293px `OneDirectionText#SongTicker` draws its 1606px moving text clipped to the whole layout, over the rounded body and past its fade layers. Extending the rule reaches every custom widget in the corpus, so it wants a render sweep and a classification of each diff | 1 skin measured (Shield_Amp; Ebonite_2_1's ticker is the same widget, unmeasured); corpus reach unmeasured | S | Live-reported |
 | B71 | **A layout script loads before the standard frame beside it has a client area**, so every name it resolves is null. Measured on Defix's detached visualizer. See [detail](#b71) | — · seen on Defix's detached visualizer; corpus reach unmeasured | L | Live-reported |
 | BB34 | **An embedded visualization pane's engine never starts.** Big Bento Modern's Multi Content View mini pane draws black; the last line is `WINAMP-MODERN-VIS: resume … visible=0 … rendering=0`. **Re-measure first** — BB35's fix gives a detached surface a route back and may have cured it. 6 corpus skins embed a holder in the player (B23a), not 1 | — · seen on Big Bento Modern's mini pane | M | Live-reported |
 | B74 | **T800's five memory slots share one storage key.** See [detail](#b74) | 1 skin / 5 buttons collapsing to 1 slot ([M22]) | L | Live-reported |
@@ -57,7 +58,8 @@ the window census and the render-dump harness. The ranking above still sets the 
 
 | Id | What the agent can do alone | How it is verified |
 |---|---|---|
-| B65 | Measure reach with a `RENDER_SCRIPTS=1` corpus sweep, then make the float divide follow IEEE | Sweep count of `division by zero`; Shield_Amp songticker scrolls in two `capture`s taken apart |
+| B148 | Register the host ticker-speed attribute once its default is known | Shield_Amp: two `capture`s taken apart differ in the ticker band, and `RENDER_SCRIPTS` shows `ontimer` in `ran=` |
+| B149 | Clip an `xuitag` instance to its declared box | Corpus render sweep, each diff classified; Shield_Amp ticker text stays inside x 26…319 |
 | B79 | Size an `autowidthsource` bitmap label from its artwork | Corpus render sweep; on winampmodern566, `clickdiff` on a titlebar menu entry shows a new layer≠0 row (a menu opened) |
 | B60 | Add a body drag on the library blank area and the video surface | `drag` + `windows` origin delta; the video is opened with `dblclick` on a browser row |
 | BB34 | Re-measure first | Big Bento Modern, tick the mini pane with `click`, then take two `capture`s and check they are not black and not identical |
@@ -131,17 +133,6 @@ archive entry.
       render sweep and `RENDER_TIME`/`RENDER_FX` on Defix as a second control. Classic and Original
       must not move. **Done when** WMP11's busy fraction converges on the control's ~50%, measured as
       above and parsed per [`harness.md`](skills/winamp-modern-skin-guide/reference/harness.md).
-
-### B65
-
-- [ ] **B65. A division by zero abandons the whole handler.** Shield_Amp's songticker never
-      initialises: its `OneDirectionText` widget reads `{9149C445-…};Text Ticker Speed`, which no
-      script in that archive registers, so `getData()` answers `""` and `20/stringToFloat("")`
-      divides by zero. Fail-closed is right for a missing method; it is wrong for arithmetic, where
-      the IEEE answer exists.
-      **Before changing it:** confirm what Winamp produces for the integer case as well as the float
-      one (opcode 67 sees both), and measure reach with a `RENDER_SCRIPTS=1` corpus sweep counting
-      `division by zero`. Keep the warning.
 
 ### B71
 

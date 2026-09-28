@@ -3,6 +3,43 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B65 — a division by zero abandoned the whole handler — closed 2026-09-28
+
+| B65 | **A division by zero abandons the whole handler, where Winamp carries on.** `MakiBytecode.swift` opcode 67 throws `invalidScript`; MAKI's `/` is a float divide, so Winamp yields infinity and runs on. See [detail](#b65) | 2 skins / 3 sites measured (Shield_Amp; cPro2's InfoViewer `onResize` with nothing playing, since B99); corpus reach unmeasured | S | Live-reported |
+
+### B65
+
+- [x] **B65. Fixed 2026-09-28.** Opcode 67 answers the IEEE quotient (±inf, NaN for 0/0) and
+      reports `[warning] invalidScript MAKI division by zero.` through the new
+      `MakiMethodDispatching.report` instead of throwing. Integer modulo still fails closed. The
+      integer case needed no separate answer: the divide was already always real (multipass's seek
+      bar), and a store into an Int clamps through `integerValue`.
+
+      **Reach, measured** with a `RENDER_SCRIPTS=1` pass over the 80-archive corpus: 6 skins,
+      4 sites — the four cPro2 skins' InfoViewer (`onAction`/`onResize`), Ebonite_2_1's
+      `OneDirectionText` and `SC-Cover`, Shield_Amp's `OneDirectionText`. After: 7 `[warning]`
+      findings, 0 `[error]`; handlers reporting `failed=` fell from 50 to 38, and no new failure
+      appeared. PNG diffs: Shield_Amp and Ebonite (four layouts) now draw their song titles;
+      Anexa's shade differs only in its wall-clock hands. Tests: `WinampModernB65Tests`.
+
+      **The row's live criterion — "the songticker scrolls" — is not met, and is not B65's.** The
+      ticker's delay is `20/stringToFloat("")` = infinity, so its move timer never fires (B148). Its
+      text is also clipped to the layout rather than the widget (B149). Live `capture` was not
+      available in this session: `screencapture -l` was refused.
+
+      Original detail:
+
+### B65
+
+- [ ] **B65. A division by zero abandons the whole handler.** Shield_Amp's songticker never
+      initialises: its `OneDirectionText` widget reads `{9149C445-…};Text Ticker Speed`, which no
+      script in that archive registers, so `getData()` answers `""` and `20/stringToFloat("")`
+      divides by zero. Fail-closed is right for a missing method; it is wrong for arithmetic, where
+      the IEEE answer exists.
+      **Before changing it:** confirm what Winamp produces for the integer case as well as the float
+      one (opcode 67 sees both), and measure reach with a `RENDER_SCRIPTS=1` corpus sweep counting
+      `division by zero`. Keep the warning.
+
 ## B99 — `enumObject` / `getNumObjects` were unimplemented — closed 2026-09-27
 
 | B99 | **`enumObject` / `getNumObjects` are unimplemented.** ClassicPro's InfoViewer (`xui/CentroSUI/_v2/InfoViewer/InfoViewer.xml`) walks its object list with them, and dispatch fails closed, so each call abandons the whole handler. Measured on cPro2 Dark Aluminum 2026-09-01: `enumObject` x12, `getNumObjects` x2 | 1 skin measured; the `_v2` SUI is shared by any engine-`two` skin | M | Measured |

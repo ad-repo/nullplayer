@@ -83,6 +83,15 @@ MAKI's casts are System methods (`System.Integer(v)`, `Float`, `String`, `Boolea
 reaches for them wherever it mixes a float with an int-typed API — which is exactly where the volume
 path runs.
 
+**Division is IEEE and never aborts (B65).** Opcode 67 is always a real divide, so a zero divisor
+answers ±infinity (NaN for 0/0), reports a `[warning] invalidScript MAKI division by zero.` through
+`MakiMethodDispatching.report`, and the handler runs on. Before this it threw and took the handler with
+it: 6 corpus skins lost a handler that way (Shield_Amp and Ebonite's `OneDirectionText`, Ebonite's
+`SC-Cover`, four cPro2 skins' InfoViewer). A store into an Int clamps through `integerValue`, so an
+infinite `Delay` becomes `Int32.max`: a timer armed with it is a timer that never fires. That is
+the *script's* arithmetic, not a defect of the divide. Integer modulo (68) has no IEEE answer and
+still fails closed.
+
 **Opcodes are exercised at the same rate as methods** — that is, barely, until a script gets far
 enough to use one. `delete` (opcode 97) consumed its operand for eight phases before anything reached
 it. `delete obj` is an **expression**: the compiler emits `push; delete; pop`, so the opcode must

@@ -2977,6 +2977,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         method.lowercased() == "isinvalid" ? .boolean(true) : .null
     }
 
+    func report(_ diagnostic: WalDiagnostic) {
+        loadedSkin.runtime.record(diagnostic)
+    }
+
     func releaseObject(_ reference: MakiObjectReference) {
         switch reference.kind {
         case .dynamic(let id):
