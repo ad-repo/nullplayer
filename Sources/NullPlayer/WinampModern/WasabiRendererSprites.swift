@@ -11,6 +11,7 @@ extension WasabiSceneRenderer {
     /// the visual top — so every bitmap has to be re-flipped about its own rect or it renders
     /// vertically mirrored in place. Text uses the same trick (`drawFlippedText`).
     func drawImage(_ image: CGImage, in rect: CGRect, context: CGContext) {
+        let rect = snappedToPixelGrid(rect, in: context)
         context.saveGState()
         context.translateBy(x: 0, y: rect.midY)
         context.scaleBy(x: 1, y: -1)
@@ -22,6 +23,36 @@ extension WasabiSceneRenderer {
         context.interpolationQuality = quality
         context.draw(prescaled(image, for: rect, in: context, quality: quality), in: rect)
         context.restoreGState()
+    }
+
+    /// `rect` with each edge moved to the nearest device-pixel boundary (B80).
+    ///
+    /// At a fractional device scale — UI Size 105% on a 2x panel is 2.1 — the edge two abutting
+    /// pieces share lands inside a pixel, each covers part of it, and source-over does not add the
+    /// two coverages back up to opaque: the pixel is left translucent, a hairline along every band
+    /// boundary. Rounding the *shared* edge value to the same pixel on both sides removes the
+    /// overlap. Measured on Cpro_Winamp_Modern at 2.1: four such seams in a full draw, `cpro.bg.left`
+    /// against the body at x=6 among them. An integral scale moves nothing, since every
+    /// whole-skin-pixel edge is already on the grid. A rotated or skewed context (Layer FX) is left
+    /// alone.
+    func snappedToPixelGrid(_ rect: CGRect, in context: CGContext) -> CGRect {
+        guard Self.snapsToPixelGrid else { return rect }
+        return Self.snapped(rect, ctm: context.ctm, devicePixelsPerUnit: devicePixelsPerContextUnit)
+    }
+
+    static func snapped(_ rect: CGRect, ctm: CGAffineTransform, devicePixelsPerUnit unit: CGFloat) -> CGRect {
+        guard ctm.b == 0, ctm.c == 0, ctm.a != 0, ctm.d != 0 else { return rect }
+        func snap(_ value: CGFloat, scale: CGFloat, offset: CGFloat) -> CGFloat {
+            ((value * scale + offset) * unit).rounded() / unit / scale - offset / scale
+        }
+        let minX = snap(rect.minX, scale: ctm.a, offset: ctm.tx)
+        let maxX = snap(rect.maxX, scale: ctm.a, offset: ctm.tx)
+        let minY = snap(rect.minY, scale: ctm.d, offset: ctm.ty)
+        let maxY = snap(rect.maxY, scale: ctm.d, offset: ctm.ty)
+        let snapped = CGRect(x: min(minX, maxX), y: min(minY, maxY),
+                             width: abs(maxX - minX), height: abs(maxY - minY))
+        // A sliver narrower than half a pixel would round away entirely; draw it where it was.
+        return snapped.width > 0 && snapped.height > 0 ? snapped : rect
     }
 
     /// The same artwork, already rasterized at the size this context will put it on screen.
@@ -93,6 +124,7 @@ extension WasabiSceneRenderer {
         let tileWidth = CGFloat(bitmap.width)
         let tileHeight = CGFloat(bitmap.height)
         guard tileWidth >= 1, tileHeight >= 1, frame.width > 0, frame.height > 0 else { return }
+        let frame = snappedToPixelGrid(frame, in: context)
         context.saveGState()
         context.clip(to: frame)
         // Tiles are blitted 1:1; smoothing would resample each tile's edge and leave a visible seam

@@ -298,6 +298,33 @@ silhouette's anti-aliased fringe goes opaque.
   top/bottom/left/right/center strips. Tiles are blitted 1:1 with interpolation off, or the resampled
   edges leave a visible seam grid.
 
+#### Abutting pieces share a pixel edge (B80)
+
+Every bitmap and tiled layer is drawn to a rect whose edges have been rounded to the nearest
+**device pixel** (`snappedToPixelGrid` in `WasabiRendererSprites.swift`). At a fractional device
+scale — any UI Size that is not a multiple of 50% on a 2x panel: 90, 105, 110, 115, 125, 135, 175 —
+the edge two abutting pieces share lands inside a pixel. Each piece covers part of it, and source-over
+does not add the two coverages back to opaque, so the pixel stays translucent: a hairline along every
+boundary between a skin's frame pieces and bands. Rounding the *shared edge value* sends it to the
+same pixel from both sides. Winamp lays out in integer pixels, so a piece landing on a whole pixel is
+also the nearer answer.
+
+- **Measured, corpus of 80 `.wal`, full draws:** at 2.1, 589 seams in 204 of 671 layouts before and
+  27 in 16 after; at 2.5, 269 in 157 before and 18 in 12 after. Live on Cpro_Winamp_Modern at 105%: 4
+  seams to 0, before and after a hover sweep. What is left is standard-frame bottoms (WMP11-BlueVU),
+  NullPlayer-hosted chrome and a few fills — none of which go through `drawImage`/`drawTiled`.
+- **At 1:1 it moves anything laid out at a fractional skin position:** 142 of 671 renders changed
+  in the corpus sweep, every one inspected a slider thumb, knob, progress-fill end or bitmap label
+  that now sits on a whole pixel rather than straddling two. At any integral scale an on-grid edge
+  does not move.
+- **The grid is the real pixel grid, not the context's.** A `.wal` view's `draw` runs at **CTM 1.0**
+  on a 2x panel: AppKit records it into a display list and replays that at the backing scale. So
+  the view sets `devicePixelsPerContextUnit` to the backing factor over the CTM it was handed, and
+  the opaque-backing buffer sets it back to 1 for its own bitmap. Snapping to the context's own unit
+  would have moved every edge to a whole *point* — up to a full device pixel off.
+- `WINAMP_MODERN_PIXEL_SNAP=0` turns it off; `WINAMP_MODERN_RENDER_SEAMS=1` counts what is left
+  (`reference/harness.md`).
+
 #### Bitmap interpolation follows UI Size × backing scale, not the asset's stretch
 
 Ordinary `.wal` artwork uses nearest-neighbour filtering only when the scene's effective device

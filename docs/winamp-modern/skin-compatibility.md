@@ -146,8 +146,6 @@ show any of them.
 - A skin whose window border is built by a second, overlapping window can load its inner layout before
   that border has a client area to sit in, leaving the border half-built until something else redraws
   it. Seen on Defix's detached visualizer (B71).
-- At UI sizes that are not a whole multiple — 105%, for instance — hairline seams can appear along the
-  boundaries between bands of the player window when only part of it repaints (B80).
 
 **Controls and interaction**
 

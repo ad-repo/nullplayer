@@ -1533,6 +1533,106 @@ final class WinampModernRenderDumpTests: XCTestCase {
                                  + "(%d FX layers)", info.id, layoutID, milliseconds, frames,
                                  runtime.enabledLayerFXObjects.count))
                 }
+                // WINAMP_MODERN_RENDER_SEAMS=1 finds seams objectively: a device-pixel row or column
+                // whose alpha is strictly between transparent and opaque while both neighbours are
+                // opaque, for a run of 12+ pixels. Each is printed with the scene nodes that have an
+                // edge inside that pixel — the two abutting pieces whose partial coverages did not
+                // add up (B80). Run it with `RENDER_SCALE` at a fractional device scale.
+                if env["WINAMP_MODERN_RENDER_SEAMS"] != nil,
+                   let drawn = context.makeImage(), let pixels = Self.pixels(of: drawn) {
+                    let width = drawn.width, height = drawn.height
+                    func alpha(_ x: Int, _ y: Int) -> UInt32 { pixels[y * width + x] >> 24 }
+                    func edges(inPixel index: Int, vertical: Bool) -> String {
+                        let low = CGFloat(index) / drawScale, high = CGFloat(index + 1) / drawScale
+                        return renderer.sceneNodes().compactMap { node -> String? in
+                            let frame = node.frame
+                            // Rows count from the top here, as skin y does.
+                            let candidates = vertical ? [frame.minX, frame.maxX] : [frame.minY, frame.maxY]
+                            guard candidates.contains(where: { $0 > low && $0 < high }) else { return nil }
+                            return "\(node.object.xmlID ?? node.object.typeName)\(frame)"
+                        }.prefix(6).joined(separator: " ")
+                    }
+                    var seams = 0
+                    for vertical in [false, true] {
+                        let lines = vertical ? width : height, span = vertical ? height : width
+                        for line in 1..<max(1, lines - 1) {
+                            var run = 0, best = (length: 0, start: 0)
+                            for step in 0...span {
+                                let partial: Bool
+                                if step == span { partial = false } else {
+                                    let (x, y) = vertical ? (line, step) : (step, line)
+                                    let (ax, ay, bx, by) = vertical ? (x - 1, y, x + 1, y) : (x, y - 1, x, y + 1)
+                                    partial = alpha(x, y) < 255 && alpha(ax, ay) == 255 && alpha(bx, by) == 255
+                                }
+                                if partial { run += 1; continue }
+                                if run > best.length { best = (run, step - run) }
+                                run = 0
+                            }
+                            guard best.length >= 12 else { continue }
+                            seams += 1
+                            print("RENDER-SEAM \(info.id)/\(layoutID) \(vertical ? "col" : "row")=\(line) "
+                                  + "from=\(best.start) length=\(best.length) edges: "
+                                  + edges(inPixel: line, vertical: vertical))
+                        }
+                    }
+                    print("RENDER-SEAMS \(info.id)/\(layoutID) scale=\(drawScale): \(seams)")
+                }
+                // WINAMP_MODERN_RENDER_PARTIAL=1 replays the view's *targeted* repaint over the full
+                // draw: per scene node, `clear(dirtyRect)` then a draw clipped to it, where the dirty
+                // rect is what `setNeedsDisplay(for:)` asks for (the node's box, 2pt of slop) rounded
+                // out to whole device pixels. A full draw is clean at every fractional scale (B80);
+                // a seam that exists only after a partial repaint is invisible without this. Reports
+                // the pixels that differ from the full draw, and the dump is the repainted frame.
+                // `WINAMP_MODERN_RENDER_PARTIAL_BACKING` is the display's backing factor (default 2),
+                // which turns the 2pt of slop into device pixels.
+                if env["WINAMP_MODERN_RENDER_PARTIAL"] != nil,
+                   let full = context.makeImage(), let reference = Self.pixels(of: full) {
+                    let backing = env["WINAMP_MODERN_RENDER_PARTIAL_BACKING"].flatMap(Double.init) ?? 2
+                    let nodes = renderer.sceneNodes().filter { !$0.frame.isEmpty }
+                    // Each repaint is measured against the full draw on its own, then the full draw
+                    // is put back: a later repaint over the same rows would otherwise hide the seam
+                    // an earlier one left, which is not what the screen does between frames.
+                    let bytes = context.bytesPerRow * context.height
+                    let saved = context.data.map { Data(bytes: $0, count: bytes) }
+                    var offenders: [(count: Int, id: String)] = []
+                    for node in nodes {
+                        let skin = node.frame
+                        let device = CGRect(x: skin.minX * drawScale,
+                                            y: (size.height - skin.maxY) * drawScale,
+                                            width: skin.width * drawScale, height: skin.height * drawScale)
+                            .insetBy(dx: -2 * backing, dy: -2 * backing)
+                        let left = device.minX.rounded(.down), bottom = device.minY.rounded(.down)
+                        let dirty = CGRect(x: left / drawScale, y: bottom / drawScale,
+                                           width: (device.maxX.rounded(.up) - left) / drawScale,
+                                           height: (device.maxY.rounded(.up) - bottom) / drawScale)
+                        context.saveGState()
+                        context.clip(to: dirty)
+                        context.clear(dirty)
+                        renderer.draw(in: context, hovered: hovered)
+                        context.restoreGState()
+                        guard let after = context.makeImage(), let pixels = Self.pixels(of: after) else { continue }
+                        // Where the difference is, in device pixels from the top-left, and how many
+                        // rows it spans — a seam is a long run of one or two rows.
+                        var changed = 0, rows = Set<Int>(), minX = Int.max, maxX = -1
+                        for index in reference.indices where reference[index] != pixels[index] {
+                            changed += 1
+                            rows.insert(index / full.width)
+                            minX = min(minX, index % full.width); maxX = max(maxX, index % full.width)
+                        }
+                        if changed > 0 {
+                            offenders.append((changed, "\(node.object.xmlID ?? node.object.typeName)\(node.frame) "
+                                              + "rows=\(rows.sorted()) x=\(minX)...\(maxX)"))
+                        }
+                        if let saved, let data = context.data {
+                            saved.withUnsafeBytes { data.copyMemory(from: $0.baseAddress!, byteCount: bytes) }
+                        }
+                    }
+                    print("RENDER-PARTIAL \(info.id)/\(layoutID) scale=\(drawScale): repaints=\(nodes.count) "
+                          + "differing=\(offenders.count) pixels=\(offenders.reduce(0) { $0 + $1.count })")
+                    for offender in offenders.sorted(by: { $0.count > $1.count }).prefix(8) {
+                        print("RENDER-PARTIAL   \(offender.count)px \(offender.id)")
+                    }
+                }
                 NSGraphicsContext.current = previous
                 guard let image = context.makeImage() else { continue }
                 let url = dumpDirectory.appendingPathComponent(
@@ -1689,6 +1789,21 @@ final class WinampModernRenderDumpTests: XCTestCase {
         }
         visit(container)
         return found
+    }
+
+    /// An image's premultiplied RGBA pixels, one `UInt32` each, for exact comparison.
+    private static func pixels(of image: CGImage) -> [UInt32]? {
+        var data = [UInt32](repeating: 0, count: image.width * image.height)
+        let drawn = data.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: image.width, height: image.height,
+                                          bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            return true
+        }
+        return drawn ? data : nil
     }
 
     private static func describe(_ items: [WinampModernPopupMenuItem]) -> String {

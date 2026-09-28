@@ -2,6 +2,7 @@
 
 ## 0.31.0
 
+- **No more hairline seams in Winamp Modern skins at in-between UI sizes** — at UI sizes such as 105% or 125% on a Retina display, thin light lines could show where the pieces of a skin's frame and panels meet. The pieces now meet exactly, so the lines are gone. Sliders, knobs and progress bars placed between whole pixels now also sit on a whole pixel.
 - **Winamp Modern VU needles use less CPU and look sharper** — skins that rotate artwork, such as the swinging needles in WMP11-BlueVU's VU Meters, now draw it in a single step instead of recalculating every pixel, which roughly halves the app's main-thread load while the meters are open.
 - **Winamp Modern skins with an animated level meter use less CPU** — a skin that steps an animated meter many times a second (WMP11-BlueVU's beat display) now redraws just that meter instead of the whole player window.
 - **Winamp Modern skins with hidden windows use far less CPU** — a skin's closed windows no longer redraw in the background. The WMP11-BlueVU skin's VU meters had been animating unseen, costing about a third of the app's main thread while music played.

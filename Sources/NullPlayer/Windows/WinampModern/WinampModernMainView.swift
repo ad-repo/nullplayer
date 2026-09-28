@@ -917,6 +917,9 @@ final class WinampModernMainView: NSView {
         Self.reportDrawFormatOnce(context: context, view: self)
         #endif
         if Self.paintRateProbe { recordPaint(dirtyRect) }
+        #if DEBUG
+        if Self.dirtyTrace { traceDirty(dirtyRect, context: context) }
+        #endif
         // Only what is being repainted is cleared: a partial repaint (a meter that moved) must not
         // blank the rest of the window it is not going to draw again.
         context.clear(dirtyRect)
@@ -924,6 +927,11 @@ final class WinampModernMainView: NSView {
         // cached on the notification: a window can lose key without either notification reaching us
         // (the app deactivating, a sheet), and the read is one Boolean.
         renderer.isWindowActive = window?.isKeyWindow ?? true
+        // Measured before `skinScale` is applied: a display-list context arrives at CTM 1.0 and is
+        // replayed at the backing scale, a bitmap one already carries it (B80).
+        let contextScale = abs(context.ctm.a)
+        renderer.devicePixelsPerContextUnit = contextScale > 0
+            ? max(1, (window?.backingScaleFactor ?? 1) / contextScale) : 1
         context.saveGState()
         if skinScale != 1 { context.scaleBy(x: skinScale, y: skinScale) }
         renderer.draw(in: context, pressed: pressedObject?.stableID,
@@ -936,6 +944,33 @@ final class WinampModernMainView: NSView {
     /// `rects=` the mean share of the rects actually being drawn. Printed every two seconds. Release
     /// builds too, because the question it answers — is a periodic update repainting the whole
     /// window? — is a release-profile question (B152).
+    #if DEBUG
+    /// `WINAMP_MODERN_DIRTY_TRACE=1` — every partial paint's dirty rect, drawn rects and clip in
+    /// **device pixels**, with `FRACTIONAL` when an edge is off the pixel grid (B80). A whole-window
+    /// paint is not printed.
+    static let dirtyTrace = ProcessInfo.processInfo.environment["WINAMP_MODERN_DIRTY_TRACE"] == "1"
+
+    private func traceDirty(_ dirtyRect: NSRect, context: CGContext) {
+        guard dirtyRect.intersection(bounds) != bounds else { return }
+        let backing = window?.backingScaleFactor ?? 1
+        func device(_ rect: NSRect) -> String {
+            let edges = [rect.minX, rect.minY, rect.maxX, rect.maxY].map { $0 * backing }
+            let off = edges.contains { abs($0 - $0.rounded()) > 0.001 }
+            return edges.map { String(format: "%.2f", $0) }.joined(separator: ",") + (off ? " FRACTIONAL" : "")
+        }
+        var drawn: UnsafePointer<NSRect>?
+        var count = 0
+        getRectsBeingDrawn(&drawn, count: &count)
+        let rects = (0..<count).compactMap { drawn?[$0] }.map(device).joined(separator: " | ")
+        let clip = context.boundingBoxOfClipPath
+        let ctm = context.ctm
+        NSLog("DIRTY %@ bounds=%@ dirty=[%@] rects=[%@] clipCTM=[%@] ctm=(%.3f,%.3f,%.3f,%.3f)",
+              window?.title ?? "-", device(bounds), device(dirtyRect), rects,
+              device(clip.applying(ctm).applying(CGAffineTransform(scaleX: 1 / backing, y: 1 / backing))),
+              ctm.a, ctm.d, ctm.tx, ctm.ty)
+    }
+    #endif
+
     static let paintRateProbe = ProcessInfo.processInfo.environment["WINAMP_MODERN_PAINT_RATE"] == "1"
     private var paintRateWindow: (start: CFTimeInterval, paints: Int, dirty: CGFloat, rects: CGFloat)?
 

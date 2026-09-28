@@ -199,6 +199,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         isLoadingSkin = true
         defer {
             isLoadingSkin = false
+            #if DEBUG
+            // `WINAMP_MODERN_UI_SIZE=<percent>` — UI Size is only in the context menu, which cannot
+            // be driven, so a fractional-scale defect (B80) had no launch route of its own.
+            if let percent = ProcessInfo.processInfo.environment["WINAMP_MODERN_UI_SIZE"].flatMap(Double.init) {
+                pendingUIScaleRequest = CGFloat(percent / 100)
+            }
+            #endif
             if let pending = pendingUIScaleRequest {
                 pendingUIScaleRequest = nil
                 DispatchQueue.main.async { [weak self] in self?.applyUIScaleRequest(pending) }

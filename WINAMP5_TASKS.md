@@ -26,7 +26,6 @@ None open.
 |---|---|---:|:---:|---|
 | B147 | **The library window follows the main window's height in a `.wal` session.** `toggleHideTitleBars` (`App/WindowManager.swift:511`) resizes the side-docked library and projectM windows by the main window's height delta — Original centre-stack behaviour. Its guard `isRunningModernUI` (`:390`) does not name `WinampModernMainWindowController`, so `.wal` falls through to the stale `isModernUIEnabled` preference. **Gate the resize itself on the mode; do not add the controller to the predicate**, whose other callers would all inherit the answer. Classic and Original byte-identical. The `.wmz` half is W237 in [`WMP_TASKS.md`](WMP_TASKS.md) | every `.wal` session with the library open | S | Live-reported |
 | B151 | **A gap between the VU face and the frame in WMP11-BlueVU's VU Meters window.** Reported 2026-09-28 from the live session. With *VU Meters Large* open (`Meter`, 438x207), a light band shows between the meter artwork (`scale` at 10,27 and the needles) and the window's `Wasabi:StandardFrame:NoStatus`, most visible along the top and left edges. The meter should sit flush against the frame. The likely cause is the frame's client area and the layer's absolute x/y disagreeing, or the frame drawing an inset the skin does not expect. Not yet measured. Reproduce with `WINAMP_MODERN_SHOW_WINDOWS=Meter`, or headlessly with `RENDER_SHOW=Meter`, and compare against the skin's `vuscreenshot.png` | 1 skin reported | S | Live-reported |
-| B80 | **Horizontal seams at fractional UI Sizes.** Hairlines along band boundaries on cPro at 105%. Affects exactly the sizes fractional at 2x backing (90/105/110/115/125/135/175). See [detail](#b80) | 7 of 13 UI Sizes; every skin ([M25]) | M | Live-reported |
 
 ### Awaiting manual QA
 
@@ -47,7 +46,6 @@ the window census and the render-dump harness. The ranking above still sets the 
 
 | Id | What the agent can do alone | How it is verified |
 |---|---|---|
-| B80 | Add a partial-repaint mode to the harness, then fix the seam | Count partial-alpha rows at a fractional scale; live: set UI Size from the menu, `move` over controls, `capture` |
 | B111 | Drag the volume up, relaunch | Persisted volume ≠ 0 after relaunch, and the log shows no `setvolume(0)` cascade (audibility is not checked) |
 | B56a | The three tiling checks | `windows` geometry before and after a UI-Size change from the menu bar; Classic/Original census rows unchanged |
 
@@ -73,20 +71,6 @@ count is not comparable to a new one. **Four are byte-identical re-adds** of ins
 A command lives here only while an open item cites it; closing the item moves the command into its
 archive entry.
 
-- <a id="m25"></a>**M25:** device scale is UI Size x the display's backing factor, so on a 2x panel the fractional stops are 90, 105, 110, 115, 125, 135 and 175 % — 7 of the 13 `UIScaleLevel` cases. To check a *full* draw, `WINAMP_MODERN_RENDER_SCALE=<factor> WINAMP_MODERN_RENDER_DUMP=/tmp/s WINAMP_MODERN_WAL=<skin> swift test --filter WinampModernRenderDumpTests`, then count rows whose alpha is strictly between transparent and opaque.
-
-## Item detail
-
-### B80
-
-- [ ] **B80. Horizontal seams at fractional UI Sizes.** A *full* draw is clean at 2.0 and 2.1 device
-      scale (zero partially-transparent rows), so the defect is the **targeted-repaint** path:
-      `draw(_:)` clears `dirtyRect` and redraws clipped to it, and a partly-cleared boundary row keeps
-      a hairline until a full repaint. Backing-aligning the invalidation rect in `setNeedsDisplay(_:)`
-      was tried and did not cure it. Suspect the hosted surfaces, which are real `NSView` subviews
-      with their own invalidation. The cPro2 "clicking recolours a region" report was a different
-      defect (closed); do not re-chase the region-scale probe. The harness has no partial-repaint
-      mode, which is most of this task ([M25]).
 
 ## Backlog hygiene check
 

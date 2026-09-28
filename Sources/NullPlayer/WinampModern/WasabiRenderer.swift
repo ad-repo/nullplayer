@@ -703,6 +703,14 @@ final class WasabiSceneRenderer {
     /// `isKeyWindow` before each paint. Defaults to active so the headless harness — which has no
     /// window at all — measures the state a skin is designed around.
     var isWindowActive = true
+    /// How many real device pixels one unit of the context's own device space is (B80). A bitmap
+    /// context's device space *is* its pixels, so this is 1 there — the harness, the opaque-backing
+    /// buffer. A layer-backed view on current macOS records `draw` into a display list at CTM 1.0
+    /// and has it replayed at the backing scale, so there the view sets the backing factor, or the
+    /// pixel grid `snappedToPixelGrid` aims at is a point, not a pixel.
+    var devicePixelsPerContextUnit: CGFloat = 1
+    /// `WINAMP_MODERN_PIXEL_SNAP=0` is the A/B switch for `snappedToPixelGrid`.
+    static let snapsToPixelGrid = ProcessInfo.processInfo.environment["WINAMP_MODERN_PIXEL_SNAP"] != "0"
     private(set) var layout: WasabiObject
     /// The layout's canvas, in skin pixels.
     ///
@@ -1337,6 +1345,10 @@ final class WasabiSceneRenderer {
             buffer = made
         }
 
+        // The buffer's device space is its pixels, whatever the window's context says.
+        let pixelsPerUnit = devicePixelsPerContextUnit
+        devicePixelsPerContextUnit = 1
+        defer { devicePixelsPerContextUnit = pixelsPerUnit }
         buffer.saveGState()
         buffer.scaleBy(x: scale, y: scale)
         buffer.translateBy(x: -rect.minX, y: -rect.minY)

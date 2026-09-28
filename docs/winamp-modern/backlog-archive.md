@@ -3,6 +3,44 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B80 — Seams at fractional UI Sizes were a full-draw conflation, not the partial repaint — closed 2026-09-28
+
+| B80 | **Horizontal seams at fractional UI Sizes.** Hairlines along band boundaries on cPro at 105%. Affects exactly the sizes fractional at 2x backing (90/105/110/115/125/135/175). See [detail](#b80) | 7 of 13 UI Sizes; every skin ([M25]) | M | Live-reported |
+
+### B80
+
+- [x] **B80. Horizontal seams at fractional UI Sizes.** A *full* draw is clean at 2.0 and 2.1 device
+      scale (zero partially-transparent rows), so the defect is the **targeted-repaint** path:
+      `draw(_:)` clears `dirtyRect` and redraws clipped to it, and a partly-cleared boundary row keeps
+      a hairline until a full repaint. Backing-aligning the invalidation rect in `setNeedsDisplay(_:)`
+      was tried and did not cure it. Suspect the hosted surfaces, which are real `NSView` subviews
+      with their own invalidation. The cPro2 "clicking recolours a region" report was a different
+      defect (closed); do not re-chase the region-scale probe. The harness has no partial-repaint
+      mode, which is most of this task (M25).
+
+      **Closed 2026-09-28.** The defect is not the targeted-repaint path. It was measured with the
+      two harness additions this row asked for: a partial-repaint mode (`RENDER_PARTIAL`) and a seam
+      counter that checks **both axes** (`RENDER_SEAMS`). A full draw at 2.1 was never clean. The
+      original check counted rows only, and every cPro skin had four *vertical* seams in the full
+      draw: `cpro.bg.left` meeting the body at x=6, and the top and bottom bands split at x=143 and
+      x=157. The replayed partial repaint added no seam, and neither did a live hover sweep at 105%.
+      The mechanism is conflation. Two abutting pieces each partly cover the pixel their shared edge
+      lands in, and source-over leaves that pixel translucent. **Fix:** bitmap and tiled draws round
+      their rect edges to the device pixel grid (`snappedToPixelGrid`). The grid is found from the
+      backing factor, because live `draw` runs at CTM 1.0 inside a display list
+      (`WINAMP_MODERN_DIRTY_TRACE`). Corpus of 80, full draws: at 2.1, **589 seams in 204 layouts →
+      27 in 16**; at 2.5, **269 in 157 → 18 in 12**. Live, Cpro_Winamp_Modern at 105%: **4 → 0**,
+      the same before and after a hover sweep. At 1:1, 142 of 671 renders moved. Every one inspected
+      was a thumb, knob, fill end or label at a fractional position that now sits on a whole pixel.
+      The residue is standard-frame bottoms, NullPlayer-hosted chrome and fills, which do not go
+      through the sprite path. The horizontal band seams the reporter saw on 2026-08-31 did not
+      reproduce on today's tree by any of the three routes. A/B switch: `WINAMP_MODERN_PIXEL_SNAP=0`.
+      The account is in `rendering.md` *Abutting pieces share a pixel edge*.
+
+      The reach command this row cited:
+
+      - <a id="m25"></a>**M25:** device scale is UI Size x the display's backing factor, so on a 2x panel the fractional stops are 90, 105, 110, 115, 125, 135 and 175 % — 7 of the 13 `UIScaleLevel` cases. To check a *full* draw, `WINAMP_MODERN_RENDER_SCALE=<factor> WINAMP_MODERN_RENDER_DUMP=/tmp/s WINAMP_MODERN_WAL=<skin> swift test --filter WinampModernRenderDumpTests`, then count rows whose alpha is strictly between transparent and opaque.
+
 ## B152 — WMP11-BlueVU's VU needle warp cost ten points of main thread over a control — closed 2026-09-28
 
 | B152 | **WMP11-BlueVU still costs ~10 points more main thread than cPro-Bento, all of it the VU needle warp.** Release, *VU Meters Large* open, music playing: 42.0% busy against cPro-Bento's 31.8%, with `drawWarped` at 18.0%. The visible meter re-warps both needles at the skin's own ~100 Hz, under the 120 Hz display. The main window's whole-window repaint is fixed (2026-09-28, `gotoframe` repaints the layer's own rect; the player now paints 25% of its area instead of 100%). What is left is making the warp cheaper per frame. Throttling it below the skin's cadence would give up visible smoothness, so that is a decision for the user, not a fix. Method: [`performance.md`](../../skills/winamp-modern-skin-guide/reference/performance.md) *A beat meter repainted the whole player* | 1 skin measured | M | Live-reported |
