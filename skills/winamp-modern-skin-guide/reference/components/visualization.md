@@ -232,6 +232,13 @@ the video surface's attach. In DEBUG it logs `WINAMP-MODERN-VIS: resume window=�
 engine=… rendering=…`, which is the one line that separates "no surface", "wrong box" and "refused to
 start" without a GUI session.
 
+**Neither ask is safe at launch (BB34, 2026-09-28).** `setSceneVisible(true)` on the player runs
+before the player's window is actually on screen, so a holder in the **main** window — Big Bento
+Modern's Multi Content View mini pane — was resumed twice with `visible=0` and drew black for the
+session. The surface therefore also watches its own window's occlusion (re-registered in
+`viewDidMoveToWindow`) and resumes when that window turns visible with the engine stopped. A third
+`resume … visible=1 … rendering=1` line after the window appears is that ask working.
+
 ### One surface, two holders — unmount before you mount (BB35, 2026-08-30)
 
 `makeVisualizationSurface()` vends **one** surface per skin, and `engineHolder(among:)` moves it

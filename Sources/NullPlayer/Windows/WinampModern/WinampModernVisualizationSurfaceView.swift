@@ -29,6 +29,8 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     private var pcmObserver: NSObjectProtocol?
     private var spectrumObserver: NSObjectProtocol?
     private var playbackObserver: NSObjectProtocol?
+    /// The occlusion watch on whichever window this surface is in — see `viewDidMoveToWindow`.
+    private var windowVisibilityObserver: NSObjectProtocol?
     private var isTornDown = false
     /// Preset/effect auto-cycling, persisted through the same keys NullPlayer's own visualization
     /// window uses, so a cycle set in one place is the cycle in the other.
@@ -393,6 +395,27 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
         #endif
     }
 
+    /// Every other ask (`setSceneVisible`, the mount pass) is made on the assumption that the window
+    /// is on screen, and at launch the player's is not yet: Big Bento Modern's mini pane was mounted
+    /// and resumed twice with `visible=0`, and drew black for the session (BB34). The engine's own
+    /// occlusion observer only restarts a link it stopped for occlusion, so the ask that cannot be
+    /// early is the one made when the window actually comes on screen.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let observer = windowVisibilityObserver {
+            NotificationCenter.default.removeObserver(observer)
+            windowVisibilityObserver = nil
+        }
+        guard let window, !isTornDown else { return }
+        windowVisibilityObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            guard let self, let window = self.window, window.occlusionState.contains(.visible),
+                  !self.engineView.isRendering else { return }
+            self.resumeRendering()
+        }
+    }
+
     // MARK: - Keyboard
 
     /// The same keys NullPlayer's own visualization window answers, against the engine in the skin's
@@ -513,6 +536,10 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
         cycleTimer?.invalidate()
         cycleTimer = nil
         removeObservers()
+        if let observer = windowVisibilityObserver {
+            NotificationCenter.default.removeObserver(observer)
+            windowVisibilityObserver = nil
+        }
         WindowManager.shared.audioEngine.removeSpectrumConsumer(Self.spectrumConsumer)
         engineView.stopRendering()
         engineView.removeFromSuperview()

@@ -30,6 +30,9 @@
 - **Song titles show in more Winamp Modern skins** — Shield Amp and Ebonite now show the playing
   track's title in their song display, which was blank. A skin script that divides by zero now
   carries on instead of stopping, as it would in Winamp.
+- **Big Bento Modern's small visualizer plays** — with the Multi Content View's mini visualization
+  pane turned on, the pane now shows the visualization as soon as the player opens, instead of
+  staying black.
 - **Song tickers scroll in Shield Amp and Ebonite** — a long title now scrolls across the song
   display at Winamp's speed instead of standing still, and stays inside the display instead of
   running over the rest of the player.

@@ -3,6 +3,30 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## BB34 — an embedded visualization pane never started its engine — closed 2026-09-28
+
+| BB34 | **An embedded visualization pane's engine never starts.** Big Bento Modern's Multi Content View mini pane draws black; the last line is `WINAMP-MODERN-VIS: resume … visible=0 … rendering=0`. **Re-measure first** — BB35's fix gives a detached surface a route back and may have cured it. 6 corpus skins embed a holder in the player (B23a), not 1 | — · seen on Big Bento Modern's mini pane | M | Live-reported |
+
+### BB34
+
+- [x] **BB34. Fixed 2026-09-28.** Re-measured first, as the row asked: BB35 had **not** cured it.
+      Big Bento Modern with the mini pane ticked (`Visualization ` = 1, `Album Art` = 0), playing:
+      the pane was 0 non-black pixels of 121,104 in two `capture`s 3 s apart, and
+      `WINAMP_MODERN_SURFACE_TRACE=1` showed one `mount` and no double-registration — so not BB35's
+      route. Both `WINAMP-MODERN-VIS: resume` lines read `visible=0 … rendering=0`: the second is
+      `setSceneVisible(true)`'s ask, made on the assumption that the player's window is on screen by
+      then, which at launch it is not yet. The engine's own occlusion observer restarts only a link
+      it stopped for occlusion, so nothing asked again.
+
+      `WinampModernVisualizationSurfaceView` now watches its own window's
+      `didChangeOcclusionStateNotification` (re-registered in `viewDidMoveToWindow`) and calls
+      `resumeRendering()` when the window turns visible with the engine stopped. `.wal`-only type, so
+      Classic and Original never reach it.
+
+      **Verified.** Same launch after the fix: a third line, `resume … visible=1 … rendering=1`,
+      follows the window coming on screen; the pane is 120,409 of 121,104 pixels non-black, the two
+      captures differ, and the picture is Tripex. `swift test`: 2802 tests, 0 failures.
+
 ## B79 — `autowidthsource` naming a bitmap label sized its group to nothing — closed 2026-09-28
 
 | B79 | **`autowidthsource` naming a bitmap label sizes its group to nothing.** `autoWidth` answers only for `<text>`, `<songticker>` and check boxes, so winampmodern566's `<groupdef id="menugroup.file" autowidthsource="File.txt">` resolves 0 wide and its titlebar menus have no hit target. Fix: give an object with resolved artwork its bitmap's width. Moves group sizing engine-wide, so it wants a corpus sweep | 2 skins / 24 declarations ([M24]) | S | Live-reported |

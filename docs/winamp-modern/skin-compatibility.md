@@ -162,7 +162,6 @@ show any of them.
 
 - A widget brought up part-way through a session is not told what is already playing, so anything it
   draws from the track — cover art, title, elapsed time — stays blank until the next track (B82).
-- A visualization pane embedded inside a larger panel may never start its engine (BB34).
 - One arithmetic fault inside a script — a division by zero, which Winamp tolerates — abandons the
   rest of that handler here. Seen on Shield_Amp's song ticker (B65).
 - A group sized from a picture rather than a text label collapses to nothing and takes its contents
