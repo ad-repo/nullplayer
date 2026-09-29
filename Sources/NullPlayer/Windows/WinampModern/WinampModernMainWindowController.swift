@@ -546,6 +546,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
                                         componentHost: componentBridge, drivesScripts: false)
         view.skinScale = skinScale
+        view.drawsHostChrome = info.object.attributes[WinampModernContainerTopology.hostChromeAttribute] == "1"
         let auxWindow = WinampModernSkinWindow(contentRect: NSRect(origin: .zero, size: view.scaledCanvasSize),
                                  styleMask: [.borderless, .resizable, .miniaturizable],
                                  backing: .buffered, defer: false)

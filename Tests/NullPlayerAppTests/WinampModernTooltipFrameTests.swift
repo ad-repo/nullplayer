@@ -28,11 +28,89 @@ final class WinampModernTooltipFrameTests: XCTestCase {
         XCTAssertEqual(frame.groupIdentifier, "wasabi.standardframe.statusbar")
     }
 
+    /// Tooltip art alongside the skin's own chrome is still the skin's frame: only a frame painted
+    /// with nothing *but* tooltip art is refused.
+    func testAFrameMixingTooltipArtWithItsOwnIsStillBorrowed() throws {
+        let loaded = try makeSkin(gridPrefix: "cpro2.genframe", tooltipAccent: true)
+        guard case .skinFrame = loaded.surfaceSynthesis.hostedWindows[.cava] else {
+            return XCTFail("tooltip art beside the skin's own is still the skin's chrome")
+        }
+    }
+
+    /// **Nothing wears tooltip art as its frame, the About page included.** With no other frame to
+    /// lend, the skin's About page fills a window of NullPlayer's own glass chrome instead.
+    func testAnAboutPageWearsNullPlayersChromeRatherThanATooltipFrame() throws {
+        let loaded = try makeSkin(gridPrefix: "wasabi.tooltip", aboutPage: true)
+        let id = WasabiSurfaceSynthesizer.aboutContainerIdentifier
+        XCTAssertEqual(loaded.surfaceSynthesis.aboutContainer, id)
+        let about = try XCTUnwrap(container(id, in: loaded))
+        XCTAssertEqual(about.object.attributes[WinampModernContainerTopology.hostChromeAttribute], "1")
+
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: TestHost(), containerID: id)
+        addTeardownBlock { renderer.teardown() }
+        XCTAssertFalse(renderer.sceneNodes().contains { isStandardFrame($0.object) },
+                       "no tooltip frame is drawn around the page")
+        XCTAssertTrue(renderer.sceneNodes().contains {
+            $0.object.xmlID == WasabiSurfaceSynthesizer.aboutGroupIdentifier
+        }, "the page itself is drawn")
+    }
+
+    /// A window the skin itself declares in a tooltip frame — engine `one`'s Widgets Manager — drops
+    /// the frame and wears NullPlayer's chrome around the same content group.
+    func testADeclaredWindowInATooltipFrameIsRehostedInNullPlayersChrome() throws {
+        let loaded = try makeSkin(gridPrefix: "wasabi.tooltip", managerWindow: true)
+        let manager = try XCTUnwrap(container("widgets.manager", in: loaded))
+        XCTAssertEqual(manager.object.attributes[WinampModernContainerTopology.hostChromeAttribute], "1")
+
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: TestHost(),
+                                               containerID: "widgets.manager")
+        addTeardownBlock { renderer.teardown() }
+        XCTAssertFalse(renderer.sceneNodes().contains { isStandardFrame($0.object) })
+        XCTAssertTrue(renderer.sceneNodes().contains { $0.object.xmlID == "manager.list" },
+                      "the content group is still there, and a findObject still reaches it")
+    }
+
+    /// The same window in a frame painted with the skin's own art keeps that frame.
+    func testADeclaredWindowInTheSkinsOwnFrameKeepsIt() throws {
+        let loaded = try makeSkin(gridPrefix: "cpro2.genframe", managerWindow: true)
+        let manager = try XCTUnwrap(container("widgets.manager", in: loaded))
+        XCTAssertNil(manager.object.attributes[WinampModernContainerTopology.hostChromeAttribute])
+    }
+
+    private func container(_ id: String, in loaded: WinampModernLoadedSkin) -> WinampModernContainerInfo? {
+        WinampModernContainerTopology.analyze(graph: loaded.runtime.graph).first { $0.id == id }
+    }
+
+    private func isStandardFrame(_ object: WasabiObject) -> Bool {
+        object.typeName.lowercased().hasPrefix("wasabi:standardframe:")
+    }
+
     // MARK: - Fixture
 
     /// ClassicPro's shape: the standard frame holds a `<group id="wasabi.frame.layout"/>` naming the
     /// groupdef that carries the art, beside a script that builds the client area.
-    private func makeSkin(gridPrefix: String) throws -> WinampModernLoadedSkin {
+    /// `tooltipAccent` adds one tooltip bitmap beside the grid; `aboutPage` defines the group the
+    /// engine supplies as the skin's About page; `managerWindow` declares a window in the frame, the
+    /// way the engine's Widgets Manager is.
+    private func makeSkin(gridPrefix: String, tooltipAccent: Bool = false, aboutPage: Bool = false,
+                          managerWindow: Bool = false) throws -> WinampModernLoadedSkin {
+        let accent = tooltipAccent
+            ? #"<layer image="wasabi.tooltip.top" x="0" y="0" w="0" h="2" relatw="1"/>"# : ""
+        let about = aboutPage ? """
+          <groupdef id="skin.about.group" w="0" h="0" relatw="1" relath="1">
+            <layer id="about.bg" image="about.bg" x="0" y="0" w="371" h="321"/>
+          </groupdef>
+        """ : ""
+        let manager = managerWindow ? """
+          <groupdef id="widgets.manager.content">
+            <group id="manager.list" x="0" y="0" w="0" h="0" relatw="1" relath="1"/>
+          </groupdef>
+          <container id="widgets.manager" name="Widgets Manager" default_visible="0">
+            <layout id="normal" default_w="200" default_h="400">
+              <Wasabi:StandardFrame:Status id="framewnd" content="widgets.manager.content" fitparent="1"/>
+            </layout>
+          </container>
+        """ : ""
         let xml = """
         <WasabiXML>
           <groupdef id="wasabi.frame.layout">
@@ -44,7 +122,10 @@ final class WinampModernTooltipFrameTests: XCTestCase {
                   bottomright="\(gridPrefix).bottom.right"/>
             <text x="-20" y="2" w="18" relatx="1" default="x"/>
             <button x="-20" y="2" w="18" h="16" relatx="1" action="CLOSE"/>
+            \(accent)
           </groupdef>
+        \(about)
+        \(manager)
           <groupdef id="wasabi.standardframe.statusbar" xuitag="Wasabi:StandardFrame:Status">
             <group id="wasabi.frame.layout" fitparent="1"/>
             <script file="scripts/standardframe.maki" param="4,19,-8,-24,0,0,1,1"/>
@@ -105,5 +186,27 @@ final class WinampModernTooltipFrameTests: XCTestCase {
         for method in 0..<handlers.count { u32(0); u32(UInt32(method)); u32(0) }
         u32(1); u8(33)
         return data
+    }
+
+    private final class TestHost: WinampModernHost {
+        var playbackState: PlaybackState = .stopped
+        var currentTime: TimeInterval = 0
+        var duration: TimeInterval = 0
+        var volume: Double = 0.5
+        var shuffleEnabled = false
+        var repeatEnabled = false
+        var trackTitle = ""
+        var trackInfo = ""
+        var spectrumLevels: [Float] = []
+
+        func play() {}
+        func pause() {}
+        func stop() {}
+        func previous() {}
+        func next() {}
+        func seek(to seconds: TimeInterval) {}
+        func openFiles() {}
+        func beginVisualizationConsumption() {}
+        func endVisualizationConsumption() {}
     }
 }

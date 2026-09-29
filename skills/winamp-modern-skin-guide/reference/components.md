@@ -694,8 +694,11 @@ and answers one of three things:
 - **`nullplayer.about`**, a synthesized container holding one standard frame around the skin's group.
   Unlike the surface containers it wraps the *skin's* groupdef directly, so there is no synthetic
   content group to register;
-- **nil**, for a skin that defines no About page or has no usable frame to put one in (the reason is
-  recorded), which is what keeps NullPlayer's own panel as the fallback.
+- **`nullplayer.about` in NullPlayer's glass chrome**, for a skin with no usable frame: the page fills
+  a frameless container marked `nullplayer_hostchrome`, whose view draws the gloss rim — see *No
+  window wears tooltip art* below. The reason is still recorded;
+- **nil**, only for a skin that defines no About page, which is what keeps NullPlayer's own panel as
+  the fallback.
 
 Two consequences worth knowing before changing it:
 
@@ -749,16 +752,36 @@ every skin-owned step has declined (B55, above).
   metrics, so a gloss rim then would misplace their content. Sonos's chrome keys its palette path on
   the same gate. Only skins whose standard frames all fail synthesis reach this route; `canum` is the
   measured case (playlist, library and every hosted window). Skins that lend a frame are unchanged.
-- **A frame painted only with tooltip art is not a frame (2026-09-27).** ClassicPro engine `one`
-  (`load.xml`) builds `wasabi.frame.layout` — the body of all four of its standard frames — from a grid
-  of `wasabi.tooltip.*` bitmaps and draws its `~`/`x` as text, so borrowed, it put our windows in a
-  cream tooltip box that has nothing to do with the player (reported on `211786-Cpro_Winamp_Modern`:
-  *"the titlebar color is different than the main window"*). Tooltip art is the one thing skins never
-  style, so `WasabiSurfaceSynthesizer.paintsOnlyTooltipArt` rejects a frame whose every bitmap —
-  followed through `inherit_group` and child `<group id=…>` references — is `wasabi.tooltip.*`, in
-  both the contract and the exemplar paths; the windows then take the gloss route above. Reach: the
-  11 installed engine-`one` cPro skins. Engine `two` (`load-two_alpha.xml`) paints
-  `cpro2.genframe.*` and keeps its frame; no non-cPro skin matches. `WinampModernTooltipFrameTests`.
+- **No window wears tooltip art as its frame — every one wears glass chrome instead (2026-09-27,
+  extended 2026-09-29). This is a hard rule: nothing may show the cream tooltip box.** ClassicPro
+  engine `one` (`load.xml`) builds `wasabi.frame.layout` — the body of all four of its standard
+  frames — from a grid of `wasabi.tooltip.*` bitmaps and draws its `~`/`x` as text, so anything framed
+  in it is a cream tooltip box that has nothing to do with the player (reported on
+  `211786-Cpro_Winamp_Modern`: *"the titlebar color is different than the main window"*; and again
+  for its About page, *"nothing should use that cream tooltip. everything should be chrome"*).
+  `WasabiSurfaceSynthesizer.paintsOnlyTooltipArt` identifies such a frame: every bitmap — followed
+  through `inherit_group` and child `<group id=…>` references — is `wasabi.tooltip.*`. Three routes
+  keep it off screen, and a new window route must be a fourth, never an exception:
+  - **Windows we synthesize and NullPlayer's hosted windows** — `usableFrame` refuses the frame in both
+    the contract and the exemplar paths, so they take the gloss route above.
+  - **The skin's About page** — with no usable frame, `makeAboutContainer(frame: nil)` builds a
+    frameless container around `skin.about.group`, inset by the gloss rim. There is no exemption for
+    the About page: an earlier fix kept the tooltip frame there and was rejected on sight.
+  - **Windows the skin or engine declares in such a frame** — `rehostTooltipFramedContainers` drops
+    the `<Wasabi:StandardFrame:*>` node and puts its `content=` group straight in the layout, inset by
+    the rim. The measured case is the engine's own **Widgets Manager** (`widgets.manager`, `Modal`
+    frame, `xml/widgets-manager.xml`); the eleven engine-`one` skins declare no framed windows of their
+    own. `widgetsManager.m` reaches its content with a recursive `findObject`, so moving the group
+    up a level is invisible to it.
+
+  Both of the last two mark their container `nullplayer_hostchrome`
+  (`WinampModernContainerTopology.hostChromeAttribute`). `WinampModernMainView.drawsHostChrome`
+  then draws `SkinnedSurfaceChrome.drawGlossFrame` under the scene in the skin palette, claims every
+  point for hit testing (the rim is not in the scene, so the pixel test would pass clicks through),
+  closes on the shared 40×26 top-right corner target, and drags from the rest of the rim
+  (`WinampModernHostChrome.swift`). Reach: the 11 installed engine-`one` cPro skins. Engine `two`
+  (`load-two_alpha.xml`) paints `cpro2.genframe.*` and keeps its frame; no non-cPro skin matches.
+  `WinampModernTooltipFrameTests`.
 - **Clicking any window raises all of them (2026-09-27)** — the `.wal` port of W273
   (`wmp-skin-guide/reference/windows/placement.md` § *Raising the skin's windows together*). A skin's
   containers and hosted windows are not controllers, so `WindowManager.raiseOrder` appends

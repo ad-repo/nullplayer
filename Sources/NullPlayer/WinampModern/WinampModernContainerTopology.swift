@@ -115,6 +115,11 @@ enum WinampModernContainerTopology {
     /// Marks a container appended by `WasabiSurfaceSynthesizer` rather than declared by the skin.
     static let synthesizedAttribute = "nullplayer_synthesized"
 
+    /// Marks a container that wears NullPlayer's own glass chrome instead of a skin frame: its view
+    /// draws the rim, and the synthesizer insets the contents by it. Set on the About page of a skin
+    /// with no usable frame and on any window the skin framed in tooltip art.
+    static let hostChromeAttribute = "nullplayer_hostchrome"
+
     /// Whether this container belongs in the host's window menu — the list Winamp puts in its own
     /// Windows menu, and the **only** way to open a window a skin declares but binds no button to.
     ///

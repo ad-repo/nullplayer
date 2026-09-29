@@ -562,9 +562,10 @@ final class WinampModernPhase13Tests: XCTestCase {
             .contains { $0.id == "nullplayer.about" })
     }
 
-    /// A skin with an About page but no frame to put around it. The reason is recorded and the route
-    /// is nil, rather than a titleless empty box the user cannot read.
-    func testAnAboutPageWithNoUsableFrameFallsBackWithAReason() throws {
+    /// A skin with an About page but no frame to put around it. The page still opens, in NullPlayer's
+    /// own glass chrome — the frame every other window of ours falls back to — and the reason is
+    /// recorded.
+    func testAnAboutPageWithNoUsableFrameWearsNullPlayersChrome() throws {
         let loaded = try makeSkin(xml: """
         <WasabiXML>
           <groupdef id="skin.about.group" w="0" h="0" relatw="1" relath="1">
@@ -573,10 +574,13 @@ final class WinampModernPhase13Tests: XCTestCase {
           <container id="main"><layout id="normal" default_w="400" default_h="200"/></container>
         </WasabiXML>
         """)
-        XCTAssertNil(loaded.surfaceSynthesis.aboutContainer)
+        XCTAssertEqual(loaded.surfaceSynthesis.aboutContainer, "nullplayer.about")
+        let about = WinampModernContainerTopology.analyze(graph: loaded.runtime.graph)
+            .first { $0.id == "nullplayer.about" }
+        XCTAssertEqual(about?.object.attributes[WinampModernContainerTopology.hostChromeAttribute], "1")
         XCTAssertTrue(loaded.surfaceSynthesis.diagnostics.contains {
             $0.message.contains("About page")
-        }, "the reason is recorded rather than the page vanishing")
+        }, "the reason is recorded")
     }
 
     private static let skinWithAnAboutPage = """
