@@ -2624,12 +2624,16 @@ class AudioEngine {
         // Notify delegate of reset time
         delegate?.audioEngineDidUpdateTime(current: 0, duration: duration)
         
-        // Reset to beginning (local files only)
-        if !isStreamingPlayback, let file = audioFile {
-            playerNode.scheduleFile(file, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.handlePlaybackComplete(generation: currentGeneration)
-                }
+        rescheduleStoppedLocalFileFromStart(generation: currentGeneration)
+    }
+
+    /// Queues a stopped local file from its start, so `play()` after Stop has audio to play:
+    /// `playerNode.stop()` discards everything scheduled on it.
+    private func rescheduleStoppedLocalFileFromStart(generation: Int) {
+        guard !isStreamingPlayback, let file = audioFile else { return }
+        playerNode.scheduleFile(file, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.handlePlaybackComplete(generation: generation)
             }
         }
     }
@@ -3267,8 +3271,15 @@ class AudioEngine {
             }
         }
 
-        // Default behavior - just stop
+        // Default behavior - just stop, leaving the local file where Stop leaves it. Casting
+        // stopped the player node, which discarded its schedule; without queueing the file again
+        // Play would run an empty node and stay silent.
+        playbackGeneration += 1
+        _currentTime = 0
+        lastReportedTime = 0
         state = .stopped
+        rescheduleStoppedLocalFileFromStart(generation: playbackGeneration)
+        delegate?.audioEngineDidUpdateTime(current: 0, duration: duration)
     }
     
     /// Decay spectrum to empty when not playing locally
@@ -4357,6 +4368,14 @@ class AudioEngine {
                     }
                 }
             }
+        } else if playlist[currentIndex].mediaType != .video,
+                  AudioEngine.playbackUsesLocalAudioGraph(playlist[currentIndex]),
+                  !rebuildAudioGraphIfDeferredAfterCast() {
+            // The graph is still settling after a cast. Hold this as Play Now, as `playTrack(at:)`
+            // does: `loadTrack` would hold it as a load only, and a `play()` for the track loaded
+            // before the cast would then overwrite that, so recovery resumed the old track.
+            NSLog("playNow: audio graph not ready after cast — holding Play Now for index %d", currentIndex)
+            deferPlaybackIntentUntilAudioGraphReady(.playTrack(index: currentIndex))
         } else {
             // A bad file is skipped only as far as the last inserted track: past it lies the queue
             // the user already had, and starting that would play something they did not ask for.
@@ -4371,8 +4390,7 @@ class AudioEngine {
                     failure.track, error: failure.error,
                     fileIsMissing: !FileManager.default.fileExists(atPath: failure.track.url.path))
             } else if currentTrack != nil {
-                // A load that returns without a track — a placeholder, a deferred audio graph —
-                // leaves `currentTrack` nil, and `play()` reads nil as "start the playlist from
+                // A load that returns without a track — a placeholder — leaves `currentTrack` nil, and `play()` reads nil as "start the playlist from
                 // the top", which would start an unrelated track.
                 play()
             }

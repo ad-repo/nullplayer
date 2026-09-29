@@ -341,6 +341,17 @@ after LOAD (see *Discovery*), so nothing else tells you whether the renderer acc
 NULLPLAYER_UPNP_LOG=1 ./scripts/kill_build_run.sh --debug --log /tmp/upnp.log
 ```
 
+### `NULLPLAYER_CAST_DISCOVERY_LOG` — the discovery refresh cycle
+
+The periodic refresh (`Refreshing devices...`, the +10s/+15s boosts, `Refresh complete`, idle
+stop, and the Chromecast browser's start/ready/cancel/stop lines) logs every few seconds for the
+life of the app, so it is silent unless this is set; `castDiscoveryLog` in `CastManager.swift`
+is the gate. Turn it on when devices fail to appear or disappear between refreshes.
+
+```bash
+NULLPLAYER_CAST_DISCOVERY_LOG=1 ./scripts/kill_build_run.sh --debug --log /tmp/discovery.log
+```
+
 ### Common Issues
 
 | Symptom | Cause | Fix |

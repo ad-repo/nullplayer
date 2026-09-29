@@ -58,7 +58,7 @@ class ChromecastManager: CastSessionControllerDelegate {
     func startDiscovery() {
         guard !isDiscovering else { return }
         
-        NSLog("ChromecastManager: Starting discovery...")
+        castDiscoveryLog("ChromecastManager: Starting discovery...")
         isDiscovering = true
         
         // Browse for Chromecast devices via mDNS
@@ -91,12 +91,12 @@ class ChromecastManager: CastSessionControllerDelegate {
             case .setup:
                 NSLog("ChromecastManager: Browser setting up...")
             case .ready:
-                NSLog("ChromecastManager: Browser ready - actively discovering _googlecast._tcp services")
+                castDiscoveryLog("ChromecastManager: Browser ready - actively discovering _googlecast._tcp services")
             case .failed(let error):
                 NSLog("ChromecastManager: Browser failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 self?.isDiscovering = false
             case .cancelled:
-                NSLog("ChromecastManager: Browser cancelled")
+                castDiscoveryLog("ChromecastManager: Browser cancelled")
                 self?.isDiscovering = false
             case .waiting(let error):
                 NSLog("ChromecastManager: Browser waiting: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
@@ -110,7 +110,7 @@ class ChromecastManager: CastSessionControllerDelegate {
     
     /// Stop discovering devices
     func stopDiscovery() {
-        NSLog("ChromecastManager: Stopping discovery")
+        castDiscoveryLog("ChromecastManager: Stopping discovery")
         browser?.cancel()
         browser = nil
         isDiscovering = false

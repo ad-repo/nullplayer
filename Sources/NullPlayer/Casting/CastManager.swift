@@ -3,6 +3,16 @@ import AppKit
 import AVFoundation
 import NullPlayerCore
 
+/// The periodic device-discovery refresh cycle logs every few seconds for the life of the app.
+/// Off by default; set the `NULLPLAYER_CAST_DISCOVERY_LOG` env var to any value to re-enable it.
+private let castDiscoveryLoggingEnabled = ProcessInfo.processInfo.environment["NULLPLAYER_CAST_DISCOVERY_LOG"] != nil
+
+/// Gated, `NSLog`-compatible logger for the discovery cycle in `CastManager` and `ChromecastManager`.
+func castDiscoveryLog(_ format: String, _ args: CVarArg...) {
+    guard castDiscoveryLoggingEnabled else { return }
+    NSLog("%@", String(format: format, arguments: args))
+}
+
 /// Unified manager for all casting functionality
 /// Coordinates Chromecast, Sonos, and DLNA device discovery and playback
 class CastManager {
@@ -687,7 +697,7 @@ class CastManager {
                     isRadioActive: RadioManager.shared.isActive,
                     currentTrack: engine.currentTrack
                 ) {
-                    NSLog("CastManager: Skipping discovery refresh - %@", skipReason)
+                    castDiscoveryLog("CastManager: Skipping discovery refresh - %@", skipReason)
                     return
                 }
                 self.refreshDevices()
@@ -701,7 +711,7 @@ class CastManager {
     /// Stop discovering devices
     func stopDiscovery() {
         guard isDiscovering, !isCasting else { return }
-        NSLog("CastManager: Stopping device discovery (idle)")
+        castDiscoveryLog("CastManager: Stopping device discovery (idle)")
         isDiscovering = false
 
         chromecastManager.stopDiscovery()
@@ -747,7 +757,7 @@ class CastManager {
     /// Refresh device list (restart discovery)
     /// Keeps existing devices visible - doesn't clear until new devices are found
     func refreshDevices() {
-        NSLog("CastManager: Refreshing devices...")
+        castDiscoveryLog("CastManager: Refreshing devices...")
         
         isRefreshing = true
         lastRefreshTime = Date()
@@ -765,7 +775,7 @@ class CastManager {
         // Wait 2s for clean socket shutdown before restarting
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
             guard let self = self else { return }
-            NSLog("CastManager: Restarting discovery after refresh delay")
+            castDiscoveryLog("CastManager: Restarting discovery after refresh delay")
             
             self.isDiscovering = true
             self.chromecastManager.startDiscovery()
@@ -775,7 +785,7 @@ class CastManager {
         // Post-refresh discovery boosts
         DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { [weak self] in
             guard let self = self, self.isDiscovering else { return }
-            NSLog("CastManager: Sending discovery boost at +10s")
+            castDiscoveryLog("CastManager: Sending discovery boost at +10s")
             self.upnpManager.sendDiscoveryBoost()
         }
         
@@ -785,10 +795,10 @@ class CastManager {
             self.isRefreshing = false
             
             if self.isDiscovering {
-                NSLog("CastManager: Sending discovery boost at +15s")
+                castDiscoveryLog("CastManager: Sending discovery boost at +15s")
                 self.upnpManager.sendDiscoveryBoost()
             }
-            NSLog("CastManager: Refresh complete")
+            castDiscoveryLog("CastManager: Refresh complete")
         }
     }
     

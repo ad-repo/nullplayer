@@ -66,6 +66,64 @@ final class AudioEngineGraphRecoveryTests: XCTestCase {
         }
     }
 
+    func testPlayNowHeldForGraphRecoveryPlaysTheRequestedTrack() throws {
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2))
+        func silentWAV() throws -> URL {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
+            let output = try AVAudioFile(forWriting: url, settings: format.settings)
+            let silence = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 480000))
+            silence.frameLength = silence.frameCapacity
+            for channel in 0..<2 {
+                silence.floatChannelData![channel].initialize(repeating: 0, count: Int(silence.frameLength))
+            }
+            try output.write(from: silence)
+            return url
+        }
+        let oldURL = try silentWAV()
+        let newURL = try silentWAV()
+        defer {
+            try? FileManager.default.removeItem(at: oldURL)
+            try? FileManager.default.removeItem(at: newURL)
+        }
+
+        let recovery = AudioGraphRecoveryCoordinator()
+        let engine = AudioEngine(audioGraphRecovery: recovery)
+        defer {
+            recovery.cancelScheduledWork()
+            engine.stop()
+        }
+        let oldTrack = Track(url: oldURL, title: "Old")
+        let newTrack = Track(url: newURL, title: "New")
+        engine.playNow([oldTrack])
+        XCTAssertEqual(engine.currentTrack?.id, oldTrack.id)
+
+        // The graph cannot be rebuilt, as after a cast ends on a device that has not settled.
+        recovery.setFaultInjectorForTesting { _ in
+            NSException(name: .internalInconsistencyException, reason: "error -10868", userInfo: nil).raise()
+        }
+        engine.rebuildAudioGraphForTesting()
+        XCTAssertTrue(recovery.isDeferred)
+
+        engine.playNow([newTrack])
+
+        guard case .playTrack(let index) = recovery.pendingIntent else {
+            return XCTFail("Play Now was held as \(String(describing: recovery.pendingIntent)), not as a play request")
+        }
+        XCTAssertEqual(engine.playlist[index].id, newTrack.id)
+
+        recovery.setFaultInjectorForTesting(nil)
+        let played = expectation(description: "requested track plays after recovery")
+        func poll() {
+            if engine.currentTrack?.id == newTrack.id, engine.state == .playing {
+                played.fulfill()
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: poll)
+            }
+        }
+        poll()
+        wait(for: [played], timeout: 10)
+    }
+
     func testFailedRebuildArmsExactlyOneRetryAttempt() {
         let recovery = AudioGraphRecoveryCoordinator()
         let engine = AudioEngine(audioGraphRecovery: recovery)

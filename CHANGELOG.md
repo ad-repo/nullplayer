@@ -178,6 +178,13 @@
   naming the file, in every skin mode, and no longer leaves a dead copy in the playlist on every
   try. Windows Media Player skins also show the failure in their status line and title, as the
   other modes already did in their marquee.
+- **Play works after you stop casting** — stopping a cast and pressing Play on a local file ran
+  the clock with no sound. The file is now ready to play again from the start, as after Stop.
+- **Play Now after a cast plays the track you picked** — if the Mac's audio output changed during a
+  cast, double-clicking a local file right after the cast ended could leave nothing playing, or
+  resume the track from before the cast instead.
+- **Quieter logs** — the cast-device discovery refresh no longer writes to the log every few
+  seconds; set `NULLPLAYER_CAST_DISCOVERY_LOG` to bring it back.
 
 ## 0.30.0
 
