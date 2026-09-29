@@ -562,9 +562,10 @@ final class WinampModernPhase13Tests: XCTestCase {
             .contains { $0.id == "nullplayer.about" })
     }
 
-    /// A skin with an About page but no frame to put around it. The reason is recorded and the route
-    /// is nil, rather than a titleless empty box the user cannot read.
-    func testAnAboutPageWithNoUsableFrameFallsBackWithAReason() throws {
+    /// A skin with an About page but no frame to put around it. The page still opens, in NullPlayer's
+    /// own glass chrome — the frame every other window of ours falls back to — and the reason is
+    /// recorded.
+    func testAnAboutPageWithNoUsableFrameWearsNullPlayersChrome() throws {
         let loaded = try makeSkin(xml: """
         <WasabiXML>
           <groupdef id="skin.about.group" w="0" h="0" relatw="1" relath="1">
@@ -573,75 +574,13 @@ final class WinampModernPhase13Tests: XCTestCase {
           <container id="main"><layout id="normal" default_w="400" default_h="200"/></container>
         </WasabiXML>
         """)
-        XCTAssertNil(loaded.surfaceSynthesis.aboutContainer)
+        XCTAssertEqual(loaded.surfaceSynthesis.aboutContainer, "nullplayer.about")
+        let about = WinampModernContainerTopology.analyze(graph: loaded.runtime.graph)
+            .first { $0.id == "nullplayer.about" }
+        XCTAssertEqual(about?.object.attributes[WinampModernContainerTopology.hostChromeAttribute], "1")
         XCTAssertTrue(loaded.surfaceSynthesis.diagnostics.contains {
             $0.message.contains("About page")
-        }, "the reason is recorded rather than the page vanishing")
-    }
-
-    /// ClassicPro engine one's standard frames are a grid of `wasabi.tooltip.*` bitmaps. That is not
-    /// the skin's window chrome, so the windows we synthesize refuse it and fall back to our own —
-    /// otherwise every cPro skin on that engine framed them as a cream box unrelated to its player.
-    func testAFramePaintedOnlyWithTooltipArtHostsNoSynthesizedWindow() throws {
-        let synthesis = try makeSkin(xml: Self.skinWithOnlyATooltipFrame(aboutPage: false)).surfaceSynthesis
-        XCTAssertTrue(synthesis.synthesizedContainers.isEmpty)
-        XCTAssertFalse(synthesis.unavailable.isEmpty)
-        XCTAssertTrue(synthesis.unavailable.values.allSatisfy { $0.contains("tooltip artwork") },
-                      "the refusal names its reason: \(synthesis.unavailable)")
-    }
-
-    /// Tooltip art alongside the skin's own chrome is still the skin's frame: only a frame painted
-    /// with nothing *but* tooltip art is refused.
-    func testAFrameMixingTooltipArtWithItsOwnIsKept() throws {
-        let synthesis = try makeSkin(xml: """
-        <WasabiXML>
-          <groupdef id="wasabi.standardframe.statusbar" background="wasabi.frame.basetexture">
-            <layer id="window.top" image="wasabi.frame.top" x="0" y="0" w="0" relatw="1" h="8"/>
-            <layer id="window.tip" image="wasabi.tooltip.top" x="0" y="8" w="0" relatw="1" h="2"/>
-            <script id="standardframe.script" file="scripts/standardframe.maki"/>
-          </groupdef>
-          <container id="main"><layout id="normal" default_w="400" default_h="200"/></container>
-        </WasabiXML>
-        """).surfaceSynthesis
-        XCTAssertFalse(synthesis.synthesizedContainers.isEmpty)
-        XCTAssertTrue(synthesis.unavailable.isEmpty, "\(synthesis.unavailable)")
-    }
-
-    /// The About page has no fallback frame of its own, so where our windows refuse a tooltip-only
-    /// frame the About page keeps it. Refusing it there sent every ClassicPro engine-one skin's About
-    /// page — the engine defines `skin.about.group` for all of them — back to NullPlayer's panel.
-    func testAnAboutPageIsFramedEvenWhenTheOnlyFrameIsTooltipArt() throws {
-        let loaded = try makeSkin(xml: Self.skinWithOnlyATooltipFrame(aboutPage: true))
-        XCTAssertEqual(loaded.surfaceSynthesis.aboutContainer, "nullplayer.about")
-        XCTAssertTrue(loaded.surfaceSynthesis.synthesizedContainers.isEmpty,
-                      "the component windows still refuse the frame")
-
-        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: TestHost(),
-                                               containerID: "nullplayer.about")
-        addTeardownBlock { renderer.teardown() }
-        let frame = try XCTUnwrap(renderer.sceneNodes().first {
-            $0.object.typeName.caseInsensitiveCompare("Wasabi:StandardFrame:Status") == .orderedSame
-        })
-        XCTAssertEqual(frame.object.attributes["content"], "skin.about.group")
-    }
-
-    /// The shape of ClassicPro engine one: a standard frame painted entirely with tooltip bitmaps.
-    private static func skinWithOnlyATooltipFrame(aboutPage: Bool) -> String {
-        let about = aboutPage ? """
-          <groupdef id="skin.about.group" w="0" h="0" relatw="1" relath="1">
-            <layer id="about.bg" image="about.bg" x="0" y="0" w="371" h="321"/>
-          </groupdef>
-        """ : ""
-        return """
-        <WasabiXML>
-          <groupdef id="wasabi.standardframe.statusbar" background="wasabi.tooltip.background">
-            <layer id="window.top" image="wasabi.tooltip.top" x="0" y="0" w="0" relatw="1" h="8"/>
-            <script id="standardframe.script" file="scripts/standardframe.maki"/>
-          </groupdef>
-        \(about)
-          <container id="main"><layout id="normal" default_w="400" default_h="200"/></container>
-        </WasabiXML>
-        """
+        }, "the reason is recorded")
     }
 
     private static let skinWithAnAboutPage = """

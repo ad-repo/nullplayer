@@ -183,6 +183,10 @@ final class WinampModernMainView: NSView {
     var closeRequested: (() -> Void)?
     var minimizeRequested: (() -> Void)?
 
+    /// This container wears NullPlayer's glass chrome rather than a skin frame
+    /// (`WinampModernHostChrome.swift`).
+    var drawsHostChrome = false
+
     /// The main window drives the shared script runtime's *global* callbacks (theme, actions, mouse
     /// position, EQ). Auxiliary container windows render and take input against the same runtime but
     /// must not clobber those single-owner callbacks, so they pass `drivesScripts: false`.
@@ -799,6 +803,11 @@ final class WinampModernMainView: NSView {
             traceHitTest(point, verdict: "outside bounds \(bounds)")
             return nil
         }
+        // NullPlayer's glass chrome paints the whole window — rim and ground — outside the scene.
+        if drawsHostChrome {
+            traceHitTest(point, verdict: "self (host chrome)")
+            return self
+        }
         let skin = skinPoint(point)
         if renderer.componentHolder(at: skin) != nil {
             traceHitTest(point, verdict: "self (holder)")
@@ -934,6 +943,7 @@ final class WinampModernMainView: NSView {
             ? max(1, (window?.backingScaleFactor ?? 1) / contextScale) : 1
         context.saveGState()
         if skinScale != 1 { context.scaleBy(x: skinScale, y: skinScale) }
+        if drawsHostChrome { drawHostChrome(in: context) }
         renderer.draw(in: context, pressed: pressedObject?.stableID,
                       hovered: hoveredObject?.stableID)
         context.restoreGState()
@@ -1602,6 +1612,13 @@ final class WinampModernMainView: NSView {
         // being dispatched, so no skin script sees an event it would otherwise have had.
         if event.modifierFlags.contains(.command), let window {
             beginWindowDrag(window, from: event)
+            return
+        }
+        if drawsHostChrome, let hit = hostChromeHit(at: point) {
+            switch hit {
+            case .close: if let closeRequested { closeRequested() } else { window?.close() }
+            case .drag: if let window { beginWindowDrag(window, from: event) }
+            }
             return
         }
         // A menu-bar entry opens on the **press**, before the divider, the resize border and the

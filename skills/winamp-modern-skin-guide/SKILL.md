@@ -164,6 +164,7 @@ top to bottom. Rows are grouped by area; within a group, follow the most specifi
 | Mode switch teardown crashes or leaks a hosted surface | [reference/components.md](reference/components.md) → *Teardown order* |
 | Embedded playlist/library text sizes disagree | [reference/components.md](reference/components.md) → *How large NullPlayer draws its own text* |
 | A skin's own About page, `skin.about.group`, the About GUID | [reference/components.md](reference/components.md) → *The About page is a group, not a window* |
+| A window in a cream tooltip box (cPro engine `one`), `nullplayer_hostchrome`, glass chrome around a skin container | [reference/components.md](reference/components.md) → *No window wears tooltip art as its frame* — a hard rule, no exemptions |
 
 ### Visualization, video, browser, notifier
 

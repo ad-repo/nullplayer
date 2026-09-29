@@ -88,6 +88,8 @@ enum WasabiSurfaceSynthesizer {
 
         // The skin's own library window, re-framed in the same frame our windows wear.
         overrideDeclaredLibraryFrame(in: document, frame: frame)
+        // And any window the skin framed in tooltip art, re-hosted in the chrome our windows wear.
+        rehostTooltipFramedContainers(in: document, definitions: definitions)
 
         var appended: [WalXMLNode] = []
         var synthesized: [WinampModernComponentKind: String] = [:]
@@ -98,17 +100,7 @@ enum WasabiSurfaceSynthesizer {
         // The skin's own About page, before the surfaces: it is the cheapest subtree of the three
         // and the one a skin is likeliest to reach for (twenty of the measured seventy define
         // `skin.about.group`), so it must not be the one the node budget runs out on.
-        // The About page keeps a frame painted only with tooltip art where our own windows refuse
-        // it: those fall back to NullPlayer's chrome, but the About page has no fallback frame, so
-        // refusing it sends every ClassicPro engine-one skin's page back to the AppKit panel.
-        let aboutFrame: FrameSelection
-        if case .failure = frame {
-            aboutFrame = usableFrame(in: definitions, document: document, scriptReader: scriptReader,
-                                     acceptsTooltipArt: true)
-        } else {
-            aboutFrame = frame
-        }
-        let about = aboutRoute(document: document, definitions: definitions, frame: aboutFrame)
+        let about = aboutRoute(document: document, definitions: definitions, frame: frame)
         var aboutContainer = about.containerID
         if !about.nodes.isEmpty {
             let cost = countNodes(about.nodes)
@@ -217,10 +209,12 @@ enum WasabiSurfaceSynthesizer {
         }
         switch frame {
         case .failure(let reason):
-            return AboutRoute(containerID: nil, nodes: [], diagnostics: [WalDiagnostic(
+            return AboutRoute(containerID: aboutContainerIdentifier,
+                              nodes: [makeAboutContainer(frame: nil)],
+                              diagnostics: [WalDiagnostic(
                 .missingGroupDefinition,
-                "No usable standard frame to host the skin's About page (\(reason)); it falls back "
-                + "to NullPlayer's own panel.",
+                "No usable standard frame to host the skin's About page (\(reason)); it wears "
+                + "NullPlayer's own chrome.",
                 severity: .warning, location: WalSourceLocation(path: sourcePath))])
         case .success(let frame):
             return AboutRoute(containerID: aboutContainerIdentifier,
@@ -251,13 +245,25 @@ enum WasabiSurfaceSynthesizer {
         return search(nodes)
     }
 
-    private static func makeAboutContainer(frame: Frame) -> WalXMLNode {
+    /// The About window: the skin's page inside `frame`, or — with no frame the skin can lend — inside
+    /// NullPlayer's own glass chrome, the same frame every other window of ours falls back to.
+    private static func makeAboutContainer(frame: Frame?) -> WalXMLNode {
         let location = WalSourceLocation(path: sourcePath)
-        let children = frameNodes(frame: frame, frameID: "\(aboutContainerIdentifier).frame",
+        let children: [WalXMLNode]
+        let floor: CGSize
+        let opening: CGSize
+        if let frame {
+            children = frameNodes(frame: frame, frameID: "\(aboutContainerIdentifier).frame",
                                   contentGroupID: aboutGroupIdentifier, componentName: "About",
                                   location: location)
-        let floor = frame.floor(under: aboutGeometry.minimumSize)
-        let opening = frame.floor(under: aboutGeometry.defaultSize)
+            floor = frame.floor(under: aboutGeometry.minimumSize)
+            opening = frame.floor(under: aboutGeometry.defaultSize)
+        } else {
+            children = [hostChromeContent(groupID: aboutGroupIdentifier, location: location)]
+            floor = aboutGeometry.minimumSize
+            opening = CGSize(width: aboutPageSize.width + 2 * hostChromeRim,
+                             height: aboutPageSize.height + 2 * hostChromeRim)
+        }
         let layout = WalXMLNode(name: "layout", attributes: [
             "id": "normal",
             "default_w": String(Int(opening.width)),
@@ -265,12 +271,71 @@ enum WasabiSurfaceSynthesizer {
             "minimum_w": String(Int(floor.width)),
             "minimum_h": String(Int(floor.height)),
         ], location: location, children: children)
-        return WalXMLNode(name: "container", attributes: [
+        var attributes = [
             "id": aboutContainerIdentifier,
             "name": "About",
             "default_visible": "0",
             WinampModernContainerTopology.synthesizedAttribute: "1",
-        ], location: location, children: [layout])
+        ]
+        if frame == nil { attributes[WinampModernContainerTopology.hostChromeAttribute] = "1" }
+        return WalXMLNode(name: "container", attributes: attributes, location: location,
+                          children: [layout])
+    }
+
+    // MARK: - NullPlayer's own chrome
+
+    /// The rim of the glass frame a host-chrome container wears, in skin pixels — the same
+    /// `SkinnedSurfaceChrome` frame NullPlayer's fallback windows draw.
+    private static let hostChromeRim = Double(SkinnedSurfaceChrome.glossBorder)
+
+    /// The page every corpus About group draws, before any frame: 380×321 (see `aboutGeometry`).
+    private static let aboutPageSize = CGSize(width: 380, height: 321)
+
+    /// `groupID` filling the window inside the glass rim. The window's view draws the rim itself
+    /// (`WinampModernMainView.drawsHostChrome`), keyed on `hostChromeAttribute`.
+    private static func hostChromeContent(groupID: String, location: WalSourceLocation) -> WalXMLNode {
+        let rim = Int(hostChromeRim)
+        return WalXMLNode(name: "group", attributes: [
+            "id": groupID,
+            "x": String(rim), "y": String(rim), "w": String(-2 * rim), "h": String(-2 * rim),
+            "relatw": "1", "relath": "1",
+        ], location: location)
+    }
+
+    /// **No window wears tooltip art as its frame.** ClassicPro engine `one` builds all four of its
+    /// standard frames from `wasabi.tooltip.*`, so a window the skin (or the engine) declares in one
+    /// of them — the engine's own Widgets Manager is the measured case — is a cream tooltip box. Such
+    /// a frame is dropped and its `content=` group fills the window inside NullPlayer's glass chrome
+    /// instead, exactly as the windows we synthesize fall back to it. A `findObject` from the skin's
+    /// scripts still finds the content: it is the same group, one level up.
+    private static func rehostTooltipFramedContainers(in document: WalExpandedXMLDocument,
+                                                      definitions: [String: WalXMLNode]) {
+        var framesByTag: [String: WalXMLNode] = [:]
+        for definition in definitions.values {
+            if let tag = definition.attribute("xuitag"), !tag.isEmpty { framesByTag[fold(tag)] = definition }
+        }
+        func walk(_ nodes: [WalXMLNode], container: WalXMLNode?) {
+            for node in nodes {
+                let isContainer = node.name.caseInsensitiveCompare("container") == .orderedSame
+                let owner = isContainer ? node : container
+                if let owner, node.name.caseInsensitiveCompare("layout") == .orderedSame {
+                    let replaced = node.children.map { child -> WalXMLNode in
+                        guard fold(child.name).hasPrefix(standardFrameTagPrefix),
+                              let definition = framesByTag[fold(child.name)],
+                              paintsOnlyTooltipArt(definition, definitions: definitions),
+                              let content = child.attribute("content"), !content.isEmpty
+                        else { return child }
+                        return hostChromeContent(groupID: content, location: child.location)
+                    }
+                    if zip(replaced, node.children).contains(where: { $0 !== $1 }) {
+                        node.replaceChildren(replaced)
+                        owner.setAttributes([WinampModernContainerTopology.hostChromeAttribute: "1"])
+                    }
+                }
+                walk(node.children, container: owner)
+            }
+        }
+        walk(document.roots, container: nil)
     }
 
     static func containerIdentifier(for kind: WinampModernComponentKind) -> String {
@@ -424,8 +489,7 @@ enum WasabiSurfaceSynthesizer {
     ///    materialized with no client area and fell back to NullPlayer's own chrome.
     private static func usableFrame(in definitions: [String: WalXMLNode],
                                     document: WalExpandedXMLDocument,
-                                    scriptReader: ScriptReader?,
-                                    acceptsTooltipArt: Bool = false) -> FrameSelection {
+                                    scriptReader: ScriptReader?) -> FrameSelection {
         var reasons: [String] = []
         var declared: [(border: Double, order: Int, frame: Frame)] = []
         for (order, flavour) in WasabiStandardFrames.Flavour.allCases.enumerated() {
@@ -442,7 +506,7 @@ enum WasabiSurfaceSynthesizer {
                                + "that instantiates its content")
                 continue
             }
-            guard acceptsTooltipArt || !paintsOnlyTooltipArt(definition, definitions: definitions) else {
+            guard !paintsOnlyTooltipArt(definition, definitions: definitions) else {
                 reasons.append("\(flavour.rawValue): '\(flavour.groupIdentifier)' is painted only with "
                                + "tooltip artwork")
                 continue
@@ -468,8 +532,7 @@ enum WasabiSurfaceSynthesizer {
             }) else { return nil }
             let candidate = candidates[index]
             guard let definition = definitions[fold(candidate.groupIdentifier)],
-                  acceptsTooltipArt || !paintsOnlyTooltipArt(definition, definitions: definitions)
-            else { return nil }
+                  !paintsOnlyTooltipArt(definition, definitions: definitions) else { return nil }
             return (Int(borderWeight(exemplar)), exemplar.rank, index,
                     Frame(groupIdentifier: candidate.groupIdentifier,
                           xuiTag: candidate.xuiTag,
