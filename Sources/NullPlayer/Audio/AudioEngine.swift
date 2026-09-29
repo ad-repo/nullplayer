@@ -122,6 +122,12 @@ struct TrackLoadFailure {
     let error: Error
 }
 
+/// A user-requested play whose file failed, held until the queue shows whether it can skip on.
+struct UserPlayRequestFailure {
+    let failure: TrackLoadFailure
+    let fileIsMissing: Bool
+}
+
 /// Core audio engine using AVAudioEngine for playback and DSP
 class AudioEngine {
 
@@ -4604,13 +4610,19 @@ class AudioEngine {
                 // Decided here, on the IO queue, because it stats the folder — which may sit on
                 // the very volume that just failed.
                 let folderIsPresent = Self.containingFolderIsPresent(track.url)
-                let fileIsMissing = userInitiated && !folderIsPresent
+                let fileIsMissing = userInitiated
                     && !FileManager.default.fileExists(atPath: track.url.path)
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     guard self.deferredLocalTrackLoadToken == token else { return }
+                    // Skipping on is not a failure to report — unless there is nothing to skip to.
+                    let userRequest = userInitiated && folderIsPresent
+                        ? UserPlayRequestFailure(failure: TrackLoadFailure(track: track, error: error),
+                                                 fileIsMissing: fileIsMissing)
+                        : nil
                     self.handleLocalTrackLoadFailure(track: track, error: error,
-                                                     advanceToNextTrack: folderIsPresent)
+                                                     advanceToNextTrack: folderIsPresent,
+                                                     userRequest: userRequest)
                     if userInitiated && !folderIsPresent {
                         self.delegate?.audioEngineUserPlayRequestDidFail(track, error: error,
                                                                          fileIsMissing: fileIsMissing)
@@ -4933,8 +4945,10 @@ class AudioEngine {
     /// `false` return; only the asynchronous immediate-playback path — which is what `playTrack` and
     /// the natural end-of-track advance both use — dead-ended on an unreadable file. That path
     /// passes it only when the file's folder is present (`containingFolderIsPresent`), so a
-    /// disconnected volume still stops playback instead of skipping.
-    private func handleLocalTrackLoadFailure(track: Track, error: Error, advanceToNextTrack: Bool = false) {
+    /// disconnected volume still stops playback instead of skipping. `userRequest` is carried into
+    /// the advance so a double-clicked file with nothing after it is reported, not just stopped on.
+    private func handleLocalTrackLoadFailure(track: Track, error: Error, advanceToNextTrack: Bool = false,
+                                             userRequest: UserPlayRequestFailure? = nil) {
         let fileExtension = track.url.pathExtension.lowercased()
         var errorMessage = "Failed to load '\(track.url.lastPathComponent)': \(error.localizedDescription)"
 
@@ -4967,7 +4981,7 @@ class AudioEngine {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 guard let self, self.deferredLocalTrackLoadToken == token,
                       self.state == .stopped else { return }
-                self.advancePastFailedTrack(at: self.currentIndex)
+                self.advancePastFailedTrack(at: self.currentIndex, userRequest: userRequest)
             }
         }
     }
@@ -4976,23 +4990,34 @@ class AudioEngine {
     ///
     /// One unreadable file used to stop the player dead with the rest of the playlist still ahead
     /// of it — the whole-playlist symptom a single bad pair of entries produced.
-    private func advancePastFailedTrack(at failedIndex: Int) {
+    ///
+    /// `userRequest` is the double-click that failed; when nothing is left to advance to, the queue
+    /// ends on it and it is reported. An automatic advance passes none and ends silently.
+    private func advancePastFailedTrack(at failedIndex: Int, userRequest: UserPlayRequestFailure? = nil) {
         guard !playlist.isEmpty else { return }
+
+        func endQueue() {
+            consecutiveTrackLoadFailures = 0
+            stopAfterQueueExhausted()
+            if let userRequest {
+                delegate?.audioEngineUserPlayRequestDidFail(userRequest.failure.track,
+                                                            error: userRequest.failure.error,
+                                                            fileIsMissing: userRequest.fileIsMissing)
+            }
+        }
 
         consecutiveTrackLoadFailures += 1
         guard consecutiveTrackLoadFailures < playlist.count else {
             NSLog("AudioEngine: %d consecutive load failures — ending queue rather than looping it",
                   consecutiveTrackLoadFailures)
-            consecutiveTrackLoadFailures = 0
-            stopAfterQueueExhausted()
+            endQueue()
             return
         }
 
         let nextIndex: Int
         if shuffleEnabled {
             guard let peeked = peekNextShuffleIndexForPlayback() else {
-                consecutiveTrackLoadFailures = 0
-                stopAfterQueueExhausted()
+                endQueue()
                 return
             }
             nextIndex = peeked
@@ -5003,8 +5028,7 @@ class AudioEngine {
             // failure always moves on; wrapping is the only thing repeat still means here.
             nextIndex = 0
         } else {
-            consecutiveTrackLoadFailures = 0
-            stopAfterQueueExhausted()
+            endQueue()
             return
         }
 

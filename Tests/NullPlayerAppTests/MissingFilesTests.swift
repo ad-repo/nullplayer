@@ -251,6 +251,23 @@ final class MissingFilesTests: XCTestCase {
         wait(for: [nextFailed], timeout: 5)
     }
 
+    /// Double-clicking an unreadable file with nothing after it ended the queue on the skip with no
+    /// alert — Play Now of the same file raised one. The skip carries the request to the queue's end.
+    func testDoubleClickingAnUnreadableLastTrackReportsTheFailure() throws {
+        let folder = try albumFolderWithAnUnreadableFile()
+        let bad = folder.appendingPathComponent("bad.mp3")
+        let engine = AudioEngine()
+        let delegate = UserPlayFailureRecorder()
+        engine.delegate = delegate
+        engine.setPlaylistTracks([Track(url: bad)])
+
+        engine.playTrack(at: 0)
+        RunLoop.main.run(until: Date().addingTimeInterval(1.5))
+
+        XCTAssertEqual(delegate.failedURLs, [bad])
+        XCTAssertNotEqual(engine.state, .playing)
+    }
+
     /// Replacing the playlist inside that half-second left the pending advance armed. It read the
     /// cleared `currentIndex` of -1 as the failed position and started the new playlist's first
     /// entry — from `setPlaylistTracks`, which promises not to play anything.
