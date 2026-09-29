@@ -158,6 +158,12 @@
   Media Player), and writes the results to spreadsheet-ready tables. Each skin is measured from the
   same saved settings, so one skin's window sizes do not carry over to the next. The app itself is
   unchanged.
+- **Windows Media Player skins: no more gaps in window borders** — NullPlayer's own windows (the
+  library, PeppyMeter, the analyzers and the rest) could show see-through seams in the border they
+  borrow from a `.wmz` skin: a widening column in Crimson Skies' and T3 Skynet's top and bottom bars,
+  a broken top edge and missing right side in WALL-E's white theme, and a strip under the bottom
+  edge in Kids. Those borders now close. A one-pixel seam down both bars of Crimson Skies' own
+  playlist on Retina displays is gone too.
 
 ## 0.30.0
 

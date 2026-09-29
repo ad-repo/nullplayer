@@ -162,6 +162,14 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   byte-identical. **A column-wise measure was tried first and is wrong**: it re-refused exactly
   those four racks, which is the 2026-09-15 *"reclaim it, we have no content for it"* report coming
   back.
+- **A panel declared larger than its bitmap ends where the bitmap does (2026-09-29).** `Kids`
+  declares `vPl` 201x137 over a 127-tall `background_pl.bmp`, so the slice's bottom 10pt was empty
+  and every hosted window wore a see-through strip under its bottom edge (`gaps=` bottom 1.000).
+  `panelSlices` trims transparent rows and columns off the **bottom and right only** — a bitmap is
+  drawn from its top-left — and never past `minimumBorder` outside the hole. `WMP_PANEL_TRIM=0` is
+  the A/B. Corpus at 430x306 and 550x464: 13 panel lines move, `Kids` to 0 bare on every edge, and
+  a before/after picture of each showed none worse (`Grinch`, `deepbluesomething` and `New Super
+  Mario Bros` reach the window edge where they fell short).
 - **A view drawn whole cannot come apart, but it can still be drawn short (W212).** The frame build
   is outside the script runtime, so a side tile whose height only the skin's `onResize` sets keeps
   its bitmap's — a 20% bare run down each side of `Alienware Invader`, which is the desktop showing
@@ -185,6 +193,27 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   fraction back into points before believing a defect belongs to the window it showed up on** —
   the number is the frame's defect divided by the window's size, and one hosted window differing
   is otherwise the signature of that window's own layout (`reference/harness/live-loop.md` § *Capturing the hosted windows*).
+- **A strip in a corner slot that its script sizes reaches the corner in its row (2026-09-29).**
+  `Crimson_Skies` and `T3-Skynet_Media_Player` (one author) fill the right half of their top and
+  bottom bars with `plTopStretch`/`plBotStretch`: tiled, no width, no alignment — so they land in
+  the top-left and bottom-left slots as *extras*, which `note` never spans — widened only by
+  `checkPlViewSize()` (`width = view.width / 2`). The strip kept its 4px bitmap width and a column
+  opened that grows by half of every point past the donor's 373: 31pt at 430, under the 40pt the
+  repair above needs. `spannedAcrossNodeIDs` gives such a tile its width on **every** pass, first
+  included, read off one extra build: **to its row's right corner, not the canvas edge** — the
+  154-tall `f_top_s_2.png` spanning the canvas hung 6pt of black shadow across the 148-tall
+  corner's rail — and **only if it shares at least half its height with that corner**, because
+  `Alienware Invader`'s second left-rail tile is the same markup shape further down the side and
+  was laid across the window. `WMP_FRAME_SPAN_TILES=0` is the A/B. Corpus at 430x306 and 550x464:
+  those two skins move and nothing else.
+- **A frame piece the donor's `onLoad` shows or hides follows it (2026-09-29).** W145 kept only
+  `alphaBlend` and `backgroundImage` from the off-screen `onLoad`. `WALL-E` stacks two frame sets in
+  `mainView` — `sub1_*` shown, `sub2_*` authored `visible="false"` — and its white theme is
+  `onLoad` revealing `sub2_*` while `sub1_*` takes the narrower `_4` bitmaps, so the frame wore
+  only the underlay: a seam in its top edge, no right rail. `appearing(_:)` now keeps `visible`
+  too, **on `ringNodeIDs` only** — a script showing the skin's own content is not the frame's
+  business. The probe runs no `onLoad`, so no sweep measures this; it was checked live on
+  PeppyMeter under `WALL-E`'s white theme.
 - **A rail that is mostly hole is still a rail, and a stretch baseline read through an expression
   is read at the authored canvas (2026-09-23).** Two defects kept `Back to the Future Trilogy`'s
   right edge bare on any window taller than about 300pt, and 21 skins' bottom bars bare on tall
