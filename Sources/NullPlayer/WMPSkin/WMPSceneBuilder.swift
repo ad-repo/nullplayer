@@ -1336,8 +1336,12 @@ struct WMPSceneBuilder: @unchecked Sendable {
                         || !isComputed(node, name)
                 }
                 var x = left, y = top
+                // **Centred on a whole point, rounded down as WMP's integer layout does.** An odd
+                // remainder put `Crimson_Skies`' 190pt `f_top_mid` at 91.5 in its 373pt `plView`,
+                // half a point clear of the tile that ends at 91, and the desktop showed through a
+                // 1px seam down both bars at 2x.
                 switch horizontal {
-                case .center: x = (parentFrame.width - width) / 2
+                case .center: x = ((parentFrame.width - width) / 2).rounded(.down)
                 case .trailing where aligns("left"):
                     x += scriptDelta("left", deltaWidth, \.width, parentFrame.width)
                 case .stretch where aligns("width"):
@@ -1346,7 +1350,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 default: break
                 }
                 switch vertical {
-                case .center: y = (parentFrame.height - height) / 2
+                case .center: y = ((parentFrame.height - height) / 2).rounded(.down)
                 case .trailing where aligns("top"):
                     y += scriptDelta("top", deltaHeight, \.height, parentFrame.height)
                 case .stretch where aligns("height"):

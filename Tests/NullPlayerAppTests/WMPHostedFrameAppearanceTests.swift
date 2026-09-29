@@ -104,6 +104,22 @@ final class WMPHostedFrameAppearanceTests: XCTestCase {
                        [.init(stableID: 7, property: "alphablend"),
                         .init(stableID: 7, property: "backgroundimage")])
     }
+
+    /// **`visible` follows the script on ring pieces, and nowhere else.** `WALL-E`'s white theme is
+    /// `onLoad` revealing a second frame set authored `visible="false"`; without it the borrowed
+    /// frame wore only the underlay, with a seam in its top edge and no right rail. A script showing
+    /// the skin's own content is not the frame's business.
+    func testAppearanceKeepsVisibilityOnRingPiecesOnly() async throws {
+        let loaded = try await skin()
+        let template = try XCTUnwrap(WMPHostedFrameTemplate.derive(from: loaded, playerViewID: nil))
+        let ring = try XCTUnwrap(template.ringNodeIDs.first)
+        let other = (template.ringNodeIDs.max() ?? 0) + 1_000
+        var overrides = WMPSceneOverrides.empty
+        overrides.properties[.init(stableID: ring, property: "visible")] = .bool(true)
+        overrides.properties[.init(stableID: other, property: "visible")] = .bool(true)
+        XCTAssertEqual(Set(template.appearing(overrides).appearance.keys),
+                       [.init(stableID: ring, property: "visible")])
+    }
 }
 
 /// **A press changes the artwork the release is tested against (W306).** A control's hit area is

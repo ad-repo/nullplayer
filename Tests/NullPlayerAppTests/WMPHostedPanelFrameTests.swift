@@ -190,6 +190,28 @@ final class WMPHostedPanelFrameTests: XCTestCase {
         }
     }
 
+    /// **A panel declared taller than its bitmap ends where the bitmap does.** `Kids` declares its
+    /// drawer 137 tall over a 127-tall bitmap, and slicing the declared size hung a 10pt see-through
+    /// strip under the bottom edge of every window wearing it.
+    func testAPanelDeclaredLargerThanItsBitmapReachesTheWindowsEdge() async throws {
+        let tray = Self.tray.replacingOccurrences(of: "height=\"261\"", with: "height=\"271\"")
+        let loaded = try await skin("""
+        <THEME><VIEW id="myview" width="321" height="278">\(tray)</VIEW></THEME>
+        """, images: ["tray.png": try panelImage(width: 328, height: 261)])
+        let template = try XCTUnwrap(WMPHostedFrameTemplate.derive(from: loaded, playerViewID: "myview"))
+        let store = WMPImageStore(provider: loaded.archive)
+        let drawn = try await template.artwork(
+            builder: WMPSceneBuilder(loadedSkin: loaded, imageStore: store),
+            renderer: WMPRenderer(imageStore: store),
+            size: CGSize(width: 550, height: 464), backingScale: 1)
+        let artwork = try XCTUnwrap(drawn)
+        let pixels = try XCTUnwrap(Self.rgba(artwork.image))
+        let width = artwork.image.width, height = artwork.image.height
+        let offset = ((height - 1) * width + width / 2) * 4
+        XCTAssertGreaterThan(pixels[offset + 3], 200, "the bottom edge is bare")
+        XCTAssertGreaterThan(pixels[offset], 200, "and it is the panel's own border")
+    }
+
     /// **A short window is not given a scaled-down border — it is given no border, and grown (W207).**
     ///
     /// Three answers were reported wrong before this one, and this test used to assert the third:
