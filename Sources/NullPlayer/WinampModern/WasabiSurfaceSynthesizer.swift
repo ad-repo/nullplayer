@@ -98,7 +98,17 @@ enum WasabiSurfaceSynthesizer {
         // The skin's own About page, before the surfaces: it is the cheapest subtree of the three
         // and the one a skin is likeliest to reach for (twenty of the measured seventy define
         // `skin.about.group`), so it must not be the one the node budget runs out on.
-        let about = aboutRoute(document: document, definitions: definitions, frame: frame)
+        // The About page keeps a frame painted only with tooltip art where our own windows refuse
+        // it: those fall back to NullPlayer's chrome, but the About page has no fallback frame, so
+        // refusing it sends every ClassicPro engine-one skin's page back to the AppKit panel.
+        let aboutFrame: FrameSelection
+        if case .failure = frame {
+            aboutFrame = usableFrame(in: definitions, document: document, scriptReader: scriptReader,
+                                     acceptsTooltipArt: true)
+        } else {
+            aboutFrame = frame
+        }
+        let about = aboutRoute(document: document, definitions: definitions, frame: aboutFrame)
         var aboutContainer = about.containerID
         if !about.nodes.isEmpty {
             let cost = countNodes(about.nodes)
@@ -414,7 +424,8 @@ enum WasabiSurfaceSynthesizer {
     ///    materialized with no client area and fell back to NullPlayer's own chrome.
     private static func usableFrame(in definitions: [String: WalXMLNode],
                                     document: WalExpandedXMLDocument,
-                                    scriptReader: ScriptReader?) -> FrameSelection {
+                                    scriptReader: ScriptReader?,
+                                    acceptsTooltipArt: Bool = false) -> FrameSelection {
         var reasons: [String] = []
         var declared: [(border: Double, order: Int, frame: Frame)] = []
         for (order, flavour) in WasabiStandardFrames.Flavour.allCases.enumerated() {
@@ -431,7 +442,7 @@ enum WasabiSurfaceSynthesizer {
                                + "that instantiates its content")
                 continue
             }
-            guard !paintsOnlyTooltipArt(definition, definitions: definitions) else {
+            guard acceptsTooltipArt || !paintsOnlyTooltipArt(definition, definitions: definitions) else {
                 reasons.append("\(flavour.rawValue): '\(flavour.groupIdentifier)' is painted only with "
                                + "tooltip artwork")
                 continue
@@ -457,7 +468,8 @@ enum WasabiSurfaceSynthesizer {
             }) else { return nil }
             let candidate = candidates[index]
             guard let definition = definitions[fold(candidate.groupIdentifier)],
-                  !paintsOnlyTooltipArt(definition, definitions: definitions) else { return nil }
+                  acceptsTooltipArt || !paintsOnlyTooltipArt(definition, definitions: definitions)
+            else { return nil }
             return (Int(borderWeight(exemplar)), exemplar.rank, index,
                     Frame(groupIdentifier: candidate.groupIdentifier,
                           xuiTag: candidate.xuiTag,
