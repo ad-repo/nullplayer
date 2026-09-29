@@ -10303,7 +10303,7 @@ class PlexBrowserView: NSView {
                     playRadioStation(station)
                 }
             default:
-                // For non-playable items and video items, just load artwork
+                // Everything else — tracks included, which play on double-click — loads artwork
                 loadArtworkForSelection()
             }
         }

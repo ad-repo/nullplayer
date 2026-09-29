@@ -175,8 +175,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// Capture is driven off the defaults domain rather than off each menu item, because the Cava
     /// and vis_classic controls in the slot's menu write their own keys and offer no callback.
     private var visualizationSettingsObserver: NSObjectProtocol?
-    /// A file that will not open stops playback before the engine records the failure, so the
-    /// stop's refresh has nothing to show; this one repaints `player.status` with it.
+    /// A file that will not open stops playback before the host records the failure, so the
+    /// stop's refresh has nothing to show; this one repaints `player.status` with it. The host
+    /// is created first, so its own observer has run by the time this one does.
     private var trackLoadFailureObserver: NSObjectProtocol?
     private var isCapturingVisualizationSettings = false
     /// The skin a captured change belongs to. It is the skin that was showing when the change was

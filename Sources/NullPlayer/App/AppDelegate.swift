@@ -51,8 +51,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Set up audio engine delegate
         windowManager.audioEngine.delegate = self
-        NotificationCenter.default.addObserver(self, selector: #selector(userPlayRequestDidFail(_:)),
-                                               name: .userPlayRequestDidFail, object: nil)
         // Main window always shows a mini spectrum overlay — register as permanent consumer
         windowManager.audioEngine.addSpectrumConsumer("mainWindowSpectrum")
 
@@ -701,11 +699,8 @@ extension AppDelegate: AudioEngineDelegate {
     /// clicked, which is often in front of the player — an alert is the one readout every skin
     /// system shares. Deliberately no "Remove from Library": a missing folder looks exactly like
     /// a disconnected NAS, whose tracks the library keeps.
-    @objc private func userPlayRequestDidFail(_ notification: Notification) {
-        guard !isShowingPlayFailureAlert,
-              let track = notification.userInfo?["track"] as? Track,
-              let error = notification.userInfo?["error"] as? Error else { return }
-        let fileIsMissing = notification.userInfo?["fileIsMissing"] as? Bool ?? false
+    func audioEngineUserPlayRequestDidFail(_ track: Track, error: Error, fileIsMissing: Bool) {
+        guard !isShowingPlayFailureAlert else { return }
         isShowingPlayFailureAlert = true
         // Off the click that caused it, so the modal loop does not run inside mouse tracking.
         DispatchQueue.main.async { [weak self] in
