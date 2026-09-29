@@ -152,7 +152,7 @@ final class WinampModernSkinImporter {
     /// Every skin that can be *loaded*: what the user imported, plus the bundled placeholder.
     ///
     /// This is the resolution list — what `selectedSkin()` matches a stored name against — and not
-    /// the menu's list, which shows the bundled skin as its own item the way Classic does. Separate
+    /// the menu's list, which shows only `installedSkins()`; the bundled skin has no entry. Separate
     /// from `installedSkins()`, which stays the user's library and nothing else: the import/storage
     /// seam is about files we own in Application Support, and the bundled skin is neither imported
     /// nor removable. A skin they imported under the same name wins, so replacing the placeholder
@@ -189,5 +189,23 @@ final class WinampModernSkinImporter {
 
     func selectSkin(_ skin: WinampModernImportedSkin) {
         UserDefaults.standard.set(skin.name, forKey: Self.selectedSkinNameKey)
+    }
+
+    /// The selected skin when the user installed it — the bundled placeholder has nothing to remove.
+    func removableSelectedSkin() -> WinampModernImportedSkin? {
+        guard let selected = selectedSkin() else { return nil }
+        return installedSkins().first { $0.archiveURL == selected.archiveURL }
+    }
+
+    /// Moves an installed skin to the Trash and selects the bundled placeholder, rather than
+    /// whichever installed skin sorts first. The caller reloads the player when the mode is on
+    /// screen.
+    func trashSkin(_ skin: WinampModernImportedSkin) throws {
+        try fileManager.trashItem(at: skin.archiveURL, resultingItemURL: nil)
+        if let bundled = bundledDefaultSkin() {
+            selectSkin(bundled)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.selectedSkinNameKey)
+        }
     }
 }

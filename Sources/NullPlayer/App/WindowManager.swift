@@ -5134,7 +5134,7 @@ class WindowManager {
             currentSkin = skin
             currentSkinPath = url.path
             // Persist last used classic skin for easy reload when switching UI modes
-            userDefaults.set(url.path, forKey: "lastClassicSkinPath")
+            userDefaults.set(url.path, forKey: WindowManager.lastClassicSkinPathKey)
             if resetCavaAppearance {
                 CavaSettings.resetAppearanceForSkinChange()
             }
@@ -5156,7 +5156,7 @@ class WindowManager {
     
     private func loadDefaultSkin() {
         // 1. Try last used skin from UserDefaults
-        if let lastPath = UserDefaults.standard.string(forKey: "lastClassicSkinPath"),
+        if let lastPath = UserDefaults.standard.string(forKey: WindowManager.lastClassicSkinPathKey),
            FileManager.default.fileExists(atPath: lastPath) {
             do {
                 currentSkin = try SkinLoader.shared.load(from: URL(fileURLWithPath: lastPath))
@@ -5201,13 +5201,38 @@ class WindowManager {
         return nil
     }
     
+    /// The Classic skin Classic mode reopens with — a path in the Skins folder, or absent for the
+    /// bundled NullPlayer-Silver.
+    static let lastClassicSkinPathKey = "lastClassicSkinPath"
+
+    /// The Classic skin "Remove …" would take: the loaded one in Classic mode, otherwise the one
+    /// Classic reopens with — and only when it lives in the Skins folder, since the bundled skin
+    /// has no file to remove.
+    func removableClassicSkinURL() -> URL? {
+        let path = uiMode == .classic
+            ? currentSkinPath
+            : UserDefaults.standard.string(forKey: Self.lastClassicSkinPathKey)
+        guard let path else { return nil }
+        let url = URL(fileURLWithPath: path).standardizedFileURL
+        guard url.deletingLastPathComponent().path == skinsDirectoryURL.standardizedFileURL.path,
+              FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return url
+    }
+
+    /// Moves a Skins-folder skin to the Trash and forgets it as the one Classic reopens with. The
+    /// caller loads the bundled skin when Classic is on screen.
+    func trashClassicSkin(at url: URL) throws {
+        try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        UserDefaults.standard.removeObject(forKey: Self.lastClassicSkinPathKey)
+    }
+
     /// Load the bundled default classic skin (NullPlayer-Silver) at runtime
     func loadBundledDefaultSkin() {
         if let bundledURL = findBundledClassicSkin("NullPlayer-Silver") {
             do {
                 currentSkin = try SkinLoader.shared.load(from: bundledURL)
                 currentSkinPath = nil
-                UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+                UserDefaults.standard.removeObject(forKey: WindowManager.lastClassicSkinPathKey)
                 CavaSettings.resetAppearanceForSkinChange()
                 applyClassicVisualizationDefaults(notify: true)
                 notifySkinChanged()
@@ -5219,7 +5244,7 @@ class WindowManager {
         // Fallback: unskinned
         currentSkin = SkinLoader.shared.loadDefault()
         currentSkinPath = nil
-        UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+        UserDefaults.standard.removeObject(forKey: WindowManager.lastClassicSkinPathKey)
         CavaSettings.resetAppearanceForSkinChange()
         applyClassicVisualizationDefaults(notify: true)
         notifySkinChanged()

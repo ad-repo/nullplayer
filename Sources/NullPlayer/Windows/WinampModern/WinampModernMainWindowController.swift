@@ -35,14 +35,16 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     private struct AuxiliaryContainer {
         let window: NSWindow
         let view: WinampModernMainView
-        let kind: WinampModernComponentKind?
-        let containerID: String
+        /// The container as the topology describes it, kept so the window menu asks
+        /// `WinampModernContainerTopology.isListedInWindowMenu` against its current tree.
+        let info: WinampModernContainerInfo
+        var kind: WinampModernComponentKind? { info.kind }
+        var containerID: String { info.id }
         /// The skin's own `name=` for this container, and whether it belongs in the host's window
         /// menu (Phase 27.7). A skin declares windows it binds no button to — Defix's two speaker
         /// cabinets and its configurator — and in Winamp those are opened from *Winamp's* Windows
         /// menu. Without the equivalent here they exist, render, and cannot be reached at all.
         let displayName: String
-        let isListedInWindowMenu: Bool
         /// The container's `autoclose="1"`: a transient popup that closes when it loses the keyboard.
         let autoCloses: Bool
         /// `default_visible="1"`: this window opens with the skin unless the user has since closed
@@ -55,7 +57,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         let defaultOffset: CGPoint?
         /// A track-change toast popup (`<container id="notifier">`). Shown by the host on track
         /// change; the skin's MAKI scripts handle fade animation and auto-dismiss.
-        let isNotifier: Bool
+        var isNotifier: Bool { WinampModernContainerTopology.isNotifier(id: info.id) }
         /// `noactivation="1"`: the window must not steal focus when shown.
         let noActivation: Bool
         /// A second live copy of a `dynamic="1"` container, built because a script asked
@@ -575,8 +577,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                     + "the skin: \(suppression.reason).",
                 severity: .warning))
         }
-        let lowID = info.id.lowercased()
-        let isNotifier = lowID == "notifier" || lowID.hasPrefix("notifier.")
+        let isNotifier = WinampModernContainerTopology.isNotifier(id: info.id)
         let noActivation = info.object.attributes["noactivation"] == "1" || isNotifier
         let isDynamicInstance = info.object.attributes[WasabiSkinRuntime.dynamicInstanceAttribute] != nil
         if isNotifier {
@@ -584,15 +585,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             auxWindow.hidesOnDeactivate = false
         }
         auxiliaryContainers.append(AuxiliaryContainer(
-            window: auxWindow, view: view, kind: info.kind, containerID: info.id,
+            window: auxWindow, view: view, info: info,
             displayName: WinampModernContainerTopology.displayName(of: info),
-            isListedInWindowMenu: WinampModernContainerTopology.isListedInWindowMenu(info) && !isDynamicInstance,
             autoCloses: info.object.attributes["autoclose"] == "1",
             opensByDefault: info.opensByDefault && suppression == nil,
             defaultOffset: info.defaultOrigin.map {
                 CGPoint(x: $0.x - playerOrigin.x, y: $0.y - playerOrigin.y)
             },
-            isNotifier: isNotifier,
             noActivation: noActivation,
             isDynamicInstance: isDynamicInstance))
         viewsByContainer[view.containerID] = view
@@ -2369,15 +2368,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // container is *routed* is a runtime fact (Defix's `pledit` carries no component GUID and is
         // recognized from the declarative inventory), and the catalog is the only thing that knows it.
         let routed = surfaceCoordinator?.catalog.routedContainerIDs ?? []
-        let roots = loadedSkin?.runtime.graph.roots ?? []
-        func hostsAlbumArt(_ container: AuxiliaryContainer) -> Bool {
-            guard !container.isDynamicInstance,
-                  let object = roots.first(where: { $0.xmlID == container.containerID })
-            else { return false }
-            return WinampModernContainerTopology.hostsAlbumArt(object)
-        }
         let listed = auxiliaryContainers
-            .filter { ($0.isListedInWindowMenu || hostsAlbumArt($0))
+            .filter { WinampModernContainerTopology.isListedInWindowMenu($0.info)
                 && !routed.contains($0.containerID.lowercased()) }
         let labels = WinampModernContainerTopology.menuLabels(
             forWindowNames: listed.map { (id: $0.containerID, name: $0.displayName) })
