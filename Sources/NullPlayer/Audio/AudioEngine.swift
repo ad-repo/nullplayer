@@ -44,6 +44,11 @@ extension Notification.Name {
     /// Posted when a track fails to load
     /// userInfo contains: "track" (Track), "error" (Error), "message" (String)
     static let audioTrackDidFailToLoad = Notification.Name("audioTrackDidFailToLoad")
+
+    /// Posted when a play the user asked for — Play Now from a library, or a playlist
+    /// double-click — failed and left nothing playing. Automatic advance never posts it.
+    /// userInfo contains: "track" (Track), "error" (Error), "fileIsMissing" (Bool)
+    static let userPlayRequestDidFail = Notification.Name("userPlayRequestDidFail")
     
     /// Posted when BPM detection updates
     /// userInfo contains: "bpm" (Int) - 0 means no confident reading
@@ -272,6 +277,7 @@ class AudioEngine {
     /// Current track
     private(set) var currentTrack: Track? {
         didSet {
+            if currentTrack != nil { trackLoadFailureMessage = nil }
             delegate?.audioEngineDidChangeTrack(currentTrack)
             // Reset BPM detector for new track
             bpmDetector.reset()
@@ -4288,6 +4294,7 @@ class AudioEngine {
             context: "playNow"
         )
         
+        let previousIndex = currentIndex
         let insertIndex = currentIndex >= 0 ? currentIndex + 1 : 0
         
         // Insert tracks at the calculated position
@@ -4338,10 +4345,23 @@ class AudioEngine {
                 }
             }
         } else {
+            let failuresBefore = localTrackLoadFailureCount
             loadTrack(at: currentIndex)
             // A failed load leaves `currentTrack` nil, and `play()` reads nil as "start the
             // playlist from the top" — which started an unrelated track under the error.
-            if currentTrack != nil { play() }
+            if currentTrack != nil {
+                play()
+            } else if localTrackLoadFailureCount != failuresBefore,
+                      let failure = lastLocalTrackLoadFailure {
+                // Nothing played, so the request is taken back out of the queue: left in, every
+                // retried double-click on a missing file added another dead copy of it.
+                playlist.removeSubrange(insertIndex..<(insertIndex + tracks.count))
+                currentIndex = previousIndex
+                invalidateShufflePlaybackStateAfterPlaylistMutation()
+                // The stat is on this thread only because the load just opened the same path on it.
+                postUserPlayRequestDidFail(track: failure.track, error: failure.error,
+                                           fileIsMissing: !FileManager.default.fileExists(atPath: failure.track.url.path))
+            }
         }
         
         delegate?.audioEngineDidChangePlaylist()
@@ -4483,7 +4503,9 @@ class AudioEngine {
         }
     }
     
-    private func loadLocalTrackForImmediatePlayback(_ track: Track, at index: Int) {
+    /// `userInitiated` — a playlist double-click, not an advance — asks for
+    /// `.userPlayRequestDidFail` when the open fails and playback stops rather than skipping on.
+    private func loadLocalTrackForImmediatePlayback(_ track: Track, at index: Int, userInitiated: Bool = false) {
         NSLog("loadLocalTrackForImmediatePlayback: %@", track.url.lastPathComponent)
         clearCrossfadeDeclineLatch()
 
@@ -4568,11 +4590,16 @@ class AudioEngine {
                 // Decided here, on the IO queue, because it stats the folder — which may sit on
                 // the very volume that just failed.
                 let folderIsPresent = Self.containingFolderIsPresent(track.url)
+                let fileIsMissing = userInitiated && !folderIsPresent
+                    && !FileManager.default.fileExists(atPath: track.url.path)
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     guard self.deferredLocalTrackLoadToken == token else { return }
                     self.handleLocalTrackLoadFailure(track: track, error: error,
                                                      advanceToNextTrack: folderIsPresent)
+                    if userInitiated && !folderIsPresent {
+                        self.postUserPlayRequestDidFail(track: track, error: error, fileIsMissing: fileIsMissing)
+                    }
                 }
             }
         }
@@ -4873,6 +4900,15 @@ class AudioEngine {
     /// unmounted volume fails *every* entry, and without this the queue would walk itself forever.
     private var consecutiveTrackLoadFailures = 0
 
+    /// Every local open that failed, and the last one. `playNow` compares the count across its
+    /// synchronous load to tell a failure from the other ways that load returns without a track.
+    private var localTrackLoadFailureCount = 0
+    private var lastLocalTrackLoadFailure: (track: Track, error: Error)?
+
+    /// The last track-load failure's message, until a track loads. Set with the
+    /// `.audioTrackDidFailToLoad` post, so a readout that repaints on it finds the message.
+    private(set) var trackLoadFailureMessage: String?
+
     /// Whether the folder holding `url` is on disk and non-empty — what separates "this one file is
     /// bad" from "the volume it lives on is not there". An unmounted NAS leaves either no folder or
     /// an empty mount point, and skipping through a queue of tracks that are all on it would only
@@ -4893,6 +4929,8 @@ class AudioEngine {
     /// passes it only when the file's folder is present (`containingFolderIsPresent`), so a
     /// disconnected volume still stops playback instead of skipping.
     private func handleLocalTrackLoadFailure(track: Track, error: Error, advanceToNextTrack: Bool = false) {
+        localTrackLoadFailureCount &+= 1
+        lastLocalTrackLoadFailure = (track, error)
         let fileExtension = track.url.pathExtension.lowercased()
         var errorMessage = "Failed to load '\(track.url.lastPathComponent)': \(error.localizedDescription)"
 
@@ -4984,9 +5022,19 @@ class AudioEngine {
         stopTimeUpdates()
     }
     
+    private func postUserPlayRequestDidFail(track: Track, error: Error, fileIsMissing: Bool) {
+        guard !AudioEngine.isHeadless else { return }
+        NotificationCenter.default.post(
+            name: .userPlayRequestDidFail,
+            object: self,
+            userInfo: ["track": track, "error": error, "fileIsMissing": fileIsMissing]
+        )
+    }
+
     /// Notify delegate and post notification when a track fails to load
     private func notifyTrackLoadFailure(track: Track, error: Error, message: String) {
         DispatchQueue.main.async { [weak self] in
+            self?.trackLoadFailureMessage = message
             self?.delegate?.audioEngineDidFailToLoadTrack(track, error: error)
             
             NotificationCenter.default.post(
@@ -6519,7 +6567,7 @@ class AudioEngine {
 
             let isDirectLocalAudio = track.url.isFileURL && track.mediaType != .video
             if isDirectLocalAudio {
-                loadLocalTrackForImmediatePlayback(track, at: index)
+                loadLocalTrackForImmediatePlayback(track, at: index, userInitiated: true)
             } else {
                 loadTrack(at: index)
                 play()

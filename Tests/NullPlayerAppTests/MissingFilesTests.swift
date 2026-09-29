@@ -149,7 +149,8 @@ final class MissingFilesTests: XCTestCase {
     // MARK: - Disconnected drive playback
 
     /// Playing a track on a disconnected drive used to skip silently to the next entry — the
-    /// track that was already playing — and start it under the error message.
+    /// track that was already playing — and start it under the error message. The failed request
+    /// is also taken back out of the queue: left in, every retry added another dead copy.
     func testPlayingATrackOnAMissingVolumeDoesNotStartAnotherTrack() {
         let engine = AudioEngine()
         let other = Track(url: tempDirectoryURL.appendingPathComponent("other.mp3"))
@@ -157,9 +158,10 @@ final class MissingFilesTests: XCTestCase {
         engine.setPlaylistTracks([other])
 
         engine.playNow([missing])
+        engine.playNow([missing])
 
-        XCTAssertEqual(engine.playlist.map(\.url), [missing.url, other.url])
-        XCTAssertEqual(engine.currentIndex, 0)
+        XCTAssertEqual(engine.playlist.map(\.url), [other.url])
+        XCTAssertEqual(engine.currentIndex, -1)
         XCTAssertNil(engine.currentTrack)
         XCTAssertNotEqual(engine.state, .playing)
     }

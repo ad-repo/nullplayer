@@ -15,6 +15,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     /// Whether the app has finished launching and is ready to handle file opens
     private var isAppReady = false
+
+    /// Set while a failed-play alert is up, so a burst of retried double-clicks shows one.
+    private var isShowingPlayFailureAlert = false
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Check for UI testing mode
@@ -48,6 +51,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Set up audio engine delegate
         windowManager.audioEngine.delegate = self
+        NotificationCenter.default.addObserver(self, selector: #selector(userPlayRequestDidFail(_:)),
+                                               name: .userPlayRequestDidFail, object: nil)
         // Main window always shows a mini spectrum overlay — register as permanent consumer
         windowManager.audioEngine.addSpectrumConsumer("mainWindowSpectrum")
 
@@ -689,5 +694,33 @@ extension AppDelegate: AudioEngineDelegate {
     func audioEngineDidFailToLoadTrack(_ track: Track, error: Error) {
         // Log the failure - UI notification is handled via NotificationCenter
         NSLog("AppDelegate: Failed to load track '%@': %@", track.title, error.localizedDescription)
+    }
+
+    /// A play the user asked for failed and nothing is playing. The marquee, songticker or
+    /// `player.status` also says so, but the user is looking at the library or playlist they
+    /// clicked, which is often in front of the player — an alert is the one readout every skin
+    /// system shares. Deliberately no "Remove from Library": a missing folder looks exactly like
+    /// a disconnected NAS, whose tracks the library keeps.
+    @objc private func userPlayRequestDidFail(_ notification: Notification) {
+        guard !isShowingPlayFailureAlert,
+              let track = notification.userInfo?["track"] as? Track,
+              let error = notification.userInfo?["error"] as? Error else { return }
+        let fileIsMissing = notification.userInfo?["fileIsMissing"] as? Bool ?? false
+        isShowingPlayFailureAlert = true
+        // Off the click that caused it, so the modal loop does not run inside mouse tracking.
+        DispatchQueue.main.async { [weak self] in
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "\u{201C}\(track.title)\u{201D} can\u{2019}t be played"
+            if fileIsMissing {
+                alert.informativeText = "The file can\u{2019}t be found. It may have been moved or deleted, "
+                    + "or the drive it\u{2019}s on may be disconnected.\n\n\(track.url.path)"
+            } else {
+                alert.informativeText = "\(error.localizedDescription)\n\n\(track.url.path)"
+            }
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            self?.isShowingPlayFailureAlert = false
+        }
     }
 }

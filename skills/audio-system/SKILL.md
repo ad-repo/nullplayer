@@ -182,6 +182,21 @@ under the error message.
   unrelated track. The navigation three also capture `wasPlaying` *before* loading: the failure
   handler sets `.stopped` on the way through the skip, so testing `state` afterwards left the queue
   paused on the track it had just skipped to.
+- **A failed `playNow` takes its tracks back out.** When the synchronous load failed
+  (`localTrackLoadFailureCount` moved) and nothing loaded, the inserted range is removed and
+  `currentIndex` restored — left in, every retried double-click on a missing file queued another
+  dead copy. The count, not `currentTrack == nil`, is the test: placeholder tracks and a deferred
+  audio graph also return with no track and are not failures.
+
+**Telling the user.** `.audioTrackDidFailToLoad` feeds each skin family's readout — the Classic and
+Original marquees, the `.wal` songticker, and WMP's `player.status` plus `currentMedia.name` (read
+from `AudioEngine.trackLoadFailureMessage`, set before the post and cleared when a track loads).
+Those sit in the player window, which is often behind the library the user clicked, so a failed
+play **the user started** also posts `.userPlayRequestDidFail` and `AppDelegate` shows an `NSAlert`
+— the one readout every skin system shares. It fires only when playback stops: `playNow` after a
+rollback, and `playTrack` (`userInitiated: true`) when the folder is gone. Automatic advance never
+posts it, since a disconnected drive would otherwise raise one modal per queued track. The alert
+has no "Remove from Library": a missing folder looks exactly like a disconnected NAS.
 
 A reconnected drive plays again only once macOS has remounted the share at the same path; the app
 does not mount shares itself. An SMB share that dropped is not remounted automatically.

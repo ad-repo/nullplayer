@@ -175,6 +175,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// Capture is driven off the defaults domain rather than off each menu item, because the Cava
     /// and vis_classic controls in the slot's menu write their own keys and offer no callback.
     private var visualizationSettingsObserver: NSObjectProtocol?
+    /// A file that will not open stops playback before the engine records the failure, so the
+    /// stop's refresh has nothing to show; this one repaints `player.status` with it.
+    private var trackLoadFailureObserver: NSObjectProtocol?
     private var isCapturingVisualizationSettings = false
     /// The skin a captured change belongs to. It is the skin that was showing when the change was
     /// made, not `importer.selectedSkinName` at the moment the notification is delivered: the
@@ -386,6 +389,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         visualizationSettingsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification, object: importer.defaults, queue: .main
         ) { [weak self] _ in MainActor.assumeIsolated { self?.captureVisualizationSettings() } }
+        trackLoadFailureObserver = NotificationCenter.default.addObserver(
+            forName: .audioTrackDidFailToLoad, object: nil, queue: .main
+        ) { [weak self] _ in MainActor.assumeIsolated { self?.refreshHostState() } }
         // The catalog is a copy of the browser's selected source (W136), so it is rebuilt when that
         // source changes, when a local rescan lands, and when a server finishes loading its
         // lists. `BrowserSource` has no notification of its own: the browser writes it to
@@ -585,7 +591,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     }
 
     deinit {
-        for observer in [effectSelectionObserver, visualizationSettingsObserver].compactMap({ $0 })
+        for observer in [effectSelectionObserver, visualizationSettingsObserver,
+                         trackLoadFailureObserver].compactMap({ $0 })
             + libraryObservers {
             NotificationCenter.default.removeObserver(observer)
         }

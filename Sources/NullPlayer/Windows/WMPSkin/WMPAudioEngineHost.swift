@@ -177,6 +177,12 @@ final class WMPAudioEngineHost: WMPHost {
                 normalization: engine.volumeNormalizationEnabled,
                 preamp: Double(engine.getPreamp()), gains: classicGains.map(Double.init)),
             effects: WMPEffectSelection.shared.snapshot)
+        // Also the title, while nothing is loaded: most skins print `currentMedia.name` and never
+        // `player.status`, the same reason a `.wal` songticker prints the failure.
+        if track == nil, state == .stopped, let failure = engine.trackLoadFailureMessage {
+            result.loadFailure = failure
+            result.metadata.title = failure
+        }
         if Self.castingVideo {
             // The readouts follow the cast, not the audio queue standing idle behind it. There is
             // no local picture, so `result.video` stays empty and the skin's `<VIDEO>` box is dark
