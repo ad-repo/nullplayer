@@ -234,27 +234,6 @@ class ModernSkinEngine {
         return importedName
     }
 
-    /// The family's current skin: the loaded one while the engine holds this family, otherwise
-    /// the one the family reopens with.
-    func currentSkinName(for family: ModernSkinFamily) -> String? {
-        currentFamily == family ? currentSkinName : UserDefaults.standard.string(forKey: family.skinNameKey)
-    }
-
-    /// The family's current skin when the user installed it — a bundled or built-in skin has no
-    /// file to remove.
-    func removableSkin(for family: ModernSkinFamily) -> SkinInfo? {
-        guard let name = currentSkinName(for: family) else { return nil }
-        return availableSkins(for: family).first { $0.name == name && !$0.isBundled && $0.path != nil }
-    }
-
-    /// Moves a user skin to the Trash and forgets it as the family's choice. The caller loads the
-    /// family's default when that family is on screen.
-    func trashSkin(_ skin: SkinInfo, family: ModernSkinFamily) throws {
-        guard let path = skin.path else { return }
-        try FileManager.default.trashItem(at: path, resultingItemURL: nil)
-        UserDefaults.standard.removeObject(forKey: family.skinNameKey)
-    }
-
     func availableSkins(for family: ModernSkinFamily) -> [SkinInfo] {
         let discovered = loader.availableSkins(for: family).map {
             SkinInfo(name: $0.name, path: $0.path, isBundled: $0.isBundled)
