@@ -125,19 +125,14 @@ final class WinampModernSkinImporter {
     }
 
     /// The placeholder skin that ships inside the app bundle — Modern's answer to Classic's bundled
-    /// `NullPlayer-Silver`, and presented the same way: its own **Default Skin (Black)** entry above
-    /// the user's imported skins, not a row inside their list.
+    /// `NullPlayer-Silver`. Like Silver it has no menu entry: it is what the mode loads before any
+    /// skin is imported and what it falls back to when the selected skin is removed.
     ///
     /// NullPlayer bundles no Winamp skins, so Modern mode had nothing at all to load until the user
     /// imported one — a first run came up on the "Import a .wal skin" placeholder. This is a plain
     /// skin of our own (`scripts/generate_default_wal_skin.swift`) that gives the mode a working
     /// window out of the box; it is a starting point, not a skin anyone is meant to keep.
     static let bundledDefaultSkinName = "NullPlayer-Black"
-
-    /// What the menu calls it. The archive's filename is the *identity* (it is what `selectSkin`
-    /// persists and what `availableSkins` matches on), so the two are deliberately separate —
-    /// exactly as Classic's "Default Skin (Silver)" names a `NullPlayer-Silver.wsz`.
-    static let bundledDefaultSkinTitle = "Default Skin (Black)"
 
     /// Where the bundled `.wal` sits. The same three-path search `findBundledClassicSkin` does,
     /// because SwiftPM's resource bundle lands in a different place than a plain copy does.

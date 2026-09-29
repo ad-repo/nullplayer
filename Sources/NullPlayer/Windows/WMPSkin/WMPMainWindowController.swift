@@ -330,7 +330,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// every caller of this — the restore path, the menu's checked state, the diagnostics — means
     /// the player.
     var selectedViewID: String? { materializer?.playerPresentation?.viewID }
-    var hasCompatibilityReport: Bool { loadedSkin != nil }
 
     /// The player window's size in the skin's own pixels.
     private var skinSpaceSize: NSSize {
@@ -1000,32 +999,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         guard let scriptRuntime else { return }
         Task { await scriptRuntime.resetPreferences() }
         lastLoadDiagnostic = "WMP skin script preferences were reset."
-    }
-
-    func saveCompatibilityReportFromPanel() {
-        guard let report = loadedSkin?.compatibilityReport else {
-            let alert = NSAlert()
-            alert.messageText = "No WMP Skin Report Available"
-            alert.informativeText = "Import and load a valid .wmz skin before saving a compatibility report."
-            alert.runModal()
-            return
-        }
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "WMP-Skin-Compatibility.json"
-        panel.message = "Save a bounded compatibility report for the active WMP skin"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        Task {
-            do {
-                try await Task.detached(priority: .utility) {
-                    let encoder = JSONEncoder()
-                    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-                    try encoder.encode(report).write(to: url, options: .atomic)
-                }.value
-            } catch {
-                _ = await MainActor.run { NSAlert(error: error).runModal() }
-            }
-        }
     }
 
     func restoreFrame(_ frame: NSRect, skinName: String?, viewID: String?) {

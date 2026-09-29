@@ -722,6 +722,9 @@ class ContextMenuBuilder {
         let loadModernSkin = NSMenuItem(title: "Load Skin...", action: #selector(MenuActions.loadModernSkinFromFile), keyEquivalent: "")
         loadModernSkin.target = MenuActions.shared
         modernMenu.addItem(loadModernSkin)
+        let openModernFolder = NSMenuItem(title: "Open Skins Folder...", action: #selector(MenuActions.openModernSkinsFolder), keyEquivalent: "")
+        openModernFolder.target = MenuActions.shared
+        modernMenu.addItem(openModernFolder)
         modernMenu.addItem(NSMenuItem.separator())
 
         // Modern skin list
@@ -745,13 +748,6 @@ class ContextMenuBuilder {
                 modernMenu.addItem(item)
             }
         }
-
-        modernMenu.addItem(NSMenuItem.separator())
-
-        // Open modern skins folder
-        let openModernFolder = NSMenuItem(title: "Open Skins Folder...", action: #selector(MenuActions.openModernSkinsFolder), keyEquivalent: "")
-        openModernFolder.target = MenuActions.shared
-        modernMenu.addItem(openModernFolder)
 
         return modernMenu
     }
@@ -880,6 +876,14 @@ class ContextMenuBuilder {
     }
 
     // MARK: - UI Submenu
+
+    /// Every skin family's "Remove “Name”..." entry, shown only while that family's current skin
+    /// is one the user installed — a bundled skin has nothing to remove.
+    private static func buildRemoveSkinItem(named name: String, action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: "Remove \u{201c}\(name)\u{201d}...", action: action, keyEquivalent: "")
+        item.target = MenuActions.shared
+        return item
+    }
     
     private static func buildUIMenu() -> NSMenu {
         let uiMenu = NSMenu()
@@ -921,17 +925,11 @@ class ContextMenuBuilder {
         let openClassicFolder = NSMenuItem(title: "Open Skins Folder...", action: #selector(MenuActions.openClassicSkinsFolder), keyEquivalent: "")
         openClassicFolder.target = MenuActions.shared
         classicMenu.addItem(openClassicFolder)
-        
-        classicMenu.addItem(NSMenuItem.separator())
-        
-        // Default Skin (Silver)
-        let defaultSkinItem = NSMenuItem(title: "Default Skin (Silver)", action: #selector(MenuActions.loadDefaultClassicSkin), keyEquivalent: "")
-        defaultSkinItem.target = MenuActions.shared
-        // Show checkmark if using the bundled default skin (no custom skin path)
-        if activeMode == .classic && wm.currentSkinPath == nil {
-            defaultSkinItem.state = .on
+        if let removable = MenuActions.removableClassicSkinURL() {
+            classicMenu.addItem(buildRemoveSkinItem(
+                named: removable.deletingPathExtension().lastPathComponent,
+                action: #selector(MenuActions.removeCurrentClassicSkin)))
         }
-        classicMenu.addItem(defaultSkinItem)
         
         classicMenu.addItem(NSMenuItem.separator())
         
@@ -980,6 +978,18 @@ class ContextMenuBuilder {
         let loadModernSkin = NSMenuItem(title: "Load Skin...", action: #selector(MenuActions.loadModernSkinFromFile), keyEquivalent: "")
         loadModernSkin.target = MenuActions.shared
         modernMenu.addItem(loadModernSkin)
+        if activeMode == .modern {
+            let resetModern = NSMenuItem(title: "Reset Skin to Default", action: #selector(MenuActions.resetCurrentSkinToDefault), keyEquivalent: "")
+            resetModern.target = MenuActions.shared
+            modernMenu.addItem(resetModern)
+        }
+        let openModernFolder = NSMenuItem(title: "Open Skins Folder...", action: #selector(MenuActions.openModernSkinsFolder), keyEquivalent: "")
+        openModernFolder.target = MenuActions.shared
+        modernMenu.addItem(openModernFolder)
+        if let removable = MenuActions.removableModernFamilySkin(.modern) {
+            modernMenu.addItem(buildRemoveSkinItem(
+                named: removable.name, action: #selector(MenuActions.removeCurrentModernSkin)))
+        }
         modernMenu.addItem(NSMenuItem.separator())
 
         let modernSkins = ModernSkinEngine.shared.availableSkins(for: .modern)
@@ -1002,16 +1012,6 @@ class ContextMenuBuilder {
                 modernMenu.addItem(item)
             }
         }
-
-        modernMenu.addItem(NSMenuItem.separator())
-        if activeMode == .modern {
-            let resetModern = NSMenuItem(title: "Reset Skin to Default", action: #selector(MenuActions.resetCurrentSkinToDefault), keyEquivalent: "")
-            resetModern.target = MenuActions.shared
-            modernMenu.addItem(resetModern)
-        }
-        let openModernFolder = NSMenuItem(title: "Open Skins Folder...", action: #selector(MenuActions.openModernSkinsFolder), keyEquivalent: "")
-        openModernFolder.target = MenuActions.shared
-        modernMenu.addItem(openModernFolder)
 
         if activeMode == .modern { modernItem.state = .on }
         modernItem.submenu = modernMenu
@@ -1041,6 +1041,18 @@ class ContextMenuBuilder {
         let loadMetalSkin = NSMenuItem(title: "Load \(ModernSkinFamily.metal.displayName) Skin...", action: #selector(MenuActions.loadMetalSkinFromFile), keyEquivalent: "")
         loadMetalSkin.target = MenuActions.shared
         metalMenu.addItem(loadMetalSkin)
+        if activeMode == .metal {
+            let resetMetal = NSMenuItem(title: "Reset Skin to Default", action: #selector(MenuActions.resetCurrentSkinToDefault), keyEquivalent: "")
+            resetMetal.target = MenuActions.shared
+            metalMenu.addItem(resetMetal)
+        }
+        let openMetalFolder = NSMenuItem(title: "Open \(ModernSkinFamily.metal.displayName) Skins Folder...", action: #selector(MenuActions.openMetalSkinsFolder), keyEquivalent: "")
+        openMetalFolder.target = MenuActions.shared
+        metalMenu.addItem(openMetalFolder)
+        if let removable = MenuActions.removableModernFamilySkin(.metal) {
+            metalMenu.addItem(buildRemoveSkinItem(
+                named: removable.name, action: #selector(MenuActions.removeCurrentMetalSkin)))
+        }
         metalMenu.addItem(NSMenuItem.separator())
 
         let metalSkins = ModernSkinEngine.shared.availableSkins(for: .metal)
@@ -1057,16 +1069,6 @@ class ContextMenuBuilder {
             }
             metalMenu.addItem(item)
         }
-
-        metalMenu.addItem(NSMenuItem.separator())
-        if activeMode == .metal {
-            let resetMetal = NSMenuItem(title: "Reset Skin to Default", action: #selector(MenuActions.resetCurrentSkinToDefault), keyEquivalent: "")
-            resetMetal.target = MenuActions.shared
-            metalMenu.addItem(resetMetal)
-        }
-        let openMetalFolder = NSMenuItem(title: "Open \(ModernSkinFamily.metal.displayName) Skins Folder...", action: #selector(MenuActions.openMetalSkinsFolder), keyEquivalent: "")
-        openMetalFolder.target = MenuActions.shared
-        metalMenu.addItem(openMetalFolder)
 
         if activeMode == .metal { metalItem.state = .on }
         metalItem.submenu = metalMenu
@@ -1114,42 +1116,9 @@ class ContextMenuBuilder {
                                         action: #selector(MenuActions.openWinampModernSkinsFolder), keyEquivalent: "")
             openFolder.target = MenuActions.shared
             winampModernMenu.addItem(openFolder)
-
-            // The bundled placeholder, in the same place and shape Classic gives its bundled
-            // Silver: its own entry between "where skins come from" and the user's own library,
-            // rather than a row inside that library. It is not a skin they installed and they
-            // cannot remove it, so listing it among the ones they can would misdescribe it.
-            if let bundled = WinampModernSkinImporter.shared.bundledDefaultSkin() {
-                winampModernMenu.addItem(NSMenuItem.separator())
-                let defaultItem = NSMenuItem(title: WinampModernSkinImporter.bundledDefaultSkinTitle,
-                                             action: #selector(MenuActions.selectWinampModernSkin(_:)),
-                                             keyEquivalent: "")
-                defaultItem.target = MenuActions.shared
-                defaultItem.representedObject = bundled.archiveURL
-                if WinampModernSkinImporter.shared.selectedSkin()?.archiveURL == bundled.archiveURL {
-                    defaultItem.state = .on
-                }
-                winampModernMenu.addItem(defaultItem)
-            }
-
-            winampModernMenu.addItem(NSMenuItem.separator())
-            let installed = WinampModernSkinImporter.shared.installedSkins()
-            if installed.isEmpty {
-                let noSkins = NSMenuItem(title: "No skins installed", action: nil, keyEquivalent: "")
-                noSkins.isEnabled = false
-                winampModernMenu.addItem(noSkins)
-            } else {
-                for skin in installed {
-                    let item = NSMenuItem(title: skin.name,
-                                          action: #selector(MenuActions.selectWinampModernSkin(_:)),
-                                          keyEquivalent: "")
-                    item.target = MenuActions.shared
-                    item.representedObject = skin.archiveURL
-                    if WinampModernSkinImporter.shared.selectedSkin()?.archiveURL == skin.archiveURL {
-                        item.state = .on
-                    }
-                    winampModernMenu.addItem(item)
-                }
+            if let removable = MenuActions.removableWinampModernSkin() {
+                winampModernMenu.addItem(buildRemoveSkinItem(
+                    named: removable.name, action: #selector(MenuActions.removeCurrentWinampModernSkin)))
             }
 
             // Everything configured for the **loaded skin**, in one block: what it can be coloured
@@ -1231,8 +1200,8 @@ class ContextMenuBuilder {
                 for item in skinSpecific { winampModernMenu.addItem(item) }
             }
 
-            // The ClassicPro engine a cPro skin needs imported before it can run at all. It sits
-            // below the skin list so the top of this menu matches Classic's and Media Player's.
+            // The ClassicPro engine a cPro skin needs imported before it can run at all. It follows
+            // the loaded skin's options so the top of this menu matches Classic's and Media Player's.
             winampModernMenu.addItem(NSMenuItem.separator())
             let engineInstalled = ClassicProEngineStore.shared.isInstalled
             let engineItem = NSMenuItem(
@@ -1262,6 +1231,26 @@ class ContextMenuBuilder {
                 let status = NSMenuItem(title: title, action: nil, keyEquivalent: "")
                 status.isEnabled = false
                 winampModernMenu.addItem(status)
+            }
+
+            winampModernMenu.addItem(NSMenuItem.separator())
+            let installed = WinampModernSkinImporter.shared.installedSkins()
+            if installed.isEmpty {
+                let noSkins = NSMenuItem(title: "No skins installed", action: nil, keyEquivalent: "")
+                noSkins.isEnabled = false
+                winampModernMenu.addItem(noSkins)
+            } else {
+                for skin in installed {
+                    let item = NSMenuItem(title: skin.name,
+                                          action: #selector(MenuActions.selectWinampModernSkin(_:)),
+                                          keyEquivalent: "")
+                    item.target = MenuActions.shared
+                    item.representedObject = skin.archiveURL
+                    if WinampModernSkinImporter.shared.selectedSkin()?.archiveURL == skin.archiveURL {
+                        item.state = .on
+                    }
+                    winampModernMenu.addItem(item)
+                }
             }
 
             winampModernItem.submenu = winampModernMenu
@@ -1297,34 +1286,10 @@ class ContextMenuBuilder {
                                   action: #selector(MenuActions.openWMPSkinsFolder), keyEquivalent: "")
             open.target = MenuActions.shared
             wmpMenu.addItem(open)
-            wmpMenu.addItem(.separator())
-
-            let unskinned = NSMenuItem(title: "Default Skin (Unskinned)",
-                                       action: #selector(MenuActions.useUnskinnedWMPPlayer), keyEquivalent: "")
-            unskinned.target = MenuActions.shared
-            unskinned.state = activeMode == .wmp && importer.selectedSkinName == nil ? .on : .off
-            wmpMenu.addItem(unskinned)
-            wmpMenu.addItem(.separator())
-
-            let installed = importer.installedSkins()
-            if installed.isEmpty {
-                let empty = NSMenuItem(title: "No skins installed", action: nil, keyEquivalent: "")
-                empty.isEnabled = false
-                wmpMenu.addItem(empty)
-            } else {
-                for skin in installed {
-                    let item = NSMenuItem(title: skin.name, action: #selector(MenuActions.selectWMPSkin(_:)), keyEquivalent: "")
-                    item.target = MenuActions.shared
-                    item.representedObject = skin.name
-                    if activeMode == .wmp,
-                       importer.selectedSkinName?.caseInsensitiveCompare(skin.name) == .orderedSame {
-                        item.state = .on
-                    }
-                    wmpMenu.addItem(item)
-                }
+            if let selectedName = importer.selectedSkinName {
+                wmpMenu.addItem(buildRemoveSkinItem(
+                    named: selectedName, action: #selector(MenuActions.removeSelectedWMPSkin)))
             }
-            wmpMenu.addItem(.separator())
-
             if activeMode == .wmp,
                let controller = wm.mainWindowController as? WMPMainWindowController,
                controller.availableViewIDs.count > 1 {
@@ -1342,19 +1307,23 @@ class ContextMenuBuilder {
                 viewsItem.submenu = viewsMenu
                 wmpMenu.addItem(viewsItem)
             }
-            let report = NSMenuItem(title: "Save Compatibility Report...",
-                                    action: #selector(MenuActions.saveWMPCompatibilityReport),
-                                    keyEquivalent: "")
-            report.target = MenuActions.shared
-            report.isEnabled = activeMode == .wmp
-                && (wm.mainWindowController as? WMPMainWindowController)?.hasCompatibilityReport == true
-            wmpMenu.addItem(report)
-            if let selectedName = importer.selectedSkinName {
-                let remove = NSMenuItem(title: "Remove \u{201c}\(selectedName)\u{201d}...",
-                                        action: #selector(MenuActions.removeSelectedWMPSkin),
-                                        keyEquivalent: "")
-                remove.target = MenuActions.shared
-                wmpMenu.addItem(remove)
+            wmpMenu.addItem(.separator())
+            let installed = importer.installedSkins()
+            if installed.isEmpty {
+                let empty = NSMenuItem(title: "No skins installed", action: nil, keyEquivalent: "")
+                empty.isEnabled = false
+                wmpMenu.addItem(empty)
+            } else {
+                for skin in installed {
+                    let item = NSMenuItem(title: skin.name, action: #selector(MenuActions.selectWMPSkin(_:)), keyEquivalent: "")
+                    item.target = MenuActions.shared
+                    item.representedObject = skin.name
+                    if activeMode == .wmp,
+                       importer.selectedSkinName?.caseInsensitiveCompare(skin.name) == .orderedSame {
+                        item.state = .on
+                    }
+                    wmpMenu.addItem(item)
+                }
             }
             if activeMode == .wmp { wmpItem.state = .on }
             wmpItem.submenu = wmpMenu
@@ -4539,22 +4508,6 @@ class MenuActions: NSObject {
     
     // MARK: - Skin Operations
     
-    @objc func loadDefaultClassicSkin() {
-        let wm = WindowManager.shared
-
-        if wm.isRunningModernUI {
-            // Load the bundled default classic skin (clears lastClassicSkinPath itself),
-            // then live-switch to classic. No restart.
-            SkinLoadingOverlay.shared.run {
-                wm.loadBundledDefaultSkin()
-                wm.reloadUI(toModernUI: false)
-            }
-        } else {
-            // Already in classic mode - load bundled default skin now
-            SkinLoadingOverlay.shared.run { wm.loadBundledDefaultSkin() }
-        }
-    }
-    
     @objc func loadSkinFromFile() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
@@ -4949,28 +4902,11 @@ class MenuActions: NSObject {
         }
     }
 
-    @objc func useUnskinnedWMPPlayer() {
-        guard AppCapabilities.supports(.wmpSkinMode) else { return }
-        let wm = WindowManager.shared
-        WMPSkinImporter().resetSelection()
-        if let controller = wm.mainWindowController as? WMPMainWindowController {
-            controller.resetToUnskinned()
-        } else {
-            wm.reloadUI(to: .wmp)
-        }
-    }
-
     @objc func selectWMPView(_ sender: NSMenuItem) {
         guard AppCapabilities.supports(.wmpSkinMode),
               let viewID = sender.representedObject as? String,
               let controller = WindowManager.shared.mainWindowController as? WMPMainWindowController else { return }
         controller.switchView(to: viewID)
-    }
-
-    @objc func saveWMPCompatibilityReport() {
-        guard AppCapabilities.supports(.wmpSkinMode),
-              let controller = WindowManager.shared.mainWindowController as? WMPMainWindowController else { return }
-        controller.saveCompatibilityReportFromPanel()
     }
 
     @objc func removeSelectedWMPSkin() {
@@ -4995,6 +4931,105 @@ class MenuActions: NSObject {
             } catch {
                 _ = await MainActor.run { NSAlert(error: error).runModal() }
             }
+        }
+    }
+
+    /// Asks before a skin family's current skin is removed. The file goes to the Trash, so a
+    /// removal made by mistake can be recovered from there.
+    private func confirmSkinRemoval(_ name: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Remove Skin?"
+        alert.informativeText = "\u{201c}\(name)\u{201d} will be moved to the Trash."
+        alert.addButton(withTitle: "Remove")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func trashSkin(at url: URL) -> Bool {
+        do {
+            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+            return true
+        } catch {
+            NSAlert(error: error).runModal()
+            return false
+        }
+    }
+
+    /// The Classic skin the menu would remove: the loaded one in Classic mode, otherwise the one
+    /// Classic reopens with — and only when it lives in the Skins folder.
+    static func removableClassicSkinURL() -> URL? {
+        let wm = WindowManager.shared
+        let path = wm.uiMode == .classic
+            ? wm.currentSkinPath
+            : UserDefaults.standard.string(forKey: "lastClassicSkinPath")
+        guard let path else { return nil }
+        let url = URL(fileURLWithPath: path).standardizedFileURL
+        guard url.deletingLastPathComponent().path == wm.skinsDirectoryURL.standardizedFileURL.path,
+              FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return url
+    }
+
+    @objc func removeCurrentClassicSkin() {
+        guard let url = Self.removableClassicSkinURL(),
+              confirmSkinRemoval(url.deletingPathExtension().lastPathComponent),
+              trashSkin(at: url) else { return }
+        let wm = WindowManager.shared
+        if wm.uiMode == .classic {
+            SkinLoadingOverlay.shared.run { wm.loadBundledDefaultSkin() }
+        } else {
+            UserDefaults.standard.removeObject(forKey: "lastClassicSkinPath")
+        }
+    }
+
+    /// The Original or Original-Metal skin the menu would remove: the family's current skin, when
+    /// it is a user skin with a file behind it rather than a bundled or built-in one.
+    static func removableModernFamilySkin(_ family: ModernSkinFamily) -> ModernSkinEngine.SkinInfo? {
+        let engine = ModernSkinEngine.shared
+        let name = engine.currentFamily == family && WindowManager.shared.uiMode.modernSkinFamily == family
+            ? engine.currentSkinName
+            : UserDefaults.standard.string(forKey: family.skinNameKey)
+        guard let name else { return nil }
+        return engine.availableSkins(for: family).first {
+            $0.name == name && !$0.isBundled && $0.path != nil
+        }
+    }
+
+    @objc func removeCurrentModernSkin() { removeCurrentSkin(of: .modern) }
+    @objc func removeCurrentMetalSkin() { removeCurrentSkin(of: .metal) }
+
+    private func removeCurrentSkin(of family: ModernSkinFamily) {
+        guard let skin = Self.removableModernFamilySkin(family), let path = skin.path,
+              confirmSkinRemoval(skin.name), trashSkin(at: path) else { return }
+        if WindowManager.shared.uiMode.modernSkinFamily == family {
+            SkinLoadingOverlay.shared.run { ModernSkinEngine.shared.loadDefaultSkin(for: family) }
+        } else {
+            UserDefaults.standard.removeObject(forKey: family.skinNameKey)
+        }
+    }
+
+    /// The `.wal` skin the menu would remove: the selected one, when the user installed it.
+    static func removableWinampModernSkin() -> WinampModernImportedSkin? {
+        let importer = WinampModernSkinImporter.shared
+        guard let selected = importer.selectedSkin() else { return nil }
+        return importer.installedSkins().first { $0.archiveURL == selected.archiveURL }
+    }
+
+    @objc func removeCurrentWinampModernSkin() {
+        guard let skin = Self.removableWinampModernSkin(),
+              confirmSkinRemoval(skin.name), trashSkin(at: skin.archiveURL) else { return }
+        let importer = WinampModernSkinImporter.shared
+        // Fall back to the bundled skin rather than whichever installed skin sorts first.
+        if let bundled = importer.bundledDefaultSkin() {
+            importer.selectSkin(bundled)
+        } else {
+            UserDefaults.standard.removeObject(forKey: WinampModernSkinImporter.selectedSkinNameKey)
+        }
+        guard WindowManager.shared.uiMode == .winampModern,
+              let next = importer.selectedSkin() else { return }
+        SkinLoadingOverlay.shared.run {
+            (WindowManager.shared.mainWindowController as? WinampModernMainWindowController)?
+                .loadSkin(at: next.archiveURL)
+            WindowManager.shared.ensureAllWindowsOnScreen()
         }
     }
 
