@@ -127,9 +127,16 @@ enum WinampModernContainerTopology {
     /// The main player is excluded (it is never closed from a list), and so is any container the
     /// surface catalog already routes — the playlist, equalizer and library have their own menu
     /// items, and a second entry here would be a second route to one window, which the catalog exists
-    /// to prevent.
+    /// to prevent. So is a script's runtime copy of a container: the declared original is the one
+    /// entry.
+    ///
+    /// The one exception to the markup is an album-art panel (`hostsAlbumArt`), listed whatever
+    /// its `name` and `nomenu` say. Its content can be built by script, so the host asks this at
+    /// menu time rather than caching the answer from load.
     static func isListedInWindowMenu(_ info: WinampModernContainerInfo) -> Bool {
-        guard !info.isMainPlayer, !info.isSynthesized else { return false }
+        guard !info.isMainPlayer, !info.isSynthesized,
+              info.object.attributes[WasabiSkinRuntime.dynamicInstanceAttribute] == nil
+        else { return false }
         // A container declaring a component GUID is normally the catalog's business, not the menu's.
         // The two exceptions are the surfaces the catalog routes but no menu item names — the
         // visualization and video windows — and excluding those left a skin's AVS window with no way
@@ -137,6 +144,7 @@ enum WinampModernContainerTopology {
         // none of their skins binds a button to it.
         if let kind = info.kind,
            !WinampModernSurfaceInventory.windowMenuRoutedKinds.contains(kind) { return false }
+        if hostsAlbumArt(info) { return true }
         guard let name = info.object.attributes["name"], !name.isEmpty else { return false }
         // A leading `:` is a Wasabi string-table reference, not a name. Only the standard library's
         // `Component` shell uses one in the corpus (`:componenttitle`, in Anexa, Sony_Walkman and
@@ -149,22 +157,26 @@ enum WinampModernContainerTopology {
     /// Whether this container's content is an album-art panel — an `<AlbumArt>` anywhere in its
     /// tree, including a body a script built from a frame's `content=` group.
     ///
-    /// Such a window is listed in the menu even when the skin says `nomenu="1"` or gives it no name.
-    /// In Winamp the host offered it from *View → Album Art*, so the skin had no reason to list it;
-    /// winampmodern566's `winamp.albumart` is `nomenu="1"` and reachable otherwise only from its
-    /// `Alt+A` handler, which is gone for good once the user closes it. jvc.tape's `albumart` and
-    /// Core-X5's unnamed `CoverArt` are the same shape. Asked at menu time, not at load, because the
-    /// panel is often script-built. A notifier carries an `<AlbumArt>` too and is not a window to
-    /// open by hand, so it answers false.
-    static func hostsAlbumArt(_ container: WasabiObject) -> Bool {
-        let id = (container.xmlID ?? "").lowercased()
-        guard id != "notifier", !id.hasPrefix("notifier.") else { return false }
+    /// In Winamp the host offered such a window from *View → Album Art*, so the skin had no reason to
+    /// list it; winampmodern566's `winamp.albumart` is `nomenu="1"` and reachable otherwise only from
+    /// its `Alt+A` handler, which is gone for good once the user closes it. jvc.tape's `albumart` and
+    /// Core-X5's unnamed `CoverArt` are the same shape. A notifier carries an `<AlbumArt>` too and is
+    /// not a window to open by hand, so it answers false.
+    static func hostsAlbumArt(_ info: WinampModernContainerInfo) -> Bool {
+        guard !isNotifier(id: info.id) else { return false }
         func visit(_ object: WasabiObject) -> Bool {
             let type = object.typeName.lowercased()
             if type == "albumart" || type == "wasabi:albumart" { return true }
             return object.children.contains(where: visit)
         }
-        return visit(container)
+        return visit(info.object)
+    }
+
+    /// A track-change toast (`notifier`, `notifier.preferences`). The id is the only name Wasabi
+    /// gives it — there is no notifier component GUID to match on.
+    static func isNotifier(id: String) -> Bool {
+        let id = id.lowercased()
+        return id == "notifier" || id.hasPrefix("notifier.")
     }
 
     /// Whether `default_visible="1"` should be *acted on* for this container, and why not when it

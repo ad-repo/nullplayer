@@ -135,12 +135,14 @@ configurator that way; all three were built, rendered and ordered out, with no r
   Winamp itself uses. Defix marks its `browserpro`, `notifier` and two `searchresults` popups
   `nomenu="1"`; its `SUI` and `VISCON` carry no name because its own buttons reach them
 - **one exception to `nomenu`: a window whose content is an `<AlbumArt>`** is listed anyway
-  (`WinampModernContainerTopology.hostsAlbumArt`, 2026-09-28). In Winamp the *host* reached it from
+  (`WinampModernContainerTopology.hostsAlbumArt`, 2026-09-28), inside `isListedInWindowMenu` after
+  its main-player, synthesized and component-GUID guards. In Winamp the *host* reached it from
   **View → Album Art**, so the skin had no reason to list it; the stock skin's `winamp.albumart` is
-  `nomenu="1"`, and here, once the user closed it, its `Alt+A` handler was the only way back. The walk
-  runs at menu time, not at load, because the stock skin's panel is built by `standardframe.maki`
-  from a `content=` group and is not in the tree until the script has run. Notifiers (which also
-  carry an `<AlbumArt>`) answer false, and the controller keeps dynamic instances out. Measured across the corpus (76 distinct
+  `nomenu="1"`, and here, once the user closed it, its `Alt+A` handler was the only way back. The
+  controller asks `isListedInWindowMenu` at menu time, not at load, because the stock skin's panel is
+  built by `standardframe.maki` from a `content=` group and is not in the tree until the script has
+  run. Notifiers (which also carry an `<AlbumArt>`) answer false, and so does a script's dynamic
+  instance of any container — the declared original is the one entry. Measured across the corpus (76 distinct
   skins): the stock skin is the only one it changes — jvc.tape's `albumart` container never loads
   (its `skin.xml` includes `albumart.xml` from the root; the file is `xml/albumart.xml`, an author
   bug), and Core-X5's `CoverArt` is a plain `<layer>` its script fills from `folder.jpg`, not an

@@ -239,13 +239,13 @@ final class WinampModernPhase48Tests: XCTestCase {
         </WasabiXML>
         """
         let loaded = try load(xml: xml)
-        let roots = loaded.runtime.graph.roots
-        let albumArt = try XCTUnwrap(roots.first { $0.xmlID == "winamp.albumart" })
-        let popup = try XCTUnwrap(roots.first { $0.xmlID == "popup" })
-        XCTAssertTrue(WinampModernContainerTopology.hostsAlbumArt(albumArt))
-        XCTAssertFalse(WinampModernContainerTopology.hostsAlbumArt(popup))
-        let notifier = try XCTUnwrap(roots.first { $0.xmlID == "notifier" })
-        XCTAssertFalse(WinampModernContainerTopology.hostsAlbumArt(notifier),
+        let containers = WinampModernContainerTopology.windowContainers(graph: loaded.runtime.graph)
+        func listed(_ id: String) throws -> Bool {
+            WinampModernContainerTopology.isListedInWindowMenu(try XCTUnwrap(containers.first { $0.id == id }))
+        }
+        XCTAssertTrue(try listed("winamp.albumart"))
+        XCTAssertFalse(try listed("popup"))
+        XCTAssertFalse(try listed("notifier"),
                        "the track-change toast shows a cover but is not a window to open by hand")
     }
 
