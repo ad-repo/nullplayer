@@ -4048,14 +4048,6 @@ class MenuActions: NSObject {
         }
     }
 
-    @objc func loadModernSkinFromFile() {
-        loadModernFamilySkinFromFile(family: .modern)
-    }
-
-    @objc func loadMetalSkinFromFile() {
-        loadModernFamilySkinFromFile(family: .metal)
-    }
-
     // MARK: - Modern (Winamp 5.x `.wal`)
 
     @objc func loadWinampModernSkinFromFile() {
@@ -4208,7 +4200,7 @@ class MenuActions: NSObject {
         }
     }
 
-    private func loadModernFamilySkinFromFile(family: ModernSkinFamily) {
+    func loadModernFamilySkinFromFile(family: ModernSkinFamily) {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
@@ -4294,50 +4286,6 @@ class MenuActions: NSObject {
         }
     }
 
-    /// Select a modern skin and switch to modern mode if needed
-    @objc func selectModernSkin(_ sender: NSMenuItem) {
-        guard let name = sender.representedObject as? String else { return }
-        let wm = WindowManager.shared
-
-        // Persist the selected modern skin name; `prepareUIRuntime` → `loadPreferredSkin()`
-        // reads this key when entering modern, so the live switch loads exactly this skin.
-        UserDefaults.standard.set(name, forKey: ModernSkinFamily.modern.skinNameKey)
-
-        SkinLoadingOverlay.shared.run {
-            if wm.uiMode != .modern {
-                // Live-switch to modern — no restart.
-                wm.reloadUI(to: .modern)
-            } else {
-                // Already in modern mode — load the skin immediately
-                ModernSkinEngine.shared.loadSkin(named: name, family: .modern)
-            }
-        }
-    }
-
-    /// Select a metal skin and switch to metal mode if needed
-    @objc func selectMetalSkin(_ sender: NSMenuItem) {
-        guard let name = sender.representedObject as? String else { return }
-        let wm = WindowManager.shared
-
-        UserDefaults.standard.set(name, forKey: ModernSkinFamily.metal.skinNameKey)
-
-        SkinLoadingOverlay.shared.run {
-            if wm.uiMode != .metal {
-                wm.reloadUI(to: .metal)
-            } else {
-                ModernSkinEngine.shared.loadSkin(named: name, family: .metal)
-            }
-        }
-    }
-    
-    @objc func openModernSkinsFolder() {
-        ModernSkinEngine.shared.openSkinsFolderForFamily(.modern)
-    }
-
-    @objc func openMetalSkinsFolder() {
-        ModernSkinEngine.shared.openSkinsFolderForFamily(.metal)
-    }
-    
     // MARK: - UI Mode Switching
     
     @objc func setClassicMode() {
@@ -4345,20 +4293,6 @@ class MenuActions: NSObject {
         let wm = WindowManager.shared
         guard wm.uiMode != .classic else { return }
         SkinLoadingOverlay.shared.run { wm.reloadUI(to: .classic) }
-    }
-
-    @objc func setModernMode() {
-        guard AppCapabilities.supports(.modernMode) else { return }
-        let wm = WindowManager.shared
-        guard wm.uiMode != .modern else { return }
-        SkinLoadingOverlay.shared.run { wm.reloadUI(to: .modern) }
-    }
-
-    @objc func setMetalMode() {
-        guard AppCapabilities.supports(.metalMode) else { return }
-        let wm = WindowManager.shared
-        guard wm.uiMode != .metal else { return }
-        SkinLoadingOverlay.shared.run { wm.reloadUI(to: .metal) }
     }
 
     /// Switch into the Winamp 5.x `.wal` family, shown to the user as **Modern**. See

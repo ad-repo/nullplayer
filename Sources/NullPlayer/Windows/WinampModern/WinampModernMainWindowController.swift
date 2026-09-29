@@ -35,16 +35,16 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     private struct AuxiliaryContainer {
         let window: NSWindow
         let view: WinampModernMainView
-        let kind: WinampModernComponentKind?
-        let containerID: String
+        /// The container as the topology describes it, kept so the window menu asks
+        /// `WinampModernContainerTopology.isListedInWindowMenu` against its current tree.
+        let info: WinampModernContainerInfo
+        var kind: WinampModernComponentKind? { info.kind }
+        var containerID: String { info.id }
         /// The skin's own `name=` for this container, and whether it belongs in the host's window
         /// menu (Phase 27.7). A skin declares windows it binds no button to — Defix's two speaker
         /// cabinets and its configurator — and in Winamp those are opened from *Winamp's* Windows
         /// menu. Without the equivalent here they exist, render, and cannot be reached at all.
         let displayName: String
-        /// The container as the topology describes it, kept so the window menu asks
-        /// `WinampModernContainerTopology.isListedInWindowMenu` against its current tree.
-        let info: WinampModernContainerInfo
         /// The container's `autoclose="1"`: a transient popup that closes when it loses the keyboard.
         let autoCloses: Bool
         /// `default_visible="1"`: this window opens with the skin unless the user has since closed
@@ -57,7 +57,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         let defaultOffset: CGPoint?
         /// A track-change toast popup (`<container id="notifier">`). Shown by the host on track
         /// change; the skin's MAKI scripts handle fade animation and auto-dismiss.
-        let isNotifier: Bool
+        var isNotifier: Bool { WinampModernContainerTopology.isNotifier(id: info.id) }
         /// `noactivation="1"`: the window must not steal focus when shown.
         let noActivation: Bool
         /// A second live copy of a `dynamic="1"` container, built because a script asked
@@ -585,15 +585,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             auxWindow.hidesOnDeactivate = false
         }
         auxiliaryContainers.append(AuxiliaryContainer(
-            window: auxWindow, view: view, kind: info.kind, containerID: info.id,
+            window: auxWindow, view: view, info: info,
             displayName: WinampModernContainerTopology.displayName(of: info),
-            info: info,
             autoCloses: info.object.attributes["autoclose"] == "1",
             opensByDefault: info.opensByDefault && suppression == nil,
             defaultOffset: info.defaultOrigin.map {
                 CGPoint(x: $0.x - playerOrigin.x, y: $0.y - playerOrigin.y)
             },
-            isNotifier: isNotifier,
             noActivation: noActivation,
             isDynamicInstance: isDynamicInstance))
         viewsByContainer[view.containerID] = view

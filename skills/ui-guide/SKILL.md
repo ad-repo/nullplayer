@@ -705,7 +705,8 @@ casting, playlist, current track, seek position, and play/pause survive the swit
 untouched; audio state is deliberately never snapshotted.
 
 **Entry points** (`ContextMenuBuilder` / `MenuActions`): `setClassicMode()` /
-`setModernMode()`, plus the skin-driven switches `selectClassicSkin` / `selectModernSkin`
+`setModernFamilyMode(_:)` (Original and Original-Metal), plus the skin-driven switches
+`selectClassicSkin` / `selectModernFamilySkin(_:)`
 (picking a skin for the other mode switches into it). All call
 `WindowManager.reloadUI(toModernUI:)`. Classic **UI Size** changes are also live
 (see the UI Size Mode section) — nothing in the UI still requires a relaunch.

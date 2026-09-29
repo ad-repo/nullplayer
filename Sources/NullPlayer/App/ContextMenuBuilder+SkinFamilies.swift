@@ -6,7 +6,7 @@ extension ContextMenuBuilder {
 
     /// One skin family's submenu, in the order every family uses: a "Switch to" row outside its own
     /// mode, the family's options, then its skins after one divider.
-    private static func buildSkinFamilyMenu(switchItem: NSMenuItem?, options: [NSMenuItem],
+    static func buildSkinFamilyMenu(switchItem: NSMenuItem?, options: [NSMenuItem],
                                             skins: [NSMenuItem]) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -46,7 +46,7 @@ extension ContextMenuBuilder {
     private static func removeSkinItem(for mode: PlayerUIMode) -> NSMenuItem? {
         MenuActions.removableSkin(for: mode).map {
             skinMenuItem("Remove \u{201c}\($0.name)\u{201d}...", #selector(MenuActions.removeCurrentSkin(_:)),
-                         representedObject: mode.rawValue)
+                         representedObject: mode)
         }
     }
 
@@ -82,40 +82,32 @@ extension ContextMenuBuilder {
 
     // MARK: - Original and Original-Metal
 
-    /// The Original or Original-Metal submenu.
+    /// The Original or Original-Metal submenu. Every item carries its family, so both families
+    /// share one action per job.
     static func buildModernFamilySkinsMenu(_ family: ModernSkinFamily) -> NSMenu {
-        let mode: PlayerUIMode
-        let actions: (switchTo: Selector, load: Selector, openFolder: Selector, select: Selector)
-        let titles: (load: String, openFolder: String)
-        switch family {
-        case .modern:
-            mode = .modern
-            actions = (#selector(MenuActions.setModernMode), #selector(MenuActions.loadModernSkinFromFile),
-                       #selector(MenuActions.openModernSkinsFolder), #selector(MenuActions.selectModernSkin(_:)))
-            titles = ("Load Skin...", "Open Skins Folder...")
-        case .metal:
-            mode = .metal
-            actions = (#selector(MenuActions.setMetalMode), #selector(MenuActions.loadMetalSkinFromFile),
-                       #selector(MenuActions.openMetalSkinsFolder), #selector(MenuActions.selectMetalSkin(_:)))
-            titles = ("Load \(family.displayName) Skin...", "Open \(family.displayName) Skins Folder...")
-        }
+        let mode = family.playerUIMode
         let engine = ModernSkinEngine.shared
         let isActive = WindowManager.shared.uiMode == mode
         let current = engine.currentSkinName(for: family)
+        // Original-Metal names itself in its own entries; Original, the older family, does not.
+        let qualifier = family == .metal ? "\(family.displayName) " : ""
         let options = [
-            skinMenuItem(titles.load, actions.load),
+            skinMenuItem("Load \(qualifier)Skin...", #selector(MenuActions.loadModernFamilySkin(_:)),
+                         representedObject: family),
             isActive ? skinMenuItem("Reset Skin to Default", #selector(MenuActions.resetCurrentSkinToDefault)) : nil,
-            skinMenuItem(titles.openFolder, actions.openFolder),
+            skinMenuItem("Open \(qualifier)Skins Folder...", #selector(MenuActions.openModernFamilySkinsFolder(_:)),
+                         representedObject: family),
             removeSkinItem(for: mode),
         ].compactMap { $0 }
         let skins = engine.availableSkins(for: family).map {
-            skinMenuItem($0.name, actions.select, representedObject: $0.name,
+            skinMenuItem($0.name, #selector(MenuActions.selectModernFamilySkin(_:)),
+                         representedObject: MenuActions.ModernFamilySkinChoice(family: family, name: $0.name),
                          isOn: isActive && $0.name == current)
         }
-        return buildSkinFamilyMenu(
-            switchItem: switchItem(to: mode, skinName: UserDefaults.standard.string(forKey: family.skinNameKey),
-                                   action: actions.switchTo),
-            options: options, skins: skins)
+        let switchItem = switchItem(to: mode, skinName: UserDefaults.standard.string(forKey: family.skinNameKey),
+                                    action: #selector(MenuActions.setModernFamilyMode(_:)))
+        switchItem?.representedObject = family
+        return buildSkinFamilyMenu(switchItem: switchItem, options: options, skins: skins)
     }
 
     // MARK: - Modern (.wal)
@@ -126,9 +118,8 @@ extension ContextMenuBuilder {
     /// own bitmaps. See `skills/winamp-modern-skin-guide/`.
     static func buildWinampModernSkinsMenu() -> NSMenu {
         let wm = WindowManager.shared
-        // Where skins come from, in the order every skin family's menu uses: load one, find
-        // more (WinampHeritage is the archive that still hosts `.wal` skins), and the folder
-        // they land in.
+        // Where skins come from: load one, find more (WinampHeritage is the archive that still
+        // hosts `.wal` skins), and the folder they land in.
         var options = [
             skinMenuItem("Load Skin...", #selector(MenuActions.loadWinampModernSkinFromFile)),
             skinMenuItem("Get More Skins...", #selector(MenuActions.getMoreWinampModernSkins)),
@@ -265,7 +256,6 @@ extension ContextMenuBuilder {
         let wm = WindowManager.shared
         let importer = WMPSkinImporter()
         let isActive = wm.uiMode == .wmp
-        // Where skins come from, in the order every skin family's menu uses.
         var options = [
             skinMenuItem("Load Skin...", #selector(MenuActions.loadWMPSkinFromFile)),
             skinMenuItem("Get More Skins...", #selector(MenuActions.getMoreWMPSkins)),
@@ -292,6 +282,52 @@ extension ContextMenuBuilder {
         return buildSkinFamilyMenu(
             switchItem: switchItem(to: .wmp, action: #selector(MenuActions.setWMPMode)),
             options: options, skins: skins)
+    }
+}
+
+// MARK: - Original and Original-Metal actions
+
+extension MenuActions {
+
+    /// A row in the Original or Original-Metal skin list.
+    struct ModernFamilySkinChoice {
+        let family: ModernSkinFamily
+        let name: String
+    }
+
+    @objc func setModernFamilyMode(_ sender: NSMenuItem) {
+        guard let family = sender.representedObject as? ModernSkinFamily,
+              AppCapabilities.supports(family.appFeature) else { return }
+        let wm = WindowManager.shared
+        guard wm.uiMode != family.playerUIMode else { return }
+        SkinLoadingOverlay.shared.run { wm.reloadUI(to: family.playerUIMode) }
+    }
+
+    @objc func loadModernFamilySkin(_ sender: NSMenuItem) {
+        guard let family = sender.representedObject as? ModernSkinFamily else { return }
+        loadModernFamilySkinFromFile(family: family)
+    }
+
+    @objc func openModernFamilySkinsFolder(_ sender: NSMenuItem) {
+        guard let family = sender.representedObject as? ModernSkinFamily else { return }
+        ModernSkinEngine.shared.openSkinsFolderForFamily(family)
+    }
+
+    /// Selects a skin, switching into its family first when another is on screen.
+    @objc func selectModernFamilySkin(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? ModernFamilySkinChoice else { return }
+        let wm = WindowManager.shared
+        let mode = choice.family.playerUIMode
+        // Persisted first: `prepareUIRuntime` → `loadPreferredSkin()` reads this key when entering
+        // the family, so the live switch loads exactly this skin.
+        UserDefaults.standard.set(choice.name, forKey: choice.family.skinNameKey)
+        SkinLoadingOverlay.shared.run {
+            if wm.uiMode != mode {
+                wm.reloadUI(to: mode)
+            } else {
+                ModernSkinEngine.shared.loadSkin(named: choice.name, family: choice.family)
+            }
+        }
     }
 }
 
@@ -332,12 +368,12 @@ extension MenuActions {
         }
     }
 
-    /// Removes the current skin of the family named by the item's `representedObject` (a
-    /// `PlayerUIMode` raw value), after asking. A trashed skin can be recovered from the Trash; a
+    /// Removes the current skin of the family named by the item's `representedObject` (its
+    /// `PlayerUIMode`), after asking. A trashed skin can be recovered from the Trash; a
     /// `.wmz` skin's installed copy is deleted, and the file it was imported from is untouched.
     /// The family falls back to its built-in skin.
     @objc func removeCurrentSkin(_ sender: NSMenuItem) {
-        guard let mode = (sender.representedObject as? String).flatMap(PlayerUIMode.init(rawValue:)),
+        guard let mode = sender.representedObject as? PlayerUIMode,
               let skin = Self.removableSkin(for: mode) else { return }
         let alert = NSAlert()
         alert.messageText = "Remove Skin?"
