@@ -190,4 +190,22 @@ final class WinampModernSkinImporter {
     func selectSkin(_ skin: WinampModernImportedSkin) {
         UserDefaults.standard.set(skin.name, forKey: Self.selectedSkinNameKey)
     }
+
+    /// The selected skin when the user installed it — the bundled placeholder has nothing to remove.
+    func removableSelectedSkin() -> WinampModernImportedSkin? {
+        guard let selected = selectedSkin() else { return nil }
+        return installedSkins().first { $0.archiveURL == selected.archiveURL }
+    }
+
+    /// Moves an installed skin to the Trash and selects the bundled placeholder, rather than
+    /// whichever installed skin sorts first. The caller reloads the player when the mode is on
+    /// screen.
+    func trashSkin(_ skin: WinampModernImportedSkin) throws {
+        try fileManager.trashItem(at: skin.archiveURL, resultingItemURL: nil)
+        if let bundled = bundledDefaultSkin() {
+            selectSkin(bundled)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.selectedSkinNameKey)
+        }
+    }
 }

@@ -67,7 +67,7 @@ family needed (`git diff main...HEAD -- Sources/NullPlayer/App` on the WMP branc
 | `App/AppCapabilities.swift` | an `AppFeature` case, so an edition can turn the family off and DEBUG-only exposure is expressible |
 | `App/WindowManager.swift` | `makeMainWindowController(for:)`; the auxiliary-window policy; the init-time default-skin gate; `prepareUIRuntime(for:)`; the `reloadUI` availability guard; the fallback main-window size; compact-mode/window guards |
 | `App/AppDelegate.swift` | menu-bar items |
-| `App/ContextMenuBuilder.swift` | context-menu items |
+| `App/ContextMenuBuilder.swift` | context-menu items; the family's Skins submenu goes in `ContextMenuBuilder+SkinFamilies.swift` (`buildSkinFamilyMenu` fixes the order: options, one divider, skins) and its `MenuActions.RemovableSkin` case |
 | `App/AppStateManager.swift` | persistence and restore |
 
 Adding the `PlayerUIControllerFamily` case **first** turns the rest into a compiler worklist. That is
