@@ -101,6 +101,25 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     var railsDownNodeIDs: Set<Int> = []
     var railsAcrossNodeIDs: Set<Int> = []
 
+    /// Tiles extended to the right corner of their own row on **every** build, the first pass
+    /// included — unlike `stretchedAcrossNodeIDs`, which only the repair pass spans. Keyed by the
+    /// tile, valued by that corner.
+    ///
+    /// **A tile in a corner slot with no authored width is a strip its script lays out.**
+    /// `Crimson_Skies`' `plView` fills the right half of its top and bottom bars with `plTopStretch`
+    /// and `plBotStretch`: tiled, no alignment of their own — so they land in the top-left and
+    /// bottom-left slots as extras, which `note` never spans — and sized only by
+    /// `checkPlViewSize()`, `width = view.width / 2`. The frame build runs no script, so each kept
+    /// its 4px bitmap width and a column opened between the centre plate and the right corner that
+    /// grows by half of every point the window is wider than 373: 31pt at 430, 67pt at 500. That
+    /// is below the 40pt a repair needs until the window is over 450 wide, so the span is given
+    /// here, from the start.
+    ///
+    /// **To the corner, not to the canvas edge.** `f_top_s_2.png` is 154 tall against a 148-tall
+    /// corner, so a tile spanning the canvas hung 6pt of its black inner shadow across the right
+    /// rail. The script's own `view.width / 2` ends 10pt inside the corner, which is under it.
+    var spannedAcrossNodeIDs: [Int: Int] = [:]
+
     /// **What the donor view's own `onLoad` makes of the frame's appearance (W145).** Markup is
     /// only the skin's opening state: `xsn_sports` stacks all eight colours of its frame in
     /// `plView` (`pl1_1`…`pl8_8`, variants 2-8 authored `alphaBlend="0"`) and `htcpStartupPl()`
@@ -116,11 +135,20 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
 
     /// This template, drawn with the appearance a script committed. Keeps only `appearanceProperties`
     /// on the donor's own frame nodes — never on a subtree `excludedNodeIDs` subtracts.
+    ///
+    /// **`visible` is kept too, but on ring pieces alone.** `WALL-E` stacks two frame sets in
+    /// `mainView` — `sub1_*` shown, `sub2_*` authored `visible="false"` — and its white theme is
+    /// `onLoad` revealing `sub2_*` while `sub1_*` takes the `_4` bitmaps, which are narrower than the
+    /// `_1` pieces their geometry was authored for. Without the reveal the frame wore only the
+    /// underlay, with a bare seam in its top edge and no right rail. A script showing or hiding
+    /// anything else in the donor is the skin's content, not its frame, and stays out.
     func appearing(_ overrides: WMPSceneOverrides) -> WMPHostedFrameTemplate {
         var copy = self
         copy.appearance = overrides.properties.filter { address, _ in
-            Self.appearanceProperties.contains(address.property.lowercased())
-                && !excludedNodeIDs.contains(address.stableID)
+            let property = address.property.lowercased()
+            guard !excludedNodeIDs.contains(address.stableID) else { return false }
+            return Self.appearanceProperties.contains(property)
+                || (property == "visible" && ringNodeIDs.contains(address.stableID))
         }
         return copy
     }
@@ -136,6 +164,16 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
     /// comparison that separated the floor's contribution from the whole-view render's.
     static let wholeDonorViewObeysFloor: Bool =
         ProcessInfo.processInfo.environment["WMP_HOSTED_FRAME_WHOLE"] != "1"
+
+    /// Whether script-sized corner tiles reach their row's corner (`spannedAcrossNodeIDs`). **On.**
+    /// `WMP_FRAME_SPAN_TILES=0` leaves them at their bitmap width — the A/B switch for that rule.
+    static let spansScriptedTiles: Bool =
+        ProcessInfo.processInfo.environment["WMP_FRAME_SPAN_TILES"] != "0"
+
+    /// Whether a panel declared larger than its bitmap is trimmed to it (`panelSlices`). **On.**
+    /// `WMP_PANEL_TRIM=0` slices the declared size — the A/B switch for that rule.
+    static let trimsPanelOverrun: Bool =
+        ProcessInfo.processInfo.environment["WMP_PANEL_TRIM"] != "0"
 
     /// Whether a panel with no top edge borrows its bottom edge (`closingOpenTop`). **On.**
     /// `WMP_OPEN_TOP=0` leaves the open top as the skin drew it — the A/B switch for that rule.
@@ -512,6 +550,7 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         var stretchedAcross: Set<Int> = []
         var extras: Set<Int> = []
         var refusedCorners: [Role: WMPNode] = [:]
+        var spannedTiles: [(node: WMPNode, role: Role)] = []
         var client: WMPNode?
 
         // Direct children only. A ring is laid out against the *window*, so its pieces are the
@@ -597,6 +636,9 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                 pieces.append(child)
                 extras.insert(child.stableID)
                 note(child, role, &stretchedDown, &stretchedAcross)
+                if !centred, role == .topLeft || role == .bottomLeft, isScriptSpannedTile(child) {
+                    spannedTiles.append((child, role))
+                }
             } else if horizontal == .stretch, vertical == .stretch, client == nil {
                 client = child
             }
@@ -631,6 +673,12 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             note(recovered, role, &stretchedDown, &stretchedAcross)
         }
         guard Role.corners.isSubset(of: Set(ring.keys)), let client else { return nil }
+        var spannedAcross: [Int: Int] = [:]
+        for (tile, role) in spannedTiles {
+            if let corner = ring[role == .topLeft ? .topRight : .bottomRight] {
+                spannedAcross[tile.stableID] = corner.stableID
+            }
+        }
         var railsDown: Set<Int> = [], railsAcross: Set<Int> = []
         walk(view) { node in
             guard node !== view, node.kind == .subview, hasBackgroundImage(node) else { return }
@@ -652,7 +700,8 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             viewNodeID: view.stableID,
             excludedNodeIDs: notOurs(view, client: client),
             railsDownNodeIDs: railsDown,
-            railsAcrossNodeIDs: railsAcross
+            railsAcrossNodeIDs: railsAcross,
+            spannedAcrossNodeIDs: spannedAcross
         )
     }
 
@@ -776,6 +825,13 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         default:
             break
         }
+    }
+
+    /// A tiled bitmap with no authored width: one whose length along its edge only a script sets.
+    /// See `spannedAcrossNodeIDs`.
+    private static func isScriptSpannedTile(_ node: WMPNode) -> Bool {
+        literal(node, "backgroundTiled")?.caseInsensitiveCompare("true") == .orderedSame
+            && number(node, "width") == nil && node.statedAttribute(named: "width") == nil
     }
 
     /// Whether a view carries one of the surfaces a WMP panel exists to hold.
@@ -1296,11 +1352,11 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
             built = CGSize(width: max(canvas.width, minimumSize.width),
                            height: max(canvas.height, minimumSize.height))
         }
-        let scene = try await builder.build(viewID: viewID,
-                                            requestedSize: WMPSize(width: built.width, height: built.height),
-                                            overrides: repairing
+        let requested = WMPSize(width: built.width, height: built.height)
+        let scene = try await builder.build(viewID: viewID, requestedSize: requested,
+                                            overrides: spanning(repairing
                                                 ? laidOut(on: canvas, down: spans.down, across: spans.across)
-                                                : unclamped)
+                                                : unclamped, builder: builder, size: requested))
         guard let client = scene.geometries[clientNodeID]?.absoluteFrame, !client.isEmpty else {
             return nil
         }
@@ -1682,10 +1738,29 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                                  unresolved: [], diagnostics: [], dirtyBounds: nil,
                                  metrics: scene.metrics, wasBuiltOnMainThread: false)
         let rendered = try await renderer.render(scene: panelOnly, backingScale: backingScale)
-        guard let cropped = rendered.image.cropping(to: CGRect(
+        guard var cropped = rendered.image.cropping(to: CGRect(
             x: panel.x * backingScale, y: panel.y * backingScale,
             width: panel.width * backingScale, height: panel.height * backingScale)) else {
             return nil
+        }
+        // **A panel declared larger than its bitmap ends where its bitmap does.** `Kids` declares
+        // `vPl` 201x137 over a 127-tall `background_pl.bmp`, so the bottom 10pt of the slice was
+        // empty and every hosted window wore a see-through strip under its bottom edge. A bitmap is
+        // drawn from its top-left, so only the bottom and right are trimmed, and only where the
+        // trimmed edge still clears the hole by `minimumBorder`.
+        if Self.trimsPanelOverrun, let extent = Self.opaqueExtent(cropped, scale: backingScale) {
+            let height = min(panel.height, max(extent.maxY, hole.y + hole.height - panel.y
+                                                   + Self.minimumBorder))
+            let width = min(panel.width, max(extent.maxX, hole.x + hole.width - panel.x
+                                                 + Self.minimumBorder))
+            if height < panel.height - 0.5 || width < panel.width - 0.5,
+               let trimmed = cropped.cropping(to: CGRect(x: 0, y: 0,
+                                                         width: (width * backingScale).rounded(),
+                                                         height: (height * backingScale).rounded())) {
+                cropped = trimmed
+                panel.width = width
+                panel.height = height
+            }
         }
 
         // The four slice lines, in the panel's own coordinates.
@@ -1888,6 +1963,29 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         if across {
             for id in stretchedAcrossNodeIDs {
                 overrides.geometry[WMPScenePropertyAddress(stableID: id, property: "width")] = canvas.width
+            }
+        }
+        return overrides
+    }
+
+    /// `overrides` with every `spannedAcrossNodeIDs` tile reaching its row's right corner, read
+    /// off one extra build of the donor. A donor without such a tile builds nothing extra.
+    private func spanning(_ overrides: WMPSceneOverrides, builder: WMPSceneBuilder,
+                          size: WMPSize) async throws -> WMPSceneOverrides {
+        guard Self.spansScriptedTiles, !spannedAcrossNodeIDs.isEmpty else { return overrides }
+        var overrides = overrides
+        let scene = try await builder.build(viewID: viewID, requestedSize: size, overrides: overrides)
+        for (tile, corner) in spannedAcrossNodeIDs {
+            guard let piece = scene.geometries[tile]?.absoluteFrame,
+                  let end = scene.geometries[corner]?.absoluteFrame else { continue }
+            // **Only a tile that lies in its corner's row is a bar.** A top-left slot also collects
+            // unaligned tiles further down the side: `Alienware Invader`'s second left-rail tile
+            // has no width either, and spanning it laid a strip of rail across the window.
+            let shared = min(piece.y + piece.height, end.y + end.height) - max(piece.y, end.y)
+            guard shared >= piece.height / 2 else { continue }
+            let reach = end.x - piece.x
+            if reach > piece.width {
+                overrides.geometry[WMPScenePropertyAddress(stableID: tile, property: "width")] = reach
             }
         }
         return overrides

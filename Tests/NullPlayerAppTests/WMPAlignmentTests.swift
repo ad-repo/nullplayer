@@ -54,8 +54,8 @@ final class WMPAlignmentTests: XCTestCase {
         """, resources: ["corner.png": try sheet(175, 76), "column.png": try sheet(175, 92)])
         let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
 
-        XCTAssertEqual(try frame(skin, scene, "column").y, (247 - 92) / 2,
-                       "the centred column sits at (parent − own) / 2, not at the parent's origin")
+        XCTAssertEqual(try frame(skin, scene, "column").y, ((247 - 92) / 2 as CGFloat).rounded(.down),
+                       "the centred column sits at ⌊(parent − own) / 2⌋, not at the parent's origin")
         XCTAssertNil(try frame(skin, scene, "column").intersection(try frame(skin, scene, "corner")),
                      "which is what keeps it off the title bar the corner piece draws")
     }
@@ -102,7 +102,7 @@ final class WMPAlignmentTests: XCTestCase {
         let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
         let resolved = try frame(skin, scene, "right")
         XCTAssertEqual(resolved.x, 214, "the right margin is authored and the delta is zero here")
-        XCTAssertEqual(resolved.y, (247 - 92) / 2)
+        XCTAssertEqual(resolved.y, ((247 - 92) / 2 as CGFloat).rounded(.down))
     }
 
     // MARK: - The counter-evidence: the other three values are still margins
@@ -207,9 +207,9 @@ final class WMPAlignmentTests: XCTestCase {
         overrides.geometry[.init(stableID: try stableID(skin, "scripted"), property: "top")] = 12
         let scene = try await WMPSceneBuilder(loadedSkin: skin)
             .build(viewID: "main", overrides: overrides)
-        XCTAssertEqual(try frame(skin, scene, "expressed").y, (247 - 92) / 2,
+        XCTAssertEqual(try frame(skin, scene, "expressed").y, ((247 - 92) / 2 as CGFloat).rounded(.down),
                        "the expression's 147 does not survive a centred axis")
-        XCTAssertEqual(try frame(skin, scene, "scripted").y, (247 - 92) / 2,
+        XCTAssertEqual(try frame(skin, scene, "scripted").y, ((247 - 92) / 2 as CGFloat).rounded(.down),
                        "and neither does a coordinate the skin's script assigned")
     }
 

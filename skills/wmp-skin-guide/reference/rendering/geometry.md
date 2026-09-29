@@ -65,6 +65,12 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   centred pieces, so **this class lives entirely in the windows a skin opens beside its player** —
   which is why four phases of `mainView` work never saw it. `WMPAlignmentTests` pins both halves.
 
+- **A centred piece sits on a whole point, rounded down (2026-09-29).** `(parent − own) / 2` with an
+  odd remainder put `Crimson_Skies`' 190pt `f_top_mid` at 91.5 in its 373pt `plView`, half a point
+  clear of the tile ending at 91 — a 1px seam down both bars at 2x, on the skin's own window. WMP
+  lays out in integer pixels, so the builder floors both axes. `WMPAlignmentTests` pins it (its
+  fixture's 155pt remainder is odd).
+
 - **A `wmpprop:` read of another element's geometry answers where that element *is*, not what it
   authored (W212).** One hop on from the rule above, and the half of it that had no answer: the same
   family states the tiles either side of its centred column as `top="wmpprop:plLeftCenter.top"`, and
