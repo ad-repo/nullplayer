@@ -146,6 +146,27 @@ enum WinampModernContainerTopology {
         return info.object.attributes["nomenu"] != "1"
     }
 
+    /// Whether this container's content is an album-art panel — an `<AlbumArt>` anywhere in its
+    /// tree, including a body a script built from a frame's `content=` group.
+    ///
+    /// Such a window is listed in the menu even when the skin says `nomenu="1"` or gives it no name.
+    /// In Winamp the host offered it from *View → Album Art*, so the skin had no reason to list it;
+    /// winampmodern566's `winamp.albumart` is `nomenu="1"` and reachable otherwise only from its
+    /// `Alt+A` handler, which is gone for good once the user closes it. jvc.tape's `albumart` and
+    /// Core-X5's unnamed `CoverArt` are the same shape. Asked at menu time, not at load, because the
+    /// panel is often script-built. A notifier carries an `<AlbumArt>` too and is not a window to
+    /// open by hand, so it answers false.
+    static func hostsAlbumArt(_ container: WasabiObject) -> Bool {
+        let id = (container.xmlID ?? "").lowercased()
+        guard id != "notifier", !id.hasPrefix("notifier.") else { return false }
+        func visit(_ object: WasabiObject) -> Bool {
+            let type = object.typeName.lowercased()
+            if type == "albumart" || type == "wasabi:albumart" { return true }
+            return object.children.contains(where: visit)
+        }
+        return visit(container)
+    }
+
     /// Whether `default_visible="1"` should be *acted on* for this container, and why not when it
     /// should not. `nil` means "open it"; embedded browser windows are usable and follow the same
     /// default-visibility rule as any other ordinary container.

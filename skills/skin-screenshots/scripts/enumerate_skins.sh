@@ -17,7 +17,7 @@ if [ "$(pgrep -x NullPlayer | wc -l | tr -d ' ')" -gt 1 ]; then
 fi
 export NULLPLAYER_PID="$PID"
 
-non_skin='^(Switch to |Load |Get More |Open |Import |Reimport |Download |Engine: |Skin Colors|Skin Settings|Spectrum Analyzer$|Default Skin \(Unskinned\)$|Views$|Save Compatibility Report|Remove )'
+non_skin='^(Switch to |Load |Get More |Open |Import |Reimport |Download |Engine: |Skin Colors|Skin Settings|Spectrum Analyzer$|Waveform Seeker$|Color Themes$|Reset Skin to Default$|No skins |Views$|Remove )'
 emit() { # $1 system  $2 submenu
   osascript "$MENU" list "$PID" "$2" 2>/dev/null | tr ',' '\n' | sed 's/^ *//; s/ *$//' |
   while IFS= read -r item; do

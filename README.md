@@ -298,7 +298,7 @@ NullPlayer is the only Mac app that runs Windows Media Player skins. The `.wmz` 
 
 1. Choose **Import WMZ…** on the unskinned player, or **Skins > Media Player > Load Skin...**. **Get More Skins...** in the same menu opens the Internet Archive's Windows Media Player skins collection.
 2. Pick an installed skin from **Skins > Media Player**; a skin with several views lists them under **Views**.
-3. **Default Skin (Unskinned)** returns to the built-in player without deleting anything, and **Save Compatibility Report...** writes a JSON report to attach to a bug report.
+3. **Remove “name”...** deletes NullPlayer's installed copy of the current skin (never your download) and returns to the built-in player.
 
 Skin scripts run in a restricted, sandboxed object model: ActiveX, registry and shell access, DLLs, WMP plug-ins, and skin-authored HTML are not supported. See the [WMP skin guide](docs/wmp-skin/user-guide.md) and the [compatibility reference](docs/wmp-skin/compatibility.md) for the supported surface.
 

@@ -86,11 +86,14 @@
   colours from the current skin in every skin mode instead of always using GitHub green, and follows
   a Winamp Modern or Windows Media Player skin's colour theme when you switch it. Switching colour
   theme now recolours the rest of the Data tab too.
-- **One layout for every skin menu** — the Classic, Modern and Windows Media Player skin menus now
-  share the same order and wording: **Load Skin...**, **Get More Skins...** and **Open Skins
-  Folder...**, then the family's **Default Skin**, then your installed skins. Windows Media Player
+- **One layout for every skin menu** — every skin family's menu now puts its options first and its
+  skins after a single divider. The options open with **Load Skin...**, **Get More Skins...** and
+  **Open Skins Folder...** in the same wording everywhere, followed by **Remove “name”...**, which
+  every family now has: it moves the current skin to the Trash (Windows Media Player deletes its
+  installed copy, never your download) and falls back to the built-in skin. Windows Media Player
   gains a **Get More Skins...** link to the Internet Archive's WMP skins collection, and Classic gains
-  **Open Skins Folder...**.
+  **Open Skins Folder...**. The separate **Default Skin** entries and Windows Media Player's **Save
+  Compatibility Report...** are gone.
 - **Winamp Modern skins with hidden windows use far less CPU** — a skin's closed windows no longer redraw in the background. The WMP11-BlueVU skin's VU meters had been animating unseen, costing about a third of the app's main thread while music played.
 - **Winamp Modern VU needles use less CPU and look sharper** — skins that rotate artwork, such as the swinging needles in WMP11-BlueVU's VU Meters, now draw it in a single step instead of recalculating every pixel, which roughly halves the app's main-thread load while the meters are open.
 - **Winamp Modern skins with an animated level meter use less CPU** — a skin that steps an animated meter many times a second (WMP11-BlueVU's beat display) now redraws just that meter instead of the whole player window.
@@ -152,6 +155,9 @@
 - **winampmodern566's menu bar lights up** — in the winampmodern566 Winamp Modern skin, pointing at
   File, Play, Options, View or Help now highlights the entry, and it shows as pressed while its menu
   is open.
+- **winampmodern566's Album Art window can be reopened** — the skin's album art window is now
+  listed in the **Windows** menu. Once it was closed, the skin's own Alt+A shortcut was the only
+  way to bring it back.
 - **Developer tooling: window census** — a new script,
   `skills/app-control/scripts/window-census.sh`, measures where each of NullPlayer's windows opens
   and how big it is for every installed skin (Classic, Original, Metal, Winamp Modern and Windows

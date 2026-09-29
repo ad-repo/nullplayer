@@ -2369,8 +2369,16 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // container is *routed* is a runtime fact (Defix's `pledit` carries no component GUID and is
         // recognized from the declarative inventory), and the catalog is the only thing that knows it.
         let routed = surfaceCoordinator?.catalog.routedContainerIDs ?? []
+        let roots = loadedSkin?.runtime.graph.roots ?? []
+        func hostsAlbumArt(_ container: AuxiliaryContainer) -> Bool {
+            guard !container.isDynamicInstance,
+                  let object = roots.first(where: { $0.xmlID == container.containerID })
+            else { return false }
+            return WinampModernContainerTopology.hostsAlbumArt(object)
+        }
         let listed = auxiliaryContainers
-            .filter { $0.isListedInWindowMenu && !routed.contains($0.containerID.lowercased()) }
+            .filter { ($0.isListedInWindowMenu || hostsAlbumArt($0))
+                && !routed.contains($0.containerID.lowercased()) }
         let labels = WinampModernContainerTopology.menuLabels(
             forWindowNames: listed.map { (id: $0.containerID, name: $0.displayName) })
         return zip(listed, labels).map { ($0.containerID, $1, $0.window.isVisible) }

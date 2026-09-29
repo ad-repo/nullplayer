@@ -200,7 +200,6 @@ keep.
 |---|---|
 | Source | `scripts/generate_default_wal_skin.swift` — the `skin.xml` lives inside the script |
 | Artifact | `Sources/NullPlayer/Resources/Skins/NullPlayer-Black.wal` (committed, ~3 KB) |
-| Menu title | **Default Skin (Black)** |
 | Regenerate | `swift scripts/generate_default_wal_skin.swift` from the repo root |
 
 **Edit the script, never the archive.** The `.wal` is generated output; a hand-edited archive is lost
@@ -209,10 +208,10 @@ the next time anyone runs the generator, and the XML in the script is the only r
 **The filename is the identity, the title is not.** `installedSkins()` and `bundledDefaultSkin()`
 both derive a skin's name from its filename stem, and that stem is what `selectSkin` persists under
 `winampModernSkinName`. So `WinampModernSkinImporter.bundledDefaultSkinName` (`NullPlayer-Black`)
-must match the generator's `skinName`, while `bundledDefaultSkinTitle` is a separate constant. This
-is Classic's arrangement exactly — `NullPlayer-Silver.wsz` under the title "Default Skin (Silver)" —
-and the Modern menu copies its shape too: the default is its own entry above the user's library, not
-a row inside it, because it is neither imported nor removable.
+must match the generator's `skinName`. Like Classic's `NullPlayer-Silver.wsz` it has **no menu
+entry** (removed 2026-09-29): it is what the mode loads before any import and what **Remove
+“name”...** falls back to, and it is never listed among the user's skins because it is neither
+imported nor removable.
 
 **Resolution vs. listing.** `installedSkins()` stays the *user's* library (files in Application
 Support) and nothing else — the Phase 2 importer test pins that. `availableSkins()` is the

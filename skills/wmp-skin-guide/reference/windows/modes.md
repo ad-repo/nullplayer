@@ -85,11 +85,11 @@ Windows Media Player afterwards. And *these keys are global, not per-family*, so
 has reset them the reset is still there when you come back to `.wmz` — start from a fresh WMP launch
 or you will measure the previous family's reset.
 
-**What is still there and was deliberately not taken**: `selectClassicSkin` (`ContextMenuBuilder.swift:4796`)
-and `loadDefaultClassicSkin` (`:4534`) branch on the same two-way predicate, so in WMP they take the
-"already in classic mode" branch and load a classic skin without switching family — the user picks a
-skin and nothing visible happens. Same class, two more sites, and W214's own rule says not to gate
-them in the same sweep.
+**What is still there and was deliberately not taken**: `selectClassicSkin` (`ContextMenuBuilder.swift`)
+branches on the same two-way predicate, so in WMP it takes the "already in classic mode" branch and
+loads a classic skin without switching family — the user picks a skin and nothing visible happens.
+Same class, one more site, and W214's own rule says not to gate it in the same sweep.
+(`loadDefaultClassicSkin` had the same defect; it was deleted with the Default Skin menu entries.)
 
 ## Presenting a skin in a window
 

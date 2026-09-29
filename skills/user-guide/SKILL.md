@@ -19,8 +19,8 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 Fresh installs start in NullPlayer's app-authored Windows Media Player mode. Use **Import WMZ…** on
 the unskinned player or **UI > Windows Media Player > Load Skin...** to install a user-supplied
 `.wmz`; **Get More Skins...** opens the Internet Archive's WMP skins collection. The same menu selects
-installed skins and authored views, removes the selected installed copy, exports a compatibility
-report, or returns to **Default Skin (Unskinned)**. Existing users keep
+installed skins and authored views, and **Remove “name”...** deletes the selected installed copy and
+returns to the unskinned player. Existing users keep
 their saved Classic, Original, Original-Metal, or WMP choice after upgrading. See
 `docs/wmp-skin/user-guide.md` for recovery and security limitations.
 
@@ -356,6 +356,11 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - **Skins > Load Skin...** to open `.wsz` file
 - Place in `~/Library/Application Support/NullPlayer/Skins/` for auto-discovery
 - Bundled skins: Silver (default), Classic, Dark, Light
+- Every skin family's menu lists its options first — **Load Skin...**, **Get More Skins...**, **Open
+  Skins Folder...**, **Remove “name”...**, then family extras — and its skins after one divider.
+  **Remove** appears only while the current skin is one the user installed; it moves the file to the
+  Trash (WMP deletes its installed copy) and falls back to the family's built-in skin, which has no
+  menu entry of its own.
 
 ### Original UI Mode
 - **Skins > Original/Classic > Switch to…** to change UI mode
@@ -366,8 +371,9 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 
 ### Winamp Modern (`.wal`) Mode
 - **Skins > Modern** lists installed Winamp 5.x `.wal` skins, imported with **Load Skin...**; **Get More Skins...** opens WinampHeritage.
-- **Skins > Modern > Default Skin (Black)** is the plain placeholder skin that ships with the app —
-  what Modern mode loads on a first run, before any skin is imported. NullPlayer bundles no Winamp
+- **Default Skin (Black)** is the plain placeholder skin that ships with the app — what Modern mode
+  loads on a first run, before any skin is imported, and after the selected skin is removed. It has
+  no menu entry. NullPlayer bundles no Winamp
   skins; this one is our own. It gives the mode a working player window (transport, seek, volume,
   PL and ML buttons) and is meant to be replaced by a skin the user imports.
 - Many of these skins draw their own **About page** — the artwork the skin author wrote about the

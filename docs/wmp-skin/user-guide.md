@@ -13,33 +13,29 @@ preferences from another NullPlayer skin family.
    `~/Library/Application Support/NullPlayer/WMPSkins/` and switches to WMP mode.
 3. Use **UI > Windows Media Player** to select any installed skin. If it defines multiple views, use
    the **Views** submenu. Skin-authored compact/full buttons can also request a supported view.
-4. Choose **Remove “name”...** to delete NullPlayer's installed copy of the selected skin. This never
-   deletes the original file you downloaded.
+4. Choose **Remove “name”...** to delete NullPlayer's installed copy of the selected skin and
+   return to the unskinned player. This never deletes the original file you downloaded.
 
-Choose **Default Skin (Unskinned)** at any time to clear the selection without deleting installed
-skins. Classic, Original, Original-Metal, and Windows Media Player can be selected live from the
+Classic, Original, Original-Metal, and Windows Media Player can be selected live from the
 **UI** menu.
 
 ## Recovery and reset
 
 - A missing, corrupt, rejected, or deleted selected skin leaves the app in WMP mode and shows the
-  unskinned player with a named diagnostic. Import the skin again, choose another installed skin, or
-  select **Default Skin (Unskinned)**.
+  unskinned player with a named diagnostic. Import the skin again or choose another installed
+  skin.
 - Skin script preferences are isolated by the archive's content hash. Re-importing different bytes
   does not inherit another skin's namespace.
-- To reset the WMP selection manually, choose **Default Skin (Unskinned)**. To remove all installed
-  copies, use the menu once per selected skin or open the WMP skins folder and remove only `.wmz`
-  files while they are not selected.
+- To return to the unskinned player, remove the selected skin. To remove all installed copies, use
+  the menu once per selected skin or open the WMP skins folder and remove only `.wmz` files while
+  they are not selected.
 - Existing users retain their persisted Classic, Original, Original-Metal, or WMP mode after an
   upgrade. Only a profile with no current or legacy mode preference gets the new WMP default.
 
-## Compatibility reports and support
+## Support
 
-With a valid skin loaded, choose **Save Compatibility Report...**. The JSON report inventories tags,
-attributes, resources, scripts, object-model members, events, and typed diagnostics. It contains no
-archive payload, source text, pixels, screenshot, or local input path. Include this file and any
-visible `WMPnnnn` diagnostic code in a support report; do not redistribute a skin unless its license
-allows it.
+Include any visible `WMPnnnn` diagnostic code in a support report; do not redistribute a skin unless
+its license allows it.
 
 For a packaged-build reproduction, advanced users can launch the GUI with the diagnostic hook:
 
