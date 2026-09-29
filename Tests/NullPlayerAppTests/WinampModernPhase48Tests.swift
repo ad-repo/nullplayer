@@ -211,6 +211,44 @@ final class WinampModernPhase48Tests: XCTestCase {
         XCTAssertFalse(WinampModernContainerTopology.isListedInWindowMenu(pledit))
     }
 
+    /// winampmodern566's `winamp.albumart` is `nomenu="1"`, because Winamp's own *View → Album Art*
+    /// reached it; here that left `Alt+A` as the only way back once the user closed it. A window
+    /// holding an `<AlbumArt>` is reachable from the menu whatever its markup says; one without stays
+    /// out.
+    func testAnAlbumArtWindowIsReachableDespiteNomenu() throws {
+        let xml = """
+        <WasabiXML>
+          <container id="main">
+            <layout id="normal" w="64" h="20"/>
+          </container>
+          <container id="winamp.albumart" name="Album Art" nomenu="1">
+            <layout id="normal" w="64" h="64">
+              <group id="frame" x="0" y="0" w="0" h="0" relatw="1" relath="1">
+                <AlbumArt id="waaa" fitparent="1"/>
+              </group>
+            </layout>
+          </container>
+          <container id="popup" name="Popup" nomenu="1">
+            <layout id="normal" w="64" h="64"/>
+          </container>
+          <container id="notifier" name="Notifier" nomenu="1">
+            <layout id="normal" w="64" h="64">
+              <AlbumArt id="notifier.cover" w="50" h="50"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """
+        let loaded = try load(xml: xml)
+        let roots = loaded.runtime.graph.roots
+        let albumArt = try XCTUnwrap(roots.first { $0.xmlID == "winamp.albumart" })
+        let popup = try XCTUnwrap(roots.first { $0.xmlID == "popup" })
+        XCTAssertTrue(WinampModernContainerTopology.hostsAlbumArt(albumArt))
+        XCTAssertFalse(WinampModernContainerTopology.hostsAlbumArt(popup))
+        let notifier = try XCTUnwrap(roots.first { $0.xmlID == "notifier" })
+        XCTAssertFalse(WinampModernContainerTopology.hostsAlbumArt(notifier),
+                       "the track-change toast shows a cover but is not a window to open by hand")
+    }
+
     /// **The second live defect.** Anaheim_Player_01's `avs_window` declares `default_w="120"` with
     /// `minimum_w="180"`, and Styx's `AVS` 300×300 with a 400×230 minimum: the window opened at the
     /// default, so its standard frame's corner art was laid out for a window wider than the one

@@ -85,6 +85,9 @@ never going to work: its title box is **75px**, half again the declared 50, and 
   album art under the playlist. This is the skin whose arrangement made `default_x`/`default_y` worth
   reading at all; stacking every window under the player put the album art two windows down from where
   it belongs.
+  **Once closed, the album art reopens from Windows → Album Art** (2026-09-28): the container is
+  `nomenu="1"` because Winamp's own View menu reached it, and `Alt+A` had been the only way back. See
+  `compatibility.md` → *Skin Windows* for the rule.
 
 - **Its EQ drawer follows the equalizer** (Phase 41) — `configdrawer.xml` handles both
   `onEqBandChanged` and `onEqPreampChanged`, and they are dispatched now, so the drawer's display

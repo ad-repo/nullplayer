@@ -774,7 +774,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
         // reading the raw topology reported it as offered anyway (B26, LOBE).
         let openable = containers.filter { WasabiSceneRenderer.primaryLayout(of: $0.object) != nil }
         print("RENDER-DUMP skin windows: "
-              + "\(openable.filter { WinampModernContainerTopology.isListedInWindowMenu($0) && !routed.contains($0.id.lowercased()) }.map(WinampModernContainerTopology.displayName))")
+              + "\(openable.filter { (WinampModernContainerTopology.isListedInWindowMenu($0) || WinampModernContainerTopology.hostsAlbumArt($0.object)) && !routed.contains($0.id.lowercased()) }.map(WinampModernContainerTopology.displayName))")
         for dropped in containers where WasabiSceneRenderer.primaryLayout(of: dropped.object) == nil {
             print("RENDER-DUMP dropped container: \(dropped.id) (no layout)")
         }

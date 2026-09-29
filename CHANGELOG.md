@@ -152,6 +152,9 @@
 - **winampmodern566's menu bar lights up** — in the winampmodern566 Winamp Modern skin, pointing at
   File, Play, Options, View or Help now highlights the entry, and it shows as pressed while its menu
   is open.
+- **winampmodern566's Album Art window can be reopened** — the skin's album art window is now
+  listed in the **Windows** menu. Once it was closed, the skin's own Alt+A shortcut was the only
+  way to bring it back.
 - **Developer tooling: window census** — a new script,
   `skills/app-control/scripts/window-census.sh`, measures where each of NullPlayer's windows opens
   and how big it is for every installed skin (Classic, Original, Metal, Winamp Modern and Windows

@@ -134,6 +134,17 @@ configurator that way; all three were built, rendered and ordered out, with no r
 - a container is offered when it carries `name=` and does **not** carry `nomenu="1"` — the attribute
   Winamp itself uses. Defix marks its `browserpro`, `notifier` and two `searchresults` popups
   `nomenu="1"`; its `SUI` and `VISCON` carry no name because its own buttons reach them
+- **one exception to `nomenu`: a window whose content is an `<AlbumArt>`** is listed anyway
+  (`WinampModernContainerTopology.hostsAlbumArt`, 2026-09-28). In Winamp the *host* reached it from
+  **View → Album Art**, so the skin had no reason to list it; the stock skin's `winamp.albumart` is
+  `nomenu="1"`, and here, once the user closed it, its `Alt+A` handler was the only way back. The walk
+  runs at menu time, not at load, because the stock skin's panel is built by `standardframe.maki`
+  from a `content=` group and is not in the tree until the script has run. Notifiers (which also
+  carry an `<AlbumArt>`) answer false, and the controller keeps dynamic instances out. Measured across the corpus (76 distinct
+  skins): the stock skin is the only one it changes — jvc.tape's `albumart` container never loads
+  (its `skin.xml` includes `albumart.xml` from the root; the file is `xml/albumart.xml`, an author
+  bug), and Core-X5's `CoverArt` is a plain `<layer>` its script fills from `folder.jpg`, not an
+  `<AlbumArt>`, with its own toggle in the skin's own menu
 - the main player is never listed, and neither is a container the **surface catalog** already routes
   (`WinampModernSurfaceCatalog.routedContainerIDs`) — the playlist/EQ/library have their own menu
   items, and a second entry would be a second route to one window. Container *kind* is not enough to
@@ -145,7 +156,7 @@ configurator that way; all three were built, rendered and ordered out, with no r
 
 Measured: Defix → `SPEAKER 1`, `SPEAKER 2`, `Skin Settings`; mmd3 → `ColorThemes`; cPro-Bento →
 `Widgets Manager`; CornerAmp Redux → `Color Themes`; T800 → `Quadhelix Home`; stock Winamp Modern →
-none. The harness prints the list as `RENDER-DUMP skin windows:` — gated, since B26, by whether a
+`Album Art` (the exception above). The harness prints the list as `RENDER-DUMP skin windows:` — gated, since B26, by whether a
 renderer can actually open the container, with the excluded ones printed as `RENDER-DUMP dropped
 container:`. A container whose `name` is an unresolved string-table reference (`:componenttitle`,
 the wasabi standard `Component` shell in three skins) is not listed. Phase 27, B26.
