@@ -102,12 +102,30 @@ protocol AudioEngineDelegate: AnyObject {
     /// `state` is set to `.stopped`. Lets observers distinguish an error-induced
     /// stop from a natural end-of-playlist stop (both surface as `.stopped`).
     func audioEngineDidEncounterPlaybackError()
+    /// A play the user asked for — Play Now from a library, or a playlist double-click — failed
+    /// and left nothing playing. Automatic advance never calls it.
+    func audioEngineUserPlayRequestDidFail(_ track: Track, error: Error, fileIsMissing: Bool)
 }
 
 extension AudioEngineDelegate {
     // Default no-op: only observers that care about error-vs-natural stops
     // (e.g. the headless CLI) need to implement this.
     func audioEngineDidEncounterPlaybackError() {}
+    // Default no-op: only the app puts a failed request in front of the user.
+    func audioEngineUserPlayRequestDidFail(_ track: Track, error: Error, fileIsMissing: Bool) {}
+}
+
+/// A local file that would not open, as `loadTrack(at:)` reports it to a caller that has to act on
+/// the failure rather than only display it.
+struct TrackLoadFailure {
+    let track: Track
+    let error: Error
+}
+
+/// A user-requested play whose file failed, held until the queue shows whether it can skip on.
+struct UserPlayRequestFailure {
+    let failure: TrackLoadFailure
+    let fileIsMissing: Bool
 }
 
 /// Core audio engine using AVAudioEngine for playback and DSP
@@ -4288,14 +4306,16 @@ class AudioEngine {
             context: "playNow"
         )
         
+        let previousIndex = currentIndex
         let insertIndex = currentIndex >= 0 ? currentIndex + 1 : 0
+        let insertedRange = insertIndex..<(insertIndex + tracks.count)
         
         // Insert tracks at the calculated position
         playlist.insert(contentsOf: tracks, at: insertIndex)
         
         // Jump to and play the first inserted track
         if shuffleEnabled {
-            let insertedIndices = Array(insertIndex..<(insertIndex + tracks.count))
+            let insertedIndices = Array(insertedRange)
             currentIndex = startShufflePlaybackCycle(preferredIndices: insertedIndices) ?? insertIndex
         } else {
             currentIndex = insertIndex
@@ -4338,10 +4358,24 @@ class AudioEngine {
                 }
             }
         } else {
-            loadTrack(at: currentIndex)
-            // A failed load leaves `currentTrack` nil, and `play()` reads nil as "start the
-            // playlist from the top" — which started an unrelated track under the error.
-            if currentTrack != nil { play() }
+            // A bad file is skipped only as far as the last inserted track: past it lies the queue
+            // the user already had, and starting that would play something they did not ask for.
+            if let failure = loadTrack(at: currentIndex, skippingNoFurtherThan: insertedRange.upperBound - 1) {
+                // Nothing played, so the request is taken back out of the queue: left in, every
+                // retried double-click on a missing file added another dead copy of it.
+                playlist.removeSubrange(insertedRange)
+                currentIndex = previousIndex
+                invalidateShufflePlaybackStateAfterPlaylistMutation()
+                // The stat is on this thread only because the load just opened the same path on it.
+                delegate?.audioEngineUserPlayRequestDidFail(
+                    failure.track, error: failure.error,
+                    fileIsMissing: !FileManager.default.fileExists(atPath: failure.track.url.path))
+            } else if currentTrack != nil {
+                // A load that returns without a track — a placeholder, a deferred audio graph —
+                // leaves `currentTrack` nil, and `play()` reads nil as "start the playlist from
+                // the top", which would start an unrelated track.
+                play()
+            }
         }
         
         delegate?.audioEngineDidChangePlaylist()
@@ -4385,8 +4419,12 @@ class AudioEngine {
         enrichPlaylistDurationsAsync(for: tracks.map(\.id))
     }
     
-    private func loadTrack(at index: Int) {
-        guard index >= 0 && index < playlist.count else { return }
+    /// Returns the failure when a local file would not open and nothing loaded in its place —
+    /// its folder is gone, or there was nothing left to skip to. A bad file with its folder present
+    /// is skipped, to no further than `lastSkippable` (default: the end of the playlist).
+    @discardableResult
+    private func loadTrack(at index: Int, skippingNoFurtherThan lastSkippable: Int? = nil) -> TrackLoadFailure? {
+        guard index >= 0 && index < playlist.count else { return nil }
         clearCrossfadeDeclineLatch()
 
         // Any explicit track load supersedes pending deferred local-load completions.
@@ -4395,7 +4433,7 @@ class AudioEngine {
         // Prevent concurrent loads - skip if already loading to avoid dual playback
         guard !isLoadingTrack else {
             NSLog("loadTrack: Blocked - already loading a track")
-            return
+            return nil
         }
         isLoadingTrack = true
         defer { isLoadingTrack = false }
@@ -4409,7 +4447,7 @@ class AudioEngine {
         // Skip about:blank placeholder tracks — streaming URL not yet resolved via async fetch
         if track.isStreamingPlaceholder {
             NSLog("loadTrack: skipping placeholder track '%@' — waiting for async URL fetch", track.title)
-            return
+            return nil
         }
 
         _ = stopRadioIfLoadingNonRadioContent(
@@ -4434,11 +4472,11 @@ class AudioEngine {
             isStreamingPlayback = false  // Reset to neutral state for video playback
             
             // Route to video player via WindowManager
-            guard !AudioEngine.isHeadless else { return }
+            guard !AudioEngine.isHeadless else { return nil }
             DispatchQueue.main.async {
                 WindowManager.shared.playVideoTrack(track)
             }
-            return
+            return nil
         }
 
         // Stop local video playback before loading audio track.
@@ -4458,10 +4496,10 @@ class AudioEngine {
         } else {
             guard rebuildAudioGraphIfDeferredAfterCast() else {
                 deferPlaybackIntentUntilAudioGraphReady(.loadTrack(index: index))
-                return
+                return nil
             }
 
-            if !loadLocalTrack(track) {
+            if let failure = loadLocalTrack(track) {
                 // One bad file is skipped. A file whose folder is gone — a disconnected NAS — is
                 // not: skipping would silently land on whatever local track follows it and start
                 // that instead, while the marquee reports the failure. Stopping is the offline
@@ -4469,21 +4507,25 @@ class AudioEngine {
                 // the same path synchronously on it.
                 guard Self.containingFolderIsPresent(track.url) else {
                     NSLog("loadTrack: Failed to load track at index %d and its folder is not present — stopping", index)
-                    return
-                }
-                NSLog("loadTrack: Failed to load track at index %d, skipping to next", index)
-                if index + 1 < playlist.count {
-                    currentIndex = index + 1
-                    // Must clear isLoadingTrack before recursive call (defer hasn't run yet)
-                    isLoadingTrack = false
-                    loadTrack(at: currentIndex)
+                    return failure
                 }
                 // If no more tracks, just stop (don't start playback)
+                guard index + 1 <= min(lastSkippable ?? .max, playlist.count - 1) else { return failure }
+                NSLog("loadTrack: Failed to load track at index %d, skipping to next", index)
+                currentIndex = index + 1
+                // Must clear isLoadingTrack before recursive call (defer hasn't run yet)
+                isLoadingTrack = false
+                // A skip that also fails reports this track, the one that was asked for.
+                return loadTrack(at: currentIndex, skippingNoFurtherThan: lastSkippable) == nil ? nil : failure
             }
         }
+        return nil
     }
     
-    private func loadLocalTrackForImmediatePlayback(_ track: Track, at index: Int) {
+    /// `userInitiated` — a playlist double-click, not an advance — asks for
+    /// `audioEngineUserPlayRequestDidFail` when the open fails and playback stops rather than
+    /// skipping on.
+    private func loadLocalTrackForImmediatePlayback(_ track: Track, at index: Int, userInitiated: Bool = false) {
         NSLog("loadLocalTrackForImmediatePlayback: %@", track.url.lastPathComponent)
         clearCrossfadeDeclineLatch()
 
@@ -4568,18 +4610,30 @@ class AudioEngine {
                 // Decided here, on the IO queue, because it stats the folder — which may sit on
                 // the very volume that just failed.
                 let folderIsPresent = Self.containingFolderIsPresent(track.url)
+                let fileIsMissing = userInitiated
+                    && !FileManager.default.fileExists(atPath: track.url.path)
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     guard self.deferredLocalTrackLoadToken == token else { return }
+                    // Skipping on is not a failure to report — unless there is nothing to skip to.
+                    let userRequest = userInitiated && folderIsPresent
+                        ? UserPlayRequestFailure(failure: TrackLoadFailure(track: track, error: error),
+                                                 fileIsMissing: fileIsMissing)
+                        : nil
                     self.handleLocalTrackLoadFailure(track: track, error: error,
-                                                     advanceToNextTrack: folderIsPresent)
+                                                     advanceToNextTrack: folderIsPresent,
+                                                     userRequest: userRequest)
+                    if userInitiated && !folderIsPresent {
+                        self.delegate?.audioEngineUserPlayRequestDidFail(track, error: error,
+                                                                         fileIsMissing: fileIsMissing)
+                    }
                 }
             }
         }
     }
 
-    @discardableResult
-    private func loadLocalTrack(_ track: Track) -> Bool {
+    /// Returns the failure, or `nil` once the track is loaded.
+    private func loadLocalTrack(_ track: Track) -> TrackLoadFailure? {
         NSLog("loadLocalTrack: %@", track.url.lastPathComponent)
 
         // Any synchronous load supersedes deferred opens.
@@ -4607,7 +4661,7 @@ class AudioEngine {
             nextScheduledFile = nil
             nextScheduledTrackIndex = -1
             commitLoadedLocalTrack(openFile, track: track, generation: currentGeneration, reuseExistingFile: true)
-            return true
+            return nil
         }
 
         prepareForLocalTrackLoad()
@@ -4619,10 +4673,10 @@ class AudioEngine {
             NSLog("loadLocalTrack: Opened '%@' in %.3fs", track.url.lastPathComponent, openElapsed)
 
             commitLoadedLocalTrack(newAudioFile, track: track, generation: currentGeneration)
-            return true
+            return nil
         } catch {
             handleLocalTrackLoadFailure(track: track, error: error)
-            return false
+            return TrackLoadFailure(track: track, error: error)
         }
     }
 
@@ -4891,8 +4945,10 @@ class AudioEngine {
     /// `false` return; only the asynchronous immediate-playback path — which is what `playTrack` and
     /// the natural end-of-track advance both use — dead-ended on an unreadable file. That path
     /// passes it only when the file's folder is present (`containingFolderIsPresent`), so a
-    /// disconnected volume still stops playback instead of skipping.
-    private func handleLocalTrackLoadFailure(track: Track, error: Error, advanceToNextTrack: Bool = false) {
+    /// disconnected volume still stops playback instead of skipping. `userRequest` is carried into
+    /// the advance so a double-clicked file with nothing after it is reported, not just stopped on.
+    private func handleLocalTrackLoadFailure(track: Track, error: Error, advanceToNextTrack: Bool = false,
+                                             userRequest: UserPlayRequestFailure? = nil) {
         let fileExtension = track.url.pathExtension.lowercased()
         var errorMessage = "Failed to load '\(track.url.lastPathComponent)': \(error.localizedDescription)"
 
@@ -4925,7 +4981,7 @@ class AudioEngine {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 guard let self, self.deferredLocalTrackLoadToken == token,
                       self.state == .stopped else { return }
-                self.advancePastFailedTrack(at: self.currentIndex)
+                self.advancePastFailedTrack(at: self.currentIndex, userRequest: userRequest)
             }
         }
     }
@@ -4934,23 +4990,34 @@ class AudioEngine {
     ///
     /// One unreadable file used to stop the player dead with the rest of the playlist still ahead
     /// of it — the whole-playlist symptom a single bad pair of entries produced.
-    private func advancePastFailedTrack(at failedIndex: Int) {
+    ///
+    /// `userRequest` is the double-click that failed; when nothing is left to advance to, the queue
+    /// ends on it and it is reported. An automatic advance passes none and ends silently.
+    private func advancePastFailedTrack(at failedIndex: Int, userRequest: UserPlayRequestFailure? = nil) {
         guard !playlist.isEmpty else { return }
+
+        func endQueue() {
+            consecutiveTrackLoadFailures = 0
+            stopAfterQueueExhausted()
+            if let userRequest {
+                delegate?.audioEngineUserPlayRequestDidFail(userRequest.failure.track,
+                                                            error: userRequest.failure.error,
+                                                            fileIsMissing: userRequest.fileIsMissing)
+            }
+        }
 
         consecutiveTrackLoadFailures += 1
         guard consecutiveTrackLoadFailures < playlist.count else {
             NSLog("AudioEngine: %d consecutive load failures — ending queue rather than looping it",
                   consecutiveTrackLoadFailures)
-            consecutiveTrackLoadFailures = 0
-            stopAfterQueueExhausted()
+            endQueue()
             return
         }
 
         let nextIndex: Int
         if shuffleEnabled {
             guard let peeked = peekNextShuffleIndexForPlayback() else {
-                consecutiveTrackLoadFailures = 0
-                stopAfterQueueExhausted()
+                endQueue()
                 return
             }
             nextIndex = peeked
@@ -4961,8 +5028,7 @@ class AudioEngine {
             // failure always moves on; wrapping is the only thing repeat still means here.
             nextIndex = 0
         } else {
-            consecutiveTrackLoadFailures = 0
-            stopAfterQueueExhausted()
+            endQueue()
             return
         }
 
@@ -6519,7 +6585,7 @@ class AudioEngine {
 
             let isDirectLocalAudio = track.url.isFileURL && track.mediaType != .video
             if isDirectLocalAudio {
-                loadLocalTrackForImmediatePlayback(track, at: index)
+                loadLocalTrackForImmediatePlayback(track, at: index, userInitiated: true)
             } else {
                 loadTrack(at: index)
                 play()

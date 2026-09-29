@@ -10287,13 +10287,10 @@ class PlexBrowserView: NSView {
         } else {
             selectedIndices = [index]
             
-            // Single-click on playable audio items plays them immediately
-            // Video items (movies, episodes) require double-click to play
+            // A single click selects; tracks play on double-click, as in the Original browser.
+            // Each play is a Play Now that inserts the track, so playing on the single click as
+            // well played a double-clicked track three times and left three copies queued.
             switch item.type {
-            case .track:
-                playTrack(item)
-            case .localTrack(let track):
-                playLocalTrack(track)
             case .plexRadioStation,
                  .subsonicRadioStation,
                  .jellyfinRadioStation,
@@ -10306,12 +10303,12 @@ class PlexBrowserView: NSView {
                     playRadioStation(station)
                 }
             default:
-                // For non-playable items and video items, just load artwork
+                // Everything else — tracks included, which play on double-click — loads artwork
                 loadArtworkForSelection()
             }
         }
         
-        // Double-click to play album/show or expand artist
+        // Double-click to play a track, album or show, or expand an artist
         if event.clickCount == 2 {
             handleDoubleClick(on: item)
         }

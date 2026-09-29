@@ -71,8 +71,27 @@ final class WMPAudioEngineHost: WMPHost {
     /// is still open. Keep only the event snapshot through that gap; the live video snapshot must
     /// still fall empty so the hosted child window detaches and releases mouse capture.
     private var videoEventLatch = WMPVideoEventLatch()
+    /// The last track that could not be opened, until the track changes — the same readout, held
+    /// the same way, as `WinampModernHost.trackLoadFailureMessage`. Any poster of
+    /// `.audioTrackDidFailToLoad` counts, `AudioFileValidator` included.
+    private var trackLoadFailureMessage: String?
+    private var trackLoadFailureObservers: [NSObjectProtocol] = []
 
-    init(audioEngine: AudioEngine) { engine = audioEngine }
+    init(audioEngine: AudioEngine) {
+        engine = audioEngine
+        trackLoadFailureObservers.append(NotificationCenter.default.addObserver(
+            forName: .audioTrackDidFailToLoad, object: nil, queue: .main) { [weak self] note in
+                MainActor.assumeIsolated { self?.trackLoadFailureMessage = note.userInfo?["message"] as? String }
+            })
+        // Any change clears it, to a track or to none: a cleared playlist is `Ready`, not the
+        // failure of a file that is no longer in it.
+        trackLoadFailureObservers.append(NotificationCenter.default.addObserver(
+            forName: .audioTrackDidChange, object: audioEngine, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.trackLoadFailureMessage = nil }
+            })
+    }
+
+    deinit { trackLoadFailureObservers.forEach(NotificationCenter.default.removeObserver) }
 
     private static var localVideoSessionController: VideoPlayerWindowController? {
         let manager = WindowManager.shared
@@ -177,6 +196,12 @@ final class WMPAudioEngineHost: WMPHost {
                 normalization: engine.volumeNormalizationEnabled,
                 preamp: Double(engine.getPreamp()), gains: classicGains.map(Double.init)),
             effects: WMPEffectSelection.shared.snapshot)
+        // Also the title, while nothing is loaded: most skins print `currentMedia.name` and never
+        // `player.status`, the same reason a `.wal` songticker prints the failure.
+        if track == nil, state == .stopped, let failure = trackLoadFailureMessage {
+            result.loadFailure = failure
+            result.metadata.title = failure
+        }
         if Self.castingVideo {
             // The readouts follow the cast, not the audio queue standing idle behind it. There is
             // no local picture, so `result.video` stays empty and the skin's `<VIDEO>` box is dark

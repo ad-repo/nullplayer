@@ -147,6 +147,9 @@ struct WMPHostSnapshot: Hashable, Codable {
     /// detach and release mouse capture when VLC has no drawable output.
     var videoEvent = WMPVideoSnapshot()
     var video = WMPVideoSnapshot()
+    /// The engine's message for a track that would not open, while nothing is loaded. WMP puts an
+    /// open failure in its status bar; without this a WMP skin said nothing at all when one failed.
+    var loadFailure: String?
 
     var elapsedText: String { Self.timeString(currentTime) }
     var durationText: String { Self.timeString(duration) }
@@ -173,7 +176,9 @@ struct WMPHostSnapshot: Hashable, Codable {
         case .paused: return "Paused"
         // WMP says `Ready` before anything is open and `Stopped` once something is and is not
         // running, which is the same split `isEnabled(.play)` already makes.
-        case .stopped: return playlistCount > 0 ? "Stopped" : "Ready"
+        case .stopped:
+            if let loadFailure { return loadFailure }
+            return playlistCount > 0 ? "Stopped" : "Ready"
         }
     }
 

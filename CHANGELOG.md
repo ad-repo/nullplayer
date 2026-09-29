@@ -170,6 +170,14 @@
   a broken top edge and missing right side in WALL-E's white theme, and a strip under the bottom
   edge in Kids. Those borders now close. A one-pixel seam down both bars of Crimson Skies' own
   playlist on Retina displays is gone too.
+- **Library tracks play on double-click, once** — in the Classic and Windows Media Player library,
+  a single click played a track and a double-click played it three times, leaving three copies in
+  the playlist. A single click now selects and a double-click plays, as in the Original library.
+- **A track that can't be played now says so** — double-clicking a track whose file has been moved
+  or deleted, or whose drive is disconnected, looked like nothing happened. It now shows an alert
+  naming the file, in every skin mode, and no longer leaves a dead copy in the playlist on every
+  try. Windows Media Player skins also show the failure in their status line and title, as the
+  other modes already did in their marquee.
 
 ## 0.30.0
 

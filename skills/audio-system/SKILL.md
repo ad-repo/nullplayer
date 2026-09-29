@@ -182,6 +182,25 @@ under the error message.
   unrelated track. The navigation three also capture `wasPlaying` *before* loading: the failure
   handler sets `.stopped` on the way through the skip, so testing `state` afterwards left the queue
   paused on the track it had just skipped to.
+- **A failed `playNow` takes its tracks back out.** `loadTrack(at:skippingNoFurtherThan:)` returns
+  a `TrackLoadFailure` when a local file would not open and nothing loaded in its place. `playNow`
+  lets it skip a bad file only within the inserted range — past it is the queue the user already
+  had, and starting that plays something they did not ask for — and on a failure removes the
+  range and restores `currentIndex`; left in, every retried double-click queued another dead copy.
+  The returned failure, not `currentTrack == nil`, is the test: placeholder tracks and a deferred
+  audio graph also return with no track and are not failures. A skip chain that fails further on
+  still reports the track that was asked for.
+
+**Telling the user.** `.audioTrackDidFailToLoad` feeds each skin family's readout — the Classic and
+Original marquees, the `.wal` songticker, and WMP's `player.status` plus `currentMedia.name`. Each host
+holds the last message itself and clears it on `.audioTrackDidChange` (`WinampModernHost`,
+`WMPAudioEngineHost`), so validator failures count and a cleared playlist reads `Ready`.
+Those sit in the player window, which is often behind the library the user clicked, so a failed
+play **the user started** also calls the delegate's `audioEngineUserPlayRequestDidFail` (a default
+no-op, so the CLI ignores it) and `AppDelegate` shows an `NSAlert` — the one readout every skin
+system shares. It fires only when playback stops: `playNow` after a rollback, and `playTrack`
+(`userInitiated: true`) when the folder is gone. Automatic advance never calls it, since a disconnected drive would otherwise raise one modal per queued track. The alert
+has no "Remove from Library": a missing folder looks exactly like a disconnected NAS.
 
 A reconnected drive plays again only once macOS has remounted the share at the same path; the app
 does not mount shares itself. An SMB share that dropped is not remounted automatically.

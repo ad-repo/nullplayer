@@ -1,4 +1,5 @@
 import XCTest
+import AVFoundation
 import SQLite
 @testable import NullPlayer
 
@@ -149,19 +150,89 @@ final class MissingFilesTests: XCTestCase {
     // MARK: - Disconnected drive playback
 
     /// Playing a track on a disconnected drive used to skip silently to the next entry — the
-    /// track that was already playing — and start it under the error message.
+    /// track that was already playing — and start it under the error message. The failed request
+    /// is also taken back out of the queue: left in, every retry added another dead copy.
     func testPlayingATrackOnAMissingVolumeDoesNotStartAnotherTrack() {
         let engine = AudioEngine()
+        let delegate = UserPlayFailureRecorder()
+        engine.delegate = delegate
         let other = Track(url: tempDirectoryURL.appendingPathComponent("other.mp3"))
         let missing = Track(url: URL(fileURLWithPath: "/Volumes/NoSuchDrive-\(UUID().uuidString)/Music/a.mp3"))
         engine.setPlaylistTracks([other])
 
         engine.playNow([missing])
+        engine.playNow([missing])
 
-        XCTAssertEqual(engine.playlist.map(\.url), [missing.url, other.url])
-        XCTAssertEqual(engine.currentIndex, 0)
+        XCTAssertEqual(delegate.failedURLs, [missing.url, missing.url])
+        XCTAssertEqual(engine.playlist.map(\.url), [other.url])
+        XCTAssertEqual(engine.currentIndex, -1)
         XCTAssertNil(engine.currentTrack)
         XCTAssertNotEqual(engine.state, .playing)
+    }
+
+    /// Play Now on one unreadable file whose album folder is still there skipped past it to the
+    /// track already queued behind it and started that, leaving the dead entry in the queue and
+    /// saying nothing. The user asked for this file, so the request fails and is taken back out.
+    func testPlayNowOnAnUnreadableFileDoesNotStartTheTrackQueuedBehindIt() throws {
+        let folder = try albumFolderWithAnUnreadableFile()
+        let queued = folder.appendingPathComponent("queued.wav")
+        try writeSilentWAV(to: queued)
+        let bad = folder.appendingPathComponent("bad.mp3")
+        let engine = AudioEngine()
+        let delegate = UserPlayFailureRecorder()
+        engine.delegate = delegate
+        engine.setPlaylistTracks([Track(url: queued)])
+
+        engine.playNow([Track(url: bad)])
+        defer { engine.stop() }
+
+        XCTAssertEqual(engine.playlist.map(\.url), [queued])
+        XCTAssertNil(engine.currentTrack)
+        XCTAssertEqual(delegate.failedURLs, [bad])
+    }
+
+    /// Control for the test above: Play Now of an album whose first file will not open still
+    /// plays the album — the skip past a bad file stays, inside what was asked for.
+    func testPlayNowOfAnAlbumSkipsAnUnreadableFirstFile() throws {
+        let folder = try albumFolderWithAnUnreadableFile()
+        let second = folder.appendingPathComponent("second.wav")
+        try writeSilentWAV(to: second)
+        let engine = AudioEngine()
+
+        engine.playNow([Track(url: folder.appendingPathComponent("bad.mp3")), Track(url: second)])
+        defer { engine.stop() }
+
+        XCTAssertEqual(engine.currentTrack?.url, second)
+        XCTAssertEqual(engine.playlist.count, 2)
+    }
+
+    /// A WMP skin prints the failure as `player.status` while nothing is loaded — but clearing the
+    /// playlist left it there, over an empty queue, instead of `Ready`.
+    @MainActor
+    func testWMPStatusDropsALoadFailureWhenThePlaylistIsCleared() {
+        let engine = AudioEngine()
+        let host = WMPAudioEngineHost(audioEngine: engine)
+        let failed = expectation(forNotification: .audioTrackDidFailToLoad, object: engine)
+        engine.playNow([Track(url: URL(fileURLWithPath: "/Volumes/NoSuchDrive-\(UUID().uuidString)/a.mp3"))])
+        wait(for: [failed], timeout: 5)
+        XCTAssertTrue(host.snapshot.statusText.hasPrefix("Failed to load"))
+
+        engine.clearPlaylist()
+
+        XCTAssertEqual(host.snapshot.statusText, "Ready")
+    }
+
+    /// Every mode's readout shows the failures `AudioFileValidator` posts for files dropped in;
+    /// WMP's read an engine property only the engine's own load path set, so it missed them.
+    @MainActor
+    func testWMPStatusShowsAValidatorFailure() {
+        let engine = AudioEngine()
+        let host = WMPAudioEngineHost(audioEngine: engine)
+
+        NotificationCenter.default.post(name: .audioTrackDidFailToLoad, object: nil,
+                                        userInfo: ["message": "Could not load 'x.txt': not audio"])
+
+        XCTAssertEqual(host.snapshot.statusText, "Could not load 'x.txt': not audio")
     }
 
     /// Control for the test below: left alone, a track that will not open is skipped after the
@@ -178,6 +249,23 @@ final class MissingFilesTests: XCTestCase {
         engine.playTrack(at: 0)
 
         wait(for: [nextFailed], timeout: 5)
+    }
+
+    /// Double-clicking an unreadable file with nothing after it ended the queue on the skip with no
+    /// alert — Play Now of the same file raised one. The skip carries the request to the queue's end.
+    func testDoubleClickingAnUnreadableLastTrackReportsTheFailure() throws {
+        let folder = try albumFolderWithAnUnreadableFile()
+        let bad = folder.appendingPathComponent("bad.mp3")
+        let engine = AudioEngine()
+        let delegate = UserPlayFailureRecorder()
+        engine.delegate = delegate
+        engine.setPlaylistTracks([Track(url: bad)])
+
+        engine.playTrack(at: 0)
+        RunLoop.main.run(until: Date().addingTimeInterval(1.5))
+
+        XCTAssertEqual(delegate.failedURLs, [bad])
+        XCTAssertNotEqual(engine.state, .playing)
     }
 
     /// Replacing the playlist inside that half-second left the pending advance armed. It read the
@@ -209,6 +297,28 @@ final class MissingFilesTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try Data("not audio".utf8).write(to: folder.appendingPathComponent("bad.mp3"))
         return folder
+    }
+
+    /// Records `audioEngineUserPlayRequestDidFail`, the call behind the app's alert.
+    private final class UserPlayFailureRecorder: AudioEngineDelegate {
+        private(set) var failedURLs: [URL] = []
+        func audioEngineUserPlayRequestDidFail(_ track: Track, error: Error, fileIsMissing: Bool) {
+            failedURLs.append(track.url)
+        }
+        func audioEngineDidChangeState(_ state: PlaybackState) {}
+        func audioEngineDidUpdateTime(current: TimeInterval, duration: TimeInterval) {}
+        func audioEngineDidChangeTrack(_ track: Track?) {}
+        func audioEngineDidUpdateSpectrum(_ levels: [Float]) {}
+        func audioEngineDidChangePlaylist() {}
+        func audioEngineDidFailToLoadTrack(_ track: Track, error: Error) {}
+    }
+
+    private func writeSilentWAV(to url: URL) throws {
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2))
+        let file = try AVAudioFile(forWriting: url, settings: format.settings)
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 22_050))
+        buffer.frameLength = 22_050
+        try file.write(from: buffer)
     }
 
     // MARK: - Playlist.resolveEntry
