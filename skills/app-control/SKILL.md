@@ -309,6 +309,45 @@ cmp -s /tmp/t1.png /tmp/t2.png && echo "IDENTICAL" || echo "DIFFER"
 
 **Confirm it took:** you can name the two artefacts your conclusion rests on.
 
+### Playback snapshot — read audio and cast state from the running app
+
+`skills/app-control/scripts/playback-snapshot.sh [<pid>]` makes the running **debug** build write
+one snapshot and prints it. It is the instrument for "it says playing but nothing is heard",
+"why didn't Play do anything after the cast", and any question about what the engine, the audio
+graph or the cast session thinks right now — without an instrumented rebuild. lldb does not attach
+to the ad-hoc-signed debug build, so this is the only way to read that state live.
+
+```
+snapshot at=2026-09-29T23:51:42Z pid=55912
+engine state=stopped track='nil' index=-1/13 time=0.0
+engine pipeline=local audioFile=false running=false player.playing=false player.sampleTime=nil crossfadeActive=false
+engine volume=0.57 mainMixerOut=0.57 player.volume=1.00 eqBypass=false pitchRate=1.00
+graph recovery=ready pendingIntent=nil needsReplacement=false retryScheduled=false
+output engineDevice='MacBook Pro Speakers' systemDefault='MacBook Pro Speakers' selected=default format=48000Hz/2ch
+level mainMixerPeak=n/a (engine not running)
+cast session=nil state=nil currentCast=none isCasting=false routingActive=false anyActive=false
+cast position=nil sessionPlaying=nil sonosRooms=0 localFileCastInProgress=false
+```
+
+- **`level mainMixerPeak` is measured**, by a 0.3 s tap on the main mixer — never inferred. It is
+  the one field that tells silence from sound: an empty player node reports `player.playing=true`
+  with an advancing `player.sampleTime` while it renders nothing. It is taken after the volume
+  control, so read it beside `engine volume`; `n/a` for the streaming pipeline (AudioStreaming has
+  its own engine) or a stopped engine.
+- **`output engineDevice`** is the device the engine's output unit is really bound to, read from
+  the unit; `systemDefault` is macOS's. A mismatch is a routing defect.
+- **`graph recovery` / `pendingIntent`** show a held post-cast rebuild and the request waiting on
+  it (`audio-system`, graph recovery).
+- The trigger is `SIGINFO` (`kill -INFO <pid>`, or Ctrl-T in the terminal running the app); its
+  default action is ignore, so a release or pre-snapshot build is never killed — the script just
+  times out. The app also logs every line with a `SNAPSHOT` prefix, so a `--log` capture carries
+  it in sequence with everything else.
+- **Run it unsandboxed.** From a sandboxed agent shell `kill` returns success and the signal never
+  arrives; the script times out and says so.
+- It changes nothing: the tap is removed after 0.3 s, and reading is on the main thread.
+
+**Confirm it took:** the first line's `pid` is the process you meant and `at` is now.
+
 ### Skin window-size isolation (user-level regression test)
 
 `skills/app-control/scripts/size-isolation-test.sh [<wmz A> <wmz B>]` (default `Ice anemone`) checks

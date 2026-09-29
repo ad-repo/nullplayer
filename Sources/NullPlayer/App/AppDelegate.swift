@@ -20,6 +20,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var isShowingPlayFailureAlert = false
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        PlaybackSnapshot.install()
+        #endif
+
         // Check for UI testing mode
         if CommandLine.arguments.contains("--ui-testing") {
             setupUITestingMode()

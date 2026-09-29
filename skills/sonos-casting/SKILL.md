@@ -489,6 +489,13 @@ list and a populated one. Check light/dark native control appearance as well as 
 a control with a valid frame can still be unreadable. For volume, read back the edited room and
 an untouched room to distinguish individual RenderingControl from group-volume changes.
 
+**Read the running app's state first:** `skills/app-control/scripts/playback-snapshot.sh` prints
+the cast session and its state, the local engine and player, a measured output level, held
+audio-graph recovery and output routing from a running debug build (see `app-control`,
+*Playback snapshot*). Take one before and after the step that misbehaves. Casting defects on
+the local side — silence after Stop Casting, a Play that does nothing, the wrong track after a
+cast — are engine state, and the snapshot names them in one line.
+
 ### Confirming a cast is live from outside the app — use `nettop`, not `lsof`
 
 Sonos control is **short-lived fire-and-forget SOAP** to ports 1400 and 1443, polled every 5 s. The

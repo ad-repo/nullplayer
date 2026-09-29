@@ -341,6 +341,15 @@ after LOAD (see *Discovery*), so nothing else tells you whether the renderer acc
 NULLPLAYER_UPNP_LOG=1 ./scripts/kill_build_run.sh --debug --log /tmp/upnp.log
 ```
 
+### Debugging a live defect
+
+For a defect that only reproduces in the running app, read `skills/live-ui-testing/SKILL.md` and
+`skills/winamp-modern-skin-guide/reference/harness.md` § *Debugging a live defect* first.
+**Read the running app's state first:** `skills/app-control/scripts/playback-snapshot.sh` prints
+the cast session and its state, the local engine and player, a measured output level, held
+audio-graph recovery and output routing from a running debug build (see `app-control`,
+*Playback snapshot*). Take one before and after the step that misbehaves.
+
 ### Common Issues
 
 | Symptom | Cause | Fix |

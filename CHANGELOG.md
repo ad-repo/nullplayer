@@ -178,6 +178,10 @@
   naming the file, in every skin mode, and no longer leaves a dead copy in the playlist on every
   try. Windows Media Player skins also show the failure in their status line and title, as the
   other modes already did in their marquee.
+- **Developer tooling: playback snapshot** — `skills/app-control/scripts/playback-snapshot.sh`
+  prints what a running debug build's player, audio output and cast session are doing, including
+  a measured output level, so a silent-playback report can be diagnosed without a rebuild. Debug
+  builds only; the app itself is unchanged.
 
 ## 0.30.0
 

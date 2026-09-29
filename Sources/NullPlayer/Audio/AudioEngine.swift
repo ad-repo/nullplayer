@@ -81,6 +81,86 @@ extension AudioEngine {
         engine.isRunning && playerNode.isPlaying
     }
 }
+
+// The engine's half of the live-QA playback snapshot (`PlaybackSnapshot`). The output level is
+// measured with a brief tap, never inferred: a player node reports playing, its clock advances and
+// the output device runs while it renders silence from an empty schedule.
+extension AudioEngine {
+    func playbackSnapshotLines(completion: @escaping ([String]) -> Void) {
+        let activeNode = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
+        let sampleTime = activeNode.lastRenderTime.flatMap { activeNode.playerTime(forNodeTime: $0) }?.sampleTime
+        let mixerFormat = engine.mainMixerNode.outputFormat(forBus: 0)
+        var lines = [
+            "engine state=\(state) track='\(currentTrack?.title ?? "nil")' index=\(currentIndex)/\(playlist.count) time=\(String(format: "%.1f", currentTime))",
+            "engine pipeline=\(isStreamingPlayback ? "streaming" : "local") audioFile=\(audioFile != nil) running=\(engine.isRunning) player.playing=\(activeNode.isPlaying) player.sampleTime=\(sampleTime.map { String($0) } ?? "nil") crossfadeActive=\(crossfadePlayerIsActive)",
+            "engine volume=\(String(format: "%.2f", volume)) mainMixerOut=\(String(format: "%.2f", engine.mainMixerNode.outputVolume)) player.volume=\(String(format: "%.2f", activeNode.volume)) eqBypass=\(eqNode.bypass) pitchRate=\(String(format: "%.2f", tuningController.localPitchNode.rate))",
+            "graph recovery=\(audioGraphRecovery.state) pendingIntent=\(audioGraphRecovery.pendingIntent.map { "\($0)" } ?? "nil") needsReplacement=\(audioGraphNeedsReplacement) retryScheduled=\(audioGraphRecovery.hasScheduledWork)",
+            "output engineDevice='\(Self.snapshotDeviceName(engineOutputDeviceID()))' systemDefault='\(Self.snapshotDeviceName(AudioOutputManager.shared.getDefaultOutputDeviceID()))' selected=\(currentOutputDeviceID.map { String($0) } ?? "default") format=\(Int(mixerFormat.sampleRate))Hz/\(mixerFormat.channelCount)ch",
+        ]
+
+        // Streaming renders on AudioStreaming's own engine, so the local mixer says nothing about it.
+        guard engine.isRunning, !isStreamingPlayback else {
+            lines.append("level mainMixerPeak=n/a (\(isStreamingPlayback ? "streaming pipeline" : "engine not running"))")
+            completion(lines)
+            return
+        }
+        let peak = SnapshotPeak()
+        let mixer = engine.mainMixerNode
+        mixer.installTap(onBus: 0, bufferSize: 4096, format: nil) { buffer, _ in
+            guard let channels = buffer.floatChannelData else { return }
+            for channel in 0..<Int(buffer.format.channelCount) {
+                var channelPeak: Float = 0
+                vDSP_maxmgv(channels[channel], 1, &channelPeak, vDSP_Length(buffer.frameLength))
+                peak.record(channelPeak)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            mixer.removeTap(onBus: 0)
+            let measured = peak.value
+            lines.append("level mainMixerPeak=\(measured.map { String(format: "%.4f", $0) } ?? "no buffers in 0.3s")")
+            completion(lines)
+        }
+    }
+
+    private func engineOutputDeviceID() -> AudioDeviceID? {
+        guard let unit = engine.outputNode.audioUnit else { return nil }
+        var deviceID = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
+                                          kAudioUnitScope_Global, 0, &deviceID, &size)
+        return status == noErr ? deviceID : nil
+    }
+
+    private static func snapshotDeviceName(_ deviceID: AudioDeviceID?) -> String {
+        guard let deviceID else { return "nil" }
+        var address = AudioObjectPropertyAddress(mSelector: kAudioObjectPropertyName,
+                                                 mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var name: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &name) == noErr,
+              let name else { return "#\(deviceID)" }
+        return name.takeRetainedValue() as String
+    }
+}
+
+/// Largest sample magnitude seen by the snapshot's tap, written on the render thread.
+private final class SnapshotPeak: @unchecked Sendable {
+    private let lock = NSLock()
+    private var peak: Float?
+
+    func record(_ sample: Float) {
+        lock.lock()
+        peak = max(peak ?? 0, sample)
+        lock.unlock()
+    }
+
+    var value: Float? {
+        lock.lock()
+        defer { lock.unlock() }
+        return peak
+    }
+}
 #endif
 
 /// Audio playback state
