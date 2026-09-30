@@ -662,6 +662,9 @@ final class WasabiSceneRenderer {
     /// `WINAMP_MODERN_FIT_TRACE=1` narrates the content-fit iteration. Read once: the fit runs on
     /// every resize and on the first read of `canvasSize`.
     static let tracesContentFit = ProcessInfo.processInfo.environment["WINAMP_MODERN_FIT_TRACE"] != nil
+    /// `WINAMP_MODERN_RESIZE_TRACE=1` narrates every canvas and window resize. Read once: a skin
+    /// that sizes a window from a 10 ms timer asks on every tick.
+    static let tracesResize = ProcessInfo.processInfo.environment["WINAMP_MODERN_RESIZE_TRACE"] != nil
     static var drawProfile: [String: TimeInterval] = [:]
 
     let loadedSkin: WinampModernLoadedSkin
@@ -746,6 +749,22 @@ final class WasabiSceneRenderer {
     /// here, and the embedded library through the view layer, so the two cannot drift apart. Seeded
     /// from the skin's stored preference at load and set from the Text Size menu.
     var textScale: WinampModernTextScale = .auto
+    /// The height each layout of this container **declares**, read once before any script runs.
+    /// A script's `resize()` writes `h` on the layout, so reading it later would read the window's
+    /// current height back.
+    private let declaredLayoutHeights: [WasabiObjectID: CGFloat]
+    /// What `auto` Text Size is resolved against: the height the active layout's markup declares,
+    /// never the height the window currently has. The size of the window is what separates a skin
+    /// that wants large rows from one that does not; resizing it is not a request for larger text,
+    /// and the user has the Text Size menu for that.
+    var textScaleReferenceHeight: CGFloat {
+        if let declared = declaredLayoutHeights[layout.stableID] { return declared }
+        // `layout` only ever comes out of `container.children`, which is what the table was built
+        // from. The fallback reads the live height — the very value this property exists to avoid
+        // — so reaching it must not pass unnoticed.
+        assertionFailure("layout \(layout.xmlID ?? "?") joined its container after the renderer was built")
+        return Self.defaultSize(for: layout, resources: resources).height
+    }
     /// The `<edit>` holding the keyboard, so it can draw a caret. Owned by the view (focus is a
     /// window's property); `nil` in every window that does not have one focused, which is most.
     var focusedEditID: WasabiObjectID?
@@ -793,6 +812,12 @@ final class WasabiSceneRenderer {
         self.container = container
         self.layout = layout
         self.storedCanvasSize = Self.defaultSize(for: layout, resources: self.resources)
+        let resources = self.resources
+        self.declaredLayoutHeights = Dictionary(
+            container.children
+                .filter { $0.typeName.caseInsensitiveCompare("layout") == .orderedSame }
+                .map { ($0.stableID, Self.defaultSize(for: $0, resources: resources).height) },
+            uniquingKeysWith: { first, _ in first })
         // Whichever window switches the theme, every renderer of this skin drops its themed bitmaps.
         themeCoordinator.addObserver(self) { [weak self] in self?.themeDidChange() }
         self.autoFittedCanvas = self.storedCanvasSize
@@ -1106,7 +1131,7 @@ final class WasabiSceneRenderer {
         let clamped = CGSize(width: max(minimum.width, min(maximum.width, proposedSize.width)),
                              height: max(minimum.height, min(maximum.height, proposedSize.height)))
         #if DEBUG
-        if ProcessInfo.processInfo.environment["WINAMP_MODERN_RESIZE_TRACE"] != nil {
+        if Self.tracesResize {
             NSLog("%@", "WM-RESIZE proposed=\(proposedSize) clamped=\(clamped) "
                   + "current=\(canvasSize) noop=\(clamped == canvasSize)\n"
                   + Thread.callStackSymbols.dropFirst().prefix(6).joined(separator: "\n"))
@@ -1879,14 +1904,14 @@ final class WasabiSceneRenderer {
     }
 
     /// The text size the embedded playlist draws at, in skin pixels — the Text Size setting, resolved
-    /// against this scene's canvas.
+    /// against the height this scene's layout declares.
     ///
     /// The `holder` is unused and stays in the signature deliberately: the render-dump probe reports
-    /// per holder, and the size is a property of the *window*, not of the pane inside it. That is the
-    /// whole point of the rule — Big Bento's playlist keeps one size whether its side pane is
-    /// collapsed to 202px or enlarged to 819px.
+    /// per holder, and the size is a property of the *layout*, not of the pane inside it or of the
+    /// size the window has been dragged to. Big Bento's playlist keeps one size whether its side
+    /// pane is collapsed to 202px or enlarged to 819px, and whatever the window is stretched to.
     func playlistTextPixelHeight(in holder: WasabiObject?) -> Double {
-        textScale.cellPixelHeight(canvasHeight: canvasSize.height)
+        textScale.cellPixelHeight(declaredHeight: textScaleReferenceHeight)
     }
 
     /// The point size the embedded playlist draws at, from its cell height.

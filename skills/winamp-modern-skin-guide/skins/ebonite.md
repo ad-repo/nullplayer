@@ -4,6 +4,7 @@
 
 - **File:** `Ebonite_2_1.wal` · 596,336 B · SHA-256 `66487c42feffc28a…` · author "WinstonGFX and SLoB", version 2.0
 - **Measured:** 2026-09-06 · harness `a916b38a` — **headless structural pass only**, see *Not measured*
+- **Driven 2026-09-30 (B160):** the playlist's frame stretched by its left, right, bottom and corner grips with the contents following. Before B160 the frame grew and the contents stayed at 250x250, because its standard frame sizes the client only from `onUserResize` and a drag on a skin handle never dispatched it.
 - **Grade: C (provisional · confidence: low)** — from a headless pass; nobody has used this skin. Calls 2 unimplemented maki method(s) ×4 (`enumgammagroup`, `setchecked`); dispatch is fail-closed, so each call abandons its whole handler. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
 - **Compatibility level:** `unsupported` (a diagnostic count, not a quality signal)
 

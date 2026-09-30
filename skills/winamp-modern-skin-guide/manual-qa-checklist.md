@@ -208,6 +208,13 @@ synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares pl
       six title boxes; EPS shows a black panel, against which its near-white controls are legible.
       Neither should be see-through. Then check one shaped player (Ujola Cat, winampmodern566) in the
       same pass: a window that declares no background must **not** have gained a rectangle.
+- [ ] **Itemskin, MoonLight, K-jr, Pure Inspired and Ebonite: a framed window stretches by its
+      frame** (B160) — with the playlist the *only* extra window open, drag its frame's right edge,
+      then a corner, then the top-right corner upward. Frame and contents must land on the same
+      rect, with no snap-back, and a top-edge drag must move the top edge rather than growing the
+      window downward. On Ebonite the contents must follow the frame rather than stay at 250x250.
+      `WINAMP_MODERN_RESIZE_NOTIFY=0` brings the defect back for comparison. It is not the whole
+      of the pre-fix build; `reference/harness.md` lists what it withholds.
 - [ ] **Itemskin: the frame windows follow their content** (B69) — open the playlist, video, library
       and AVS windows. Each must be a *single* composed window, not an empty frame in one place and a
       chromeless panel in another: this skin builds every component window as a pair (a bare content

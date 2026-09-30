@@ -193,6 +193,21 @@
   prints what a running debug build's player, audio output and cast session are doing, including
   a measured output level, so a silent-playback report can be diagnosed without a rebuild. Debug
   builds only; the app itself is unchanged.
+- **Winamp Modern: framed windows resize by their frame** — on skins that draw a window's frame
+  separately from its contents (Itemskin, MoonLight, K-jr, Pure Inspired, Ebonite), dragging the
+  frame's edge or corner either snapped straight back or stretched the frame and left the contents
+  behind, and on Itemskin worked only while a second window such as PeppyMeter was open. The frame
+  and its contents now resize together, and dragging a top edge moves the top edge. A window
+  resized while nothing is playing also re-lays out at once (ClassicPro's logo, tabs and equalizer
+  stayed where they were).
+- **Winamp Modern: resizing a window no longer resizes its text** — with Text Size on Auto, the
+  embedded playlist and library text grew and shrank with the window. Auto now picks the size
+  from the size the skin designed the window at and keeps it; use Text Size to change it.
+- **Winamp Modern: framed windows keep their size at every UI Size** — at a UI Size such as 105%,
+  115% or 125%, a window whose frame is drawn separately (Ebonite, Itemskin, K-jr, Pure Inspired)
+  settled a point wider or taller than its own frame, shrank by itself after being dragged, and
+  came back smaller after a trip through the UI Size menu. Frame and contents now stay the same
+  size, and a window returns to the size it left at.
 
 ## 0.30.0
 

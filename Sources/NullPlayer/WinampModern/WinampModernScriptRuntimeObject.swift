@@ -240,20 +240,7 @@ extension WinampModernScriptRuntime {
             for (key, value) in zip(["x", "y", "w", "h"], arguments) {
                 _ = object.setAttribute(key, value: String(value.integerValue))
             }
-            if object.typeName.caseInsensitiveCompare("layout") == .orderedSame,
-               let container = ancestor(of: object, type: "container") {
-                layoutResizeRequested?(container.stableID,
-                                       CGSize(width: CGFloat(arguments[2].integerValue),
-                                              height: CGFloat(arguments[3].integerValue)))
-            }
-            switch borrowed {
-            case .desktop(let origin):
-                applyContainerGeometry(object, reportedOrigin: reportedBeforeResize, desktopOrigin: origin)
-            case .offScreen:
-                applyContainerGeometry(object, keepsOrigin: true)
-            case nil:
-                applyContainerGeometry(object, reportedOrigin: reportedBeforeResize)
-            }
+            applyContainerGeometry(object, reportedOrigin: reportedBeforeResize, borrowed: borrowed)
             noteGeometryChange()
             notifyGraphDidMutate()
             return .null

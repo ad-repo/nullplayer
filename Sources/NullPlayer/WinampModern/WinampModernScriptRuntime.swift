@@ -3005,6 +3005,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// `WINAMP_MODERN_ACTION_TRACE=1` names each `onAction` and its addressee. Read once: this is
     /// on the dispatch path every ClassicPro internal message takes.
     static let tracesActions = ProcessInfo.processInfo.environment["WINAMP_MODERN_ACTION_TRACE"] != nil
+    /// Whether a window resize reaches the skin the way Wasabi delivers one: applied as a whole box
+    /// — position before size — and reported in the same turn, `onUserResize` included (B160).
+    /// `WINAMP_MODERN_RESIZE_NOTIFY=0` is the A/B switch; `reference/harness.md` lists what it
+    /// withholds and what it does not.
+    static let deliversResizeAsWasabiDoes =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_RESIZE_NOTIFY"] != "0"
 
     private func invokeTraced(method: String, on reference: MakiObjectReference, arguments: [MakiValue],
                               program: MakiProgram) throws -> MakiValue {

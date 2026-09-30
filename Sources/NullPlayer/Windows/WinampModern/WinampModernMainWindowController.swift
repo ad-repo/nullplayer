@@ -659,12 +659,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// embedded Media Library, which move together.
     var textScale: WinampModernTextScale { skinView?.renderer.textScale ?? .auto }
 
-    /// What `.auto` currently amounts to, as a percent, for the menu entry that shows it. Read off the
-    /// **player's** canvas: a separate-window skin resolves `auto` per window, but the menu can only
+    /// What `.auto` amounts to, as a percent, for the menu entry that shows it. Read off the
+    /// **player's** layout: a separate-window skin resolves `auto` per window, but the menu can only
     /// name one number and the player is the window the user is looking at.
     var resolvedTextPercent: Int {
         guard let renderer = skinView?.renderer else { return 100 }
-        return WinampModernTextScale.resolvedPercent(canvasHeight: renderer.canvasSize.height)
+        return WinampModernTextScale.resolvedPercent(declaredHeight: renderer.textScaleReferenceHeight)
     }
 
     /// Apply a Text Size and remember it for this skin.
@@ -2075,8 +2075,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // A script parking its own window overrides whatever `place` decided, and legitimately
             // so. Traced next to `[place]` because the two are indistinguishable from the outside:
             // an overlap after a good `[place]` line is the skin's arithmetic, not the host's.
-            NSLog("[place/script] \(container) -> \(NSStringFromPoint(origin)) "
-                  + "(was \(NSStringFromPoint(target.frame.origin)))")
+            NSLog("[place/script] \(container) \(target.accessibilityIdentifier()) "
+                  + "-> \(NSStringFromPoint(origin)) "
+                  + "(was \(NSStringFromPoint(target.frame.origin)))\(pinned ? " pinned" : "")")
         }
         target.setFrameOrigin(origin)
     }
@@ -2705,19 +2706,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // back stretched. Clamp here as well as in `contentMinSize`/`contentMaxSize`.
         let limits = view.renderer.userResizeLimits
         let proposed = CGSize(width: content.width / skinScale, height: content.height / skinScale)
-        _ = view.renderer.resize(to: CGSize(
+        let clamped = CGSize(
             width: min(max(proposed.width, limits.minimum.width), limits.maximum.width),
-            height: min(max(proposed.height, limits.minimum.height), limits.maximum.height)))
-        let size = view.scaledCanvasSize
-        if size != content { resize(window: resized, to: size) }
-        if size != view.frame.size { view.setFrameSize(size) }
-        view.needsDisplay = true
-        // `onUserResize`, and only for a resize the user is actually dragging — `inLiveResize` is what
-        // separates that from the tiler, a restored frame and a script's own `resize()`, all of which
-        // come through here too. A standard frame answers it by writing the *client's* new box, so
-        // firing it on a programmatic resize would have the two windows resizing each other (B110).
-        if resized.inLiveResize {
-            view.dispatchWindowUserResized()
+            height: min(max(proposed.height, limits.minimum.height), limits.maximum.height))
+        view.hostWindowDidResize(toCanvas: clamped, live: resized.inLiveResize) { size in
+            if size != content { resize(window: resized, to: size) }
         }
     }
 

@@ -49,17 +49,17 @@ final class WinampModernMainView: NSView {
     }
 
     /// How large the embedded Media Library draws its content: UI Size, times the Text Size setting
-    /// resolved against *this* scene's canvas. One number, so the library and the playlist beside it
-    /// move together and cannot drift.
+    /// resolved against the height *this* scene's layout declares. One number, so the library and
+    /// the playlist beside it move together and cannot drift.
     var libraryContentScale: CGFloat {
-        skinScale * renderer.textScale.contentScale(canvasHeight: renderer.canvasSize.height)
+        skinScale * renderer.textScale.contentScale(declaredHeight: renderer.textScaleReferenceHeight)
     }
 
     /// Tell every live library surface the current number.
     ///
-    /// Called from everything that can move either factor — including **every canvas change**, since
-    /// `auto` is keyed on canvas height: without that, resizing a Big Bento window leaves the library
-    /// at a stale scale while the playlist next to it grows.
+    /// Called from everything that can move either factor: UI Size, the Text Size setting, and a
+    /// layout switch. A resize is not one of them — `auto` is keyed on the height the layout
+    /// declares, so the window's current size never enters into it.
     func pushLibraryContentScale() {
         let scale = libraryContentScale
         for surface in librarySurfaces.values { surface.applyContentScale(scale) }
@@ -360,7 +360,7 @@ final class WinampModernMainView: NSView {
         // A different layout is a different scene, so nothing carries over: every object in it hears
         // its geometry for the first time, exactly as it does when the window first comes up.
         dispatchResize(seeding: true)
-        // A different layout is a different canvas height, which is what `auto` Text Size is keyed on.
+        // A different layout declares a different height, which is what `auto` Text Size is keyed on.
         pushLibraryContentScale()
         needsDisplay = true
         return true
@@ -377,12 +377,59 @@ final class WinampModernMainView: NSView {
         let previous = renderer.canvasSize
         let accepted = renderer.resize(to: proposed)
         guard accepted != previous || frame.size != scaledCanvasSize else { return }
-        invalidateRectCaches()
         setFrameSize(scaledCanvasSize)
         canvasSizeDidChange?(scaledCanvasSize)
+        canvasDidChange()
+    }
+
+    /// The window this view fills was resized from outside the scene — AppKit's edge band, a drag
+    /// on one of the skin's own handles, the tiler, a restored frame. `proposed` is the canvas the
+    /// window now asks for; the renderer clamps it, `fitWindow` puts the window on the size that
+    /// came back, and this view follows.
+    ///
+    /// The scene hears it in the same turn (B160): left to the next script mutation's
+    /// `geometryDidSettle`, a window the user stretched was told only if some *other* script
+    /// happened to move something first. See `reference/components.md` → *Resize, and why a skin
+    /// needs it*. `live` is AppKit's `inLiveResize`, which makes the resize `onUserResize` too; a
+    /// drag on a skin handle reports itself from `resizeWindow(edges:)`.
+    ///
+    /// Not folded into `applyCanvasResize`, which shares only `canvasDidChange()` with this. That
+    /// one answers a script and drives the window through `canvasSizeDidChange`, which also
+    /// re-derives every window's layout limits — work for a layout switch, not for each step of a
+    /// drag. This one answers the window, which is already at the size unless the layout refused
+    /// it, and each host corrects it under its own re-entrancy guard.
+    func hostWindowDidResize(toCanvas proposed: CGSize, live: Bool, fitWindow: (NSSize) -> Void) {
+        let previousCanvas = renderer.canvasSize
+        // **A window already showing this canvas is not asking for another one.** The canvas is in
+        // skin pixels and the window in whole points, so at most UI Sizes a size the app itself
+        // put the window on does not divide back to the canvas it came from: 396 px is 455 pt at
+        // 115%, and 455 pt is 395.65 px. Read back, every resize a script made — and every UI Size
+        // change — left a fractional canvas behind, and a frame script that copies `getWidth()`
+        // from one window to the other then lost a pixel per round trip: Ebonite's framed windows
+        // shrank by themselves after a drag and settled a point apart from their own frames.
+        if window?.contentLayoutRect.size != scaledCanvasSize { renderer.resize(to: proposed) }
+        let size = scaledCanvasSize
+        fitWindow(size)
+        if frame.size != size { setFrameSize(size) }
+        if WasabiSceneRenderer.tracesResize {
+            NSLog("%@", "WM-RESIZE window=\(window?.accessibilityIdentifier() ?? "-") "
+                  + "frame=\(window?.frame ?? .zero) live=\(live) handle=\(activeResizeEdges != nil)")
+        }
+        if WinampModernScriptRuntime.deliversResizeAsWasabiDoes, renderer.canvasSize != previousCanvas {
+            canvasDidChange()
+        } else {
+            needsDisplay = true
+        }
+        // Only for a resize the user is dragging: the tiler, a restored frame and a script's own
+        // `resize()` come through here too, and a standard frame answers `onUserResize` by writing
+        // the *client's* new box — fired for those, the two windows resize each other (B110).
+        if live { dispatchWindowUserResized() }
+    }
+
+    /// What every change of canvas size owes the scene, whoever asked for it.
+    private func canvasDidChange() {
+        invalidateRectCaches()
         dispatchResize(seeding: false)
-        // `auto` Text Size is keyed on canvas height, so a user resize moves it.
-        pushLibraryContentScale()
         needsDisplay = true
     }
 
@@ -1655,6 +1702,12 @@ final class WinampModernMainView: NSView {
             activeResizeEdges = edges
             resizeStartFrame = window.frame
             resizeStartMouse = NSEvent.mouseLocation
+            if WasabiSceneRenderer.tracesResize {
+                let handle = renderer.object(at: point)
+                NSLog("%@", "WM-RESIZE handle=\(handle?.attributes["id"] ?? "?") "
+                      + "resize=\(handle?.attributes["resize"] ?? "?") at=\(point) "
+                      + "window=\(window.frame) min=\(window.contentMinSize) max=\(window.contentMaxSize)")
+            }
             return
         }
         if let holder = renderer.componentHolder(at: point) {
@@ -1814,6 +1867,11 @@ final class WinampModernMainView: NSView {
                                       maximum: window.contentMaxSize)
         guard frame != window.frame else { return }
         window.setFrame(frame, display: true)
+        // This drag is the user's resize, and nothing else can say so: AppKit's `inLiveResize`
+        // covers its own edge band only and is false for the whole of a drag that sets the frame
+        // from here. After the frame, so `onResize` — dispatched from inside it — comes first.
+        // Ebonite's standard frame sizes its contents from `onUserResize` alone (B160).
+        if WinampModernScriptRuntime.deliversResizeAsWasabiDoes { dispatchWindowUserResized() }
     }
 
     /// Pure form of the resize rule, so it can be tested without a window or a mouse.

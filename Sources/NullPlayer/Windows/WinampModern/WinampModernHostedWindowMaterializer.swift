@@ -134,20 +134,30 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
         for instance in materializedWindows {
             let topLeft = NSPoint(x: instance.window.frame.minX, y: instance.window.frame.maxY)
             instance.view.skinScale = scale
-            let limits = instance.view.renderer.userResizeLimits
-            instance.window.contentMinSize = NSSize(width: limits.minimum.width * scale,
-                                                    height: limits.minimum.height * scale)
-            instance.window.contentMaxSize = NSSize(
-                width: limits.maximum.width.isFinite
-                    ? limits.maximum.width * scale : CGFloat.greatestFiniteMagnitude,
-                height: limits.maximum.height.isFinite
-                    ? limits.maximum.height * scale : CGFloat.greatestFiniteMagnitude)
+            applyResizeLimits(of: instance.view.renderer, to: instance.window, scale: scale)
             let size = instance.view.scaledCanvasSize
             instance.window.setContentSize(size)
             instance.window.setFrameTopLeftPoint(topLeft)
             instance.view.setFrameSize(size)
             instance.view.needsDisplay = true
         }
+    }
+
+    /// Give a hosted window the limits of the layout it shows, in whole points.
+    ///
+    /// Rounded the way `WinampModernMainView.scaledCanvasSize` rounds the canvas, which is the size
+    /// `windowDidResize` puts the window on. Left fractional — 343 skin pixels is 360.15 points at
+    /// 105% — the floor sat above the size the window was then corrected to, and AppKit and the
+    /// delegate disagreed about the minimum on every step of a drag against it.
+    private func applyResizeLimits(of renderer: WasabiSceneRenderer, to window: NSWindow, scale: CGFloat) {
+        let limits = renderer.userResizeLimits
+        func points(_ pixels: CGFloat) -> CGFloat {
+            pixels.isFinite ? (pixels * scale).rounded() : CGFloat.greatestFiniteMagnitude
+        }
+        window.contentMinSize = NSSize(width: points(limits.minimum.width),
+                                       height: points(limits.minimum.height))
+        window.contentMaxSize = NSSize(width: points(limits.maximum.width),
+                                       height: points(limits.maximum.height))
     }
 
     func teardown() {
@@ -208,16 +218,7 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
             window.hasShadow = false
             window.contentView = createdView
             window.delegate = self
-            let limits = renderer.userResizeLimits
-            let scale = max(skinScale(), 0.01)
-            window.contentMinSize = NSSize(width: limits.minimum.width * scale,
-                                           height: limits.minimum.height * scale)
-            window.contentMaxSize = NSSize(width: limits.maximum.width.isFinite
-                                                ? limits.maximum.width * scale
-                                                : CGFloat.greatestFiniteMagnitude,
-                                           height: limits.maximum.height.isFinite
-                                                ? limits.maximum.height * scale
-                                                : CGFloat.greatestFiniteMagnitude)
+            applyResizeLimits(of: renderer, to: window, scale: max(skinScale(), 0.01))
             window.setAccessibilityIdentifier("WinampModernHostedWindow_\(id.rawValue)")
             window.setAccessibilityLabel(definition.title)
             window.orderOut(nil)
@@ -246,10 +247,7 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
                                    height: max(canvas.height - lift, floor.height))
                 if grown != canvas {
                     _ = renderer.resize(to: grown)
-                    let scale = max(skinScale(), 0.01)
-                    let limits = renderer.userResizeLimits
-                    window.contentMinSize = NSSize(width: limits.minimum.width * scale,
-                                                   height: limits.minimum.height * scale)
+                    applyResizeLimits(of: renderer, to: window, scale: max(skinScale(), 0.01))
                     window.setContentSize(createdView.scaledCanvasSize)
                     createdView.setFrameSize(createdView.scaledCanvasSize)
                 }
@@ -370,15 +368,12 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
         let scale = max(skinScale(), 0.01)
         let proposed = CGSize(width: window.contentLayoutRect.width / scale,
                               height: window.contentLayoutRect.height / scale)
-        let accepted = instance.view.renderer.resize(to: proposed)
-        let target = CGSize(width: accepted.width * scale, height: accepted.height * scale)
-        if target != window.contentLayoutRect.size {
+        instance.view.hostWindowDidResize(toCanvas: proposed, live: window.inLiveResize) { target in
+            guard target != window.contentLayoutRect.size else { return }
             programmaticResizeWindows.insert(key)
             window.setContentSize(target)
             programmaticResizeWindows.remove(key)
         }
-        instance.view.setFrameSize(target)
-        instance.view.needsDisplay = true
         WindowManager.shared.postWindowLayoutDidChange()
     }
 
