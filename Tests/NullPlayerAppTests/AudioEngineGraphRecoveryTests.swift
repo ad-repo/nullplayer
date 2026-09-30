@@ -113,7 +113,12 @@ final class AudioEngineGraphRecoveryTests: XCTestCase {
 
         recovery.setFaultInjectorForTesting(nil)
         let played = expectation(description: "requested track plays after recovery")
+        // Cleared on the way out, so a timed-out poll does not keep rescheduling itself, holding
+        // the engine, through later tests.
+        var polling = true
+        defer { polling = false }
         func poll() {
+            guard polling else { return }
             if engine.currentTrack?.id == newTrack.id, engine.state == .playing {
                 played.fulfill()
             } else {

@@ -80,6 +80,13 @@ extension AudioEngine {
     var isLocalGraphPlayingForTesting: Bool {
         engine.isRunning && playerNode.isPlaying
     }
+
+    /// What `playTrack(at:)` and `castNewTrack` leave behind when a track is picked mid-cast:
+    /// the selection moves, the open local file does not.
+    func selectTrackDuringCastForTesting(at index: Int) {
+        currentIndex = index
+        currentTrack = playlist[index]
+    }
 }
 #endif
 
@@ -2628,10 +2635,15 @@ class AudioEngine {
     }
 
     /// Queues a stopped local file from its start, so `play()` after Stop has audio to play:
-    /// `playerNode.stop()` discards everything scheduled on it.
+    /// `playerNode.stop()` discards everything scheduled on it. A cue track starts at its offset
+    /// into the shared file, as `commitLoadedLocalTrack` schedules it.
     private func rescheduleStoppedLocalFileFromStart(generation: Int) {
         guard !isStreamingPlayback, let file = audioFile else { return }
-        playerNode.scheduleFile(file, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+        let startFrame = AVAudioFramePosition((currentTrack?.cueStartOffset ?? 0) * file.processingFormat.sampleRate)
+        guard startFrame < file.length else { return }
+        playerNode.scheduleSegment(file, startingFrame: startFrame,
+                                   frameCount: AVAudioFrameCount(file.length - startFrame), at: nil,
+                                   completionCallbackType: .dataPlayedBack) { [weak self] _ in
             DispatchQueue.main.async {
                 self?.handlePlaybackComplete(generation: generation)
             }
@@ -3275,6 +3287,14 @@ class AudioEngine {
         // stopped the player node, which discarded its schedule; without queueing the file again
         // Play would run an empty node and stay silent.
         playbackGeneration += 1
+        // A Stop pressed during the cast already queued the file; queueing it again on top would
+        // play it twice.
+        playerNode.stop()
+        // A track picked during the cast only replaced `currentTrack`, never the open file, so the
+        // file is the pre-cast track's. Drop it and Play reloads the track on screen.
+        if let file = audioFile, file.url != currentTrack?.url {
+            audioFile = nil
+        }
         _currentTime = 0
         lastReportedTime = 0
         state = .stopped
@@ -4390,8 +4410,9 @@ class AudioEngine {
                     failure.track, error: failure.error,
                     fileIsMissing: !FileManager.default.fileExists(atPath: failure.track.url.path))
             } else if currentTrack != nil {
-                // A load that returns without a track — a placeholder — leaves `currentTrack` nil, and `play()` reads nil as "start the playlist from
-                // the top", which would start an unrelated track.
+                // A load that returns without a track — a placeholder — leaves `currentTrack`
+                // nil, and `play()` reads nil as "start the playlist from the top", which would
+                // start an unrelated track.
                 play()
             }
         }

@@ -179,7 +179,9 @@
   try. Windows Media Player skins also show the failure in their status line and title, as the
   other modes already did in their marquee.
 - **Play works after you stop casting** — stopping a cast and pressing Play on a local file ran
-  the clock with no sound. The file is now ready to play again from the start, as after Stop.
+  the clock with no sound. The file is now ready to play again from the start, as after Stop. A
+  track picked during the cast is the one that plays, and a cue track starts at its own beginning
+  after Stop instead of the start of the whole file.
 - **Play Now after a cast plays the track you picked** — if the Mac's audio output changed during a
   cast, double-clicking a local file right after the cast ended could leave nothing playing, or
   resume the track from before the cast instead.
