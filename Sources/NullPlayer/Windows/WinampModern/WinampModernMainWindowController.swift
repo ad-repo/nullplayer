@@ -659,12 +659,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// embedded Media Library, which move together.
     var textScale: WinampModernTextScale { skinView?.renderer.textScale ?? .auto }
 
-    /// What `.auto` currently amounts to, as a percent, for the menu entry that shows it. Read off the
-    /// **player's** canvas: a separate-window skin resolves `auto` per window, but the menu can only
+    /// What `.auto` amounts to, as a percent, for the menu entry that shows it. Read off the
+    /// **player's** layout: a separate-window skin resolves `auto` per window, but the menu can only
     /// name one number and the player is the window the user is looking at.
     var resolvedTextPercent: Int {
         guard let renderer = skinView?.renderer else { return 100 }
-        return WinampModernTextScale.resolvedPercent(canvasHeight: renderer.canvasSize.height)
+        return WinampModernTextScale.resolvedPercent(declaredHeight: renderer.textScaleReferenceHeight)
     }
 
     /// Apply a Text Size and remember it for this skin.
@@ -2707,38 +2707,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         let limits = view.renderer.userResizeLimits
         let proposed = CGSize(width: content.width / skinScale, height: content.height / skinScale)
         let previousCanvas = view.renderer.canvasSize
-        #if DEBUG
-        if ProcessInfo.processInfo.environment["WINAMP_MODERN_RESIZE_TRACE"] != nil {
-            NSLog("%@", "WM-RESIZE window=\(resized.accessibilityIdentifier()) frame=\(resized.frame) "
-                  + "live=\(resized.inLiveResize) handle=\(view.isResizingFromSkinHandle)")
-        }
-        #endif
         _ = view.renderer.resize(to: CGSize(
             width: min(max(proposed.width, limits.minimum.width), limits.maximum.width),
             height: min(max(proposed.height, limits.minimum.height), limits.maximum.height)))
         let size = view.scaledCanvasSize
         if size != content { resize(window: resized, to: size) }
         if size != view.frame.size { view.setFrameSize(size) }
-        view.needsDisplay = true
-        // `onResize`, in the same turn the canvas changed. Wasabi resizes synchronously and notifies
-        // as it goes; leaving it to the next script mutation's `geometryDidSettle` meant a window the
-        // user stretched was told only if some *other* script happened to move something first.
-        // Itemskin's frame is a second window whose 10 ms timer sizes it back onto its contents and
-        // whose `onResize` sizes the contents to it: with the event late the timer always won, and
-        // the playlist could be stretched only while another framed window's timer was running.
-        if WasabiWindowResizeNotification.isEnabled, view.renderer.canvasSize != previousCanvas {
-            view.dispatchResizeIfChanged()
-        }
-        // `onUserResize`, and only for a resize the user is actually dragging — that is what
-        // separates it from the tiler, a restored frame and a script's own `resize()`, all of which
-        // come through here too. A standard frame answers it by writing the *client's* new box, so
-        // firing it on a programmatic resize would have the two windows resizing each other (B110).
-        // `inLiveResize` covers AppKit's own edge band only; a drag on one of the skin's `resize=`
-        // handles sets the frame from the view and is the same gesture.
-        if resized.inLiveResize
-            || (WasabiWindowResizeNotification.isEnabled && view.isResizingFromSkinHandle) {
-            view.dispatchWindowUserResized()
-        }
+        view.hostWindowDidResize(fromCanvas: previousCanvas, live: resized.inLiveResize)
     }
 
     /// A window a skin has glued a frame over must not be able to bury it (B110).

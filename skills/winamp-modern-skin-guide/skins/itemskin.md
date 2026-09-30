@@ -93,12 +93,10 @@ with an `xuitag` and a `scripts/standardframe*.maki`. Each of those scripts:
   write; see [`reference/scripting.md`](../reference/scripting.md) → *Writing back the position a
   window just read*. **Do not** make a layout report its desktop position instead.
 - **The frame window is also the only half with resize handles, and it sizes its contents from
-  `onResize`.** The 10 ms timer runs the other way and sizes the frame onto the contents, so an
-  `onResize` that arrives late loses to it every time. That was the whole of "the playlist cannot be
-  stretched unless PeppyMeter is open" (B160): a second framed window's timer was delivering the
-  first one's overdue event. `WINAMP_MODERN_RESIZE_NOTIFY=0` brings the defect back in one launch.
-  The same family ships the same scripts and had the same defect: K-jr, MoonLight, Pure Inspired.
-  See [`reference/components.md`](../reference/components.md) → *Resize, and why a skin needs it*.
+  `onResize`.** The 10 ms timer runs the other way, so an `onResize` that arrives late loses to it
+  every time (B160); see [`reference/components.md`](../reference/components.md) → *Resize, and why
+  a skin needs it*. `WINAMP_MODERN_RESIZE_NOTIFY=0` brings the defect back in one launch. K-jr,
+  MoonLight and Pure Inspired ship the same scripts and had the same defect.
 - **The frame window is the only draggable half.** The content window is a transparent box around a
   component holder and has no handle, so `onMove` on the chrome is the only route the pair moves by.
   It was never dispatched at all before B69.

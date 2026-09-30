@@ -197,7 +197,12 @@
   separately from its contents (Itemskin, MoonLight, K-jr, Pure Inspired, Ebonite), dragging the
   frame's edge or corner either snapped straight back or stretched the frame and left the contents
   behind, and on Itemskin worked only while a second window such as PeppyMeter was open. The frame
-  and its contents now resize together, and dragging a top edge moves the top edge.
+  and its contents now resize together, and dragging a top edge moves the top edge. A window
+  resized while nothing is playing also re-lays out at once (ClassicPro's logo, tabs and equalizer
+  stayed where they were).
+- **Winamp Modern: resizing a window no longer resizes its text** — with Text Size on Auto, the
+  embedded playlist and library text grew and shrank with the window. Auto now picks the size
+  from the size the skin designed the window at and keeps it; use Text Size to change it.
 
 ## 0.30.0
 

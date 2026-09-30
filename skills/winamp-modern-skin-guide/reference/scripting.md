@@ -920,13 +920,17 @@ the pair a script moves — was pushed back.
 
 **The pin lands before the size** (B160). Wasabi applies `resize(x, y, w, h)` as one box and then
 notifies; the host is asked in two calls, and the size is the one that dispatches `onResize` inside
-the resized window. So for this idiom `containerMoveRequested` goes out first and the size second,
-and `applyContainerGeometry` is then told to keep the origin. The host sizes every `.wal` window
-around its top-left, the corner the pin names, so the position survives. Sized first, Itemskin's
+the resized window. So `applyContainerGeometry` sends a pinned move (`desktopOrigin:`) before the
+size, and each goes out once. The host sizes every `.wal` window around its top-left, the corner
+the pin names, so the position survives. Sized first, Itemskin's
 content window heard its resize while still at its old position, its frame script pulled the frame
 back onto it, and the frame's `onMove` then dragged the content back too: stretching the playlist by
 its top edge grew the pair downward from where the top had been. Only the borrowed-origin case is
-reordered. A plain move and the self round trip run in the order they always did.
+reordered. A plain move still follows the size, because it is clamped to the screen by the size the
+window ends up with, and the self round trip moves nothing. `resize()` no longer asks for a layout's
+size a second time ahead of `applyContainerGeometry`; the one difference is a `resize()` to a zero or
+negative size, which that extra request used to clamp to the layout's minimum and which now leaves
+the window's size alone, as `setXmlParam` of the same values always has.
 
 **The match carries a one-pixel tolerance, and it is not slack** (B110). Wasabi's own standard frame
 nudges its minimum-size clamp by ±1 to force a re-layout:

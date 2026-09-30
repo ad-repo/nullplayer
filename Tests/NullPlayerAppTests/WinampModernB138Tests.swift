@@ -1,5 +1,4 @@
 import XCTest
-import ZIPFoundation
 @testable import NullPlayer
 
 /// B138 — a cPro player came back from windowshade with a dead grey column where its playlist was.
@@ -127,7 +126,7 @@ final class WinampModernB138Tests: XCTestCase {
     /// cPro's shape, reduced to what the rule turns on: a player with a resizable `normal` layout
     /// holding a pane group, and a short `shade` layout that does not contain it.
     private func makeTwoLayoutScene() throws -> Scene {
-        let loaded = try makeSkin(xml: """
+        let loaded = try makeWinampModernSkin(xml: """
         <WasabiXML>
           <container id="main">
             <layout id="normal" w="500" h="400" minimum_w="300" minimum_h="100">
@@ -141,7 +140,7 @@ final class WinampModernB138Tests: XCTestCase {
           </container>
         </WasabiXML>
         """)
-        let host = TestHost()
+        let host = WinampModernStubHost()
         let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host)
         addTeardownBlock { renderer.teardown() }
         let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
@@ -151,46 +150,5 @@ final class WinampModernB138Tests: XCTestCase {
         view.setFrameSize(renderer.canvasSize)
         let pane = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "pane").first)
         return Scene(renderer: renderer, scripts: scripts, view: view, pane: pane)
-    }
-
-    private final class TestHost: WinampModernHost {
-        var playbackState: PlaybackState = .stopped
-        var currentTime: TimeInterval = 0
-        var duration: TimeInterval = 0
-        var volume: Double = 0.5
-        var shuffleEnabled = false
-        var repeatEnabled = false
-        var trackTitle = ""
-        var trackInfo = ""
-        var spectrumLevels: [Float] = []
-
-        func play() {}
-        func pause() {}
-        func stop() {}
-        func previous() {}
-        func next() {}
-        func seek(to seconds: TimeInterval) {}
-        func openFiles() {}
-        func beginVisualizationConsumption() {}
-        func endVisualizationConsumption() {}
-    }
-
-    private func makeSkin(xml: String) throws -> WinampModernLoadedSkin {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("WinampModernB138Tests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let url = directory.appendingPathComponent("B138-\(UUID().uuidString).wal")
-        let archive = try Archive(url: url, accessMode: .create)
-        let payload = Data(xml.utf8)
-        try archive.addEntry(with: "skin.xml", type: .file, uncompressedSize: Int64(payload.count),
-                             compressionMethod: .none) { position, size in
-            let start = Int(position)
-            guard start < payload.count else { return Data() }
-            return payload.subdata(in: start..<min(payload.count, start + size))
-        }
-        let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: url)
-        addTeardownBlock { loaded.teardown() }
-        return loaded
     }
 }

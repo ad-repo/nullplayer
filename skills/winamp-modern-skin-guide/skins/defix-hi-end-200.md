@@ -507,7 +507,7 @@ The same `Bottom.bar.button` wrapper carries the **playlist window's** `PE_Add`/
   half-size rows in a 1536×878 window. Defix's `pledit` pane declares `fontsize="19"`/`"20"`, so it
   landed on the same 18px cell — inside a **406×355** window, where it read as enormous. The two
   skins are indistinguishable by their fonts, and B50 rekeyed the rule on **window size**
-  (`clamp(canvasHeight/48, 11, 18)`), which separates them cleanly: Defix's playlist is back to 11px
+  (`clamp(declaredHeight/48, 11, 18)`, the height the layout declares), which separates them cleanly: Defix's playlist is back to 11px
   and Bento keeps 18. Its 800×600 `SUI` library resolves to 12.5px. The lesson generalises — a
   host-drawn surface sized from the markup around it inherits every skin's typographic taste, and the
   *window* is the thing that actually differs.

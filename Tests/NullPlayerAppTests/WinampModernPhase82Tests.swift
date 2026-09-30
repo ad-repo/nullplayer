@@ -1,5 +1,4 @@
 import XCTest
-import ZIPFoundation
 @testable import NullPlayer
 
 /// Phase 82 (B69) — one window laid over another: Itemskin's frames find their content.
@@ -222,12 +221,9 @@ final class WinampModernPhase82Tests: XCTestCase {
 
     // MARK: - B160: the position lands before the size
 
-    /// Wasabi applies `resize(x, y, w, h)` as one box and then notifies, so a handler that runs off
-    /// the new size already sees the new position. The host is asked in two calls, and the size is
-    /// the one that dispatches `onResize` — so the pin has to be the first of them. Sized first,
-    /// Itemskin's content window heard its resize while still at its old position, its frame
-    /// script pulled the frame back onto it, and stretching the playlist from its top edge walked
-    /// the pair back down to where the top had been.
+    /// The host is asked in two calls, and the size is the one that dispatches `onResize` — so the
+    /// pin has to be the first of them, and each goes out once. The rule and the Itemskin defect
+    /// behind it are in `reference/scripting.md` → *The pin lands before the size*.
     func testAWindowPutOnAnothersPositionIsMovedBeforeItIsSized() throws {
         let (runtime, program) = try makeRuntime()
         runtime.containerOriginQuery = { id in
@@ -247,11 +243,7 @@ final class WinampModernPhase82Tests: XCTestCase {
         let read = try readOrigin(runtime, program, of: chrome)
         try resize(runtime, program, content, to: CGRect(origin: read, size: CGSize(width: 330, height: 197)))
 
-        XCTAssertEqual(requests.first, "move 1159,418 pinned=true")
-        XCTAssertEqual(requests.filter { $0.hasPrefix("move") }.count, 1,
-                       "and once: the host sizes a window around the corner the pin names")
-        XCTAssertTrue(requests.dropFirst().allSatisfy { $0 == "size 330x197" })
-        XCTAssertFalse(requests.dropFirst().isEmpty, "the size half still applies")
+        XCTAssertEqual(requests, ["move 1159,418 pinned=true", "size 330x197"])
     }
 
     // MARK: - onMove
@@ -307,7 +299,7 @@ final class WinampModernPhase82Tests: XCTestCase {
     /// Itemskin's shape, at its smallest: one window holding the component and a second holding the
     /// frame drawn over it.
     private func makeRuntime() throws -> (WinampModernScriptRuntime, MakiProgram) {
-        let loaded = try makeSkin(xml: """
+        let loaded = try makeWinampModernSkin(xml: """
         <WasabiXML>
           <container id="chrome">
             <layout id="normal" w="330" h="137">
@@ -319,7 +311,7 @@ final class WinampModernPhase82Tests: XCTestCase {
           </container>
         </WasabiXML>
         """)
-        let runtime = try WinampModernScriptRuntime(loadedSkin: loaded, host: TestHost())
+        let runtime = try WinampModernScriptRuntime(loadedSkin: loaded, host: WinampModernStubHost())
         addTeardownBlock { runtime.teardown() }
         return (runtime, Self.syntheticProgram)
     }
@@ -327,51 +319,4 @@ final class WinampModernPhase82Tests: XCTestCase {
     private static let syntheticProgram = MakiProgram(
         version: 0x0403, classes: [], methods: [], variables: [], bindings: [], instructions: [],
         source: WalSourceLocation(path: "/Skins/Synthetic/t.maki"), ownerID: nil, parameter: nil)
-
-    private func makeSkin(xml: String) throws -> WinampModernLoadedSkin {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("WinampModernPhase82Tests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let url = directory.appendingPathComponent("Phase82-\(UUID().uuidString).wal")
-        let archive = try Archive(url: url, accessMode: .create)
-        let payload = Data(xml.utf8)
-        try archive.addEntry(with: "skin.xml", type: .file, uncompressedSize: Int64(payload.count),
-                             compressionMethod: .none) { position, size in
-            let start = Int(position)
-            guard start < payload.count else { return Data() }
-            return payload.subdata(in: start..<min(payload.count, start + size))
-        }
-        let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: url)
-        addTeardownBlock { loaded.teardown() }
-        return loaded
-    }
-
-    private final class TestHost: WinampModernHost {
-        var playbackState: PlaybackState = .stopped
-        var currentTime: TimeInterval = 0
-        var duration: TimeInterval = 0
-        var volume: Double = 0.5
-        var shuffleEnabled = false
-        var repeatEnabled = false
-        var trackTitle = ""
-        var trackInfo = ""
-        var trackDisplayTitle = ""
-        var bitrateKbps = 0
-        var sampleRateHz = 0
-        var channelCount = 2
-        var spectrumLevels: [Float] = []
-        var isArtworkLoading = false
-        var vuLevels: (left: Double, right: Double) = (0, 0)
-
-        func play() {}
-        func pause() {}
-        func stop() {}
-        func previous() {}
-        func next() {}
-        func seek(to seconds: TimeInterval) {}
-        func openFiles() {}
-        func beginVisualizationConsumption() {}
-        func endVisualizationConsumption() {}
-    }
 }

@@ -1,24 +1,16 @@
 import XCTest
 import AppKit
-import ZIPFoundation
 @testable import NullPlayer
 
 /// B160 — a `.wal` window the user stretched did not tell its own scene.
 ///
 /// Reported live on Itemskin as *"the playlist window cannot be stretched/resized unless the
-/// PeppyMeter window is also open"*. Itemskin draws each component window's frame in a second
-/// window. The frame script sizes the frame onto its contents from a 10 ms timer, and sizes the
-/// contents to the frame from the frame's `onResize`. `windowDidResize` resized the renderer and
-/// dispatched nothing: `onResize` reached a scene only when some script's own geometry write set
-/// off `geometryDidSettle`. With one framed window open, the only script writing geometry was the
-/// timer that had already put the frame back, so the drag was undone 10 ms after every step. A
-/// second framed window (PeppyMeter wears a copy of the AVS frame) ran a second timer whose
-/// settle delivered the first window's overdue `onResize`, which is the whole of "unless the
-/// PeppyMeter window is also open".
+/// PeppyMeter window is also open"*. The mechanism is in `reference/components.md` → *Resize, and
+/// why a skin needs it*.
 ///
 /// What is pinned here is the delivery: the scene's resize baseline moves in the same turn as the
-/// window. The bound half — a compiled handler answering it — has no headless route and is
-/// verified live; see `skins/itemskin.md`.
+/// window. The bound half — a compiled handler answering it, and `onUserResize` from a drag on a
+/// skin handle — has no headless route and is verified live; see `skins/itemskin.md`.
 final class WinampModernB160Tests: XCTestCase {
 
     @MainActor
@@ -39,26 +31,15 @@ final class WinampModernB160Tests: XCTestCase {
     }
 
     /// A resize that leaves the canvas where it was — a UI Size change, a frame restored at the
-    /// size it already had — dispatches nothing, as before.
+    /// size it already had — dispatches nothing. Asked of a scene that has not been seeded, where
+    /// a diffing dispatch would deliver every object its first `onResize` ahead of
+    /// `scriptsDidStart`.
     @MainActor
     func testAWindowResizeThatLeavesTheCanvasAloneDispatchesNothing() throws {
-        let scene = try makeScene()
-        let before = scene.view.resizeBaselineForTesting
+        let scene = try makeScene(seeded: false)
         scene.controller.windowDidResize(Notification(name: NSWindow.didResizeNotification,
                                                       object: scene.window))
-        XCTAssertEqual(scene.view.resizeBaselineForTesting, before)
-    }
-
-    /// Only a press on one of the skin's own `resize=` handles makes a resize the user's; a view
-    /// nobody is dragging must not turn a tiler or script resize into `onUserResize` (B110).
-    @MainActor
-    func testAViewNobodyIsDraggingIsNotInAHandleResize() throws {
-        XCTAssertFalse(try makeScene().view.isResizingFromSkinHandle)
-    }
-
-    func testTheNotificationIsOnUnlessTheDebugSwitchTurnsItOff() {
-        XCTAssertEqual(WasabiWindowResizeNotification.isEnabled,
-                       ProcessInfo.processInfo.environment["WINAMP_MODERN_RESIZE_NOTIFY"] != "0")
+        XCTAssertTrue(scene.view.resizeBaselineForTesting.isEmpty)
     }
 
     // MARK: - Fixtures
@@ -73,8 +54,8 @@ final class WinampModernB160Tests: XCTestCase {
     /// Itemskin's frame window, reduced to what the rule turns on: a resizable layout in a window
     /// whose delegate is the skin controller.
     @MainActor
-    private func makeScene() throws -> Scene {
-        let loaded = try makeSkin(xml: """
+    private func makeScene(seeded: Bool = true) throws -> Scene {
+        let loaded = try makeWinampModernSkin(xml: """
         <WasabiXML>
           <container id="main">
             <layout id="normal" w="330" h="137" minimum_w="330" minimum_h="137">
@@ -83,7 +64,7 @@ final class WinampModernB160Tests: XCTestCase {
           </container>
         </WasabiXML>
         """)
-        let host = TestHost()
+        let host = WinampModernStubHost()
         let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host)
         addTeardownBlock { renderer.teardown() }
         let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
@@ -91,7 +72,7 @@ final class WinampModernB160Tests: XCTestCase {
         let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
                                         componentHost: nil)
         view.setFrameSize(renderer.canvasSize)
-        view.scriptsDidStart()
+        if seeded { view.scriptsDidStart() }
 
         // Built through the designated initializer rather than `init()`, which would load whichever
         // skin the machine running the tests happens to have selected.
@@ -110,46 +91,5 @@ final class WinampModernB160Tests: XCTestCase {
             _ = controller
         }
         return Scene(controller: controller, window: window, renderer: renderer, view: view)
-    }
-
-    private final class TestHost: WinampModernHost {
-        var playbackState: PlaybackState = .stopped
-        var currentTime: TimeInterval = 0
-        var duration: TimeInterval = 0
-        var volume: Double = 0.5
-        var shuffleEnabled = false
-        var repeatEnabled = false
-        var trackTitle = ""
-        var trackInfo = ""
-        var spectrumLevels: [Float] = []
-
-        func play() {}
-        func pause() {}
-        func stop() {}
-        func previous() {}
-        func next() {}
-        func seek(to seconds: TimeInterval) {}
-        func openFiles() {}
-        func beginVisualizationConsumption() {}
-        func endVisualizationConsumption() {}
-    }
-
-    private func makeSkin(xml: String) throws -> WinampModernLoadedSkin {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("WinampModernB160Tests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let url = directory.appendingPathComponent("B160-\(UUID().uuidString).wal")
-        let archive = try Archive(url: url, accessMode: .create)
-        let payload = Data(xml.utf8)
-        try archive.addEntry(with: "skin.xml", type: .file, uncompressedSize: Int64(payload.count),
-                             compressionMethod: .none) { position, size in
-            let start = Int(position)
-            guard start < payload.count else { return Data() }
-            return payload.subdata(in: start..<min(payload.count, start + size))
-        }
-        let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: url)
-        addTeardownBlock { loaded.teardown() }
-        return loaded
     }
 }

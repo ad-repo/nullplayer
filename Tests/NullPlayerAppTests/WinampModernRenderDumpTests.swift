@@ -1373,7 +1373,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 // canvas, and `scale=` says whether it came from `auto` or from a user's choice —
                 // which is the whole question behind "the playlist font is tiny in this skin".
                 let textScaleLabel = renderer.textScale == .auto
-                    ? "auto(\(WinampModernTextScale.resolvedPercent(canvasHeight: renderer.canvasSize.height))%)"
+                    ? "auto(\(WinampModernTextScale.resolvedPercent(declaredHeight: renderer.textScaleReferenceHeight))%)"
                     : "set(\(renderer.textScale.storedValue)%)"
                 for holder in holders where holder.kind == .playlist {
                     print("PLAYLIST holder \(info.id)/\(layoutID): \(holder.object.xmlID ?? "-")"

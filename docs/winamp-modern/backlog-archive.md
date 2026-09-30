@@ -19,12 +19,17 @@ Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entri
         second timer, whose settle made every container diff its scene and so delivered the
         playlist frame's overdue `onResize`.
       - **Fix, three parts, all `.wal`-only code.** `windowDidResize` (controller and hosted-window
-        materializer) runs the diffing resize dispatch when the canvas changed. A drag on a skin
-        `resize=` handle counts as a user resize, so `onUserResize` fires for it
-        (`isResizingFromSkinHandle`; `inLiveResize` covers only AppKit's band). A `resize()` that
-        borrows another window's origin moves the window before it sizes it, because the size is
-        what dispatches `onResize` in the resized window and Itemskin's script answered that from
-        the old position: a top-edge drag grew the pair downward.
+        materializer) hands over to `WinampModernMainView.hostWindowDidResize(fromCanvas:live:)`,
+        which runs the diffing resize dispatch when the canvas changed and drops the rect caches
+        with it, as `applyCanvasResize` always did. A drag on
+        a skin `resize=` handle is a user resize: `resizeWindow(edges:)` dispatches `onUserResize`
+        after it sets the frame (`inLiveResize` covers only AppKit's band). `applyContainerGeometry`
+        sends a pinned move before the size, because the size is what dispatches `onResize` in the
+        resized window and Itemskin's script answered that from the old position: a top-edge drag
+        grew the pair downward. `resize()` lost its second, redundant size request on the way.
+      - **Also changed.** A hosted window resized by AppKit's edge band now hears `onUserResize`;
+        the materializer dispatched neither event before. A `resize()` to a zero or negative size
+        no longer shrinks the window to its layout minimum.
       - **Other skins.** Corpus scan for the idiom (`newDynamicContainer` + `getLeft` + `resize`
         in one script): Itemskin, K-jr, MoonLight, Pure Inspired (one author's frame scripts, plus
         the two byte-identical re-adds), Ebonite, and unrelated uses in Big Bento and
@@ -33,12 +38,22 @@ Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entri
         unchanged off, bottom +50 on. K-jr +30 of 50 off (its library frame's timer was helping),
         +50 on. Ebonite off: frame 300x300 over contents left at 250x250; on: both 300x300.
       - **Controls.** 2222-cPro__Bento's player resized to 840x840 in both modes with
-        pixel-identical captures; winampmodern566's player and playlist resize the same in both.
+        pixel-identical captures when first measured. Launched `--no-play` and dragged 750 → 810,
+        the captures differ: with the switch off the logo, tab strip and equalizer stay where the
+        old width put them, because nothing mutates the scene to deliver the overdue
+        `onResize`; with it on all three follow the window. The embedded library's text is the
+        same size in both. winampmodern566's player and playlist resize the same in both, and its hosted
+        PeppyMeter resizes by AppKit's band through the materializer (`live=true` in the trace).
         Big Bento Modern opens at 1800x1169, larger than the test display, and was not driven.
       - **Tests.** `WinampModernB160Tests` (the resize baseline moves with the window; an
-        unchanged canvas dispatches nothing) and
-        `WinampModernPhase82Tests.testAWindowPutOnAnothersPositionIsMovedBeforeItIsSized`. Both
-        fail under `WINAMP_MODERN_RESIZE_NOTIFY=0`. The bound handler itself has no headless route.
+        unchanged canvas dispatches nothing, shown to fail with the guard removed) and
+        `WinampModernPhase82Tests.testAWindowPutOnAnothersPositionIsMovedBeforeItIsSized`. The
+        first B160 test and the order test fail under `WINAMP_MODERN_RESIZE_NOTIFY=0`. The bound handler itself has no headless route.
+      - **Auto Text Size no longer follows the window.** Found while driving the control: `auto`
+        read the live canvas height, so a resize changed the playlist rows at once and the library
+        text on the next scale push. It now reads the height the layout declares
+        (`textScaleReferenceHeight`); `reference/components.md` → *How large NullPlayer draws its
+        own text*. Corpus sweep before and after: every `PLAYLIST holder` line identical.
       - **Left open:** B161, AppKit's edge band taking a corner press as a single edge.
 
 ## B147 — the library follows the centre stack in a `.wal` session — closed 2026-09-28

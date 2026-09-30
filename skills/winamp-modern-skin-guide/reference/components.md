@@ -1146,8 +1146,9 @@ state that is assigned **nowhere else**. Three rules, each earned:
   the settle, closing the playlist hid the only control that could reopen it.
 - **Fire it when the window itself is resized, in the same turn** (B160). `windowDidResize` — the
   controller's for the skin's own windows, the materializer's for hosted ones — resizes the renderer
-  and then runs the same diffing dispatch, but only when the canvas actually changed, so a UI Size
-  change still dispatches nothing. Until then a window the user stretched told its scene nothing;
+  and hands over to `WinampModernMainView.hostWindowDidResize(fromCanvas:live:)`, which does what
+  `applyCanvasResize` does for a script's resize: drop the rect caches and run the diffing
+  dispatch. Only when the canvas actually changed, so a UI Size change still dispatches nothing. Until then a window the user stretched told its scene nothing;
   `onResize` arrived only when some script's own geometry write set off `geometryDidSettle`, and a
   skin with no such write waiting never heard it. Itemskin is that skin: its frame is a second
   window whose 10 ms timer sizes it back onto its contents, and whose `onResize` is what sizes the
@@ -1156,10 +1157,14 @@ state that is assigned **nowhere else**. Three rules, each earned:
   delivered the first one's overdue event — reported as "the playlist cannot be resized unless
   PeppyMeter is open".
 - **A drag on the skin's own `resize=` handle is a user resize.** `inLiveResize` is true only for
-  AppKit's edge band. `WinampModernMainView.resizeWindow(edges:)` sets the frame itself, so
-  `windowDidResize` also asks `view.isResizingFromSkinHandle` before it dispatches `onUserResize`.
+  AppKit's edge band. `WinampModernMainView.resizeWindow(edges:)` sets the frame itself, so it
+  dispatches `onUserResize` itself, straight after the frame — which puts it behind the `onResize`
+  the frame change dispatched. The delegates only ever pass `inLiveResize`: a press that is merely
+  *down* on a handle must not turn a script's own `resize()` into a user resize (B110).
   Ebonite's standard frame answers only that event: dragged by its border, the frame used to
-  stretch and leave its contents behind at the old size.
+  stretch and leave its contents behind at the old size. A hosted window resized by AppKit's band
+  hears `onUserResize` too, as the skin's own windows always did; before B160 the materializer
+  dispatched neither event.
 - **Hidden objects are still laid out.** `layoutNodes()` resolves the whole active layout including
   invisible subtrees, and backs both `resizeTargets` and `resolvedGeometry`; drawing and hit testing
   keep using `sceneNodes()`. A hidden pane with no geometry can never hear that it is wide again — a
@@ -1235,12 +1240,12 @@ stored **per skin** (`WinampModernSkinState`, section `@nullplayer.text`, key `s
 all derived from.
 
 ```
-auto cell (px) = clamp(canvasHeight / 48, 11, 18)
+auto cell (px) = clamp(declaredHeight / 48, 11, 18)
 explicit cell  = 11 * percent / 100      // 100…200%, and an explicit choice is NOT capped at 18
 content scale  = cell / 11               // what the library multiplies its own scale by
 ```
 
-**Auto is keyed on the window's size, and the first attempt keyed it on fonts.** That earlier rule
+**Auto is keyed on the size the layout declares, and the first attempt keyed it on fonts.** That earlier rule
 (`b2980d3a`) took the median `fontsize` declared near the holder, and it cannot separate the two skins
 it has to: Big Bento Modern's playlist pane declares 22 and wants the large rows, Defix Hi-END 200's
 declares 19/20 and does not. Window size separates them cleanly.
@@ -1253,12 +1258,19 @@ declares 19/20 and does not. Window size separates them cleanly.
 
 Two details that are load-bearing:
 
-- **It reads the `canvasSize`, not the holder's frame.** Big Bento's side playlist pane swings between
-  202 and 819px as the user collapses or enlarges it; the row size must not move with it. Using the
-  canvas also gives each window of a separate-window skin its own correct number.
-- **`auto` depends on canvas height, so every canvas change has to re-push the library's scale** —
-  `applyCanvasResize` and `activateLayout`, not just the UI Size observer and surface creation.
-  Without that a user resize grows the playlist and leaves the library beside it stale.
+- **It reads the layout, not the holder's frame.** Big Bento's side playlist pane swings between
+  202 and 819px as the user collapses or enlarges it; the row size must not move with it. Reading
+  the layout also gives each window of a separate-window skin its own correct number.
+- **It reads the height the layout *declares*, never the height the window has now**
+  (`WasabiSceneRenderer.textScaleReferenceHeight`). Until 2026-09-30 it read the live `canvasSize`,
+  so stretching a window resized its playlist rows on every step of the drag, and the library
+  beside it caught up on the next scale push. No other UI mode resizes text with the window, and
+  the user has the Text Size menu for it. The declared heights are read once, in the renderer's
+  `init`: a script's `resize()` writes `h` on the layout, so the attribute as it stands later is
+  the window's current height again. What still moves the number is a **layout switch** (`shade`
+  declares its own height) — `activateLayout` re-pushes the library's scale, with the UI Size
+  observer, the Text Size menu and surface creation; a resize does not. Measured over the corpus
+  sweep: every `PLAYLIST holder` line is unchanged, so no skin's opening text size moved.
 
 The divisor 48 keeps anything under a 528px-tall window at the 11px default. The 18px cap belongs to
 `auto` alone, which is guessing: judged on screen, a host-drawn *list* has to stay quieter than the

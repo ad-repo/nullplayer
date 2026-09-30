@@ -242,13 +242,13 @@ final class WinampModernB130Tests: XCTestCase {
     func testTheTextSizeMenuProducesTheExpectedPointSizes() {
         let ratio = WasabiSceneRenderer.playlistCellToPointSize
         // auto, any window under 528px tall — cPro2 Bento, Anaheim, every small skin.
-        XCTAssertEqual(WinampModernTextScale.auto.cellPixelHeight(canvasHeight: 400) * ratio,
+        XCTAssertEqual(WinampModernTextScale.auto.cellPixelHeight(declaredHeight: 400) * ratio,
                        9.9, accuracy: 0.0001)
         // auto, at the cap — Big Bento's 878px window.
-        XCTAssertEqual(WinampModernTextScale.auto.cellPixelHeight(canvasHeight: 878) * ratio,
+        XCTAssertEqual(WinampModernTextScale.auto.cellPixelHeight(declaredHeight: 878) * ratio,
                        16.2, accuracy: 0.0001)
         // An explicit choice is not capped.
-        XCTAssertEqual(WinampModernTextScale.p125.cellPixelHeight(canvasHeight: 400) * ratio,
+        XCTAssertEqual(WinampModernTextScale.p125.cellPixelHeight(declaredHeight: 400) * ratio,
                        12.375, accuracy: 0.0001)
     }
 

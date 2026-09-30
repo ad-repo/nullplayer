@@ -61,6 +61,13 @@ extension WinampModernScriptRuntime {
     /// another window's, and re-expressed them in the desktop space this move is answered in. See
     /// `borrowedWindowOrigin`. `keepsOrigin` drops the position half altogether: the coordinates
     /// were read off a window that is not on screen (B156).
+    ///
+    /// **A pin goes out before the size** (B160). Wasabi applies the box whole and then notifies,
+    /// and the size is the request that dispatches `onResize` inside the resized window — so a
+    /// window still at its old position when that fires is a state Wasabi never shows a script.
+    /// The host sizes a window around its top-left, the corner the pin names, so the position
+    /// survives. A plain move still follows the size: it is clamped to the screen by the size the
+    /// window ends up with. See `reference/scripting.md` → *The pin lands before the size*.
     func applyContainerGeometry(_ object: WasabiObject, reportedOrigin: CGPoint? = nil,
                                         desktopOrigin: CGPoint? = nil, keepsOrigin: Bool = false) {
         // A **layout** is its window as much as the container is — a `noparent` popup is placed and
@@ -77,14 +84,16 @@ extension WinampModernScriptRuntime {
             target = nil
         }
         guard let target else { return }
+        let pin = keepsOrigin ? nil : desktopOrigin
+        let pinsBeforeSizing = Self.deliversResizeAsWasabiDoes
+        if let pin, pinsBeforeSizing { containerMoveRequested?(target.stableID, pin, true) }
         if let width = Double(object.attributes["w"] ?? ""),
            let height = Double(object.attributes["h"] ?? ""), width > 0, height > 0 {
             layoutResizeRequested?(target.stableID, CGSize(width: width, height: height))
         }
-        if keepsOrigin {
+        if let pin, !pinsBeforeSizing { containerMoveRequested?(target.stableID, pin, true) }
+        if keepsOrigin || pin != nil {
             return
-        } else if let desktopOrigin {
-            containerMoveRequested?(target.stableID, desktopOrigin, true)
         } else if let x = Double(object.attributes["x"] ?? ""),
                   let y = Double(object.attributes["y"] ?? "") {
             // **Writing back the position that was just read is not a move.** `resize(getLeft(),
