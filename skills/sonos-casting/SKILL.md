@@ -204,14 +204,14 @@ Click **🔴 Stop Casting** to fully disconnect:
 - Clear all room selections
 - Return to local control: stopped at 0:00 with the current local file queued again, so the Play
   button plays it from the start. Starting the cast stopped the local player node, which discards
-  its schedule; `AudioEngine.stopCastPlayback(resumeLocally: false)` re-queues it, or Play would run
+  its schedule; `AudioEngine.stopCastPlayback()` re-queues it, or Play would run
   an empty node — clock moving, output device running, no sound (`AudioEngineCastHandoffTests`).
   It stops the node first, since a Stop pressed during the cast already queued the file. A track
   picked during the cast moved only the selection, so when the open file is not the current
   track's it is dropped instead and Play reloads the track on screen.
 - If the Mac's output device changed during the cast, the local audio graph rebuild was held until
-  the session ends. A Play Now in that window is held as a play request and starts once the graph
-  is rebuilt; see `audio-system` (graph recovery).
+  the session ends. A Play Now in that window is held as Play Now and starts once the graph is
+  rebuilt; see `audio-system` (graph recovery).
 
 ## Casting Protocol
 
@@ -500,7 +500,8 @@ an untouched room to distinguish individual RenderingControl from group-volume c
 
 ### Logging switches
 
-Both are off by default and read once at launch; any non-empty value turns them on.
+Both are off by default and read once at launch (`EnvGatedLog`); any value, even an empty one,
+turns them on.
 
 - `NULLPLAYER_UPNP_LOG` — the SSDP/SOAP wire log from `UPnPManager` (see `chromecast-casting`).
 - `NULLPLAYER_CAST_DISCOVERY_LOG` — the periodic discovery refresh in `CastManager` (refresh,

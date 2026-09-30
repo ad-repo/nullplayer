@@ -387,7 +387,7 @@ final class WMPPhase4Tests: XCTestCase {
     func testAudioHostControlsRealLocalPlaybackWithoutReplacingEngineState() throws {
         let directory = try WMPSkinTestSupport.temporaryDirectory()
         let url = directory.appendingPathComponent("transport.wav")
-        try writeSilentWAV(to: url)
+        try TestAudioFile.writeWAV(to: url)
 
         let engine = AudioEngine()
         let host = WMPAudioEngineHost(audioEngine: engine)
@@ -422,14 +422,6 @@ final class WMPPhase4Tests: XCTestCase {
         XCTAssertEqual(host.snapshot.state, .playing)
         host.perform(.stop, value: nil)
         XCTAssertEqual(host.snapshot.state, .stopped)
-    }
-
-    private func writeSilentWAV(to url: URL) throws {
-        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2))
-        let file = try AVAudioFile(forWriting: url, settings: format.settings)
-        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 22_050))
-        buffer.frameLength = 22_050
-        try file.write(from: buffer)
     }
 
     @MainActor

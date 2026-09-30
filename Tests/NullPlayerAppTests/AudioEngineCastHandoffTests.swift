@@ -1,4 +1,3 @@
-import AVFoundation
 import XCTest
 @testable import NullPlayer
 
@@ -12,18 +11,8 @@ final class AudioEngineCastHandoffTests: XCTestCase {
     }
 
     private func toneWAV(seconds: Double) throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
+        let url = try TestAudioFile.temporaryWAV(seconds: seconds, tone: true)
         tempFiles.append(url)
-        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2))
-        let output = try AVAudioFile(forWriting: url, settings: format.settings)
-        let tone = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(seconds * 48000)))
-        tone.frameLength = tone.frameCapacity
-        for channel in 0..<2 {
-            for frame in 0..<Int(tone.frameLength) {
-                tone.floatChannelData![channel][frame] = 0.2 * sin(Float(frame) * 2 * .pi * 440 / 48000)
-            }
-        }
-        try output.write(from: tone)
         return url
     }
 
@@ -36,7 +25,7 @@ final class AudioEngineCastHandoffTests: XCTestCase {
         defer { engine.stop() }
         engine.playNow([Track(url: url, title: "Tone")])
         engine.stopLocalForCasting()
-        engine.stopCastPlayback(resumeLocally: false)
+        engine.stopCastPlayback()
 
         // A queued 0.3 s file plays out and ends the queue; an empty node never finishes.
         let finished = expectation(forNotification: .audioQueueDidExhaust, object: engine)
@@ -55,7 +44,7 @@ final class AudioEngineCastHandoffTests: XCTestCase {
         engine.playNow([Track(url: url, title: "Tone")])
         engine.stopLocalForCasting()
         engine.stop()
-        engine.stopCastPlayback(resumeLocally: false)
+        engine.stopCastPlayback()
 
         let finished = expectation(forNotification: .audioQueueDidExhaust, object: engine)
         let start = Date()
@@ -75,7 +64,7 @@ final class AudioEngineCastHandoffTests: XCTestCase {
         engine.playNow([Track(url: beforeCast, title: "Before"), Track(url: pickedDuringCast, title: "Picked")])
         engine.stopLocalForCasting()
         engine.selectTrackDuringCastForTesting(at: 1)
-        engine.stopCastPlayback(resumeLocally: false)
+        engine.stopCastPlayback()
 
         // The picked track is the last, so it plays out and ends the queue; the 10 s pre-cast
         // file would still be playing.

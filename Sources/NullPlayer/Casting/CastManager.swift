@@ -3,15 +3,10 @@ import AppKit
 import AVFoundation
 import NullPlayerCore
 
-/// The periodic device-discovery refresh cycle logs every few seconds for the life of the app.
-/// Off by default; set the `NULLPLAYER_CAST_DISCOVERY_LOG` env var to any value to re-enable it.
-private let castDiscoveryLoggingEnabled = ProcessInfo.processInfo.environment["NULLPLAYER_CAST_DISCOVERY_LOG"] != nil
-
-/// Gated, `NSLog`-compatible logger for the discovery cycle in `CastManager` and `ChromecastManager`.
-func castDiscoveryLog(_ format: String, _ args: CVarArg...) {
-    guard castDiscoveryLoggingEnabled else { return }
-    NSLog("%@", String(format: format, arguments: args))
-}
+/// The periodic device-discovery refresh cycle in `CastManager` and `ChromecastManager` logs every
+/// few seconds for the life of the app. Off by default; set `NULLPLAYER_CAST_DISCOVERY_LOG` to
+/// re-enable it.
+let castDiscoveryLog = EnvGatedLog("NULLPLAYER_CAST_DISCOVERY_LOG")
 
 /// Unified manager for all casting functionality
 /// Coordinates Chromecast, Sonos, and DLNA device discovery and playback
@@ -2043,7 +2038,7 @@ class CastManager {
                 }
             }
             
-            self.resolvedAudioEngine.stopCastPlayback(resumeLocally: false)
+            self.resolvedAudioEngine.stopCastPlayback()
             NotificationCenter.default.post(name: Self.sessionDidChangeNotification, object: nil)
             NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
         }

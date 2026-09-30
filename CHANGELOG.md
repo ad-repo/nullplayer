@@ -178,16 +178,15 @@
   naming the file, in every skin mode, and no longer leaves a dead copy in the playlist on every
   try. Windows Media Player skins also show the failure in their status line and title, as the
   other modes already did in their marquee.
-- **Play works after you stop casting** — stopping a cast and pressing Play on a local file ran
-  the clock with no sound. The file is now ready to play again from the start, as after Stop. A
-  track picked during the cast is the one that plays, and a cue track starts at its own beginning
-  after Stop instead of the start of the whole file.
-- **Cue tracks keep their place when the audio output changes** — connecting headphones or switching
-  the output device while a cue-sheet track played jumped into the album's first track at the same
-  time; it now carries on where it was.
-- **Play Now after a cast plays the track you picked** — if the Mac's audio output changed during a
-  cast, double-clicking a local file right after the cast ended could leave nothing playing, or
-  resume the track from before the cast instead.
+- **Playing locally after a cast** — after Stop Casting, pressing Play on a local file ran the
+  clock with no sound; it now plays from the start, as after Stop, and a track picked during the
+  cast is the one that plays. If the Mac's audio output changed during the cast, a Play Now right
+  after it ended could leave nothing playing or resume the track from before the cast; it now plays
+  the track you picked, and if that file can't be opened it is reported and taken back out of the
+  playlist instead of the next queued track starting.
+- **Cue tracks keep their place** — connecting headphones or switching the output device while a
+  cue-sheet track played jumped into the album's first track at the same time, and Stop sent a cue
+  track back to the start of the whole file; both now stay within the track.
 - **Quieter logs** — the cast-device discovery refresh no longer writes to the log every few
   seconds; set `NULLPLAYER_CAST_DISCOVERY_LOG` to bring it back.
 

@@ -4,8 +4,27 @@ import Foundation
 enum AudioGraphRecoveryIntent {
     case play
     case playTrack(index: Int)
+    case playNow(PlayNowRequest)
     case loadTrack(index: Int)
     case loadLocalImmediate(index: Int)
+}
+
+/// A Play Now: the tracks it inserted, the one to start, and the selection to restore if none of
+/// them can be opened. A bad file is skipped no further than the last inserted track, and on
+/// failure the inserted tracks are taken back out.
+struct PlayNowRequest {
+    let insertedRange: Range<Int>
+    let insertedTrackIDs: [UUID]
+    let startIndex: Int
+    let previousIndex: Int
+
+    var startTrackID: UUID { insertedTrackIDs[startIndex - insertedRange.lowerBound] }
+
+    /// Whether the inserted tracks are still where Play Now put them. The skip bound and the
+    /// rollback are positions, so they only mean what they meant while this holds.
+    func isInPlace(in playlist: [Track]) -> Bool {
+        insertedRange.upperBound <= playlist.count && playlist[insertedRange].map(\.id) == insertedTrackIDs
+    }
 }
 
 /// Owns the recovery lifecycle for the local AVAudioEngine graph.

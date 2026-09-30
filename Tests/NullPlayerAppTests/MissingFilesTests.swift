@@ -176,7 +176,7 @@ final class MissingFilesTests: XCTestCase {
     func testPlayNowOnAnUnreadableFileDoesNotStartTheTrackQueuedBehindIt() throws {
         let folder = try albumFolderWithAnUnreadableFile()
         let queued = folder.appendingPathComponent("queued.wav")
-        try writeSilentWAV(to: queued)
+        try TestAudioFile.writeWAV(to: queued)
         let bad = folder.appendingPathComponent("bad.mp3")
         let engine = AudioEngine()
         let delegate = UserPlayFailureRecorder()
@@ -196,7 +196,7 @@ final class MissingFilesTests: XCTestCase {
     func testPlayNowOfAnAlbumSkipsAnUnreadableFirstFile() throws {
         let folder = try albumFolderWithAnUnreadableFile()
         let second = folder.appendingPathComponent("second.wav")
-        try writeSilentWAV(to: second)
+        try TestAudioFile.writeWAV(to: second)
         let engine = AudioEngine()
 
         engine.playNow([Track(url: folder.appendingPathComponent("bad.mp3")), Track(url: second)])
@@ -311,14 +311,6 @@ final class MissingFilesTests: XCTestCase {
         func audioEngineDidUpdateSpectrum(_ levels: [Float]) {}
         func audioEngineDidChangePlaylist() {}
         func audioEngineDidFailToLoadTrack(_ track: Track, error: Error) {}
-    }
-
-    private func writeSilentWAV(to url: URL) throws {
-        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2))
-        let file = try AVAudioFile(forWriting: url, settings: format.settings)
-        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 22_050))
-        buffer.frameLength = 22_050
-        try file.write(from: buffer)
     }
 
     // MARK: - Playlist.resolveEntry
