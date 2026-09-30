@@ -81,31 +81,41 @@ extension AudioEngine {
         engine.isRunning && playerNode.isPlaying
     }
 }
+#endif
 
-// The engine's half of the live-QA playback snapshot (`PlaybackSnapshot`). The output level is
-// measured with a brief tap, never inferred: a player node reports playing, its clock advances and
-// the output device runs while it renders silence from an empty schedule.
+#if DEBUG
+// The engine's half of the live-QA playback snapshot (`PlaybackSnapshot`), which formats it. The
+// output level is measured with a brief tap, never inferred: a player node reports playing, its
+// clock advances and the output device runs while it renders silence from an empty schedule.
 extension AudioEngine {
-    func playbackSnapshotLines(completion: @escaping ([String]) -> Void) {
+    /// Reads every field now, then measures the main-mixer level for 0.3 s before completing.
+    /// Only one reading may be in flight: the mixer bus takes a single tap.
+    func readPlaybackSnapshot(completion: @escaping (PlaybackSnapshot.EngineReading) -> Void) {
         let activeNode = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
-        let sampleTime = activeNode.lastRenderTime.flatMap { activeNode.playerTime(forNodeTime: $0) }?.sampleTime
-        let mixerFormat = engine.mainMixerNode.outputFormat(forBus: 0)
-        var lines = [
-            "engine state=\(state) track='\(currentTrack?.title ?? "nil")' index=\(currentIndex)/\(playlist.count) time=\(String(format: "%.1f", currentTime))",
-            "engine pipeline=\(isStreamingPlayback ? "streaming" : "local") audioFile=\(audioFile != nil) running=\(engine.isRunning) player.playing=\(activeNode.isPlaying) player.sampleTime=\(sampleTime.map { String($0) } ?? "nil") crossfadeActive=\(crossfadePlayerIsActive)",
-            "engine volume=\(String(format: "%.2f", volume)) mainMixerOut=\(String(format: "%.2f", engine.mainMixerNode.outputVolume)) player.volume=\(String(format: "%.2f", activeNode.volume)) eqBypass=\(eqNode.bypass) pitchRate=\(String(format: "%.2f", tuningController.localPitchNode.rate))",
-            "graph recovery=\(audioGraphRecovery.state) pendingIntent=\(audioGraphRecovery.pendingIntent.map { "\($0)" } ?? "nil") needsReplacement=\(audioGraphNeedsReplacement) retryScheduled=\(audioGraphRecovery.hasScheduledWork)",
-            "output engineDevice='\(Self.snapshotDeviceName(engineOutputDeviceID()))' systemDefault='\(Self.snapshotDeviceName(AudioOutputManager.shared.getDefaultOutputDeviceID()))' selected=\(currentOutputDeviceID.map { String($0) } ?? "default") format=\(Int(mixerFormat.sampleRate))Hz/\(mixerFormat.channelCount)ch",
-        ]
+        let mixer = engine.mainMixerNode
+        let mixerFormat = mixer.outputFormat(forBus: 0)
+        var reading = PlaybackSnapshot.EngineReading(
+            state: state, trackTitle: currentTrack?.title, index: currentIndex, playlistCount: playlist.count,
+            time: currentTime, isStreaming: isStreamingPlayback, hasAudioFile: audioFile != nil,
+            isRunning: engine.isRunning, playerIsPlaying: activeNode.isPlaying,
+            playerSampleTime: activeNode.lastRenderTime.flatMap { activeNode.playerTime(forNodeTime: $0) }?.sampleTime,
+            crossfadeActive: crossfadePlayerIsActive,
+            volume: volume, mainMixerOutputVolume: mixer.outputVolume, playerVolume: activeNode.volume,
+            eqBypass: eqNode.bypass, pitchRate: tuningController.localPitchNode.rate,
+            recoveryState: audioGraphRecovery.state, pendingIntent: audioGraphRecovery.pendingIntent,
+            needsReplacement: audioGraphNeedsReplacement, retryScheduled: audioGraphRecovery.hasScheduledWork,
+            engineDeviceID: engineOutputDeviceID(),
+            systemDefaultDeviceID: AudioOutputManager.shared.getDefaultOutputDeviceID(),
+            selectedDeviceID: currentOutputDeviceID,
+            sampleRate: mixerFormat.sampleRate, channelCount: mixerFormat.channelCount,
+            // Streaming renders on AudioStreaming's own engine, so the local mixer says nothing about it.
+            level: .unavailable(isStreamingPlayback ? "streaming pipeline" : "engine not running"))
 
-        // Streaming renders on AudioStreaming's own engine, so the local mixer says nothing about it.
         guard engine.isRunning, !isStreamingPlayback else {
-            lines.append("level mainMixerPeak=n/a (\(isStreamingPlayback ? "streaming pipeline" : "engine not running"))")
-            completion(lines)
+            completion(reading)
             return
         }
         let peak = SnapshotPeak()
-        let mixer = engine.mainMixerNode
         mixer.installTap(onBus: 0, bufferSize: 4096, format: nil) { buffer, _ in
             guard let channels = buffer.floatChannelData else { return }
             for channel in 0..<Int(buffer.format.channelCount) {
@@ -116,9 +126,8 @@ extension AudioEngine {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             mixer.removeTap(onBus: 0)
-            let measured = peak.value
-            lines.append("level mainMixerPeak=\(measured.map { String(format: "%.4f", $0) } ?? "no buffers in 0.3s")")
-            completion(lines)
+            reading.level = peak.value.map { .measured($0) } ?? .noBuffers
+            completion(reading)
         }
     }
 
@@ -129,18 +138,6 @@ extension AudioEngine {
         let status = AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
                                           kAudioUnitScope_Global, 0, &deviceID, &size)
         return status == noErr ? deviceID : nil
-    }
-
-    private static func snapshotDeviceName(_ deviceID: AudioDeviceID?) -> String {
-        guard let deviceID else { return "nil" }
-        var address = AudioObjectPropertyAddress(mSelector: kAudioObjectPropertyName,
-                                                 mScope: kAudioObjectPropertyScopeGlobal,
-                                                 mElement: kAudioObjectPropertyElementMain)
-        var name: Unmanaged<CFString>?
-        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &name) == noErr,
-              let name else { return "#\(deviceID)" }
-        return name.takeRetainedValue() as String
     }
 }
 

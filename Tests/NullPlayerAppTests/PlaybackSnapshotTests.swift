@@ -24,25 +24,31 @@ final class PlaybackSnapshotTests: XCTestCase {
         let engine = AudioEngine()
         defer { engine.stop() }
 
-        var stoppedLines: [String] = []
-        let stopped = expectation(description: "stopped snapshot")
-        engine.playbackSnapshotLines { stoppedLines = $0; stopped.fulfill() }
-        wait(for: [stopped], timeout: 2)
-        XCTAssertTrue(stoppedLines.contains { $0.hasPrefix("engine state=stopped") })
-        XCTAssertTrue(stoppedLines.contains { $0.hasPrefix("level mainMixerPeak=n/a") })
+        var stopped: PlaybackSnapshot.EngineReading?
+        let stoppedRead = expectation(description: "stopped snapshot")
+        engine.readPlaybackSnapshot { stopped = $0; stoppedRead.fulfill() }
+        wait(for: [stoppedRead], timeout: 2)
+        let stoppedReading = try XCTUnwrap(stopped)
+        XCTAssertEqual(stoppedReading.state, .stopped)
+        guard case .unavailable = stoppedReading.level else {
+            return XCTFail("a stopped engine has no level to measure: \(stoppedReading.level)")
+        }
+        XCTAssertTrue(PlaybackSnapshot.engineLines(stoppedReading).contains { $0.hasPrefix("level mainMixerPeak=n/a") })
 
         engine.volume = 1
         engine.playNow([Track(url: url, title: "Tone")])
         XCTAssertEqual(engine.state, .playing)
-        var playingLines: [String] = []
-        let playing = expectation(description: "playing snapshot")
-        engine.playbackSnapshotLines { playingLines = $0; playing.fulfill() }
-        wait(for: [playing], timeout: 2)
+        var playing: PlaybackSnapshot.EngineReading?
+        let playingRead = expectation(description: "playing snapshot")
+        engine.readPlaybackSnapshot { playing = $0; playingRead.fulfill() }
+        wait(for: [playingRead], timeout: 2)
 
-        let level = try XCTUnwrap(playingLines.first { $0.hasPrefix("level mainMixerPeak=") })
-        let peak = try XCTUnwrap(Float(level.dropFirst("level mainMixerPeak=".count)), level)
-        XCTAssertGreaterThan(peak, 0.05, level)
-        XCTAssertTrue(playingLines.contains { $0.contains("player.playing=true") })
-        XCTAssertTrue(playingLines.contains { $0.hasPrefix("graph recovery=ready") })
+        let playingReading = try XCTUnwrap(playing)
+        guard case .measured(let peak) = playingReading.level else {
+            return XCTFail("expected a measured level, got \(playingReading.level)")
+        }
+        XCTAssertGreaterThan(peak, 0.05)
+        XCTAssertTrue(playingReading.playerIsPlaying)
+        XCTAssertEqual(playingReading.recoveryState, .ready)
     }
 }

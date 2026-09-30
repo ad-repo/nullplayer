@@ -614,8 +614,10 @@ the control-to-engine path before changing DSP; use offline PCM tests for sample
 
 Before instrumenting, take a playback snapshot (`skills/app-control/scripts/playback-snapshot.sh`,
 see `app-control`): engine and player state, a measured main-mixer level, graph recovery with its
-pending intent, and the device the output unit is really bound to. `player.playing=true` with an
-advancing `player.sampleTime` and `mainMixerPeak=0` is an empty schedule, not a routing fault.
+pending intent, and the device the output unit is really bound to. The level is taken after the
+volume control: with `engine volume` above 0 and audible source material, `player.playing=true`
+with an advancing `player.sampleTime` and `mainMixerPeak=0` is an empty schedule, not a routing
+fault.
 
 ## Credential-safe logging
 

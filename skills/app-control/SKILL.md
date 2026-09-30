@@ -335,7 +335,9 @@ cast position=nil sessionPlaying=nil sonosRooms=0 localFileCastInProgress=false
   control, so read it beside `engine volume`; `n/a` for the streaming pipeline (AudioStreaming has
   its own engine) or a stopped engine.
 - **`output engineDevice`** is the device the engine's output unit is really bound to, read from
-  the unit; `systemDefault` is macOS's. A mismatch is a routing defect.
+  the unit; `systemDefault` is macOS's. With `selected=default` they must match — a mismatch is a
+  routing defect. With a device chosen in the output menu, `selected` is its id and a mismatch is
+  expected.
 - **`graph recovery` / `pendingIntent`** show a held post-cast rebuild and the request waiting on
   it (`audio-system`, graph recovery).
 - The trigger is `SIGINFO` (`kill -INFO <pid>`, or Ctrl-T in the terminal running the app); its
@@ -344,7 +346,9 @@ cast position=nil sessionPlaying=nil sonosRooms=0 localFileCastInProgress=false
   it in sequence with everything else.
 - **Run it unsandboxed.** From a sandboxed agent shell `kill` returns success and the signal never
   arrives; the script times out and says so.
-- It changes nothing: the tap is removed after 0.3 s, and reading is on the main thread.
+- It changes nothing: the tap is removed after 0.3 s, and reading is on the main thread. A
+  second trigger while one is measuring is dropped (logged `SNAPSHOT skipped`), since the mixer
+  bus takes one tap.
 
 **Confirm it took:** the first line's `pid` is the process you meant and `at` is now.
 

@@ -13,7 +13,7 @@ set -euo pipefail
 
 PID="${1:-}"
 if [ -z "$PID" ]; then
-  PIDS=$(pgrep -f '/debug/NullPlayer$' || true)
+  PIDS=$(pgrep -f '\.build/.*/debug/NullPlayer' || true)
   COUNT=$(printf '%s\n' "$PIDS" | grep -c . || true)
   if [ "$COUNT" -ne 1 ]; then
     echo "playback-snapshot: FAIL — expected one running debug build, found $COUNT${PIDS:+ ($(echo $PIDS))}; pass a pid" >&2
