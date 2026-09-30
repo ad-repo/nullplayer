@@ -182,6 +182,9 @@
   the clock with no sound. The file is now ready to play again from the start, as after Stop. A
   track picked during the cast is the one that plays, and a cue track starts at its own beginning
   after Stop instead of the start of the whole file.
+- **Cue tracks keep their place when the audio output changes** — connecting headphones or switching
+  the output device while a cue-sheet track played jumped into the album's first track at the same
+  time; it now carries on where it was.
 - **Play Now after a cast plays the track you picked** — if the Mac's audio output changed during a
   cast, double-clicking a local file right after the cast ended could leave nothing playing, or
   resume the track from before the cast instead.

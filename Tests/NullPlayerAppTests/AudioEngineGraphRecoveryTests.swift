@@ -66,6 +66,46 @@ final class AudioEngineGraphRecoveryTests: XCTestCase {
         }
     }
 
+    /// The rebuild re-queues from the position within the track; a cue track has to be re-queued
+    /// at its offset into the shared file, not that far into the file's first track.
+    func testReplacementReschedulesCueTrackAtItsOffset() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2))
+        do {
+            let output = try AVAudioFile(forWriting: url, settings: format.settings)
+            let silence = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 480000))
+            silence.frameLength = silence.frameCapacity
+            for channel in 0..<2 {
+                silence.floatChannelData![channel].initialize(repeating: 0, count: Int(silence.frameLength))
+            }
+            try output.write(from: silence)
+        }
+
+        let recovery = AudioGraphRecoveryCoordinator()
+        let engine = AudioEngine(audioGraphRecovery: recovery)
+        defer {
+            recovery.cancelScheduledWork()
+            engine.stop()
+        }
+        // The last half second of a 10 s file.
+        engine.playNow([Track(url: url, title: "Last", cueStartOffset: 9.5, cueEndOffset: nil,
+                              cueSourceURL: url.deletingPathExtension().appendingPathExtension("cue"))])
+        XCTAssertEqual(engine.state, .playing)
+
+        recovery.setFaultInjectorForTesting { stage in
+            if stage == "disconnect" {
+                NSException(name: .internalInconsistencyException, reason: "error -10868", userInfo: nil).raise()
+            }
+        }
+        engine.rebuildAudioGraphForTesting()
+        XCTAssertFalse(recovery.isDeferred)
+
+        // Re-queued at 9.5 s the track plays out and ends the queue; at 0 s it would run 10 s.
+        let finished = expectation(forNotification: .audioQueueDidExhaust, object: engine)
+        wait(for: [finished], timeout: 3)
+    }
+
     func testPlayNowHeldForGraphRecoveryPlaysTheRequestedTrack() throws {
         let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2))
         func silentWAV() throws -> URL {

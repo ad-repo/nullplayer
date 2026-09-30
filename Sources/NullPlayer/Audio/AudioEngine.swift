@@ -1683,9 +1683,11 @@ class AudioEngine {
                     try engine.start()
                 }
                 
-                // Schedule from current position
+                // Schedule from current position. The position is within the track; a cue
+                // track sits at its offset into the shared file, as seek schedules it.
                 let sampleRate = file.processingFormat.sampleRate
-                let framePosition = AVAudioFramePosition(resumePosition * sampleRate)
+                let cueStart = currentTrack?.cueStartOffset ?? 0
+                let framePosition = AVAudioFramePosition((resumePosition + cueStart) * sampleRate)
                 let remainingFrames = file.length - framePosition
                 
                 guard remainingFrames > 0 else {
