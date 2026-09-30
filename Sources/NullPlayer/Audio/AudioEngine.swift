@@ -80,6 +80,13 @@ extension AudioEngine {
     var isLocalGraphPlayingForTesting: Bool {
         engine.isRunning && playerNode.isPlaying
     }
+
+    /// What `playTrack(at:)` and `castNewTrack` leave behind when a track is picked mid-cast:
+    /// the selection moves, the open local file does not.
+    func selectTrackDuringCastForTesting(at index: Int) {
+        currentIndex = index
+        currentTrack = playlist[index]
+    }
 }
 #endif
 
@@ -1347,7 +1354,8 @@ class AudioEngine {
     /// Streaming tracks run on AudioStreaming's own engine and EQ, so local graph
     /// recovery must never gate them.
     static func playbackUsesLocalAudioGraph(_ track: Track) -> Bool {
-        if track.isStreamingPlaceholder { return false }
+        // Video plays in its own window, never through this graph.
+        if track.isStreamingPlaceholder || track.mediaType == .video { return false }
         return !(track.url.scheme == "http" || track.url.scheme == "https")
     }
 
@@ -1403,6 +1411,16 @@ class AudioEngine {
             play()
         case .playTrack(let index):
             playTrack(at: index)
+        case .playNow(let request):
+            if request.isInPlace(in: playlist) {
+                startPlayNowLocally(request)
+                // A failed Play Now takes its tracks back out of the playlist.
+                delegate?.audioEngineDidChangePlaylist()
+            } else if let index = playlist.firstIndex(where: { $0.id == request.startTrackID }) {
+                // The playlist was edited while the request was held, so its skip bound and
+                // rollback no longer point at its tracks; play the chosen track as a plain Play.
+                playTrack(at: index)
+            }
         case .loadTrack(let index):
             loadTrack(at: index)
         case .loadLocalImmediate(let index):
@@ -1676,12 +1694,10 @@ class AudioEngine {
                     try engine.start()
                 }
                 
-                // Schedule from current position
-                let sampleRate = file.processingFormat.sampleRate
-                let framePosition = AVAudioFramePosition(resumePosition * sampleRate)
-                let remainingFrames = file.length - framePosition
-                
-                guard remainingFrames > 0 else {
+                // Increment generation to invalidate old completion handlers
+                playbackGeneration += 1
+
+                guard scheduleLocalFile(file, fromTrackPosition: resumePosition, generation: playbackGeneration) else {
                     NSLog("AudioEngine: No remaining frames after config change")
                     moveToNonPlayingStateAfterGraphRebuildFailure(
                         position: resumePosition,
@@ -1689,20 +1705,6 @@ class AudioEngine {
                     )
                     return
                 }
-                
-                // Increment generation to invalidate old completion handlers
-                playbackGeneration += 1
-                let currentGeneration = playbackGeneration
-                
-                playerNode.scheduleSegment(file,
-                    startingFrame: framePosition,
-                    frameCount: AVAudioFrameCount(remainingFrames),
-                    at: nil,
-                    completionCallbackType: .dataPlayedBack) { [weak self] _ in
-                        DispatchQueue.main.async {
-                            self?.handlePlaybackComplete(generation: currentGeneration)
-                        }
-                    }
                 if wasPlaying {
                     playerNode.play()
                     playbackStartDate = Date()
@@ -2590,7 +2592,6 @@ class AudioEngine {
         
         // Increment generation to invalidate completion handlers
         playbackGeneration += 1
-        let currentGeneration = playbackGeneration
         
         if isStreamingPlayback {
             streamingPlayer?.stop()
@@ -2598,13 +2599,7 @@ class AudioEngine {
             playerNode.stop()
         }
         resetLocalCrossfadeStateForDirectPlayback()
-        
-        playbackStartDate = nil
-        suspendedLocalPlaybackClockForSleep = false
-        _currentTime = 0  // Reset to beginning
-        lastReportedTime = 0
-        state = .stopped
-        stopTimeUpdates()
+        resetStoppedTransportToStart()
         
         // Report stop to Plex (not finished - user manually stopped)
         PlexPlaybackReporter.shared.trackDidStop(at: stopPosition, finished: false)
@@ -2620,18 +2615,51 @@ class AudioEngine {
 
         // Clear spectrum analyzer
         clearSpectrum()
-        
-        // Notify delegate of reset time
+    }
+
+    /// Leaves playback whose players the caller has just stopped at 0:00, stopped, with a local
+    /// file queued again from its start, so `play()` has audio to play: `playerNode.stop()`
+    /// discards everything scheduled on it. Shared by Stop and Stop Casting.
+    private func resetStoppedTransportToStart() {
+        playbackStartDate = nil
+        suspendedLocalPlaybackClockForSleep = false
+        _currentTime = 0
+        lastReportedTime = 0
+        state = .stopped
+        stopTimeUpdates()
         delegate?.audioEngineDidUpdateTime(current: 0, duration: duration)
-        
-        // Reset to beginning (local files only)
         if !isStreamingPlayback, let file = audioFile {
-            playerNode.scheduleFile(file, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.handlePlaybackComplete(generation: currentGeneration)
-                }
+            scheduleLocalFile(file, generation: playbackGeneration)
+        }
+    }
+
+    /// Queues `file` on the player node from `position` seconds into the current track to the
+    /// end of the file, completing through `handlePlaybackComplete(generation:)`. A cue track
+    /// sits at its `cueStartOffset` into the shared file; every local schedule goes through here
+    /// so none of them can start a cue track at the file's first track. Returns false, queueing
+    /// nothing, when that point is at or past the end of the file.
+    @discardableResult
+    private func scheduleLocalFile(_ file: AVAudioFile, fromTrackPosition position: TimeInterval = 0,
+                                   generation: Int) -> Bool {
+        let cueStart = currentTrack?.cueStartOffset ?? 0
+        let startFrame = AVAudioFramePosition((position + cueStart) * file.processingFormat.sampleRate)
+        guard startFrame < file.length else { return false }
+        let completion: AVAudioPlayerNodeCompletionHandler = { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.handlePlaybackComplete(generation: generation)
             }
         }
+        // A segment's frame count is 32-bit (about 24 hours at 48 kHz); the whole file has no
+        // such limit.
+        if startFrame == 0 {
+            playerNode.scheduleFile(file, at: nil, completionCallbackType: .dataPlayedBack,
+                                    completionHandler: completion)
+        } else {
+            playerNode.scheduleSegment(file, startingFrame: startFrame,
+                                       frameCount: AVAudioFrameCount(clamping: file.length - startFrame), at: nil,
+                                       completionCallbackType: .dataPlayedBack, completionHandler: completion)
+        }
+        return true
     }
     
     /// Stop local playback when casting starts
@@ -2998,27 +3026,12 @@ class AudioEngine {
 
             // Increment generation to invalidate old completion handlers
             playbackGeneration += 1
-            let currentGeneration = playbackGeneration
 
             // Stop current playback
             playerNode.stop()
 
-            // Calculate frame position: clamp to cue bounds if applicable
-            let sampleRate = file.processingFormat.sampleRate
-            let cueStart = currentTrack?.cueStartOffset ?? 0
-            let fileFramePosition = AVAudioFramePosition((seekTime + cueStart) * sampleRate)
-            let remainingFrames = file.length - fileFramePosition
-
-            guard remainingFrames > 0 else { return }
-
             // Schedule from the new position with a new completion handler
-            playerNode.scheduleSegment(file, startingFrame: fileFramePosition,
-                                       frameCount: AVAudioFrameCount(remainingFrames), at: nil,
-                                       completionCallbackType: .dataPlayedBack) { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.handlePlaybackComplete(generation: currentGeneration)
-                }
-            }
+            guard scheduleLocalFile(file, fromTrackPosition: seekTime, generation: playbackGeneration) else { return }
 
             // Resume if was playing
             if wasPlaying {
@@ -3247,28 +3260,22 @@ class AudioEngine {
         }
     }
     
-    /// Stop cast playback and resume local playback at current position
-    /// - Parameter resumeLocally: If true, resume local playback from current cast position
-    func stopCastPlayback(resumeLocally: Bool = false) {
-        let currentPosition = currentTime
-        NSLog("AudioEngine: stopCastPlayback resumeLocally=%d at=%.1f track='%@'",
-              resumeLocally ? 1 : 0, currentPosition, currentTrack?.title ?? "nil")
-        stopTimeUpdates()
+    /// Returns local control to where Stop leaves it once a cast has ended: stopped at 0:00 with
+    /// the file queued again. Casting stopped the player node, which discarded its schedule;
+    /// without queueing the file again Play would run an empty node and stay silent.
+    func stopCastPlayback() {
+        NSLog("AudioEngine: stopCastPlayback at=%.1f track='%@'", currentTime, currentTrack?.title ?? "nil")
 
-        if resumeLocally, let track = currentTrack {
-            // Resume local playback from current position
-            // Load and seek to position
-            if let index = playlist.firstIndex(where: { $0.id == track.id }) {
-                currentIndex = index
-                loadTrack(at: index)
-                seek(to: currentPosition)
-                play()
-                return
-            }
+        playbackGeneration += 1
+        // A Stop pressed during the cast already queued the file; queueing it again on top would
+        // play it twice.
+        playerNode.stop()
+        // A track picked during the cast only replaced `currentTrack`, never the open file, so the
+        // file is the pre-cast track's. Drop it and Play reloads the track on screen.
+        if let file = audioFile, file.url != currentTrack?.url {
+            audioFile = nil
         }
-
-        // Default behavior - just stop
-        state = .stopped
+        resetStoppedTransportToStart()
     }
     
     /// Decay spectrum to empty when not playing locally
@@ -4358,27 +4365,45 @@ class AudioEngine {
                 }
             }
         } else {
-            // A bad file is skipped only as far as the last inserted track: past it lies the queue
-            // the user already had, and starting that would play something they did not ask for.
-            if let failure = loadTrack(at: currentIndex, skippingNoFurtherThan: insertedRange.upperBound - 1) {
-                // Nothing played, so the request is taken back out of the queue: left in, every
-                // retried double-click on a missing file added another dead copy of it.
-                playlist.removeSubrange(insertedRange)
-                currentIndex = previousIndex
-                invalidateShufflePlaybackStateAfterPlaylistMutation()
-                // The stat is on this thread only because the load just opened the same path on it.
-                delegate?.audioEngineUserPlayRequestDidFail(
-                    failure.track, error: failure.error,
-                    fileIsMissing: !FileManager.default.fileExists(atPath: failure.track.url.path))
-            } else if currentTrack != nil {
-                // A load that returns without a track — a placeholder, a deferred audio graph —
-                // leaves `currentTrack` nil, and `play()` reads nil as "start the playlist from
-                // the top", which would start an unrelated track.
-                play()
-            }
+            startPlayNowLocally(PlayNowRequest(insertedRange: insertedRange,
+                                               insertedTrackIDs: tracks.map(\.id),
+                                               startIndex: currentIndex,
+                                               previousIndex: previousIndex))
         }
         
         delegate?.audioEngineDidChangePlaylist()
+    }
+
+    private func startPlayNowLocally(_ request: PlayNowRequest) {
+        // The graph is still settling after a cast. Hold the whole Play Now: `loadTrack` would
+        // hold it as a load only, and a `play()` for the track loaded before the cast would then
+        // overwrite that, so recovery resumed the old track.
+        if AudioEngine.playbackUsesLocalAudioGraph(playlist[request.startIndex]),
+           !rebuildAudioGraphIfDeferredAfterCast() {
+            NSLog("playNow: audio graph not ready after cast — holding Play Now for index %d", request.startIndex)
+            deferPlaybackIntentUntilAudioGraphReady(.playNow(request))
+            return
+        }
+
+        currentIndex = request.startIndex
+        // A bad file is skipped only as far as the last inserted track: past it lies the queue
+        // the user already had, and starting that would play something they did not ask for.
+        if let failure = loadTrack(at: currentIndex, skippingNoFurtherThan: request.insertedRange.upperBound - 1) {
+            // Nothing played, so the request is taken back out of the queue: left in, every
+            // retried double-click on a missing file added another dead copy of it.
+            playlist.removeSubrange(request.insertedRange)
+            currentIndex = request.previousIndex
+            invalidateShufflePlaybackStateAfterPlaylistMutation()
+            // The stat is on this thread only because the load just opened the same path on it.
+            delegate?.audioEngineUserPlayRequestDidFail(
+                failure.track, error: failure.error,
+                fileIsMissing: !FileManager.default.fileExists(atPath: failure.track.url.path))
+        } else if currentTrack != nil {
+            // A load that returns without a track — a placeholder — leaves `currentTrack`
+            // nil, and `play()` reads nil as "start the playlist from the top", which would
+            // start an unrelated track.
+            play()
+        }
     }
     
     /// Set the playlist files without starting playback (for state restoration)
@@ -4859,31 +4884,11 @@ class AudioEngine {
         NSLog("loadLocalTrack: Stopping playerNode and scheduling file...")
         playerNode.stop()
 
-        // Handle cue sheet tracks: schedule from start offset to EOF (cueEndOffset is enforced via duration getter and seek bounds)
-        if let cueStartOffset = track.cueStartOffset {
-            let sampleRate = newAudioFile.processingFormat.sampleRate
-            let startFrame = AVAudioFramePosition(cueStartOffset * sampleRate)
-            let frameCount = newAudioFile.length - startFrame
-
-            guard frameCount > 0 else {
-                NSLog("loadLocalTrack: Cue track start offset beyond file length")
-                handleLocalTrackLoadFailure(track: track, error: NSError(domain: "CueSheet", code: -1, userInfo: ["message": "Cue offset out of range"]))
-                return
-            }
-
-            playerNode.scheduleSegment(newAudioFile, startingFrame: startFrame,
-                                       frameCount: AVAudioFrameCount(frameCount), at: nil,
-                                       completionCallbackType: .dataPlayedBack) { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.handlePlaybackComplete(generation: generation)
-                }
-            }
-        } else {
-            playerNode.scheduleFile(newAudioFile, at: nil, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.handlePlaybackComplete(generation: generation)
-                }
-            }
+        // A cue track plays from its start offset to EOF (cueEndOffset is enforced via duration getter and seek bounds)
+        guard scheduleLocalFile(newAudioFile, generation: generation) else {
+            NSLog("loadLocalTrack: Track start offset beyond file length")
+            handleLocalTrackLoadFailure(track: track, error: NSError(domain: "CueSheet", code: -1, userInfo: ["message": "Cue offset out of range"]))
+            return
         }
 
         // Reset cue boundary detector for fresh load

@@ -202,7 +202,16 @@ Click **🔴 Stop Casting** to fully disconnect:
 - Ungroup all member rooms (each becomes standalone)
 - Stop playback on the coordinator
 - Clear all room selections
-- Return to local control (stopped; use the play button to resume)
+- Return to local control: stopped at 0:00 with the current local file queued again, so the Play
+  button plays it from the start. Starting the cast stopped the local player node, which discards
+  its schedule; `AudioEngine.stopCastPlayback()` re-queues it, or Play would run
+  an empty node — clock moving, output device running, no sound (`AudioEngineCastHandoffTests`).
+  It stops the node first, since a Stop pressed during the cast already queued the file. A track
+  picked during the cast moved only the selection, so when the open file is not the current
+  track's it is dropped instead and Play reloads the track on screen.
+- If the Mac's output device changed during the cast, the local audio graph rebuild was held until
+  the session ends. A Play Now in that window is held as Play Now and starts once the graph is
+  rebuilt; see `audio-system` (graph recovery).
 
 ## Casting Protocol
 
@@ -488,6 +497,19 @@ Measure actual window/control frames, capture the window, and verify Refresh in 
 list and a populated one. Check light/dark native control appearance as well as skin colors;
 a control with a valid frame can still be unreadable. For volume, read back the edited room and
 an untouched room to distinguish individual RenderingControl from group-volume changes.
+
+### Logging switches
+
+Both are off by default and read once at launch (`EnvGatedLog`); any value, even an empty one,
+turns them on.
+
+- `NULLPLAYER_UPNP_LOG` — the SSDP/SOAP wire log from `UPnPManager` (see `chromecast-casting`).
+- `NULLPLAYER_CAST_DISCOVERY_LOG` — the periodic discovery refresh in `CastManager` (refresh,
+  +10s/+15s boosts, idle stop) and the Chromecast browser. Use it when rooms fail to appear or
+  vanish between refreshes.
+
+The `Sonos poll — state=…` line every 5 s while casting is always on; it is the record of
+position, duration and engine state used to diagnose seek and end-of-track defects.
 
 ### Confirming a cast is live from outside the app — use `nettop`, not `lsof`
 

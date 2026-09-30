@@ -2,16 +2,8 @@ import Foundation
 import Network
 
 /// Discovery/control logging is off by default (it's very chatty during SSDP
-/// discovery). Set the `NULLPLAYER_UPNP_LOG` env var to any value to re-enable it.
-private let upnpLoggingEnabled = ProcessInfo.processInfo.environment["NULLPLAYER_UPNP_LOG"] != nil
-
-/// Gated, `NSLog`-compatible logger; preserves printf-style format semantics.
-/// A free function (like `NSLog`) so call sites inside closures don't need `self`.
-private func upnpLog(_ format: String, _ args: CVarArg...) {
-    guard upnpLoggingEnabled else { return }
-    let message = String(format: format, arguments: args).redactingSensitiveURLQueryItems
-    NSLog("%@", message)
-}
+/// discovery). Set the `NULLPLAYER_UPNP_LOG` env var to re-enable it.
+private let upnpLog = EnvGatedLog("NULLPLAYER_UPNP_LOG")
 
 /// UPnP/DLNA manager for discovering and controlling Sonos speakers and DLNA TVs
 /// Uses SSDP for discovery and SOAP for AVTransport control
