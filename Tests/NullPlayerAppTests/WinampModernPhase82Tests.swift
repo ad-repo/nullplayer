@@ -220,6 +220,40 @@ final class WinampModernPhase82Tests: XCTestCase {
         XCTAssertTrue(moves.first?.2 ?? false)
     }
 
+    // MARK: - B160: the position lands before the size
+
+    /// Wasabi applies `resize(x, y, w, h)` as one box and then notifies, so a handler that runs off
+    /// the new size already sees the new position. The host is asked in two calls, and the size is
+    /// the one that dispatches `onResize` — so the pin has to be the first of them. Sized first,
+    /// Itemskin's content window heard its resize while still at its old position, its frame
+    /// script pulled the frame back onto it, and stretching the playlist from its top edge walked
+    /// the pair back down to where the top had been.
+    func testAWindowPutOnAnothersPositionIsMovedBeforeItIsSized() throws {
+        let (runtime, program) = try makeRuntime()
+        runtime.containerOriginQuery = { id in
+            id.caseInsensitiveCompare("content") == .orderedSame
+                ? CGPoint(x: 1309, y: 318) : CGPoint(x: 1159, y: 418)
+        }
+        var requests: [String] = []
+        runtime.containerMoveRequested = { _, point, pinned in
+            requests.append("move \(Int(point.x)),\(Int(point.y)) pinned=\(pinned)")
+        }
+        runtime.layoutResizeRequested = { _, size in
+            requests.append("size \(Int(size.width))x\(Int(size.height))")
+        }
+
+        let chrome = try XCTUnwrap(object(runtime, type: "layout", id: "normal"))
+        let content = try XCTUnwrap(object(runtime, type: "layout", id: "contentNormal"))
+        let read = try readOrigin(runtime, program, of: chrome)
+        try resize(runtime, program, content, to: CGRect(origin: read, size: CGSize(width: 330, height: 197)))
+
+        XCTAssertEqual(requests.first, "move 1159,418 pinned=true")
+        XCTAssertEqual(requests.filter { $0.hasPrefix("move") }.count, 1,
+                       "and once: the host sizes a window around the corner the pin names")
+        XCTAssertTrue(requests.dropFirst().allSatisfy { $0 == "size 330x197" })
+        XCTAssertFalse(requests.dropFirst().isEmpty, "the size half still applies")
+    }
+
     // MARK: - onMove
 
     /// `onMove()` is addressed at the window objects only — a move changes nothing inside the scene,

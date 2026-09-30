@@ -240,6 +240,20 @@ extension WinampModernScriptRuntime {
             for (key, value) in zip(["x", "y", "w", "h"], arguments) {
                 _ = object.setAttribute(key, value: String(value.integerValue))
             }
+            // **A window put on another window's position is moved before it is sized.** Wasabi
+            // applies the four numbers as one box and only then notifies, so a handler that runs
+            // off the new size already sees the new position. Sizing first fires `onResize` inside
+            // the resized window while it still sits at the old one, and Itemskin's frame script
+            // answers exactly that by pulling its frame back onto the contents: stretching the
+            // playlist from its top edge sized the pair and then walked it back down to where the
+            // top had been. The host sizes a window around its top-left, the corner the pin names,
+            // so the position survives the resize that follows.
+            let movesFirst = WasabiWindowResizeNotification.isEnabled
+            if movesFirst, case .desktop(let origin) = borrowed,
+               let window = object.typeName.caseInsensitiveCompare("container") == .orderedSame
+                ? object : Self.enclosingContainer(of: object) {
+                containerMoveRequested?(window.stableID, origin, true)
+            }
             if object.typeName.caseInsensitiveCompare("layout") == .orderedSame,
                let container = ancestor(of: object, type: "container") {
                 layoutResizeRequested?(container.stableID,
@@ -248,7 +262,12 @@ extension WinampModernScriptRuntime {
             }
             switch borrowed {
             case .desktop(let origin):
-                applyContainerGeometry(object, reportedOrigin: reportedBeforeResize, desktopOrigin: origin)
+                if movesFirst {
+                    applyContainerGeometry(object, keepsOrigin: true)
+                } else {
+                    applyContainerGeometry(object, reportedOrigin: reportedBeforeResize,
+                                           desktopOrigin: origin)
+                }
             case .offScreen:
                 applyContainerGeometry(object, keepsOrigin: true)
             case nil:

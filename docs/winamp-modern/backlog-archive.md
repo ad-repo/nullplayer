@@ -3,6 +3,44 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
 
 
+## B160 — a window the user stretched did not tell its own scene — closed 2026-09-30
+
+- [x] **B160. A `.wal` window resize reaches the scene in the same turn.** **Closed 2026-09-30.**
+      Reported live on Itemskin: *"the playlist window cannot be stretched/resized unless the
+      PeppyMeter window is also open"*. Reproduced with `winhelper drag` on the frame's right edge:
+      330x137 before and after with the playlist alone, 450x137 after the same drag with
+      PeppyMeter open.
+      - **Cause.** `windowDidResize` resized the renderer and dispatched nothing. `onResize`
+        reached a scene only from `geometryDidSettle`, which a *script's* geometry write sets off.
+        Itemskin's frame is a second window: a 10 ms timer sizes the frame onto its contents, and
+        the frame's `onResize` sizes the contents to the frame. `WINAMP_MODERN_RESIZE_TRACE=1`
+        showed the frame going to 366 in `windowDidResize` and back to 330 from the timer 11 ms
+        later, every step. A second framed window (PeppyMeter wears a copy of the AVS frame) runs a
+        second timer, whose settle made every container diff its scene and so delivered the
+        playlist frame's overdue `onResize`.
+      - **Fix, three parts, all `.wal`-only code.** `windowDidResize` (controller and hosted-window
+        materializer) runs the diffing resize dispatch when the canvas changed. A drag on a skin
+        `resize=` handle counts as a user resize, so `onUserResize` fires for it
+        (`isResizingFromSkinHandle`; `inLiveResize` covers only AppKit's band). A `resize()` that
+        borrows another window's origin moves the window before it sizes it, because the size is
+        what dispatches `onResize` in the resized window and Itemskin's script answered that from
+        the old position: a top-edge drag grew the pair downward.
+      - **Other skins.** Corpus scan for the idiom (`newDynamicContainer` + `getLeft` + `resize`
+        in one script): Itemskin, K-jr, MoonLight, Pure Inspired (one author's frame scripts, plus
+        the two byte-identical re-adds), Ebonite, and unrelated uses in Big Bento and
+        cPro_Venus_Alpha. A/B with `WINAMP_MODERN_RESIZE_NOTIFY=0` in one binary, playlist only:
+        Itemskin 330 → 330 off, 380 on. MoonLight 416x279 unchanged off, 466x329 on. Pure Inspired
+        unchanged off, bottom +50 on. K-jr +30 of 50 off (its library frame's timer was helping),
+        +50 on. Ebonite off: frame 300x300 over contents left at 250x250; on: both 300x300.
+      - **Controls.** 2222-cPro__Bento's player resized to 840x840 in both modes with
+        pixel-identical captures; winampmodern566's player and playlist resize the same in both.
+        Big Bento Modern opens at 1800x1169, larger than the test display, and was not driven.
+      - **Tests.** `WinampModernB160Tests` (the resize baseline moves with the window; an
+        unchanged canvas dispatches nothing) and
+        `WinampModernPhase82Tests.testAWindowPutOnAnothersPositionIsMovedBeforeItIsSized`. Both
+        fail under `WINAMP_MODERN_RESIZE_NOTIFY=0`. The bound handler itself has no headless route.
+      - **Left open:** B161, AppKit's edge band taking a corner press as a single edge.
+
 ## B147 — the library follows the centre stack in a `.wal` session — closed 2026-09-28
 
 | B147 | **The library window follows the main window's height in a `.wal` session.** `toggleHideTitleBars` (`App/WindowManager.swift:511`) resizes the side-docked library and projectM windows by the main window's height delta — Original centre-stack behaviour. Its guard `isRunningModernUI` (`:390`) does not name `WinampModernMainWindowController`, so `.wal` falls through to the stale `isModernUIEnabled` preference. **Gate the resize itself on the mode; do not add the controller to the predicate**, whose other callers would all inherit the answer. Classic and Original byte-identical. The `.wmz` half is W237 in [`WMP_TASKS.md`](../../WMP_TASKS.md) | every `.wal` session with the library open | S | Live-reported |

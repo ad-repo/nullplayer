@@ -41,6 +41,22 @@ struct WasabiResizeEdges: OptionSet {
     var isVertical: Bool { contains(.top) || contains(.bottom) }
 }
 
+/// Whether a window resize is reported to the skin as it happens: `onResize` to the scene in the
+/// same turn, `onUserResize` for a drag on the skin's own handle, and a window placed on another
+/// window's position moved before it is sized.
+///
+/// Always on. `WINAMP_MODERN_RESIZE_NOTIFY=0` turns all three off in a debug build, so "did the
+/// notification cause this?" is one launch of the same binary rather than a baseline build.
+enum WasabiWindowResizeNotification {
+    static let isEnabled: Bool = {
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["WINAMP_MODERN_RESIZE_NOTIFY"] != "0"
+        #else
+        return true
+        #endif
+    }()
+}
+
 extension WasabiSceneRenderer {
     /// The window edges a press at this point drags, or `nil` when the point is not on a handle.
     ///

@@ -370,6 +370,7 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
         let scale = max(skinScale(), 0.01)
         let proposed = CGSize(width: window.contentLayoutRect.width / scale,
                               height: window.contentLayoutRect.height / scale)
+        let previousCanvas = instance.view.renderer.canvasSize
         let accepted = instance.view.renderer.resize(to: proposed)
         let target = CGSize(width: accepted.width * scale, height: accepted.height * scale)
         if target != window.contentLayoutRect.size {
@@ -379,6 +380,17 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
         }
         instance.view.setFrameSize(target)
         instance.view.needsDisplay = true
+        // The scene hears its resize in the turn it happened, and a resize the user dragged is
+        // `onUserResize` too — the same two rules the controller's `windowDidResize` applies to the
+        // skin's own windows, which this delegate stands in for.
+        if WasabiWindowResizeNotification.isEnabled {
+            if accepted != previousCanvas {
+                instance.view.dispatchResizeIfChanged()
+            }
+            if window.inLiveResize || instance.view.isResizingFromSkinHandle {
+                instance.view.dispatchWindowUserResized()
+            }
+        }
         WindowManager.shared.postWindowLayoutDidChange()
     }
 

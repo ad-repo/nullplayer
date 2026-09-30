@@ -4,6 +4,7 @@
 
 - **File:** `K-jr.wal` · 239,458 B · SHA-256 `4cd619470e5b15fb…` · author "Marisa85", version 1.0.1
 - **Measured:** 2026-09-06 · harness `a916b38a` — **headless structural pass only**, see *Not measured*
+- **Driven 2026-09-30 (B160):** the playlist stretches by its right edge by the full drag. Before B160 it took about 30 of every 50pt, and only because the library's frame timer was running beside it; this is Itemskin's frame script, see [itemskin.md](itemskin.md).
 - **Grade: B (provisional · confidence: low)** — from a headless pass; nobody has driven this skin. Everything it declares routes, draws and resolves, and it calls no unimplemented script method. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
 
 **Known outstanding:**

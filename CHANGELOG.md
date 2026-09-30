@@ -193,6 +193,11 @@
   prints what a running debug build's player, audio output and cast session are doing, including
   a measured output level, so a silent-playback report can be diagnosed without a rebuild. Debug
   builds only; the app itself is unchanged.
+- **Winamp Modern: framed windows resize by their frame** — on skins that draw a window's frame
+  separately from its contents (Itemskin, MoonLight, K-jr, Pure Inspired, Ebonite), dragging the
+  frame's edge or corner either snapped straight back or stretched the frame and left the contents
+  behind, and on Itemskin worked only while a second window such as PeppyMeter was open. The frame
+  and its contents now resize together, and dragging a top edge moves the top edge.
 
 ## 0.30.0
 

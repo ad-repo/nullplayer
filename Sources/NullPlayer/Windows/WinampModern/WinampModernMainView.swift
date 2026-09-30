@@ -87,6 +87,10 @@ final class WinampModernMainView: NSView {
     /// pointer the drag started from. Measured from the start rather than accumulated per delta, so a
     /// drag that runs into the layout's minimum and comes back out again lands where the pointer is.
     private var activeResizeEdges: WasabiResizeEdges?
+    /// Whether the user is stretching this window by one of the skin's own `resize="…"` handles.
+    /// AppKit's `inLiveResize` is false for the whole of such a drag — the view sets the frame
+    /// itself — so this is the only thing that tells `windowDidResize` the resize is the user's.
+    var isResizingFromSkinHandle: Bool { activeResizeEdges != nil }
     private var resizeStartFrame: NSRect = .zero
     private var resizeStartMouse: NSPoint = .zero
     /// Whether this view is the one currently showing a resize cursor, so leaving a handle puts the
@@ -1655,6 +1659,14 @@ final class WinampModernMainView: NSView {
             activeResizeEdges = edges
             resizeStartFrame = window.frame
             resizeStartMouse = NSEvent.mouseLocation
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["WINAMP_MODERN_RESIZE_TRACE"] != nil {
+                let handle = renderer.object(at: point)
+                NSLog("%@", "WM-RESIZE handle=\(handle?.attributes["id"] ?? "?") "
+                      + "resize=\(handle?.attributes["resize"] ?? "?") at=\(point) "
+                      + "window=\(window.frame) min=\(window.contentMinSize) max=\(window.contentMaxSize)")
+            }
+            #endif
             return
         }
         if let holder = renderer.componentHolder(at: point) {

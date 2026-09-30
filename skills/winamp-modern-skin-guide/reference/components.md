@@ -1144,6 +1144,22 @@ state that is assigned **nowhere else**. Three rules, each earned:
   only advances an animation frame produces none. cPro's "close side view" button collapses the pane
   and relies on `area_right.onResize` to swap in its **open** button, which ships `visible="0"`; without
   the settle, closing the playlist hid the only control that could reopen it.
+- **Fire it when the window itself is resized, in the same turn** (B160). `windowDidResize` — the
+  controller's for the skin's own windows, the materializer's for hosted ones — resizes the renderer
+  and then runs the same diffing dispatch, but only when the canvas actually changed, so a UI Size
+  change still dispatches nothing. Until then a window the user stretched told its scene nothing;
+  `onResize` arrived only when some script's own geometry write set off `geometryDidSettle`, and a
+  skin with no such write waiting never heard it. Itemskin is that skin: its frame is a second
+  window whose 10 ms timer sizes it back onto its contents, and whose `onResize` is what sizes the
+  contents to it, so with the event late the timer undid every step of the drag. It worked only
+  while a *second* framed window was open, because that window's timer settled geometry and
+  delivered the first one's overdue event — reported as "the playlist cannot be resized unless
+  PeppyMeter is open".
+- **A drag on the skin's own `resize=` handle is a user resize.** `inLiveResize` is true only for
+  AppKit's edge band. `WinampModernMainView.resizeWindow(edges:)` sets the frame itself, so
+  `windowDidResize` also asks `view.isResizingFromSkinHandle` before it dispatches `onUserResize`.
+  Ebonite's standard frame answers only that event: dragged by its border, the frame used to
+  stretch and leave its contents behind at the old size.
 - **Hidden objects are still laid out.** `layoutNodes()` resolves the whole active layout including
   invisible subtrees, and backs both `resizeTargets` and `resolvedGeometry`; drawing and hit testing
   keep using `sceneNodes()`. A hidden pane with no geometry can never hear that it is wide again — a

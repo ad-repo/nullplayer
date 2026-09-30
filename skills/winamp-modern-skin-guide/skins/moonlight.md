@@ -4,6 +4,7 @@
 
 - **File:** `MoonLight.wal` · 356,180 B · SHA-256 `efbf44944525f3ea…` · author "Marisa85", version 1.1
 - **Measured:** 2026-09-06 · harness `a916b38a` — **headless structural pass only**, see *Not measured*
+- **Driven 2026-09-30 (B160):** the playlist stretches by its right and bottom edges. Before B160 neither moved it at all; this is Itemskin's frame script, see [itemskin.md](itemskin.md).
 - **Grade: B (provisional · confidence: low)** — from a headless pass; nobody has used this skin. Everything it declares routes, draws and resolves, and it calls no unimplemented script method. A provisional letter is worth about ±1 (see [skin-compatibility.md](../../../docs/winamp-modern/skin-compatibility.md)); a driven `/wal-skin-report` replaces it.
 - **Skinned:** `fully-skinned` · compatibility level `degraded` (a diagnostic count, not a quality signal)
 

@@ -2075,8 +2075,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // A script parking its own window overrides whatever `place` decided, and legitimately
             // so. Traced next to `[place]` because the two are indistinguishable from the outside:
             // an overlap after a good `[place]` line is the skin's arithmetic, not the host's.
-            NSLog("[place/script] \(container) -> \(NSStringFromPoint(origin)) "
-                  + "(was \(NSStringFromPoint(target.frame.origin)))")
+            NSLog("[place/script] \(container) \(target.accessibilityIdentifier()) "
+                  + "-> \(NSStringFromPoint(origin)) "
+                  + "(was \(NSStringFromPoint(target.frame.origin)))\(pinned ? " pinned" : "")")
         }
         target.setFrameOrigin(origin)
     }
@@ -2705,6 +2706,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // back stretched. Clamp here as well as in `contentMinSize`/`contentMaxSize`.
         let limits = view.renderer.userResizeLimits
         let proposed = CGSize(width: content.width / skinScale, height: content.height / skinScale)
+        let previousCanvas = view.renderer.canvasSize
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["WINAMP_MODERN_RESIZE_TRACE"] != nil {
+            NSLog("%@", "WM-RESIZE window=\(resized.accessibilityIdentifier()) frame=\(resized.frame) "
+                  + "live=\(resized.inLiveResize) handle=\(view.isResizingFromSkinHandle)")
+        }
+        #endif
         _ = view.renderer.resize(to: CGSize(
             width: min(max(proposed.width, limits.minimum.width), limits.maximum.width),
             height: min(max(proposed.height, limits.minimum.height), limits.maximum.height)))
@@ -2712,11 +2720,23 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         if size != content { resize(window: resized, to: size) }
         if size != view.frame.size { view.setFrameSize(size) }
         view.needsDisplay = true
-        // `onUserResize`, and only for a resize the user is actually dragging — `inLiveResize` is what
-        // separates that from the tiler, a restored frame and a script's own `resize()`, all of which
+        // `onResize`, in the same turn the canvas changed. Wasabi resizes synchronously and notifies
+        // as it goes; leaving it to the next script mutation's `geometryDidSettle` meant a window the
+        // user stretched was told only if some *other* script happened to move something first.
+        // Itemskin's frame is a second window whose 10 ms timer sizes it back onto its contents and
+        // whose `onResize` sizes the contents to it: with the event late the timer always won, and
+        // the playlist could be stretched only while another framed window's timer was running.
+        if WasabiWindowResizeNotification.isEnabled, view.renderer.canvasSize != previousCanvas {
+            view.dispatchResizeIfChanged()
+        }
+        // `onUserResize`, and only for a resize the user is actually dragging — that is what
+        // separates it from the tiler, a restored frame and a script's own `resize()`, all of which
         // come through here too. A standard frame answers it by writing the *client's* new box, so
         // firing it on a programmatic resize would have the two windows resizing each other (B110).
-        if resized.inLiveResize {
+        // `inLiveResize` covers AppKit's own edge band only; a drag on one of the skin's `resize=`
+        // handles sets the frame from the view and is the same gesture.
+        if resized.inLiveResize
+            || (WasabiWindowResizeNotification.isEnabled && view.isResizingFromSkinHandle) {
             view.dispatchWindowUserResized()
         }
     }
