@@ -332,13 +332,24 @@ swift scripts/test_chromecast.swift
 
 ### `NULLPLAYER_UPNP_LOG` — the DLNA/UPnP wire log
 
-`UPnPManager` is silent unless this is set (`UPnPManager.swift:6`, read once into
-`upnpLoggingEnabled`); any non-empty value turns it on. It is the only view of the DLNA half of
+`UPnPManager` is silent unless this is set (`upnpLog`, an `EnvGatedLog` read once at launch);
+any value, even an empty one, turns it on. It is the only view of the DLNA half of
 casting, which matters because DLNA has no status channel — the session goes `.casting` immediately
 after LOAD (see *Discovery*), so nothing else tells you whether the renderer accepted the request.
 
 ```bash
 NULLPLAYER_UPNP_LOG=1 ./scripts/kill_build_run.sh --debug --log /tmp/upnp.log
+```
+
+### `NULLPLAYER_CAST_DISCOVERY_LOG` — the discovery refresh cycle
+
+The periodic refresh (`Refreshing devices...`, the +10s/+15s boosts, `Refresh complete`, idle
+stop, and the Chromecast browser's start/ready/cancel/stop lines) logs every few seconds for the
+life of the app, so it is silent unless this is set; `castDiscoveryLog` in `CastManager.swift`
+(an `EnvGatedLog`) is the gate. Turn it on when devices fail to appear or disappear between refreshes.
+
+```bash
+NULLPLAYER_CAST_DISCOVERY_LOG=1 ./scripts/kill_build_run.sh --debug --log /tmp/discovery.log
 ```
 
 ### Debugging a live defect

@@ -35,18 +35,8 @@ final class AudioEngineGraphRecoveryTests: XCTestCase {
     }
 
     func testReplacementReschedulesPlayingAndPausedFilesAtSavedPosition() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
+        let url = try TestAudioFile.temporaryWAV(seconds: 10)
         defer { try? FileManager.default.removeItem(at: url) }
-        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2))
-        do {
-            let output = try AVAudioFile(forWriting: url, settings: format.settings)
-            let silence = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 480000))
-            silence.frameLength = silence.frameCapacity
-            for channel in 0..<2 {
-                silence.floatChannelData![channel].initialize(repeating: 0, count: Int(silence.frameLength))
-            }
-            try output.write(from: silence)
-        }
         for initialState in [PlaybackState.playing, .paused] {
             let recovery = AudioGraphRecoveryCoordinator()
             let engine = AudioEngine(audioGraphRecovery: recovery)
@@ -64,6 +54,135 @@ final class AudioEngineGraphRecoveryTests: XCTestCase {
             XCTAssertEqual(engine.isLocalGraphPlayingForTesting, initialState == .playing)
             engine.pauseLocalOnly()
         }
+    }
+
+    /// The rebuild re-queues from the position within the track; a cue track has to be re-queued
+    /// at its offset into the shared file, not that far into the file's first track.
+    func testReplacementReschedulesCueTrackAtItsOffset() throws {
+        let url = try TestAudioFile.temporaryWAV(seconds: 10)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let recovery = AudioGraphRecoveryCoordinator()
+        let engine = AudioEngine(audioGraphRecovery: recovery)
+        defer {
+            recovery.cancelScheduledWork()
+            engine.stop()
+        }
+        // The last half second of a 10 s file.
+        engine.playNow([Track(url: url, title: "Last", cueStartOffset: 9.5, cueEndOffset: nil,
+                              cueSourceURL: url.deletingPathExtension().appendingPathExtension("cue"))])
+        XCTAssertEqual(engine.state, .playing)
+
+        recovery.setFaultInjectorForTesting { stage in
+            if stage == "disconnect" {
+                NSException(name: .internalInconsistencyException, reason: "error -10868", userInfo: nil).raise()
+            }
+        }
+        engine.rebuildAudioGraphForTesting()
+        XCTAssertFalse(recovery.isDeferred)
+
+        // Re-queued at 9.5 s the track plays out and ends the queue; at 0 s it would run 10 s.
+        let finished = expectation(forNotification: .audioQueueDidExhaust, object: engine)
+        wait(for: [finished], timeout: 3)
+    }
+
+    func testPlayNowHeldForGraphRecoveryPlaysTheRequestedTrack() throws {
+        let oldURL = try TestAudioFile.temporaryWAV(seconds: 10)
+        let newURL = try TestAudioFile.temporaryWAV(seconds: 10)
+        defer {
+            try? FileManager.default.removeItem(at: oldURL)
+            try? FileManager.default.removeItem(at: newURL)
+        }
+
+        let recovery = AudioGraphRecoveryCoordinator()
+        let engine = AudioEngine(audioGraphRecovery: recovery)
+        defer {
+            recovery.cancelScheduledWork()
+            engine.stop()
+        }
+        let oldTrack = Track(url: oldURL, title: "Old")
+        let newTrack = Track(url: newURL, title: "New")
+        engine.playNow([oldTrack])
+        XCTAssertEqual(engine.currentTrack?.id, oldTrack.id)
+
+        holdGraphRebuild(of: engine, recovery: recovery)
+        engine.playNow([newTrack])
+
+        guard case .playNow(let request) = recovery.pendingIntent else {
+            return XCTFail("Play Now was held as \(String(describing: recovery.pendingIntent)), not as Play Now")
+        }
+        XCTAssertEqual(engine.playlist[request.startIndex].id, newTrack.id)
+
+        recovery.setFaultInjectorForTesting(nil)
+        waitUntil("requested track plays after recovery") {
+            engine.currentTrack?.id == newTrack.id && engine.state == .playing
+        }
+    }
+
+    /// A held Play Now keeps Play Now's rules when it replays: an unreadable file is not skipped
+    /// into the queue the user already had, and the inserted track is taken back out.
+    func testHeldPlayNowOfAnUnreadableFileTakesItBackOutAfterRecovery() throws {
+        let currentURL = try TestAudioFile.temporaryWAV(seconds: 10)
+        let queuedURL = try TestAudioFile.temporaryWAV(seconds: 10)
+        let unreadableURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
+        try Data("not audio".utf8).write(to: unreadableURL)
+        defer {
+            [currentURL, queuedURL, unreadableURL].forEach { try? FileManager.default.removeItem(at: $0) }
+        }
+
+        let recovery = AudioGraphRecoveryCoordinator()
+        let engine = AudioEngine(audioGraphRecovery: recovery)
+        defer {
+            recovery.cancelScheduledWork()
+            engine.stop()
+        }
+        let current = Track(url: currentURL, title: "Current")
+        let queued = Track(url: queuedURL, title: "Queued")
+        engine.playNow([current, queued])
+        XCTAssertEqual(engine.currentTrack?.id, current.id)
+
+        holdGraphRebuild(of: engine, recovery: recovery)
+        engine.playNow([Track(url: unreadableURL, title: "Unreadable")])
+        XCTAssertEqual(engine.playlist.count, 3)
+
+        recovery.setFaultInjectorForTesting(nil)
+        waitUntil("held Play Now replays") { recovery.pendingIntent == nil && !recovery.isDeferred }
+        // A skip past the bad file into the old queue would start `queued` after half a second.
+        let settled = expectation(description: "a skip would have started by now")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { settled.fulfill() }
+        wait(for: [settled], timeout: 3)
+
+        XCTAssertEqual(engine.playlist.map(\.id), [current.id, queued.id])
+        XCTAssertEqual(engine.currentIndex, 0)
+        XCTAssertNotEqual(engine.currentTrack?.id, queued.id)
+        XCTAssertNotEqual(engine.state, .playing)
+    }
+
+    /// The graph cannot be rebuilt, as after a cast ends on a device that has not settled.
+    private func holdGraphRebuild(of engine: AudioEngine, recovery: AudioGraphRecoveryCoordinator) {
+        recovery.setFaultInjectorForTesting { _ in
+            NSException(name: .internalInconsistencyException, reason: "error -10868", userInfo: nil).raise()
+        }
+        engine.rebuildAudioGraphForTesting()
+        XCTAssertTrue(recovery.isDeferred)
+    }
+
+    private func waitUntil(_ description: String, timeout: TimeInterval = 10, _ condition: @escaping () -> Bool) {
+        let met = expectation(description: description)
+        // Cleared on the way out, so a timed-out poll does not keep rescheduling itself, holding
+        // the engine, through later tests.
+        var polling = true
+        defer { polling = false }
+        func poll() {
+            guard polling else { return }
+            if condition() {
+                met.fulfill()
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: poll)
+            }
+        }
+        poll()
+        wait(for: [met], timeout: timeout)
     }
 
     func testFailedRebuildArmsExactlyOneRetryAttempt() {
