@@ -189,6 +189,10 @@
   track back to the start of the whole file; both now stay within the track.
 - **Quieter logs** — the cast-device discovery refresh no longer writes to the log every few
   seconds; set `NULLPLAYER_CAST_DISCOVERY_LOG` to bring it back.
+- **Developer tooling: playback snapshot** — `skills/app-control/scripts/playback-snapshot.sh`
+  prints what a running debug build's player, audio output and cast session are doing, including
+  a measured output level, so a silent-playback report can be diagnosed without a rebuild. Debug
+  builds only; the app itself is unchanged.
 
 ## 0.30.0
 

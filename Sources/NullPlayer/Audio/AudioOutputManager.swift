@@ -244,7 +244,7 @@ class AudioOutputManager {
     }
     
     /// Get the name of a device
-    private func getDeviceName(deviceID: AudioDeviceID) -> String? {
+    func getDeviceName(deviceID: AudioDeviceID) -> String? {
         var propertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyDeviceNameCFString,
             mScope: kAudioObjectPropertyScopeGlobal,

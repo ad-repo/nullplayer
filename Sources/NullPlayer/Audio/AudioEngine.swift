@@ -90,6 +90,83 @@ extension AudioEngine {
 }
 #endif
 
+#if DEBUG
+// The engine's half of the live-QA playback snapshot (`PlaybackSnapshot`), which formats it. The
+// output level is measured with a brief tap, never inferred: a player node reports playing, its
+// clock advances and the output device runs while it renders silence from an empty schedule.
+extension AudioEngine {
+    /// Reads every field now, then measures the main-mixer level for 0.3 s before completing.
+    /// Only one reading may be in flight: the mixer bus takes a single tap.
+    func readPlaybackSnapshot(completion: @escaping (PlaybackSnapshot.EngineReading) -> Void) {
+        let activeNode = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
+        let mixer = engine.mainMixerNode
+        let mixerFormat = mixer.outputFormat(forBus: 0)
+        var reading = PlaybackSnapshot.EngineReading(
+            state: state, trackTitle: currentTrack?.title, index: currentIndex, playlistCount: playlist.count,
+            time: currentTime, isStreaming: isStreamingPlayback, hasAudioFile: audioFile != nil,
+            isRunning: engine.isRunning, playerIsPlaying: activeNode.isPlaying,
+            playerSampleTime: activeNode.lastRenderTime.flatMap { activeNode.playerTime(forNodeTime: $0) }?.sampleTime,
+            crossfadeActive: crossfadePlayerIsActive,
+            volume: volume, mainMixerOutputVolume: mixer.outputVolume, playerVolume: activeNode.volume,
+            eqBypass: eqNode.bypass, pitchRate: tuningController.localPitchNode.rate,
+            recoveryState: audioGraphRecovery.state, pendingIntent: audioGraphRecovery.pendingIntent,
+            needsReplacement: audioGraphNeedsReplacement, retryScheduled: audioGraphRecovery.hasScheduledWork,
+            engineDeviceID: engineOutputDeviceID(),
+            systemDefaultDeviceID: AudioOutputManager.shared.getDefaultOutputDeviceID(),
+            selectedDeviceID: currentOutputDeviceID,
+            sampleRate: mixerFormat.sampleRate, channelCount: mixerFormat.channelCount,
+            // Streaming renders on AudioStreaming's own engine, so the local mixer says nothing about it.
+            level: .unavailable(isStreamingPlayback ? "streaming pipeline" : "engine not running"))
+
+        guard engine.isRunning, !isStreamingPlayback else {
+            completion(reading)
+            return
+        }
+        let peak = SnapshotPeak()
+        mixer.installTap(onBus: 0, bufferSize: 4096, format: nil) { buffer, _ in
+            guard let channels = buffer.floatChannelData else { return }
+            for channel in 0..<Int(buffer.format.channelCount) {
+                var channelPeak: Float = 0
+                vDSP_maxmgv(channels[channel], 1, &channelPeak, vDSP_Length(buffer.frameLength))
+                peak.record(channelPeak)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            mixer.removeTap(onBus: 0)
+            reading.level = peak.value.map { .measured($0) } ?? .noBuffers
+            completion(reading)
+        }
+    }
+
+    private func engineOutputDeviceID() -> AudioDeviceID? {
+        guard let unit = engine.outputNode.audioUnit else { return nil }
+        var deviceID = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice,
+                                          kAudioUnitScope_Global, 0, &deviceID, &size)
+        return status == noErr ? deviceID : nil
+    }
+}
+
+/// Largest sample magnitude seen by the snapshot's tap, written on the render thread.
+private final class SnapshotPeak: @unchecked Sendable {
+    private let lock = NSLock()
+    private var peak: Float?
+
+    func record(_ sample: Float) {
+        lock.lock()
+        peak = max(peak ?? 0, sample)
+        lock.unlock()
+    }
+
+    var value: Float? {
+        lock.lock()
+        defer { lock.unlock() }
+        return peak
+    }
+}
+#endif
+
 /// Audio playback state
 enum PlaybackState {
     case stopped
