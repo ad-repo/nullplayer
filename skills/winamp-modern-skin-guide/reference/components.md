@@ -1145,10 +1145,15 @@ state that is assigned **nowhere else**. Three rules, each earned:
   and relies on `area_right.onResize` to swap in its **open** button, which ships `visible="0"`; without
   the settle, closing the playlist hid the only control that could reopen it.
 - **Fire it when the window itself is resized, in the same turn** (B160). `windowDidResize` — the
-  controller's for the skin's own windows, the materializer's for hosted ones — resizes the renderer
-  and hands over to `WinampModernMainView.hostWindowDidResize(fromCanvas:live:)`, which does what
-  `applyCanvasResize` does for a script's resize: drop the rect caches and run the diffing
-  dispatch. Only when the canvas actually changed, so a UI Size change still dispatches nothing. Until then a window the user stretched told its scene nothing;
+  controller's for the skin's own windows, the materializer's for hosted ones — hands the proposed
+  canvas to `WinampModernMainView.hostWindowDidResize(toCanvas:live:fitWindow:)`. The view resizes
+  the renderer, has the delegate put the window on the size that came back (`fitWindow`, each host
+  under its own re-entrancy guard), and then does what `applyCanvasResize` does for a script's
+  resize: drop the rect caches and run the diffing dispatch. Only when the canvas actually changed,
+  so a UI Size change still dispatches nothing. The two entry points share that tail
+  (`canvasDidChange()`) and are deliberately not one function: `applyCanvasResize` drives the
+  window through `canvasSizeDidChange`, which re-derives every window's layout limits, and that is
+  not per-drag-step work. Until then a window the user stretched told its scene nothing;
   `onResize` arrived only when some script's own geometry write set off `geometryDidSettle`, and a
   skin with no such write waiting never heard it. Itemskin is that skin: its frame is a second
   window whose 10 ms timer sizes it back onto its contents, and whose `onResize` is what sizes the
@@ -1156,6 +1161,18 @@ state that is assigned **nowhere else**. Three rules, each earned:
   while a *second* framed window was open, because that window's timer settled geometry and
   delivered the first one's overdue event — reported as "the playlist cannot be resized unless
   PeppyMeter is open".
+- **A size the app put the window on is not a new canvas.** The canvas is in skin pixels and the
+  window in whole points, so at most UI Sizes the window's size does not divide back to the canvas
+  that produced it: 396 px is 455 pt at 115%, and 455 pt is 395.65 px. `hostWindowDidResize`
+  therefore leaves the canvas alone when the window already shows it (`contentLayoutRect.size ==
+  scaledCanvasSize`), which covers every echo at once — a script's `resize()`, a UI Size change,
+  the delegate's own correction. Read back, each of those left a fractional canvas, and a frame
+  script that copies `getWidth()` from one window to the other lost a pixel per round trip:
+  Ebonite's framed windows shrank by themselves after a drag and settled a point apart from their
+  frames, and Pure Inspired's framed playlist came back from a walk through UI Size at 181 wide
+  instead of 395. A hosted window's `contentMinSize`/`contentMaxSize` are rounded to whole points
+  for the same reason: fractional, the floor sat above the size the window was corrected to.
+  `WinampModernB160Tests` and `WinampModernHostedWindowTests` walk every UI Size.
 - **A drag on the skin's own `resize=` handle is a user resize.** `inLiveResize` is true only for
   AppKit's edge band. `WinampModernMainView.resizeWindow(edges:)` sets the frame itself, so it
   dispatches `onUserResize` itself, straight after the frame — which puts it behind the `onResize`

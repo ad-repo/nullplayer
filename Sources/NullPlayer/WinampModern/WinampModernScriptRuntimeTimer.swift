@@ -57,10 +57,10 @@ extension WinampModernScriptRuntime {
     /// out at its declared 540 with the text clipped into the third of it the XML reserves for the
     /// album art it had already hidden (BB27).
     ///
-    /// `desktopOrigin` overrides the position half: the caller has recognised the coordinates as
-    /// another window's, and re-expressed them in the desktop space this move is answered in. See
-    /// `borrowedWindowOrigin`. `keepsOrigin` drops the position half altogether: the coordinates
-    /// were read off a window that is not on screen (B156).
+    /// `borrowed` overrides the position half: the caller has recognised the coordinates as
+    /// another window's. `.desktop` carries them re-expressed in the desktop space this move is
+    /// answered in; `.offScreen` drops the position half altogether, because they were read off a
+    /// window that is not on screen (B156). See `borrowedWindowOrigin`.
     ///
     /// **A pin goes out before the size** (B160). Wasabi applies the box whole and then notifies,
     /// and the size is the request that dispatches `onResize` inside the resized window — so a
@@ -69,7 +69,7 @@ extension WinampModernScriptRuntime {
     /// survives. A plain move still follows the size: it is clamped to the screen by the size the
     /// window ends up with. See `reference/scripting.md` → *The pin lands before the size*.
     func applyContainerGeometry(_ object: WasabiObject, reportedOrigin: CGPoint? = nil,
-                                        desktopOrigin: CGPoint? = nil, keepsOrigin: Bool = false) {
+                                        borrowed: BorrowedWindowOrigin? = nil) {
         // A **layout** is its window as much as the container is — a `noparent` popup is placed and
         // sized by writing `x`/`y`/`w`/`h` on the layout, in screen coordinates the script builds with
         // `clientToScreenX/Y`. Big Bento's playlist search does exactly that before showing its
@@ -84,18 +84,26 @@ extension WinampModernScriptRuntime {
             target = nil
         }
         guard let target else { return }
-        let pin = keepsOrigin ? nil : desktopOrigin
-        let pinsBeforeSizing = Self.deliversResizeAsWasabiDoes
-        if let pin, pinsBeforeSizing { containerMoveRequested?(target.stableID, pin, true) }
-        if let width = Double(object.attributes["w"] ?? ""),
-           let height = Double(object.attributes["h"] ?? ""), width > 0, height > 0 {
+        func applySize() {
+            guard let width = Double(object.attributes["w"] ?? ""),
+                  let height = Double(object.attributes["h"] ?? ""), width > 0, height > 0 else { return }
             layoutResizeRequested?(target.stableID, CGSize(width: width, height: height))
         }
-        if let pin, !pinsBeforeSizing { containerMoveRequested?(target.stableID, pin, true) }
-        if keepsOrigin || pin != nil {
-            return
-        } else if let x = Double(object.attributes["x"] ?? ""),
-                  let y = Double(object.attributes["y"] ?? "") {
+        switch borrowed {
+        case .desktop(let pin):
+            if Self.deliversResizeAsWasabiDoes {
+                containerMoveRequested?(target.stableID, pin, true)
+                applySize()
+            } else {
+                applySize()
+                containerMoveRequested?(target.stableID, pin, true)
+            }
+        case .offScreen:
+            applySize()
+        case nil:
+            applySize()
+            guard let x = Double(object.attributes["x"] ?? ""),
+                  let y = Double(object.attributes["y"] ?? "") else { return }
             // **Writing back the position that was just read is not a move.** `resize(getLeft(),
             // getTop(), w, h)` is how a skin resizes a window while leaving it where it is, and the
             // two halves have to agree about the space they are in: `getLeft()`/`getTop()` on a

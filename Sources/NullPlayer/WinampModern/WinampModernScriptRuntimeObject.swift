@@ -240,14 +240,7 @@ extension WinampModernScriptRuntime {
             for (key, value) in zip(["x", "y", "w", "h"], arguments) {
                 _ = object.setAttribute(key, value: String(value.integerValue))
             }
-            switch borrowed {
-            case .desktop(let origin):
-                applyContainerGeometry(object, reportedOrigin: reportedBeforeResize, desktopOrigin: origin)
-            case .offScreen:
-                applyContainerGeometry(object, keepsOrigin: true)
-            case nil:
-                applyContainerGeometry(object, reportedOrigin: reportedBeforeResize)
-            }
+            applyContainerGeometry(object, reportedOrigin: reportedBeforeResize, borrowed: borrowed)
             noteGeometryChange()
             notifyGraphDidMutate()
             return .null

@@ -758,7 +758,12 @@ final class WasabiSceneRenderer {
     /// that wants large rows from one that does not; resizing it is not a request for larger text,
     /// and the user has the Text Size menu for that.
     var textScaleReferenceHeight: CGFloat {
-        declaredLayoutHeights[layout.stableID] ?? Self.defaultSize(for: layout, resources: resources).height
+        if let declared = declaredLayoutHeights[layout.stableID] { return declared }
+        // `layout` only ever comes out of `container.children`, which is what the table was built
+        // from. The fallback reads the live height — the very value this property exists to avoid
+        // — so reaching it must not pass unnoticed.
+        assertionFailure("layout \(layout.xmlID ?? "?") joined its container after the renderer was built")
+        return Self.defaultSize(for: layout, resources: resources).height
     }
     /// The `<edit>` holding the keyboard, so it can draw a caret. Owned by the view (focus is a
     /// window's property); `nil` in every window that does not have one focused, which is most.

@@ -163,6 +163,97 @@ final class WinampModernHostedWindowTests: XCTestCase {
             .first { $0.view.containerID == instance.graphRoot.stableID }?.window === instance.window)
     }
 
+    // MARK: - A window resize at every UI Size
+
+    /// What the materializer's `skinScale` closure answers; a test that walks UI Size moves it.
+    private var skinScale: CGFloat = 1.25
+
+    /// A hosted window the user resizes lands on whole points with its scene filling it, at every
+    /// UI Size, and stays there when the same resize is reported again.
+    ///
+    /// The scale multiplies a skin pixel into a fraction of a point at most of the UI Size menu's
+    /// levels, and the two places that can disagree about the rounding are the window and the view
+    /// inside it: a view a fraction narrower than its window is a transparent seam down one edge,
+    /// and a window corrected to a size its own `contentMinSize` rejects is fought by AppKit on
+    /// every step of a drag.
+    func testAResizedHostedWindowHasNoSeamAtAnyUISize() throws {
+        let parts = try makeMaterializer()
+        XCTAssertTrue(parts.materializer.show(.spectrum))
+        let instance = try XCTUnwrap(parts.materializer.materializedWindows.first)
+        let window = instance.window
+        let view = instance.view
+        let limits = view.renderer.userResizeLimits
+
+        for level in UIScaleLevel.allCases {
+            let scale = level.scaleFactor
+            skinScale = scale
+            parts.materializer.applySkinScale(scale)
+            let floor = window.contentMinSize
+            XCTAssertEqual(floor.width, floor.width.rounded(), "\(level.menuTitle): fractional floor")
+            XCTAssertEqual(floor.height, floor.height.rounded(), "\(level.menuTitle): fractional floor")
+
+            let canvases: [CGSize] = [
+                limits.minimum,
+                CGSize(width: limits.minimum.width + 37, height: limits.minimum.height + 53),
+                CGSize(width: limits.minimum.width + 101, height: limits.minimum.height + 7),
+                CGSize(width: limits.minimum.width - 40, height: limits.minimum.height - 40),
+            ]
+            for canvas in canvases {
+                // The size AppKit hands over: whole points, as a drag produces.
+                let dragged = NSSize(width: (canvas.width * scale).rounded(),
+                                     height: (canvas.height * scale).rounded())
+                window.setContentSize(dragged)
+                let note = Notification(name: NSWindow.didResizeNotification, object: window)
+                parts.materializer.windowDidResize(note)
+                let landed = window.contentLayoutRect.size
+                let label = "\(level.menuTitle) dragged=\(dragged) landed=\(landed)"
+
+                XCTAssertEqual(landed.width, landed.width.rounded(), "fractional width: \(label)")
+                XCTAssertEqual(landed.height, landed.height.rounded(), "fractional height: \(label)")
+                XCTAssertEqual(view.frame.size, landed, "the scene does not fill its window: \(label)")
+                XCTAssertEqual(view.scaledCanvasSize, landed, "canvas and window disagree: \(label)")
+                XCTAssertGreaterThanOrEqual(landed.width, floor.width, "under its own floor: \(label)")
+                XCTAssertGreaterThanOrEqual(landed.height, floor.height, "under its own floor: \(label)")
+                if dragged.width >= floor.width, dragged.height >= floor.height {
+                    XCTAssertEqual(landed, dragged, "a size the layout accepts was moved: \(label)")
+                }
+
+                let canvasBefore = view.renderer.canvasSize
+                parts.materializer.windowDidResize(note)
+                XCTAssertEqual(window.contentLayoutRect.size, landed, "not stable: \(label)")
+                XCTAssertEqual(view.renderer.canvasSize, canvasBefore, "canvas crept: \(label)")
+            }
+        }
+    }
+
+    /// A size the app put the window on is not read back as a new canvas.
+    ///
+    /// 396 skin pixels is 455 points at 115%, and 455 points is 395.65 pixels. Reading that back
+    /// after a script's `resize()`, or after a UI Size change, left a fractional canvas that a
+    /// frame script copying `getWidth()` between two windows lost a pixel to on every round trip.
+    func testASizeTheAppSetIsNotReadBackAsAFractionalCanvas() throws {
+        let parts = try makeMaterializer()
+        XCTAssertTrue(parts.materializer.show(.spectrum))
+        let instance = try XCTUnwrap(parts.materializer.materializedWindows.first)
+        let minimum = instance.view.renderer.userResizeLimits.minimum
+        let asked = CGSize(width: minimum.width + 53, height: minimum.height + 35)
+
+        for level in UIScaleLevel.allCases {
+            skinScale = level.scaleFactor
+            // Each of these sizes the window, and AppKit reports every one of them back.
+            let note = Notification(name: NSWindow.didResizeNotification, object: instance.window)
+            parts.materializer.applySkinScale(level.scaleFactor)
+            parts.materializer.windowDidResize(note)
+            instance.view.applyCanvasResize(asked)
+            parts.materializer.windowDidResize(note)
+            XCTAssertEqual(instance.view.renderer.canvasSize, asked,
+                           "\(level.menuTitle): a script's resize came back as another canvas")
+            XCTAssertEqual(instance.window.contentLayoutRect.size, instance.view.scaledCanvasSize)
+        }
+        // And the walk through every UI Size left the canvas where it was.
+        XCTAssertEqual(instance.view.renderer.canvasSize, asked)
+    }
+
     private struct MaterializerParts {
         let loaded: WinampModernLoadedSkin
         let scripts: WinampModernScriptRuntime
@@ -201,7 +292,7 @@ final class WinampModernHostedWindowTests: XCTestCase {
             host: host,
             scripts: scripts,
             componentHost: components,
-            skinScale: { 1.25 },
+            skinScale: { [unowned self] in self.skinScale },
             classicFallback: fallback,
             windowDidSettle: windowDidSettle,
             testContentInstaller: { root, id in

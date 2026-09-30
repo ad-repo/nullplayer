@@ -203,6 +203,11 @@
 - **Winamp Modern: resizing a window no longer resizes its text** — with Text Size on Auto, the
   embedded playlist and library text grew and shrank with the window. Auto now picks the size
   from the size the skin designed the window at and keeps it; use Text Size to change it.
+- **Winamp Modern: framed windows keep their size at every UI Size** — at a UI Size such as 105%,
+  115% or 125%, a window whose frame is drawn separately (Ebonite, Itemskin, K-jr, Pure Inspired)
+  settled a point wider or taller than its own frame, shrank by itself after being dragged, and
+  came back smaller after a trip through the UI Size menu. Frame and contents now stay the same
+  size, and a window returns to the size it left at.
 
 ## 0.30.0
 

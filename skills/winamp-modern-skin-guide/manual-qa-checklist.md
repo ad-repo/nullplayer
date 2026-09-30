@@ -213,7 +213,8 @@ synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares pl
       then a corner, then the top-right corner upward. Frame and contents must land on the same
       rect, with no snap-back, and a top-edge drag must move the top edge rather than growing the
       window downward. On Ebonite the contents must follow the frame rather than stay at 250x250.
-      `WINAMP_MODERN_RESIZE_NOTIFY=0` is the pre-fix behaviour for comparison.
+      `WINAMP_MODERN_RESIZE_NOTIFY=0` brings the defect back for comparison. It is not the whole
+      of the pre-fix build; `reference/harness.md` lists what it withholds.
 - [ ] **Itemskin: the frame windows follow their content** (B69) — open the playlist, video, library
       and AVS windows. Each must be a *single* composed window, not an empty frame in one place and a
       chromeless panel in another: this skin builds every component window as a pair (a bare content

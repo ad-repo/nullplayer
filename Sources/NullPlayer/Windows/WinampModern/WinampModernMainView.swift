@@ -383,22 +383,42 @@ final class WinampModernMainView: NSView {
     }
 
     /// The window this view fills was resized from outside the scene — AppKit's edge band, a drag
-    /// on one of the skin's own handles, the tiler, a restored frame — and its delegate has already
-    /// put the renderer, the window and this view on the size the layout accepted.
+    /// on one of the skin's own handles, the tiler, a restored frame. `proposed` is the canvas the
+    /// window now asks for; the renderer clamps it, `fitWindow` puts the window on the size that
+    /// came back, and this view follows.
     ///
     /// The scene hears it in the same turn (B160): left to the next script mutation's
     /// `geometryDidSettle`, a window the user stretched was told only if some *other* script
     /// happened to move something first. See `reference/components.md` → *Resize, and why a skin
     /// needs it*. `live` is AppKit's `inLiveResize`, which makes the resize `onUserResize` too; a
     /// drag on a skin handle reports itself from `resizeWindow(edges:)`.
-    func hostWindowDidResize(fromCanvas previousCanvas: CGSize, live: Bool) {
+    ///
+    /// Not folded into `applyCanvasResize`, which shares only `canvasDidChange()` with this. That
+    /// one answers a script and drives the window through `canvasSizeDidChange`, which also
+    /// re-derives every window's layout limits — work for a layout switch, not for each step of a
+    /// drag. This one answers the window, which is already at the size unless the layout refused
+    /// it, and each host corrects it under its own re-entrancy guard.
+    func hostWindowDidResize(toCanvas proposed: CGSize, live: Bool, fitWindow: (NSSize) -> Void) {
+        let previousCanvas = renderer.canvasSize
+        // **A window already showing this canvas is not asking for another one.** The canvas is in
+        // skin pixels and the window in whole points, so at most UI Sizes a size the app itself
+        // put the window on does not divide back to the canvas it came from: 396 px is 455 pt at
+        // 115%, and 455 pt is 395.65 px. Read back, every resize a script made — and every UI Size
+        // change — left a fractional canvas behind, and a frame script that copies `getWidth()`
+        // from one window to the other then lost a pixel per round trip: Ebonite's framed windows
+        // shrank by themselves after a drag and settled a point apart from their own frames.
+        if window?.contentLayoutRect.size != scaledCanvasSize { renderer.resize(to: proposed) }
+        let size = scaledCanvasSize
+        fitWindow(size)
+        if frame.size != size { setFrameSize(size) }
         if WasabiSceneRenderer.tracesResize {
             NSLog("%@", "WM-RESIZE window=\(window?.accessibilityIdentifier() ?? "-") "
                   + "frame=\(window?.frame ?? .zero) live=\(live) handle=\(activeResizeEdges != nil)")
         }
-        needsDisplay = true
         if WinampModernScriptRuntime.deliversResizeAsWasabiDoes, renderer.canvasSize != previousCanvas {
             canvasDidChange()
+        } else {
+            needsDisplay = true
         }
         // Only for a resize the user is dragging: the tiler, a restored frame and a script's own
         // `resize()` come through here too, and a standard frame answers `onUserResize` by writing

@@ -19,8 +19,8 @@ Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entri
         second timer, whose settle made every container diff its scene and so delivered the
         playlist frame's overdue `onResize`.
       - **Fix, three parts, all `.wal`-only code.** `windowDidResize` (controller and hosted-window
-        materializer) hands over to `WinampModernMainView.hostWindowDidResize(fromCanvas:live:)`,
-        which runs the diffing resize dispatch when the canvas changed and drops the rect caches
+        materializer) hands over to `WinampModernMainView.hostWindowDidResize(toCanvas:live:fitWindow:)`,
+        which resizes the renderer, runs the diffing resize dispatch when the canvas changed and drops the rect caches
         with it, as `applyCanvasResize` always did. A drag on
         a skin `resize=` handle is a user resize: `resizeWindow(edges:)` dispatches `onUserResize`
         after it sets the frame (`inLiveResize` covers only AppKit's band). `applyContainerGeometry`
@@ -49,6 +49,13 @@ Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entri
         unchanged canvas dispatches nothing, shown to fail with the guard removed) and
         `WinampModernPhase82Tests.testAWindowPutOnAnothersPositionIsMovedBeforeItIsSized`. The
         first B160 test and the order test fail under `WINAMP_MODERN_RESIZE_NOTIFY=0`. The bound handler itself has no headless route.
+      - **Found in review: the window's own size read back as a canvas.** Walking UI Size and
+        dragging frames at 105–175% (a raw-bounds window lister, a frame/contents seam check, an
+        A/B in one binary) found 44 problems over 13 skins with the review's arithmetic and 1 with
+        this fix — the one left is NullPlayer's own Spectrum Analyzer on 2222-cPro__Bento, the
+        classic window, drifting 344x145 → 347x148 over the walk, identical in both and not `.wal`
+        code. A window already showing its canvas no longer re-derives it, and a hosted window's
+        limits are whole points; see `reference/components.md` → *Resize, and why a skin needs it*.
       - **Auto Text Size no longer follows the window.** Found while driving the control: `auto`
         read the live canvas height, so a resize changed the playlist rows at once and the library
         text on the next scale push. It now reads the height the layout declares

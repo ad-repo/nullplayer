@@ -2706,14 +2706,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // back stretched. Clamp here as well as in `contentMinSize`/`contentMaxSize`.
         let limits = view.renderer.userResizeLimits
         let proposed = CGSize(width: content.width / skinScale, height: content.height / skinScale)
-        let previousCanvas = view.renderer.canvasSize
-        _ = view.renderer.resize(to: CGSize(
+        let clamped = CGSize(
             width: min(max(proposed.width, limits.minimum.width), limits.maximum.width),
-            height: min(max(proposed.height, limits.minimum.height), limits.maximum.height)))
-        let size = view.scaledCanvasSize
-        if size != content { resize(window: resized, to: size) }
-        if size != view.frame.size { view.setFrameSize(size) }
-        view.hostWindowDidResize(fromCanvas: previousCanvas, live: resized.inLiveResize)
+            height: min(max(proposed.height, limits.minimum.height), limits.maximum.height))
+        view.hostWindowDidResize(toCanvas: clamped, live: resized.inLiveResize) { size in
+            if size != content { resize(window: resized, to: size) }
+        }
     }
 
     /// A window a skin has glued a frame over must not be able to bury it (B110).
