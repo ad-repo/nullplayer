@@ -94,9 +94,9 @@ Static, from the archive — this is what separates a report from a screenshot:
 
 ```sh
 mkdir -p $OUT/x && (cd $OUT/x && unzip -o -q "$WINAMP_MODERN_WAL")
-grep -rhoE '<[a-zA-Z:.]+' $OUT/x --include=*.xml | sort | uniq -c | sort -rn      # element census
-grep -rhoE '(action|display|cfgattrib|ticker|xuitag|inherit_group)="[^"]*"' $OUT/x --include=*.xml | sort | uniq -c | sort -rn
-grep -rhoE 'action="MENU"[^>]*param="[^"]*"' $OUT/x --include=*.xml | sort -u    # host menus expected
+grep -rhoE '<[a-zA-Z:.]+' $OUT/x --include='*.xml' | sort | uniq -c | sort -rn      # element census
+grep -rhoE '(action|display|cfgattrib|ticker|xuitag|inherit_group)="[^"]*"' $OUT/x --include='*.xml' | sort | uniq -c | sort -rn
+grep -rhoE 'action="MENU"[^>]*param="[^"]*"' $OUT/x --include='*.xml' | sort -u    # host menus expected
 ls -R $OUT/x | head -50; find $OUT/x -name '*.maki' -exec ls -l {} +             # scripts + sizes
 find $OUT/x -iname 'screenshot.png' -o -iname 'readme*' -o -iname '*.txt'        # author's own reference
 ```
