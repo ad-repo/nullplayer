@@ -1,6 +1,15 @@
-## NullPlayer. Your media. Your backend. Your home devices. Your UI.
 
-<img width="500" height="500" alt="nullplayer-skins-all" src="https://github.com/user-attachments/assets/be764bfb-c284-4787-ada7-8b532253b4e9" />
+  <h2 align="center">NullPlayer. Your media. Your backend. Your home devices. Your UI.</h2>
+
+  https://github.com/user-attachments/assets/09f161cf-a1c5-407d-a8d7-24cc0ac25295
+
+
+  <p align="center">
+    <img width="500" alt="nullplayer-skins-all" src="https://github.com/user-attachments/assets/be764bfb-c284-4787-ada7-8b532253b4e9" />
+  </p>
+
+
+
 
 ## **If you enjoy NullPlayer please ⭐ STAR ⭐ the project on GitHub**
 
