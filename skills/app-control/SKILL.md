@@ -1,6 +1,6 @@
 ---
 name: app-control
-description: Launch, configure, drive, screenshot and measure the running NullPlayer app. Use when asked to run / launch / start the app, click or drag a control, reproduce a defect on screen, "open skin X", "show me it working", set up a test scenario, capture a window, or hand the user a loaded interactive session. Covers every skin family (Classic, Original, Original-Metal, Winamp Modern .wal, Windows Media Player .wmz) and names the canonical test-data targets.
+description: Launch, configure, drive, screenshot and measure the running NullPlayer app. Use when asked to run / launch / start the app, click or drag a control, reproduce a defect on screen, "open skin X", "show me it working", set up a test scenario, capture a window, check that every window opens, stretches and closes, or hand the user a loaded interactive session. Covers every skin family (Classic, Original, Original-Metal, Winamp Modern .wal, Windows Media Player .wmz) and names the canonical test-data targets.
 ---
 
 # Controlling the app
@@ -375,6 +375,43 @@ Within Classic, and within Original/Metal (one family in the code), an open wind
 stretch across a skin change, as it always has. Pick windows by how their size is decided:
 `Spectrum Analyzer` (stack), `Visualizations` (side window), `Sonos Rooms` (own show path). About
 3–4 minutes each.
+
+### Window open / stretch / close matrix
+
+Does every window open, stretch and close through the real UI? Run this after any change to window
+chrome, title-bar hit testing, edge resizing (`ResizableWindow`, `BorderlessWindow`) or close handling:
+
+```bash
+skills/app-control/scripts/window-interaction-matrix.sh aquamp.wsz /tmp/np-matrix/m.tsv
+TAG=-titlebars skills/app-control/scripts/window-interaction-matrix.sh modern:NeonWave /tmp/np-matrix/m.tsv -hideTitleBars NO
+```
+
+For each Windows-menu window it opens the window, closes it, reopens it, drags five edges (bottom-right,
+bottom, right, left, top) by 40 pt and closes it again; the main window is stretched and closed last.
+Each skin takes about 7 minutes and prints one line: `MATRIX <skin>: N closed, N not-closed,
+N hidden-but-checked`. Rows (`skin window step result detail`) are appended to the TSV, so a set of
+skins can share one file.
+
+- **A close is verified, not inferred.** `CLOSED` means the window is off screen, its Windows-menu
+  item is unchecked, and Accessibility does not report it minimized. Leaving the on-screen list
+  alone proves nothing, because a minimize or `orderOut` looks the same.
+- **The close target is searched for.** The search clicks the top-right corner from the outside
+  in, down to 40 pt. The target moves by mode: Classic's 9×9 box, a gloss frame's corner hit area,
+  a `.wal` skin's art. Sonos Rooms and Waveform sit 10 pt down, and a stretched Classic EQ
+  letterboxes its art, pushing the close about 20 pt down. A miss that shades, resizes or minimizes
+  the window is logged as `<step>-miss` and undone.
+- **`NOT-CLOSED` is something to classify, not a failure.** Original/Metal with Hide Title Bars on
+  (`hideTitleBars`, which only those modes read) and some gloss-framed `.wmz`/`.wal` windows have no
+  close target. The row names a `noclose-*.png` capture saved beside the TSV. Pass
+  `-hideTitleBars NO` to show title bars for one run without writing the setting.
+- **Stretch results are recorded, not judged.** Not every window stretches in every mode, so
+  `resize`, `move` and `none` are all results. Synthetic drags are timing-sensitive: one run's left
+  drag can travel 30 pt instead of 40 and change the rows after it. Repeat a run before treating a
+  one-row difference as a regression.
+- **A/B against another build:** the script measures the checkout it lives in. To compare against
+  another commit, add a worktree there (`git worktree add --detach <dir> <sha>`), symlink
+  `Frameworks/` and `skills/app-control/scripts/winhelper` into it from this checkout, run the
+  worktree's copy of the script, then diff the first four columns of the two TSVs.
 
 ### Window census
 

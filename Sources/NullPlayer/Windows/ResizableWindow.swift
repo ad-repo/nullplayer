@@ -16,9 +16,10 @@ class ResizableWindow: NSWindow {
     
     /// Width of the resize edge detection zone in pixels (larger = easier to grab)
     private let edgeThickness: CGFloat = 14
-    /// Narrower zone for top edge to avoid interfering with docked window dragging
-    private let topEdgeThickness: CGFloat = 12
-    
+    /// The 3 pt band AppKit's own `.resizable` frame used to give. The top edge and the right edge
+    /// above the bottom corner resize only through it.
+    private let frameEdgeThickness: CGFloat = 3
+
     /// Which edges are being resized
     struct ResizeEdges: OptionSet {
         let rawValue: Int
@@ -53,15 +54,22 @@ class ResizableWindow: NSWindow {
     
     // MARK: - Initialization
     
+    /// A borderless window that resizes its own edges. It is deliberately not `.resizable`: from
+    /// macOS 27 AppKit takes a press near a borderless `.resizable` window's frame for its own resize
+    /// loop, which swallowed clicks on the title-bar buttons. `.miniaturizable` lets the skin's own
+    /// minimize button reach the Dock.
+    convenience init(contentRect: NSRect) {
+        self.init(contentRect: contentRect, styleMask: [.borderless, .miniaturizable],
+                  backing: .buffered, defer: false)
+    }
+
     override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
         super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
 
-        // Borderless classic windows still need explicit miniaturizable behavior for
-        // custom toolbar/menu minimize actions.
-        if !styleMask.contains(.miniaturizable) {
-            styleMask.insert(.miniaturizable)
-        }
-        
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(dropResizableAfterFullScreen),
+            name: NSWindow.didExitFullScreenNotification, object: self)
+
         // Enable mouse moved events for cursor updates
         acceptsMouseMovedEvents = true
         
@@ -73,63 +81,51 @@ class ResizableWindow: NSWindow {
     
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
-    
+
+    // MARK: - Native Fullscreen
+
+    /// Native fullscreen only fills the screen for a `.resizable` window, so the flag is held for
+    /// the stay in fullscreen and dropped again on exit.
+    override func toggleFullScreen(_ sender: Any?) {
+        if !styleMask.contains(.fullScreen) {
+            styleMask.insert(.resizable)
+        }
+        super.toggleFullScreen(sender)
+    }
+
+    @objc private func dropResizableAfterFullScreen(_ notification: Notification) {
+        styleMask.remove(.resizable)
+    }
+
     // MARK: - Edge Detection
     
     /// Detect which edges the mouse is near for a given point in window coordinates
     private func detectEdges(at windowPoint: NSPoint) -> ResizeEdges {
         let size = frame.size
-        var edges: ResizeEdges = []
-        
-        // Exclude title bar area from top edge resize detection
-        // Title bar is used for window dragging, not resizing
-        // Scale-aware: at 2x scale, a 14px skin title bar = 28 window pixels
-        let titleBarHeight = max(20, size.height * 0.12)
-        let isInTitleBar = windowPoint.y > size.height - titleBarHeight
-        
-        // Exclude top-right corner where window control buttons are (close, minimize)
-        // Scale-aware: buttons span ~38 skin pixels from right edge, which scales with window
-        let buttonAreaWidth = max(40, size.width * 0.14)
-        let isInButtonArea = isInTitleBar && windowPoint.x > size.width - buttonAreaWidth
-        
-        // Also exclude top-left corner where menu button is
-        // Scale-aware for menu button area
-        let menuButtonWidth = max(20, size.width * 0.06)
-        let isInMenuArea = isInTitleBar && windowPoint.x < menuButtonWidth
-        
-        if isInButtonArea || isInMenuArea {
-            // Don't allow resize in button areas - let clicks pass through to the view
-            return .none
-        }
-        
-        if isInTitleBar {
-            // In title bar area: only allow left/right edge resizing, not top
-            if windowPoint.x < edgeThickness {
-                edges.insert(.left)
-            } else if windowPoint.x > size.width - edgeThickness {
-                edges.insert(.right)
-            }
-            return edges
-        }
-        
-        // Check horizontal edges
-        if windowPoint.x < edgeThickness {
-            edges.insert(.left)
-        } else if windowPoint.x > size.width - edgeThickness {
-            // Only allow right edge resize near the bottom of the window
-            // The rest of the right edge has the scrollbar
-            if windowPoint.y < edgeThickness * 3 {
-                edges.insert(.right)
-            }
-        }
-        
-        // Check vertical edges (window coordinates: 0 is at bottom)
-        if windowPoint.y < edgeThickness {
-            edges.insert(.bottom)
-        } else if windowPoint.y > size.height - topEdgeThickness {
-            edges.insert(.top)
+
+        // The title bar drags the window, and holds the menu button on the left and the window
+        // buttons on the right. Only its top frame band resizes, and never over a button.
+        // Scale-aware: at 2x a 14px skin title bar is 28 window pixels, and the buttons span
+        // ~38 skin pixels from the right edge.
+        if windowPoint.y > size.height - max(20, size.height * 0.12) {
+            let isOverButton = windowPoint.x < max(20, size.width * 0.06)
+                || windowPoint.x > size.width - max(40, size.width * 0.14)
+            return !isOverButton && windowPoint.y > size.height - frameEdgeThickness ? .top : .none
         }
 
+        // Window coordinates: y is 0 at the bottom
+        var edges: ResizeEdges = []
+        if windowPoint.x < edgeThickness {
+            edges.insert(.left)
+        } else if windowPoint.y < edgeThickness * 3 ? windowPoint.x > size.width - edgeThickness
+                                                    : windowPoint.x >= size.width - frameEdgeThickness {
+            // Above the bottom corner the right edge holds the playlist scrollbar, so it resizes
+            // on the frame band alone
+            edges.insert(.right)
+        }
+        if windowPoint.y < edgeThickness {
+            edges.insert(.bottom)
+        }
         return edges
     }
 
