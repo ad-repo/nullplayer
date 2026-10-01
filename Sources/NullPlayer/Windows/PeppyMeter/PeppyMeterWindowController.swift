@@ -11,12 +11,7 @@ final class PeppyMeterWindowController: NSWindowController, PeppyMeterWindowProv
     private var preFullscreenLevel: NSWindow.Level = .normal
 
     convenience init() {
-        let window = ResizableWindow(
-            contentRect: NSRect(origin: .zero, size: SkinElements.PeppyMeterWindow.windowSize),
-            styleMask: [.borderless, .resizable],
-            backing: .buffered,
-            defer: false
-        )
+        let window = ResizableWindow(contentRect: NSRect(origin: .zero, size: SkinElements.PeppyMeterWindow.windowSize))
         self.init(window: window)
         setupWindow()
         setupView()

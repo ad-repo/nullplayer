@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.31.1
+
+- **Classic windows close again on macOS 27** — the close button in the top-right corner of a
+  Classic window (and of the Classic-style windows a `.wal` or `.wmz` skin opens beside it) showed
+  a resize cursor and ignored the click, because macOS 27 took the press for its own window resize.
+  These windows now do all edge resizing themselves, on the same edges and margins as before, and
+  library-browser fullscreen still fills the screen.
+
 ## 0.31.0
 
 - **Windows Media Player `.wmz` skins** — a new Windows Media Player mode that runs real WMP 9-12 era

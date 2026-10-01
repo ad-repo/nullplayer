@@ -7,12 +7,7 @@ class WaveformWindowController: NSWindowController, WaveformWindowProviding {
     private var shouldResetFrameOnNextShow = true
 
     convenience init() {
-        let window = ResizableWindow(
-            contentRect: NSRect(origin: .zero, size: SkinElements.WaveformWindow.windowSize),
-            styleMask: [.borderless, .resizable],
-            backing: .buffered,
-            defer: false
-        )
+        let window = ResizableWindow(contentRect: NSRect(origin: .zero, size: SkinElements.WaveformWindow.windowSize))
         self.init(window: window)
         setupWindow()
         setupView()
