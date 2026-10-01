@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.31.1
+
+- **Sonos group volume keeps each room's level** — after changing one room's volume in a multi-room
+  cast, the main window's volume control put the rooms back to their old balance. It now keeps the
+  new balance and moves every room from there.
+
 ## 0.31.0
 
 - **Windows Media Player `.wmz` skins** — a new Windows Media Player mode that runs real WMP 9-12 era

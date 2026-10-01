@@ -22,6 +22,7 @@ final class SonosRoomMixer {
          },
          writeVolume: @escaping @MainActor (Int, String) async throws -> Void = {
              try await UPnPManager.shared.setSonosRoomVolume($0, roomUDN: $1)
+             CastManager.shared.invalidateSonosGroupVolumeSnapshot()
          }) {
         self.roomIDs = roomIDs
         self.readVolume = readVolume

@@ -355,13 +355,21 @@ class CastManager {
     /// a stale PLAYING poll that raced the multi-second Stop SOAP request.
     @MainActor private var sonosLocalStopState = SonosLocalStopState()
 
+    /// A room's own volume changed, so the next group volume send must re-snapshot the ratio.
+    @MainActor func invalidateSonosGroupVolumeSnapshot() {
+        sonosVolumeCoalescer.invalidateSnapshot()
+    }
+
     /// Coalesces Sonos/UPnP volume commands so a fast slider drag lands monotonically (GH #414).
     @MainActor
     private lazy var sonosVolumeCoalescer = SonosVolumeCoalescer(
         send: { [weak self] percent in
             (try? await self?.upnpManager.setVolume(percent, retries: 0)) != nil
         },
-        currentKey: { [weak self] in self?.upnpManager.activeSession?.device.id }
+        currentKey: { [weak self] in self?.upnpManager.activeSession?.device.id },
+        snapshot: { [weak self] in
+            try? await self?.upnpManager.snapshotSonosGroupVolume()
+        }
     )
 
     /// Classify a Sonos STOPPED transport report as a natural end-of-track finish (advance) vs an

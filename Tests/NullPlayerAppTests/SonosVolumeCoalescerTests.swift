@@ -141,6 +141,49 @@ final class SonosVolumeCoalescerTests: XCTestCase {
         XCTAssertEqual(sent, [10, 10])
     }
 
+    // MARK: - Group volume snapshot (Sonos SetGroupVolume scales from the last snapshot)
+
+    /// Records snapshots and sends in wire order, on a hand-advanced clock.
+    private func snapshotFixture() -> (SonosVolumeCoalescer, () -> [String], (TimeInterval) -> Void) {
+        var wire: [String] = []
+        var clock = Date(timeIntervalSinceReferenceDate: 0)
+        let coalescer = SonosVolumeCoalescer(
+            send: { wire.append("set \($0)"); return true },
+            currentKey: { "device-A" },
+            snapshot: { wire.append("snapshot") },
+            now: { clock }
+        )
+        return (coalescer, { wire }, { clock += $0 })
+    }
+
+    func testSnapshotsOnceAtStartOfGesture() async {
+        let (coalescer, wire, advance) = snapshotFixture()
+        await coalescer.submit(40)
+        advance(0.2)
+        await coalescer.submit(45)
+        advance(0.2)
+        await coalescer.submit(50)
+        // Mid-drag snapshots would flatten the ratio once a drag reached 0.
+        XCTAssertEqual(wire(), ["snapshot", "set 40", "set 45", "set 50"])
+    }
+
+    func testSnapshotsAgainAfterIdleGap() async {
+        let (coalescer, wire, advance) = snapshotFixture()
+        await coalescer.submit(40)
+        advance(5)          // a room may have been changed in the Sonos app meanwhile
+        await coalescer.submit(45)
+        XCTAssertEqual(wire(), ["snapshot", "set 40", "snapshot", "set 45"])
+    }
+
+    func testRoomChangeForcesSnapshotWithinGesture() async {
+        let (coalescer, wire, advance) = snapshotFixture()
+        await coalescer.submit(40)
+        advance(0.2)
+        coalescer.invalidateSnapshot()      // Sonos Rooms slider wrote a room's own volume
+        await coalescer.submit(45)
+        XCTAssertEqual(wire(), ["snapshot", "set 40", "snapshot", "set 45"])
+    }
+
     func testNoSendWhenNoSession() async {
         var sent: [Int] = []
         let coalescer = SonosVolumeCoalescer(
