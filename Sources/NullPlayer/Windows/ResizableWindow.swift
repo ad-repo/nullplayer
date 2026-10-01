@@ -18,7 +18,11 @@ class ResizableWindow: NSWindow {
     private let edgeThickness: CGFloat = 14
     /// Narrower zone for top edge to avoid interfering with docked window dragging
     private let topEdgeThickness: CGFloat = 12
-    
+    /// The band AppKit's own `.resizable` frame gave on every edge, measured at 3 pt. The right
+    /// edge above the bottom zone and the top edge over the title bar resize only through this
+    /// band, which these windows had from AppKit until `.resizable` was dropped (see `init`).
+    private let frameEdgeThickness: CGFloat = 3
+
     /// Which edges are being resized
     struct ResizeEdges: OptionSet {
         let rawValue: Int
@@ -62,6 +66,18 @@ class ResizableWindow: NSWindow {
             styleMask.insert(.miniaturizable)
         }
         
+        // Edge resizing is done by hand below, so AppKit's own is dropped. From macOS 27 a borderless
+        // window that carries `.resizable` has AppKit claim a press near the frame in
+        // `super.sendEvent` and run its own resize loop — the view is sent no `mouseDown`, so the
+        // title-bar close button in the top-right corner showed a resize cursor and could not be
+        // clicked (the 0.30.0 build fails the same way on macOS 27). Native fullscreen
+        // still needs `.resizable` to fill the screen, so `toggleFullScreen` restores it for the
+        // duration (the library browser's visualizer uses it).
+        styleMask.remove(.resizable)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(dropResizableAfterFullScreen),
+            name: NSWindow.didExitFullScreenNotification, object: self)
+
         // Enable mouse moved events for cursor updates
         acceptsMouseMovedEvents = true
         
@@ -73,7 +89,20 @@ class ResizableWindow: NSWindow {
     
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
-    
+
+    // MARK: - Native Fullscreen
+
+    override func toggleFullScreen(_ sender: Any?) {
+        if !styleMask.contains(.fullScreen) {
+            styleMask.insert(.resizable)
+        }
+        super.toggleFullScreen(sender)
+    }
+
+    @objc private func dropResizableAfterFullScreen(_ notification: Notification) {
+        styleMask.remove(.resizable)
+    }
+
     // MARK: - Edge Detection
     
     /// Detect which edges the mouse is near for a given point in window coordinates
@@ -103,22 +132,25 @@ class ResizableWindow: NSWindow {
         }
         
         if isInTitleBar {
-            // In title bar area: only allow left/right edge resizing, not top
+            // In title bar area: left/right edge resizing, and top only on the frame band
             if windowPoint.x < edgeThickness {
                 edges.insert(.left)
             } else if windowPoint.x > size.width - edgeThickness {
                 edges.insert(.right)
             }
+            if windowPoint.y > size.height - frameEdgeThickness {
+                edges.insert(.top)
+            }
             return edges
         }
-        
+
         // Check horizontal edges
         if windowPoint.x < edgeThickness {
             edges.insert(.left)
         } else if windowPoint.x > size.width - edgeThickness {
-            // Only allow right edge resize near the bottom of the window
-            // The rest of the right edge has the scrollbar
-            if windowPoint.y < edgeThickness * 3 {
+            // The full-width right zone is only near the bottom of the window; the rest of the
+            // right edge has the scrollbar, so it resizes on the frame band alone
+            if windowPoint.y < edgeThickness * 3 || windowPoint.x >= size.width - frameEdgeThickness {
                 edges.insert(.right)
             }
         }
