@@ -2070,6 +2070,17 @@ class UPnPManager {
         }
     }
     
+    /// Re-captures the room ratio `SetGroupVolume` scales from; `SonosGroupSnapshotPolicy` says when.
+    func snapshotSonosGroupVolume() async throws {
+        guard let session = activeSession, session.device.type == .sonos else { return }
+        try await sendGroupRenderingControlAction(
+            controlURL: getGroupRenderingControlURL(for: session.device),
+            action: "SnapshotGroupVolume",
+            arguments: [("InstanceID", "0")],
+            retries: 0
+        )
+    }
+
     /// Get current volume (0-100)
     func getVolume() async throws -> Int {
         guard let session = activeSession else {

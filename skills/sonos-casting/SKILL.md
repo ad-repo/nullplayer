@@ -260,6 +260,16 @@ This group-level behavior is handled in `UPnPManager.setVolume(_:)`, `getVolume(
 by branching on `session.device.type == .sonos`. The room mixer's independent RenderingControl
 path is described above; do not route a room slider through these group methods.
 
+**Group volume snapshot.** `SetGroupVolume` does not scale from each room's current level but from
+the room ratio captured by the last `SnapshotGroupVolume`. Without a fresh snapshot, a group change
+after one room's own volume changed (Sonos Rooms slider or the Sonos app) puts the old ratio back.
+`SonosGroupSnapshotPolicy` decides when: before the first group send of each gesture (no send for
+1.5 s), after any room write through `CastManager.setSonosRoomVolume` (the room mixer's write path),
+after a failed snapshot, and on a new target. `CastManager.sendUPnPVolume` — the coalescer's send —
+then calls `UPnPManager.snapshotSonosGroupVolume()`. Never snapshot per send, nor after a pause at
+group volume 0: a snapshot at 0 flattens the ratio. Room writes must go through `CastManager`, not
+straight to `UPnPManager.setSonosRoomVolume`, or the next group send skips the snapshot.
+
 ### Playback State Monitoring
 
 NullPlayer polls Sonos every 5 seconds during casting:

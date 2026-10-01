@@ -2,6 +2,9 @@
 
 ## 0.31.1
 
+- **Sonos group volume keeps each room's level** — after changing one room's volume in a multi-room
+  cast, the main window's volume control put the rooms back to their old balance. It now keeps the
+  new balance and moves every room from there.
 - **Classic windows close again on macOS 27** — the close button in the top-right corner of a
   Classic window (and of the Classic-style windows a `.wal` or `.wmz` skin opens beside it) showed
   a resize cursor and ignored the click, because macOS 27 took the press for its own window resize.
