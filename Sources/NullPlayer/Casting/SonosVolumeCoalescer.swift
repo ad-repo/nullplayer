@@ -28,34 +28,15 @@ final class SonosVolumeCoalescer {
     /// Incremented on reset so an older in-flight completion cannot restore cleared dedupe state.
     private var generation: UInt = 0
 
-    /// When the last send finished; a longer gap than `gestureGap` starts a new gesture.
-    private var lastSendFinished = Date.distantPast
-    private let gestureGap: TimeInterval = 1.5
-
     /// Performs the actual send; returns true when the SOAP call succeeded.
     private let send: @MainActor (Int) async -> Bool
     /// Identifies the active target (device UDN); nil when there is no session.
     private let currentKey: @MainActor () -> String?
-    /// Re-captures the Sonos group's room ratio. Sonos `SetGroupVolume` scales each room from the
-    /// last snapshot, not from current levels, so a room changed on its own since then would be
-    /// put back. Called once per gesture, not per send: a mid-drag snapshot at 0 would flatten
-    /// the ratio.
-    private let snapshot: @MainActor () async -> Void
-    private let now: @MainActor () -> Date
 
     init(send: @escaping @MainActor (Int) async -> Bool,
-         currentKey: @escaping @MainActor () -> String?,
-         snapshot: @escaping @MainActor () async -> Void = {},
-         now: @escaping @MainActor () -> Date = { Date() }) {
+         currentKey: @escaping @MainActor () -> String?) {
         self.send = send
         self.currentKey = currentKey
-        self.snapshot = snapshot
-        self.now = now
-    }
-
-    /// A room's own volume changed, so the next send must re-snapshot even mid-gesture.
-    func invalidateSnapshot() {
-        lastSendFinished = .distantPast
     }
 
     /// Submit the latest desired volume percent (0–100). Coalesces with any in-flight send.
@@ -73,11 +54,7 @@ final class SonosVolumeCoalescer {
             if lastSent?.key == key, lastSent?.percent == next { continue }    // equal-value dedupe
             let sendGeneration = generation
             let t0 = Date()
-            if now().timeIntervalSince(lastSendFinished) > gestureGap {
-                await snapshot()
-            }
             let ok = await send(next)
-            lastSendFinished = now()
             if castClockLoggingEnabled {
                 NSLog("CastManager: [CLOCKDBG] volume send=%d ok=%d %.0fms", next, ok ? 1 : 0, Date().timeIntervalSince(t0) * 1000)
             }
@@ -96,6 +73,5 @@ final class SonosVolumeCoalescer {
         generation &+= 1
         pending = nil
         lastSent = nil
-        lastSendFinished = .distantPast
     }
 }

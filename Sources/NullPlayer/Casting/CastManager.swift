@@ -355,22 +355,35 @@ class CastManager {
     /// a stale PLAYING poll that raced the multi-second Stop SOAP request.
     @MainActor private var sonosLocalStopState = SonosLocalStopState()
 
-    /// A room's own volume changed, so the next group volume send must re-snapshot the ratio.
-    @MainActor func invalidateSonosGroupVolumeSnapshot() {
-        sonosVolumeCoalescer.invalidateSnapshot()
-    }
-
     /// Coalesces Sonos/UPnP volume commands so a fast slider drag lands monotonically (GH #414).
     @MainActor
     private lazy var sonosVolumeCoalescer = SonosVolumeCoalescer(
-        send: { [weak self] percent in
-            (try? await self?.upnpManager.setVolume(percent, retries: 0)) != nil
-        },
-        currentKey: { [weak self] in self?.upnpManager.activeSession?.device.id },
-        snapshot: { [weak self] in
-            try? await self?.upnpManager.snapshotSonosGroupVolume()
-        }
+        send: { [weak self] percent in await self?.sendUPnPVolume(percent) ?? false },
+        currentKey: { [weak self] in self?.upnpManager.activeSession?.device.id }
     )
+
+    @MainActor private var sonosGroupSnapshot = SonosGroupSnapshotPolicy()
+
+    /// The coalescer's single-flight send. A Sonos group send first re-captures the room ratio
+    /// when `SonosGroupSnapshotPolicy` says it may be stale.
+    @MainActor
+    private func sendUPnPVolume(_ percent: Int) async -> Bool {
+        guard let device = upnpManager.activeSession?.device else { return false }
+        if device.type == .sonos, sonosGroupSnapshot.claimSnapshot(key: device.id, now: Date()),
+           (try? await upnpManager.snapshotSonosGroupVolume()) == nil {
+            sonosGroupSnapshot.invalidate()
+        }
+        guard (try? await upnpManager.setVolume(percent, retries: 0)) != nil else { return false }
+        sonosGroupSnapshot.groupVolumeSent(key: device.id, percent: percent, at: Date())
+        return true
+    }
+
+    /// Writes one room's own volume. The group ratio has changed, so the next group send snapshots.
+    @MainActor
+    func setSonosRoomVolume(_ volume: Int, roomUDN: String) async throws {
+        defer { sonosGroupSnapshot.invalidate() }   // a failed write may still have landed
+        try await upnpManager.setSonosRoomVolume(volume, roomUDN: roomUDN)
+    }
 
     /// Classify a Sonos STOPPED transport report as a natural end-of-track finish (advance) vs an
     /// external/intended stop (pause). Pure and side-effect-free so it can be unit-tested (GH #415).
@@ -1979,6 +1992,7 @@ class CastManager {
             sonosRecentSeek = nil
             sonosLocalStopState.clear()
             sonosVolumeCoalescer.reset()   // true teardown — clear coalescer dedupe/pending
+            sonosGroupSnapshot = SonosGroupSnapshotPolicy()
         }
 
         // Stop Sonos polling and topology refresh

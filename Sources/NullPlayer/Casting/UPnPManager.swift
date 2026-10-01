@@ -2070,9 +2070,7 @@ class UPnPManager {
         }
     }
     
-    /// Sonos `SetGroupVolume` scales each member from the ratio captured by the last
-    /// `SnapshotGroupVolume`, not from their current levels — so after a room's own volume
-    /// changes, a group change without a fresh snapshot restores the old ratio.
+    /// Re-captures the room ratio `SetGroupVolume` scales from; `SonosGroupSnapshotPolicy` says when.
     func snapshotSonosGroupVolume() async throws {
         guard let session = activeSession, session.device.type == .sonos else { return }
         try await sendGroupRenderingControlAction(
