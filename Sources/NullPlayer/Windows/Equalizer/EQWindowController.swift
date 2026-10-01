@@ -13,12 +13,7 @@ class EQWindowController: NSWindowController, EQWindowProviding {
     
     convenience init() {
         // Create borderless window with manual resize handling
-        let window = ResizableWindow(
-            contentRect: NSRect(origin: .zero, size: Skin.eqWindowSize),
-            styleMask: [.borderless, .resizable],
-            backing: .buffered,
-            defer: false
-        )
+        let window = ResizableWindow(contentRect: NSRect(origin: .zero, size: Skin.eqWindowSize))
         
         self.init(window: window)
         
