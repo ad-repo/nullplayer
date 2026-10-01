@@ -14,12 +14,7 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
     
     convenience init() {
         // Create borderless window with manual resize handling
-        let window = ResizableWindow(
-            contentRect: NSRect(origin: .zero, size: Skin.playlistMinSize),
-            styleMask: [.borderless, .resizable],
-            backing: .buffered,
-            defer: false
-        )
+        let window = ResizableWindow(contentRect: NSRect(origin: .zero, size: Skin.playlistMinSize))
         
         self.init(window: window)
         

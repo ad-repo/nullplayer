@@ -5,12 +5,7 @@ final class CavaWindowController: NSWindowController, CavaWindowProviding {
     private var lifecycleObservers: [NSObjectProtocol] = []
 
     convenience init() {
-        let window = ResizableWindow(
-            contentRect: NSRect(origin: .zero, size: SkinElements.SpectrumWindow.windowSize),
-            styleMask: [.borderless, .resizable],
-            backing: .buffered,
-            defer: false
-        )
+        let window = ResizableWindow(contentRect: NSRect(origin: .zero, size: SkinElements.SpectrumWindow.windowSize))
         self.init(window: window)
         setupWindow()
         setupView()

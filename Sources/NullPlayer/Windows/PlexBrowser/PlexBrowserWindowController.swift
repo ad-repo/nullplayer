@@ -39,12 +39,7 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
     
     convenience init() {
         // Create borderless window with manual resize handling
-        let window = ResizableWindow(
-            contentRect: NSRect(origin: .zero, size: Self.defaultSize),
-            styleMask: [.borderless, .resizable],
-            backing: .buffered,
-            defer: false
-        )
+        let window = ResizableWindow(contentRect: NSRect(origin: .zero, size: Self.defaultSize))
         
         self.init(window: window)
         
