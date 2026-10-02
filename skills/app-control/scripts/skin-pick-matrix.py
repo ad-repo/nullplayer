@@ -19,7 +19,7 @@ own load evidence names the skin, and a window is on screen. One row per cell, t
 It quits any running NullPlayer, saves and restores the debug `NullPlayer` defaults domain, and
 deletes the `Matrix*` skins the load pass imports. The load pass types into the open panel, so the
 build is brought to the front for it; leave the keyboard alone while it runs."""
-import os, shutil, subprocess, sys, tempfile, time
+import os, re, shutil, subprocess, sys, tempfile, time
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 SCRIPTS = os.path.join(REPO, "skills/app-control/scripts")
@@ -132,16 +132,16 @@ def run(pid, load_dir):
     current["Classic"] = "aquamp"
     fails = 0
     for i, (kind, src, dst) in enumerate(steps, 1):
-        skin = {"pick": lambda: next(s for s in FAMILIES[dst] if s != current[dst]),
-                "load": lambda: LOADS[dst][0],
-                "switch": lambda: current[dst]}[kind]()
         mark = len(log_lines())
         t0 = time.time()
         if kind == "pick":
+            skin = next(s for s in FAMILIES[dst] if s != current[dst])
             menu(pid, "skin", dst, skin)
         elif kind == "load":
+            skin = LOADS[dst][0]
             menu(pid, "load", dst, os.path.join(load_dir, LOADS[dst][1]))
         else:
+            skin = current[dst]
             r = menu(pid, "mode", dst)
             if not r.startswith("switched:"):
                 print(f"{i:2d} FAIL  switch {src} -> {dst}: no Switch to item ({r})", flush=True)
@@ -178,9 +178,10 @@ def main():
         out = subprocess.run([os.path.join(SCRIPTS, "launch.sh"), "aquamp", "--log", LOG],
                              cwd=REPO, capture_output=True, text=True)
         print(out.stdout.strip().splitlines()[-1] if out.stdout.strip() else out.stderr[-500:])
-        if "LAUNCH PASS" not in out.stdout:
+        found = re.search(r"LAUNCH PASS: .* pid (\d+)", out.stdout)
+        if not found:
             return 1
-        pid = int(sh("pgrep", "-nx", "NullPlayer"))
+        pid = int(found.group(1))  # the build launch.sh started, never one found by name
         time.sleep(3)
         return run(pid, load_dir)
     finally:

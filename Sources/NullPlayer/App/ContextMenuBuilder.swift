@@ -4025,72 +4025,8 @@ class MenuActions: NSObject {
         }
     }
     
-    // MARK: - Skin Operations
-    
-    @objc func loadSkinFromFile() {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.init(filenameExtension: "wsz")!]
-        
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        let wm = WindowManager.shared
-        do {
-            let importedURL = try wm.importClassicSkin(from: url)
-            let loaded = SkinLoadingOverlay.shared.run { () -> Bool in
-                // Loaded first: entering classic renders `currentSkin`.
-                guard wm.loadSkin(from: importedURL) else { return false }
-                if wm.uiMode != .classic { wm.reloadUI(to: .classic) }
-                return true
-            }
-            if !loaded {
-                let alert = NSAlert()
-                alert.messageText = "Failed to Load Classic Skin"
-                alert.informativeText = "The skin was imported but could not be loaded."
-                alert.alertStyle = .warning
-                alert.runModal()
-            }
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Failed to Import Classic Skin"
-            alert.informativeText = error.localizedDescription
-            alert.alertStyle = .warning
-            alert.runModal()
-        }
-    }
-
     // MARK: - Modern (Winamp 5.x `.wal`)
-
-    @objc func loadWinampModernSkinFromFile() {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.init(filenameExtension: "wal")!]
-        panel.message = "Select a Winamp 5.x .wal skin archive"
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            let imported = try WinampModernSkinImporter.shared.importContainer(at: url)
-            NSLog("WinampModern: Imported validated skin '%@' to %@", imported.name, imported.archiveURL.path)
-            if WindowManager.shared.uiMode != .winampModern {
-                // The import selected it, and entering the mode loads the selection.
-                SkinLoadingOverlay.shared.run { WindowManager.shared.reloadUI(to: .winampModern) }
-            } else {
-                SkinLoadingOverlay.shared.run {
-                    (WindowManager.shared.mainWindowController as? WinampModernMainWindowController)?
-                        .loadSkin(at: imported.archiveURL)
-                    WindowManager.shared.ensureAllWindowsOnScreen()
-                }
-            }
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Failed to Import \(PlayerUIMode.winampModern.displayName) Skin"
-            alert.informativeText = error.localizedDescription
-            alert.alertStyle = .warning
-            alert.runModal()
-        }
-    }
+    // Picking and loading a skin, in every family, is in ContextMenuBuilder+SkinFamilies.swift.
 
     @objc func toggleWinampModernSkinWindow(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
@@ -4146,9 +4082,7 @@ class MenuActions: NSObject {
                   info.provenanceVerdict.rawValue)
             if WindowManager.shared.uiMode == .winampModern,
                let selected = WinampModernSkinImporter.shared.selectedSkin() {
-                (WindowManager.shared.mainWindowController as? WinampModernMainWindowController)?
-                    .loadSkin(at: selected.archiveURL)
-                WindowManager.shared.ensureAllWindowsOnScreen()
+                loadWinampModernSkinInPlace(at: selected.archiveURL)
             }
         } catch {
             let alert = NSAlert()
@@ -4198,64 +4132,6 @@ class MenuActions: NSObject {
         NSWorkspace.shared.open(directory)
     }
 
-    @objc func selectWinampModernSkin(_ sender: NSMenuItem) {
-        guard let url = sender.representedObject as? URL else { return }
-        let skin = WinampModernImportedSkin(name: url.deletingPathExtension().lastPathComponent,
-                                            archiveURL: url)
-        WinampModernSkinImporter.shared.selectSkin(skin)
-        if WindowManager.shared.uiMode != .winampModern {
-            // Selected first: entering the mode builds the controller, which loads the selection.
-            SkinLoadingOverlay.shared.run { WindowManager.shared.reloadUI(to: .winampModern) }
-        } else {
-            SkinLoadingOverlay.shared.run {
-                (WindowManager.shared.mainWindowController as? WinampModernMainWindowController)?
-                    .loadSkin(at: url)
-                // A `.wal` window's size *is* the skin, so switching to a larger one grows every
-                // window in place around its top-left — off the display, for a skin wide or tall
-                // enough.
-                WindowManager.shared.ensureAllWindowsOnScreen()
-            }
-        }
-    }
-
-    func loadModernFamilySkinFromFile(family: ModernSkinFamily) {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.init(filenameExtension: ModernSkinLoader.bundleExtension)!]
-        panel.message = "Select a .\(ModernSkinLoader.bundleExtension) \(family.displayName) skin bundle"
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        let previousSkinName = UserDefaults.standard.string(forKey: family.skinNameKey)
-        do {
-            let importedSkinName = try ModernSkinEngine.shared.importSkinBundle(from: url, family: family)
-            if WindowManager.shared.uiMode.modernSkinFamily != family {
-                // The import saved it as the family's skin, and entering the family loads that.
-                SkinLoadingOverlay.shared.run { WindowManager.shared.reloadUI(to: family.playerUIMode) }
-            } else {
-                if !ModernSkinEngine.shared.loadSkin(named: importedSkinName, family: family) {
-                    if let previousSkinName = previousSkinName {
-                        UserDefaults.standard.set(previousSkinName, forKey: family.skinNameKey)
-                    } else {
-                        UserDefaults.standard.removeObject(forKey: family.skinNameKey)
-                    }
-                    let alert = NSAlert()
-                    alert.messageText = "Failed to Load \(family.displayName) Skin"
-                    alert.informativeText = "The skin was imported but could not be loaded."
-                    alert.alertStyle = .warning
-                    alert.runModal()
-                }
-            }
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Failed to Import \(family.displayName) Skin"
-            alert.informativeText = error.localizedDescription
-            alert.alertStyle = .warning
-            alert.runModal()
-        }
-    }
-    
     @objc func getMoreClassicSkins() {
         guard let url = URL(string: "https://skins.webamp.org") else { return }
         NSWorkspace.shared.open(url)
@@ -4287,25 +4163,6 @@ class MenuActions: NSObject {
         SkinLoadingOverlay.shared.run { WindowManager.shared.loadSkin(from: url) }
         UserDefaults.standard.set(url.path, forKey: WindowManager.lastClassicSkinPathKey)
     }
-    
-    /// Select a classic skin and switch to classic mode if needed
-    @objc func selectClassicSkin(_ sender: NSMenuItem) {
-        guard let url = sender.representedObject as? URL else { return }
-        let wm = WindowManager.shared
-
-        SkinLoadingOverlay.shared.run {
-            if wm.uiMode != .classic {
-                // Load the chosen classic skin into `currentSkin` (also persists
-                // lastClassicSkinPath), then live-switch to classic from whichever family is
-                // on screen — the rebuilt classic windows render `currentSkin`. No restart.
-                wm.loadSkin(from: url)
-                wm.reloadUI(to: .classic)
-            } else {
-                // Already in classic mode — load the skin immediately
-                wm.loadSkin(from: url)
-            }
-        }
-    }
 
     // MARK: - UI Mode Switching
     
@@ -4329,45 +4186,6 @@ class MenuActions: NSObject {
         let wm = WindowManager.shared
         guard wm.uiMode != .wmp else { return }
         wm.reloadUI(to: .wmp)
-    }
-
-    @objc func loadWMPSkinFromFile() {
-        guard AppCapabilities.supports(.wmpSkinMode) else { return }
-        if let controller = WindowManager.shared.mainWindowController as? WMPMainWindowController {
-            controller.importSkinFromPanel()
-            return
-        }
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.allowedContentTypes = [.init(filenameExtension: "wmz")!]
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        Task {
-            do {
-                _ = try await WMPSkinImporter().importSkin(from: url)
-                await MainActor.run { WindowManager.shared.reloadUI(to: .wmp) }
-            } catch {
-                await MainActor.run {
-                    let alert = NSAlert(error: error)
-                    alert.messageText = "Failed to Import WMP Skin"
-                    alert.runModal()
-                }
-            }
-        }
-    }
-
-    @objc func selectWMPSkin(_ sender: NSMenuItem) {
-        guard AppCapabilities.supports(.wmpSkinMode),
-              let name = sender.representedObject as? String else { return }
-        let wm = WindowManager.shared
-        if let controller = wm.mainWindowController as? WMPMainWindowController {
-            controller.selectInstalledSkin(named: name)
-        } else if let skin = WMPSkinImporter().installedSkins().first(where: {
-            $0.name.caseInsensitiveCompare(name) == .orderedSame
-        }) {
-            WMPSkinImporter().select(skin)
-            wm.reloadUI(to: .wmp)
-        }
     }
 
     @objc func selectWMPView(_ sender: NSMenuItem) {

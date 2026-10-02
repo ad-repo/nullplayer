@@ -161,17 +161,22 @@ on drive(argv, targetPid)
         return name of every menu item of menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
 
       else if act is "current" then
-        -- The checked skin in a submenu: which skin a mode switch landed on. The LAST checked
-        -- item, because skins follow the options and Modern checks "Reimport ClassicPro Engine..."
-        -- whenever the engine is installed.
+        -- The checked skin in a submenu: which skin a mode switch landed on. Every family submenu
+        -- lists its skins after its last divider (`buildSkinFamilyMenu`), so only that block is
+        -- read: options above it are checked too, such as "Reimport ClassicPro Engine...".
         set subName to item 3 of argv
         set sm to menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
         set nms to name of every menu item of sm
         set mks to value of attribute "AXMenuItemMarkChar" of every menu item of sm
         set found to ""
         repeat with i from 1 to count of nms
-          set mk to item i of mks
-          if mk is not missing value and mk is not "" then set found to item i of nms
+          set nm to item i of nms
+          if nm is missing value or nm is "" then
+            set found to ""
+          else
+            set mk to item i of mks
+            if mk is not missing value and mk is not "" then set found to nm
+          end if
         end repeat
         return found
 
@@ -224,10 +229,20 @@ on drive(argv, targetPid)
         delay 0.8
         keystroke filePath
         delay 0.5
+        -- The first Return goes to the path, the second presses Open once the Go To sheet has gone.
+        set dlg to first window whose role description is "dialog"
         key code 36
-        delay 1.0
+        repeat 20 times
+          if not (exists sheet 1 of dlg) then exit repeat
+          delay 0.1
+        end repeat
+        if exists sheet 1 of dlg then error "menu.applescript load: the Go To sheet did not close" number 5
         key code 36
-        return "ok"
+        repeat 40 times
+          if not (exists (first window whose role description is "dialog")) then return "ok"
+          delay 0.25
+        end repeat
+        error "menu.applescript load: the open panel did not close" number 6
 
       else if act is "skin" then
         set subName to item 3 of argv
