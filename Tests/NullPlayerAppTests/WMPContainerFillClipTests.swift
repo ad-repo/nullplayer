@@ -132,7 +132,9 @@ final class WMPContainerFillClipTests: XCTestCase {
         let skin = try await load(wms: pharaohIdiomWithoutTheSurface,
                                   images: ["sphinx.png": try artwork()])
         let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
-        let image = try await renderer(for: skin).render(scene: scene).image
+        // Unfeathered: the body pixel asserted below is on the outline of an 8x8 window.
+        let image = try await renderer(for: skin).render(scene: scene,
+                                                         featheringOutline: false).image
 
         XCTAssertEqual(WMPSkinTestSupport.rgba(image, x: 0, yFromTop: 0)[3], 0,
                        "the clippingColor matte is outside the window — pharaoh's 53,252 px")

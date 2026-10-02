@@ -509,7 +509,10 @@ final class WMPClippingShapeTests: XCTestCase {
         let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
         XCTAssertNotNil(try imageCommand(scene, nodeID: "vol").matte)
 
-        let rendered = try await renderer(for: skin).render(scene: scene).image
+        // Unfeathered: these pixels are the key's answer, and every one is on the outline, which
+        // `WMPOutlineFeather` would antialias.
+        let rendered = try await renderer(for: skin).render(scene: scene,
+                                                            featheringOutline: false).image
         XCTAssertEqual(WMPSkinTestSupport.rgba(rendered, x: 0, yFromTop: 0)[3], 0,
                        "the key colour over the matte is not drawn")
         XCTAssertEqual(WMPSkinTestSupport.rgba(rendered, x: 3, yFromTop: 0), red,

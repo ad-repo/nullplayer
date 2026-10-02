@@ -1477,7 +1477,8 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                                       commands: whole, hits: [], widgets: [], geometries: [:],
                                       unresolved: [], diagnostics: [], dirtyBounds: nil,
                                       metrics: scene.metrics, wasBuiltOnMainThread: false)
-            let drawn = try await renderer.render(scene: wholeScene, backingScale: backingScale)
+            let drawn = try await renderer.render(scene: wholeScene, backingScale: backingScale,
+                                                  featheringOutline: false)
             let canvasRect = CGRect(x: 0, y: 0,
                                     width: scene.canvasSize.width, height: scene.canvasSize.height)
             return (drawn.image,
@@ -1494,7 +1495,8 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                                 commands: ring, hits: [], widgets: [], geometries: [:],
                                 unresolved: [], diagnostics: [], dirtyBounds: nil,
                                 metrics: scene.metrics, wasBuiltOnMainThread: false)
-        let rendered = try await renderer.render(scene: ringOnly, backingScale: backingScale)
+        let rendered = try await renderer.render(scene: ringOnly, backingScale: backingScale,
+                                                 featheringOutline: false)
         let full = CGRect(x: 0, y: 0, width: scene.canvasSize.width, height: scene.canvasSize.height)
         let extent = Self.opaqueExtent(rendered.image, scale: backingScale) ?? full
 
@@ -1524,7 +1526,8 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                                       commands: ring + decoration, hits: [], widgets: [], geometries: [:],
                                       unresolved: [], diagnostics: [], dirtyBounds: nil,
                                       metrics: scene.metrics, wasBuiltOnMainThread: false)
-            if let plated = try? await renderer.render(scene: decorScene, backingScale: backingScale) {
+            if let plated = try? await renderer.render(scene: decorScene, backingScale: backingScale,
+                                                       featheringOutline: false) {
                 image = plated.image
             }
         }
@@ -1737,7 +1740,8 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                                  commands: own, hits: [], widgets: [], geometries: [:],
                                  unresolved: [], diagnostics: [], dirtyBounds: nil,
                                  metrics: scene.metrics, wasBuiltOnMainThread: false)
-        let rendered = try await renderer.render(scene: panelOnly, backingScale: backingScale)
+        let rendered = try await renderer.render(scene: panelOnly, backingScale: backingScale,
+                                                 featheringOutline: false)
         guard var cropped = rendered.image.cropping(to: CGRect(
             x: panel.x * backingScale, y: panel.y * backingScale,
             width: panel.width * backingScale, height: panel.height * backingScale)) else {
