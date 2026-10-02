@@ -96,14 +96,42 @@ Same class, one more site, and W214's own rule says not to gate it in the same s
 Learned by driving the real app on 2026-09-07, after a headless sweep said everything was fine. Each
 of these was invisible to the harness and visible in the first minute of live QA.
 
-- **A skinned WMP window carries no macOS shadow.** It is genuinely shaped — Corona is transparent
-  across the 250 px its playlist slides into and the 124 px its equaliser drops into — and AppKit
-  caches a borderless window's shadow from whatever content it last saw. On a shape that changes with
-  every drawer and every repaint that goes stale, and a stale shadow over a transparent region reads
-  as a dark box the size of the window. `invalidateShadow()` on each present fixed it, then on each
-  frame change fixed it again, then playback's continuous repaints brought it back a third time. So
-  `hasShadow` is **off** while a skin is shown and on for the opaque app-authored player. There is no
-  drop shadow in Windows Media Player to lose.
+- **A skinned WMP window's shadow is ours, never AppKit's (2026-10-01).** The window is genuinely
+  shaped — Corona is transparent across the 250 px its playlist slides into and the 124 px its
+  equaliser drops into — and AppKit caches a borderless window's shadow from whatever content it last
+  saw. On a shape that changes with every drawer and every repaint that goes stale, and a stale
+  shadow over a transparent region reads as a dark box the size of the window. `invalidateShadow()`
+  on each present fixed it, then on each frame change fixed it again, then playback's continuous
+  repaints brought it back a third time. So `hasShadow` stays **off** while a skin is shown (on for
+  the opaque app-authored player), and `SkinWindowShadow` (`Windows/Shared/`, shared with `.wal`)
+  draws one instead: a click-through child window ordered `.below` the skin, holding a blur of the
+  artwork's own alpha. Each `WMPViewPresentation` owns one, attached in `apply` with
+  `WMPMainView.outlineLayers` (the presented image and overlay) as the shape it pulls.
+  - **It looks after itself.** It watches its window's move, resize, key and occlusion
+    notifications and repairs its own link, order and frame, so no delegate method calls it. AppKit
+    keeps a child at its parent's level, so Always on Top needs nothing.
+  - **What rebuilds it** is `WMPMainView.onOutlineMayHaveMoved` → `invalidateShape`: every present
+    of a `WMPRenderResult` whose `alphaChanged` is set — always for a whole render, and for a dirty
+    repaint only when the renderer found the alpha inside the rect it just drew had moved, so a
+    marquee over opaque art never asks. A hidden window owes the pull until it is back on screen.
+    The outline is fingerprinted off the main thread and rebuilt only when its bytes move; a skin
+    that only plays rebuilds nothing after load.
+  - **The knockout ramps, it is not `alpha > 0`.** Corona paints its own soft shadow at alpha 1-60,
+    16 pt below the player, and clearing under every non-zero pixel cut the real shadow away
+    beneath that glow: the desktop showed through as a white band ("a white window extension, not a
+    shadow"). `SkinWindowShadow.knockoutAlpha` clears nothing at 16 and below and everything from 128.
+  - **AppKit clamps the shadow window under the menu bar** when it carries it along with a parent
+    that sits above the screen top by its transparent rows, which left the shadow 165 pt below
+    `BlueCrush_MP7` as a second outline. `reassert()` puts the frame back from the parent's
+    `didMoveNotification`. AppKit carries the child only *after* that notification, so the frame is
+    re-set on every drag step and lands right (measured headlessly 2026-10-02: no overshoot).
+  - **Shared code keeps the child.** `WindowManager.updateDockedChildWindows` strips every non-docked
+    child of the player on each drag and dock; it exempts `SkinShadowWindow`, gated on
+    `hostsSkinShadowWindows` (`.wmz`/`.wal` only). NullPlayer's own Compact Mode — which records and
+    re-shows every visible window (`orderOutOrphanedAppWindows`) and would treat a shadow as a window
+    of its own — is not offered in `.wmz`/`.wal` (`ContextMenuBuilder` hides it), so it needs no
+    exemption; add one there if that ever changes. The trace is `NP_SKIN_SHADOW_TRACE`
+    (`harness/app-flags.md`).
 - **A script transaction repaints in full.** The dirty region cannot be derived from what a handler
   *wrote*: it writes `svEqualizer.top` and a whole subtree moves that it never mentioned, and a
   `SUBVIEW` carries no hit metadata at all, so the narrowed bounds collapse to roughly the button

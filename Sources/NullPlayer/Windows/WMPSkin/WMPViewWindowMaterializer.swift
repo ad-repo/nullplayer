@@ -95,9 +95,10 @@ final class WMPViewWindowMaterializer: NSObject, NSWindowDelegate {
             window = WMPSkinWindow(contentRect: NSRect(origin: .zero, size: size),
                                    styleMask: [.borderless, .resizable, .miniaturizable],
                                    backing: .buffered, defer: false)
-            // The same recipe the player window gets in `configureWindow`, minus the shadow: a
+            // The same recipe the player window gets in `configureWindow`, minus AppKit's shadow: a
             // `.wmz` window is genuinely shaped and AppKit caches a borderless window's shadow from
             // whatever content it last saw, which over a transparent region reads as a dark box.
+            // The presentation's `SkinWindowShadow` draws one from the outline instead.
             window.backgroundColor = .clear
             window.isOpaque = false
             window.hasShadow = false

@@ -227,6 +227,7 @@ extension WasabiSceneRenderer {
     }
 
     private func animatedFrameImage(_ bitmap: WasabiBitmap, object: WasabiObject) -> CGImage? {
+        if drawsAnimationCores { return animationCoreImage(bitmap, object: object) }
         let (frameWidth, frameHeight, count, columns) = animationGrid(bitmap, object: object)
         let frameIndex = max(0, min(count - 1, WasabiAnimation.state(of: object, frameCount: count,
                                                                      clock: clock()).frame))
@@ -236,6 +237,48 @@ extension WasabiSceneRenderer {
                           width: frameWidth, height: frameHeight)
         guard crop.maxY <= CGFloat(bitmap.height), crop.maxX <= CGFloat(bitmap.width) else { return nil }
         return cropped(bitmap.image, to: crop)
+    }
+
+    /// Black at the lowest alpha each pixel has across every frame of the layer's sheet — see
+    /// `drawsAnimationCores`. Outline pass only.
+    private func animationCoreImage(_ bitmap: WasabiBitmap, object: WasabiObject) -> CGImage? {
+        let grid = animationGrid(bitmap, object: object)
+        let key = AnimationCoreKey(sheet: ObjectIdentifier(bitmap.image), frameWidth: grid.width,
+                                   frameHeight: grid.height, count: grid.count, columns: grid.columns)
+        if let cached = animationCoreCache[key] { return cached.core }
+        guard let image = Self.animationCore(of: bitmap.image, frameWidth: grid.width,
+                                             frameHeight: grid.height, count: grid.count,
+                                             columns: grid.columns) else { return nil }
+        if animationCoreCache.count > Self.maximumCachedCrops { animationCoreCache.removeAll() }
+        animationCoreCache[key] = (bitmap.image, image)
+        return image
+    }
+
+    /// The pure half of `animationCoreImage`: black at each pixel's lowest alpha across the
+    /// `count` frames of `sheet`, laid out `columns` to a row. `nil` when no frame lies inside the
+    /// sheet.
+    static func animationCore(of sheet: CGImage, frameWidth width: Int, frameHeight height: Int,
+                              count: Int, columns: Int) -> CGImage? {
+        guard count > 0, columns > 0 else { return nil }
+        var core: AlphaPlane?
+        for index in 0..<count {
+            let crop = CGRect(x: (index % columns) * width, y: (index / columns) * height,
+                              width: width, height: height)
+            guard crop.maxY <= CGFloat(sheet.height), crop.maxX <= CGFloat(sheet.width),
+                  let frame = sheet.cropping(to: crop),
+                  let plane = AlphaPlane(layers: [frame], width: width, height: height) else { continue }
+            if core == nil { core = plane } else { core?.formMinimum(plane) }
+        }
+        return core?.blackImage()
+    }
+
+    /// Which core `animationCoreCache` holds: one per sheet and frame grid.
+    struct AnimationCoreKey: Hashable {
+        let sheet: ObjectIdentifier
+        let frameWidth: Int
+        let frameHeight: Int
+        let count: Int
+        let columns: Int
     }
 
     /// One sub-rectangle of a sheet, **stably**. `CGImage.cropping(to:)` allocates a fresh image on

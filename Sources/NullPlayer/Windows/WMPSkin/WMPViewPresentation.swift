@@ -36,6 +36,9 @@ final class WMPViewPresentation {
     let isPlayer: Bool
 
     var mainView: WMPMainView?
+    /// The window's drop shadow, built from the artwork's outline; the window's own `hasShadow`
+    /// stays off while a skin is shown.
+    let shadow = SkinWindowShadow()
     var activeScene: WMPScene?
     var sceneOverrides = WMPSceneOverrides.empty
     /// The list contents last handed to this window's widgets. Paired with `sceneOverrides` it is
@@ -214,6 +217,7 @@ final class WMPViewPresentation {
         loadTask?.cancel(); loadTask = nil
         scriptTask?.cancel(); scriptTask = nil
         stopAllTimers()
+        shadow.detach()
         mainView?.prepareForUITeardown()
         mainView = nil
         activeScene = nil

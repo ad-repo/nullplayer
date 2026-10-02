@@ -112,7 +112,11 @@ Visualization, Web Reader, Now Playing.
 - **`enumItem`** — `xml/widgets-manager-cpro2.xml`.
 - **Aero-snap is inert by design.** `snapAdjust` is accepted and returns `.null`. Snapping a window
   to a screen edge is a Windows shell behaviour with no macOS counterpart worth emulating.
-- **The drop shadow is inert by design.** macOS draws its own window shadow.
+- **The skin's own drop shadow is inert by design.** NullPlayer draws the window's shadow itself,
+  from the outline (`SkinWindowShadow`, 2026-10-01 — `.wal` windows have `hasShadow` off, so it is not
+  macOS's), and showing `main.shadow` as well would draw it twice. Verified on screen: one shadow.
+  The beat meter in the top bar resizes ~1.5 times a second, which costs one outline check each time
+  (`[shadow] wal:main same … trigger=graph`, ~6 ms in a debug build) and never a rebuild.
 - **Neither window is allowed on screen** (B101, 2026-09-04). Both containers are real and their
   scripts run; `setAuxiliaryWindow` refuses to show a container
   `WinampModernContainerTopology.isHostProvidedDesktopEffect` matches. Before that they opened —

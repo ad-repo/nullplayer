@@ -1064,10 +1064,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // playlist slides into and the 124 px its equaliser drops into — and macOS derives a
         // borderless window's shadow from whatever content it last cached. On a shape that changes
         // with every drawer and every repaint that gets stale, and a stale shadow over a
-        // transparent region reads as a dark box the size of the window. There is no drop shadow
-        // in Windows Media Player to lose.
+        // transparent region reads as a dark box the size of the window. So the window's own
+        // shadow stays off and `SkinWindowShadow` draws one from the artwork's outline instead.
         presentation.window.hasShadow = false
-        presentation.window.invalidateShadow()
+        presentation.shadow.attach(to: presentation.window, name: "wmp:\(scene.viewID)") {
+            [weak presentation] in presentation?.mainView?.outlineLayers ?? []
+        }
         // **Only the player is the session's view (W96).** `theme.openView` opens a second window,
         // so persisting whatever is presented recorded a panel as the thing to restore: `WoW` opens
         // its playlist that way, and quitting with it open restored a playlist panel with an empty
@@ -1290,6 +1292,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             presentation.interactionState = state
             self.renderInteraction(presentation, state: state, changed: changed)
         }
+        view.onOutlineMayHaveMoved = { [weak presentation] trigger in
+            presentation?.shadow.invalidateShape(trigger)
+        }
         if presentation.isPlayer { unskinnedView = nil }
         // A present is a new view (or a reload of this one): the previous view's scripted size is
         // not this one's, and `apply` sizes the window from the scene it was handed.
@@ -1305,7 +1310,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             presentation.isApplyingSceneSize = true
             presentation.window.setFrame(frame, display: true)
             presentation.isApplyingSceneSize = false
-            presentation.window.invalidateShadow()
             pendingRestoredFrame = nil
             pendingRestoredViewID = nil
         } else {
@@ -1553,10 +1557,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         presentation.isApplyingSceneSize = true
         window.setFrame(frame, display: true)
         presentation.isApplyingSceneSize = false
-        // A borderless, non-opaque window keeps the shadow it had at its previous frame. Corona
-        // resizes the view when a drawer opens, so without this the old outline is left behind
-        // beside the window as a ghost of the shape it used to be.
-        window.invalidateShadow()
     }
 
     func renderCurrentSize(_ presentation: WMPViewPresentation) {
@@ -1629,7 +1629,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     presentation.mainView?.updateListItems(scriptOutput.listItems)
                     presentation.mainView?.updateWidgetState(scriptOutput.widgetState)
                 }
-                presentation.mainView?.present(result.image, overlay: result.overlayImage, silhouette: result.silhouetteMask, scene: scene, traceSource: "load")
+                presentation.mainView?.present(result, scene: scene, traceSource: "load")
                 presentation.mainView?.refreshHostState(self.host.snapshot)
                 if let scriptOutput {
                     let switchedView = self.applyHostCommands(scriptOutput.hostCommands,
@@ -2573,8 +2573,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                           presentation.activeScene?.canvasSize == canvas else { continue }
                     presentation.activeScene = scene
                     self?.startAnimation(presentation, for: scene)
-                    presentation.mainView?.present(result.image, overlay: result.overlayImage, silhouette: result.silhouetteMask,
-                                                   scene: scene, dirtyBounds: scene.dirtyBounds,
+                    presentation.mainView?.present(result, scene: scene, dirtyBounds: scene.dirtyBounds,
                                                    traceSource: "interaction")
                     return
                 }
@@ -2984,7 +2983,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 presentation.presentedWidgetState = presented.widgetState
                 presentation.mainView?.updateListItems(presented.listItems)
                 presentation.mainView?.updateWidgetState(presented.widgetState)
-                presentation.mainView?.present(result.image, overlay: result.overlayImage, silhouette: result.silhouetteMask, scene: scene, traceSource: "transaction")
+                presentation.mainView?.present(result, scene: scene, traceSource: "transaction")
                 self.arbitrateVideoSurface()
             } catch { recordScriptDiagnostics([.init(code: "scene-transaction", message: error.localizedDescription)]) }
         }
@@ -3443,8 +3442,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 self.startAnimation(presentation, for: scene)
                 presentation.mainView?.updateListItems(output.listItems)
                 presentation.mainView?.updateWidgetState(output.widgetState)
-                presentation.mainView?.present(rendered.image, overlay: rendered.overlayImage, silhouette: rendered.silhouetteMask,
-                                               scene: scene, traceSource: "timer")
+                presentation.mainView?.present(rendered, scene: scene, traceSource: "timer")
                 self.arbitrateVideoSurface()
             } catch { self.recordScriptDiagnostics([.init(code: "timer-transaction", message: error.localizedDescription)]) }
         }
@@ -3558,8 +3556,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             presentation.presentedWidgetState = output.widgetState
             presentation.mainView?.updateListItems(output.listItems)
             presentation.mainView?.updateWidgetState(output.widgetState)
-            presentation.mainView?.present(rendered.image, overlay: rendered.overlayImage, silhouette: rendered.silhouetteMask,
-                                           scene: scene, traceSource: "tween")
+            presentation.mainView?.present(rendered, scene: scene, traceSource: "tween")
             arbitrateVideoSurface()
         } catch {
             recordScriptDiagnostics([.init(code: "tween-frame",
@@ -3696,7 +3693,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         let presentStarted = Date()
         guard presentation.activeScene == scene else { return }
         presentation.animationFrame = (scene, dirty, rendered)
-        view.present(rendered.image, overlay: rendered.overlayImage, silhouette: rendered.silhouetteMask, scene: scene, dirtyBounds: dirty, traceSource: "animation")
+        view.present(rendered, scene: scene, dirtyBounds: dirty, traceSource: "animation")
         if Self.animationTrace {
             presentation.animationTraceRenderSeconds += presentStarted.timeIntervalSince(renderStarted)
             presentation.animationTracePresentSeconds += Date().timeIntervalSince(presentStarted)
@@ -3960,7 +3957,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
         for presentation in materializer.openPresentations {
             setWindowSize(presentation, presentation.skinSpaceSize)
-            presentation.window.invalidateShadow()
             renderCurrentSize(presentation)
         }
     }

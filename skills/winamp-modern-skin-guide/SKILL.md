@@ -98,6 +98,7 @@ top to bottom. Rows are grouped by area; within a group, follow the most specifi
 | Window restores at the wrong size or one skin inherits another's frame | [reference/rendering.md](reference/rendering.md) → *A .wal window's size is still the skin's* |
 | Container/layout writes do not move or size their window | [reference/rendering.md](reference/rendering.md) → *A container's x/y/w/h are its window's* |
 | A bare outline rectangle opens beside the player (drop shadow, snap preview) | [reference/components.md](reference/components.md) → *A window that only fakes a Windows desktop effect* |
+| NullPlayer's own drop shadow is missing, stale, a white band, or a ghost of an older frame | [reference/rendering.md](reference/rendering.md) → *The window's drop shadow* |
 
 ### Drawing: sprites, colour, text
 

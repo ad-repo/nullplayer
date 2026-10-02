@@ -2823,6 +2823,35 @@ final class WasabiSceneRenderer {
     static let maximumCachedCrops = 512
     var cropCache: [CropKey: (source: CGImage, crop: CGImage)] = [:]
 
+    /// Set only inside `drawOutline(in:)`: an animated layer then paints its **core** — the pixels
+    /// opaque in every one of its frames — instead of its current frame.
+    ///
+    /// Anaheim's mini player *is* an animated layer, a 130x130 ball whose ears `vis_mini.maki` flaps
+    /// to the music ~30 times a second by stepping frames. Steps are not shape events and must not
+    /// be (they are the hottest repaint path a skin has), so a shadow cut from whichever frame it
+    /// last sampled kept the ears' old outline as a white ghost behind the ball. The core never
+    /// changes while the layer plays, so the ball casts its shadow and the ears, which are always
+    /// drawn over it, cast none and leave nothing behind.
+    private(set) var drawsAnimationCores = false
+    /// One core per sheet and grid, built on first use. The source is held so its address cannot
+    /// be reused by another image while the entry lives.
+    var animationCoreCache: [AnimationCoreKey: (source: CGImage, core: CGImage)] = [:]
+
+    /// The window drop shadow's outline pass (`WinampModernMainView+Shadow`): `draw(in:)` into a
+    /// bitmap at one pixel per context unit, with every animated layer at its core. Whatever the
+    /// next real draw reads is put back.
+    func drawOutline(in context: CGContext) {
+        // A bitmap's device space is its pixels (B80).
+        let pixelsPerUnit = devicePixelsPerContextUnit
+        devicePixelsPerContextUnit = 1
+        drawsAnimationCores = true
+        defer {
+            devicePixelsPerContextUnit = pixelsPerUnit
+            drawsAnimationCores = false
+        }
+        draw(in: context)
+    }
+
     /// `<vis mode>` — which visualization the skin wants in this box, and whether it wants one at all.
     ///
     /// `1` is the **spectrum analyzer** and `2` the **oscilloscope**; `0`/`3` are off, and an

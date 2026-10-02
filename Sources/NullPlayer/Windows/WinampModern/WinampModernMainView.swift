@@ -137,6 +137,10 @@ final class WinampModernMainView: NSView {
     /// auxiliary container, each hosted window — is one of these views, and each answers for itself.
     private var activeStateObservers: [NSObjectProtocol] = []
     private(set) var isTornDown = false
+
+    /// This window's drop shadow, built from the scene's outline (`WinampModernMainView+Shadow`).
+    let windowShadow = SkinWindowShadow(minimumInterval: WinampModernMainView.shadowShapeInterval)
+    var shadowOutlineGate = WinampModernShadowOutlineGate()
     private var sceneIsVisible = false
     var canvasSizeDidChange: ((CGSize) -> Void)?
     /// A click landed in this window: dismiss any `autoclose="1"` popup that is not this one. The
@@ -357,6 +361,7 @@ final class WinampModernMainView: NSView {
         renderer.restorePersistedFramePositions()
         setFrameSize(scaledCanvasSize)
         canvasSizeDidChange?(scaledCanvasSize)
+        windowShadow.invalidateShape("layout")
         // A different layout is a different scene, so nothing carries over: every object in it hears
         // its geometry for the first time, exactly as it does when the window first comes up.
         dispatchResize(seeding: true)
@@ -380,6 +385,7 @@ final class WinampModernMainView: NSView {
         setFrameSize(scaledCanvasSize)
         canvasSizeDidChange?(scaledCanvasSize)
         canvasDidChange()
+        windowShadow.invalidateShape("canvas")
     }
 
     /// The window this view fills was resized from outside the scene — AppKit's edge band, a drag
@@ -582,6 +588,7 @@ final class WinampModernMainView: NSView {
             // Scoped: a warped layer on the *main* window fires this 30 times a second, and this
             // window has no business repainting for it.
             if let object, !self.owns(object) { return }
+            self.graphMayHaveMovedShadowOutline()
             // A window nobody can see does not paint for the skin's animation: it catches up in one
             // pass when it comes back (`occlusionDidChange`).
             guard self.isOnScreen else {
@@ -622,6 +629,7 @@ final class WinampModernMainView: NSView {
             // A script can also turn Layer FX on outside load (switching Defix's display style does
             // exactly that), and the warp needs the repaint clock from that moment on.
             self?.updateAnimationTimer()
+            self?.graphMayHaveMovedShadowOutline()
         }
         // The light path a warped layer takes 30 times a second: repaint, nothing else.
         scripts.repaintRequested = { [weak self] in self?.needsDisplay = true }
@@ -880,6 +888,14 @@ final class WinampModernMainView: NSView {
     /// does not exist yet.
     var willReconcileSurfaces: (() -> Void)?
 
+    /// Every route that sizes the window — the user's drag, the tiler, a script, a UI Size change —
+    /// ends here, and the outline is drawn at this size.
+    override func setFrameSize(_ newSize: NSSize) {
+        let resized = newSize != frame.size
+        super.setFrameSize(newSize)
+        if resized { windowShadow.invalidateShape("resize") }
+    }
+
     override func layout() {
         super.layout()
         willReconcileSurfaces?()
@@ -924,7 +940,7 @@ final class WinampModernMainView: NSView {
         super.viewDidMoveToWindow()
         activeStateObservers.forEach(NotificationCenter.default.removeObserver)
         activeStateObservers.removeAll()
-        guard let window else { return }
+        guard let window else { windowShadow.detach(); return }
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
             activeStateObservers.append(NotificationCenter.default.addObserver(
                 forName: name, object: window, queue: .main) { [weak self] _ in
@@ -937,6 +953,7 @@ final class WinampModernMainView: NSView {
                 self?.occlusionDidChange()
             })
         occlusionDidChange()
+        attachWindowShadow(to: window)
         needsDisplay = true
     }
 
@@ -2494,6 +2511,7 @@ final class WinampModernMainView: NSView {
         webNavigationRequested = nil
         activeStateObservers.forEach(NotificationCenter.default.removeObserver)
         activeStateObservers.removeAll()
+        windowShadow.detach()
         isTornDown = true
     }
 

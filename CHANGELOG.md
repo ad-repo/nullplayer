@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.31.2
+
+- **Drop shadows for Windows Media Player and Modern skins** — `.wmz` and `.wal` skin windows had no
+  shadow at all, so they looked cut out and flat next to the rest of the app. Every skin window now
+  casts a soft macOS-style shadow that follows the skin's own shape, including drawers, panes and
+  layout switches, and stays put while you drag. Animated parts such as Anaheim's flapping ears do
+  not leave a ghost behind. **Windows > Window Shadows** turns it off. Classic and Original windows
+  are unchanged.
+
 ## 0.31.1
 
 - **Sonos group volume keeps each room's level** — after changing one room's volume in a multi-room
