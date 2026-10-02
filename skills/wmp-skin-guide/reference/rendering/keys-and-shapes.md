@@ -221,3 +221,34 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   CoreGraphics" by reversing the rows mirrors the mask and clips the half it should keep. That is
   W47 arriving by a second route, and only a **top/bottom** fixture can see it: a left/right one is
   identical under a vertical flip, and so is a horizontal position ramp.
+
+- **A keyed window's outline is traced, smoothed along its own length and antialiased (W316).** A
+  key keeps or drops a whole pixel, so the window's edge is a staircase two device pixels to a step
+  on a 2x screen. `WMPOutlineFeather` runs on the presented layers after `WMPRenderer` rasterises
+  them: the skin-pixel grid (in where any device pixel is at least half opaque) is traced as closed
+  polygons along pixel edges, each vertex is averaged with up to four neighbours either side along
+  the polygon, twice, and held within half a skin pixel of where it was traced, and the polygons are
+  filled antialiased at device resolution. Opaque pixels are multiplied by that coverage; faint
+  pixels in skin pixels *outside* the traced outline that it covers are filled from the nearest
+  opaque pixel; nothing more than a skin pixel from the outline moves. **Four clauses, each measured
+  on the corpus**:
+  - *Along the outline, not over the grid.* A 1-2-1 kernel over the grid trimmed one device pixel
+    per step: fine on 45° edges (`AlienMorph`, `xXx_night_vision_redx`), no visible change on
+    `BlueCrush_MP7`'s one-in-five flanks, which was the report.
+  - *Small artwork is pinned.* A vertex whose edge borders a skin pixel with fewer than five of its
+    3x3 on its own side stays put — a staircase step has six — and a pin bounds its neighbours'
+    windows. Unpinned, all 27 of `Erektorset`'s one-pixel lines thinned and 71 of its 120 slits
+    filled at 1x; pinning only the corner sagged the edges beside it into a wave.
+  - *Fill outside only.* Filling faint pixels inside the traced outline fattened `Heart_Butterfly`'s
+    antialiased dotted string into beads.
+  - *Colour is the artist's.* Recolouring the rim from one pixel in did not remove `BlueCrush_MP7`'s
+    pale beads and would erase a deliberate one-pixel border, so the rim is left as drawn.
+  The feather is a few thousand pixel edits (`Feather.cuts`, `.growth`), not a mask. A repaint
+  draws over the layers *as drawn* (`WMPRenderResult.drawn`, the presented images themselves when
+  nothing was feathered) and reuses `outlineFeather` while its dirty rect's alpha is unchanged —
+  feathering a feathered frame would erode it on every marquee tick. `alphaChanged`, the effects
+  silhouette and the window shadow all read the result consistently: the first compares drawn
+  alpha, the other two the presented layers. `WMPHostedFrameTemplate.renderPieces` renders with
+  `featheringOutline: false`, because its pieces meet the client hole. Integer backing scales only (a Mac has 1x and 2x). `WMP_OUTLINE_FEATHER=0` is
+  the A/B switch; `WMPOutlineFeatherTests` and `WMPOutlineGoldenImageTests` pin it, the second with
+  committed hard and feathered goldens and a comparison sheet per synthetic fixture.

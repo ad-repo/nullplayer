@@ -14,6 +14,10 @@
   Modern skin was showing, or any Modern skin picked from another family, was only remembered
   until **Switch to …** was used. **Switch to …** stays as the one-click way back to a family's
   last skin.
+- **Smoother edges on shaped Windows Media Player skins** — a skin cut out by a colour key no
+  longer has a stair-stepped outline. Its edge is now traced and smoothed along its length, so
+  curves and slopes are antialiased on Retina and non-Retina screens alike. Thin lines, small gaps
+  and square corners keep their shape exactly, and the skin's own artwork is left as drawn.
 
 ## 0.31.1
 

@@ -25,23 +25,49 @@ struct WMPRenderResult {
     /// painted over. The window's drop shadow is rebuilt from the outline, so a marquee over opaque
     /// artwork must leave this `false` (`SkinWindowShadow`).
     let alphaChanged: Bool
+    /// The layers as drawn, before `outlineFeather` antialiased their outline — the very images
+    /// in `image` and `overlayImage` when nothing was feathered. A repaint draws over these, never
+    /// over the presented layers: the feather is read off the opaque set, so feathering a
+    /// feathered frame would erode it a little more on every repaint.
+    let drawn: WMPRenderLayers
+    let outlineFeather: WMPOutlineFeather.Feather?
     let renderMilliseconds: Double
     let backingScale: CGFloat
     let imageMetrics: WMPImageStoreMetrics
     let wasRenderedOnMainThread: Bool
 
+    /// `drawn` defaults to the presented layers, which is what a render that feathered nothing
+    /// drew.
     init(image: CGImage, overlayImage: CGImage? = nil, silhouetteMask: CGImage? = nil,
-         alphaChanged: Bool = true, renderMilliseconds: Double,
+         alphaChanged: Bool = true, drawn: WMPRenderLayers? = nil,
+         outlineFeather: WMPOutlineFeather.Feather? = nil,
+         renderMilliseconds: Double,
          backingScale: CGFloat, imageMetrics: WMPImageStoreMetrics,
          wasRenderedOnMainThread: Bool) {
         self.image = image
         self.overlayImage = overlayImage
         self.silhouetteMask = silhouetteMask
         self.alphaChanged = alphaChanged
+        self.drawn = drawn ?? WMPRenderLayers(image: image, overlay: overlayImage)
+        self.outlineFeather = outlineFeather
         self.renderMilliseconds = renderMilliseconds
         self.backingScale = backingScale
         self.imageMetrics = imageMetrics
         self.wasRenderedOnMainThread = wasRenderedOnMainThread
+    }
+}
+
+/// A render's layers: the artwork under the effects surface and, in a scene that hosts one, the
+/// artwork over it (`WMPRenderResult.overlayImage`).
+struct WMPRenderLayers {
+    let image: CGImage
+    let overlay: CGImage?
+
+    /// These layers with `feather` applied to each, or these layers when there is none.
+    func feathered(by feather: WMPOutlineFeather.Feather?) -> WMPRenderLayers {
+        guard let feather else { return self }
+        return WMPRenderLayers(image: WMPOutlineFeather.apply(feather, to: image),
+                               overlay: overlay.map { WMPOutlineFeather.apply(feather, to: $0) })
     }
 }
 
@@ -77,10 +103,12 @@ struct WMPRenderer: @unchecked Sendable {
                 clock: TimeInterval = 0,
                 slotClocks: [WMPAnimationSlot: TimeInterval] = [:],
                 reusing previous: WMPRenderResult? = nil,
-                dirty: WMPRect? = nil) async throws -> WMPRenderResult {
+                dirty: WMPRect? = nil,
+                featheringOutline: Bool = WMPOutlineFeather.isEnabled) async throws -> WMPRenderResult {
         try await Task.detached(priority: .userInitiated) {
             try renderOffMain(scene: scene, backingScale: backingScale, clock: clock,
-                              slotClocks: slotClocks, reusing: previous, dirty: dirty)
+                              slotClocks: slotClocks, featheringOutline: featheringOutline,
+                              reusing: previous, dirty: dirty)
         }.value
     }
 
@@ -192,7 +220,8 @@ struct WMPRenderer: @unchecked Sendable {
               clock: TimeInterval = 0) async throws -> WMPRenderDumpRecord {
         try await Task.detached(priority: .userInitiated) {
             let result = try renderOffMain(scene: scene, backingScale: backingScale, clock: clock,
-                                           splitAtEffects: false)
+                                           splitAtEffects: false,
+                                           featheringOutline: WMPOutlineFeather.isEnabled)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let safeID = scene.viewID.map { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "_" }
             // The clock is in the name only when it is non-zero, so every still dump keeps the
@@ -228,6 +257,7 @@ struct WMPRenderer: @unchecked Sendable {
                                clock: TimeInterval = 0,
                                slotClocks: [WMPAnimationSlot: TimeInterval] = [:],
                                splitAtEffects: Bool = true,
+                               featheringOutline: Bool,
                                reusing previous: WMPRenderResult? = nil,
                                dirty: WMPRect? = nil) throws -> WMPRenderResult {
         guard backingScale > 0, backingScale.isFinite,
@@ -253,8 +283,9 @@ struct WMPRenderer: @unchecked Sendable {
         // none is a blend of the old frame and the new one.
         let repaint: (previous: WMPRenderResult, pixels: CGRect)? = {
             guard let previous, let dirty, previous.backingScale == backingScale,
-                  previous.image.width == pixelWidth, previous.image.height == pixelHeight,
-                  (previous.overlayImage != nil) == (layers != nil) else { return nil }
+                  previous.drawn.image.width == pixelWidth,
+                  previous.drawn.image.height == pixelHeight,
+                  (previous.drawn.overlay != nil) == (layers != nil) else { return nil }
             let pixels = CGRect(x: dirty.x * backingScale, y: dirty.y * backingScale,
                                 width: dirty.width * backingScale,
                                 height: dirty.height * backingScale).integral
@@ -270,7 +301,7 @@ struct WMPRenderer: @unchecked Sendable {
         let image = try rasterize(below, scene: scene, pixelWidth: pixelWidth,
                                   pixelHeight: pixelHeight, backingScale: backingScale, clock: clock,
                                   slotClocks: slotClocks, grounds: scene.effectsGrounds,
-                                  base: repaint.map { ($0.previous.image, $0.pixels) })
+                                  base: repaint.map { ($0.previous.drawn.image, $0.pixels) })
         // **A windowed visualization is not something the skin can draw over.** Its rects are
         // punched out of the overlay after it is rasterized, so the surface hosted underneath shows
         // through and whatever the skin painted *before* the effects node stands where the
@@ -281,32 +312,51 @@ struct WMPRenderer: @unchecked Sendable {
                           slotClocks: slotClocks, punchingOut: scene.windowedEffectsRects,
                           underneath: image,
                           base: repaint.flatMap { repaint in
-                              repaint.previous.overlayImage.map { ($0, repaint.pixels) } })
+                              repaint.previous.drawn.overlay.map { ($0, repaint.pixels) } })
         }
+        let drawn = WMPRenderLayers(image: image, overlay: overlay)
         // Whether the repaint moved the window's alpha, compared only inside the rect it has just
-        // drawn. It decides both the effects silhouette below and the window's drop shadow.
+        // drawn. It decides the outline feather, the effects silhouette below and the window's
+        // drop shadow. Compared as drawn: the feather is a function of exactly this alpha, so
+        // where it is unchanged the presented alpha is too.
         let alphaChanged: Bool
         if let repaint {
             let pixels = repaint.pixels
-            alphaChanged = Self.alpha(of: repaint.previous.image, in: pixels)
+            alphaChanged = Self.alpha(of: repaint.previous.drawn.image, in: pixels)
                     != Self.alpha(of: image, in: pixels)
-                || Self.alpha(of: repaint.previous.overlayImage, in: pixels)
+                || Self.alpha(of: repaint.previous.drawn.overlay, in: pixels)
                     != Self.alpha(of: overlay, in: pixels)
         } else {
             alphaChanged = true
         }
+        // **The feather and the silhouette read nothing but that alpha**, so a repaint that left
+        // it alone keeps both from the frame it drew over — a marquee over opaque artwork changes
+        // neither.
+        let kept = alphaChanged ? nil : repaint?.previous
+        let feather: WMPOutlineFeather.Feather?
+        if !featheringOutline {
+            feather = nil
+        } else if let kept {
+            feather = kept.outlineFeather
+        } else {
+            feather = WMPOutlineFeather.feather(layers: [image, overlay],
+                                                canvasSize: scene.canvasSize,
+                                                backingScale: backingScale,
+                                                solid: scene.windowedEffectsRects)
+        }
+        let presented = drawn.feathered(by: feather)
         let silhouette: CGImage?
         if layers == nil {
             silhouette = nil
-        } else if let repaint, !alphaChanged {
-            // The silhouette reads nothing but these layers' alpha, so identical alpha is an
-            // identical silhouette — a marquee over opaque artwork never changes it.
-            silhouette = repaint.previous.silhouetteMask
+        } else if let kept {
+            silhouette = kept.silhouetteMask
         } else {
-            silhouette = Self.effectsSilhouette(scene: scene, layers: [image, overlay])
+            silhouette = Self.effectsSilhouette(scene: scene,
+                                                layers: [presented.image, presented.overlay])
         }
-        return WMPRenderResult(image: image, overlayImage: overlay, silhouetteMask: silhouette,
-            alphaChanged: alphaChanged,
+        return WMPRenderResult(image: presented.image, overlayImage: presented.overlay,
+            silhouetteMask: silhouette, alphaChanged: alphaChanged,
+            drawn: drawn, outlineFeather: feather,
             renderMilliseconds: (CFAbsoluteTimeGetCurrent() - started) * 1_000,
             backingScale: backingScale, imageMetrics: imageStore.metrics,
             wasRenderedOnMainThread: Thread.isMainThread)

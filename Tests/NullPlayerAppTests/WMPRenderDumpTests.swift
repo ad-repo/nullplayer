@@ -155,6 +155,15 @@ struct WMPProbe {
         return values.isEmpty ? [0] : values
     }
 
+    /// The backing scale a render dump is drawn at. The app draws at the screen's, and a defect
+    /// that lives in device pixels — a keyed outline's staircase on a 2x display (W316) — is not
+    /// in a 1x dump at all. The filename already carries `@<scale>x`.
+    var dumpScale: CGFloat {
+        guard let value = Double(env["WMP_RENDER_SCALE"] ?? ""), value.isFinite,
+              value > 0, value <= 4 else { return 1 }
+        return CGFloat(value)
+    }
+
     /// `<view>@x,y[;x,y…]`, where any one entry may instead be a `>`-joined path — `x,y>x,y>x,y` —
     /// which is a **drag**: press at the first point, move through the rest, release at the last.
     ///
@@ -1073,7 +1082,8 @@ enum WMPHarness {
                 // is now one line per view per outcome: stats, or FAILED when the scene never
                 // built at all.
                 do {
-                    let record = try await renderer.dump(scene: scene, to: dump, clock: clock)
+                    let record = try await renderer.dump(scene: scene, to: dump,
+                                                     backingScale: probe.dumpScale, clock: clock)
                     WMPHarnessOutput.emit("PNG \(viewID): \(record.pngFilename)")
                 } catch {
                     WMPHarnessOutput.emit("PNG \(viewID) FAILED \(oneLine(error))")

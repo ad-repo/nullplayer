@@ -404,6 +404,21 @@ Test audio files are located in `Tests/Fixtures/`:
 - `test-3min.mp3` - 3 minute track for seek tests
 - `test-metadata.mp3` - File with full ID3 tags
 
+### Golden images (`.wmz` window outline)
+
+`Tests/NullPlayerAppTests/Goldens/WMPOutline/` holds a **hard and a feathered** golden for each of
+four synthetic keyed windows (`shallow-flank`, `round-body`, `diagonal`, `small-artwork`) at 1x and
+2x, rendered through the real loader, scene builder and `WMPRenderer` by
+`WMPOutlineGoldenImageTests` — the hard one pins the key and the 2x resample, the feathered one pins
+`WMPOutlineFeather`. Beside them, `<scene>-compare@<n>x.png` is the hard | feathered sheet over a dark
+and a light ground: read it, not the goldens, to judge a change. A failure writes
+`<golden>.actual.png` and `<golden>.compare.png` (golden | actual | diff in red) to
+`WMP_OUTLINE_GOLDEN_DUMP` or the temporary directory. An improvement fails exactly like a regression.
+
+```sh
+WMP_OUTLINE_GOLDEN_UPDATE=1 swift test --filter WMPOutlineGoldenImageTests
+```
+
 ### Golden images (Winamp Modern `.wal` renderer)
 
 `Tests/NullPlayerAppTests/Goldens/WinampModern/` holds five committed PNGs that
