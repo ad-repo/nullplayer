@@ -762,3 +762,21 @@ layouts — **exactly one** holder meets all three, and the sweep diff is one PN
 > size fix verified only in the harness is not verified. Waiting buys nothing here anyway: the
 > `<component>` is plain markup inside the layout, in the graph from the moment it is built, and its
 > box is relative to the canvas alone.
+
+#### The library window has a width floor of NullPlayer's, not the skin's
+
+The Media Library holder hosts NullPlayer's own browser (the Classic `PlexBrowserView`), which is
+laid out for its own room, not for the skin's. `WasabiSceneRenderer.libraryFloorWidth` gives any
+container whose `component=` is the library GUID a minimum width at which its holder is
+`libraryHolderMinimumWidth` (440 skin px). It feeds `layoutMinimumSize`, so a drag, a restored frame
+and a script's `resize()` are all clamped to it, and `libraryRoomFittedSize` in both canvas fits, so
+the window *opens* at the floor before the tiler places it.
+
+- **440 is measured, not derived.** At 344 (the Classic library window's floor) the tab labels
+  overlap: the tab row is sized from bitmap glyph widths while the `.wal` style draws a wider font.
+  At 440 the full labels fit at the default Text Size; a larger Text Size can still crowd them.
+- **The floor applies even when the declared size clears it.** Itemskin declares `MLibrary` 660×274
+  and its own script shrinks it to the 330×137 minimum on open; a floor gated on the declared size
+  never fired. Its glued frame window (`cont.clear.ml`) follows the content to the floor (493 wide).
+- Anaheim Player 01 declares 260×180 with a 40px frame — the browser opened in a 220px hole; it now
+  opens 480 wide.

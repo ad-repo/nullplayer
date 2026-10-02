@@ -18,6 +18,11 @@
   longer has a stair-stepped outline. Its edge is now traced and smoothed along its length, so
   curves and slopes are antialiased on Retina and non-Retina screens alike. Thin lines, small gaps
   and square corners keep their shape exactly, and the skin's own artwork is left as drawn.
+- **The library no longer opens in a tiny window on some Modern skins** — skins such as Anaheim
+  Player 01 and Itemskin opened the Library Browser 260–330 wide, too narrow for its tabs and
+  columns. A Modern skin's library window now has a minimum width that fits the browser, whether
+  the skin declares a smaller size or its own script shrinks the window. Other windows, and
+  Classic and Original skins, are unchanged.
 
 ## 0.31.1
 

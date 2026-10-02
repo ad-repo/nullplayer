@@ -903,7 +903,7 @@ final class WasabiSceneRenderer {
         let authored = layout.scriptAuthoredMinimumAxes
         let width = authored.contains("minimum_w")
             ? declared.width
-            : max(max(declared.width, protective.width), content.width)
+            : max(max(declared.width, protective.width), content.width, libraryFloorWidth ?? 0)
         let height = authored.contains("minimum_h")
             ? declared.height
             : max(max(declared.height, protective.height), content.height)
@@ -973,6 +973,7 @@ final class WasabiSceneRenderer {
     func layoutBoundsDidChange() {
         protectiveMinimumCache.removeAll()
         contentFloorCache = nil
+        libraryFloorCache.removeAll()
     }
 
     /// The smallest canvas at which the scene still lays itself out the way its author drew it.
@@ -4803,8 +4804,8 @@ final class WasabiSceneRenderer {
               storedCanvasSize == autoFittedCanvas else { return }
         isFittingContent = true
         defer { isFittingContent = false; hasFittedContent = true }
-        let fitted = componentRoomFittedSize(contentFittedSize(defaultSize(for: layout), for: layout),
-                                             for: layout)
+        let fitted = libraryRoomFittedSize(
+            componentRoomFittedSize(contentFittedSize(defaultSize(for: layout), for: layout), for: layout))
         guard fitted != storedCanvasSize else { return }
         storedCanvasSize = fitted
         autoFittedCanvas = fitted
@@ -4840,7 +4841,7 @@ final class WasabiSceneRenderer {
               storedCanvasSize == autoFittedCanvas else { return }
         isFittingComponentRoom = true
         defer { isFittingComponentRoom = false; hasFittedComponentRoom = true }
-        let fitted = componentRoomFittedSize(storedCanvasSize, for: layout)
+        let fitted = libraryRoomFittedSize(componentRoomFittedSize(storedCanvasSize, for: layout))
         guard fitted != storedCanvasSize else { return }
         storedCanvasSize = fitted
         autoFittedCanvas = fitted
@@ -4890,6 +4891,52 @@ final class WasabiSceneRenderer {
                               size.height + Self.componentRoomExtent - tallest)
         }
         return size
+    }
+
+    /// The narrowest library holder NullPlayer will host its browser in, in skin pixels. The embedded
+    /// browser is the Classic `PlexBrowserView`, laid out for its own room, not a Winamp skin's.
+    /// Measured on Anaheim at the default Text Size: at 344 (the Classic window's floor) the tab
+    /// labels overlap, because the `.wal` style's font is wider than the bitmap glyphs the tab row is
+    /// sized from; at 440 the row fits with its full labels.
+    private static let libraryHolderMinimumWidth: CGFloat = 440
+    private var libraryFloorCache: [WasabiObjectID: CGFloat?] = [:]
+
+    /// The window width at which the active layout's library holder gets
+    /// `libraryHolderMinimumWidth` — `nil` unless the container exists to host the Media Library.
+    /// Anaheim Player 01 declares its `MLibrary` 260 wide with a
+    /// 40px frame, so the browser opened in a 220px hole. A skin's size is overruled here because
+    /// the thing in the hole is NullPlayer's, not the skin's.
+    private var libraryFloorWidth: CGFloat? {
+        if let cached = libraryFloorCache[layout.stableID] { return cached }
+        // Seeded first: the measurement resolves a scene, and a re-entrant read must not measure again.
+        libraryFloorCache[layout.stableID] = .some(nil)
+        let value = computeLibraryFloorWidth()
+        libraryFloorCache[layout.stableID] = value
+        return value
+    }
+
+    private func computeLibraryFloorWidth() -> CGFloat? {
+        guard WinampModernComponentRegistry.kind(for: container.attributes["component"]) == .library
+        else { return nil }
+        // Measured at the declared size; a holder's width tracks the canvas one-for-one (`relatw`),
+        // so the shortfall there is the shortfall at any width.
+        let declared = defaultSize(for: layout)
+        let holders = sceneNodes(canvas: declared).filter {
+            WinampModernComponentRegistry.isHolderElement($0.object.typeName) && isVisible($0.object)
+        }
+        // Returned even when the declared size already clears it: it is a floor, and a script or a
+        // restored frame can take the window below its declared size. Itemskin declares its library
+        // 660 wide and its own script shrinks it to the 330 minimum on open.
+        guard let widest = holders.map({ $0.frame.width }).max() else { return nil }
+        let wanted = declared.width + Self.libraryHolderMinimumWidth - widest
+        return min(Self.optionalDimension(layout.attributes["maximum_w"]) ?? .greatestFiniteMagnitude, wanted)
+    }
+
+    /// `size` widened to `libraryFloorWidth`, so the window *opens* at the floor rather than being
+    /// grown to it after the tiler has already placed it.
+    private func libraryRoomFittedSize(_ size: CGSize) -> CGSize {
+        guard let floor = libraryFloorWidth, size.width < floor else { return size }
+        return CGSize(width: floor, height: size.height)
     }
 
     /// Grow a layout that describes **no** size of its own to the extent of the content it lays out.
