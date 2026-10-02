@@ -709,10 +709,10 @@ untouched; audio state is deliberately never snapshotted.
 `setModernFamilyMode(_:)` (Original and Original-Metal), plus the skin-driven switches
 `selectClassicSkin` / `selectModernFamilySkin(_:)`
 (picking a skin for the other mode switches into it). All call
-`WindowManager.reloadUI(toModernUI:)`. Classic **UI Size** changes are also live
+`WindowManager.reloadUI(to:)`. Classic **UI Size** changes are also live
 (see the UI Size Mode section) — nothing in the UI still requires a relaunch.
 
-**`WindowManager.reloadUI(toModernUI:)`** orchestration:
+**`WindowManager.reloadUI(to:)`** orchestration:
 1. `captureModeDependentLayout()` — snapshot which mode-dependent windows are open + frames; snapshot Compact Mode.
 2. `teardownModeDependentWindows()` — synchronous; completion gates recreation. Orders out, calls `prepareForUITeardown()` on each controller (cancels tasks/timers, stops render loops, unregisters audio consumers), detaches docked children, `close()` + nils the mode-dependent controllers, clears drag/snap/dock state, and flushes the `ObjectIdentifier`-keyed geometry caches. **Preserves `videoPlayerWindowController`** (mode-independent — closing it stops playback/casts).
 3. Flip `isModernUIEnabled` — the `show*()` paths read it to choose classic vs. modern controllers, so it must change *between* teardown and recreate.
@@ -806,7 +806,7 @@ These are subtle and only reproduce with multiple Spaces / a fullscreen app on a
 
 ### Live UI switch (Classic↔Modern) while in Compact Mode
 
-`reloadUI(toModernUI:)` must not naively call `exitCompactMode()` then `enterCompactMode()`:
+`reloadUI(to:)` must not naively call `exitCompactMode()` then `enterCompactMode()`:
 
 - `exitCompactMode` restores asynchronously (state stays `.exiting` until a deferred block), so a synchronous re-enter hits the `.regular` guard and is silently dropped. `exitCompactMode` is **completion-based**; run the teardown/rebuild/re-enter inside the completion.
 - Pass `exitCompactMode(restoreRegularWindows: false)` on this path: re-showing the still-hidden `.managed` regular windows would pull the user to whatever Space they live on. Derive the rebuild snapshot from the pre-compact capture (`modeDependentLayout(from: regularWindowSnapshot)`) instead of the live (hidden) windows.

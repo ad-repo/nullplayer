@@ -8,6 +8,12 @@
   layout switches, and stays put while you drag. Animated parts such as Anaheim's flapping ears do
   not leave a ghost behind. **Windows > Window Shadows** turns it off. Classic and Original windows
   are unchanged.
+- **Picking a skin always switches to its family** — choosing a skin from any family's list in the
+  Skins menu, or loading one with that family's **Load Skin...**, now switches to that family
+  straight away, whatever is on screen. Before, a Classic skin picked while a Media Player or
+  Modern skin was showing, or any Modern skin picked from another family, was only remembered
+  until **Switch to …** was used. **Switch to …** stays as the one-click way back to a family's
+  last skin.
 
 ## 0.31.1
 

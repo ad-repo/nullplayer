@@ -8424,7 +8424,7 @@ class WindowManager {
     }
     #endif
 
-    /// Switch between Classic, Modern, and Metal UI in-process, with **no app restart**.
+    /// Switch the live UI to `targetMode` in-process, with **no app restart**.
     ///
     /// This is the production live-switch built on the same teardown/rebuild primitive proven
     /// by the DEBUG recreate action, with mode-change semantics layered on:
@@ -8441,12 +8441,8 @@ class WindowManager {
     /// is owned here (not by any window), so playlist / current track / seek / play-pause continue
     /// across the switch — audio state is deliberately *not* snapshotted or restored. No-op if the
     /// requested mode is already running.
-    func reloadUI(toModernUI targetModern: Bool) {
-        reloadUI(to: targetModern ? .modern : .classic)
-    }
-
-    /// Switch the live UI to `targetMode`. When Compact Mode is active the actual swap is
-    /// deferred until compact teardown finishes, so callers that need to read the post-swap
+    ///
+    /// When Compact Mode is active the actual swap is deferred until compact teardown finishes, so callers that need to read the post-swap
     /// state (`uiMode`, `isRunningModernFamilyUI`) or rebuild window/skin state must pass
     /// `completion` — it runs after `performReloadUI`, on the main thread, in both the
     /// synchronous and deferred paths. It also fires when no switch is needed.
@@ -8724,7 +8720,7 @@ class WindowManager {
     }
 
     /// The actual mode-dependent window swap. Runs synchronously when not in Compact Mode, or as
-    /// the `exitCompactMode` completion when it was — see `reloadUI(toModernUI:)`.
+    /// the `exitCompactMode` completion when it was — see `reloadUI(to:)`.
     private func performReloadUI(to targetMode: PlayerUIMode, snapshot: ModeDependentLayoutSnapshot, reenterCompact: Bool,
                                  reenterCompactWindow: Bool = false,
                                  compactWindowTreatMainAsVisible: Bool = false,

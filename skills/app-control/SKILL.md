@@ -201,7 +201,7 @@ read -r WID _ X Y W H _ < <("$WH" windows --pid "$PID" --size 289x283)   # the s
 | `winhelper scroll <x> <y> <count> <delta> [line\|precise]` | `count` wheel events at one point; `precise` is a trackpad (points), `line` (the default) a mouse wheel (lines) |
 | `winhelper move <x> <y> …` | `mouseMoved` through the path, 250 ms apart |
 | `winhelper drag <x> <y> …` | press, `leftMouseDragged` through the path, release at the last point |
-| `osascript menu.applescript mode\|skin\|list\|closeaux <pid> …` | the Skins / Windows menu verbs |
+| `osascript menu.applescript mode\|skin\|load\|list\|current\|family\|closeaux <pid> …` | the Skins / Windows menu verbs. `skin` picks a skin (switching family if needed), `mode` presses "Switch to …", `load <sub> <path>` answers "Load … Skin..."'s open panel (types into it, so the build is raised first), `family` names the ticked family |
 | `osascript menu.applescript windowitems <pid>` | one `index\|name\|enabled\|checked` line per Windows-menu window toggle — block 1 minus Main Window, Debug Console and Recreate Windows (Debug), plus a `.wal` skin's own windows |
 | `osascript menu.applescript toggle <pid> <index> <name>` | presses (`AXPress`, menu unopened) Windows item `index`, erroring (exit non-zero, nothing clicked) if its name is no longer `name` |
 | `winhelper screens` | each display's `visibleFrame` as `x y w h scale`, in the same top-left points as `windows` |
@@ -382,6 +382,16 @@ Within Classic, and within Original/Metal (one family in the code), an open wind
 stretch across a skin change, as it always has. Pick windows by how their size is decided:
 `Spectrum Analyzer` (stack), `Visualizations` (side window), `Sonos Rooms` (own show path). About
 3–4 minutes each.
+
+### Skin family switching matrix
+
+`skills/app-control/scripts/skin-pick-matrix.py` checks the Skins menu's family switching through the
+real menus: a skin picked in every family from every other family, every "Switch to …" item, and
+"Load … Skin..." through the open panel. Each cell must tick the target family and skin, log a
+`reloadUI` switch exactly when the family changed, and show the family's own load evidence. 53
+cells, about three minutes, ending `SKIN-PICK MATRIX PASS|FAIL`. It saves and restores the debug
+defaults domain and deletes the `Matrix*` skins it imports. The load pass types into the open panel,
+so keep the keyboard free. Run it after any change to a Skins-menu action or to `reloadUI`.
 
 ### Window open / stretch / close matrix
 
