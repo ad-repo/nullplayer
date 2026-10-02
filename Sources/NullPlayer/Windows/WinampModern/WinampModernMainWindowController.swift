@@ -17,6 +17,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// Tells the skin when shuffle, repeat or crossfade moved from outside it.
     private var playbackOptionsObserver: NSObjectProtocol?
     private var trackLoadFailureObserver: NSObjectProtocol?
+    /// Carries each script-glued frame with its window for the length of a host drag.
+    private var dragObservers: [NSObjectProtocol] = []
+    /// The (leader, follower) pairs `attachGluedWindowsForDrag` linked, undone when the drag ends.
+    private var dragAttachedGluedWindows: [(leader: NSWindow, follower: NSWindow)] = []
     private var loadedSkin: WinampModernLoadedSkin?
     private var skinView: WinampModernMainView?
     private var host: WinampModernAudioEngineHost?
@@ -119,6 +123,16 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 self?.refreshBoundText()
                 self?.auxiliaryContainers.forEach { $0.view.needsDisplay = true }
             }
+        dragObservers = [
+            NotificationCenter.default.addObserver(forName: .windowDragDidBegin, object: nil,
+                                                   queue: .main) { [weak self] _ in
+                self?.attachGluedWindowsForDrag()
+            },
+            NotificationCenter.default.addObserver(forName: .windowDragDidEnd, object: nil,
+                                                   queue: .main) { [weak self] _ in
+                self?.detachGluedWindowsAfterDrag()
+            },
+        ]
         #if DEBUG
         if let localPath = UserDefaults.standard.string(forKey: "winampModernSkinPath"),
            !localPath.isEmpty {
@@ -1961,6 +1975,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         follower.setFrameOrigin(carried)
     }
 
+    /// Whether a script keeps one of these two windows glued over the other, in either direction.
+    func areGlued(_ first: NSWindow, _ second: NSWindow) -> Bool {
+        first !== second && (gluedWindow(over: first) === second || gluedWindow(over: second) === first)
+    }
+
     /// The window a script keeps glued over `window`, if it has recorded one. See `windowsGluedOver`.
     private func gluedWindow(over window: NSWindow) -> NSWindow? {
         guard let scripts = skinView?.scripts,
@@ -2792,6 +2811,49 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
     }
 
+    /// A drag carries every script-glued frame with its window in the window server's own move.
+    ///
+    /// Pure Inspired, Itemskin, K-jr and MoonLight draw each component window's frame in a second
+    /// window that their script parks on the content from a 10 ms timer. A host drag moves the
+    /// content — directly, as a docked peer, or as the player's child — but never the frame, which
+    /// is not a snap target. So the frame trailed its content by one timer tick on every drag step.
+    /// That was measured on Pure Inspired's docked playlist at 5-15 ms and ~16 pt per step, and on
+    /// screen the border and interior pulled apart.
+    /// As a child window the frame moves in the same window-server operation as its content.
+    ///
+    /// A follower that is the dragged window itself is left alone: it moves itself, and its own
+    /// `onMove` pulls the content after it, as it always has. Linked only for the drag, because a
+    /// script-driven move or resize of the content must not carry the frame. The script moves the
+    /// frame onto the content itself, and a second carry would move the frame twice.
+    /// `WINAMP_MODERN_DRAG_GLUE=0` turns it off.
+    private func attachGluedWindowsForDrag() {
+        guard Self.carriesGluedWindowsInDrag, let scripts = skinView?.scripts else { return }
+        detachGluedWindowsAfterDrag()
+        let dragged = WindowManager.shared.draggingWindow
+        for (leaderID, followerID) in scripts.windowsGluedOver {
+            guard let leader = viewsByContainer[leaderID]?.window,
+                  let follower = viewsByContainer[followerID]?.window,
+                  leader !== follower, follower !== dragged,
+                  leader.isVisible, follower.isVisible, follower.parent == nil else { continue }
+            leader.addChildWindow(follower, ordered: .above)
+            dragAttachedGluedWindows.append((leader, follower))
+            if Self.tracesGlue {
+                NSLog("GLUE-TRACE drag carries %@ with %@", follower.accessibilityIdentifier(),
+                      leader.accessibilityIdentifier())
+            }
+        }
+    }
+
+    private func detachGluedWindowsAfterDrag() {
+        for (leader, follower) in dragAttachedGluedWindows where follower.parent === leader {
+            leader.removeChildWindow(follower)
+        }
+        dragAttachedGluedWindows.removeAll()
+    }
+
+    static let carriesGluedWindowsInDrag =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_DRAG_GLUE"] != "0"
+
     /// `WINAMP_MODERN_GLUE_TRACE=1` — the script-glued window pairs and every restack, live. See
     /// `restackGluedWindows`.
     static let tracesGlue = ProcessInfo.processInfo.environment["WINAMP_MODERN_GLUE_TRACE"] != nil
@@ -2813,6 +2875,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     private func tearDownSkin() {
         // A scale the outgoing skin asked for is not owed to the incoming one.
         pendingUIScaleRequest = nil
+        detachGluedWindowsAfterDrag()
         hostedWindowMaterializer?.teardown()
         hostedWindowMaterializer = nil
         // Auxiliary views share the main view's script runtime + host, so tear them down first
@@ -2863,6 +2926,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         if let artworkObserver { NotificationCenter.default.removeObserver(artworkObserver) }
         if let playbackOptionsObserver { NotificationCenter.default.removeObserver(playbackOptionsObserver) }
         if let trackLoadFailureObserver { NotificationCenter.default.removeObserver(trackLoadFailureObserver) }
+        dragObservers.forEach(NotificationCenter.default.removeObserver)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         tearDownSkin()
     }

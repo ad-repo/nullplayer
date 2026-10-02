@@ -989,7 +989,13 @@ Implementation details:
 - Hold timing can be primed at `mouseDown` (`windowWillPrimeDragging`) before actual drag start for lazy-drag views (for example HT-on library browser)
 - Mode resolves on first `windowWillMove` via `determineDragMode(holdStart:currentTime:threshold:isWindowLayoutLocked:)` (pure static, unit-tested)
 - If `isWindowLayoutLocked == true`, drag mode is forced to `.group` regardless of hold duration
-- Separate mode: peers are restored to their pre-drag origins before the dock is broken
+- Separate mode: peers are restored to their pre-drag origins before the dock is broken. A window
+  that `updateDockedChildWindows` made the main window's child is **still carried** by AppKit in
+  this mode, so `applySnapping` skips the dragged window's own child windows. Snapping to one used
+  to hold the main window to its own docked playlist: it moved only after the pointer passed the
+  15 pt `snapThreshold`, in ~16 pt jumps about every 40 ms. That was measured at 38 ms in Classic and
+  40 ms in `.wal`, and is 8.5–9.5 ms in every mode since (2026-10-02). The `.wal` script-glued pairs
+  are skipped the same way; see `winamp-modern-skin-guide/reference/scripting.md`.
 - Group mode: connected windows move using stored offsets from drag start to prevent drift; child windows of the dragging window are skipped (AppKit moves them automatically); group top is clamped so no window goes off-screen
 - Mid-drag window close: `NSWindow.willCloseNotification` observer cleans up hold state and clears highlights
 - Mid-flight drag (AppKit-initiated, no prior `mouseDown`): always `.group` mode (override)

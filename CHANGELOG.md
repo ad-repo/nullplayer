@@ -23,6 +23,12 @@
   columns. A Modern skin's library window now has a minimum width that fits the browser, whether
   the skin declares a smaller size or its own script shrinks the window. Other windows, and
   Classic and Original skins, are unchanged.
+- **Docked windows drag smoothly** — in every skin family, a quick drag of the player with a
+  window docked to it moved in jerky 16 pt jumps, because the player kept snapping to the docked
+  window riding along with it. It now follows the pointer. On Modern skins that draw a window's
+  border as a separate window, such as Pure Inspired and Itemskin, the border no longer pulls away
+  from the window's contents while you drag, and dragging such a window on its own is smooth too.
+  Skin window shadows also cost less on every drag step.
 
 ## 0.31.1
 

@@ -809,7 +809,7 @@ class WindowManager {
     private var highlightWasPosted = false
     
     /// Track which window is currently being dragged
-    private var draggingWindow: NSWindow?
+    private(set) var draggingWindow: NSWindow?
 
     /// Local monitor used to guarantee drag teardown even when a view misses mouseUp.
     private var dragMouseUpMonitor: Any?
@@ -7612,7 +7612,15 @@ class WindowManager {
             guard otherWindow != window else { continue }
             // Skip docked windows as they're moving with us
             guard !dockedWindowsToMove.contains(otherWindow) else { continue }
-            
+            // Never snap to a window that moves with this one. A docked window stays the player's
+            // child window after a quick drag leaves the group, so AppKit carries it along; and a
+            // `.wal` script-glued frame sits on its content's exact rect. Snapping to either held
+            // the dragged window to its own partner, moving in ~16 pt jumps every ~40 ms (measured
+            // in Classic and `.wal`).
+            if otherWindow.parent === window { continue }
+            if let controller = winampModernHostedController,
+               controller.areGlued(window, otherWindow) { continue }
+
             let otherFrame = otherWindow.frame
             
             // Check if windows overlap or are close vertically (for horizontal snapping)
