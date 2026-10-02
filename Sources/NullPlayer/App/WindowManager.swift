@@ -3180,9 +3180,6 @@ class WindowManager {
     /// instances (such as About) are not exempt.
     private func isSystemOrTransientWindow(_ window: NSWindow) -> Bool {
         if window is NSColorPanel || window is NSFontPanel { return true }
-        // A skin window's drop shadow follows its parent in and out; recorded on its own, it
-        // would be ordered back in front later without the window it belongs to.
-        if hostsSkinShadowWindows, window is SkinShadowWindow { return true }
         if window.sheetParent != nil { return true }    // attached modal sheet
         let className = NSStringFromClass(type(of: window))
         let systemClasses = ["NSStatusBarWindow", "_NSPopoverWindow",

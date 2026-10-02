@@ -118,9 +118,12 @@ of these was invisible to the harness and visible in the first minute of live QA
     that sits above the screen top by its transparent rows, which left the shadow 165 pt below
     `BlueCrush_MP7` as a second outline. `reassert()` puts the frame back from `windowDidMove`.
   - **Shared code keeps the child.** `WindowManager.updateDockedChildWindows` strips every non-docked
-    child of the player, and `isSystemOrTransientWindow` would let compact mode record the shadow as
-    a window of its own; both exempt `SkinShadowWindow`, gated on `hostsSkinShadowWindows`
-    (`.wmz`/`.wal` only). The trace is `NP_SKIN_SHADOW_TRACE` (`harness/app-flags.md`).
+    child of the player on each drag and dock; it exempts `SkinShadowWindow`, gated on
+    `hostsSkinShadowWindows` (`.wmz`/`.wal` only). NullPlayer's own Compact Mode — which records and
+    re-shows every visible window (`orderOutOrphanedAppWindows`) and would treat a shadow as a window
+    of its own — is not offered in `.wmz`/`.wal` (`ContextMenuBuilder` hides it), so it needs no
+    exemption; add one there if that ever changes. The trace is `NP_SKIN_SHADOW_TRACE`
+    (`harness/app-flags.md`).
 - **A script transaction repaints in full.** The dirty region cannot be derived from what a handler
   *wrote*: it writes `svEqualizer.top` and a whole subtree moves that it never mentioned, and a
   `SUBVIEW` carries no hit metadata at all, so the narrowed bounds collapse to roughly the button
