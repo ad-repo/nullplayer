@@ -896,6 +896,9 @@ final class WasabiSceneRenderer {
     /// playlist hides its 19px search bar from `onResize` below 102px of pane, and with that bar
     /// left standing its 1px overhang pinned cPro2's whole player at 352px tall against the 106 its
     /// own `layout.m` had just computed and written (B125).
+    ///
+    /// The hosted component's floor is applied last, over even a script's own minimum: what fills the
+    /// holder is NullPlayer's, so how much room it needs is not the skin's to say.
     var layoutMinimumSize: CGSize {
         let declared = declaredMinimumSize
         let protective = protectiveMinimumSize
@@ -907,7 +910,7 @@ final class WasabiSceneRenderer {
         let height = authored.contains("minimum_h")
             ? declared.height
             : max(max(declared.height, protective.height), content.height)
-        return CGSize(width: width, height: height)
+        return CGSize(width: max(width, hostedComponentFloorWidth ?? 0), height: height)
     }
 
     private var contentFloorCache: CGSize??
@@ -973,6 +976,7 @@ final class WasabiSceneRenderer {
     func layoutBoundsDidChange() {
         protectiveMinimumCache.removeAll()
         contentFloorCache = nil
+        hostedComponentFloorCache.removeAll()
     }
 
     /// The smallest canvas at which the scene still lays itself out the way its author drew it.
@@ -4803,11 +4807,17 @@ final class WasabiSceneRenderer {
               storedCanvasSize == autoFittedCanvas else { return }
         isFittingContent = true
         defer { isFittingContent = false; hasFittedContent = true }
-        let fitted = componentRoomFittedSize(contentFittedSize(defaultSize(for: layout), for: layout),
-                                             for: layout)
-        guard fitted != storedCanvasSize else { return }
-        storedCanvasSize = fitted
-        autoFittedCanvas = fitted
+        commitAutoFit(componentRoomFittedSize(contentFittedSize(defaultSize(for: layout), for: layout),
+                                              for: layout))
+    }
+
+    /// Adopt a canvas one of the fits chose, raised to the hosted component's floor so the window
+    /// *opens* at that floor rather than being grown to it after the tiler has already placed it.
+    private func commitAutoFit(_ fitted: CGSize) {
+        let size = CGSize(width: max(fitted.width, hostedComponentFloorWidth ?? 0), height: fitted.height)
+        guard size != storedCanvasSize else { return }
+        storedCanvasSize = size
+        autoFittedCanvas = size
         invalidateSceneCache()
         loadedSkin.runtime.graph.markAllDirty([.geometry, .appearance])
     }
@@ -4840,12 +4850,7 @@ final class WasabiSceneRenderer {
               storedCanvasSize == autoFittedCanvas else { return }
         isFittingComponentRoom = true
         defer { isFittingComponentRoom = false; hasFittedComponentRoom = true }
-        let fitted = componentRoomFittedSize(storedCanvasSize, for: layout)
-        guard fitted != storedCanvasSize else { return }
-        storedCanvasSize = fitted
-        autoFittedCanvas = fitted
-        invalidateSceneCache()
-        loadedSkin.runtime.graph.markAllDirty([.geometry, .appearance])
+        commitAutoFit(componentRoomFittedSize(storedCanvasSize, for: layout))
     }
 
     /// Grow an axis a layout never states when the component it exists to host has no room on it.
@@ -4873,23 +4878,63 @@ final class WasabiSceneRenderer {
             || container["default_w"] != nil
         let statesHeight = attributes["h"] != nil || attributes["default_h"] != nil
             || container["default_h"] != nil
-        guard !statesWidth || !statesHeight else { return declared }
-        let holders = sceneNodes(canvas: declared).filter {
-            WinampModernComponentRegistry.isHolderElement($0.object.typeName) && isVisible($0.object)
+        guard !statesWidth || !statesHeight, let holder = holderExtent(atCanvas: declared) else {
+            return declared
         }
-        guard !holders.isEmpty else { return declared }
         var size = declared
-        if !statesWidth, let widest = holders.map({ $0.frame.width }).max(),
-           widest < Self.degenerateComponentExtent {
+        if !statesWidth, holder.width < Self.degenerateComponentExtent {
             size.width = min(Self.optionalDimension(attributes["maximum_w"]) ?? .greatestFiniteMagnitude,
-                             size.width + Self.componentRoomExtent - widest)
+                             size.width + Self.componentRoomExtent - holder.width)
         }
-        if !statesHeight, let tallest = holders.map({ $0.frame.height }).max(),
-           tallest < Self.degenerateComponentExtent {
+        if !statesHeight, holder.height < Self.degenerateComponentExtent {
             size.height = min(Self.optionalDimension(attributes["maximum_h"]) ?? .greatestFiniteMagnitude,
-                              size.height + Self.componentRoomExtent - tallest)
+                              size.height + Self.componentRoomExtent - holder.height)
         }
         return size
+    }
+
+    /// The widest and the tallest visible component holder the active layout resolves at `canvas`,
+    /// or `nil` when it has none — what both the component-room fit and the hosted component's floor
+    /// measure the window's shortfall from.
+    private func holderExtent(atCanvas canvas: CGSize) -> CGSize? {
+        let holders = sceneNodes(canvas: canvas).filter {
+            WinampModernComponentRegistry.isHolderElement($0.object.typeName) && isVisible($0.object)
+        }
+        guard !holders.isEmpty else { return nil }
+        return holders.reduce(CGSize.zero) {
+            CGSize(width: max($0.width, $1.frame.width), height: max($0.height, $1.frame.height))
+        }
+    }
+
+    private var hostedComponentFloorCache: [String: CGFloat?] = [:]
+
+    /// The window width at which the holder gets the room its component asks for
+    /// (`WinampModernComponentRegistry.minimumHolderWidth`) — `nil` for a container that hosts no such
+    /// component. Anaheim Player 01 declares its `MLibrary` 260 wide with a 40px frame, so the library
+    /// browser opened in a 220px hole; the skin's size is overruled because what fills the hole is
+    /// NullPlayer's, not the skin's.
+    ///
+    /// It is a floor even where the declared size already clears it, because a script or a restored
+    /// frame can take the window below its declared size: Itemskin declares its library 660 wide and
+    /// its own script shrinks it to the 330 minimum on open.
+    private var hostedComponentFloorWidth: CGFloat? {
+        let key = activeLayoutID
+        if let cached = hostedComponentFloorCache[key] { return cached }
+        let computed = computeHostedComponentFloorWidth()
+        hostedComponentFloorCache[key] = computed
+        return computed
+    }
+
+    private func computeHostedComponentFloorWidth() -> CGFloat? {
+        guard let kind = WinampModernComponentRegistry.kind(for: container.attributes["component"]),
+              let room = WinampModernComponentRegistry.minimumHolderWidth(for: kind) else { return nil }
+        let declared = defaultSize(for: layout)
+        // The arithmetic below assumes the holder stretches with the canvas (`relatw`). Checked rather
+        // than assumed: around a fixed-width holder, widening the window only widens the frame.
+        guard let holder = holderExtent(atCanvas: declared),
+              let wider = holderExtent(atCanvas: CGSize(width: declared.width + room, height: declared.height)),
+              wider.width > holder.width else { return nil }
+        return min(layoutMaximumSize.width, declared.width + room - holder.width)
     }
 
     /// Grow a layout that describes **no** size of its own to the extent of the content it lays out.

@@ -762,3 +762,29 @@ layouts — **exactly one** holder meets all three, and the sweep diff is one PN
 > size fix verified only in the harness is not verified. Waiting buys nothing here anyway: the
 > `<component>` is plain markup inside the layout, in the graph from the moment it is built, and its
 > box is relative to the canvas alone.
+
+#### The library window has a width floor of NullPlayer's, not the skin's
+
+The Media Library holder hosts NullPlayer's own browser (the Classic `PlexBrowserView`), which is
+laid out for its own room, not for the skin's. A component that needs room declares it in
+`WinampModernComponentRegistry.minimumHolderWidth(for:)` — only `.library`, at 440 skin px — and
+`WasabiSceneRenderer.hostedComponentFloorWidth` turns that into a window width for any container
+whose `component=` names it. The floor is applied in two places:
+
+- `layoutMinimumSize`, **after** the declared/protective/script arbitration, so a drag, a restored
+  frame and a script's `resize()` are all clamped to it — even when the script wrote its own
+  `minimum_w`, because what fills the holder is NullPlayer's.
+- `commitAutoFit`, the single tail both canvas fits go through, so the window *opens* at the floor
+  before the tiler places it.
+
+- **440 is measured, not derived.** At 344 (the Classic library window's floor) the tab labels
+  overlap: the tab row is sized from bitmap glyph widths while the `.wal` style draws a wider font.
+  At 440 the full labels fit at the default Text Size; a larger Text Size can still crowd them.
+- **Only a holder that stretches gets a floor.** The width is `declared + 440 − holder`, which holds
+  only for a `relatw` holder; the renderer re-resolves the holder at a wider canvas and gives a
+  fixed-width one no floor, since widening the window around it would only widen the frame.
+- **The floor applies even when the declared size clears it.** Itemskin declares `MLibrary` 660×274
+  and its own script shrinks it to the 330×137 minimum on open; a floor gated on the declared size
+  never fired. Its glued frame window (`cont.clear.ml`) follows the content to the floor (493 wide).
+- Anaheim Player 01 declares 260×180 with a 40px frame — the browser opened in a 220px hole; it now
+  opens 480 wide.

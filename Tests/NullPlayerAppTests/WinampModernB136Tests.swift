@@ -121,6 +121,75 @@ final class WinampModernB136Tests: XCTestCase {
         XCTAssertEqual(renderer.canvasSize, CGSize(width: 354, height: 280))
     }
 
+    // MARK: - The hosted component's floor
+
+    private static let libraryContainer =
+        #"<container id="MLibrary" component="guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}">"#
+
+    /// Anaheim Player 01's shape: a library declared 260 wide around a holder with a 40px frame. It
+    /// opens, and stays, wide enough for a 440px holder.
+    func testALibraryDeclaredTooNarrowOpensAtTheFloor() throws {
+        let renderer = try makeRenderer(container: Self.libraryContainer, layout: """
+            <layout id="normal" w="260" h="180" minimum_w="100" minimum_h="80">
+              <component x="20" y="20" w="-40" h="-40" relatw="1" relath="1"
+                         param="guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}"/>
+            </layout>
+            """)
+        XCTAssertEqual(renderer.canvasSize, CGSize(width: 480, height: 180))
+        XCTAssertEqual(renderer.layoutMinimumSize.width, 480)
+    }
+
+    /// Itemskin's shape: declared well clear of the floor, then shrunk by its own script on open.
+    func testALibraryDeclaredWideStillCannotBeShrunkBelowTheFloor() throws {
+        let renderer = try makeRenderer(container: Self.libraryContainer, layout: """
+            <layout id="normal" w="660" h="274" minimum_w="330" minimum_h="137">
+              <component x="20" y="20" w="-40" h="-40" relatw="1" relath="1"
+                         param="guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}"/>
+            </layout>
+            """)
+        XCTAssertEqual(renderer.canvasSize.width, 660, "a library that already has room is not resized")
+        XCTAssertEqual(renderer.resize(to: CGSize(width: 330, height: 137)).width, 480)
+    }
+
+    /// The floor is NullPlayer's, so it outranks a minimum the skin's script wrote — the arbitration
+    /// that lets a script's floor beat the protective probe does not reach it.
+    func testTheFloorOutranksAScriptAuthoredMinimum() throws {
+        let renderer = try makeRenderer(container: Self.libraryContainer, layout: """
+            <layout id="normal" w="660" h="274" minimum_w="330" minimum_h="137">
+              <component x="20" y="20" w="-40" h="-40" relatw="1" relath="1"
+                         param="guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}"/>
+            </layout>
+            """)
+        renderer.layoutForTesting.noteScriptAuthoredMinimum("minimum_w")
+        XCTAssertEqual(renderer.layoutMinimumSize.width, 480)
+    }
+
+    /// Widening a window around a holder that does not stretch would only widen its frame.
+    func testAFixedWidthLibraryHolderGetsNoFloor() throws {
+        let renderer = try makeRenderer(container: Self.libraryContainer, layout: """
+            <layout id="normal" w="260" h="180" minimum_w="100" minimum_h="80">
+              <component x="20" y="20" w="220" h="-40" relath="1"
+                         param="guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}"/>
+            </layout>
+            """)
+        XCTAssertEqual(renderer.canvasSize, CGSize(width: 260, height: 180))
+        XCTAssertEqual(renderer.layoutMinimumSize.width, 100)
+    }
+
+    /// Only a component that asks for room gets a floor; a narrow playlist is the skin's business.
+    func testANarrowPlaylistWindowIsLeftAlone() throws {
+        let renderer = try makeRenderer(
+            container: #"<container id="Pledit" component="guid:{45F3F7C1-A6F3-4EE6-A15E-125E92FC3F8D}">"#,
+            layout: """
+            <layout id="normal" w="260" h="180" minimum_w="100" minimum_h="80">
+              <component x="20" y="20" w="-40" h="-40" relatw="1" relath="1"
+                         param="guid:{45F3F7C1-A6F3-4EE6-A15E-125E92FC3F8D}"/>
+            </layout>
+            """)
+        XCTAssertEqual(renderer.canvasSize, CGSize(width: 260, height: 180))
+        XCTAssertEqual(renderer.layoutMinimumSize.width, 100)
+    }
+
     // MARK: - Gradient direction
 
     /// The measurement that named the defect: with the direction defaulted to `start == end`, every
