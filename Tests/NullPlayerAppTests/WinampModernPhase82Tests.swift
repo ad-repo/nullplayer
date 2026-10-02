@@ -118,6 +118,24 @@ final class WinampModernPhase82Tests: XCTestCase {
         XCTAssertFalse(moved, "resize(getLeft(), getTop(), w, h) on itself leaves the window alone")
     }
 
+    /// The round trip is recognised against the number the script was **handed**, not the attribute
+    /// behind it. A layout's `x="12.7"` reads back as 12, as Wasabi reads it; compared against 12.7
+    /// rounded, the 12 written straight back looked like a move.
+    func testWritingBackAFractionalPositionItReadIsStillNotAMove() throws {
+        let (runtime, program) = try makeRuntime()
+        var moved = false
+        runtime.containerMoveRequested = { _, _, _ in moved = true }
+
+        let chrome = try XCTUnwrap(object(runtime, type: "layout", id: "normal"))
+        _ = chrome.setAttribute("x", value: "12.7")
+        _ = chrome.setAttribute("y", value: "3")
+        let read = try readOrigin(runtime, program, of: chrome)
+        try resize(runtime, program, chrome, to: CGRect(origin: read, size: CGSize(width: 330, height: 137)))
+
+        XCTAssertEqual(read, CGPoint(x: 12, y: 3))
+        XCTAssertFalse(moved, "resize(getLeft(), getTop(), w, h) on itself leaves the window alone")
+    }
+
     /// **BB31 must still hold.** Only the round trip is recognised, never the value: Big Bento's
     /// search-results popup places itself at a point it *measured* with `clientToScreenX/Y`, and that
     /// is an ordinary, clamped move whatever the number happens to be.

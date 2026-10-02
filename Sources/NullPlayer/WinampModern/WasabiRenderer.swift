@@ -312,6 +312,10 @@ final class WasabiResourceCache {
     private var currentCost = 0
     private var accessCounter: UInt64 = 0
     private(set) var isTornDown = false
+    /// One context for every themed sprite. Creating a `CIContext` costs far more than the colour
+    /// matrix it runs, and a themed skin decodes hundreds of sprites on a skin switch. A `CIContext`
+    /// is thread-safe, so sharing it across renderers and threads is safe.
+    private static let themeContext = CIContext(options: [.cacheIntermediates: false])
 
     init(loadedSkin: WinampModernLoadedSkin, themes: WasabiColorThemeCatalog,
          maximumCost: Int = 256 * 1_024 * 1_024) {
@@ -589,7 +593,7 @@ final class WasabiResourceCache {
                 "inputBVector": CIVector(x: 0, y: 0, z: 1 + transform.blue, w: 0)
             ])
         }
-        return CIContext(options: [.cacheIntermediates: false]).createCGImage(output, from: output.extent) ?? image
+        return Self.themeContext.createCGImage(output, from: output.extent) ?? image
     }
 
     private func evictIfNeeded(protecting protectedKey: String) {

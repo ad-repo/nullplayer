@@ -28,7 +28,8 @@ extension WinampModernMainView {
         }
     }
 
-    /// The graph changed. Cheap unless the gate says this window's outline may have moved.
+    /// The graph changed. Cheap unless the gate says this window's outline may have moved. Run once
+    /// per runloop turn from the graph settle (`scheduleGraphSettle(.shadowOutline)`), never per write.
     func graphMayHaveMovedShadowOutline() {
         guard windowShadow.isActive,
               shadowOutlineGate.mayHaveMoved(renderer, traceName: shadowTraceName) else { return }

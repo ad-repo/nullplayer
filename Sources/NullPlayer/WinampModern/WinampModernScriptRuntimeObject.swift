@@ -146,25 +146,23 @@ extension WinampModernScriptRuntime {
             // panelled, which is what Winamp shows for a set that never loaded.
             guard !Self.imageKeys.contains(key.lowercased()) || resolvesToResource(value)
             else { return .null }
-            let reportedBeforeWrite = reportedOrigin(of: object)
-            _ = object.setAttribute(key, value: value)
-            // A layout that computes its own resize floor has said what the protective minimum can
-            // only guess at (B125: ClassicPro engine two writes `minimum_h` = titlebar+info+playback
-            // from `fullScreen(false)`, and our inferred floor was three times it).
-            if object.typeName.caseInsensitiveCompare("layout") == .orderedSame,
-               ["minimum_w", "minimum_h"].contains(key.lowercased()) {
-                object.noteScriptAuthoredMinimum(key)
-            }
             if Self.geometryKeys.contains(key.lowercased()) {
                 // A container or a layout is a *window*: its box is not read back out of the graph at
                 // the next repaint, it has to be pushed to AppKit. `resize()` already did this; the
                 // same four attributes written one at a time did not, which is how Big Bento's search
                 // results came out at the container's declared 275×116 in the corner of the screen
                 // instead of under the search box it measured itself against (BB31).
-                applyContainerGeometry(object, reportedOrigin: reportedBeforeWrite)
-                noteGeometryChange()
-                notifyGraphDidMutate()
+                writeGeometry([(key, value)], on: object)
             } else {
+                _ = object.setAttribute(key, value: value)
+                // A layout that computes its own resize floor has said what the protective minimum
+                // can only guess at (B125: ClassicPro engine two writes `minimum_h` =
+                // titlebar+info+playback from `fullScreen(false)`, and our inferred floor was three
+                // times it).
+                if object.typeName.caseInsensitiveCompare("layout") == .orderedSame,
+                   ["minimum_w", "minimum_h"].contains(key.lowercased()) {
+                    object.noteScriptAuthoredMinimum(key)
+                }
                 notifyObjectDidMutate(object)
             }
             deliverRuntimeXUIParam(key, value: value, to: object)
@@ -232,17 +230,12 @@ extension WinampModernScriptRuntime {
         case "getguid":
             return .string(object.attributes["guid"] ?? "")
         case "resize":
-            let reportedBeforeResize = reportedOrigin(of: object)
             let borrowed = borrowedWindowOrigin(
                 matching: CGPoint(x: Double(arguments[0].integerValue),
                                   y: Double(arguments[1].integerValue)),
                 writtenOn: object)
-            for (key, value) in zip(["x", "y", "w", "h"], arguments) {
-                _ = object.setAttribute(key, value: String(value.integerValue))
-            }
-            applyContainerGeometry(object, reportedOrigin: reportedBeforeResize, borrowed: borrowed)
-            noteGeometryChange()
-            notifyGraphDidMutate()
+            writeGeometry(Array(zip(["x", "y", "w", "h"], arguments.map { String($0.integerValue) })),
+                          on: object, borrowed: borrowed)
             return .null
         // `onSetVisible` fires only on an actual change, as in Wasabi. ClassicPro's `beat.m` hangs its
         // VU timer off `beatGroup.onSetVisible`, and `showGroup` hides both display groups before
@@ -358,29 +351,9 @@ extension WinampModernScriptRuntime {
         // that made this look necessary is handled on the **write** instead — see
         // `applyContainerGeometry`.
         case "getleft", "getguix":
-            if Self.isWindowObject(object) {
-                noteWindowOriginRead(of: object)
-                if object.typeName.caseInsensitiveCompare("container") == .orderedSame,
-                   let origin = windowOrigin(of: object) {
-                    return .integer(Int32(clamping: Int(origin.x.rounded())))
-                }
-                if let x = Double(object.attributes["x"] ?? "") {
-                    return .integer(Int32(clamping: Int(x)))
-                }
-            }
-            return .integer(dimension(resolvedFrame(of: object)?.minX, declared: object.geometry.x))
+            return .integer(Int32(clamping: Int(scriptReadsOrigin(of: object).x)))
         case "gettop", "getguiy":
-            if Self.isWindowObject(object) {
-                noteWindowOriginRead(of: object)
-                if object.typeName.caseInsensitiveCompare("container") == .orderedSame,
-                   let origin = windowOrigin(of: object) {
-                    return .integer(Int32(clamping: Int(origin.y.rounded())))
-                }
-                if let y = Double(object.attributes["y"] ?? "") {
-                    return .integer(Int32(clamping: Int(y)))
-                }
-            }
-            return .integer(dimension(resolvedFrame(of: object)?.minY, declared: object.geometry.y))
+            return .integer(Int32(clamping: Int(scriptReadsOrigin(of: object).y)))
         case "getwidth", "getguiw":
             return .integer(dimension(resolvedFrame(of: object)?.width,
                                       declared: object.geometry.width ?? 0))

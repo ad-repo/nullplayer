@@ -29,6 +29,11 @@
   border as a separate window, such as Pure Inspired and Itemskin, the border no longer pulls away
   from the window's contents while you drag, and dragging such a window on its own is smooth too.
   Skin window shadows also cost less on every drag step.
+- **Switching Modern skins no longer shows the spinning cursor** — changing from one `.wal` skin to
+  another froze the app for two to three seconds, long enough for macOS to show the beachball
+  under the loading animation. The switch now takes about half the time or less: switching to
+  cPro Bento went from 2 seconds to half a second, and to Big Bento Modern from 3 seconds to
+  1.5. Classic, Original and Media Player skins are unchanged.
 
 ## 0.31.1
 

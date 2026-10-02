@@ -141,6 +141,8 @@ final class WinampModernMainView: NSView {
     /// This window's drop shadow, built from the scene's outline (`WinampModernMainView+Shadow`).
     let windowShadow = SkinWindowShadow(minimumInterval: WinampModernMainView.shadowShapeInterval)
     var shadowOutlineGate = WinampModernShadowOutlineGate()
+    /// The scene readers graph writes this turn still owe (`WinampModernMainView+GraphSettle`).
+    var pendingGraphSettle: WinampModernGraphSettle = []
     private var sceneIsVisible = false
     var canvasSizeDidChange: ((CGSize) -> Void)?
     /// A click landed in this window: dismiss any `autoclose="1"` popup that is not this one. The
@@ -588,7 +590,7 @@ final class WinampModernMainView: NSView {
             // Scoped: a warped layer on the *main* window fires this 30 times a second, and this
             // window has no business repainting for it.
             if let object, !self.owns(object) { return }
-            self.graphMayHaveMovedShadowOutline()
+            self.scheduleGraphSettle(.shadowOutline)
             // A window nobody can see does not paint for the skin's animation: it catches up in one
             // pass when it comes back (`occlusionDidChange`).
             guard self.isOnScreen else {
@@ -602,7 +604,7 @@ final class WinampModernMainView: NSView {
             self.invalidateRectCaches()
             self.needsLayout = true
             self.needsDisplay = true
-            self.updateAnimationTimer()
+            self.scheduleGraphSettle(.animationClock)
         }
     }
 
@@ -627,9 +629,8 @@ final class WinampModernMainView: NSView {
             self?.needsLayout = true
             self?.needsDisplay = true
             // A script can also turn Layer FX on outside load (switching Defix's display style does
-            // exactly that), and the warp needs the repaint clock from that moment on.
-            self?.updateAnimationTimer()
-            self?.graphMayHaveMovedShadowOutline()
+            // exactly that), and the warp needs the repaint clock from then on.
+            self?.scheduleGraphSettle([.animationClock, .shadowOutline])
         }
         // The light path a warped layer takes 30 times a second: repaint, nothing else.
         scripts.repaintRequested = { [weak self] in self?.needsDisplay = true }
