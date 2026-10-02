@@ -243,11 +243,12 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
     antialiased dotted string into beads.
   - *Colour is the artist's.* Recolouring the rim from one pixel in did not remove `BlueCrush_MP7`'s
     pale beads and would erase a deliberate one-pixel border, so the rim is left as drawn.
-  A repaint draws over the *unfeathered* layers (`WMPRenderResult.unfeatheredImage`) and reuses
-  `outlineFeather` while its dirty rect's alpha is unchanged — feathering a feathered frame would
-  erode it on every marquee tick. `alphaChanged`, the effects silhouette and the window shadow all
-  read the result consistently: the first compares unfeathered alpha, the other two the presented
-  layers. `WMPHostedFrameTemplate` renders with `featheringOutline: false`, because its pieces meet
-  the client hole. Integer backing scales only (a Mac has 1x and 2x). `WMP_OUTLINE_FEATHER=0` is
+  The feather is a few thousand pixel edits (`Feather.cuts`, `.growth`), not a mask. A repaint
+  draws over the layers *as drawn* (`WMPRenderResult.drawn`, the presented images themselves when
+  nothing was feathered) and reuses `outlineFeather` while its dirty rect's alpha is unchanged —
+  feathering a feathered frame would erode it on every marquee tick. `alphaChanged`, the effects
+  silhouette and the window shadow all read the result consistently: the first compares drawn
+  alpha, the other two the presented layers. `WMPHostedFrameTemplate.renderPieces` renders with
+  `featheringOutline: false`, because its pieces meet the client hole. Integer backing scales only (a Mac has 1x and 2x). `WMP_OUTLINE_FEATHER=0` is
   the A/B switch; `WMPOutlineFeatherTests` and `WMPOutlineGoldenImageTests` pin it, the second with
   committed hard and feathered goldens and a comparison sheet per synthetic fixture.

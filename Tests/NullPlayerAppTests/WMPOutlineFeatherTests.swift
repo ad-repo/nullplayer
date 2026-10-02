@@ -18,26 +18,13 @@ final class WMPOutlineFeatherTests: XCTestCase {
                 bytes[offset + 3] = value
             }
         }
-        let provider = try XCTUnwrap(CGDataProvider(data: Data(bytes) as CFData))
-        return try XCTUnwrap(CGImage(width: width * scale, height: height * scale,
-            bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * scale * 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Big.rawValue
-                | CGImageAlphaInfo.premultipliedLast.rawValue),
-            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        return try WMPSkinTestSupport.image(premultipliedRGBA: bytes, width: width * scale,
+                                            height: height * scale)
     }
 
     /// Every alpha byte, top row first.
     private func alphas(_ image: CGImage) -> [UInt8] {
-        let width = image.width, height = image.height
-        var bytes = [UInt8](repeating: 0, count: width * height * 4)
-        bytes.withUnsafeMutableBytes { buffer in
-            let context = CGContext(data: buffer.baseAddress, width: width, height: height,
-                bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
-                    | CGImageAlphaInfo.premultipliedLast.rawValue)!
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        }
+        let bytes = WMPSkinTestSupport.premultipliedRGBA(image)
         return stride(from: 3, to: bytes.count, by: 4).map { bytes[$0] }
     }
 
@@ -188,11 +175,11 @@ final class WMPOutlineFeatherTests: XCTestCase {
     }
 
     /// `WMPHostedFrameTemplate` assembles pieces whose edges meet the client hole, so its renders
-    /// opt out — and an opted-out render is the hard outline, with nothing kept for a repaint.
+    /// opt out — and an opted-out render presents exactly the layers it drew.
     func testAnOptedOutRenderIsTheHardOutline() async throws {
         let (renderer, scene) = try await shapedMarqueeScene()
         let hard = try await renderer.render(scene: scene, backingScale: 2, featheringOutline: false)
         XCTAssertNil(hard.outlineFeather)
-        XCTAssertNil(hard.unfeatheredImage)
+        XCTAssertTrue(hard.image === hard.drawn.image)
     }
 }

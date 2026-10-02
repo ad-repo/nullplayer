@@ -1472,33 +1472,23 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                 !excludedNodeIDs.contains($0.stableID) && !furniture.contains($0.stableID)
             }
             guard !whole.isEmpty else { return nil }
-            let wholeScene = WMPScene(viewID: scene.viewID, canvasSize: scene.canvasSize,
-                                      resizeLimits: scene.resizeLimits, isResizable: scene.isResizable,
-                                      commands: whole, hits: [], widgets: [], geometries: [:],
-                                      unresolved: [], diagnostics: [], dirtyBounds: nil,
-                                      metrics: scene.metrics, wasBuiltOnMainThread: false)
-            let drawn = try await renderer.render(scene: wholeScene, backingScale: backingScale,
-                                                  featheringOutline: false)
+            let drawn = try await Self.renderPieces(whole, of: scene, renderer: renderer,
+                                                    backingScale: backingScale)
             let canvasRect = CGRect(x: 0, y: 0,
                                     width: scene.canvasSize.width, height: scene.canvasSize.height)
-            return (drawn.image,
+            return (drawn,
                     CGRect(x: client.x, y: client.y, width: client.width, height: client.height),
                     topRightNodeID.flatMap { scene.geometries[$0]?.absoluteFrame }.map(\.width),
-                    Self.opaqueExtent(drawn.image, scale: backingScale) ?? canvasRect,
+                    Self.opaqueExtent(drawn, scale: backingScale) ?? canvasRect,
                     furniture)
         }
         let admitted = repairing ? ringNodeIDs : ringNodeIDs.subtracting(extraNodeIDs)
         let ring = scene.commands.filter { admitted.contains($0.stableID) && !overlapping.contains($0.stableID) }
         guard !ring.isEmpty else { return nil }
-        let ringOnly = WMPScene(viewID: scene.viewID, canvasSize: scene.canvasSize,
-                                resizeLimits: scene.resizeLimits, isResizable: scene.isResizable,
-                                commands: ring, hits: [], widgets: [], geometries: [:],
-                                unresolved: [], diagnostics: [], dirtyBounds: nil,
-                                metrics: scene.metrics, wasBuiltOnMainThread: false)
-        let rendered = try await renderer.render(scene: ringOnly, backingScale: backingScale,
-                                                 featheringOutline: false)
+        let rendered = try await Self.renderPieces(ring, of: scene, renderer: renderer,
+                                                   backingScale: backingScale)
         let full = CGRect(x: 0, y: 0, width: scene.canvasSize.width, height: scene.canvasSize.height)
-        let extent = Self.opaqueExtent(rendered.image, scale: backingScale) ?? full
+        let extent = Self.opaqueExtent(rendered, scale: backingScale) ?? full
 
         // **The border's own decoration is drawn, and it is drawn *after* the extent is measured.**
         //
@@ -1515,26 +1505,37 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         // tried first and grew the alpha bounding box, which shifted the crop, which changed the
         // edge measurement, which refused `Harry_Potter…` and moved `Ice`'s client hole — all for
         // a plate a few points across. Painted here, every number on every skin is untouched.
-        var image = rendered.image
+        var image = rendered
         let decoration = scene.commands.filter {
             extraNodeIDs.contains($0.stableID) && !admitted.contains($0.stableID)
                 && !overlapping.contains($0.stableID)
         }
-        if !decoration.isEmpty {
-            let decorScene = WMPScene(viewID: scene.viewID, canvasSize: scene.canvasSize,
-                                      resizeLimits: scene.resizeLimits, isResizable: scene.isResizable,
-                                      commands: ring + decoration, hits: [], widgets: [], geometries: [:],
-                                      unresolved: [], diagnostics: [], dirtyBounds: nil,
-                                      metrics: scene.metrics, wasBuiltOnMainThread: false)
-            if let plated = try? await renderer.render(scene: decorScene, backingScale: backingScale,
-                                                       featheringOutline: false) {
-                image = plated.image
-            }
+        if !decoration.isEmpty,
+           let plated = try? await Self.renderPieces(ring + decoration, of: scene,
+                                                     renderer: renderer, backingScale: backingScale) {
+            image = plated
         }
         return (image,
                 CGRect(x: client.x, y: client.y, width: client.width, height: client.height),
                 topRightNodeID.flatMap { scene.geometries[$0]?.absoluteFrame }.map(\.width),
                 extent, [])
+    }
+
+    /// `commands` alone, on `scene`'s canvas: one set of the donor's pieces, drawn to be measured,
+    /// cropped and assembled into a frame.
+    ///
+    /// **Never feathered** (`WMPOutlineFeather`): these pieces meet the client hole and each other,
+    /// and the edges this file measures are the key's own.
+    private static func renderPieces(_ commands: [WMPPaintCommand], of scene: WMPScene,
+                                     renderer: WMPRenderer,
+                                     backingScale: CGFloat) async throws -> CGImage {
+        let pieces = WMPScene(viewID: scene.viewID, canvasSize: scene.canvasSize,
+                              resizeLimits: scene.resizeLimits, isResizable: scene.isResizable,
+                              commands: commands, hits: [], widgets: [], geometries: [:],
+                              unresolved: [], diagnostics: [], dirtyBounds: nil,
+                              metrics: scene.metrics, wasBuiltOnMainThread: false)
+        return try await renderer.render(scene: pieces, backingScale: backingScale,
+                                         featheringOutline: false).image
     }
 
     /// The bounding box, in points, of everything in `image` that is not fully transparent.
@@ -1734,15 +1735,9 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         // the skin's window, not ours — the ring path's rule, stated there at length.
         let own = scene.commands.filter { $0.stableID == panelNodeID }
         guard !own.isEmpty else { return nil }
-        let canvas = scene.canvasSize
-        let panelOnly = WMPScene(viewID: scene.viewID, canvasSize: canvas,
-                                 resizeLimits: scene.resizeLimits, isResizable: scene.isResizable,
-                                 commands: own, hits: [], widgets: [], geometries: [:],
-                                 unresolved: [], diagnostics: [], dirtyBounds: nil,
-                                 metrics: scene.metrics, wasBuiltOnMainThread: false)
-        let rendered = try await renderer.render(scene: panelOnly, backingScale: backingScale,
-                                                 featheringOutline: false)
-        guard var cropped = rendered.image.cropping(to: CGRect(
+        let rendered = try await Self.renderPieces(own, of: scene, renderer: renderer,
+                                                   backingScale: backingScale)
+        guard var cropped = rendered.cropping(to: CGRect(
             x: panel.x * backingScale, y: panel.y * backingScale,
             width: panel.width * backingScale, height: panel.height * backingScale)) else {
             return nil

@@ -144,7 +144,8 @@ final class WMPOutlineGoldenImageTests: XCTestCase {
             return XCTFail("Golden '\(name)' is \(expectedImage.width)x\(expectedImage.height), "
                            + "the render \(image.width)x\(image.height).", file: file, line: line)
         }
-        let actual = Self.pixels(image), expected = Self.pixels(expectedImage)
+        let actual = WMPSkinTestSupport.premultipliedRGBA(image)
+        let expected = WMPSkinTestSupport.premultipliedRGBA(expectedImage)
         var differing = Set<Int>()
         for index in stride(from: 0, to: actual.count, by: 4) where (0..<4).contains(where: {
             abs(Int(actual[index + $0]) - Int(expected[index + $0])) > Self.channelTolerance
@@ -160,7 +161,8 @@ final class WMPOutlineGoldenImageTests: XCTestCase {
             marked[pixel * 4] = 255; marked[pixel * 4 + 1] = 0
             marked[pixel * 4 + 2] = 0; marked[pixel * 4 + 3] = 255
         }
-        let diff = try Self.image(marked, width: image.width, height: image.height)
+        let diff = try WMPSkinTestSupport.image(premultipliedRGBA: marked, width: image.width,
+                                                height: image.height)
         try Self.writePNG(Self.sheet([expectedImage, image, diff], zoom: 16 / max(1, image.width / 64)),
                           to: directory.appendingPathComponent("\(name).compare.png"))
         XCTFail("Golden '\(name)': \(differing.count) pixel(s) differ. Wrote \(directory.path)"
@@ -175,29 +177,6 @@ final class WMPOutlineGoldenImageTests: XCTestCase {
     private static var goldensDirectory: URL {
         URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("Goldens/WMPOutline", isDirectory: true)
-    }
-
-    /// Premultiplied RGBA, top row first.
-    private static func pixels(_ image: CGImage) -> [UInt8] {
-        let width = image.width, height = image.height
-        var bytes = [UInt8](repeating: 0, count: width * height * 4)
-        bytes.withUnsafeMutableBytes { buffer in
-            let context = CGContext(data: buffer.baseAddress, width: width, height: height,
-                bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
-                    | CGImageAlphaInfo.premultipliedLast.rawValue)!
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        }
-        return bytes
-    }
-
-    private static func image(_ pixels: [UInt8], width: Int, height: Int) throws -> CGImage {
-        let provider = try XCTUnwrap(CGDataProvider(data: Data(pixels) as CFData))
-        return try XCTUnwrap(CGImage(width: width, height: height, bitsPerComponent: 8,
-            bitsPerPixel: 32, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Big.rawValue
-                | CGImageAlphaInfo.premultipliedLast.rawValue),
-            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
     }
 
     /// The images side by side, enlarged without smoothing, over a dark ground and below that a

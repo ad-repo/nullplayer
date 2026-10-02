@@ -2,6 +2,7 @@ import Foundation
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
+import XCTest
 import ZIPFoundation
 @testable import NullPlayer
 
@@ -186,7 +187,8 @@ enum WMPSkinTestSupport {
         return data
     }
 
-    static func rgba(_ image: CGImage, x: Int, yFromTop: Int) -> [UInt8] {
+    /// Every pixel of `image`, premultiplied RGBA, top row first.
+    static func premultipliedRGBA(_ image: CGImage) -> [UInt8] {
         let width = image.width, height = image.height
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
         bytes.withUnsafeMutableBytes { buffer in
@@ -196,6 +198,22 @@ enum WMPSkinTestSupport {
                     | CGImageAlphaInfo.premultipliedLast.rawValue)!
             context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         }
+        return bytes
+    }
+
+    /// `premultipliedRGBA`'s inverse: an image of premultiplied RGBA, top row first.
+    static func image(premultipliedRGBA bytes: [UInt8], width: Int, height: Int) throws -> CGImage {
+        let provider = try XCTUnwrap(CGDataProvider(data: Data(bytes) as CFData))
+        return try XCTUnwrap(CGImage(width: width, height: height, bitsPerComponent: 8,
+            bitsPerPixel: 32, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Big.rawValue
+                | CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+    }
+
+    static func rgba(_ image: CGImage, x: Int, yFromTop: Int) -> [UInt8] {
+        let width = image.width
+        let bytes = premultipliedRGBA(image)
         let offset = (yFromTop * width + x) * 4
         let alpha = bytes[offset + 3]
         guard alpha > 0, alpha < 255 else { return Array(bytes[offset..<(offset + 4)]) }
