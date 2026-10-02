@@ -61,7 +61,7 @@ that skin decided.
 | `reframe.sh` | Centres the visible artwork on the white frame; owns the two framing rules |
 | `makegif.sh` | Assembles the GIF at an exact cycle length |
 | `../../app-control/scripts/winhelper` | Window enumeration, and real `CGEvent` clicks, hovers and drags. Owned by `app-control` |
-| `../../app-control/scripts/menu.applescript` | The `mode` / `skin` / `list` / `closeaux` menu verbs, addressed by pid. Owned by `app-control` |
+| `../../app-control/scripts/menu.applescript` | The `mode` / `skin` / `list` / `current` / `family` / `closeaux` menu verbs, addressed by pid. Owned by `app-control` |
 
 `capture.sh` writes `manifest_<stamp>.tsv` next to the images recording, per skin: status, window
 size, artwork size, which framing rule fired, and the output path. **Read the manifest rather than
@@ -72,12 +72,13 @@ that went wrong.
 
 Each one produced a batch of confident-looking wrong images before it was understood.
 
-### 1. Selecting a skin does not switch skin *system*
+### 1. Confirm the skin system before photographing
 
-Clicking a skin name changes the skin **within** the active system. Moving between Classic / Original
-/ Original-Metal / Modern requires that submenu's **"Switch to …"** item, which is only present when
-you are outside that system. Get it wrong and the sweep silently re-photographs the previous system's
-window under the new system's names — 30 frames of Original-Metal labelled `modern_*`.
+Clicking a skin name switches into that skin's system when another is on screen, in every family.
+Before 0.31.2 Classic switched only from Original/Metal and Modern never did, and the sweep silently
+re-photographed the previous system's window under the new system's names — 30 frames of
+Original-Metal labelled `modern_*`. Check `menu.applescript family <pid>` names the system you meant
+before capturing.
 
 ### 2. Window geometry is not a "skin loaded" signal
 

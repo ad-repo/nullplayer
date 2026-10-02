@@ -1,8 +1,10 @@
 -- Drives the Skins / Windows menus of ONE process, addressed by unix id. Verbs:
 --   mode <pid> <submenu>          click that submenu's "Switch to ..." item if present
---   skin <pid> <submenu> <item>   select a skin (does NOT switch system - use mode first)
+--   skin <pid> <submenu> <item>   select a skin; switches into that family when another is on screen
 --   list <pid> <submenu>          the submenu's item names
 --   current <pid> <submenu>       the checked (loaded) skin in that submenu, or empty
+--   family <pid>                  the checked Skins submenu, i.e. the family on screen
+--   load <pid> <submenu> <path>   press that submenu's Load ... Skin... and open <path> in its panel
 --   closeaux <pid>                toggle off every checked window except Main Window
 --   windowitems <pid>             one line per window-toggle item: index|name|enabled|checked
 --   toggle <pid> <index> <name>   click Windows item <index>, refusing if its name is not <name>
@@ -17,9 +19,6 @@
 -- whenever the installed /Applications build is also running, and resolving it by name is
 -- how the installed app gets driven by accident. Pass the pid of the debug build you
 -- launched: see `app-control` Rule zero.
--- Selecting a skin name only changes the skin WITHIN the active system. Switching
--- systems requires the "Switch to ..." item, which is only present when you are
--- outside that system. Getting this wrong silently re-photographs the old system.
 -- **Menus are closed through Accessibility, never with Escape.** A menu opened by an AX click on
 -- a background app stays open until that app is told to cancel it; `key code 53` goes to the
 -- *frontmost* app (the terminal), so the menu stayed up, held the app in menu tracking, and every
@@ -139,65 +138,101 @@ on drive(argv, targetPid)
         perform action "AXPress" of menu item idx of mm
         return "ok"
 
+      -- The Skins verbs read and press the submenus unopened, as `toggle` does: opening the menu
+      -- and `click`ing a skin left the menu up with the selection highlighted and nothing run
+      -- (2026-10-02), while `AXPress` on the unopened item fires it.
       else if act is "mode" then
         set subName to item 3 of argv
-        click menu bar item "Skins" of menu bar 1
-        delay 0.4
-        click menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
-        delay 0.5
         set sm to menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
         set nms to name of every menu item of sm
         repeat with i from 1 to count of nms
           set nm to item i of nms
           if nm is not missing value then
             if nm starts with "Switch to" then
-              click menu item i of sm
+              perform action "AXPress" of menu item i of sm
               return "switched:" & nm
             end if
           end if
         end repeat
-        my closeMenus(targetPid)
-        delay 0.2
-        my closeMenus(targetPid)
         return "already"
 
       else if act is "list" then
         set subName to item 3 of argv
-        click menu bar item "Skins" of menu bar 1
-        delay 0.4
-        click menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
-        delay 0.6
-        set nms to name of every menu item of menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
-        my closeMenus(targetPid)
-        delay 0.2
-        my closeMenus(targetPid)
-        return nms
+        return name of every menu item of menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
 
       else if act is "current" then
-        -- The checked skin in a submenu: which skin a mode switch landed on.
+        -- The checked skin in a submenu: which skin a mode switch landed on. The LAST checked
+        -- item, because skins follow the options and Modern checks "Reimport ClassicPro Engine..."
+        -- whenever the engine is installed.
         set subName to item 3 of argv
-        click menu bar item "Skins" of menu bar 1
-        delay 0.4
-        click menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
-        delay 0.6
         set sm to menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
         set nms to name of every menu item of sm
         set mks to value of attribute "AXMenuItemMarkChar" of every menu item of sm
-        my closeMenus(targetPid)
+        set found to ""
+        repeat with i from 1 to count of nms
+          set mk to item i of mks
+          if mk is not missing value and mk is not "" then set found to item i of nms
+        end repeat
+        return found
+
+      else if act is "family" then
+        -- The checked Skins submenu: the family on screen.
+        set m to menu 1 of menu bar item "Skins" of menu bar 1
+        set nms to name of every menu item of m
+        set mks to value of attribute "AXMenuItemMarkChar" of every menu item of m
         repeat with i from 1 to count of nms
           set mk to item i of mks
           if mk is not missing value and mk is not "" then return item i of nms
         end repeat
         return ""
 
+      else if act is "load" then
+        -- Press the submenu's "Load ... Skin..." item and answer its open panel with <path>. The
+        -- panel is modal, so the press is sent without waiting for a reply; the path goes in
+        -- through the panel's Go To field, which needs the build frontmost to receive keystrokes.
+        set subName to item 3 of argv
+        set filePath to item 4 of argv
+        set sm to menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
+        set nms to name of every menu item of sm
+        set hit to 0
+        repeat with i from 1 to count of nms
+          set nm to item i of nms
+          if nm is not missing value then
+            if nm starts with "Load" then
+              set hit to i
+              exit repeat
+            end if
+          end if
+        end repeat
+        if hit is 0 then error "menu.applescript load: no Load item in " & subName number 2
+        ignoring application responses
+          perform action "AXPress" of menu item hit of sm
+        end ignoring
+        set panelUp to false
+        repeat 40 times
+          delay 0.25
+          if exists (first window whose role description is "dialog") then
+            set panelUp to true
+            exit repeat
+          end if
+        end repeat
+        if not panelUp then error "menu.applescript load: no open panel appeared" number 3
+        set frontmost to true
+        delay 0.4
+        if not frontmost then error "menu.applescript load: build is not frontmost; refusing to type" number 4
+        keystroke "g" using {command down, shift down}
+        delay 0.8
+        keystroke filePath
+        delay 0.5
+        key code 36
+        delay 1.0
+        key code 36
+        return "ok"
+
       else if act is "skin" then
         set subName to item 3 of argv
         set skinName to item 4 of argv
-        click menu bar item "Skins" of menu bar 1
-        delay 0.4
-        click menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
-        delay 0.5
-        click menu item skinName of menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
+        perform action "AXPress" of menu item skinName of menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
         return "ok"
       end if
     end tell

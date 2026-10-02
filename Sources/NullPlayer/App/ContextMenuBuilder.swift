@@ -4038,7 +4038,13 @@ class MenuActions: NSObject {
         let wm = WindowManager.shared
         do {
             let importedURL = try wm.importClassicSkin(from: url)
-            if !SkinLoadingOverlay.shared.run({ wm.loadSkin(from: importedURL) }) {
+            let loaded = SkinLoadingOverlay.shared.run { () -> Bool in
+                // Loaded first: entering classic renders `currentSkin`.
+                guard wm.loadSkin(from: importedURL) else { return false }
+                if wm.uiMode != .classic { wm.reloadUI(to: .classic) }
+                return true
+            }
+            if !loaded {
                 let alert = NSAlert()
                 alert.messageText = "Failed to Load Classic Skin"
                 alert.informativeText = "The skin was imported but could not be loaded."
@@ -4067,7 +4073,10 @@ class MenuActions: NSObject {
         do {
             let imported = try WinampModernSkinImporter.shared.importContainer(at: url)
             NSLog("WinampModern: Imported validated skin '%@' to %@", imported.name, imported.archiveURL.path)
-            if WindowManager.shared.uiMode == .winampModern {
+            if WindowManager.shared.uiMode != .winampModern {
+                // The import selected it, and entering the mode loads the selection.
+                SkinLoadingOverlay.shared.run { WindowManager.shared.reloadUI(to: .winampModern) }
+            } else {
                 SkinLoadingOverlay.shared.run {
                     (WindowManager.shared.mainWindowController as? WinampModernMainWindowController)?
                         .loadSkin(at: imported.archiveURL)
@@ -4194,7 +4203,10 @@ class MenuActions: NSObject {
         let skin = WinampModernImportedSkin(name: url.deletingPathExtension().lastPathComponent,
                                             archiveURL: url)
         WinampModernSkinImporter.shared.selectSkin(skin)
-        if WindowManager.shared.uiMode == .winampModern {
+        if WindowManager.shared.uiMode != .winampModern {
+            // Selected first: entering the mode builds the controller, which loads the selection.
+            SkinLoadingOverlay.shared.run { WindowManager.shared.reloadUI(to: .winampModern) }
+        } else {
             SkinLoadingOverlay.shared.run {
                 (WindowManager.shared.mainWindowController as? WinampModernMainWindowController)?
                     .loadSkin(at: url)
@@ -4218,7 +4230,10 @@ class MenuActions: NSObject {
         let previousSkinName = UserDefaults.standard.string(forKey: family.skinNameKey)
         do {
             let importedSkinName = try ModernSkinEngine.shared.importSkinBundle(from: url, family: family)
-            if WindowManager.shared.uiMode.modernSkinFamily == family {
+            if WindowManager.shared.uiMode.modernSkinFamily != family {
+                // The import saved it as the family's skin, and entering the family loads that.
+                SkinLoadingOverlay.shared.run { WindowManager.shared.reloadUI(to: family.playerUIMode) }
+            } else {
                 if !ModernSkinEngine.shared.loadSkin(named: importedSkinName, family: family) {
                     if let previousSkinName = previousSkinName {
                         UserDefaults.standard.set(previousSkinName, forKey: family.skinNameKey)
@@ -4279,12 +4294,12 @@ class MenuActions: NSObject {
         let wm = WindowManager.shared
 
         SkinLoadingOverlay.shared.run {
-            if wm.isRunningModernUI {
+            if wm.uiMode != .classic {
                 // Load the chosen classic skin into `currentSkin` (also persists
-                // lastClassicSkinPath), then live-switch to classic — the rebuilt classic
-                // windows render `currentSkin`. No restart.
+                // lastClassicSkinPath), then live-switch to classic from whichever family is
+                // on screen — the rebuilt classic windows render `currentSkin`. No restart.
                 wm.loadSkin(from: url)
-                wm.reloadUI(toModernUI: false)
+                wm.reloadUI(to: .classic)
             } else {
                 // Already in classic mode — load the skin immediately
                 wm.loadSkin(from: url)

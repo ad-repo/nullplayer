@@ -364,8 +364,8 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
   menu entry of its own.
 
 ### Original UI Mode
-- **Skins > Original/Classic > Switch to…** to change UI mode
-- Switches **live, with no restart** — only the mode-dependent window layer is rebuilt; audio, casting, the video player, and playlist/seek/play state continue uninterrupted. Picking a specific modern or classic skin while in the other mode also switches live.
+- **Skins > <family> > Switch to…** changes UI mode, returning to that family's last skin
+- Switches **live, with no restart** — only the mode-dependent window layer is rebuilt; audio, casting, the video player, and playlist/seek/play state continue uninterrupted. Picking a skin in any family's list, or loading one with its **Load Skin...**, while another family is on screen also switches live to that family.
 - Original skins use `skin.json` format
 - Portable Original skin bundles use `.nsz` (ZIP) and can be imported via **Skins > Original > Load Skin...**
 - Bundled Original skins: NeonWave (default), Skulls
