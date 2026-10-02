@@ -14,8 +14,8 @@
   shadow at all, so they looked cut out and flat next to the rest of the app. Every skin window now
   casts a soft macOS-style shadow that follows the skin's own shape, including drawers, panes and
   layout switches, and stays put while you drag. Animated parts such as Anaheim's flapping ears do
-  not leave a ghost behind. **Window Shadows** in the Media Player and Modern skin menus turns it
-  off. Classic and Original windows are unchanged.
+  not leave a ghost behind. **Windows > Window Shadows** turns it off. Classic and Original windows
+  are unchanged.
 
 ## 0.31.0
 
