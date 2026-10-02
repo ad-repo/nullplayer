@@ -243,8 +243,8 @@ extension WasabiSceneRenderer {
     /// `drawsAnimationCores`. Outline pass only.
     private func animationCoreImage(_ bitmap: WasabiBitmap, object: WasabiObject) -> CGImage? {
         let grid = animationGrid(bitmap, object: object)
-        let key = CropKey(image: ObjectIdentifier(bitmap.image), x: grid.count, y: grid.columns,
-                          width: grid.width, height: grid.height)
+        let key = AnimationCoreKey(sheet: ObjectIdentifier(bitmap.image), frameWidth: grid.width,
+                                   frameHeight: grid.height, count: grid.count, columns: grid.columns)
         if let cached = animationCoreCache[key] { return cached.core }
         guard let image = Self.animationCore(of: bitmap.image, frameWidth: grid.width,
                                              frameHeight: grid.height, count: grid.count,
@@ -255,41 +255,30 @@ extension WasabiSceneRenderer {
     }
 
     /// The pure half of `animationCoreImage`: black at each pixel's lowest alpha across the
-    /// `count` frames of `sheet`, laid out `columns` to a row.
+    /// `count` frames of `sheet`, laid out `columns` to a row. `nil` when no frame lies inside the
+    /// sheet.
     static func animationCore(of sheet: CGImage, frameWidth width: Int, frameHeight height: Int,
                               count: Int, columns: Int) -> CGImage? {
-        guard width > 0, height > 0, count > 0, columns > 0,
-              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
-                                      bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
-                                      bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue),
-              let data = context.data else { return nil }
-        let pixels = data.bindMemory(to: UInt8.self, capacity: context.bytesPerRow * height)
-        var core = [UInt8](repeating: 255, count: width * height)
-        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        guard count > 0, columns > 0 else { return nil }
+        var core: AlphaPlane?
         for index in 0..<count {
             let crop = CGRect(x: (index % columns) * width, y: (index / columns) * height,
                               width: width, height: height)
             guard crop.maxY <= CGFloat(sheet.height), crop.maxX <= CGFloat(sheet.width),
-                  let frame = sheet.cropping(to: crop) else { continue }
-            context.clear(bounds)
-            context.draw(frame, in: bounds)
-            for row in 0..<height {
-                let source = pixels + row * context.bytesPerRow
-                for column in 0..<width {
-                    let alpha = source[column]
-                    if alpha < core[row * width + column] { core[row * width + column] = alpha }
-                }
-            }
+                  let frame = sheet.cropping(to: crop),
+                  let plane = AlphaPlane(layers: [frame], width: width, height: height) else { continue }
+            if core == nil { core = plane } else { core?.formMinimum(plane) }
         }
-        var rgba = [UInt8](repeating: 0, count: width * height * 4)
-        for index in 0..<core.count { rgba[index * 4 + 3] = core[index] }
-        guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
-        return CGImage(width: width, height: height, bitsPerComponent: 8,
-                       bitsPerPixel: 32, bytesPerRow: width * 4,
-                       space: CGColorSpaceCreateDeviceRGB(),
-                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                       provider: provider, decode: nil, shouldInterpolate: false,
-                       intent: .defaultIntent)
+        return core?.blackImage()
+    }
+
+    /// Which core `animationCoreCache` holds: one per sheet and frame grid.
+    struct AnimationCoreKey: Hashable {
+        let sheet: ObjectIdentifier
+        let frameWidth: Int
+        let frameHeight: Int
+        let count: Int
+        let columns: Int
     }
 
     /// One sub-rectangle of a sheet, **stably**. `CGImage.cropping(to:)` allocates a fresh image on

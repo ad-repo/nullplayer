@@ -1,4 +1,3 @@
-import Accelerate
 import AppKit
 import QuartzCore
 
@@ -35,8 +34,8 @@ final class SkinShadowWindow: NSWindow {
     /// top left the shadow — knockout and all — 165 pt below the skin as a second outline of it.
     /// This covers a frame set on the shadow itself; AppKit still clamps it when it carries the
     /// child along with a moving parent, and `SkinWindowShadow.reassert()` puts it back from the
-    /// parent's `windowDidMove` in the same turn (measured: one `reassert frame` per drag step
-    /// while the skin is above the screen top, none below it).
+    /// parent's `didMoveNotification` in the same turn (measured: one `reassert frame` per drag
+    /// step while the skin is above the screen top, none below it).
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
         frameRect
     }
@@ -52,6 +51,13 @@ final class SkinShadowWindow: NSWindow {
 /// Instead the shadow is a click-through child window ordered `.below` the skin, holding a blurred
 /// copy of the skin's alpha with the shape itself knocked back out. It is rebuilt only when the
 /// shape's bytes change, never on a repaint that left the outline alone.
+///
+/// **It looks after itself.** `attach` hands it the window and a `shape` to pull the outline from;
+/// from then on it watches the window's move, key, resize and occlusion notifications and the
+/// preference, and repairs its own link, order and frame. The owner's one job is
+/// `invalidateShape` when its content may have moved the outline. A pull waits for the window to be
+/// on screen, for the previous build to land and for `minimumInterval`, so any number of
+/// invalidations cost one pull of the newest shape.
 @MainActor
 final class SkinWindowShadow {
     /// One key for both families. Default on.
@@ -73,34 +79,34 @@ final class SkinWindowShadow {
         }
     }
 
-    static let isTraceEnabled = ProcessInfo.processInfo.environment["NP_SKIN_SHADOW_TRACE"] == "1"
+    nonisolated static let isTraceEnabled = ProcessInfo.processInfo.environment["NP_SKIN_SHADOW_TRACE"] == "1"
 
     let shadowWindow = SkinShadowWindow()
+    /// The fewest seconds between two pulls of `shape`. A `.wal` outline is a render made for the
+    /// purpose, on the main thread; a `.wmz` one is the frame the window already presented.
+    private let minimumInterval: CFTimeInterval
     private weak var parent: NSWindow?
     private var name = "?"
-    /// The shape last handed over, kept so enabling the preference can build without waiting for
-    /// the skin to repaint.
-    private var lastLayers: [CGImage] = []
+    private var shape: () -> [CGImage] = { [] }
+    private var parentObservers: [NSObjectProtocol] = []
+    private var preferenceObserver: NSObjectProtocol?
+    /// `isEnabledPreference`, cached from its notification: read on every drag step.
+    private var isEnabled = SkinWindowShadow.isEnabledPreference
+    /// The parent's `occlusionState`, cached from its notification for the same reason.
+    private var isParentOnScreen = false
     private var lastFingerprint: Int?
-    private var observers: [NSObjectProtocol] = []
-    private var levelObservation: NSKeyValueObservation?
 
-    init() {
-        observers.append(NotificationCenter.default.addObserver(
+    init(minimumInterval: CFTimeInterval = 0) {
+        self.minimumInterval = minimumInterval
+        preferenceObserver = NotificationCenter.default.addObserver(
             forName: Self.enabledDidChange, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.applyPreference() }
-            })
-        // Always on Top writes this key and then re-levels every managed window; the shadow is not
-        // one of them, so it re-copies its parent's level a turn later.
-        levelObservation = UserDefaults.standard.observe(\.isAlwaysOnTop, options: []) {
-            [weak self] _, _ in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.reassert() } }
-        }
+            }
     }
 
     deinit {
-        observers.forEach(NotificationCenter.default.removeObserver)
-        levelObservation?.invalidate()
+        if let preferenceObserver { NotificationCenter.default.removeObserver(preferenceObserver) }
+        parentObservers.forEach(NotificationCenter.default.removeObserver)
         let window = shadowWindow
         DispatchQueue.main.async {
             window.parent?.removeChildWindow(window)
@@ -110,33 +116,54 @@ final class SkinWindowShadow {
 
     // MARK: Attachment
 
-    var isAttached: Bool { parent != nil }
+    /// Whether there is a window to shadow and the preference wants one — the cheap check an owner
+    /// makes before doing any work toward `invalidateShape`.
+    var isActive: Bool { parent != nil && isEnabled }
 
-    /// Bind to `parent` for its lifetime on screen. `name` is only for the trace.
-    func attach(to parent: NSWindow, name: String) {
+    /// Shadow `parent` from now on, pulling its outline from `shape`: layers drawn over each other
+    /// at the window's size, whose combined alpha is the shape. `name` is only for the trace.
+    /// Attaching again to the same window only takes the new `name` and `shape`.
+    func attach(to parent: NSWindow, name: String, shape: @escaping () -> [CGImage]) {
         self.name = name
-        if self.parent !== parent {
-            detach()
-            self.parent = parent
+        self.shape = shape
+        guard self.parent !== parent else { reassert(); return }
+        detach()
+        self.parent = parent
+        let center = NotificationCenter.default
+        for event in [NSWindow.didMoveNotification, NSWindow.didResizeNotification,
+                      NSWindow.didBecomeKeyNotification] {
+            parentObservers.append(center.addObserver(forName: event, object: parent, queue: .main) {
+                [weak self] _ in MainActor.assumeIsolated { self?.reassert() }
+            })
         }
-        guard Self.isEnabledPreference else { return }
-        updateFrame(parentFrame: parent.frame, trigger: "attach")
-        if !lastLayers.isEmpty, lastFingerprint == nil {
-            update(layers: lastLayers, parentFrame: parent.frame, trigger: "attach")
-        }
+        parentObservers.append(center.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification, object: parent, queue: .main) {
+                [weak self] _ in MainActor.assumeIsolated { self?.parentOcclusionDidChange() }
+            })
+        isParentOnScreen = parent.occlusionState.contains(.visible)
+        reassert()
+        invalidateShape("attach")
     }
 
     func detach() {
+        parentObservers.forEach(NotificationCenter.default.removeObserver)
+        parentObservers.removeAll()
         shadowWindow.parent?.removeChildWindow(shadowWindow)
         shadowWindow.orderOut(nil)
         parent = nil
+        pendingTrigger = nil
     }
 
-    /// Put the link, the order and the level back if anything has moved them. A pointer compare on
-    /// the common path; the shadow has no timer, so these calls are the only thing that repairs it.
-    func reassert() {
-        guard let parent, Self.isEnabledPreference else { return }
-        guard parent.isVisible else { return }
+    /// Put the frame, the link and the order back if anything has moved them. A few compares on the
+    /// common path. The level needs nothing: AppKit keeps a child window at its parent's level,
+    /// Always on Top included.
+    private func reassert() {
+        guard let parent, isEnabled, parent.isVisible else { return }
+        let frame = parent.frame.insetBy(dx: -Self.pad, dy: -Self.pad)
+        if shadowWindow.frame != frame {
+            shadowWindow.setFrame(frame, display: false)
+            trace("reassert frame \(Int(parent.frame.width))x\(Int(parent.frame.height))")
+        }
         if shadowWindow.parent !== parent {
             shadowWindow.parent?.removeChildWindow(shadowWindow)
             parent.addChildWindow(shadowWindow, ordered: .below)
@@ -146,23 +173,24 @@ final class SkinWindowShadow {
             shadowWindow.order(.below, relativeTo: parent.windowNumber)
             trace("reassert order")
         }
-        if shadowWindow.level != parent.level {
-            shadowWindow.level = parent.level
-            trace("reassert level")
-        }
-        let frame = parent.frame.insetBy(dx: -Self.pad, dy: -Self.pad)
-        if shadowWindow.frame != frame {
-            shadowWindow.setFrame(frame, display: false)
-            trace("reassert frame")
-        }
+    }
+
+    /// A window that comes back on screen also takes the pull it was owed while hidden.
+    private func parentOcclusionDidChange() {
+        isParentOnScreen = parent?.occlusionState.contains(.visible) ?? false
+        reassert()
+        pullShapeWhenDue()
     }
 
     private func applyPreference() {
-        guard let parent else { return }
-        if Self.isEnabledPreference {
+        isEnabled = Self.isEnabledPreference
+        guard parent != nil else { return }
+        if isEnabled {
             lastFingerprint = nil
-            attach(to: parent, name: name)
+            reassert()
+            invalidateShape("enabled")
         } else {
+            pendingTrigger = nil
             shadowWindow.parent?.removeChildWindow(shadowWindow)
             shadowWindow.orderOut(nil)
         }
@@ -175,10 +203,11 @@ final class SkinWindowShadow {
     /// a tick in a debug build (`corona`, 2026-10-01).
     nonisolated private static let worker = DispatchQueue(label: "NullPlayer.SkinWindowShadow",
                                                          qos: .userInitiated)
+    /// Why the shape was last invalidated, while a pull is owed. Only the newest matters.
+    private var pendingTrigger: String?
+    private var lastPull: CFAbsoluteTime = 0
+    private var isPullScheduled = false
     private var isBuilding = false
-    /// The newest shape not yet looked at. Only the latest matters, so a request that arrives
-    /// while one is in flight replaces any other that is waiting.
-    private var pendingRequest: ShapeRequest?
 
     private struct ShapeRequest {
         let layers: [CGImage]
@@ -193,23 +222,47 @@ final class SkinWindowShadow {
         case rebuilt(fingerprint: Int, image: CGImage?)
     }
 
-    /// The window's shape may have changed: `layers` are drawn over each other at the window's
-    /// size, and their combined alpha is the outline. Re-frames at once; the alpha is compared off
-    /// the main thread, and the shadow is rebuilt only when it moved.
-    func update(layers: [CGImage], parentFrame: NSRect, trigger: String) {
-        lastLayers = layers
-        guard parent != nil, Self.isEnabledPreference, !layers.isEmpty else { return }
-        updateFrame(parentFrame: parentFrame, trigger: trigger)
-        pendingRequest = ShapeRequest(layers: layers,
-                                      width: max(1, Int(parentFrame.width.rounded())),
-                                      height: max(1, Int(parentFrame.height.rounded())),
-                                      trigger: trigger)
-        startNextBuild()
+    /// The window's outline may have moved. The shape is pulled once the window is on screen, the
+    /// previous build has landed and `minimumInterval` has passed since the last pull; the alpha
+    /// is compared off the main thread, and the shadow is rebuilt only when it moved.
+    func invalidateShape(_ trigger: String) {
+        guard isActive else { return }
+        pendingTrigger = trigger
+        pullShapeWhenDue()
     }
 
-    private func startNextBuild() {
-        guard !isBuilding, let request = pendingRequest else { return }
-        pendingRequest = nil
+    private func pullShapeWhenDue() {
+        guard let trigger = pendingTrigger, let parent, isEnabled, isParentOnScreen,
+              !isBuilding, !isPullScheduled else { return }
+        let wait = lastPull + minimumInterval - CFAbsoluteTimeGetCurrent()
+        if wait > 0 {
+            // Leading edge at once, the rest coalesced into one trailing pull that catches the
+            // end of an animation.
+            isPullScheduled = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.isPullScheduled = false
+                    self?.pullShapeWhenDue()
+                }
+            }
+            return
+        }
+        pendingTrigger = nil
+        let started = CFAbsoluteTimeGetCurrent()
+        lastPull = started
+        let layers = shape()
+        guard !layers.isEmpty else { return }
+        // Pulling a `.wal` outline is main-thread work the build's own (off-main) timing cannot see.
+        let label = Self.isTraceEnabled
+            ? trigger + String(format: " pull=%.1fms", (CFAbsoluteTimeGetCurrent() - started) * 1_000)
+            : trigger
+        startBuild(ShapeRequest(layers: layers,
+                                width: max(1, Int(parent.frame.width.rounded())),
+                                height: max(1, Int(parent.frame.height.rounded())),
+                                trigger: label))
+    }
+
+    private func startBuild(_ request: ShapeRequest) {
         isBuilding = true
         let known = lastFingerprint
         Self.worker.async { [weak self] in
@@ -226,8 +279,8 @@ final class SkinWindowShadow {
 
     private func finishBuild(_ result: ShapeResult, request: ShapeRequest, milliseconds: Double) {
         isBuilding = false
-        defer { startNextBuild() }
-        guard parent != nil, Self.isEnabledPreference else { return }
+        defer { pullShapeWhenDue() }
+        guard isActive else { return }
         let detail = "\(request.width)x\(request.height) "
             + String(format: "%.1fms", milliseconds) + " trigger=\(request.trigger)"
         switch result {
@@ -244,7 +297,7 @@ final class SkinWindowShadow {
 
     /// Off the main thread: fingerprint the outline, and build a shadow only for a new one.
     nonisolated private static func shape(_ request: ShapeRequest, known: Int?) -> ShapeResult {
-        guard let plane = alphaPlane(of: request.layers, width: request.width,
+        guard let plane = AlphaPlane(layers: request.layers, width: request.width,
                                      height: request.height) else { return .failed }
         var hasher = Hasher()
         hasher.combine(request.width)
@@ -257,18 +310,6 @@ final class SkinWindowShadow {
                                                opacity: opacity, pad: pad))
     }
 
-    /// Fit the shadow around `parentFrame`. The layer stretches what it last built until the next
-    /// shape update, so a live resize costs nothing but this.
-    func updateFrame(parentFrame: NSRect, trigger: String = "frame") {
-        guard parent != nil, Self.isEnabledPreference else { return }
-        let frame = parentFrame.insetBy(dx: -Self.pad, dy: -Self.pad)
-        if shadowWindow.frame != frame {
-            shadowWindow.setFrame(frame, display: false)
-            trace("reframe \(Int(parentFrame.width))x\(Int(parentFrame.height)) trigger=\(trigger)")
-        }
-        reassert()
-    }
-
     private func trace(_ message: String) {
         guard Self.isTraceEnabled else { return }
         NSLog("[shadow] %@ %@", name, message)
@@ -276,43 +317,8 @@ final class SkinWindowShadow {
 
     // MARK: Pure image work
 
-    struct AlphaPlane {
-        let width: Int
-        let height: Int
-        /// One byte per pixel, top row first, `width` bytes a row.
-        let bytes: [UInt8]
-    }
-
-    /// The combined alpha of `layers`, each drawn to fill `width` x `height`.
-    nonisolated static func alphaPlane(of layers: [CGImage], width: Int, height: Int) -> AlphaPlane? {
-        guard width > 0, height > 0, !layers.isEmpty,
-              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
-                                      bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
-                                      bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue),
-              let data = context.data else { return nil }
-        context.interpolationQuality = .medium
-        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
-        for layer in layers { context.draw(layer, in: bounds) }
-        let pointer = data.bindMemory(to: UInt8.self, capacity: width * height)
-        var bytes = [UInt8](repeating: 0, count: width * height)
-        // Bitmap memory is top row first; `bytesPerRow` may be padded.
-        for row in 0..<height {
-            let source = pointer + row * context.bytesPerRow
-            bytes.withUnsafeMutableBufferPointer {
-                ($0.baseAddress! + row * width).update(from: source, count: width)
-            }
-        }
-        return AlphaPlane(width: width, height: height, bytes: bytes)
-    }
-
-    /// The shadow for `alpha`'s shape, `pad` larger on every side.
-    nonisolated static func makeShadowImage(alpha: CGImage, blur: CGFloat, offset: CGSize,
-                                            opacity: CGFloat, pad: CGFloat) -> CGImage? {
-        guard let plane = alphaPlane(of: [alpha], width: alpha.width, height: alpha.height)
-        else { return nil }
-        return makeShadowImage(plane: plane, blur: blur, offset: offset, opacity: opacity, pad: pad)
-    }
-
+    /// The shadow for `plane`'s shape, `pad` larger on every side.
+    ///
     /// The shape is drawn with a shadow, then cut back out with a **binarized** copy of itself:
     /// a plain `.destinationOut` leaves shadow x (1 - alpha) under translucent art, which would
     /// still darken it from behind. macOS clears its shadow under the whole window shape, and this
@@ -322,12 +328,11 @@ final class SkinWindowShadow {
         let padding = Int(pad.rounded(.up))
         let width = plane.width + padding * 2
         let height = plane.height + padding * 2
-        let space = CGColorSpaceCreateDeviceRGB()
-        let info = CGImageAlphaInfo.premultipliedLast.rawValue
-        guard let shape = rgbaMask(plane, binarized: false),
-              let knockout = rgbaMask(plane, binarized: true),
+        guard let shape = plane.blackImage(),
+              let knockout = plane.blackImage(mappedThrough: knockoutTable),
               let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
-                                      bytesPerRow: 0, space: space, bitmapInfo: info)
+                                      bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else { return nil }
         let rect = CGRect(x: padding, y: padding, width: plane.width, height: plane.height)
         context.saveGState()
@@ -357,53 +362,6 @@ final class SkinWindowShadow {
         return UInt8((value - floor) * 255 / (ceiling - floor))
     }
 
-    /// Black at `plane`'s alpha (or at `knockoutAlpha` of it). vImage rather than a
-    /// loop: a debug build spent ~20 ms a pass interleaving a 596x468 plane by hand.
-    nonisolated private static func rgbaMask(_ plane: AlphaPlane, binarized: Bool) -> CGImage? {
-        let count = plane.width * plane.height
-        var alpha = plane.bytes
-        var zero = [UInt8](repeating: 0, count: count)
-        var pixels = [UInt8](repeating: 0, count: count * 4)
-        let width = vImagePixelCount(plane.width), height = vImagePixelCount(plane.height)
-        let error: vImage_Error = alpha.withUnsafeMutableBytes { alphaBytes in
-            zero.withUnsafeMutableBytes { zeroBytes in
-                pixels.withUnsafeMutableBytes { pixelBytes in
-                    var alphaBuffer = vImage_Buffer(data: alphaBytes.baseAddress, height: height,
-                                                    width: width, rowBytes: plane.width)
-                    var zeroBuffer = vImage_Buffer(data: zeroBytes.baseAddress, height: height,
-                                                   width: width, rowBytes: plane.width)
-                    var destination = vImage_Buffer(data: pixelBytes.baseAddress, height: height,
-                                                    width: width, rowBytes: plane.width * 4)
-                    if binarized {
-                        let table = [UInt8](unsafeUninitializedCapacity: 256) { buffer, initialized in
-                            for index in 0..<256 { buffer[index] = knockoutAlpha(UInt8(index)) }
-                            initialized = 256
-                        }
-                        let result = vImageTableLookUp_Planar8(&alphaBuffer, &alphaBuffer, table,
-                                                               vImage_Flags(kvImageNoFlags))
-                        guard result == kvImageNoError else { return result }
-                    }
-                    // The four planes go in in memory order, so this is R, G, B, A: premultiplied
-                    // black is (0, 0, 0, a).
-                    return vImageConvert_Planar8toARGB8888(&zeroBuffer, &zeroBuffer, &zeroBuffer,
-                                                           &alphaBuffer, &destination,
-                                                           vImage_Flags(kvImageNoFlags))
-                }
-            }
-        }
-        guard error == kvImageNoError,
-              let provider = CGDataProvider(data: Data(pixels) as CFData) else { return nil }
-        return CGImage(width: plane.width, height: plane.height, bitsPerComponent: 8,
-                       bitsPerPixel: 32, bytesPerRow: plane.width * 4,
-                       space: CGColorSpaceCreateDeviceRGB(),
-                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                       provider: provider, decode: nil, shouldInterpolate: false,
-                       intent: .defaultIntent)
-    }
-}
-
-private extension UserDefaults {
-    /// `WindowManager.isAlwaysOnTop`'s key, exposed for key-value observation — `UserDefaults`
-    /// posts KVO under the key's own name, so the property has to carry exactly that name.
-    @objc dynamic var isAlwaysOnTop: Bool { bool(forKey: "isAlwaysOnTop") }
+    /// `knockoutAlpha` for every alpha, as the lookup `AlphaPlane.blackImage` takes.
+    nonisolated private static let knockoutTable: [UInt8] = (0...255).map { knockoutAlpha(UInt8($0)) }
 }

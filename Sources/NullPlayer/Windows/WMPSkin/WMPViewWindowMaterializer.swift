@@ -140,7 +140,6 @@ final class WMPViewWindowMaterializer: NSObject, NSWindowDelegate {
     /// preferences at load from ending up with two of each.
     func raise(_ presentation: WMPViewPresentation) {
         presentation.window.orderFront(nil)
-        presentation.shadow.reassert()
     }
 
     // MARK: Closing
@@ -249,8 +248,7 @@ final class WMPViewWindowMaterializer: NSObject, NSWindowDelegate {
 
     func windowDidMove(_ notification: Notification) {
         guard let window = notification.object as? NSWindow,
-              let presentation = presentation(for: window) else { return }
-        defer { presentation.shadow.reassert() }
+              presentation(for: window) != nil else { return }
         // **Not while the user is dragging this window.** `WindowManager` has already put the drag
         // through `windowWillMove` and set the origin itself, so running it again from the delegate
         // applies the same delta to the whole docked group a second time, once per mouse event —
@@ -297,15 +295,9 @@ final class WMPViewWindowMaterializer: NSObject, NSWindowDelegate {
         controller?.renderCurrentSize(presentation)
     }
 
-    func windowDidChangeOcclusionState(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow else { return }
-        presentation(for: window)?.shadow.reassert()
-    }
-
     func windowDidBecomeKey(_ notification: Notification) {
         guard let window = notification.object as? NSWindow,
-              let presentation = presentation(for: window) else { return }
-        presentation.shadow.reassert()
+              presentation(for: window) != nil else { return }
         // A turn later, once a click-activation has finished (W273).
         DispatchQueue.main.async { [weak window] in
             guard let window, window.isKeyWindow else { return }

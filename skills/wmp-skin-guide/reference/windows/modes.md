@@ -105,18 +105,26 @@ of these was invisible to the harness and visible in the first minute of live QA
   repaints brought it back a third time. So `hasShadow` stays **off** while a skin is shown (on for
   the opaque app-authored player), and `SkinWindowShadow` (`Windows/Shared/`, shared with `.wal`)
   draws one instead: a click-through child window ordered `.below` the skin, holding a blur of the
-  artwork's own alpha. Each `WMPViewPresentation` owns one.
-  - **What rebuilds it** is `WMPMainView.onShapeChanged`: every full present, and a dirty repaint
-    only when `WMPRenderResult.alphaChanged` — the renderer compares alpha inside the rect it just
-    drew, so a marquee over opaque art never asks. The outline is fingerprinted off the main thread
-    and rebuilt only when its bytes move; a skin that only plays rebuilds nothing after load.
+  artwork's own alpha. Each `WMPViewPresentation` owns one, attached in `apply` with
+  `WMPMainView.outlineLayers` (the presented image and overlay) as the shape it pulls.
+  - **It looks after itself.** It watches its window's move, resize, key and occlusion
+    notifications and repairs its own link, order and frame, so no delegate method calls it. AppKit
+    keeps a child at its parent's level, so Always on Top needs nothing.
+  - **What rebuilds it** is `WMPMainView.onOutlineMayHaveMoved` → `invalidateShape`: every present
+    of a `WMPRenderResult` whose `alphaChanged` is set — always for a whole render, and for a dirty
+    repaint only when the renderer found the alpha inside the rect it just drew had moved, so a
+    marquee over opaque art never asks. A hidden window owes the pull until it is back on screen.
+    The outline is fingerprinted off the main thread and rebuilt only when its bytes move; a skin
+    that only plays rebuilds nothing after load.
   - **The knockout ramps, it is not `alpha > 0`.** Corona paints its own soft shadow at alpha 1-60,
     16 pt below the player, and clearing under every non-zero pixel cut the real shadow away
     beneath that glow: the desktop showed through as a white band ("a white window extension, not a
     shadow"). `SkinWindowShadow.knockoutAlpha` clears nothing at 16 and below and everything from 128.
   - **AppKit clamps the shadow window under the menu bar** when it carries it along with a parent
     that sits above the screen top by its transparent rows, which left the shadow 165 pt below
-    `BlueCrush_MP7` as a second outline. `reassert()` puts the frame back from `windowDidMove`.
+    `BlueCrush_MP7` as a second outline. `reassert()` puts the frame back from the parent's
+    `didMoveNotification`. AppKit carries the child only *after* that notification, so the frame is
+    re-set on every drag step and lands right (measured headlessly 2026-10-02: no overshoot).
   - **Shared code keeps the child.** `WindowManager.updateDockedChildWindows` strips every non-docked
     child of the player on each drag and dock; it exempts `SkinShadowWindow`, gated on
     `hostsSkinShadowWindows` (`.wmz`/`.wal` only). NullPlayer's own Compact Mode — which records and

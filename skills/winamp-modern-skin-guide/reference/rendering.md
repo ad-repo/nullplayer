@@ -354,18 +354,22 @@ every auxiliary container and every hosted window get one; the code is
   `renderer.draw` into a one-pixel-per-point buffer, then fills every visible hosted surface's frame
   — the renderer draws only the chrome around a library, browser, video or vis surface, and its area
   would otherwise read as a hole. The fingerprint and the rebuild run off the main thread.
-- **What asks for a render is an event that can move the outline, never invalidation.** Layer FX
+- **The shadow pulls; the view only invalidates.** `SkinWindowShadow` is attached with the outline
+  render as its `shape`, watches the window's move, resize, key and occlusion notifications itself,
+  and pulls at most once per `shadowShapeInterval` (250 ms), leading edge first with a trailing pull
+  for the end of an animation, and never while the window is hidden.
+- **What invalidates it is an event that can move the outline, never invalidation.** Layer FX
   invalidates the window 30 times a second and a playing skin writes readouts every tick, so neither
   `repaintRequested` nor `needsDisplay` is a trigger. The triggers are a layout switch, a canvas
-  change, a window resize, the window coming on screen, and a graph write — and a graph write only
-  when **`WasabiObjectGraph.shapeGeneration`** moved (geometry, structure, `visible`, `alpha`, an
-  image; never `text`, colour or `frame`) *and* this window's own scene fingerprint changed. The
-  counter alone is graph-wide: cPro2 Dark Aluminum writes its shade layout and About window every
-  second, which cost the player 34 renders in 20 s before the scene check. Requests are throttled
-  leading-edge to one per 250 ms with a trailing pass for the end of an animation.
-- **An animated layer contributes its core, not its current frame.** While the outline pass runs,
-  `WasabiSceneRenderer.drawsAnimationCores` makes an `<animatedlayer>` paint the pixels opaque in
-  *every* frame. Anaheim's mini player is a frame-stepped ball whose ears `vis_mini.maki` flaps to
+  change, a resize (`setFrameSize`), and a graph write — and a graph write only past
+  `WinampModernShadowOutlineGate`: **`WasabiObjectGraph.shapeGeneration`** moved (geometry,
+  structure, `visible`, `alpha`, an image; never `text`, colour or `frame` — the graph decides it
+  beside `isSceneNeutral`) *and* this window's own scene fingerprint changed. The counter alone is
+  graph-wide: cPro2 Dark Aluminum writes its shade layout and About window every second, which cost
+  the player 34 renders in 20 s before the scene check.
+- **An animated layer contributes its core, not its current frame.** The outline pass is
+  `WasabiSceneRenderer.drawOutline(in:)`, which makes an `<animatedlayer>` paint the pixels opaque
+  in *every* frame (`drawsAnimationCores`, the minimum of each frame's `AlphaPlane`). Anaheim's mini player is a frame-stepped ball whose ears `vis_mini.maki` flaps to
   the music; a frame step is not (and must not be) a trigger, so a shadow cut from whichever frame it
   last sampled kept the old ears as a white ghost behind the ball. With the core, the ball casts the
   shadow, the ears cast none, and the shadow costs nothing while the skin plays.

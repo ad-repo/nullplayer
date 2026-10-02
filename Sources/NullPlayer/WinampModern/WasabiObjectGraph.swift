@@ -134,22 +134,7 @@ final class WasabiObject {
         if WasabiMutationTrace.isEnabled {
             WasabiMutationTrace.record(object: self, reason: reason ?? Self.reasonName(for: flags))
         }
-        graph?.recordInvalidation(stableID, flags: flags,
-                                  sceneAffecting: reason.map { !WasabiObjectGraph.isSceneNeutral(attribute: $0) } ?? true,
-                                  shapeAffecting: Self.mayMoveOutline(flags: flags, reason: reason))
-    }
-
-    /// The attributes besides geometry and structure that can change where a window has pixels at
-    /// all. Text, colour, font, a slider's value and an animation's frame cannot in practice, and
-    /// they are what a playing skin writes every tick.
-    private static let outlineAttributes: Set<String> = [
-        "visible", "alpha", "image", "file", "downimage", "hoverimage", "activeimage",
-    ]
-
-    private static func mayMoveOutline(flags: WasabiDirtyFlags, reason: String?) -> Bool {
-        if !flags.isDisjoint(with: [.geometry, .structure]) { return true }
-        guard let reason else { return flags.contains(.appearance) }
-        return outlineAttributes.contains(reason)
+        graph?.recordInvalidation(stableID, flags: flags, attribute: reason)
     }
 
     private static func reasonName(for flags: WasabiDirtyFlags) -> String {
@@ -316,6 +301,20 @@ final class WasabiObjectGraph {
         attribute == "alpha" || attribute == "frame"
     }
 
+    /// The attributes besides geometry and structure that can change where a window has pixels at
+    /// all — what moves `shapeGeneration`. Text, colour, font, a slider's value and an animation's
+    /// frame cannot in practice, and they are what a playing skin writes every tick. Not the
+    /// complement of `isSceneNeutral`: `alpha` leaves the scene alone and still moves the outline.
+    private static let outlineAttributes: Set<String> = [
+        "visible", "alpha", "image", "file", "downimage", "hoverimage", "activeimage",
+    ]
+
+    private static func mayMoveOutline(flags: WasabiDirtyFlags, attribute: String?) -> Bool {
+        if !flags.isDisjoint(with: [.geometry, .structure]) { return true }
+        guard let attribute else { return flags.contains(.appearance) }
+        return outlineAttributes.contains(attribute)
+    }
+
     private var nextRawID: UInt64 = 1
     private var objectsByID: [WasabiObjectID: WasabiObject] = [:]
     private var invalidated: [WasabiObjectID: WasabiDirtyFlags] = [:]
@@ -393,14 +392,16 @@ final class WasabiObjectGraph {
         return result
     }
 
+    /// `attribute` is the attribute a write changed, or `nil` for a mutation that is not one; every
+    /// counter but `mutationGeneration` is decided from it and `flags` here, and nowhere else.
     fileprivate func recordInvalidation(_ id: WasabiObjectID, flags: WasabiDirtyFlags,
-                                        sceneAffecting: Bool = true, shapeAffecting: Bool = true) {
+                                        attribute: String? = nil) {
         guard !isTornDown else { return }
         invalidated[id, default: []].formUnion(flags)
         mutationGeneration &+= 1
         if flags.contains(.structure) { structureGeneration &+= 1 }
-        if sceneAffecting { sceneGeneration &+= 1 }
-        if shapeAffecting { shapeGeneration &+= 1 }
+        if !(attribute.map { Self.isSceneNeutral(attribute: $0) } ?? false) { sceneGeneration &+= 1 }
+        if Self.mayMoveOutline(flags: flags, attribute: attribute) { shapeGeneration &+= 1 }
     }
 
     func snapshot() -> String {

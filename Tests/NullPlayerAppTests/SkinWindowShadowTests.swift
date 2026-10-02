@@ -8,18 +8,15 @@ final class SkinWindowShadowTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    /// An RGBA image, top row first, from a closure answering each pixel's alpha.
-    private func maskImage(width: Int, height: Int, alpha: (Int, Int) -> UInt8) -> CGImage {
-        var bytes = [UInt8](repeating: 0, count: width * height * 4)
-        for y in 0..<height {
-            for x in 0..<width { bytes[(y * width + x) * 4 + 3] = alpha(x, y) }
-        }
-        let provider = CGDataProvider(data: Data(bytes) as CFData)!
-        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
-                       bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
-                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
-                       provider: provider, decode: nil, shouldInterpolate: false,
-                       intent: .defaultIntent)!
+    /// An alpha plane, top row first, from a closure answering each pixel's alpha.
+    private func plane(width: Int, height: Int, alpha: (Int, Int) -> UInt8) -> AlphaPlane {
+        AlphaPlane(width: width, height: height,
+                   bytes: (0..<width * height).map { alpha($0 % width, $0 / width) })
+    }
+
+    /// The same plane as a premultiplied black image.
+    private func maskImage(width: Int, height: Int, alpha: (Int, Int) -> UInt8) throws -> CGImage {
+        try XCTUnwrap(plane(width: width, height: height, alpha: alpha).blackImage())
     }
 
     private func alpha(_ image: CGImage, x: Int, yFromTop: Int) -> UInt8 {
@@ -32,14 +29,14 @@ final class SkinWindowShadowTests: XCTestCase {
     /// skin-drawn glow beside it (alpha 8), shadowed with a 30 px pad — so the body sits at
     /// (40...59, 40...59) in the output.
     private func shadowOfFixture() throws -> CGImage {
-        let mask = maskImage(width: 40, height: 40) { x, y in
+        let fixture = plane(width: 40, height: 40) { x, y in
             if (10..<30).contains(x), (10..<30).contains(y) { return 255 }
             if (10..<30).contains(x), (0..<10).contains(y) { return 128 }
             if (30..<40).contains(x), (10..<30).contains(y) { return 8 }
             return 0
         }
         return try XCTUnwrap(SkinWindowShadow.makeShadowImage(
-            alpha: mask, blur: 12, offset: CGSize(width: 0, height: -4), opacity: 0.35, pad: 30))
+            plane: fixture, blur: 12, offset: CGSize(width: 0, height: -4), opacity: 0.35, pad: 30))
     }
 
     func testTheShadowIsPaddedOnEverySide() throws {
@@ -86,10 +83,10 @@ final class SkinWindowShadowTests: XCTestCase {
 
     /// The outline is the union of every layer handed over — a `.wmz` artwork and its overlay.
     func testTheOutlineIsEveryLayerTogether() throws {
-        let left = maskImage(width: 4, height: 1) { x, _ in x < 2 ? 255 : 0 }
-        let right = maskImage(width: 4, height: 1) { x, _ in x >= 2 ? 255 : 0 }
-        let plane = try XCTUnwrap(SkinWindowShadow.alphaPlane(of: [left, right], width: 4, height: 1))
-        XCTAssertEqual(plane.bytes, [255, 255, 255, 255])
+        let left = try maskImage(width: 4, height: 1) { x, _ in x < 2 ? 255 : 0 }
+        let right = try maskImage(width: 4, height: 1) { x, _ in x >= 2 ? 255 : 0 }
+        let union = try XCTUnwrap(AlphaPlane(layers: [left, right], width: 4, height: 1))
+        XCTAssertEqual(union.bytes, [255, 255, 255, 255])
     }
 
     // MARK: - `.wmz`: which repaints may have moved the outline
@@ -158,7 +155,7 @@ final class SkinWindowShadowTests: XCTestCase {
     func testAnAnimatedLayerContributesOnlyWhatEveryFrameShows() throws {
         // Two 4x4 frames side by side: the first is opaque in its left half, the second in its top
         // half, so only the top-left quadrant is opaque in both.
-        let sheet = maskImage(width: 8, height: 4) { x, y in
+        let sheet = try maskImage(width: 8, height: 4) { x, y in
             let leftFrame = x < 4
             let column = x % 4
             return (leftFrame ? column < 2 : y < 2) ? 255 : 0

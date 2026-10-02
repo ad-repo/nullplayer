@@ -252,14 +252,31 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     }
 
 
-    /// The window's outline may have moved: `(image, overlay, trigger)`, whose combined alpha is the
-    /// shape. Raised on every full present and on a dirty repaint whose render reported
-    /// `alphaChanged` — never on one that only repainted inside the outline.
-    var onShapeChanged: ((CGImage, CGImage?, String) -> Void)?
+    /// The presented image and overlay, whose combined alpha is the window's outline — what its
+    /// drop shadow (`SkinWindowShadow`) is pulled from.
+    private(set) var outlineLayers: [CGImage] = []
+    /// The outline may have moved, with the present's trace source: raised by every present except
+    /// a render that reported `alphaChanged == false` — a repaint that only drew inside it.
+    var onOutlineMayHaveMoved: ((String) -> Void)?
 
-    func present(_ cgImage: CGImage, overlay: CGImage? = nil, silhouette: CGImage? = nil,
-                 scene: WMPScene, dirtyBounds: WMPRect? = nil, alphaChanged: Bool = true,
+    /// A render's own result: the outline is announced only when the render says its alpha moved.
+    func present(_ result: WMPRenderResult, scene: WMPScene, dirtyBounds: WMPRect? = nil,
                  traceSource: String = "?") {
+        show(result.image, overlay: result.overlayImage, silhouette: result.silhouetteMask,
+             scene: scene, dirtyBounds: dirtyBounds, outlineMayHaveMoved: result.alphaChanged,
+             traceSource: traceSource)
+    }
+
+    /// Pictures with no render behind them say nothing about the outline, so it may have moved.
+    func present(_ cgImage: CGImage, overlay: CGImage? = nil, silhouette: CGImage? = nil,
+                 scene: WMPScene, dirtyBounds: WMPRect? = nil, traceSource: String = "?") {
+        show(cgImage, overlay: overlay, silhouette: silhouette, scene: scene,
+             dirtyBounds: dirtyBounds, outlineMayHaveMoved: true, traceSource: traceSource)
+    }
+
+    private func show(_ cgImage: CGImage, overlay: CGImage?, silhouette: CGImage?,
+                      scene: WMPScene, dirtyBounds: WMPRect?, outlineMayHaveMoved: Bool,
+                      traceSource: String) {
         let previous = self.scene
         self.silhouette = silhouette
         image = NSImage(cgImage: cgImage, size: bounds.size)
@@ -314,7 +331,8 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         }
         // The drop shadow is built from the outline, so it follows the artwork rather than
         // AppKit's cached copy of the window (`SkinWindowShadow`).
-        if dirtyBounds == nil || alphaChanged { onShapeChanged?(cgImage, overlay, traceSource) }
+        outlineLayers = [cgImage, overlay].compactMap { $0 }
+        if outlineMayHaveMoved { onOutlineMayHaveMoved?(traceSource) }
         // The children are built from the scene's hits and text widgets, so an unchanged structure
         // describes the same tree — and rebuilding it per frame is what an assistive client sees as
         // a window whose contents change 12 times a second.
@@ -446,7 +464,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         onInteractionChanged = nil; onAction = nil; onScriptEvent = nil; onKeyEvent = nil
         onElementValueChanged = nil; onElementTextChanged = nil; onSpectrumDemandChanged = nil
         onListSelected = nil; onListDoubleClicked = nil; onPlayLibraryTracks = nil
-        onElementTextReturn = nil; onShapeChanged = nil
+        onElementTextReturn = nil; onOutlineMayHaveMoved = nil
     }
 
     func skinPoint(from event: NSEvent, sceneSize: WMPSize) -> WMPPoint {
