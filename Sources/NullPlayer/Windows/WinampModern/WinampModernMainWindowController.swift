@@ -125,8 +125,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             }
         dragObservers = [
             NotificationCenter.default.addObserver(forName: .windowDragDidBegin, object: nil,
-                                                   queue: .main) { [weak self] _ in
-                self?.attachGluedWindowsForDrag()
+                                                   queue: .main) { [weak self] notification in
+                self?.attachGluedWindowsForDrag(dragged: notification.object as? NSWindow)
             },
             NotificationCenter.default.addObserver(forName: .windowDragDidEnd, object: nil,
                                                    queue: .main) { [weak self] _ in
@@ -1965,7 +1965,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             NSPoint(x: $0.frame.minX - window.frame.minX, y: $0.frame.minY - window.frame.minY)
         }
         window.setFrameOrigin(origin)
-        guard let follower, let offset, follower !== window, follower.isVisible else { return }
+        guard let follower, let offset, follower.isVisible else { return }
         let carried = NSPoint(x: origin.x + offset.x, y: origin.y + offset.y)
         guard follower.frame.origin != carried else { return }
         if trace {
@@ -1975,18 +1975,29 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         follower.setFrameOrigin(carried)
     }
 
-    /// Whether a script keeps one of these two windows glued over the other, in either direction.
-    func areGlued(_ first: NSWindow, _ second: NSWindow) -> Bool {
-        first !== second && (gluedWindow(over: first) === second || gluedWindow(over: second) === first)
+    /// The window a script keeps glued to `window`, over it or under it. Snapping skips it.
+    func gluedPartner(of window: NSWindow) -> NSWindow? {
+        for (leader, follower) in gluedWindowPairs {
+            if leader === window { return follower }
+            if follower === window { return leader }
+        }
+        return nil
     }
 
-    /// The window a script keeps glued over `window`, if it has recorded one. See `windowsGluedOver`.
+    /// The window a script keeps glued over `window`, if it has recorded one.
     private func gluedWindow(over window: NSWindow) -> NSWindow? {
-        guard let scripts = skinView?.scripts,
-              let leaderID = viewsByContainer.first(where: { $0.value.window === window })?.key,
-              let followerID = scripts.windowGluedOver(leaderID)
-        else { return nil }
-        return viewsByContainer[followerID]?.window
+        gluedWindowPairs.first { $0.leader === window }?.follower
+    }
+
+    /// Every pair a script has glued (`windowsGluedOver`) whose two windows exist and differ.
+    private var gluedWindowPairs: [(leader: NSWindow, follower: NSWindow)] {
+        guard let scripts = skinView?.scripts else { return [] }
+        return scripts.windowsGluedOver.compactMap { leaderID, followerID in
+            guard let leader = viewsByContainer[leaderID]?.window,
+                  let follower = viewsByContainer[followerID]?.window,
+                  leader !== follower else { return nil }
+            return (leader, follower)
+        }
     }
 
     /// A closed window whose remembered frame lies under `frame` is placed afresh on its next open:
@@ -2781,8 +2792,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            for (leaderID, followerID) in scripts.windowsGluedOver {
-                if Self.tracesGlue {
+            if Self.tracesGlue {
+                for (leaderID, followerID) in scripts.windowsGluedOver {
                     let leaderWindow = viewsByContainer[leaderID]?.window
                     let followerWindow = viewsByContainer[followerID]?.window
                     let leaderName: String = leaderWindow?.accessibilityIdentifier() ?? "none"
@@ -2791,9 +2802,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                           leaderName, leaderWindow?.isVisible == true ? "visible" : "hidden",
                           followerName, followerWindow?.isVisible == true ? "visible" : "hidden")
                 }
-                guard let leader = viewsByContainer[leaderID]?.window,
-                      let follower = viewsByContainer[followerID]?.window,
-                      leader !== follower, leader.isVisible, follower.isVisible else { continue }
+            }
+            for (leader, follower) in gluedWindowPairs where leader.isVisible && follower.isVisible {
                 // Whichever of the pair the user is in stays where it is and the other joins it, so
                 // clicking the frame's title bar does not leave its client stranded behind something.
                 if follower.isKeyWindow {
@@ -2826,15 +2836,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// script-driven move or resize of the content must not carry the frame. The script moves the
     /// frame onto the content itself, and a second carry would move the frame twice.
     /// `WINAMP_MODERN_DRAG_GLUE=0` turns it off.
-    private func attachGluedWindowsForDrag() {
-        guard Self.carriesGluedWindowsInDrag, let scripts = skinView?.scripts else { return }
+    private func attachGluedWindowsForDrag(dragged: NSWindow?) {
+        guard Self.carriesGluedWindowsInDrag else { return }
         detachGluedWindowsAfterDrag()
-        let dragged = WindowManager.shared.draggingWindow
-        for (leaderID, followerID) in scripts.windowsGluedOver {
-            guard let leader = viewsByContainer[leaderID]?.window,
-                  let follower = viewsByContainer[followerID]?.window,
-                  leader !== follower, follower !== dragged,
-                  leader.isVisible, follower.isVisible, follower.parent == nil else { continue }
+        for (leader, follower) in gluedWindowPairs
+        where follower !== dragged && leader.isVisible && follower.isVisible && follower.parent == nil {
             leader.addChildWindow(follower, ordered: .above)
             dragAttachedGluedWindows.append((leader, follower))
             if Self.tracesGlue {

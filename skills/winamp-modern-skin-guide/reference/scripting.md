@@ -991,7 +991,7 @@ follower to its leader with `addChildWindow` on `windowDragDidBegin` and unlinks
 `windowDragDidEnd`: **0%** after. The link lasts only for the drag, because a script-driven move or
 resize of the content must not carry the frame, which the script then moves itself (a double carry).
 A follower that is the dragged window itself is not linked; its own `onMove` pulls the content, as
-before. Snapping skips a window's glued partner (`areGlued`). Snapped against the content on the
+before. Snapping skips a window's glued partner (`gluedPartner(of:)`). Snapped against the content on the
 frame's exact rect, a solo drag of the frame stuck until the pointer passed the 15 pt threshold, in
 ~16 pt jumps every ~35 ms; after the fix it moved every 8.5 ms. A/B: `WINAMP_MODERN_DRAG_GLUE=0`
 ([harness.md](harness.md)).

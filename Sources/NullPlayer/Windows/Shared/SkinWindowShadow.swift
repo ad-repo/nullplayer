@@ -161,12 +161,8 @@ final class SkinWindowShadow {
     /// common path. The level needs nothing: AppKit keeps a child window at its parent's level,
     /// Always on Top included.
     private func reassert() {
+        reassertFrame()
         guard let parent, isEnabled, parent.isVisible else { return }
-        let frame = parent.frame.insetBy(dx: -Self.pad, dy: -Self.pad)
-        if shadowWindow.frame != frame {
-            shadowWindow.setFrame(frame, display: false)
-            trace("reassert frame \(Int(parent.frame.width))x\(Int(parent.frame.height))")
-        }
         if shadowWindow.parent !== parent {
             shadowWindow.parent?.removeChildWindow(shadowWindow)
             parent.addChildWindow(shadowWindow, ordered: .below)
@@ -197,15 +193,15 @@ final class SkinWindowShadow {
 
     private func checkFrameAfterMove() {
         isMoveCheckScheduled = false
-        guard let parent, isEnabled, parent.isVisible, shadowWindow.parent === parent else {
-            reassert()
-            return
-        }
+        if shadowWindow.parent === parent { reassertFrame() } else { reassert() }
+    }
+
+    private func reassertFrame() {
+        guard let parent, isEnabled, parent.isVisible else { return }
         let frame = parent.frame.insetBy(dx: -Self.pad, dy: -Self.pad)
-        if shadowWindow.frame != frame {
-            shadowWindow.setFrame(frame, display: false)
-            trace("reassert frame after move \(Int(parent.frame.width))x\(Int(parent.frame.height))")
-        }
+        guard shadowWindow.frame != frame else { return }
+        shadowWindow.setFrame(frame, display: false)
+        trace("reassert frame \(Int(parent.frame.width))x\(Int(parent.frame.height))")
     }
 
     /// A window that comes back on screen also takes the pull it was owed while hidden.
