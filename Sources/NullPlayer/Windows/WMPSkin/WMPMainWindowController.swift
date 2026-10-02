@@ -1064,10 +1064,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // playlist slides into and the 124 px its equaliser drops into — and macOS derives a
         // borderless window's shadow from whatever content it last cached. On a shape that changes
         // with every drawer and every repaint that gets stale, and a stale shadow over a
-        // transparent region reads as a dark box the size of the window. There is no drop shadow
-        // in Windows Media Player to lose.
+        // transparent region reads as a dark box the size of the window. So the window's own
+        // shadow stays off and `SkinWindowShadow` draws one from the artwork's outline instead.
         presentation.window.hasShadow = false
-        presentation.window.invalidateShadow()
+        presentation.shadow.attach(to: presentation.window, name: "wmp:\(scene.viewID)")
         // **Only the player is the session's view (W96).** `theme.openView` opens a second window,
         // so persisting whatever is presented recorded a panel as the thing to restore: `WoW` opens
         // its playlist that way, and quitting with it open restored a playlist panel with an empty
@@ -1290,6 +1290,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             presentation.interactionState = state
             self.renderInteraction(presentation, state: state, changed: changed)
         }
+        view.onShapeChanged = { [weak presentation] image, overlay, trigger in
+            guard let presentation else { return }
+            presentation.shadow.update(layers: [image, overlay].compactMap { $0 },
+                                       parentFrame: presentation.window.frame, trigger: trigger)
+        }
         if presentation.isPlayer { unskinnedView = nil }
         // A present is a new view (or a reload of this one): the previous view's scripted size is
         // not this one's, and `apply` sizes the window from the scene it was handed.
@@ -1305,7 +1310,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             presentation.isApplyingSceneSize = true
             presentation.window.setFrame(frame, display: true)
             presentation.isApplyingSceneSize = false
-            presentation.window.invalidateShadow()
             pendingRestoredFrame = nil
             pendingRestoredViewID = nil
         } else {
@@ -1332,6 +1336,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // A fallback window opened under the *previous* skin is not a fallback under this one.
         WindowManager.shared.dismissWMPFallbackSurfacesTheSkinProvides()
         if !presentation.isPlayer { presentation.window.orderFront(nil) }
+        presentation.shadow.reassert()
         persistOpenViews()
     }
 
@@ -1553,10 +1558,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         presentation.isApplyingSceneSize = true
         window.setFrame(frame, display: true)
         presentation.isApplyingSceneSize = false
-        // A borderless, non-opaque window keeps the shadow it had at its previous frame. Corona
-        // resizes the view when a drawer opens, so without this the old outline is left behind
-        // beside the window as a ghost of the shape it used to be.
-        window.invalidateShadow()
     }
 
     func renderCurrentSize(_ presentation: WMPViewPresentation) {
@@ -2117,6 +2118,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         #endif
         presentation.skinSpaceSize = NSSize(width: presentation.window.frame.width / uiScale,
                                             height: presentation.window.frame.height / uiScale)
+        presentation.shadow.updateFrame(parentFrame: presentation.window.frame, trigger: "resize")
         // Persisted in skin space as well, so a size the user dragged out at 200% is not restored
         // as a scene twice that size the next time the skin loads — and only for a view the user
         // can size at all. A fixed view has no size of the user's to keep, and every resize it sees
@@ -2146,6 +2148,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         let origin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
         WindowManager.shared.applySnappedPosition(window, to: origin)
         persistViewFrame(for: window)
+        materializer?.playerPresentation?.shadow.reassert()
+    }
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        materializer?.playerPresentation?.shadow.reassert()
     }
     /// What a skin means by `event.screenWidth`: the resolution of the display its window is on,
     /// in points, falling back to the main display and then to the harness default so the number is
@@ -2209,6 +2215,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         if let window { WindowManager.shared.detachDockedWindowsAfterDeminiaturize(mainWindow: window) }
     }
     func windowDidBecomeKey(_ notification: Notification) {
+        materializer?.playerPresentation?.shadow.reassert()
         // Deferred a turn: raised while a click is still activating the app, the window server
         // takes only some of the reorders, leaving panels behind another app's window and one
         // above the window that was clicked (W273).
@@ -3696,7 +3703,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         let presentStarted = Date()
         guard presentation.activeScene == scene else { return }
         presentation.animationFrame = (scene, dirty, rendered)
-        view.present(rendered.image, overlay: rendered.overlayImage, silhouette: rendered.silhouetteMask, scene: scene, dirtyBounds: dirty, traceSource: "animation")
+        view.present(rendered.image, overlay: rendered.overlayImage, silhouette: rendered.silhouetteMask, scene: scene, dirtyBounds: dirty, alphaChanged: rendered.alphaChanged, traceSource: "animation")
         if Self.animationTrace {
             presentation.animationTraceRenderSeconds += presentStarted.timeIntervalSince(renderStarted)
             presentation.animationTracePresentSeconds += Date().timeIntervalSince(presentStarted)
@@ -3960,7 +3967,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
         for presentation in materializer.openPresentations {
             setWindowSize(presentation, presentation.skinSpaceSize)
-            presentation.window.invalidateShadow()
             renderCurrentSize(presentation)
         }
     }

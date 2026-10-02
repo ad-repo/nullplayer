@@ -74,6 +74,8 @@ final class WasabiObject {
     /// The graph's structure counter, for callers memoizing something that depends on this object's
     /// position in the tree rather than only on the object itself.
     var graphStructureGeneration: UInt64 { graph?.structureGeneration ?? 0 }
+    /// See `WasabiObjectGraph.shapeGeneration`.
+    var graphShapeGeneration: UInt64 { graph?.shapeGeneration ?? 0 }
     var geometry: WasabiGeometrySpec { WasabiGeometrySpec(attributes: attributes) }
 
     @discardableResult
@@ -133,7 +135,21 @@ final class WasabiObject {
             WasabiMutationTrace.record(object: self, reason: reason ?? Self.reasonName(for: flags))
         }
         graph?.recordInvalidation(stableID, flags: flags,
-                                  sceneAffecting: reason.map { !WasabiObjectGraph.isSceneNeutral(attribute: $0) } ?? true)
+                                  sceneAffecting: reason.map { !WasabiObjectGraph.isSceneNeutral(attribute: $0) } ?? true,
+                                  shapeAffecting: Self.mayMoveOutline(flags: flags, reason: reason))
+    }
+
+    /// The attributes besides geometry and structure that can change where a window has pixels at
+    /// all. Text, colour, font, a slider's value and an animation's frame cannot in practice, and
+    /// they are what a playing skin writes every tick.
+    private static let outlineAttributes: Set<String> = [
+        "visible", "alpha", "image", "file", "downimage", "hoverimage", "activeimage",
+    ]
+
+    private static func mayMoveOutline(flags: WasabiDirtyFlags, reason: String?) -> Bool {
+        if !flags.isDisjoint(with: [.geometry, .structure]) { return true }
+        guard let reason else { return flags.contains(.appearance) }
+        return outlineAttributes.contains(reason)
     }
 
     private static func reasonName(for flags: WasabiDirtyFlags) -> String {
@@ -248,6 +264,11 @@ enum WasabiMutationTrace {
 final class WasabiObjectGraph {
     private(set) var roots: [WasabiObject] = []
     private(set) var mutationGeneration: UInt64 = 0
+    /// Bumped only by a mutation that can move a window's outline — geometry, structure,
+    /// visibility, alpha, or an image. The window drop shadow (`SkinWindowShadow`) re-renders the
+    /// outline when this moves and not on the text, colour and value writes a playing skin makes
+    /// every tick.
+    private(set) var shapeGeneration: UInt64 = 0
 
     /// Bumped by every mutation **except** the ones the scene walk does not read.
     ///
@@ -373,12 +394,13 @@ final class WasabiObjectGraph {
     }
 
     fileprivate func recordInvalidation(_ id: WasabiObjectID, flags: WasabiDirtyFlags,
-                                        sceneAffecting: Bool = true) {
+                                        sceneAffecting: Bool = true, shapeAffecting: Bool = true) {
         guard !isTornDown else { return }
         invalidated[id, default: []].formUnion(flags)
         mutationGeneration &+= 1
         if flags.contains(.structure) { structureGeneration &+= 1 }
         if sceneAffecting { sceneGeneration &+= 1 }
+        if shapeAffecting { shapeGeneration &+= 1 }
     }
 
     func snapshot() -> String {

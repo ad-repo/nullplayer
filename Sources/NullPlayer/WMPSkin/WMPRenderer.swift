@@ -20,18 +20,24 @@ struct WMPRenderResult {
     /// windowless `<EFFECTS>` rect reaches outside the skin, which is almost every scene.
     /// See `WMPRenderer.effectsSilhouette`.
     let silhouetteMask: CGImage?
+    /// Whether this render may have changed the window's outline: always `true` for a full render,
+    /// and for a repaint only when the alpha inside its dirty rect differs from the frame it was
+    /// painted over. The window's drop shadow is rebuilt from the outline, so a marquee over opaque
+    /// artwork must leave this `false` (`SkinWindowShadow`).
+    let alphaChanged: Bool
     let renderMilliseconds: Double
     let backingScale: CGFloat
     let imageMetrics: WMPImageStoreMetrics
     let wasRenderedOnMainThread: Bool
 
     init(image: CGImage, overlayImage: CGImage? = nil, silhouetteMask: CGImage? = nil,
-         renderMilliseconds: Double,
+         alphaChanged: Bool = true, renderMilliseconds: Double,
          backingScale: CGFloat, imageMetrics: WMPImageStoreMetrics,
          wasRenderedOnMainThread: Bool) {
         self.image = image
         self.overlayImage = overlayImage
         self.silhouetteMask = silhouetteMask
+        self.alphaChanged = alphaChanged
         self.renderMilliseconds = renderMilliseconds
         self.backingScale = backingScale
         self.imageMetrics = imageMetrics
@@ -277,14 +283,22 @@ struct WMPRenderer: @unchecked Sendable {
                           base: repaint.flatMap { repaint in
                               repaint.previous.overlayImage.map { ($0, repaint.pixels) } })
         }
+        // Whether the repaint moved the window's alpha, compared only inside the rect it has just
+        // drawn. It decides both the effects silhouette below and the window's drop shadow.
+        let alphaChanged: Bool
+        if let repaint {
+            let pixels = repaint.pixels
+            alphaChanged = Self.alpha(of: repaint.previous.image, in: pixels)
+                    != Self.alpha(of: image, in: pixels)
+                || Self.alpha(of: repaint.previous.overlayImage, in: pixels)
+                    != Self.alpha(of: overlay, in: pixels)
+        } else {
+            alphaChanged = true
+        }
         let silhouette: CGImage?
         if layers == nil {
             silhouette = nil
-        } else if let repaint,
-                  Self.alpha(of: repaint.previous.image, in: repaint.pixels)
-                    == Self.alpha(of: image, in: repaint.pixels),
-                  Self.alpha(of: repaint.previous.overlayImage, in: repaint.pixels)
-                    == Self.alpha(of: overlay, in: repaint.pixels) {
+        } else if let repaint, !alphaChanged {
             // The silhouette reads nothing but these layers' alpha, so identical alpha is an
             // identical silhouette — a marquee over opaque artwork never changes it.
             silhouette = repaint.previous.silhouetteMask
@@ -292,6 +306,7 @@ struct WMPRenderer: @unchecked Sendable {
             silhouette = Self.effectsSilhouette(scene: scene, layers: [image, overlay])
         }
         return WMPRenderResult(image: image, overlayImage: overlay, silhouetteMask: silhouette,
+            alphaChanged: alphaChanged,
             renderMilliseconds: (CFAbsoluteTimeGetCurrent() - started) * 1_000,
             backingScale: backingScale, imageMetrics: imageStore.metrics,
             wasRenderedOnMainThread: Thread.isMainThread)

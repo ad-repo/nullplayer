@@ -7,14 +7,19 @@ let args = CommandLine.arguments
 
 struct WindowRow { let id: Int, layer: Int, x: Int, y: Int, w: Int, h: Int, alpha: Double, name: String, pid: Int }
 
+/// The title of a `.wmz`/`.wal` window's drop-shadow window (`SkinShadowWindow.marker`): a
+/// click-through child larger than the skin by its padding, which is never a target.
+let shadowMarker = "NullPlayer.SkinShadow"
+
 /// On-screen windows owned by NullPlayer, front to back.
 ///
 /// `.optionOnScreenOnly` is load-bearing: `.optionAll` includes offscreen windows and its order
 /// means nothing. `pid` narrows to one process — the installed app is also "NullPlayer", and a row
 /// from it looks exactly like one from the build under test. `size` narrows to the skin's canvas: a
 /// `.wmz` list can carry a transient second row for the same app, and a click computed from it
-/// lands on the desktop and reads like a dead control.
-func windowRows(pid: Int? = nil, size: (Int, Int)? = nil) -> [WindowRow] {
+/// lands on the desktop and reads like a dead control. Shadow windows are left out unless
+/// `includeShadows` — only `capture`'s group arithmetic needs them.
+func windowRows(pid: Int? = nil, size: (Int, Int)? = nil, includeShadows: Bool = false) -> [WindowRow] {
     guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
                                                 kCGNullWindowID) as? [[String: Any]] else { return [] }
     var rows: [WindowRow] = []
@@ -27,6 +32,7 @@ func windowRows(pid: Int? = nil, size: (Int, Int)? = nil) -> [WindowRow] {
         let owningPID = w[kCGWindowOwnerPID as String] as? Int ?? 0
         if let pid, owningPID != pid { continue }
         if let size, Int(width) != size.0 || Int(height) != size.1 { continue }
+        if !includeShadows, w[kCGWindowName as String] as? String == shadowMarker { continue }
         rows.append(WindowRow(id: id, layer: w[kCGWindowLayer as String] as? Int ?? 0,
                               x: Int(x), y: Int(y), w: Int(width), h: Int(height),
                               alpha: w[kCGWindowAlpha as String] as? Double ?? 1,
@@ -60,6 +66,9 @@ func requireNullPlayer(at p: CGPoint, verb: String) {
               let width = b["Width"] as? Double, let height = b["Height"] as? Double,
               (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
               CGRect(x: x, y: y, width: width, height: height).contains(p) else { continue }
+        // A drop shadow takes no mouse events, so a press over its padding lands on whatever is
+        // under it — judge that window instead.
+        if w[kCGWindowName as String] as? String == shadowMarker { continue }
         let owner = w[kCGWindowOwnerName as String] as? String ?? "?"
         if owner == "NullPlayer" { return }
         fail("\(verb) refused: (\(Int(p.x)),\(Int(p.y))) is on \(owner), not a NullPlayer window — nothing posted")
@@ -168,8 +177,11 @@ func clickdiff(_ x: Double, _ y: Double, pid: Int?, size: (Int, Int)?, settle: D
 ///   docked neighbours (measured 2026-09-24).
 ///
 /// So the image must be the window's points times a backing scale, or — the group case — the
-/// bounding box of the process's on-screen windows times a scale, in which case the window's own
-/// rect is cropped out of it and the output says `cropped-from-group`. Anything else exits non-zero.
+/// bounding box of a group times a scale, in which case the window's own rect is cropped out of it
+/// and the output says `cropped-from-group`. Anything else exits non-zero. A `.wmz`/`.wal` window's
+/// drop shadow is a child window too, so every skinned window is a group: the groups tried are the
+/// window with its own shadow, and every on-screen window of the process. `siblings` must therefore
+/// include the shadow rows.
 func capture(_ row: WindowRow, to path: String, siblings: [WindowRow], quiet: Bool = false) -> Bool {
     let p = Process()
     p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
@@ -187,17 +199,23 @@ func capture(_ row: WindowRow, to path: String, siblings: [WindowRow], quiet: Bo
         print("\(path)\t\(pw)x\(ph)\t@\(scale)x\t\(row.id)\t\(row.name)")
         return true
     }
-    let minX = siblings.map(\.x).min() ?? row.x, minY = siblings.map(\.y).min() ?? row.y
-    let maxX = siblings.map { $0.x + $0.w }.max() ?? row.x + row.w
-    let maxY = siblings.map { $0.y + $0.h }.max() ?? row.y + row.h
-    for scale in [1, 2, 3] where pw == (maxX - minX) * scale && ph == (maxY - minY) * scale {
-        let rect = CGRect(x: (row.x - minX) * scale, y: (row.y - minY) * scale, width: row.w * scale, height: row.h * scale)
-        guard let cropped = image.cropping(to: rect),
-              let dst = CGImageDestinationCreateWithURL(url, "public.png" as CFString, 1, nil) else { break }
-        CGImageDestinationAddImage(dst, cropped, nil)
-        guard CGImageDestinationFinalize(dst) else { break }
-        print("\(path)\t\(cropped.width)x\(cropped.height)\t@\(scale)x\t\(row.id)\t\(row.name)\tcropped-from-group")
-        return true
+    let ownShadow = siblings.filter {
+        $0.name == shadowMarker && $0.x <= row.x && $0.y <= row.y
+            && $0.x + $0.w >= row.x + row.w && $0.y + $0.h >= row.y + row.h
+    }
+    for group in [[row] + ownShadow, siblings] {
+        let minX = group.map(\.x).min() ?? row.x, minY = group.map(\.y).min() ?? row.y
+        let maxX = group.map { $0.x + $0.w }.max() ?? row.x + row.w
+        let maxY = group.map { $0.y + $0.h }.max() ?? row.y + row.h
+        for scale in [1, 2, 3] where pw == (maxX - minX) * scale && ph == (maxY - minY) * scale {
+            let rect = CGRect(x: (row.x - minX) * scale, y: (row.y - minY) * scale, width: row.w * scale, height: row.h * scale)
+            guard let cropped = image.cropping(to: rect),
+                  let dst = CGImageDestinationCreateWithURL(url, "public.png" as CFString, 1, nil) else { break }
+            CGImageDestinationAddImage(dst, cropped, nil)
+            guard CGImageDestinationFinalize(dst) else { break }
+            print("\(path)\t\(cropped.width)x\(cropped.height)\t@\(scale)x\t\(row.id)\t\(row.name)\tcropped-from-group")
+            return true
+        }
     }
     try? FileManager.default.removeItem(atPath: path)
     if quiet { return false }
@@ -215,7 +233,8 @@ func captureSettled(id: Int, pid: Int?, to path: String) -> Bool {
         guard let row = windowRows(pid: pid).first(where: { $0.id == id }) else {
             fail("window \(id) is not an on-screen NullPlayer window (see `winhelper windows`)")
         }
-        if capture(row, to: path, siblings: windowRows(pid: row.pid), quiet: attempt < 2) { return true }
+        if capture(row, to: path, siblings: windowRows(pid: row.pid, includeShadows: true),
+                   quiet: attempt < 2) { return true }
         usleep(400_000)
     }
     return false
@@ -361,6 +380,23 @@ case "capture-all":
         if !captureSettled(id: row.id, pid: row.pid, to: "\(f.rest[0])/\(row.id)-\(safe).png") { failed += 1 }
     }
     exit(failed == 0 ? 0 : 1)
+case "capture-region":
+    // The screen itself over a rect, in the same top-left global points as `windows`. `capture`
+    // takes one window's own content and a skin's drop shadow is a separate window, so this is the
+    // only way to see the shadow — and it photographs whatever is on top, so clear the rect first.
+    guard args.count == 7, let x = Int(args[2]), let y = Int(args[3]),
+          let w = Int(args[4]), let h = Int(args[5]), w > 0, h > 0 else {
+        fail("usage: winhelper capture-region <x> <y> <w> <h> <out.png>")
+    }
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+    p.arguments = ["-x", "-R", "\(x),\(y),\(w),\(h)", args[6]]
+    do { try p.run() } catch { fail("screencapture: \(error)") }
+    p.waitUntilExit()
+    guard p.terminationStatus == 0, FileManager.default.fileExists(atPath: args[6]) else {
+        fail("screencapture -R produced no image")
+    }
+    print("\(args[6])\t\(x),\(y) \(w)x\(h)")
 case "park":
     guard args.count == 6, let pid = Int(args[2]), let x = Int(args[4]), let y = Int(args[5]) else {
         fail("usage: winhelper park <pid> <window-title> <x> <y>")
@@ -406,6 +442,6 @@ case "drag":
     drag(points)
 default:
     FileHandle.standardError.write(
-        "usage: winhelper windows|screens|raise|park|capture|capture-all|click|dblclick|clickdiff|dblclickdiff|scroll|move|drag\n".data(using: .utf8)!)
+        "usage: winhelper windows|screens|raise|park|capture|capture-all|capture-region|click|dblclick|clickdiff|dblclickdiff|scroll|move|drag\n".data(using: .utf8)!)
     exit(1)
 }

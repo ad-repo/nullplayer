@@ -194,6 +194,7 @@ read -r WID _ X Y W H _ < <("$WH" windows --pid "$PID" --size 289x283)   # the s
 | `winhelper park <pid> <title> <x> <y>` | moves the window with that title to a top-left screen point and raises it, then reads the position back; non-zero if no window has that title or it landed elsewhere — use it before `capture` on a window that runs off the screen |
 | `winhelper capture <id> <out.png> [--pid <n>]` | the window's own content (`screencapture -l`), size-checked — see below |
 | `winhelper capture-all <outdir> [--pid <n>] [--size <w>x<h>]` | `capture` for every matching window, one PNG each; non-zero if any is refused |
+| `winhelper capture-region <x> <y> <w> <h> <out.png>` | the **screen** over a rect (`screencapture -R`), top-left points as `windows` — everything on top of it included, so raise the build first. The only way to see a `.wmz`/`.wal` window's drop shadow, which is a separate window; capture the window plus ~40 pt each side |
 | `winhelper click <x> <y>` | `mouseMoved`, then down/up **with `mouseEventClickState = 1`** |
 | `winhelper dblclick <x> <y>` | two clicks, the second at `clickState = 2` |
 | `winhelper clickdiff <x> <y> [--pid <n>] [--size <w>x<h>] [--settle <s>]` | the window-frame check: `before` rows, a `click`, a wait (1 s default), `after` rows, then one `changed`/`gone`/`new` line per window; **exits 2 when nothing changed**. `dblclickdiff` is the same with `dblclick`. `--size` filters only the *before* listing |
@@ -205,6 +206,12 @@ read -r WID _ X Y W H _ < <("$WH" windows --pid "$PID" --size 289x283)   # the s
 | `osascript menu.applescript toggle <pid> <index> <name>` | presses (`AXPress`, menu unopened) Windows item `index`, erroring (exit non-zero, nothing clicked) if its name is no longer `name` |
 | `winhelper screens` | each display's `visibleFrame` as `x y w h scale`, in the same top-left points as `windows` |
 
+- **A skin window's drop shadow is never a row.** Each `.wmz`/`.wal` window carries a click-through
+  child titled `NullPlayer.SkinShadow`, 30 pt larger on every side. `windows`, `capture-all` and every
+  script built on them leave it out; `requireNullPlayer` skips it too, so a press in that 30 pt ring
+  is judged by the window really under it and refused. `capture` is the one verb that needs it: `-l`
+  returns a window **with its children**, so every skinned window comes back as a group, and the
+  window's own rect is cropped out of it against its shadow row (`cropped-from-group`).
 - **A press lands only on NullPlayer.** `click`, `dblclick`, `clickdiff`, `scroll` and the first
   point of `drag` exit 1 and post nothing unless the frontmost window under that point belongs to
   NullPlayer. An empty lookup reads as 0 in shell arithmetic: on 2026-09-27 an unchecked

@@ -125,6 +125,8 @@ extension ContextMenuBuilder {
             skinMenuItem("Get More Skins...", #selector(MenuActions.getMoreWinampModernSkins)),
             skinMenuItem("Open Skins Folder...", #selector(MenuActions.openWinampModernSkinsFolder)),
             removeSkinItem(for: .winampModern),
+            skinMenuItem("Window Shadows", #selector(MenuActions.toggleSkinWindowShadows),
+                         isOn: SkinWindowShadow.isEnabledPreference),
         ].compactMap { $0 }
 
         // Everything configured for the **loaded skin**, in one block: what it can be coloured
@@ -261,6 +263,8 @@ extension ContextMenuBuilder {
             skinMenuItem("Get More Skins...", #selector(MenuActions.getMoreWMPSkins)),
             skinMenuItem("Open Skins Folder...", #selector(MenuActions.openWMPSkinsFolder)),
             removeSkinItem(for: .wmp),
+            skinMenuItem("Window Shadows", #selector(MenuActions.toggleSkinWindowShadows),
+                         isOn: SkinWindowShadow.isEnabledPreference),
         ].compactMap { $0 }
         if isActive,
            let controller = wm.mainWindowController as? WMPMainWindowController,
@@ -282,6 +286,17 @@ extension ContextMenuBuilder {
         return buildSkinFamilyMenu(
             switchItem: switchItem(to: .wmp, action: #selector(MenuActions.setWMPMode)),
             options: options, skins: skins)
+    }
+}
+
+// MARK: - Shared skin-family actions
+
+extension MenuActions {
+
+    /// The `.wmz` / `.wal` drop shadow. One preference for both families; each open skin window's
+    /// `SkinWindowShadow` observes the change.
+    @objc func toggleSkinWindowShadows() {
+        SkinWindowShadow.isEnabledPreference.toggle()
     }
 }
 

@@ -413,6 +413,15 @@ class WindowManager {
         return mainWindowController == nil && uiMode.controllerFamily == .wmp
     }
 
+    /// The families whose skinned windows carry a `SkinShadowWindow` child. Every shared path that
+    /// treats that child specially is gated on this, so Classic and Original run unchanged.
+    var hostsSkinShadowWindows: Bool {
+        switch runningControllerFamily {
+        case .wmp, .winampModern: return true
+        case .classic, .nullPlayerModern: return false
+        }
+    }
+
     private var auxiliaryControllerStyle: AuxiliaryControllerStyle {
         switch uiMode.controllerFamily {
         // Phase 1 aux-window policy (§5): winampModern reuses the classic providers.
@@ -3171,6 +3180,9 @@ class WindowManager {
     /// instances (such as About) are not exempt.
     private func isSystemOrTransientWindow(_ window: NSWindow) -> Bool {
         if window is NSColorPanel || window is NSFontPanel { return true }
+        // A skin window's drop shadow follows its parent in and out; recorded on its own, it
+        // would be ordered back in front later without the window it belongs to.
+        if hostsSkinShadowWindows, window is SkinShadowWindow { return true }
         if window.sheetParent != nil { return true }    // attached modal sheet
         let className = NSStringFromClass(type(of: window))
         let systemClasses = ["NSStatusBarWindow", "_NSPopoverWindow",
@@ -8894,8 +8906,12 @@ class WindowManager {
         refitDockedProjectMToVerticalStack()
         let docked = findDockedWindows(to: mainWindow)
 
-        // Remove children that are no longer docked
+        // Remove children that are no longer docked — except a `.wmz`/`.wal` window's drop
+        // shadow, which is a child of it for as long as it is on screen and would otherwise be
+        // stripped on the first drag and left behind on the desktop.
+        let keepsShadowChildren = hostsSkinShadowWindows
         for child in mainWindow.childWindows ?? [] {
+            if keepsShadowChildren, child is SkinShadowWindow { continue }
             if !docked.contains(child) {
                 mainWindow.removeChildWindow(child)
             }

@@ -95,9 +95,10 @@ final class WMPViewWindowMaterializer: NSObject, NSWindowDelegate {
             window = WMPSkinWindow(contentRect: NSRect(origin: .zero, size: size),
                                    styleMask: [.borderless, .resizable, .miniaturizable],
                                    backing: .buffered, defer: false)
-            // The same recipe the player window gets in `configureWindow`, minus the shadow: a
+            // The same recipe the player window gets in `configureWindow`, minus AppKit's shadow: a
             // `.wmz` window is genuinely shaped and AppKit caches a borderless window's shadow from
             // whatever content it last saw, which over a transparent region reads as a dark box.
+            // The presentation's `SkinWindowShadow` draws one from the outline instead.
             window.backgroundColor = .clear
             window.isOpaque = false
             window.hasShadow = false
@@ -139,6 +140,7 @@ final class WMPViewWindowMaterializer: NSObject, NSWindowDelegate {
     /// preferences at load from ending up with two of each.
     func raise(_ presentation: WMPViewPresentation) {
         presentation.window.orderFront(nil)
+        presentation.shadow.reassert()
     }
 
     // MARK: Closing
@@ -247,7 +249,8 @@ final class WMPViewWindowMaterializer: NSObject, NSWindowDelegate {
 
     func windowDidMove(_ notification: Notification) {
         guard let window = notification.object as? NSWindow,
-              presentation(for: window) != nil else { return }
+              let presentation = presentation(for: window) else { return }
+        defer { presentation.shadow.reassert() }
         // **Not while the user is dragging this window.** `WindowManager` has already put the drag
         // through `windowWillMove` and set the origin itself, so running it again from the delegate
         // applies the same delta to the whole docked group a second time, once per mouse event —
@@ -294,9 +297,15 @@ final class WMPViewWindowMaterializer: NSObject, NSWindowDelegate {
         controller?.renderCurrentSize(presentation)
     }
 
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        presentation(for: window)?.shadow.reassert()
+    }
+
     func windowDidBecomeKey(_ notification: Notification) {
         guard let window = notification.object as? NSWindow,
-              presentation(for: window) != nil else { return }
+              let presentation = presentation(for: window) else { return }
+        presentation.shadow.reassert()
         // A turn later, once a click-activation has finished (W273).
         DispatchQueue.main.async { [weak window] in
             guard let window, window.isKeyWindow else { return }

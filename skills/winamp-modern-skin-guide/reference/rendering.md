@@ -339,6 +339,39 @@ Corpus sweep, 671 renders: **66 changed**, and none are shadows. They are notifi
 layouts, a 1px dark fringe on anti-aliased silhouettes (Wiimote, PokemonDS, SingItKitty, jvc.tape),
 and corner pixels on frames. The fringe is the same shape B114 accepted on EPS.
 
+#### The window's drop shadow (2026-10-01)
+
+A `.wal` window keeps `hasShadow = false` — AppKit caches a borderless window's shadow from what it
+last drew, and these windows change shape — and `SkinWindowShadow` (`Windows/Shared/`, shared with
+`.wmz`) draws one instead: a click-through child window ordered `.below`, holding a blur of the
+window's outline with the outline knocked back out. `WinampModernMainView` owns it, so the player,
+every auxiliary container and every hosted window get one; the code is
+`WinampModernMainView+Shadow.swift`. Toggle: **Window Shadows** in the Modern skins menu (one
+preference with `.wmz`, `skinWindowShadows`). Trace: `NP_SKIN_SHADOW_TRACE=1`
+(`reference/harness.md`).
+
+- **The outline is rendered on purpose.** `.wal` has no frame image, so the view runs the same
+  `renderer.draw` into a one-pixel-per-point buffer, then fills every visible hosted surface's frame
+  — the renderer draws only the chrome around a library, browser, video or vis surface, and its area
+  would otherwise read as a hole. The fingerprint and the rebuild run off the main thread.
+- **What asks for a render is an event that can move the outline, never invalidation.** Layer FX
+  invalidates the window 30 times a second and a playing skin writes readouts every tick, so neither
+  `repaintRequested` nor `needsDisplay` is a trigger. The triggers are a layout switch, a canvas
+  change, a window resize, the window coming on screen, and a graph write — and a graph write only
+  when **`WasabiObjectGraph.shapeGeneration`** moved (geometry, structure, `visible`, `alpha`, an
+  image; never `text`, colour or `frame`) *and* this window's own scene fingerprint changed. The
+  counter alone is graph-wide: cPro2 Dark Aluminum writes its shade layout and About window every
+  second, which cost the player 34 renders in 20 s before the scene check. Requests are throttled
+  leading-edge to one per 250 ms with a trailing pass for the end of an animation.
+- **An animated layer contributes its core, not its current frame.** While the outline pass runs,
+  `WasabiSceneRenderer.drawsAnimationCores` makes an `<animatedlayer>` paint the pixels opaque in
+  *every* frame. Anaheim's mini player is a frame-stepped ball whose ears `vis_mini.maki` flaps to
+  the music; a frame step is not (and must not be) a trigger, so a shadow cut from whichever frame it
+  last sampled kept the old ears as a white ghost behind the ball. With the core, the ball casts the
+  shadow, the ears cast none, and the shadow costs nothing while the skin plays.
+- **A skin's own fake shadow stays inert.** cPro2 `main.shadow` and cPro Venus's are
+  `isHostProvidedDesktopEffect` containers that are never shown, so nothing is drawn twice.
+
 #### Layer fill modes
 
 - **Default (no `tile`)**: the bitmap **stretches** to the layer's rect. Resizable window chrome

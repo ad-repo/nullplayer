@@ -137,6 +137,20 @@ final class WinampModernMainView: NSView {
     /// auxiliary container, each hosted window — is one of these views, and each answers for itself.
     private var activeStateObservers: [NSObjectProtocol] = []
     private(set) var isTornDown = false
+
+    /// This window's drop shadow, built from the scene's outline (`WinampModernMainView+Shadow`).
+    let windowShadow = SkinWindowShadow()
+    var shadowObservers: [NSObjectProtocol] = []
+    /// `shapeGeneration` at the last outline render, so a graph change that cannot have moved the
+    /// outline costs a compare and nothing else.
+    var shadowShapeGeneration: UInt64?
+    var shadowSceneFingerprint: Int?
+    /// `NP_SKIN_SHADOW_TRACE` only: the last scene's per-node signatures, so a fingerprint change
+    /// can name the node that moved.
+    var shadowTraceSignatures: [String] = []
+    var shadowLastShapeRender: CFAbsoluteTime = 0
+    var shadowShapeScheduled = false
+    var shadowPendingTrigger: String?
     private var sceneIsVisible = false
     var canvasSizeDidChange: ((CGSize) -> Void)?
     /// A click landed in this window: dismiss any `autoclose="1"` popup that is not this one. The
@@ -357,6 +371,7 @@ final class WinampModernMainView: NSView {
         renderer.restorePersistedFramePositions()
         setFrameSize(scaledCanvasSize)
         canvasSizeDidChange?(scaledCanvasSize)
+        requestShadowShape("layout")
         // A different layout is a different scene, so nothing carries over: every object in it hears
         // its geometry for the first time, exactly as it does when the window first comes up.
         dispatchResize(seeding: true)
@@ -380,6 +395,7 @@ final class WinampModernMainView: NSView {
         setFrameSize(scaledCanvasSize)
         canvasSizeDidChange?(scaledCanvasSize)
         canvasDidChange()
+        requestShadowShape("canvas")
     }
 
     /// The window this view fills was resized from outside the scene — AppKit's edge band, a drag
@@ -582,6 +598,7 @@ final class WinampModernMainView: NSView {
             // Scoped: a warped layer on the *main* window fires this 30 times a second, and this
             // window has no business repainting for it.
             if let object, !self.owns(object) { return }
+            self.requestShadowShape("graph", onlyIfOutlineMayHaveMoved: true)
             // A window nobody can see does not paint for the skin's animation: it catches up in one
             // pass when it comes back (`occlusionDidChange`).
             guard self.isOnScreen else {
@@ -622,6 +639,7 @@ final class WinampModernMainView: NSView {
             // A script can also turn Layer FX on outside load (switching Defix's display style does
             // exactly that), and the warp needs the repaint clock from that moment on.
             self?.updateAnimationTimer()
+            self?.requestShadowShape("graph", onlyIfOutlineMayHaveMoved: true)
         }
         // The light path a warped layer takes 30 times a second: repaint, nothing else.
         scripts.repaintRequested = { [weak self] in self?.needsDisplay = true }
@@ -924,7 +942,7 @@ final class WinampModernMainView: NSView {
         super.viewDidMoveToWindow()
         activeStateObservers.forEach(NotificationCenter.default.removeObserver)
         activeStateObservers.removeAll()
-        guard let window else { return }
+        guard let window else { detachWindowShadow(); return }
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
             activeStateObservers.append(NotificationCenter.default.addObserver(
                 forName: name, object: window, queue: .main) { [weak self] _ in
@@ -937,6 +955,7 @@ final class WinampModernMainView: NSView {
                 self?.occlusionDidChange()
             })
         occlusionDidChange()
+        attachWindowShadow(to: window)
         needsDisplay = true
     }
 
@@ -959,6 +978,7 @@ final class WinampModernMainView: NSView {
 
     private func occlusionDidChange() {
         isOnScreen = window?.occlusionState.contains(.visible) ?? false
+        windowShadowOcclusionDidChange(isOnScreen: isOnScreen)
         guard !isTornDown, isOnScreen, repaintDeferredWhileHidden else { return }
         repaintDeferredWhileHidden = false
         invalidateRectCaches()
@@ -2494,6 +2514,7 @@ final class WinampModernMainView: NSView {
         webNavigationRequested = nil
         activeStateObservers.forEach(NotificationCenter.default.removeObserver)
         activeStateObservers.removeAll()
+        detachWindowShadow()
         isTornDown = true
     }
 

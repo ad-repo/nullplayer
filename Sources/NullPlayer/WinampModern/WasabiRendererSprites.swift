@@ -227,6 +227,7 @@ extension WasabiSceneRenderer {
     }
 
     private func animatedFrameImage(_ bitmap: WasabiBitmap, object: WasabiObject) -> CGImage? {
+        if drawsAnimationCores { return animationCoreImage(bitmap, object: object) }
         let (frameWidth, frameHeight, count, columns) = animationGrid(bitmap, object: object)
         let frameIndex = max(0, min(count - 1, WasabiAnimation.state(of: object, frameCount: count,
                                                                      clock: clock()).frame))
@@ -236,6 +237,59 @@ extension WasabiSceneRenderer {
                           width: frameWidth, height: frameHeight)
         guard crop.maxY <= CGFloat(bitmap.height), crop.maxX <= CGFloat(bitmap.width) else { return nil }
         return cropped(bitmap.image, to: crop)
+    }
+
+    /// Black at the lowest alpha each pixel has across every frame of the layer's sheet — see
+    /// `drawsAnimationCores`. Outline pass only.
+    private func animationCoreImage(_ bitmap: WasabiBitmap, object: WasabiObject) -> CGImage? {
+        let grid = animationGrid(bitmap, object: object)
+        let key = CropKey(image: ObjectIdentifier(bitmap.image), x: grid.count, y: grid.columns,
+                          width: grid.width, height: grid.height)
+        if let cached = animationCoreCache[key] { return cached.core }
+        guard let image = Self.animationCore(of: bitmap.image, frameWidth: grid.width,
+                                             frameHeight: grid.height, count: grid.count,
+                                             columns: grid.columns) else { return nil }
+        if animationCoreCache.count > Self.maximumCachedCrops { animationCoreCache.removeAll() }
+        animationCoreCache[key] = (bitmap.image, image)
+        return image
+    }
+
+    /// The pure half of `animationCoreImage`: black at each pixel's lowest alpha across the
+    /// `count` frames of `sheet`, laid out `columns` to a row.
+    static func animationCore(of sheet: CGImage, frameWidth width: Int, frameHeight height: Int,
+                              count: Int, columns: Int) -> CGImage? {
+        guard width > 0, height > 0, count > 0, columns > 0,
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
+                                      bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue),
+              let data = context.data else { return nil }
+        let pixels = data.bindMemory(to: UInt8.self, capacity: context.bytesPerRow * height)
+        var core = [UInt8](repeating: 255, count: width * height)
+        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        for index in 0..<count {
+            let crop = CGRect(x: (index % columns) * width, y: (index / columns) * height,
+                              width: width, height: height)
+            guard crop.maxY <= CGFloat(sheet.height), crop.maxX <= CGFloat(sheet.width),
+                  let frame = sheet.cropping(to: crop) else { continue }
+            context.clear(bounds)
+            context.draw(frame, in: bounds)
+            for row in 0..<height {
+                let source = pixels + row * context.bytesPerRow
+                for column in 0..<width {
+                    let alpha = source[column]
+                    if alpha < core[row * width + column] { core[row * width + column] = alpha }
+                }
+            }
+        }
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        for index in 0..<core.count { rgba[index * 4 + 3] = core[index] }
+        guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
+        return CGImage(width: width, height: height, bitsPerComponent: 8,
+                       bitsPerPixel: 32, bytesPerRow: width * 4,
+                       space: CGColorSpaceCreateDeviceRGB(),
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: false,
+                       intent: .defaultIntent)
     }
 
     /// One sub-rectangle of a sheet, **stably**. `CGImage.cropping(to:)` allocates a fresh image on

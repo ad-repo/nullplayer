@@ -20,7 +20,9 @@ Fresh installs start in NullPlayer's app-authored Windows Media Player mode. Use
 the unskinned player or **UI > Windows Media Player > Load Skin...** to install a user-supplied
 `.wmz`; **Get More Skins...** opens the Internet Archive's WMP skins collection. The same menu selects
 installed skins and authored views, and **Remove “name”...** deletes the selected installed copy and
-returns to the unskinned player. Existing users keep
+returns to the unskinned player. **Window Shadows** (on by default) gives skin windows a soft
+macOS-style drop shadow that follows the skin's own shape; it is one setting shared with the Modern
+menu's item of the same name. Existing users keep
 their saved Classic, Original, Original-Metal, or WMP choice after upgrading. See
 `docs/wmp-skin/user-guide.md` for recovery and security limitations.
 
@@ -371,6 +373,8 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 
 ### Winamp Modern (`.wal`) Mode
 - **Skins > Modern** lists installed Winamp 5.x `.wal` skins, imported with **Load Skin...**; **Get More Skins...** opens WinampHeritage.
+- **Skins > Modern > Window Shadows** (on by default) gives every skin window a soft drop shadow
+  that follows the skin's own outline — the same setting as the Media Player menu's item.
 - **Default Skin (Black)** is the plain placeholder skin that ships with the app — what Modern mode
   loads on a first run, before any skin is imported, and after the selected skin is removed. It has
   no menu entry. NullPlayer bundles no Winamp

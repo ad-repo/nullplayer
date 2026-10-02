@@ -252,8 +252,14 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     }
 
 
+    /// The window's outline may have moved: `(image, overlay, trigger)`, whose combined alpha is the
+    /// shape. Raised on every full present and on a dirty repaint whose render reported
+    /// `alphaChanged` — never on one that only repainted inside the outline.
+    var onShapeChanged: ((CGImage, CGImage?, String) -> Void)?
+
     func present(_ cgImage: CGImage, overlay: CGImage? = nil, silhouette: CGImage? = nil,
-                 scene: WMPScene, dirtyBounds: WMPRect? = nil, traceSource: String = "?") {
+                 scene: WMPScene, dirtyBounds: WMPRect? = nil, alphaChanged: Bool = true,
+                 traceSource: String = "?") {
         let previous = self.scene
         self.silhouette = silhouette
         image = NSImage(cgImage: cgImage, size: bounds.size)
@@ -305,15 +311,10 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
                                    width: dirty.width * xScale, height: dirty.height * yScale))
         } else {
             needsDisplay = true
-            // A `.wmz` window is shaped by its own artwork: Corona's player block occupies the
-            // right 346 of a 596-wide view and the rest is transparent, because that is where its
-            // playlist pane slides in. AppKit caches a borderless window's shadow from the content
-            // it first drew — which here is the *opaque* unskinned player the controller shows
-            // first — so without this the skin sits inside a full-rectangle drop shadow that reads
-            // as a dark box around it. Only on a full present: a dirty-rect repaint (hover, a
-            // moving slider) cannot change the silhouette, and invalidating per frame is expensive.
-            window?.invalidateShadow()
         }
+        // The drop shadow is built from the outline, so it follows the artwork rather than
+        // AppKit's cached copy of the window (`SkinWindowShadow`).
+        if dirtyBounds == nil || alphaChanged { onShapeChanged?(cgImage, overlay, traceSource) }
         // The children are built from the scene's hits and text widgets, so an unchanged structure
         // describes the same tree — and rebuilding it per frame is what an assistive client sees as
         // a window whose contents change 12 times a second.
@@ -445,7 +446,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         onInteractionChanged = nil; onAction = nil; onScriptEvent = nil; onKeyEvent = nil
         onElementValueChanged = nil; onElementTextChanged = nil; onSpectrumDemandChanged = nil
         onListSelected = nil; onListDoubleClicked = nil; onPlayLibraryTracks = nil
-        onElementTextReturn = nil
+        onElementTextReturn = nil; onShapeChanged = nil
     }
 
     func skinPoint(from event: NSEvent, sceneSize: WMPSize) -> WMPPoint {
