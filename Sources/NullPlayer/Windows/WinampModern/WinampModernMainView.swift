@@ -141,6 +141,8 @@ final class WinampModernMainView: NSView {
     /// This window's drop shadow, built from the scene's outline (`WinampModernMainView+Shadow`).
     let windowShadow = SkinWindowShadow(minimumInterval: WinampModernMainView.shadowShapeInterval)
     var shadowOutlineGate = WinampModernShadowOutlineGate()
+    /// A gate check is queued for the end of this runloop turn (`graphMayHaveMovedShadowOutline`).
+    var shadowGateCheckQueued = false
     private var sceneIsVisible = false
     var canvasSizeDidChange: ((CGSize) -> Void)?
     /// A click landed in this window: dismiss any `autoclose="1"` popup that is not this one. The

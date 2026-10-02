@@ -1402,8 +1402,17 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                 return CGPoint(x: x, y: y)
             }
         }
-        return CGPoint(x: Double(dimension(resolvedFrame(of: object)?.minX, declared: object.geometry.x)),
-                       y: Double(dimension(resolvedFrame(of: object)?.minY, declared: object.geometry.y)))
+        let frame = resolvedFrame(of: object)
+        return CGPoint(x: Double(dimension(frame?.minX, declared: object.geometry.x)),
+                       y: Double(dimension(frame?.minY, declared: object.geometry.y)))
+    }
+
+    /// `reportedOrigin(of:)` for the objects `applyContainerGeometry` uses it on — a container or a
+    /// layout — and nil for everything else. The read resolves the whole layout, and the write after it
+    /// invalidates that, so reading it for every object rebuilt the scene once per `setXmlParam` and
+    /// `resize` and was most of a skin switch's script start-up.
+    func windowOriginBeforeWrite(of object: WasabiObject) -> CGPoint? {
+        Self.isWindowObject(object) ? reportedOrigin(of: object) : nil
     }
 
     /// The `<container>` an object lives in, or nil for one that is not inside a window.

@@ -29,10 +29,21 @@ extension WinampModernMainView {
     }
 
     /// The graph changed. Cheap unless the gate says this window's outline may have moved.
+    ///
+    /// Checked once per runloop turn, not once per write: the gate's fingerprint walks the whole
+    /// scene, and a skin's scripts write the graph hundreds of times while it loads — the walk after
+    /// each write was a third of a skin switch. The shadow pulls at most every `shadowShapeInterval`
+    /// anyway, so the end of the turn loses nothing.
     func graphMayHaveMovedShadowOutline() {
-        guard windowShadow.isActive,
-              shadowOutlineGate.mayHaveMoved(renderer, traceName: shadowTraceName) else { return }
-        windowShadow.invalidateShape("graph")
+        guard windowShadow.isActive, !shadowGateCheckQueued else { return }
+        shadowGateCheckQueued = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            shadowGateCheckQueued = false
+            guard !isTornDown, windowShadow.isActive,
+                  shadowOutlineGate.mayHaveMoved(renderer, traceName: shadowTraceName) else { return }
+            windowShadow.invalidateShape("graph")
+        }
     }
 
     /// What `SkinWindowShadow` pulls: the scene as `draw(_:)` paints it, at one pixel per point.

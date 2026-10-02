@@ -418,6 +418,26 @@ final class WinampModernPhase24Tests: XCTestCase {
         XCTAssertEqual(settles, 0)
     }
 
+    /// A write to anything that is not a window resolves no layout. The origin read before a write
+    /// only serves `applyContainerGeometry`, which acts on containers and layouts alone; reading it
+    /// for every object rebuilt the whole scene once per `setXmlParam`, because the write after it
+    /// invalidated the layout each time. That was most of a `.wal` skin switch's script start-up.
+    func testWritingANonWindowObjectResolvesNoLayout() throws {
+        let (runtime, object) = try makeRuntimeWithObject()
+        var resolves = 0
+        runtime.resolvedGeometryRequested = { _ in resolves += 1; return nil }
+        let holder = try XCTUnwrap(runtime.loadedSkin.runtime.graph.objects(xmlID: "holder").first)
+        _ = try runtime.invoke(method: "setxmlparam", on: reference(object),
+                               arguments: [.string("image"), .string("other")], program: emptyProgram())
+        _ = try runtime.invoke(method: "setxmlparam", on: reference(holder),
+                               arguments: [.string("w"), .string("40")], program: emptyProgram())
+        _ = try runtime.invoke(method: "resize", on: reference(holder),
+                               arguments: [.integer(0), .integer(0), .integer(30), .integer(30)],
+                               program: emptyProgram())
+        XCTAssertEqual(resolves, 0)
+        XCTAssertEqual(holder.attributes["w"], "30", "the writes themselves still land")
+    }
+
     /// Geometry is resolved for **hidden** objects too. Wasabi lays a hidden object out anyway, and
     /// cPro's side view is hidden when it closes — the only thing that can bring it back is its own
     /// `onResize` seeing that the pane is wide again, which it can never see if a hidden object has no

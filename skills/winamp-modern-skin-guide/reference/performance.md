@@ -511,3 +511,43 @@ by up to 170/255 in a channel, but that was resampling shimmer, not motion. Tint
 draw red, live, showed it landing on both reels and turning between captures. If a "still reel"
 report comes in, check what the skin's own art covers before suspecting the warp.
 
+
+#### A skin switch is one main-thread stall (2026-10-02)
+
+Reported as "switching from one `.wal` to another shows the beachball under the loading animation".
+`MenuActions.selectWinampModernSkin` → `loadWinampModernSkinInPlace` → `loadSkin(at:)` runs in one
+block on the main thread. `SkinLoadingOverlay`'s bars keep moving because they are Core Animation in
+the render server, but the app answers no event until the block returns, so macOS shows the spinning
+cursor once it passes about 2 s.
+
+**Measure the stall, not the profile.** A `sample` tree says where the time goes, but the beachball is
+decided by the longest stretch the main thread could not answer. Time an Accessibility round trip:
+`AXUIElementCopyAttributeValue(app, kAXWindowsAttribute)` is answered on the app's main thread, so
+calling it back to back from a probe while the menu switch runs gives that stretch directly. Drive
+the switch with `menu.applescript skin <pid> Modern <name>`, which returns at once, so the probe has
+to be started first. Release, the user's 0.31.x code, playing:
+
+| switch | before | after |
+|---|---:|---:|
+| Big Bento Modern → cPro Bento | 2.0–2.1 s | **0.5 s** |
+| cPro Bento → Big Bento Modern | 3.0 s | **1.5 s** |
+
+All three costs were repeated work, and debug showed them as clearly as release:
+
+- **A `CIContext` per themed sprite.** `WasabiResourceCache.themed` built a new context for every
+  bitmap a colour theme touches, and creating one costs far more than the colour matrix it runs:
+  767 of 2758 debug samples. It is one shared static context now.
+- **A full layout per `setXmlParam`.** The origin read before each write (`reportedOrigin`) resolved
+  the whole layout, and the write after it invalidated that layout again, so every param a script
+  wrote at start-up rebuilt the scene. Only `applyContainerGeometry` uses the read, and only on a
+  container or layout, so it is taken only there (`windowOriginBeforeWrite`). Pinned by
+  `testWritingANonWindowObjectResolvesNoLayout`.
+- **A scene fingerprint per graph write.** `graphMayHaveMovedShadowOutline` walked the whole scene
+  after every write to decide whether the drop shadow's outline moved. It now runs once at the end
+  of the runloop turn. The shadow pulls at most every `shadowShapeInterval` anyway.
+
+**What is left is legitimate.** In Big Bento Modern's remaining 1.5 s, half is the skin's own
+start-up scripts, and two thirds of that is `layoutNodes()` rebuilt between a script's geometry
+write and its next read (`getLeft`, `getWidth`) or the `onResize` settle after each event. Each one
+answers a question about a layout that really changed. Going further means resolving the layout
+incrementally rather than per scene, which is a change to the layout engine, not a cache.

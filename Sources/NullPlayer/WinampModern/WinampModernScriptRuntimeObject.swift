@@ -146,7 +146,8 @@ extension WinampModernScriptRuntime {
             // panelled, which is what Winamp shows for a set that never loaded.
             guard !Self.imageKeys.contains(key.lowercased()) || resolvesToResource(value)
             else { return .null }
-            let reportedBeforeWrite = reportedOrigin(of: object)
+            let isGeometryWrite = Self.geometryKeys.contains(key.lowercased())
+            let reportedBeforeWrite = isGeometryWrite ? windowOriginBeforeWrite(of: object) : nil
             _ = object.setAttribute(key, value: value)
             // A layout that computes its own resize floor has said what the protective minimum can
             // only guess at (B125: ClassicPro engine two writes `minimum_h` = titlebar+info+playback
@@ -155,7 +156,7 @@ extension WinampModernScriptRuntime {
                ["minimum_w", "minimum_h"].contains(key.lowercased()) {
                 object.noteScriptAuthoredMinimum(key)
             }
-            if Self.geometryKeys.contains(key.lowercased()) {
+            if isGeometryWrite {
                 // A container or a layout is a *window*: its box is not read back out of the graph at
                 // the next repaint, it has to be pushed to AppKit. `resize()` already did this; the
                 // same four attributes written one at a time did not, which is how Big Bento's search
@@ -232,7 +233,7 @@ extension WinampModernScriptRuntime {
         case "getguid":
             return .string(object.attributes["guid"] ?? "")
         case "resize":
-            let reportedBeforeResize = reportedOrigin(of: object)
+            let reportedBeforeResize = windowOriginBeforeWrite(of: object)
             let borrowed = borrowedWindowOrigin(
                 matching: CGPoint(x: Double(arguments[0].integerValue),
                                   y: Double(arguments[1].integerValue)),
