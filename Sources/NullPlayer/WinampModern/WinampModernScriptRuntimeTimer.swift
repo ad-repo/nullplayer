@@ -46,6 +46,22 @@ extension WinampModernScriptRuntime {
         Double(object.attributes[key] ?? object.attributes[fallback] ?? "0") ?? 0
     }
 
+    /// A script's geometry write — `setXmlParam` of a geometry key, or `resize()` — and the window
+    /// push that has to follow it.
+    ///
+    /// A window's reported origin is taken **before** the write, for `applyContainerGeometry` to
+    /// recognise a round trip (B61), and only a window's: for anything else the read resolves the
+    /// whole layout, the write invalidates it again, and doing that on every write was most of a
+    /// skin switch's script start-up.
+    func writeGeometry(_ attributes: [(key: String, value: String)], on object: WasabiObject,
+                       borrowed: BorrowedWindowOrigin? = nil) {
+        let reportedBeforeWrite = Self.isWindowObject(object) ? reportedOrigin(of: object) : nil
+        for (key, value) in attributes { _ = object.setAttribute(key, value: value) }
+        applyContainerGeometry(object, reportedOrigin: reportedBeforeWrite, borrowed: borrowed)
+        noteGeometryChange()
+        notifyGraphDidMutate()
+    }
+
     /// Push a *container's* `x`/`y`/`w`/`h` out to its window.
     ///
     /// Every other object's geometry is read back out of the graph when the scene is next drawn, so

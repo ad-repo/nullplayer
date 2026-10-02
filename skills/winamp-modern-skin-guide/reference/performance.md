@@ -539,12 +539,17 @@ All three costs were repeated work, and debug showed them as clearly as release:
   767 of 2758 debug samples. It is one shared static context now.
 - **A full layout per `setXmlParam`.** The origin read before each write (`reportedOrigin`) resolved
   the whole layout, and the write after it invalidated that layout again, so every param a script
-  wrote at start-up rebuilt the scene. Only `applyContainerGeometry` uses the read, and only on a
-  container or layout, so it is taken only there (`windowOriginBeforeWrite`). Pinned by
-  `testWritingANonWindowObjectResolvesNoLayout`.
+  wrote at start-up rebuilt the scene, whatever its key. Only `applyContainerGeometry` uses the read,
+  and only on a container or layout, so it is taken only for a geometry write on a window. Both
+  `setXmlParam` and `resize()` write geometry through `writeGeometry`, which owns that snapshot, so
+  no caller can take it for the wrong object. Pinned by
+  `testOnlyAWindowsGeometryWriteReadsItsOriginFirst`.
 - **A scene fingerprint per graph write.** `graphMayHaveMovedShadowOutline` walked the whole scene
   after every write to decide whether the drop shadow's outline moved. It now runs once at the end
-  of the runloop turn. The shadow pulls at most every `shadowShapeInterval` anyway.
+  of the runloop turn, from `scheduleGraphSettle` (`WinampModernMainView+GraphSettle`), together with
+  the animation clock's check, which walks the same scene while nothing in it animates. A write's
+  cheap half (rect caches, `needsLayout`/`needsDisplay`) stays synchronous. The shadow pulls at most
+  every `shadowShapeInterval` anyway.
 
 **What is left is legitimate.** In Big Bento Modern's remaining 1.5 s, half is the skin's own
 start-up scripts, and two thirds of that is `layoutNodes()` rebuilt between a script's geometry

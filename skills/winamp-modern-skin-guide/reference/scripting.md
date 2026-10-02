@@ -880,11 +880,13 @@ out to the desktop as absolute screen coordinates. A skin handing back what it j
 parked its window in the top-left corner of the monitor. Big Bento Modern does exactly this from
 `pledit.maki` every time the side playlist opens (B61).
 
-**It is fixed on the write, not on the read.** `applyContainerGeometry` takes the origin the object
-reported *before* the write (`reportedOrigin`) and skips `containerMoveRequested` when the new `x`/`y`
-are that same pair. Only the round trip is recognised, never the value — a script that writes a
-position it did not read is still a move, whatever that position is, which is what keeps Big Bento's
-search-results popup landing under its search box (BB31).
+**It is fixed on the write, not on the read.** `writeGeometry` takes the origin a window reported
+*before* the write (`reportedOrigin`), and `applyContainerGeometry` skips `containerMoveRequested`
+when the new `x`/`y` are that same pair. Only the round trip is recognised, never the value — a script
+that writes a position it did not read is still a move, whatever that position is, which is what keeps
+Big Bento's search-results popup landing under its search box (BB31). `reportedOrigin` is also what
+`getLeft()`/`getTop()` answer, so the check compares against the very integers the script was handed:
+a layout's `x="12.7"` reads back as 12, and a 12 written back is not a move.
 
 **Do not "fix" this by making a layout report its desktop position instead.** It is the obvious move
 and it is wrong: a layout is the space every object inside it is laid out in, and skins do arithmetic

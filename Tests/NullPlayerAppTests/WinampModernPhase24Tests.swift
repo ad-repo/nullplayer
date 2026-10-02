@@ -418,24 +418,36 @@ final class WinampModernPhase24Tests: XCTestCase {
         XCTAssertEqual(settles, 0)
     }
 
-    /// A write to anything that is not a window resolves no layout. The origin read before a write
-    /// only serves `applyContainerGeometry`, which acts on containers and layouts alone; reading it
-    /// for every object rebuilt the whole scene once per `setXmlParam`, because the write after it
-    /// invalidated the layout each time. That was most of a `.wal` skin switch's script start-up.
-    func testWritingANonWindowObjectResolvesNoLayout() throws {
-        let (runtime, object) = try makeRuntimeWithObject()
+    /// Only a **window's geometry write** reads the window's origin first. That read only serves
+    /// `applyContainerGeometry`'s round-trip check, which acts on containers and layouts alone, and
+    /// for an object it has to resolve the layout, which the write after it invalidates again. Taken
+    /// for every `setXmlParam` it rebuilt the scene once per write, which was most of a `.wal` skin
+    /// switch's script start-up.
+    func testOnlyAWindowsGeometryWriteReadsItsOriginFirst() throws {
+        let (runtime, _) = try makeRuntimeWithObject()
         var resolves = 0
         runtime.resolvedGeometryRequested = { _ in resolves += 1; return nil }
         let holder = try XCTUnwrap(runtime.loadedSkin.runtime.graph.objects(xmlID: "holder").first)
-        _ = try runtime.invoke(method: "setxmlparam", on: reference(object),
-                               arguments: [.string("image"), .string("other")], program: emptyProgram())
+        // Declares no `x`/`y`, so its origin is only known by resolving the layout.
+        let layout = try XCTUnwrap(runtime.loadedSkin.runtime.graph.objects(xmlID: "normal").first)
+
+        // A window, but not a geometry key.
+        _ = try runtime.invoke(method: "setxmlparam", on: reference(layout),
+                               arguments: [.string("tooltip"), .string("Player")], program: emptyProgram())
+        // Geometry, but not a window.
         _ = try runtime.invoke(method: "setxmlparam", on: reference(holder),
                                arguments: [.string("w"), .string("40")], program: emptyProgram())
         _ = try runtime.invoke(method: "resize", on: reference(holder),
                                arguments: [.integer(0), .integer(0), .integer(30), .integer(30)],
                                program: emptyProgram())
         XCTAssertEqual(resolves, 0)
-        XCTAssertEqual(holder.attributes["w"], "30", "the writes themselves still land")
+        XCTAssertEqual(layout.attributes["tooltip"], "Player", "the writes themselves still land")
+        XCTAssertEqual(holder.attributes["w"], "30")
+
+        // The counter is live: a window's geometry write does read its origin first.
+        _ = try runtime.invoke(method: "setxmlparam", on: reference(layout),
+                               arguments: [.string("w"), .string("50")], program: emptyProgram())
+        XCTAssertGreaterThan(resolves, 0)
     }
 
     /// Geometry is resolved for **hidden** objects too. Wasabi lays a hidden object out anyway, and

@@ -1295,12 +1295,16 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     private var lastWindowOriginRead: (objectID: WasabiObjectID, reported: CGPoint, desktop: CGPoint,
                                        onScreen: Bool)?
 
-    /// Remember a window object's position read, for `borrowedWindowOrigin` to recognise.
-    func noteWindowOriginRead(of object: WasabiObject) {
-        guard Self.isWindowObject(object), let desktop = windowOrigin(of: object) else { return }
-        // No answer (the headless harness) counts as on screen, as it did before B156.
-        let onScreen = enclosingWindowID(of: object).flatMap { containerVisibilityQuery?($0) } != false
-        lastWindowOriginRead = (object.stableID, reportedOrigin(of: object), desktop, onScreen)
+    /// `getLeft()`/`getTop()`: the reported origin, remembered when it was read off a window object
+    /// so `borrowedWindowOrigin` can recognise it being handed straight back to another window.
+    func scriptReadsOrigin(of object: WasabiObject) -> CGPoint {
+        let reported = reportedOrigin(of: object)
+        if Self.isWindowObject(object), let desktop = windowOrigin(of: object) {
+            // No answer (the headless harness) counts as on screen, as it did before B156.
+            let onScreen = enclosingWindowID(of: object).flatMap { containerVisibilityQuery?($0) } != false
+            lastWindowOriginRead = (object.stableID, reported, desktop, onScreen)
+        }
+        return reported
     }
 
     /// What a `resize()` on a window object asks for when its coordinates are another window's.
@@ -1388,31 +1392,24 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         windowsGluedOver[container]
     }
 
-    /// Exactly what `getLeft()`/`getTop()` would answer for this object right now, in whatever space
-    /// they answer in — the host's desktop origin for a container, the layout's own canvas origin
-    /// (usually 0) for a layout. Used to recognise a write that is only handing back what was just
-    /// read; see `applyContainerGeometry`.
+    /// What `getLeft()`/`getTop()` answer for this object right now, in whatever space they answer
+    /// in — the host's desktop origin for a container, the layout's own canvas origin (usually 0) for
+    /// a layout. **The only place that answer is worked out**, so the round trip
+    /// `applyContainerGeometry` recognises compares against the very integers the script was handed:
+    /// a layout's `x="12.7"` reads back as 12, and a 12 written back is not a move.
     func reportedOrigin(of object: WasabiObject) -> CGPoint {
-        if Self.isWindowObject(object) {
-            if object.typeName.caseInsensitiveCompare("container") == .orderedSame,
-               let origin = windowOrigin(of: object) {
-                return origin
-            }
-            if let x = Double(object.attributes["x"] ?? ""), let y = Double(object.attributes["y"] ?? "") {
-                return CGPoint(x: x, y: y)
-            }
+        let isWindow = Self.isWindowObject(object)
+        if isWindow, object.typeName.caseInsensitiveCompare("container") == .orderedSame,
+           let origin = windowOrigin(of: object) {
+            return CGPoint(x: origin.x.rounded(), y: origin.y.rounded())
         }
-        let frame = resolvedFrame(of: object)
-        return CGPoint(x: Double(dimension(frame?.minX, declared: object.geometry.x)),
-                       y: Double(dimension(frame?.minY, declared: object.geometry.y)))
-    }
-
-    /// `reportedOrigin(of:)` for the objects `applyContainerGeometry` uses it on — a container or a
-    /// layout — and nil for everything else. The read resolves the whole layout, and the write after it
-    /// invalidates that, so reading it for every object rebuilt the scene once per `setXmlParam` and
-    /// `resize` and was most of a skin switch's script start-up.
-    func windowOriginBeforeWrite(of object: WasabiObject) -> CGPoint? {
-        Self.isWindowObject(object) ? reportedOrigin(of: object) : nil
+        // A window's own `x`/`y`, truncated as Wasabi reads them; anything else, or a window that
+        // never declared one, answers from the resolved layout.
+        let x = isWindow ? Double(object.attributes["x"] ?? "") : nil
+        let y = isWindow ? Double(object.attributes["y"] ?? "") : nil
+        let frame = x == nil || y == nil ? resolvedFrame(of: object) : nil
+        return CGPoint(x: x.map { Double(Int($0)) } ?? Double(dimension(frame?.minX, declared: object.geometry.x)),
+                       y: y.map { Double(Int($0)) } ?? Double(dimension(frame?.minY, declared: object.geometry.y)))
     }
 
     /// The `<container>` an object lives in, or nil for one that is not inside a window.

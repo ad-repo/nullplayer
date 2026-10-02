@@ -313,8 +313,8 @@ final class WasabiResourceCache {
     private var accessCounter: UInt64 = 0
     private(set) var isTornDown = false
     /// One context for every themed sprite. Creating a `CIContext` costs far more than the colour
-    /// matrix it runs, and a themed skin decodes hundreds of sprites on a skin switch. A context is
-    /// immutable, so sharing it across renderers and threads is safe.
+    /// matrix it runs, and a themed skin decodes hundreds of sprites on a skin switch. A `CIContext`
+    /// is thread-safe, so sharing it across renderers and threads is safe.
     private static let themeContext = CIContext(options: [.cacheIntermediates: false])
 
     init(loadedSkin: WinampModernLoadedSkin, themes: WasabiColorThemeCatalog,
