@@ -989,7 +989,16 @@ Implementation details:
 - Hold timing can be primed at `mouseDown` (`windowWillPrimeDragging`) before actual drag start for lazy-drag views (for example HT-on library browser)
 - Mode resolves on first `windowWillMove` via `determineDragMode(holdStart:currentTime:threshold:isWindowLayoutLocked:)` (pure static, unit-tested)
 - If `isWindowLayoutLocked == true`, drag mode is forced to `.group` regardless of hold duration
-- Separate mode: peers are restored to their pre-drag origins before the dock is broken
+- Separate mode: peers are restored to their pre-drag origins before the dock is broken. A peer
+  that is the dragged window's child window is **still carried** by AppKit in this mode, so it stays
+  in `dockedWindowsToMove`; only the others leave. `updateDockedChildWindows` makes every window
+  docked to the player the player's child, so a quick drag of the player moves the whole group, and
+  snapping and the group's screen guards (screen-separation check, top clamp) still count it. When
+  separate mode emptied the set, the player snapped to its own docked playlist: it moved only after
+  the pointer passed the 15 pt `snapThreshold`, in ~16 pt jumps about every 40 ms. That was measured
+  at 38 ms in Classic and 40 ms in `.wal`, and is 8.5–9.5 ms in every mode since (2026-10-02).
+  `applySnapping` also skips a `.wal` window's script-glued partner (`gluedPartner(of:)`); see
+  `winamp-modern-skin-guide/reference/scripting.md`.
 - Group mode: connected windows move using stored offsets from drag start to prevent drift; child windows of the dragging window are skipped (AppKit moves them automatically); group top is clamped so no window goes off-screen
 - Mid-drag window close: `NSWindow.willCloseNotification` observer cleans up hold state and clears highlights
 - Mid-flight drag (AppKit-initiated, no prior `mouseDown`): always `.group` mode (override)

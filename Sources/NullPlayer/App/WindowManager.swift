@@ -7159,7 +7159,7 @@ class WindowManager {
             postConnectedWindowHighlight(highlightSet)
             highlightWasPosted = true
         }
-        NotificationCenter.default.post(name: .windowDragDidBegin, object: nil)
+        NotificationCenter.default.post(name: .windowDragDidBegin, object: window)
     }
 
     /// Prime hold timing at mouseDown without starting drag movement yet.
@@ -7378,8 +7378,13 @@ class WindowManager {
                     }
                 }
                 isMovingDockedWindows = false
-                dockedWindowsToMove.removeAll()
-                dockedWindowOffsets.removeAll()
+                // A peer that is this window's child window still moves with it: AppKit carries it.
+                // It stays in the moving set, so snapping skips it and the group's screen guards
+                // count it. Every window docked to the player is the player's child
+                // (`updateDockedChildWindows`), so a quick drag of the player still moves them all.
+                dockedWindowsToMove = dockedWindowsToMove.filter { $0.parent === window }
+                let carried = Set(dockedWindowsToMove.map(ObjectIdentifier.init))
+                dockedWindowOffsets = dockedWindowOffsets.filter { carried.contains($0.key) }
                 dockedWindowOriginalOrigins.removeAll()
                 if highlightWasPosted {
                     postConnectedWindowHighlight([])
@@ -7427,49 +7432,6 @@ class WindowManager {
         }
 
         return snappedOrigin
-    }
-    
-    /// Calculate the bounding box of the dragging window and all its docked windows
-    /// - Parameters:
-    ///   - window: The window being dragged
-    ///   - newOrigin: The proposed new origin for the dragging window
-    /// - Returns: The bounding rectangle of the entire window group
-    private func calculateGroupBounds(for window: NSWindow, at newOrigin: NSPoint) -> NSRect {
-        var bounds = NSRect(origin: newOrigin, size: window.frame.size)
-        
-        // Include all docked windows in the bounds calculation
-        for dockedWindow in dockedWindowsToMove {
-            if let offset = dockedWindowOffsets[ObjectIdentifier(dockedWindow)] {
-                let dockedOrigin = NSPoint(
-                    x: newOrigin.x + offset.x,
-                    y: newOrigin.y + offset.y
-                )
-                let dockedFrame = NSRect(origin: dockedOrigin, size: dockedWindow.frame.size)
-                bounds = bounds.union(dockedFrame)
-            }
-        }
-        
-        return bounds
-    }
-    
-    /// Check if the window group spans multiple screens
-    /// - Parameter groupBounds: The bounding rectangle of the entire group
-    /// - Returns: true if the group is currently crossing monitor boundaries
-    private func groupSpansMultipleScreens(_ groupBounds: NSRect) -> Bool {
-        var containingScreen: NSScreen? = nil
-        
-        for screen in NSScreen.screens {
-            let intersection = groupBounds.intersection(screen.frame)
-            if !intersection.isEmpty {
-                if containingScreen != nil {
-                    // Group intersects multiple screens
-                    return true
-                }
-                containingScreen = screen
-            }
-        }
-        
-        return false
     }
     
     /// Check if snapping would cause any docked window to end up on a different screen
@@ -7608,11 +7570,16 @@ class WindowManager {
         
         // All windows can snap to dockable windows plus the Library browser.
         let windowsToSnapTo = snapTargetWindows()
+        // A `.wal` script-glued partner sits on this window's exact rect and follows it. Snapping
+        // to it held the dragged window in place until the pointer passed the threshold, then
+        // moved it in ~16 pt jumps every ~35 ms.
+        let gluedPartner = winampModernHostedController?.gluedPartner(of: window)
         for otherWindow in windowsToSnapTo {
             guard otherWindow != window else { continue }
             // Skip docked windows as they're moving with us
             guard !dockedWindowsToMove.contains(otherWindow) else { continue }
-            
+            guard otherWindow !== gluedPartner else { continue }
+
             let otherFrame = otherWindow.frame
             
             // Check if windows overlap or are close vertically (for horizontal snapping)

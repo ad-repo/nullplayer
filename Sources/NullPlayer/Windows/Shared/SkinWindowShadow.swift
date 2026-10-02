@@ -130,8 +130,11 @@ final class SkinWindowShadow {
         detach()
         self.parent = parent
         let center = NotificationCenter.default
-        for event in [NSWindow.didMoveNotification, NSWindow.didResizeNotification,
-                      NSWindow.didBecomeKeyNotification] {
+        parentObservers.append(center.addObserver(forName: NSWindow.didMoveNotification,
+                                                  object: parent, queue: .main) {
+            [weak self] _ in MainActor.assumeIsolated { self?.reassertAfterMove() }
+        })
+        for event in [NSWindow.didResizeNotification, NSWindow.didBecomeKeyNotification] {
             parentObservers.append(center.addObserver(forName: event, object: parent, queue: .main) {
                 [weak self] _ in MainActor.assumeIsolated { self?.reassert() }
             })
@@ -158,12 +161,8 @@ final class SkinWindowShadow {
     /// common path. The level needs nothing: AppKit keeps a child window at its parent's level,
     /// Always on Top included.
     private func reassert() {
+        reassertFrame()
         guard let parent, isEnabled, parent.isVisible else { return }
-        let frame = parent.frame.insetBy(dx: -Self.pad, dy: -Self.pad)
-        if shadowWindow.frame != frame {
-            shadowWindow.setFrame(frame, display: false)
-            trace("reassert frame \(Int(parent.frame.width))x\(Int(parent.frame.height))")
-        }
         if shadowWindow.parent !== parent {
             shadowWindow.parent?.removeChildWindow(shadowWindow)
             parent.addChildWindow(shadowWindow, ordered: .below)
@@ -173,6 +172,36 @@ final class SkinWindowShadow {
             shadowWindow.order(.below, relativeTo: parent.windowNumber)
             trace("reassert order")
         }
+    }
+
+    private var isMoveCheckScheduled = false
+
+    /// **A move is checked a turn late, and only for the frame.** AppKit carries a child window
+    /// with its parent *after* posting the parent's `didMove`, so a check made inside the
+    /// notification always saw the old frame. It then set the shadow's frame itself and asked
+    /// for `orderedIndex`, which lists every window on the system. That was three window-server
+    /// round trips per drag step per window, measured as most of the drag handler's time. A move
+    /// cannot change the order. One turn later the carry has landed, so the check is a compare
+    /// unless AppKit clamped the shadow below the menu bar (`SkinShadowWindow.constrainFrameRect`).
+    private func reassertAfterMove() {
+        guard !isMoveCheckScheduled else { return }
+        isMoveCheckScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated { self?.checkFrameAfterMove() }
+        }
+    }
+
+    private func checkFrameAfterMove() {
+        isMoveCheckScheduled = false
+        if shadowWindow.parent === parent { reassertFrame() } else { reassert() }
+    }
+
+    private func reassertFrame() {
+        guard let parent, isEnabled, parent.isVisible else { return }
+        let frame = parent.frame.insetBy(dx: -Self.pad, dy: -Self.pad)
+        guard shadowWindow.frame != frame else { return }
+        shadowWindow.setFrame(frame, display: false)
+        trace("reassert frame \(Int(parent.frame.width))x\(Int(parent.frame.height))")
     }
 
     /// A window that comes back on screen also takes the pull it was owed while hidden.

@@ -373,6 +373,13 @@ every auxiliary container and every hosted window get one; the code is
   the music; a frame step is not (and must not be) a trigger, so a shadow cut from whichever frame it
   last sampled kept the old ears as a white ghost behind the ball. With the core, the ball casts the
   shadow, the ears cast none, and the shadow costs nothing while the skin plays.
+- **A move is checked a turn late, and only for the frame (2026-10-02).** AppKit carries the child
+  shadow *after* posting the parent's `didMove`, so a check inside the notification always saw the
+  old frame. It then called `setFrame` on the shadow and `orderedIndex`, which lists every window on
+  the system. That was the largest part of the drag handler in a profile of a Pure Inspired drag:
+  `NP_SKIN_SHADOW_TRACE=1` logged one `reassert frame` per window per step, 232 each over two turns.
+  Checked a turn later, it logged none, and the shadows sat on their windows in every
+  `CGWindowList` sample. The order is not re-checked on a move, because a move cannot change it.
 - **A skin's own fake shadow stays inert.** cPro2 `main.shadow` and cPro Venus's are
   `isHostProvidedDesktopEffect` containers that are never shown, so nothing is drawn twice.
 

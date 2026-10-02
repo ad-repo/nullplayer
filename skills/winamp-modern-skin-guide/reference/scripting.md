@@ -981,6 +981,21 @@ onto the frame, so a host move of the content alone is undone by the next such e
 before the frame's timer. A UI Size change does exactly that. See [components.md](components.md) →
 *Where a skin's windows go*.
 
+**A drag carries the frame in the same window-server move (2026-10-02).** A host drag moves the
+content as the dragged window, as a docked peer, or as the player's child window. It never moved the
+frame, a dynamic instance that is not a snap target, so the frame only caught up on the script's
+next 10 ms tick. On Pure Inspired's playlist docked under the player, measured by sampling
+`CGWindowList` through a circular drag, the two were apart in **61%** of samples (held group drag)
+and **19%** (quick drag), about 16 pt each time. `attachGluedWindowsForDrag` now links every visible
+follower to its leader with `addChildWindow` on `windowDragDidBegin` and unlinks it on
+`windowDragDidEnd`: **0%** after. The link lasts only for the drag, because a script-driven move or
+resize of the content must not carry the frame, which the script then moves itself (a double carry).
+A follower that is the dragged window itself is not linked; its own `onMove` pulls the content, as
+before. Snapping skips a window's glued partner (`gluedPartner(of:)`). Snapped against the content on the
+frame's exact rect, a solo drag of the frame stuck until the pointer passed the 15 pt threshold, in
+~16 pt jumps every ~35 ms; after the fix it moved every 8.5 ms. A/B: `WINAMP_MODERN_DRAG_GLUE=0`
+([harness.md](harness.md)).
+
 ### `onSetVisible` — a window a script closes has to be *reopened*, not just ordered in
 
 `onSetVisible` is dispatched per container by `notifyContainerVisibility`, and two rules about it are

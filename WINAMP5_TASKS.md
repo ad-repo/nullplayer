@@ -22,6 +22,12 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 |---|---|---:|:---:|---|
 | B161 | **A press in the outer few points of a resizable `.wal` window is AppKit's, and it moves one edge even at a corner.** The skin's auxiliary windows are `[.borderless, .resizable]`, so AppKit's own edge band takes the press before `WinampModernMainView.mouseDown` and the skin's `resize="bottomright"` layer never sees it. Measured 2026-09-30 with `WINAMP_MODERN_RESIZE_TRACE=1` on Itemskin: a press 8pt in from the playlist frame's bottom-right corner, dragged +60,+30, logged `live=true handle=false` and changed the width only; 13pt in on the PeppyMeter frame, dragged +30,+60, changed the height only. 20pt in, the same drags logged `handle=clear.bottom.right` and moved both axes. Decide whether the band should defer to a skin handle under the pointer, or the windows should drop `.resizable` where the layout declares handles. Found during B160; not changed by it | every resizable auxiliary window | S | 2 |
 
+### Code health
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B162 | **Move the script-glue code out of `WinampModernMainWindowController.swift`.** The file is ~2,900 lines, and the glued-window code sits in two places ~800 lines apart. One part is `moveCarryingGluedWindow`, `gluedPartner(of:)`, `gluedWindow(over:)` and `gluedWindowPairs`. The other is `restackGluedWindows`, `attachGluedWindowsForDrag`/`detachGluedWindowsAfterDrag`, their `dragObservers` and `dragAttachedGluedWindows`, and the `tracesGlue`/`carriesGluedWindowsInDrag` switches. An extension file cannot carry the stored state and cannot reach the controller's private `skinView`/`viewsByContainer`. So give the glue its own small type that owns the drag observers and linked pairs and gets the pairs from the controller, leaving one property on the controller. No behaviour change. Done when `swift test` passes and a drag of Pure Inspired's docked playlist under `WINAMP_MODERN_GLUE_TRACE=1` still prints `drag carries` and `restacked` lines. Deferred from PR #468 to keep that diff a behaviour fix | none on screen; the glue-pair skins (Ebonite, Itemskin, Pure Inspired, K-jr, MoonLight) exercise it | M | 3 |
+
 ### Live-reported draw defects
 
 | Id | Item | Reach | Effort | Tier |
@@ -41,6 +47,9 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 Triaged 2026-09-27 against the `app-control` tools: `launch.sh`, `winhelper`
 (`click`/`dblclick`/`drag`/`move`/`scroll`/`clickdiff`/`capture`/`screens`), `menu.applescript`,
 the window census and the render-dump harness. The ranking above still sets the order.
+
+**Verifiable.** B162: `swift test` plus a `winhelper drag` of Pure Inspired's player with the
+playlist docked, reading the glue trace.
 
 **Partly verifiable.** B66 and B85: the drop-down and the drawer menu may be contextual menus; if
 a synthetic press does not open them, they are Route D.
