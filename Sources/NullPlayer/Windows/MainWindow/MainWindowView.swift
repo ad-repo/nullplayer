@@ -1017,6 +1017,15 @@ class MainWindowView: NSView {
         updateMarqueeLayerFrame()
         updateMetalOverlayFrame()
     }
+
+    /// The layer only redraws on `setNeedsDisplay`, so a new size keeps the old bitmap and the
+    /// time, spectrum and position bar repaint at their new scale over it — an edge resize smeared
+    /// the window into copies of itself.
+    override func setFrameSize(_ newSize: NSSize) {
+        let changed = newSize != frame.size
+        super.setFrameSize(newSize)
+        if changed { needsDisplay = true }
+    }
     
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
