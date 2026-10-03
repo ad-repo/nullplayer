@@ -186,9 +186,10 @@ class MainWindowView: NSView {
         layer?.backgroundColor = NSColor.clear.cgColor
         layer?.isOpaque = false
 
-        // Only redraw when explicitly requested via setNeedsDisplay
-        // This allows macOS to cache the layer contents between updates
-        layerContentsRedrawPolicy = .onSetNeedsDisplay
+        // Cache the layer contents between explicit setNeedsDisplay calls, but repaint in full
+        // when the size changes — otherwise an edge resize keeps the old bitmap and only the
+        // timer-driven regions repaint over it at the new scale
+        layerContentsRedrawPolicy = .duringViewResize
 
         applyCavaSkinDefaultColors()
         
@@ -1018,15 +1019,6 @@ class MainWindowView: NSView {
         updateMetalOverlayFrame()
     }
 
-    /// The layer only redraws on `setNeedsDisplay`, so a new size keeps the old bitmap and the
-    /// time, spectrum and position bar repaint at their new scale over it — an edge resize smeared
-    /// the window into copies of itself.
-    override func setFrameSize(_ newSize: NSSize) {
-        let changed = newSize != frame.size
-        super.setFrameSize(newSize)
-        if changed { needsDisplay = true }
-    }
-    
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 

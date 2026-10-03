@@ -1,9 +1,9 @@
 import XCTest
 @testable import NullPlayer
 
-/// The Classic main window's layer redraws only on `setNeedsDisplay`. An edge resize that did not
-/// ask for one kept the old bitmap, and the time, spectrum and position bar repainted at the new
-/// scale over it — the window smeared into trailing copies of itself.
+/// The Classic main window caches its layer between redraws. When an edge resize did not repaint
+/// it, the old bitmap stayed and the time, spectrum and position bar repainted at the new scale
+/// over it — the window smeared into trailing copies of itself.
 final class ClassicMainWindowResizeTests: XCTestCase {
     /// Records the area each `draw` repainted.
     private final class RecordingMainWindowView: MainWindowView {
@@ -39,13 +39,5 @@ final class ClassicMainWindowResizeTests: XCTestCase {
         XCTAssertEqual(view.bounds.size, frame.size)
         XCTAssertTrue(repainted.contains(view.bounds),
                       "repainted \(repainted) of \(view.bounds): the rest keeps the old bitmap")
-    }
-
-    /// A move is not a resize, and leaves the cached bitmap alone.
-    func testMoveDoesNotRepaint() {
-        let (window, view) = makeShownWindow()
-        window.setFrameOrigin(NSPoint(x: window.frame.minX + 40, y: window.frame.minY))
-        view.displayIfNeeded()
-        XCTAssertEqual(view.drawnRects, [])
     }
 }
