@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.31.3
+
+- **Classic main window no longer smears when resized** — dragging the Classic main window by its
+  edge left the old picture in place: the time, visualizer and position bar repainted at the new
+  size over it, so the window trailed copies of itself and the position bar stretched across them.
+  It now redraws in full at every size.
+
 ## 0.31.2
 
 - **Drop shadows for Windows Media Player and Modern skins** — `.wmz` and `.wal` skin windows had no

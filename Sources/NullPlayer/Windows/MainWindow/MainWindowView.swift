@@ -186,9 +186,10 @@ class MainWindowView: NSView {
         layer?.backgroundColor = NSColor.clear.cgColor
         layer?.isOpaque = false
 
-        // Only redraw when explicitly requested via setNeedsDisplay
-        // This allows macOS to cache the layer contents between updates
-        layerContentsRedrawPolicy = .onSetNeedsDisplay
+        // Cache the layer contents between explicit setNeedsDisplay calls, but repaint in full
+        // when the size changes — otherwise an edge resize keeps the old bitmap and only the
+        // timer-driven regions repaint over it at the new scale
+        layerContentsRedrawPolicy = .duringViewResize
 
         applyCavaSkinDefaultColors()
         
@@ -1017,7 +1018,7 @@ class MainWindowView: NSView {
         updateMarqueeLayerFrame()
         updateMetalOverlayFrame()
     }
-    
+
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
