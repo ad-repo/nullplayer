@@ -210,6 +210,8 @@ Switch the Library Browser source to "Local" to manage a persistent media librar
 
 **Tabs:** Artists, Albums, Playlists (`Plists` in the UI), Movies, TV (the TV-shows tab, labeled `Shows` internally), Radio, Search, Data
 
+**Sorting is per tab:** each tab keeps its own Sort-menu choice and column-header sort, remembered across launches. Setting Albums to "Recently Added" leaves Artists as it was. A tab's sort is the same whichever source is selected, and Folders and Plists sort separately even though they share a slot. Both browsers (classic and modern) share the saved sort. Hiding a column drops it as the header sort on every tab. YouTube channels keep their session-only sort (see `youtube-source`).
+
 The **Data tab** is present in both the modern Library Browser and the classic library browser (`PlexBrowserView`). It shows play-history analytics for all sources (see the Data tab description at the top of this section).
 
 ### Drag/Drop + Folder Import Behavior (Local/NAS)

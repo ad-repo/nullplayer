@@ -6,6 +6,10 @@
   edge left the old picture in place: the time, visualizer and position bar repainted at the new
   size over it, so the window trailed copies of itself and the position bar stretched across them.
   It now redraws in full at every size.
+- **Each library tab keeps its own sort** — choosing a sort in the Library Browser, from the Sort
+  menu or by clicking a column header, used to re-sort every tab: "Recently Added" on Albums also
+  re-ordered Artists and Playlists. Each tab now remembers its own sort, across launches too, in
+  every skin family. Tabs start from the sort you had before.
 
 ## 0.31.2
 
