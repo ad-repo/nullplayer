@@ -93,15 +93,17 @@ class JellyfinServerClient {
     
     /// Generate authentication headers for API calls
     private func authHeaders() -> [String: String] {
-        var headers = [
-            "Authorization": "MediaBrowser Client=\"\(clientName)\", Device=\"Mac\", DeviceId=\"\(deviceId)\", Version=\"1.0\"",
+        // The token rides in the Authorization header: Jellyfin 10.11 disables the legacy
+        // X-Emby-Token header by default and answers 401 to it.
+        var authorization = "MediaBrowser Client=\"\(clientName)\", Device=\"Mac\", DeviceId=\"\(deviceId)\", Version=\"1.0\""
+        if !accessToken.isEmpty {
+            authorization += ", Token=\"\(accessToken)\""
+        }
+        return [
+            "Authorization": authorization,
             "Accept": "application/json",
             "Content-Type": "application/json"
         ]
-        if !accessToken.isEmpty {
-            headers["X-Emby-Token"] = accessToken
-        }
-        return headers
     }
     
     /// Authenticate with a Jellyfin server (called before client is created)

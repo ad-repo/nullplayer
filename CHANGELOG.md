@@ -16,6 +16,10 @@
   the first ten artists it matches. On Plex, music results stay in the library you are browsing
   instead of filling up with copies from your other libraries, and separate releases that share a
   title are no longer merged. Local search also finds albums whose tracks have no album-artist tag.
+- **Jellyfin connects again on newer servers** — the Jellyfin source showed a connection error even
+  though **Test** in the server manager succeeded, because newer Jellyfin servers reject the older
+  way NullPlayer sent its sign-in token. The token now goes the way Jellyfin expects, so libraries
+  load and play again.
 
 ## 0.31.3
 

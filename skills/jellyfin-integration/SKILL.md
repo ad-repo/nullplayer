@@ -20,7 +20,13 @@ NullPlayer supports Jellyfin media servers for music streaming, video playback (
 
 ## Authentication
 
-All requests include header: `Authorization: MediaBrowser Client="NullPlayer", Device="Mac", DeviceId="{uuid}", Version="1.0"`. After auth, also include `X-Emby-Token: {accessToken}`.
+All requests include header: `Authorization: MediaBrowser Client="NullPlayer", Device="Mac", DeviceId="{uuid}", Version="1.0"`. After auth, the access token is appended to that same header as `, Token="{accessToken}"`.
+
+- **Never send the token as `X-Emby-Token`.** Jellyfin 10.11 disables the legacy auth headers by
+  default and answers 401 to them. The symptom is a browser connection error (log:
+  `JellyfinManager: Background connection failed: Authentication failed - check username and
+  password`) while the link sheet's **Test** passes — Test only calls `AuthenticateByName`, which
+  carries no token. The `api_key` query parameter on stream/image URLs is still accepted.
 
 - **Auth**: `POST /Users/AuthenticateByName`
   - Body: `{"Username":"x","Pw":"y"}`
