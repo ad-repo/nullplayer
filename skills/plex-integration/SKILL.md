@@ -71,6 +71,32 @@ Current behavior in both classic `PlexBrowserView` and modern `ModernLibraryBrow
 
 Performance requirement: build group indexes once when artist/album counts are rebuilt. `buildArtistAlbumCounts()` should populate `plexArtistGroupsByName`, `plexAlbumsByArtistGroupKey`, and `plexAlbumCountsByArtistGroupKey` from `cachedArtists` and `cachedAlbums`. Expanding a grouped artist row should first use `plexAlbumsByArtistGroupKey[groupKey]` and avoid rescanning the full album cache on the main actor, because large same-name groups can otherwise beachball the UI.
 
+## Library Search (`/hubs/search`)
+
+`PlexServerClient.search` calls `GET /hubs/search?query={q}&sectionId={id}&limit=50`, parsed by the
+pure `parseHubSearch(_:musicLibraryID:)`. Measured on a server with several music libraries:
+
+- **`sectionId` is ignored.** Every hub returns hits from every section, so a 50-row album hub held
+  31 hits from the current library and 19 copies from the others. Copies carry different
+  `ratingKey`s (keys are section-scoped), so they cannot be deduped by key. `librarySectionID`,
+  `sectionID` and `searchTypes=music` do not scope it either. `/library/sections/{id}/search?type=9` does, but
+  for albums it matches titles only, never the artist.
+- **Each hub is capped at `limit`**, ranked by relevance. `limit=1000` returns everything for a
+  narrow query, but a broad one ("the") times out at ~30 s — at `limit=50` too.
+
+So when the current library is a music library (`PlexManager.search` passes `musicLibraryID`),
+artist/album/track hits are kept to that section by their `librarySectionID` (decoded beside the
+shared DTO, Int or String); movie/show/episode hits still come from every section, because
+Library Browser search is cross-media. Albums dedupe on normalized artist|title|year
+(`searchAlbumKey`, the same key as the grouped Artists-tab expand), so editions that share a
+title stay separate. Then every matched artist record — same-name duplicates included — has its
+full `/children` album list merged in through `SearchArtistAlbumMerge` (first 10 records), so the
+search lists the same albums as the artist's grouped row. Before this, an artist with 53 albums
+showed 31–34.
+
+To measure from the terminal: `--cli --source plex --list-albums --artist "<name>"` gives the
+artist's album list (first exact-name record only); `--search` prints the track hits only.
+
 ## Popular Tracks (Last.fm Integration)
 
 Plex identifies "hit" tracks using the `ratingCount` field, which contains **global popularity data from Last.fm** - the number of unique listeners who have scrobbled the track worldwide.

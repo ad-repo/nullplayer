@@ -40,6 +40,10 @@ All requests include header: `Authorization: MediaBrowser Client="NullPlayer", D
 - **Album tracks**: `GET /Users/{userId}/Items?parentId={albumId}&IncludeItemTypes=Audio`
 - **Playlists**: `GET /Users/{userId}/Items?IncludeItemTypes=Playlist&Recursive=true`
 - **Search**: `GET /Items?searchTerm={q}&IncludeItemTypes=Audio,MusicAlbum,MusicArtist,Movie,Series,Episode`
+  — one `Limit=50` shared by every item type, and `searchTerm` matches item names only, so an
+  artist's albums appear only when titled like the query. `JellyfinManager.search` merges each
+  matched artist's full album list through `SearchArtistAlbumMerge` (first 10 artists, deduped by
+  album id).
 
 ## Video Browsing
 

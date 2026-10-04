@@ -121,6 +121,7 @@ Queried by `PlayHistoryStore` (in `Windows/ModernStats/`) to power the Data tab 
 ### Key API Methods (MediaLibraryStore)
 
 - **Paginated queries**: `artistNames(limit:offset:sort:)`, `albumSummaries(...)`, `tracksForAlbum(...)`, `searchTracks(...)`, `searchArtistNames(...)`, `searchAlbumSummaries(...)`
+- **`searchAlbumSummaries` matches the artist it groups by** — `coalesce(nullif(album_artist, ''), artist)`, the same expression as its `album_id`. Matching `album_artist` alone dropped every album whose tracks carry only an `artist` tag.
 - **Batch query**: `albumsForArtistsBatch(_:)` — fetches album summaries for a full page of artists in **one** SQL query (IN clause). Use this instead of per-artist `albumsForArtist(_:)` to avoid N×full-table-scan on the main thread.
 - **Bulk insert**: `upsertTracks(_:)`, `upsertMovies(_:)`, `upsertEpisodes(_:)` — wrap rows in a transaction; call in 500-row batches during enrichment.
 - **Alphabet index**: `artistLetterOffsets(sort:)`, `albumLetterOffsets(sort:)` — used by scroll jump-bar.

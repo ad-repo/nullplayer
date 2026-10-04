@@ -574,7 +574,32 @@ class PlexServerClient {
             throw PlexServerError.httpError(statusCode: httpResponse.statusCode)
         }
         
-        // Parse hub search response
+        var (results, matchedArtistIDs) = try Self.parseHubSearch(data, musicLibraryID: musicLibraryID)
+
+        // The album hub is capped, so an artist with more albums than the cap (and its
+        // same-name duplicate records) loses some.
+        if musicLibraryID != nil {
+            results.albums = await SearchArtistAlbumMerge.merged(
+                results.albums, artistIDs: matchedArtistIDs, key: Self.searchAlbumKey
+            ) { [self] in try await fetchAlbums(forArtist: $0) }
+        }
+        return results
+    }
+
+    /// Album identity for search dedupe: artist|title|year, normalized like the Artists tab's
+    /// grouped expand, so distinct editions that share a title stay separate.
+    static func searchAlbumKey(_ album: PlexAlbum) -> String {
+        func normalized(_ s: String?) -> String {
+            (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                .lowercased()
+        }
+        return "\(normalized(album.parentTitle))|\(normalized(album.title))|\(album.year.map { String($0) } ?? "")"
+    }
+
+    /// Parses a `/hubs/search` response. Artist/album/track hits are kept to `musicLibraryID`
+    /// when it is set; `matchedArtistIDs` lists every kept artist record, same-name ones included.
+    static func parseHubSearch(_ data: Data, musicLibraryID: String?) throws -> (results: PlexSearchResults, matchedArtistIDs: [String]) {
         struct HubSearchResponse: Decodable {
             let MediaContainer: HubContainer
         }
@@ -611,22 +636,11 @@ class PlexServerClient {
             }
         }
 
-        let decoder = JSONDecoder()
-        let hubResponse = try decoder.decode(HubSearchResponse.self, from: data)
+        let hubResponse = try JSONDecoder().decode(HubSearchResponse.self, from: data)
 
-        // Deduplicate by content identity — /hubs/search returns one hub per library section,
-        // so a server with N sections returns N copies of each hit, each with a different
-        // ratingKey (keys are section-scoped). Use title-based keys instead. Albums key on
-        // artist|title|year like the Artists tab's grouped expand, so distinct editions that
-        // share a title stay separate.
-        func normalized(_ s: String?) -> String {
-            (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-                .lowercased()
-        }
-        func albumKey(_ album: PlexAlbum) -> String {
-            "\(normalized(album.parentTitle))|\(normalized(album.title))|\(album.year.map { String($0) } ?? "")"
-        }
+        // Deduplicate by content identity — /hubs/search ignores sectionId and returns hits from
+        // every library section, so a server with N sections returns N copies of each hit, each
+        // with a different ratingKey (keys are section-scoped). Use title-based keys instead.
         var seenArtists = Set<String>(); var seenAlbums = Set<String>()
         var seenTracks = Set<String>(); var seenMovies = Set<String>()
         var seenShows = Set<String>(); var seenEpisodes = Set<String>()
@@ -644,7 +658,7 @@ class PlexServerClient {
             case "album":
                 for item in hub.items(in: musicLibraryID) {
                     let album = item.toAlbum()
-                    if seenAlbums.insert(albumKey(album)).inserted { results.albums.append(album) }
+                    if seenAlbums.insert(searchAlbumKey(album)).inserted { results.albums.append(album) }
                 }
             case "track":
                 for item in hub.items(in: musicLibraryID) {
@@ -668,24 +682,7 @@ class PlexServerClient {
                 break
             }
         }
-
-        // The album hub is capped, so an artist with more albums than the cap (and its
-        // same-name duplicate records) loses some. Merge each matched artist's full album list,
-        // bounded so a broad query does not fan out across dozens of artists.
-        if musicLibraryID != nil, !matchedArtistIDs.isEmpty {
-            let artistAlbums = await withTaskGroup(of: (Int, [PlexAlbum]).self) { group in
-                for (index, artistID) in matchedArtistIDs.prefix(10).enumerated() {
-                    group.addTask { (index, (try? await self.fetchAlbums(forArtist: artistID)) ?? []) }
-                }
-                var byIndex: [Int: [PlexAlbum]] = [:]
-                for await (index, albums) in group { byIndex[index] = albums }
-                return byIndex.sorted { $0.key < $1.key }.flatMap(\.value)
-            }
-            for album in artistAlbums where seenAlbums.insert(albumKey(album)).inserted {
-                results.albums.append(album)
-            }
-        }
-        return results
+        return (results, matchedArtistIDs)
     }
 
     // MARK: - URL Generation

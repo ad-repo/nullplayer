@@ -465,18 +465,9 @@ class SubsonicManager {
             return SubsonicSearchResults()
         }
         var results = try await client.search(query: query)
-        let artistIDs = results.artists.prefix(10).map(\.id)
-        guard !artistIDs.isEmpty else { return results }
-        let artistAlbums = await withTaskGroup(of: (Int, [SubsonicAlbum]).self) { group in
-            for (index, artistID) in artistIDs.enumerated() {
-                group.addTask { (index, (try? await client.fetchArtist(id: artistID).1) ?? []) }
-            }
-            var byIndex: [Int: [SubsonicAlbum]] = [:]
-            for await (index, albums) in group { byIndex[index] = albums }
-            return byIndex.sorted { $0.key < $1.key }.flatMap(\.value)
-        }
-        var seen = Set(results.albums.map(\.id))
-        results.albums += artistAlbums.filter { seen.insert($0.id).inserted }
+        results.albums = await SearchArtistAlbumMerge.merged(
+            results.albums, artistIDs: results.artists.map(\.id), key: \.id
+        ) { try await client.fetchArtist(id: $0).1 }
         return results
     }
     
