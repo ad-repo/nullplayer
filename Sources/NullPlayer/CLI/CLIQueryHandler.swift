@@ -33,8 +33,8 @@ struct CLIQueryHandler {
             return
         }
 
-        // Search query (--search without playback flags → print results and exit)
-        if opts.isSearchQuery {
+        // Search query (--search without playback flags, or --search-albums → print results and exit)
+        if opts.isSearchQuery || opts.searchAlbums != nil {
             let source = opts.source ?? "local"
             try await CLISourceResolver.checkConnectivity(source: source)
             // Server search is scoped to the selected library, so honor --library (or
@@ -45,7 +45,11 @@ struct CLIQueryHandler {
             } else {
                 try CLISourceResolver.ensureMusicLibrarySelected(source: source)
             }
-            try await searchAndPrint(source: source, query: opts.search!, json: opts.json)
+            if let query = opts.searchAlbums {
+                try await searchAlbumsAndPrint(source: source, query: query, json: opts.json)
+            } else {
+                try await searchAndPrint(source: source, query: opts.search!, json: opts.json)
+            }
             return
         }
 
@@ -473,41 +477,27 @@ struct CLIQueryHandler {
 
     private static func searchAndPrint(source: String, query: String, json: Bool) async throws {
         var tracks: [Track] = []
-        // Artist and album hits, printed in place of the tracks when PROBE_ALBUMS is set
-        var artistCount = 0
-        var albums: [(artist: String?, title: String, year: Int?)] = []
         switch source {
         case "local":
             tracks = MediaLibrary.shared.search(query: query).map { $0.toTrack() }
-            let store = MediaLibraryStore.shared
-            artistCount = store.searchArtistNames(query: query).count
-            albums = store.searchAlbumSummaries(query: query).map { ($0.artist, $0.name, $0.year) }
         case "plex":
             let results = try await PlexManager.shared.search(query: query)
             tracks = PlexManager.shared.convertToTracks(results.tracks)
-            artistCount = results.artists.count
-            albums = results.albums.map { ($0.parentTitle, $0.title, $0.year) }
         case "subsonic":
             let results = try await SubsonicManager.shared.search(query: query)
             tracks = SubsonicManager.shared.convertToTracks(results.songs)
-            artistCount = results.artists.count
-            albums = results.albums.map { ($0.artist, $0.name, $0.year) }
         case "jellyfin":
             let results = try await JellyfinManager.shared.search(
                 query: query,
                 parentId: JellyfinManager.shared.currentMusicLibrary?.id
             )
             tracks = JellyfinManager.shared.convertToTracks(results.songs)
-            artistCount = results.artists.count
-            albums = results.albums.map { ($0.artist, $0.name, $0.year) }
         case "emby":
             let results = try await EmbyManager.shared.search(
                 query: query,
                 parentId: EmbyManager.shared.currentMusicLibrary?.id
             )
             tracks = EmbyManager.shared.convertToTracks(results.songs)
-            artistCount = results.artists.count
-            albums = results.albums.map { ($0.artist, $0.name, $0.year) }
         case "radio":
             let stations = RadioManager.shared.searchStations(query: query)
             if json {
@@ -524,19 +514,46 @@ struct CLIQueryHandler {
             return
         }
 
-        if ProcessInfo.processInfo.environment["PROBE_ALBUMS"] != nil {
-            for album in albums {
-                print("ALBUM\t\(album.artist ?? "")\t\(album.title)\t\(album.year.map { String($0) } ?? "")")
-            }
-            print("ARTISTS\t\(artistCount)\tALBUMS\t\(albums.count)\tTRACKS\t\(tracks.count)")
-            return
-        }
-
         let names = tracks.map { "\($0.artist ?? "Unknown") - \($0.title)" }
         if json { CLIDisplay.printJSON(names) }
         else {
             for name in names { print(name) }
             print("\n\(names.count) result(s)")
+        }
+    }
+
+    /// The album hits of a search, from the same calls the Library Browser's Search tab makes.
+    private static func searchAlbumsAndPrint(source: String, query: String, json: Bool) async throws {
+        let albums: [(artist: String?, title: String, year: Int?)]
+        switch source {
+        case "local":
+            albums = MediaLibraryStore.shared.searchAlbumSummaries(query: query).map { ($0.artist, $0.name, $0.year) }
+        case "plex":
+            albums = try await PlexManager.shared.searchWithArtistAlbums(query: query).albums
+                .map { ($0.parentTitle, $0.title, $0.year) }
+        case "subsonic":
+            albums = try await SubsonicManager.shared.searchWithArtistAlbums(query: query).albums
+                .map { ($0.artist, $0.name, $0.year) }
+        case "jellyfin":
+            let manager = JellyfinManager.shared
+            albums = try await manager.searchWithArtistAlbums(query: query, parentId: manager.currentMusicLibrary?.id).albums
+                .map { ($0.artist, $0.name, $0.year) }
+        case "emby":
+            let manager = EmbyManager.shared
+            albums = try await manager.searchWithArtistAlbums(query: query, parentId: manager.currentMusicLibrary?.id).albums
+                .map { ($0.artist, $0.name, $0.year) }
+        default:
+            fputs("Error: --search-albums not supported for source '\(source)'\n", cliStderr)
+            return
+        }
+
+        let names = albums.map { album in
+            "\(album.artist ?? "Unknown") - \(album.title)" + (album.year.map { " (\($0))" } ?? "")
+        }
+        if json { CLIDisplay.printJSON(names) }
+        else {
+            for name in names { print(name) }
+            print("\n\(names.count) album(s)")
         }
     }
 

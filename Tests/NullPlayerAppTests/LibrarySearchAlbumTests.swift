@@ -35,10 +35,10 @@ final class LibrarySearchAlbumTests: XCTestCase {
             ["type": "movie", "Metadata": [item("20", type: "movie", title: "Rush", section: 1)]],
         ])
 
-        let (results, artistIDs) = try PlexServerClient.parseHubSearch(data, musicLibraryID: "15")
+        let (results, artistRecords) = try PlexHubSearch.parse(data, musicSectionID: "15")
 
         XCTAssertEqual(results.albums.map(\.title), ["Signals"])
-        XCTAssertEqual(artistIDs, ["1", "2"], "every same-name record in the library is fetched")
+        XCTAssertEqual(artistRecords.map(\.id), ["1", "2"], "every same-name record in the library is fetched")
         XCTAssertEqual(results.artists.count, 1)
         XCTAssertEqual(results.movies.map(\.title), ["Rush"], "video hits come from every section")
     }
@@ -50,7 +50,7 @@ final class LibrarySearchAlbumTests: XCTestCase {
             item("12", type: "album", title: "moving pictures", parent: "RUSH", year: 1981, section: 15),
         ]]])
 
-        let (results, _) = try PlexServerClient.parseHubSearch(data, musicLibraryID: "15")
+        let (results, _) = try PlexHubSearch.parse(data, musicSectionID: "15")
 
         XCTAssertEqual(results.albums.map(\.id), ["10", "11"])
     }
@@ -61,7 +61,7 @@ final class LibrarySearchAlbumTests: XCTestCase {
             item("30", type: "album", title: "Signals", parent: "Rush", year: 1982, section: 14),
         ]]])
 
-        let (results, _) = try PlexServerClient.parseHubSearch(data, musicLibraryID: nil)
+        let (results, _) = try PlexHubSearch.parse(data, musicSectionID: nil)
 
         XCTAssertEqual(results.albums.map(\.id), ["10"])
     }
@@ -72,9 +72,21 @@ final class LibrarySearchAlbumTests: XCTestCase {
             item("11", type: "album", title: "Presto", parent: "Rush", year: 1989, section: "14"),
         ]]])
 
-        let (results, _) = try PlexServerClient.parseHubSearch(data, musicLibraryID: "15")
+        let (results, _) = try PlexHubSearch.parse(data, musicSectionID: "15")
 
         XCTAssertEqual(results.albums.map(\.title), ["Signals"])
+    }
+
+    func testPlexKeepsHitsWithoutASectionAndFoldsArtistNames() throws {
+        let data = try hubJSON([["type": "artist", "Metadata": [
+            item("1", type: "artist", title: "Beyoncé", section: 15),
+            item("2", type: "artist", title: " beyonce", section: nil),
+        ]]])
+
+        let (results, artistRecords) = try PlexHubSearch.parse(data, musicSectionID: "15")
+
+        XCTAssertEqual(artistRecords.map(\.id), ["1", "2"])
+        XCTAssertEqual(results.artists.map(\.id), ["1"], "artists dedupe like the Artists tab groups them")
     }
 
     // MARK: - Artist album merge
@@ -83,7 +95,7 @@ final class LibrarySearchAlbumTests: XCTestCase {
         let byArtist = ["a": ["A1", "A2"], "b": ["B1", "A1"]]
 
         let merged = await SearchArtistAlbumMerge.merged(
-            ["A2", "X"], artistIDs: ["a", "b"], key: { $0 }
+            ["A2", "X"], artists: ["a", "b"], key: { $0 }
         ) { byArtist[$0] ?? [] }
 
         XCTAssertEqual(merged, ["A2", "X", "A1", "B1"])
@@ -94,7 +106,7 @@ final class LibrarySearchAlbumTests: XCTestCase {
         let ids = (0..<(SearchArtistAlbumMerge.artistLimit + 5)).map { "artist\($0)" }
 
         let merged = await SearchArtistAlbumMerge.merged(
-            [String](), artistIDs: ["bad"] + ids, key: { $0 }
+            [String](), artists: ["bad"] + ids, key: { $0 }
         ) { id in
             if id == "bad" { throw Failure() }
             return [id]

@@ -9478,7 +9478,7 @@ class ModernLibraryBrowserView: NSView {
                     self.buildPlexPlaylistItems()
                 case .search:
                     if !self.searchQuery.isEmpty {
-                        self.searchResults = try await pm.search(query: self.searchQuery)
+                        self.searchResults = try await pm.searchWithArtistAlbums(query: self.searchQuery)
                         guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         self.buildSearchItems()
                     } else {
@@ -9586,7 +9586,7 @@ class ModernLibraryBrowserView: NSView {
                     self.buildSubsonicPlaylistItems()
                 case .search:
                     if !self.searchQuery.isEmpty {
-                        self.subsonicSearchResults = try await manager.search(query: self.searchQuery)
+                        self.subsonicSearchResults = try await manager.searchWithArtistAlbums(query: self.searchQuery)
                         guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         self.buildSubsonicSearchItems()
                     } else { self.displayItems = [] }
@@ -9697,7 +9697,7 @@ class ModernLibraryBrowserView: NSView {
                     self.buildJellyfinPlaylistItems()
                 case .search:
                     if !self.searchQuery.isEmpty {
-                        self.jellyfinSearchResults = try await manager.search(query: self.searchQuery)
+                        self.jellyfinSearchResults = try await manager.searchWithArtistAlbums(query: self.searchQuery)
                         guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         self.buildJellyfinSearchItems()
                     } else { self.displayItems = [] }
@@ -9843,7 +9843,7 @@ class ModernLibraryBrowserView: NSView {
                     self.buildEmbyPlaylistItems()
                 case .search:
                     if !self.searchQuery.isEmpty {
-                        self.embySearchResults = try await manager.search(query: self.searchQuery)
+                        self.embySearchResults = try await manager.searchWithArtistAlbums(query: self.searchQuery)
                         guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         self.buildEmbySearchItems()
                     } else { self.displayItems = [] }
@@ -9901,7 +9901,7 @@ class ModernLibraryBrowserView: NSView {
     
     private func buildArtistAlbumCounts() {
         artistAlbumCounts.removeAll()
-        plexArtistGroupsByName = Dictionary(grouping: cachedArtists, by: { normalizedPlexArtistName($0.title) })
+        plexArtistGroupsByName = Dictionary(grouping: cachedArtists, by: { PlexIdentity.normalizedName($0.title) })
         plexAlbumsByArtistGroupKey.removeAll()
         plexAlbumCountsByArtistGroupKey.removeAll()
 
@@ -9919,7 +9919,7 @@ class ModernLibraryBrowserView: NSView {
         }
 
         for (groupKey, albums) in plexAlbumsByArtistGroupKey {
-            let deduplicated = deduplicatedPlexAlbums(albums)
+            let deduplicated = PlexIdentity.unique(albums)
             plexAlbumsByArtistGroupKey[groupKey] = deduplicated
             plexAlbumCountsByArtistGroupKey[groupKey] = deduplicated.count
         }
@@ -10943,18 +10943,12 @@ class ModernLibraryBrowserView: NSView {
         }
     }
 
-    private func normalizedPlexArtistName(_ title: String) -> String {
-        title.trimmingCharacters(in: .whitespacesAndNewlines)
-            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .lowercased()
-    }
-
     private func plexArtistGroupKey(for artist: PlexArtist) -> String {
-        "plex-artist-\(normalizedPlexArtistName(artist.title))"
+        "plex-artist-\(PlexIdentity.normalizedName(artist.title))"
     }
 
     private func uniquePlexArtistsByName(_ artists: [PlexArtist]) -> [PlexArtist] {
-        var groups = Dictionary(grouping: artists, by: { normalizedPlexArtistName($0.title) })
+        var groups = Dictionary(grouping: artists, by: { PlexIdentity.normalizedName($0.title) })
         if artists.count == cachedArtists.count && !plexArtistGroupsByName.isEmpty {
             groups = plexArtistGroupsByName
         }
@@ -10969,8 +10963,8 @@ class ModernLibraryBrowserView: NSView {
 
     private func plexArtistGroup(for artist: PlexArtist) -> [PlexArtist] {
         guard browseMode != .search else { return [artist] }
-        let key = normalizedPlexArtistName(artist.title)
-        let matches = plexArtistGroupsByName[key] ?? cachedArtists.filter { normalizedPlexArtistName($0.title) == key }
+        let key = PlexIdentity.normalizedName(artist.title)
+        let matches = plexArtistGroupsByName[key] ?? cachedArtists.filter { PlexIdentity.normalizedName($0.title) == key }
         return matches.isEmpty ? [artist] : matches
     }
 
@@ -10995,30 +10989,6 @@ class ModernLibraryBrowserView: NSView {
         return foundCount ? count : nil
     }
 
-    private func deduplicatedPlexAlbums(_ albums: [PlexAlbum]) -> [PlexAlbum] {
-        var seen = Set<String>()
-        var result: [PlexAlbum] = []
-        for album in albums {
-            let key = "\(normalizedPlexArtistName(album.parentTitle ?? ""))|\(normalizedPlexArtistName(album.title))|\(album.year.map { String($0) } ?? "")"
-            if seen.insert(key).inserted {
-                result.append(album)
-            }
-        }
-        return result
-    }
-
-    private func deduplicatedPlexTracks(_ tracks: [PlexTrack]) -> [PlexTrack] {
-        var seen = Set<String>()
-        var result: [PlexTrack] = []
-        for track in tracks {
-            let key = "\(normalizedPlexArtistName(track.grandparentTitle ?? ""))|\(normalizedPlexArtistName(track.parentTitle ?? ""))|\(normalizedPlexArtistName(track.title))|\(track.parentIndex ?? 1)|\(track.index ?? 0)"
-            if seen.insert(key).inserted {
-                result.append(track)
-            }
-        }
-        return result
-    }
-
     private func fetchAlbumsForPlexArtistGroup(_ artist: PlexArtist) async throws -> [PlexAlbum] {
         let groupKey = plexArtistGroupKey(for: artist)
         if let cached = plexAlbumsByArtistGroupKey[groupKey], !cached.isEmpty {
@@ -11029,7 +10999,7 @@ class ModernLibraryBrowserView: NSView {
         for member in plexArtistGroup(for: artist) {
             albums.append(contentsOf: try await PlexManager.shared.fetchAlbums(forArtist: member))
         }
-        return deduplicatedPlexAlbums(albums)
+        return PlexIdentity.unique(albums)
     }
 
     private func fetchTracksForPlexArtistGroup(_ artist: PlexArtist) async throws -> [PlexTrack] {
@@ -11043,7 +11013,7 @@ class ModernLibraryBrowserView: NSView {
                 tracks.append(contentsOf: try await PlexManager.shared.fetchTracks(forArtist: member))
             }
         }
-        return deduplicatedPlexTracks(tracks)
+        return PlexIdentity.unique(tracks)
     }
     
     private func sortPlexAlbums(_ albums: [PlexAlbum]) -> [PlexAlbum] {

@@ -150,6 +150,7 @@ Art rendering and log suppression each have their own section below.
 | `--list-artists` | Yes |
 | `--list-albums` | Yes (optional `--artist` filter) |
 | `--list-tracks` | Yes (optional `--artist`/`--album` filter) |
+| `--search-albums <query>` | Yes (`local`, `plex`, `subsonic`, `jellyfin`, `emby`) |
 | `--list-genres` | No (local library only) |
 | `--list-playlists` | Yes |
 | `--list-stations` | No (optional `--folder` filter) |
@@ -159,14 +160,14 @@ Art rendering and log suppression each have their own section below.
 
 `--search` without playback flags (`--artist`, `--album`, `--playlist`, `--radio`, `--station`, `--file`, `--movie`, `--episode`) is also a query command.
 
-**Search album probe (`PROBE_ALBUMS=1`).** `--search` prints only track hits. With `PROBE_ALBUMS`
-set, it prints the album hits instead, one `ALBUM<TAB>artist<TAB>title<TAB>year` row each, then
-one `ARTISTS n ALBUMS n TRACKS n` count line, for `local`, `plex`, `subsonic`, `jellyfin` and
-`emby` (`radio` ignores it). The albums are what each manager's `search` returns, the list the
-Library Browser's Search tab is built from, so this measures search without the GUI:
+**Search album hits (`--search-albums <query>`).** `--search` prints only track hits.
+`--search-albums` prints the album hits instead, one `artist - title (year)` row each, then an
+`n album(s)` count (`--json`: the rows as an array). The albums come from each manager's
+`searchWithArtistAlbums` (local: `searchAlbumSummaries`), the call the Library Browser's Search tab
+makes, so this measures search without the GUI:
 
 ```bash
-PROBE_ALBUMS=1 .build/arm64-apple-macosx/debug/NullPlayer --cli --source plex --search rush | tail -1
+.build/arm64-apple-macosx/debug/NullPlayer --cli --source plex --search-albums rush | tail -1
 ```
 
 ### String/Int Parameters

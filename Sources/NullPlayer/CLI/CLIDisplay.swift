@@ -162,6 +162,8 @@ class CLIDisplay {
             --list-artists              List artists (requires --source)
             --list-albums               List albums (optional --artist filter)
             --list-tracks               List tracks (optional --artist/--album filter)
+            --search-albums <query>     List the albums a search finds, as the
+                                        Library Browser's Search tab shows them
             --list-genres               List genres (local library only)
             --list-playlists            List playlists
             --list-stations             List radio stations (optional --folder filter)

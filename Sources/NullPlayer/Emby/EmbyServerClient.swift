@@ -493,17 +493,8 @@ class EmbyServerClient {
         return allArtists
     }
 
-    /// Fetch artist details with their albums
-    func fetchArtist(id: String) async throws -> (artist: EmbyArtist, albums: [EmbyAlbum]) {
-        // Fetch artist details
-        guard let artistRequest = buildRequest(path: "/Users/\(server.userId)/Items/\(id)") else {
-            throw EmbyClientError.invalidURL
-        }
-
-        let artistDTO: EmbyItemDTO = try await performRequest(artistRequest)
-        let artist = artistDTO.toArtist()
-
-        // Fetch artist's albums
+    /// Fetch an artist's albums
+    func fetchAlbums(forArtistID id: String) async throws -> [EmbyAlbum] {
         let albumParams = [
             URLQueryItem(name: "AlbumArtistIds", value: id),
             URLQueryItem(name: "IncludeItemTypes", value: "MusicAlbum"),
@@ -516,9 +507,7 @@ class EmbyServerClient {
         }
 
         let albumResponse: EmbyQueryResult = try await performRequest(albumRequest)
-        let albums = albumResponse.Items.map { $0.toAlbum() }
-
-        return (artist, albums)
+        return albumResponse.Items.map { $0.toAlbum() }
     }
 
     // MARK: - Album Operations

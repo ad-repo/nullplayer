@@ -17,6 +17,7 @@ struct CLIOptions {
     var decade: Int?
     var playlist: String?
     var search: String?
+    var searchAlbums: String?
     var radio: String?
     var station: String?
     var file: String?
@@ -76,7 +77,7 @@ struct CLIOptions {
     var isQueryMode: Bool {
         listSources || listLibraries || listArtists || listAlbums || listTracks ||
         listGenres || listPlaylists || listStations || listDevices ||
-        listOutputs || listEQ || isSearchQuery
+        listOutputs || listEQ || isSearchQuery || searchAlbums != nil
     }
 
     /// --search without playback flags (--artist/--album/--playlist/--radio/--station)
@@ -132,6 +133,7 @@ struct CLIOptions {
                         opts.decade = intVal
                     case "--playlist": opts.playlist = value
                     case "--search": opts.search = value
+                    case "--search-albums": opts.searchAlbums = value
                     case "--radio": opts.radio = value
                     case "--station": opts.station = value
                     case "--file": opts.file = value

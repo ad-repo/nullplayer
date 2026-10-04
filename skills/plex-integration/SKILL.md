@@ -77,8 +77,9 @@ The Albums tab sorts `cachedAlbums` client-side (`sortPlexAlbums`, by the tab's 
 
 ## Library Search (`/hubs/search`)
 
-`PlexServerClient.search` calls `GET /hubs/search?query={q}&sectionId={id}&limit=50`, parsed by the
-pure `parseHubSearch(_:musicLibraryID:)`. Measured on a server with several music libraries:
+`PlexServerClient.search(query:in:)` calls `GET /hubs/search?query={q}&sectionId={id}&limit=50`,
+parsed by the pure `PlexHubSearch.parse(_:musicSectionID:)`. Measured on a server with several
+music libraries:
 
 - **`sectionId` is ignored.** Every hub returns hits from every section, so a 50-row album hub held
   31 hits from the current library and 19 copies from the others. Copies carry different
@@ -88,19 +89,24 @@ pure `parseHubSearch(_:musicLibraryID:)`. Measured on a server with several musi
 - **Each hub is capped at `limit`**, ranked by relevance. `limit=1000` returns everything for a
   narrow query, but a broad one ("the") times out at ~30 s — at `limit=50` too.
 
-So when the current library is a music library (`PlexManager.search` passes `musicLibraryID`),
-artist/album/track hits are kept to that section by their `librarySectionID` (decoded beside the
-shared DTO, Int or String); movie/show/episode hits still come from every section, because
-Library Browser search is cross-media. Albums dedupe on normalized artist|title|year
-(`searchAlbumKey`, the same key as the grouped Artists-tab expand), so editions that share a
-title stay separate. Then every matched artist record — same-name duplicates included — has its
-full `/children` album list merged in through `SearchArtistAlbumMerge` (first 10 records), so the
-search lists the same albums as the artist's grouped row. Before this, an artist with 53 albums
-showed 31–34.
+So when the current library is a music library, artist/album/track hits are kept to that section
+by their `librarySectionID` (decoded from the same object as the shared DTO, Int or String, absent
+kept); movie/show/episode hits still come from every section, because Library Browser search is
+cross-media. Music hits dedupe on `PlexIdentity` (NullPlayerCore) — artists by normalized name,
+albums by `PlexAlbum.identityKey` (artist|title|year), tracks by `PlexTrack.identityKey` — the same
+keys the Artists tab groups and dedupes with, so editions that share a title stay separate.
+
+`PlexManager.search` stops there. `PlexManager.searchWithArtistAlbums`, which only the Search tabs
+and `--search-albums` call, also merges in the albums of every matched artist record (same-name
+duplicates included, first 10 records) through `SearchArtistAlbumMerge` and
+`PlexManager.fetchAlbums(forArtist:)`, the Artists tab's own fetch with its section-filter fallback.
+The search then lists the same albums as the artist's grouped row. Before this, an artist with 53
+albums showed 31–34. Callers that use only the tracks (the WMP catalog, CLI playback, context-menu
+fallbacks) call plain `search` and pay no fan-out.
 
 To measure from the terminal: `--cli --source plex --list-albums --artist "<name>"` gives the
-artist's album list (first exact-name record only); `PROBE_ALBUMS=1 … --search "<q>"` prints the
-search's album hits and counts (`cli` § *Search album probe*); plain `--search` prints the track hits only.
+artist's album list (first exact-name record only); `--search-albums "<q>"` prints the search's
+album hits (`cli` § *Search album hits*); plain `--search` prints the track hits only.
 
 ## Popular Tracks (Last.fm Integration)
 

@@ -12,10 +12,10 @@
   large the library.
 - **Search lists every album by the artist you searched for** — searching a Plex, Subsonic,
   Jellyfin or Emby library for an artist showed only some of their albums: 34 of 53 on Plex, 19 of
-  74 on Subsonic, 5 of 54 on Emby. Search now lists the same albums as the artist's own row, up to
-  ten matching artists. On Plex, music results stay in the library you are browsing instead of
-  filling up with copies from your other libraries, and separate releases that share a title are
-  no longer merged. Local search also finds albums whose tracks have no album-artist tag.
+  74 on Subsonic, 5 of 54 on Emby. Search now lists the same albums as the artist's own row for
+  the first ten artists it matches. On Plex, music results stay in the library you are browsing
+  instead of filling up with copies from your other libraries, and separate releases that share a
+  title are no longer merged. Local search also finds albums whose tracks have no album-artist tag.
 
 ## 0.31.3
 
