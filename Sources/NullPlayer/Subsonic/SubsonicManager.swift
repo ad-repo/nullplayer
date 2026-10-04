@@ -465,6 +465,16 @@ class SubsonicManager {
         }
         return try await client.search(query: query)
     }
+
+    /// `search`, with each matched artist's albums merged in — `search3` caps albums at
+    /// `albumCount`. For lists that show the album hits.
+    func searchWithArtistAlbums(query: String) async throws -> SubsonicSearchResults {
+        var results = try await search(query: query)
+        results.albums = await SearchArtistAlbumMerge.merged(
+            results.albums, artists: results.artists, key: \.id
+        ) { try await self.fetchAlbums(forArtist: $0) }
+        return results
+    }
     
     /// Fetch starred (favorite) items
     func fetchStarred() async throws -> SubsonicStarred {

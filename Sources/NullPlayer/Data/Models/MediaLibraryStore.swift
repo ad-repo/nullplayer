@@ -1262,7 +1262,7 @@ final class MediaLibraryStore {
                 min(year) as yr,
                 count(*) as cnt
             FROM library_tracks
-            WHERE album LIKE ? OR album_artist LIKE ?
+            WHERE album LIKE ? OR coalesce(nullif(album_artist, ''), artist) LIKE ?
             GROUP BY album_id
             ORDER BY album_name ASC
             LIMIT 100

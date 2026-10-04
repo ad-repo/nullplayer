@@ -552,17 +552,8 @@ class JellyfinServerClient {
         return allArtists
     }
     
-    /// Fetch artist details with their albums
-    func fetchArtist(id: String) async throws -> (artist: JellyfinArtist, albums: [JellyfinAlbum]) {
-        // Fetch artist details
-        guard let artistRequest = buildRequest(path: "/Users/\(server.userId)/Items/\(id)") else {
-            throw JellyfinClientError.invalidURL
-        }
-        
-        let artistDTO: JellyfinItemDTO = try await performRequest(artistRequest)
-        let artist = artistDTO.toArtist()
-        
-        // Fetch artist's albums
+    /// Fetch an artist's albums
+    func fetchAlbums(forArtistID id: String) async throws -> [JellyfinAlbum] {
         let albumParams = [
             URLQueryItem(name: "AlbumArtistIds", value: id),
             URLQueryItem(name: "IncludeItemTypes", value: "MusicAlbum"),
@@ -575,9 +566,7 @@ class JellyfinServerClient {
         }
         
         let albumResponse: JellyfinQueryResult = try await performRequest(albumRequest)
-        let albums = albumResponse.Items.map { $0.toAlbum() }
-        
-        return (artist, albums)
+        return albumResponse.Items.map { $0.toAlbum() }
     }
     
     // MARK: - Album Operations

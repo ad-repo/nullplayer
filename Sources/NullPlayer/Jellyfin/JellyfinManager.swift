@@ -526,8 +526,7 @@ class JellyfinManager {
     /// Fetch albums for an artist
     func fetchAlbums(forArtist artist: JellyfinArtist) async throws -> [JellyfinAlbum] {
         guard let client = serverClient else { return [] }
-        let (_, albums) = try await client.fetchArtist(id: artist.id)
-        return albums
+        return try await client.fetchAlbums(forArtistID: artist.id)
     }
     
     /// Fetch songs for an album
@@ -652,6 +651,16 @@ class JellyfinManager {
             return JellyfinSearchResults()
         }
         return try await client.search(query: query, parentId: parentId)
+    }
+
+    /// `search`, with each matched artist's albums merged in — `searchTerm` matches album names
+    /// only and every item type shares one `Limit`. For lists that show the album hits.
+    func searchWithArtistAlbums(query: String, parentId: String? = nil) async throws -> JellyfinSearchResults {
+        var results = try await search(query: query, parentId: parentId)
+        results.albums = await SearchArtistAlbumMerge.merged(
+            results.albums, artists: results.artists, key: \.id
+        ) { try await self.fetchAlbums(forArtist: $0) }
+        return results
     }
     
     // MARK: - Favorites

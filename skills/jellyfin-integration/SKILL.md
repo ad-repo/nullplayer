@@ -36,10 +36,16 @@ All requests include header: `Authorization: MediaBrowser Client="NullPlayer", D
   - `fetchVideoLibraries()` uses the same endpoint but filters out non-video library types (`music`, `musicvideos`, `books`, `photos`, `playlists`, `livetv`).
 - **Artists**: `GET /Artists/AlbumArtists?parentId={libId}&userId={userId}&Recursive=true&SortBy=SortName`
 - **Albums**: `GET /Users/{userId}/Items?parentId={libId}&IncludeItemTypes=MusicAlbum&Recursive=true`
-- **Artist albums**: `GET /Users/{userId}/Items?AlbumArtistIds={artistId}&IncludeItemTypes=MusicAlbum`
+- **Artist albums**: `GET /Users/{userId}/Items?AlbumArtistIds={artistId}&IncludeItemTypes=MusicAlbum` —
+  `fetchAlbums(forArtistID:)`, one request (the artist item itself is not fetched)
 - **Album tracks**: `GET /Users/{userId}/Items?parentId={albumId}&IncludeItemTypes=Audio`
 - **Playlists**: `GET /Users/{userId}/Items?IncludeItemTypes=Playlist&Recursive=true`
 - **Search**: `GET /Items?searchTerm={q}&IncludeItemTypes=Audio,MusicAlbum,MusicArtist,Movie,Series,Episode`
+  — one `Limit=50` shared by every item type, and `searchTerm` matches item names only, so an
+  artist's albums appear only when titled like the query. `JellyfinManager.searchWithArtistAlbums`
+  (Search tab, `--search-albums`) merges each matched artist's `fetchAlbums(forArtist:)` list
+  through `SearchArtistAlbumMerge` (first 10 artists, deduped by album id); plain `search` does not
+  fan out, for callers that use only the songs.
 
 ## Video Browsing
 

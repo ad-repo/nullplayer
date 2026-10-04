@@ -53,7 +53,11 @@ The "Lib:" zone in the status bar shows the current folder name ("All" when nil)
 - **Albums**: `GET /rest/getAlbumList2?type={type}&size={n}&offset={n}&musicFolderId={id}` — `musicFolderId` optional
 - **Album detail**: `GET /rest/getAlbum?id={albumId}` — returns album + track list
 - **Song**: `GET /rest/getSong?id={songId}`
-- **Search**: `GET /rest/search3?query={q}&artistCount={n}&albumCount={n}&songCount={n}`
+- **Search**: `GET /rest/search3?query={q}&artistCount={n}&albumCount={n}&songCount={n}` — capped
+  at 20 albums, so `SubsonicManager.searchWithArtistAlbums` (Search tab, `--search-albums`) merges
+  each matched artist's `fetchAlbums(forArtist:)` list through `SearchArtistAlbumMerge` (first 10
+  artists, deduped by album id). Without it a search for an artist with 74 albums listed 19. Plain
+  `search` does not fan out, for callers that use only the songs.
 - **Playlists**: `GET /rest/getPlaylists`
 - **Playlist detail**: `GET /rest/getPlaylist?id={playlistId}`
 - **Starred**: `GET /rest/getStarred2`

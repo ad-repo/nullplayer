@@ -586,12 +586,14 @@ class PlexServerClient {
     
     // MARK: - Search
     
-    /// Search for content in a library
-    func search(query: String, libraryID: String, type: SearchType = .all) async throws -> PlexSearchResults {
+    /// Search for content from `library`. `/hubs/search` ignores `sectionId`, so in a music library
+    /// the artist/album/track hits are kept to it (`PlexHubSearch`); movie/show/episode hits, and
+    /// every hit in a video library, come from every section. Each hub is capped at 50.
+    func search(query: String, in library: PlexLibrary, type: SearchType = .all) async throws -> (results: PlexSearchResults, artistRecords: [PlexArtist]) {
         // Use the hubs/search endpoint which is more reliable
         let queryItems = [
             URLQueryItem(name: "query", value: query),
-            URLQueryItem(name: "sectionId", value: libraryID),
+            URLQueryItem(name: "sectionId", value: library.id),
             URLQueryItem(name: "limit", value: "50")
         ]
         
@@ -611,64 +613,7 @@ class PlexServerClient {
             throw PlexServerError.httpError(statusCode: httpResponse.statusCode)
         }
         
-        // Parse hub search response
-        struct HubSearchResponse: Decodable {
-            let MediaContainer: HubContainer
-        }
-        struct HubContainer: Decodable {
-            let Hub: [Hub]?
-        }
-        struct Hub: Decodable {
-            let type: String
-            let Metadata: [PlexMetadataDTO]?
-        }
-        
-        let decoder = JSONDecoder()
-        let hubResponse = try decoder.decode(HubSearchResponse.self, from: data)
-        
-        // Deduplicate by content identity — /hubs/search returns one hub per library section,
-        // so a server with N sections returns N copies of each hit, each with a different
-        // ratingKey (keys are section-scoped). Use title-based keys instead.
-        var seenArtists = Set<String>(); var seenAlbums = Set<String>()
-        var seenTracks = Set<String>(); var seenMovies = Set<String>()
-        var seenShows = Set<String>(); var seenEpisodes = Set<String>()
-        var results = PlexSearchResults()
-        for hub in hubResponse.MediaContainer.Hub ?? [] {
-            guard let metadata = hub.Metadata else { continue }
-            switch hub.type {
-            case "artist":
-                for item in metadata {
-                    let key = item.title.lowercased()
-                    if seenArtists.insert(key).inserted { results.artists.append(item.toArtist()) }
-                }
-            case "album":
-                for item in metadata {
-                    let key = "\(item.parentTitle?.lowercased() ?? "")|\(item.title.lowercased())"
-                    if seenAlbums.insert(key).inserted { results.albums.append(item.toAlbum()) }
-                }
-            case "track":
-                for item in metadata {
-                    let key = "\(item.grandparentTitle?.lowercased() ?? "")|\(item.parentTitle?.lowercased() ?? "")|\(item.title.lowercased())|\(item.index ?? 0)"
-                    if seenTracks.insert(key).inserted { results.tracks.append(item.toTrack()) }
-                }
-            case "movie":
-                for item in metadata {
-                    if seenMovies.insert(item.title.lowercased()).inserted { results.movies.append(item.toMovie()) }
-                }
-            case "show":
-                for item in metadata {
-                    if seenShows.insert(item.title.lowercased()).inserted { results.shows.append(item.toShow()) }
-                }
-            case "episode":
-                for item in metadata {
-                    let key = "\(item.grandparentTitle?.lowercased() ?? "")|\(item.parentTitle?.lowercased() ?? "")|\(item.title.lowercased())|\(item.index ?? 0)"
-                    if seenEpisodes.insert(key).inserted { results.episodes.append(item.toEpisode()) }
-                }
-            default:
-                break
-            }
-        }
-        return results
+        return try PlexHubSearch.parse(data, musicSectionID: library.isMusicLibrary ? library.id : nil)
     }
     
     // MARK: - URL Generation

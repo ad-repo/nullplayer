@@ -75,6 +75,39 @@ Performance requirement: build group indexes once when artist/album counts are r
 
 The Albums tab sorts `cachedAlbums` client-side (`sortPlexAlbums`, by the tab's own sort), so every fill of a browser list cache must be the whole library, never one capped page. The Artists-tab load, the Albums, Movies and TV tab loads, and the `PlexManager` preload all use `fetchAllAlbums` / `fetchAllMovies` / `fetchAllShows`. Those page through `PlexServerClient.fetchAllPages` (1000 per request) until a short page. Shows page on the raw page size, because bonus-content filtering can shrink a full page. The Albums tab used to fetch 500: Plex returns albums in title order, so launching straight into Albums on "Recently Added" sorted only the first 500 alphabetically. Visiting Artists, which refilled the cache with everything, appeared to fix it. Movies and TV were cut off at 500.
 
+## Library Search (`/hubs/search`)
+
+`PlexServerClient.search(query:in:)` calls `GET /hubs/search?query={q}&sectionId={id}&limit=50`,
+parsed by the pure `PlexHubSearch.parse(_:musicSectionID:)`. Measured on a server with several
+music libraries:
+
+- **`sectionId` is ignored.** Every hub returns hits from every section, so a 50-row album hub held
+  31 hits from the current library and 19 copies from the others. Copies carry different
+  `ratingKey`s (keys are section-scoped), so they cannot be deduped by key. `librarySectionID`,
+  `sectionID` and `searchTypes=music` do not scope it either. `/library/sections/{id}/search?type=9` does, but
+  for albums it matches titles only, never the artist.
+- **Each hub is capped at `limit`**, ranked by relevance. `limit=1000` returns everything for a
+  narrow query, but a broad one ("the") times out at ~30 s — at `limit=50` too.
+
+So when the current library is a music library, artist/album/track hits are kept to that section
+by their `librarySectionID` (decoded from the same object as the shared DTO, Int or String, absent
+kept); movie/show/episode hits still come from every section, because Library Browser search is
+cross-media. Music hits dedupe on `PlexIdentity` (NullPlayerCore) — artists by normalized name,
+albums by `PlexAlbum.identityKey` (artist|title|year), tracks by `PlexTrack.identityKey` — the same
+keys the Artists tab groups and dedupes with, so editions that share a title stay separate.
+
+`PlexManager.search` stops there. `PlexManager.searchWithArtistAlbums`, which only the Search tabs
+and `--search-albums` call, also merges in the albums of every matched artist record (same-name
+duplicates included, first 10 records) through `SearchArtistAlbumMerge` and
+`PlexManager.fetchAlbums(forArtist:)`, the Artists tab's own fetch with its section-filter fallback.
+The search then lists the same albums as the artist's grouped row. Before this, an artist with 53
+albums showed 31–34. Callers that use only the tracks (the WMP catalog, CLI playback, context-menu
+fallbacks) call plain `search` and pay no fan-out.
+
+To measure from the terminal: `--cli --source plex --list-albums --artist "<name>"` gives the
+artist's album list (first exact-name record only); `--search-albums "<q>"` prints the search's
+album hits (`cli` § *Search album hits*); plain `--search` prints the track hits only.
+
 ## Popular Tracks (Last.fm Integration)
 
 Plex identifies "hit" tracks using the `ratingCount` field, which contains **global popularity data from Last.fm** - the number of unique listeners who have scrobbled the track worldwide.

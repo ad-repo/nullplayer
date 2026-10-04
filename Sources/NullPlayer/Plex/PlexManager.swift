@@ -650,7 +650,23 @@ class PlexManager {
         guard let client = serverClient, let library = currentLibrary else {
             return PlexSearchResults()
         }
-        return try await client.search(query: query, libraryID: library.id, type: type)
+        return try await client.search(query: query, in: library, type: type).results
+    }
+
+    /// `search`, with the albums of each matched artist record merged in through
+    /// `fetchAlbums(forArtist:)`, as the Artists tab lists them — the album hub is capped. Only in
+    /// a music library, where the artist hits are kept to it. For lists that show the album hits.
+    func searchWithArtistAlbums(query: String) async throws -> PlexSearchResults {
+        guard let client = serverClient, let library = currentLibrary else {
+            return PlexSearchResults()
+        }
+        var (results, artistRecords) = try await client.search(query: query, in: library)
+        if library.isMusicLibrary {
+            results.albums = await SearchArtistAlbumMerge.merged(
+                results.albums, artists: artistRecords, key: \.identityKey
+            ) { try await self.fetchAlbums(forArtist: $0) }
+        }
+        return results
     }
     
     // MARK: - Video Content Fetching
