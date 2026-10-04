@@ -95,7 +95,8 @@ search lists the same albums as the artist's grouped row. Before this, an artist
 showed 31–34.
 
 To measure from the terminal: `--cli --source plex --list-albums --artist "<name>"` gives the
-artist's album list (first exact-name record only); `--search` prints the track hits only.
+artist's album list (first exact-name record only); `PROBE_ALBUMS=1 … --search "<q>"` prints the
+search's album hits and counts (`cli` § *Search album probe*); plain `--search` prints the track hits only.
 
 ## Popular Tracks (Last.fm Integration)
 
