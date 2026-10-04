@@ -11,7 +11,7 @@ class JellyfinServerClient {
     private let baseURL: URL
     
     /// Client identifier for API calls
-    private let clientName = "NullPlayer"
+    private static let clientName = "NullPlayer"
     
     /// Device ID for Jellyfin session tracking
     private let deviceId: String
@@ -91,16 +91,20 @@ class JellyfinServerClient {
     
     // MARK: - Authentication
     
+    /// The `Authorization` value Jellyfin expects on every request. The token rides here, not in
+    /// X-Emby-Token: Jellyfin 10.11 disables the legacy header by default and answers 401 to it.
+    static func authorization(deviceId: String, token: String = "") -> String {
+        var value = "MediaBrowser Client=\"\(clientName)\", Device=\"Mac\", DeviceId=\"\(deviceId)\", Version=\"1.0\""
+        if !token.isEmpty {
+            value += ", Token=\"\(token)\""
+        }
+        return value
+    }
+
     /// Generate authentication headers for API calls
     private func authHeaders() -> [String: String] {
-        // The token rides in the Authorization header: Jellyfin 10.11 disables the legacy
-        // X-Emby-Token header by default and answers 401 to it.
-        var authorization = "MediaBrowser Client=\"\(clientName)\", Device=\"Mac\", DeviceId=\"\(deviceId)\", Version=\"1.0\""
-        if !accessToken.isEmpty {
-            authorization += ", Token=\"\(accessToken)\""
-        }
-        return [
-            "Authorization": authorization,
+        [
+            "Authorization": Self.authorization(deviceId: deviceId, token: accessToken),
             "Accept": "application/json",
             "Content-Type": "application/json"
         ]
@@ -123,10 +127,7 @@ class JellyfinServerClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(
-            "MediaBrowser Client=\"NullPlayer\", Device=\"Mac\", DeviceId=\"\(deviceId)\", Version=\"1.0\"",
-            forHTTPHeaderField: "Authorization"
-        )
+        request.setValue(authorization(deviceId: deviceId), forHTTPHeaderField: "Authorization")
         
         let body: [String: String] = ["Username": username, "Pw": password]
         request.httpBody = try JSONEncoder().encode(body)
