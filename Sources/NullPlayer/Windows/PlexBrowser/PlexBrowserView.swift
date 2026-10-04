@@ -214,21 +214,6 @@ enum BrowserSortOption: String, CaseIterable, Codable {
         case .yearAsc: return "Year"
         }
     }
-    
-    /// Persistence key
-    private static let userDefaultsKey = "BrowserSortOption"
-    
-    func save() {
-        UserDefaults.standard.set(rawValue, forKey: Self.userDefaultsKey)
-    }
-    
-    static func load() -> BrowserSortOption {
-        guard let raw = UserDefaults.standard.string(forKey: userDefaultsKey),
-              let option = BrowserSortOption(rawValue: raw) else {
-            return .nameAsc
-        }
-        return option
-    }
 
     /// Convert to the equivalent ModernBrowserSortOption for store queries.
     var asModernSort: ModernBrowserSortOption {
@@ -239,6 +224,17 @@ enum BrowserSortOption: String, CaseIterable, Codable {
         case .dateAddedAsc: return .dateAddedAsc
         case .yearDesc: return .yearDesc
         case .yearAsc: return .yearAsc
+        }
+    }
+
+    init(_ modern: ModernBrowserSortOption) {
+        switch modern {
+        case .nameAsc: self = .nameAsc
+        case .nameDesc: self = .nameDesc
+        case .dateAddedDesc: self = .dateAddedDesc
+        case .dateAddedAsc: self = .dateAddedAsc
+        case .yearDesc: self = .yearDesc
+        case .yearAsc: self = .yearAsc
         }
     }
 }
@@ -274,6 +270,7 @@ class PlexBrowserView: NSView {
     private var browseMode: PlexBrowseMode = .artists {
         didSet {
             guard browseMode != oldValue else { return }
+            restoreSortForCurrentTab()
             // Switching tabs always exits Art view and Cover Flow.
             isArtOnlyMode = false
             isCoverFlowMode = false
@@ -310,16 +307,8 @@ class PlexBrowserView: NSView {
         }
     }
     
-    /// Current sort option
-    private var currentSort: BrowserSortOption = .nameAsc {
-        didSet {
-            currentSort.save()
-            localArtistPageOffset = 0; localAlbumPageOffset = 0
-            localArtistLetterOffsets = [:]; localAlbumLetterOffsets = [:]
-            rebuildCurrentModeItems()
-            needsDisplay = true
-        }
-    }
+    /// Current sort option (per tab). Change it through `setMenuSort`.
+    private var currentSort: BrowserSortOption = .nameAsc
     
     /// Search query
     private var searchQuery: String = ""
@@ -391,19 +380,9 @@ class PlexBrowserView: NSView {
     private var resizeStartX: CGFloat = 0
     private var resizeStartWidth: CGFloat = 0
     
-    /// Column sort state (overrides currentSort when set)
-    private var columnSortId: String? {
-        didSet {
-            saveColumnSort()
-            applyColumnSort(collapseExpanded: true)
-        }
-    }
-    private var columnSortAscending: Bool = true {
-        didSet {
-            saveColumnSort()
-            applyColumnSort(collapseExpanded: true)
-        }
-    }
+    /// Column sort state (overrides currentSort when set; per tab). Change it through `setColumnSort`.
+    private var columnSortId: String?
+    private var columnSortAscending: Bool = true
 
     // YouTube channels keep their own sort state (session-only, default = none → date
     // order as returned by yt-dlp). This keeps the persisted library column sort from
@@ -421,24 +400,40 @@ class PlexBrowserView: NSView {
         currentSource.isYouTube ? youtubeColumnSortAscending : columnSortAscending
     }
 
-    /// Save column sort to UserDefaults
-    private func saveColumnSort() {
-        if let id = columnSortId {
-            UserDefaults.standard.set(id, forKey: "BrowserColumnSortId")
-            UserDefaults.standard.set(columnSortAscending, forKey: "BrowserColumnSortAscending")
-        } else {
-            UserDefaults.standard.removeObject(forKey: "BrowserColumnSortId")
-        }
+    /// Sort-menu choice: becomes the tab's sole sort, replacing any column-header sort.
+    private func setMenuSort(_ option: BrowserSortOption) {
+        columnSortId = nil
+        currentSort = option
+        saveTabSort()
+        localArtistPageOffset = 0; localAlbumPageOffset = 0
+        localArtistLetterOffsets = [:]; localAlbumLetterOffsets = [:]
+        rebuildCurrentModeItems()
+        needsDisplay = true
     }
-    
-    /// Load column sort from UserDefaults
-    private func loadColumnSort() {
-        columnSortId = UserDefaults.standard.string(forKey: "BrowserColumnSortId")
-        columnSortAscending = UserDefaults.standard.bool(forKey: "BrowserColumnSortAscending")
-        // Default to true if not set
-        if UserDefaults.standard.object(forKey: "BrowserColumnSortAscending") == nil {
-            columnSortAscending = true
-        }
+
+    /// Column-header sort for the current tab.
+    private func setColumnSort(id: String, ascending: Bool) {
+        columnSortId = id
+        columnSortAscending = ascending
+        saveTabSort()
+        applyColumnSort(collapseExpanded: true)
+    }
+
+    private func saveTabSort() {
+        LibraryBrowserTabSortStore.save(
+            LibraryBrowserTabSort(menuSort: currentSort.asModernSort, columnSortId: columnSortId, columnSortAscending: columnSortAscending),
+            modeRawValue: browseMode.rawValue
+        )
+    }
+
+    /// Load the current tab's saved sort. Doesn't rebuild — every tab switch loads the tab's
+    /// data next. Paging offsets need no reset: each tab's offsets are only built on that tab,
+    /// under its own sort.
+    private func restoreSortForCurrentTab() {
+        let sort = LibraryBrowserTabSortStore.load(modeRawValue: browseMode.rawValue)
+        currentSort = BrowserSortOption(sort.menuSort)
+        columnSortId = sort.columnSortId
+        columnSortAscending = sort.columnSortAscending
     }
     
     /// Whether any content uses columns (for showing headers)
@@ -1836,8 +1831,8 @@ class PlexBrowserView: NSView {
         // Load saved column widths and sort
         loadColumnWidths()
         loadVisibleColumns()
-        loadColumnSort()
-        
+        restoreSortForCurrentTab()
+
         // Load saved source
         if let savedSource = BrowserSource.load() {
             // Validate saved source
@@ -1911,10 +1906,7 @@ class PlexBrowserView: NSView {
                 currentSource = .local
             }
         }
-        
-        // Load saved sort option
-        currentSort = BrowserSortOption.load()
-        
+
         // Art-only mode always starts disabled (don't persist across sessions)
         isArtOnlyMode = false
         
@@ -8731,7 +8723,9 @@ class PlexBrowserView: NSView {
             }
         } else {
             ids.removeAll { $0 == columnId }
+            // No save needed: clearColumnSort also clears this tab's saved entry.
             if columnSortId == columnId { columnSortId = nil }
+            LibraryBrowserTabSortStore.clearColumnSort(id: columnId)
         }
 
         setVisibleColumnIds(ids, for: group)
@@ -9106,13 +9100,9 @@ class PlexBrowserView: NSView {
                     youtubeColumnSortAscending = true
                 }
                 applyColumnSort(collapseExpanded: true)
-            } else if columnSortId == columnId {
-                // Same column - toggle direction
-                columnSortAscending.toggle()
             } else {
-                // New column - sort ascending
-                columnSortId = columnId
-                columnSortAscending = true
+                // Same column toggles direction; a new column sorts ascending
+                setColumnSort(id: columnId, ascending: columnSortId == columnId ? !columnSortAscending : true)
             }
             return
         }
@@ -10077,9 +10067,8 @@ class PlexBrowserView: NSView {
         // lingering column sort (which overrides currentSort) would silently re-order the list
         // on the next rebuild — e.g. snapping a date-sorted tab back to name order the moment a
         // row is expanded, leaving the selection on the wrong item. Picking from the menu makes
-        // it the sole sort, so drop any active column sort first.
-        if columnSortId != nil { columnSortId = nil }
-        currentSort = option
+        // it the sole sort (setMenuSort drops any active column sort).
+        setMenuSort(option)
     }
     
     private func handleAlphabetClick(at skinPoint: NSPoint) {
@@ -14255,11 +14244,12 @@ class PlexBrowserView: NSView {
         cachedSubsonicArtists.removeAll()
         cachedJellyfinArtists.removeAll()
         cachedEmbyArtists.removeAll()
+        // Switch first so the page offset is computed under the Artists tab's own sort.
+        browseMode = .artists
         if currentSource == .local,
            let artistOffset = MediaLibraryStore.shared.artistOffset(named: artistName, sort: currentSort.asModernSort) {
             localArtistPageOffset = (artistOffset / localPageSize) * localPageSize
         }
-        browseMode = .artists
         selectedIndices.removeAll()
         scrollOffset = 0
         loadDataForCurrentMode()
@@ -14422,7 +14412,7 @@ class PlexBrowserView: NSView {
                         if self.pendingArtistLoadUnfiltered {
                             artists = try await plexManager.fetchArtists()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
-                            albums = try await plexManager.fetchAlbums(offset: 0, limit: 10000)
+                            albums = try await plexManager.fetchAllAlbums()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         } else if plexManager.isContentPreloaded && !plexManager.cachedArtists.isEmpty {
                             artists = plexManager.cachedArtists
@@ -14430,7 +14420,7 @@ class PlexBrowserView: NSView {
                         } else {
                             artists = try await plexManager.fetchArtists()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
-                            albums = try await plexManager.fetchAlbums(offset: 0, limit: 10000)
+                            albums = try await plexManager.fetchAllAlbums()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
 
@@ -14447,7 +14437,9 @@ class PlexBrowserView: NSView {
                         if plexManager.isContentPreloaded && !plexManager.cachedAlbums.isEmpty {
                             self.cachedAlbums = plexManager.cachedAlbums
                         } else {
-                            self.cachedAlbums = try await plexManager.fetchAlbums(offset: 0, limit: 500)
+                            // Every album, as the Artists tab and the preload fetch: the tab sorts
+                            // client-side, so a partial fetch would sort only a subset.
+                            self.cachedAlbums = try await plexManager.fetchAllAlbums()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
@@ -14458,7 +14450,7 @@ class PlexBrowserView: NSView {
                         if plexManager.isContentPreloaded && !plexManager.cachedMovies.isEmpty {
                             self.cachedMovies = plexManager.cachedMovies
                         } else {
-                            self.cachedMovies = try await plexManager.fetchMovies(offset: 0, limit: 500)
+                            self.cachedMovies = try await plexManager.fetchAllMovies()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
@@ -14469,7 +14461,7 @@ class PlexBrowserView: NSView {
                         if plexManager.isContentPreloaded && !plexManager.cachedShows.isEmpty {
                             self.cachedShows = plexManager.cachedShows
                         } else {
-                            self.cachedShows = try await plexManager.fetchShows(offset: 0, limit: 500)
+                            self.cachedShows = try await plexManager.fetchAllShows()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }

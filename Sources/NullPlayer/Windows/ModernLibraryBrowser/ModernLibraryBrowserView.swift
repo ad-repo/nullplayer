@@ -162,14 +162,6 @@ enum ModernBrowserSortOption: String, CaseIterable, Codable {
         case .yearAsc: return "Year"
         }
     }
-    
-    private static let userDefaultsKey = "BrowserSortOption"
-    func save() { UserDefaults.standard.set(rawValue, forKey: Self.userDefaultsKey) }
-    static func load() -> ModernBrowserSortOption {
-        guard let raw = UserDefaults.standard.string(forKey: userDefaultsKey),
-              let option = ModernBrowserSortOption(rawValue: raw) else { return .nameAsc }
-        return option
-    }
 }
 
 // MARK: - Button Type
@@ -233,6 +225,7 @@ class ModernLibraryBrowserView: NSView {
     private var browseMode: ModernBrowseMode = .artists {
         didSet {
             guard browseMode != oldValue else { return }
+            restoreSortForCurrentTab()
             // Switching tabs always exits Art view and Cover Flow.
             isArtOnlyMode = false
             isCoverFlowMode = false
@@ -272,15 +265,8 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     
-    private var currentSort: ModernBrowserSortOption = .nameAsc {
-        didSet {
-            currentSort.save()
-            localArtistPageOffset = 0; localAlbumPageOffset = 0
-            localArtistLetterOffsets = [:]; localAlbumLetterOffsets = [:]
-            rebuildCurrentModeItems()
-            needsDisplay = true
-        }
-    }
+    /// Current sort option (per tab). Change it through `setMenuSort`.
+    private var currentSort: ModernBrowserSortOption = .nameAsc
     private var searchQuery: String = ""
     private var typeAheadQuery: String = ""
     private var typeAheadTimer: Timer?
@@ -300,8 +286,9 @@ class ModernLibraryBrowserView: NSView {
     private var resizingColumnGroup: LibraryColumnVisibilityGroup?
     private var resizeStartX: CGFloat = 0
     private var resizeStartWidth: CGFloat = 0
-    private var columnSortId: String? { didSet { saveColumnSort(); applyColumnSort(collapseExpanded: true) } }
-    private var columnSortAscending: Bool = true { didSet { saveColumnSort(); applyColumnSort(collapseExpanded: true) } }
+    /// Column sort state (overrides currentSort when set; per tab). Change it through `setColumnSort`.
+    private var columnSortId: String?
+    private var columnSortAscending: Bool = true
 
     // YouTube channels keep their own sort state (session-only, default = none → date
     // order as returned by yt-dlp). This keeps the persisted library column sort from
@@ -774,7 +761,7 @@ class ModernLibraryBrowserView: NSView {
         // Load saved column widths, visibility, and sort
         loadColumnWidths()
         loadVisibleColumns()
-        loadColumnSort()
+        restoreSortForCurrentTab()
         
         // Load saved source
         if let savedSource = ModernBrowserSource.load() {
@@ -841,10 +828,7 @@ class ModernLibraryBrowserView: NSView {
                 currentSource = .local
             }
         }
-        
-        // Load saved sort option
-        currentSort = ModernBrowserSortOption.load()
-        
+
         // Art-only mode always starts disabled
         isArtOnlyMode = false
         
@@ -3438,21 +3422,40 @@ class ModernLibraryBrowserView: NSView {
         return migrated
     }
     
-    private func saveColumnSort() {
-        if let id = columnSortId {
-            UserDefaults.standard.set(id, forKey: "BrowserColumnSortId")
-            UserDefaults.standard.set(columnSortAscending, forKey: "BrowserColumnSortAscending")
-        } else {
-            UserDefaults.standard.removeObject(forKey: "BrowserColumnSortId")
-        }
+    /// Sort-menu choice: becomes the tab's sole sort, replacing any column-header sort.
+    private func setMenuSort(_ option: ModernBrowserSortOption) {
+        columnSortId = nil
+        currentSort = option
+        saveTabSort()
+        localArtistPageOffset = 0; localAlbumPageOffset = 0
+        localArtistLetterOffsets = [:]; localAlbumLetterOffsets = [:]
+        rebuildCurrentModeItems()
+        needsDisplay = true
     }
-    
-    private func loadColumnSort() {
-        columnSortId = UserDefaults.standard.string(forKey: "BrowserColumnSortId")
-        columnSortAscending = UserDefaults.standard.bool(forKey: "BrowserColumnSortAscending")
-        if UserDefaults.standard.object(forKey: "BrowserColumnSortAscending") == nil {
-            columnSortAscending = true
-        }
+
+    /// Column-header sort for the current tab.
+    private func setColumnSort(id: String, ascending: Bool) {
+        columnSortId = id
+        columnSortAscending = ascending
+        saveTabSort()
+        applyColumnSort(collapseExpanded: true)
+    }
+
+    private func saveTabSort() {
+        LibraryBrowserTabSortStore.save(
+            LibraryBrowserTabSort(menuSort: currentSort, columnSortId: columnSortId, columnSortAscending: columnSortAscending),
+            modeRawValue: browseMode.rawValue
+        )
+    }
+
+    /// Load the current tab's saved sort. Doesn't rebuild — every tab switch loads the tab's
+    /// data next. Paging offsets need no reset: each tab's offsets are only built on that tab,
+    /// under its own sort.
+    private func restoreSortForCurrentTab() {
+        let sort = LibraryBrowserTabSortStore.load(modeRawValue: browseMode.rawValue)
+        currentSort = sort.menuSort
+        columnSortId = sort.columnSortId
+        columnSortAscending = sort.columnSortAscending
     }
     
     private func saveVisibleColumns() {
@@ -4180,10 +4183,8 @@ class ModernLibraryBrowserView: NSView {
                 if youtubeColumnSortId == columnId { youtubeColumnSortAscending.toggle() }
                 else { youtubeColumnSortId = columnId; youtubeColumnSortAscending = true }
                 applyColumnSort(collapseExpanded: true)
-            } else if columnSortId == columnId {
-                columnSortAscending.toggle()
             } else {
-                columnSortId = columnId; columnSortAscending = true
+                setColumnSort(id: columnId, ascending: columnSortId == columnId ? !columnSortAscending : true)
             }
             return
         }
@@ -5531,7 +5532,9 @@ class ModernLibraryBrowserView: NSView {
             }
         } else {
             ids.removeAll { $0 == columnId }
+            // No save needed: clearColumnSort also clears this tab's saved entry.
             if columnSortId == columnId { columnSortId = nil }
+            LibraryBrowserTabSortStore.clearColumnSort(id: columnId)
         }
 
         setVisibleColumnIds(ids, for: group)
@@ -6041,9 +6044,8 @@ class ModernLibraryBrowserView: NSView {
         // lingering column sort (which overrides currentSort) would silently re-order the list
         // on the next rebuild — e.g. snapping a date-sorted tab back to name order the moment a
         // row is expanded, leaving the selection on the wrong item. Picking from the menu makes
-        // it the sole sort, so drop any active column sort first.
-        if columnSortId != nil { columnSortId = nil }
-        currentSort = option
+        // it the sole sort (setMenuSort drops any active column sort).
+        setMenuSort(option)
     }
     @objc private func selectLibrary(_ sender: NSMenuItem) {
         guard let library = sender.representedObject as? PlexLibrary else { return }
@@ -9417,7 +9419,7 @@ class ModernLibraryBrowserView: NSView {
                         if self.pendingArtistLoadUnfiltered {
                             artists = try await pm.fetchArtists()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
-                            albums = try await pm.fetchAlbums(offset: 0, limit: 10000)
+                            albums = try await pm.fetchAllAlbums()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         } else if pm.isContentPreloaded && !pm.cachedArtists.isEmpty {
                             artists = pm.cachedArtists
@@ -9425,7 +9427,7 @@ class ModernLibraryBrowserView: NSView {
                         } else {
                             artists = try await pm.fetchArtists()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
-                            albums = try await pm.fetchAlbums(offset: 0, limit: 10000)
+                            albums = try await pm.fetchAllAlbums()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
 
@@ -9440,7 +9442,9 @@ class ModernLibraryBrowserView: NSView {
                     if self.cachedAlbums.isEmpty {
                         if pm.isContentPreloaded && !pm.cachedAlbums.isEmpty { self.cachedAlbums = pm.cachedAlbums }
                         else {
-                            self.cachedAlbums = try await pm.fetchAlbums(offset: 0, limit: 500)
+                            // Every album, as the Artists tab and the preload fetch: the tab sorts
+                            // client-side, so a partial fetch would sort only a subset.
+                            self.cachedAlbums = try await pm.fetchAllAlbums()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
@@ -9449,7 +9453,7 @@ class ModernLibraryBrowserView: NSView {
                     if self.cachedMovies.isEmpty {
                         if pm.isContentPreloaded && !pm.cachedMovies.isEmpty { self.cachedMovies = pm.cachedMovies }
                         else {
-                            self.cachedMovies = try await pm.fetchMovies(offset: 0, limit: 500)
+                            self.cachedMovies = try await pm.fetchAllMovies()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
@@ -9458,7 +9462,7 @@ class ModernLibraryBrowserView: NSView {
                     if self.cachedShows.isEmpty {
                         if pm.isContentPreloaded && !pm.cachedShows.isEmpty { self.cachedShows = pm.cachedShows }
                         else {
-                            self.cachedShows = try await pm.fetchShows(offset: 0, limit: 500)
+                            self.cachedShows = try await pm.fetchAllShows()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
@@ -12507,11 +12511,12 @@ class ModernLibraryBrowserView: NSView {
         cachedSubsonicArtists.removeAll()
         cachedJellyfinArtists.removeAll()
         cachedEmbyArtists.removeAll()
+        // Switch first so the page offset is computed under the Artists tab's own sort.
+        browseMode = .artists
         if case .local = currentSource,
            let artistOffset = MediaLibraryStore.shared.artistOffset(named: artistName, sort: currentSort) {
             localArtistPageOffset = (artistOffset / localPageSize) * localPageSize
         }
-        browseMode = .artists
         selectedIndices.removeAll()
         scrollOffset = 0
         loadDataForCurrentMode()
