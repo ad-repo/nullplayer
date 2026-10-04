@@ -33,6 +33,7 @@ No Winamp or Windows Media Player skins are distributed with the project
 
 ### General Features
 
+- Library browser for Plex, Jellyfin, Emby, Navidrome/Subsonic, YouTube and local files
 - 21-band EQ (Original/Original-Metal) and 10-band EQ (Classic, Modern)
 - Gapless + Sweet Fades (configurable crossfade), volume normalization, play speed (0.25×–4×), and Reference Tuning (432/440 Hz/custom)
 - SRS inspired audio enhancements: WOW stereo widening and TruBass low-frequency enhancement plus a Headphones profile for TruBass
@@ -46,7 +47,6 @@ No Winamp or Windows Media Player skins are distributed with the project
 
 ### Backend Support
 
-- Library browser for Plex, Jellyfin, Emby, Navidrome/Subsonic, YouTube and local files
 - Server integration for Plex, Jellyfin, Emby, YouTube and Navidrome/Subsonic with scrobbling
 - Local media library with metadata parsing, editing, and management
 - Mixed playlists — combine tracks or video from any sources (local, Plex, Jellyfin, Emby, Subsonic/Navidrome, radio, movies, YouTube) into a single playlist
