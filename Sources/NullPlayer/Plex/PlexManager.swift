@@ -347,7 +347,7 @@ class PlexManager {
                 NSLog("PlexManager: Fetching artists...")
                 let artists = try await client.fetchAllArtists(libraryID: musicLib.id)
                 NSLog("PlexManager: Fetched %d artists, now fetching albums...", artists.count)
-                let albums = try await client.fetchAlbums(libraryID: musicLib.id, offset: 0, limit: 10000)
+                let albums = try await client.fetchAllAlbums(libraryID: musicLib.id)
                 NSLog("PlexManager: Fetched %d albums", albums.count)
 
                 await MainActor.run {
@@ -368,7 +368,7 @@ class PlexManager {
         if let movieLib = movieLib {
             do {
                 NSLog("PlexManager: Fetching movies from '%@'...", movieLib.title)
-                let movies = try await client.fetchMovies(libraryID: movieLib.id, offset: 0, limit: 500)
+                let movies = try await client.fetchAllMovies(libraryID: movieLib.id)
                 await MainActor.run {
                     let activeMovieLib = (self.currentLibrary?.isMovieLibrary == true ? self.currentLibrary : nil)
                         ?? self.availableLibraries.first(where: { $0.isMovieLibrary })
@@ -388,7 +388,7 @@ class PlexManager {
         if let showLib = showLib {
             do {
                 NSLog("PlexManager: Fetching shows from '%@'...", showLib.title)
-                let shows = try await client.fetchShows(libraryID: showLib.id, offset: 0, limit: 500)
+                let shows = try await client.fetchAllShows(libraryID: showLib.id)
                 await MainActor.run {
                     let activeShowLib = (self.currentLibrary?.isShowLibrary == true ? self.currentLibrary : nil)
                         ?? self.availableLibraries.first(where: { $0.isShowLibrary })
@@ -586,7 +586,15 @@ class PlexManager {
         }
         return try await client.fetchAlbums(libraryID: library.id, offset: offset, limit: limit)
     }
-    
+
+    /// Fetch every album in the current library (returns empty if not a music library)
+    func fetchAllAlbums() async throws -> [PlexAlbum] {
+        guard let client = serverClient, let library = currentLibrary, library.isMusicLibrary else {
+            return []
+        }
+        return try await client.fetchAllAlbums(libraryID: library.id)
+    }
+
     /// Fetch tracks from the current library (returns empty if not a music library)
     func fetchTracks(offset: Int = 0, limit: Int = 100) async throws -> [PlexTrack] {
         guard let client = serverClient, let library = currentLibrary else {
@@ -652,24 +660,44 @@ class PlexManager {
     
     // MARK: - Video Content Fetching
     
-    /// Fetch movies from the current library if it's a movie library, otherwise from the first available movie library
+    /// The current library if it's a movie library, otherwise the first available movie library
+    private var movieLibrary: PlexLibrary? {
+        currentLibrary?.isMovieLibrary == true ? currentLibrary : availableLibraries.first(where: { $0.isMovieLibrary })
+    }
+
+    /// The current library if it's a show library, otherwise the first available show library
+    private var showLibrary: PlexLibrary? {
+        currentLibrary?.isShowLibrary == true ? currentLibrary : availableLibraries.first(where: { $0.isShowLibrary })
+    }
+
+    /// Fetch movies from `movieLibrary`
     func fetchMovies(offset: Int = 0, limit: Int = 100) async throws -> [PlexMovie] {
-        guard let client = serverClient else { return [] }
-        let library = currentLibrary?.isMovieLibrary == true ? currentLibrary! : availableLibraries.first(where: { $0.isMovieLibrary })
-        guard let library else { return [] }
+        guard let client = serverClient, let library = movieLibrary else { return [] }
         return try await client.fetchMovies(libraryID: library.id, offset: offset, limit: limit)
     }
-    
-    /// Fetch TV shows from the current library if it's a show library, otherwise from the first available show library
+
+    /// Fetch every movie in `movieLibrary`
+    func fetchAllMovies() async throws -> [PlexMovie] {
+        guard let client = serverClient, let library = movieLibrary else { return [] }
+        return try await client.fetchAllMovies(libraryID: library.id)
+    }
+
+    /// Fetch TV shows from `showLibrary`
     func fetchShows(offset: Int = 0, limit: Int = 100) async throws -> [PlexShow] {
         try await fetchShowsPage(offset: offset, limit: limit).shows
     }
 
+    /// Fetch every show in `showLibrary`
+    func fetchAllShows() async throws -> [PlexShow] {
+        guard let client = serverClient, let library = showLibrary else { return [] }
+        return try await client.fetchAllShows(libraryID: library.id)
+    }
+
     /// Fetch one Plex show page with raw server page metadata for pagination.
     func fetchShowsPage(offset: Int = 0, limit: Int = 100) async throws -> PlexShowPage {
-        guard let client = serverClient else { return PlexShowPage(shows: [], rawCount: 0, totalSize: 0) }
-        let library = currentLibrary?.isShowLibrary == true ? currentLibrary! : availableLibraries.first(where: { $0.isShowLibrary })
-        guard let library else { return PlexShowPage(shows: [], rawCount: 0, totalSize: 0) }
+        guard let client = serverClient, let library = showLibrary else {
+            return PlexShowPage(shows: [], rawCount: 0, totalSize: 0)
+        }
         return try await client.fetchShowsPage(libraryID: library.id, offset: offset, limit: limit)
     }
     

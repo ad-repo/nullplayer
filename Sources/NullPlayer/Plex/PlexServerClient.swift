@@ -299,7 +299,24 @@ class PlexServerClient {
         
         return allArtists
     }
-    
+
+    /// Page through a section listing until a short page, so a library of any size loads in
+    /// full. `page` returns the kept items and the raw page size Plex sent, which can differ
+    /// when items are filtered out.
+    static func fetchAllPages<Item>(
+        pageSize: Int = 1000,
+        _ page: (_ offset: Int, _ limit: Int) async throws -> (items: [Item], rawCount: Int)
+    ) async throws -> [Item] {
+        var all: [Item] = []
+        var offset = 0
+        while true {
+            let (items, rawCount) = try await page(offset, pageSize)
+            all.append(contentsOf: items)
+            if rawCount < pageSize { return all }
+            offset += pageSize
+        }
+    }
+
     // MARK: - Album Operations
     
     /// Fetch all albums in a music library
@@ -317,7 +334,15 @@ class PlexServerClient {
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         return response.mediaContainer.metadata?.map { $0.toAlbum() } ?? []
     }
-    
+
+    /// Fetch every album in a music library
+    func fetchAllAlbums(libraryID: String) async throws -> [PlexAlbum] {
+        try await Self.fetchAllPages { offset, limit in
+            let albums = try await self.fetchAlbums(libraryID: libraryID, offset: offset, limit: limit)
+            return (albums, albums.count)
+        }
+    }
+
     /// Fetch albums for a specific artist
     func fetchAlbums(forArtist artistID: String) async throws -> [PlexAlbum] {
         guard let request = buildRequest(path: "/library/metadata/\(artistID)/children") else {
@@ -417,6 +442,14 @@ class PlexServerClient {
         let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
         return response.mediaContainer.metadata?.map { $0.toMovie() } ?? []
     }
+
+    /// Fetch every movie in a movie library
+    func fetchAllMovies(libraryID: String) async throws -> [PlexMovie] {
+        try await Self.fetchAllPages { offset, limit in
+            let movies = try await self.fetchMovies(libraryID: libraryID, offset: offset, limit: limit)
+            return (movies, movies.count)
+        }
+    }
     
     // MARK: - TV Show Operations
     
@@ -424,6 +457,15 @@ class PlexServerClient {
     /// Filters out bonus content that Plex misclassifies as TV shows
     func fetchShows(libraryID: String, offset: Int = 0, limit: Int = 100) async throws -> [PlexShow] {
         try await fetchShowsPage(libraryID: libraryID, offset: offset, limit: limit).shows
+    }
+
+    /// Fetch every show in a TV library, paging on the raw page size (bonus-content
+    /// filtering can shrink a full page)
+    func fetchAllShows(libraryID: String) async throws -> [PlexShow] {
+        try await Self.fetchAllPages { offset, limit in
+            let page = try await self.fetchShowsPage(libraryID: libraryID, offset: offset, limit: limit)
+            return (page.shows, page.rawCount)
+        }
     }
 
     /// Fetch one raw Plex show page plus filtered show results.

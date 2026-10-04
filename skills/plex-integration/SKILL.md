@@ -71,6 +71,10 @@ Current behavior in both classic `PlexBrowserView` and modern `ModernLibraryBrow
 
 Performance requirement: build group indexes once when artist/album counts are rebuilt. `buildArtistAlbumCounts()` should populate `plexArtistGroupsByName`, `plexAlbumsByArtistGroupKey`, and `plexAlbumCountsByArtistGroupKey` from `cachedArtists` and `cachedAlbums`. Expanding a grouped artist row should first use `plexAlbumsByArtistGroupKey[groupKey]` and avoid rescanning the full album cache on the main actor, because large same-name groups can otherwise beachball the UI.
 
+### Browser lists load the whole library
+
+The Albums tab sorts `cachedAlbums` client-side (`sortPlexAlbums`, by the tab's own sort), so every fill of a browser list cache must be the whole library, never one capped page. The Artists-tab load, the Albums, Movies and TV tab loads, and the `PlexManager` preload all use `fetchAllAlbums` / `fetchAllMovies` / `fetchAllShows`. Those page through `PlexServerClient.fetchAllPages` (1000 per request) until a short page. Shows page on the raw page size, because bonus-content filtering can shrink a full page. The Albums tab used to fetch 500: Plex returns albums in title order, so launching straight into Albums on "Recently Added" sorted only the first 500 alphabetically. Visiting Artists, which refilled the cache with everything, appeared to fix it. Movies and TV were cut off at 500.
+
 ## Library Search (`/hubs/search`)
 
 `PlexServerClient.search` calls `GET /hubs/search?query={q}&sectionId={id}&limit=50`, parsed by the
