@@ -22,11 +22,18 @@ NullPlayer supports Jellyfin media servers for music streaming, video playback (
 
 All requests include header: `Authorization: MediaBrowser Client="NullPlayer", Device="Mac", DeviceId="{uuid}", Version="1.0"`. After auth, the access token is appended to that same header as `, Token="{accessToken}"`.
 
-- **Never send the token as `X-Emby-Token`.** Jellyfin 10.11 disables the legacy auth headers by
-  default and answers 401 to them. The symptom is a browser connection error (log:
+- **Use only the non-legacy token forms.** The server's `EnableLegacyAuthorization` setting gates
+  the `X-Emby-Token`, `X-MediaBrowser-Token` and `X-Emby-Authorization` headers, the `api_key`
+  query parameter and the `Emby` auth scheme name. It arrived in 10.11 defaulting on; 12.0 defaults
+  it off and a migration turns it off on upgrade, so a legacy token gets a 401. The forms that
+  always work (10.8 onward) are `Token="…"` in the `MediaBrowser` header and the `ApiKey` query
+  parameter. The symptom is a browser connection error (log:
   `JellyfinManager: Background connection failed: Authentication failed - check username and
   password`) while the link sheet's **Test** passes — Test only calls `AuthenticateByName`, which
-  carries no token. The `api_key` query parameter on stream/image URLs is still accepted.
+  carries no token.
+- **Stream URLs do not need the token on 12.0.** `/Audio/{id}/stream` and `/Videos/{id}/stream`
+  carry no `[Authorize]`, so a stream plays even when its token is ignored. A stream test is
+  therefore not evidence that a token form is accepted; test an authenticated endpoint.
 
 - **Auth**: `POST /Users/AuthenticateByName`
   - Body: `{"Username":"x","Pw":"y"}`
@@ -64,8 +71,8 @@ All requests include header: `Authorization: MediaBrowser Client="NullPlayer", D
 
 ## Streaming
 
-- **Audio Stream**: `GET /Audio/{itemId}/stream?static=true&api_key={token}`
-- **Video Stream**: `GET /Videos/{itemId}/stream?static=true&api_key={token}`
+- **Audio Stream**: `GET /Audio/{itemId}/stream?static=true&ApiKey={token}`
+- **Video Stream**: `GET /Videos/{itemId}/stream?static=true&ApiKey={token}`
   - Note: Uses `/Videos/` path, not `/Audio/`
 
 ## Images
@@ -180,7 +187,7 @@ Current app-side mitigations:
 Jellyfin tracks support casting to Sonos, Chromecast, and DLNA devices:
 - Sonos requires proxy (like Subsonic) — `needsJellyfinProxy` flag
 - Artwork is loaded via `JellyfinManager.shared.imageURL()`
-- Stream URLs use `api_key` auth parameter, not header auth
+- Stream URLs use the `ApiKey` query parameter, not header auth
 
 ### Content Type Detection for Sonos Casting
 
@@ -199,7 +206,7 @@ Jellyfin (and Subsonic) streaming URLs use paths like `/Audio/{id}/stream` with 
 Jellyfin movies and episodes can be cast to video-capable devices (Chromecast, DLNA TVs):
 - `CastManager.castJellyfinMovie(_:to:startPosition:)` — cast a movie
 - `CastManager.castJellyfinEpisode(_:to:startPosition:)` — cast an episode
-- Stream URL uses `/Videos/{id}/stream?static=true&api_key={token}`
+- Stream URL uses `/Videos/{id}/stream?static=true&ApiKey={token}`
 
 ## Credential Storage
 

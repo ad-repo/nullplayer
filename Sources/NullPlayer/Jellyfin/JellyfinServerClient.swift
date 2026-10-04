@@ -92,7 +92,7 @@ class JellyfinServerClient {
     // MARK: - Authentication
     
     /// The `Authorization` value Jellyfin expects on every request. The token rides here, not in
-    /// X-Emby-Token: Jellyfin 10.11 disables the legacy header by default and answers 401 to it.
+    /// X-Emby-Token: Jellyfin 12.0 disables the legacy header by default and answers 401 to it.
     static func authorization(deviceId: String, token: String = "") -> String {
         var value = "MediaBrowser Client=\"\(clientName)\", Device=\"Mac\", DeviceId=\"\(deviceId)\", Version=\"1.0\""
         if !token.isEmpty {
@@ -989,7 +989,7 @@ class JellyfinServerClient {
         var components = URLComponents(url: baseURL.appendingPathComponent("/Audio/\(itemId)/stream"), resolvingAgainstBaseURL: false)
         components?.queryItems = [
             URLQueryItem(name: "static", value: "true"),
-            URLQueryItem(name: "api_key", value: accessToken)
+            URLQueryItem(name: "ApiKey", value: accessToken)
         ]
         return components?.url
     }
@@ -999,7 +999,7 @@ class JellyfinServerClient {
         var components = URLComponents(url: baseURL.appendingPathComponent("/Videos/\(itemId)/stream"), resolvingAgainstBaseURL: false)
         components?.queryItems = [
             URLQueryItem(name: "static", value: "true"),
-            URLQueryItem(name: "api_key", value: accessToken)
+            URLQueryItem(name: "ApiKey", value: accessToken)
         ]
         return components?.url
     }
