@@ -458,12 +458,26 @@ class SubsonicManager {
         return songs
     }
     
-    /// Search the library
+    /// Search the library. `search3` caps albums at `albumCount`, so each matched artist's full
+    /// album list is merged in — a prolific artist's albums otherwise fall past the cap.
     func search(query: String) async throws -> SubsonicSearchResults {
         guard let client = serverClient else {
             return SubsonicSearchResults()
         }
-        return try await client.search(query: query)
+        var results = try await client.search(query: query)
+        let artistIDs = results.artists.prefix(10).map(\.id)
+        guard !artistIDs.isEmpty else { return results }
+        let artistAlbums = await withTaskGroup(of: (Int, [SubsonicAlbum]).self) { group in
+            for (index, artistID) in artistIDs.enumerated() {
+                group.addTask { (index, (try? await client.fetchArtist(id: artistID).1) ?? []) }
+            }
+            var byIndex: [Int: [SubsonicAlbum]] = [:]
+            for await (index, albums) in group { byIndex[index] = albums }
+            return byIndex.sorted { $0.key < $1.key }.flatMap(\.value)
+        }
+        var seen = Set(results.albums.map(\.id))
+        results.albums += artistAlbums.filter { seen.insert($0.id).inserted }
+        return results
     }
     
     /// Fetch starred (favorite) items

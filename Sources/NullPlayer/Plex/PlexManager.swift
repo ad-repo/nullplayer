@@ -642,7 +642,12 @@ class PlexManager {
         guard let client = serverClient, let library = currentLibrary else {
             return PlexSearchResults()
         }
-        return try await client.search(query: query, libraryID: library.id, type: type)
+        return try await client.search(
+            query: query,
+            libraryID: library.id,
+            type: type,
+            musicLibraryID: library.isMusicLibrary ? library.id : nil
+        )
     }
     
     // MARK: - Video Content Fetching

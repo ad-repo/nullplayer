@@ -646,12 +646,27 @@ class JellyfinManager {
         )
     }
     
-    /// Search the server, optionally scoped to a specific library.
+    /// Search the server, optionally scoped to a specific library. `searchTerm` matches album
+    /// names only and every item type shares one `Limit`, so each matched artist's full album
+    /// list is merged in — otherwise an artist's albums appear only when titled like the query.
     func search(query: String, parentId: String? = nil) async throws -> JellyfinSearchResults {
         guard let client = serverClient else {
             return JellyfinSearchResults()
         }
-        return try await client.search(query: query, parentId: parentId)
+        var results = try await client.search(query: query, parentId: parentId)
+        let artistIDs = results.artists.prefix(10).map(\.id)
+        guard !artistIDs.isEmpty else { return results }
+        let artistAlbums = await withTaskGroup(of: (Int, [JellyfinAlbum]).self) { group in
+            for (index, artistID) in artistIDs.enumerated() {
+                group.addTask { (index, (try? await client.fetchArtist(id: artistID).1) ?? []) }
+            }
+            var byIndex: [Int: [JellyfinAlbum]] = [:]
+            for await (index, albums) in group { byIndex[index] = albums }
+            return byIndex.sorted { $0.key < $1.key }.flatMap(\.value)
+        }
+        var seen = Set(results.albums.map(\.id))
+        results.albums += artistAlbums.filter { seen.insert($0.id).inserted }
+        return results
     }
     
     // MARK: - Favorites

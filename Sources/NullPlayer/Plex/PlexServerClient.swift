@@ -544,8 +544,13 @@ class PlexServerClient {
     
     // MARK: - Search
     
-    /// Search for content in a library
-    func search(query: String, libraryID: String, type: SearchType = .all) async throws -> PlexSearchResults {
+    /// Search for content in a library.
+    ///
+    /// `/hubs/search` ignores `sectionId` and caps each hub at `limit` across every section, so
+    /// when `musicLibraryID` is set the artist/album/track hits are kept to that section, and each
+    /// matched artist's full album list is merged in — a prolific artist's albums otherwise fall
+    /// past the cap. Movie/show/episode hits still come from every section.
+    func search(query: String, libraryID: String, type: SearchType = .all, musicLibraryID: String? = nil) async throws -> PlexSearchResults {
         // Use the hubs/search endpoint which is more reliable
         let queryItems = [
             URLQueryItem(name: "query", value: query),
@@ -576,36 +581,73 @@ class PlexServerClient {
         struct HubContainer: Decodable {
             let Hub: [Hub]?
         }
+        /// `librarySectionID` is decoded beside the shared DTO, leniently, so a server that sends it
+        /// as a string cannot fail the whole search.
+        struct SectionRef: Decodable {
+            let id: String?
+            enum CodingKeys: String, CodingKey { case librarySectionID }
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                if let n = try? c.decode(Int.self, forKey: .librarySectionID) { id = String(n) }
+                else { id = try? c.decode(String.self, forKey: .librarySectionID) }
+            }
+        }
         struct Hub: Decodable {
             let type: String
             let Metadata: [PlexMetadataDTO]?
+            let sectionIDs: [String?]
+            enum CodingKeys: String, CodingKey { case type, Metadata }
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                type = try c.decode(String.self, forKey: .type)
+                Metadata = try c.decodeIfPresent([PlexMetadataDTO].self, forKey: .Metadata)
+                sectionIDs = (try? c.decodeIfPresent([SectionRef].self, forKey: .Metadata))?.map(\.id) ?? []
+            }
+            /// Hits in `sectionID` (and hits that carry no section); every hit when nil.
+            func items(in sectionID: String?) -> [PlexMetadataDTO] {
+                guard let metadata = Metadata else { return [] }
+                guard let sectionID, sectionIDs.count == metadata.count else { return metadata }
+                return zip(metadata, sectionIDs).filter { $0.1 == nil || $0.1 == sectionID }.map(\.0)
+            }
         }
-        
+
         let decoder = JSONDecoder()
         let hubResponse = try decoder.decode(HubSearchResponse.self, from: data)
-        
+
         // Deduplicate by content identity — /hubs/search returns one hub per library section,
         // so a server with N sections returns N copies of each hit, each with a different
-        // ratingKey (keys are section-scoped). Use title-based keys instead.
+        // ratingKey (keys are section-scoped). Use title-based keys instead. Albums key on
+        // artist|title|year like the Artists tab's grouped expand, so distinct editions that
+        // share a title stay separate.
+        func normalized(_ s: String?) -> String {
+            (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                .lowercased()
+        }
+        func albumKey(_ album: PlexAlbum) -> String {
+            "\(normalized(album.parentTitle))|\(normalized(album.title))|\(album.year.map { String($0) } ?? "")"
+        }
         var seenArtists = Set<String>(); var seenAlbums = Set<String>()
         var seenTracks = Set<String>(); var seenMovies = Set<String>()
         var seenShows = Set<String>(); var seenEpisodes = Set<String>()
         var results = PlexSearchResults()
+        var matchedArtistIDs: [String] = []
         for hub in hubResponse.MediaContainer.Hub ?? [] {
             guard let metadata = hub.Metadata else { continue }
             switch hub.type {
             case "artist":
-                for item in metadata {
+                for item in hub.items(in: musicLibraryID) {
+                    matchedArtistIDs.append(item.ratingKey)
                     let key = item.title.lowercased()
                     if seenArtists.insert(key).inserted { results.artists.append(item.toArtist()) }
                 }
             case "album":
-                for item in metadata {
-                    let key = "\(item.parentTitle?.lowercased() ?? "")|\(item.title.lowercased())"
-                    if seenAlbums.insert(key).inserted { results.albums.append(item.toAlbum()) }
+                for item in hub.items(in: musicLibraryID) {
+                    let album = item.toAlbum()
+                    if seenAlbums.insert(albumKey(album)).inserted { results.albums.append(album) }
                 }
             case "track":
-                for item in metadata {
+                for item in hub.items(in: musicLibraryID) {
                     let key = "\(item.grandparentTitle?.lowercased() ?? "")|\(item.parentTitle?.lowercased() ?? "")|\(item.title.lowercased())|\(item.index ?? 0)"
                     if seenTracks.insert(key).inserted { results.tracks.append(item.toTrack()) }
                 }
@@ -626,9 +668,26 @@ class PlexServerClient {
                 break
             }
         }
+
+        // The album hub is capped, so an artist with more albums than the cap (and its
+        // same-name duplicate records) loses some. Merge each matched artist's full album list,
+        // bounded so a broad query does not fan out across dozens of artists.
+        if musicLibraryID != nil, !matchedArtistIDs.isEmpty {
+            let artistAlbums = await withTaskGroup(of: (Int, [PlexAlbum]).self) { group in
+                for (index, artistID) in matchedArtistIDs.prefix(10).enumerated() {
+                    group.addTask { (index, (try? await self.fetchAlbums(forArtist: artistID)) ?? []) }
+                }
+                var byIndex: [Int: [PlexAlbum]] = [:]
+                for await (index, albums) in group { byIndex[index] = albums }
+                return byIndex.sorted { $0.key < $1.key }.flatMap(\.value)
+            }
+            for album in artistAlbums where seenAlbums.insert(albumKey(album)).inserted {
+                results.albums.append(album)
+            }
+        }
         return results
     }
-    
+
     // MARK: - URL Generation
     
     /// Generate a streaming URL for a track
