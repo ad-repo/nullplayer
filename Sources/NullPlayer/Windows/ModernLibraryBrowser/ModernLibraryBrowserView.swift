@@ -9419,7 +9419,7 @@ class ModernLibraryBrowserView: NSView {
                         if self.pendingArtistLoadUnfiltered {
                             artists = try await pm.fetchArtists()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
-                            albums = try await pm.fetchAlbums(offset: 0, limit: 10000)
+                            albums = try await pm.fetchAllAlbums()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         } else if pm.isContentPreloaded && !pm.cachedArtists.isEmpty {
                             artists = pm.cachedArtists
@@ -9427,7 +9427,7 @@ class ModernLibraryBrowserView: NSView {
                         } else {
                             artists = try await pm.fetchArtists()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
-                            albums = try await pm.fetchAlbums(offset: 0, limit: 10000)
+                            albums = try await pm.fetchAllAlbums()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
 
@@ -9442,7 +9442,9 @@ class ModernLibraryBrowserView: NSView {
                     if self.cachedAlbums.isEmpty {
                         if pm.isContentPreloaded && !pm.cachedAlbums.isEmpty { self.cachedAlbums = pm.cachedAlbums }
                         else {
-                            self.cachedAlbums = try await pm.fetchAlbums(offset: 0, limit: 500)
+                            // Every album, as the Artists tab and the preload fetch: the tab sorts
+                            // client-side, so a partial fetch would sort only a subset.
+                            self.cachedAlbums = try await pm.fetchAllAlbums()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
@@ -9451,7 +9453,7 @@ class ModernLibraryBrowserView: NSView {
                     if self.cachedMovies.isEmpty {
                         if pm.isContentPreloaded && !pm.cachedMovies.isEmpty { self.cachedMovies = pm.cachedMovies }
                         else {
-                            self.cachedMovies = try await pm.fetchMovies(offset: 0, limit: 500)
+                            self.cachedMovies = try await pm.fetchAllMovies()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
@@ -9460,7 +9462,7 @@ class ModernLibraryBrowserView: NSView {
                     if self.cachedShows.isEmpty {
                         if pm.isContentPreloaded && !pm.cachedShows.isEmpty { self.cachedShows = pm.cachedShows }
                         else {
-                            self.cachedShows = try await pm.fetchShows(offset: 0, limit: 500)
+                            self.cachedShows = try await pm.fetchAllShows()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }

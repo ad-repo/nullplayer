@@ -14412,7 +14412,7 @@ class PlexBrowserView: NSView {
                         if self.pendingArtistLoadUnfiltered {
                             artists = try await plexManager.fetchArtists()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
-                            albums = try await plexManager.fetchAlbums(offset: 0, limit: 10000)
+                            albums = try await plexManager.fetchAllAlbums()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         } else if plexManager.isContentPreloaded && !plexManager.cachedArtists.isEmpty {
                             artists = plexManager.cachedArtists
@@ -14420,7 +14420,7 @@ class PlexBrowserView: NSView {
                         } else {
                             artists = try await plexManager.fetchArtists()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
-                            albums = try await plexManager.fetchAlbums(offset: 0, limit: 10000)
+                            albums = try await plexManager.fetchAllAlbums()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
 
@@ -14437,7 +14437,9 @@ class PlexBrowserView: NSView {
                         if plexManager.isContentPreloaded && !plexManager.cachedAlbums.isEmpty {
                             self.cachedAlbums = plexManager.cachedAlbums
                         } else {
-                            self.cachedAlbums = try await plexManager.fetchAlbums(offset: 0, limit: 500)
+                            // Every album, as the Artists tab and the preload fetch: the tab sorts
+                            // client-side, so a partial fetch would sort only a subset.
+                            self.cachedAlbums = try await plexManager.fetchAllAlbums()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
@@ -14448,7 +14450,7 @@ class PlexBrowserView: NSView {
                         if plexManager.isContentPreloaded && !plexManager.cachedMovies.isEmpty {
                             self.cachedMovies = plexManager.cachedMovies
                         } else {
-                            self.cachedMovies = try await plexManager.fetchMovies(offset: 0, limit: 500)
+                            self.cachedMovies = try await plexManager.fetchAllMovies()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }
@@ -14459,7 +14461,7 @@ class PlexBrowserView: NSView {
                         if plexManager.isContentPreloaded && !plexManager.cachedShows.isEmpty {
                             self.cachedShows = plexManager.cachedShows
                         } else {
-                            self.cachedShows = try await plexManager.fetchShows(offset: 0, limit: 500)
+                            self.cachedShows = try await plexManager.fetchAllShows()
                             guard self.isLoadContextActive(generation, source: expectedSource) else { return }
                         }
                     }

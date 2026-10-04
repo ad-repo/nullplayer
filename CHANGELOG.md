@@ -6,6 +6,10 @@
   menu or by clicking a column header, used to re-sort every tab: "Recently Added" on Albums also
   re-ordered Artists and Playlists. Each tab now remembers its own sort, across launches too, in
   every skin family. Tabs start from the sort you had before.
+- **Plex Albums tab sorts the whole library** — opening the Library Browser straight onto Albums
+  loaded only the first 500 Plex albums, so "Recently Added" showed the newest of an alphabetical
+  slice until you visited Artists and came back. Albums, Movies and TV now load every item, however
+  large the library.
 
 ## 0.31.3
 
