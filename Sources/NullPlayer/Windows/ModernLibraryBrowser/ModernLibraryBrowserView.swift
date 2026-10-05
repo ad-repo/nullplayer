@@ -142,28 +142,6 @@ enum ModernBrowseMode: Int, CaseIterable {
     }
 }
 
-// MARK: - Sort Option
-
-enum ModernBrowserSortOption: String, CaseIterable, Codable {
-    case nameAsc = "Name A-Z"
-    case nameDesc = "Name Z-A"
-    case dateAddedDesc = "Recently Added"
-    case dateAddedAsc = "Oldest First"
-    case yearDesc = "Year (Newest)"
-    case yearAsc = "Year (Oldest)"
-    
-    var shortName: String {
-        switch self {
-        case .nameAsc: return "A-Z"
-        case .nameDesc: return "Z-A"
-        case .dateAddedDesc: return "New"
-        case .dateAddedAsc: return "Old"
-        case .yearDesc: return "Year"
-        case .yearAsc: return "Year"
-        }
-    }
-}
-
 // MARK: - Button Type
 
 enum LibraryBrowserButtonType {
@@ -225,7 +203,6 @@ class ModernLibraryBrowserView: NSView {
     private var browseMode: ModernBrowseMode = .artists {
         didSet {
             guard browseMode != oldValue else { return }
-            restoreSortForCurrentTab()
             // Switching tabs always exits Art view and Cover Flow.
             isArtOnlyMode = false
             isCoverFlowMode = false
@@ -265,8 +242,9 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     
-    /// Current sort option (per tab). Change it through `setMenuSort`.
-    private var currentSort: ModernBrowserSortOption = .nameAsc
+    /// The current tab's sort; each tab keeps its own in `LibraryBrowserTabSortStore`.
+    private var tabSort: LibraryBrowserTabSort { LibraryBrowserTabSortStore.shared.sort(for: browseMode.rawValue) }
+    private var currentSort: LibraryBrowserSortOption { tabSort.menuSort }
     private var searchQuery: String = ""
     private var typeAheadQuery: String = ""
     private var typeAheadTimer: Timer?
@@ -286,9 +264,8 @@ class ModernLibraryBrowserView: NSView {
     private var resizingColumnGroup: LibraryColumnVisibilityGroup?
     private var resizeStartX: CGFloat = 0
     private var resizeStartWidth: CGFloat = 0
-    /// Column sort state (overrides currentSort when set; per tab). Change it through `setColumnSort`.
-    private var columnSortId: String?
-    private var columnSortAscending: Bool = true
+    /// Column header sort; overrides `currentSort` when set
+    private var columnSortId: String? { tabSort.columnSortId }
 
     // YouTube channels keep their own sort state (session-only, default = none → date
     // order as returned by yt-dlp). This keeps the persisted library column sort from
@@ -303,7 +280,7 @@ class ModernLibraryBrowserView: NSView {
         currentSource.isYouTube ? youtubeColumnSortId : columnSortId
     }
     private var activeColumnSortAscending: Bool {
-        currentSource.isYouTube ? youtubeColumnSortAscending : columnSortAscending
+        currentSource.isYouTube ? youtubeColumnSortAscending : tabSort.columnSortAscending
     }
     
     // Visible columns (ordered lists of column IDs; persisted to UserDefaults)
@@ -769,11 +746,10 @@ class ModernLibraryBrowserView: NSView {
         let skin = ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()
         renderer = ModernSkinRenderer(skin: skin)
         
-        // Load saved column widths, visibility, and sort
+        // Load saved column widths and visibility
         loadColumnWidths()
         loadVisibleColumns()
-        restoreSortForCurrentTab()
-        
+
         // Load saved source
         if let savedSource = ModernBrowserSource.load() {
             switch savedSource {
@@ -3454,42 +3430,6 @@ class ModernLibraryBrowserView: NSView {
         return migrated
     }
     
-    /// Sort-menu choice: becomes the tab's sole sort, replacing any column-header sort.
-    private func setMenuSort(_ option: ModernBrowserSortOption) {
-        columnSortId = nil
-        currentSort = option
-        saveTabSort()
-        localArtistPageOffset = 0; localAlbumPageOffset = 0
-        localArtistLetterOffsets = [:]; localAlbumLetterOffsets = [:]
-        rebuildCurrentModeItems()
-        needsDisplay = true
-    }
-
-    /// Column-header sort for the current tab.
-    private func setColumnSort(id: String, ascending: Bool) {
-        columnSortId = id
-        columnSortAscending = ascending
-        saveTabSort()
-        applyColumnSort(collapseExpanded: true)
-    }
-
-    private func saveTabSort() {
-        LibraryBrowserTabSortStore.save(
-            LibraryBrowserTabSort(menuSort: currentSort, columnSortId: columnSortId, columnSortAscending: columnSortAscending),
-            modeRawValue: browseMode.rawValue
-        )
-    }
-
-    /// Load the current tab's saved sort. Doesn't rebuild — every tab switch loads the tab's
-    /// data next. Paging offsets need no reset: each tab's offsets are only built on that tab,
-    /// under its own sort.
-    private func restoreSortForCurrentTab() {
-        let sort = LibraryBrowserTabSortStore.load(modeRawValue: browseMode.rawValue)
-        currentSort = sort.menuSort
-        columnSortId = sort.columnSortId
-        columnSortAscending = sort.columnSortAscending
-    }
-    
     private func saveVisibleColumns() {
         UserDefaults.standard.set(visibleTrackColumnIds, forKey: "BrowserVisibleTrackColumns")
         UserDefaults.standard.set(visibleAlbumColumnIds, forKey: "BrowserVisibleAlbumColumns")
@@ -4218,10 +4158,10 @@ class ModernLibraryBrowserView: NSView {
                 // YouTube uses its own session sort (not persisted to the library sort).
                 if youtubeColumnSortId == columnId { youtubeColumnSortAscending.toggle() }
                 else { youtubeColumnSortId = columnId; youtubeColumnSortAscending = true }
-                applyColumnSort(collapseExpanded: true)
             } else {
-                setColumnSort(id: columnId, ascending: columnSortId == columnId ? !columnSortAscending : true)
+                LibraryBrowserTabSortStore.shared.clickColumn(columnId, for: browseMode.rawValue)
             }
+            applyColumnSort(collapseExpanded: true)
             return
         }
         
@@ -5189,7 +5129,7 @@ class ModernLibraryBrowserView: NSView {
     
     private func showSortMenu(at windowPoint: NSPoint) {
         let menu = NSMenu()
-        for option in ModernBrowserSortOption.allCases {
+        for option in LibraryBrowserSortOption.allCases {
             let item = NSMenuItem(title: option.rawValue, action: #selector(selectSortOption(_:)), keyEquivalent: "")
             item.target = self; item.representedObject = option
             if option == currentSort { item.state = .on }
@@ -5568,9 +5508,7 @@ class ModernLibraryBrowserView: NSView {
             }
         } else {
             ids.removeAll { $0 == columnId }
-            // No save needed: clearColumnSort also clears this tab's saved entry.
-            if columnSortId == columnId { columnSortId = nil }
-            LibraryBrowserTabSortStore.clearColumnSort(id: columnId)
+            LibraryBrowserTabSortStore.shared.dropColumn(columnId)
         }
 
         setVisibleColumnIds(ids, for: group)
@@ -6084,13 +6022,12 @@ class ModernLibraryBrowserView: NSView {
     }
     @objc private func linkPlexAccount() { controller?.showLinkSheet() }
     @objc private func selectSortOption(_ sender: NSMenuItem) {
-        guard let option = sender.representedObject as? ModernBrowserSortOption else { return }
-        // The Sort menu and column-header sorts are two routes to the same ordering, and a
-        // lingering column sort (which overrides currentSort) would silently re-order the list
-        // on the next rebuild — e.g. snapping a date-sorted tab back to name order the moment a
-        // row is expanded, leaving the selection on the wrong item. Picking from the menu makes
-        // it the sole sort (setMenuSort drops any active column sort).
-        setMenuSort(option)
+        guard let option = sender.representedObject as? LibraryBrowserSortOption else { return }
+        LibraryBrowserTabSortStore.shared.setMenuSort(option, for: browseMode.rawValue)
+        localArtistPageOffset = 0; localAlbumPageOffset = 0
+        localArtistLetterOffsets = [:]; localAlbumLetterOffsets = [:]
+        rebuildCurrentModeItems()
+        needsDisplay = true
     }
     @objc private func selectLibrary(_ sender: NSMenuItem) {
         guard let library = sender.representedObject as? PlexLibrary else { return }

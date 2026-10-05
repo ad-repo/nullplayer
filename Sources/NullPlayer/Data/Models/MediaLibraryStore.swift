@@ -671,7 +671,7 @@ final class MediaLibraryStore {
     // MARK: - Alphabet Index Queries
 
     /// Returns a map of sort-letter → first DB offset for that letter, across all artists.
-    func artistLetterOffsets(sort: ModernBrowserSortOption) -> [String: Int] {
+    func artistLetterOffsets(sort: LibraryBrowserSortOption) -> [String: Int] {
         guard let db = db else { return [:] }
         // IMPORTANT: query structure must be identical to artistNames (without LIMIT/OFFSET)
         // so offsets align exactly with artistNames page row positions.
@@ -746,7 +746,7 @@ final class MediaLibraryStore {
     }
 
     /// Returns a map of sort-letter → first DB offset for that letter, across all albums.
-    func albumLetterOffsets(sort: ModernBrowserSortOption) -> [String: Int] {
+    func albumLetterOffsets(sort: LibraryBrowserSortOption) -> [String: Int] {
         guard let db = db else { return [:] }
         let orderClause: String
         switch sort {
@@ -816,7 +816,7 @@ final class MediaLibraryStore {
         }
     }
 
-    func artistNames(limit: Int, offset: Int, sort: ModernBrowserSortOption) -> [String] {
+    func artistNames(limit: Int, offset: Int, sort: LibraryBrowserSortOption) -> [String] {
         guard let db = db else { return [] }
         let sql: String
         switch sort {
@@ -889,7 +889,7 @@ final class MediaLibraryStore {
         }
     }
 
-    func artistOffset(named artistName: String, sort: ModernBrowserSortOption) -> Int? {
+    func artistOffset(named artistName: String, sort: LibraryBrowserSortOption) -> Int? {
         guard let db = db else { return nil }
         let sql: String
         switch sort {
@@ -971,7 +971,7 @@ final class MediaLibraryStore {
         }
     }
 
-    func albumSummaries(limit: Int, offset: Int, sort: ModernBrowserSortOption) -> [AlbumSummary] {
+    func albumSummaries(limit: Int, offset: Int, sort: LibraryBrowserSortOption) -> [AlbumSummary] {
         guard let db = db else { return [] }
         let orderClause: String
         switch sort {

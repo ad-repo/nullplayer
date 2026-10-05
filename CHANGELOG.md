@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Library browser sorting simplified underneath** — every Library Browser (classic, modern and
+  the one inside Winamp Modern skins) now reads each tab's sort from one shared, saved copy instead
+  of keeping its own. Sorting behaves as before.
+- **Plex library loading uses one pager** — artists, albums, movies and TV, in the Library Browser
+  and on the command line, now page through Plex the same way. No change to what loads.
+
 ## 0.31.4
 
 - **Each library tab keeps its own sort** — choosing a sort in the Library Browser, from the Sort

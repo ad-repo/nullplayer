@@ -283,21 +283,10 @@ class PlexServerClient {
     
     /// Fetch all artists in a library (paginated, fetches all)
     func fetchAllArtists(libraryID: String) async throws -> [PlexArtist] {
-        var allArtists: [PlexArtist] = []
-        var offset = 0
-        let pageSize = 100
-        
-        while true {
-            let artists = try await fetchArtists(libraryID: libraryID, offset: offset, limit: pageSize)
-            allArtists.append(contentsOf: artists)
-            
-            if artists.count < pageSize {
-                break
-            }
-            offset += pageSize
+        try await Self.fetchAllPages(pageSize: 100) { offset, limit in
+            let artists = try await self.fetchArtists(libraryID: libraryID, offset: offset, limit: limit)
+            return (artists, artists.count)
         }
-        
-        return allArtists
     }
 
     /// Page through a section listing until a short page, so a library of any size loads in
@@ -453,12 +442,6 @@ class PlexServerClient {
     
     // MARK: - TV Show Operations
     
-    /// Fetch all shows in a TV show library
-    /// Filters out bonus content that Plex misclassifies as TV shows
-    func fetchShows(libraryID: String, offset: Int = 0, limit: Int = 100) async throws -> [PlexShow] {
-        try await fetchShowsPage(libraryID: libraryID, offset: offset, limit: limit).shows
-    }
-
     /// Fetch every show in a TV library, paging on the raw page size (bonus-content
     /// filtering can shrink a full page)
     func fetchAllShows(libraryID: String) async throws -> [PlexShow] {

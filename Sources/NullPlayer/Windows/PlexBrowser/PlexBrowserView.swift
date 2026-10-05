@@ -195,50 +195,6 @@ enum PlexBrowseMode: Int, CaseIterable {
     }
 }
 
-/// Sort options for browser content
-enum BrowserSortOption: String, CaseIterable, Codable {
-    case nameAsc = "Name A-Z"
-    case nameDesc = "Name Z-A"
-    case dateAddedDesc = "Recently Added"
-    case dateAddedAsc = "Oldest First"
-    case yearDesc = "Year (Newest)"
-    case yearAsc = "Year (Oldest)"
-    
-    var shortName: String {
-        switch self {
-        case .nameAsc: return "A-Z"
-        case .nameDesc: return "Z-A"
-        case .dateAddedDesc: return "New"
-        case .dateAddedAsc: return "Old"
-        case .yearDesc: return "Year"
-        case .yearAsc: return "Year"
-        }
-    }
-
-    /// Convert to the equivalent ModernBrowserSortOption for store queries.
-    var asModernSort: ModernBrowserSortOption {
-        switch self {
-        case .nameAsc: return .nameAsc
-        case .nameDesc: return .nameDesc
-        case .dateAddedDesc: return .dateAddedDesc
-        case .dateAddedAsc: return .dateAddedAsc
-        case .yearDesc: return .yearDesc
-        case .yearAsc: return .yearAsc
-        }
-    }
-
-    init(_ modern: ModernBrowserSortOption) {
-        switch modern {
-        case .nameAsc: self = .nameAsc
-        case .nameDesc: self = .nameDesc
-        case .dateAddedDesc: self = .dateAddedDesc
-        case .dateAddedAsc: self = .dateAddedAsc
-        case .yearDesc: self = .yearDesc
-        case .yearAsc: self = .yearAsc
-        }
-    }
-}
-
 // =============================================================================
 // PLEX BROWSER VIEW - Skinned Plex browser with playlist sprite support
 // =============================================================================
@@ -270,7 +226,6 @@ class PlexBrowserView: NSView {
     private var browseMode: PlexBrowseMode = .artists {
         didSet {
             guard browseMode != oldValue else { return }
-            restoreSortForCurrentTab()
             // Switching tabs always exits Art view and Cover Flow.
             isArtOnlyMode = false
             isCoverFlowMode = false
@@ -307,9 +262,10 @@ class PlexBrowserView: NSView {
         }
     }
     
-    /// Current sort option (per tab). Change it through `setMenuSort`.
-    private var currentSort: BrowserSortOption = .nameAsc
-    
+    /// The current tab's sort; each tab keeps its own in `LibraryBrowserTabSortStore`.
+    private var tabSort: LibraryBrowserTabSort { LibraryBrowserTabSortStore.shared.sort(for: browseMode.rawValue) }
+    private var currentSort: LibraryBrowserSortOption { tabSort.menuSort }
+
     /// Search query
     private var searchQuery: String = ""
     
@@ -380,9 +336,8 @@ class PlexBrowserView: NSView {
     private var resizeStartX: CGFloat = 0
     private var resizeStartWidth: CGFloat = 0
     
-    /// Column sort state (overrides currentSort when set; per tab). Change it through `setColumnSort`.
-    private var columnSortId: String?
-    private var columnSortAscending: Bool = true
+    /// Column header sort; overrides `currentSort` when set
+    private var columnSortId: String? { tabSort.columnSortId }
 
     // YouTube channels keep their own sort state (session-only, default = none → date
     // order as returned by yt-dlp). This keeps the persisted library column sort from
@@ -397,45 +352,9 @@ class PlexBrowserView: NSView {
         currentSource.isYouTube ? youtubeColumnSortId : columnSortId
     }
     private var activeColumnSortAscending: Bool {
-        currentSource.isYouTube ? youtubeColumnSortAscending : columnSortAscending
+        currentSource.isYouTube ? youtubeColumnSortAscending : tabSort.columnSortAscending
     }
 
-    /// Sort-menu choice: becomes the tab's sole sort, replacing any column-header sort.
-    private func setMenuSort(_ option: BrowserSortOption) {
-        columnSortId = nil
-        currentSort = option
-        saveTabSort()
-        localArtistPageOffset = 0; localAlbumPageOffset = 0
-        localArtistLetterOffsets = [:]; localAlbumLetterOffsets = [:]
-        rebuildCurrentModeItems()
-        needsDisplay = true
-    }
-
-    /// Column-header sort for the current tab.
-    private func setColumnSort(id: String, ascending: Bool) {
-        columnSortId = id
-        columnSortAscending = ascending
-        saveTabSort()
-        applyColumnSort(collapseExpanded: true)
-    }
-
-    private func saveTabSort() {
-        LibraryBrowserTabSortStore.save(
-            LibraryBrowserTabSort(menuSort: currentSort.asModernSort, columnSortId: columnSortId, columnSortAscending: columnSortAscending),
-            modeRawValue: browseMode.rawValue
-        )
-    }
-
-    /// Load the current tab's saved sort. Doesn't rebuild — every tab switch loads the tab's
-    /// data next. Paging offsets need no reset: each tab's offsets are only built on that tab,
-    /// under its own sort.
-    private func restoreSortForCurrentTab() {
-        let sort = LibraryBrowserTabSortStore.load(modeRawValue: browseMode.rawValue)
-        currentSort = BrowserSortOption(sort.menuSort)
-        columnSortId = sort.columnSortId
-        columnSortAscending = sort.columnSortAscending
-    }
-    
     /// Whether any content uses columns (for showing headers)
     private var hasColumnContent: Bool {
         displayItems.contains { item in
@@ -1842,10 +1761,9 @@ class PlexBrowserView: NSView {
     private func setupView() {
         wantsLayer = true
         
-        // Load saved column widths and sort
+        // Load saved column widths and visibility
         loadColumnWidths()
         loadVisibleColumns()
-        restoreSortForCurrentTab()
 
         // Load saved source
         if let savedSource = BrowserSource.load() {
@@ -8788,9 +8706,7 @@ class PlexBrowserView: NSView {
             }
         } else {
             ids.removeAll { $0 == columnId }
-            // No save needed: clearColumnSort also clears this tab's saved entry.
-            if columnSortId == columnId { columnSortId = nil }
-            LibraryBrowserTabSortStore.clearColumnSort(id: columnId)
+            LibraryBrowserTabSortStore.shared.dropColumn(columnId)
         }
 
         setVisibleColumnIds(ids, for: group)
@@ -9165,11 +9081,10 @@ class PlexBrowserView: NSView {
                     youtubeColumnSortId = columnId
                     youtubeColumnSortAscending = true
                 }
-                applyColumnSort(collapseExpanded: true)
             } else {
-                // Same column toggles direction; a new column sorts ascending
-                setColumnSort(id: columnId, ascending: columnSortId == columnId ? !columnSortAscending : true)
+                LibraryBrowserTabSortStore.shared.clickColumn(columnId, for: browseMode.rawValue)
             }
+            applyColumnSort(collapseExpanded: true)
             return
         }
         
@@ -10113,7 +10028,7 @@ class PlexBrowserView: NSView {
     private func showSortMenu(at windowPoint: NSPoint) {
         let menu = NSMenu()
         
-        for option in BrowserSortOption.allCases {
+        for option in LibraryBrowserSortOption.allCases {
             let item = NSMenuItem(title: option.rawValue, action: #selector(selectSortOption(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = option
@@ -10128,13 +10043,12 @@ class PlexBrowserView: NSView {
     }
     
     @objc private func selectSortOption(_ sender: NSMenuItem) {
-        guard let option = sender.representedObject as? BrowserSortOption else { return }
-        // The Sort menu and column-header sorts are two routes to the same ordering, and a
-        // lingering column sort (which overrides currentSort) would silently re-order the list
-        // on the next rebuild — e.g. snapping a date-sorted tab back to name order the moment a
-        // row is expanded, leaving the selection on the wrong item. Picking from the menu makes
-        // it the sole sort (setMenuSort drops any active column sort).
-        setMenuSort(option)
+        guard let option = sender.representedObject as? LibraryBrowserSortOption else { return }
+        LibraryBrowserTabSortStore.shared.setMenuSort(option, for: browseMode.rawValue)
+        localArtistPageOffset = 0; localAlbumPageOffset = 0
+        localArtistLetterOffsets = [:]; localAlbumLetterOffsets = [:]
+        rebuildCurrentModeItems()
+        needsDisplay = true
     }
     
     private func handleAlphabetClick(at skinPoint: NSPoint) {
@@ -10490,7 +10404,7 @@ class PlexBrowserView: NSView {
             guard nextOffset < localArtistTotal else { return false }
             localArtistPageOffset = nextOffset
             let store = MediaLibraryStore.shared
-            let names = store.artistNames(limit: localPageSize, offset: localArtistPageOffset, sort: currentSort.asModernSort)
+            let names = store.artistNames(limit: localPageSize, offset: localArtistPageOffset, sort: currentSort)
             let albumsByArtist = store.albumsForArtistsBatch(names)
             for name in names {
                 let albumSummaries = albumsByArtist[name] ?? []
@@ -10505,7 +10419,7 @@ class PlexBrowserView: NSView {
             guard nextOffset < localAlbumTotal else { return false }
             localAlbumPageOffset = nextOffset
             let store = MediaLibraryStore.shared
-            let summaries = store.albumSummaries(limit: localPageSize, offset: localAlbumPageOffset, sort: currentSort.asModernSort)
+            let summaries = store.albumSummaries(limit: localPageSize, offset: localAlbumPageOffset, sort: currentSort)
             for summary in summaries {
                 let album = Album(id: summary.id, name: summary.name, artist: summary.artist, year: summary.year, tracks: [])
                 let displayName: String
@@ -14325,7 +14239,7 @@ class PlexBrowserView: NSView {
         // Switch first so the page offset is computed under the Artists tab's own sort.
         browseMode = .artists
         if currentSource == .local,
-           let artistOffset = MediaLibraryStore.shared.artistOffset(named: artistName, sort: currentSort.asModernSort) {
+           let artistOffset = MediaLibraryStore.shared.artistOffset(named: artistName, sort: currentSort) {
             localArtistPageOffset = (artistOffset / localPageSize) * localPageSize
         }
         selectedIndices.removeAll()
@@ -16855,9 +16769,9 @@ class PlexBrowserView: NSView {
         displayItems.removeAll()
         let store = MediaLibraryStore.shared
         if localArtistPageOffset == 0 {
-            localArtistLetterOffsets = store.artistLetterOffsets(sort: currentSort.asModernSort)
+            localArtistLetterOffsets = store.artistLetterOffsets(sort: currentSort)
         }
-        let names = store.artistNames(limit: localPageSize, offset: localArtistPageOffset, sort: currentSort.asModernSort)
+        let names = store.artistNames(limit: localPageSize, offset: localArtistPageOffset, sort: currentSort)
         let albumsByArtist = store.albumsForArtistsBatch(names)
         for name in names {
             let albumSummaries = albumsByArtist[name] ?? []
@@ -16904,9 +16818,9 @@ class PlexBrowserView: NSView {
         displayItems.removeAll()
         let store = MediaLibraryStore.shared
         if localAlbumPageOffset == 0 {
-            localAlbumLetterOffsets = store.albumLetterOffsets(sort: currentSort.asModernSort)
+            localAlbumLetterOffsets = store.albumLetterOffsets(sort: currentSort)
         }
-        let summaries = store.albumSummaries(limit: localPageSize, offset: localAlbumPageOffset, sort: currentSort.asModernSort)
+        let summaries = store.albumSummaries(limit: localPageSize, offset: localAlbumPageOffset, sort: currentSort)
         for summary in summaries {
             let expanded = expandedLocalAlbums.contains(summary.id)
             let tracks: [LibraryTrack] = expanded ? store.tracksForAlbum(summary.id) : []

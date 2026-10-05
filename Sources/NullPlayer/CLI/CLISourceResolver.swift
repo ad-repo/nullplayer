@@ -580,7 +580,7 @@ struct CLISourceResolver {
     private static func resolvePlexVideo(_ opts: CLIOptions) async throws -> CLIResolveResult {
         let mgr = PlexManager.shared
         if let title = opts.movie {
-            let movies = try await fetchAllPlexMovies()
+            let movies = try await mgr.fetchAllMovies()
             let movie = try VideoMatch.exactOrContains(
                 movies,
                 query: title,
@@ -598,7 +598,7 @@ struct CLISourceResolver {
         guard let showName = opts.show else {
             throw CLISourceError.missingRequiredArg("--episode", "--show <name>")
         }
-        let shows = try await fetchAllPlexShows()
+        let shows = try await mgr.fetchAllShows()
         let show = try VideoMatch.exactOrContains(
             shows,
             query: showName,
@@ -719,34 +719,6 @@ struct CLISourceResolver {
             candidateDescription: { "\($0.episodeIdentifier) \($0.title)" }
         )
         return .video(.embyEpisode(episode))
-    }
-
-    private static func fetchAllPlexMovies() async throws -> [PlexMovie] {
-        var offset = 0
-        let limit = 500
-        var all: [PlexMovie] = []
-        while true {
-            let page = try await PlexManager.shared.fetchMovies(offset: offset, limit: limit)
-            all.append(contentsOf: page)
-            if page.count < limit { break }
-            offset += limit
-        }
-        return all
-    }
-
-    private static func fetchAllPlexShows() async throws -> [PlexShow] {
-        var offset = 0
-        let limit = 500
-        var all: [PlexShow] = []
-        while true {
-            let page = try await PlexManager.shared.fetchShowsPage(offset: offset, limit: limit)
-            all.append(contentsOf: page.shows)
-            offset += page.rawCount
-            if page.rawCount == 0 { break }
-            if let totalSize = page.totalSize, offset >= totalSize { break }
-            if page.rawCount < limit { break }
-        }
-        return all
     }
 
     private static func applyVideoLibrary(source: String, name: String, wantsShows: Bool) async throws {
