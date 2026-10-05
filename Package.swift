@@ -164,6 +164,14 @@ let package = Package(
                 // Let the compiler find the vendored VLCKit.framework module map
                 // (Frameworks/VLCKit.framework) so `import VLCKit` resolves.
                 .unsafeFlags(["-F", "Frameworks"]),
+                // Emit `.swiftconstvalues` beside each object so scripts/lib/app_intents_metadata.sh
+                // can build Metadata.appintents, which Shortcuts reads to discover App Intents.
+                // The protocol list is the one Xcode 26.2 passes; see the shortcuts-app-intents skill.
+                .unsafeFlags([
+                    "-emit-const-values",
+                    "-Xfrontend", "-const-gather-protocols-file",
+                    "-Xfrontend", "scripts/lib/app_intents_const_protocols.json",
+                ]),
             ],
             linkerSettings: [
                 .linkedFramework("WebKit"),

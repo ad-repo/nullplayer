@@ -38,6 +38,13 @@ Two consequences, stated as facts:
 2. **There is exactly one defaults domain in this skill: `NullPlayer`.** `com.nullplayer.app` is
    never read or written, so nothing here can damage the user's real preferences.
 
+**One exception: Shortcuts and App Intents.** Shortcuts can't see the bare binary, so
+`./scripts/kill_build_run.sh --debug --bundle` wraps the same debug build in a registered
+`dist/dev/NullPlayer.app` (bundle ID `com.nullplayer.app.dev`). Its defaults domain is
+`com.nullplayer.app.dev`, seeded once from `NullPlayer`. Its actions only *run* when it's signed
+with a Team ID certificate; see `docs/development-workflow.md` § *Testing Shortcuts and App Intents*.
+Drive a saved shortcut with `shortcuts run "<name>"`.
+
 ## Routing
 
 | Route | Use when | Cost |

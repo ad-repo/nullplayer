@@ -18,6 +18,38 @@ Release mode is intentional — it matches the DMG distribution binary and catch
 pgrep -l NullPlayer  # Check if app is running
 ```
 
+`pkill -x NullPlayer` matches any process named NullPlayer, so it also quits an installed
+`/Applications/NullPlayer.app` that is running.
+
+### Testing Shortcuts and App Intents
+
+```bash
+./scripts/kill_build_run.sh --debug --bundle
+```
+
+Shortcuts only discovers App Intents in a registered `.app`, never in the bare binary. `--bundle`:
+- wraps the build in `dist/dev/NullPlayer.app` with bundle ID `com.nullplayer.app.dev`, so it
+  never competes with an installed copy
+- writes `Contents/Resources/Metadata.appintents` (`scripts/lib/app_intents_metadata.sh`)
+- signs and registers the bundle, then opens it
+- seeds the `com.nullplayer.app.dev` defaults domain once from the bare binary's `NullPlayer`
+  domain
+
+Keychain credentials and `Application Support/NullPlayer/` are shared with the other builds.
+
+**Signing decides whether the actions run.** `linkd` refuses App Intents connections from an
+ad-hoc signed app (`Unable to get teamId` … `requiresValidatedBundle` in the system log). Shortcuts
+then lists the actions but fails every run with "couldn't communicate with the app". `--bundle`
+signs with `NULLPLAYER_SIGN_IDENTITY`, else the first Apple Development identity in the keychain,
+else ad-hoc with a warning. The free personal-team certificate works:
+1. Xcode → Settings → Accounts → add an Apple ID → Manage Certificates → **+** → Apple Development.
+2. If `security find-identity -v -p codesigning` then reports 0 valid identities, the keychain is
+   missing Apple's WWDR G3 intermediate. Install it from
+   `https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer`.
+
+The DMG (`build_dmg.sh`) is still ad-hoc signed, so its actions are listed but don't run. Whether
+a release signed with a free certificate works on other Macs is open as M1 in `MISC_TASKS.md`.
+
 ## Monitoring Logs (Cursor IDE)
 
 When running the build script via the Shell tool with `is_background: true`, logs are captured to a terminal file:

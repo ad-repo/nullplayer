@@ -183,6 +183,12 @@ assemble_app() {
     # Also copy Info.plist from source
     cp "$REPO_ROOT/Sources/NullPlayer/Resources/Info.plist" "$CONTENTS_DIR/"
 
+    # Build Metadata.appintents so Shortcuts can discover the App Intents. Fails the build on an
+    # empty or partial result.
+    log_info "Extracting App Intents metadata..."
+    "$REPO_ROOT/scripts/lib/app_intents_metadata.sh" "$BUILD_DIR" "$APP_BUNDLE"
+    log_success "App Intents metadata written"
+
     # Step 6a: Refresh the aggregated third-party notices so they match the
     # current Info.plist version. The notices file embeds the app version on its
     # second line, so a version bump leaves the committed copy stale and trips the
