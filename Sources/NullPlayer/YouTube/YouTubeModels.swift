@@ -14,8 +14,57 @@ struct YouTubeChannel: Codable, Identifiable, Hashable {
     /// When this channel was added to the saved list
     let dateAdded: Date
 
+    /// Square channel avatar, shown as the channel's art. Optional so channels saved
+    /// before it existed still decode; filled in on add, or on first expand.
+    var avatarURL: URL? = nil
+
     enum CodingKeys: String, CodingKey {
-        case id, title, url, dateAdded
+        case id, title, url, dateAdded, avatarURL
+    }
+}
+
+/// A channel found by `YouTubeManager.searchChannels`, not (necessarily) subscribed
+struct YouTubeChannelSearchResult: Hashable {
+    /// YouTube channel ID (`UC…`)
+    let channelId: String
+
+    /// `@handle`, nil when the channel has none
+    let handle: String?
+
+    let title: String
+    let followerCount: Int?
+    let description: String?
+    let avatarURL: URL?
+
+    /// The channel as it would be subscribed. The URL goes through `normalizeChannelURL`
+    /// so `id` is keyed exactly as a pasted URL of the same form would be.
+    var asChannel: YouTubeChannel {
+        let path = handle.map { $0.hasPrefix("@") ? $0 : "@" + $0 } ?? "channel/\(channelId)"
+        let pasted = URL(string: "https://www.youtube.com/\(path)")
+        let normalized = pasted.flatMap { YouTubeManager.normalizeChannelURL($0) }
+        let key = normalized?.key ?? channelId
+        let baseURL = normalized.map { YouTubeManager.channelBaseURL(fromListURL: $0.listURL) }
+            ?? URL(string: "https://www.youtube.com/channel/\(channelId)")!
+        return YouTubeChannel(id: key, title: title, url: baseURL, dateAdded: Date(), avatarURL: avatarURL)
+    }
+
+    /// Follower count in compact form ("15.8M", "36.5K"), nil when unknown
+    var formattedFollowerCount: String? {
+        guard let count = followerCount else { return nil }
+        let value = Double(count)
+        func compact(_ v: Double, _ suffix: String) -> String {
+            let s = v >= 100 ? String(format: "%.0f", v) : String(format: "%.1f", v)
+            return (s.hasSuffix(".0") ? String(s.dropLast(2)) : s) + suffix
+        }
+        if value >= 1_000_000_000 { return compact(value / 1_000_000_000, "B") }
+        if value >= 1_000_000 { return compact(value / 1_000_000, "M") }
+        if value >= 1_000 { return compact(value / 1_000, "K") }
+        return "\(count)"
+    }
+
+    /// Row info text: "@handle · 15.8M"
+    var infoText: String {
+        [handle, formattedFollowerCount].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -37,6 +86,9 @@ struct YouTubeVideo: Codable, Identifiable, Hashable {
     /// the channel grid, so this is an estimate that coarsens for older uploads. nil when
     /// unavailable (e.g. a flat fetch without the approximate-date extractor arg).
     let publishedAt: Date?
+
+    /// 16:9 thumbnail (`hq720.jpg`, no letterbox bars), used as the video's art
+    var thumbnailURL: URL? = nil
 
     /// Video ID is used as the Identifiable id
     var id: String { videoId }
@@ -67,7 +119,7 @@ struct YouTubeVideo: Codable, Identifiable, Hashable {
     }()
 
     enum CodingKeys: String, CodingKey {
-        case videoId, title, channelId, duration, publishedAt
+        case videoId, title, channelId, duration, publishedAt, thumbnailURL
     }
 }
 

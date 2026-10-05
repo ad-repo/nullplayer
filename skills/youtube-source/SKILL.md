@@ -10,7 +10,9 @@ Subscribe to YouTube channels in the **Radio tab** and browse their uploads. Dou
 ## Quick Start (user)
 
 1. **Radio tab** → **+ Add YouTube Channel**
-2. Paste a YouTube channel URL (e.g., `https://www.youtube.com/@channel_name`)
+2. Paste a YouTube channel URL (e.g., `https://www.youtube.com/@channel_name`) — or find one by
+   name: **Search** tab, type, press Enter, then double-click a result (or right-click →
+   **Subscribe**). Results show `@handle · followers`; a ✓ marks channels already subscribed
 3. Channel appears as a folder; expand to see uploads
 4. Double-click a video to download its audio or video and play
 5. **Library → YouTube → Set Download Folder…** to choose where downloads live
@@ -22,8 +24,11 @@ Subscribe to YouTube channels in the **Radio tab** and browse their uploads. Dou
 ```text
 Sources/NullPlayer/
 ├── YouTube/
-│   ├── YouTubeModels.swift          # Channel, Video, Download, Quality data models
-│   └── YouTubeManager.swift         # Singleton: channels, video listing, downloads, manifest (youtube_downloads.json), all in one file
+│   ├── YouTubeModels.swift          # Channel, ChannelSearchResult, Video, Download, Quality data models
+│   ├── YouTubeManager.swift         # Singleton: channels, channel search, video listing, downloads, manifest (youtube_downloads.json)
+│   └── YouTubeRowThumbnails.swift   # Shared loader/cache for list-row thumbnails and avatars (both browsers)
+├── Utilities/
+│   └── NSImage+SquareCrop.swift     # squareCenterCropped() — 16:9 thumbnails as square art
 ├── Windows/ModernLibraryBrowser/
 │   └── ModernLibraryBrowserView.swift # YouTube folder tree integration
 └── Windows/PlexBrowser/
@@ -56,6 +61,17 @@ struct YouTubeChannel: Codable, Identifiable, Hashable {
     let title: String
     let url: URL         // Base channel URL (e.g. https://www.youtube.com/@handle)
     let dateAdded: Date
+    var avatarURL: URL?  // square avatar; optional so channels saved before it still decode
+}
+
+struct YouTubeChannelSearchResult: Hashable {   // a search hit, not necessarily subscribed
+    let channelId: String       // UC…
+    let handle: String?         // "@handle", nil for e.g. "- Topic" channels
+    let title: String
+    let followerCount: Int?
+    let description: String?
+    let avatarURL: URL?
+    var asChannel: YouTubeChannel   // keyed via normalizeChannelURL, exactly like a pasted URL
 }
 
 struct YouTubeVideo: Codable, Identifiable, Hashable {
@@ -64,6 +80,7 @@ struct YouTubeVideo: Codable, Identifiable, Hashable {
     let channelId: String
     let duration: TimeInterval?
     let publishedAt: Date?          // approximate upload date (see "Approximate dates" below)
+    var thumbnailURL: URL?          // 16:9 hq720 thumbnail (optional, older data decodes)
     var id: String { videoId }      // Identifiable
     var watchURL: URL { ... }       // https://www.youtube.com/watch?v=<videoId>
     var formattedDate: String?      // "MMM d, yyyy", nil when publishedAt is nil
@@ -110,12 +127,71 @@ yt-dlp --flat-playlist -J --playlist-end 200 \
 
 Videos appear as indented child rows. Double-clicking a video triggers `YouTubeManager.download(video:)` (audio or video MP4 depending on the current Quality setting; then the browser loads the returned local file and plays it).
 
+### Channel Search (Search tab)
+
+Under the YouTube source the **Search** tab searches YouTube for channels (it used to list
+internet-radio stations — leftover behaviour). `YouTubeManager.searchChannels(query:limit:)` runs a
+channels-only results page through the same `fetchYtDlpJSON`, no API key:
+
+```bash
+yt-dlp --flat-playlist -J --playlist-end 20 \
+  "https://www.youtube.com/results?search_query=<q>&sp=EgIQAg%3D%3D"   # sp = "Type: Channel" filter
+```
+
+- `channelSearchURL(query:)` percent-encodes the query down to RFC 3986 unreserved characters (so
+  `&`, `+`, `#` survive); `parseChannelSearch` (pure) reads each entry's `channel_id`,
+  `uploader_id` (`@handle`, **may be null**), `channel_follower_count`, `description`, and avatar.
+  yt-dlp reports Topic channels with a follower count of 1.
+- **Submit-only**: a search is a network call, so it runs on Enter, never per keystroke. The classic
+  browser otherwise searches as you type — for the YouTube source its key handler only edits the
+  query. Once a query has run, Enter acts on the selected row; Refresh re-runs the query; returning
+  to the tab reuses results of an unchanged query (`youtubeSearchQuery`).
+- Results build as a `.header` "Channels (N)" plus one **`.youtubeChannel(result.asChannel)`** row
+  each, so expand/preview/download reuse the Channels-tab paths (`expandedYouTubeChannels`,
+  `youtubeChannelVideos`). `hasYouTubeColumns` and `applyYouTubeColumnSort` accept the search view
+  (`isYouTubeChannelSearch`); the latter returns true with no video rows so the header isn't sorted
+  into the channels.
+- **Subscribe**: double-click / Enter on an unsubscribed result, or the context-menu **Subscribe**,
+  calls `YouTubeManager.subscribe(to:)` (same ffmpeg + duplicate checks as `addChannel(url:)`, which
+  now calls it after its title fetch). `isSubscribed(_:)` matches on the normalized key
+  (case-insensitive — handles are) **or** the UC channel ID, so a channel added by `/channel/UC…`
+  URL still shows ✓. Search rows carry no Refresh/Remove.
+- A preview video downloaded before subscribing is foldered under the search result's title
+  (`download(video:channelTitle:)`), not a bare ID.
+
+### Thumbnails and Avatars
+
+- **Art column**: `youtubeColumns` is `[.thumbnail, .title, .youtubeDate, .duration]` in both
+  browsers; `drawColumnRow` draws the `thumbnail` column as an image (square crop, rounded corners),
+  and a header click on it does not sort. Channel rows are not column rows (they keep the ▶ arrow),
+  so their avatar is drawn round, inline before the title. Images come from
+  `YouTubeRowThumbnails.shared` (fetch on first draw, 64 px square cache, failures not retried,
+  `didLoadNotification` → redraw). The classic browser draws them inside its text counter-flip
+  (y-up there) centred on the row, so the flip leaves the rect unchanged and the image upright.
+- **Selection art** (the faint backdrop behind the list): `loadArtworkForSelection` handles
+  `.youtubeVideo` (embedded art of a download, else `thumbnailURL`) and `.youtubeChannel`
+  (`avatarURL`), center-cropped square.
+- **Sources** (yt-dlp `thumbnails[]`): video entries carry `hq720.jpg` (16:9, no bars — avoid
+  `hqdefault.jpg`, 4:3 letterboxed); rows use `mqdefault.jpg`. Channel listings carry a 900×900
+  square avatar (`avatarURL(from:)` takes the largest square, else `avatar_uncropped`); search
+  entries carry `=s176-` avatars, some protocol-relative (`//yt3…`) — rewritten to `https:` and
+  `=s512-`.
+- **Back-fill**: `addChannel` stores the avatar from its title fetch. Subscriptions saved earlier get
+  it from `backfillMissingAvatars()` (called when the Channels tab loads; one `--playlist-end 1`
+  listing per channel, once per session) or from their first `videos(forChannel:)`;
+  `updateAvatar(channelId:url:)` writes it back.
+- **Embedded art is square**: both download paths add `squareThumbnailArgs` — `--embed-thumbnail
+  --convert-thumbnails jpg` plus a `--ppa ThumbnailsConvertor+FFmpeg_o:` crop, passed as one
+  Process argument (yt-dlp shlex-splits it). MP4 downloads get them through
+  `StreamRipper.downloadVideo(…, extraArgs:)`; the stream-ripper's own URL-rip path is unchanged.
+  Files downloaded earlier keep 16:9 art.
+
 #### Column rendering (Channels tab)
 
 Video (leaf) rows render through the **established resizable-column path** (`drawColumnRow`), not the simple list path, so a long title truncates inside its column instead of printing over the time. The column set is:
 
 ```swift
-static let youtubeColumns: [ModernBrowserColumn] = [.title, .youtubeDate, .duration]  // .youtubeDate titled "Date", .duration titled "Time"
+static let youtubeColumns: [ModernBrowserColumn] = [.thumbnail, .title, .youtubeDate, .duration]  // "Art", "Title", "Date", "Time"
 ```
 
 - A dedicated **`.youtube` case in `LibraryColumnVisibilityGroup`** namespaces the persisted widths (`youtube:title`, `youtube:youtubeDate`, `youtube:duration`) so they survive `migrateColumnWidths`. This is why the internet-radio column path can't be reused: `internetRadioColumns` are deliberately **non-resizable** (`hitTestColumnResize` early-returns when `hasInternetRadioColumns`), and the requirement here is a movable Time column like the library tabs.
@@ -180,4 +256,4 @@ Downloaded files are local `file://` tracks. After download completes, the `Trac
 - **Video titles from yt-dlp**: Source of truth is yt-dlp's title extraction; titles are not synced with YouTube's API and may differ from what the web UI shows
 - **YouTube has its own session sort (default date order)**: The channels tab must NOT inherit the persisted library column sort (`columnSortId`, saved per tab by `LibraryBrowserTabSortStore`), or every rebuild — including after a download — re-sorts videos to A–Z. Both views keep session-only `youtubeColumnSortId`/`youtubeColumnSortAscending` (default nil = yt-dlp's newest-first order), read through `activeColumnSortId`/`activeColumnSortAscending` by every sort/header-draw path. A header click in the YouTube tab sets the session sort only; it never writes the library sort. This state resets to date order on relaunch (intended).
 - **Downloaded marker is rebuild-driven**: A downloading video draws a per-row spinner gated on `downloadingVideoIds`; the **`⬇ ` prefix** for a finished download is added in `buildYouTubeChannelItems` from `isDownloaded`. The download handler calls `rebuildCurrentModeItems()` on success (adds the marker) and a `defer` clears `downloadingVideoIds` (drops the spinner) — so the spinner→icon transition only works because the row stays put, which is why the session-sort fix above matters (an A–Z re-sort would relocate the row mid-transition).
-- **Channels tab uses the `.youtube` column group, not the radio column path**: Don't route YouTube videos through `internetRadioColumns` — those columns are fixed-width by design. Video rows use `youtubeColumns` (`[.title, .youtubeDate, .duration]`) via the resizable `LibraryColumnVisibilityGroup.youtube` group; adding/changing that enum requires updating every exhaustive `switch group` in both `ModernLibraryBrowserView` and `PlexBrowserView`
+- **Channels tab uses the `.youtube` column group, not the radio column path**: Don't route YouTube videos through `internetRadioColumns` — those columns are fixed-width by design. Video rows use `youtubeColumns` (`[.thumbnail, .title, .youtubeDate, .duration]`) via the resizable `LibraryColumnVisibilityGroup.youtube` group; adding/changing that enum requires updating every exhaustive `switch group` in both `ModernLibraryBrowserView` and `PlexBrowserView`

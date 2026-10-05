@@ -20,6 +20,15 @@
   though **Test** in the server manager succeeded, because newer Jellyfin servers reject the older
   way NullPlayer sent its sign-in token. The token now goes the way Jellyfin expects, so libraries
   load and play again.
+- **Find YouTube channels by name** — the YouTube source's **Search** tab now searches YouTube for
+  channels instead of listing internet radio stations. Type a name and press Enter: each result
+  shows its @handle and subscriber count, expands to preview its uploads, and subscribes on
+  double-click (or **Subscribe** in its right-click menu). Channels you already follow are marked
+  ✓. Pasting a URL into **+ → Add Channel…** still works.
+- **YouTube thumbnails and channel avatars** — YouTube video lists have a new **Art** column with
+  each video's thumbnail, channel rows show the channel's avatar, and selecting a video or channel
+  shows its art behind the list. New audio and video downloads embed the thumbnail cropped square,
+  so it reads as album art in the player; video downloads had no cover art before.
 
 ## 0.31.3
 
