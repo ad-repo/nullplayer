@@ -37,6 +37,10 @@
 
 set -u -o pipefail
 
+# Pin the native build system where offered: the default on Swift 6.4 cannot build the test
+# target (no VLCKit), which would leave an empty capture. See scripts/lib/swiftpm.sh.
+source "$(dirname "$0")/lib/swiftpm.sh"
+
 readonly CORPUS_DEFAULT="$HOME/Library/Application Support/NullPlayer/WinampModernSkins"
 # A skin emits ~30 invariant lines; this is the floor per archive that catches a short or empty
 # capture, which is what a build failure writes.
@@ -99,7 +103,7 @@ if [ "$parse_only" -eq 0 ]; then
     WINAMP_MODERN_WAL="$corpus" \
     WINAMP_MODERN_RENDER_DUMP="$out/png" \
     WINAMP_MODERN_RENDER_BITMAPS=1 \
-        swift test --filter WinampModernRenderDumpTests > "$out/render.txt" 2> "$out/render.stderr.txt"
+        swift test ${SWIFTPM_ARGS[@]+"${SWIFTPM_ARGS[@]}"} --filter WinampModernRenderDumpTests > "$out/render.txt" 2> "$out/render.stderr.txt"
     render_status=$?
 
     grep -E "$INVARIANT_PATTERN" "$out/render.txt" > "$out/invariants.txt"
@@ -117,7 +121,7 @@ if [ "$parse_only" -eq 0 ]; then
     # back to the standalone classic window.
     if [ "$skip_hosted" -eq 0 ]; then
         WINAMP_MODERN_DRAG_HOSTED="$corpus" \
-            swift test --filter WinampModernDragProbe/testHostedWindowDragCoverage \
+            swift test ${SWIFTPM_ARGS[@]+"${SWIFTPM_ARGS[@]}"} --filter WinampModernDragProbe/testHostedWindowDragCoverage \
             > "$out/hosted.txt" 2> "$out/hosted.stderr.txt"
         hosted_status=$?
         [ $hosted_status -ne 0 ] && echo "wal_skin_census: hosted pass exited $hosted_status; read $out/hosted.txt" >&2

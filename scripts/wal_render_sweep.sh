@@ -45,6 +45,10 @@
 
 set -u -o pipefail
 
+# Pin the native build system where offered: the default on Swift 6.4 cannot build the test
+# target (no VLCKit), which would leave an empty capture. See scripts/lib/swiftpm.sh.
+source "$(dirname "$0")/lib/swiftpm.sh"
+
 readonly CORPUS_DEFAULT="$HOME/Library/Application Support/NullPlayer/WinampModernSkins"
 # A skin emits ~30 invariant lines. The check is against a short or empty capture — a build failure
 # writes an empty one, and an empty capture diffs as "everything changed" — so this is a floor per
@@ -103,7 +107,7 @@ capture() {
     WINAMP_MODERN_WAL="$corpus" \
     WINAMP_MODERN_RENDER_DUMP="$out/png" \
     WINAMP_MODERN_RENDER_BITMAPS=1 \
-        swift test --filter WinampModernRenderDumpTests > "$out/raw.txt" 2> "$out/stderr.txt"
+        swift test ${SWIFTPM_ARGS[@]+"${SWIFTPM_ARGS[@]}"} --filter WinampModernRenderDumpTests > "$out/raw.txt" 2> "$out/stderr.txt"
     local status=$?
 
     grep -E "$INVARIANT_PATTERN" "$out/raw.txt" > "$out/invariants.txt"

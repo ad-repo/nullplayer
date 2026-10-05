@@ -1,7 +1,8 @@
 #!/bin/bash
 # NullPlayer App Bundle Assembly Helper
 # Shared by build_dmg.sh and build_mas.sh
-# Expects: REPO_ROOT, BUILD_DIR, SKIP_BUILD set by caller
+# Expects: REPO_ROOT, BUILD_DIR, SKIP_BUILD set by caller, and scripts/lib/swiftpm.sh sourced
+#          (SWIFTPM_ARGS; BUILD_DIR from swiftpm_bin_path release)
 # Expects: log_info, log_success, log_warning, log_error functions defined by caller
 
 assemble_app() {
@@ -25,7 +26,7 @@ assemble_app() {
     # Step 2: Build release binary
     if [[ "$SKIP_BUILD" == false ]]; then
         log_info "Building release binary..."
-        swift build -c release
+        swift build -c release ${SWIFTPM_ARGS[@]+"${SWIFTPM_ARGS[@]}"}
         log_success "Build complete"
     else
         log_info "Skipping build (--skip-build)"

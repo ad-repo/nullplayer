@@ -38,6 +38,10 @@
 
 set -u -o pipefail
 
+# Pin the native build system where offered: the default on Swift 6.4 cannot build the test
+# target (no VLCKit), which would leave an empty capture. See scripts/lib/swiftpm.sh.
+source "$(dirname "$0")/lib/swiftpm.sh"
+
 readonly CORPUS_DEFAULT="$HOME/Library/Application Support/NullPlayer/WMPSkins"
 # A loading skin emits at least SKIN + LOAD + COMPAT + one RENDER-DUMP. A *rejected* skin emits only
 # SKIN + SKIN…FAILED, and 10 of 14 archives are rejected today, so the floor cannot assume a load.
@@ -143,7 +147,7 @@ if [ "$parse_only" -eq 0 ]; then
     WMP_RENDER_SCRIPTS=1 \
     WMP_CALL_TRACE=1 \
     WMP_RENDER_APPKIT=1 \
-        swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus \
+        swift test ${SWIFTPM_ARGS[@]+"${SWIFTPM_ARGS[@]}"} --filter WMPRenderDumpTests/testSweepsSkinOrCorpus \
         > "$out/render.txt" 2> "$out/render.stderr.txt"
     render_status=$?
 
