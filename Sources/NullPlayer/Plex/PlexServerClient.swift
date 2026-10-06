@@ -42,13 +42,12 @@ enum RadioConfig {
     ]
 }
 
-/// Client for communicating with a Plex Media Server
 struct PlexShowPage {
     let shows: [PlexShow]
     let rawCount: Int
-    let totalSize: Int?
 }
 
+/// Client for communicating with a Plex Media Server
 class PlexServerClient {
     
     // MARK: - Properties
@@ -452,8 +451,7 @@ class PlexServerClient {
     }
 
     /// Fetch one raw Plex show page plus filtered show results.
-    /// `rawCount`/`totalSize` reflect Plex's unfiltered page metadata and must be
-    /// used for pagination because `shows.count` can be smaller after bonus-content
+    /// `rawCount` is Plex's unfiltered page size and must be used for pagination because `shows.count` can be smaller after bonus-content
     /// filtering.
     func fetchShowsPage(libraryID: String, offset: Int = 0, limit: Int = 100) async throws -> PlexShowPage {
         let queryItems = [
@@ -491,8 +489,7 @@ class PlexServerClient {
 
         return PlexShowPage(
             shows: shows,
-            rawCount: response.mediaContainer.size ?? response.mediaContainer.metadata?.count ?? 0,
-            totalSize: response.mediaContainer.totalSize
+            rawCount: response.mediaContainer.size ?? response.mediaContainer.metadata?.count ?? 0
         )
     }
     
