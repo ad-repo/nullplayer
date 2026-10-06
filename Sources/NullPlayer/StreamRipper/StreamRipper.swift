@@ -283,12 +283,14 @@ final class StreamRipper {
     ///   - sourceURL: The URL to download video from
     ///   - maxHeight: Maximum video height in pixels (e.g. 720, 1080)
     ///   - outputTemplate: yt-dlp output filename template (e.g., `"/path/to/downloads/%(id)s.%(ext)s"`)
+    ///   - extraArgs: additional yt-dlp arguments (e.g. thumbnail embedding), inserted before the URL
     /// - Returns: A file:// URL to the downloaded video file
     /// - Throws: If yt-dlp is not found, the download fails, or the output path cannot be resolved
     nonisolated static func downloadVideo(
         from sourceURL: URL,
         maxHeight: Int,
-        outputTemplate: String
+        outputTemplate: String,
+        extraArgs: [String] = []
     ) async throws -> URL {
         guard let ytdlp = Self.resolveTool("yt-dlp") else {
             throw DownloadAudioError.toolNotFound("yt-dlp is not installed. Install via Homebrew: brew install yt-dlp")
@@ -327,6 +329,9 @@ final class StreamRipper {
             "--merge-output-format", "mp4",
             "--no-playlist",
             "--embed-metadata",
+        ]
+        args += extraArgs
+        args += [
             "--print-to-file", "after_move:filepath", pathFile,
             "-o", staging.stagingTemplate,
             sourceURL.absoluteString

@@ -14,8 +14,72 @@ struct YouTubeChannel: Codable, Identifiable, Hashable {
     /// When this channel was added to the saved list
     let dateAdded: Date
 
+    /// Square channel avatar, shown as the channel's art, as YouTube listed it. Optional so
+    /// channels saved before it existed still decode; filled in on add, or by
+    /// `YouTubeManager.backfillMissingAvatars()`.
+    var avatarURL: URL? = nil
+
     enum CodingKeys: String, CodingKey {
-        case id, title, url, dateAdded
+        case id, title, url, dateAdded, avatarURL
+    }
+
+    /// `avatarURL` sized to `side` pixels. Google's image server sizes by an `=sNNN-` path
+    /// parameter; a URL without one is returned as is.
+    func avatarURL(side: Int) -> URL? {
+        guard var string = avatarURL?.absoluteString else { return nil }
+        if let range = string.range(of: #"=s\d+-"#, options: .regularExpression) {
+            string.replaceSubrange(range, with: "=s\(side)-")
+        }
+        return URL(string: string)
+    }
+}
+
+/// A channel found by `YouTubeManager.searchChannels`, not (necessarily) subscribed
+struct YouTubeChannelSearchResult: Hashable {
+    /// YouTube channel ID (`UC…`)
+    let channelId: String
+
+    /// `@handle`, nil when the channel has none
+    let handle: String?
+
+    let followerCount: Int?
+
+    /// The channel as it would be subscribed, keyed exactly as a pasted URL of the same
+    /// form would be (the URL goes through `normalizeChannelURL`).
+    let channel: YouTubeChannel
+
+    init(channelId: String, handle: String?, title: String, followerCount: Int?, avatarURL: URL?) {
+        self.channelId = channelId
+        self.handle = handle
+        self.followerCount = followerCount
+        let path = handle.map { $0.hasPrefix("@") ? $0 : "@" + $0 } ?? "channel/\(channelId)"
+        let normalized = URL(string: "https://www.youtube.com/\(path)").flatMap(YouTubeManager.normalizeChannelURL)
+        channel = YouTubeChannel(
+            id: normalized?.key ?? channelId,
+            title: title,
+            url: normalized.map { YouTubeManager.channelBaseURL(fromListURL: $0.listURL) }
+                ?? URL(string: "https://www.youtube.com/channel/\(channelId)")!,
+            dateAdded: Date(),
+            avatarURL: avatarURL)
+    }
+
+    /// Follower count in compact form ("15.8M", "36.5K"), nil when unknown
+    var formattedFollowerCount: String? {
+        guard let count = followerCount else { return nil }
+        let value = Double(count)
+        func compact(_ v: Double, _ suffix: String) -> String {
+            let s = v >= 100 ? String(format: "%.0f", v) : String(format: "%.1f", v)
+            return (s.hasSuffix(".0") ? String(s.dropLast(2)) : s) + suffix
+        }
+        if value >= 1_000_000_000 { return compact(value / 1_000_000_000, "B") }
+        if value >= 1_000_000 { return compact(value / 1_000_000, "M") }
+        if value >= 1_000 { return compact(value / 1_000, "K") }
+        return "\(count)"
+    }
+
+    /// Row info text: "@handle · 15.8M"
+    var infoText: String {
+        [handle, formattedFollowerCount].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -37,6 +101,14 @@ struct YouTubeVideo: Codable, Identifiable, Hashable {
     /// the channel grid, so this is an estimate that coarsens for older uploads. nil when
     /// unavailable (e.g. a flat fetch without the approximate-date extractor arg).
     let publishedAt: Date?
+
+    /// 16:9 thumbnail (`hq720.jpg`, no letterbox bars), used as the video's art
+    var thumbnailURL: URL? = nil
+
+    /// The small 16:9 thumbnail for a list row (`mqdefault.jpg`, 320×180, no letterbox bars)
+    var rowThumbnailURL: URL {
+        URL(string: "https://i.ytimg.com/vi/\(videoId)/mqdefault.jpg")!
+    }
 
     /// Video ID is used as the Identifiable id
     var id: String { videoId }
@@ -67,7 +139,7 @@ struct YouTubeVideo: Codable, Identifiable, Hashable {
     }()
 
     enum CodingKeys: String, CodingKey {
-        case videoId, title, channelId, duration, publishedAt
+        case videoId, title, channelId, duration, publishedAt, thumbnailURL
     }
 }
 

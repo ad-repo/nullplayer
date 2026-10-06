@@ -456,6 +456,136 @@ final class YouTubeTests: XCTestCase {
         XCTAssertTrue(videos.allSatisfy { $0.channelId == testChannelId })
     }
 
+    // MARK: - Channel Search Tests
+
+    /// Shape of a live `yt-dlp --flat-playlist -J` channels-only search: a handle-keyed entry,
+    /// a Topic channel with a null `uploader_id`, a protocol-relative avatar, and an entry
+    /// with no channel ID (dropped).
+    private let channelSearchJSON = """
+    {
+        "entries": [
+            {
+                "ie_key": "YoutubeTab", "id": "UCSJ4gkVC6NrvII8umztf0Ow",
+                "channel_id": "UCSJ4gkVC6NrvII8umztf0Ow", "title": "Lofi Girl",
+                "uploader_id": "@LofiGirl", "channel_follower_count": 15800000,
+                "url": "https://www.youtube.com/channel/UCSJ4gkVC6NrvII8umztf0Ow",
+                "thumbnails": [
+                    {"url": "https://yt3.ggpht.com/abc=s88-c-k-c0x00ffffff-no-rj-mo", "width": 88, "height": 88},
+                    {"url": "https://yt3.ggpht.com/abc=s176-c-k-c0x00ffffff-no-rj-mo", "width": 176, "height": 176}
+                ]
+            },
+            {
+                "ie_key": "YoutubeTab", "id": "UCi5YpRRZmwegT235crEZ2YQ",
+                "channel_id": "UCi5YpRRZmwegT235crEZ2YQ", "title": "Lofi Girl - Topic",
+                "uploader_id": null, "channel_follower_count": 36500,
+                "thumbnails": [
+                    {"url": "//yt3.ggpht.com/def=s176-c-k-c0x00ffffff-no-rj-mo", "width": 176, "height": 176}
+                ]
+            },
+            {"ie_key": "YoutubeTab", "title": "No ID"}
+        ]
+    }
+    """
+
+    func testParseChannelSearch() throws {
+        let results = try YouTubeManager.parseChannelSearch(Data(channelSearchJSON.utf8))
+
+        XCTAssertEqual(results.count, 2)
+        XCTAssertEqual(results[0].channelId, "UCSJ4gkVC6NrvII8umztf0Ow")
+        XCTAssertEqual(results[0].handle, "@LofiGirl")
+        XCTAssertEqual(results[0].channel.title, "Lofi Girl")
+        XCTAssertEqual(results[0].infoText, "@LofiGirl · 15.8M")
+        // Largest square avatar, stored as listed and sized at use
+        XCTAssertEqual(results[0].channel.avatarURL?.absoluteString, "https://yt3.ggpht.com/abc=s176-c-k-c0x00ffffff-no-rj-mo")
+        XCTAssertEqual(results[0].channel.avatarURL(side: 512)?.absoluteString,
+                       "https://yt3.ggpht.com/abc=s512-c-k-c0x00ffffff-no-rj-mo")
+
+        XCTAssertNil(results[1].handle)
+        XCTAssertEqual(results[1].infoText, "36.5K")
+        // Protocol-relative avatar gets https:
+        XCTAssertEqual(results[1].channel.avatarURL?.absoluteString, "https://yt3.ggpht.com/def=s176-c-k-c0x00ffffff-no-rj-mo")
+    }
+
+    func testChannelSearchResultChannelMatchesPastedURLKey() throws {
+        let results = try YouTubeManager.parseChannelSearch(Data(channelSearchJSON.utf8))
+
+        // With a handle: keyed and addressed exactly like a pasted @handle URL
+        let pasted = YouTubeManager.normalizeChannelURL(URL(string: "https://www.youtube.com/@LofiGirl")!)
+        XCTAssertEqual(results[0].channel.id, pasted?.key)
+        XCTAssertEqual(results[0].channel.url.absoluteString, "https://www.youtube.com/@LofiGirl")
+
+        // Without a handle: the /channel/UC… form
+        XCTAssertEqual(results[1].channel.id, "UCi5YpRRZmwegT235crEZ2YQ")
+        XCTAssertEqual(results[1].channel.url.absoluteString,
+                       "https://www.youtube.com/channel/UCi5YpRRZmwegT235crEZ2YQ")
+    }
+
+    func testSubscriptionMatchingHandleKeyedSubscription() throws {
+        let result = try XCTUnwrap(YouTubeManager.parseChannelSearch(Data(channelSearchJSON.utf8)).first)
+        let byHandle = YouTubeChannel(id: "lofigirl", title: "Lofi Girl",
+                                      url: URL(string: "https://www.youtube.com/@lofigirl")!, dateAdded: Date())
+
+        // Handles are case-insensitive on YouTube; the subscription's own key comes back
+        XCTAssertEqual(YouTubeManager.subscription(matching: result, in: [byHandle])?.id, "lofigirl")
+        XCTAssertNil(YouTubeManager.subscription(matching: result, in: []))
+    }
+
+    func testSubscriptionMatchingChannelIDKeyedSubscription() throws {
+        let result = try XCTUnwrap(YouTubeManager.parseChannelSearch(Data(channelSearchJSON.utf8)).first)
+        // Added earlier by a /channel/UC… URL, so keyed by the UC ID, not the handle
+        let byChannelID = YouTubeChannel(id: "UCSJ4gkVC6NrvII8umztf0Ow", title: "Lofi Girl",
+                                         url: URL(string: "https://www.youtube.com/channel/UCSJ4gkVC6NrvII8umztf0Ow")!,
+                                         dateAdded: Date())
+        let other = YouTubeChannel(id: "SomeoneElse", title: "Other",
+                                   url: URL(string: "https://www.youtube.com/@SomeoneElse")!, dateAdded: Date())
+
+        XCTAssertEqual(YouTubeManager.subscription(matching: result, in: [byChannelID])?.id, "UCSJ4gkVC6NrvII8umztf0Ow")
+        XCTAssertNil(YouTubeManager.subscription(matching: result, in: [other]))
+    }
+
+    func testChannelSearchURLEncodesQueryAndChannelFilter() {
+        let url = YouTubeManager.channelSearchURL(query: "lofi girl & c++ #1")
+        XCTAssertEqual(url?.absoluteString,
+                       "https://www.youtube.com/results?search_query=lofi%20girl%20%26%20c%2B%2B%20%231&sp=EgIQAg%3D%3D")
+    }
+
+    func testChannelSavedBeforeAvatarsStillDecodes() throws {
+        let saved = #"[{"id":"LofiGirl","title":"Lofi Girl","url":"https://www.youtube.com/@LofiGirl","dateAdded":0}]"#
+        let channels = try JSONDecoder().decode([YouTubeChannel].self, from: Data(saved.utf8))
+        XCTAssertEqual(channels.count, 1)
+        XCTAssertNil(channels[0].avatarURL)
+    }
+
+    func testParseFlatPlaylistCapturesThumbnailAndChannelAvatar() throws {
+        let json = """
+        {
+            "channel": "Lofi Girl",
+            "thumbnails": [
+                {"id": "0", "url": "https://yt3.googleusercontent.com/banner=w1060", "width": 1060, "height": 175},
+                {"id": "7", "url": "https://yt3.googleusercontent.com/av=s900-c-k-c0x00ffffff-no-rj", "width": 900, "height": 900},
+                {"id": "avatar_uncropped", "url": "https://yt3.googleusercontent.com/av=s0"}
+            ],
+            "entries": [
+                {"id": "v1", "title": "With thumbs", "thumbnails": [
+                    {"url": "https://i.ytimg.com/vi/v1/hq720.jpg?a", "width": 360, "height": 202},
+                    {"url": "https://i.ytimg.com/vi/v1/hq720.jpg?b", "width": 720, "height": 404}
+                ]},
+                {"id": "v2", "title": "No thumbs"}
+            ]
+        }
+        """
+        let data = Data(json.utf8)
+
+        let videos = try YouTubeManager.parseFlatPlaylist(data, channelId: "c")
+        XCTAssertEqual(videos[0].thumbnailURL?.absoluteString, "https://i.ytimg.com/vi/v1/hq720.jpg?b")
+        XCTAssertEqual(videos[1].thumbnailURL?.absoluteString, "https://i.ytimg.com/vi/v2/mqdefault.jpg")
+
+        // The square 900px avatar, not the banner or the full-size original
+        let info = try YouTubeManager.parseChannelInfo(data)
+        XCTAssertEqual(info.title, "Lofi Girl")
+        XCTAssertEqual(info.avatarURL?.absoluteString, "https://yt3.googleusercontent.com/av=s900-c-k-c0x00ffffff-no-rj")
+    }
+
     // MARK: - Download Manifest Tests
 
     func testChangingDownloadRootReloadsThatFoldersManifest() throws {
