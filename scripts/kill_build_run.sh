@@ -44,7 +44,8 @@ while pgrep -x NullPlayer > /dev/null 2>&1; do
     sleep 0.5
 done
 
-source "$(dirname "$0")/lib/swiftpm.sh"
+# Relative to the repo root: the cd above has already consumed a relative $0.
+source scripts/lib/swiftpm.sh
 
 echo "🔨 Building NullPlayer (${CONFIG} mode)..."
 swift build -c "$CONFIG" ${SWIFTPM_ARGS[@]+"${SWIFTPM_ARGS[@]}"}
