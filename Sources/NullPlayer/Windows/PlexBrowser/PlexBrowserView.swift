@@ -1095,6 +1095,11 @@ class PlexBrowserView: NSView {
     private var isYouTubeChannelSearch: Bool {
         currentSource.isYouTube && browseMode == .search
     }
+    /// A YouTube channel search typed but not yet run: Enter submits it. Once its results
+    /// are showing, Enter acts on the selected row (subscribe / expand) instead.
+    private var hasUnsubmittedYouTubeSearch: Bool {
+        isYouTubeChannelSearch && youtubeSearch.isUnsubmitted(searchQuery)
+    }
 
     private var isLocalSource: Bool {
         if case .local = currentSource { return true }
@@ -1193,10 +1198,7 @@ class PlexBrowserView: NSView {
     /// Channel IDs whose uploads are currently being fetched — drives a per-row spinner on the channel entry.
     private var loadingChannelIds: Set<String> = []
     /// Search tab (YouTube source): channels found by the last submitted query.
-    private var youtubeSearchResults: [YouTubeChannelSearchResult] = []
-    /// The query that produced `youtubeSearchResults` (nil before any search).
-    private var youtubeSearchQuery: String?
-    private var youtubeSearchTask: Task<Void, Never>?
+    private let youtubeSearch = YouTubeChannelSearch()
 
     private let historyAgent = PlayHistoryAgent()
     private var historyHostingView: NSHostingView<StatsContentView>?
@@ -1995,17 +1997,17 @@ class PlexBrowserView: NSView {
             name: YouTubeManager.youtubeVideoLimitDidChangeNotification,
             object: nil
         )
-        // Redraw when a YouTube row thumbnail / avatar finishes loading, or a channel's
-        // avatar URL is back-filled
+        // Redraw when a YouTube row thumbnail / avatar finishes loading
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(youtubeRowThumbnailDidLoad),
             name: YouTubeRowThumbnails.didLoadNotification,
             object: nil
         )
+        // Rebuild when a channel is subscribed, removed, or its avatar is back-filled
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(youtubeRowThumbnailDidLoad),
+            selector: #selector(youtubeChannelsDidChange),
             name: YouTubeManager.youtubeChannelsDidChangeNotification,
             object: nil
         )
@@ -2436,7 +2438,7 @@ class PlexBrowserView: NSView {
         subsonicExpandTask?.cancel(); subsonicExpandTask = nil
         jellyfinExpandTask?.cancel(); jellyfinExpandTask = nil
         embyExpandTask?.cancel(); embyExpandTask = nil
-        youtubeSearchTask?.cancel(); youtubeSearchTask = nil
+        youtubeSearch.cancel()
         return loadGeneration
     }
     
@@ -2558,17 +2560,18 @@ class PlexBrowserView: NSView {
                      subsonicLoadTask, subsonicExpandTask,
                      plexLoadTask, sourceConnectTask,
                      jellyfinLoadTask, jellyfinAlbumWarmTask, jellyfinExpandTask,
-                     youtubeExpandTask, youtubeDownloadTask, youtubeSearchTask,
+                     youtubeExpandTask, youtubeDownloadTask,
                      embyLoadTask, embyExpandTask,
                      ratingSubmitTask, artworkLoadTask, artworkCyclingTask,
                      radioLoadTask, radioPlayTask] {
             task?.cancel()
         }
+        youtubeSearch.cancel()
         localFolderBuildTask = nil
         subsonicLoadTask = nil; subsonicExpandTask = nil
         plexLoadTask = nil; sourceConnectTask = nil
         jellyfinLoadTask = nil; jellyfinAlbumWarmTask = nil; jellyfinExpandTask = nil
-        youtubeExpandTask = nil; youtubeDownloadTask = nil; youtubeSearchTask = nil
+        youtubeExpandTask = nil; youtubeDownloadTask = nil
         embyLoadTask = nil; embyExpandTask = nil
         ratingSubmitTask = nil; artworkLoadTask = nil; artworkCyclingTask = nil
         radioLoadTask = nil; radioPlayTask = nil
@@ -4651,8 +4654,7 @@ class PlexBrowserView: NSView {
         case .search:
             if isYouTubeChannelSearch {
                 // Channel search is submit-only: until Enter, nothing has been searched.
-                let submitted = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines) == youtubeSearchQuery
-                message = searchQuery.isEmpty || !submitted ? "Type and press Enter to search" : "No results found"
+                message = searchQuery.isEmpty || hasUnsubmittedYouTubeSearch ? "Type and press Enter to search" : "No results found"
             } else {
                 message = searchQuery.isEmpty ? "Type to search" : "No results found"
             }
@@ -4847,11 +4849,8 @@ class PlexBrowserView: NSView {
                 // rows). Drawn here, inside the counter-flip, so the image is upright.
                 if case .youtubeChannel(let channel) = item.type {
                     let side = itemHeight - 2
-                    if let url = YouTubeRowThumbnails.url(forChannel: channel),
-                       let image = YouTubeRowThumbnails.shared.image(for: url) {
-                        YouTubeRowThumbnails.draw(image, in: context, at: textX + titleSpinnerInset,
-                                                  rowRect: itemRect, side: side, circular: true)
-                    }
+                    YouTubeRowThumbnails.shared.draw(channel: channel, in: context, at: textX + titleSpinnerInset,
+                                                     rowRect: itemRect, side: side)
                     titleSpinnerInset += side + 4
                 }
 
@@ -5001,11 +5000,9 @@ class PlexBrowserView: NSView {
             let width = widthForColumn(column, availableWidth: totalWidth, columns: columns, group: group)
             if column.id == "thumbnail" {
                 // Inside the counter-flip (y-up), centred on the row so the flip doesn't move it.
-                if case .youtubeVideo(let video) = item.type,
-                   let url = YouTubeRowThumbnails.url(forVideo: video),
-                   let image = YouTubeRowThumbnails.shared.image(for: url) {
-                    let side = max(0, min(width - 8, rect.height - 2))
-                    YouTubeRowThumbnails.draw(image, in: context, at: x + 4, rowRect: rect, side: side, circular: false)
+                if case .youtubeVideo(let video) = item.type {
+                    YouTubeRowThumbnails.shared.draw(video: video, in: context, at: x + 4, rowRect: rect,
+                                                     side: max(0, min(width - 8, rect.height - 2)))
                 }
                 x += width
                 continue
@@ -8121,7 +8118,7 @@ class PlexBrowserView: NSView {
                 }
                 image = image?.squareCenterCropped()
             case .youtubeChannel(let channel):
-                if let avatar = channel.avatarURL ?? YouTubeManager.shared.channels.first(where: { $0.id == channel.id })?.avatarURL {
+                if let avatar = channel.avatarURL(side: 512) {
                     image = await self.loadRemoteArtwork(urlString: avatar.absoluteString, cacheNamespace: "youtube")?.squareCenterCropped()
                 }
             case .localPlaylist, .localPlaylistTrack,
@@ -11466,21 +11463,19 @@ class PlexBrowserView: NSView {
             let expandItem = NSMenuItem(title: expandTitle, action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
             menu.addItem(NSMenuItem.separator())
-            if let result = youtubeSearchResult(for: channel) {
-                // Search results: subscribe only — Refresh/Remove belong to the Channels tab.
-                if YouTubeManager.shared.isSubscribed(result) {
-                    let subscribedItem = NSMenuItem(title: "Already Subscribed", action: nil, keyEquivalent: "")
-                    subscribedItem.isEnabled = false; menu.addItem(subscribedItem)
-                } else {
-                    let subscribeItem = NSMenuItem(title: "Subscribe", action: #selector(contextMenuSubscribeYouTubeChannel(_:)), keyEquivalent: "")
-                    subscribeItem.target = self; subscribeItem.representedObject = channel; menu.addItem(subscribeItem)
-                }
-                break
+            if !YouTubeManager.shared.isSubscribed(channel) {
+                let subscribeItem = NSMenuItem(title: "Subscribe", action: #selector(contextMenuSubscribeYouTubeChannel(_:)), keyEquivalent: "")
+                subscribeItem.target = self; subscribeItem.representedObject = channel; menu.addItem(subscribeItem)
+            } else if isYouTubeChannelSearch {
+                // Refresh/Remove belong to the Channels tab.
+                let subscribedItem = NSMenuItem(title: "Already Subscribed", action: nil, keyEquivalent: "")
+                subscribedItem.isEnabled = false; menu.addItem(subscribedItem)
+            } else {
+                let refreshItem = NSMenuItem(title: "Refresh", action: #selector(contextMenuRefreshYouTubeChannel(_:)), keyEquivalent: "")
+                refreshItem.target = self; refreshItem.representedObject = channel; menu.addItem(refreshItem)
+                let removeItem = NSMenuItem(title: "Remove Channel", action: #selector(contextMenuRemoveYouTubeChannel(_:)), keyEquivalent: "")
+                removeItem.target = self; removeItem.representedObject = channel; menu.addItem(removeItem)
             }
-            let refreshItem = NSMenuItem(title: "Refresh", action: #selector(contextMenuRefreshYouTubeChannel(_:)), keyEquivalent: "")
-            refreshItem.target = self; refreshItem.representedObject = channel; menu.addItem(refreshItem)
-            let removeItem = NSMenuItem(title: "Remove Channel", action: #selector(contextMenuRemoveYouTubeChannel(_:)), keyEquivalent: "")
-            removeItem.target = self; removeItem.representedObject = channel; menu.addItem(removeItem)
 
         case .youtubeVideo(let video):
             let isDownloaded = YouTubeManager.shared.isDownloaded(video.videoId)
@@ -12153,7 +12148,7 @@ class PlexBrowserView: NSView {
             startLoadingAnimation()
             needsDisplay = true
             youtubeDownloadTask?.cancel()
-            let channelTitle = youtubeSearchChannelTitle(forVideo: video)
+            let channelTitle = youtubeSearch.channelTitle(forVideo: video)
             youtubeDownloadTask = Task.detached { @MainActor [weak self] in
                 guard let self = self else { return }
                 defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }
@@ -14195,10 +14190,8 @@ class PlexBrowserView: NSView {
         
         switch event.keyCode {
         case 36: // Enter
-            if isYouTubeChannelSearch && !searchQuery.isEmpty
-                && searchQuery.trimmingCharacters(in: .whitespacesAndNewlines) != youtubeSearchQuery {
-                // Submit a new YouTube channel search; once submitted, Enter acts on the selection.
-                loadYouTubeSearchResults(force: true)
+            if hasUnsubmittedYouTubeSearch {
+                loadYouTubeSearchResults()
             } else if event.modifierFlags.contains(.shift) {
                 playNextSelected()
             } else if event.modifierFlags.contains(.option) {
@@ -14232,17 +14225,11 @@ class PlexBrowserView: NSView {
         default:
             guard let chars = event.characters, !chars.isEmpty else { break }
             if browseMode == .search {
-                // YouTube channel search is a network call: submit on Enter, not per keystroke.
-                let searchAsYouType = !isYouTubeChannelSearch
                 if event.keyCode == 51 { // Delete
-                    if !searchQuery.isEmpty {
-                        searchQuery.removeLast()
-                        if searchAsYouType { loadDataForCurrentMode() } else { needsDisplay = true }
-                    }
+                    if !searchQuery.isEmpty { searchQuery.removeLast(); searchQueryDidChange() }
                 } else if chars.rangeOfCharacter(from: .alphanumerics) != nil ||
                           chars.rangeOfCharacter(from: .whitespaces) != nil {
-                    searchQuery += chars
-                    if searchAsYouType { loadDataForCurrentMode() } else { needsDisplay = true }
+                    searchQuery += chars; searchQueryDidChange()
                 }
             } else {
                 if event.keyCode == 53 { // Escape — clear type-ahead
@@ -15327,125 +15314,83 @@ class PlexBrowserView: NSView {
                 hasChildren: true,
                 type: .youtubeChannel(channel)
             ))
-            guard expandedYouTubeChannels.contains(channel.id), let videos = youtubeChannelVideos[channel.id] else { continue }
-            for video in videos {
-                let isDownloaded = YouTubeManager.shared.isDownloaded(video.videoId)
-                let marker = isDownloaded ? "⬇ " : ""
-                displayItems.append(PlexDisplayItem(
-                    id: "youtube-video-\(video.videoId)",
-                    title: marker + video.title,
-                    info: video.formattedDuration,
-                    indentLevel: 1,
-                    hasChildren: false,
-                    type: .youtubeVideo(video)
-                ))
-            }
+            appendYouTubeVideoItems(for: channel)
         }
     }
 
-    /// Search tab (YouTube source): run the submitted query as a YouTube channel search.
-    /// Submit-only (Enter), so typing never fires network calls. Returning to the tab
-    /// reuses the results of an unchanged query; `force` (Enter, Refresh) re-runs it.
+    /// An expanded channel's uploads, as indented rows under it.
+    private func appendYouTubeVideoItems(for channel: YouTubeChannel) {
+        guard expandedYouTubeChannels.contains(channel.id), let videos = youtubeChannelVideos[channel.id] else { return }
+        for video in videos {
+            let marker = YouTubeManager.shared.isDownloaded(video.videoId) ? "⬇ " : ""
+            displayItems.append(PlexDisplayItem(
+                id: "youtube-video-\(video.videoId)",
+                title: marker + video.title,
+                info: video.formattedDuration,
+                indentLevel: 1,
+                hasChildren: false,
+                type: .youtubeVideo(video)
+            ))
+        }
+    }
+
+    /// Search as you type — except a YouTube channel search, a network call that waits for Enter.
+    private func searchQueryDidChange() {
+        if isYouTubeChannelSearch { needsDisplay = true } else { loadDataForCurrentMode() }
+    }
+
+    /// Search tab (YouTube source): run the typed query as a YouTube channel search, or show
+    /// the results of an unchanged one; `force` (Refresh) re-runs it.
     private func loadYouTubeSearchResults(force: Bool = false) {
-        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         errorMessage = nil
-        if query.isEmpty || (!force && query == youtubeSearchQuery) {
-            if query.isEmpty {
-                youtubeSearchTask?.cancel(); youtubeSearchTask = nil
-                youtubeSearchResults = []; youtubeSearchQuery = nil
+        let started = youtubeSearch.submit(searchQuery, force: force) { [weak self] error in
+            guard let self, self.isYouTubeChannelSearch else { return }
+            self.isLoading = false; self.stopLoadingAnimation()
+            if let error {
+                self.errorMessage = error.localizedDescription
+                self.needsDisplay = true
+            } else {
+                self.rebuildCurrentModeItems()
             }
+        }
+        guard started else {
             isLoading = false; stopLoadingAnimation()
             buildYouTubeSearchItems(); needsDisplay = true
             return
         }
-        youtubeSearchTask?.cancel()
         displayItems = []; selectedIndices.removeAll(); scrollOffset = 0
         isLoading = true; startLoadingAnimation(); needsDisplay = true
-        youtubeSearchTask = Task.detached { @MainActor [weak self] in
-            do {
-                let results = try await YouTubeManager.shared.searchChannels(query: query)
-                try Task.checkCancellation()
-                guard let self else { return }
-                self.youtubeSearchTask = nil
-                self.youtubeSearchResults = results; self.youtubeSearchQuery = query
-                guard self.isYouTubeChannelSearch else { return }
-                self.isLoading = false; self.stopLoadingAnimation()
-                self.rebuildCurrentModeItems()
-            } catch is CancellationError {
-            } catch where Task.isCancelled {
-            } catch {
-                guard let self else { return }
-                self.youtubeSearchTask = nil
-                self.youtubeSearchResults = []; self.youtubeSearchQuery = nil
-                NSLog("YouTube channel search failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-                guard self.isYouTubeChannelSearch else { return }
-                self.isLoading = false; self.stopLoadingAnimation()
-                self.errorMessage = error.localizedDescription
-                self.needsDisplay = true
-            }
-        }
     }
 
-    /// Search results as channel rows under one header. A result is a `.youtubeChannel`
-    /// row like a subscription, so expand/preview/download reuse the Channels-tab paths.
+    /// Search results as channel rows under one header. A result already subscribed is
+    /// shown as its subscription, so every channel row — here or on the Channels tab —
+    /// carries a subscription's own `id` when there is one, and expand/preview/download
+    /// reuse the Channels-tab paths.
     private func buildYouTubeSearchItems() {
         displayItems.removeAll()
-        guard !youtubeSearchResults.isEmpty else { return }
+        guard !youtubeSearch.results.isEmpty else { return }
         displayItems.append(PlexDisplayItem(
-            id: "youtube-search-header", title: "Channels (\(youtubeSearchResults.count))",
+            id: "youtube-search-header", title: "Channels (\(youtubeSearch.results.count))",
             info: nil, indentLevel: 0, hasChildren: false, type: .header))
-        for result in youtubeSearchResults {
-            let channel = result.asChannel
-            let subscribed = YouTubeManager.shared.isSubscribed(result)
+        for result in youtubeSearch.results {
+            let subscription = YouTubeManager.shared.subscription(matching: result)
+            var channel = subscription ?? result.channel
+            channel.avatarURL = channel.avatarURL ?? result.channel.avatarURL
             let info = result.infoText
             displayItems.append(PlexDisplayItem(
                 id: "youtube-search-\(result.channelId)",
-                title: (subscribed ? "✓ " : "") + result.title,
+                title: (subscription != nil ? "✓ " : "") + result.channel.title,
                 info: info.isEmpty ? nil : info,
                 indentLevel: 0,
                 hasChildren: true,
                 type: .youtubeChannel(channel)))
-            guard expandedYouTubeChannels.contains(channel.id), let videos = youtubeChannelVideos[channel.id] else { continue }
-            for video in videos {
-                let marker = YouTubeManager.shared.isDownloaded(video.videoId) ? "⬇ " : ""
-                displayItems.append(PlexDisplayItem(
-                    id: "youtube-video-\(video.videoId)",
-                    title: marker + video.title,
-                    info: video.formattedDuration,
-                    indentLevel: 1,
-                    hasChildren: false,
-                    type: .youtubeVideo(video)))
-            }
+            appendYouTubeVideoItems(for: channel)
         }
-    }
-
-    /// The search result a channel row came from, when on the YouTube Search tab.
-    private func youtubeSearchResult(for channel: YouTubeChannel) -> YouTubeChannelSearchResult? {
-        guard isYouTubeChannelSearch else { return nil }
-        return youtubeSearchResults.first { $0.asChannel.id == channel.id }
-    }
-
-    /// Folder title for a preview video's download when its channel isn't subscribed.
-    private func youtubeSearchChannelTitle(forVideo video: YouTubeVideo) -> String? {
-        youtubeSearchResults.first { $0.asChannel.id == video.channelId }?.title
-    }
-
-    private func subscribeToYouTubeSearchResult(_ result: YouTubeChannelSearchResult) {
-        do {
-            try YouTubeManager.shared.subscribe(to: result.asChannel)
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Could not subscribe"
-            alert.informativeText = error.localizedDescription
-            alert.runModal()
-        }
-        rebuildCurrentModeItems()
     }
 
     @objc private func contextMenuSubscribeYouTubeChannel(_ sender: NSMenuItem) {
-        guard let channel = sender.representedObject as? YouTubeChannel,
-              let result = youtubeSearchResult(for: channel) else { return }
-        subscribeToYouTubeSearchResult(result)
+        guard let channel = sender.representedObject as? YouTubeChannel else { return }
+        youtubeSearch.subscribe(to: channel)
     }
 
     private func buildRadioSearchItems() {
@@ -15999,10 +15944,15 @@ class PlexBrowserView: NSView {
     }
 
     @objc private func youtubeRowThumbnailDidLoad() {
-        // youtubeChannelsDidChangeNotification can be posted off the main thread.
+        guard currentSource.isYouTube else { return }
+        needsDisplay = true
+    }
+
+    @objc private func youtubeChannelsDidChange() {
+        // Posted off the main thread by `addChannel(url:)`.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.currentSource.isYouTube else { return }
-            self.needsDisplay = true
+            self.rebuildCurrentModeItems()
         }
     }
 
@@ -18819,10 +18769,10 @@ class PlexBrowserView: NSView {
 
         case .youtubeChannel(let channel):
             // A search result not yet subscribed: double-click / Enter subscribes it.
-            if let result = youtubeSearchResult(for: channel), !YouTubeManager.shared.isSubscribed(result) {
-                subscribeToYouTubeSearchResult(result)
-            } else {
+            if YouTubeManager.shared.isSubscribed(channel) {
                 toggleExpand(item)
+            } else {
+                youtubeSearch.subscribe(to: channel)
             }
         case .youtubeVideo(let video):
             if YouTubeManager.shared.isDownloaded(video.videoId) {
@@ -18835,7 +18785,7 @@ class PlexBrowserView: NSView {
                 startLoadingAnimation()
                 needsDisplay = true
                 youtubeDownloadTask?.cancel()
-                let channelTitle = youtubeSearchChannelTitle(forVideo: video)
+                let channelTitle = youtubeSearch.channelTitle(forVideo: video)
                 youtubeDownloadTask = Task.detached { @MainActor [weak self] in
                     guard let self = self else { return }
                     defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }

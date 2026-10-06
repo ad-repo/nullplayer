@@ -174,9 +174,7 @@ final class YouTubeManager {
         // implicitly in fetchChannelTitle below) so the user is told about a
         // missing dependency when adding a channel, rather than only when a later
         // download fails with a cryptic "Postprocessing: ffmpeg not found" error.
-        guard StreamRipper.resolveTool("ffmpeg") != nil else {
-            throw YouTubeManagerError.toolNotFound("ffmpeg is not installed. Install via Homebrew: brew install ffmpeg")
-        }
+        try Self.requireFFmpeg()
 
         let info = try await Self.fetchChannelInfo(from: listURL)
         try Task.checkCancellation()
@@ -194,26 +192,40 @@ final class YouTubeManager {
     /// Subscribe to a channel whose title is already known (e.g. a search result).
     /// Same dependency and duplicate checks as `addChannel(url:)`, without the title fetch.
     func subscribe(to channel: YouTubeChannel) throws {
-        guard StreamRipper.resolveTool("ffmpeg") != nil else {
-            throw YouTubeManagerError.toolNotFound("ffmpeg is not installed. Install via Homebrew: brew install ffmpeg")
-        }
-        if channels.contains(where: { $0.id.caseInsensitiveCompare(channel.id) == .orderedSame }) {
+        try Self.requireFFmpeg()
+        if channels.contains(where: { Self.channelKeysMatch($0.id, channel.id) }) {
             throw YouTubeManagerError.channelAlreadyAdded("Channel '\(channel.title)' is already in your library")
         }
         channels.append(channel)
     }
 
-    /// Whether a search result is already subscribed: by its normalized key (a
-    /// handle-keyed subscription), or by its `UC…` channel ID (a channel added by a
-    /// `/channel/UC…` URL). Handles are case-insensitive on YouTube.
-    func isSubscribed(_ result: YouTubeChannelSearchResult) -> Bool {
-        Self.isSubscribed(result, in: channels)
+    /// Whether `channel` is one of the subscriptions. Rows always carry a subscription's own
+    /// `id`; a search result is resolved to its subscription by `subscription(matching:)`.
+    func isSubscribed(_ channel: YouTubeChannel) -> Bool {
+        channels.contains { $0.id == channel.id }
     }
 
-    nonisolated static func isSubscribed(_ result: YouTubeChannelSearchResult, in channels: [YouTubeChannel]) -> Bool {
-        let key = result.asChannel.id
-        return channels.contains {
-            $0.id.caseInsensitiveCompare(key) == .orderedSame || $0.id == result.channelId
+    /// The subscription a search result is, if any: by its key (a handle-keyed
+    /// subscription), or by its `UC…` channel ID (a channel added by a `/channel/UC…` URL).
+    func subscription(matching result: YouTubeChannelSearchResult) -> YouTubeChannel? {
+        Self.subscription(matching: result, in: channels)
+    }
+
+    nonisolated static func subscription(matching result: YouTubeChannelSearchResult,
+                                         in channels: [YouTubeChannel]) -> YouTubeChannel? {
+        channels.first { channelKeysMatch($0.id, result.channel.id) || $0.id == result.channelId }
+    }
+
+    /// Whether two channel keys name the same channel. Handles are case-insensitive on
+    /// YouTube, so `@LofiGirl` and `@lofigirl` are one channel.
+    nonisolated private static func channelKeysMatch(_ a: String, _ b: String) -> Bool {
+        a.caseInsensitiveCompare(b) == .orderedSame
+    }
+
+    /// ffmpeg is required to merge video streams and transcode audio at download time.
+    nonisolated private static func requireFFmpeg() throws {
+        guard StreamRipper.resolveTool("ffmpeg") != nil else {
+            throw YouTubeManagerError.toolNotFound("ffmpeg is not installed. Install via Homebrew: brew install ffmpeg")
         }
     }
 
@@ -230,8 +242,8 @@ final class YouTubeManager {
     private var avatarBackfillAttempted: Set<String> = []
 
     /// Fetch avatars for subscriptions saved before avatars were stored, so the Channels list
-    /// shows them without each channel having to be expanded first. One `--playlist-end 1`
-    /// listing per channel, run sequentially.
+    /// shows them. One `--playlist-end 1` listing per channel, run sequentially; each avatar
+    /// is stored as it lands (a listing takes seconds, so they appear one by one).
     @MainActor
     func backfillMissingAvatars() {
         let missing = channels.filter { $0.avatarURL == nil && !avatarBackfillAttempted.contains($0.id) }
@@ -240,20 +252,11 @@ final class YouTubeManager {
         Task { @MainActor in
             for channel in missing {
                 guard let listURL = Self.channelVideosURL(channel: channel),
-                      let info = try? await Self.fetchChannelInfo(from: listURL),
-                      let avatar = info.avatarURL else { continue }
-                self.updateAvatar(channelId: channel.id, url: avatar)
+                      let avatar = try? await Self.fetchChannelInfo(from: listURL).avatarURL,
+                      let index = self.channels.firstIndex(where: { $0.id == channel.id }) else { continue }
+                self.channels[index].avatarURL = avatar
             }
         }
-    }
-
-    /// Store a channel's avatar once it is known (channels saved before avatars existed
-    /// get it from their first video listing). No-op if it already has one.
-    @MainActor
-    func updateAvatar(channelId: String, url: URL) {
-        guard let index = channels.firstIndex(where: { $0.id == channelId }),
-              channels[index].avatarURL == nil else { return }
-        channels[index].avatarURL = url
     }
 
     /// Remove a channel (does not delete downloaded videos)
@@ -272,12 +275,7 @@ final class YouTubeManager {
         // Request approximate upload dates so the channels list can show/sort a Date column;
         // they come back as a per-entry `timestamp` in the same single flat-playlist call.
         let jsonData = try await Self.fetchYtDlpJSON(from: videosURL, playlistEnd: limit ?? videoLimit, approximateDate: true)
-        let videos = try Self.parseFlatPlaylist(jsonData, channelId: channel.id)
-        // The same response carries the channel avatar; back-fill subscriptions saved without one.
-        if channel.avatarURL == nil, let avatar = Self.parseChannelAvatar(jsonData) {
-            await updateAvatar(channelId: channel.id, url: avatar)
-        }
-        return videos
+        return try Self.parseFlatPlaylist(jsonData, channelId: channel.id)
     }
 
     // MARK: - Downloads API
@@ -538,9 +536,13 @@ final class YouTubeManager {
 
     /// Fetch the channel title (and avatar, when present) via a one-entry listing
     nonisolated private static func fetchChannelInfo(from videosURL: URL) async throws -> (title: String, avatarURL: URL?) {
-        let jsonData = try await fetchYtDlpJSON(from: videosURL, playlistEnd: 1)
-        let decoder = JSONDecoder()
-        let response = try decoder.decode(YtDlpResponse.self, from: jsonData)
+        try parseChannelInfo(await fetchYtDlpJSON(from: videosURL, playlistEnd: 1))
+    }
+
+    /// The channel title and avatar from a channel listing response.
+    /// This is a pure function with no side effects, suitable for unit testing.
+    nonisolated static func parseChannelInfo(_ data: Data) throws -> (title: String, avatarURL: URL?) {
+        let response = try JSONDecoder().decode(YtDlpResponse.self, from: data)
         let avatar = avatarURL(from: response.thumbnails)
 
         // Try to get channel name from response
@@ -554,12 +556,6 @@ final class YouTubeManager {
         }
 
         throw YouTubeManagerError.couldNotFetchChannelTitle("Could not determine channel title")
-    }
-
-    /// The channel avatar from a channel listing response's top-level `thumbnails`
-    nonisolated static func parseChannelAvatar(_ data: Data) -> URL? {
-        guard let response = try? JSONDecoder().decode(YtDlpResponse.self, from: data) else { return nil }
-        return avatarURL(from: response.thumbnails)
     }
 
     /// Parse a yt-dlp channels-only search (`/results?…&sp=EgIQAg==`) into results.
@@ -578,40 +574,30 @@ final class YouTubeManager {
                 handle: handle,
                 title: entry.title ?? entry.channel ?? handle ?? channelId,
                 followerCount: entry.channel_follower_count,
-                description: entry.description,
                 avatarURL: avatarURL(from: entry.thumbnails)
             )
         }
     }
 
     /// Pick a channel avatar from a `thumbnails` list: the largest square one, else
-    /// `avatar_uncropped`. Protocol-relative URLs get `https:`, and a small Google
-    /// image-server size (`=s176-…`) is bumped to `=s512-…` so the art pane is sharp.
-    nonisolated static func avatarURL(from thumbnails: [YtDlpThumbnail]?) -> URL? {
-        guard let thumbnails, !thumbnails.isEmpty else { return nil }
+    /// `avatar_uncropped`. Callers size it with `YouTubeChannel.avatarURL(side:)`.
+    nonisolated private static func avatarURL(from thumbnails: [YtDlpThumbnail]?) -> URL? {
+        guard let thumbnails else { return nil }
         let square = thumbnails
             .filter { ($0.width ?? 0) > 0 && $0.width == $0.height }
             .max { ($0.width ?? 0) < ($1.width ?? 0) }
-        guard var string = (square ?? thumbnails.first { $0.id == "avatar_uncropped" })?.url else { return nil }
-        if string.hasPrefix("//") { string = "https:" + string }
-        if let range = string.range(of: #"=s(\d+)-"#, options: .regularExpression) {
-            let size = Int(string[range].dropFirst(2).dropLast()) ?? 0
-            if size < 512 { string.replaceSubrange(range, with: "=s512-") }
-        }
-        return URL(string: string)
+        return (square ?? thumbnails.first { $0.id == "avatar_uncropped" }).flatMap(\.absoluteURL)
     }
 
     /// Pick a video thumbnail: the widest `hq720` (16:9, no letterbox bars), falling back
-    /// to `mqdefault.jpg` (also 16:9). `hqdefault.jpg` is 4:3 letterboxed, so a square
-    /// crop of it would include black bars.
-    nonisolated static func videoThumbnailURL(videoId: String, thumbnails: [YtDlpThumbnail]?) -> URL? {
-        let widest = (thumbnails ?? [])
+    /// to the row's `mqdefault.jpg` (also 16:9). `hqdefault.jpg` is 4:3 letterboxed, so a
+    /// square crop of it would include black bars.
+    nonisolated private static func videoThumbnailURL(videoId: String, thumbnails: [YtDlpThumbnail]?) -> URL? {
+        (thumbnails ?? [])
             .filter { !$0.url.contains("hqdefault") }
-            .max { ($0.width ?? 0) < ($1.width ?? 0) }
-        if let widest, let url = URL(string: widest.url.hasPrefix("//") ? "https:" + widest.url : widest.url) {
-            return url
-        }
-        return URL(string: "https://i.ytimg.com/vi/\(videoId)/mqdefault.jpg")
+            .max { ($0.width ?? 0) < ($1.width ?? 0) }?
+            .absoluteURL
+            ?? URL(string: "https://i.ytimg.com/vi/\(videoId)/mqdefault.jpg")
     }
 
     /// Parse yt-dlp's flat-playlist JSON response into YouTubeVideo models
@@ -742,11 +728,16 @@ private struct YtDlpResponse: Decodable {
     }
 }
 
-struct YtDlpThumbnail: Decodable {
+private struct YtDlpThumbnail: Decodable {
     let url: String
     let id: String?
     let width: Int?
     let height: Int?
+
+    /// `url` as an absolute URL: search results list some protocol-relative (`//yt3…`).
+    var absoluteURL: URL? {
+        URL(string: url.hasPrefix("//") ? "https:" + url : url)
+    }
 }
 
 private struct YtDlpEntry: Decodable {
@@ -760,6 +751,5 @@ private struct YtDlpEntry: Decodable {
     let channel_id: String?
     let uploader_id: String?
     let channel_follower_count: Int?
-    let description: String?
     let thumbnails: [YtDlpThumbnail]?
 }

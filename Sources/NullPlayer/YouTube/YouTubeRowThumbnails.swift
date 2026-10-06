@@ -27,7 +27,7 @@ final class YouTubeRowThumbnails {
 
     private init() {}
 
-    func image(for url: URL) -> CGImage? {
+    private func image(for url: URL) -> CGImage? {
         if let entry = cache.object(forKey: url as NSURL) { return entry.image }
         guard !inFlight.contains(url), !failed.contains(url) else { return nil }
         inFlight.insert(url)
@@ -59,36 +59,27 @@ final class YouTubeRowThumbnails {
         return context.makeImage() ?? cgImage
     }
 
-    /// The row image URL for a list item, nil for non-YouTube rows.
-    static func url(forVideo video: YouTubeVideo) -> URL? {
-        // mqdefault is 320x180 16:9 with no letterbox bars — plenty for a row.
-        URL(string: "https://i.ytimg.com/vi/\(video.videoId)/mqdefault.jpg")
+    /// Draw a channel's avatar, clipped round, once it has loaded (nothing until then).
+    func draw(channel: YouTubeChannel, in context: CGContext, at x: CGFloat, rowRect: NSRect, side: CGFloat) {
+        guard let url = channel.avatarURL(side: 88) else { return }
+        draw(url, in: context, at: x, rowRect: rowRect, side: side) { CGPath(ellipseIn: $0, transform: nil) }
     }
 
-    static func url(forChannel channel: YouTubeChannel) -> URL? {
-        // A row built before the avatar was back-filled carries nil; the subscription has it.
-        let avatar = channel.avatarURL
-            ?? YouTubeManager.shared.channels.first(where: { $0.id == channel.id })?.avatarURL
-        guard var string = avatar?.absoluteString else { return nil }
-        // Google's image server sizes by `=sNNN-`; ask for a row-sized avatar.
-        if let range = string.range(of: #"=s\d+-"#, options: .regularExpression) {
-            string.replaceSubrange(range, with: "=s88-")
+    /// Draw a video's thumbnail with slightly rounded corners once it has loaded.
+    func draw(video: YouTubeVideo, in context: CGContext, at x: CGFloat, rowRect: NSRect, side: CGFloat) {
+        draw(video.rowThumbnailURL, in: context, at: x, rowRect: rowRect, side: side) {
+            CGPath(roundedRect: $0, cornerWidth: 2, cornerHeight: 2, transform: nil)
         }
-        return URL(string: string)
     }
 
-    /// Draw a row thumbnail centred vertically in `rect`'s height at `x`. The context's CTM must
-    /// be y-up at this point (the classic browser draws it inside its text counter-flip). A
-    /// channel avatar is clipped round, a video thumbnail gets slightly rounded corners.
-    static func draw(_ image: CGImage, in context: CGContext, at x: CGFloat, rowRect: NSRect,
-                     side: CGFloat, circular: Bool) {
+    /// Draw a row thumbnail centred vertically in `rowRect` at `x`. The context's CTM must be
+    /// y-up at this point (the classic browser draws it inside its text counter-flip).
+    private func draw(_ url: URL, in context: CGContext, at x: CGFloat, rowRect: NSRect, side: CGFloat,
+                      clip: (CGRect) -> CGPath) {
+        guard let image = image(for: url) else { return }
         let rect = CGRect(x: x, y: rowRect.midY - side / 2, width: side, height: side)
         context.saveGState()
-        if circular {
-            context.addEllipse(in: rect)
-        } else {
-            context.addPath(CGPath(roundedRect: rect, cornerWidth: 2, cornerHeight: 2, transform: nil))
-        }
+        context.addPath(clip(rect))
         context.clip()
         context.interpolationQuality = .high
         context.draw(image, in: rect)

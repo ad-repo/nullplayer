@@ -493,42 +493,44 @@ final class YouTubeTests: XCTestCase {
         XCTAssertEqual(results.count, 2)
         XCTAssertEqual(results[0].channelId, "UCSJ4gkVC6NrvII8umztf0Ow")
         XCTAssertEqual(results[0].handle, "@LofiGirl")
-        XCTAssertEqual(results[0].title, "Lofi Girl")
+        XCTAssertEqual(results[0].channel.title, "Lofi Girl")
         XCTAssertEqual(results[0].infoText, "@LofiGirl · 15.8M")
-        // Largest square avatar, bumped to a sharp size
-        XCTAssertEqual(results[0].avatarURL?.absoluteString, "https://yt3.ggpht.com/abc=s512-c-k-c0x00ffffff-no-rj-mo")
+        // Largest square avatar, stored as listed and sized at use
+        XCTAssertEqual(results[0].channel.avatarURL?.absoluteString, "https://yt3.ggpht.com/abc=s176-c-k-c0x00ffffff-no-rj-mo")
+        XCTAssertEqual(results[0].channel.avatarURL(side: 512)?.absoluteString,
+                       "https://yt3.ggpht.com/abc=s512-c-k-c0x00ffffff-no-rj-mo")
 
         XCTAssertNil(results[1].handle)
         XCTAssertEqual(results[1].infoText, "36.5K")
         // Protocol-relative avatar gets https:
-        XCTAssertEqual(results[1].avatarURL?.absoluteString, "https://yt3.ggpht.com/def=s512-c-k-c0x00ffffff-no-rj-mo")
+        XCTAssertEqual(results[1].channel.avatarURL?.absoluteString, "https://yt3.ggpht.com/def=s176-c-k-c0x00ffffff-no-rj-mo")
     }
 
-    func testChannelSearchResultAsChannelMatchesPastedURLKey() throws {
+    func testChannelSearchResultChannelMatchesPastedURLKey() throws {
         let results = try YouTubeManager.parseChannelSearch(Data(channelSearchJSON.utf8))
 
         // With a handle: keyed and addressed exactly like a pasted @handle URL
         let pasted = YouTubeManager.normalizeChannelURL(URL(string: "https://www.youtube.com/@LofiGirl")!)
-        XCTAssertEqual(results[0].asChannel.id, pasted?.key)
-        XCTAssertEqual(results[0].asChannel.url.absoluteString, "https://www.youtube.com/@LofiGirl")
+        XCTAssertEqual(results[0].channel.id, pasted?.key)
+        XCTAssertEqual(results[0].channel.url.absoluteString, "https://www.youtube.com/@LofiGirl")
 
         // Without a handle: the /channel/UC… form
-        XCTAssertEqual(results[1].asChannel.id, "UCi5YpRRZmwegT235crEZ2YQ")
-        XCTAssertEqual(results[1].asChannel.url.absoluteString,
+        XCTAssertEqual(results[1].channel.id, "UCi5YpRRZmwegT235crEZ2YQ")
+        XCTAssertEqual(results[1].channel.url.absoluteString,
                        "https://www.youtube.com/channel/UCi5YpRRZmwegT235crEZ2YQ")
     }
 
-    func testIsSubscribedMatchesHandleKeyedSubscription() throws {
+    func testSubscriptionMatchingHandleKeyedSubscription() throws {
         let result = try XCTUnwrap(YouTubeManager.parseChannelSearch(Data(channelSearchJSON.utf8)).first)
         let byHandle = YouTubeChannel(id: "lofigirl", title: "Lofi Girl",
                                       url: URL(string: "https://www.youtube.com/@lofigirl")!, dateAdded: Date())
 
-        // Handles are case-insensitive on YouTube
-        XCTAssertTrue(YouTubeManager.isSubscribed(result, in: [byHandle]))
-        XCTAssertFalse(YouTubeManager.isSubscribed(result, in: []))
+        // Handles are case-insensitive on YouTube; the subscription's own key comes back
+        XCTAssertEqual(YouTubeManager.subscription(matching: result, in: [byHandle])?.id, "lofigirl")
+        XCTAssertNil(YouTubeManager.subscription(matching: result, in: []))
     }
 
-    func testIsSubscribedMatchesChannelIDKeyedSubscription() throws {
+    func testSubscriptionMatchingChannelIDKeyedSubscription() throws {
         let result = try XCTUnwrap(YouTubeManager.parseChannelSearch(Data(channelSearchJSON.utf8)).first)
         // Added earlier by a /channel/UC… URL, so keyed by the UC ID, not the handle
         let byChannelID = YouTubeChannel(id: "UCSJ4gkVC6NrvII8umztf0Ow", title: "Lofi Girl",
@@ -537,8 +539,8 @@ final class YouTubeTests: XCTestCase {
         let other = YouTubeChannel(id: "SomeoneElse", title: "Other",
                                    url: URL(string: "https://www.youtube.com/@SomeoneElse")!, dateAdded: Date())
 
-        XCTAssertTrue(YouTubeManager.isSubscribed(result, in: [byChannelID]))
-        XCTAssertFalse(YouTubeManager.isSubscribed(result, in: [other]))
+        XCTAssertEqual(YouTubeManager.subscription(matching: result, in: [byChannelID])?.id, "UCSJ4gkVC6NrvII8umztf0Ow")
+        XCTAssertNil(YouTubeManager.subscription(matching: result, in: [other]))
     }
 
     func testChannelSearchURLEncodesQueryAndChannelFilter() {
@@ -557,6 +559,7 @@ final class YouTubeTests: XCTestCase {
     func testParseFlatPlaylistCapturesThumbnailAndChannelAvatar() throws {
         let json = """
         {
+            "channel": "Lofi Girl",
             "thumbnails": [
                 {"id": "0", "url": "https://yt3.googleusercontent.com/banner=w1060", "width": 1060, "height": 175},
                 {"id": "7", "url": "https://yt3.googleusercontent.com/av=s900-c-k-c0x00ffffff-no-rj", "width": 900, "height": 900},
@@ -578,8 +581,9 @@ final class YouTubeTests: XCTestCase {
         XCTAssertEqual(videos[1].thumbnailURL?.absoluteString, "https://i.ytimg.com/vi/v2/mqdefault.jpg")
 
         // The square 900px avatar, not the banner or the full-size original
-        XCTAssertEqual(YouTubeManager.parseChannelAvatar(data)?.absoluteString,
-                       "https://yt3.googleusercontent.com/av=s900-c-k-c0x00ffffff-no-rj")
+        let info = try YouTubeManager.parseChannelInfo(data)
+        XCTAssertEqual(info.title, "Lofi Girl")
+        XCTAssertEqual(info.avatarURL?.absoluteString, "https://yt3.googleusercontent.com/av=s900-c-k-c0x00ffffff-no-rj")
     }
 
     // MARK: - Download Manifest Tests

@@ -432,6 +432,11 @@ class ModernLibraryBrowserView: NSView {
     private var isYouTubeChannelSearch: Bool {
         currentSource.isYouTube && browseMode == .search
     }
+    /// A YouTube channel search typed but not yet run: Enter submits it. Once its results
+    /// are showing, Enter acts on the selected row (subscribe / expand) instead.
+    private var hasUnsubmittedYouTubeSearch: Bool {
+        isYouTubeChannelSearch && youtubeSearch.isUnsubmitted(searchQuery)
+    }
 
     private var isLocalSource: Bool {
         if case .local = currentSource { return true }
@@ -492,10 +497,7 @@ class ModernLibraryBrowserView: NSView {
     /// Channel IDs whose uploads are currently being fetched — drives a per-row spinner on the channel entry.
     private var loadingChannelIds: Set<String> = []
     /// Search tab (YouTube source): channels found by the last submitted query.
-    private var youtubeSearchResults: [YouTubeChannelSearchResult] = []
-    /// The query that produced `youtubeSearchResults` (nil before any search).
-    private var youtubeSearchQuery: String?
-    private var youtubeSearchTask: Task<Void, Never>?
+    private let youtubeSearch = YouTubeChannelSearch()
 
     // Cached data - Video (Plex)
     private var cachedMovies: [PlexMovie] = []
@@ -959,17 +961,18 @@ class ModernLibraryBrowserView: NSView {
                      subsonicLoadTask, subsonicExpandTask,
                      plexLoadTask, sourceConnectTask,
                      jellyfinLoadTask, jellyfinAlbumWarmTask, jellyfinExpandTask,
-                     youtubeExpandTask, youtubeDownloadTask, youtubeSearchTask,
+                     youtubeExpandTask, youtubeDownloadTask,
                      embyLoadTask, embyExpandTask,
                      ratingSubmitTask, currentTrackArtworkLoadTask, artworkLoadTask, artworkCyclingTask,
                      radioLoadTask, radioPlayTask] {
             task?.cancel()
         }
+        youtubeSearch.cancel()
         localFolderBuildTask = nil
         subsonicLoadTask = nil; subsonicExpandTask = nil
         plexLoadTask = nil; sourceConnectTask = nil
         jellyfinLoadTask = nil; jellyfinAlbumWarmTask = nil; jellyfinExpandTask = nil
-        youtubeExpandTask = nil; youtubeDownloadTask = nil; youtubeSearchTask = nil
+        youtubeExpandTask = nil; youtubeDownloadTask = nil
         embyLoadTask = nil; embyExpandTask = nil
         ratingSubmitTask = nil
         currentTrackArtworkLoadTask = nil; artworkLoadTask = nil; artworkCyclingTask = nil
@@ -2558,11 +2561,8 @@ class ModernLibraryBrowserView: NSView {
                 // YouTube channel avatar, round, ahead of the title (channel rows aren't column rows).
                 if case .youtubeChannel(let channel) = item.type {
                     let side = itemHeight - 2
-                    if let url = YouTubeRowThumbnails.url(forChannel: channel),
-                       let image = YouTubeRowThumbnails.shared.image(for: url) {
-                        YouTubeRowThumbnails.draw(image, in: context, at: textX + titleSpinnerInset,
-                                                  rowRect: itemRect, side: side, circular: true)
-                    }
+                    YouTubeRowThumbnails.shared.draw(channel: channel, in: context, at: textX + titleSpinnerInset,
+                                                     rowRect: itemRect, side: side)
                     titleSpinnerInset += side + 4
                 }
 
@@ -2691,11 +2691,9 @@ class ModernLibraryBrowserView: NSView {
         for column in columns {
             let width = widthForColumn(column, availableWidth: totalWidth, columns: columns, group: group)
             if column.id == "thumbnail" {
-                if case .youtubeVideo(let video) = item.type,
-                   let url = YouTubeRowThumbnails.url(forVideo: video),
-                   let image = YouTubeRowThumbnails.shared.image(for: url) {
-                    let side = max(0, min(width - 8, rect.height - 2))
-                    YouTubeRowThumbnails.draw(image, in: context, at: x + 4, rowRect: rect, side: side, circular: false)
+                if case .youtubeVideo(let video) = item.type {
+                    YouTubeRowThumbnails.shared.draw(video: video, in: context, at: x + 4, rowRect: rect,
+                                                     side: max(0, min(width - 8, rect.height - 2)))
                 }
                 x += width
                 continue
@@ -2850,10 +2848,7 @@ class ModernLibraryBrowserView: NSView {
         case .folders: message = "No folders found"
         case .plists: message = "No playlists found"
         case .search:
-            // YouTube channel search is submit-only: until ↵, nothing has been searched.
-            let unsubmitted = isYouTubeChannelSearch
-                && searchQuery.trimmingCharacters(in: .whitespacesAndNewlines) != youtubeSearchQuery
-            message = searchQuery.isEmpty || unsubmitted ? "Type and press ↵ to search" : "No results found"
+            message = searchQuery.isEmpty || hasUnsubmittedYouTubeSearch ? "Type and press ↵ to search" : "No results found"
         case .radio: message = "No radio stations found"
         case .history: message = "No play history recorded yet"
         }
@@ -4503,12 +4498,7 @@ class ModernLibraryBrowserView: NSView {
         
         switch event.keyCode {
         case 36: // Enter
-            if isYouTubeChannelSearch && !searchQuery.isEmpty
-                && searchQuery.trimmingCharacters(in: .whitespacesAndNewlines) != youtubeSearchQuery {
-                // Submit a new YouTube channel search; once submitted, Enter acts on the
-                // selected row (subscribe / expand) and Refresh re-runs the query.
-                loadYouTubeSearchResults(force: true)
-            } else if browseMode == .search && !searchQuery.isEmpty && !isYouTubeChannelSearch {
+            if browseMode == .search && !searchQuery.isEmpty && (!isYouTubeChannelSearch || hasUnsubmittedYouTubeSearch) {
                 loadDataForCurrentMode()
             } else if event.modifierFlags.contains(.shift) {
                 playNextSelected()
@@ -5852,21 +5842,19 @@ class ModernLibraryBrowserView: NSView {
             let expandItem = NSMenuItem(title: expandTitle, action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
             menu.addItem(NSMenuItem.separator())
-            if let result = youtubeSearchResult(for: channel) {
-                // Search results: subscribe only — Refresh/Remove belong to the Channels tab.
-                if YouTubeManager.shared.isSubscribed(result) {
-                    let subscribedItem = NSMenuItem(title: "Already Subscribed", action: nil, keyEquivalent: "")
-                    subscribedItem.isEnabled = false; menu.addItem(subscribedItem)
-                } else {
-                    let subscribeItem = NSMenuItem(title: "Subscribe", action: #selector(contextMenuSubscribeYouTubeChannel(_:)), keyEquivalent: "")
-                    subscribeItem.target = self; subscribeItem.representedObject = channel; menu.addItem(subscribeItem)
-                }
-                break
+            if !YouTubeManager.shared.isSubscribed(channel) {
+                let subscribeItem = NSMenuItem(title: "Subscribe", action: #selector(contextMenuSubscribeYouTubeChannel(_:)), keyEquivalent: "")
+                subscribeItem.target = self; subscribeItem.representedObject = channel; menu.addItem(subscribeItem)
+            } else if isYouTubeChannelSearch {
+                // Refresh/Remove belong to the Channels tab.
+                let subscribedItem = NSMenuItem(title: "Already Subscribed", action: nil, keyEquivalent: "")
+                subscribedItem.isEnabled = false; menu.addItem(subscribedItem)
+            } else {
+                let refreshItem = NSMenuItem(title: "Refresh", action: #selector(contextMenuRefreshYouTubeChannel(_:)), keyEquivalent: "")
+                refreshItem.target = self; refreshItem.representedObject = channel; menu.addItem(refreshItem)
+                let removeItem = NSMenuItem(title: "Remove Channel", action: #selector(contextMenuRemoveYouTubeChannel(_:)), keyEquivalent: "")
+                removeItem.target = self; removeItem.representedObject = channel; menu.addItem(removeItem)
             }
-            let refreshItem = NSMenuItem(title: "Refresh", action: #selector(contextMenuRefreshYouTubeChannel(_:)), keyEquivalent: "")
-            refreshItem.target = self; refreshItem.representedObject = channel; menu.addItem(refreshItem)
-            let removeItem = NSMenuItem(title: "Remove Channel", action: #selector(contextMenuRemoveYouTubeChannel(_:)), keyEquivalent: "")
-            removeItem.target = self; removeItem.representedObject = channel; menu.addItem(removeItem)
         case .youtubeVideo(let video):
             let isDownloaded = YouTubeManager.shared.isDownloaded(video.videoId)
             let actionTitle = isDownloaded ? "Play" : "Download & Play"
@@ -6747,7 +6735,7 @@ class ModernLibraryBrowserView: NSView {
             startLoadingAnimation()
             needsDisplay = true
             youtubeDownloadTask?.cancel()
-            let channelTitle = youtubeSearchChannelTitle(forVideo: video)
+            let channelTitle = youtubeSearch.channelTitle(forVideo: video)
             youtubeDownloadTask = Task.detached { @MainActor [weak self] in
                 guard let self = self else { return }
                 defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }
@@ -8054,7 +8042,7 @@ class ModernLibraryBrowserView: NSView {
         subsonicExpandTask?.cancel(); subsonicExpandTask = nil
         jellyfinExpandTask?.cancel(); jellyfinExpandTask = nil
         embyExpandTask?.cancel(); embyExpandTask = nil
-        youtubeSearchTask?.cancel(); youtubeSearchTask = nil
+        youtubeSearch.cancel()
         return loadGeneration
     }
     
@@ -9182,7 +9170,7 @@ class ModernLibraryBrowserView: NSView {
                 }
                 image = image?.squareCenterCropped()
             case .youtubeChannel(let channel):
-                if let avatar = channel.avatarURL ?? YouTubeManager.shared.channels.first(where: { $0.id == channel.id })?.avatarURL {
+                if let avatar = channel.avatarURL(side: 512) {
                     image = await self.loadRemoteArtwork(urlString: avatar.absoluteString, cacheNamespace: "youtube")?.squareCenterCropped()
                 }
             default:
@@ -10311,127 +10299,80 @@ class ModernLibraryBrowserView: NSView {
                     type: .youtubeChannel(channel)
                 )
             )
-            guard expandedYouTubeChannels.contains(channel.id), let videos = youtubeChannelVideos[channel.id] else { continue }
-            for video in videos {
-                let isDownloaded = YouTubeManager.shared.isDownloaded(video.videoId)
-                let marker = isDownloaded ? "⬇ " : ""
-                displayItems.append(
-                    ModernDisplayItem(
-                        id: "youtube-video-\(video.videoId)",
-                        title: marker + video.title,
-                        info: video.formattedDuration,
-                        indentLevel: 1,
-                        hasChildren: false,
-                        type: .youtubeVideo(video)
-                    )
-                )
-            }
+            appendYouTubeVideoItems(for: channel)
         }
     }
 
-    /// Search tab (YouTube source): run the submitted query as a YouTube channel search.
-    /// Submit-only (Enter), so typing never fires network calls. Returning to the tab
-    /// reuses the results of an unchanged query; `force` (Enter, Refresh) re-runs it.
-    private func loadYouTubeSearchResults(force: Bool = false) {
-        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        errorMessage = nil
-        if query.isEmpty || (!force && query == youtubeSearchQuery) {
-            if query.isEmpty {
-                youtubeSearchTask?.cancel(); youtubeSearchTask = nil
-                youtubeSearchResults = []; youtubeSearchQuery = nil
-            }
-            isLoading = false; stopLoadingAnimation()
-            buildYouTubeSearchItems(); needsDisplay = true
-            return
-        }
-        youtubeSearchTask?.cancel()
-        displayItems = []; selectedIndices.removeAll(); scrollOffset = 0
-        isLoading = true; startLoadingAnimation(); needsDisplay = true
-        youtubeSearchTask = Task.detached { @MainActor [weak self] in
-            do {
-                let results = try await YouTubeManager.shared.searchChannels(query: query)
-                try Task.checkCancellation()
-                guard let self else { return }
-                self.youtubeSearchTask = nil
-                self.youtubeSearchResults = results; self.youtubeSearchQuery = query
-                guard self.isYouTubeChannelSearch else { return }
-                self.isLoading = false; self.stopLoadingAnimation()
-                self.rebuildCurrentModeItems()
-            } catch is CancellationError {
-            } catch where Task.isCancelled {
-            } catch {
-                guard let self else { return }
-                self.youtubeSearchTask = nil
-                self.youtubeSearchResults = []; self.youtubeSearchQuery = nil
-                NSLog("YouTube channel search failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-                guard self.isYouTubeChannelSearch else { return }
-                self.isLoading = false; self.stopLoadingAnimation()
-                self.errorMessage = error.localizedDescription
-                self.needsDisplay = true
-            }
-        }
-    }
-
-    /// Search results as channel rows under one header. A result is a `.youtubeChannel`
-    /// row like a subscription, so expand/preview/download reuse the Channels-tab paths.
-    private func buildYouTubeSearchItems() {
-        displayItems.removeAll()
-        guard !youtubeSearchResults.isEmpty else { return }
-        displayItems.append(ModernDisplayItem(
-            id: "youtube-search-header", title: "Channels (\(youtubeSearchResults.count))",
-            info: nil, indentLevel: 0, hasChildren: false, type: .header))
-        for result in youtubeSearchResults {
-            let channel = result.asChannel
-            let subscribed = YouTubeManager.shared.isSubscribed(result)
-            let info = result.infoText
-            displayItems.append(ModernDisplayItem(
-                id: "youtube-search-\(result.channelId)",
-                title: (subscribed ? "✓ " : "") + result.title,
-                info: info.isEmpty ? nil : info,
-                indentLevel: 0,
-                hasChildren: true,
-                type: .youtubeChannel(channel)))
-            guard expandedYouTubeChannels.contains(channel.id), let videos = youtubeChannelVideos[channel.id] else { continue }
-            for video in videos {
-                let marker = YouTubeManager.shared.isDownloaded(video.videoId) ? "⬇ " : ""
-                displayItems.append(ModernDisplayItem(
+    /// An expanded channel's uploads, as indented rows under it.
+    private func appendYouTubeVideoItems(for channel: YouTubeChannel) {
+        guard expandedYouTubeChannels.contains(channel.id), let videos = youtubeChannelVideos[channel.id] else { return }
+        for video in videos {
+            let marker = YouTubeManager.shared.isDownloaded(video.videoId) ? "⬇ " : ""
+            displayItems.append(
+                ModernDisplayItem(
                     id: "youtube-video-\(video.videoId)",
                     title: marker + video.title,
                     info: video.formattedDuration,
                     indentLevel: 1,
                     hasChildren: false,
-                    type: .youtubeVideo(video)))
+                    type: .youtubeVideo(video)
+                )
+            )
+        }
+    }
+
+    /// Search tab (YouTube source): run the typed query as a YouTube channel search, or show
+    /// the results of an unchanged one; `force` (Refresh) re-runs it.
+    private func loadYouTubeSearchResults(force: Bool = false) {
+        errorMessage = nil
+        let started = youtubeSearch.submit(searchQuery, force: force) { [weak self] error in
+            guard let self, self.isYouTubeChannelSearch else { return }
+            self.isLoading = false; self.stopLoadingAnimation()
+            if let error {
+                self.errorMessage = error.localizedDescription
+                self.needsDisplay = true
+            } else {
+                self.rebuildCurrentModeItems()
             }
         }
-    }
-
-    /// The search result a channel row came from, when on the YouTube Search tab.
-    private func youtubeSearchResult(for channel: YouTubeChannel) -> YouTubeChannelSearchResult? {
-        guard isYouTubeChannelSearch else { return nil }
-        return youtubeSearchResults.first { $0.asChannel.id == channel.id }
-    }
-
-    /// Folder title for a preview video's download when its channel isn't subscribed.
-    private func youtubeSearchChannelTitle(forVideo video: YouTubeVideo) -> String? {
-        youtubeSearchResults.first { $0.asChannel.id == video.channelId }?.title
-    }
-
-    private func subscribeToYouTubeSearchResult(_ result: YouTubeChannelSearchResult) {
-        do {
-            try YouTubeManager.shared.subscribe(to: result.asChannel)
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Could not subscribe"
-            alert.informativeText = error.localizedDescription
-            alert.runModal()
+        guard started else {
+            isLoading = false; stopLoadingAnimation()
+            buildYouTubeSearchItems(); needsDisplay = true
+            return
         }
-        rebuildCurrentModeItems()
+        displayItems = []; selectedIndices.removeAll(); scrollOffset = 0
+        isLoading = true; startLoadingAnimation(); needsDisplay = true
+    }
+
+    /// Search results as channel rows under one header. A result already subscribed is
+    /// shown as its subscription, so every channel row — here or on the Channels tab —
+    /// carries a subscription's own `id` when there is one, and expand/preview/download
+    /// reuse the Channels-tab paths.
+    private func buildYouTubeSearchItems() {
+        displayItems.removeAll()
+        guard !youtubeSearch.results.isEmpty else { return }
+        displayItems.append(ModernDisplayItem(
+            id: "youtube-search-header", title: "Channels (\(youtubeSearch.results.count))",
+            info: nil, indentLevel: 0, hasChildren: false, type: .header))
+        for result in youtubeSearch.results {
+            let subscription = YouTubeManager.shared.subscription(matching: result)
+            var channel = subscription ?? result.channel
+            channel.avatarURL = channel.avatarURL ?? result.channel.avatarURL
+            let info = result.infoText
+            displayItems.append(ModernDisplayItem(
+                id: "youtube-search-\(result.channelId)",
+                title: (subscription != nil ? "✓ " : "") + result.channel.title,
+                info: info.isEmpty ? nil : info,
+                indentLevel: 0,
+                hasChildren: true,
+                type: .youtubeChannel(channel)))
+            appendYouTubeVideoItems(for: channel)
+        }
     }
 
     @objc private func contextMenuSubscribeYouTubeChannel(_ sender: NSMenuItem) {
-        guard let channel = sender.representedObject as? YouTubeChannel,
-              let result = youtubeSearchResult(for: channel) else { return }
-        subscribeToYouTubeSearchResult(result)
+        guard let channel = sender.representedObject as? YouTubeChannel else { return }
+        youtubeSearch.subscribe(to: channel)
     }
 
     private func buildRadioSearchItems() {
@@ -12721,10 +12662,10 @@ class ModernLibraryBrowserView: NSView {
             }
         case .youtubeChannel(let channel):
             // A search result not yet subscribed: double-click / Enter subscribes it.
-            if let result = youtubeSearchResult(for: channel), !YouTubeManager.shared.isSubscribed(result) {
-                subscribeToYouTubeSearchResult(result)
-            } else {
+            if YouTubeManager.shared.isSubscribed(channel) {
                 toggleExpand(item)
+            } else {
+                youtubeSearch.subscribe(to: channel)
             }
         case .youtubeVideo(let video):
             if YouTubeManager.shared.isDownloaded(video.videoId) {
@@ -12737,7 +12678,7 @@ class ModernLibraryBrowserView: NSView {
                 startLoadingAnimation()
                 needsDisplay = true
                 youtubeDownloadTask?.cancel()
-                let channelTitle = youtubeSearchChannelTitle(forVideo: video)
+                let channelTitle = youtubeSearch.channelTitle(forVideo: video)
                 youtubeDownloadTask = Task.detached { @MainActor [weak self] in
                     guard let self = self else { return }
                     defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }
