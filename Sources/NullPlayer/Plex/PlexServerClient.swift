@@ -42,13 +42,12 @@ enum RadioConfig {
     ]
 }
 
-/// Client for communicating with a Plex Media Server
 struct PlexShowPage {
     let shows: [PlexShow]
     let rawCount: Int
-    let totalSize: Int?
 }
 
+/// Client for communicating with a Plex Media Server
 class PlexServerClient {
     
     // MARK: - Properties
@@ -283,21 +282,10 @@ class PlexServerClient {
     
     /// Fetch all artists in a library (paginated, fetches all)
     func fetchAllArtists(libraryID: String) async throws -> [PlexArtist] {
-        var allArtists: [PlexArtist] = []
-        var offset = 0
-        let pageSize = 100
-        
-        while true {
-            let artists = try await fetchArtists(libraryID: libraryID, offset: offset, limit: pageSize)
-            allArtists.append(contentsOf: artists)
-            
-            if artists.count < pageSize {
-                break
-            }
-            offset += pageSize
+        try await Self.fetchAllPages(pageSize: 100) { offset, limit in
+            let artists = try await self.fetchArtists(libraryID: libraryID, offset: offset, limit: limit)
+            return (artists, artists.count)
         }
-        
-        return allArtists
     }
 
     /// Page through a section listing until a short page, so a library of any size loads in
@@ -453,12 +441,6 @@ class PlexServerClient {
     
     // MARK: - TV Show Operations
     
-    /// Fetch all shows in a TV show library
-    /// Filters out bonus content that Plex misclassifies as TV shows
-    func fetchShows(libraryID: String, offset: Int = 0, limit: Int = 100) async throws -> [PlexShow] {
-        try await fetchShowsPage(libraryID: libraryID, offset: offset, limit: limit).shows
-    }
-
     /// Fetch every show in a TV library, paging on the raw page size (bonus-content
     /// filtering can shrink a full page)
     func fetchAllShows(libraryID: String) async throws -> [PlexShow] {
@@ -469,8 +451,7 @@ class PlexServerClient {
     }
 
     /// Fetch one raw Plex show page plus filtered show results.
-    /// `rawCount`/`totalSize` reflect Plex's unfiltered page metadata and must be
-    /// used for pagination because `shows.count` can be smaller after bonus-content
+    /// `rawCount` is Plex's unfiltered page size and must be used for pagination because `shows.count` can be smaller after bonus-content
     /// filtering.
     func fetchShowsPage(libraryID: String, offset: Int = 0, limit: Int = 100) async throws -> PlexShowPage {
         let queryItems = [
@@ -508,8 +489,7 @@ class PlexServerClient {
 
         return PlexShowPage(
             shows: shows,
-            rawCount: response.mediaContainer.size ?? response.mediaContainer.metadata?.count ?? 0,
-            totalSize: response.mediaContainer.totalSize
+            rawCount: response.mediaContainer.size ?? response.mediaContainer.metadata?.count ?? 0
         )
     }
     

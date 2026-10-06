@@ -576,17 +576,6 @@ class PlexManager {
         return try await client.fetchAllArtists(libraryID: library.id)
     }
     
-    /// Fetch albums from the current library (returns empty if not a music library)
-    func fetchAlbums(offset: Int = 0, limit: Int = 100) async throws -> [PlexAlbum] {
-        guard let client = serverClient, let library = currentLibrary else {
-            return []
-        }
-        guard library.isMusicLibrary else {
-            return []  // Not a music library, return empty
-        }
-        return try await client.fetchAlbums(libraryID: library.id, offset: offset, limit: limit)
-    }
-
     /// Fetch every album in the current library (returns empty if not a music library)
     func fetchAllAlbums() async throws -> [PlexAlbum] {
         guard let client = serverClient, let library = currentLibrary, library.isMusicLibrary else {
@@ -681,35 +670,16 @@ class PlexManager {
         currentLibrary?.isShowLibrary == true ? currentLibrary : availableLibraries.first(where: { $0.isShowLibrary })
     }
 
-    /// Fetch movies from `movieLibrary`
-    func fetchMovies(offset: Int = 0, limit: Int = 100) async throws -> [PlexMovie] {
-        guard let client = serverClient, let library = movieLibrary else { return [] }
-        return try await client.fetchMovies(libraryID: library.id, offset: offset, limit: limit)
-    }
-
     /// Fetch every movie in `movieLibrary`
     func fetchAllMovies() async throws -> [PlexMovie] {
         guard let client = serverClient, let library = movieLibrary else { return [] }
         return try await client.fetchAllMovies(libraryID: library.id)
     }
 
-    /// Fetch TV shows from `showLibrary`
-    func fetchShows(offset: Int = 0, limit: Int = 100) async throws -> [PlexShow] {
-        try await fetchShowsPage(offset: offset, limit: limit).shows
-    }
-
     /// Fetch every show in `showLibrary`
     func fetchAllShows() async throws -> [PlexShow] {
         guard let client = serverClient, let library = showLibrary else { return [] }
         return try await client.fetchAllShows(libraryID: library.id)
-    }
-
-    /// Fetch one Plex show page with raw server page metadata for pagination.
-    func fetchShowsPage(offset: Int = 0, limit: Int = 100) async throws -> PlexShowPage {
-        guard let client = serverClient, let library = showLibrary else {
-            return PlexShowPage(shows: [], rawCount: 0, totalSize: 0)
-        }
-        return try await client.fetchShowsPage(libraryID: library.id, offset: offset, limit: limit)
     }
     
     /// Fetch seasons for a TV show

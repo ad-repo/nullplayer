@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+- **Find YouTube channels by name** — the YouTube source's **Search** tab now searches YouTube for
+  channels instead of listing internet radio stations. Type a name and press Enter: each result
+  shows its @handle and subscriber count, expands to preview its uploads, and subscribes on
+  double-click (or **Subscribe** in its right-click menu). Channels you already follow are marked
+  ✓. Pasting a URL into **+ → Add Channel…** still works.
+- **YouTube thumbnails and channel avatars** — YouTube video lists have a new **Art** column with
+  each video's thumbnail, channel rows show the channel's avatar, and selecting a video or channel
+  shows its art behind the list. New audio and video downloads embed the thumbnail cropped square,
+  so it reads as album art in the player; video downloads had no cover art before.
+- **Build scripts work with Swift 6.4** — Swift 6.4 switched SwiftPM to a new build system that
+  puts the app somewhere else, so `kill_build_run.sh`, `build_dmg.sh` and `build_mas.sh` launched
+  or packaged an old build without saying so. The scripts now use SwiftPM's native build system
+  when the toolchain offers it, and ask SwiftPM where the built app is instead of assuming.
+- **Library browser sorting simplified underneath** — every Library Browser (classic, modern and
+  the one inside Winamp Modern skins) now reads each tab's sort from one shared, saved copy instead
+  of keeping its own. Sorting behaves as before.
+- **Plex library loading uses one pager** — Plex artists in the Library Browser, and movies and TV
+  on the command line, now page through Plex the same way albums, movies and TV already did in the
+  Library Browser. No change to what loads.
+
 ## 0.31.4
 
 - **Each library tab keeps its own sort** — choosing a sort in the Library Browser, from the Sort
@@ -20,15 +42,6 @@
   though **Test** in the server manager succeeded, because newer Jellyfin servers reject the older
   way NullPlayer sent its sign-in token. The token now goes the way Jellyfin expects, so libraries
   load and play again.
-- **Find YouTube channels by name** — the YouTube source's **Search** tab now searches YouTube for
-  channels instead of listing internet radio stations. Type a name and press Enter: each result
-  shows its @handle and subscriber count, expands to preview its uploads, and subscribes on
-  double-click (or **Subscribe** in its right-click menu). Channels you already follow are marked
-  ✓. Pasting a URL into **+ → Add Channel…** still works.
-- **YouTube thumbnails and channel avatars** — YouTube video lists have a new **Art** column with
-  each video's thumbnail, channel rows show the channel's avatar, and selecting a video or channel
-  shows its art behind the list. New audio and video downloads embed the thumbnail cropped square,
-  so it reads as album art in the player; video downloads had no cover art before.
 
 ## 0.31.3
 

@@ -17,29 +17,48 @@ final class LibraryBrowserTabSortTests: XCTestCase {
         super.tearDown()
     }
 
-    func testRoundTripsSortForOneTab() {
-        let sort = LibraryBrowserTabSort(menuSort: .dateAddedDesc, columnSortId: "year", columnSortAscending: false)
-        LibraryBrowserTabSortStore.save(sort, modeRawValue: 1, defaults: defaults)
+    /// A fresh store over the same defaults, as on the next launch.
+    private func relaunched() -> LibraryBrowserTabSortStore {
+        LibraryBrowserTabSortStore(defaults: defaults)
+    }
 
-        XCTAssertEqual(LibraryBrowserTabSortStore.load(modeRawValue: 1, defaults: defaults), sort)
+    func testRoundTripsSortForOneTab() {
+        let store = relaunched()
+        store.setMenuSort(.dateAddedDesc, for: 1)
+        store.clickColumn("year", for: 1)
+        store.clickColumn("year", for: 1)
+
+        let expected = LibraryBrowserTabSort(menuSort: .dateAddedDesc, columnSortId: "year", columnSortAscending: false)
+        XCTAssertEqual(store.sort(for: 1), expected)
+        XCTAssertEqual(relaunched().sort(for: 1), expected)
     }
 
     func testTabsAreIndependent() {
-        let albums = LibraryBrowserTabSort(menuSort: .dateAddedDesc)
-        let plists = LibraryBrowserTabSort(menuSort: .nameAsc, columnSortId: "title", columnSortAscending: false)
-        LibraryBrowserTabSortStore.save(albums, modeRawValue: 1, defaults: defaults)
-        LibraryBrowserTabSortStore.save(plists, modeRawValue: 3, defaults: defaults)
+        let store = relaunched()
+        store.setMenuSort(.dateAddedDesc, for: 1)
+        store.clickColumn("title", for: 3)
 
-        XCTAssertEqual(LibraryBrowserTabSortStore.load(modeRawValue: 1, defaults: defaults), albums)
-        XCTAssertEqual(LibraryBrowserTabSortStore.load(modeRawValue: 3, defaults: defaults), plists)
-        XCTAssertEqual(LibraryBrowserTabSortStore.load(modeRawValue: 0, defaults: defaults), LibraryBrowserTabSort())
+        let reloaded = relaunched()
+        XCTAssertEqual(reloaded.sort(for: 1), LibraryBrowserTabSort(menuSort: .dateAddedDesc))
+        XCTAssertEqual(reloaded.sort(for: 3), LibraryBrowserTabSort(columnSortId: "title"))
+        XCTAssertEqual(reloaded.sort(for: 0), LibraryBrowserTabSort())
     }
 
-    func testClearingColumnSortPersistsNil() {
-        LibraryBrowserTabSortStore.save(LibraryBrowserTabSort(columnSortId: "title"), modeRawValue: 0, defaults: defaults)
-        LibraryBrowserTabSortStore.save(LibraryBrowserTabSort(menuSort: .nameDesc), modeRawValue: 0, defaults: defaults)
+    func testClickingANewColumnSortsAscending() {
+        let store = relaunched()
+        store.clickColumn("title", for: 0)
+        store.clickColumn("title", for: 0)
+        store.clickColumn("year", for: 0)
 
-        XCTAssertNil(LibraryBrowserTabSortStore.load(modeRawValue: 0, defaults: defaults).columnSortId)
+        XCTAssertEqual(store.sort(for: 0), LibraryBrowserTabSort(columnSortId: "year", columnSortAscending: true))
+    }
+
+    func testMenuSortReplacesColumnSort() {
+        let store = relaunched()
+        store.clickColumn("title", for: 0)
+        store.setMenuSort(.nameDesc, for: 0)
+
+        XCTAssertNil(relaunched().sort(for: 0).columnSortId)
     }
 
     func testTabWithoutEntryStartsFromLegacyGlobalSort() {
@@ -48,46 +67,40 @@ final class LibraryBrowserTabSortTests: XCTestCase {
         defaults.set(false, forKey: "BrowserColumnSortAscending")
         let legacy = LibraryBrowserTabSort(menuSort: .yearDesc, columnSortId: "title", columnSortAscending: false)
 
-        XCTAssertEqual(LibraryBrowserTabSortStore.load(modeRawValue: 0, defaults: defaults), legacy)
+        let store = relaunched()
+        XCTAssertEqual(store.sort(for: 0), legacy)
 
-        LibraryBrowserTabSortStore.save(LibraryBrowserTabSort(), modeRawValue: 1, defaults: defaults)
+        store.setMenuSort(.nameAsc, for: 1)
         // The first save carries the legacy sort over; the old keys are not read again.
         defaults.set("Name Z-A", forKey: "BrowserSortOption")
 
-        XCTAssertEqual(LibraryBrowserTabSortStore.load(modeRawValue: 0, defaults: defaults), legacy)
-        XCTAssertNil(LibraryBrowserTabSortStore.load(modeRawValue: 1, defaults: defaults).columnSortId)
+        let reloaded = relaunched()
+        XCTAssertEqual(reloaded.sort(for: 0), legacy)
+        XCTAssertNil(reloaded.sort(for: 1).columnSortId)
     }
 
-    func testClearColumnSortDropsHiddenColumnFromEveryTabAndLegacySort() {
+    func testDropColumnClearsItFromEveryTabAndLegacySort() {
         defaults.set("rating", forKey: "BrowserColumnSortId")
-        LibraryBrowserTabSortStore.save(
-            LibraryBrowserTabSort(columnSortId: "rating", columnSortAscending: false), modeRawValue: 0, defaults: defaults
-        )
-        LibraryBrowserTabSortStore.save(
-            LibraryBrowserTabSort(menuSort: .dateAddedDesc, columnSortId: "year"), modeRawValue: 1, defaults: defaults
-        )
+        let store = relaunched()
+        // Tab 0 starts from the legacy "rating" sort, so this click flips it to descending.
+        store.clickColumn("rating", for: 0)
+        store.setMenuSort(.dateAddedDesc, for: 1)
+        store.clickColumn("year", for: 1)
 
-        LibraryBrowserTabSortStore.clearColumnSort(id: "rating", defaults: defaults)
+        store.dropColumn("rating")
 
-        XCTAssertEqual(
-            LibraryBrowserTabSortStore.load(modeRawValue: 0, defaults: defaults),
-            LibraryBrowserTabSort(columnSortAscending: false)
-        )
-        XCTAssertEqual(LibraryBrowserTabSortStore.load(modeRawValue: 1, defaults: defaults).columnSortId, "year")
-        XCTAssertNil(LibraryBrowserTabSortStore.load(modeRawValue: 3, defaults: defaults).columnSortId)
+        let reloaded = relaunched()
+        XCTAssertEqual(reloaded.sort(for: 0), LibraryBrowserTabSort(columnSortAscending: false))
+        XCTAssertEqual(reloaded.sort(for: 1).columnSortId, "year")
+        XCTAssertNil(reloaded.sort(for: 3).columnSortId)
     }
 
     /// The store is keyed by browse-mode raw value and shared by both browsers, so the two
-    /// browse-mode enums must agree, as must the two sort-option enums the store converts between.
-    func testClassicAndModernEnumsShareRawValues() {
+    /// browse-mode enums must agree.
+    func testClassicAndModernBrowseModesShareRawValues() {
         XCTAssertEqual(
             Dictionary(uniqueKeysWithValues: PlexBrowseMode.allCases.map { ($0.rawValue, $0.title) }),
             Dictionary(uniqueKeysWithValues: ModernBrowseMode.allCases.map { ($0.rawValue, $0.title) })
         )
-        for option in BrowserSortOption.allCases {
-            XCTAssertEqual(option.asModernSort.rawValue, option.rawValue)
-            XCTAssertEqual(BrowserSortOption(option.asModernSort), option)
-        }
-        XCTAssertEqual(BrowserSortOption.allCases.count, ModernBrowserSortOption.allCases.count)
     }
 }
