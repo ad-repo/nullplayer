@@ -2,8 +2,8 @@
 
 The two skin backlogs in this repo — [`WMP_TASKS.md`](../../WMP_TASKS.md) for `.wmz` and
 [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md) for `.wal` — each say a foreign entry does not belong
-in them, and [`docs/video-playback/backlog.md`](../video-playback/backlog.md) took the shared video
-path for the same reason. This file is for defects in the **local library and the playlist playback
+in them, and the shared video path goes in [`MISC_TASKS.md`](../../MISC_TASKS.md) for the same
+reason. This file is for defects in the **local library and the playlist playback
 path** — `Data/Models/MediaLibrary.swift`, `Utilities/LocalFileDiscovery.swift` and
 `Audio/AudioEngine.swift`'s track-load failure handling — which belong to none of the above. Owning
 skills: `local-library` for the scanner and store, `audio-system` for playback.
