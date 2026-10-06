@@ -274,21 +274,26 @@ final class StreamRipper {
         }
     }
 
-    /// Download video from a URL using yt-dlp, fetched as H.264 video + AAC audio remuxed to MP4.
+    /// The tallest H.264 stream YouTube serves; anything taller is VP9 or AV1 only.
+    nonisolated private static let youTubeH264MaxHeight = 1080
+
+    /// Download video from a URL using yt-dlp, fetched as video + AAC audio remuxed to MP4. Up to
+    /// 1080p the video is H.264 only (YouTube's H.264 stops there); above that it is whatever the
+    /// highest resolution comes in (VP9 / AV1), still preferring H.264 when it ties.
     /// This is a low-level, stateless function suitable for embedding in other tools (e.g., YouTube manager).
     /// It does not handle UI (spinners, alerts) — callers provide their own.
     /// This function is nonisolated and can be called from any actor context.
     ///
     /// - Parameters:
     ///   - sourceURL: The URL to download video from
-    ///   - maxHeight: Maximum video height in pixels (e.g. 720, 1080)
+    ///   - maxHeight: Maximum video height in pixels (e.g. 720, 2160); nil for no cap
     ///   - outputTemplate: yt-dlp output filename template (e.g., `"/path/to/downloads/%(id)s.%(ext)s"`)
     ///   - extraArgs: additional yt-dlp arguments (e.g. thumbnail embedding), inserted before the URL
     /// - Returns: A file:// URL to the downloaded video file
     /// - Throws: If yt-dlp is not found, the download fails, or the output path cannot be resolved
     nonisolated static func downloadVideo(
         from sourceURL: URL,
-        maxHeight: Int,
+        maxHeight: Int?,
         outputTemplate: String,
         extraArgs: [String] = []
     ) async throws -> URL {
@@ -322,10 +327,12 @@ final class StreamRipper {
             try? FileManager.default.removeItem(at: errorFile)
         }
 
-        let formatString = "bv*[vcodec^=avc1][height<=\(maxHeight)]+ba[acodec^=mp4a]/b[vcodec^=avc1][height<=\(maxHeight)]"
+        let codecFilter = (maxHeight ?? .max) <= Self.youTubeH264MaxHeight ? "[vcodec^=avc1]" : ""
+        let filter = codecFilter + (maxHeight.map { "[height<=\($0)]" } ?? "")
+        let formatString = "bv*\(filter)+ba[acodec^=mp4a]/b\(filter)"
         var args = ["-f", formatString]
         args += [
-            "-S", "res,fps",
+            "-S", "res,fps,vcodec:h264",
             "--merge-output-format", "mp4",
             "--no-playlist",
             "--embed-metadata",

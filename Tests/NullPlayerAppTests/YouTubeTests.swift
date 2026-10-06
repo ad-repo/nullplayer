@@ -301,72 +301,16 @@ final class YouTubeTests: XCTestCase {
         XCTAssertThrowsError(try YouTubeManager.parseFlatPlaylist(data, channelId: "invalid"))
     }
 
-    // MARK: - YouTubeQuality Tests
+    // MARK: - Format Tests
 
-    func testYouTubeQualityFLACArgs() {
-        let quality = YouTubeQuality.flac
-
-        XCTAssertEqual(quality.ytdlpArgs, ["--audio-format", "flac", "--audio-quality", "0"])
-        XCTAssertEqual(quality.displayName, "FLAC")
-        XCTAssertEqual(quality.fileExtension, "flac")
+    func testYouTubeAudioFormatArgs() {
+        XCTAssertEqual(YouTubeAudioFormat.flac.ytdlpArgs, ["--audio-format", "flac"])
+        XCTAssertEqual(YouTubeAudioFormat.mp3(kbps: 320).ytdlpArgs, ["--audio-format", "mp3", "--audio-quality", "320K"])
     }
 
-    func testYouTubeQualityMP3HighArgs() {
-        let quality = YouTubeQuality.mp3High
-
-        XCTAssertEqual(quality.ytdlpArgs, ["--audio-format", "mp3", "--audio-quality", "0"])
-        XCTAssertEqual(quality.displayName, "MP3 (High)")
-        XCTAssertEqual(quality.fileExtension, "mp3")
-    }
-
-    func testYouTubeQualityMP3LowArgs() {
-        let quality = YouTubeQuality.mp3Low
-
-        XCTAssertEqual(quality.ytdlpArgs, ["--audio-format", "mp3", "--audio-quality", "5"])
-        XCTAssertEqual(quality.displayName, "MP3 (Low)")
-        XCTAssertEqual(quality.fileExtension, "mp3")
-    }
-
-    func testYouTubeQualityAllCases() {
-        let allCases = YouTubeQuality.allCases
-
-        XCTAssertEqual(allCases.count, 5)
-        XCTAssertTrue(allCases.contains(.flac))
-        XCTAssertTrue(allCases.contains(.mp3High))
-        XCTAssertTrue(allCases.contains(.mp3Low))
-        XCTAssertTrue(allCases.contains(.video720))
-        XCTAssertTrue(allCases.contains(.video1080))
-    }
-
-    func testYouTubeQualityVideo720() {
-        let quality = YouTubeQuality.video720
-
-        XCTAssertEqual(quality.displayName, "Video (720p)")
-        XCTAssertEqual(quality.fileExtension, "mp4")
-        XCTAssertTrue(quality.isVideo)
-        XCTAssertEqual(quality.videoMaxHeight, 720)
-    }
-
-    func testYouTubeQualityVideo1080() {
-        let quality = YouTubeQuality.video1080
-
-        XCTAssertEqual(quality.displayName, "Video (1080p)")
-        XCTAssertEqual(quality.fileExtension, "mp4")
-        XCTAssertTrue(quality.isVideo)
-        XCTAssertEqual(quality.videoMaxHeight, 1080)
-    }
-
-    func testYouTubeQualityAudioFormats() {
-        for quality in [YouTubeQuality.flac, .mp3High, .mp3Low] {
-            XCTAssertFalse(quality.isVideo)
-            XCTAssertNil(quality.videoMaxHeight)
-        }
-    }
-
-    func testYouTubeQualityRawValues() {
-        XCTAssertEqual(YouTubeQuality.flac.rawValue, "flac")
-        XCTAssertEqual(YouTubeQuality.mp3High.rawValue, "mp3High")
-        XCTAssertEqual(YouTubeQuality.mp3Low.rawValue, "mp3Low")
+    func testYouTubeVideoQualityMaxHeight() {
+        XCTAssertEqual(YouTubeVideoQuality.height(720).maxHeight, 720)
+        XCTAssertEqual(YouTubeVideoQuality.height(1080).maxHeight, 1080)
     }
 
     // MARK: - YouTubeVideo Computed Properties Tests
@@ -603,20 +547,20 @@ final class YouTubeTests: XCTestCase {
 
         try writeManifest(
             root: rootA,
-            download: YouTubeDownload(videoId: "video-a", title: "A", channelId: "channel", fileName: "A.flac")
+            download: YouTubeDownload(videoId: "video-a", title: "A", channelId: "channel", fileName: "A.flac", kind: .audio)
         )
         try writeManifest(
             root: rootB,
-            download: YouTubeDownload(videoId: "video-b", title: "B", channelId: "channel", fileName: "B.flac")
+            download: YouTubeDownload(videoId: "video-b", title: "B", channelId: "channel", fileName: "B.flac", kind: .audio)
         )
 
         manager.downloadRoot = rootA
-        XCTAssertNotNil(manager.downloadedFileURL(for: "video-a"))
-        XCTAssertNil(manager.downloadedFileURL(for: "video-b"))
+        XCTAssertNotNil(manager.downloadedFiles(for: "video-a")[.audio])
+        XCTAssertNil(manager.downloadedFiles(for: "video-b")[.audio])
 
         manager.downloadRoot = rootB
-        XCTAssertNil(manager.downloadedFileURL(for: "video-a"))
-        XCTAssertNotNil(manager.downloadedFileURL(for: "video-b"))
+        XCTAssertNil(manager.downloadedFiles(for: "video-a")[.audio])
+        XCTAssertNotNil(manager.downloadedFiles(for: "video-b")[.audio])
     }
 
     func testManifestEntryCannotEscapeDownloadRoot() throws {
@@ -637,14 +581,15 @@ final class YouTubeTests: XCTestCase {
             videoId: "outside",
             title: "Outside",
             channelId: "channel",
-            fileName: "../outside.flac"
+            fileName: "../outside.flac",
+            kind: .audio
         )
         let manifest = try JSONEncoder().encode(["outside": download])
         try manifest.write(to: root.appendingPathComponent("youtube_downloads.json"))
 
         manager.downloadRoot = root
-        XCTAssertNil(manager.downloadedFileURL(for: "outside"))
-        manager.removeDownload(videoId: "outside")
+        XCTAssertNil(manager.downloadedFiles(for: "outside")[.audio])
+        manager.removeDownload(videoId: "outside", kind: .audio)
         XCTAssertTrue(FileManager.default.fileExists(atPath: outsideFile.path))
     }
 
