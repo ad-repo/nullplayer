@@ -21,6 +21,20 @@
 - **Plex library loading uses one pager** — Plex artists in the Library Browser, and movies and TV
   on the command line, now page through Plex the same way albums, movies and TV already did in the
   Library Browser. No change to what loads.
+- **Choose audio or video for each YouTube video** — a video's right-click menu now has **Audio**
+  and **Video** submenus with the library's usual Play, Play and Replace Queue, Add to Playlist,
+  Play Next and Add to Queue. The chosen form downloads first if it isn't on disk yet, then plays or
+  queues. A video can keep both its audio and its video, and **Show in Finder**, **Remove Audio
+  File** and **Remove Video File** manage them. Double-click and Enter open the same menu instead
+  of downloading straight away. This replaces "Download & Play".
+- **More YouTube download formats, up to 4K** — **Libraries → YouTube → Format** is now two
+  settings. **Audio Format**: FLAC, ALAC, MP3 at 320/256/192/128 kbps, AAC at 256/192/128 kbps, or
+  YouTube's original AAC or Opus stream with no re-encode. **Video Quality**: 360p, 480p, 720p,
+  1080p, 1440p, 2160p (4K) or Best Available; above 1080p videos come as VP9/AV1. Your previous
+  choice carries over (MP3 High becomes MP3 320, MP3 Low becomes MP3 128).
+- **Videos no longer show cropped or in a corner** — on Retina screens a video could fill only the
+  bottom-left quarter of the video window, or show just the bottom-left corner of the picture (most
+  visible with 1440p and 4K files). The picture now fits the window.
 
 ## 0.31.4
 

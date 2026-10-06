@@ -468,9 +468,17 @@ class ModernLibraryBrowserView: NSView {
     private var expandedYouTubeChannels: Set<String> = []
     private var youtubeChannelVideos: [String: [YouTubeVideo]] = [:]
     private var youtubeExpandTask: Task<Void, Never>?
-    private var youtubeDownloadTask: Task<Void, Never>?
-    /// Video IDs currently downloading — drives a per-row spinner on the video entry.
-    private var downloadingVideoIds: Set<String> = []
+    /// A video row's Audio ▸ / Video ▸ menu and its downloads, which drive a per-row spinner.
+    private lazy var youtubeVideoActions: YouTubeVideoActions = {
+        let actions = YouTubeVideoActions(search: youtubeSearch)
+        actions.onFetchesChanged = { [weak self] in
+            guard let self else { return }
+            if self.youtubeVideoActions.hasFetchesInFlight { self.startLoadingAnimation() } else { self.stopLoadingAnimation() }
+            self.needsDisplay = true
+        }
+        actions.onFilesChanged = { [weak self] in self?.rebuildCurrentModeItems() }
+        return actions
+    }()
     /// Channel IDs whose uploads are currently being fetched — drives a per-row spinner on the channel entry.
     private var loadingChannelIds: Set<String> = []
     /// Search tab (YouTube source): channels found by the last submitted query.
@@ -937,18 +945,19 @@ class ModernLibraryBrowserView: NSView {
                      subsonicLoadTask, subsonicExpandTask,
                      plexLoadTask, sourceConnectTask,
                      jellyfinLoadTask, jellyfinAlbumWarmTask, jellyfinExpandTask,
-                     youtubeExpandTask, youtubeDownloadTask,
+                     youtubeExpandTask,
                      embyLoadTask, embyExpandTask,
                      ratingSubmitTask, currentTrackArtworkLoadTask, artworkLoadTask, artworkCyclingTask,
                      radioLoadTask, radioPlayTask] {
             task?.cancel()
         }
         youtubeSearch.cancel()
+        youtubeVideoActions.cancel()
         localFolderBuildTask = nil
         subsonicLoadTask = nil; subsonicExpandTask = nil
         plexLoadTask = nil; sourceConnectTask = nil
         jellyfinLoadTask = nil; jellyfinAlbumWarmTask = nil; jellyfinExpandTask = nil
-        youtubeExpandTask = nil; youtubeDownloadTask = nil
+        youtubeExpandTask = nil
         embyLoadTask = nil; embyExpandTask = nil
         ratingSubmitTask = nil
         currentTrackArtworkLoadTask = nil; artworkLoadTask = nil; artworkCyclingTask = nil
@@ -2688,7 +2697,7 @@ class ModernLibraryBrowserView: NSView {
             // Per-row download spinner on the title column of a downloading YouTube video.
             var titleSpinnerInset: CGFloat = 0
             if column.id == "title", case .youtubeVideo(let video) = item.type,
-               downloadingVideoIds.contains(video.videoId) {
+               youtubeVideoActions.isFetching(video.videoId) {
                 let spinnerRadius = min(rect.height * 0.3, 6)
                 let cx = x + 4 + spinnerRadius
                 drawRowSpinner(in: context, center: CGPoint(x: cx, y: rect.midY), radius: spinnerRadius, skin: skin)
@@ -5794,15 +5803,7 @@ class ModernLibraryBrowserView: NSView {
                 removeItem.target = self; removeItem.representedObject = channel; menu.addItem(removeItem)
             }
         case .youtubeVideo(let video):
-            let isDownloaded = YouTubeManager.shared.isDownloaded(video.videoId)
-            let actionTitle = isDownloaded ? "Play" : "Download & Play"
-            let actionItem = NSMenuItem(title: actionTitle, action: #selector(contextMenuPlayYouTubeVideo(_:)), keyEquivalent: "")
-            actionItem.target = self; actionItem.representedObject = video; menu.addItem(actionItem)
-            if isDownloaded {
-                menu.addItem(NSMenuItem.separator())
-                let removeDownloadItem = NSMenuItem(title: "Remove Download", action: #selector(contextMenuRemoveYouTubeDownload(_:)), keyEquivalent: "")
-                removeDownloadItem.target = self; removeDownloadItem.representedObject = video; menu.addItem(removeDownloadItem)
-            }
+            youtubeVideoActions.addMenuItems(for: video, to: menu)
         case .plexRadioStation:
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayPlexRadioStation(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = item; menu.addItem(playItem)
@@ -6657,44 +6658,6 @@ class ModernLibraryBrowserView: NSView {
         YouTubeManager.shared.removeChannel(channel)
         expandedYouTubeChannels.remove(channel.id)
         youtubeChannelVideos.removeValue(forKey: channel.id)
-        rebuildCurrentModeItems()
-    }
-
-    @objc private func contextMenuPlayYouTubeVideo(_ sender: NSMenuItem) {
-        guard let video = sender.representedObject as? YouTubeVideo else { return }
-        if YouTubeManager.shared.isDownloaded(video.videoId) {
-            if let url = YouTubeManager.shared.downloadedFileURL(for: video.videoId) {
-                let track = Track(url: url, isYouTubeOrigin: true)
-                WindowManager.shared.audioEngine.playNow([track])
-            }
-        } else {
-            downloadingVideoIds.insert(video.videoId)
-            startLoadingAnimation()
-            needsDisplay = true
-            youtubeDownloadTask?.cancel()
-            let channelTitle = youtubeSearch.channelTitle(forVideo: video)
-            youtubeDownloadTask = Task.detached { @MainActor [weak self] in
-                guard let self = self else { return }
-                defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }
-                do {
-                    let downloadedURL = try await YouTubeManager.shared.download(video: video, channelTitle: channelTitle)
-                    // A newer download may have superseded this one; don't auto-play a stale result.
-                    try Task.checkCancellation()
-                    let track = Track(url: downloadedURL, isYouTubeOrigin: true)
-                    WindowManager.shared.audioEngine.playNow([track])
-                    rebuildCurrentModeItems()
-                } catch is CancellationError {
-                    // Superseded by a newer download request; skip side effects.
-                } catch {
-                    NSLog("Failed to download YouTube video: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-                }
-            }
-        }
-    }
-
-    @objc private func contextMenuRemoveYouTubeDownload(_ sender: NSMenuItem) {
-        guard let video = sender.representedObject as? YouTubeVideo else { return }
-        YouTubeManager.shared.removeDownload(videoId: video.videoId)
         rebuildCurrentModeItems()
     }
 
@@ -8073,7 +8036,7 @@ class ModernLibraryBrowserView: NSView {
             self.loadingAnimationFrame += 1
             if self.isLoading {
                 self.needsDisplay = true
-            } else if !self.downloadingVideoIds.isEmpty || !self.loadingChannelIds.isEmpty {
+            } else if self.youtubeVideoActions.hasFetchesInFlight || !self.loadingChannelIds.isEmpty {
                 // Redraw the list area for the per-row download/channel-load spinner(s)
                 self.needsDisplay = true
             } else if self.isLibraryScanning {
@@ -8088,7 +8051,7 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func stopLoadingAnimation(force: Bool = false) {
-        guard force || (!isLibraryScanning && downloadingVideoIds.isEmpty && loadingChannelIds.isEmpty) else { return }
+        guard force || (!isLibraryScanning && !youtubeVideoActions.hasFetchesInFlight && loadingChannelIds.isEmpty) else { return }
         loadingAnimationTimer?.invalidate(); loadingAnimationTimer = nil; loadingAnimationFrame = 0
     }
 
@@ -9099,7 +9062,7 @@ class ModernLibraryBrowserView: NSView {
                 image = await self.loadRadioArtwork(for: radioTrack, station: station)
             case .youtubeVideo(let video):
                 // A download carries its own embedded art; otherwise the 16:9 thumbnail.
-                if let fileURL = YouTubeManager.shared.downloadedFileURL(for: video.videoId) {
+                if let fileURL = YouTubeManager.shared.coverArtFile(for: video.videoId) {
                     image = await self.loadLocalArtwork(url: fileURL)
                 }
                 if image == nil, let thumb = video.thumbnailURL {
@@ -12605,34 +12568,7 @@ class ModernLibraryBrowserView: NSView {
                 youtubeSearch.subscribe(to: channel)
             }
         case .youtubeVideo(let video):
-            if YouTubeManager.shared.isDownloaded(video.videoId) {
-                if let url = YouTubeManager.shared.downloadedFileURL(for: video.videoId) {
-                    let track = Track(url: url, isYouTubeOrigin: true)
-                    WindowManager.shared.audioEngine.playNow([track])
-                }
-            } else {
-                downloadingVideoIds.insert(video.videoId)
-                startLoadingAnimation()
-                needsDisplay = true
-                youtubeDownloadTask?.cancel()
-                let channelTitle = youtubeSearch.channelTitle(forVideo: video)
-                youtubeDownloadTask = Task.detached { @MainActor [weak self] in
-                    guard let self = self else { return }
-                    defer { self.downloadingVideoIds.remove(video.videoId); self.stopLoadingAnimation(); self.needsDisplay = true }
-                    do {
-                        let downloadedURL = try await YouTubeManager.shared.download(video: video, channelTitle: channelTitle)
-                        // A newer download may have superseded this one; don't auto-play a stale result.
-                        try Task.checkCancellation()
-                        let track = Track(url: downloadedURL, isYouTubeOrigin: true)
-                        WindowManager.shared.audioEngine.playNow([track])
-                        rebuildCurrentModeItems()
-                    } catch is CancellationError {
-                        // Superseded by a newer download request; skip side effects.
-                    } catch {
-                        NSLog("Failed to download YouTube video: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-                    }
-                }
-            }
+            youtubeVideoActions.popUpMenu(for: video, in: self)
         case .plexRadioStation(let r): playPlexRadioStation(r)
         case .subsonicRadioStation(let r): playSubsonicRadioStation(r)
         case .jellyfinRadioStation(let r): playJellyfinRadioStation(r)

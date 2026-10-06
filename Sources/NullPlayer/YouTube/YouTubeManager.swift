@@ -9,7 +9,7 @@ final class YouTubeManager {
 
     private init() {
         loadChannels()
-        loadQuality()
+        loadFormats()
         loadVideoLimit()
         setupDownloadRoot()
     }
@@ -30,12 +30,14 @@ final class YouTubeManager {
         }
     }
 
-    // MARK: - Quality
+    // MARK: - Formats
 
-    var quality: YouTubeQuality = .flac {
-        didSet {
-            UserDefaults.standard.set(quality.rawValue, forKey: "YouTubeQuality")
-        }
+    var audioFormat: YouTubeAudioFormat = .flac {
+        didSet { UserDefaults.standard.set(audioFormat.rawValue, forKey: Self.audioFormatKey) }
+    }
+
+    var videoQuality: YouTubeVideoQuality = .height(1080) {
+        didSet { UserDefaults.standard.set(videoQuality.rawValue, forKey: Self.videoQualityKey) }
     }
 
     // MARK: - Video Limit
@@ -97,8 +99,8 @@ final class YouTubeManager {
 
     // MARK: - Download Manifest
 
-    /// In-memory cache of downloaded videos, keyed by videoId
-    private var downloadManifest: [String: YouTubeDownload] = [:]
+    /// In-memory cache of downloaded videos, keyed by videoId and kind
+    private var downloadManifest: [YouTubeDownload.Key: YouTubeDownload] = [:]
     private var manifestLoaded = false
 
     // MARK: - Initialization
@@ -118,9 +120,23 @@ final class YouTubeManager {
         UserDefaults.standard.set(data, forKey: channelsKey)
     }
 
-    private func loadQuality() {
-        let rawValue = UserDefaults.standard.string(forKey: "YouTubeQuality") ?? YouTubeQuality.flac.rawValue
-        quality = YouTubeQuality(rawValue: rawValue) ?? .flac
+    private func loadFormats() {
+        let defaults = UserDefaults.standard
+        let formats = Self.resolveFormats(
+            audioFormat: defaults.string(forKey: Self.audioFormatKey),
+            videoQuality: defaults.string(forKey: Self.videoQualityKey),
+            legacyQuality: defaults.string(forKey: Self.legacyQualityKey))
+        audioFormat = formats.audioFormat
+        videoQuality = formats.videoQuality
+    }
+
+    /// The two format settings from their saved raw values. Before they were split, one
+    /// `YouTubeQuality` setting held either an audio format or a video height; when a new
+    /// key is absent its value comes from that, else the default (FLAC / 1080p).
+    nonisolated static func resolveFormats(audioFormat: String?, videoQuality: String?,
+                                           legacyQuality: String?) -> (audioFormat: YouTubeAudioFormat, videoQuality: YouTubeVideoQuality) {
+        ((audioFormat ?? legacyQuality).flatMap(YouTubeAudioFormat.init(savedValue:)) ?? .flac,
+         (videoQuality ?? legacyQuality).flatMap(YouTubeVideoQuality.init(savedValue:)) ?? .height(1080))
     }
 
     private func loadVideoLimit() {
@@ -285,11 +301,11 @@ final class YouTubeManager {
     /// Files are organized as `<downloadRoot>/<Channel Name>/<Title> [<videoId>].<ext>`
     /// so the on-disk layout mirrors the channel/video hierarchy and filenames are
     /// human-readable while staying unique (the bracketed video ID disambiguates
-    /// videos that share a title). The output format (audio FLAC/MP3 or video MP4)
-    /// is determined by the current quality setting.
+    /// videos that share a title). `kind` picks the audio track (in `audioFormat`) or the
+    /// MP4 (capped at `videoQuality`); the two can coexist.
     /// `channelTitle` names the folder for a channel that isn't subscribed (a search
     /// result's preview), so it isn't named after a bare ID.
-    func download(video: YouTubeVideo, channelTitle: String? = nil) async throws -> URL {
+    func download(video: YouTubeVideo, kind: YouTubeMediaKind, channelTitle: String? = nil) async throws -> URL {
         guard isDownloadFolderReachable() else {
             throw YouTubeManagerError.downloadFolderNotReachable("Download folder is not accessible")
         }
@@ -303,15 +319,15 @@ final class YouTubeManager {
         let outputTemplate = "\(channelDir.path)/%(title)s [%(id)s].%(ext)s"
 
         let fileURL: URL
-        if quality.isVideo, let h = quality.videoMaxHeight {
+        switch kind {
+        case .video:
             fileURL = try await StreamRipper.downloadVideo(
-                from: video.watchURL, maxHeight: h, outputTemplate: outputTemplate,
+                from: video.watchURL, maxHeight: videoQuality.maxHeight, outputTemplate: outputTemplate,
                 extraArgs: Self.squareThumbnailArgs)
-        } else {
-            let formatArgs = quality.ytdlpArgs + ["-x", "--embed-metadata", "--no-playlist"]
-                + Self.squareThumbnailArgs
+        case .audio:
             fileURL = try await StreamRipper.downloadAudio(
-                from: video.watchURL, formatArgs: formatArgs, outputTemplate: outputTemplate)
+                from: video.watchURL, formatSelector: audioFormat.formatSelector,
+                formatArgs: audioFormat.ytdlpArgs + Self.squareThumbnailArgs, outputTemplate: outputTemplate)
         }
 
         // Record in manifest as a path relative to downloadRoot (channel/file).
@@ -320,7 +336,8 @@ final class YouTubeManager {
             videoId: video.videoId,
             title: video.title,
             channelId: video.channelId,
-            fileName: relativePath
+            fileName: relativePath,
+            kind: kind
         )
         recordDownload(download)
 
@@ -355,28 +372,38 @@ final class YouTubeManager {
         return cleaned.isEmpty ? "Unknown Channel" : cleaned
     }
 
-    /// Get the local URL for a downloaded video (if it exists)
-    func downloadedFileURL(for videoId: String) -> URL? {
+    /// A video's downloaded files that are on disk, by kind (empty when none are).
+    func downloadedFiles(for videoId: String) -> [YouTubeMediaKind: URL] {
         loadManifestIfNeeded()
-        guard let download = downloadManifest[videoId],
-              let fileURL = manifestFileURL(for: download) else { return nil }
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
-        return fileURL
+        var files: [YouTubeMediaKind: URL] = [:]
+        for kind in YouTubeMediaKind.allCases {
+            guard let download = downloadManifest[YouTubeDownload.Key(videoId: videoId, kind: kind)],
+                  let fileURL = manifestFileURL(for: download),
+                  FileManager.default.fileExists(atPath: fileURL.path) else { continue }
+            files[kind] = fileURL
+        }
+        return files
     }
 
-    /// Check if a video has been downloaded
+    /// Check if any form of a video has been downloaded
     func isDownloaded(_ videoId: String) -> Bool {
-        downloadedFileURL(for: videoId) != nil
+        !downloadedFiles(for: videoId).isEmpty
     }
 
-    /// Remove a downloaded video (deletes file and manifest entry)
-    func removeDownload(videoId: String) {
+    /// The file whose embedded cover art stands for a video: the audio download, else the video.
+    func coverArtFile(for videoId: String) -> URL? {
+        let files = downloadedFiles(for: videoId)
+        return files[.audio] ?? files[.video]
+    }
+
+    /// Remove one form of a downloaded video (deletes file and manifest entry)
+    func removeDownload(_ key: YouTubeDownload.Key) {
         loadManifestIfNeeded()
-        guard let download = downloadManifest[videoId] else { return }
+        guard let download = downloadManifest[key] else { return }
         if let fileURL = manifestFileURL(for: download) {
             try? FileManager.default.removeItem(at: fileURL)
         }
-        downloadManifest.removeValue(forKey: videoId)
+        downloadManifest.removeValue(forKey: key)
         saveManifest()
     }
 
@@ -384,7 +411,7 @@ final class YouTubeManager {
 
     private func recordDownload(_ download: YouTubeDownload) {
         loadManifestIfNeeded()
-        downloadManifest[download.videoId] = download
+        downloadManifest[download.key] = download
         saveManifest()
     }
 
@@ -395,18 +422,22 @@ final class YouTubeManager {
         let manifestURL = downloadRoot.appendingPathComponent("youtube_downloads.json")
         guard let data = try? Data(contentsOf: manifestURL) else { return }
         guard let decoded = try? JSONDecoder().decode([String: YouTubeDownload].self, from: data) else { return }
-        // Re-key by each entry's videoId rather than trusting the dictionary key, so
-        // a manifest written with any other key scheme still resolves by videoId.
-        var byVideoId: [String: YouTubeDownload] = [:]
+        // Re-key by each entry's videoId and kind rather than trusting the dictionary key,
+        // so a manifest written with any other key scheme (older ones used the bare videoId)
+        // still resolves.
+        var byKey: [YouTubeDownload.Key: YouTubeDownload] = [:]
         for download in decoded.values {
-            byVideoId[download.videoId] = download
+            byKey[download.key] = download
         }
-        downloadManifest = byVideoId
+        downloadManifest = byKey
     }
 
     private func saveManifest() {
         let manifestURL = downloadRoot.appendingPathComponent("youtube_downloads.json")
-        guard let data = try? JSONEncoder().encode(downloadManifest) else { return }
+        let byName = Dictionary(uniqueKeysWithValues: downloadManifest.map { key, download in
+            ("\(key.videoId).\(key.kind.rawValue)", download)
+        })
+        guard let data = try? JSONEncoder().encode(byName) else { return }
         try? data.write(to: manifestURL, options: .atomic)
     }
 
@@ -686,6 +717,9 @@ final class YouTubeManager {
     // MARK: - Constants
 
     private let channelsKey = "YouTubeChannels"
+    private static let audioFormatKey = "YouTubeAudioFormat"
+    private static let videoQualityKey = "YouTubeVideoQuality"
+    private static let legacyQualityKey = "YouTubeQuality"
     private static let downloadRootKey = "YouTubeDownloadRoot"
     private var downloadRootKey: String { Self.downloadRootKey }
 

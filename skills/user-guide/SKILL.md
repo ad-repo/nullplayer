@@ -184,6 +184,19 @@ Original and Original-Metal UI add: **HT** (Hide Title Bars), **CP** (Compact Mo
 - **Play history tracking** — listen sessions are recorded with pause-aware duration; visible in the Data tab Internet Radio section (total listen time + top stations). Sessions shorter than 1 second are discarded. Long sessions checkpoint every 30 minutes.
 - Playback Options now groups all source histories under a single **Radio History** submenu
 
+### YouTube
+Library Browser → **Source: YouTube**. Subscribe to channels (**+ADD**, or find them by name in the
+**Search** tab) and expand one to list its uploads. Needs `yt-dlp` and `ffmpeg`. Details: `youtube-source`.
+- **A video's menu** (right-click, or double-click / Enter, which pop the same menu):
+  **Audio ▸** and **Video ▸**, each with Play · Play and Replace Queue · Add to Playlist · Play Next ·
+  Add to Queue. That form downloads first if it isn't on disk (row spinner), then plays or queues.
+  A video can have both its audio and its video downloaded; `⬇ ` marks a row with a download.
+  Below: **Show in Finder**, **Remove Audio File**, **Remove Video File** (only what is on disk).
+- **Libraries → YouTube**: **Set Download Folder…**, **Audio Format** (FLAC, ALAC, MP3 320/256/192/128,
+  AAC 256/192/128, Original AAC, Original Opus), **Video Quality** (360p–2160p 4K, Best Available),
+  **Videos per Channel** (50/100/200/500), **Rip URL…**
+- Downloads go to `<folder>/<Channel>/<Title> [<id>].<ext>`, play locally, and cast like local files.
+
 ### Local Files
 Drag & drop or use File menu. Supports: MP3, M4A, AAC, WAV, AIFF, FLAC, OGG, ALAC
 

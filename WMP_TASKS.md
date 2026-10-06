@@ -4,7 +4,7 @@ The only live backlog for the WMP skin subsystem, and a list of open rows — no
 `skills/wmp-skin-guide/SKILL.md` before picking anything up.
 
 - `.wal` work goes in [`WINAMP5_TASKS.md`](WINAMP5_TASKS.md); the shared video path goes in
-  [`docs/video-playback/backlog.md`](docs/video-playback/backlog.md) (read V1 before any `.wmz` video work);
+  [`MISC_TASKS.md`](MISC_TASKS.md) (read M5 before any `.wmz` video work);
   the local library and the playlist-playback path go in
   [`docs/local-library/backlog.md`](docs/local-library/backlog.md) (**read L1 before any report that a
   skin "won't play" something** — an unreadable track halts the playlist and says nothing in WMP mode).

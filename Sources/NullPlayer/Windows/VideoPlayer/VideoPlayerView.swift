@@ -11,32 +11,6 @@ private struct VideoTrackInfo {
     let name: String
 }
 
-/// Host view for VLCKit's video output.
-///
-/// VLCKit inserts its own rendering subview into whatever NSView is assigned as
-/// the player's `drawable`, and it sizes that subview to the host's bounds *at
-/// insertion time*. For instant-starting local files (e.g. a freshly ripped
-/// clip) that insertion can happen before the window has been laid out, leaving
-/// the video pinned to the bottom-left corner at a stale size until a manual
-/// resize nudges it. Streamed sources avoid this only because their first-frame
-/// delay lets layout settle first. Forcing every subview to fill the host on
-/// insertion and on every resize keeps the video output matched to the host
-/// regardless of when VLCKit attaches it.
-private final class VLCVideoHostView: NSView {
-    override func didAddSubview(_ subview: NSView) {
-        super.didAddSubview(subview)
-        subview.autoresizingMask = [.width, .height]
-        subview.frame = bounds
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        for subview in subviews {
-            subview.frame = bounds
-        }
-    }
-}
-
 /// Video player view using VLCKit (libVLC), skinned title bar, and controls
 class VideoPlayerView: NSView {
 
@@ -214,6 +188,9 @@ class VideoPlayerView: NSView {
 
     /// Set by the two calls that pause on purpose, and consumed by the next `.paused`.
     private var didRequestPause = false
+
+    /// Whether this media's video output has been told its drawing size (`reportSizeToVideoOutput`).
+    private var didReportVideoOutputSize = false
 
     /// Latched for the span of one film, so a source that reports both `.ended` and the end-of-film
     /// `.paused` scrobbles and advances the playlist once. Re-armed on the transition into playing,
@@ -872,6 +849,7 @@ class VideoPlayerView: NSView {
         isActivelyPlaying = false
         didReportPlaybackFinished = false
         didRequestPause = false
+        didReportVideoOutputSize = false
         availableAudioTracks = []
         availableSubtitleTracks = []
         // Clear Plex external-subtitle entries so a stale set can't carry into
@@ -903,6 +881,7 @@ class VideoPlayerView: NSView {
         player.media = media
         mediaPlayer = player
         player.play()
+        playerHostView.traceLayoutAfterPlay(of: player)
 
         // Redact auth query params (e.g. Plex X-Plex-Token) — the token rides in
         // the URL for query-param auth and must not leak into system logs.
@@ -1403,6 +1382,12 @@ extension VideoPlayerView: VLCMediaPlayerDelegate {
             // controls-hide countdown).
             if !self.isActivelyPlaying && player.isPlaying {
                 self.markPlaying()
+            }
+
+            // A known video size means the video output exists: tell it the drawing size now.
+            if !self.didReportVideoOutputSize, player.videoSize != .zero {
+                self.didReportVideoOutputSize = true
+                self.playerHostView.reportSizeToVideoOutput()
             }
 
             let current = Double(player.time.intValue) / 1000.0

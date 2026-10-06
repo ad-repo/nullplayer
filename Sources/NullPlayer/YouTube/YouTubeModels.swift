@@ -143,6 +143,18 @@ struct YouTubeVideo: Codable, Identifiable, Hashable {
     }
 }
 
+/// Which form of a video a download is: its audio track or the MP4. A video can have both.
+enum YouTubeMediaKind: String, Codable, CaseIterable {
+    case audio, video
+
+    var displayName: String {
+        switch self {
+        case .audio: return "Audio"
+        case .video: return "Video"
+        }
+    }
+}
+
 /// Metadata about a downloaded YouTube video
 struct YouTubeDownload: Codable {
     /// YouTube video ID
@@ -156,61 +168,149 @@ struct YouTubeDownload: Codable {
 
     /// Local filename (relative to downloadRoot)
     let fileName: String
+
+    let kind: YouTubeMediaKind
+
+    /// A manifest entry's identity: one video can have an audio and a video download.
+    struct Key: Hashable {
+        let videoId: String
+        let kind: YouTubeMediaKind
+    }
+
+    var key: Key { Key(videoId: videoId, kind: kind) }
 }
 
-/// Output quality for YouTube downloads
-enum YouTubeQuality: String, Codable, CaseIterable {
-    case flac = "flac"
-    case mp3High = "mp3High"
-    case mp3Low = "mp3Low"
-    case video720 = "video720"
-    case video1080 = "video1080"
-
-    /// Whether this is a video format
-    var isVideo: Bool {
-        self == .video720 || self == .video1080
+extension YouTubeDownload {
+    /// An entry written before `kind` existed infers it from the file's extension.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        videoId = try container.decode(String.self, forKey: .videoId)
+        title = try container.decode(String.self, forKey: .title)
+        channelId = try container.decode(String.self, forKey: .channelId)
+        fileName = try container.decode(String.self, forKey: .fileName)
+        kind = try container.decodeIfPresent(YouTubeMediaKind.self, forKey: .kind)
+            ?? (AudioFileValidator.isVideoFile(url: URL(fileURLWithPath: fileName)) ? .video : .audio)
     }
+}
 
-    /// Height cap for video formats; nil for audio formats.
-    var videoMaxHeight: Int? {
+/// Audio format for a video's audio download. YouTube's best audio is ~130–160 kbps Opus (or
+/// 128 kbps AAC), so every format but the two originals is a re-encode of that.
+enum YouTubeAudioFormat: Hashable {
+    case flac, alac
+    case mp3(kbps: Int)
+    case aac(kbps: Int)
+    case originalAAC, originalOpus
+
+    /// The choices, as the menu groups them: lossless, MP3, AAC, originals
+    static let sections: [[YouTubeAudioFormat]] = [
+        [.flac, .alac],
+        [320, 256, 192, 128].map { .mp3(kbps: $0) },
+        [256, 192, 128].map { .aac(kbps: $0) },
+        [.originalAAC, .originalOpus],
+    ]
+
+    /// The saved setting value
+    var rawValue: String {
         switch self {
-        case .video720: return 720
-        case .video1080: return 1080
-        default: return nil
+        case .flac: return "flac"
+        case .alac: return "alac"
+        case .mp3(let kbps): return "mp3-\(kbps)"
+        case .aac(let kbps): return "aac-\(kbps)"
+        case .originalAAC: return "originalAAC"
+        case .originalOpus: return "originalOpus"
         }
     }
 
-    /// yt-dlp command-line arguments for this quality
+    /// A saved value: one of the choices, or a value of the old `YouTubeQuality` setting
+    /// (`mp3High` was V0, `mp3Low` V5).
+    init?(savedValue: String) {
+        switch savedValue {
+        case "mp3High": self = .mp3(kbps: 320)
+        case "mp3Low": self = .mp3(kbps: 128)
+        default:
+            guard let choice = Self.sections.joined().first(where: { $0.rawValue == savedValue }) else { return nil }
+            self = choice
+        }
+    }
+
+    /// yt-dlp's `-f` stream selector
+    var formatSelector: String {
+        switch self {
+        case .flac, .alac, .mp3: return "bestaudio/best"
+        // An AAC source would be copied into the .m4a as is, so encode from the Opus stream.
+        case .aac, .originalOpus: return "bestaudio[acodec=opus]/bestaudio"
+        case .originalAAC: return "bestaudio[ext=m4a]/bestaudio"
+        }
+    }
+
+    /// yt-dlp's audio-extraction arguments
     var ytdlpArgs: [String] {
         switch self {
-        case .flac:
-            return ["--audio-format", "flac", "--audio-quality", "0"]
-        case .mp3High:
-            return ["--audio-format", "mp3", "--audio-quality", "0"]
-        case .mp3Low:
-            return ["--audio-format", "mp3", "--audio-quality", "5"]
-        case .video720, .video1080:
-            return []
+        case .flac: return ["--audio-format", "flac"]
+        // yt-dlp's `alac` mapping drops the codec and writes AAC; name it to ffmpeg directly.
+        case .alac: return ["--audio-format", "alac", "--ppa", "ExtractAudio+ffmpeg_o:-c:a alac"]
+        case .mp3(let kbps): return ["--audio-format", "mp3", "--audio-quality", "\(kbps)K"]
+        case .aac(let kbps): return ["--audio-format", "m4a", "--audio-quality", "\(kbps)K"]
+        case .originalAAC: return ["--audio-format", "m4a"]
+        case .originalOpus: return ["--audio-format", "opus"]
         }
     }
 
-    /// Human-readable display name
     var displayName: String {
         switch self {
         case .flac: return "FLAC"
-        case .mp3High: return "MP3 (High)"
-        case .mp3Low: return "MP3 (Low)"
-        case .video720: return "Video (720p)"
-        case .video1080: return "Video (1080p)"
+        case .alac: return "ALAC"
+        case .mp3(let kbps): return "MP3 \(kbps) kbps"
+        case .aac(let kbps): return "AAC \(kbps) kbps"
+        case .originalAAC: return "Original AAC (no re-encode)"
+        case .originalOpus: return "Original Opus (no re-encode)"
+        }
+    }
+}
+
+/// Height cap for a video's MP4 download
+enum YouTubeVideoQuality: Hashable {
+    case height(Int)
+    case best
+
+    /// The choices, as the menu groups them: the height ladder, then no cap
+    static let sections: [[YouTubeVideoQuality]] = [
+        [360, 480, 720, 1080, 1440, 2160].map { .height($0) },
+        [.best],
+    ]
+
+    /// The saved setting value
+    var rawValue: String {
+        switch self {
+        case .height(let height): return "p\(height)"
+        case .best: return "best"
         }
     }
 
-    /// File extension for this format
-    var fileExtension: String {
+    /// A saved value: one of the choices, or a video value of the old `YouTubeQuality` setting.
+    init?(savedValue: String) {
+        switch savedValue {
+        case "video720": self = .height(720)
+        case "video1080": self = .height(1080)
+        default:
+            guard let choice = Self.sections.joined().first(where: { $0.rawValue == savedValue }) else { return nil }
+            self = choice
+        }
+    }
+
+    /// nil for `best`: no cap
+    var maxHeight: Int? {
         switch self {
-        case .flac: return "flac"
-        case .mp3High, .mp3Low: return "mp3"
-        case .video720, .video1080: return "mp4"
+        case .height(let height): return height
+        case .best: return nil
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .height(2160): return "2160p (4K)"
+        case .height(let height): return "\(height)p"
+        case .best: return "Best Available"
         }
     }
 }
