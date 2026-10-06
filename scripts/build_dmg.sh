@@ -46,13 +46,10 @@ if [[ "${1:-}" == "--skip-build" ]]; then
     SKIP_BUILD=true
 fi
 
-# Detect architecture
-BUILD_ARCH=$(uname -m)
-if [[ "$BUILD_ARCH" == "x86_64" ]]; then
-    BUILD_DIR="$REPO_ROOT/.build/x86_64-apple-macosx/release"
-else
-    BUILD_DIR="$REPO_ROOT/.build/arm64-apple-macosx/release"
-fi
+# Release products directory, as SwiftPM reports it for the build system assemble_app uses
+# (see scripts/lib/swiftpm.sh)
+source "$(dirname "$0")/lib/swiftpm.sh"
+BUILD_DIR=$(swiftpm_bin_path release 2>/dev/null)
 
 echo ""
 echo "======================================"

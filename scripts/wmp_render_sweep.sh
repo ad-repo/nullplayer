@@ -43,6 +43,10 @@
 
 set -u -o pipefail
 
+# Pin the native build system where offered: the default on Swift 6.4 cannot build the test
+# target (no VLCKit), which would leave an empty capture. See scripts/lib/swiftpm.sh.
+source "$(dirname "$0")/lib/swiftpm.sh"
+
 readonly CORPUS_DEFAULT="$HOME/Library/Application Support/NullPlayer/WMPSkins"
 # A rejected archive emits only SKIN + SKIN…FAILED, and 10 of 14 are rejected today, so the floor
 # per archive cannot assume a load. It exists to catch an empty or truncated capture.
@@ -138,7 +142,7 @@ capture() {
     WMP_RENDER_DUMP="$out/png" \
     WMP_RENDER_BITMAPS=1 \
     WMP_RENDER_SCRIPTS=1 \
-        swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus \
+        swift test ${SWIFTPM_ARGS[@]+"${SWIFTPM_ARGS[@]}"} --filter WMPRenderDumpTests/testSweepsSkinOrCorpus \
         > "$out/raw.txt" 2> "$out/stderr.txt"
     local status=$?
 
