@@ -471,11 +471,12 @@ class ModernLibraryBrowserView: NSView {
     /// A video row's Audio ▸ / Video ▸ menu and its downloads, which drive a per-row spinner.
     private lazy var youtubeVideoActions: YouTubeVideoActions = {
         let actions = YouTubeVideoActions(search: youtubeSearch)
-        actions.onChange = { [weak self] in
+        actions.onFetchesChanged = { [weak self] in
             guard let self else { return }
             if self.youtubeVideoActions.hasFetchesInFlight { self.startLoadingAnimation() } else { self.stopLoadingAnimation() }
-            self.rebuildCurrentModeItems(); self.needsDisplay = true
+            self.needsDisplay = true
         }
+        actions.onFilesChanged = { [weak self] in self?.rebuildCurrentModeItems() }
         return actions
     }()
     /// Channel IDs whose uploads are currently being fetched — drives a per-row spinner on the channel entry.
@@ -9061,7 +9062,7 @@ class ModernLibraryBrowserView: NSView {
                 image = await self.loadRadioArtwork(for: radioTrack, station: station)
             case .youtubeVideo(let video):
                 // A download carries its own embedded art; otherwise the 16:9 thumbnail.
-                if let fileURL = YouTubeManager.shared.downloadedFiles(for: video.videoId).values.first {
+                if let fileURL = YouTubeManager.shared.coverArtFile(for: video.videoId) {
                     image = await self.loadLocalArtwork(url: fileURL)
                 }
                 if image == nil, let thumb = video.thumbnailURL {

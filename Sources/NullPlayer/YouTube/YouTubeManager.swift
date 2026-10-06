@@ -325,10 +325,9 @@ final class YouTubeManager {
                 from: video.watchURL, maxHeight: videoQuality.maxHeight, outputTemplate: outputTemplate,
                 extraArgs: Self.squareThumbnailArgs)
         case .audio:
-            let formatArgs = audioFormat.ytdlpArgs + ["-x", "--embed-metadata", "--no-playlist"]
-                + Self.squareThumbnailArgs
             fileURL = try await StreamRipper.downloadAudio(
-                from: video.watchURL, formatArgs: formatArgs, outputTemplate: outputTemplate)
+                from: video.watchURL, formatSelector: audioFormat.formatSelector,
+                formatArgs: audioFormat.ytdlpArgs + Self.squareThumbnailArgs, outputTemplate: outputTemplate)
         }
 
         // Record in manifest as a path relative to downloadRoot (channel/file).
@@ -391,10 +390,15 @@ final class YouTubeManager {
         !downloadedFiles(for: videoId).isEmpty
     }
 
+    /// The file whose embedded cover art stands for a video: the audio download, else the video.
+    func coverArtFile(for videoId: String) -> URL? {
+        let files = downloadedFiles(for: videoId)
+        return files[.audio] ?? files[.video]
+    }
+
     /// Remove one form of a downloaded video (deletes file and manifest entry)
-    func removeDownload(videoId: String, kind: YouTubeMediaKind) {
+    func removeDownload(_ key: YouTubeDownload.Key) {
         loadManifestIfNeeded()
-        let key = YouTubeDownload.Key(videoId: videoId, kind: kind)
         guard let download = downloadManifest[key] else { return }
         if let fileURL = manifestFileURL(for: download) {
             try? FileManager.default.removeItem(at: fileURL)

@@ -10,14 +10,16 @@ final class YouTubeVideoActions: NSObject {
     /// In-flight downloads by video and kind. A repeat request for one awaits it rather than
     /// running a second yt-dlp onto the same file.
     private var fetches: [YouTubeDownload.Key: Task<URL, Error>] = [:]
-    /// Verbs waiting on a fetch, cancelled at teardown.
-    private var pendingVerbs: [UUID: Task<Void, Never>] = [:]
-    /// The waiting play verb, if any: a newer play supersedes it, so a stale result never
-    /// starts playing.
-    private var pendingPlay: UUID?
+    /// Bumped by `cancel()`: a verb still waiting on a fetch from an older epoch is dropped.
+    private var epoch = 0
+    /// Bumped by every play verb: a newer play supersedes a waiting one, so a stale result
+    /// never starts playing.
+    private var playEpoch = 0
 
-    /// Fired when a fetch starts or finishes, or a file is removed.
-    var onChange: (() -> Void)?
+    /// A download started or finished: the row spinners changed.
+    var onFetchesChanged: (() -> Void)?
+    /// A file landed or was removed: the rows' downloaded state changed.
+    var onFilesChanged: (() -> Void)?
 
     init(search: YouTubeChannelSearch) {
         self.search = search
@@ -29,10 +31,9 @@ final class YouTubeVideoActions: NSObject {
 
     var hasFetchesInFlight: Bool { !fetches.isEmpty }
 
-    /// Cancel the waiting verbs. A running download still finishes and is recorded.
+    /// Drop the waiting verbs. A running download still finishes and is recorded.
     func cancel() {
-        pendingVerbs.values.forEach { $0.cancel() }
-        pendingVerbs = [:]; pendingPlay = nil
+        epoch += 1
     }
 
     // MARK: - Menu
@@ -40,12 +41,12 @@ final class YouTubeVideoActions: NSObject {
     func addMenuItems(for video: YouTubeVideo, to menu: NSMenu) {
         for kind in YouTubeMediaKind.allCases {
             let submenu = NSMenu()
-            for verb in Verb.allCases {
+            for verb in TrackVerb.allCases {
                 let item = NSMenuItem(title: verb.title, action: #selector(performVerb(_:)), keyEquivalent: "")
                 item.target = self; item.representedObject = VerbRequest(video: video, kind: kind, verb: verb)
                 submenu.addItem(item)
             }
-            let kindItem = NSMenuItem(title: kind.title, action: nil, keyEquivalent: "")
+            let kindItem = NSMenuItem(title: kind.displayName, action: nil, keyEquivalent: "")
             kindItem.submenu = submenu
             menu.addItem(kindItem)
         }
@@ -57,7 +58,7 @@ final class YouTubeVideoActions: NSObject {
         finderItem.target = self; finderItem.representedObject = Array(files.values)
         menu.addItem(finderItem)
         for kind in YouTubeMediaKind.allCases where files[kind] != nil {
-            let removeItem = NSMenuItem(title: "Remove \(kind.title) File", action: #selector(removeFile(_:)), keyEquivalent: "")
+            let removeItem = NSMenuItem(title: "Remove \(kind.displayName) File", action: #selector(removeFile(_:)), keyEquivalent: "")
             removeItem.target = self; removeItem.representedObject = YouTubeDownload.Key(videoId: video.videoId, kind: kind)
             menu.addItem(removeItem)
         }
@@ -83,8 +84,8 @@ final class YouTubeVideoActions: NSObject {
 
     @objc private func removeFile(_ sender: NSMenuItem) {
         guard let key = sender.representedObject as? YouTubeDownload.Key else { return }
-        YouTubeManager.shared.removeDownload(videoId: key.videoId, kind: key.kind)
-        onChange?()
+        YouTubeManager.shared.removeDownload(key)
+        onFilesChanged?()
     }
 
     // MARK: - Verbs
@@ -92,61 +93,23 @@ final class YouTubeVideoActions: NSObject {
     private struct VerbRequest {
         let video: YouTubeVideo
         let kind: YouTubeMediaKind
-        let verb: Verb
+        let verb: TrackVerb
     }
 
-    /// The library's track verbs, with the engine calls its local-track handlers make.
-    private enum Verb: CaseIterable {
-        case play, playAndReplaceQueue, addToPlaylist, playNext, addToQueue
-
-        var title: String {
-            switch self {
-            case .play: return "Play"
-            case .playAndReplaceQueue: return "Play and Replace Queue"
-            case .addToPlaylist: return "Add to Playlist"
-            case .playNext: return "Play Next"
-            case .addToQueue: return "Add to Queue"
-            }
-        }
-
-        var startsPlayback: Bool { self == .play || self == .playAndReplaceQueue }
-
-        func perform(_ track: Track) {
-            let engine = WindowManager.shared.audioEngine
-            switch self {
-            case .play: engine.playNow([track])
-            case .playAndReplaceQueue: engine.loadTracks([track])
-            case .addToPlaylist: engine.appendTracks([track])
-            case .playNext: engine.insertTracksAfterCurrent([track])
-            case .addToQueue:
-                let wasEmpty = engine.playlist.isEmpty
-                engine.appendTracks([track])
-                if wasEmpty { engine.playTrack(at: 0) }
-            }
-        }
-    }
-
-    private func perform(_ verb: Verb, video: YouTubeVideo, kind: YouTubeMediaKind) {
-        if verb.startsPlayback, let previous = pendingPlay {
-            pendingVerbs.removeValue(forKey: previous)?.cancel()
-            pendingPlay = nil
-        }
+    private func perform(_ verb: TrackVerb, video: YouTubeVideo, kind: YouTubeMediaKind) {
+        if verb.startsPlayback { playEpoch += 1 }
         if let url = YouTubeManager.shared.downloadedFiles(for: video.videoId)[kind] {
-            verb.perform(Track(url: url, isYouTubeOrigin: true))
+            verb.perform([Track(url: url, isYouTubeOrigin: true)])
             return
         }
         let fetch = fetch(video, kind: kind)
-        let id = UUID()
-        pendingVerbs[id] = Task { [weak self] in
-            defer {
-                self?.pendingVerbs[id] = nil
-                if self?.pendingPlay == id { self?.pendingPlay = nil }
-            }
-            // A failed fetch is logged where it runs; a cancelled verb does nothing.
-            guard let url = try? await fetch.value, !Task.isCancelled else { return }
-            verb.perform(Track(url: url, isYouTubeOrigin: true))
+        let (epoch, playEpoch) = (self.epoch, self.playEpoch)
+        Task { [weak self] in
+            // A failed fetch is logged where it runs; a dropped or superseded verb does nothing.
+            guard let url = try? await fetch.value, let self, self.epoch == epoch,
+                  !verb.startsPlayback || self.playEpoch == playEpoch else { return }
+            verb.perform([Track(url: url, isYouTubeOrigin: true)])
         }
-        if verb.startsPlayback { pendingPlay = id }
     }
 
     private func fetch(_ video: YouTubeVideo, kind: YouTubeMediaKind) -> Task<URL, Error> {
@@ -154,25 +117,18 @@ final class YouTubeVideoActions: NSObject {
         if let existing = fetches[key] { return existing }
         let channelTitle = search.channelTitle(forVideo: video)
         let task = Task { [weak self] in
-            defer { self?.fetches[key] = nil; self?.onChange?() }
+            defer { self?.fetches[key] = nil; self?.onFetchesChanged?() }
             do {
-                return try await YouTubeManager.shared.download(video: video, kind: kind, channelTitle: channelTitle)
+                let url = try await YouTubeManager.shared.download(video: video, kind: kind, channelTitle: channelTitle)
+                self?.onFilesChanged?()
+                return url
             } catch {
                 NSLog("Failed to download YouTube %@: %@", kind.rawValue, error.localizedDescription.redactingSensitiveURLQueryItems)
                 throw error
             }
         }
         fetches[key] = task
-        onChange?()
+        onFetchesChanged?()
         return task
-    }
-}
-
-private extension YouTubeMediaKind {
-    var title: String {
-        switch self {
-        case .audio: return "Audio"
-        case .video: return "Video"
-        }
     }
 }

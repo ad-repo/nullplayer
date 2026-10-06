@@ -2654,17 +2654,17 @@ class ContextMenuBuilder {
 
         // A radio-style submenu: one checkmarked item per choice, the choice as represented object,
         // a separator between sections.
-        func choiceSubmenu<Choice: Equatable>(_ title: String, _ sections: [[(title: String, value: Choice)]],
-                                              current: Choice, action: Selector) -> NSMenuItem {
+        func choiceSubmenu<Choice: Equatable>(_ title: String, _ sections: [[Choice]], current: Choice,
+                                              name: (Choice) -> String, action: Selector) -> NSMenuItem {
             let menu = NSMenu()
             menu.autoenablesItems = false
             for (index, choices) in sections.enumerated() {
                 if index > 0 { menu.addItem(NSMenuItem.separator()) }
                 for choice in choices {
-                    let item = NSMenuItem(title: choice.title, action: action, keyEquivalent: "")
+                    let item = NSMenuItem(title: name(choice), action: action, keyEquivalent: "")
                     item.target = MenuActions.shared
-                    item.representedObject = choice.value
-                    item.state = choice.value == current ? .on : .off
+                    item.representedObject = choice
+                    item.state = choice == current ? .on : .off
                     menu.addItem(item)
                 }
             }
@@ -2674,13 +2674,13 @@ class ContextMenuBuilder {
         }
 
         let manager = YouTubeManager.shared
-        youtubeMenu.addItem(choiceSubmenu("Audio Format", YouTubeAudioFormat.sections.map { $0.map { ($0.displayName, $0) } },
-                                          current: manager.audioFormat, action: #selector(MenuActions.setYouTubeAudioFormat(_:))))
-        youtubeMenu.addItem(choiceSubmenu("Video Quality", YouTubeVideoQuality.sections.map { $0.map { ($0.displayName, $0) } },
-                                          current: manager.videoQuality, action: #selector(MenuActions.setYouTubeVideoQuality(_:))))
+        youtubeMenu.addItem(choiceSubmenu("Audio Format", YouTubeAudioFormat.sections, current: manager.audioFormat,
+                                          name: \.displayName, action: #selector(MenuActions.setYouTubeAudioFormat(_:))))
+        youtubeMenu.addItem(choiceSubmenu("Video Quality", YouTubeVideoQuality.sections, current: manager.videoQuality,
+                                          name: \.displayName, action: #selector(MenuActions.setYouTubeVideoQuality(_:))))
         // How many recent uploads to list per channel
-        youtubeMenu.addItem(choiceSubmenu("Videos per Channel", [YouTubeManager.videoLimitChoices.map { ("\($0)", $0) }],
-                                          current: manager.videoLimit, action: #selector(MenuActions.setYouTubeVideoLimit(_:))))
+        youtubeMenu.addItem(choiceSubmenu("Videos per Channel", [YouTubeManager.videoLimitChoices], current: manager.videoLimit,
+                                          name: { "\($0)" }, action: #selector(MenuActions.setYouTubeVideoLimit(_:))))
 
         youtubeItem.submenu = youtubeMenu
         return youtubeItem

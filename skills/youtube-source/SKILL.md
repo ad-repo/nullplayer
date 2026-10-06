@@ -225,25 +225,32 @@ One `@MainActor` instance per browser view (`youtubeVideoActions`, like `youtube
 whole per-video flow, so both browsers' YouTube-video branches are one call each.
 
 - `addMenuItems(for:to:)` builds **Audio ▸** / **Video ▸** (each with the library's track verbs —
-  Play, Play and Replace Queue, Add to Playlist, Play Next, Add to Queue — mapped to the same engine
-  calls the library's local-track handlers make), then, for whatever is on disk, **Show in Finder**
-  (selects every file of the video) and **Remove Audio File** / **Remove Video File**.
+  `App/TrackVerb.swift`: Play, Play and Replace Queue, Add to Playlist, Play Next, Add to Queue —
+  mapped to the same engine calls the library's local-track handlers make), then, for whatever is
+  on disk, **Show in Finder** (selects every file of the video) and **Remove Audio File** /
+  **Remove Video File**.
   `popUpMenu(for:in:)` pops the same items at the mouse for double-click and Enter (so Enter also
   pops at the cursor, not the row).
 - A verb on a form that is on disk runs now. Otherwise it awaits that form's download:
   `fetches[Key]` is the single in-flight state, and a repeat request for the same video + kind
-  awaits the running download instead of starting a second yt-dlp onto the same file. A newer
-  Play / Play and Replace Queue cancels a still-waiting one, so a stale result never starts playing;
-  queue verbs apply when their file lands. `cancel()` (view teardown) cancels the waiting verbs but
-  not the download — yt-dlp is not killed, and a finished file is still recorded.
-- `isFetching(_:)` / `hasFetchesInFlight` drive each view's row spinner and loading timer;
-  `onChange` (a download started or finished, or a file removed) makes the view rebuild its rows.
+  awaits the running download instead of starting a second yt-dlp onto the same file. A waiting
+  verb is not a stored task: it captures two counters and checks them when its file lands. Every
+  Play / Play and Replace Queue bumps `playEpoch`, so a newer one supersedes a still-waiting one and
+  a stale result never starts playing; queue verbs apply when their file lands. `cancel()` (view
+  teardown) bumps `epoch`, dropping every waiting verb but not the download — yt-dlp is not killed,
+  and a finished file is still recorded.
+- `isFetching(_:)` / `hasFetchesInFlight` drive each view's row spinner and loading timer.
+  `onFetchesChanged` (a download started or finished) updates the spinner; `onFilesChanged` (a file
+  landed or was removed) makes the view rebuild its rows.
+- A row's art is `YouTubeManager.coverArtFile(for:)` — the audio download's embedded art, else the
+  video's — before falling back to the thumbnail.
 
 ### Download Flow
 
 1. **Reachability Check**: Verify `downloadRoot` is accessible (mounted NAS, etc.)
 2. **Download**: `YouTubeManager.download(video:kind:channelTitle:)` switches on `kind`. `.audio`
-   passes `audioFormat.ytdlpArgs` to `StreamRipper.downloadAudio(from:formatArgs:outputTemplate:)`;
+   passes `audioFormat.formatSelector` (the one `-f`) and `audioFormat.ytdlpArgs` to
+   `StreamRipper.downloadAudio(from:formatSelector:formatArgs:outputTemplate:)`;
    `.video` calls `StreamRipper.downloadVideo(from:maxHeight:outputTemplate:extraArgs:)` with
    `videoQuality.maxHeight` (nil = no cap). Up to 1080p the video is H.264 only; above that it is
    VP9 / AV1 (YouTube's H.264 stops at 1080p), still preferring H.264 on a tie, merged with AAC
@@ -310,5 +317,5 @@ Downloaded files are local `file://` tracks. After download completes, the `Trac
 - **Streaming playback not offered**: YouTube streams (live, members-only, age-restricted) may fail silently if yt-dlp can't extract them; only downloadable videos are listed
 - **Video titles from yt-dlp**: Source of truth is yt-dlp's title extraction; titles are not synced with YouTube's API and may differ from what the web UI shows
 - **YouTube has its own session sort (default date order)**: The channels tab must NOT inherit the persisted library column sort (`columnSortId`, saved per tab by `LibraryBrowserTabSortStore`), or every rebuild — including after a download — re-sorts videos to A–Z. Both views keep session-only `youtubeColumnSortId`/`youtubeColumnSortAscending` (default nil = yt-dlp's newest-first order), read through `activeColumnSortId`/`activeColumnSortAscending` by every sort/header-draw path. A header click in the YouTube tab sets the session sort only; it never writes the library sort. This state resets to date order on relaunch (intended).
-- **Downloaded marker is rebuild-driven**: A downloading video draws a per-row spinner gated on `youtubeVideoActions.isFetching`; the **`⬇ ` prefix** (either form on disk) is added in `buildYouTubeChannelItems` from `isDownloaded`. `onChange` fires when the download finishes, and the view's handler calls `rebuildCurrentModeItems()` (adds the marker; the spinner is gone because the fetch left `fetches`) — so the spinner→icon transition only works because the row stays put, which is why the session-sort fix above matters (an A–Z re-sort would relocate the row mid-transition).
+- **Downloaded marker is rebuild-driven**: A downloading video draws a per-row spinner gated on `youtubeVideoActions.isFetching`; the **`⬇ ` prefix** (either form on disk) is added in `buildYouTubeChannelItems` from `isDownloaded`. `onFilesChanged` fires when the download lands, and the view's handler calls `rebuildCurrentModeItems()` (adds the marker; the spinner is gone because the fetch left `fetches`) — so the spinner→icon transition only works because the row stays put, which is why the session-sort fix above matters (an A–Z re-sort would relocate the row mid-transition).
 - **Channels tab uses the `.youtube` column group, not the radio column path**: Don't route YouTube videos through `internetRadioColumns` — those columns are fixed-width by design. Video rows use `youtubeColumns` (`[.thumbnail, .title, .youtubeDate, .duration]`) via the resizable `LibraryColumnVisibilityGroup.youtube` group; adding/changing that enum requires updating every exhaustive `switch group` in both `ModernLibraryBrowserView` and `PlexBrowserView`

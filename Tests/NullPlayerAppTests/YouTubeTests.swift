@@ -309,11 +309,19 @@ final class YouTubeTests: XCTestCase {
         XCTAssertEqual(YouTubeAudioFormat.alac.ytdlpArgs,
                        ["--audio-format", "alac", "--ppa", "ExtractAudio+ffmpeg_o:-c:a alac"])
         XCTAssertEqual(YouTubeAudioFormat.mp3(kbps: 192).ytdlpArgs, ["--audio-format", "mp3", "--audio-quality", "192K"])
+        XCTAssertEqual(YouTubeAudioFormat.aac(kbps: 256).ytdlpArgs, ["--audio-format", "m4a", "--audio-quality", "256K"])
+        XCTAssertEqual(YouTubeAudioFormat.originalAAC.ytdlpArgs, ["--audio-format", "m4a"])
+        XCTAssertEqual(YouTubeAudioFormat.originalOpus.ytdlpArgs, ["--audio-format", "opus"])
+    }
+
+    func testYouTubeAudioFormatSelectors() {
+        for format in [YouTubeAudioFormat.flac, .alac, .mp3(kbps: 320)] {
+            XCTAssertEqual(format.formatSelector, "bestaudio/best")
+        }
         // Re-encoded AAC starts from the Opus stream; an AAC source would be copied as is.
-        XCTAssertEqual(YouTubeAudioFormat.aac(kbps: 256).ytdlpArgs,
-                       ["-f", "bestaudio[acodec=opus]/bestaudio", "--audio-format", "m4a", "--audio-quality", "256K"])
-        XCTAssertEqual(YouTubeAudioFormat.originalAAC.ytdlpArgs, ["-f", "bestaudio[ext=m4a]/bestaudio", "--audio-format", "m4a"])
-        XCTAssertEqual(YouTubeAudioFormat.originalOpus.ytdlpArgs, ["-f", "bestaudio[acodec=opus]/bestaudio", "--audio-format", "opus"])
+        XCTAssertEqual(YouTubeAudioFormat.aac(kbps: 256).formatSelector, "bestaudio[acodec=opus]/bestaudio")
+        XCTAssertEqual(YouTubeAudioFormat.originalAAC.formatSelector, "bestaudio[ext=m4a]/bestaudio")
+        XCTAssertEqual(YouTubeAudioFormat.originalOpus.formatSelector, "bestaudio[acodec=opus]/bestaudio")
     }
 
     func testYouTubeAudioFormatMenuAndNames() {
@@ -645,7 +653,7 @@ final class YouTubeTests: XCTestCase {
 
         manager.downloadRoot = root
         XCTAssertNil(manager.downloadedFiles(for: "outside")[.audio])
-        manager.removeDownload(videoId: "outside", kind: .audio)
+        manager.removeDownload(YouTubeDownload.Key(videoId: "outside", kind: .audio))
         XCTAssertTrue(FileManager.default.fileExists(atPath: outsideFile.path))
     }
 
@@ -672,10 +680,13 @@ final class YouTubeTests: XCTestCase {
         manager.downloadRoot = root
         XCTAssertEqual(Set(manager.downloadedFiles(for: "v").keys), [.audio, .video])
         XCTAssertTrue(manager.isDownloaded("v"))
+        // Cover art comes from the audio file while there is one, then from the video
+        XCTAssertEqual(manager.coverArtFile(for: "v")?.lastPathComponent, "V.mp3")
 
-        manager.removeDownload(videoId: "v", kind: .audio)
+        manager.removeDownload(YouTubeDownload.Key(videoId: "v", kind: .audio))
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("V.mp3").path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("V.mp4").path))
+        XCTAssertEqual(manager.coverArtFile(for: "v")?.lastPathComponent, "V.mp4")
 
         // The saved manifest keeps the video, keyed by video ID and kind
         manager.downloadRoot = otherRoot

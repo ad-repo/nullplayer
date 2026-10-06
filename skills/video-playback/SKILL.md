@@ -18,6 +18,7 @@ Video plays in its own window through VLCKit (libVLC 3.0.12.1, vendored in
 | `Audio/AudioEngine.swift` | `loadTrack(at:)` routes a `.video` track to `WindowManager.playVideoTrack` and stops audio; `playTrack(at:)` and the natural end-of-track advance (`advanceToLocalTrackAsync`) take that path |
 | `App/WindowManager.swift` | `playVideoTrack(_:)` — video cast routing, then creates `VideoPlayerWindowController` lazily and plays (Plex / Jellyfin / Emby tracks get server-aware playback) |
 | `Windows/VideoPlayer/VideoPlayerView.swift` | the VLCKit player, controls, track selection; `play(url:title:)` is the **only** place a `VLCMediaPlayer` is created |
+| `Windows/VideoPlayer/VLCVideoHostView.swift` | the player's `drawable`: keeps VLC's view filling it, re-reports the drawing size (below), and the `VIDEO_LAYOUT_TRACE` instrument |
 
 ## Routing rules
 

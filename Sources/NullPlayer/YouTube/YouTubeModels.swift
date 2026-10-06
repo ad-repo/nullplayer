@@ -146,6 +146,13 @@ struct YouTubeVideo: Codable, Identifiable, Hashable {
 /// Which form of a video a download is: its audio track or the MP4. A video can have both.
 enum YouTubeMediaKind: String, Codable, CaseIterable {
     case audio, video
+
+    var displayName: String {
+        switch self {
+        case .audio: return "Audio"
+        case .video: return "Video"
+        }
+    }
 }
 
 /// Metadata about a downloaded YouTube video
@@ -226,18 +233,26 @@ enum YouTubeAudioFormat: Hashable {
         }
     }
 
-    /// yt-dlp arguments, after the downloader's own `-f bestaudio/best -x` (a later `-f` wins)
+    /// yt-dlp's `-f` stream selector
+    var formatSelector: String {
+        switch self {
+        case .flac, .alac, .mp3: return "bestaudio/best"
+        // An AAC source would be copied into the .m4a as is, so encode from the Opus stream.
+        case .aac, .originalOpus: return "bestaudio[acodec=opus]/bestaudio"
+        case .originalAAC: return "bestaudio[ext=m4a]/bestaudio"
+        }
+    }
+
+    /// yt-dlp's audio-extraction arguments
     var ytdlpArgs: [String] {
         switch self {
         case .flac: return ["--audio-format", "flac"]
         // yt-dlp's `alac` mapping drops the codec and writes AAC; name it to ffmpeg directly.
         case .alac: return ["--audio-format", "alac", "--ppa", "ExtractAudio+ffmpeg_o:-c:a alac"]
         case .mp3(let kbps): return ["--audio-format", "mp3", "--audio-quality", "\(kbps)K"]
-        // An AAC source would be copied into the .m4a as is, so encode from the Opus stream.
-        case .aac(let kbps):
-            return ["-f", "bestaudio[acodec=opus]/bestaudio", "--audio-format", "m4a", "--audio-quality", "\(kbps)K"]
-        case .originalAAC: return ["-f", "bestaudio[ext=m4a]/bestaudio", "--audio-format", "m4a"]
-        case .originalOpus: return ["-f", "bestaudio[acodec=opus]/bestaudio", "--audio-format", "opus"]
+        case .aac(let kbps): return ["--audio-format", "m4a", "--audio-quality", "\(kbps)K"]
+        case .originalAAC: return ["--audio-format", "m4a"]
+        case .originalOpus: return ["--audio-format", "opus"]
         }
     }
 

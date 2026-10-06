@@ -169,12 +169,15 @@ final class StreamRipper {
     ///
     /// - Parameters:
     ///   - sourceURL: The URL to download audio from
+    ///   - formatSelector: yt-dlp `-f` stream selector (e.g. `"bestaudio/best"`)
     ///   - formatArgs: yt-dlp audio format arguments (e.g., `["--audio-format","flac","--audio-quality","0"]`)
+    ///     and any other extras (e.g. thumbnail embedding)
     ///   - outputTemplate: yt-dlp output filename template (e.g., `"/path/to/downloads/%(id)s.%(ext)s"`)
     /// - Returns: A file:// URL to the downloaded audio file
     /// - Throws: If yt-dlp is not found, the download fails, or the output path cannot be resolved
     nonisolated static func downloadAudio(
         from sourceURL: URL,
+        formatSelector: String,
         formatArgs: [String],
         outputTemplate: String
     ) async throws -> URL {
@@ -208,7 +211,7 @@ final class StreamRipper {
             try? FileManager.default.removeItem(at: errorFile)
         }
 
-        var args = ["-f", "bestaudio/best", "-x"]
+        var args = ["-f", formatSelector, "-x"]
         args += formatArgs
         args += [
             "--no-playlist",
