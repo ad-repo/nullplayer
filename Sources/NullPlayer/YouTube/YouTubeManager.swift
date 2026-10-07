@@ -396,6 +396,24 @@ final class YouTubeManager {
         return files[.audio] ?? files[.video]
     }
 
+    /// The Local source's search over YouTube: subscribed channels whose name matches, and
+    /// downloaded videos whose title matches. `listedFiles` are already library tracks (the
+    /// download folder is also a watch folder), so a video is listed only for a file on disk
+    /// that is not one of them. Reads the subscriptions and the manifest only.
+    func localSearch(query: String, excluding listedFiles: Set<URL>) -> (channels: [YouTubeChannel], videos: [YouTubeVideo]) {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return ([], []) }
+        loadManifestIfNeeded()
+        let listed = Set(listedFiles.map(\.standardizedFileURL))
+        let matchingDownloads = downloadManifest.values.filter { $0.title.localizedStandardContains(query) }
+        let oneDownloadPerVideo = Dictionary(matchingDownloads.map { ($0.videoId, $0) }, uniquingKeysWith: { first, _ in first })
+        let videos = oneDownloadPerVideo.values
+            .filter { !Set(downloadedFiles(for: $0.videoId).values).isSubset(of: listed) }
+            .map(YouTubeVideo.init(download:))
+            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        return (channels.filter { $0.title.localizedStandardContains(query) }, videos)
+    }
+
     /// Remove one form of a downloaded video (deletes file and manifest entry)
     func removeDownload(_ key: YouTubeDownload.Key) {
         loadManifestIfNeeded()

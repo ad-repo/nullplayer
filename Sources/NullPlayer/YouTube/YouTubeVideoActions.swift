@@ -3,7 +3,8 @@ import AppKit
 /// A YouTube video row's actions, shared by both library browsers: **Audio ▸** and **Video ▸**
 /// submenus carrying the library's track verbs, each fetching that form of the video first
 /// when it isn't on disk, then Show in Finder and Remove Audio / Video File. Double-click and
-/// Enter pop the same menu, so nothing is fetched without a choice.
+/// Enter (`activate`) play the one form on disk, or else pop the same menu, so nothing is
+/// fetched or picked without a choice.
 @MainActor
 final class YouTubeVideoActions: NSObject {
     private let search: YouTubeChannelSearch
@@ -64,12 +65,22 @@ final class YouTubeVideoActions: NSObject {
         }
     }
 
-    /// The row menu at the mouse location, for double-click and Enter.
-    func popUpMenu(for video: YouTubeVideo, in view: NSView) {
+    /// Double-click and Enter: a video with one form on disk plays it; one with both, or
+    /// neither, pops the row menu at the mouse location.
+    func activate(_ video: YouTubeVideo, in view: NSView) {
+        if let kind = Self.formToPlay(YouTubeManager.shared.downloadedFiles(for: video.videoId)) {
+            perform(.play, video: video, kind: kind)
+            return
+        }
         let menu = NSMenu()
         addMenuItems(for: video, to: menu)
         let location = view.convert(view.window?.mouseLocationOutsideOfEventStream ?? .zero, from: nil)
         menu.popUp(positioning: nil, at: location, in: view)
+    }
+
+    /// The form `activate` plays: the only one on disk. nil — pop the menu — for both or neither.
+    nonisolated static func formToPlay(_ files: [YouTubeMediaKind: URL]) -> YouTubeMediaKind? {
+        files.count == 1 ? files.keys.first : nil
     }
 
     @objc private func performVerb(_ sender: NSMenuItem) {

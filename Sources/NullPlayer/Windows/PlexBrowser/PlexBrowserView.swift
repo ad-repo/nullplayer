@@ -365,11 +365,11 @@ class PlexBrowserView: NSView {
         currentSource.isYouTube ? youtubeColumnSortAscending : tabSort.columnSortAscending
     }
 
-    /// Whether any content uses columns (for showing headers)
-    private var hasColumnContent: Bool {
-        displayItems.contains { item in
-            columnsForItem(item) != nil
-        }
+    /// Whether the list draws a column header. Drawing and every hit test ask this, so a click
+    /// lands on the row drawn under it — rows with their own columns (YouTube videos in the
+    /// Local search) can sit in a list that draws no header.
+    private var hasColumnHeader: Bool {
+        headerColumnsForCurrentContent() != nil
     }
 
     private var hasInternetRadioColumns: Bool {
@@ -8376,7 +8376,7 @@ class PlexBrowserView: NSView {
         }
         
         // Check if columns are shown (affects content start position)
-        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        let hasColumns = hasColumnHeader
         var contentY = listY
         if hasColumns {
             contentY += columnHeaderHeight
@@ -8414,7 +8414,7 @@ class PlexBrowserView: NSView {
         if browseMode == .search {
             listY += Layout.searchBarHeight
         }
-        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        let hasColumns = hasColumnHeader
         var contentY = listY
         if hasColumns {
             contentY += columnHeaderHeight
@@ -8458,7 +8458,7 @@ class PlexBrowserView: NSView {
         guard !browseMode.isHistoryMode else { return nil }
         if hasInternetRadioColumns { return nil }
         // Only applies when columns are shown
-        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        let hasColumns = hasColumnHeader
         guard hasColumns else { return nil }
         
         // Check if in header area (account for search bar when in search mode)
@@ -8505,7 +8505,7 @@ class PlexBrowserView: NSView {
     private func hitTestColumnHeader(at skinPoint: NSPoint) -> String? {
         guard !browseMode.isHistoryMode else { return nil }
         // Only applies when columns are shown
-        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        let hasColumns = hasColumnHeader
         guard hasColumns else { return nil }
         
         // Check if in header area
@@ -8544,7 +8544,7 @@ class PlexBrowserView: NSView {
     private func hitTestColumnHeaderArea(at skinPoint: NSPoint) -> Bool {
         guard !browseMode.isHistoryMode else { return false }
         if hasInternetRadioColumns { return false }
-        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        let hasColumns = hasColumnHeader
         guard hasColumns else { return false }
 
         var headerY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
@@ -15240,7 +15240,7 @@ class PlexBrowserView: NSView {
     }
 
     /// An expanded channel's uploads, as indented rows under it.
-    private func appendYouTubeVideoItems(for channel: YouTubeChannel) {
+    private func appendYouTubeVideoItems(for channel: YouTubeChannel, indentLevel: Int = 1) {
         guard expandedYouTubeChannels.contains(channel.id), let videos = youtubeChannelVideos[channel.id] else { return }
         for video in videos {
             let marker = YouTubeManager.shared.isDownloaded(video.videoId) ? "⬇ " : ""
@@ -15248,7 +15248,7 @@ class PlexBrowserView: NSView {
                 id: "youtube-video-\(video.videoId)",
                 title: marker + video.title,
                 info: video.formattedDuration,
-                indentLevel: 1,
+                indentLevel: indentLevel,
                 hasChildren: false,
                 type: .youtubeVideo(video)
             ))
@@ -17351,6 +17351,19 @@ class PlexBrowserView: NSView {
                 displayItems.append(PlexDisplayItem(id: track.id.uuidString, title: track.displayTitle, info: track.formattedDuration, indentLevel: 1, hasChildren: false, type: .localTrack(track)))
             }
         }
+
+        // Search YouTube channels and downloads (tracks already listed above are left out)
+        let youtube = YouTubeManager.shared.localSearch(query: searchQuery, excluding: Set(matchingTracks.map(\.url)))
+        if !youtube.channels.isEmpty || !youtube.videos.isEmpty {
+            displayItems.append(PlexDisplayItem(id: "header-local-youtube", title: "YouTube (\(youtube.channels.count + youtube.videos.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for channel in youtube.channels {
+                displayItems.append(PlexDisplayItem(id: "youtube-channel-\(channel.id)", title: channel.title, info: nil, indentLevel: 1, hasChildren: true, type: .youtubeChannel(channel)))
+                appendYouTubeVideoItems(for: channel, indentLevel: 2)
+            }
+            for video in youtube.videos {
+                displayItems.append(PlexDisplayItem(id: "youtube-download-\(video.videoId)", title: video.title, info: nil, indentLevel: 1, hasChildren: false, type: .youtubeVideo(video)))
+            }
+        }
     }
     
     /// Build the Folders view: one off-actor depth-first walk of every *expanded* directory,
@@ -18695,7 +18708,7 @@ class PlexBrowserView: NSView {
                 youtubeSearch.subscribe(to: channel)
             }
         case .youtubeVideo(let video):
-            youtubeVideoActions.popUpMenu(for: video, in: self)
+            youtubeVideoActions.activate(video, in: self)
 
         case .plexRadioStation(let radioType):
             playPlexRadioStation(radioType)

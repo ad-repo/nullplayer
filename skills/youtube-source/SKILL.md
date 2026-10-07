@@ -14,9 +14,10 @@ Subscribe to YouTube channels in the **Radio tab** and browse their uploads. A v
    name: **Search** tab, type, press Enter, then double-click a result (or right-click →
    **Subscribe**). Results show `@handle · followers`; a ✓ marks channels already subscribed
 3. Channel appears as a folder; expand to see uploads
-4. Right-click a video (or double-click / Enter, which pops the same menu) → **Audio ▸** or **Video ▸** →
-   Play, Play and Replace Queue, Add to Playlist, Play Next or Add to Queue. That form downloads first
-   if it isn't on disk; the row shows a spinner meanwhile and a `⬇ ` once a file is there
+4. Right-click a video → **Audio ▸** or **Video ▸** → Play, Play and Replace Queue, Add to Playlist,
+   Play Next or Add to Queue. That form downloads first if it isn't on disk; the row shows a spinner
+   meanwhile and a `⬇ ` once a file is there. Double-click / Enter plays the one form on disk, and
+   otherwise (both forms, or neither) pops the same menu
 5. **Library → YouTube → Set Download Folder…** to choose where downloads live
 6. **Library → YouTube → Audio Format** and **Video Quality** to pick what those downloads are
 7. **Library → YouTube → Videos per Channel** to pick how many recent uploads to list (50 / 100 / 200 / 500)
@@ -229,8 +230,9 @@ whole per-video flow, so both browsers' YouTube-video branches are one call each
   mapped to the same engine calls the library's local-track handlers make), then, for whatever is
   on disk, **Show in Finder** (selects every file of the video) and **Remove Audio File** /
   **Remove Video File**.
-  `popUpMenu(for:in:)` pops the same items at the mouse for double-click and Enter (so Enter also
-  pops at the cursor, not the row).
+  `activate(_:in:)` is double-click and Enter: a video with exactly one form on disk plays it
+  (`TrackVerb.play`); with both, or neither, it pops the same items at the mouse (so Enter also
+  pops at the cursor, not the row). Nothing is fetched or picked without a choice.
 - A verb on a form that is on disk runs now. Otherwise it awaits that form's download:
   `fetches[Key]` is the single in-flight state, and a repeat request for the same video + kind
   awaits the running download instead of starting a second yt-dlp onto the same file. A waiting
@@ -244,6 +246,28 @@ whole per-video flow, so both browsers' YouTube-video branches are one call each
   landed or was removed) makes the view rebuild its rows.
 - A row's art is `YouTubeManager.coverArtFile(for:)` — the audio download's embedded art, else the
   video's — before falling back to the thumbnail.
+
+### Local search (YouTube section)
+
+The **Local** source's Search tab ends with a **YouTube (N)** section after Artists, Albums and
+Tracks, in both browsers. `YouTubeManager.localSearch(query:excluding:)` decides its content; each
+view only maps it to rows. No network: it reads the subscriptions and the manifest.
+
+- **Channels**: subscriptions whose title contains the query, as `.youtubeChannel` rows that expand
+  in place (`appendYouTubeVideoItems(for:indentLevel: 2)`) and share `expandedYouTubeChannels` with
+  the Channels tab. Expanding fetches uploads, as on that tab.
+- **Downloads**: manifest entries whose title contains the query, one `.youtubeVideo` row per video
+  (`YouTubeVideo(download:)` — no duration, date or thumbnail URL, so those columns are blank), A–Z,
+  row ids `youtube-download-<videoId>`. Matching is `localizedStandardContains` (case- and
+  accent-insensitive) on a trimmed query.
+- **No double listing**: the download folder may also be a watch folder, so `.mp3`/`.flac`
+  downloads can already be under Tracks. The view passes the Tracks section's file URLs; a video is
+  dropped when `Set(downloadedFiles(for:).values).isSubset(of: listed)` — which also drops a video
+  with nothing on disk (the empty set). Compared as `standardizedFileURL`.
+- **Column header**: these rows carry their own columns (`.youtube` group) but the Local search draws
+  no header for them. Hit tests must ask `hasColumnHeader` (= `headerColumnsForCurrentContent() !=
+  nil`, what drawing asks), never "does any row have columns" — with only YouTube results that
+  shifted every click one row up onto the section header.
 
 ### Download Flow
 

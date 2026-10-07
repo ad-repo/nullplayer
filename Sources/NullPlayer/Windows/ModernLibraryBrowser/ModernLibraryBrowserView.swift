@@ -3254,8 +3254,11 @@ class ModernLibraryBrowserView: NSView {
     
     // MARK: - Column Support
     
-    private var hasColumnContent: Bool {
-        displayItems.contains { columnsForItem($0) != nil }
+    /// Whether the list draws a column header. Drawing and every hit test ask this, so a click
+    /// lands on the row drawn under it — rows with their own columns (YouTube videos in the
+    /// Local search) can sit in a list that draws no header.
+    private var hasColumnHeader: Bool {
+        headerColumnsForCurrentContent() != nil
     }
 
     private var hasInternetRadioColumns: Bool {
@@ -3843,7 +3846,7 @@ class ModernLibraryBrowserView: NSView {
         var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         
-        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        let hasColumns = hasColumnHeader
         if hasColumns { contentTopY -= columnHeaderHeight }
         
         let contentBottomY = contentRegionBottomY
@@ -3873,7 +3876,7 @@ class ModernLibraryBrowserView: NSView {
 
         var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
-        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        let hasColumns = hasColumnHeader
         if hasColumns { contentTopY -= columnHeaderHeight }
 
         let contentBottomY = contentRegionBottomY
@@ -3925,7 +3928,7 @@ class ModernLibraryBrowserView: NSView {
         let listAreaY = contentRegionBottomY + bannerHeight
         let listAreaHeight = contentTopY - contentRegionBottomY - bannerHeight
 
-        let hasColumns = headerColumnsForCurrentContent() != nil
+        let hasColumns = hasColumnHeader
         let alphabetHeight = listAreaHeight - (hasColumns ? columnHeaderHeight : 0)
 
         let alphabetX = bounds.width - Layout.borderWidth - Layout.scrollbarWidth - Layout.alphabetWidth
@@ -3947,7 +3950,7 @@ class ModernLibraryBrowserView: NSView {
     
     private func hitTestColumnResize(at point: NSPoint) -> String? {
         if hasInternetRadioColumns { return nil }
-        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        let hasColumns = hasColumnHeader
         guard hasColumns else { return nil }
         
         var headerTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
@@ -3986,7 +3989,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func hitTestColumnHeader(at point: NSPoint) -> String? {
-        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        let hasColumns = hasColumnHeader
         guard hasColumns else { return nil }
         
         var headerTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
@@ -4010,7 +4013,7 @@ class ModernLibraryBrowserView: NSView {
     
     /// Returns true if the point is within the column header area (for right-click detection)
     private func hitTestColumnHeaderArea(at point: NSPoint) -> Bool {
-        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        let hasColumns = hasColumnHeader
         guard hasColumns else { return false }
         
         var headerTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
@@ -4574,7 +4577,7 @@ class ModernLibraryBrowserView: NSView {
         var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
         if browseMode == .search { contentTopY -= Layout.searchBarHeight }
         let listHeight = contentTopY - contentRegionBottomY
-        let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+        let hasColumns = hasColumnHeader
         let effectiveHeight = listHeight - (hasColumns ? columnHeaderHeight : 0)
 
         let itemTop = CGFloat(index) * itemHeight
@@ -4883,7 +4886,7 @@ class ModernLibraryBrowserView: NSView {
                 var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
                 if browseMode == .search { contentTopY -= Layout.searchBarHeight }
                 let listHeight = contentTopY - contentRegionBottomY
-                let hasColumns = displayItems.contains { columnsForItem($0) != nil }
+                let hasColumns = hasColumnHeader
                 let effectiveHeight = listHeight - (hasColumns ? columnHeaderHeight : 0)
                 let maxScroll = max(0, CGFloat(displayItems.count) * itemHeight - effectiveHeight)
                 scrollOffset = min(maxScroll, CGFloat(index) * itemHeight)
@@ -10224,7 +10227,7 @@ class ModernLibraryBrowserView: NSView {
     }
 
     /// An expanded channel's uploads, as indented rows under it.
-    private func appendYouTubeVideoItems(for channel: YouTubeChannel) {
+    private func appendYouTubeVideoItems(for channel: YouTubeChannel, indentLevel: Int = 1) {
         guard expandedYouTubeChannels.contains(channel.id), let videos = youtubeChannelVideos[channel.id] else { return }
         for video in videos {
             let marker = YouTubeManager.shared.isDownloaded(video.videoId) ? "⬇ " : ""
@@ -10233,7 +10236,7 @@ class ModernLibraryBrowserView: NSView {
                     id: "youtube-video-\(video.videoId)",
                     title: marker + video.title,
                     info: video.formattedDuration,
-                    indentLevel: 1,
+                    indentLevel: indentLevel,
                     hasChildren: false,
                     type: .youtubeVideo(video)
                 )
@@ -10747,6 +10750,17 @@ class ModernLibraryBrowserView: NSView {
         if !matchingTracks.isEmpty {
             displayItems.append(ModernDisplayItem(id: "header-local-tracks", title: "Tracks (\(matchingTracks.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
             for t in matchingTracks { displayItems.append(ModernDisplayItem(id: t.id.uuidString, title: t.displayTitle, info: t.formattedDuration, indentLevel: 1, hasChildren: false, type: .localTrack(t))) }
+        }
+        let youtube = YouTubeManager.shared.localSearch(query: searchQuery, excluding: Set(matchingTracks.map(\.url)))
+        if !youtube.channels.isEmpty || !youtube.videos.isEmpty {
+            displayItems.append(ModernDisplayItem(id: "header-local-youtube", title: "YouTube (\(youtube.channels.count + youtube.videos.count))", info: nil, indentLevel: 0, hasChildren: false, type: .header))
+            for channel in youtube.channels {
+                displayItems.append(ModernDisplayItem(id: "youtube-channel-\(channel.id)", title: channel.title, info: nil, indentLevel: 1, hasChildren: true, type: .youtubeChannel(channel)))
+                appendYouTubeVideoItems(for: channel, indentLevel: 2)
+            }
+            for video in youtube.videos {
+                displayItems.append(ModernDisplayItem(id: "youtube-download-\(video.videoId)", title: video.title, info: nil, indentLevel: 1, hasChildren: false, type: .youtubeVideo(video)))
+            }
         }
     }
     
@@ -12604,7 +12618,7 @@ class ModernLibraryBrowserView: NSView {
                 youtubeSearch.subscribe(to: channel)
             }
         case .youtubeVideo(let video):
-            youtubeVideoActions.popUpMenu(for: video, in: self)
+            youtubeVideoActions.activate(video, in: self)
         case .plexRadioStation(let r): playPlexRadioStation(r)
         case .subsonicRadioStation(let r): playSubsonicRadioStation(r)
         case .jellyfinRadioStation(let r): playJellyfinRadioStation(r)

@@ -40,6 +40,13 @@
 - **Videos no longer show cropped or in a corner** — on Retina screens a video could fill only the
   bottom-left quarter of the video window, or show just the bottom-left corner of the picture (most
   visible with 1440p and 4K files). The picture now fits the window.
+- **Local search finds your YouTube channels and downloads** — the Local source's **Search** tab
+  now ends with a **YouTube** section: subscribed channels whose name matches, and downloaded videos
+  whose title matches, with no YouTube-specific page and nothing sent to YouTube. A download that
+  already shows under Tracks (because the download folder is also a watch folder) isn't listed
+  twice. Double-clicking a YouTube video, here or on the Channels tab, now plays it when exactly one
+  of its audio or video is downloaded; with both, or neither, it opens the Audio / Video menu as
+  before.
 
 ## 0.31.4
 
