@@ -1,9 +1,22 @@
 import AppKit
 
-/// The Original-skin Art window: modern spectrum-family chrome around an `ArtView`.
-final class ModernArtWindowView: NSView {
-    weak var controller: ModernArtWindowController?
+extension ArtWindowController {
+    /// The Original-skin Art window.
+    static func modern() -> ArtWindowController {
+        let size = ModernSkinElements.spectrumWindowSize
+        let window = BorderlessWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless],
+                                      backing: .buffered, defer: false)
+        window.allowedResizeEdges = [.bottom, .left, .right]
+        window.titleBarHeight = ModernSkinElements.titleBarBaseHeight * ModernSkinElements.scaleFactor
+        window.collectionBehavior = [.fullScreenPrimary, .managed]
+        window.minSize = ModernSkinElements.spectrumMinSize
+        window.setAccessibilityIdentifier("ModernArtWindow")
+        return ArtWindowController(window: window, chrome: ModernArtWindowView(frame: NSRect(origin: .zero, size: size)))
+    }
+}
 
+/// The Original-skin Art window: modern spectrum-family chrome around an `ArtView`.
+final class ModernArtWindowView: NSView, ArtWindowChrome {
     let artView = ArtView(frame: .zero)
     private var renderer: ModernSkinRenderer!
     private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
@@ -13,7 +26,7 @@ final class ModernArtWindowView: NSView {
     private var pressedClose = false
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
-    private(set) var isFullscreen = false
+    private var isFullscreen = false
 
     private var scale: CGFloat { ModernSkinElements.scaleFactor }
     private var borderWidth: CGFloat { ModernSkinElements.spectrumBorderWidth }
@@ -28,9 +41,6 @@ final class ModernArtWindowView: NSView {
         layer?.isOpaque = false
         renderer = ModernSkinRenderer(skin: ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault())
         addSubview(artView)
-        artView.onToggleFullscreen = { [weak self] in self?.controller?.toggleFullscreen() }
-        artView.onClose = { [weak self] in self?.window?.close() }
-        artView.isFullscreen = { [weak self] in self?.isFullscreen ?? false }
 
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(skinDidChange),
@@ -61,6 +71,11 @@ final class ModernArtWindowView: NSView {
         super.layout()
         artView.frame = contentAreaRect()
         updateCornerMask()
+    }
+
+    var chromeSize: CGSize {
+        let content = contentAreaRect()
+        return CGSize(width: bounds.width - content.width, height: bounds.height - content.height)
     }
 
     override func draw(_ dirtyRect: NSRect) {

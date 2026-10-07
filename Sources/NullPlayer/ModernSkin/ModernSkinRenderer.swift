@@ -1088,7 +1088,7 @@ class ModernSkinRenderer {
         }
     }
     
-    /// Draw a toggle button (shuffle, repeat, EQ, playlist)
+    /// Draw one of the main window's window toggles (EQ, PL, AR, …): the skin's image, else a boxed label.
     func drawToggleButton(_ id: String, isOn: Bool, isPressed: Bool, label: String?,
                           in rect: NSRect, context: CGContext) {
         let scaledR = scaledRect(rect)
@@ -1113,29 +1113,16 @@ class ModernSkinRenderer {
         let font = skin.smallLabelFont()
         let labelText = label ?? id.replacingOccurrences(of: "btn_", with: "").uppercased()
         
-        // Toggle buttons with outlined boxes
-        let isBoxedButton = (id == "btn_eq" ||
-                             id == "btn_playlist" ||
-                             id == "btn_library" ||
-                             id == "btn_cava" ||
-                             id == "btn_projectm" ||
-                             id == "btn_networkmonitor" ||
-                             id == "btn_peppymeter" ||
-                             id == "btn_art" ||
-                             id == "btn_spectrum" ||
-                             id == "btn_waveform" ||
-                             id == "btn_audioanalysis")
-        if isBoxedButton {
-            let boxColor = isOn ? onColor : offColor
-            context.saveGState()
-            context.setStrokeColor(boxColor.withAlphaComponent(isOn ? 0.8 : 0.4).cgColor)
-            context.setLineWidth(0.8 * scaleFactor)
-            let boxPath = CGPath(roundedRect: scaledR.insetBy(dx: 1, dy: 1),
-                                 cornerWidth: 2 * scaleFactor, cornerHeight: 2 * scaleFactor, transform: nil)
-            context.addPath(boxPath)
-            context.strokePath()
-            context.restoreGState()
-        }
+        // An outlined box around the label.
+        let boxColor = isOn ? onColor : offColor
+        context.saveGState()
+        context.setStrokeColor(boxColor.withAlphaComponent(isOn ? 0.8 : 0.4).cgColor)
+        context.setLineWidth(0.8 * scaleFactor)
+        let boxPath = CGPath(roundedRect: scaledR.insetBy(dx: 1, dy: 1),
+                             cornerWidth: 2 * scaleFactor, cornerHeight: 2 * scaleFactor, transform: nil)
+        context.addPath(boxPath)
+        context.strokePath()
+        context.restoreGState()
         
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,

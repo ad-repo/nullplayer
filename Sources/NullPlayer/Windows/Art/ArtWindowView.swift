@@ -1,11 +1,23 @@
 import AppKit
 
+extension ArtWindowController {
+    /// Classic's Art window, which a `.wmz` session gets too. Its minimum follows UI Size from here
+    /// on through the UI-size reflow.
+    static func classic() -> ArtWindowController {
+        let size = SkinElements.SpectrumWindow.windowSize
+        let window = ResizableWindow(contentRect: NSRect(origin: .zero, size: size))
+        let scale = WindowManager.shared.classicScaleMultiplier
+        window.minSize = NSSize(width: SkinElements.SpectrumWindow.minSize.width * scale,
+                                height: SkinElements.SpectrumWindow.minSize.height * scale)
+        window.setAccessibilityIdentifier("ArtWindow")
+        return ArtWindowController(window: window, chrome: ArtWindowView(frame: NSRect(origin: .zero, size: size)))
+    }
+}
+
 /// The classic Art window: spectrum-family chrome around an `ArtView`. The same view is what a
 /// `.wal` skin hosts (the skin's frame then draws the chrome) and what wears a `.wmz` skin's
 /// borrowed frame.
-final class ArtWindowView: NSView {
-    weak var controller: ArtWindowController?
-
+final class ArtWindowView: NSView, ArtWindowChrome {
     let artView = ArtView(frame: .zero)
     private var pressedClose = false
     private var isDraggingWindow = false
@@ -27,15 +39,6 @@ final class ArtWindowView: NSView {
         wantsLayer = true
         setAccessibilityIdentifier("artWindowView")
         addSubview(artView)
-        artView.onToggleFullscreen = { [weak self] in self?.toggleFullscreen() }
-        artView.onClose = { [weak self] in self?.close() }
-        artView.isFullscreen = { [weak self] in
-            guard let self else { return false }
-            if let hostedContext = self.hostedContext {
-                return hostedContext.nativeWindow()?.styleMask.contains(.fullScreen) ?? false
-            }
-            return self.isFullscreen
-        }
         NotificationCenter.default.addObserver(self, selector: #selector(connectedWindowHighlightDidChange(_:)),
                                                name: .connectedWindowHighlightDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(hostedSurfaceStyleDidChange),
@@ -62,6 +65,11 @@ final class ArtWindowView: NSView {
     override func layout() {
         super.layout()
         artView.frame = contentAreaRect()
+    }
+
+    var chromeSize: CGSize {
+        let content = contentAreaRect()
+        return CGSize(width: bounds.width - content.width, height: bounds.height - content.height)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -125,14 +133,6 @@ final class ArtWindowView: NSView {
         isDraggingWindow = false
         needsLayout = true
         needsDisplay = true
-    }
-
-    func toggleFullscreen() {
-        if let hostedContext { hostedContext.requestFullscreen() } else { controller?.toggleFullscreen() }
-    }
-
-    private func close() {
-        if let hostedContext { hostedContext.requestClose() } else { window?.close() }
     }
 
     // MARK: - Mouse
@@ -229,14 +229,23 @@ final class ArtWindowView: NSView {
 
     func configureForHostedSurface(context: WinampModernHostedSurfaceContext) {
         hostedContext = context
+        artView.host = self
         autoresizingMask = [.width, .height]
         needsLayout = true
         needsDisplay = true
     }
 }
 
+/// Hosted in a `.wal` skin there is no `ArtWindowController`; the skin's window is the host's.
+extension ArtWindowView: ArtViewHost {
+    var isArtFullscreen: Bool { hostedContext?.nativeWindow()?.styleMask.contains(.fullScreen) ?? false }
+    func toggleArtFullscreen() { toggleFullscreen() }
+    func closeArt() { hostedContext?.requestClose() }
+}
+
 extension ArtWindowView: WinampModernHostedFullscreenSurface {
     var view: NSView { self }
+    func toggleFullscreen() { hostedContext?.requestFullscreen() }
     func applyPalette(_ style: WinampModernSurfaceStyle) { needsDisplay = true }
     func applySkinScale(_ scale: CGFloat) { needsDisplay = true }
     func resume() { needsLayout = true }

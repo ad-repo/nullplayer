@@ -6,12 +6,11 @@ final class ArtWindowTests: XCTestCase {
     /// The default height is the content cut to the cover's aspect ratio, plus the chrome.
     func testDefaultHeightFollowsTheCoverAspectRatio() {
         // Classic spectrum-family chrome: 12 + 12 sides, 20 title + 7 bottom.
-        XCTAssertEqual(WindowManager.artWindowHeight(width: 275, horizontalChrome: 24, verticalChrome: 27,
-                                                     aspectRatio: 1), 278)
-        XCTAssertEqual(WindowManager.artWindowHeight(width: 275, horizontalChrome: 24, verticalChrome: 27,
-                                                     aspectRatio: 0.5), 153)
-        XCTAssertEqual(WindowManager.artWindowHeight(width: 10, horizontalChrome: 24, verticalChrome: 27,
-                                                     aspectRatio: 1), 27, "chrome wider than the window")
+        let chrome = CGSize(width: 24, height: 27)
+        XCTAssertEqual(ArtView.windowHeight(forWidth: 275, chrome: chrome, aspectRatio: 1), 278)
+        XCTAssertEqual(ArtView.windowHeight(forWidth: 275, chrome: chrome, aspectRatio: 0.5), 153)
+        XCTAssertEqual(ArtView.windowHeight(forWidth: 10, chrome: chrome, aspectRatio: 1), 27,
+                       "chrome wider than the window")
     }
 
     func testEffectStepsWrapBothWays() {
@@ -59,9 +58,11 @@ final class ArtWindowTests: XCTestCase {
         XCTAssertFalse(legacy.isArtVisible)
     }
 
-    func testRadioStreamsAreNotRateable() {
+    /// Rateable means `setRating` has somewhere to write: not a stream, not a file the library lacks.
+    func testOnlyTracksWithARatingHomeAreRateable() {
         let station = RadioStation(name: "Test FM", url: URL(string: "https://example.com/stream")!)
         XCTAssertFalse(TrackRatingService.isRateable(station.toTrack()))
-        XCTAssertTrue(TrackRatingService.isRateable(Track(lightweightURL: URL(fileURLWithPath: "/tmp/a.mp3"))))
+        let outsideLibrary = URL(fileURLWithPath: "/tmp/nullplayer-art-tests-\(UUID().uuidString).mp3")
+        XCTAssertFalse(TrackRatingService.isRateable(Track(lightweightURL: outsideLibrary)))
     }
 }

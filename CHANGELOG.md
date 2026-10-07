@@ -112,6 +112,12 @@
   orange-to-yellow body, white controls and a lemon glow. It is now the default Original skin
   whenever no Original skin has been picked yet; a skin you already have selected stays selected.
   **October** puts the same orange, gold and lemon on a dark warm-brown body.
+- **Album art ratings stick** — a rating chosen in the star panel is no longer lost if you press
+  Esc, close the window or the next track starts within half a second of choosing it, and **Rate**
+  in the right-click menu saves the same way. The stars no longer appear for a file that is not in
+  your library, where a rating had nowhere to be saved; dragging its cover moves the window
+  instead. With **Hide Title Bars** on, and in Windows Media Player skins, the Art window now opens
+  exactly the size of the cover, without a black band.
 
 ## 0.31.4
 

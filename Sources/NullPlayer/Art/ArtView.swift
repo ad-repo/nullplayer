@@ -1,6 +1,14 @@
 import AppKit
 import AVFoundation
 
+/// Whatever owns the window an `ArtView` is in: `ArtWindowController` for a window of its own, the
+/// hosted `ArtWindowView` inside a `.wal` skin.
+protocol ArtViewHost: AnyObject {
+    var isArtFullscreen: Bool { get }
+    func toggleArtFullscreen()
+    func closeArt()
+}
+
 /// The Art window's content: the playing track's cover, its star rating, and the audio-reactive
 /// VIS effects. Chrome-free and shared by every skin family — the Classic and Original window views
 /// frame it, and a `.wal` skin hosts the classic one (`WinampModernHostedWindowRegistry`).
@@ -8,10 +16,7 @@ import AVFoundation
 /// The cover is `NowPlayingManager`'s, the one fetch the app runs per track (the system Now Playing
 /// panel and a `.wal` skin's `<AlbumArt>` read the same image).
 final class ArtView: NSView {
-    /// Wired by whichever window frames this view: its own fullscreen and close.
-    var onToggleFullscreen: (() -> Void)?
-    var onClose: (() -> Void)?
-    var isFullscreen: () -> Bool = { false }
+    weak var host: ArtViewHost?
 
     /// The `browserVis*` names are the Library Browser's, from when VIS lived there; kept so a chosen
     /// effect and intensity carry over.
@@ -84,6 +89,7 @@ final class ArtView: NSView {
     }()
 
     private var currentTrack: Track? { WindowManager.shared.audioEngine.currentTrack }
+    private var isFullscreen: Bool { host?.isArtFullscreen == true }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -294,25 +300,31 @@ final class ArtView: NSView {
     }
 
     private func hideRatingOverlay() {
-        ratingSubmitTask?.cancel()
-        ratingSubmitTask = nil
         if !ratingOverlay.isHidden { ratingOverlay.isHidden = true }
     }
 
-    /// Debounced so a run of clicks across the stars sends one request.
+    /// Every rating — a star, a key, the menu — goes through here. Debounced so a run of clicks
+    /// across the stars sends one request; only a newer rating replaces it. Hiding the panel,
+    /// closing the window or the next track starting does not take a chosen rating back.
     private func submitRating(_ rating: Int) {
         guard let track = currentTrack else { return }
         ratingSubmitTask?.cancel()
         ratingSubmitTask = Task { @MainActor [weak self] in
+            var saved = false
             do {
                 try await Task.sleep(nanoseconds: 500_000_000)
-                try await TrackRatingService.shared.setRating(rating > 0 ? min(10, rating) : nil, for: track)
-                try await Task.sleep(nanoseconds: 300_000_000)
-                self?.hideRatingOverlay()
+                try await TrackRatingService.shared.setRating(rating > 0 ? rating : nil, for: track)
+                saved = true
             } catch is CancellationError {
             } catch {
                 NSLog("ArtView: rating failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
+            // A newer rating cancelled this one and holds the slot now.
+            guard let self, !Task.isCancelled else { return }
+            self.ratingSubmitTask = nil
+            guard saved else { return }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            self.hideRatingOverlay()
         }
     }
 
@@ -370,9 +382,9 @@ final class ArtView: NSView {
             }
         }
         switch event.keyCode {
-        case 3: onToggleFullscreen?()                                    // F
+        case 3: host?.toggleArtFullscreen()                              // F
         case 9: isVisualizing.toggle()                                   // V
-        case 53 where isFullscreen(): onToggleFullscreen?()              // Esc
+        case 53 where isFullscreen: host?.toggleArtFullscreen()          // Esc
         case 53 where isVisualizing: isVisualizing = false
         case 123 where isVisualizing: step(by: -1)                       // ←
         case 124 where isVisualizing: step(by: 1)                        // →
@@ -449,7 +461,7 @@ final class ArtView: NSView {
         menu.addItem(.separator())
         add("Click: rate • Double-click: next picture • V: visualization • F: fullscreen", nil)
         menu.addItem(.separator())
-        add(isFullscreen() ? "Exit Fullscreen" : "Fullscreen", #selector(menuToggleFullscreen))
+        add(isFullscreen ? "Exit Fullscreen" : "Fullscreen", #selector(menuToggleFullscreen))
         add("Close", #selector(menuClose))
         return menu
     }
@@ -468,8 +480,8 @@ final class ArtView: NSView {
     @objc private func selectCycleInterval(_ sender: NSMenuItem) { cycleInterval = TimeInterval(sender.tag) }
     @objc private func selectIntensity(_ sender: NSMenuItem) { intensity = CGFloat(sender.tag) / 100 }
     @objc private func setDefaultEffect() { UserDefaults.standard.set(effect.rawValue, forKey: Keys.defaultEffect) }
-    @objc private func menuToggleFullscreen() { onToggleFullscreen?() }
-    @objc private func menuClose() { onClose?() }
+    @objc private func menuToggleFullscreen() { host?.toggleArtFullscreen() }
+    @objc private func menuClose() { host?.closeArt() }
 
     @objc private func selectEffect(_ sender: NSMenuItem) {
         effect = ArtVisEffect.allCases[sender.tag]
@@ -478,16 +490,7 @@ final class ArtView: NSView {
         needsDisplay = true
     }
 
-    @objc private func rateFromMenu(_ sender: NSMenuItem) {
-        guard let track = currentTrack else { return }
-        Task {
-            do {
-                try await TrackRatingService.shared.setRating(sender.tag > 0 ? sender.tag : nil, for: track)
-            } catch {
-                NSLog("ArtView: rating failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-            }
-        }
-    }
+    @objc private func rateFromMenu(_ sender: NSMenuItem) { submitRating(sender.tag) }
 
     // MARK: - Default size
 
@@ -498,5 +501,12 @@ final class ArtView: NSView {
             return 1
         }
         return min(max(size.height / size.width, 0.5), 2)
+    }
+
+    /// A window `width` wide whose `chrome` leaves the art a hole of `aspectRatio` (height over
+    /// width): the hole's height plus the chrome's.
+    static func windowHeight(forWidth width: CGFloat, chrome: CGSize,
+                             aspectRatio: CGFloat = preferredAspectRatio) -> CGFloat {
+        (max(0, width - chrome.width) * aspectRatio + chrome.height).rounded()
     }
 }

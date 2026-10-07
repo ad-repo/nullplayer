@@ -745,21 +745,22 @@ class ModernMainWindowView: NSView {
         }
     }
     
-    /// The window toggles under the marquee, left to right: id, label, whether its window is open.
-    private static var windowToggleButtons: [(id: String, label: String, isOn: () -> Bool)] {
+    /// The window toggles under the marquee, left to right: id, label, whether its window is open,
+    /// and what a click does. Drawing, hit testing and clicks all read this one list.
+    private static var windowToggleButtons: [(id: String, label: String, isOn: () -> Bool, toggle: () -> Void)] {
         let wm = WindowManager.shared
         return [
-            ("btn_cava", "CV", { wm.isCavaVisible }),
-            ("btn_projectm", "VZ", { wm.isProjectMVisible }),
-            ("btn_networkmonitor", "FL", { wm.isNetworkMonitorVisible }),
-            ("btn_peppymeter", "PM", { wm.isPeppyMeterVisible }),
-            ("btn_art", "AR", { wm.isArtVisible }),
-            ("btn_eq", "EQ", { wm.isEqualizerVisible }),
-            ("btn_playlist", "PL", { wm.isPlaylistVisible }),
-            ("btn_spectrum", "SP", { wm.isSpectrumVisible }),
-            ("btn_audioanalysis", "AA", { wm.isAudioAnalysisVisible }),
-            ("btn_waveform", "WV", { wm.isWaveformVisible }),
-            ("btn_library", "LB", { wm.isPlexBrowserVisible }),
+            ("btn_cava", "CV", { wm.isCavaVisible }, wm.toggleCava),
+            ("btn_projectm", "VZ", { wm.isProjectMVisible }, wm.toggleProjectM),
+            ("btn_networkmonitor", "FL", { wm.isNetworkMonitorVisible }, wm.toggleNetworkMonitor),
+            ("btn_peppymeter", "PM", { wm.isPeppyMeterVisible }, wm.togglePeppyMeter),
+            ("btn_art", "AR", { wm.isArtVisible }, wm.toggleArt),
+            ("btn_eq", "EQ", { wm.isEqualizerVisible }, wm.toggleEqualizer),
+            ("btn_playlist", "PL", { wm.isPlaylistVisible }, wm.togglePlaylist),
+            ("btn_spectrum", "SP", { wm.isSpectrumVisible }, wm.toggleSpectrum),
+            ("btn_audioanalysis", "AA", { wm.isAudioAnalysisVisible }, wm.toggleAudioAnalysis),
+            ("btn_waveform", "WV", { wm.isWaveformVisible }, wm.toggleWaveform),
+            ("btn_library", "LB", { wm.isPlexBrowserVisible }, wm.togglePlexBrowser),
         ]
     }
 
@@ -1693,6 +1694,10 @@ class ModernMainWindowView: NSView {
     // MARK: - Button Actions
     
     private func handleButtonClick(_ elementId: String) {
+        if let toggle = Self.windowToggleButtons.first(where: { $0.id == elementId }) {
+            toggle.toggle()
+            return
+        }
         let audioEngine = WindowManager.shared.audioEngine
         
         switch elementId {
@@ -1731,45 +1736,12 @@ class ModernMainWindowView: NSView {
                 audioEngine.next()
             }
             
-        case "btn_audioanalysis":
-            WindowManager.shared.toggleAudioAnalysis()
-
-        case "btn_eq":
-            WindowManager.shared.toggleEqualizer()
-            
-        case "btn_playlist":
-            WindowManager.shared.togglePlaylist()
-            
         case "btn_close":
             window?.close()
             NSApp.terminate(nil)
             
         case "btn_minimize":
             window?.miniaturize(nil)
-            
-        case "btn_library":
-            WindowManager.shared.togglePlexBrowser()
-            
-        case "btn_projectm":
-            WindowManager.shared.toggleProjectM()
-            
-        case "btn_networkmonitor":
-            WindowManager.shared.toggleNetworkMonitor()
-
-        case "btn_peppymeter":
-            WindowManager.shared.togglePeppyMeter()
-
-        case "btn_art":
-            WindowManager.shared.toggleArt()
-
-        case "btn_spectrum":
-            WindowManager.shared.toggleSpectrum()
-
-        case "btn_waveform":
-            WindowManager.shared.toggleWaveform()
-            
-        case "btn_cava":
-            WindowManager.shared.toggleCava()
 
         default:
             break

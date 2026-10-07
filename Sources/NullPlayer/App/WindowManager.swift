@@ -678,7 +678,7 @@ class WindowManager {
     private var peppyMeterWindowController: PeppyMeterWindowProviding?
 
     /// Art window (the playing track's cover, rating and VIS) for the active UI mode.
-    private var artWindowController: ArtWindowProviding?
+    private var artWindowController: ArtWindowController?
 
     /// Network monitor window controller for the active UI mode, accessed via protocol.
     private var networkMonitorWindowController: NetworkMonitorWindowProviding?
@@ -1465,13 +1465,7 @@ class WindowManager {
         case peppyMeterWindowController?.window:
             return CGSize(width: width, height: (SkinElements.PeppyMeterWindow.windowSize.height * scale).rounded())
         case artWindowController?.window:
-            // The chrome `ArtWindowView` lays its content inside, which UI Size does not scale.
-            let chrome = SkinnedSurfaceChrome.Metrics.spectrumFamily
-            return CGSize(width: width, height: Self.artWindowHeight(
-                width: width,
-                horizontalChrome: chrome.leftBorder + chrome.rightBorder,
-                verticalChrome: chrome.titleBarHeight + chrome.bottomBorder,
-                aspectRatio: ArtView.preferredAspectRatio))
+            return artWindowController.map { CGSize(width: width, height: $0.defaultHeight(forWidth: width)) }
         case waveformWindowController?.window:
             return CGSize(width: width, height: SkinElements.WaveformWindow.minSize.height * scale)
         case projectMWindowController?.window:
@@ -4633,46 +4627,25 @@ class WindowManager {
 
     func showArt(at restoredFrame: NSRect? = nil) {
         if routeWinampModernHostedWindow(.art, toggle: false, restoredFrame: restoredFrame) { return }
-        let runningModernMode = isRunningModernUI
-        if artWindowController == nil {
-            artWindowController = runningModernMode ? ModernArtWindowController() : ArtWindowController()
-        }
-        markModeDependentWindow(artWindowController?.window)
+        let controller = artWindowController ?? (isRunningModernUI ? .modern() : .classic())
+        artWindowController = controller
+        guard let window = controller.window else { return }
+        markModeDependentWindow(window)
 
-        if let window = artWindowController?.window {
-            applyCenterStackSizingConstraints(window, kind: .art)
-            let keepsLeftFrame = reopensWhereLeft(window)
-            if let frame = restoredFrame, frame != .zero {
-                applyRestoredCenterStackFrame(frame, to: window, kind: .art)
-            } else if !keepsLeftFrame {
-                if runningModernMode {
-                    applyDefaultCenterStackFrameForCurrentHT(window, kind: .art)
-                } else {
-                    (artWindowController as? ArtWindowController)?.resetToDefaultFrame()
-                }
-                positionSubWindow(window)
-            }
+        applyCenterStackSizingConstraints(window, kind: .art)
+        let keepsLeftFrame = reopensWhereLeft(window)
+        if let frame = restoredFrame, frame != .zero {
+            applyRestoredCenterStackFrame(frame, to: window, kind: .art)
+        } else if !keepsLeftFrame {
+            controller.resetToDefaultFrame()
+            positionSubWindow(window)
         }
 
-        presizeHostedWindow(artWindowController?.window)
-        artWindowController?.showWindow(nil)
-        applyAlwaysOnTopToWindow(artWindowController?.window)
+        presizeHostedWindow(window)
+        controller.showWindow(nil)
+        applyAlwaysOnTopToWindow(window)
         notifyMainWindowVisibilityChanged()
         postLayoutChangeNotification()
-    }
-
-    var isArtVisible: Bool {
-        if winampModernHostedController?.handlesHostedWindow(.art) == true {
-            return winampModernHostedController?.isHostedWindowVisible(.art) == true
-        }
-        return artWindowController?.window?.isVisible == true
-    }
-
-    var artWindowFrame: NSRect? {
-        if winampModernHostedController?.handlesHostedWindow(.art) == true {
-            return winampModernHostedController?.hostedWindow(ifMaterialized: .art)?.frame
-        }
-        return artWindowController?.window?.frame
     }
 
     var artWindow: NSWindow? {
@@ -4681,6 +4654,9 @@ class WindowManager {
         }
         return artWindowController?.window
     }
+
+    var isArtVisible: Bool { artWindow?.isVisible == true }
+    var artWindowFrame: NSRect? { artWindow?.frame }
 
     func toggleArt() {
         if routeWinampModernHostedWindow(.art, toggle: true) { return }
@@ -4697,13 +4673,6 @@ class WindowManager {
         _ = tightenClassicCenterStackIfNeeded()
         postLayoutChangeNotification()
         updateDockedChildWindows()
-    }
-
-    /// The Art window's height for `width`: its content cut to the playing cover's aspect ratio,
-    /// plus the chrome around it. Pure, so the arithmetic is testable without a window.
-    static func artWindowHeight(width: CGFloat, horizontalChrome: CGFloat, verticalChrome: CGFloat,
-                                aspectRatio: CGFloat) -> CGFloat {
-        (max(0, width - horizontalChrome) * aspectRatio + verticalChrome).rounded()
     }
 
     // MARK: - Network Monitor Window
@@ -5794,14 +5763,9 @@ class WindowManager {
             let baseMinSize: NSSize = runningModernMode
                 ? ModernSkinElements.spectrumMinSize
                 : SkinElements.SpectrumWindow.minSize
-            let heightMultiplier = centerStackHeightMultiplier(for: kind)
-            let minHeight = runningModernMode
+            let adjustedMinHeight = centerStackHeight(for: kind, base: runningModernMode
                 ? expectedMainHeightForCurrentHT(mainWindowController?.window)
-                : baseMinSize.height * scale
-            // PeppyMeter's 1.75 lands between points; the others' whole multiples do not.
-            let adjustedMinHeight = kind == .peppyMeter
-                ? (minHeight * heightMultiplier).rounded()
-                : minHeight * heightMultiplier
+                : baseMinSize.height * scale)
             let minWidth = runningModernMode
                 ? ModernSkinElements.spectrumMinSize.width
                 : baseMinSize.width * scale
@@ -6207,6 +6171,12 @@ class WindowManager {
         (baseHeight * centerStackHeightMultiplier(for: .peppyMeter)).rounded()
     }
 
+    /// A stack window's height from a single-height `base`. PeppyMeter's 1.75 lands between points,
+    /// so it alone rounds.
+    private func centerStackHeight(for kind: CenterStackWindowKind, base: CGFloat) -> CGFloat {
+        kind == .peppyMeter ? peppyMeterHeight(for: base) : base * centerStackHeightMultiplier(for: kind)
+    }
+
     /// Height for a restored PeppyMeter frame. Collapses the previous double-height default
     /// down to the current 1.75x landscape floor, but otherwise honors a user-stretched height
     /// so the window remembers its size like the other stack windows.
@@ -6219,10 +6189,7 @@ class WindowManager {
                                          currentHeight: CGFloat,
                                          titleBarDelta: CGFloat,
                                          preservePlaylistContentHeight: Bool) -> CGFloat {
-        let baseTarget = expectedMainHeightForCurrentHT(mainWindowController?.window)
-        let target = kind == .peppyMeter
-            ? peppyMeterHeight(for: baseTarget)
-            : baseTarget * centerStackHeightMultiplier(for: kind)
+        let target = centerStackHeight(for: kind, base: expectedMainHeightForCurrentHT(mainWindowController?.window))
         guard kind == .playlist || kind == .waveform || kind == .sonos else { return target }
         guard preservePlaylistContentHeight else { return target }
         let adjusted = hideTitleBars ? (currentHeight - titleBarDelta) : (currentHeight + titleBarDelta)
@@ -6231,44 +6198,12 @@ class WindowManager {
 
     private func applyCenterStackSizingConstraints(_ window: NSWindow, kind: CenterStackWindowKind) {
         guard isRunningModernUI, let mainWindow = mainWindowController?.window else { return }
-        let targetWidth = mainWindow.frame.width
-        let targetHeight = expectedMainHeightForCurrentHT(mainWindow)
-        switch kind {
-        case .sonos:
-            window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight * 2)
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        case .equalizer:
-            window.minSize = NSSize(width: targetWidth, height: targetHeight)
-            window.maxSize = NSSize(width: targetWidth, height: targetHeight)
-        case .spectrum:
-            window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight)
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        case .playlist:
-            window.minSize = NSSize(width: ModernSkinElements.playlistMinSize.width, height: targetHeight)
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        case .waveform:
-            window.minSize = NSSize(width: ModernSkinElements.waveformMinSize.width, height: targetHeight)
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        case .audioAnalysis:
-            // Matches the center-stack width; stretchable in height like spectrum/playlist.
-            window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight)
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        case .peppyMeter:
-            // Matches the center-stack width; stretchable above its landscape meter floor.
-            window.minSize = NSSize(
-                width: ModernSkinElements.spectrumMinSize.width,
-                height: peppyMeterHeight(for: targetHeight)
-            )
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        case .art, .networkMonitor:
-            // Matches the center-stack width; stretchable above its single-height floor.
-            window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight)
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        case .cava:
-            // Matches the center-stack width; stretchable above its single-height floor.
-            window.minSize = NSSize(width: ModernSkinElements.spectrumMinSize.width, height: targetHeight)
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        }
+        window.minSize = NSSize(width: modernMinimumWidth(for: kind),
+                                height: centerStackHeight(for: kind, base: expectedMainHeightForCurrentHT(mainWindow)))
+        // The equalizer is pinned to the player's size; every other stack window stretches.
+        window.maxSize = kind == .equalizer
+            ? window.minSize
+            : NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     }
 
     private func applyDefaultCenterStackFrameForCurrentHT(_ window: NSWindow, kind: CenterStackWindowKind) {
@@ -6278,20 +6213,10 @@ class WindowManager {
         // The equalizer is pinned to the player's width (`applyCenterStackSizingConstraints`);
         // every other window opens at the native default width.
         frame.size.width = kind == .equalizer ? mainWindow.frame.width : nativeWindowDefaultWidth
-        if kind == .art {
-            // Cut to the cover, never below the single-height floor the window's constraints hold.
-            let border = ModernSkinElements.spectrumBorderWidth
-            frame.size.height = max(expectedMainHeightForCurrentHT(mainWindow), Self.artWindowHeight(
-                width: frame.width,
-                horizontalChrome: border * 2,
-                verticalChrome: ModernSkinElements.titleBarBaseHeight * ModernSkinElements.scaleFactor + border,
-                aspectRatio: ArtView.preferredAspectRatio))
-        } else {
-            frame.size.height = targetCenterStackHeight(for: kind,
-                                                        currentHeight: frame.height,
-                                                        titleBarDelta: 0,
-                                                        preservePlaylistContentHeight: false)
-        }
+        frame.size.height = targetCenterStackHeight(for: kind,
+                                                    currentHeight: frame.height,
+                                                    titleBarDelta: 0,
+                                                    preservePlaylistContentHeight: false)
         frame.origin.y = topY - frame.size.height
         frame.origin.x = mainWindow.frame.minX
         window.setFrame(frame, display: true)
@@ -6304,7 +6229,7 @@ class WindowManager {
         }
     }
 
-    private func modernMinimumRestoredWidth(for kind: CenterStackWindowKind) -> CGFloat {
+    private func modernMinimumWidth(for kind: CenterStackWindowKind) -> CGFloat {
         switch kind {
         case .equalizer:
             return mainWindowController?.window?.frame.width ?? ModernSkinElements.mainWindowSize.width
@@ -6415,7 +6340,7 @@ class WindowManager {
             frame,
             kind: kind,
             mainWidth: mainWindowController?.window?.frame.width ?? ModernSkinElements.mainWindowSize.width,
-            minimumWidth: modernMinimumRestoredWidth(for: kind),
+            minimumWidth: modernMinimumWidth(for: kind),
             targetHeight: target,
             peppyMeterFloor: peppyMeterHeight(for: target),
             peppyMeterLegacyDoubleHeight: (target * 2).rounded()
