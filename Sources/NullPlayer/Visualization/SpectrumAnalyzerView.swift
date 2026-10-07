@@ -1408,18 +1408,10 @@ class SpectrumAnalyzerView: NSView {
     
     private func setupPipeline() {
         guard let device = device else { return }
-        
-        // Load shader source from file (runtime compilation for SPM compatibility)
-        // This is required because makeDefaultLibrary() returns nil in SPM executables
-        guard let shaderURL = BundleHelper.url(forResource: "SpectrumShaders", withExtension: "metal"),
-              let shaderSource = try? String(contentsOf: shaderURL, encoding: .utf8) else {
-            NSLog("SpectrumAnalyzerView: Failed to load shader source file")
-            return
-        }
-        
+
         do {
-            let library = try device.makeLibrary(source: shaderSource, options: nil)
-            
+            let library = try device.makeBundledLibrary("SpectrumShaders")
+
             // Create LED matrix pipeline (Enhanced mode)
             if let vertexFunc = library.makeFunction(name: "led_matrix_vertex"),
                let fragmentFunc = library.makeFunction(name: "led_matrix_fragment") {
@@ -1582,13 +1574,8 @@ class SpectrumAnalyzerView: NSView {
     /// Set up flame compute and render pipelines
     private func setupFlamePipelines() {
         guard let device = device else { return }
-        guard let url = BundleHelper.url(forResource: "FlameShaders", withExtension: "metal"),
-              let src = try? String(contentsOf: url, encoding: .utf8) else {
-            NSLog("SpectrumAnalyzerView: FlameShaders.metal not found")
-            return
-        }
         do {
-            let lib = try device.makeLibrary(source: src, options: nil)
+            let lib = try device.makeBundledLibrary("FlameShaders")
             if let fn = lib.makeFunction(name: "propagate_fire") {
                 flamePropPipeline = try device.makeComputePipelineState(function: fn)
             }
@@ -1615,6 +1602,7 @@ class SpectrumAnalyzerView: NSView {
             NSLog("SpectrumAnalyzerView: Flame pipelines created")
         } catch {
             NSLog("SpectrumAnalyzerView: Flame shader error: \(error)")
+            return
         }
         // Create simulation textures
         let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba32Float, width: flameGridWidth, height: flameGridHeight, mipmapped: false)
@@ -1638,13 +1626,8 @@ class SpectrumAnalyzerView: NSView {
     /// Set up Cosmic mode render pipeline
     private func setupCosmicPipelines() {
         guard let device = device else { return }
-        guard let url = BundleHelper.url(forResource: "CosmicShaders", withExtension: "metal"),
-              let src = try? String(contentsOf: url, encoding: .utf8) else {
-            NSLog("SpectrumAnalyzerView: CosmicShaders.metal not found")
-            return
-        }
         do {
-            let lib = try device.makeLibrary(source: src, options: nil)
+            let lib = try device.makeBundledLibrary("CosmicShaders")
             if let vf = lib.makeFunction(name: "cosmic_vertex"),
                let ff = lib.makeFunction(name: "cosmic_fragment") {
                 let d = MTLRenderPipelineDescriptor()
@@ -1661,13 +1644,8 @@ class SpectrumAnalyzerView: NSView {
     /// Set up Electricity mode render pipeline
     private func setupElectricityPipelines() {
         guard let device = device else { return }
-        guard let url = BundleHelper.url(forResource: "ElectricityShaders", withExtension: "metal"),
-              let src = try? String(contentsOf: url, encoding: .utf8) else {
-            NSLog("SpectrumAnalyzerView: ElectricityShaders.metal not found")
-            return
-        }
         do {
-            let lib = try device.makeLibrary(source: src, options: nil)
+            let lib = try device.makeBundledLibrary("ElectricityShaders")
             if let vf = lib.makeFunction(name: "electricity_vertex"),
                let ff = lib.makeFunction(name: "electricity_fragment") {
                 let d = MTLRenderPipelineDescriptor()
@@ -1684,13 +1662,8 @@ class SpectrumAnalyzerView: NSView {
     /// Set up Matrix mode render pipeline
     private func setupMatrixPipelines() {
         guard let device = device else { return }
-        guard let url = BundleHelper.url(forResource: "MatrixShaders", withExtension: "metal"),
-              let src = try? String(contentsOf: url, encoding: .utf8) else {
-            NSLog("SpectrumAnalyzerView: MatrixShaders.metal not found")
-            return
-        }
         do {
-            let lib = try device.makeLibrary(source: src, options: nil)
+            let lib = try device.makeBundledLibrary("MatrixShaders")
             if let vf = lib.makeFunction(name: "matrix_vertex"),
                let ff = lib.makeFunction(name: "matrix_fragment") {
                 let d = MTLRenderPipelineDescriptor()
@@ -1707,13 +1680,8 @@ class SpectrumAnalyzerView: NSView {
     /// Set up Snow mode render pipeline
     private func setupSnowPipelines() {
         guard let device = device else { return }
-        guard let url = BundleHelper.url(forResource: "SnowShaders", withExtension: "metal"),
-              let src = try? String(contentsOf: url, encoding: .utf8) else {
-            NSLog("SpectrumAnalyzerView: SnowShaders.metal not found")
-            return
-        }
         do {
-            let lib = try device.makeLibrary(source: src, options: nil)
+            let lib = try device.makeBundledLibrary("SnowShaders")
             if let vf = lib.makeFunction(name: "snow_vertex"),
                let ff = lib.makeFunction(name: "snow_fragment") {
                 let d = MTLRenderPipelineDescriptor()
@@ -1731,13 +1699,8 @@ class SpectrumAnalyzerView: NSView {
     /// Set up EKG mode render pipeline
     private func setupEKGPipelines() {
         guard let device = device else { return }
-        guard let url = BundleHelper.url(forResource: "EKGShaders", withExtension: "metal"),
-              let src = try? String(contentsOf: url, encoding: .utf8) else {
-            NSLog("SpectrumAnalyzerView: EKGShaders.metal not found")
-            return
-        }
         do {
-            let lib = try device.makeLibrary(source: src, options: nil)
+            let lib = try device.makeBundledLibrary("EKGShaders")
             if let vf = lib.makeFunction(name: "ekg_vertex"),
                let updateFF = lib.makeFunction(name: "ekg_update_fragment"),
                let compositeFF = lib.makeFunction(name: "ekg_composite_fragment") {
