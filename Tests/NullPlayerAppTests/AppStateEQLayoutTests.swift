@@ -9,43 +9,31 @@ final class AppStateEQLayoutTests: XCTestCase {
 
     private let classic: [Float] = [12, 0, 12, 11.25, 0, -3, 0, 0, 4, 0]
     private let modern: [Float] = (0..<21).map { Float($0 % 7) - 3 }
+    private var saved: [String: [Float]] { ["classic10": classic, "modern21": modern] }
+    /// Each layout paired with the other one, so every engine test runs in both directions.
+    private let directions: [(EQConfiguration, EQConfiguration)] = [(.classic10, .modern21), (.modern21, .classic10)]
 
-    private func makeState(eqBands: [Float], eqBandsByLayout: [String: [Float]]) -> AppStateManager.AppState {
-        AppStateManager.AppState(
-            isPlaylistVisible: false,
-            isEqualizerVisible: false,
-            isPlexBrowserVisible: false,
-            isProjectMVisible: false,
-            mainWindowFrame: nil,
-            playlistWindowFrame: nil,
-            equalizerWindowFrame: nil,
-            plexBrowserWindowFrame: nil,
-            projectMWindowFrame: nil,
-            volume: 0.5,
-            balance: 0,
-            shuffleEnabled: false,
-            repeatEnabled: false,
-            gaplessPlaybackEnabled: false,
-            volumeNormalizationEnabled: false,
-            sweetFadeEnabled: false,
-            sweetFadeDuration: 5,
-            eqEnabled: true,
-            eqAutoEnabled: false,
-            eqPreamp: 0,
-            eqBands: eqBands,
-            eqBandsByLayout: eqBandsByLayout,
-            playlistTracks: [],
-            currentTrackIndex: -1,
-            playbackPosition: 0,
-            wasPlaying: false,
-            timeDisplayMode: "elapsed",
-            isAlwaysOnTop: false
-        )
+    private func curve(_ layout: EQConfiguration) -> [Float] {
+        layout == .classic10 ? classic : modern
+    }
+
+    /// An engine in `layout`, whatever UI mode the test host's defaults would start it in.
+    private func makeEngine(in layout: EQConfiguration) -> AudioEngine {
+        let engine = AudioEngine()
+        engine.applyEQLayout(forModernUI: layout == .modern21)
+        XCTAssertEqual(engine.eqConfiguration, layout)
+        return engine
+    }
+
+    private func liveGains(_ engine: AudioEngine) -> [Float] {
+        (0..<engine.eqConfiguration.bandCount).map { engine.getEQBand($0) }
     }
 
     func testBothLayoutsSurviveEncodeAndDecode() throws {
-        let saved = ["classic10": classic, "modern21": modern]
-        let data = try JSONEncoder().encode(makeState(eqBands: classic, eqBandsByLayout: saved))
+        var state = AppStateManager.AppState.fixture()
+        state.eqBands = classic
+        state.eqBandsByLayout = saved
+        let data = try JSONEncoder().encode(state)
         let decoded = try JSONDecoder().decode(AppStateManager.AppState.self, from: data)
         XCTAssertEqual(decoded.eqBandsByLayout, saved)
         XCTAssertEqual(decoded.eqBands, classic)
@@ -54,7 +42,9 @@ final class AppStateEQLayoutTests: XCTestCase {
     /// A state written before `eqBandsByLayout` existed carries only the active layout's bands.
     func testOlderStateIsUpgradedFromItsActiveBands() throws {
         for bands in [classic, modern] {
-            let data = try JSONEncoder().encode(makeState(eqBands: bands, eqBandsByLayout: [:]))
+            var state = AppStateManager.AppState.fixture()
+            state.eqBands = bands
+            let data = try JSONEncoder().encode(state)
             var json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
             json.removeValue(forKey: "eqBandsByLayout")
             let legacy = try JSONSerialization.data(withJSONObject: json)
@@ -66,29 +56,42 @@ final class AppStateEQLayoutTests: XCTestCase {
     }
 
     func testRestoreAppliesTheActiveLayoutAndKeepsTheOtherExact() {
-        let engine = AudioEngine()
-        let startedModern = engine.eqConfiguration == .modern21
-        engine.restoreEQGains(["classic10": classic, "modern21": modern])
+        for (active, other) in directions {
+            let engine = makeEngine(in: active)
+            engine.restoreEQGains(saved)
 
-        XCTAssertEqual(engine.eqGainsByLayout(), ["classic10": classic, "modern21": modern])
-        let active = startedModern ? modern : classic
-        XCTAssertEqual((0..<active.count).map { engine.getEQBand($0) }, active)
+            XCTAssertEqual(engine.canonicalGains, saved)
+            XCTAssertEqual(liveGains(engine), curve(active))
 
-        // A live switch to the other family lands on its own saved curve, not a remap.
-        engine.applyEQLayout(forModernUI: !startedModern)
-        let other = startedModern ? classic : modern
-        XCTAssertEqual((0..<other.count).map { engine.getEQBand($0) }, other)
+            // A live switch to the other family lands on its own saved curve, not a remap.
+            engine.applyEQLayout(forModernUI: other == .modern21)
+            XCTAssertEqual(liveGains(engine), curve(other))
+        }
     }
 
     func testRestoreSeedsAnUnsavedActiveLayoutFromTheSavedOne() {
-        let engine = AudioEngine()
-        let active = engine.eqConfiguration
-        let source: EQConfiguration = active == .modern21 ? .classic10 : .modern21
-        let sourceGains = source == .classic10 ? classic : modern
-        engine.restoreEQGains([source.name: sourceGains])
+        for (active, source) in directions {
+            let engine = makeEngine(in: active)
+            engine.restoreEQGains([source.name: curve(source)])
 
-        let expected = EQBandRemapper.remap(gains: sourceGains, from: source, to: active)
-        XCTAssertEqual((0..<active.bandCount).map { engine.getEQBand($0) }, expected)
-        XCTAssertEqual(engine.eqGainsByLayout()[source.name], sourceGains)
+            let expected = EQBandRemapper.remap(gains: curve(source), from: source, to: active)
+            XCTAssertEqual(liveGains(engine), expected)
+            XCTAssertEqual(engine.canonicalGains, [source.name: curve(source), active.name: expected])
+        }
+    }
+
+    /// `canonicalGains` is what gets saved, so it must always match what the node plays: the
+    /// active layout has an entry from the start, and a band edit lands in it.
+    func testCanonicalGainsFollowTheLiveNode() {
+        for (layout, _) in directions {
+            let engine = makeEngine(in: layout)
+            XCTAssertEqual(engine.canonicalGains[layout.name], liveGains(engine))
+
+            engine.setEQBand(2, gain: 7.5)
+            engine.setEQBand(3, gain: 40)  // clamped to +12
+            XCTAssertEqual(engine.canonicalGains[layout.name], liveGains(engine))
+            XCTAssertEqual(engine.canonicalGains[layout.name]?[2], 7.5)
+            XCTAssertEqual(engine.canonicalGains[layout.name]?[3], 12)
+        }
     }
 }

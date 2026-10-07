@@ -115,8 +115,9 @@ class AppStateManager {
         // Preserves content type across restarts so Sonos casting doesn't default to audio/mpeg
         var contentType: String?
         
-        /// Create from a Track
-        static func from(_ track: Track) -> SavedTrack {
+        /// Create from a Track. `radioStations` names a radio stream; it is passed in rather than
+        /// read from `RadioManager` because saving runs off the main thread.
+        static func from(_ track: Track, radioStations: [RadioStation]) -> SavedTrack {
             if track.url.isFileURL {
                 return SavedTrack(
                     localURL: track.url.absoluteString,
@@ -168,7 +169,7 @@ class AppStateManager {
             } else if !track.url.isFileURL {
                 // Non-file URL without streaming service IDs = radio/internet stream
                 // Match against known radio stations for station name
-                let stationName = RadioManager.shared.stations.first(where: { $0.url == track.url })?.name
+                let stationName = radioStations.first(where: { $0.url == track.url })?.name
                 return SavedTrack(
                     radioURL: track.url.absoluteString,
                     radioStationName: stationName ?? track.title,
@@ -280,8 +281,9 @@ class AppStateManager {
         var eqEnabled: Bool
         var eqAutoEnabled: Bool = false
         var eqPreamp: Float
-        /// The active layout's bands only. Still written because older builds decode it as
-        /// required — without it a downgrade would lose the whole saved session.
+        /// The active layout's bands only, copied from `eqBandsByLayout`. Written for older builds
+        /// alone, which decode it as required — without it a downgrade would lose the whole saved
+        /// session. This build never reads it except to upgrade a state with no `eqBandsByLayout`.
         var eqBands: [Float]
         /// Every EQ layout's own curve, keyed by `EQConfiguration.name` — the engine's
         /// `canonicalGains`, so Classic's 10 bands and Original's 21 each survive a relaunch in the
@@ -619,13 +621,12 @@ class AppStateManager {
     // MARK: - Autosave
 
     private var autosaveTimer: Timer?
-    private var lastSavedStateData: Data?
 
     /// Quitting is not the only way the app ends: a dead battery, a crash or a force quit never
     /// reach `applicationWillTerminate`. Save periodically and before the machine sleeps, so the
-    /// session survives those too. Started by `restoreSettingsState` once the restore has applied,
-    /// so it can never overwrite the saved session with the empty one the app starts with.
-    private func startAutosave() {
+    /// session survives those too. The launch starts it once both restores have applied — never
+    /// earlier, or it overwrites the saved session with the empty one the app starts with.
+    func startAutosave() {
         guard autosaveTimer == nil else { return }
         autosaveTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             self?.saveState()
@@ -633,18 +634,25 @@ class AppStateManager {
         let center = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.willSleepNotification, NSWorkspace.willPowerOffNotification] {
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                self?.saveState()
+                self?.saveStateAndWait()
             }
         }
     }
 
     // MARK: - Save State
 
-    /// Save the current application state. Writes, and logs, only when it changed since the
-    /// last save, so the autosave ticks cost nothing while the session is idle.
+    /// Encodes, compares and writes the saved state, so none of it runs on the main thread.
+    private let saveQueue = DispatchQueue(label: "AppStateManager.save", qos: .utility)
+    /// The last state written. Read and written only on `saveQueue`.
+    private var lastSavedStateData: Data?
+
+    /// Save the current application state. Only capturing it runs here, on the main thread, and
+    /// that costs the same however long the playlist is; turning the playlist into `SavedTrack`s,
+    /// encoding and writing happen on `saveQueue`. Writes, and logs, only when the state changed
+    /// since the last save, so idle autosave ticks write nothing.
     func saveState() {
         guard isEnabled else { return }
-        
+
         let wm = WindowManager.shared
         let engine = wm.audioEngine
 
@@ -658,6 +666,11 @@ class AppStateManager {
             browserBrowseMode = wm.plexBrowserBrowseMode
         }
         
+        // Copies of value-type arrays: O(1) here, and safe to read on `saveQueue`.
+        let playlist = engine.playlist
+        let radioStations = RadioManager.shared.stations
+        let eqGains = engine.canonicalGains
+
         // Capture window visibility
         let state = AppState(
             // Window visibility
@@ -707,15 +720,14 @@ class AppStateManager {
             eqEnabled: engine.isEQEnabled(),
             eqAutoEnabled: UserDefaults.standard.bool(forKey: "EQAutoEnabled"),
             eqPreamp: engine.getPreamp(),
-            eqBands: (0..<engine.eqConfiguration.bandCount).map { engine.getEQBand($0) },
-            eqBandsByLayout: engine.eqGainsByLayout(),
-            
+            eqBands: eqGains[engine.eqConfiguration.name] ?? [],
+            eqBandsByLayout: eqGains,
+
             // Playback state - save all tracks with metadata for restoration,
             // but do not save the selected/current track. Setting the index to -1
             // keeps startup from loading a track solely because state was restored.
-            playlistTracks: engine.playlist.map { track in
-                SavedTrack.from(track)
-            },
+            // Filled from `playlist` on `saveQueue`.
+            playlistTracks: [],
             currentTrackIndex: -1,
             playbackPosition: 0,
             wasPlaying: false,
@@ -750,7 +762,23 @@ class AppStateManager {
                 : nil
         )
 
-        // Encode and save
+        saveQueue.async { [self] in
+            var state = state
+            state.playlistTracks = playlist.map { SavedTrack.from($0, radioStations: radioStations) }
+            write(state)
+        }
+    }
+
+    /// `saveState`, returning only once the write is done — for quit, sleep and power-off, after
+    /// which the process may not run again.
+    func saveStateAndWait() {
+        saveState()
+        saveQueue.sync {}
+    }
+
+    /// Encode and store `state` unless it is what was last stored. Runs on `saveQueue`.
+    private func write(_ state: AppState) {
+        dispatchPrecondition(condition: .onQueue(saveQueue))
         do {
             let encoder = JSONEncoder()
             // Dictionary keys otherwise encode in an unstable order, defeating the change check.
@@ -797,13 +825,7 @@ class AppStateManager {
     
     /// Restore only settings state (skin, volume, EQ, windows)
     /// Called early in launch before playlist state is restored
-    func restoreSettingsState(completion callerCompletion: (() -> Void)? = nil) {
-        // Autosave starts when the restore has applied. Every path below completes asynchronously,
-        // after the launch's synchronous `restorePlaylistState`, so a save can only record both.
-        let completion: (() -> Void)? = { [weak self] in
-            self?.startAutosave()
-            callerCompletion?()
-        }
+    func restoreSettingsState(completion: (() -> Void)? = nil) {
         guard isEnabled else {
             NSLog("AppStateManager: Remember State disabled, skipping settings restore")
             DispatchQueue.main.async { completion?() }
@@ -1761,9 +1783,12 @@ class AppStateManager {
     
     /// Clear the saved state
     func clearSavedState() {
-        UserDefaults.standard.removeObject(forKey: Keys.savedAppState)
-        // The next save must write even though the session itself has not changed.
-        lastSavedStateData = nil
+        // On `saveQueue`, after any save already queued, so the clear is not overwritten by one.
+        saveQueue.sync {
+            UserDefaults.standard.removeObject(forKey: Keys.savedAppState)
+            // The next save must write even though the session itself has not changed.
+            lastSavedStateData = nil
+        }
         NSLog("AppStateManager: Cleared saved state")
     }
 }

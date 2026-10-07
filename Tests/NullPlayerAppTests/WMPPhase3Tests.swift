@@ -157,38 +157,11 @@ final class WMPPhase3Tests: XCTestCase {
     }
 
     private func makeState(wmpSkinName: String?, wmpViewID: String?) -> AppStateManager.AppState {
-        AppStateManager.AppState(
-            isPlaylistVisible: false,
-            isEqualizerVisible: false,
-            isPlexBrowserVisible: false,
-            isProjectMVisible: false,
-            mainWindowFrame: NSStringFromRect(NSRect(x: 10, y: 20, width: 120, height: 80)),
-            playlistWindowFrame: nil,
-            equalizerWindowFrame: nil,
-            plexBrowserWindowFrame: nil,
-            projectMWindowFrame: nil,
-            volume: 0.75,
-            balance: 0,
-            shuffleEnabled: false,
-            repeatEnabled: false,
-            gaplessPlaybackEnabled: true,
-            volumeNormalizationEnabled: false,
-            sweetFadeEnabled: false,
-            sweetFadeDuration: 5,
-            eqEnabled: false,
-            eqAutoEnabled: false,
-            eqPreamp: 0,
-            eqBands: Array(repeating: 0, count: 10),
-            eqBandsByLayout: [:],
-            playlistTracks: [],
-            currentTrackIndex: -1,
-            playbackPosition: 0,
-            wasPlaying: false,
-            timeDisplayMode: TimeDisplayMode.elapsed.rawValue,
-            isAlwaysOnTop: false,
-            wmpSkinName: wmpSkinName,
-            wmpViewID: wmpViewID,
-            uiMode: PlayerUIMode.wmp.rawValue
-        )
+        var state = AppStateManager.AppState.fixture()
+        state.mainWindowFrame = NSStringFromRect(NSRect(x: 10, y: 20, width: 120, height: 80))
+        state.wmpSkinName = wmpSkinName
+        state.wmpViewID = wmpViewID
+        state.uiMode = PlayerUIMode.wmp.rawValue
+        return state
     }
 }

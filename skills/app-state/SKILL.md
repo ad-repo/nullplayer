@@ -10,18 +10,30 @@ description: NullPlayer session-state restoration, AppStateManager, AppPersisten
 `AppStateManager` saves and restores session state (v2) for window visibility and layout, audio and EQ state, and playlist contents. It intentionally does not save or restore the selected or current track, seek position, or playing state, so launch starts paused with no track loaded solely because state was restored.
 
 Remember State is **on by default** (`register(defaults:)`; an explicit menu choice wins). Saving is not
-only on quit: power loss, a crash or a force quit never reach `applicationWillTerminate`, so
-`restoreSettingsState` starts an autosave once the restore has applied — every 10 s, plus before
-system sleep and power-off. `saveState` writes, and logs, only when the encoded state changed
-(`.sortedKeys`, or dictionary order defeats the check), so idle ticks write nothing. Never start the
-autosave before restoration: it would overwrite the saved session with the empty launch state.
-`clearSavedState` forgets the last-written copy so the next save writes.
+only on quit: power loss, a crash or a force quit never reach `applicationWillTerminate`, so the
+launch calls `startAutosave` from the `restoreSettingsState` completion in `AppDelegate`, once both
+restores have applied — every 10 s, plus before system sleep and power-off. Never start it earlier: it
+would overwrite the saved session with the empty launch state.
+
+`saveState` only *captures* the session on the main thread: the playlist and radio stations are
+copied as value-type arrays, so that part costs the same however long the playlist is (~2 ms in a
+debug build at 1,000 or 20,000 tracks). Turning tracks into `SavedTrack`s, encoding, comparing and
+writing run on the serial `saveQueue` — encoding 20,000 tracks is ~33 ms in debug, which used to run
+on the main thread every tick. `SavedTrack.from` therefore takes the radio stations instead of reading
+`RadioManager`. Quit, sleep and power-off use `saveStateAndWait`, because the process may not run
+again. The write happens, and is logged, only when the encoded state changed (`.sortedKeys`, or
+dictionary order defeats the check), so idle ticks write nothing. `clearSavedState` runs on
+`saveQueue` after any queued save, and forgets the last-written copy so the next save writes.
 
 EQ is saved per band layout (`eqBandsByLayout`, the engine's `canonicalGains`: `classic10` for Classic,
 `.wal` and `.wmz`, `modern21` for Original and Metal) and restored through
 `AudioEngine.restoreEQGains`, so each family keeps its exact curve across a relaunch in the other.
-`eqBands` (the active layout only) is still written because older builds decode it as required; a
-state without `eqBandsByLayout` is upgraded on decode from `eqBands`.
+`canonicalGains` is the source of truth for the live node, not a cache: `programEQNode` records the
+curve it applies, so the active layout always has an entry, and `setEQBand` writes both. Never read
+gains back from `eqNode` to save them. `eqBands` (the active layout only, copied from the same
+dictionary) is still written because older builds decode it as required; a state without
+`eqBandsByLayout` is upgraded on decode from `eqBands`. The layouts a session can hold are
+`EQConfiguration.persistedLayouts`.
 
 Restore state in two phases: settings first with `restoreSettingsState`, then the playlist with `restorePlaylistState`. Load streaming tracks as placeholder `Track` objects, then replace them asynchronously through `engine.replaceTrack(at:with:)`.
 

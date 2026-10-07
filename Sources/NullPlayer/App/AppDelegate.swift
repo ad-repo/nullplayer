@@ -117,6 +117,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         CastManager.shared.startDiscovery()
 
         AppStateManager.shared.restoreSettingsState { [weak self] in
+            // Both restores have applied: this runs asynchronously, after the synchronous
+            // `restorePlaylistState` below, so the first save records the restored session.
+            AppStateManager.shared.startAutosave()
             self?.loadDiagnosticWMPSkinIfRequested()
             // Everything the launch puts on screen is finally up: the player at its restored frame,
             // the skin's own windows at their final sizes, and any hosted window the session had
@@ -292,8 +295,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // which can't execute while main thread is blocked waiting for completion
         CastManager.shared.stopCastingSync()
         
-        // Save app state if "Remember State" is enabled
-        AppStateManager.shared.saveState()
+        // Save app state if "Remember State" is enabled; the process exits next, so wait for the write
+        AppStateManager.shared.saveStateAndWait()
         
         // Compact Mode's floating frame is its own store, saved on quit whatever Remember State says.
         windowManager.persistCompactFloatingFrame()
