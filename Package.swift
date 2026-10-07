@@ -3,6 +3,11 @@
 
 import PackageDescription
 
+// Let the compiler find the vendored VLCKit.framework module map (Frameworks/VLCKit.framework)
+// so `import VLCKit` resolves. Unsafe flags don't carry over to dependent targets, and the
+// swiftbuild build system resolves NullPlayer's imports again while scanning the test target.
+let vlcKitSearchPath: SwiftSetting = .unsafeFlags(["-F", "Frameworks"])
+
 let package = Package(
     name: "NullPlayer",
     defaultLocalization: "en",
@@ -160,11 +165,7 @@ let package = Package(
                 .copy("Visualization/EKGShaders.metal"),
                 .copy("ModernSkin/BloomShader.metal")
             ],
-            swiftSettings: [
-                // Let the compiler find the vendored VLCKit.framework module map
-                // (Frameworks/VLCKit.framework) so `import VLCKit` resolves.
-                .unsafeFlags(["-F", "Frameworks"]),
-            ],
+            swiftSettings: [vlcKitSearchPath],
             linkerSettings: [
                 .linkedFramework("WebKit"),
                 // The WMP skin engine runs skin JScript in an in-process JSContext whose only
@@ -196,7 +197,13 @@ let package = Package(
             path: "Tests/NullPlayerAppTests",
             // Committed golden PNGs for the `.wal` render sweep. They are read from the source tree
             // by path (so an update run rewrites them in place), not from a resource bundle.
-            exclude: ["Fixtures", "Goldens"]
+            exclude: ["Fixtures", "Goldens"],
+            swiftSettings: [vlcKitSearchPath],
+            // The test bundle links NullPlayer's vendored libraries (VLCKit, projectM, aubio);
+            // let it load them from Frameworks/ instead of from a hand-made build-dir symlink.
+            linkerSettings: [
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", Context.packageDirectory + "/Frameworks"]),
+            ]
         ),
     ],
     // Use Swift 5 language mode to keep concurrency warnings as warnings, not errors

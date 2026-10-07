@@ -14,7 +14,7 @@ enum BundleHelper {
         #if DEBUG
         // In debug builds, Bundle.main.infoDictionary is empty because we run as a bare executable.
         // Load Info.plist from the source Resources directory via Bundle.module.
-        if let url = Bundle.module.url(forResource: "Info", withExtension: "plist"),
+        if let url = lookUp("Info", "plist", nil, in: Bundle.module),
            let data = try? Data(contentsOf: url),
            let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] {
             return plist
@@ -69,183 +69,32 @@ enum BundleHelper {
         return nil
     }()
     
-    /// Returns the bundle containing app resources
-    /// - In SPM development: Uses Bundle.module
-    /// - In standalone app: Uses Bundle.main's Resources folder
-    /// - In release from build dir: Uses NullPlayer_NullPlayer.bundle
-    static var resourceBundle: Bundle {
+    /// The SwiftPM resource bundle: `Bundle.module` in DEBUG; in release only the copy next to the
+    /// executable, since `Bundle.module` crashes when the app runs outside the build directory.
+    private static var packageResourceBundle: Bundle? {
         #if DEBUG
-        // In debug builds, try module bundle first (SPM development)
         return Bundle.module
         #else
-        // In release builds, try SPM bundle first (running from build dir), then main bundle
-        return spmResourceBundle ?? Bundle.main
+        return spmResourceBundle
         #endif
     }
-    
-    /// Find a resource URL, checking main bundle first then module bundle (DEBUG only)
+
+    /// Looks `name` up in `bundle`, directly or under the copied `Resources/` folder. The package
+    /// copies `Resources/` whole (`.copy("Resources")`): the native build system's flat bundle serves
+    /// that folder as the bundle's resources, while swiftbuild's `Contents/Resources/` layout nests it
+    /// one level down.
+    private static func lookUp(_ name: String, _ ext: String?, _ subdirectory: String?, in bundle: Bundle) -> URL? {
+        let nested = ["Resources", subdirectory].compactMap { $0 }.joined(separator: "/")
+        return bundle.url(forResource: name, withExtension: ext, subdirectory: subdirectory)
+            ?? bundle.url(forResource: name, withExtension: ext, subdirectory: nested)
+    }
+
+    /// Find a resource URL, checking the main bundle first, then the SwiftPM resource bundle.
     ///
     /// The order is important: Bundle.module crashes in release builds when installed
     /// outside the build directory, so we must try Bundle.main first.
     static func url(forResource name: String, withExtension ext: String?, subdirectory: String? = nil) -> URL? {
-        // Try main bundle first (works in standalone app)
-        if let url = Bundle.main.url(forResource: name, withExtension: ext, subdirectory: subdirectory) {
-            return url
-        }
-        
-        // Try main bundle Resources subdirectory (common app bundle structure)
-        if let subdirectory = subdirectory {
-            if let url = Bundle.main.url(forResource: name, withExtension: ext, subdirectory: "Resources/\(subdirectory)") {
-                return url
-            }
-        }
-        
-        // Try without subdirectory in main bundle
-        if let url = Bundle.main.url(forResource: name, withExtension: ext) {
-            return url
-        }
-        
-        // Try main bundle Resources folder directly
-        if let resourceURL = Bundle.main.resourceURL {
-            var searchURL = resourceURL.appendingPathComponent(name)
-            if let ext = ext {
-                searchURL = searchURL.appendingPathExtension(ext)
-            }
-            if FileManager.default.fileExists(atPath: searchURL.path) {
-                return searchURL
-            }
-            
-            // Also try with subdirectory
-            if let subdirectory = subdirectory {
-                var subSearchURL = resourceURL.appendingPathComponent(subdirectory).appendingPathComponent(name)
-                if let ext = ext {
-                    subSearchURL = subSearchURL.appendingPathExtension(ext)
-                }
-                if FileManager.default.fileExists(atPath: subSearchURL.path) {
-                    return subSearchURL
-                }
-            }
-        }
-        
-        #if DEBUG
-        // Only try Bundle.module in DEBUG builds - it crashes in release builds
-        // when the app is installed outside the SPM build directory
-        if let url = Bundle.module.url(forResource: name, withExtension: ext, subdirectory: subdirectory) {
-            return url
-        }
-        #else
-        // In release builds running from SPM build directory, check the NullPlayer_NullPlayer.bundle
-        if let spmBundle = spmResourceBundle {
-            // Try Resources subdirectory first (SPM puts resources there)
-            if let url = spmBundle.url(forResource: name, withExtension: ext, subdirectory: "Resources") {
-                return url
-            }
-            if let subdirectory = subdirectory {
-                if let url = spmBundle.url(forResource: name, withExtension: ext, subdirectory: "Resources/\(subdirectory)") {
-                    return url
-                }
-            }
-            if let url = spmBundle.url(forResource: name, withExtension: ext, subdirectory: subdirectory) {
-                return url
-            }
-            if let url = spmBundle.url(forResource: name, withExtension: ext) {
-                return url
-            }
-        }
-        #endif
-        
-        return nil
-    }
-    
-    /// Find a resource URL in a specific subdirectory
-    static func url(forResource name: String, withExtension ext: String?, inDirectory directory: String) -> URL? {
-        return url(forResource: name, withExtension: ext, subdirectory: directory)
-    }
-    
-    /// Get the path to the Presets directory
-    static var presetsDirectory: URL? {
-        // Try main bundle first (standalone app)
-        if let url = Bundle.main.url(forResource: "Presets", withExtension: nil) {
-            return url
-        }
-        if let resourceURL = Bundle.main.resourceURL {
-            let presetsURL = resourceURL.appendingPathComponent("Presets")
-            if FileManager.default.fileExists(atPath: presetsURL.path) {
-                return presetsURL
-            }
-            // Also try Resources/Presets
-            let resourcePresetsURL = resourceURL.appendingPathComponent("Resources").appendingPathComponent("Presets")
-            if FileManager.default.fileExists(atPath: resourcePresetsURL.path) {
-                return resourcePresetsURL
-            }
-        }
-        
-        #if DEBUG
-        // Only try Bundle.module in DEBUG builds
-        if let url = Bundle.module.url(forResource: "Presets", withExtension: nil, subdirectory: "Resources") {
-            return url
-        }
-        if let url = Bundle.module.url(forResource: "Presets", withExtension: nil) {
-            return url
-        }
-        #else
-        // In release builds running from SPM build directory
-        if let spmBundle = spmResourceBundle {
-            if let url = spmBundle.url(forResource: "Presets", withExtension: nil, subdirectory: "Resources") {
-                return url
-            }
-            if let url = spmBundle.url(forResource: "Presets", withExtension: nil) {
-                return url
-            }
-        }
-        #endif
-        
-        return nil
-    }
-    
-    /// Get the path to the Textures directory
-    static var texturesDirectory: URL? {
-        // Try main bundle first (standalone app)
-        if let url = Bundle.main.url(forResource: "Textures", withExtension: nil) {
-            return url
-        }
-        if let resourceURL = Bundle.main.resourceURL {
-            let texturesURL = resourceURL.appendingPathComponent("Textures")
-            if FileManager.default.fileExists(atPath: texturesURL.path) {
-                return texturesURL
-            }
-            // Also try Resources/Textures
-            let resourceTexturesURL = resourceURL.appendingPathComponent("Resources").appendingPathComponent("Textures")
-            if FileManager.default.fileExists(atPath: resourceTexturesURL.path) {
-                return resourceTexturesURL
-            }
-        }
-        
-        #if DEBUG
-        // Only try Bundle.module in DEBUG builds
-        if let url = Bundle.module.url(forResource: "Textures", withExtension: nil, subdirectory: "Resources") {
-            return url
-        }
-        if let url = Bundle.module.url(forResource: "Textures", withExtension: nil) {
-            return url
-        }
-        #else
-        // In release builds running from SPM build directory
-        if let spmBundle = spmResourceBundle {
-            if let url = spmBundle.url(forResource: "Textures", withExtension: nil, subdirectory: "Resources") {
-                return url
-            }
-            if let url = spmBundle.url(forResource: "Textures", withExtension: nil) {
-                return url
-            }
-        }
-        #endif
-        
-        return nil
-    }
-    
-    /// Get the path to a skin file (wsz)
-    static func skinURL(named name: String) -> URL? {
-        return url(forResource: name, withExtension: "wsz")
+        lookUp(name, ext, subdirectory, in: .main)
+            ?? packageResourceBundle.flatMap { lookUp(name, ext, subdirectory, in: $0) }
     }
 }
