@@ -52,7 +52,7 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
         window.minSize = ModernSkinElements.libraryMinSize
         window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         
-        // Allow fullscreen for art-only / visualizer mode
+        // Allow fullscreen
         window.collectionBehavior = [.fullScreenPrimary, .managed]
         
         // Initial center position - will be repositioned by WindowManager

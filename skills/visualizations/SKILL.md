@@ -28,7 +28,7 @@ Visualization choices are durable `UserDefaults` preferences, not AppState sessi
 | [peppymeter](../peppymeter/SKILL.md) | Skinnable analog VU meter window (PeppyMeter port): needle/bar meters composited from meters.txt templates, driven by the stereo tap. A CoreGraphics-skinned meter, **not** a Metal visualization mode |
 | [cava](../cava/SKILL.md) | cava-style bar spectrum in both the standalone window and main-window inline area (clean-room Swift/vDSP port): dual bass/treble FFT → log bands, CoreGraphics gradient bars, scoped skin-following colors + tuning. A CoreGraphics meter driven by the full-rate stereo tap, **not** a Metal mode |
 | [gpu-vis-modes](../gpu-vis-modes/SKILL.md) | Per-mode internals shared by both windows: Fire, JWST, Lightning, Matrix, Snow, EKG, Classic/Enhanced/Ultra |
-| [album-art-visualizer](../album-art-visualizer/SKILL.md) | Library Browser ART-mode effects (30 Core Image filters) |
+| [album-art-visualizer](../album-art-visualizer/SKILL.md) | The Art window: playing cover, rating, and VIS (30 Core Image effects) |
 | [projectm-milkdrop](../projectm-milkdrop/SKILL.md) | ProjectM/MilkDrop preset engine in the visualization window |
 | [geiss-port](../geiss-port/SKILL.md) | Geiss engine — port architecture, ABI, configuration |
 | [tripex-port](../tripex-port/SKILL.md) | Tripex (ben-marsh/tripex) port — D3D9→OpenGL, C ABI |

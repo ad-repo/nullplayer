@@ -33,6 +33,8 @@ final class WinampModernHostedProviderTests: XCTestCase {
         XCTAssertTrue(surfaces[.waveform] is WaveformView)
         XCTAssertTrue(surfaces[.cava] is WinampModernHostedCavaSurface)
         XCTAssertTrue(surfaces[.peppyMeter] is WinampModernHostedFullscreenSurface)
+        XCTAssertTrue(surfaces[.art] is ArtWindowView)
+        XCTAssertTrue(surfaces[.art] is WinampModernHostedFullscreenSurface)
         XCTAssertTrue(surfaces[.waveform] is WinampModernHostedWaveformSurface)
     }
 

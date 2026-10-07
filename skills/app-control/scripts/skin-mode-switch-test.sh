@@ -6,7 +6,7 @@
 #
 # Pick windows by how their size is decided, not all of them:
 #   "Spectrum Analyzer"  centre stack, `.wmz` border, classic resetToDefaultFrame — stands in for
-#                        Cava, Flow, Audio Analyzer, PeppyMeter, Waveform
+#                        Cava, Flow, Audio Analyzer, PeppyMeter, Art, Waveform
 #   "Visualizations"     side window, no reset, its own last-frame cache — stands in for Library
 #   "Sonos Rooms"        its own show path, width once taken from the player
 #

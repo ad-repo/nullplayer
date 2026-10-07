@@ -180,6 +180,7 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Spectrum Analyzer", visible: wm.isSpectrumVisible, action: #selector(MenuActions.toggleSpectrum), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Audio Analyzer", visible: wm.isAudioAnalysisVisible, action: #selector(MenuActions.toggleAudioAnalysis), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("PeppyMeter", visible: wm.isPeppyMeterVisible, action: #selector(MenuActions.togglePeppyMeter), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Art", visible: wm.isArtVisible, action: #selector(MenuActions.toggleArt), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Flow", visible: wm.isNetworkMonitorVisible, action: #selector(MenuActions.toggleNetworkMonitor), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Cava", visible: wm.isCavaVisible, action: #selector(MenuActions.toggleCava), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Sonos Rooms", visible: wm.isSonosVisible, action: #selector(MenuActions.toggleSonos), enabled: supportsSkinnedAuxiliaryWindows))
@@ -3297,6 +3298,10 @@ class MenuActions: NSObject {
 
     @objc func togglePeppyMeter() {
         WindowManager.shared.togglePeppyMeter()
+    }
+
+    @objc func toggleArt() {
+        WindowManager.shared.toggleArt()
     }
 
     @objc func toggleNetworkMonitor() {

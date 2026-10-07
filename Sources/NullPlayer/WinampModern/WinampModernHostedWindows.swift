@@ -18,6 +18,7 @@ enum WinampModernSurfaceID: Hashable, CustomStringConvertible {
     static let audioAnalysis: Self = .hostWindow(.audioAnalysis)
     static let waveform: Self = .hostWindow(.waveform)
     static let projectM: Self = .hostWindow(.projectM)
+    static let art: Self = .hostWindow(.art)
     /// The equalizer reaches this only as a *fallback*: a skin that declares an equalizer surface of
     /// its own is matched as embedded or declared by the surface coordinator and never gets here.
     static let hostedEqualizer: Self = .hostWindow(.equalizer)
@@ -77,6 +78,7 @@ enum WinampModernHostedWindowID: String, CaseIterable {
     case audioAnalysis
     case waveform
     case projectM
+    case art
 
     var containerIdentifier: String { "nullplayer.\(rawValue)" }
     var contentGroupIdentifier: String { "\(containerIdentifier).content" }
@@ -245,6 +247,23 @@ enum WinampModernHostedWindowRegistry {
             ),
             makeSurface: { context in
                 let view = ModernProjectMView(frame: NSRect(origin: .zero, size: SkinElements.ProjectM.defaultSize))
+                view.configureForHostedSurface(context: context)
+                return view
+            }
+        ),
+        WinampModernHostedWindowDefinition(
+            id: .art,
+            title: "Art",
+            defaultSize: CGSize(width: SkinElements.SpectrumWindow.windowSize.width,
+                                height: SkinElements.SpectrumWindow.windowSize.width),
+            minimumSize: SkinElements.SpectrumWindow.minSize,
+            maximumSize: nil,
+            stackPolicy: WinampModernHostedStackPolicy(
+                participatesInCenterStack: true,
+                preferredHeightMultiplier: 1
+            ),
+            makeSurface: { context in
+                let view = ArtWindowView(frame: NSRect(origin: .zero, size: SkinElements.SpectrumWindow.windowSize))
                 view.configureForHostedSurface(context: context)
                 return view
             }

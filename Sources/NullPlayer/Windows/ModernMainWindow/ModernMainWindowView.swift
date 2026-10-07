@@ -745,34 +745,39 @@ class ModernMainWindowView: NSView {
         }
     }
     
-    private func drawEQPlaylistButtons(context: CGContext) {
-        // 10 toggle buttons aligned with marquee panel (x:93 to x:267)
-        let y: CGFloat = 42
-        let h: CGFloat = 14
-        let leftEdge: CGFloat = 93   // Match marquee left edge
-        let rightEdge: CGFloat = 269  // Match marquee right edge
-        let w: CGFloat = 16
-        let spacing = (rightEdge - leftEdge - 10 * w) / 9  // ~1.56
-        let startX = leftEdge
-        
-        let buttonDefs: [(String, String, Bool)] = [
-            ("btn_cava", "CV", WindowManager.shared.isCavaVisible),
-            ("btn_projectm", "VZ", WindowManager.shared.isProjectMVisible),
-            ("btn_networkmonitor", "FL", WindowManager.shared.isNetworkMonitorVisible),
-            ("btn_peppymeter", "PM", WindowManager.shared.isPeppyMeterVisible),
-            ("btn_eq", "EQ", WindowManager.shared.isEqualizerVisible),
-            ("btn_playlist", "PL", WindowManager.shared.isPlaylistVisible),
-            ("btn_spectrum", "SP", WindowManager.shared.isSpectrumVisible),
-            ("btn_audioanalysis", "AA", WindowManager.shared.isAudioAnalysisVisible),
-            ("btn_waveform", "WV", WindowManager.shared.isWaveformVisible),
-            ("btn_library", "LB", WindowManager.shared.isPlexBrowserVisible),
+    /// The window toggles under the marquee, left to right: id, label, whether its window is open.
+    private static var windowToggleButtons: [(id: String, label: String, isOn: () -> Bool)] {
+        let wm = WindowManager.shared
+        return [
+            ("btn_cava", "CV", { wm.isCavaVisible }),
+            ("btn_projectm", "VZ", { wm.isProjectMVisible }),
+            ("btn_networkmonitor", "FL", { wm.isNetworkMonitorVisible }),
+            ("btn_peppymeter", "PM", { wm.isPeppyMeterVisible }),
+            ("btn_art", "AR", { wm.isArtVisible }),
+            ("btn_eq", "EQ", { wm.isEqualizerVisible }),
+            ("btn_playlist", "PL", { wm.isPlaylistVisible }),
+            ("btn_spectrum", "SP", { wm.isSpectrumVisible }),
+            ("btn_audioanalysis", "AA", { wm.isAudioAnalysisVisible }),
+            ("btn_waveform", "WV", { wm.isWaveformVisible }),
+            ("btn_library", "LB", { wm.isPlexBrowserVisible }),
         ]
-        
-        for (i, (id, label, isOn)) in buttonDefs.enumerated() {
-            let x = startX + CGFloat(i) * (w + spacing)
-            let rect = NSRect(x: x, y: y, width: w, height: h)
-            renderer.drawToggleButton(id, isOn: isOn, isPressed: pressedElement == id,
-                                      label: label, in: rect, context: context)
+    }
+
+    /// Where toggle `index` sits: spread evenly across the marquee panel's width (x:93 to x:269).
+    private static func windowToggleRect(at index: Int, count: Int) -> NSRect {
+        let leftEdge: CGFloat = 93
+        let rightEdge: CGFloat = 269
+        let width: CGFloat = 15
+        let spacing = (rightEdge - leftEdge - CGFloat(count) * width) / CGFloat(count - 1)
+        return NSRect(x: leftEdge + CGFloat(index) * (width + spacing), y: 42, width: width, height: 14)
+    }
+
+    private func drawEQPlaylistButtons(context: CGContext) {
+        let buttons = Self.windowToggleButtons
+        for (index, button) in buttons.enumerated() {
+            renderer.drawToggleButton(button.id, isOn: button.isOn(), isPressed: pressedElement == button.id,
+                                      label: button.label, in: Self.windowToggleRect(at: index, count: buttons.count),
+                                      context: context)
         }
     }
     
@@ -1499,19 +1504,10 @@ class ModernMainWindowView: NSView {
             ("btn_pause", ModernSkinElements.btnPause.defaultRect),
             ("btn_stop", ModernSkinElements.btnStop.defaultRect),
             ("btn_next", ModernSkinElements.btnNext.defaultRect),
-            // Toggle button row (10 buttons aligned with marquee panel x:93–267)
         ])
-        do {
-            let leftEdge: CGFloat = 93
-            let rightEdge: CGFloat = 269
-            let bw: CGFloat = 16
-            let bs = (rightEdge - leftEdge - 10 * bw) / 9
-            let ids = ["btn_cava", "btn_projectm", "btn_networkmonitor", "btn_peppymeter",
-                       "btn_eq", "btn_playlist", "btn_spectrum", "btn_audioanalysis",
-                       "btn_waveform", "btn_library"]
-            for (i, id) in ids.enumerated() {
-                hitTargets.append((id, NSRect(x: leftEdge + CGFloat(i) * (bw + bs), y: 42, width: bw, height: 14)))
-            }
+        let toggles = Self.windowToggleButtons
+        for (index, button) in toggles.enumerated() {
+            hitTargets.append((button.id, Self.windowToggleRect(at: index, count: toggles.count)))
         }
         hitTargets.append(contentsOf: [
             // Sliders
@@ -1762,6 +1758,9 @@ class ModernMainWindowView: NSView {
 
         case "btn_peppymeter":
             WindowManager.shared.togglePeppyMeter()
+
+        case "btn_art":
+            WindowManager.shared.toggleArt()
 
         case "btn_spectrum":
             WindowManager.shared.toggleSpectrum()

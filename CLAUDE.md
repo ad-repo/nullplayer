@@ -26,7 +26,7 @@ Technical documentation lives in `skills/`. Read the owning skill before changin
 - `sonos-casting`, `chromecast-casting`: casting protocols and debugging
 - `stream-ripper`: URL ripping; `youtube-source`: YouTube audio; `cue-sheets`: cue playback/splitting; `radio-streaming`: radio
 - `visualizations`: visualizer router; `main-window-visualization`: inline vis; `spectrum-analyzer-window`: analyzer; `audio-analysis-window`: analysis panes
-- `peppymeter`: analog VU; `cava`: bar spectrum; `flow`: network meter; `gpu-vis-modes`: shaders; `album-art-visualizer`: ART effects
+- `peppymeter`: analog VU; `cava`: bar spectrum; `flow`: network meter; `gpu-vis-modes`: shaders; `album-art-visualizer`: Art window
 - `projectm-milkdrop`: MilkDrop; `metal-gotchas`: Metal rules
 - `geiss-port`, `tripex-port`, `vis-classic-guide`: visualization ports and compatibility
 - `app-control`: launching, configuring, driving and measuring the running app; test-data targets

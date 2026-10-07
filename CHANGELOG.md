@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Art is its own window** — the Library Browser's ART view is now an **Art** window (Windows →
+  Art, or **AR** on the Original player) that follows the playing track and docks under the player
+  like PeppyMeter, opening at the player's width and shaped to the cover. Click it to rate the
+  track, double-click to step through a file's embedded pictures, press **V** for the 30
+  audio-reactive effects (formerly VIS) and **F** for fullscreen; right-click for effects,
+  intensity and rating. It is remembered across launches, and Winamp Modern skins that frame
+  NullPlayer's windows frame it too. You can browse while it is open: the Library Browser's ART
+  button is gone. Radio station logos now also show as the station's art, including in Control
+  Center.
 - **Find YouTube channels by name** — the YouTube source's **Search** tab now searches YouTube for
   channels instead of listing internet radio stations. Type a name and press Enter: each result
   shows its @handle and subscriber count, expands to preview its uploads, and subscribes on

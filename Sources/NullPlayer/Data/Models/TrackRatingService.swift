@@ -6,8 +6,8 @@ import Foundation
 /// **The scale is 0–10 everywhere inside the app, and 0–5 stars everywhere a user sees it** — a star
 /// is two points, so a half-star is representable even though no surface currently offers one. Each
 /// backend keeps its own unit (Plex 0–10, Subsonic 0–5, Jellyfin and Emby 0–100, the local library
-/// 0–10) and the conversion belongs here rather than at each caller: the star row in the Library
-/// Browser's ART mode and a `.wal` skin's file-info panel are the same field and must never disagree
+/// 0–10) and the conversion belongs here rather than at each caller: the Art window's star rating
+/// and a `.wal` skin's file-info panel are the same field and must never disagree
 /// about what three stars means.
 ///
 /// `nil` is "unrated", which is not the same as zero — a surface draws no stars for it rather than
@@ -21,6 +21,12 @@ final class TrackRatingService {
     /// cannot be made on one side only.
     static func stars(fromRating rating: Int) -> Int { max(0, min(5, Int((Double(rating) / 2).rounded()))) }
     static func rating(fromStars stars: Int) -> Int { max(0, min(5, stars)) * 2 }
+
+    /// Whether `setRating` has somewhere to write this track's rating. A radio stream has none.
+    static func isRateable(_ track: Track) -> Bool {
+        track.plexRatingKey != nil || track.subsonicId != nil || track.jellyfinId != nil
+            || track.embyId != nil || track.url.isFileURL
+    }
 
     /// The rating a *local* track already has, without going to a server — a dictionary hit in the
     /// library. This is the only synchronous answer available: every other source has to be asked

@@ -344,6 +344,14 @@ class NowPlayingManager {
                 if let imageTag = track.artworkThumb {
                     image = await self.loadEmbyArtwork(itemId: track.embyId!, imageTag: imageTag)
                 }
+            } else if let thumb = track.artworkThumb, let url = URL(string: thumb),
+                      ["http", "https"].contains(url.scheme?.lowercased()) {
+                // A radio station's logo (`RadioStation.toTrack`), or any stream that names its
+                // cover by URL. The Art window shows it as the station's art.
+                if let (data, response) = try? await URLSession.shared.data(from: url),
+                   (response as? HTTPURLResponse)?.statusCode == 200 {
+                    image = NSImage(data: data)
+                }
             }
             
             // Check if cancelled
