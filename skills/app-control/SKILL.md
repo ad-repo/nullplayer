@@ -198,7 +198,7 @@ read -r WID _ X Y W H _ < <("$WH" windows --pid "$PID" --size 289x283)   # the s
 | `winhelper click <x> <y>` | `mouseMoved`, then down/up **with `mouseEventClickState = 1`** |
 | `winhelper dblclick <x> <y>` | two clicks, the second at `clickState = 2` |
 | `winhelper clickdiff <x> <y> [--pid <n>] [--size <w>x<h>] [--settle <s>]` | the window-frame check: `before` rows, a `click`, a wait (1 s default), `after` rows, then one `changed`/`gone`/`new` line per window; **exits 2 when nothing changed**. `dblclickdiff` is the same with `dblclick`. `--size` filters only the *before* listing |
-| `winhelper scroll <x> <y> <count> <delta> [line\|precise]` | `count` wheel events at one point; `precise` is a trackpad (points), `line` (the default) a mouse wheel (lines) |
+| `winhelper scroll <x> <y> <count> <delta> [line\|precise] [h]` | `count` wheel events at one point; `precise` is a trackpad (points), `line` (the default) a mouse wheel (lines); `h` posts the delta on the horizontal axis (negative scrolls content left) |
 | `winhelper move <x> <y> …` | `mouseMoved` through the path, 250 ms apart |
 | `winhelper drag <x> <y> …` | press, `leftMouseDragged` through the path, release at the last point |
 | `osascript menu.applescript mode\|skin\|load\|list\|current\|family\|closeaux <pid> …` | the Skins / Windows menu verbs. `skin` picks a skin (switching family if needed), `mode` presses "Switch to …", `load <sub> <path>` answers "Load … Skin..."'s open panel (types into it, so the build is raised first), `family` names the ticked family |
