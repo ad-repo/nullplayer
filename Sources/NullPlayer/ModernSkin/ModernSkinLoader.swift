@@ -274,7 +274,7 @@ class ModernSkinLoader {
     
     private func createFallbackSkin() -> ModernSkin {
         let config = ModernSkinConfig(
-            meta: SkinMeta(name: "NeonWave", author: "NullPlayer", version: "1.0", description: "Default neon skin"),
+            meta: SkinMeta(name: "Fallback", author: "NullPlayer", version: "1.0", description: "Programmatic fallback when the bundled default fails to load"),
             palette: ColorPalette(
                 primary: "#00ffcc",
                 secondary: "#00ccff",

@@ -292,34 +292,19 @@ final class CavaSettingsTests: XCTestCase {
     }
 
     func testBundledModernSkinsDefaultEmbeddedVisualizerToCava() throws {
-        let bundledSkinNames = [
-            "ArcticMinimal",
-            "BananaParty",
-            "BloodGlass",
-            "Bubblegum Retro",
-            "EmeraldForge",
-            "ForgedTitanium",
-            "HyperPopPrism",
-            "IndustrialSignal",
-            "NeonWave",
-            "NullPlayer-Orange",
-            "October",
-            "Sakura Minimal",
-            "SeaGlass",
-            "Skulls",
-            "SmoothGlass",
-        ]
+        let defaultName = ModernSkinFamily.modern.defaultSkinName
+        let defaultConfigURL = try XCTUnwrap(
+            BundleHelper.url(forResource: "skin", withExtension: "json", subdirectory: "Resources/Skins/\(defaultName)"),
+            "Missing bundled default skin \(defaultName)"
+        )
+        let skinsDir = defaultConfigURL.deletingLastPathComponent().deletingLastPathComponent()
+        let skinDirs = try FileManager.default.contentsOfDirectory(at: skinsDir, includingPropertiesForKeys: nil)
+            .filter { FileManager.default.fileExists(atPath: $0.appendingPathComponent("skin.json").path) }
+        XCTAssertGreaterThan(skinDirs.count, 1, "Bundled skin enumeration found only the default")
 
-        for name in bundledSkinNames {
-            let configURL = try XCTUnwrap(
-                BundleHelper.url(
-                    forResource: "skin",
-                    withExtension: "json",
-                    subdirectory: "Resources/Skins/\(name)"
-                ),
-                "Missing bundled skin config for \(name)"
-            )
-            let skin = try ModernSkinLoader.shared.load(from: configURL.deletingLastPathComponent())
+        for dir in skinDirs {
+            let name = dir.lastPathComponent
+            let skin = try ModernSkinLoader.shared.load(from: dir)
             XCTAssertEqual(
                 skin.config.visualization?.mainWindowMode,
                 MainWindowVisMode.cava.rawValue,
