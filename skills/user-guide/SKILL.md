@@ -144,6 +144,12 @@ Original and Original-Metal UI add: **HT** (Hide Title Bars), **CP** (Compact Mo
 
 ## Media Sources
 
+**One play menu everywhere**: right-click a track, album, artist, playlist, playlist entry or local folder
+in the Library Browser, from any source, for **Play** · **Play and Replace Queue** · **Play Next** · **Add to
+Queue**, then that row's own items (Rate, Edit Tags, Start Radio, Expand…). Play Next and Add to Queue start
+playback when the queue is empty. An artist plays album by album, oldest first. Radio stations and video rows
+keep their own menus. Code: `App/TrackVerb.swift` (verbs, menu) and `App/LibraryPlayable.swift` (row → tracks).
+
 ### Plex Integration
 - Browse music, movies, and TV shows
 - Album artwork and metadata
@@ -187,8 +193,8 @@ Original and Original-Metal UI add: **HT** (Hide Title Bars), **CP** (Compact Mo
 ### YouTube
 Library Browser → **Source: YouTube**. Subscribe to channels (**+ADD**, or find them by name in the
 **Search** tab) and expand one to list its uploads. Needs `yt-dlp` and `ffmpeg`. Details: `youtube-source`.
-- **A video's menu** (right-click): **Audio ▸** and **Video ▸**, each with Play · Play and Replace
-  Queue · Add to Playlist · Play Next · Add to Queue. That form downloads first if it isn't on disk
+- **A video's menu** (right-click): **Audio ▸** and **Video ▸**, each with the library's four play
+  verbs (Play · Play and Replace Queue · Play Next · Add to Queue). That form downloads first if it isn't on disk
   (row spinner), then plays or queues. A video can have both its audio and its video downloaded;
   `⬇ ` marks a row with a download. Below: **Show in Finder**, **Remove Audio File**, **Remove Video
   File** (only what is on disk).
@@ -493,8 +499,8 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 
 ### Library Browser
 - **Enter**: Play Now (insert and play)
-- **Shift+Enter**: Play Next (insert after current, no auto-play if empty)
-- **Option+Enter**: Add to Queue (append, no auto-play if empty)
+- **Shift+Enter**: Play Next (insert after current; starts playback if the queue is empty)
+- **Option+Enter**: Add to Queue (append; starts playback if the queue is empty)
 - **Right-click column headers**: Configure visible columns. Artists shows Artist, Album, and Track sections; Albums shows Album and Track sections. Checkbox clicks keep the menu open; each section has its own reset.
 - **Right Arrow**: Expand item (artists, albums, playlists, shows, seasons); if already expanded, move to first child
 - **Left Arrow**: Collapse expanded item; if not expanded, jump to parent item

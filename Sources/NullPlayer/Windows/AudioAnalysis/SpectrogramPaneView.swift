@@ -78,19 +78,11 @@ class SpectrogramMetalView: NSView {
         // Create command queue
         commandQueue = device.makeCommandQueue()
 
-        // Load shader source from the resource bundle and compile at runtime.
-        // makeDefaultLibrary() returns nil in SPM executables — match SpectrumAnalyzerView.
-        guard let shaderURL = BundleHelper.url(forResource: "SpectrogramShaders", withExtension: "metal"),
-              let shaderSource = try? String(contentsOf: shaderURL, encoding: .utf8) else {
-            NSLog("AudioAnalysis: Failed to load spectrogram shader source file")
-            return
-        }
-
         let library: MTLLibrary
         do {
-            library = try device.makeLibrary(source: shaderSource, options: nil)
+            library = try device.makeBundledLibrary("SpectrogramShaders")
         } catch {
-            NSLog("AudioAnalysis: Failed to compile spectrogram shader library: \(error)")
+            NSLog("AudioAnalysis: Failed to load spectrogram shader library: \(error)")
             return
         }
 

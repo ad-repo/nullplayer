@@ -51,6 +51,20 @@
   download that already shows under its expanded channel is no longer listed again below it, and a
   video's title no longer changes between searches when its audio and video were saved under
   different titles.
+- **Original skin glow works when built with Swift 6.4's default build system** — built that way,
+  Original skins drew without their glow, because the effect looked for its shader in a fixed
+  place and the new build system puts it somewhere else. Every shader, the glow and the
+  visualizers alike, is now found and loaded the same way. The released app was not affected.
+- **One play menu for every Library Browser row** — right-clicking a track, album, artist,
+  playlist, playlist entry or local folder now offers the same four items on every source:
+  **Play**, **Play and Replace Queue**, **Play Next** and **Add to Queue**. Many rows had
+  only some of them before (local folders, local and server playlists, and Subsonic, Jellyfin and
+  Emby rows in the classic browser). **Add to Playlist** is gone, including from YouTube's Audio and
+  Video submenus: **Add to Queue** does the same and starts playback when the queue is empty.
+  **Shift+Enter** and **Option+Enter** now match the menu's Play Next and Add to Queue, so they too
+  start an empty queue. An artist plays album by album, oldest first, however you start it, and a
+  newer Play wins over a slow server fetch still loading. In the classic browser, **Play Movie** and
+  **Play Episode** on local videos did nothing; they now play.
 - **Your EQ and playlist survive quitting, a crash or a dead battery** — **Remember State on Quit**
   is now on by default, so the EQ, playlist and window layout come back on the next launch instead
   of resetting to flat and empty. The session is also saved every few seconds and before the Mac

@@ -55,14 +55,8 @@ class BloomPostProcessor {
         self.device = device
         self.commandQueue = device.makeCommandQueue()
         
-        // Load shader library
-        guard let library = loadShaderLibrary(device: device) else {
-            NSLog("BloomPostProcessor: Failed to load shader library")
-            return
-        }
-        
-        // Create compute pipelines
         do {
+            let library = try device.makeBundledLibrary("BloomShader")
             if let fn = library.makeFunction(name: "bloom_extract_brightness") {
                 brightnessExtractPipeline = try device.makeComputePipelineState(function: fn)
             }
@@ -85,55 +79,10 @@ class BloomPostProcessor {
                 NSLog("BloomPostProcessor: Metal setup complete")
             }
         } catch {
-            NSLog("BloomPostProcessor: Pipeline creation failed: %@", error.localizedDescription)
+            NSLog("BloomPostProcessor: Metal setup failed: \(error)")
         }
     }
-    
-    private func loadShaderLibrary(device: MTLDevice) -> MTLLibrary? {
-        // Try loading from the default library first
-        if let library = device.makeDefaultLibrary() {
-            // Check if our bloom functions exist
-            if library.makeFunction(name: "bloom_extract_brightness") != nil {
-                return library
-            }
-        }
-        
-        // Try loading from a compiled metallib in the bundle
-        let bundle = Bundle.main
-        let searchPaths = [
-            bundle.resourceURL?.appendingPathComponent("BloomShader.metallib"),
-            bundle.resourceURL?.appendingPathComponent("Resources/BloomShader.metallib"),
-            bundle.resourceURL?.appendingPathComponent("NullPlayer_NullPlayer.bundle/BloomShader.metallib"),
-        ].compactMap { $0 }
-        
-        for path in searchPaths {
-            if FileManager.default.fileExists(atPath: path.path) {
-                if let library = try? device.makeLibrary(URL: path) {
-                    return library
-                }
-            }
-        }
-        
-        // Try compiling from source at runtime
-        let sourceSearchPaths = [
-            bundle.resourceURL?.appendingPathComponent("BloomShader.metal"),
-            bundle.resourceURL?.appendingPathComponent("Resources/BloomShader.metal"),
-            bundle.resourceURL?.appendingPathComponent("NullPlayer_NullPlayer.bundle/BloomShader.metal"),
-            bundle.resourceURL?.appendingPathComponent("ModernSkin/BloomShader.metal"),
-        ].compactMap { $0 }
-        
-        for path in sourceSearchPaths {
-            if let source = try? String(contentsOf: path, encoding: .utf8) {
-                if let library = try? device.makeLibrary(source: source, options: nil) {
-                    return library
-                }
-            }
-        }
-        
-        NSLog("BloomPostProcessor: Could not find or compile BloomShader")
-        return nil
-    }
-    
+
     // MARK: - Texture Management
     
     private func ensureTextures(width: Int, height: Int) {
