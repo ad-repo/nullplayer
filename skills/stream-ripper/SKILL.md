@@ -69,7 +69,7 @@ The cue this writes is consumed by the **cue-sheets** feature (direct-play virtu
 
 `presentSuccess(outputPath:mode:cueTrackCount:)` branches by `mode`:
 - **audio** → `audioEngine.loadFiles([url]); audioEngine.play()` (same path as opening a file from Finder)
-- **video** → `WindowManager.shared.showVideoPlayer(url:title:allowCasting: false)` using the final compatibility-transcoded `.mp4` (opens the local video player window; it deliberately bypasses active/preferred cast routing because the user just clicked **Play Now** for a local rip)
+- **video** → `WindowManager.shared.showVideoPlayer(url:title:allowCasting: false)` using the final compatibility-transcoded `.mp4` (the local window even while a video cast runs; `video-playback` § *Entry points*)
 
 ## Gotchas
 
@@ -77,5 +77,4 @@ The cue this writes is consumed by the **cue-sheets** feature (direct-play virtu
 - `start_time` in the chapter JSON can be an integer (`0`); `JSONSerialization` → `NSNumber` bridges to `Double` regardless, so `entry["start_time"] as? Double` is fine.
 - The output extension is **not** fixed for audio when keeping native containers would apply — always trust the `after_move:filepath` value, not an assumed `.flac`/`.mp3`/`.mp4`.
 - A failed download, transcode, destination copy, or CUE transfer moves every remaining staging item into `~/Downloads` with collision-free names. The error dialog reports the recovered path; `/var/folders` is retained only if Downloads itself cannot be written.
-- Do not call `WindowManager.playVideoTrack` from Stream Ripper's **Play Now** path unless you intend to cast. `playVideoTrack` is playlist-oriented and routes to `targetVideoCastDevice` when a video-capable cast session or preferred video cast device exists. Use `showVideoPlayer(..., allowCasting: false)` for local Play Now.
 - No Spotify/Apple/Amazon sources (project policy) — this is a generic URL ripper backed by yt-dlp.

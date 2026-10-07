@@ -1,6 +1,6 @@
 ---
 name: video-playback
-description: The shared video path — how a video track is routed from the playlist to the video player window, the VLCKit-backed `VideoPlayerView`, and how its output is sized. Use when working on or debugging video playback, the video player window, a video drawn at the wrong size or position, or anything that plays a video file or stream outside a skin's own video surface.
+description: The shared video path — how a video reaches the video player window (playlist routing, browser rows, drops), the VLCKit-backed `VideoPlayerView` and its output sizing, the window's cast routing and lifetime, and Plex / Jellyfin / Emby progress reporting. Use when working on or debugging video playback, the video player window, a video drawn at the wrong size or position, or anything that plays a video file or stream outside a skin's own video surface.
 ---
 
 # Video Playback
@@ -8,21 +8,23 @@ description: The shared video path — how a video track is routed from the play
 Video plays in its own window through VLCKit (libVLC 3.0.12.1, vendored in
 `Frameworks/VLCKit.framework`), never through the audio engine's graph. Skin-hosted video surfaces
 (`.wal` `<VIDEO>`, `.wmz` video panes) have their own guides: `winamp-modern-skin-guide`
-(`reference/components/video.md`) and `wmp-skin-guide` (`reference/rendering/video.md`).
+(`reference/components/video.md`) and `wmp-skin-guide` (`reference/rendering/video.md`). Headless
+video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
 
 ## Key files
 
 | File | Role |
 |---|---|
-| `Data/Models/Track.swift` | `mediaType` is `.video` when the asset has a video track **or** the extension is a video one (`AudioFileValidator.isVideoFile`); AVFoundation cannot parse `.mkv`/`.avi`/`.webm`, hence the fallback |
+| `Data/Models/Track.swift` | `mediaType` is `.video` when the asset has a video track **or** the extension is a video one (`AudioFileValidator.isVideoFile`). AVFoundation cannot parse `.mkv`/`.avi`/`.webm`/`.flv`/`.ts` (the reason playback uses VLCKit), so the probe comes back empty for them and the extension keeps them off the audio engine. Audio extensions are never in the video set |
 | `Audio/AudioEngine.swift` | `loadTrack(at:)` routes a `.video` track to `WindowManager.playVideoTrack` and stops audio; `playTrack(at:)` and the natural end-of-track advance (`advanceToLocalTrackAsync`) take that path |
-| `App/WindowManager.swift` | `playVideoTrack(_:)` — video cast routing, then creates `VideoPlayerWindowController` lazily and plays (Plex / Jellyfin / Emby tracks get server-aware playback) |
+| `App/WindowManager.swift` | the entry points (below); each creates `VideoPlayerWindowController` lazily |
+| `Windows/VideoPlayer/VideoPlayerWindowController.swift` | the window: what is loaded (Plex / Jellyfin / Emby movie or episode, local URL), cast state, server progress reporting, end-of-media |
 | `Windows/VideoPlayer/VideoPlayerView.swift` | the VLCKit player, controls, track selection; `play(url:title:)` is the **only** place a `VLCMediaPlayer` is created |
 | `Windows/VideoPlayer/VLCVideoHostView.swift` | the player's `drawable`: keeps VLC's view filling it, re-reports the drawing size (below), and the `VIDEO_LAYOUT_TRACE` instrument |
 
 ## Routing rules
 
-- **Every way into a video goes through `loadTrack` routing.** A path that opens a playlist item
+- **Every playlist path into a video goes through `loadTrack` routing.** A path that opens a playlist item
   with `AVAudioFile` directly plays the video's audio with no window. Sweet Fades and gapless are
   the two that pre-load the next track; both ask `AudioEngine.canHandOff(to:fromStreaming:)` first,
   which refuses a video, so a new pre-load path must too. It reads `Track.playbackRoute`, the same
@@ -34,7 +36,73 @@ Video plays in its own window through VLCKit (libVLC 3.0.12.1, vendored in
 - **The vendored VLCKit reports the end of a film as `.paused`, never `.ended`** — see the
   `mediaPlayerStateChanged` comment; end-of-film handling keys off that pause.
 - **Windows → Video Player is inert until a video has been opened** — the controller is created on
-  first play (`app-control/reference/launch-recipes.md`).
+  first play, and `WindowManager.toggleVideoPlayer` returns early while it is nil.
+
+## Entry points
+
+Every `WindowManager` entry point first offers the video to `routeToVideoCastIfNeeded` (see
+*Casting* below), then creates the controller if needed and plays.
+
+| Entry point | Called by | Notes |
+|---|---|---|
+| `playVideoTrack(_:)` | `AudioEngine.loadTrack` (any playlist video) | the **only** one that sets `onVideoFinishedForPlaylist`, so the only one whose end advances the playlist. Picks `play(plexTrack:)` / `play(jellyfinTrack:)` / `play(embyTrack:)` from `plexRatingKey` / `jellyfinId` / `embyId`, else `play(url:title:)` |
+| `showVideoPlayer(url:title:allowCasting:)` | local movie / episode rows in both browsers, Stream Ripper **Play Now** | `allowCasting: false` skips cast routing: Play Now opens the file just ripped in the local window even while a video cast runs |
+| `playMovie` / `playEpisode`, `playJellyfinMovie` / `playJellyfinEpisode`, `playEmbyMovie` / `playEmbyEpisode` | server movie / episode rows | load the server item into `play(movie:)`, `play(jellyfinMovie:)`, `play(embyEpisode:)` … so its reporter runs |
+
+**Drag and drop.** The main window and the playlist each have their own drop handler, in Classic
+(`MainWindowView`, `PlaylistView`) and Modern (`ModernMainWindowView`, `ModernPlaylistView`). Each
+must pass `includeVideo: true` to `hasSupportedDropContent` and `discoverMediaURLsAsync`, or
+dragging a video does nothing. The `.wal` playlist's **Add Directory** does the same
+(`WinampModernHostActionMenus`). Discovered videos join the playlist and play through `loadTrack`.
+A drop on a Library Browser imports instead (`local-library` § *Video import*).
+
+## Window lifetime
+
+- **The controller is mode-independent.** `reloadUI(to:)`'s teardown keeps
+  `videoPlayerWindowController`, since closing it stops playback and casts, so a film keeps playing
+  across a skin-family switch.
+- **The video player is exempt from Compact Mode hiding** and stays visible throughout. The compact
+  mini-player floats at `.statusBar`, so a video that starts while compact calls
+  `yieldFrontForVideoPlayer()` and brings the player to the front instead of opening behind it.
+
+## Server progress reporting
+
+`VideoPlayerWindowController` sends pause, resume, position and stop to the reporter of whatever it
+has loaded (`PlexVideoPlaybackReporter`, `JellyfinVideoPlaybackReporter`,
+`EmbyVideoPlaybackReporter`); local files report nothing. Every `play(…)` first reports the previous
+item stopped (`finished: false`). The three reporters share their rules: scrobble at 90% (audio
+uses 50%), only after 60 s of play, with a timeline update every 10 s. Each server's API details
+are in its own integration skill.
+
+## Casting
+
+Cast protocols are in `chromecast-casting`; this is the video player's side.
+
+- **Video goes to a cast device only while a video cast is already running.**
+  `targetVideoCastDevice` is the active session's device when `currentCast == .video` and the device
+  supports video; otherwise it is nil and the video plays in the local window.
+  `preferredVideoCastDeviceID` is a UI preference, not playback ownership. It may pick the default
+  device in an explicit cast-menu action, but no entry point may use it to cast on its own, whether
+  after relaunch or after an earlier cast. This holds for local files, HTTP streams, Plex, Jellyfin,
+  Emby and mixed playlists. The local window is also what carries the video metadata and a
+  stop-casting control.
+- **A routed cast stops the local film only once the cast succeeds**, so a failed cast leaves local
+  playback running. A video cast already running from the window is closed first
+  (`closeForCastTransition`).
+- **Closing the window stops the cast only if the window started it.** `didInitiateCast` is true only
+  for a cast from the window's own cast button, and `windowWillClose` stops the cast only if
+  `currentCast == .video` and `didInitiateCast` is true. A library-menu cast survives closing an
+  unrelated player window. Video controls must cover both: the window's path uses `isCastingVideo`,
+  while a library cast may have no window and goes through `CastManager.shared.isVideoCasting` /
+  `currentCast == .video`.
+- **An audio cast that replaces a video cast closes the window.** `CastManager` (`castNewTrack` and
+  `cast()`) calls `WindowManager.closeVideoPlayerForCastTransition(wasVideoCast:)`. On the
+  `castNewTrack` path `isCastingVideo` is still true. On the `cast()` path
+  `stopCastingAndAwaitTeardown()` has already cleared it, so the check falls back to
+  `wasVideoCast`, `isVideoCasting` or `currentCast == .video`, not to whether the window is
+  visible. `closeForCastTransition()` does **not** call `CastManager.stopCasting()`, because the
+  audio cast is already running. It sets `isClosing` before `close()` so that `windowWillClose`
+  skips its cleanup.
 
 ## Video output sizing (VLC)
 

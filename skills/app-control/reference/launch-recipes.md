@@ -35,9 +35,9 @@ skills/app-control/scripts/launch.sh corona                 # Windows Media Play
 | **Video** | library scan → browser **MOVIES** tab → double-click | Plex browser **MOVIES** tab → double-click (GUI); `--movie … --cast` (CLI only) |
 
 **Video never goes through `NULLPLAYER_PLAY`** — `application(_:openFiles:)` takes audio and
-`.cue` only. And **the Windows → Video Player menu item is inert** until a video has been opened
-from a browser: `WindowManager.toggleVideoPlayer` returns early while the controller is nil
-(`App/WindowManager.swift:3205`). A browser is the only way into the video window.
+`.cue` only, and Windows → Video Player stays inert until a video has been opened
+(`video-playback` § *Routing rules*). Start one from a browser, as below; a drag onto the playlist
+also works but needs a drag tool.
 
 ### Local audio
 

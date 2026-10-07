@@ -144,8 +144,8 @@ launches that way. Reproduce it by killing the app and relaunching the debug bin
 
 **`NULLPLAYER_PLAY` takes audio and `.cue` only** — `mp3 m4a aac wav aiff aif flac ogg alac`
 (`App/AppDelegate.swift:340,357`). An `.m3u` or `.mp4` there is dropped with no log line and reads
-exactly like a playback bug. **Video never goes through it**, and **Windows → Video Player is
-inert** until a video has been opened from a browser (`App/WindowManager.swift:3205`). Media
+exactly like a playback bug. **Video never goes through it**, and Windows → Video Player stays
+inert until a video has been opened (`video-playback` § *Routing rules*). Media
 recipes (audio/video × local/streaming) are in `reference/launch-recipes.md`.
 
 Launch rules that still apply to anything `launch.sh` does not cover:

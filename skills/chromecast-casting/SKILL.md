@@ -161,7 +161,7 @@ public enum CurrentCast: Sendable { case none; case audio; case video }
 - `.audio` — `activeSession.metadata?.mediaType == .audio` (or nil)
 - `.video` — `activeSession.metadata?.mediaType == .video`
 
-Use `currentCast` for the overall audio/video branch. Video controls still need to account for both initiation paths: the player-window path uses `VideoPlayerWindowController.isCastingVideo`, while library/menu casts may have no player window and should route through `CastManager.shared.isVideoCasting` / `currentCast == .video`.
+Use `currentCast` for the overall audio/video branch. Video controls also have to handle casts started from the player window and from a library menu (`video-playback` § *Casting*).
 
 ### Inflight Task Serialization
 
@@ -180,32 +180,10 @@ try await task.value
 
 If `cast()` is called while a session is active and the new media type differs (e.g., audio → video), `stopCastingAndAwaitTeardown()` runs before the new `LOAD`. This ensures the prior session is fully stopped and `LocalMediaServer` files are unregistered before the new session starts.
 
-### Window Controller Ownership (`didInitiateCast`)
+### The video player window's side
 
-`VideoPlayerWindowController` has a private `didInitiateCast: Bool` flag, `true` only when the cast was started from the player window's own cast button. `windowWillClose` only stops the cast if `case .video = CastManager.shared.currentCast, didInitiateCast`. This allows closing an unrelated player window without interrupting a library-menu cast.
-
-### Video-to-Audio Cast Transition (Auto-Close Video Player)
-
-When `castNewTrack` or `cast()` successfully starts an audio cast while the video player window is open:
-
-- **`castNewTrack` path**: `isCastingVideo` is still `true` at this point. `WindowManager.closeVideoPlayerForCastTransition()` checks `isCastingVideo` and calls `VideoPlayerWindowController.closeForCastTransition()`.
-- **`cast()` path**: `stopCastingAndAwaitTeardown()` already ran, which posts `sessionDidChangeNotification` with `currentCast == .none`, triggering `handleCastSessionChange()` which clears `isCastingVideo`. `WindowManager.closeVideoPlayerForCastTransition()` falls back to checking `window?.isVisible`.
-
-`closeForCastTransition()` closes the video player **without** calling `CastManager.stopCasting()`. It sets `isClosing = true` before calling `close()` so `windowWillClose` skips its cleanup block entirely.
-
-### Video Cast Routing
-
-Video playback routes to casting only when casting is already active:
-
-- `WindowManager` video entry points call `routeToVideoCastIfNeeded(...)` before creating/loading the local player.
-- If `case .video = CastManager.shared.currentCast`, the next video is cast to the active session's device.
-- If no video cast is active, videos load into the local player even when `preferredVideoCastDeviceID` is set.
-
-`preferredVideoCastDeviceID` is durable UI preference state, not playback ownership. It may select the
-initial device in an explicit cast menu action, but it must never be used by ordinary video entry
-points to auto-cast after relaunch or after a previous cast. This invariant applies equally to local
-files, HTTP streams, Plex, Jellyfin, Emby, and mixed playlists. Keeping the local player window as
-the default is also what preserves video metadata and an accessible stop-casting control.
+When a video is routed to a cast, who owns the cast when the player window closes, and how an audio
+cast closes the window: `video-playback` § *Casting*.
 
 ### Mixed-Type Playlists (`castNewTrack`)
 
