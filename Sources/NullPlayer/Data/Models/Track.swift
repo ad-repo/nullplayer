@@ -7,6 +7,14 @@ enum MediaType: String, Codable {
     case video
 }
 
+/// The pipeline a track plays through; see `Track.playbackRoute`.
+enum PlaybackRoute: String {
+    case unresolved  // state-restore placeholder awaiting its streaming URL
+    case video       // its own window
+    case streaming   // AudioStreaming
+    case local       // the local AVAudioEngine graph
+}
+
 enum PlayHistorySource: String, CaseIterable, Sendable {
     case local
     case plex
@@ -359,6 +367,14 @@ struct Track: Identifiable, Equatable {
     /// True when this row is a state-restore placeholder awaiting URL refresh.
     var isStreamingPlaceholder: Bool {
         url.absoluteString == "about:blank"
+    }
+
+    /// Where `AudioEngine.loadTrack` sends this track. Paths that bypass `loadTrack` (gapless,
+    /// Sweet Fades, graph-recovery gating) ask this too, so they cannot disagree with it.
+    var playbackRoute: PlaybackRoute {
+        if isStreamingPlaceholder { return .unresolved }
+        if mediaType == .video { return .video }
+        return url.scheme == "http" || url.scheme == "https" ? .streaming : .local
     }
 
     /// True when this track is a virtual cue sheet track (originated from .cue parsing)
