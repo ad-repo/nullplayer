@@ -69,18 +69,33 @@ enum BundleHelper {
         return nil
     }()
     
+    /// The SwiftPM resource bundle: `Bundle.module` in DEBUG; in release only the copy next to the
+    /// executable, since `Bundle.module` crashes when the app runs outside the build directory.
+    private static var packageResourceBundle: Bundle? {
+        #if DEBUG
+        return Bundle.module
+        #else
+        return spmResourceBundle
+        #endif
+    }
+
+    /// Looks `name` up in the SwiftPM resource bundle. The package copies `Resources/` whole
+    /// (`.copy("Resources")`): the native build system's flat bundle serves that folder as the
+    /// bundle's resources, while swiftbuild's `Contents/Resources/` layout nests it one level down.
+    private static func packageResourceURL(forResource name: String, withExtension ext: String?, subdirectory: String?) -> URL? {
+        guard let bundle = packageResourceBundle else { return nil }
+        let nested = ["Resources", subdirectory].compactMap { $0 }.joined(separator: "/")
+        return bundle.url(forResource: name, withExtension: ext, subdirectory: subdirectory)
+            ?? bundle.url(forResource: name, withExtension: ext, subdirectory: nested)
+            ?? bundle.url(forResource: name, withExtension: ext)
+    }
+
     /// Returns the bundle containing app resources
     /// - In SPM development: Uses Bundle.module
     /// - In standalone app: Uses Bundle.main's Resources folder
     /// - In release from build dir: Uses NullPlayer_NullPlayer.bundle
     static var resourceBundle: Bundle {
-        #if DEBUG
-        // In debug builds, try module bundle first (SPM development)
-        return Bundle.module
-        #else
-        // In release builds, try SPM bundle first (running from build dir), then main bundle
-        return spmResourceBundle ?? Bundle.main
-        #endif
+        packageResourceBundle ?? Bundle.main
     }
     
     /// Find a resource URL, checking main bundle first then module bundle (DEBUG only)
@@ -126,35 +141,8 @@ enum BundleHelper {
                 }
             }
         }
-        
-        #if DEBUG
-        // Only try Bundle.module in DEBUG builds - it crashes in release builds
-        // when the app is installed outside the SPM build directory
-        if let url = Bundle.module.url(forResource: name, withExtension: ext, subdirectory: subdirectory) {
-            return url
-        }
-        #else
-        // In release builds running from SPM build directory, check the NullPlayer_NullPlayer.bundle
-        if let spmBundle = spmResourceBundle {
-            // Try Resources subdirectory first (SPM puts resources there)
-            if let url = spmBundle.url(forResource: name, withExtension: ext, subdirectory: "Resources") {
-                return url
-            }
-            if let subdirectory = subdirectory {
-                if let url = spmBundle.url(forResource: name, withExtension: ext, subdirectory: "Resources/\(subdirectory)") {
-                    return url
-                }
-            }
-            if let url = spmBundle.url(forResource: name, withExtension: ext, subdirectory: subdirectory) {
-                return url
-            }
-            if let url = spmBundle.url(forResource: name, withExtension: ext) {
-                return url
-            }
-        }
-        #endif
-        
-        return nil
+
+        return packageResourceURL(forResource: name, withExtension: ext, subdirectory: subdirectory)
     }
     
     /// Find a resource URL in a specific subdirectory
@@ -179,28 +167,8 @@ enum BundleHelper {
                 return resourcePresetsURL
             }
         }
-        
-        #if DEBUG
-        // Only try Bundle.module in DEBUG builds
-        if let url = Bundle.module.url(forResource: "Presets", withExtension: nil, subdirectory: "Resources") {
-            return url
-        }
-        if let url = Bundle.module.url(forResource: "Presets", withExtension: nil) {
-            return url
-        }
-        #else
-        // In release builds running from SPM build directory
-        if let spmBundle = spmResourceBundle {
-            if let url = spmBundle.url(forResource: "Presets", withExtension: nil, subdirectory: "Resources") {
-                return url
-            }
-            if let url = spmBundle.url(forResource: "Presets", withExtension: nil) {
-                return url
-            }
-        }
-        #endif
-        
-        return nil
+
+        return packageResourceURL(forResource: "Presets", withExtension: nil, subdirectory: nil)
     }
     
     /// Get the path to the Textures directory
@@ -220,28 +188,8 @@ enum BundleHelper {
                 return resourceTexturesURL
             }
         }
-        
-        #if DEBUG
-        // Only try Bundle.module in DEBUG builds
-        if let url = Bundle.module.url(forResource: "Textures", withExtension: nil, subdirectory: "Resources") {
-            return url
-        }
-        if let url = Bundle.module.url(forResource: "Textures", withExtension: nil) {
-            return url
-        }
-        #else
-        // In release builds running from SPM build directory
-        if let spmBundle = spmResourceBundle {
-            if let url = spmBundle.url(forResource: "Textures", withExtension: nil, subdirectory: "Resources") {
-                return url
-            }
-            if let url = spmBundle.url(forResource: "Textures", withExtension: nil) {
-                return url
-            }
-        }
-        #endif
-        
-        return nil
+
+        return packageResourceURL(forResource: "Textures", withExtension: nil, subdirectory: nil)
     }
     
     /// Get the path to a skin file (wsz)

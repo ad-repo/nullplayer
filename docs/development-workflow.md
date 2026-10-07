@@ -15,13 +15,12 @@ The `kill_build_run.sh` script:
    (`.build/arm64-apple-macosx/release/NullPlayer &`)
 
 **Build system.** Swift 6.4 made `swiftbuild` SwiftPM's default. It writes products to
-`.build/out/Products/<Config>/`, lays out resource bundles differently, and cannot build the test
-target (`unable to resolve module dependency: 'VLCKit'`). `scripts/lib/swiftpm.sh` pins the native
-build system wherever `swift build --help` lists it, and passes no flag on older toolchains (which
-build natively by default); `kill_build_run.sh`, `build_dmg.sh`, `build_mas.sh` and the render
-sweeps all source it. Running SwiftPM by hand on 6.4, pass the flag yourself
-(`swift build --build-system native`, `swift test --build-system native`); a plain `swift build`
-there builds into `.build/out/` and leaves the binary the scripts run untouched.
+`.build/out/Products/<Config>/` and lays out resource bundles differently (`Contents/Resources/`).
+`scripts/lib/swiftpm.sh` pins the native build system wherever `swift build --help` lists it, and
+passes no flag on older toolchains (which build natively by default); `kill_build_run.sh`,
+`build_dmg.sh`, `build_mas.sh` and the render sweeps all source it. A plain `swift test` works under
+either build system. A plain `swift build` on 6.4 builds into `.build/out/` and leaves the binary the
+scripts run untouched; pass `--build-system native` to rebuild that one by hand.
 
 Release mode is intentional — it matches the DMG distribution binary and catches optimization-related issues early. The script exits immediately after launch; the app continues independently.
 

@@ -20,10 +20,11 @@ swift test --filter "testTrackCreation"
 swift test list
 ```
 
-On Swift 6.4+ add `--build-system native` to each of these (`swift test --build-system native
---filter …`): the 6.4 default build system cannot build `NullPlayerAppTests` (`unable to resolve
-module dependency: 'VLCKit'`). Older toolchains build natively and need no flag. The sweep scripts
-pick this up from `scripts/lib/swiftpm.sh`; see `docs/development-workflow.md` § *Build system*.
+These run under either build system: Swift 6.4's default `swiftbuild` (products in `.build/out/`)
+or `--build-system native`. `NullPlayerAppTests` gets the vendored frameworks from `Package.swift`
+(`-F Frameworks` and an rpath to `Frameworks/`), not from build-directory symlinks. The sweep
+scripts pin native through `scripts/lib/swiftpm.sh`; see `docs/development-workflow.md` § *Build
+system*.
 
 ## Core Principles
 
