@@ -51,6 +51,10 @@
   download that already shows under its expanded channel is no longer listed again below it, and a
   video's title no longer changes between searches when its audio and video were saved under
   different titles.
+- **Original skin glow works when built with Swift 6.4's default build system** — built that way,
+  Original skins drew without their glow, because the effect looked for its shader in a fixed
+  place and the new build system puts it somewhere else. Every shader, the glow and the
+  visualizers alike, is now found and loaded the same way. The released app was not affected.
 - **One play menu for every Library Browser row** — right-clicking a track, album, artist,
   playlist, playlist entry or local folder now offers the same four items on every source:
   **Play**, **Play and Replace Queue**, **Play Next** and **Add to Queue**. Many rows had
