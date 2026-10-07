@@ -738,7 +738,7 @@ final class YouTubeTests: XCTestCase {
         }
         try writeManifestEntries(root: root, [
             "both.audio": ["videoId": "both", "title": "Café Session", "channelId": "c", "fileName": "Both.mp3", "kind": "audio"],
-            "both.video": ["videoId": "both", "title": "Café Session", "channelId": "c", "fileName": "Both.mp4", "kind": "video"],
+            "both.video": ["videoId": "both", "title": "Café Session (Video)", "channelId": "c", "fileName": "Both.mp4", "kind": "video"],
             "indexed.audio": ["videoId": "indexed", "title": "Indexed Session", "channelId": "c", "fileName": "Indexed.flac", "kind": "audio"],
             "partly.audio": ["videoId": "partly", "title": "A Partly Indexed Session", "channelId": "c", "fileName": "Partly.mp3", "kind": "audio"],
             "partly.video": ["videoId": "partly", "title": "A Partly Indexed Session", "channelId": "c", "fileName": "Partly.opus", "kind": "video"],
@@ -756,11 +756,46 @@ final class YouTubeTests: XCTestCase {
         // a track), "gone" (nothing on disk), "other" (no match)
         let result = manager.localSearch(query: " cafe session ", excluding: tracks)
         XCTAssertEqual(result.videos.map(\.videoId), ["both"])
+        // Entries of one video that disagree on its title: the audio entry's wins, every time
+        XCTAssertEqual(result.videos.first?.title, "Café Session")
         let all = manager.localSearch(query: "session", excluding: tracks)
         XCTAssertEqual(all.videos.map(\.videoId), ["partly", "both"])
         XCTAssertEqual(all.videos.first?.title, "A Partly Indexed Session")
 
         XCTAssertTrue(manager.localSearch(query: "  ", excluding: []).videos.isEmpty)
+    }
+
+    func testChannelRowsCarryTheirUploadsOnceExpanded() throws {
+        let manager = YouTubeManager.shared
+        let originalRoot = manager.downloadRoot
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nullplayer-youtube-test-rows-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            manager.downloadRoot = originalRoot
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data().write(to: root.appendingPathComponent("Up.mp3"))
+        try writeManifestEntries(root: root, [
+            "up.audio": ["videoId": "up", "title": "Up", "channelId": "ch", "fileName": "Up.mp3", "kind": "audio"],
+        ])
+        manager.downloadRoot = root
+        let channel = YouTubeChannel(id: "ch", title: "Chan", url: URL(string: "https://www.youtube.com/@ch")!, dateAdded: Date())
+        let uploads = ["ch": [
+            YouTubeVideo(videoId: "up", title: "Up", channelId: "ch", duration: 75, publishedAt: nil),
+            YouTubeVideo(videoId: "new", title: "New", channelId: "ch", duration: nil, publishedAt: nil),
+        ]]
+
+        let collapsed = YouTubeRowBuilder(expanded: [], uploads: uploads).channels([channel])
+        XCTAssertEqual(collapsed.map(\.id), ["youtube-channel-ch"])
+
+        let rows = YouTubeRowBuilder(expanded: ["ch"], uploads: uploads).channels([channel])
+        XCTAssertEqual(rows.map(\.id), ["youtube-channel-ch", "youtube-video-up", "youtube-video-new"])
+        XCTAssertEqual(rows.map(\.indentLevel), [0, 1, 1])
+        XCTAssertEqual(rows.map(\.title), ["Chan", "⬇ Up", "New"])
+        XCTAssertEqual(rows.map(\.info), [nil, "1:15", nil])
+        XCTAssertEqual(rows.map(\.hasChildren), [true, false, false])
     }
 
     func testDoubleClickPlaysTheOnlyFormOnDiskAndOtherwiseAsks() {

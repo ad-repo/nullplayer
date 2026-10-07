@@ -47,6 +47,10 @@
   twice. Double-clicking a YouTube video, here or on the Channels tab, now plays it when exactly one
   of its audio or video is downloaded; with both, or neither, it opens the Audio / Video menu as
   before.
+- **Local search lists each YouTube video once** — in the Local search's YouTube section, a
+  download that already shows under its expanded channel is no longer listed again below it, and a
+  video's title no longer changes between searches when its audio and video were saved under
+  different titles.
 
 ## 0.31.4
 
