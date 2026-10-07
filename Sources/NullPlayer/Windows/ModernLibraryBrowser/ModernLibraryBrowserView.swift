@@ -4230,28 +4230,28 @@ class ModernLibraryBrowserView: NSView {
             super.scrollWheel(with: event)
             return
         }
-        let listHeight = listTopY - contentRegionBottomY
+        let layout = listLayout()
+        let listHeight = layout.rows.height
         let totalHeight = CGFloat(displayItems.count) * itemHeight
         let verticalDelta = verticalScrollDelta(from: event)
+        // The list with its header and the offline banner: a horizontal scroll moves the header too.
+        let dirtyRect = NSRect(x: 0, y: contentRegionBottomY, width: bounds.width, height: listTopY - contentRegionBottomY)
 
         if totalHeight > listHeight && verticalDelta != 0 {
             scrollOffset = max(0, min(totalHeight - listHeight, scrollOffset - verticalDelta))
-
-            let listRect = NSRect(x: 0, y: contentRegionBottomY, width: bounds.width, height: listHeight)
-            setNeedsDisplay(listRect)
+            setNeedsDisplay(dirtyRect)
         }
 
         let horizontalDelta = horizontalScrollDelta(from: event)
         if horizontalDelta != 0 {
             let columns = currentVisibleColumns()
             let group = currentColumnGroup()
-            let availableWidth = listLayout().rows.width
+            let availableWidth = layout.rows.width
             let totalWidth = totalColumnsWidth(columns: columns, availableWidth: availableWidth, group: group)
             let maxOffset = max(0, totalWidth - availableWidth)
             if maxOffset > 0 {
                 horizontalScrollOffset = max(0, min(maxOffset, horizontalScrollOffset - horizontalDelta))
-                let listRect = NSRect(x: 0, y: contentRegionBottomY, width: bounds.width, height: listHeight)
-                setNeedsDisplay(listRect)
+                setNeedsDisplay(dirtyRect)
             }
         }
 
@@ -4487,7 +4487,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func ensureVisible(index: Int) {
-        let effectiveHeight = listLayout().rows.height + offlineBannerHeight
+        let effectiveHeight = listLayout().rows.height
 
         let itemTop = CGFloat(index) * itemHeight
         let itemBottom = itemTop + itemHeight
@@ -4792,7 +4792,7 @@ class ModernLibraryBrowserView: NSView {
         }
         for (index, item) in displayItems.enumerated() {
             if effectiveSortLetter(for: item) == letter {
-                let effectiveHeight = listLayout().rows.height + offlineBannerHeight
+                let effectiveHeight = listLayout().rows.height
                 let maxScroll = max(0, CGFloat(displayItems.count) * itemHeight - effectiveHeight)
                 scrollOffset = min(maxScroll, CGFloat(index) * itemHeight)
                 selectedIndices = [index]; needsDisplay = true; return

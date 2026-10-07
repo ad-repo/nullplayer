@@ -3261,7 +3261,7 @@ class PlexBrowserView: NSView {
 
     /// Calculate scroll position as 0-1 value
     private func calculateScrollPosition() -> CGFloat {
-        let listHeight = listLayout().area.height
+        let listHeight = listLayout().rows.height
         let totalContentHeight = CGFloat(displayItems.count) * itemHeight
         
         guard totalContentHeight > listHeight else { return 0 }
@@ -10045,7 +10045,7 @@ class PlexBrowserView: NSView {
         }
         for (index, item) in displayItems.enumerated() {
             if effectiveSortLetter(for: item) == letter {
-                let listHeight = listLayout().area.height
+                let listHeight = listLayout().rows.height
                 let maxScroll = max(0, CGFloat(displayItems.count) * itemHeight - listHeight)
                 scrollOffset = min(maxScroll, CGFloat(index) * itemHeight)
                 selectedIndices = [index]
@@ -12583,7 +12583,7 @@ class PlexBrowserView: NSView {
         }
 
         let layout = listLayout()
-        let listHeight = layout.area.height
+        let listHeight = layout.rows.height
         let totalHeight = CGFloat(displayItems.count) * itemHeight
         let verticalDelta = verticalScrollDelta(from: event)
         let horizontalDelta = horizontalScrollDelta(from: event)
@@ -12784,7 +12784,7 @@ class PlexBrowserView: NSView {
     }
     
     private func ensureVisible(index: Int) {
-        let listHeight = listLayout().area.height
+        let listHeight = listLayout().rows.height
 
         let itemTop = CGFloat(index) * itemHeight
         let itemBottom = itemTop + itemHeight

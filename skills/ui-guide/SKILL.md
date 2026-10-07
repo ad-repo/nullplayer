@@ -966,6 +966,25 @@ library list, toggled by a **FLOW** button. It is a visual lens over the browser
   synchronously in the item-mapping pass. Teardown removes the cover flow view in
   `prepareForUITeardown`; toggling the mode off clears the focus stack.
 
+## Library browser list layout (both browsers)
+
+`ModernLibraryBrowserView` and `PlexBrowserView` each work out the list's geometry in one place,
+`listLayout()`, returning `area` (below the tab and search bars, full inner width; the loading,
+error and art views fill it), `header` (the column-header rect and its columns, `nil` when the list
+has no columns), `rows` (under the header, left of the scrollbar and alphabet index) and
+`alphabet`. Drawing, every hit test, every column-width calculation and every scroll range read it.
+Never rebuild "tab bar, then search bar, then header" at a call site: PR #480 was a header reserved
+on one condition when drawn and another when hit-tested, so every click landed one row up.
+
+- **Coordinates:** classic is skin space (top-left origin, `originalWindowSize`); modern is view
+  space (bottom-left). `listTopY` is the bottom of the tab bar, or of the search bar in search mode.
+- **Scroll ranges use `rows.height`.** The header, and in the modern browser the offline-volume
+  banner, are not visible list height; counting them hid the last row (M8).
+- **Header hit tests differ on purpose:** the modern browser matches the header band at any x, so
+  a right-click above the alphabet index opens the column menu; the classic one is bounded by the
+  header rect.
+- The modern alphabet index stops under the header; the classic one spans `area`'s full height.
+
 ## Library row thumbnails (Library browser, all skin families)
 
 Every library list row that can carry art draws it as a small circle before its title; hovering
