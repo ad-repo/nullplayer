@@ -763,8 +763,8 @@ class PlexBrowserView: NSView {
             return ascending ? aDate < bDate : aDate > bDate
         }
 
-        let aVal = a.columnSortValue(for: sortColumn)
-        let bVal = b.columnSortValue(for: sortColumn)
+        let aVal = a.columnValue(for: sortColumn)
+        let bVal = b.columnValue(for: sortColumn)
 
         // Try numeric comparison for numeric columns
         if sortColumn.id == "trackNum" || sortColumn.id == "year" || sortColumn.id == "plays" ||
@@ -4807,7 +4807,7 @@ class PlexBrowserView: NSView {
 
                 let textRect = NSRect(x: textX + titleSpinnerInset, y: itemRect.minY + 2,
                                      width: itemRect.width - indent - 60 - titleSpinnerInset, height: itemHeight - 4)
-                item.title.draw(in: textRect, withAttributes: attrs)
+                item.shownTitle.draw(in: textRect, withAttributes: attrs)
                 
                 // Secondary info (only for non-column view)
                 if let info = item.info {
@@ -4961,7 +4961,7 @@ class PlexBrowserView: NSView {
                 x += width
                 continue
             }
-            let value = item.columnValue(for: column)
+            let value = column.id == "title" ? item.shownTitle : item.columnValue(for: column)
             let isCenteredRadioColumn = (browseMode == .radio && column.id == "genre") ||
                 (isInternetRadioItem(item) && column.id == "rating")
             
@@ -10630,7 +10630,8 @@ class PlexBrowserView: NSView {
             info: item.info,
             indentLevel: item.indentLevel,
             hasChildren: item.hasChildren,
-            type: itemType
+            type: itemType,
+            titlePrefix: item.titlePrefix
         )
         showContextMenu(for: detailedItem, at: event)
     }
@@ -17686,6 +17687,7 @@ private struct PlexDisplayItem {
     let indentLevel: Int
     let hasChildren: Bool
     let type: ItemType
+    var titlePrefix: String? = nil
     
     enum ItemType {
         case artist(PlexArtist)
@@ -17792,7 +17794,7 @@ extension PlexDisplayItem {
         case .video(let video): type = .youtubeVideo(video)
         }
         self.init(id: row.id, title: row.title, info: row.info, indentLevel: row.indentLevel,
-                  hasChildren: row.hasChildren, type: type)
+                  hasChildren: row.hasChildren, type: type, titlePrefix: row.titlePrefix)
     }
 }
 
@@ -17935,12 +17937,8 @@ private struct BrowserColumn {
 // MARK: - Column Value Extraction
 
 extension PlexDisplayItem {
-    /// What a column sorts by: its shown value, except a YouTube video's title, which sorts
-    /// by the video's own title without the downloaded-form markers that lead the row.
-    func columnSortValue(for column: BrowserColumn) -> String {
-        if column.id == "title", case .youtubeVideo(let video) = type { return video.title }
-        return columnValue(for: column)
-    }
+    /// The title as drawn: `titlePrefix` (a YouTube row's markers) ahead of the item's own title.
+    var shownTitle: String { titlePrefix.map { "\($0) \(title)" } ?? title }
 
     /// Get the display value for a specific column based on item type
     func columnValue(for column: BrowserColumn) -> String {

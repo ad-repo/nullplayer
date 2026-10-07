@@ -2565,7 +2565,7 @@ class ModernLibraryBrowserView: NSView {
                 ]
                 let textRect = NSRect(x: textX + titleSpinnerInset, y: itemRect.minY + 2,
                                      width: itemRect.width - indent - 60 - titleSpinnerInset, height: itemHeight - 4)
-                drawText(item.title, in: textRect, withAttributes: attrs, context: context)
+                drawText(item.shownTitle, in: textRect, withAttributes: attrs, context: context)
 
                 // Secondary info
                 if let info = item.info {
@@ -2692,7 +2692,7 @@ class ModernLibraryBrowserView: NSView {
                 x += width
                 continue
             }
-            let value = item.columnValue(for: column)
+            let value = column.id == "title" ? item.shownTitle : item.columnValue(for: column)
             let isCenteredRadioColumn = (browseMode == .radio && column.id == "genre") ||
                 (isInternetRadioItem(item) && column.id == "rating")
             
@@ -3624,8 +3624,8 @@ class ModernLibraryBrowserView: NSView {
             return ascending ? aDate < bDate : aDate > bDate
         }
 
-        let aVal = a.columnSortValue(for: sortColumn)
-        let bVal = b.columnSortValue(for: sortColumn)
+        let aVal = a.columnValue(for: sortColumn)
+        let bVal = b.columnValue(for: sortColumn)
 
         if sortColumn.id == "trackNum" || sortColumn.id == "year" || sortColumn.id == "plays" ||
            sortColumn.id == "albums" || sortColumn.id == "discNum" {
@@ -11313,6 +11313,7 @@ private struct ModernDisplayItem {
     let indentLevel: Int
     let hasChildren: Bool
     let type: ItemType
+    var titlePrefix: String? = nil
     
     enum ItemType {
         case artist(PlexArtist)
@@ -11411,7 +11412,7 @@ extension ModernDisplayItem {
         case .video(let video): type = .youtubeVideo(video)
         }
         self.init(id: row.id, title: row.title, info: row.info, indentLevel: row.indentLevel,
-                  hasChildren: row.hasChildren, type: type)
+                  hasChildren: row.hasChildren, type: type, titlePrefix: row.titlePrefix)
     }
 }
 
@@ -11604,12 +11605,8 @@ private struct ModernBrowserColumn {
 // MARK: - Column Value Extraction
 
 extension ModernDisplayItem {
-    /// What a column sorts by: its shown value, except a YouTube video's title, which sorts
-    /// by the video's own title without the downloaded-form markers that lead the row.
-    func columnSortValue(for column: ModernBrowserColumn) -> String {
-        if column.id == "title", case .youtubeVideo(let video) = type { return video.title }
-        return columnValue(for: column)
-    }
+    /// The title as drawn: `titlePrefix` (a YouTube row's markers) ahead of the item's own title.
+    var shownTitle: String { titlePrefix.map { "\($0) \(title)" } ?? title }
 
     func columnValue(for column: ModernBrowserColumn) -> String {
         if column.id == "title" { return title }

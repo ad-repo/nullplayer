@@ -84,8 +84,9 @@
   window showing it, as other skins already did.
 - **YouTube rows show which forms you downloaded** — a downloaded video is marked ♫ for its audio,
   ▶ for its video, or both, instead of a single ⬇ that didn't say which. Downloads found by the
-  Local source's search carry the same marks; before, they had none. Sorting by Title ignores the
-  marks, so in Original skins downloaded videos no longer sort ahead of the rest.
+  Local source's search carry the same marks; before, they had none. Sorting by Title, the A–Z
+  index and typing a name to jump to it all ignore the marks, so in Original skins downloaded
+  videos no longer sort ahead of the rest, and typing a downloaded video's name now finds it.
 
 ## 0.31.4
 
