@@ -114,8 +114,6 @@ final class LibraryRowThumbnails {
     private var failed: Set<String> = []
     private var didLoadPostScheduled = false
 
-    private(set) lazy var preview = RowThumbnailPreview { [unowned self] in await self.previewImage(for: $0) }
-
     private init() {
         let diskCache = diskCache
         Task.detached(priority: .background) { diskCache.prune() }
@@ -161,17 +159,21 @@ final class LibraryRowThumbnails {
     }
 
     /// The hover preview: memory, then disk, then the row's own load (moved to the front).
-    private func previewImage(for source: Source) async -> CGImage? {
+    func previewImage(for source: Source) async -> CGImage? {
         let key = source.key
         if let cached = previews.object(forKey: key as NSString) { return cached.image }
         guard !failed.contains(key) else { return nil }
         let diskCache = diskCache
         if let preview = await Task.detached(priority: .userInitiated, operation: { diskCache.readPreview(key) }).value {
-            previews.setObject(ImageBox(preview), forKey: key as NSString, cost: preview.bytesPerRow * preview.height)
+            cachePreview(preview, key: key)
             return preview
         }
         removeFromPending(key)
         return await startLoad(source).value?.preview
+    }
+
+    private func cachePreview(_ preview: CGImage, key: String) {
+        previews.setObject(ImageBox(preview), forKey: key as NSString, cost: preview.bytesPerRow * preview.height)
     }
 
     private func removeFromPending(_ key: String) {
@@ -193,25 +195,26 @@ final class LibraryRowThumbnails {
         }
     }
 
+    /// Load `source` once, store the result, and start whatever is queued next. A second caller
+    /// for the same key gets the running task.
     @discardableResult
     private func startLoad(_ source: Source) -> Task<Renditions?, Never> {
-        if let running = inFlight[source.key] { return running }
-        let task = Task { await self.load(source) }
-        inFlight[source.key] = task
-        Task {
-            let renditions = await task.value
-            self.inFlight[source.key] = nil
+        let key = source.key
+        if let running = inFlight[key] { return running }
+        let task = Task {
+            let renditions = await self.load(source)
+            self.inFlight[key] = nil
             if let renditions {
-                let key = source.key as NSString
-                self.thumbnails.setObject(ImageBox(renditions.thumbnail), forKey: key)
-                self.previews.setObject(ImageBox(renditions.preview), forKey: key,
-                                        cost: renditions.preview.bytesPerRow * renditions.preview.height)
+                self.thumbnails.setObject(ImageBox(renditions.thumbnail), forKey: key as NSString)
+                self.cachePreview(renditions.preview, key: key)
                 self.postDidLoad()
             } else {
-                self.failed.insert(source.key)
+                self.failed.insert(key)
             }
             self.startPendingLoads()
+            return renditions
         }
+        inFlight[key] = task
         return task
     }
 
@@ -279,11 +282,10 @@ final class LibraryRowThumbnailTracker {
     /// Show the preview of the thumbnail under `point`, or hide it when there is none. `point` and
     /// the drawn rects share the browser's drawing coordinates; `toScreen` maps a rect from them.
     func hover(at point: CGPoint, toScreen: (CGRect) -> NSRect) {
-        let preview = LibraryRowThumbnails.shared.preview
         guard let hit = drawn.last(where: { $0.rect.contains(point) }) else {
-            preview.hide()
+            RowThumbnailPreview.shared.hide()
             return
         }
-        preview.show(hit.source, anchor: toScreen(hit.rect))
+        RowThumbnailPreview.shared.show(hit.source, anchor: toScreen(hit.rect))
     }
 }

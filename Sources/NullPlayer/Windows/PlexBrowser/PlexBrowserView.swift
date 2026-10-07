@@ -8592,13 +8592,13 @@ class PlexBrowserView: NSView {
         if !isArtOnlyMode, hitTestListArea(at: skinPoint) != nil, let window {
             rowThumbnails.hover(at: skinPoint) { window.convertToScreen(convert(convertFromSkinCoordinates($0), to: nil)) }
         } else {
-            LibraryRowThumbnails.shared.preview.hide()
+            RowThumbnailPreview.shared.hide()
         }
     }
     
     override func mouseExited(with event: NSEvent) {
         NSCursor.arrow.set()
-        LibraryRowThumbnails.shared.preview.hide()
+        RowThumbnailPreview.shared.hide()
     }
     
     // MARK: - Mouse Events

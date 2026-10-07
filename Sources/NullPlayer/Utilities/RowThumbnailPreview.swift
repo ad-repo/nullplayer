@@ -5,17 +5,16 @@ import AppKit
 /// resigns key or minimizes, so a browser only shows it on hover and hides it on `mouseExited`.
 @MainActor
 final class RowThumbnailPreview {
+    static let shared = RowThumbnailPreview()
     /// The preview's longer side in points; the shorter follows the art's aspect.
     static let maxSide: CGFloat = 200
 
-    private let resolve: (LibraryRowThumbnails.Source) async -> CGImage?
     private var panel: NSPanel?
     private var shownKey: String?
     private var resolveTask: Task<Void, Never>?
     private var eventMonitor: Any?
 
-    init(resolve: @escaping (LibraryRowThumbnails.Source) async -> CGImage?) {
-        self.resolve = resolve
+    private init() {
         // A browser closing or losing key while hovered never sends it `mouseExited`.
         for name in [NSWindow.didResignKeyNotification, NSWindow.willCloseNotification, NSWindow.didMiniaturizeNotification] {
             NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -37,7 +36,8 @@ final class RowThumbnailPreview {
             return event
         }
         resolveTask = Task {
-            guard let image = await resolve(source), !Task.isCancelled, shownKey == source.key else { return }
+            guard let image = await LibraryRowThumbnails.shared.previewImage(for: source),
+                  !Task.isCancelled, shownKey == source.key else { return }
             present(image, anchor: anchor)
         }
     }

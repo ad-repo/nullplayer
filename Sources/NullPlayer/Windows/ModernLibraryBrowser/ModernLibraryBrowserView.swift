@@ -4260,13 +4260,13 @@ class ModernLibraryBrowserView: NSView {
         if !isArtOnlyMode, hitTestListArea(at: point) != nil, let window {
             rowThumbnails.hover(at: point) { window.convertToScreen(convert($0, to: nil)) }
         } else {
-            LibraryRowThumbnails.shared.preview.hide()
+            RowThumbnailPreview.shared.hide()
         }
     }
 
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
-        LibraryRowThumbnails.shared.preview.hide()
+        RowThumbnailPreview.shared.hide()
     }
     
     override func rightMouseDown(with event: NSEvent) {
