@@ -6292,61 +6292,49 @@ class ModernLibraryBrowserView: NSView {
     @objc private func contextMenuPlaySubsonicSongAlbum(_ sender: NSMenuItem) {
         guard let song = sender.representedObject as? SubsonicSong,
               let albumId = song.albumId else { return }
-        Task { @MainActor in
-            if let album = cachedSubsonicAlbums.first(where: { $0.id == albumId }) {
-                TrackVerb.play.run(.subsonicAlbum(album))
-            } else {
-                do {
-                    let (_, songs) = try await SubsonicManager.shared.serverClient?.fetchAlbum(id: albumId) ?? (nil, [])
-                    let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
-                    if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
-                } catch { NSLog("Failed to fetch album: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-            }
+        if let album = cachedSubsonicAlbums.first(where: { $0.id == albumId }) {
+            TrackVerb.play.run(.subsonicAlbum(album))
+            return
+        }
+        TrackVerb.play.run {
+            let (_, songs) = try await SubsonicManager.shared.serverClient?.fetchAlbum(id: albumId) ?? (nil, [])
+            return SubsonicManager.shared.convertToTracks(songs)
         }
     }
     @objc private func contextMenuPlaySubsonicSongArtist(_ sender: NSMenuItem) {
         guard let song = sender.representedObject as? SubsonicSong,
               let artistId = song.artistId else { return }
-        Task { @MainActor in
-            if let artist = cachedSubsonicArtists.first(where: { $0.id == artistId }) {
-                TrackVerb.play.run(.subsonicArtist(artist))
-            } else {
-                do {
-                    let results = try await SubsonicManager.shared.search(query: song.artist ?? "")
-                    let tracks = results.songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
-                    if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
-                } catch { NSLog("Failed to fetch artist songs: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-            }
+        if let artist = cachedSubsonicArtists.first(where: { $0.id == artistId }) {
+            TrackVerb.play.run(.subsonicArtist(artist))
+            return
+        }
+        TrackVerb.play.run {
+            let results = try await SubsonicManager.shared.search(query: song.artist ?? "")
+            return SubsonicManager.shared.convertToTracks(results.songs)
         }
     }
     @objc private func contextMenuPlayJellyfinSongAlbum(_ sender: NSMenuItem) {
         guard let song = sender.representedObject as? JellyfinSong,
               let albumId = song.albumId else { return }
-        Task { @MainActor in
-            if let album = cachedJellyfinAlbums.first(where: { $0.id == albumId }) {
-                TrackVerb.play.run(.jellyfinAlbum(album))
-            } else {
-                do {
-                    let (_, songs) = try await JellyfinManager.shared.serverClient?.fetchAlbum(id: albumId) ?? (nil, [])
-                    let tracks = JellyfinManager.shared.convertToTracks(songs)
-                    if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
-                } catch { NSLog("Failed to fetch album: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-            }
+        if let album = cachedJellyfinAlbums.first(where: { $0.id == albumId }) {
+            TrackVerb.play.run(.jellyfinAlbum(album))
+            return
+        }
+        TrackVerb.play.run {
+            let (_, songs) = try await JellyfinManager.shared.serverClient?.fetchAlbum(id: albumId) ?? (nil, [])
+            return JellyfinManager.shared.convertToTracks(songs)
         }
     }
     @objc private func contextMenuPlayJellyfinSongArtist(_ sender: NSMenuItem) {
         guard let song = sender.representedObject as? JellyfinSong,
               let artistId = song.artistId else { return }
-        Task { @MainActor in
-            if let artist = cachedJellyfinArtists.first(where: { $0.id == artistId }) {
-                TrackVerb.play.run(.jellyfinArtist(artist))
-            } else {
-                do {
-                    let results = try await JellyfinManager.shared.search(query: song.artist ?? "")
-                    let tracks = JellyfinManager.shared.convertToTracks(results.songs)
-                    if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
-                } catch { NSLog("Failed to fetch artist songs: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-            }
+        if let artist = cachedJellyfinArtists.first(where: { $0.id == artistId }) {
+            TrackVerb.play.run(.jellyfinArtist(artist))
+            return
+        }
+        TrackVerb.play.run {
+            let results = try await JellyfinManager.shared.search(query: song.artist ?? "")
+            return JellyfinManager.shared.convertToTracks(results.songs)
         }
     }
     @objc private func contextMenuPlayRadioStation(_ sender: NSMenuItem) {
@@ -6505,31 +6493,25 @@ class ModernLibraryBrowserView: NSView {
     @objc private func contextMenuPlayEmbySongAlbum(_ sender: NSMenuItem) {
         guard let song = sender.representedObject as? EmbySong,
               let albumId = song.albumId else { return }
-        Task { @MainActor in
-            if let album = cachedEmbyAlbums.first(where: { $0.id == albumId }) {
-                TrackVerb.play.run(.embyAlbum(album))
-            } else {
-                do {
-                    let (_, songs) = try await EmbyManager.shared.serverClient?.fetchAlbum(id: albumId) ?? (nil, [])
-                    let tracks = EmbyManager.shared.convertToTracks(songs)
-                    if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
-                } catch { NSLog("Failed to fetch album: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-            }
+        if let album = cachedEmbyAlbums.first(where: { $0.id == albumId }) {
+            TrackVerb.play.run(.embyAlbum(album))
+            return
+        }
+        TrackVerb.play.run {
+            let (_, songs) = try await EmbyManager.shared.serverClient?.fetchAlbum(id: albumId) ?? (nil, [])
+            return EmbyManager.shared.convertToTracks(songs)
         }
     }
     @objc private func contextMenuPlayEmbySongArtist(_ sender: NSMenuItem) {
         guard let song = sender.representedObject as? EmbySong,
               let artistId = song.artistId else { return }
-        Task { @MainActor in
-            if let artist = cachedEmbyArtists.first(where: { $0.id == artistId }) {
-                TrackVerb.play.run(.embyArtist(artist))
-            } else {
-                do {
-                    let results = try await EmbyManager.shared.search(query: song.artist ?? "")
-                    let tracks = EmbyManager.shared.convertToTracks(results.songs)
-                    if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
-                } catch { NSLog("Failed to fetch artist songs: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-            }
+        if let artist = cachedEmbyArtists.first(where: { $0.id == artistId }) {
+            TrackVerb.play.run(.embyArtist(artist))
+            return
+        }
+        TrackVerb.play.run {
+            let results = try await EmbyManager.shared.search(query: song.artist ?? "")
+            return EmbyManager.shared.convertToTracks(results.songs)
         }
     }
     @objc private func contextMenuPlayEmbyMovie(_ sender: NSMenuItem) {
@@ -6561,7 +6543,7 @@ class ModernLibraryBrowserView: NSView {
         case .album(let a): return .plexAlbum(a)
         case .artist(let a):
             return .plexArtistGroup(members: plexArtistGroup(for: a),
-                                    cachedAlbums: plexAlbumsByArtistGroupKey[plexArtistGroupKey(for: a)] ?? [])
+                                    albums: plexAlbumsByArtistGroupKey[plexArtistGroupKey(for: a)] ?? [])
         case .plexPlaylist(let p): return .plexPlaylist(p)
         case .localTrack(let t): return .localTrack(t)
         case .localAlbum(let a): return .localAlbum(a)
@@ -9958,16 +9940,10 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func fetchAlbumsForPlexArtistGroup(_ artist: PlexArtist) async throws -> [PlexAlbum] {
-        let groupKey = plexArtistGroupKey(for: artist)
-        if let cached = plexAlbumsByArtistGroupKey[groupKey], !cached.isEmpty {
+        if let cached = plexAlbumsByArtistGroupKey[plexArtistGroupKey(for: artist)], !cached.isEmpty {
             return cached
         }
-
-        var albums: [PlexAlbum] = []
-        for member in plexArtistGroup(for: artist) {
-            albums.append(contentsOf: try await PlexManager.shared.fetchAlbums(forArtist: member))
-        }
-        return PlexIdentity.unique(albums)
+        return try await LibraryPlayable.plexAlbums(ofArtistGroup: plexArtistGroup(for: artist))
     }
 
     private func sortPlexAlbums(_ albums: [PlexAlbum]) -> [PlexAlbum] {
@@ -11270,43 +11246,33 @@ class ModernLibraryBrowserView: NSView {
 
     private func handleDoubleClick(on item: ModernDisplayItem) {
         switch item.type {
-        case .track(let t): TrackVerb.play.run(.plexTrack(t))
-        case .album(let a): TrackVerb.play.run(.plexAlbum(a))
+        case .track, .album, .plexPlaylist, .localTrack, .localAlbum, .localPlaylist, .localPlaylistTrack,
+             .subsonicTrack, .subsonicAlbum, .subsonicPlaylist, .jellyfinTrack, .jellyfinAlbum, .jellyfinPlaylist,
+             .embyTrack, .embyAlbum, .embyPlaylist:
+            if let playable = playable(for: item) { TrackVerb.play.run(playable) }
         case .artist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id, name: a.title) } else { toggleExpand(item) }
         case .movie(let m): playMovie(m)
         case .show: toggleExpand(item)
         case .season: toggleExpand(item)
         case .episode(let e): playEpisode(e)
         case .header: break
-        case .localTrack(let t): TrackVerb.play.run(.localTrack(t))
-        case .localAlbum(let a): TrackVerb.play.run(.localAlbum(a))
         case .localArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: item.id, name: a.name) } else { toggleExpand(item) }
         case .localFolder: toggleExpand(item)
         case .localMovie(let m): WindowManager.shared.showVideoPlayer(url: m.url, title: m.title)
         case .localShow: toggleExpand(item)
         case .localSeason: toggleExpand(item)
         case .localEpisode(let e): WindowManager.shared.showVideoPlayer(url: e.url, title: e.title)
-        case .subsonicTrack(let s): TrackVerb.play.run(.subsonicSong(s))
-        case .subsonicAlbum(let a): TrackVerb.play.run(.subsonicAlbum(a))
         case .subsonicArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id, name: a.name) } else { toggleExpand(item) }
-        case .subsonicPlaylist(let p): TrackVerb.play.run(.subsonicPlaylist(p))
-        case .jellyfinTrack(let s): TrackVerb.play.run(.jellyfinSong(s))
-        case .jellyfinAlbum(let a): TrackVerb.play.run(.jellyfinAlbum(a))
         case .jellyfinArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id, name: a.name) } else { toggleExpand(item) }
-        case .jellyfinPlaylist(let p): TrackVerb.play.run(.jellyfinPlaylist(p))
         case .jellyfinMovie(let m): playJellyfinMovie(m)
         case .jellyfinShow: toggleExpand(item)
         case .jellyfinSeason: toggleExpand(item)
         case .jellyfinEpisode(let e): playJellyfinEpisode(e)
-        case .embyTrack(let s): TrackVerb.play.run(.embySong(s))
-        case .embyAlbum(let a): TrackVerb.play.run(.embyAlbum(a))
         case .embyArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id, name: a.name) } else { toggleExpand(item) }
-        case .embyPlaylist(let p): TrackVerb.play.run(.embyPlaylist(p))
         case .embyMovie(let m): playEmbyMovie(m)
         case .embyShow: toggleExpand(item)
         case .embySeason: toggleExpand(item)
         case .embyEpisode(let e): playEmbyEpisode(e)
-        case .plexPlaylist(let p): TrackVerb.play.run(.plexPlaylist(p))
         case .radioStation(let s): playRadioStation(s)
         case .radioFolder(let folder):
             if folder.hasChildren {
@@ -11326,8 +11292,6 @@ class ModernLibraryBrowserView: NSView {
         case .jellyfinRadioStation(let r): playJellyfinRadioStation(r)
         case .embyRadioStation(let r): playEmbyRadioStation(r)
         case .localRadioStation(let r): playLocalRadioStation(r)
-        case .localPlaylist(let p): TrackVerb.play.run(.localPlaylist(p.url))
-        case .localPlaylistTrack(let t): TrackVerb.play.run(.tracks([t]))
         }
     }
 }

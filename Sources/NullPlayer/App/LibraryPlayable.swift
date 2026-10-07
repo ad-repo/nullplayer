@@ -14,9 +14,9 @@ enum LibraryPlayable {
     case localPlaylist(URL)
     case plexTrack(PlexTrack)
     case plexAlbum(PlexAlbum)
-    /// The same-named Plex artists the browser shows as one row, and the albums it has cached for
-    /// them (empty when it hasn't fetched them yet).
-    case plexArtistGroup(members: [PlexArtist], cachedAlbums: [PlexAlbum])
+    /// The same-named Plex artists shown as one row, with their albums when already loaded
+    /// (empty: fetched with `plexAlbums(ofArtistGroup:)`).
+    case plexArtistGroup(members: [PlexArtist], albums: [PlexAlbum])
     case plexPlaylist(PlexPlaylist)
     case subsonicSong(SubsonicSong)
     case subsonicAlbum(SubsonicAlbum)
@@ -47,11 +47,11 @@ enum LibraryPlayable {
             // A paginated artist row is a stub without albums: read them from the store.
             if artist.albums.isEmpty {
                 let store = MediaLibraryStore.shared
-                return store.albumsForArtist(artist.name).sorted { ($0.year ?? 0) < ($1.year ?? 0) }
-                    .flatMap { store.tracksForAlbum($0.id) }.map { $0.toTrack() }
+                return try await Self.artistTracks(store.albumsForArtist(artist.name), year: \.year) {
+                    store.tracksForAlbum($0.id).map { $0.toTrack() }
+                }
             }
-            return artist.albums.sorted { ($0.year ?? 0) < ($1.year ?? 0) }
-                .flatMap { Self.libraryTracks(of: $0) }.map { $0.toTrack() }
+            return try await Self.artistTracks(artist.albums, year: \.year) { try await LibraryPlayable.localAlbum($0).tracks() }
         case .localFolder(let url):
             return await Task.detached { Self.tracks(inFolder: url) }.value
         case .localPlaylist(let url):
@@ -61,15 +61,11 @@ enum LibraryPlayable {
             return PlexManager.shared.convertToTrack(track).map { [$0] } ?? []
         case .plexAlbum(let album):
             return PlexManager.shared.convertToTracks(try await PlexManager.shared.fetchTracks(forAlbum: album))
-        case .plexArtistGroup(let members, let cachedAlbums):
+        case .plexArtistGroup(let members, let albums):
             let plex = PlexManager.shared
-            var albums = cachedAlbums
-            if albums.isEmpty {
-                for member in members { albums.append(contentsOf: try await plex.fetchAlbums(forArtist: member)) }
-                albums = PlexIdentity.unique(albums)
-            }
+            let albums = albums.isEmpty ? try await Self.plexAlbums(ofArtistGroup: members) : albums
             var tracks: [PlexTrack] = []
-            for album in albums { tracks.append(contentsOf: try await plex.fetchTracks(forAlbum: album)) }
+            for album in Self.oldestFirst(albums, year: \.year) { tracks.append(contentsOf: try await plex.fetchTracks(forAlbum: album)) }
             // An artist whose tracks belong to no album the server lists.
             if tracks.isEmpty {
                 for member in members { tracks.append(contentsOf: try await plex.fetchTracks(forArtist: member)) }
@@ -83,27 +79,23 @@ enum LibraryPlayable {
         case .subsonicSong(let song):
             return SubsonicManager.shared.convertToTrack(song).map { [$0] } ?? []
         case .subsonicAlbum(let album):
-            return try await SubsonicManager.shared.fetchSongs(forAlbum: album).compactMap { SubsonicManager.shared.convertToTrack($0) }
+            return SubsonicManager.shared.convertToTracks(try await SubsonicManager.shared.fetchSongs(forAlbum: album))
         case .subsonicArtist(let artist):
-            var tracks: [Track] = []
-            for album in try await SubsonicManager.shared.fetchAlbums(forArtist: artist).sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) {
-                tracks.append(contentsOf: try await LibraryPlayable.subsonicAlbum(album).tracks())
+            return try await Self.artistTracks(try await SubsonicManager.shared.fetchAlbums(forArtist: artist), year: \.year) {
+                try await LibraryPlayable.subsonicAlbum($0).tracks()
             }
-            return tracks
         case .subsonicPlaylist(let playlist):
             let (_, songs) = try await SubsonicManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
-            return songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
+            return SubsonicManager.shared.convertToTracks(songs)
 
         case .jellyfinSong(let song):
             return JellyfinManager.shared.convertToTrack(song).map { [$0] } ?? []
         case .jellyfinAlbum(let album):
             return JellyfinManager.shared.convertToTracks(try await JellyfinManager.shared.fetchSongs(forAlbum: album))
         case .jellyfinArtist(let artist):
-            var tracks: [Track] = []
-            for album in try await JellyfinManager.shared.fetchAlbums(forArtist: artist).sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) {
-                tracks.append(contentsOf: try await LibraryPlayable.jellyfinAlbum(album).tracks())
+            return try await Self.artistTracks(try await JellyfinManager.shared.fetchAlbums(forArtist: artist), year: \.year) {
+                try await LibraryPlayable.jellyfinAlbum($0).tracks()
             }
-            return tracks
         case .jellyfinPlaylist(let playlist):
             let (_, songs) = try await JellyfinManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
             return JellyfinManager.shared.convertToTracks(songs)
@@ -113,15 +105,35 @@ enum LibraryPlayable {
         case .embyAlbum(let album):
             return EmbyManager.shared.convertToTracks(try await EmbyManager.shared.fetchSongs(forAlbum: album))
         case .embyArtist(let artist):
-            var tracks: [Track] = []
-            for album in try await EmbyManager.shared.fetchAlbums(forArtist: artist).sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) }) {
-                tracks.append(contentsOf: try await LibraryPlayable.embyAlbum(album).tracks())
+            return try await Self.artistTracks(try await EmbyManager.shared.fetchAlbums(forArtist: artist), year: \.year) {
+                try await LibraryPlayable.embyAlbum($0).tracks()
             }
-            return tracks
         case .embyPlaylist(let playlist):
             let (_, songs) = try await EmbyManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
             return EmbyManager.shared.convertToTracks(songs)
         }
+    }
+
+    /// An artist plays album by album, oldest first.
+    private static func oldestFirst<A>(_ albums: [A], year: KeyPath<A, Int?>) -> [A] {
+        albums.sorted { ($0[keyPath: year] ?? 0) < ($1[keyPath: year] ?? 0) }
+    }
+
+    /// An artist's tracks: each album's in turn, oldest first.
+    @MainActor
+    private static func artistTracks<A>(_ albums: [A], year: KeyPath<A, Int?>,
+                                        tracks: (A) async throws -> [Track]) async throws -> [Track] {
+        var result: [Track] = []
+        for album in oldestFirst(albums, year: year) { result.append(contentsOf: try await tracks(album)) }
+        return result
+    }
+
+    /// Every album of a group of same-named Plex artists, once each.
+    @MainActor
+    static func plexAlbums(ofArtistGroup members: [PlexArtist]) async throws -> [PlexAlbum] {
+        var albums: [PlexAlbum] = []
+        for member in members { albums.append(contentsOf: try await PlexManager.shared.fetchAlbums(forArtist: member)) }
+        return PlexIdentity.unique(albums)
     }
 
     /// A local album's tracks, read from the store when the album was built as a stub (no tracks).

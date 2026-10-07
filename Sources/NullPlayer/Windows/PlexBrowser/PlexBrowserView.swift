@@ -10645,7 +10645,7 @@ class PlexBrowserView: NSView {
     private func showContextMenu(for item: PlexDisplayItem, at event: NSEvent) {
         let menu = NSMenu()
         if let playable = playable(for: item) {
-            TrackVerb.addMenuItems(to: menu, for: playable)
+            TrackVerb.addMenuItems(to: menu, resolve: resolver(for: playable))
         }
         
         NSLog("showContextMenu: item.type = %@, title = %@", String(describing: item.type), item.title)
@@ -11964,7 +11964,28 @@ class PlexBrowserView: NSView {
     private func runVerbOnSelection(_ verb: TrackVerb) {
         guard let index = selectedIndices.first, index < displayItems.count,
               let playable = playable(for: displayItems[index]) else { return }
-        verb.run(playable)
+        verb.run(resolver(for: playable))
+    }
+
+    /// The row's tracks for a play verb, from its menu, Enter or double-click. A server playlist is
+    /// fetched behind the loading screen, which shows the error if the fetch fails.
+    private func resolver(for playable: LibraryPlayable) -> @MainActor () async throws -> [Track] {
+        switch playable {
+        case .plexPlaylist, .subsonicPlaylist, .jellyfinPlaylist, .embyPlaylist:
+            return { [weak self] in
+                guard let self else { throw CancellationError() }
+                isLoading = true; errorMessage = nil; startLoadingAnimation(); needsDisplay = true
+                defer { isLoading = false; stopLoadingAnimation(); needsDisplay = true }
+                do {
+                    return try await playable.tracks()
+                } catch {
+                    errorMessage = "Failed to load playlist: \(error.localizedDescription.redactingSensitiveURLQueryItems)"
+                    throw error
+                }
+            }
+        default:
+            return { try await playable.tracks() }
+        }
     }
 
     /// The row as tracks for the play verbs; nil for a row with no basic play menu (radio, video,
@@ -11975,7 +11996,7 @@ class PlexBrowserView: NSView {
         case .album(let a): return .plexAlbum(a)
         case .artist(let a):
             return .plexArtistGroup(members: plexArtistGroup(for: a),
-                                    cachedAlbums: plexAlbumsByArtistGroupKey[plexArtistGroupKey(for: a)] ?? [])
+                                    albums: plexAlbumsByArtistGroupKey[plexArtistGroupKey(for: a)] ?? [])
         case .plexPlaylist(let p): return .plexPlaylist(p)
         case .localTrack(let t): return .localTrack(t)
         case .localAlbum(let a): return .localAlbum(a)
@@ -15701,16 +15722,10 @@ class PlexBrowserView: NSView {
     }
 
     private func fetchAlbumsForPlexArtistGroup(_ artist: PlexArtist) async throws -> [PlexAlbum] {
-        let groupKey = plexArtistGroupKey(for: artist)
-        if let cached = plexAlbumsByArtistGroupKey[groupKey], !cached.isEmpty {
+        if let cached = plexAlbumsByArtistGroupKey[plexArtistGroupKey(for: artist)], !cached.isEmpty {
             return cached
         }
-
-        var albums: [PlexAlbum] = []
-        for member in plexArtistGroup(for: artist) {
-            albums.append(contentsOf: try await PlexManager.shared.fetchAlbums(forArtist: member))
-        }
-        return PlexIdentity.unique(albums)
+        return try await LibraryPlayable.plexAlbums(ofArtistGroup: plexArtistGroup(for: artist))
     }
 
     private func sortPlexPlaylists(_ playlists: [PlexPlaylist]) -> [PlexPlaylist] {
@@ -17171,31 +17186,13 @@ class PlexBrowserView: NSView {
         WindowManager.shared.playJellyfinEpisode(episode)
     }
     
-    /// Double-click on a server playlist: Play, behind the loading screen while its tracks are fetched.
-    private func playWithLoadingScreen(_ playable: LibraryPlayable) {
-        isLoading = true
-        errorMessage = nil
-        startLoadingAnimation()
-        needsDisplay = true
-        TrackVerb.play.run { [weak self] in
-            defer { self?.isLoading = false; self?.stopLoadingAnimation(); self?.needsDisplay = true }
-            do {
-                return try await playable.tracks()
-            } catch {
-                self?.errorMessage = "Failed to load playlist: \(error.localizedDescription.redactingSensitiveURLQueryItems)"
-                throw error
-            }
-        }
-    }
-
     private func handleDoubleClick(on item: PlexDisplayItem) {
         switch item.type {
-        case .track(let track):
-            TrackVerb.play.run(.plexTrack(track))
-            
-        case .album(let album):
-            TrackVerb.play.run(.plexAlbum(album))
-            
+        case .track, .album, .plexPlaylist, .localTrack, .localAlbum, .localPlaylist, .localPlaylistTrack,
+             .subsonicTrack, .subsonicAlbum, .subsonicPlaylist, .jellyfinTrack, .jellyfinAlbum, .jellyfinPlaylist,
+             .embyTrack, .embyAlbum, .embyPlaylist:
+            if let playable = playable(for: item) { TrackVerb.play.run(resolver(for: playable)) }
+
         case .artist(let artist):
             if browseMode == .search { navigateToArtistFromSearch(id: artist.id, name: artist.title) } else { toggleExpand(item) }
             
@@ -17214,12 +17211,6 @@ class PlexBrowserView: NSView {
         case .header:
             break
             
-        case .localTrack(let track):
-            TrackVerb.play.run(.localTrack(track))
-
-        case .localAlbum(let album):
-            TrackVerb.play.run(.localAlbum(album))
-
         case .localArtist(let artist):
             if browseMode == .search { navigateToArtistFromSearch(id: item.id, name: artist.name) } else { toggleExpand(item) }
 
@@ -17238,29 +17229,11 @@ class PlexBrowserView: NSView {
         case .localEpisode(let episode):
             WindowManager.shared.showVideoPlayer(url: episode.url, title: episode.title)
             
-        case .subsonicTrack(let song):
-            TrackVerb.play.run(.subsonicSong(song))
-            
-        case .subsonicAlbum(let album):
-            TrackVerb.play.run(.subsonicAlbum(album))
-            
         case .subsonicArtist(let artist):
             if browseMode == .search { navigateToArtistFromSearch(id: artist.id, name: artist.name) } else { toggleExpand(item) }
             
-        case .subsonicPlaylist(let playlist):
-            playWithLoadingScreen(.subsonicPlaylist(playlist))
-            
-        case .jellyfinTrack(let song):
-            TrackVerb.play.run(.jellyfinSong(song))
-            
-        case .jellyfinAlbum(let album):
-            TrackVerb.play.run(.jellyfinAlbum(album))
-            
         case .jellyfinArtist(let artist):
             if browseMode == .search { navigateToArtistFromSearch(id: artist.id, name: artist.name) } else { toggleExpand(item) }
-            
-        case .jellyfinPlaylist(let playlist):
-            playWithLoadingScreen(.jellyfinPlaylist(playlist))
             
         case .jellyfinMovie(let movie):
             playJellyfinMovie(movie)
@@ -17274,17 +17247,8 @@ class PlexBrowserView: NSView {
         case .jellyfinEpisode(let episode):
             playJellyfinEpisode(episode)
 
-        case .embyTrack(let song):
-            TrackVerb.play.run(.embySong(song))
-
-        case .embyAlbum(let album):
-            TrackVerb.play.run(.embyAlbum(album))
-
         case .embyArtist(let artist):
             if browseMode == .search { navigateToArtistFromSearch(id: artist.id, name: artist.name) } else { toggleExpand(item) }
-
-        case .embyPlaylist(let playlist):
-            playWithLoadingScreen(.embyPlaylist(playlist))
 
         case .embyMovie(let movie):
             playEmbyMovie(movie)
@@ -17298,9 +17262,6 @@ class PlexBrowserView: NSView {
         case .embyEpisode(let episode):
             playEmbyEpisode(episode)
 
-        case .plexPlaylist(let playlist):
-            playWithLoadingScreen(.plexPlaylist(playlist))
-            
         case .radioStation(let station):
             playRadioStation(station)
 
@@ -17329,10 +17290,6 @@ class PlexBrowserView: NSView {
             playEmbyRadioStation(radioType)
         case .localRadioStation(let radioType):
             playLocalRadioStation(radioType)
-        case .localPlaylist(let p):
-            TrackVerb.play.run(.localPlaylist(p.url))
-        case .localPlaylistTrack(let t):
-            TrackVerb.play.run(.tracks([t]))
         }
     }
 
