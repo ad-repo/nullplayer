@@ -87,6 +87,11 @@
   Local source's search carry the same marks; before, they had none. Sorting by Title, the A–Z
   index and typing a name to jump to it all ignore the marks, so in Original skins downloaded
   videos no longer sort ahead of the rest, and typing a downloaded video's name now finds it.
+- **YouTube channels open instantly** — a channel's upload list is kept, so expanding it again
+  shows it at once instead of asking YouTube every time, also after a relaunch, after switching
+  skins, and in either library browser. The list is fetched again when it is over an hour old (the
+  old one stays on screen meanwhile), when you pick a larger **Videos per Channel**, or on
+  **Refresh**. A smaller **Videos per Channel** now applies without fetching anything.
 
 ## 0.31.4
 
