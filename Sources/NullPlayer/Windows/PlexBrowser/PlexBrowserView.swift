@@ -125,6 +125,16 @@ enum BrowserSource: Equatable, Codable {
             return true
         }
     }
+
+    /// The server of a remote source
+    var serverId: String? {
+        switch self {
+        case .local, .radio, .youtube:
+            return nil
+        case .plex(let id), .subsonic(let id), .jellyfin(let id), .emby(let id):
+            return id
+        }
+    }
     
     /// Persistence key
     private static let userDefaultsKey = "BrowserSource"
@@ -1409,6 +1419,7 @@ class PlexBrowserView: NSView {
     
     /// Static image cache shared across all browser instances
     private static let artworkCache = NSCache<NSString, NSImage>()
+    private let rowThumbnails = LibraryRowThumbnailTracker()
     
     // MARK: - Layout Constants (reference to SkinElements)
     
@@ -1926,8 +1937,8 @@ class PlexBrowserView: NSView {
         // Redraw when a YouTube row thumbnail / avatar finishes loading
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(youtubeRowThumbnailDidLoad),
-            name: YouTubeRowThumbnails.didLoadNotification,
+            selector: #selector(libraryRowThumbnailDidLoad),
+            name: LibraryRowThumbnails.didLoadNotification,
             object: nil
         )
         // Rebuild when a channel is subscribed, removed, or its avatar is back-filled
@@ -2963,7 +2974,7 @@ class PlexBrowserView: NSView {
             })
         case .subsonicAlbum(let album):
             guard let coverArt = album.coverArt else { return (nil, { nil }) }
-            let key = "subsonic:\(album.id)"
+            let key = "subsonic:\(coverArt)"
             return (key, { [weak self] in await self?.loadSubsonicArtworkByCoverId(coverArt: coverArt, cacheKey: key) })
         case .jellyfinAlbum(let album):
             return ("jellyfin:\(album.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: album.id, imageTag: album.imageTag) })
@@ -3033,7 +3044,7 @@ class PlexBrowserView: NSView {
             })
         case .subsonicArtist(let artist):
             guard let coverArt = artist.coverArt else { return (nil, { nil }) }
-            let key = "subsonic:\(artist.id)"
+            let key = "subsonic:\(coverArt)"
             return (key, { [weak self] in await self?.loadSubsonicArtworkByCoverId(coverArt: coverArt, cacheKey: key) })
         case .jellyfinArtist(let artist):
             return ("jellyfin:\(artist.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: artist.id, imageTag: artist.imageTag) })
@@ -3057,6 +3068,22 @@ class PlexBrowserView: NSView {
             return ("emby:\(id)", { [weak self] in await self?.loadEmbyArtwork(itemId: id, imageTag: song.imageTag) })
         default:
             return (nil, { nil })
+        }
+    }
+
+    /// The art for a row's round thumbnail, or nil for rows that never carry art. Cover Flow items
+    /// reuse `coverFlowArtwork`'s loaders, keyed within the current server.
+    private func rowThumbnailSource(for item: PlexDisplayItem) -> LibraryRowThumbnails.Source? {
+        switch item.type {
+        case .localFolder: return nil
+        case .youtubeChannel(let channel): return .channel(channel)
+        case .youtubeVideo(let video): return .video(video)
+        case .radioStation(let station): return .radio(station)
+        case .localPlaylistTrack(let track): return .localFile(track.url)
+        default:
+            guard item.type.isCoverFlowItem else { return nil }
+            let (cacheKey, load) = coverFlowArtwork(for: item)
+            return .item(key: cacheKey ?? "item:\(item.id)", server: currentSource.serverId, owner: self, load: load)
         }
     }
 
@@ -3105,6 +3132,12 @@ class PlexBrowserView: NSView {
             skinPoint.y += Layout.titleBarHeight
         }
         return skinPoint
+    }
+
+    /// The inverse of `convertToSkinCoordinates`, for a rect.
+    private func convertFromSkinCoordinates(_ rect: NSRect) -> NSRect {
+        let titleOffset = hidesClassicTitleBar ? Layout.titleBarHeight : 0
+        return NSRect(x: rect.minX, y: bounds.height - rect.maxY + titleOffset, width: rect.width, height: rect.height)
     }
     
     // MARK: - Drawing
@@ -4677,6 +4710,7 @@ class PlexBrowserView: NSView {
         // Draw items
         // Round scroll offset to integer pixels to prevent text shimmering on non-Retina displays
         let roundedScrollOffset = backingScale < 1.5 ? round(scrollOffset) : scrollOffset
+        rowThumbnails.beginPass(placeholder: colors.normalText.withAlphaComponent(0.15))
         
         let visibleStart = max(0, Int(scrollOffset / itemHeight))
         let visibleEnd = min(displayItems.count, visibleStart + Int(contentHeight / itemHeight) + 2)
@@ -4772,13 +4806,10 @@ class PlexBrowserView: NSView {
                     .font: contentFont(ofSize: 10)
                 ]
 
-                // YouTube channel avatar, round, ahead of the title (channel rows aren't column
-                // rows). Drawn here, inside the counter-flip, so the image is upright.
-                if case .youtubeChannel(let channel) = item.type {
-                    let side = itemHeight - 2
-                    YouTubeRowThumbnails.shared.draw(channel: channel, in: context, at: textX + titleSpinnerInset,
-                                                     rowRect: itemRect, side: side)
-                    titleSpinnerInset += side + 4
+                // Round thumbnail ahead of the title, drawn inside the counter-flip so it is upright.
+                if let thumbnail = rowThumbnailSource(for: item) {
+                    titleSpinnerInset += rowThumbnails.draw(thumbnail, in: context, at: textX + titleSpinnerInset,
+                                                            rowRect: itemRect, side: itemHeight - 2)
                 }
 
                 let textRect = NSRect(x: textX + titleSpinnerInset, y: itemRect.minY + 2,
@@ -4802,6 +4833,9 @@ class PlexBrowserView: NSView {
                 
                 context.restoreGState()
             }
+        }
+        rowThumbnails.endPass(visible: visibleStart..<visibleEnd, count: displayItems.count) {
+            rowThumbnailSource(for: displayItems[$0])
         }
         
         context.restoreGState()
@@ -4923,13 +4957,13 @@ class PlexBrowserView: NSView {
         
         var x = rect.minX + indent + 4 - horizontalScrollOffset
         let group = columnGroup(for: item)
+        let hasArtColumn = columns.contains { $0.id == "thumbnail" }
         for column in columns {
             let width = widthForColumn(column, availableWidth: totalWidth, columns: columns, group: group)
             if column.id == "thumbnail" {
                 // Inside the counter-flip (y-up), centred on the row so the flip doesn't move it.
-                if case .youtubeVideo(let video) = item.type {
-                    YouTubeRowThumbnails.shared.draw(video: video, in: context, at: x + 4, rowRect: rect,
-                                                     side: max(0, min(width - 8, rect.height - 2)))
+                if let thumbnail = rowThumbnailSource(for: item) {
+                    rowThumbnails.draw(thumbnail, in: context, at: x + 4, rowRect: rect, side: min(width - 8, rect.height - 2))
                 }
                 x += width
                 continue
@@ -4955,6 +4989,11 @@ class PlexBrowserView: NSView {
                 let cx = x + 4 + spinnerRadius
                 drawRowSpinner(in: context, center: CGPoint(x: cx, y: rect.midY), radius: spinnerRadius, colors: colors)
                 titleSpinnerInset = spinnerRadius * 2 + 4
+            }
+            // Round art ahead of the title, unless the row has an Art column to hold it.
+            if column.id == "title", !hasArtColumn, let thumbnail = rowThumbnailSource(for: item) {
+                titleSpinnerInset += rowThumbnails.draw(thumbnail, in: context, at: x + 4 + titleSpinnerInset,
+                                                        rowRect: rect, side: rect.height - 2)
             }
 
             let textSize = value.size(withAttributes: attrs)
@@ -8549,10 +8588,15 @@ class PlexBrowserView: NSView {
         } else {
             NSCursor.arrow.set()
         }
+        let overList = !isArtOnlyMode && hitTestListArea(at: skinPoint) != nil
+        rowThumbnails.hover(at: overList ? skinPoint : nil) {
+            window?.convertToScreen(convert(convertFromSkinCoordinates($0), to: nil))
+        }
     }
     
     override func mouseExited(with event: NSEvent) {
         NSCursor.arrow.set()
+        RowThumbnailPreview.shared.hide()
     }
     
     // MARK: - Mouse Events
@@ -15820,8 +15864,7 @@ class PlexBrowserView: NSView {
         }
     }
 
-    @objc private func youtubeRowThumbnailDidLoad() {
-        guard currentSource.isYouTube else { return }
+    @objc private func libraryRowThumbnailDidLoad() {
         needsDisplay = true
     }
 
