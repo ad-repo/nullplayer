@@ -1,34 +1,74 @@
 import AppKit
+import AVFoundation
 
 /// Round images for library list rows — album/artist/track/video art, radio station icons,
 /// YouTube video thumbnails and channel avatars — shared by both library browsers.
 ///
 /// One load makes both renditions of a row's art (`Renditions`): the round row thumbnail and the
 /// hover preview. They are written to `RowThumbnailDiskCache`, which is read before any loader
-/// runs, so a relaunch draws from disk. `thumbnail(for:)` returns a cached image or queues a load;
-/// when one lands, `didLoadNotification` is posted so the browser redraws. Rows on screen load
-/// first, newest request first; `preload` queues the rows either side of them behind those.
+/// runs, so a relaunch draws from disk. `thumbnail(for:)` only reads the cache; after each list
+/// pass the browser calls `request` with every row it wants, which replaces the queue. When a
+/// load lands, `didLoadNotification` is posted so the browser redraws.
 @MainActor
 final class LibraryRowThumbnails {
     static let shared = LibraryRowThumbnails()
     static let didLoadNotification = Notification.Name("LibraryRowThumbnailDidLoad")
 
     private static let maxConcurrentLoads = 4
-    private static let maxPendingLoads = 300
 
-    /// Where a row's art comes from, and the key both renditions are cached under.
+    /// Where a row's art comes from, and the key both renditions are cached under. The key
+    /// outlives the session on disk, so it names the image, not the row. A row kind that carries
+    /// art always gets a source, even without art, so its circle keeps the placeholder and its
+    /// title stays aligned with its neighbours'.
     struct Source {
         let key: String
         let load: () async -> NSImage?
+        /// The view `load` calls into, if any. Once it is gone, a nil from `load` means the loader
+        /// went away, not that the row has no art.
+        private weak var owner: AnyObject?
+        private let hasOwner: Bool
 
-        /// One fetch at preview size; the thumbnail is cut from it. A channel without an avatar
-        /// still gets a source, so its row keeps the placeholder and its title stays aligned.
+        init(key: String, owner: AnyObject? = nil, load: @escaping () async -> NSImage?) {
+            self.key = key
+            self.load = load
+            self.owner = owner
+            hasOwner = owner != nil
+        }
+
+        var isOrphaned: Bool { hasOwner && owner == nil }
+
+        /// A browser item through the browser's own loader. `key` is `coverFlowArtwork`'s
+        /// `<service>:<id>`, scoped to `server` because ids repeat across servers (Plex rating keys
+        /// are small integers).
+        static func item(key: String, server: String?, owner: AnyObject,
+                         load: @escaping () async -> NSImage?) -> Source {
+            Source(key: server.map { "\($0)/\(key)" } ?? key, owner: owner, load: load)
+        }
+
+        /// One fetch at preview size; the thumbnail is cut from it.
         static func channel(_ channel: YouTubeChannel) -> Source {
             guard let url = channel.avatarURL(side: 320) else { return Source(key: "channel:\(channel.id)", load: { nil }) }
             return remote(url)
         }
 
         static func video(_ video: YouTubeVideo) -> Source { remote(video.rowThumbnailURL) }
+
+        static func radio(_ station: RadioStation) -> Source {
+            guard let url = station.iconURL else { return Source(key: "radio:\(station.id)", load: { nil }) }
+            return remote(url)
+        }
+
+        /// A file's embedded art; a stream URL keeps the placeholder.
+        static func localFile(_ url: URL) -> Source {
+            guard url.isFileURL else { return Source(key: "stream:\(url.absoluteString)", load: { nil }) }
+            return Source(key: "local:\(url.path)", load: {
+                guard let metadata = try? await AVURLAsset(url: url).load(.metadata) else { return nil }
+                for item in metadata where item.commonKey == .commonKeyArtwork {
+                    if let data = try? await item.load(.dataValue), let image = NSImage(data: data) { return image }
+                }
+                return nil
+            })
+        }
 
         private static func remote(_ url: URL) -> Source {
             Source(key: "url:\(url.absoluteString)", load: {
@@ -106,9 +146,8 @@ final class LibraryRowThumbnails {
         return cache
     }()
     private let diskCache = RowThumbnailDiskCache.standard
-    /// Queued loads, lowest priority first: `popLast` takes the next.
+    /// What the latest list pass wants that is not loaded or loading yet, highest priority first.
     private var pending: [Source] = []
-    private var pendingKeys: Set<String> = []
     private var inFlight: [String: Task<Renditions?, Never>] = [:]
     /// Keys whose load failed or found no art — not retried this session.
     private var failed: Set<String> = []
@@ -119,35 +158,23 @@ final class LibraryRowThumbnails {
         Task.detached(priority: .background) { diskCache.prune() }
     }
 
-    /// The row thumbnail, or nil while it loads (the request moves to the front of the queue)
-    /// or when the row has no art.
+    /// The row thumbnail, or nil while it is wanted or loading, or when the row has no art.
     func thumbnail(for source: Source) -> CGImage? {
-        if let cached = thumbnails.object(forKey: source.key as NSString) { return cached.image }
-        guard inFlight[source.key] == nil, !failed.contains(source.key) else { return nil }
-        removeFromPending(source.key)
-        pending.append(source)
-        pendingKeys.insert(source.key)
-        trimPending()
-        startPendingLoads()
-        return nil
+        thumbnails.object(forKey: source.key as NSString)?.image
     }
 
-    /// Queue the rows either side of `visible` behind everything already waiting. `source` maps a
-    /// row index to its art; rows already loaded, loading, queued or failed are left alone.
-    func preload(around visible: Range<Int>, count: Int, source: (Int) -> Source?) {
-        var added = false
-        for index in Self.preloadOrder(around: visible, count: count) {
-            guard let source = source(index) else { continue }
-            let key = source.key
-            guard thumbnails.object(forKey: key as NSString) == nil, inFlight[key] == nil,
-                  !failed.contains(key), !pendingKeys.contains(key) else { continue }
-            pending.insert(source, at: 0)
-            pendingKeys.insert(key)
-            added = true
-        }
-        guard added else { return }
-        trimPending()
+    /// Replace the queue with `sources`, highest priority first: one list pass's rows on screen,
+    /// then the rows around them. Rows a scroll has left behind drop out on the next pass.
+    func request(_ sources: [Source]) {
+        var queued: Set<String> = []
+        pending = sources.filter { needsLoad($0) && queued.insert($0.key).inserted }
         startPendingLoads()
+    }
+
+    private func needsLoad(_ source: Source) -> Bool {
+        let key = source.key
+        return thumbnails.object(forKey: key as NSString) == nil && inFlight[key] == nil
+            && !failed.contains(key) && !source.isOrphaned
     }
 
     /// Two screens of rows either side of `visible`, nearest first, alternating below and above.
@@ -158,7 +185,7 @@ final class LibraryRowThumbnails {
             .filter { (0..<count).contains($0) }
     }
 
-    /// The hover preview: memory, then disk, then the row's own load (moved to the front).
+    /// The hover preview: memory, then disk, then the row's own load, started now.
     func previewImage(for source: Source) async -> CGImage? {
         let key = source.key
         if let cached = previews.object(forKey: key as NSString) { return cached.image }
@@ -168,7 +195,6 @@ final class LibraryRowThumbnails {
             cachePreview(preview, key: key)
             return preview
         }
-        removeFromPending(key)
         return await startLoad(source).value?.preview
     }
 
@@ -176,22 +202,11 @@ final class LibraryRowThumbnails {
         previews.setObject(ImageBox(preview), forKey: key as NSString, cost: preview.bytesPerRow * preview.height)
     }
 
-    private func removeFromPending(_ key: String) {
-        guard pendingKeys.remove(key) != nil else { return }
-        pending.removeAll { $0.key == key }
-    }
-
-    private func trimPending() {
-        let excess = pending.count - Self.maxPendingLoads
-        guard excess > 0 else { return }
-        for dropped in pending.prefix(excess) { pendingKeys.remove(dropped.key) }
-        pending.removeFirst(excess)
-    }
-
     private func startPendingLoads() {
-        while inFlight.count < Self.maxConcurrentLoads, let next = pending.popLast() {
-            pendingKeys.remove(next.key)
-            startLoad(next)
+        while inFlight.count < Self.maxConcurrentLoads, !pending.isEmpty {
+            let next = pending.removeFirst()
+            // A preview may have loaded it since the pass, or its browser may have gone.
+            if needsLoad(next) { startLoad(next) }
         }
     }
 
@@ -208,7 +223,8 @@ final class LibraryRowThumbnails {
                 self.thumbnails.setObject(ImageBox(renditions.thumbnail), forKey: key as NSString)
                 self.cachePreview(renditions.preview, key: key)
                 self.postDidLoad()
-            } else {
+            } else if !source.isOrphaned {
+                // An orphan's nil says its browser went away; the next browser asks again.
                 self.failed.insert(key)
             }
             self.startPendingLoads()
@@ -245,7 +261,8 @@ final class LibraryRowThumbnails {
 }
 
 /// One browser's row thumbnails in its current list pass: each is drawn round through the shared
-/// cache, and where it landed is kept so a mouse position can show that row's preview.
+/// cache, and where it landed is kept so a mouse position can show that row's preview. The
+/// browser's only contact with row thumbnails: `beginPass`, `draw`, `endPass`, `hover`.
 @MainActor
 final class LibraryRowThumbnailTracker {
     private var drawn: [(rect: CGRect, source: LibraryRowThumbnails.Source)] = []
@@ -258,12 +275,21 @@ final class LibraryRowThumbnailTracker {
         self.placeholder = placeholder
     }
 
-    /// Draw `source` round, centred vertically in `rowRect` at `x`. The context's CTM must be y-up
-    /// here: the classic browser draws inside its text counter-flip, where a rect centred on the
-    /// row comes out the same in its unflipped coordinates.
+    /// End a list pass: load the rows just drawn, then the rows around `visible`. `source` maps a
+    /// row index to its art.
+    func endPass(visible: Range<Int>, count: Int, source: (Int) -> LibraryRowThumbnails.Source?) {
+        let preload = LibraryRowThumbnails.preloadOrder(around: visible, count: count).compactMap(source)
+        LibraryRowThumbnails.shared.request(drawn.map(\.source) + preload)
+    }
+
+    /// Draw `source` round, centred vertically in `rowRect` at `x`, and return how far a title
+    /// after it moves right. The context's CTM must be y-up here: the classic browser draws inside
+    /// its text counter-flip, where a rect centred on the row comes out the same in its unflipped
+    /// coordinates.
+    @discardableResult
     func draw(_ source: LibraryRowThumbnails.Source, in context: CGContext, at x: CGFloat, rowRect: NSRect,
-              side: CGFloat) {
-        guard side > 0 else { return }
+              side: CGFloat) -> CGFloat {
+        guard side > 0 else { return 0 }
         let rect = CGRect(x: x, y: rowRect.midY - side / 2, width: side, height: side)
         context.saveGState()
         context.addEllipse(in: rect)
@@ -277,15 +303,18 @@ final class LibraryRowThumbnailTracker {
         }
         context.restoreGState()
         drawn.append((rect, source))
+        return side + 4
     }
 
-    /// Show the preview of the thumbnail under `point`, or hide it when there is none. `point` and
-    /// the drawn rects share the browser's drawing coordinates; `toScreen` maps a rect from them.
-    func hover(at point: CGPoint, toScreen: (CGRect) -> NSRect) {
-        guard let hit = drawn.last(where: { $0.rect.contains(point) }) else {
+    /// Show the preview of the thumbnail under `point`, or hide it when there is none or `point`
+    /// is nil (the mouse is off the list). `point` and the drawn rects share the browser's drawing
+    /// coordinates; `toScreen` maps a rect from them, or returns nil without a window.
+    func hover(at point: CGPoint?, toScreen: (CGRect) -> NSRect?) {
+        guard let point, let hit = drawn.last(where: { $0.rect.contains(point) }),
+              let anchor = toScreen(hit.rect) else {
             RowThumbnailPreview.shared.hide()
             return
         }
-        RowThumbnailPreview.shared.show(hit.source, anchor: toScreen(hit.rect))
+        RowThumbnailPreview.shared.show(hit.source, anchor: anchor)
     }
 }

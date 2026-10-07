@@ -98,6 +98,12 @@ enum ModernBrowserSource: Equatable, Codable {
     var isRemote: Bool {
         switch self { case .local, .radio, .youtube: return false; case .plex, .subsonic, .jellyfin, .emby: return true }
     }
+    var serverId: String? {
+        switch self {
+        case .local, .radio, .youtube: return nil
+        case .plex(let id), .subsonic(let id), .jellyfin(let id), .emby(let id): return id
+        }
+    }
 
     private static let userDefaultsKey = "BrowserSource"
     func save() {
@@ -2547,9 +2553,8 @@ class ModernLibraryBrowserView: NSView {
 
                 // Round thumbnail ahead of the title: a YouTube channel's avatar, or the item's art.
                 if let thumbnail = rowThumbnailSource(for: item) {
-                    let side = itemHeight - 2
-                    rowThumbnails.draw(thumbnail, in: context, at: textX + titleSpinnerInset, rowRect: itemRect, side: side)
-                    titleSpinnerInset += side + 4
+                    titleSpinnerInset += rowThumbnails.draw(thumbnail, in: context, at: textX + titleSpinnerInset,
+                                                            rowRect: itemRect, side: itemHeight - 2)
                 }
 
                 // Main text
@@ -2579,7 +2584,7 @@ class ModernLibraryBrowserView: NSView {
 
             if isOffline { context.restoreGState() }
         }
-        LibraryRowThumbnails.shared.preload(around: visibleStart..<visibleEnd, count: displayItems.count) {
+        rowThumbnails.endPass(visible: visibleStart..<visibleEnd, count: displayItems.count) {
             rowThumbnailSource(for: displayItems[$0])
         }
         
@@ -2682,8 +2687,7 @@ class ModernLibraryBrowserView: NSView {
             let width = widthForColumn(column, availableWidth: totalWidth, columns: columns, group: group)
             if column.id == "thumbnail" {
                 if let thumbnail = rowThumbnailSource(for: item) {
-                    rowThumbnails.draw(thumbnail, in: context, at: x + 4, rowRect: rect,
-                                       side: max(0, min(width - 8, rect.height - 2)))
+                    rowThumbnails.draw(thumbnail, in: context, at: x + 4, rowRect: rect, side: min(width - 8, rect.height - 2))
                 }
                 x += width
                 continue
@@ -2710,9 +2714,8 @@ class ModernLibraryBrowserView: NSView {
             }
             // Round art ahead of the title, unless the row has an Art column to hold it.
             if column.id == "title", !hasArtColumn, let thumbnail = rowThumbnailSource(for: item) {
-                let side = max(0, rect.height - 2)
-                rowThumbnails.draw(thumbnail, in: context, at: x + 4 + titleSpinnerInset, rowRect: rect, side: side)
-                titleSpinnerInset += side + 4
+                titleSpinnerInset += rowThumbnails.draw(thumbnail, in: context, at: x + 4 + titleSpinnerInset,
+                                                        rowRect: rect, side: rect.height - 2)
             }
 
             let textSize = value.size(withAttributes: attrs)
@@ -4257,11 +4260,8 @@ class ModernLibraryBrowserView: NSView {
         } else {
             NSCursor.arrow.set()
         }
-        if !isArtOnlyMode, hitTestListArea(at: point) != nil, let window {
-            rowThumbnails.hover(at: point) { window.convertToScreen(convert($0, to: nil)) }
-        } else {
-            RowThumbnailPreview.shared.hide()
-        }
+        let overList = !isArtOnlyMode && hitTestListArea(at: point) != nil
+        rowThumbnails.hover(at: overList ? point : nil) { window?.convertToScreen(convert($0, to: nil)) }
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -12151,27 +12151,19 @@ class ModernLibraryBrowserView: NSView {
         }
     }
 
-    /// The art for a row's round thumbnail — `coverFlowArtwork`'s loaders plus YouTube channels
-    /// and videos, radio station icons and local playlist tracks — or nil for rows that never
-    /// carry art.
+    /// The art for a row's round thumbnail, or nil for rows that never carry art. Cover Flow items
+    /// reuse `coverFlowArtwork`'s loaders, keyed within the current server.
     private func rowThumbnailSource(for item: ModernDisplayItem) -> LibraryRowThumbnails.Source? {
         switch item.type {
-        case .localFolder:
-            return nil
-        case .youtubeChannel(let channel):
-            return .channel(channel)
-        case .youtubeVideo(let video):
-            return .video(video)
-        case .radioStation(let station):
-            guard let icon = station.iconURL?.absoluteString else { return nil }
-            return .init(key: "radio:\(icon)", load: { [weak self] in await self?.loadRemoteArtwork(urlString: icon, cacheNamespace: "radio") })
-        case .localPlaylistTrack(let track):
-            guard track.url.isFileURL else { return nil }
-            return .init(key: "local:\(track.url.path)", load: { [weak self] in await self?.loadLocalArtwork(url: track.url) })
+        case .localFolder: return nil
+        case .youtubeChannel(let channel): return .channel(channel)
+        case .youtubeVideo(let video): return .video(video)
+        case .radioStation(let station): return .radio(station)
+        case .localPlaylistTrack(let track): return .localFile(track.url)
         default:
             guard item.type.isCoverFlowItem else { return nil }
             let (cacheKey, load) = coverFlowArtwork(for: item)
-            return .init(key: cacheKey ?? "item:\(item.id)", load: load)
+            return .item(key: cacheKey ?? "item:\(item.id)", server: currentSource.serverId, owner: self, load: load)
         }
     }
 
