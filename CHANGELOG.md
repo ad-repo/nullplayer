@@ -92,6 +92,11 @@
   skins, and in either library browser. The list is fetched again when it is over an hour old (the
   old one stays on screen meanwhile), when you pick a larger **Videos per Channel**, or on
   **Refresh**. A smaller **Videos per Channel** now applies without fetching anything.
+- **The Library Browser scrolls all the way to the last row** — while a column header showed, the
+  last row stayed hidden below the list (in Original skins, also behind the offline-volume
+  banner), whether you scrolled, jumped with the A–Z index, or moved the selection with the arrow
+  keys. In Original skins, clicking the offline-volume banner no longer selects the row hidden
+  behind it.
 
 ## 0.31.4
 

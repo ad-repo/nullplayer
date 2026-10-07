@@ -310,14 +310,15 @@ func move(_ points: [CGPoint]) {
 /// `hasPreciseScrollingDeltas` reports and what a per-point scroller consumes — and `.line` is a
 /// mouse wheel, whose delta is a line count. A view that scrolls under one and not the other is
 /// not a flaky view; post both before believing either.
-func scroll(_ x: Double, _ y: Double, count: Int, delta: Int32, precise: Bool) {
+func scroll(_ x: Double, _ y: Double, count: Int, delta: Int32, precise: Bool, horizontal: Bool) {
     let p = CGPoint(x: x, y: y)
     CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?
         .post(tap: .cghidEventTap)
     usleep(150_000)
     for _ in 0..<count {
         let event = CGEvent(scrollWheelEvent2Source: nil, units: precise ? .pixel : .line,
-                            wheelCount: 1, wheel1: delta, wheel2: 0, wheel3: 0)
+                            wheelCount: horizontal ? 2 : 1, wheel1: horizontal ? 0 : delta,
+                            wheel2: horizontal ? delta : 0, wheel3: 0)
         event?.location = p
         if precise { event?.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1) }
         event?.post(tap: .cghidEventTap)
@@ -428,11 +429,12 @@ case "scroll":
     guard args.count >= 6, let x = Double(args[2]), let y = Double(args[3]),
           let count = Int(args[4]), let delta = Int32(args[5]) else {
         FileHandle.standardError.write(
-            "usage: winhelper scroll <x> <y> <count> <delta> [line|precise]\n".data(using: .utf8)!)
+            "usage: winhelper scroll <x> <y> <count> <delta> [line|precise] [h]\n".data(using: .utf8)!)
         exit(1)
     }
     requireNullPlayer(at: CGPoint(x: x, y: y), verb: "scroll")
-    scroll(x, y, count: count, delta: delta, precise: args.count > 6 && args[6] == "precise")
+    scroll(x, y, count: count, delta: delta, precise: args.count > 6 && args[6] == "precise",
+           horizontal: args.count > 7 && args[7] == "h")
 case "move":
     move(pairs("move", args.dropFirst(2), minimum: 2))
 case "drag":
