@@ -1720,7 +1720,7 @@ class WindowManager {
     func wmpSkinShowsInActiveView(_ surface: WMPSkinSurface) -> Bool {
         guard uiMode.controllerFamily == .wmp,
               let controller = mainWindowController as? WMPMainWindowController else { return false }
-        return controller.anyOpenViewProvides(surface)
+        return controller.windowShowing(surface) != nil
     }
 
     /// Put away NullPlayer's own playlist or equalizer when the `.wmz` now on screen draws that

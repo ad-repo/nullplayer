@@ -77,6 +77,11 @@
   video that followed a song in the playlist played as audio only, with no video window. It now
   opens in the video player like any other video. Double-clicking a video while music plays also no
   longer starts the next song in the background.
+- **A film in a Windows Media Player skin no longer restarts when you press Return** — a Plex or
+  local film started from the Library Browser into a `.wmz` skin's video area left the keyboard on
+  the browser, so pressing Return replayed the selected film from the beginning and lost your
+  place, with nothing on screen to show why. Starting a film now moves the keyboard to the skin
+  window showing it, as other skins already did.
 
 ## 0.31.4
 

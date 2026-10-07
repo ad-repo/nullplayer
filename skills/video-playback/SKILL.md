@@ -37,6 +37,14 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   `mediaPlayerStateChanged` comment; end-of-film handling keys off that pause.
 - **Windows → Video Player is inert until a video has been opened** — the controller is created on
   first play, and `WindowManager.toggleVideoPlayer` returns early while it is nil.
+- **A play call moves key focus to the picture** (`revealVideoOutput`): the free window takes it
+  itself, a `.wal` skin's video window takes it in `setAuxiliaryWindow`, and a `.wmz` skin window
+  showing the video takes it through `WMPMainWindowController.windowShowing(.video)`. Without that,
+  focus stayed on the Library Browser that started the film, where Return replays the selected row:
+  a keystroke meant for the film restarted it from 0 and discarded the position (M5, measured
+  2026-10-07). It goes to the skin window, never the parked video window: under `.wmz`, Esc there
+  falls through to `close()` and stops the film. Hence the video keys do not reach a parked film
+  (M18).
 
 ## Entry points
 

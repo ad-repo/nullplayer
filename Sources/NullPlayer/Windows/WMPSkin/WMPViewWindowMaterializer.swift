@@ -66,10 +66,10 @@ final class WMPViewWindowMaterializer: NSObject, NSWindowDelegate {
 
     var isEmpty: Bool { presentations.isEmpty }
 
-    /// Whether any open window is showing this view — what a NullPlayer menu toggle asks before
-    /// opening a window of its own.
-    func anyOpenView(where predicate: (String) -> Bool) -> Bool {
-        openPresentations.contains { predicate($0.viewID) }
+    /// The first open window showing a matching view — what a NullPlayer menu toggle asks before
+    /// opening a window of its own, and what a play call gives key focus to.
+    func openWindow(where predicate: (String) -> Bool) -> NSWindow? {
+        openPresentations.first { predicate($0.viewID) }?.window
     }
 
     // MARK: Materialization

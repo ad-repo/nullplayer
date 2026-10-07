@@ -1393,7 +1393,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // Already on screen in one of this skin's windows: nothing to open, and nothing of ours to
         // add. With real windows this is a question about the whole session rather than about the
         // one view that used to be presented.
-        if materializer.anyOpenView(where: { skinSurfaces.view($0, provides: surface) }) { return true }
+        if windowShowing(surface) != nil { return true }
         if switchingViews, let target = skinSurfaces.viewIDs(for: surface).first,
            let player = materializer.playerPresentation {
             // The same call the skin's own button makes. Routing a menu toggle through `openView`
@@ -3970,8 +3970,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// The windows this skin has open, for `WindowManager`'s docking branch.
     var materializedAuxiliaryWindows: [NSWindow] { materializer?.auxiliaryWindows ?? [] }
 
-    /// Whether any open WMP window is showing a view that provides `surface`.
-    func anyOpenViewProvides(_ surface: WMPSkinSurface) -> Bool {
-        materializer?.anyOpenView(where: { skinSurfaces.view($0, provides: surface) }) ?? false
+    /// The open WMP window showing a view that provides `surface`, if any.
+    func windowShowing(_ surface: WMPSkinSurface) -> NSWindow? {
+        materializer?.openWindow(where: { skinSurfaces.view($0, provides: surface) })
     }
 }
