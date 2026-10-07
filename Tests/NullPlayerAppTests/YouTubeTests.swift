@@ -722,6 +722,101 @@ final class YouTubeTests: XCTestCase {
         XCTAssertEqual(Array(manager.downloadedFiles(for: "b").keys), [.video])
     }
 
+    func testLocalSearchListsDownloadsNotAlreadyListedAsTracks() throws {
+        let manager = YouTubeManager.shared
+        let originalRoot = manager.downloadRoot
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nullplayer-youtube-test-search-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            manager.downloadRoot = originalRoot
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for name in ["Both.mp3", "Both.mp4", "Indexed.flac", "Partly.mp3", "Partly.opus", "Other.mp3"] {
+            try Data().write(to: root.appendingPathComponent(name))
+        }
+        try writeManifestEntries(root: root, [
+            "both.audio": ["videoId": "both", "title": "Café Session", "channelId": "c", "fileName": "Both.mp3", "kind": "audio"],
+            "both.video": ["videoId": "both", "title": "Café Session (Video)", "channelId": "c", "fileName": "Both.mp4", "kind": "video"],
+            "indexed.audio": ["videoId": "indexed", "title": "Indexed Session", "channelId": "c", "fileName": "Indexed.flac", "kind": "audio"],
+            "partly.audio": ["videoId": "partly", "title": "A Partly Indexed Session", "channelId": "c", "fileName": "Partly.mp3", "kind": "audio"],
+            "partly.video": ["videoId": "partly", "title": "A Partly Indexed Session", "channelId": "c", "fileName": "Partly.opus", "kind": "video"],
+            "gone.audio": ["videoId": "gone", "title": "Gone Session", "channelId": "c", "fileName": "Gone.mp3", "kind": "audio"],
+            "other.audio": ["videoId": "other", "title": "Something Else", "channelId": "c", "fileName": "Other.mp3", "kind": "audio"],
+        ])
+        manager.downloadRoot = root
+        // The library lists these as tracks, unstandardized as a scan may report them
+        let tracks: Set<URL> = [
+            URL(fileURLWithPath: root.path + "/./Indexed.flac"),
+            root.appendingPathComponent("Partly.mp3"),
+        ]
+
+        // Case- and accent-insensitive; one row per video, A–Z. Dropped: "indexed" (every file is
+        // a track), "gone" (nothing on disk), "other" (no match)
+        let result = manager.localSearch(query: " cafe session ", excluding: tracks)
+        XCTAssertEqual(result.videos.map(\.videoId), ["both"])
+        // Entries of one video that disagree on its title: the audio entry's wins, every time
+        XCTAssertEqual(result.videos.first?.title, "Café Session")
+        let all = manager.localSearch(query: "session", excluding: tracks)
+        XCTAssertEqual(all.videos.map(\.videoId), ["partly", "both"])
+        XCTAssertEqual(all.videos.first?.title, "A Partly Indexed Session")
+
+        XCTAssertTrue(manager.localSearch(query: "  ", excluding: []).videos.isEmpty)
+    }
+
+    func testChannelRowsCarryTheirUploadsOnceExpanded() throws {
+        let manager = YouTubeManager.shared
+        let originalRoot = manager.downloadRoot
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nullplayer-youtube-test-rows-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            manager.downloadRoot = originalRoot
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data().write(to: root.appendingPathComponent("Up.mp3"))
+        try writeManifestEntries(root: root, [
+            "up.audio": ["videoId": "up", "title": "Up", "channelId": "ch", "fileName": "Up.mp3", "kind": "audio"],
+        ])
+        manager.downloadRoot = root
+        let channel = YouTubeChannel(id: "ch", title: "Chan", url: URL(string: "https://www.youtube.com/@ch")!, dateAdded: Date())
+        let uploads = ["ch": [
+            YouTubeVideo(videoId: "up", title: "Up", channelId: "ch", duration: 75, publishedAt: nil),
+            YouTubeVideo(videoId: "new", title: "New", channelId: "ch", duration: nil, publishedAt: nil),
+        ]]
+
+        let collapsed = YouTubeRowBuilder(expanded: [], uploads: uploads).channels([channel])
+        XCTAssertEqual(collapsed.map(\.id), ["youtube-channel-ch"])
+
+        let rows = YouTubeRowBuilder(expanded: ["ch"], uploads: uploads).channels([channel])
+        XCTAssertEqual(rows.map(\.id), ["youtube-channel-ch", "youtube-video-up", "youtube-video-new"])
+        XCTAssertEqual(rows.map(\.indentLevel), [0, 1, 1])
+        XCTAssertEqual(rows.map(\.title), ["Chan", "⬇ Up", "New"])
+        XCTAssertEqual(rows.map(\.info), [nil, "1:15", nil])
+        XCTAssertEqual(rows.map(\.hasChildren), [true, false, false])
+    }
+
+    func testDoubleClickPlaysTheOnlyFormOnDiskAndOtherwiseAsks() {
+        let audio = URL(fileURLWithPath: "/tmp/V.mp3"), video = URL(fileURLWithPath: "/tmp/V.mp4")
+        XCTAssertEqual(YouTubeVideoActions.formToPlay([.audio: audio]), .audio)
+        XCTAssertEqual(YouTubeVideoActions.formToPlay([.video: video]), .video)
+        // Both forms on disk: the menu chooses. Neither: the menu offers the downloads.
+        XCTAssertNil(YouTubeVideoActions.formToPlay([.audio: audio, .video: video]))
+        XCTAssertNil(YouTubeVideoActions.formToPlay([:]))
+    }
+
+    func testDownloadedVideoCarriesTheManifestIdentity() {
+        let download = YouTubeDownload(videoId: "v", title: "Title", channelId: "c", fileName: "C/T [v].mp3", kind: .audio)
+        let video = YouTubeVideo(download: download)
+        XCTAssertEqual(video.videoId, "v")
+        XCTAssertEqual(video.title, "Title")
+        XCTAssertEqual(video.channelId, "c")
+        XCTAssertNil(video.duration)
+        XCTAssertNil(video.publishedAt)
+    }
+
     private func writeManifestEntries(root: URL, _ entries: [String: [String: String]]) throws {
         let data = try JSONSerialization.data(withJSONObject: entries)
         try data.write(to: root.appendingPathComponent("youtube_downloads.json"))

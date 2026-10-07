@@ -143,6 +143,14 @@ struct YouTubeVideo: Codable, Identifiable, Hashable {
     }
 }
 
+extension YouTubeVideo {
+    /// A downloaded video, as the manifest knows it: no duration, date or thumbnail.
+    init(download: YouTubeDownload) {
+        self.init(videoId: download.videoId, title: download.title, channelId: download.channelId,
+                  duration: nil, publishedAt: nil)
+    }
+}
+
 /// Which form of a video a download is: its audio track or the MP4. A video can have both.
 enum YouTubeMediaKind: String, Codable, CaseIterable {
     case audio, video

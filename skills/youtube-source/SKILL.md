@@ -14,9 +14,10 @@ Subscribe to YouTube channels in the **Radio tab** and browse their uploads. A v
    name: **Search** tab, type, press Enter, then double-click a result (or right-click →
    **Subscribe**). Results show `@handle · followers`; a ✓ marks channels already subscribed
 3. Channel appears as a folder; expand to see uploads
-4. Right-click a video (or double-click / Enter, which pops the same menu) → **Audio ▸** or **Video ▸** →
-   Play, Play and Replace Queue, Add to Playlist, Play Next or Add to Queue. That form downloads first
-   if it isn't on disk; the row shows a spinner meanwhile and a `⬇ ` once a file is there
+4. Right-click a video → **Audio ▸** or **Video ▸** → Play, Play and Replace Queue, Add to Playlist,
+   Play Next or Add to Queue. That form downloads first if it isn't on disk; the row shows a spinner
+   meanwhile and a `⬇ ` once a file is there. Double-click / Enter plays the one form on disk, and
+   otherwise (both forms, or neither) pops the same menu
 5. **Library → YouTube → Set Download Folder…** to choose where downloads live
 6. **Library → YouTube → Audio Format** and **Video Quality** to pick what those downloads are
 7. **Library → YouTube → Videos per Channel** to pick how many recent uploads to list (50 / 100 / 200 / 500)
@@ -29,6 +30,7 @@ Sources/NullPlayer/
 │   ├── YouTubeModels.swift          # Channel, ChannelSearchResult, Video, Download, MediaKind, AudioFormat, VideoQuality
 │   ├── YouTubeManager.swift         # Singleton: channels, channel search, video listing, downloads, manifest (youtube_downloads.json)
 │   ├── YouTubeVideoActions.swift    # A video row's Audio ▸ / Video ▸ menu and its downloads (both browsers)
+│   ├── YouTubeRows.swift            # Every YouTube list row (Channels tab, channel search, Local search), both browsers
 │   └── YouTubeChannelSearch.swift   # The Search tab's channel search (both browsers)
 ├── Utilities/
 │   ├── LibraryRowThumbnails.swift   # Round list-row thumbnails for every library row (see ui-guide)
@@ -229,8 +231,9 @@ whole per-video flow, so both browsers' YouTube-video branches are one call each
   mapped to the same engine calls the library's local-track handlers make), then, for whatever is
   on disk, **Show in Finder** (selects every file of the video) and **Remove Audio File** /
   **Remove Video File**.
-  `popUpMenu(for:in:)` pops the same items at the mouse for double-click and Enter (so Enter also
-  pops at the cursor, not the row).
+  `activate(_:in:)` is double-click and Enter: a video with exactly one form on disk plays it
+  (`TrackVerb.play`); with both, or neither, it pops the same items at the mouse (so Enter also
+  pops at the cursor, not the row). Nothing is fetched or picked without a choice.
 - A verb on a form that is on disk runs now. Otherwise it awaits that form's download:
   `fetches[Key]` is the single in-flight state, and a repeat request for the same video + kind
   awaits the running download instead of starting a second yt-dlp onto the same file. A waiting
@@ -244,6 +247,41 @@ whole per-video flow, so both browsers' YouTube-video branches are one call each
   landed or was removed) makes the view rebuild its rows.
 - A row's art is `YouTubeManager.coverArtFile(for:)` — the audio download's embedded art, else the
   video's — before falling back to the thumbnail.
+
+### Local search (YouTube section)
+
+The **Local** source's Search tab ends with a **YouTube (N)** section after Artists, Albums and
+Tracks, in both browsers. `YouTubeManager.localSearch(query:excluding:)` decides what matches and
+`YouTubeRowBuilder.localSearch` shapes the rows (see *Row builder* below). No network: it reads the
+subscriptions and the manifest.
+
+- **Channels**: subscriptions whose title contains the query, as `.youtubeChannel` rows at indent 1
+  that expand in place (uploads at indent 2) and share `expandedYouTubeChannels` with the Channels
+  tab. Expanding fetches uploads, as on that tab.
+- **Downloads**: manifest entries whose title contains the query, one `.youtubeVideo` row per video
+  (`YouTubeVideo(download:)` — no duration, date or thumbnail URL, so those columns are blank), A–Z,
+  row ids `youtube-download-<videoId>`. Matching is `localizedStandardContains` (case- and
+  accent-insensitive) on a trimmed query. A video whose audio and video entries carry different
+  titles takes the audio entry's (as `coverArtFile` prefers the audio file).
+- **No double listing**: the download folder may also be a watch folder, so `.mp3`/`.flac`
+  downloads can already be under Tracks. The view passes the Tracks section's file URLs; a video is
+  dropped when `Set(downloadedFiles(for:).values).isSubset(of: listed)` — which also drops a video
+  with nothing on disk (the empty set). Compared as `standardizedFileURL`. A download already shown
+  as an upload under an expanded matching channel is dropped too, and N counts only rows shown.
+- **Column header**: these rows carry their own columns (`.youtube` group) but the Local search draws
+  no header for them. Hit tests must ask `hasColumnHeader` (= `headerColumnsForCurrentContent() !=
+  nil`, what drawing asks), never "does any row have columns" — with only YouTube results that
+  shifted every click one row up onto the section header. MISC_TASKS M8 makes one layout function
+  per view so the two cannot disagree.
+
+### Row builder (`YouTubeRows.swift`)
+
+Every YouTube list row in both browsers comes from `YouTubeRowBuilder`, built per rebuild from the
+view's `expandedYouTubeChannels` and `youtubeChannelVideos`: `channels(_:)` (Channels tab),
+`channelSearch(_:)` (the YouTube source's Search tab) and `localSearch(query:excluding:)`. It
+returns view-independent `YouTubeRow`s, and each view maps them with a ten-line
+`ModernDisplayItem(_:)` / `PlexDisplayItem(_:)`. Row ids, titles, indents, the `⬇ ` marker and the
+section headers are decided there only, so a change to YouTube rows is made once, not per browser.
 
 ### Download Flow
 
@@ -317,5 +355,5 @@ Downloaded files are local `file://` tracks. After download completes, the `Trac
 - **Streaming playback not offered**: YouTube streams (live, members-only, age-restricted) may fail silently if yt-dlp can't extract them; only downloadable videos are listed
 - **Video titles from yt-dlp**: Source of truth is yt-dlp's title extraction; titles are not synced with YouTube's API and may differ from what the web UI shows
 - **YouTube has its own session sort (default date order)**: The channels tab must NOT inherit the persisted library column sort (`columnSortId`, saved per tab by `LibraryBrowserTabSortStore`), or every rebuild — including after a download — re-sorts videos to A–Z. Both views keep session-only `youtubeColumnSortId`/`youtubeColumnSortAscending` (default nil = yt-dlp's newest-first order), read through `activeColumnSortId`/`activeColumnSortAscending` by every sort/header-draw path. A header click in the YouTube tab sets the session sort only; it never writes the library sort. This state resets to date order on relaunch (intended).
-- **Downloaded marker is rebuild-driven**: A downloading video draws a per-row spinner gated on `youtubeVideoActions.isFetching`; the **`⬇ ` prefix** (either form on disk) is added in `buildYouTubeChannelItems` from `isDownloaded`. `onFilesChanged` fires when the download lands, and the view's handler calls `rebuildCurrentModeItems()` (adds the marker; the spinner is gone because the fetch left `fetches`) — so the spinner→icon transition only works because the row stays put, which is why the session-sort fix above matters (an A–Z re-sort would relocate the row mid-transition).
+- **Downloaded marker is rebuild-driven**: A downloading video draws a per-row spinner gated on `youtubeVideoActions.isFetching`; the **`⬇ ` prefix** (either form on disk) is added by `YouTubeRowBuilder` from `isDownloaded`. `onFilesChanged` fires when the download lands, and the view's handler calls `rebuildCurrentModeItems()` (adds the marker; the spinner is gone because the fetch left `fetches`) — so the spinner→icon transition only works because the row stays put, which is why the session-sort fix above matters (an A–Z re-sort would relocate the row mid-transition).
 - **Channels tab uses the `.youtube` column group, not the radio column path**: Don't route YouTube videos through `internetRadioColumns` — those columns are fixed-width by design. Video rows use `youtubeColumns` (`[.thumbnail, .title, .youtubeDate, .duration]`) via the resizable `LibraryColumnVisibilityGroup.youtube` group; adding/changing that enum requires updating every exhaustive `switch group` in both `ModernLibraryBrowserView` and `PlexBrowserView`
