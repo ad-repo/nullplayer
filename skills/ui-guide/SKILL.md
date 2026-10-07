@@ -714,7 +714,7 @@ untouched; audio state is deliberately never snapshotted.
 
 **`WindowManager.reloadUI(to:)`** orchestration:
 1. `captureModeDependentLayout()` — snapshot which mode-dependent windows are open + frames; snapshot Compact Mode.
-2. `teardownModeDependentWindows()` — synchronous; completion gates recreation. Orders out, calls `prepareForUITeardown()` on each controller (cancels tasks/timers, stops render loops, unregisters audio consumers), detaches docked children, `close()` + nils the mode-dependent controllers, clears drag/snap/dock state, and flushes the `ObjectIdentifier`-keyed geometry caches. **Preserves `videoPlayerWindowController`** (mode-independent — closing it stops playback/casts).
+2. `teardownModeDependentWindows()` — synchronous; completion gates recreation. Orders out, calls `prepareForUITeardown()` on each controller (cancels tasks/timers, stops render loops, unregisters audio consumers), detaches docked children, `close()` + nils the mode-dependent controllers, clears drag/snap/dock state, and flushes the `ObjectIdentifier`-keyed geometry caches. **Preserves `videoPlayerWindowController`** (`video-playback` § *Window lifetime*).
 3. Flip `isModernUIEnabled` — the `show*()` paths read it to choose classic vs. modern controllers, so it must change *between* teardown and recreate.
 4. `prepareUIRuntime(forModernUI:)` — `ModernSkinEngine.shared.loadPreferredSkin()` entering modern; reset classic spectrum transparent-bg keys entering classic. Classic `currentSkin` is loaded once at init and survives, so no classic reload is needed for a plain mode toggle (skin-driven classic switches load the chosen skin via `loadSkin` *before* `reloadUI`).
 5. `audioEngine.applyEQLayout(forModernUI:)` — reprograms the shared fixed-21-band EQ node to the target layout (mirrors to the streaming player internally); guard-idempotent.
@@ -810,7 +810,7 @@ These are subtle and only reproduce with multiple Spaces / a fullscreen app on a
 
 - `exitCompactMode` restores asynchronously (state stays `.exiting` until a deferred block), so a synchronous re-enter hits the `.regular` guard and is silently dropped. `exitCompactMode` is **completion-based**; run the teardown/rebuild/re-enter inside the completion.
 - Pass `exitCompactMode(restoreRegularWindows: false)` on this path: re-showing the still-hidden `.managed` regular windows would pull the user to whatever Space they live on. Derive the rebuild snapshot from the pre-compact capture (`modeDependentLayout(from: regularWindowSnapshot)`) instead of the live (hidden) windows.
-- `enterCompactMode()` re-captures `regularWindowSnapshot` from the live windows, which **loses hidden mode-independent app panels** (they survive teardown but stay hidden). Carry those fields forward with `reapplyModeIndependentWindows(from:)` after the rebuild. The video player and debug console are exempt from Compact Mode hiding and stay visible throughout.
+- `enterCompactMode()` re-captures `regularWindowSnapshot` from the live windows, which **loses hidden mode-independent app panels** (they survive teardown but stay hidden). Carry those fields forward with `reapplyModeIndependentWindows(from:)` after the rebuild. The debug console is exempt from Compact Mode hiding and stays visible throughout, as does the video player (`video-playback` § *Window lifetime*).
 
 ### Compact window reveal positioning
 

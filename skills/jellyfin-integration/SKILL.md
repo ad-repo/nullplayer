@@ -128,10 +128,8 @@ Jellyfin tracks in the playlist are identified by:
 
 ## Video Playback Reporter
 
-`JellyfinVideoPlaybackReporter` mirrors `PlexVideoPlaybackReporter` with Jellyfin API:
-- Video scrobble threshold: 90% (vs 50% for audio)
-- Minimum play time: 60s before scrobbling
-- Periodic timeline updates every 10s via `POST /Sessions/Playing/Progress` with `PositionTicks`
+`JellyfinVideoPlaybackReporter` follows the shared video reporting rules (`video-playback` § *Server progress reporting*). The API side:
+- Timeline updates via `POST /Sessions/Playing/Progress` with `PositionTicks`
 - Tracks pause/resume state with `IsPaused` flag
 - Uses ticks (1 tick = 100ns, `seconds × 10_000_000`) for Jellyfin API
 

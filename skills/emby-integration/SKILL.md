@@ -130,10 +130,8 @@ Emby tracks in the playlist are identified by:
 
 ## Video Playback Reporter
 
-`EmbyVideoPlaybackReporter` mirrors `JellyfinVideoPlaybackReporter`:
-- Video scrobble threshold: 90% (vs 50% for audio)
-- Minimum play time: 60s before scrobbling
-- Periodic timeline updates every 10s via `POST /Sessions/Playing/Progress` with `PositionTicks`
+`EmbyVideoPlaybackReporter` follows the shared video reporting rules (`video-playback` § *Server progress reporting*). The API side:
+- Timeline updates via `POST /Sessions/Playing/Progress` with `PositionTicks`
 - Tracks pause/resume state with `IsPaused` flag
 - Uses ticks (`seconds × 10_000_000`) for Emby API
 
@@ -181,7 +179,6 @@ Emby tracks support casting to Sonos, Chromecast, and DLNA devices:
 - `CastManager.castEmbyMovie(_:to:startPosition:)` — cast a movie
 - `CastManager.castEmbyEpisode(_:to:startPosition:)` — cast an episode
 - Stream URL uses `/Videos/{id}/stream?static=true&api_key={token}`
-- `VideoPlayerWindowController.play(embyMovie:)` / `play(embyEpisode:)` for local playback
 
 ## Credential Storage
 
