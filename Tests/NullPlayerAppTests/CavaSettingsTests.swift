@@ -302,6 +302,8 @@ final class CavaSettingsTests: XCTestCase {
             "HyperPopPrism",
             "IndustrialSignal",
             "NeonWave",
+            "NullPlayer-Orange",
+            "October",
             "Sakura Minimal",
             "SeaGlass",
             "Skulls",

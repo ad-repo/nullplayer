@@ -94,14 +94,14 @@ class ModernSkinLoader {
         }
     }
 
-    /// Load the default bundled skin (NeonWave)
+    /// Load the default bundled skin (`ModernSkinFamily.modern.defaultSkinName`)
     func loadDefault() -> ModernSkin {
-        // Try to find NeonWave in the resource bundle
-        if let skinDir = findBundledSkinDirectory("NeonWave") {
+        let name = ModernSkinFamily.modern.defaultSkinName
+        if let skinDir = findBundledSkinDirectory(name) {
             do {
                 return try load(from: skinDir)
             } catch {
-                NSLog("ModernSkinLoader: Failed to load bundled NeonWave: %@", error.localizedDescription)
+                NSLog("ModernSkinLoader: Failed to load bundled %@: %@", name, error.localizedDescription)
             }
         }
         

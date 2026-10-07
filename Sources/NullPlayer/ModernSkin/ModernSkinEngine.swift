@@ -101,7 +101,7 @@ class ModernSkinEngine {
         NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
     }
 
-    /// Load the default bundled skin (NeonWave)
+    /// Load the default bundled skin (`ModernSkinFamily.modern.defaultSkinName`)
     func loadDefaultSkin() {
         loadDefaultSkin(for: .modern)
     }
