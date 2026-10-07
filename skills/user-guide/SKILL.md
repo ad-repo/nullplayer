@@ -196,7 +196,8 @@ Library Browser → **Source: YouTube**. Subscribe to channels (**+ADD**, or fin
 - **A video's menu** (right-click): **Audio ▸** and **Video ▸**, each with the library's four play
   verbs (Play · Play and Replace Queue · Play Next · Add to Queue). That form downloads first if it isn't on disk
   (row spinner), then plays or queues. A video can have both its audio and its video downloaded;
-  `⬇ ` marks a row with a download. Below: **Show in Finder**, **Remove Audio File**, **Remove Video
+  `♫` marks a row whose audio is on disk and `▶` one whose video is (both when both are), in the
+  Channels tab and the Local search alike. Below: **Show in Finder**, **Remove Audio File**, **Remove Video
   File** (only what is on disk).
 - **Double-click / Enter** plays the video's one downloaded form (audio in the player, video in the
   video window); with both forms, or none, it opens the menu above.

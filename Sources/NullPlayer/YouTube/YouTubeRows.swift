@@ -1,7 +1,7 @@
 import Foundation
 
 /// A YouTube list row, shaped once for both library browsers. Each browser maps it to its own
-/// display item, so row ids, titles, indents and the `⬇ ` marker are decided here only.
+/// display item, so row ids, titles, indents and title prefixes are decided here only.
 struct YouTubeRow {
     enum Kind {
         case header
@@ -10,7 +10,10 @@ struct YouTubeRow {
     }
 
     let id: String
+    /// The item's own name, which sorting, the alphabet index and type-ahead read.
     let title: String
+    /// Drawn ahead of `title` only: the downloaded-form markers, or `✓` on a subscribed result.
+    var titlePrefix: String? = nil
     var info: String? = nil
     let indentLevel: Int
     let kind: Kind
@@ -46,8 +49,8 @@ struct YouTubeRowBuilder {
             var channel = subscription ?? result.channel
             channel.avatarURL = channel.avatarURL ?? result.channel.avatarURL
             let info = result.infoText
-            return channelRows(channel, id: "youtube-search-\(result.channelId)",
-                               title: (subscription != nil ? "✓ " : "") + result.channel.title,
+            return channelRows(channel, id: "youtube-search-\(result.channelId)", title: result.channel.title,
+                               titlePrefix: subscription != nil ? "✓" : nil,
                                info: info.isEmpty ? nil : info, indentLevel: 0)
         }
     }
@@ -62,7 +65,7 @@ struct YouTubeRowBuilder {
         }
         let shownUploads = Set(found.channels.flatMap(expandedUploads(of:)).map(\.videoId))
         let downloads = found.videos.filter { !shownUploads.contains($0.videoId) }.map {
-            YouTubeRow(id: "youtube-download-\($0.videoId)", title: $0.title, indentLevel: 1, kind: .video($0))
+            videoRow($0, id: "youtube-download-\($0.videoId)", indentLevel: 1)
         }
         let count = found.channels.count + downloads.count
         guard count > 0 else { return [] }
@@ -71,17 +74,36 @@ struct YouTubeRowBuilder {
     }
 
     /// A channel row, then its uploads indented one level under it.
-    private func channelRows(_ channel: YouTubeChannel, id: String, title: String, info: String? = nil,
-                             indentLevel: Int) -> [YouTubeRow] {
-        let row = YouTubeRow(id: id, title: title, info: info, indentLevel: indentLevel, kind: .channel(channel))
-        return [row] + expandedUploads(of: channel).map { video in
-            YouTubeRow(id: "youtube-video-\(video.videoId)",
-                       title: (manager.isDownloaded(video.videoId) ? "⬇ " : "") + video.title,
-                       info: video.formattedDuration, indentLevel: indentLevel + 1, kind: .video(video))
+    private func channelRows(_ channel: YouTubeChannel, id: String, title: String, titlePrefix: String? = nil,
+                             info: String? = nil, indentLevel: Int) -> [YouTubeRow] {
+        let row = YouTubeRow(id: id, title: title, titlePrefix: titlePrefix, info: info, indentLevel: indentLevel,
+                             kind: .channel(channel))
+        return [row] + expandedUploads(of: channel).map {
+            videoRow($0, id: "youtube-video-\($0.videoId)", indentLevel: indentLevel + 1)
         }
+    }
+
+    /// A video row, its title prefixed by one marker per form on disk. The files are checked here,
+    /// once per rebuild, never while drawing: the list redraws at 10 Hz under a download spinner
+    /// and the download folder may be a network mount.
+    private func videoRow(_ video: YouTubeVideo, id: String, indentLevel: Int) -> YouTubeRow {
+        let onDisk = manager.downloadedFiles(for: video.videoId)
+        let markers = YouTubeMediaKind.allCases.filter { onDisk[$0] != nil }.map(\.rowMarker)
+        return YouTubeRow(id: id, title: video.title, titlePrefix: markers.isEmpty ? nil : markers.joined(separator: " "),
+                          info: video.formattedDuration, indentLevel: indentLevel, kind: .video(video))
     }
 
     private func expandedUploads(of channel: YouTubeChannel) -> [YouTubeVideo] {
         expanded.contains(channel.id) ? uploads[channel.id] ?? [] : []
+    }
+}
+
+private extension YouTubeMediaKind {
+    /// The row marker for this form on disk: a text glyph, so it takes the row's text color.
+    var rowMarker: String {
+        switch self {
+        case .audio: return "♫"
+        case .video: return "▶\u{FE0E}"
+        }
     }
 }
