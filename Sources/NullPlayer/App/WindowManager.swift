@@ -1720,7 +1720,7 @@ class WindowManager {
     func wmpSkinShowsInActiveView(_ surface: WMPSkinSurface) -> Bool {
         guard uiMode.controllerFamily == .wmp,
               let controller = mainWindowController as? WMPMainWindowController else { return false }
-        return controller.anyOpenViewProvides(surface)
+        return controller.windowShowing(surface) != nil
     }
 
     /// Put away NullPlayer's own playlist or equalizer when the `.wmz` now on screen draws that
@@ -2021,6 +2021,17 @@ class WindowManager {
     func hostVideoOutputInWinampModernSkin() -> Bool {
         guard uiMode.controllerFamily == .winampModern else { return false }
         return (mainWindowController as? WinampModernMainWindowController)?.hostVideoOutput() ?? false
+    }
+
+    /// A play call's reveal: the loaded `.wmz` or `.wal` skin's own video window, opened and given
+    /// key focus. False for every other mode, and for a skin with no video window of its own.
+    @discardableResult
+    func hostVideoOutputInSkin() -> Bool {
+        if uiMode.controllerFamily == .wmp {
+            return (mainWindowController as? WMPMainWindowController)?
+                .revealSkinSurface(.video, switchingViews: true, activate: true) ?? false
+        }
+        return hostVideoOutputInWinampModernSkin()
     }
 
     /// Put the skin's video window away (`autoclose="1"`). False when there is none showing.

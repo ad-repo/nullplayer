@@ -1387,19 +1387,27 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     ///   that view — the same thing the skin's own button does through `theme.openView`. False for
     ///   the restore path, which must never move the user to a different view at launch, and true
     ///   for an explicit toggle from a menu.
+    /// - Parameter activate: give the window showing the surface key focus — now if it is open, and
+    ///   once it exists if it has to be opened, which is a `Task` away. A play call passes true so
+    ///   keys stop going to the Library Browser that started the film, where Return replays the
+    ///   selected row (M5); `.wal`'s `setAuxiliaryWindow(activate:)` is the counterpart.
     @discardableResult
-    func revealSkinSurface(_ surface: WMPSkinSurface, switchingViews: Bool) -> Bool {
+    func revealSkinSurface(_ surface: WMPSkinSurface, switchingViews: Bool,
+                           activate: Bool = false) -> Bool {
         guard skinSurfaces.provides(surface) else { return false }
         // Already on screen in one of this skin's windows: nothing to open, and nothing of ours to
         // add. With real windows this is a question about the whole session rather than about the
         // one view that used to be presented.
-        if materializer.anyOpenView(where: { skinSurfaces.view($0, provides: surface) }) { return true }
+        if let window = windowShowing(surface) {
+            if activate { window.makeKeyAndOrderFront(nil) }
+            return true
+        }
         if switchingViews, let target = skinSurfaces.viewIDs(for: surface).first,
            let player = materializer.playerPresentation {
             // The same call the skin's own button makes. Routing a menu toggle through `openView`
             // rather than a view *switch* is what keeps the player up beside the panel — and it is
             // the panel's own `view.close()` that takes it away again.
-            _ = applyHostCommands([.init(action: "openView", value: .string(target))], from: player)
+            openView(target, from: player, offset: nil, activate: activate)
         }
         return true
     }
@@ -1681,18 +1689,19 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     ///
     /// `offset` is `theme.openViewRelative`'s displacement in skin pixels from `opener`'s top-left.
     private func openView(_ requestedID: String, from opener: WMPViewPresentation?,
-                          offset: CGPoint?) {
+                          offset: CGPoint?, activate: Bool = false) {
         guard let skin = loadedSkin, skin.views.contains(where: {
             $0.id.caseInsensitiveCompare(requestedID) == .orderedSame
         }) else { return }
         if let existing = materializer.presentation(for: requestedID) {
             materializer.raise(existing)
+            if activate { existing.window.makeKey() }
             return
         }
         // Bounded like the covered-view stack it replaces. A skin that opens a window on every tick
         // of its own dispatcher must not be able to open an unbounded number of them.
         guard materializer.openPresentations.count < Self.maximumOpenViews else { return }
-        loadView(requestedID, into: nil, opener: opener, offset: offset)
+        loadView(requestedID, into: nil, opener: opener, offset: offset, activate: activate)
     }
 
     /// `theme.currentViewID` replaces the view inside the **calling** window. The window survives;
@@ -1729,7 +1738,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// view is now genuinely never touched — it is in its own window, still running — which is what
     /// that restore was simulating (W90).
     private func loadView(_ requestedID: String, into existing: WMPViewPresentation?,
-                          opener: WMPViewPresentation?, offset: CGPoint?) {
+                          opener: WMPViewPresentation?, offset: CGPoint?, activate: Bool = false) {
         guard let skin = loadedSkin, let store = imageStore,
               let registration = skin.views.first(where: {
                   $0.id.caseInsensitiveCompare(requestedID) == .orderedSame
@@ -1849,6 +1858,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 apply(skin: skin, store: store, scene: scene, image: rendered.image,
                       overlay: rendered.overlayImage, silhouette: rendered.silhouetteMask,
                       runtime: scriptRuntime, overrides: overrides, into: presentation)
+                // After `apply`, which is what orders the new window in.
+                if activate { presentation.window.makeKey() }
                 if let oldTopLeft {
                     presentation.window.setFrameOrigin(
                         NSPoint(x: oldTopLeft.x, y: oldTopLeft.y - presentation.window.frame.height))
@@ -3970,8 +3981,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// The windows this skin has open, for `WindowManager`'s docking branch.
     var materializedAuxiliaryWindows: [NSWindow] { materializer?.auxiliaryWindows ?? [] }
 
-    /// Whether any open WMP window is showing a view that provides `surface`.
-    func anyOpenViewProvides(_ surface: WMPSkinSurface) -> Bool {
-        materializer?.anyOpenView(where: { skinSurfaces.view($0, provides: surface) }) ?? false
+    /// The open WMP window showing a view that provides `surface`, if any.
+    func windowShowing(_ surface: WMPSkinSurface) -> NSWindow? {
+        materializer?.window(where: { skinSurfaces.view($0, provides: surface) })
     }
 }

@@ -1830,12 +1830,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
 
     /// Where a play call reveals the picture. Parked, that is the skin's own video window (the
     /// `autoopen="1"` every measured holder declares); otherwise this window, exactly as before.
+    ///
+    /// Key focus goes with the picture in every case, or it stays on the Library Browser that started
+    /// the film, where Return replays the selected row from 0 (M5).
     private func revealVideoOutput() {
-        let manager = WindowManager.shared
-        if manager.uiMode.controllerFamily == .wmp,
-           (manager.mainWindowController as? WMPMainWindowController)?
-            .revealSkinSurface(.video, switchingViews: true) == true { return }
-        if WindowManager.shared.hostVideoOutputInWinampModernSkin() { return }
+        if WindowManager.shared.hostVideoOutputInSkin() { return }
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
     }
