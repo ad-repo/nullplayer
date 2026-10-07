@@ -291,7 +291,11 @@ class AudioEngine {
     /// (classic→modern→classic) restores bit-identical gains instead of repeatedly
     /// remapping through the lossy `EQBandRemapper`. The remapper seeds a layout only
     /// the first time it is used.
-    private var canonicalGains: [String: [Float]] = [:]
+    ///
+    /// The source of truth for the live node's gains, not a cache of them: the active layout always
+    /// has an entry (`programEQNode` records the one it applies) and `setEQBand` writes both. Saved
+    /// with the session as `eqBandsByLayout`.
+    private(set) var canonicalGains: [String: [Float]] = [:]
 
     /// Equalizer — a fixed 21-band layout; replaced only during graph failure recovery.
     private var eqNode: AVAudioUnitEQ
@@ -1587,7 +1591,6 @@ class AudioEngine {
         NSLog("AudioEngine: Replacing failed local audio graph")
         let bypass = eqNode.bypass
         let preamp = eqNode.globalGain
-        canonicalGains[activeEQConfiguration.name] = Array(eqNode.bands.prefix(activeEQConfiguration.bandCount)).map(\.gain)
         NotificationCenter.default.removeObserver(self, name: .AVAudioEngineConfigurationChange, object: engine)
         // This is the engine that just raised an Objective-C exception. `mainMixerNode`
         // realizes a connection on first access and `stop()` walks the same broken graph,
@@ -1869,33 +1872,31 @@ class AudioEngine {
 
         activeEQConfiguration = config
 
-        // Apply this layout's canonical gains to its active bands (flat if unseeded).
+        // Apply this layout's canonical gains to its active bands (flat if unseeded), and record
+        // them, so the active layout always has an entry.
         let gains = canonicalGains[config.name] ?? Array(repeating: 0, count: config.bandCount)
-        for index in 0..<config.bandCount where index < gains.count {
-            eqNode.bands[index].gain = gains[index]
+        canonicalGains[config.name] = gains
+        for (index, gain) in gains.enumerated() {
+            eqNode.bands[index].gain = gain
         }
     }
 
+    /// A layout's first use starts from another layout's curve, remapped; from then on it keeps
+    /// its own.
+    private func seedGainsIfUnused(_ target: EQConfiguration, from source: EQConfiguration) {
+        guard canonicalGains[target.name] == nil, let sourceGains = canonicalGains[source.name] else { return }
+        canonicalGains[target.name] = EQBandRemapper.remap(gains: sourceGains, from: source, to: target)
+    }
+
     /// Switch the active EQ layout (modern ↔ classic) on the live node without
-    /// rebuilding it. Saves the outgoing layout's exact gains, programs the new
-    /// layout, restores its canonical gains (seeding from the previous layout via
-    /// `EQBandRemapper` only the first time a layout is used), and mirrors the change
-    /// to the streaming player. Used by the live UI-mode switch.
+    /// rebuilding it. Programs the new layout, restores its canonical gains (seeding
+    /// from the previous layout only the first time a layout is used), and mirrors the
+    /// change to the streaming player. Used by the live UI-mode switch.
     func applyEQLayout(forModernUI isModernUI: Bool) {
         let target = EQConfiguration.forModernUI(isModernUI)
         guard target != activeEQConfiguration else { return }
 
-        let previous = activeEQConfiguration
-        // Save the outgoing layout's exact gains, read from the live node.
-        var previousGains: [Float] = []
-        for i in 0..<previous.bandCount { previousGains.append(eqNode.bands[i].gain) }
-        canonicalGains[previous.name] = previousGains
-
-        // Seed the target layout's canonical gains only if it has never been used.
-        if canonicalGains[target.name] == nil {
-            canonicalGains[target.name] = EQBandRemapper.remap(gains: previousGains, from: previous, to: target)
-        }
-
+        seedGainsIfUnused(target, from: activeEQConfiguration)
         programEQNode(for: target)
 
         // Mirror the structural switch to both streaming graphs. The secondary player may be
@@ -6342,27 +6343,36 @@ class AudioEngine {
         guard band >= 0 && band < activeEQConfiguration.bandCount else { return }
         let clampedGain = max(-12, min(12, gain))
         eqNode.bands[band].gain = clampedGain
-        recordCanonicalGain(band, gain: clampedGain)
+        // Keep the canonical curve exact, so a later layout switch restores it without remapping.
+        canonicalGains[activeEQConfiguration.name]?[band] = clampedGain
         // Sync to streaming player
         streamingPlayer?.setEQBand(band, gain: clampedGain)
     }
 
-    /// Keep the active layout's canonical gain array in sync with live band edits so a
-    /// later layout switch can restore exact gains without re-remapping.
-    private func recordCanonicalGain(_ band: Int, gain: Float) {
-        var gains = canonicalGains[activeEQConfiguration.name] ?? Array(repeating: 0, count: activeEQConfiguration.bandCount)
-        if gains.count != activeEQConfiguration.bandCount {
-            gains = Array(repeating: 0, count: activeEQConfiguration.bandCount)
-        }
-        guard band >= 0 && band < gains.count else { return }
-        gains[band] = gain
-        canonicalGains[activeEQConfiguration.name] = gains
-    }
-    
     /// Get EQ band gain
     func getEQBand(_ band: Int) -> Float {
         guard band >= 0 && band < activeEQConfiguration.bandCount else { return 0 }
         return eqNode.bands[band].gain
+    }
+
+    /// Replace every layout's gains with a saved session's and apply the active one. A layout the
+    /// session never used is seeded from one it did, the same way `applyEQLayout` seeds it.
+    func restoreEQGains(_ gainsByLayout: [String: [Float]]) {
+        canonicalGains = [:]
+        for layout in EQConfiguration.persistedLayouts {
+            if let gains = gainsByLayout[layout.name], gains.count == layout.bandCount {
+                canonicalGains[layout.name] = gains
+            }
+        }
+        let active = activeEQConfiguration
+        if let source = EQConfiguration.persistedLayouts.first(where: { canonicalGains[$0.name] != nil }) {
+            seedGainsIfUnused(active, from: source)
+        }
+        programEQNode(for: active)
+        syncEQToStreamingPlayer()
+        if let crossfadeStreamingPlayer {
+            syncEQToStreamingPlayer(crossfadeStreamingPlayer)
+        }
     }
     
     /// Set preamp gain (-12 to +12 dB)

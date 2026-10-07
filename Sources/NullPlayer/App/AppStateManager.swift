@@ -115,8 +115,9 @@ class AppStateManager {
         // Preserves content type across restarts so Sonos casting doesn't default to audio/mpeg
         var contentType: String?
         
-        /// Create from a Track
-        static func from(_ track: Track) -> SavedTrack {
+        /// Create from a Track. `radioStations` names a radio stream; it is passed in rather than
+        /// read from `RadioManager` because saving runs off the main thread.
+        static func from(_ track: Track, radioStations: [RadioStation]) -> SavedTrack {
             if track.url.isFileURL {
                 return SavedTrack(
                     localURL: track.url.absoluteString,
@@ -168,7 +169,7 @@ class AppStateManager {
             } else if !track.url.isFileURL {
                 // Non-file URL without streaming service IDs = radio/internet stream
                 // Match against known radio stations for station name
-                let stationName = RadioManager.shared.stations.first(where: { $0.url == track.url })?.name
+                let stationName = radioStations.first(where: { $0.url == track.url })?.name
                 return SavedTrack(
                     radioURL: track.url.absoluteString,
                     radioStationName: stationName ?? track.title,
@@ -280,8 +281,15 @@ class AppStateManager {
         var eqEnabled: Bool
         var eqAutoEnabled: Bool = false
         var eqPreamp: Float
+        /// The active layout's bands only, copied from `eqBandsByLayout`. Written for older builds
+        /// alone, which decode it as required — without it a downgrade would lose the whole saved
+        /// session. This build never reads it except to upgrade a state with no `eqBandsByLayout`.
         var eqBands: [Float]
-        
+        /// Every EQ layout's own curve, keyed by `EQConfiguration.name` — the engine's
+        /// `canonicalGains`, so Classic's 10 bands and Original's 21 each survive a relaunch in the
+        /// other family exactly instead of being remapped from one another.
+        var eqBandsByLayout: [String: [Float]]
+
         // Playback state
         var playlistTracks: [SavedTrack]  // All tracks including streaming
         var playlistURLs: [String]?  // Legacy - for backward compatibility reading old saved states
@@ -333,7 +341,7 @@ class AppStateManager {
             case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, projectMWindowFrame, spectrumWindowFrame, audioAnalysisWindowFrame, peppyMeterWindowFrame, networkMonitorWindowFrame, cavaWindowFrame, sonosWindowFrame, waveformWindowFrame, isProjectMFullscreen
             case volume, balance, shuffleEnabled, repeatEnabled, gaplessPlaybackEnabled, volumeNormalizationEnabled
             case sweetFadeEnabled, sweetFadeDuration
-            case eqEnabled, eqAutoEnabled, eqPreamp, eqBands
+            case eqEnabled, eqAutoEnabled, eqPreamp, eqBands, eqBandsByLayout
             case playlistTracks, playlistURLs, currentTrackIndex, playbackPosition, wasPlaying
             case timeDisplayMode, isAlwaysOnTop
             case customSkinPath
@@ -405,7 +413,12 @@ class AppStateManager {
             eqEnabled = try container.decode(Bool.self, forKey: .eqEnabled)
             eqAutoEnabled = try container.decodeIfPresent(Bool.self, forKey: .eqAutoEnabled) ?? false
             eqPreamp = try container.decode(Float.self, forKey: .eqPreamp)
-            eqBands = try container.decode([Float].self, forKey: .eqBands)
+            let activeBands = try container.decode([Float].self, forKey: .eqBands)
+            eqBands = activeBands
+            // States written before each layout kept its own curve carry only the active one.
+            eqBandsByLayout = try container.decodeIfPresent([String: [Float]].self, forKey: .eqBandsByLayout)
+                ?? EQConfiguration.persistedLayout(forBandCount: activeBands.count).map { [$0.name: activeBands] }
+                ?? [:]
             
             // Playback state - try new format first, fall back to legacy
             if let tracks = try container.decodeIfPresent([SavedTrack].self, forKey: .playlistTracks) {
@@ -493,6 +506,7 @@ class AppStateManager {
             eqAutoEnabled: Bool,
             eqPreamp: Float,
             eqBands: [Float],
+            eqBandsByLayout: [String: [Float]],
             playlistTracks: [SavedTrack],
             currentTrackIndex: Int,
             playbackPosition: Double,
@@ -552,6 +566,7 @@ class AppStateManager {
             self.eqAutoEnabled = eqAutoEnabled
             self.eqPreamp = eqPreamp
             self.eqBands = eqBands
+            self.eqBandsByLayout = eqBandsByLayout
             self.playlistTracks = playlistTracks
             self.playlistURLs = nil  // Legacy, not used
             self.currentTrackIndex = currentTrackIndex
@@ -596,21 +611,48 @@ class AppStateManager {
     // MARK: - Initialization
     
     private init() {
-        // Register default value (disabled by default)
+        // On by default: a player that forgets its EQ and playlist on every quit reads as broken.
+        // An explicit choice in the menu still wins over this registered default.
         UserDefaults.standard.register(defaults: [
-            Keys.rememberStateEnabled: false
+            Keys.rememberStateEnabled: true
         ])
     }
-    
-    // MARK: - Save State
-    
-    /// Save the current application state
-    func saveState() {
-        guard isEnabled else {
-            NSLog("AppStateManager: Remember State disabled, skipping save")
-            return
+
+    // MARK: - Autosave
+
+    private var autosaveTimer: Timer?
+
+    /// Quitting is not the only way the app ends: a dead battery, a crash or a force quit never
+    /// reach `applicationWillTerminate`. Save periodically and before the machine sleeps, so the
+    /// session survives those too. The launch starts it once both restores have applied — never
+    /// earlier, or it overwrites the saved session with the empty one the app starts with.
+    func startAutosave() {
+        guard autosaveTimer == nil else { return }
+        autosaveTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            self?.saveState()
         }
-        
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.willSleepNotification, NSWorkspace.willPowerOffNotification] {
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.saveStateAndWait()
+            }
+        }
+    }
+
+    // MARK: - Save State
+
+    /// Encodes, compares and writes the saved state, so none of it runs on the main thread.
+    private let saveQueue = DispatchQueue(label: "AppStateManager.save", qos: .utility)
+    /// The last state written. Read and written only on `saveQueue`.
+    private var lastSavedStateData: Data?
+
+    /// Save the current application state. Only capturing it runs here, on the main thread, and
+    /// that costs the same however long the playlist is; turning the playlist into `SavedTrack`s,
+    /// encoding and writing happen on `saveQueue`. Writes, and logs, only when the state changed
+    /// since the last save, so idle autosave ticks write nothing.
+    func saveState() {
+        guard isEnabled else { return }
+
         let wm = WindowManager.shared
         let engine = wm.audioEngine
 
@@ -624,6 +666,11 @@ class AppStateManager {
             browserBrowseMode = wm.plexBrowserBrowseMode
         }
         
+        // Copies of value-type arrays: O(1) here, and safe to read on `saveQueue`.
+        let playlist = engine.playlist
+        let radioStations = RadioManager.shared.stations
+        let eqGains = engine.canonicalGains
+
         // Capture window visibility
         let state = AppState(
             // Window visibility
@@ -673,14 +720,14 @@ class AppStateManager {
             eqEnabled: engine.isEQEnabled(),
             eqAutoEnabled: UserDefaults.standard.bool(forKey: "EQAutoEnabled"),
             eqPreamp: engine.getPreamp(),
-            eqBands: (0..<engine.eqConfiguration.bandCount).map { engine.getEQBand($0) },
-            
+            eqBands: eqGains[engine.eqConfiguration.name] ?? [],
+            eqBandsByLayout: eqGains,
+
             // Playback state - save all tracks with metadata for restoration,
             // but do not save the selected/current track. Setting the index to -1
             // keeps startup from loading a track solely because state was restored.
-            playlistTracks: engine.playlist.map { track in
-                SavedTrack.from(track)
-            },
+            // Filled from `playlist` on `saveQueue`.
+            playlistTracks: [],
             currentTrackIndex: -1,
             playbackPosition: 0,
             wasPlaying: false,
@@ -714,12 +761,32 @@ class AppStateManager {
                 ? UserDefaults.standard.string(forKey: WinampModernSkinImporter.selectedSkinNameKey)
                 : nil
         )
-        
-        // Encode and save
+
+        saveQueue.async { [self] in
+            var state = state
+            state.playlistTracks = playlist.map { SavedTrack.from($0, radioStations: radioStations) }
+            write(state)
+        }
+    }
+
+    /// `saveState`, returning only once the write is done — for quit, sleep and power-off, after
+    /// which the process may not run again.
+    func saveStateAndWait() {
+        saveState()
+        saveQueue.sync {}
+    }
+
+    /// Encode and store `state` unless it is what was last stored. Runs on `saveQueue`.
+    private func write(_ state: AppState) {
+        dispatchPrecondition(condition: .onQueue(saveQueue))
         do {
             let encoder = JSONEncoder()
+            // Dictionary keys otherwise encode in an unstable order, defeating the change check.
+            encoder.outputFormatting = .sortedKeys
             let data = try encoder.encode(state)
+            if data == lastSavedStateData { return }
             UserDefaults.standard.set(data, forKey: Keys.savedAppState)
+            lastSavedStateData = data
             NSLog("AppStateManager: Saved state - playlist: %d tracks, trackIndex: %d, position: %.1fs, volume: %.2f, doubleSize: %d",
                   state.playlistTracks.count, state.currentTrackIndex, state.playbackPosition, state.volume, state.isDoubleSize ? 1 : 0)
         } catch {
@@ -802,19 +869,6 @@ class AppStateManager {
         }
     }
 
-    private func remappedEQBands(_ savedBands: [Float], for targetLayout: EQConfiguration) -> [Float] {
-        guard !savedBands.isEmpty else {
-            return Array(repeating: 0, count: targetLayout.bandCount)
-        }
-
-        guard let sourceLayout = EQConfiguration.persistedLayout(forBandCount: savedBands.count) else {
-            let normalized = Array(savedBands.prefix(targetLayout.bandCount))
-            return normalized + Array(repeating: 0, count: max(0, targetLayout.bandCount - normalized.count))
-        }
-
-        return targetLayout.gainValues(remapping: savedBands, from: sourceLayout)
-    }
-    
     /// Apply settings state (skin, volume, EQ, windows) - no playlist
     private func applySettingsState(_ state: AppState, completion: (() -> Void)? = nil) {
         let wm = WindowManager.shared
@@ -874,11 +928,8 @@ class AppStateManager {
         engine.setEQEnabled(state.eqEnabled)
         UserDefaults.standard.set(state.eqAutoEnabled, forKey: "EQAutoEnabled")
         engine.setPreamp(state.eqPreamp)
-        let restoredBands = remappedEQBands(state.eqBands, for: engine.eqConfiguration)
-        for (index, gain) in restoredBands.enumerated() {
-            engine.setEQBand(index, gain: gain)
-        }
-        
+        engine.restoreEQGains(state.eqBandsByLayout)
+
         // Restore UI preferences
         if let mode = TimeDisplayMode(rawValue: state.timeDisplayMode) {
             wm.timeDisplayMode = mode
@@ -1732,7 +1783,12 @@ class AppStateManager {
     
     /// Clear the saved state
     func clearSavedState() {
-        UserDefaults.standard.removeObject(forKey: Keys.savedAppState)
+        // On `saveQueue`, after any save already queued, so the clear is not overwritten by one.
+        saveQueue.sync {
+            UserDefaults.standard.removeObject(forKey: Keys.savedAppState)
+            // The next save must write even though the session itself has not changed.
+            lastSavedStateData = nil
+        }
         NSLog("AppStateManager: Cleared saved state")
     }
 }

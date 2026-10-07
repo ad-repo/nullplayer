@@ -30,15 +30,11 @@ public struct EQConfiguration: Equatable, Sendable {
         isModernUI ? .modern21 : .classic10
     }
 
+    /// Every layout a saved session can hold a curve for.
+    public static let persistedLayouts: [EQConfiguration] = [.classic10, .modern21]
+
     public static func persistedLayout(forBandCount count: Int) -> EQConfiguration? {
-        switch count {
-        case classic10.bandCount:
-            return .classic10
-        case modern21.bandCount:
-            return .modern21
-        default:
-            return nil
-        }
+        persistedLayouts.first { $0.bandCount == count }
     }
 
     public static let classic10 = EQConfiguration(
