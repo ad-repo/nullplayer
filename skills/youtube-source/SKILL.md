@@ -29,9 +29,9 @@ Sources/NullPlayer/
 │   ├── YouTubeModels.swift          # Channel, ChannelSearchResult, Video, Download, MediaKind, AudioFormat, VideoQuality
 │   ├── YouTubeManager.swift         # Singleton: channels, channel search, video listing, downloads, manifest (youtube_downloads.json)
 │   ├── YouTubeVideoActions.swift    # A video row's Audio ▸ / Video ▸ menu and its downloads (both browsers)
-│   ├── YouTubeChannelSearch.swift   # The Search tab's channel search (both browsers)
-│   └── YouTubeRowThumbnails.swift   # Shared loader/cache for list-row thumbnails and avatars (both browsers)
+│   └── YouTubeChannelSearch.swift   # The Search tab's channel search (both browsers)
 ├── Utilities/
+│   ├── LibraryRowThumbnails.swift   # Round list-row thumbnails for every library row (see ui-guide)
 │   └── NSImage+SquareCrop.swift     # squareCenterCropped() — 16:9 thumbnails as square art
 ├── Windows/ModernLibraryBrowser/
 │   └── ModernLibraryBrowserView.swift # YouTube folder tree integration
@@ -179,12 +179,12 @@ yt-dlp --flat-playlist -J --playlist-end 20 \
 ### Thumbnails and Avatars
 
 - **Art column**: `youtubeColumns` is `[.thumbnail, .title, .youtubeDate, .duration]` in both
-  browsers; `drawColumnRow` draws the `thumbnail` column as an image (square crop, rounded corners),
-  and a header click on it does not sort. Channel rows are not column rows (they keep the ▶ arrow),
-  so their avatar is drawn round, inline before the title. Images come from
-  `YouTubeRowThumbnails.shared` (fetch on first draw, 64 px square cache, failures not retried,
-  `didLoadNotification` → redraw). The classic browser draws them inside its text counter-flip
-  (y-up there) centred on the row, so the flip leaves the rect unchanged and the image upright.
+  browsers; `drawColumnRow` draws the `thumbnail` column as a round image, and a header click on it
+  does not sort. Channel rows are not column rows (they keep the ▶ arrow), so their avatar is drawn
+  round, inline before the title. Both are ordinary library row thumbnails —
+  `LibraryRowThumbnails.Source.video` / `.channel` through `rowThumbnailSource(for:)`; loading,
+  caching, preload and the hover preview are in `ui-guide` § *Library row thumbnails*. A channel
+  fetches its avatar once at 320 px (`avatarURL(side:)`) and both renditions are cut from it.
 - **Selection art** (the faint backdrop behind the list): `loadArtworkForSelection` handles
   `.youtubeVideo` (embedded art of either download — both carry the same square thumbnail — else `thumbnailURL`) and `.youtubeChannel`
   (`avatarURL`), center-cropped square.

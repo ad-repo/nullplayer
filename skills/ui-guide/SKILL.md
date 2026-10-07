@@ -966,6 +966,53 @@ library list, toggled by a **FLOW** button. It is a visual lens over the browser
   synchronously in the item-mapping pass. Teardown removes the cover flow view in
   `prepareForUITeardown`; toggling the mode off clears the focus stack.
 
+## Library row thumbnails (Library browser, all skin families)
+
+Every library list row that can carry art draws it as a small circle before its title; hovering
+the circle shows the art large, in its own shape, beside the row. Shared code lives in
+`Utilities/`; each browser (`ModernLibraryBrowserView`, `PlexBrowserView`) owns only what is
+genuinely its own.
+
+**Per browser** — three touch points, mirrored in both:
+- `rowThumbnailSource(for:)` maps a display item to a `LibraryRowThumbnails.Source` (a cache key
+  plus an async loader), or nil for rows that never carry art (folders, headers, playlists).
+  It reuses `coverFlowArtwork(for:)` — the Cover Flow loaders above — for artists, albums, tracks
+  and video items, and adds YouTube channels and videos, radio station icons and local playlist
+  tracks. Local albums and artists have no cache key there, so they key on `item:<id>`.
+- A `LibraryRowThumbnailTracker` (`rowThumbnails`): `beginPass(placeholder:)` at the top of
+  `drawListArea`, `draw(...)` at each thumbnail, `hover(at:toScreen:)` from `mouseMoved` (only
+  while the mouse is over the list and not in art-only mode). A row's art goes in its **Art**
+  column when it has one (YouTube videos), otherwise before the title. Every circle gets the
+  placeholder until its art loads or when there is none, so titles never shift. The classic
+  browser draws inside its text counter-flip; a rect centred on the row is the same in its skin
+  coordinates, and `convertFromSkinCoordinates` maps it back for the preview's screen anchor.
+- After the row loop, `LibraryRowThumbnails.shared.preload(around:count:source:)`.
+
+**`LibraryRowThumbnails`** (the shared cache):
+- One load makes both `Renditions`: a 64 px square thumbnail and a preview of at most 400 px in the
+  art's own aspect (never upscaled, flattened onto black). Memory holds 3000 thumbnails and 64 MB
+  of previews; `RowThumbnailDiskCache` holds both on disk.
+- Load order: at most 4 at once; rows on screen first, newest request first (a scroll's landing
+  rows beat the ones it passed); `preload` queues two screens either side of the visible rows,
+  nearest first (`preloadOrder`), behind them. The queue keeps the 300 newest. A key whose load
+  fails is not retried this session. `didLoadNotification` is coalesced to one post per run-loop
+  pass, and both browsers redraw on it.
+- The preview resolves memory → disk → the row's own load moved to the front.
+
+**`RowThumbnailDiskCache`** — `~/Library/Caches/NullPlayer/RowThumbnails`, `<sha256(key)>.png`
+(thumbnail) and `.jpg` (preview); both must exist for a hit. Entries older than 30 days are misses,
+which is how changed server art or retagged files are picked up — until then the cache does not
+know the art changed. Pruned at launch to 200 MB once over 300 MB, oldest first. Missing art is
+not written, so a server that was briefly down never leaves blank circles behind. To force a
+refetch while debugging, delete the folder.
+
+**`RowThumbnailPreview`** — a borderless, non-activating, mouse-transparent panel at
+`.popUpMenu` level, 200 pt on its longer side, right of the hovered circle (left when the screen
+runs out). It hides itself: a local event monitor installed while it is up catches any click,
+scroll or key press, and window close / resign-key / miniaturize notifications cover a browser
+that disappears under it. A browser therefore only shows it on hover and hides it on
+`mouseExited` — do not add hide calls to other event handlers.
+
 ## Window Docking
 
 Complex snapping logic in `WindowManager`:

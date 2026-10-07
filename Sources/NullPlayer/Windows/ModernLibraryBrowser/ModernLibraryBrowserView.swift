@@ -639,6 +639,7 @@ class ModernLibraryBrowserView: NSView {
     private var loadGeneration: Int = 0
     private var isPreparingForUITeardown = false
     private static let artworkCache = NSCache<NSString, NSImage>()
+    private let rowThumbnails = LibraryRowThumbnailTracker()
     private var artworkImages: [NSImage] = []
     private var artworkIndex: Int = 0
     
@@ -862,8 +863,8 @@ class ModernLibraryBrowserView: NSView {
                                                name: YouTubeManager.youtubeChannelsDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(youtubeVideoLimitDidChange),
                                                name: YouTubeManager.youtubeVideoLimitDidChangeNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(youtubeRowThumbnailDidLoad),
-                                               name: YouTubeRowThumbnails.didLoadNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(libraryRowThumbnailDidLoad),
+                                               name: LibraryRowThumbnails.didLoadNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(trackDidChange),
                                                name: .audioTrackDidChange, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(playHistoryDidChange),
@@ -2467,6 +2468,7 @@ class ModernLibraryBrowserView: NSView {
         context.clip(to: listRect)
         
         drawArtworkBackground(in: context, listRect: listRect, artwork: artwork)
+        rowThumbnails.beginPass(placeholder: skin.textDimColor.withAlphaComponent(0.15))
         
         // Draw items (bottom-left origin: item 0 at top of list, so we draw from top down)
         let visibleStart = max(0, Int(scrollOffset / itemHeight))
@@ -2543,11 +2545,10 @@ class ModernLibraryBrowserView: NSView {
                     drawText(indicator, at: NSPoint(x: textX - 12, y: itemRect.midY - 5), withAttributes: indicatorAttrs, context: context)
                 }
 
-                // YouTube channel avatar, round, ahead of the title (channel rows aren't column rows).
-                if case .youtubeChannel(let channel) = item.type {
+                // Round thumbnail ahead of the title: a YouTube channel's avatar, or the item's art.
+                if let thumbnail = rowThumbnailSource(for: item) {
                     let side = itemHeight - 2
-                    YouTubeRowThumbnails.shared.draw(channel: channel, in: context, at: textX + titleSpinnerInset,
-                                                     rowRect: itemRect, side: side)
+                    rowThumbnails.draw(thumbnail, in: context, at: textX + titleSpinnerInset, rowRect: itemRect, side: side)
                     titleSpinnerInset += side + 4
                 }
 
@@ -2577,6 +2578,9 @@ class ModernLibraryBrowserView: NSView {
             }
 
             if isOffline { context.restoreGState() }
+        }
+        LibraryRowThumbnails.shared.preload(around: visibleStart..<visibleEnd, count: displayItems.count) {
+            rowThumbnailSource(for: displayItems[$0])
         }
         
         context.restoreGState()
@@ -2673,12 +2677,13 @@ class ModernLibraryBrowserView: NSView {
         
         var x = rect.minX + indent + 4 - horizontalScrollOffset
         let group = columnGroup(for: item)
+        let hasArtColumn = columns.contains { $0.id == "thumbnail" }
         for column in columns {
             let width = widthForColumn(column, availableWidth: totalWidth, columns: columns, group: group)
             if column.id == "thumbnail" {
-                if case .youtubeVideo(let video) = item.type {
-                    YouTubeRowThumbnails.shared.draw(video: video, in: context, at: x + 4, rowRect: rect,
-                                                     side: max(0, min(width - 8, rect.height - 2)))
+                if let thumbnail = rowThumbnailSource(for: item) {
+                    rowThumbnails.draw(thumbnail, in: context, at: x + 4, rowRect: rect,
+                                       side: max(0, min(width - 8, rect.height - 2)))
                 }
                 x += width
                 continue
@@ -2702,6 +2707,12 @@ class ModernLibraryBrowserView: NSView {
                 let cx = x + 4 + spinnerRadius
                 drawRowSpinner(in: context, center: CGPoint(x: cx, y: rect.midY), radius: spinnerRadius, skin: skin)
                 titleSpinnerInset = spinnerRadius * 2 + 4
+            }
+            // Round art ahead of the title, unless the row has an Art column to hold it.
+            if column.id == "title", !hasArtColumn, let thumbnail = rowThumbnailSource(for: item) {
+                let side = max(0, rect.height - 2)
+                rowThumbnails.draw(thumbnail, in: context, at: x + 4 + titleSpinnerInset, rowRect: rect, side: side)
+                titleSpinnerInset += side + 4
             }
 
             let textSize = value.size(withAttributes: attrs)
@@ -4246,6 +4257,16 @@ class ModernLibraryBrowserView: NSView {
         } else {
             NSCursor.arrow.set()
         }
+        if !isArtOnlyMode, hitTestListArea(at: point) != nil, let window {
+            rowThumbnails.hover(at: point) { window.convertToScreen(convert($0, to: nil)) }
+        } else {
+            LibraryRowThumbnails.shared.preview.hide()
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        LibraryRowThumbnails.shared.preview.hide()
     }
     
     override func rightMouseDown(with event: NSEvent) {
@@ -7802,8 +7823,7 @@ class ModernLibraryBrowserView: NSView {
         }
     }
 
-    @objc private func youtubeRowThumbnailDidLoad() {
-        guard currentSource.isYouTube else { return }
+    @objc private func libraryRowThumbnailDidLoad() {
         needsDisplay = true
     }
 
@@ -12128,6 +12148,30 @@ class ModernLibraryBrowserView: NSView {
             return ("emby:\(id)", { [weak self] in await self?.loadEmbyArtwork(itemId: id, imageTag: song.imageTag) })
         default:
             return (nil, { nil })
+        }
+    }
+
+    /// The art for a row's round thumbnail — `coverFlowArtwork`'s loaders plus YouTube channels
+    /// and videos, radio station icons and local playlist tracks — or nil for rows that never
+    /// carry art.
+    private func rowThumbnailSource(for item: ModernDisplayItem) -> LibraryRowThumbnails.Source? {
+        switch item.type {
+        case .localFolder:
+            return nil
+        case .youtubeChannel(let channel):
+            return .channel(channel)
+        case .youtubeVideo(let video):
+            return .video(video)
+        case .radioStation(let station):
+            guard let icon = station.iconURL?.absoluteString else { return nil }
+            return .init(key: "radio:\(icon)", load: { [weak self] in await self?.loadRemoteArtwork(urlString: icon, cacheNamespace: "radio") })
+        case .localPlaylistTrack(let track):
+            guard track.url.isFileURL else { return nil }
+            return .init(key: "local:\(track.url.path)", load: { [weak self] in await self?.loadLocalArtwork(url: track.url) })
+        default:
+            guard item.type.isCoverFlowItem else { return nil }
+            let (cacheKey, load) = coverFlowArtwork(for: item)
+            return .init(key: cacheKey ?? "item:\(item.id)", load: load)
         }
     }
 

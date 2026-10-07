@@ -11,6 +11,11 @@
   each video's thumbnail, channel rows show the channel's avatar, and selecting a video or channel
   shows its art behind the list. New audio and video downloads embed the thumbnail cropped square,
   so it reads as album art in the player; video downloads had no cover art before.
+- **Round thumbnails on every Library Browser row** — artists, albums, tracks, movies, shows,
+  episodes, radio stations and YouTube videos and channels now show their art as a small circle
+  before the title, from every source, in every skin. Hover the circle to see the art large in its
+  real shape. Thumbnails for the rows just off screen load ahead of a scroll, and all of them are
+  kept on disk, so they show straight away after a relaunch.
 - **Build scripts work with Swift 6.4** — Swift 6.4 switched SwiftPM to a new build system that
   puts the app somewhere else, so `kill_build_run.sh`, `build_dmg.sh` and `build_mas.sh` launched
   or packaged an old build without saying so. The scripts now use SwiftPM's native build system
