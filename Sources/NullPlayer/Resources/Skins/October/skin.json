@@ -1,0 +1,122 @@
+{
+    "meta": {
+        "name": "October",
+        "author": "NullPlayer",
+        "version": "1.0",
+        "description": "The app icon's orange, gold and lemon as accents on a dark warm-brown body, with its white-blue glyph on the transport"
+    },
+    "palette": {
+        "primary": "#ffa526",
+        "secondary": "#f5d44e",
+        "accent": "#fff685",
+        "highlight": "#ffc762",
+        "background": "#1c1006",
+        "surface": "#2e1a07",
+        "text": "#fff1dc",
+        "textDim": "#b07a36",
+        "positive": "#d1cf00",
+        "negative": "#ff5a1f",
+        "warning": "#ffc762",
+        "border": "#ffc762",
+        "timeColor": "#fff685",
+        "marqueeColor": "#ffd27a",
+        "dataColor": "#ffc762",
+        "eqLow": "#d1cf00",
+        "eqMid": "#fea123",
+        "eqHigh": "#ff6a00"
+    },
+    "fonts": {
+        "primaryName": "DepartureMono-Regular",
+        "fallbackName": "Menlo",
+        "titleSize": 9,
+        "bodySize": 10,
+        "smallSize": 7,
+        "timeSize": 22,
+        "infoSize": 6.5,
+        "eqLabelSize": 7,
+        "eqValueSize": 6,
+        "marqueeSize": 12.5,
+        "playlistSize": 8
+    },
+    "background": {
+        "grid": {
+            "color": "#ff9a1f",
+            "spacing": 30,
+            "angle": 78,
+            "opacity": 0.1,
+            "perspective": false
+        }
+    },
+    "glow": {
+        "enabled": true,
+        "radius": 12,
+        "intensity": 0.6,
+        "threshold": 0.65,
+        "color": "#ffb030",
+        "elementBlur": 0.8
+    },
+    "window": {
+        "borderWidth": 1,
+        "borderColor": "#ffc762",
+        "cornerRadius": 14,
+        "opacity": 0.94,
+        "textOpacity": 1.0,
+        "mainSpectrumOpacity": 1.0,
+        "seamlessDocking": 1.0
+    },
+    "marquee": {
+        "scrollSpeed": 28,
+        "scrollGap": 56
+    },
+    "elements": {
+        "titlebar": { "color": "#3a2108" },
+        "spectrum_titlebar": { "color": "#3a2108" },
+        "playlist_titlebar": { "color": "#3a2108" },
+        "eq_titlebar": { "color": "#3a2108" },
+        "library_titlebar": { "color": "#3a2108" },
+        "projectm_titlebar": { "color": "#3a2108" },
+        "marquee_bg": { "color": "#2a1606" },
+        "play_controls": { "color": "#eef2fb" },
+        "seek_fill": { "color": "#ffa526" },
+        "volume_fill": { "color": "#f5d44e" },
+        "spectrum_area": { "color": "#ffa526" },
+        "minicontrol_buttons": { "color": "#fff685" },
+        "playlist_text": { "color": "#d9a05a" },
+        "tab_outline": { "color": "#ffc762" },
+        "tab_text": { "color": "#fff685" }
+    },
+    "animations": {
+        "seek_fill": {
+            "type": "glow",
+            "duration": 3.0,
+            "minValue": 0.5,
+            "maxValue": 1.0
+        }
+    },
+    "visualization": {
+        "mainWindowMode": "Cava",
+        "spectrumWindowMode": "vis_classic",
+        "visClassic": {
+            "mainWindowProfile": "Flames",
+            "spectrumWindowProfile": "Flames",
+            "mainWindowFitToWidth": true,
+            "spectrumWindowFitToWidth": true
+        },
+        "fire": {
+            "mainWindowStyle": "Inferno",
+            "mainWindowIntensity": "Intense",
+            "spectrumWindowStyle": "Inferno",
+            "spectrumWindowIntensity": "Intense"
+        },
+        "lightning": {
+            "mainWindowStyle": "Ember",
+            "spectrumWindowStyle": "Ember"
+        },
+        "matrix": {
+            "mainWindowColorScheme": "Amber",
+            "mainWindowIntensity": "Intense",
+            "spectrumWindowColorScheme": "Amber",
+            "spectrumWindowIntensity": "Intense"
+        }
+    }
+}

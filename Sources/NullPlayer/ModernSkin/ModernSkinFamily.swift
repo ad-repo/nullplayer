@@ -22,7 +22,7 @@ enum ModernSkinFamily {
 
     var defaultSkinName: String {
         switch self {
-        case .modern: return "NeonWave"
+        case .modern: return "NullPlayer-Orange"
         case .metal: return "Brushed Steel"
         }
     }

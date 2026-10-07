@@ -262,7 +262,8 @@ The following skins ship in `Sources/NullPlayer/Resources/Skins/`:
 
 | Skin | Notes |
 |------|-------|
-| **NeonWave** (default) | Cyan/magenta, sprite-based pixel-art title text, perspective grid, seamless docking |
+| **NullPlayer-Orange** (default) | The app icon: orange-to-yellow gradient body (`images/background.png`, stretched per window), white-blue glyph transport, lemon rim glow |
+| **NeonWave** | Cyan/magenta, sprite-based pixel-art title text, perspective grid, seamless docking |
 | **Skulls** | Cream/amber, skull decorations, amber 7-segment digits, lo-fi receiver aesthetic |
 | **ArcticMinimal** | Clean minimal arctic color scheme |
 | **BananaParty** | Bright banana/yellow theme |
@@ -272,6 +273,7 @@ The following skins ship in `Sources/NullPlayer/Resources/Skins/`:
 | **ForgedTitanium** | Dark metallic titanium aesthetic |
 | **HyperPopPrism** | Hyper-saturated prismatic colors |
 | **IndustrialSignal** | Industrial signal/utility aesthetic |
+| **October** | Dark warm-brown body with the icon's orange, gold and lemon as accents |
 | **Sakura Minimal** | Soft pink sakura minimal theme |
 | **SeaGlass** | Teal sea-glass translucent look |
 | **SmoothGlass** | Smooth glass translucent aesthetic |

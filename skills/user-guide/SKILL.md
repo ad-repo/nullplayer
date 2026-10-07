@@ -395,7 +395,7 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - Switches **live, with no restart** — only the mode-dependent window layer is rebuilt; audio, casting, the video player, and playlist/seek/play state continue uninterrupted. Picking a skin in any family's list, or loading one with its **Load Skin...**, while another family is on screen also switches live to that family.
 - Original skins use `skin.json` format
 - Portable Original skin bundles use `.nsz` (ZIP) and can be imported via **Skins > Original > Load Skin...**
-- Bundled Original skins: NeonWave (default), Skulls
+- Bundled Original skins: NullPlayer-Orange (default), October, NeonWave, Skulls, and more
 
 ### Winamp Modern (`.wal`) Mode
 - **Skins > Modern** lists installed Winamp 5.x `.wal` skins, imported with **Load Skin...**; **Get More Skins...** opens WinampHeritage.

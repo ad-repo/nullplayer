@@ -332,7 +332,7 @@ A custom skin engine built from scratch with a neon cyberpunk aesthetic. Origina
 - **Custom fonts** -- bundle TTF/OTF fonts or use any system font
 - **Animations** -- sprite frame cycling and parametric effects (pulse, glow, rotate, color cycle)
 
-The bundled default skin ("NeonWave") is fully programmatic -- zero image assets, pure palette-driven rendering.
+The bundled default skin ("NullPlayer-Orange") is palette-driven apart from one gradient background image.
 
 **Creating a skin is as simple as writing a single JSON file.** See [SKINNING.md](SKINNING.md) for the complete guide.
 

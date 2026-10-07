@@ -99,6 +99,10 @@
   behind it.
 - **New app icon** by Allan Nyholm Nielsen
   ([#488](https://github.com/ad-repo/nullplayer/issues/488)).
+- **Two new Original skins from the new icon** — **NullPlayer-Orange** wears the icon itself: an
+  orange-to-yellow body, white controls and a lemon glow. It is now the default Original skin
+  whenever no Original skin has been picked yet; a skin you already have selected stays selected.
+  **October** puts the same orange, gold and lemon on a dark warm-brown body.
 
 ## 0.31.4
 
