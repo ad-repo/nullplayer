@@ -55,14 +55,8 @@ class BloomPostProcessor {
         self.device = device
         self.commandQueue = device.makeCommandQueue()
         
-        // Load shader library
-        guard let library = loadShaderLibrary(device: device) else {
-            NSLog("BloomPostProcessor: Failed to load shader library")
-            return
-        }
-        
-        // Create compute pipelines
         do {
+            let library = try device.makeBundledLibrary("BloomShader")
             if let fn = library.makeFunction(name: "bloom_extract_brightness") {
                 brightnessExtractPipeline = try device.makeComputePipelineState(function: fn)
             }
@@ -85,23 +79,10 @@ class BloomPostProcessor {
                 NSLog("BloomPostProcessor: Metal setup complete")
             }
         } catch {
-            NSLog("BloomPostProcessor: Pipeline creation failed: %@", error.localizedDescription)
+            NSLog("BloomPostProcessor: Metal setup failed: \(error)")
         }
     }
-    
-    private func loadShaderLibrary(device: MTLDevice) -> MTLLibrary? {
-        // Load shader source from file (runtime compilation for SPM compatibility), found the
-        // way every other shader is: makeDefaultLibrary() returns nil in SPM executables, and
-        // BundleHelper resolves the resource bundle in any layout the build system produces.
-        guard let shaderURL = BundleHelper.url(forResource: "BloomShader", withExtension: "metal"),
-              let source = try? String(contentsOf: shaderURL, encoding: .utf8),
-              let library = try? device.makeLibrary(source: source, options: nil) else {
-            NSLog("BloomPostProcessor: Could not find or compile BloomShader")
-            return nil
-        }
-        return library
-    }
-    
+
     // MARK: - Texture Management
     
     private func ensureTextures(width: Int, height: Int) {
