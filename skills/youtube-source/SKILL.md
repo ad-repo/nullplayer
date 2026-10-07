@@ -14,8 +14,8 @@ Subscribe to YouTube channels in the **Radio tab** and browse their uploads. A v
    name: **Search** tab, type, press Enter, then double-click a result (or right-click →
    **Subscribe**). Results show `@handle · followers`; a ✓ marks channels already subscribed
 3. Channel appears as a folder; expand to see uploads
-4. Right-click a video → **Audio ▸** or **Video ▸** → Play, Play and Replace Queue, Add to Playlist,
-   Play Next or Add to Queue. That form downloads first if it isn't on disk; the row shows a spinner
+4. Right-click a video → **Audio ▸** or **Video ▸** → Play, Play and Replace Queue, Play Next or
+   Add to Queue. That form downloads first if it isn't on disk; the row shows a spinner
    meanwhile and a `⬇ ` once a file is there. Double-click / Enter plays the one form on disk, and
    otherwise (both forms, or neither) pops the same menu
 5. **Library → YouTube → Set Download Folder…** to choose where downloads live
@@ -226,9 +226,9 @@ static let youtubeColumns: [ModernBrowserColumn] = [.thumbnail, .title, .youtube
 One `@MainActor` instance per browser view (`youtubeVideoActions`, like `youtubeSearch`) owns the
 whole per-video flow, so both browsers' YouTube-video branches are one call each.
 
-- `addMenuItems(for:to:)` builds **Audio ▸** / **Video ▸** (each with the library's track verbs —
-  `App/TrackVerb.swift`: Play, Play and Replace Queue, Add to Playlist, Play Next, Add to Queue —
-  mapped to the same engine calls the library's local-track handlers make), then, for whatever is
+- `addMenuItems(for:to:)` builds **Audio ▸** / **Video ▸** (each filled by the library's shared play
+  menu, `TrackVerb.addMenuItems` in `App/TrackVerb.swift`, with a resolve that returns that form's
+  file, fetching it first when needed), then, for whatever is
   on disk, **Show in Finder** (selects every file of the video) and **Remove Audio File** /
   **Remove Video File**.
   `activate(_:in:)` is double-click and Enter: a video with exactly one form on disk plays it
@@ -237,9 +237,9 @@ whole per-video flow, so both browsers' YouTube-video branches are one call each
 - A verb on a form that is on disk runs now. Otherwise it awaits that form's download:
   `fetches[Key]` is the single in-flight state, and a repeat request for the same video + kind
   awaits the running download instead of starting a second yt-dlp onto the same file. A waiting
-  verb is not a stored task: it captures two counters and checks them when its file lands. Every
-  Play / Play and Replace Queue bumps `playEpoch`, so a newer one supersedes a still-waiting one and
-  a stale result never starts playing; queue verbs apply when their file lands. `cancel()` (view
+  verb is not a stored task. `TrackVerb.run` supersedes plays for every source: each Play / Play and
+  Replace Queue bumps its epoch, so a newer one wins over a still-waiting one and a stale result never
+  starts playing; queue verbs apply when their file lands. `cancel()` (view
   teardown) bumps `epoch`, dropping every waiting verb but not the download — yt-dlp is not killed,
   and a finished file is still recorded.
 - `isFetching(_:)` / `hasFetchesInFlight` drive each view's row spinner and loading timer.

@@ -10644,37 +10644,14 @@ class PlexBrowserView: NSView {
     
     private func showContextMenu(for item: PlexDisplayItem, at event: NSEvent) {
         let menu = NSMenu()
+        if let playable = playable(for: item) {
+            TrackVerb.addMenuItems(to: menu, for: playable)
+        }
         
         NSLog("showContextMenu: item.type = %@, title = %@", String(describing: item.type), item.title)
         
         switch item.type {
         case .track(let track):
-            NSLog("showContextMenu: Matched .track case, track.id = %@", track.id)
-            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlay(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = item
-            menu.addItem(playItem)
-            
-            let playReplaceItem = NSMenuItem(title: "Play and Replace Queue", action: #selector(contextMenuPlayAndReplaceTrack(_:)), keyEquivalent: "")
-            playReplaceItem.target = self
-            playReplaceItem.representedObject = item
-            menu.addItem(playReplaceItem)
-            
-            let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddToPlaylist(_:)), keyEquivalent: "")
-            addItem.target = self
-            addItem.representedObject = track
-            menu.addItem(addItem)
-            
-            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayNext(_:)), keyEquivalent: "")
-            playNextItem.target = self
-            playNextItem.representedObject = track
-            menu.addItem(playNextItem)
-            
-            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self
-            queueItem.representedObject = track
-            menu.addItem(queueItem)
-            
             menu.addItem(NSMenuItem.separator())
             
             let radioItem = NSMenuItem(title: "Start Track Radio", action: #selector(contextMenuStartTrackRadio(_:)), keyEquivalent: "")
@@ -10683,31 +10660,6 @@ class PlexBrowserView: NSView {
             menu.addItem(radioItem)
             
         case .album(let album):
-            let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlayAlbum(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = album
-            menu.addItem(playItem)
-            
-            let playReplaceItem = NSMenuItem(title: "Play Album and Replace Queue", action: #selector(contextMenuPlayAlbumAndReplace(_:)), keyEquivalent: "")
-            playReplaceItem.target = self
-            playReplaceItem.representedObject = album
-            menu.addItem(playReplaceItem)
-            
-            let addItem = NSMenuItem(title: "Add Album to Playlist", action: #selector(contextMenuAddAlbumToPlaylist(_:)), keyEquivalent: "")
-            addItem.target = self
-            addItem.representedObject = album
-            menu.addItem(addItem)
-            
-            let playNextItem = NSMenuItem(title: "Play Album Next", action: #selector(contextMenuPlayAlbumNext(_:)), keyEquivalent: "")
-            playNextItem.target = self
-            playNextItem.representedObject = album
-            menu.addItem(playNextItem)
-            
-            let queueItem = NSMenuItem(title: "Add Album to Queue", action: #selector(contextMenuAddAlbumToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self
-            queueItem.representedObject = album
-            menu.addItem(queueItem)
-            
             menu.addItem(NSMenuItem.separator())
             
             let radioItem = NSMenuItem(title: "Start Album Radio", action: #selector(contextMenuStartAlbumRadio(_:)), keyEquivalent: "")
@@ -10716,26 +10668,6 @@ class PlexBrowserView: NSView {
             menu.addItem(radioItem)
             
         case .artist(let artist):
-            let playItem = NSMenuItem(title: "Play All by Artist", action: #selector(contextMenuPlayArtist(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = artist
-            menu.addItem(playItem)
-            
-            let playReplaceItem = NSMenuItem(title: "Play Artist and Replace Queue", action: #selector(contextMenuPlayArtistAndReplace(_:)), keyEquivalent: "")
-            playReplaceItem.target = self
-            playReplaceItem.representedObject = artist
-            menu.addItem(playReplaceItem)
-            
-            let playNextItem = NSMenuItem(title: "Play Artist Next", action: #selector(contextMenuPlayArtistNext(_:)), keyEquivalent: "")
-            playNextItem.target = self
-            playNextItem.representedObject = artist
-            menu.addItem(playNextItem)
-            
-            let queueItem = NSMenuItem(title: "Add Artist to Queue", action: #selector(contextMenuAddArtistToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self
-            queueItem.representedObject = artist
-            menu.addItem(queueItem)
-            
             let expandItem = NSMenuItem(title: expandedArtists.contains(item.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self
             expandItem.representedObject = item
@@ -10963,31 +10895,6 @@ class PlexBrowserView: NSView {
             menu.addItem(linksItem)
             
         case .localTrack(let track):
-            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalTrack(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = track
-            menu.addItem(playItem)
-            
-            let playReplaceItem = NSMenuItem(title: "Play and Replace Queue", action: #selector(contextMenuPlayLocalTrackAndReplace(_:)), keyEquivalent: "")
-            playReplaceItem.target = self
-            playReplaceItem.representedObject = track
-            menu.addItem(playReplaceItem)
-            
-            let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddLocalTrackToPlaylist(_:)), keyEquivalent: "")
-            addItem.target = self
-            addItem.representedObject = track
-            menu.addItem(addItem)
-            
-            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayLocalTrackNext(_:)), keyEquivalent: "")
-            playNextItem.target = self
-            playNextItem.representedObject = track
-            menu.addItem(playNextItem)
-            
-            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddLocalTrackToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self
-            queueItem.representedObject = track
-            menu.addItem(queueItem)
-            
             menu.addItem(NSMenuItem.separator())
             
             let editTagsItem = NSMenuItem(title: "Edit Tags", action: #selector(contextMenuEditTags(_:)), keyEquivalent: "")
@@ -11018,26 +10925,6 @@ class PlexBrowserView: NSView {
             menu.addItem(deleteItem)
 
         case .localFolder(let url, _):
-            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalFolder(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = item
-            menu.addItem(playItem)
-
-            let playReplaceItem = NSMenuItem(title: "Play and Replace Queue", action: #selector(contextMenuPlayLocalFolderAndReplace(_:)), keyEquivalent: "")
-            playReplaceItem.target = self
-            playReplaceItem.representedObject = item
-            menu.addItem(playReplaceItem)
-
-            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayLocalFolderNext(_:)), keyEquivalent: "")
-            playNextItem.target = self
-            playNextItem.representedObject = item
-            menu.addItem(playNextItem)
-
-            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddLocalFolderToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self
-            queueItem.representedObject = item
-            menu.addItem(queueItem)
-
             menu.addItem(NSMenuItem.separator())
 
             let finderItem = NSMenuItem(title: "Show in Finder", action: #selector(contextMenuRevealLocalFolderInFinder(_:)), keyEquivalent: "")
@@ -11046,31 +10933,6 @@ class PlexBrowserView: NSView {
             menu.addItem(finderItem)
 
         case .localAlbum(let album):
-            let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlayLocalAlbum(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = album
-            menu.addItem(playItem)
-            
-            let playReplaceItem = NSMenuItem(title: "Play Album and Replace Queue", action: #selector(contextMenuPlayLocalAlbumAndReplace(_:)), keyEquivalent: "")
-            playReplaceItem.target = self
-            playReplaceItem.representedObject = album
-            menu.addItem(playReplaceItem)
-            
-            let addItem = NSMenuItem(title: "Add Album to Playlist", action: #selector(contextMenuAddLocalAlbumToPlaylist(_:)), keyEquivalent: "")
-            addItem.target = self
-            addItem.representedObject = album
-            menu.addItem(addItem)
-            
-            let playNextItem = NSMenuItem(title: "Play Album Next", action: #selector(contextMenuPlayLocalAlbumNext(_:)), keyEquivalent: "")
-            playNextItem.target = self
-            playNextItem.representedObject = album
-            menu.addItem(playNextItem)
-            
-            let queueItem = NSMenuItem(title: "Add Album to Queue", action: #selector(contextMenuAddLocalAlbumToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self
-            queueItem.representedObject = album
-            menu.addItem(queueItem)
-            
             menu.addItem(NSMenuItem.separator())
 
             let rateAlbumItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
@@ -11095,26 +10957,6 @@ class PlexBrowserView: NSView {
             menu.addItem(deleteItem)
             
         case .localArtist(let artist):
-            let playItem = NSMenuItem(title: "Play All by Artist", action: #selector(contextMenuPlayLocalArtist(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = artist
-            menu.addItem(playItem)
-            
-            let playReplaceItem = NSMenuItem(title: "Play Artist and Replace Queue", action: #selector(contextMenuPlayLocalArtistAndReplace(_:)), keyEquivalent: "")
-            playReplaceItem.target = self
-            playReplaceItem.representedObject = artist
-            menu.addItem(playReplaceItem)
-            
-            let playNextItem = NSMenuItem(title: "Play Artist Next", action: #selector(contextMenuPlayLocalArtistNext(_:)), keyEquivalent: "")
-            playNextItem.target = self
-            playNextItem.representedObject = artist
-            menu.addItem(playNextItem)
-            
-            let queueItem = NSMenuItem(title: "Add Artist to Queue", action: #selector(contextMenuAddLocalArtistToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self
-            queueItem.representedObject = artist
-            menu.addItem(queueItem)
-            
             let expandItem = NSMenuItem(title: expandedLocalArtists.contains(artist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self
             expandItem.representedObject = item
@@ -11137,159 +10979,25 @@ class PlexBrowserView: NSView {
             deleteItem.representedObject = artist
             menu.addItem(deleteItem)
             
-        case .subsonicTrack(let song):
-            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlaySubsonicSong(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = song
-            menu.addItem(playItem)
-            
-            let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddSubsonicSongToPlaylist(_:)), keyEquivalent: "")
-            addItem.target = self
-            addItem.representedObject = song
-            menu.addItem(addItem)
-            
-            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlaySubsonicSongNext(_:)), keyEquivalent: "")
-            playNextItem.target = self
-            playNextItem.representedObject = song
-            menu.addItem(playNextItem)
-            
-            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddSubsonicSongToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self
-            queueItem.representedObject = song
-            menu.addItem(queueItem)
-            
-        case .subsonicAlbum(let album):
-            let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlaySubsonicAlbum(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = album
-            menu.addItem(playItem)
-
-            let playReplaceItem = NSMenuItem(title: "Play Album and Replace Queue", action: #selector(contextMenuPlaySubsonicAlbumAndReplace(_:)), keyEquivalent: "")
-            playReplaceItem.target = self
-            playReplaceItem.representedObject = album
-            menu.addItem(playReplaceItem)
-            
-            let addItem = NSMenuItem(title: "Add Album to Playlist", action: #selector(contextMenuAddSubsonicAlbumToPlaylist(_:)), keyEquivalent: "")
-            addItem.target = self
-            addItem.representedObject = album
-            menu.addItem(addItem)
-            
-            let playNextItem = NSMenuItem(title: "Play Album Next", action: #selector(contextMenuPlaySubsonicAlbumNext(_:)), keyEquivalent: "")
-            playNextItem.target = self
-            playNextItem.representedObject = album
-            menu.addItem(playNextItem)
-            
-            let queueItem = NSMenuItem(title: "Add Album to Queue", action: #selector(contextMenuAddSubsonicAlbumToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self
-            queueItem.representedObject = album
-            menu.addItem(queueItem)
-            
         case .subsonicArtist(let artist):
-            let playItem = NSMenuItem(title: "Play All by Artist", action: #selector(contextMenuPlaySubsonicArtist(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = artist
-            menu.addItem(playItem)
-
-            let playReplaceItem = NSMenuItem(title: "Play Artist and Replace Queue", action: #selector(contextMenuPlaySubsonicArtistAndReplace(_:)), keyEquivalent: "")
-            playReplaceItem.target = self
-            playReplaceItem.representedObject = artist
-            menu.addItem(playReplaceItem)
-            
-            let playNextItem = NSMenuItem(title: "Play Artist Next", action: #selector(contextMenuPlaySubsonicArtistNext(_:)), keyEquivalent: "")
-            playNextItem.target = self
-            playNextItem.representedObject = artist
-            menu.addItem(playNextItem)
-            
-            let queueItem = NSMenuItem(title: "Add Artist to Queue", action: #selector(contextMenuAddSubsonicArtistToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self
-            queueItem.representedObject = artist
-            menu.addItem(queueItem)
-            
             let expandItem = NSMenuItem(title: expandedSubsonicArtists.contains(artist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self
             expandItem.representedObject = item
             menu.addItem(expandItem)
             
         case .subsonicPlaylist(let playlist):
-            let playItem = NSMenuItem(title: "Play Playlist", action: #selector(contextMenuPlaySubsonicPlaylist(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = playlist
-            menu.addItem(playItem)
-            
             let expandItem = NSMenuItem(title: expandedSubsonicPlaylists.contains(playlist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self
             expandItem.representedObject = item
             menu.addItem(expandItem)
             
-        case .jellyfinTrack(let song):
-            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayJellyfinSong(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = song
-            menu.addItem(playItem)
-            
-            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayJellyfinSongNext(_:)), keyEquivalent: "")
-            playNextItem.target = self
-            playNextItem.representedObject = song
-            menu.addItem(playNextItem)
-            
-            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddJellyfinSongToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self
-            queueItem.representedObject = song
-            menu.addItem(queueItem)
-            
-        case .jellyfinAlbum(let album):
-            let playItem = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlayJellyfinAlbum(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = album
-            menu.addItem(playItem)
-
-            let playReplaceItem = NSMenuItem(title: "Play Album and Replace Queue", action: #selector(contextMenuPlayJellyfinAlbumAndReplace(_:)), keyEquivalent: "")
-            playReplaceItem.target = self
-            playReplaceItem.representedObject = album
-            menu.addItem(playReplaceItem)
-            
-            let playNextItem = NSMenuItem(title: "Play Album Next", action: #selector(contextMenuPlayJellyfinAlbumNext(_:)), keyEquivalent: "")
-            playNextItem.target = self
-            playNextItem.representedObject = album
-            menu.addItem(playNextItem)
-            
-            let queueItem = NSMenuItem(title: "Add Album to Queue", action: #selector(contextMenuAddJellyfinAlbumToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self
-            queueItem.representedObject = album
-            menu.addItem(queueItem)
-            
         case .jellyfinArtist(let artist):
-            let playItem = NSMenuItem(title: "Play All by Artist", action: #selector(contextMenuPlayJellyfinArtist(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = artist
-            menu.addItem(playItem)
-
-            let playReplaceItem = NSMenuItem(title: "Play Artist and Replace Queue", action: #selector(contextMenuPlayJellyfinArtistAndReplace(_:)), keyEquivalent: "")
-            playReplaceItem.target = self
-            playReplaceItem.representedObject = artist
-            menu.addItem(playReplaceItem)
-            
-            let playNextItem = NSMenuItem(title: "Play Artist Next", action: #selector(contextMenuPlayJellyfinArtistNext(_:)), keyEquivalent: "")
-            playNextItem.target = self
-            playNextItem.representedObject = artist
-            menu.addItem(playNextItem)
-            
-            let queueItem = NSMenuItem(title: "Add Artist to Queue", action: #selector(contextMenuAddJellyfinArtistToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self
-            queueItem.representedObject = artist
-            menu.addItem(queueItem)
-            
             let expandItem2 = NSMenuItem(title: expandedJellyfinArtists.contains(artist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem2.target = self
             expandItem2.representedObject = item
             menu.addItem(expandItem2)
             
         case .jellyfinPlaylist(let playlist):
-            let playItem = NSMenuItem(title: "Play Playlist", action: #selector(contextMenuPlayJellyfinPlaylist(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = playlist
-            menu.addItem(playItem)
-            
             let expandItem3 = NSMenuItem(title: expandedJellyfinPlaylists.contains(playlist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem3.target = self
             expandItem3.representedObject = item
@@ -11319,23 +11027,9 @@ class PlexBrowserView: NSView {
             playItem.representedObject = episode
             menu.addItem(playItem)
 
-        case .embyTrack(let song):
-            let p = NSMenuItem(title: "Play", action: #selector(contextMenuPlayEmbySong(_:)), keyEquivalent: ""); p.target = self; p.representedObject = song; menu.addItem(p)
-            let pn = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayEmbySongNext(_:)), keyEquivalent: ""); pn.target = self; pn.representedObject = song; menu.addItem(pn)
-            let q = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddEmbySongToQueue(_:)), keyEquivalent: ""); q.target = self; q.representedObject = song; menu.addItem(q)
-        case .embyAlbum(let album):
-            let p = NSMenuItem(title: "Play Album", action: #selector(contextMenuPlayEmbyAlbum(_:)), keyEquivalent: ""); p.target = self; p.representedObject = album; menu.addItem(p)
-            let pr = NSMenuItem(title: "Play Album and Replace Queue", action: #selector(contextMenuPlayEmbyAlbumAndReplace(_:)), keyEquivalent: ""); pr.target = self; pr.representedObject = album; menu.addItem(pr)
-            let pn = NSMenuItem(title: "Play Album Next", action: #selector(contextMenuPlayEmbyAlbumNext(_:)), keyEquivalent: ""); pn.target = self; pn.representedObject = album; menu.addItem(pn)
-            let q = NSMenuItem(title: "Add Album to Queue", action: #selector(contextMenuAddEmbyAlbumToQueue(_:)), keyEquivalent: ""); q.target = self; q.representedObject = album; menu.addItem(q)
         case .embyArtist(let artist):
-            let p = NSMenuItem(title: "Play All by Artist", action: #selector(contextMenuPlayEmbyArtist(_:)), keyEquivalent: ""); p.target = self; p.representedObject = artist; menu.addItem(p)
-            let pr = NSMenuItem(title: "Play Artist and Replace Queue", action: #selector(contextMenuPlayEmbyArtistAndReplace(_:)), keyEquivalent: ""); pr.target = self; pr.representedObject = artist; menu.addItem(pr)
-            let pn = NSMenuItem(title: "Play Artist Next", action: #selector(contextMenuPlayEmbyArtistNext(_:)), keyEquivalent: ""); pn.target = self; pn.representedObject = artist; menu.addItem(pn)
-            let q = NSMenuItem(title: "Add Artist to Queue", action: #selector(contextMenuAddEmbyArtistToQueue(_:)), keyEquivalent: ""); q.target = self; q.representedObject = artist; menu.addItem(q)
             let ex = NSMenuItem(title: expandedEmbyArtists.contains(artist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: ""); ex.target = self; ex.representedObject = item; menu.addItem(ex)
         case .embyPlaylist(let playlist):
-            let p = NSMenuItem(title: "Play Playlist", action: #selector(contextMenuPlayEmbyPlaylist(_:)), keyEquivalent: ""); p.target = self; p.representedObject = playlist; menu.addItem(p)
             let ex = NSMenuItem(title: expandedEmbyPlaylists.contains(playlist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: ""); ex.target = self; ex.representedObject = item; menu.addItem(ex)
         case .embyMovie(let movie):
             let p = NSMenuItem(title: "Play Movie", action: #selector(contextMenuPlayEmbyMovie(_:)), keyEquivalent: ""); p.target = self; p.representedObject = movie; menu.addItem(p)
@@ -11347,11 +11041,6 @@ class PlexBrowserView: NSView {
             let p = NSMenuItem(title: "Play Episode", action: #selector(contextMenuPlayEmbyEpisode(_:)), keyEquivalent: ""); p.target = self; p.representedObject = episode; menu.addItem(p)
 
         case .plexPlaylist(let playlist):
-            let playItem = NSMenuItem(title: "Play Playlist", action: #selector(contextMenuPlayPlexPlaylist(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = playlist
-            menu.addItem(playItem)
-            
             let expandItem = NSMenuItem(title: expandedPlexPlaylists.contains(playlist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self
             expandItem.representedObject = item
@@ -11480,7 +11169,7 @@ class PlexBrowserView: NSView {
             menu.addItem(playItem)
             
         case .localMovie(let movie):
-            let playItem = NSMenuItem(title: "Play Movie", action: #selector(contextMenuPlay(_:)), keyEquivalent: "")
+            let playItem = NSMenuItem(title: "Play Movie", action: #selector(contextMenuActivate(_:)), keyEquivalent: "")
             playItem.target = self
             playItem.representedObject = item
             menu.addItem(playItem)
@@ -11524,7 +11213,7 @@ class PlexBrowserView: NSView {
             menu.addItem(expandItem)
 
         case .localEpisode(let episode):
-            let playItem = NSMenuItem(title: "Play Episode", action: #selector(contextMenuPlay(_:)), keyEquivalent: "")
+            let playItem = NSMenuItem(title: "Play Episode", action: #selector(contextMenuActivate(_:)), keyEquivalent: "")
             playItem.target = self
             playItem.representedObject = item
             menu.addItem(playItem)
@@ -11553,19 +11242,8 @@ class PlexBrowserView: NSView {
             editEpisodeItem.representedObject = episode
             menu.addItem(editEpisodeItem)
 
-        case .localPlaylist:
-            let playItem = NSMenuItem(title: "Play Playlist", action: #selector(contextMenuPlayLocalPlaylist(_:)), keyEquivalent: "")
-            playItem.target = self; playItem.representedObject = item; menu.addItem(playItem)
-
-        case .localPlaylistTrack(let track):
-            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayPlaylistTrack(_:)), keyEquivalent: "")
-            playItem.target = self; playItem.representedObject = track; menu.addItem(playItem)
-            let playReplaceItem = NSMenuItem(title: "Play and Replace Queue", action: #selector(contextMenuPlayPlaylistTrackAndReplace(_:)), keyEquivalent: "")
-            playReplaceItem.target = self; playReplaceItem.representedObject = track; menu.addItem(playReplaceItem)
-            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayPlaylistTrackNext(_:)), keyEquivalent: "")
-            playNextItem.target = self; playNextItem.representedObject = track; menu.addItem(playNextItem)
-            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddPlaylistTrackToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self; queueItem.representedObject = track; menu.addItem(queueItem)
+        case .subsonicTrack, .subsonicAlbum, .jellyfinTrack, .jellyfinAlbum, .embyTrack, .embyAlbum, .localPlaylist, .localPlaylistTrack:
+            break
 
         case .header:
             return
@@ -11629,28 +11307,7 @@ class PlexBrowserView: NSView {
         menu.addItem(clearItem)
         return menu
     }
-    
-    @objc private func contextMenuPlay(_ sender: NSMenuItem) {
-        guard let item = sender.representedObject as? PlexDisplayItem else { return }
-        playTrack(item)
-    }
-    
-    @objc private func contextMenuAddToPlaylist(_ sender: NSMenuItem) {
-        guard let track = sender.representedObject as? PlexTrack,
-              let convertedTrack = PlexManager.shared.convertToTrack(track) else { return }
-        WindowManager.shared.audioEngine.appendTracks([convertedTrack])
-    }
-    
-    @objc private func contextMenuPlayLocalTrack(_ sender: NSMenuItem) {
-        guard let track = sender.representedObject as? LibraryTrack else { return }
-        playLocalTrack(track)
-    }
-    
-    @objc private func contextMenuAddLocalTrackToPlaylist(_ sender: NSMenuItem) {
-        guard let track = sender.representedObject as? LibraryTrack else { return }
-        WindowManager.shared.audioEngine.appendTracks([track.toTrack()])
-    }
-    
+
     @objc private func contextMenuShowTags(_ sender: NSMenuItem) {
         guard let track = sender.representedObject as? LibraryTrack else { return }
         // Close any existing tags panel first
@@ -11699,33 +11356,6 @@ class PlexBrowserView: NSView {
         activeEditVideoTagsPanel = panel
         panel.show()
     }
-    
-    @objc private func contextMenuPlayLocalAlbum(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? Album else { return }
-        playLocalAlbum(album)
-    }
-    
-    @objc private func contextMenuAddLocalAlbumToPlaylist(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? Album else { return }
-        let tracks = resolvedTracksForLocalAlbum(album).map { $0.toTrack() }
-        WindowManager.shared.audioEngine.appendTracks(tracks)
-    }
-    
-    @objc private func contextMenuPlayLocalArtist(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? Artist else { return }
-        playLocalArtist(artist)
-    }
-
-    @objc private func contextMenuPlayLocalPlaylist(_ sender: NSMenuItem) {
-        guard let item = sender.representedObject as? PlexDisplayItem,
-              case .localPlaylist(let p) = item.type else { return }
-        playLocalPlaylist(p.url)
-    }
-
-    @objc private func contextMenuPlayPlaylistTrack(_ sender: NSMenuItem) {
-        guard let track = sender.representedObject as? Track else { return }
-        WindowManager.shared.audioEngine.playNow([track])
-    }
 
     @objc private func contextMenuRateLocalAlbum(_ sender: NSMenuItem) {
         guard let albumId = sender.representedObject as? String else { return }
@@ -11742,34 +11372,7 @@ class PlexBrowserView: NSView {
     }
     
     // MARK: - Play and Replace Queue Handlers
-    
-    @objc private func contextMenuPlayAndReplaceTrack(_ sender: NSMenuItem) {
-        guard let item = sender.representedObject as? PlexDisplayItem,
-              case .track(let track) = item.type,
-              let t = PlexManager.shared.convertToTrack(track) else { return }
-        WindowManager.shared.audioEngine.loadTracks([t])
-    }
-    
-    @objc private func contextMenuPlayAlbumAndReplace(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? PlexAlbum else { return }
-        Task { @MainActor in
-            do {
-                let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
-                WindowManager.shared.audioEngine.loadTracks(PlexManager.shared.convertToTracks(tracks))
-            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    
-    @objc private func contextMenuPlayArtistAndReplace(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? PlexArtist else { return }
-        Task { @MainActor in
-            do {
-                let all = try await self.fetchTracksForPlexArtistGroup(artist)
-                WindowManager.shared.audioEngine.loadTracks(PlexManager.shared.convertToTracks(all))
-            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    
+
     @objc private func contextMenuPlayMovieAndReplace(_ sender: NSMenuItem) {
         guard let movie = sender.representedObject as? PlexMovie else { return }
         // Movies use video player, just play the movie (video player handles its own queue)
@@ -11808,109 +11411,7 @@ class PlexBrowserView: NSView {
               let track = PlexManager.shared.convertToTrack(episode) else { return }
         WindowManager.shared.audioEngine.loadTracks([track])
     }
-    
-    @objc private func contextMenuPlayLocalTrackAndReplace(_ sender: NSMenuItem) {
-        guard let track = sender.representedObject as? LibraryTrack else { return }
-        WindowManager.shared.audioEngine.loadTracks([track.toTrack()])
-    }
 
-    @objc private func contextMenuPlayPlaylistTrackAndReplace(_ sender: NSMenuItem) {
-        guard let track = sender.representedObject as? Track else { return }
-        WindowManager.shared.audioEngine.loadTracks([track])
-    }
-    
-    @objc private func contextMenuPlayLocalAlbumAndReplace(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? Album else { return }
-        WindowManager.shared.audioEngine.loadTracks(resolvedTracksForLocalAlbum(album).map { $0.toTrack() })
-    }
-
-    @objc private func contextMenuPlayLocalArtistAndReplace(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? Artist else { return }
-        let store = MediaLibraryStore.shared
-        var tracks: [Track] = []
-        let summaries = store.albumsForArtist(artist.name).sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) })
-        for summary in summaries { tracks.append(contentsOf: store.tracksForAlbum(summary.id).map { $0.toTrack() }) }
-        WindowManager.shared.audioEngine.loadTracks(tracks)
-    }
-
-    @objc private func contextMenuPlaySubsonicAlbumAndReplace(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? SubsonicAlbum else { return }
-        Task { @MainActor in
-            do {
-                let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
-                let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
-                WindowManager.shared.audioEngine.loadTracks(tracks)
-            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-
-    @objc private func contextMenuPlaySubsonicArtistAndReplace(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? SubsonicArtist else { return }
-        Task { @MainActor in
-            do {
-                let albums = try await SubsonicManager.shared.fetchAlbums(forArtist: artist)
-                var allTracks: [Track] = []
-                for album in albums {
-                    let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
-                    allTracks.append(contentsOf: songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
-                }
-                WindowManager.shared.audioEngine.loadTracks(allTracks)
-            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-
-    @objc private func contextMenuPlayJellyfinAlbumAndReplace(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? JellyfinAlbum else { return }
-        Task { @MainActor in
-            do {
-                let songs = try await JellyfinManager.shared.fetchSongs(forAlbum: album)
-                let tracks = JellyfinManager.shared.convertToTracks(songs)
-                WindowManager.shared.audioEngine.loadTracks(tracks)
-            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-
-    @objc private func contextMenuPlayJellyfinArtistAndReplace(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? JellyfinArtist else { return }
-        Task { @MainActor in
-            do {
-                let albums = try await JellyfinManager.shared.fetchAlbums(forArtist: artist)
-                var allTracks: [Track] = []
-                for album in albums {
-                    let songs = try await JellyfinManager.shared.fetchSongs(forAlbum: album)
-                    allTracks.append(contentsOf: JellyfinManager.shared.convertToTracks(songs))
-                }
-                WindowManager.shared.audioEngine.loadTracks(allTracks)
-            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-
-    @objc private func contextMenuPlayEmbyAlbumAndReplace(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? EmbyAlbum else { return }
-        Task { @MainActor in
-            do {
-                let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
-                let tracks = EmbyManager.shared.convertToTracks(songs)
-                WindowManager.shared.audioEngine.loadTracks(tracks)
-            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-
-    @objc private func contextMenuPlayEmbyArtistAndReplace(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? EmbyArtist else { return }
-        Task { @MainActor in
-            do {
-                let albums = try await EmbyManager.shared.fetchAlbums(forArtist: artist)
-                var allTracks: [Track] = []
-                for album in albums {
-                    let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
-                    allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
-                }
-                WindowManager.shared.audioEngine.loadTracks(allTracks)
-            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    
     @objc private func contextMenuShowInFinder(_ sender: NSMenuItem) {
         guard let track = sender.representedObject as? LibraryTrack else { return }
         NSWorkspace.shared.activateFileViewerSelecting([track.url])
@@ -11934,7 +11435,7 @@ class PlexBrowserView: NSView {
     
     @objc private func contextMenuRemoveLocalAlbum(_ sender: NSMenuItem) {
         guard let album = sender.representedObject as? Album else { return }
-        let tracks = resolvedTracksForLocalAlbum(album)
+        let tracks = LibraryPlayable.libraryTracks(of: album)
 
         let alert = NSAlert()
         alert.messageText = "Remove album from library?"
@@ -11950,7 +11451,7 @@ class PlexBrowserView: NSView {
 
     @objc private func contextMenuDeleteLocalAlbum(_ sender: NSMenuItem) {
         guard let album = sender.representedObject as? Album else { return }
-        deleteTracksFromDisk(resolvedTracksForLocalAlbum(album))
+        deleteTracksFromDisk(LibraryPlayable.libraryTracks(of: album))
     }
 
     @objc private func contextMenuRemoveLocalArtist(_ sender: NSMenuItem) {
@@ -12307,75 +11808,8 @@ class PlexBrowserView: NSView {
 
     // MARK: - Subsonic Context Menu Actions
 
-    @objc private func contextMenuPlaySubsonicSong(_ sender: NSMenuItem) {
-        guard let song = sender.representedObject as? SubsonicSong else { return }
-        playSubsonicSong(song)
-    }
-    
-    @objc private func contextMenuAddSubsonicSongToPlaylist(_ sender: NSMenuItem) {
-        guard let song = sender.representedObject as? SubsonicSong,
-              let track = SubsonicManager.shared.convertToTrack(song) else { return }
-        WindowManager.shared.audioEngine.appendTracks([track])
-    }
-    
-    @objc private func contextMenuPlaySubsonicAlbum(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? SubsonicAlbum else { return }
-        playSubsonicAlbum(album)
-    }
-    
-    @objc private func contextMenuAddSubsonicAlbumToPlaylist(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? SubsonicAlbum else { return }
-        Task { @MainActor in
-            do {
-                let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
-                let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
-                WindowManager.shared.audioEngine.appendTracks(tracks)
-            } catch {
-                NSLog("Failed to add subsonic album to playlist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-            }
-        }
-    }
-    
-    @objc private func contextMenuPlaySubsonicArtist(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? SubsonicArtist else { return }
-        playSubsonicArtist(artist)
-    }
-    
-    @objc private func contextMenuPlaySubsonicPlaylist(_ sender: NSMenuItem) {
-        guard let playlist = sender.representedObject as? SubsonicPlaylist else { return }
-        playSubsonicPlaylist(playlist)
-    }
-    
-    @objc private func contextMenuPlayPlexPlaylist(_ sender: NSMenuItem) {
-        guard let playlist = sender.representedObject as? PlexPlaylist else { return }
-        playPlexPlaylist(playlist)
-    }
-    
     // MARK: - Plex Context Menu Actions
-    
-    @objc private func contextMenuPlayAlbum(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? PlexAlbum else { return }
-        playAlbum(album)
-    }
-    
-    @objc private func contextMenuAddAlbumToPlaylist(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? PlexAlbum else { return }
-        Task { @MainActor in
-            do {
-                let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
-                let convertedTracks = PlexManager.shared.convertToTracks(tracks)
-                WindowManager.shared.audioEngine.appendTracks(convertedTracks)
-            } catch {
-                NSLog("Failed to add album to playlist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-            }
-        }
-    }
-    
-    @objc private func contextMenuPlayArtist(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? PlexArtist else { return }
-        playArtist(artist)
-    }
-    
+
     // MARK: - Plex Video Context Menu Actions
     
     @objc private func contextMenuAddMovieToPlaylist(_ sender: NSMenuItem) {
@@ -12436,314 +11870,13 @@ class PlexBrowserView: NSView {
     }
     
     // MARK: - Play Next / Add to Queue Handlers
-    
-    @objc private func contextMenuPlayNext(_ sender: NSMenuItem) {
-        guard let track = sender.representedObject as? PlexTrack,
-              let t = PlexManager.shared.convertToTrack(track) else { return }
-        WindowManager.shared.audioEngine.insertTracksAfterCurrent([t])
-    }
-    @objc private func contextMenuAddToQueue(_ sender: NSMenuItem) {
-        guard let track = sender.representedObject as? PlexTrack,
-              let t = PlexManager.shared.convertToTrack(track) else { return }
-        let engine = WindowManager.shared.audioEngine
-        let wasEmpty = engine.playlist.isEmpty
-        engine.appendTracks([t])
-        if wasEmpty { engine.playTrack(at: 0) }
-    }
-    @objc private func contextMenuPlayLocalTrackNext(_ sender: NSMenuItem) {
-        guard let track = sender.representedObject as? LibraryTrack else { return }
-        WindowManager.shared.audioEngine.insertTracksAfterCurrent([track.toTrack()])
-    }
-    @objc private func contextMenuAddLocalTrackToQueue(_ sender: NSMenuItem) {
-        guard let track = sender.representedObject as? LibraryTrack else { return }
-        let engine = WindowManager.shared.audioEngine
-        let wasEmpty = engine.playlist.isEmpty
-        engine.appendTracks([track.toTrack()])
-        if wasEmpty { engine.playTrack(at: 0) }
-    }
-
-    @objc private func contextMenuPlayPlaylistTrackNext(_ sender: NSMenuItem) {
-        guard let track = sender.representedObject as? Track else { return }
-        WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
-    }
-
-    @objc private func contextMenuAddPlaylistTrackToQueue(_ sender: NSMenuItem) {
-        guard let track = sender.representedObject as? Track else { return }
-        let engine = WindowManager.shared.audioEngine
-        let wasEmpty = engine.playlist.isEmpty
-        engine.appendTracks([track])
-        if wasEmpty { engine.playTrack(at: 0) }
-    }
-
-    @objc private func contextMenuPlayLocalFolder(_ sender: NSMenuItem) {
-        guard let item = sender.representedObject as? PlexDisplayItem,
-              case .localFolder(let url, _) = item.type else { return }
-        collectTracksFromFolder(url) { tracks in
-            WindowManager.shared.audioEngine.playNow(tracks)
-        }
-    }
-
-    @objc private func contextMenuPlayLocalFolderAndReplace(_ sender: NSMenuItem) {
-        guard let item = sender.representedObject as? PlexDisplayItem,
-              case .localFolder(let url, _) = item.type else { return }
-        collectTracksFromFolder(url) { tracks in
-            WindowManager.shared.audioEngine.loadTracks(tracks)
-        }
-    }
-
-    @objc private func contextMenuPlayLocalFolderNext(_ sender: NSMenuItem) {
-        guard let item = sender.representedObject as? PlexDisplayItem,
-              case .localFolder(let url, _) = item.type else { return }
-        collectTracksFromFolder(url) { tracks in
-            WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks, startPlaybackIfEmpty: false)
-        }
-    }
-
-    @objc private func contextMenuAddLocalFolderToQueue(_ sender: NSMenuItem) {
-        guard let item = sender.representedObject as? PlexDisplayItem,
-              case .localFolder(let url, _) = item.type else { return }
-        collectTracksFromFolder(url) { tracks in
-            let engine = WindowManager.shared.audioEngine
-            let wasEmpty = engine.playlist.isEmpty
-            engine.appendTracks(tracks)
-            if wasEmpty { engine.playTrack(at: 0) }
-        }
-    }
 
     @objc private func contextMenuRevealLocalFolderInFinder(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
-    @objc private func contextMenuPlaySubsonicSongNext(_ sender: NSMenuItem) {
-        guard let song = sender.representedObject as? SubsonicSong,
-              let track = SubsonicManager.shared.convertToTrack(song) else { return }
-        WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
-    }
-    @objc private func contextMenuAddSubsonicSongToQueue(_ sender: NSMenuItem) {
-        guard let song = sender.representedObject as? SubsonicSong,
-              let track = SubsonicManager.shared.convertToTrack(song) else { return }
-        let engine = WindowManager.shared.audioEngine
-        let wasEmpty = engine.playlist.isEmpty
-        engine.appendTracks([track])
-        if wasEmpty { engine.playTrack(at: 0) }
-    }
-    @objc private func contextMenuPlayAlbumNext(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? PlexAlbum else { return }
-        Task { @MainActor in
-            do {
-                let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
-                let converted = PlexManager.shared.convertToTracks(tracks)
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent(converted)
-            } catch { NSLog("Failed to play album next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    @objc private func contextMenuAddAlbumToQueue(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? PlexAlbum else { return }
-        Task { @MainActor in
-            do {
-                let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
-                let converted = PlexManager.shared.convertToTracks(tracks)
-                let engine = WindowManager.shared.audioEngine
-                let wasEmpty = engine.playlist.isEmpty
-                engine.appendTracks(converted)
-                if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add album to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    @objc private func contextMenuPlayLocalAlbumNext(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? Album else { return }
-        let tracks = resolvedTracksForLocalAlbum(album).map { $0.toTrack() }
-        WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
-    }
-    @objc private func contextMenuAddLocalAlbumToQueue(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? Album else { return }
-        let tracks = resolvedTracksForLocalAlbum(album).map { $0.toTrack() }
-        let engine = WindowManager.shared.audioEngine
-        let wasEmpty = engine.playlist.isEmpty
-        engine.appendTracks(tracks)
-        if wasEmpty { engine.playTrack(at: 0) }
-    }
-    @objc private func contextMenuPlaySubsonicAlbumNext(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? SubsonicAlbum else { return }
-        Task { @MainActor in
-            do {
-                let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
-                let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
-            } catch { NSLog("Failed to play subsonic album next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    @objc private func contextMenuAddSubsonicAlbumToQueue(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? SubsonicAlbum else { return }
-        Task { @MainActor in
-            do {
-                let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
-                let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
-                let engine = WindowManager.shared.audioEngine
-                let wasEmpty = engine.playlist.isEmpty
-                engine.appendTracks(tracks)
-                if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add subsonic album to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    @objc private func contextMenuPlayArtistNext(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? PlexArtist else { return }
-        Task { @MainActor in
-            do {
-                let allTracks = try await self.fetchTracksForPlexArtistGroup(artist)
-                let converted = PlexManager.shared.convertToTracks(allTracks)
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent(converted)
-            } catch { NSLog("Failed to play artist next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    @objc private func contextMenuAddArtistToQueue(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? PlexArtist else { return }
-        Task { @MainActor in
-            do {
-                let allTracks = try await self.fetchTracksForPlexArtistGroup(artist)
-                let converted = PlexManager.shared.convertToTracks(allTracks)
-                let engine = WindowManager.shared.audioEngine
-                let wasEmpty = engine.playlist.isEmpty
-                engine.appendTracks(converted)
-                if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add artist to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    @objc private func contextMenuPlayLocalArtistNext(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? Artist else { return }
-        let store = MediaLibraryStore.shared
-        var allTracks: [Track] = []
-        let summaries = store.albumsForArtist(artist.name).sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) })
-        for summary in summaries { allTracks.append(contentsOf: store.tracksForAlbum(summary.id).map { $0.toTrack() }) }
-        WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
-    }
-    @objc private func contextMenuAddLocalArtistToQueue(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? Artist else { return }
-        let store = MediaLibraryStore.shared
-        var allTracks: [Track] = []
-        let summaries = store.albumsForArtist(artist.name).sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) })
-        for summary in summaries { allTracks.append(contentsOf: store.tracksForAlbum(summary.id).map { $0.toTrack() }) }
-        let engine = WindowManager.shared.audioEngine
-        let wasEmpty = engine.playlist.isEmpty
-        engine.appendTracks(allTracks)
-        if wasEmpty { engine.playTrack(at: 0) }
-    }
-    @objc private func contextMenuPlaySubsonicArtistNext(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? SubsonicArtist else { return }
-        Task { @MainActor in
-            do {
-                let albums = try await SubsonicManager.shared.fetchAlbums(forArtist: artist)
-                var allTracks: [Track] = []
-                for album in albums {
-                    let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
-                    allTracks.append(contentsOf: songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
-                }
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
-            } catch { NSLog("Failed to play subsonic artist next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    @objc private func contextMenuAddSubsonicArtistToQueue(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? SubsonicArtist else { return }
-        Task { @MainActor in
-            do {
-                let albums = try await SubsonicManager.shared.fetchAlbums(forArtist: artist)
-                var allTracks: [Track] = []
-                for album in albums {
-                    let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
-                    allTracks.append(contentsOf: songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
-                }
-                let engine = WindowManager.shared.audioEngine
-                let wasEmpty = engine.playlist.isEmpty
-                engine.appendTracks(allTracks)
-                if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add subsonic artist to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
     // MARK: - Jellyfin Context Menu Actions
-    @objc private func contextMenuPlayJellyfinSong(_ sender: NSMenuItem) {
-        guard let song = sender.representedObject as? JellyfinSong else { return }
-        playJellyfinSong(song)
-    }
-    @objc private func contextMenuPlayJellyfinAlbum(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? JellyfinAlbum else { return }
-        playJellyfinAlbum(album)
-    }
-    @objc private func contextMenuPlayJellyfinArtist(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? JellyfinArtist else { return }
-        playJellyfinArtist(artist)
-    }
-    @objc private func contextMenuPlayJellyfinPlaylist(_ sender: NSMenuItem) {
-        guard let playlist = sender.representedObject as? JellyfinPlaylist else { return }
-        playJellyfinPlaylist(playlist)
-    }
-    @objc private func contextMenuPlayJellyfinSongNext(_ sender: NSMenuItem) {
-        guard let song = sender.representedObject as? JellyfinSong,
-              let track = JellyfinManager.shared.convertToTrack(song) else { return }
-        WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
-    }
-    @objc private func contextMenuAddJellyfinSongToQueue(_ sender: NSMenuItem) {
-        guard let song = sender.representedObject as? JellyfinSong,
-              let track = JellyfinManager.shared.convertToTrack(song) else { return }
-        let engine = WindowManager.shared.audioEngine
-        let wasEmpty = engine.playlist.isEmpty
-        engine.appendTracks([track])
-        if wasEmpty { engine.playTrack(at: 0) }
-    }
-    @objc private func contextMenuPlayJellyfinAlbumNext(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? JellyfinAlbum else { return }
-        Task { @MainActor in
-            do {
-                let songs = try await JellyfinManager.shared.fetchSongs(forAlbum: album)
-                let tracks = JellyfinManager.shared.convertToTracks(songs)
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
-            } catch { NSLog("Failed to play Jellyfin album next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    @objc private func contextMenuAddJellyfinAlbumToQueue(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? JellyfinAlbum else { return }
-        Task { @MainActor in
-            do {
-                let songs = try await JellyfinManager.shared.fetchSongs(forAlbum: album)
-                let tracks = JellyfinManager.shared.convertToTracks(songs)
-                let engine = WindowManager.shared.audioEngine
-                let wasEmpty = engine.playlist.isEmpty
-                engine.appendTracks(tracks)
-                if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add Jellyfin album to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    @objc private func contextMenuPlayJellyfinArtistNext(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? JellyfinArtist else { return }
-        Task { @MainActor in
-            do {
-                let albums = try await JellyfinManager.shared.fetchAlbums(forArtist: artist)
-                var allTracks: [Track] = []
-                for album in albums {
-                    let songs = try await JellyfinManager.shared.fetchSongs(forAlbum: album)
-                    allTracks.append(contentsOf: JellyfinManager.shared.convertToTracks(songs))
-                }
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
-            } catch { NSLog("Failed to play Jellyfin artist next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    @objc private func contextMenuAddJellyfinArtistToQueue(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? JellyfinArtist else { return }
-        Task { @MainActor in
-            do {
-                let albums = try await JellyfinManager.shared.fetchAlbums(forArtist: artist)
-                var allTracks: [Track] = []
-                for album in albums {
-                    let songs = try await JellyfinManager.shared.fetchSongs(forAlbum: album)
-                    allTracks.append(contentsOf: JellyfinManager.shared.convertToTracks(songs))
-                }
-                let engine = WindowManager.shared.audioEngine
-                let wasEmpty = engine.playlist.isEmpty
-                engine.appendTracks(allTracks)
-                if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add Jellyfin artist to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
     @objc private func contextMenuPlayMovieNext(_ sender: NSMenuItem) {
         guard let movie = sender.representedObject as? PlexMovie,
               let track = PlexManager.shared.convertToTrack(movie) else { return }
@@ -12827,293 +11960,55 @@ class PlexBrowserView: NSView {
     
     // MARK: - Keyboard Shortcut Helpers
     
-    private func playNextSelected() {
-        guard let index = selectedIndices.first, index < displayItems.count else { return }
-        let item = displayItems[index]
+    /// Shift+Enter / Option+Enter: the menu's Play Next / Add to Queue on the selected row.
+    private func runVerbOnSelection(_ verb: TrackVerb) {
+        guard let index = selectedIndices.first, index < displayItems.count,
+              let playable = playable(for: displayItems[index]) else { return }
+        verb.run(playable)
+    }
+
+    /// The row as tracks for the play verbs; nil for a row with no basic play menu (radio, video,
+    /// YouTube, containers that only expand).
+    private func playable(for item: PlexDisplayItem) -> LibraryPlayable? {
         switch item.type {
-        case .track(let track):
-            if let t = PlexManager.shared.convertToTrack(track) {
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent([t])
-            }
-        case .localTrack(let track):
-            WindowManager.shared.audioEngine.insertTracksAfterCurrent([track.toTrack()])
-        case .subsonicTrack(let song):
-            if let track = SubsonicManager.shared.convertToTrack(song) {
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
-            }
-        case .album(let album):
-            Task { @MainActor in
-                if let tracks = try? await PlexManager.shared.fetchTracks(forAlbum: album) {
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(PlexManager.shared.convertToTracks(tracks))
-                }
-            }
-        case .localAlbum(let album):
-            WindowManager.shared.audioEngine.insertTracksAfterCurrent(album.tracks.map { $0.toTrack() })
-        case .subsonicAlbum(let album):
-            Task { @MainActor in
-                if let songs = try? await SubsonicManager.shared.fetchSongs(forAlbum: album) {
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
-                }
-            }
-        case .artist(let artist):
-            Task { @MainActor in
-                if let allTracks = try? await self.fetchTracksForPlexArtistGroup(artist) {
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(PlexManager.shared.convertToTracks(allTracks))
-                }
-            }
-        case .localArtist(let artist):
-            var allTracks: [Track] = []
-            for album in artist.albums { allTracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
-            WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
-        case .subsonicArtist(let artist):
-            Task { @MainActor in
-                if let albums = try? await SubsonicManager.shared.fetchAlbums(forArtist: artist) {
-                    var allTracks: [Track] = []
-                    for album in albums {
-                        if let songs = try? await SubsonicManager.shared.fetchSongs(forAlbum: album) {
-                            allTracks.append(contentsOf: songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
-                        }
-                    }
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
-                }
-            }
-        case .jellyfinTrack(let song):
-            if let track = JellyfinManager.shared.convertToTrack(song) {
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
-            }
-        case .jellyfinAlbum(let album):
-            Task { @MainActor in
-                if let songs = try? await JellyfinManager.shared.fetchSongs(forAlbum: album) {
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(JellyfinManager.shared.convertToTracks(songs))
-                }
-            }
-        case .jellyfinArtist(let artist):
-            Task { @MainActor in
-                if let albums = try? await JellyfinManager.shared.fetchAlbums(forArtist: artist) {
-                    var allTracks: [Track] = []
-                    for album in albums {
-                        if let songs = try? await JellyfinManager.shared.fetchSongs(forAlbum: album) {
-                            allTracks.append(contentsOf: JellyfinManager.shared.convertToTracks(songs))
-                        }
-                    }
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
-                }
-            }
-        case .embyTrack(let song):
-            if let track = EmbyManager.shared.convertToTrack(song) {
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
-            }
-        case .embyAlbum(let album):
-            Task { @MainActor in
-                if let songs = try? await EmbyManager.shared.fetchSongs(forAlbum: album) {
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(EmbyManager.shared.convertToTracks(songs))
-                }
-            }
-        case .embyArtist(let artist):
-            Task { @MainActor in
-                if let albums = try? await EmbyManager.shared.fetchAlbums(forArtist: artist) {
-                    var allTracks: [Track] = []
-                    for album in albums {
-                        if let songs = try? await EmbyManager.shared.fetchSongs(forAlbum: album) {
-                            allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
-                        }
-                    }
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
-                }
-            }
-        case .movie(let movie):
-            if let track = PlexManager.shared.convertToTrack(movie) {
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
-            }
-        case .episode(let episode):
-            if let track = PlexManager.shared.convertToTrack(episode) {
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
-            }
-        case .season(let season):
-            Task { @MainActor in
-                if let episodes = try? await PlexManager.shared.fetchEpisodes(forSeason: season) {
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(PlexManager.shared.convertToTracks(episodes))
-                }
-            }
-        case .show(let show):
-            Task { @MainActor in
-                if let seasons = try? await PlexManager.shared.fetchSeasons(forShow: show) {
-                    var allTracks: [Track] = []
-                    for season in seasons {
-                        if let episodes = try? await PlexManager.shared.fetchEpisodes(forSeason: season) {
-                            allTracks.append(contentsOf: PlexManager.shared.convertToTracks(episodes))
-                        }
-                    }
-                    WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
-                }
-            }
-        default: break
+        case .track(let t): return .plexTrack(t)
+        case .album(let a): return .plexAlbum(a)
+        case .artist(let a):
+            return .plexArtistGroup(members: plexArtistGroup(for: a),
+                                    cachedAlbums: plexAlbumsByArtistGroupKey[plexArtistGroupKey(for: a)] ?? [])
+        case .plexPlaylist(let p): return .plexPlaylist(p)
+        case .localTrack(let t): return .localTrack(t)
+        case .localAlbum(let a): return .localAlbum(a)
+        case .localArtist(let a): return .localArtist(a)
+        case .localFolder(let url, _): return .localFolder(url)
+        case .localPlaylist(let p): return .localPlaylist(p.url)
+        case .localPlaylistTrack(let t): return .tracks([t])
+        case .subsonicTrack(let s): return .subsonicSong(s)
+        case .subsonicAlbum(let a): return .subsonicAlbum(a)
+        case .subsonicArtist(let a): return .subsonicArtist(a)
+        case .subsonicPlaylist(let p): return .subsonicPlaylist(p)
+        case .jellyfinTrack(let s): return .jellyfinSong(s)
+        case .jellyfinAlbum(let a): return .jellyfinAlbum(a)
+        case .jellyfinArtist(let a): return .jellyfinArtist(a)
+        case .jellyfinPlaylist(let p): return .jellyfinPlaylist(p)
+        case .embyTrack(let s): return .embySong(s)
+        case .embyAlbum(let a): return .embyAlbum(a)
+        case .embyArtist(let a): return .embyArtist(a)
+        case .embyPlaylist(let p): return .embyPlaylist(p)
+        case .movie, .show, .season, .episode, .header, .localMovie, .localShow, .localSeason, .localEpisode,
+             .jellyfinMovie, .jellyfinShow, .jellyfinSeason, .jellyfinEpisode,
+             .embyMovie, .embyShow, .embySeason, .embyEpisode,
+             .radioStation, .radioFolder, .youtubeChannel, .youtubeVideo, .plexRadioStation,
+             .subsonicRadioStation, .jellyfinRadioStation, .embyRadioStation, .localRadioStation:
+            return nil
         }
     }
 
-    private func addSelectedToQueue() {
-        guard let index = selectedIndices.first, index < displayItems.count else { return }
-        let item = displayItems[index]
-        let engine = WindowManager.shared.audioEngine
-        let wasEmpty = engine.playlist.isEmpty
-        
-        switch item.type {
-        case .track(let track):
-            if let t = PlexManager.shared.convertToTrack(track) {
-                engine.appendTracks([t])
-                if wasEmpty { engine.playTrack(at: 0) }
-            }
-        case .localTrack(let track):
-            engine.appendTracks([track.toTrack()])
-            if wasEmpty { engine.playTrack(at: 0) }
-        case .subsonicTrack(let song):
-            if let track = SubsonicManager.shared.convertToTrack(song) {
-                engine.appendTracks([track])
-                if wasEmpty { engine.playTrack(at: 0) }
-            }
-        case .album(let album):
-            Task { @MainActor in
-                if let tracks = try? await PlexManager.shared.fetchTracks(forAlbum: album) {
-                    let converted = PlexManager.shared.convertToTracks(tracks)
-                    let wasEmpty = engine.playlist.isEmpty
-                    engine.appendTracks(converted)
-                    if wasEmpty { engine.playTrack(at: 0) }
-                }
-            }
-        case .localAlbum(let album):
-            let tracks = album.tracks.map { $0.toTrack() }
-            engine.appendTracks(tracks)
-            if wasEmpty { engine.playTrack(at: 0) }
-        case .subsonicAlbum(let album):
-            Task { @MainActor in
-                if let songs = try? await SubsonicManager.shared.fetchSongs(forAlbum: album) {
-                    let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
-                    let wasEmpty = engine.playlist.isEmpty
-                    engine.appendTracks(tracks)
-                    if wasEmpty { engine.playTrack(at: 0) }
-                }
-            }
-        case .artist(let artist):
-            Task { @MainActor in
-                if let allTracks = try? await self.fetchTracksForPlexArtistGroup(artist) {
-                    let converted = PlexManager.shared.convertToTracks(allTracks)
-                    let wasEmpty = engine.playlist.isEmpty
-                    engine.appendTracks(converted)
-                    if wasEmpty { engine.playTrack(at: 0) }
-                }
-            }
-        case .localArtist(let artist):
-            var allTracks: [Track] = []
-            for album in artist.albums { allTracks.append(contentsOf: album.tracks.map { $0.toTrack() }) }
-            engine.appendTracks(allTracks)
-            if wasEmpty { engine.playTrack(at: 0) }
-        case .subsonicArtist(let artist):
-            Task { @MainActor in
-                if let albums = try? await SubsonicManager.shared.fetchAlbums(forArtist: artist) {
-                    var allTracks: [Track] = []
-                    for album in albums {
-                        if let songs = try? await SubsonicManager.shared.fetchSongs(forAlbum: album) {
-                            allTracks.append(contentsOf: songs.compactMap { SubsonicManager.shared.convertToTrack($0) })
-                        }
-                    }
-                    let wasEmpty = engine.playlist.isEmpty
-                    engine.appendTracks(allTracks)
-                    if wasEmpty { engine.playTrack(at: 0) }
-                }
-            }
-        case .jellyfinTrack(let song):
-            if let track = JellyfinManager.shared.convertToTrack(song) {
-                engine.appendTracks([track])
-                if wasEmpty { engine.playTrack(at: 0) }
-            }
-        case .jellyfinAlbum(let album):
-            Task { @MainActor in
-                if let songs = try? await JellyfinManager.shared.fetchSongs(forAlbum: album) {
-                    let tracks = JellyfinManager.shared.convertToTracks(songs)
-                    let wasEmpty = engine.playlist.isEmpty
-                    engine.appendTracks(tracks)
-                    if wasEmpty { engine.playTrack(at: 0) }
-                }
-            }
-        case .jellyfinArtist(let artist):
-            Task { @MainActor in
-                if let albums = try? await JellyfinManager.shared.fetchAlbums(forArtist: artist) {
-                    var allTracks: [Track] = []
-                    for album in albums {
-                        if let songs = try? await JellyfinManager.shared.fetchSongs(forAlbum: album) {
-                            allTracks.append(contentsOf: JellyfinManager.shared.convertToTracks(songs))
-                        }
-                    }
-                    let wasEmpty = engine.playlist.isEmpty
-                    engine.appendTracks(allTracks)
-                    if wasEmpty { engine.playTrack(at: 0) }
-                }
-            }
-        case .embyTrack(let song):
-            if let track = EmbyManager.shared.convertToTrack(song) {
-                engine.appendTracks([track])
-                if wasEmpty { engine.playTrack(at: 0) }
-            }
-        case .embyAlbum(let album):
-            Task { @MainActor in
-                if let songs = try? await EmbyManager.shared.fetchSongs(forAlbum: album) {
-                    let tracks = EmbyManager.shared.convertToTracks(songs)
-                    let wasEmpty = engine.playlist.isEmpty
-                    engine.appendTracks(tracks)
-                    if wasEmpty { engine.playTrack(at: 0) }
-                }
-            }
-        case .embyArtist(let artist):
-            Task { @MainActor in
-                if let albums = try? await EmbyManager.shared.fetchAlbums(forArtist: artist) {
-                    var allTracks: [Track] = []
-                    for album in albums {
-                        if let songs = try? await EmbyManager.shared.fetchSongs(forAlbum: album) {
-                            allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
-                        }
-                    }
-                    let wasEmpty = engine.playlist.isEmpty
-                    engine.appendTracks(allTracks)
-                    if wasEmpty { engine.playTrack(at: 0) }
-                }
-            }
-        case .movie(let movie):
-            if let track = PlexManager.shared.convertToTrack(movie) {
-                engine.appendTracks([track])
-                if wasEmpty { engine.playTrack(at: 0) }
-            }
-        case .episode(let episode):
-            if let track = PlexManager.shared.convertToTrack(episode) {
-                engine.appendTracks([track])
-                if wasEmpty { engine.playTrack(at: 0) }
-            }
-        case .season(let season):
-            Task { @MainActor in
-                if let episodes = try? await PlexManager.shared.fetchEpisodes(forSeason: season) {
-                    let tracks = PlexManager.shared.convertToTracks(episodes)
-                    let wasEmpty = engine.playlist.isEmpty
-                    engine.appendTracks(tracks)
-                    if wasEmpty { engine.playTrack(at: 0) }
-                }
-            }
-        case .show(let show):
-            Task { @MainActor in
-                if let seasons = try? await PlexManager.shared.fetchSeasons(forShow: show) {
-                    var allTracks: [Track] = []
-                    for season in seasons {
-                        if let episodes = try? await PlexManager.shared.fetchEpisodes(forSeason: season) {
-                            allTracks.append(contentsOf: PlexManager.shared.convertToTracks(episodes))
-                        }
-                    }
-                    let wasEmpty = engine.playlist.isEmpty
-                    engine.appendTracks(allTracks)
-                    if wasEmpty { engine.playTrack(at: 0) }
-                }
-            }
-        default: break
-        }
+    @objc private func contextMenuActivate(_ sender: NSMenuItem) {
+        guard let item = sender.representedObject as? PlexDisplayItem else { return }
+        handleDoubleClick(on: item)
     }
-    
+
     // MARK: - Plex Radio Actions
     
     @objc private func contextMenuStartTrackRadio(_ sender: NSMenuItem) {
@@ -13251,89 +12146,6 @@ class PlexBrowserView: NSView {
         playJellyfinEpisode(episode)
     }
 
-    @objc private func contextMenuPlayEmbySong(_ sender: NSMenuItem) {
-        guard let song = sender.representedObject as? EmbySong else { return }
-        playEmbySong(song)
-    }
-    @objc private func contextMenuPlayEmbyAlbum(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? EmbyAlbum else { return }
-        playEmbyAlbum(album)
-    }
-    @objc private func contextMenuPlayEmbyArtist(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? EmbyArtist else { return }
-        playEmbyArtist(artist)
-    }
-    @objc private func contextMenuPlayEmbyPlaylist(_ sender: NSMenuItem) {
-        guard let playlist = sender.representedObject as? EmbyPlaylist else { return }
-        playEmbyPlaylist(playlist)
-    }
-    @objc private func contextMenuPlayEmbySongNext(_ sender: NSMenuItem) {
-        guard let song = sender.representedObject as? EmbySong,
-              let track = EmbyManager.shared.convertToTrack(song) else { return }
-        WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
-    }
-    @objc private func contextMenuAddEmbySongToQueue(_ sender: NSMenuItem) {
-        guard let song = sender.representedObject as? EmbySong,
-              let track = EmbyManager.shared.convertToTrack(song) else { return }
-        let engine = WindowManager.shared.audioEngine
-        let wasEmpty = engine.playlist.isEmpty
-        engine.appendTracks([track])
-        if wasEmpty { engine.playTrack(at: 0) }
-    }
-    @objc private func contextMenuPlayEmbyAlbumNext(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? EmbyAlbum else { return }
-        Task { @MainActor in
-            do {
-                let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
-                let tracks = EmbyManager.shared.convertToTracks(songs)
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
-            } catch { NSLog("Failed to play Emby album next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    @objc private func contextMenuAddEmbyAlbumToQueue(_ sender: NSMenuItem) {
-        guard let album = sender.representedObject as? EmbyAlbum else { return }
-        Task { @MainActor in
-            do {
-                let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
-                let tracks = EmbyManager.shared.convertToTracks(songs)
-                let engine = WindowManager.shared.audioEngine
-                let wasEmpty = engine.playlist.isEmpty
-                engine.appendTracks(tracks)
-                if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add Emby album to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    @objc private func contextMenuPlayEmbyArtistNext(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? EmbyArtist else { return }
-        Task { @MainActor in
-            do {
-                let albums = try await EmbyManager.shared.fetchAlbums(forArtist: artist)
-                var allTracks: [Track] = []
-                for album in albums {
-                    let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
-                    allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
-                }
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
-            } catch { NSLog("Failed to play Emby artist next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    @objc private func contextMenuAddEmbyArtistToQueue(_ sender: NSMenuItem) {
-        guard let artist = sender.representedObject as? EmbyArtist else { return }
-        Task { @MainActor in
-            do {
-                let albums = try await EmbyManager.shared.fetchAlbums(forArtist: artist)
-                var allTracks: [Track] = []
-                for album in albums {
-                    let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
-                    allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
-                }
-                let engine = WindowManager.shared.audioEngine
-                let wasEmpty = engine.playlist.isEmpty
-                engine.appendTracks(allTracks)
-                if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add Emby artist to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
     @objc private func contextMenuPlayEmbyMovie(_ sender: NSMenuItem) {
         guard let movie = sender.representedObject as? EmbyMovie else { return }
         playEmbyMovie(movie)
@@ -14109,9 +12921,9 @@ class PlexBrowserView: NSView {
             if hasUnsubmittedYouTubeSearch {
                 loadYouTubeSearchResults()
             } else if event.modifierFlags.contains(.shift) {
-                playNextSelected()
+                runVerbOnSelection(.playNext)
             } else if event.modifierFlags.contains(.option) {
-                addSelectedToQueue()
+                runVerbOnSelection(.addToQueue)
             } else {
                 if let index = selectedIndices.first, index < displayItems.count {
                     handleDoubleClick(on: displayItems[index])
@@ -16114,15 +14926,6 @@ class PlexBrowserView: NSView {
         expandedLocalPlaylists.formIntersection(validKeys)
     }
 
-    private func playLocalPlaylist(_ url: URL) {
-        Task.detached {
-            let tracks = parsePlexLocalPlaylistTracks(at: url)
-            await MainActor.run {
-                WindowManager.shared.audioEngine.playNow(tracks)
-            }
-        }
-    }
-
     /// Format duration in seconds to mm:ss
     private func formatDuration(_ seconds: Int?) -> String? {
         guard let seconds = seconds else { return nil }
@@ -16801,12 +15604,6 @@ class PlexBrowserView: NSView {
         LibraryTextSorter.areInOrder(lhs, rhs, ascending: ascending, ignoreLeadingArticles: true)
     }
 
-    /// Returns the tracks for a local album, fetching from store if the album's tracks array is empty (stub album).
-    private func resolvedTracksForLocalAlbum(_ album: Album) -> [LibraryTrack] {
-        if !album.tracks.isEmpty { return album.tracks }
-        return MediaLibraryStore.shared.tracksForAlbum(album.id)
-    }
-
     // Plex sorting helpers
     
     private func sortPlexArtists(_ artists: [PlexArtist]) -> [PlexArtist] {
@@ -16914,20 +15711,6 @@ class PlexBrowserView: NSView {
             albums.append(contentsOf: try await PlexManager.shared.fetchAlbums(forArtist: member))
         }
         return PlexIdentity.unique(albums)
-    }
-
-    private func fetchTracksForPlexArtistGroup(_ artist: PlexArtist) async throws -> [PlexTrack] {
-        let albums = try await fetchAlbumsForPlexArtistGroup(artist)
-        var tracks: [PlexTrack] = []
-        for album in albums {
-            tracks.append(contentsOf: try await PlexManager.shared.fetchTracks(forAlbum: album))
-        }
-        if tracks.isEmpty {
-            for member in plexArtistGroup(for: artist) {
-                tracks.append(contentsOf: try await PlexManager.shared.fetchTracks(forArtist: member))
-            }
-        }
-        return PlexIdentity.unique(tracks)
     }
 
     private func sortPlexPlaylists(_ playlists: [PlexPlaylist]) -> [PlexPlaylist] {
@@ -17408,61 +16191,6 @@ class PlexBrowserView: NSView {
                 self.needsDisplay = true
                 self.localFolderBuildTask = nil
             }
-        }
-    }
-
-    /// Recursively collect audio files from a directory and enrich with library metadata.
-    /// Runs entirely off the main actor, then invokes `completion` on the main actor.
-    private func collectTracksFromFolder(_ folderURL: URL, completion: @escaping ([Track]) -> Void) {
-        Task.detached {
-            var audioFileURLs: [URL] = []
-            var visitedPaths: Set<String> = []
-
-            func walkDirectory(_ url: URL, depth: Int = 0) {
-                guard depth < 100 else { return } // Prevent infinite recursion
-                let resolvedPath = url.resolvingSymlinksInPath().path
-                guard !visitedPaths.contains(resolvedPath) else { return }
-                visitedPaths.insert(resolvedPath)
-
-                if let contents = try? FileManager.default.contentsOfDirectory(
-                    at: url, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
-                    var subdirectories: [URL] = []
-                    var audioFiles: [URL] = []
-                    for item in contents {
-                        var isDir: ObjCBool = false
-                        if FileManager.default.fileExists(atPath: item.path, isDirectory: &isDir) {
-                            if isDir.boolValue {
-                                if item.resolvingSymlinksInPath().path == item.path {
-                                    subdirectories.append(item)
-                                }
-                            } else if LocalFileDiscovery.isSupportedAudioFile(item) {
-                                audioFiles.append(item)
-                            }
-                        }
-                    }
-                    subdirectories.sort { $0.lastPathComponent.lowercased() < $1.lastPathComponent.lowercased() }
-                    audioFiles.sort { $0.lastPathComponent.lowercased() < $1.lastPathComponent.lowercased() }
-                    for subdirectory in subdirectories {
-                        walkDirectory(subdirectory, depth: depth + 1)
-                    }
-                    audioFileURLs.append(contentsOf: audioFiles)
-                }
-            }
-
-            walkDirectory(folderURL)
-
-            let urlToTrackMap = MediaLibraryStore.shared.tracks(forURLs: audioFileURLs)
-            var tracks: [Track] = []
-            for url in audioFileURLs {
-                if let libraryTrack = urlToTrackMap[url] {
-                    tracks.append(libraryTrack.toTrack())
-                } else {
-                    tracks.append(LibraryTrack(url: url).toTrack())
-                }
-            }
-
-            let collectedTracks = tracks
-            await MainActor.run { completion(collectedTracks) }
         }
     }
 
@@ -18364,7 +17092,7 @@ class PlexBrowserView: NSView {
                 if localPlaylistTracks[key] == nil {
                     let url = p.url
                     Task.detached { [weak self] in
-                        let tracks = parsePlexLocalPlaylistTracks(at: url)
+                        let tracks = LibraryPlayable.tracks(inPlaylistFile: url)
                         await MainActor.run { [weak self] in
                             guard let self else { return }
                             self.localPlaylistTracks[key] = tracks
@@ -18422,50 +17150,7 @@ class PlexBrowserView: NSView {
     }
 
     // MARK: - Playback
-    
-    private func playTrack(_ item: PlexDisplayItem) {
-        guard case .track(let track) = item.type else {
-            NSLog("playTrack: item is not a track")
-            return
-        }
-        
-        NSLog("playTrack: %@", track.title)
-        
-        if let convertedTrack = PlexManager.shared.convertToTrack(track) {
-            NSLog("  streamURL: %@", convertedTrack.url.redacted)
-            WindowManager.shared.audioEngine.playNow([convertedTrack])
-            NSLog("  Called playNow()")
-        } else {
-            NSLog("  ERROR: Failed to convert track - streamURL is nil")
-        }
-    }
-    
-    private func playAlbum(_ album: PlexAlbum) {
-        Task { @MainActor in
-            do {
-                let tracks = try await PlexManager.shared.fetchTracks(forAlbum: album)
-                let convertedTracks = PlexManager.shared.convertToTracks(tracks)
-                NSLog("Playing album %@ with %d tracks", album.title, convertedTracks.count)
-                WindowManager.shared.audioEngine.playNow(convertedTracks)
-            } catch {
-                NSLog("Failed to play album: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-            }
-        }
-    }
-    
-    private func playArtist(_ artist: PlexArtist) {
-        Task { @MainActor in
-            do {
-                let allTracks = try await fetchTracksForPlexArtistGroup(artist)
-                let convertedTracks = PlexManager.shared.convertToTracks(allTracks)
-                NSLog("Playing artist %@ with %d tracks", artist.title, convertedTracks.count)
-                WindowManager.shared.audioEngine.playNow(convertedTracks)
-            } catch {
-                NSLog("Failed to play artist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-            }
-        }
-    }
-    
+
     private func playMovie(_ movie: PlexMovie) {
         NSLog("Playing movie: %@", movie.title)
         WindowManager.shared.playMovie(movie)
@@ -18486,47 +17171,30 @@ class PlexBrowserView: NSView {
         WindowManager.shared.playJellyfinEpisode(episode)
     }
     
-    private func playPlexPlaylist(_ playlist: PlexPlaylist) {
-        // Show loading screen while fetching playlist tracks
+    /// Double-click on a server playlist: Play, behind the loading screen while its tracks are fetched.
+    private func playWithLoadingScreen(_ playable: LibraryPlayable) {
         isLoading = true
         errorMessage = nil
         startLoadingAnimation()
         needsDisplay = true
-        
-        Task { @MainActor in
+        TrackVerb.play.run { [weak self] in
+            defer { self?.isLoading = false; self?.stopLoadingAnimation(); self?.needsDisplay = true }
             do {
-                NSLog("playPlexPlaylist: Starting for '%@' (id=%@, key=%@, smart=%d, content=%@)", 
-                      playlist.title, playlist.id, playlist.key, playlist.smart ? 1 : 0, playlist.content ?? "nil")
-                // Pass the content URI for smart playlists as fallback
-                let tracks = try await PlexManager.shared.fetchPlaylistTracks(
-                    playlistID: playlist.id, 
-                    smartContent: playlist.smart ? playlist.content : nil
-                )
-                let convertedTracks = PlexManager.shared.convertToTracks(tracks)
-                NSLog("Playing Plex playlist %@ with %d tracks (fetched %d)", playlist.title, convertedTracks.count, tracks.count)
-                
-                isLoading = false
-                stopLoadingAnimation()
-                needsDisplay = true
-                
-                WindowManager.shared.audioEngine.playNow(convertedTracks)
+                return try await playable.tracks()
             } catch {
-                NSLog("Failed to play Plex playlist '%@' (id=%@): %@", playlist.title, playlist.id, error.localizedDescription.redactingSensitiveURLQueryItems)
-                isLoading = false
-                stopLoadingAnimation()
-                errorMessage = "Failed to load playlist: \(error.localizedDescription.redactingSensitiveURLQueryItems)"
-                needsDisplay = true
+                self?.errorMessage = "Failed to load playlist: \(error.localizedDescription.redactingSensitiveURLQueryItems)"
+                throw error
             }
         }
     }
-    
+
     private func handleDoubleClick(on item: PlexDisplayItem) {
         switch item.type {
-        case .track:
-            playTrack(item)
+        case .track(let track):
+            TrackVerb.play.run(.plexTrack(track))
             
         case .album(let album):
-            playAlbum(album)
+            TrackVerb.play.run(.plexAlbum(album))
             
         case .artist(let artist):
             if browseMode == .search { navigateToArtistFromSearch(id: artist.id, name: artist.title) } else { toggleExpand(item) }
@@ -18547,10 +17215,10 @@ class PlexBrowserView: NSView {
             break
             
         case .localTrack(let track):
-            playLocalTrack(track)
+            TrackVerb.play.run(.localTrack(track))
 
         case .localAlbum(let album):
-            playLocalAlbum(album)
+            TrackVerb.play.run(.localAlbum(album))
 
         case .localArtist(let artist):
             if browseMode == .search { navigateToArtistFromSearch(id: item.id, name: artist.name) } else { toggleExpand(item) }
@@ -18571,28 +17239,28 @@ class PlexBrowserView: NSView {
             WindowManager.shared.showVideoPlayer(url: episode.url, title: episode.title)
             
         case .subsonicTrack(let song):
-            playSubsonicSong(song)
+            TrackVerb.play.run(.subsonicSong(song))
             
         case .subsonicAlbum(let album):
-            playSubsonicAlbum(album)
+            TrackVerb.play.run(.subsonicAlbum(album))
             
         case .subsonicArtist(let artist):
             if browseMode == .search { navigateToArtistFromSearch(id: artist.id, name: artist.name) } else { toggleExpand(item) }
             
         case .subsonicPlaylist(let playlist):
-            playSubsonicPlaylist(playlist)
+            playWithLoadingScreen(.subsonicPlaylist(playlist))
             
         case .jellyfinTrack(let song):
-            playJellyfinSong(song)
+            TrackVerb.play.run(.jellyfinSong(song))
             
         case .jellyfinAlbum(let album):
-            playJellyfinAlbum(album)
+            TrackVerb.play.run(.jellyfinAlbum(album))
             
         case .jellyfinArtist(let artist):
             if browseMode == .search { navigateToArtistFromSearch(id: artist.id, name: artist.name) } else { toggleExpand(item) }
             
         case .jellyfinPlaylist(let playlist):
-            playJellyfinPlaylist(playlist)
+            playWithLoadingScreen(.jellyfinPlaylist(playlist))
             
         case .jellyfinMovie(let movie):
             playJellyfinMovie(movie)
@@ -18607,16 +17275,16 @@ class PlexBrowserView: NSView {
             playJellyfinEpisode(episode)
 
         case .embyTrack(let song):
-            playEmbySong(song)
+            TrackVerb.play.run(.embySong(song))
 
         case .embyAlbum(let album):
-            playEmbyAlbum(album)
+            TrackVerb.play.run(.embyAlbum(album))
 
         case .embyArtist(let artist):
             if browseMode == .search { navigateToArtistFromSearch(id: artist.id, name: artist.name) } else { toggleExpand(item) }
 
         case .embyPlaylist(let playlist):
-            playEmbyPlaylist(playlist)
+            playWithLoadingScreen(.embyPlaylist(playlist))
 
         case .embyMovie(let movie):
             playEmbyMovie(movie)
@@ -18631,7 +17299,7 @@ class PlexBrowserView: NSView {
             playEmbyEpisode(episode)
 
         case .plexPlaylist(let playlist):
-            playPlexPlaylist(playlist)
+            playWithLoadingScreen(.plexPlaylist(playlist))
             
         case .radioStation(let station):
             playRadioStation(station)
@@ -18662,9 +17330,9 @@ class PlexBrowserView: NSView {
         case .localRadioStation(let radioType):
             playLocalRadioStation(radioType)
         case .localPlaylist(let p):
-            playLocalPlaylist(p.url)
+            TrackVerb.play.run(.localPlaylist(p.url))
         case .localPlaylistTrack(let t):
-            WindowManager.shared.audioEngine.playNow([t])
+            TrackVerb.play.run(.tracks([t]))
         }
     }
 
@@ -18846,139 +17514,7 @@ class PlexBrowserView: NSView {
         audioEngine.loadTracks(tracks)
     }
     
-    // MARK: - Subsonic Playback
-    
-    private func playSubsonicSong(_ song: SubsonicSong) {
-        NSLog("playSubsonicSong: %@", song.title)
-        if let track = SubsonicManager.shared.convertToTrack(song) {
-            WindowManager.shared.audioEngine.playNow([track])
-        }
-    }
-    
-    private func playSubsonicAlbum(_ album: SubsonicAlbum) {
-        Task { @MainActor in
-            do {
-                let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
-                let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
-                NSLog("Playing subsonic album %@ with %d tracks", album.name, tracks.count)
-                WindowManager.shared.audioEngine.playNow(tracks)
-            } catch {
-                NSLog("Failed to play subsonic album: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-            }
-        }
-    }
-    
-    private func playSubsonicArtist(_ artist: SubsonicArtist) {
-        Task { @MainActor in
-            do {
-                let albums = try await SubsonicManager.shared.fetchAlbums(forArtist: artist)
-                var allTracks: [Track] = []
-                for album in albums {
-                    let songs = try await SubsonicManager.shared.fetchSongs(forAlbum: album)
-                    let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
-                    allTracks.append(contentsOf: tracks)
-                }
-                NSLog("Playing subsonic artist %@ with %d tracks", artist.name, allTracks.count)
-                WindowManager.shared.audioEngine.playNow(allTracks)
-            } catch {
-                NSLog("Failed to play subsonic artist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-            }
-        }
-    }
-    
-    private func playSubsonicPlaylist(_ playlist: SubsonicPlaylist) {
-        // Show loading screen while fetching playlist tracks
-        isLoading = true
-        errorMessage = nil
-        startLoadingAnimation()
-        needsDisplay = true
-        
-        Task { @MainActor in
-            do {
-                let (_, songs) = try await SubsonicManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
-                let tracks = songs.compactMap { SubsonicManager.shared.convertToTrack($0) }
-                NSLog("Playing subsonic playlist %@ with %d tracks", playlist.name, tracks.count)
-                
-                isLoading = false
-                stopLoadingAnimation()
-                needsDisplay = true
-                
-                WindowManager.shared.audioEngine.playNow(tracks)
-            } catch {
-                NSLog("Failed to play subsonic playlist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-                isLoading = false
-                stopLoadingAnimation()
-                errorMessage = "Failed to load playlist: \(error.localizedDescription.redactingSensitiveURLQueryItems)"
-                needsDisplay = true
-            }
-        }
-    }
-    
     // MARK: - Emby Playback
-
-    private func playEmbySong(_ song: EmbySong) {
-        NSLog("playEmbySong: %@", song.title)
-        if let track = EmbyManager.shared.convertToTrack(song) {
-            WindowManager.shared.audioEngine.playNow([track])
-        }
-    }
-
-    private func playEmbyAlbum(_ album: EmbyAlbum) {
-        Task { @MainActor in
-            do {
-                let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
-                let tracks = EmbyManager.shared.convertToTracks(songs)
-                NSLog("Playing Emby album %@ with %d tracks", album.name, tracks.count)
-                WindowManager.shared.audioEngine.playNow(tracks)
-            } catch {
-                NSLog("Failed to play Emby album: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-            }
-        }
-    }
-
-    private func playEmbyArtist(_ artist: EmbyArtist) {
-        Task { @MainActor in
-            do {
-                let albums = try await EmbyManager.shared.fetchAlbums(forArtist: artist)
-                var allTracks: [Track] = []
-                for album in albums {
-                    let songs = try await EmbyManager.shared.fetchSongs(forAlbum: album)
-                    allTracks.append(contentsOf: EmbyManager.shared.convertToTracks(songs))
-                }
-                NSLog("Playing Emby artist %@ with %d tracks", artist.name, allTracks.count)
-                WindowManager.shared.audioEngine.playNow(allTracks)
-            } catch {
-                NSLog("Failed to play Emby artist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-            }
-        }
-    }
-
-    private func playEmbyPlaylist(_ playlist: EmbyPlaylist) {
-        isLoading = true
-        errorMessage = nil
-        startLoadingAnimation()
-        needsDisplay = true
-
-        Task { @MainActor in
-            do {
-                let (_, songs) = try await EmbyManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
-                let tracks = EmbyManager.shared.convertToTracks(songs)
-                NSLog("Playing Emby playlist %@ with %d tracks", playlist.name, tracks.count)
-
-                isLoading = false
-                stopLoadingAnimation()
-                needsDisplay = true
-
-                WindowManager.shared.audioEngine.playNow(tracks)
-            } catch {
-                NSLog("Failed to play Emby playlist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-                isLoading = false
-                stopLoadingAnimation()
-                errorMessage = "Failed to load playlist: \(error.localizedDescription.redactingSensitiveURLQueryItems)"
-                needsDisplay = true
-            }
-        }
-    }
 
     private func playEmbyMovie(_ movie: EmbyMovie) {
         NSLog("Playing Emby movie: %@", movie.title)
@@ -18988,105 +17524,6 @@ class PlexBrowserView: NSView {
     private func playEmbyEpisode(_ episode: EmbyEpisode) {
         NSLog("Playing Emby episode: %@ - %@", episode.episodeIdentifier, episode.title)
         WindowManager.shared.playEmbyEpisode(episode)
-    }
-
-    // MARK: - Jellyfin Playback
-
-    private func playJellyfinSong(_ song: JellyfinSong) {
-        NSLog("playJellyfinSong: %@", song.title)
-        if let track = JellyfinManager.shared.convertToTrack(song) {
-            WindowManager.shared.audioEngine.playNow([track])
-        }
-    }
-    
-    private func playJellyfinAlbum(_ album: JellyfinAlbum) {
-        Task { @MainActor in
-            do {
-                let songs = try await JellyfinManager.shared.fetchSongs(forAlbum: album)
-                let tracks = JellyfinManager.shared.convertToTracks(songs)
-                NSLog("Playing Jellyfin album %@ with %d tracks", album.name, tracks.count)
-                WindowManager.shared.audioEngine.playNow(tracks)
-            } catch {
-                NSLog("Failed to play Jellyfin album: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-            }
-        }
-    }
-    
-    private func playJellyfinArtist(_ artist: JellyfinArtist) {
-        Task { @MainActor in
-            do {
-                let albums = try await JellyfinManager.shared.fetchAlbums(forArtist: artist)
-                var allTracks: [Track] = []
-                for album in albums {
-                    let songs = try await JellyfinManager.shared.fetchSongs(forAlbum: album)
-                    allTracks.append(contentsOf: JellyfinManager.shared.convertToTracks(songs))
-                }
-                NSLog("Playing Jellyfin artist %@ with %d tracks", artist.name, allTracks.count)
-                WindowManager.shared.audioEngine.playNow(allTracks)
-            } catch {
-                NSLog("Failed to play Jellyfin artist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-            }
-        }
-    }
-    
-    private func playJellyfinPlaylist(_ playlist: JellyfinPlaylist) {
-        isLoading = true
-        errorMessage = nil
-        startLoadingAnimation()
-        needsDisplay = true
-        
-        Task { @MainActor in
-            do {
-                let (_, songs) = try await JellyfinManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
-                let tracks = JellyfinManager.shared.convertToTracks(songs)
-                NSLog("Playing Jellyfin playlist %@ with %d tracks", playlist.name, tracks.count)
-                
-                isLoading = false
-                stopLoadingAnimation()
-                needsDisplay = true
-                
-                WindowManager.shared.audioEngine.playNow(tracks)
-            } catch {
-                NSLog("Failed to play Jellyfin playlist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-                isLoading = false
-                stopLoadingAnimation()
-                errorMessage = "Failed to load playlist: \(error.localizedDescription.redactingSensitiveURLQueryItems)"
-                needsDisplay = true
-            }
-        }
-    }
-    
-    // MARK: - Local Playback
-    
-    private func playLocalTrack(_ track: LibraryTrack) {
-        NSLog("playLocalTrack: %@", track.title)
-
-        // Expand .cue files or audio files with a sibling .cue. tracksForCueOrSibling owns
-        // the eligibility check, so don't gate on a hard-coded extension list (which would
-        // block sibling-cue expansion for supported formats missing from the list).
-        if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: track.url), !cueExpanded.isEmpty {
-            WindowManager.shared.audioEngine.playNow(cueExpanded)
-            return
-        }
-
-        // Fall back to normal audio file loading
-        let playbackTrack = track.toTrack()
-        WindowManager.shared.audioEngine.playNow([playbackTrack])
-    }
-    
-    private func playLocalAlbum(_ album: Album) {
-        let resolved = resolvedTracksForLocalAlbum(album)
-        NSLog("playLocalAlbum: %@ (%d tracks)", album.name, resolved.count)
-        WindowManager.shared.audioEngine.playNow(resolved.map { $0.toTrack() })
-    }
-
-    private func playLocalArtist(_ artist: Artist) {
-        NSLog("playLocalArtist: %@", artist.name)
-        let store = MediaLibraryStore.shared
-        var tracks: [Track] = []
-        let summaries = store.albumsForArtist(artist.name).sorted(by: { ($0.year ?? 0) < ($1.year ?? 0) })
-        for summary in summaries { tracks.append(contentsOf: store.tracksForAlbum(summary.id).map { $0.toTrack() }) }
-        WindowManager.shared.audioEngine.playNow(tracks)
     }
 }
 
@@ -20105,26 +18542,5 @@ extension PlexDisplayItem {
 
     private static func formatDate(_ date: Date) -> String {
         dateFormatter.string(from: date)
-    }
-}
-
-private func parsePlexLocalPlaylistTracks(at url: URL) -> [Track] {
-    guard let playlist = Playlist.load(from: url) else { return [] }
-
-    // A relative entry is resolved against the playlist file's own directory, which is right only
-    // while the playlist sits beside its music. Nothing used to check that guess, so a playlist
-    // that had been moved listed a full set of entries that all looked fine and none of which
-    // could play. Reported through the validator so it reaches the marquee in every skin mode.
-    let missing = playlist.missingFileEntries
-    if !missing.isEmpty {
-        AudioFileValidator.notifyInvalidFiles(
-            missing.map { (url: $0, reason: "Not found: the playlist entry '\(url.lastPathComponent)' resolves to '\(url.path)'") })
-    }
-
-    return playlist.trackURLs.map { trackURL in
-        if let libTrack = MediaLibrary.shared.findTrack(byURL: trackURL) {
-            return libTrack.toTrack()
-        }
-        return Track(lightweightURL: trackURL)
     }
 }

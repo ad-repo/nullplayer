@@ -51,6 +51,16 @@
   download that already shows under its expanded channel is no longer listed again below it, and a
   video's title no longer changes between searches when its audio and video were saved under
   different titles.
+- **One play menu for every Library Browser row** — right-clicking a track, album, artist,
+  playlist, playlist entry or local folder now offers the same four items on every source:
+  **Play**, **Play and Replace Queue**, **Play Next** and **Add to Queue**. Many rows had
+  only some of them before (local folders, local and server playlists, and Subsonic, Jellyfin and
+  Emby rows in the classic browser). **Add to Playlist** is gone, including from YouTube's Audio and
+  Video submenus: **Add to Queue** does the same and starts playback when the queue is empty.
+  **Shift+Enter** and **Option+Enter** now match the menu's Play Next and Add to Queue, so they too
+  start an empty queue. An artist plays album by album, oldest first, however you start it, and a
+  newer Play wins over a slow server fetch still loading. In the classic browser, **Play Movie** and
+  **Play Episode** on local videos did nothing; they now play.
 
 ## 0.31.4
 
