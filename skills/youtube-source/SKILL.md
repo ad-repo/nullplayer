@@ -29,6 +29,7 @@ Sources/NullPlayer/
 ├── YouTube/
 │   ├── YouTubeModels.swift          # Channel, ChannelSearchResult, Video, Download, MediaKind, AudioFormat, VideoQuality
 │   ├── YouTubeManager.swift         # Singleton: channels, channel search, video listing, downloads, manifest (youtube_downloads.json)
+│   ├── YouTubeChannelUploads.swift  # Each channel's fetched upload list, shared by both browsers and kept on disk
 │   ├── YouTubeVideoActions.swift    # A video row's Audio ▸ / Video ▸ menu and its downloads (both browsers)
 │   ├── YouTubeRows.swift            # Every YouTube list row (Channels tab, channel search, Local search), both browsers
 │   └── YouTubeChannelSearch.swift   # The Search tab's channel search (both browsers)
@@ -58,7 +59,9 @@ var videoQuality: YouTubeVideoQuality        // persisted under "YouTubeVideoQua
 ```
 
 **Notifications:**
-- `YouTubeManager.youtubeChannelsDidChangeNotification` — Channel list modified (the only notification)
+- `YouTubeManager.youtubeChannelsDidChangeNotification` — Channel list modified
+- `YouTubeManager.youtubeVideoLimitDidChangeNotification` — Videos per Channel changed
+- `YouTubeChannelUploads.didChangeNotification` — `load` was called, or an upload fetch finished
 
 ### Data Models
 
@@ -132,7 +135,7 @@ Stored inside `downloadRoot`, tracks downloaded files. In memory it is `[YouTube
 
 ### Channel / Video Listing
 
-Both `ModernLibraryBrowserView` and `PlexBrowserView` (classic UI) integrate YouTube as a **source branch** alongside internet radio stations. Channels appear as expandable folders; expanding a channel calls `YouTubeManager.videos(forChannel:limit:)` which shells out to `yt-dlp --flat-playlist` with no API key:
+Both `ModernLibraryBrowserView` and `PlexBrowserView` (classic UI) integrate YouTube as a **source branch** alongside internet radio stations. Channels appear as expandable folders; expanding a channel calls `YouTubeChannelUploads.shared.load(_:)` (see *Upload cache* below), which, when its cached list won't do, runs `YouTubeManager.videos(forChannel:limit:)`. That shells out to `yt-dlp --flat-playlist` with no API key:
 
 ```bash
 yt-dlp --flat-playlist -J --playlist-end 200 \
@@ -140,11 +143,42 @@ yt-dlp --flat-playlist -J --playlist-end 200 \
   "https://www.youtube.com/@channel_name/videos"
 ```
 
-`-J` dumps a single JSON object; `parseFlatPlaylist` decodes its `entries` (each `id`/`title`/`duration`/`timestamp`) into `YouTubeVideo`s. The `limit` defaults to `YouTubeManager.videoLimit` (a user setting, **default 200**, persisted under `YouTubeVideoLimit`, chosen via **Library → YouTube → Videos per Channel**: 50/100/200/500). Changing it posts `youtubeVideoLimitDidChangeNotification`; both browser views drop their cached `youtubeChannelVideos` and re-fetch expanded channels (`reloadExpandedYouTubeChannels`) so it applies without a restart. Channel title on add comes from a separate `--playlist-end 1` fetch (`fetchChannelTitle`, no extractor arg).
+`-J` dumps a single JSON object; `parseFlatPlaylist` decodes its `entries` (each `id`/`title`/`duration`/`timestamp`) into `YouTubeVideo`s. The `limit` defaults to `YouTubeManager.videoLimit` (a user setting, **default 200**, persisted under `YouTubeVideoLimit`, chosen via **Library → YouTube → Videos per Channel**: 50/100/200/500). Changing it posts `youtubeVideoLimitDidChangeNotification`; each browser view calls `load` for its expanded channels, which fetches only those cached under a smaller limit (see *Upload cache*). Channel title on add comes from a separate `--playlist-end 1` fetch (`fetchChannelTitle`, no extractor arg).
 
 **Approximate dates**: plain `--flat-playlist` returns **no** `upload_date`/`timestamp` — the channel grid only exposes relative dates ("3 weeks ago"). The `youtubetab:approximate_date` extractor arg (passed via `fetchYtDlpJSON(…, approximateDate: true)`, videos call only) makes yt-dlp populate each entry's `timestamp` with an **estimated** epoch, decoded into `YouTubeVideo.publishedAt`. Accurate to the day for recent uploads, coarsening for older ones (older videos can share a timestamp). Unsupported/old yt-dlp just omits it → `publishedAt` nil → empty Date column, natural newest-first order preserved.
 
 Videos appear as indented child rows. Their menu, and double-click / Enter, come from `YouTubeVideoActions` (see *Video row menu* below).
+
+#### Upload cache (`YouTubeChannelUploads`)
+
+A listing takes seconds, so each channel's last list is kept in one `@MainActor` store
+(`YouTubeChannelUploads.shared`) that both browsers, the channel search and the Local search's
+channel rows read; a browser holds only its `expandedYouTubeChannels` (id → channel, so a limit
+change can re-load unsubscribed search previews too). Entries are keyed by channel
+id with the `limit` they were fetched under and `fetchedAt`, and written to
+`~/Library/Caches/NullPlayer/youtube_uploads.json` after each fetch, so the list survives view
+rebuilds, skin switches and relaunches. Entries older than 30 days are dropped when the file is read
+(previews of unsubscribed search results would otherwise pile up).
+
+- `load(channels)` fetches each channel only when there is no entry, it is older than `maxAge` (1 h),
+  or it was fetched under a smaller limit; `load([channel], force: true)` is Refresh. The limit
+  comes from the `limit` closure passed to `init` (default `YouTubeManager.videoLimit`). The cached list stays on
+  screen while a fetch runs. One fetch per channel at a time: a second `load` joins the running one.
+  A fetch that lands under a limit that has since grown fetches again; a failed fetch keeps the old
+  list and is not retried until the next `load`.
+- `uploads(of: expandedIds)` is what `YouTubeRowBuilder` gets: each list cut to the current limit,
+  so a smaller Videos per Channel applies without a fetch.
+- `isFetching(id)` drives the channel row's spinner and `hasFetchesInFlight` the loading timer.
+  `didChangeNotification` posts once per `load` call (fetching or not) and once when each fetch
+  ends. A view rebuilds on it only while it shows YouTube rows (`showsYouTubeRows`: the YouTube
+  source or the Local search), so expand, Refresh and a limit change don't rebuild themselves, and a
+  fetch doesn't reset the other browser's list.
+- Every fetch logs `YouTubeChannelUploads: fetching '<title>' (limit N; cached: …)` with the cached
+  entry's size, limit and age — the line to read when a channel seems to re-fetch.
+- Remove Channel leaves the entry; it ages out, or is reused if the channel is added back.
+- **Not done:** merging only new uploads from a short `--playlist-end` fetch. The
+  `approximate_date` timestamps move between fetches, so a merge would have to replace entries by
+  `videoId`, never append.
 
 ### Channel Search (Search tab)
 
@@ -167,7 +201,7 @@ yt-dlp --flat-playlist -J --playlist-end 20 \
   to the tab reuses results of an unchanged query (`youtubeSearchQuery`).
 - Results build as a `.header` "Channels (N)" plus one **`.youtubeChannel(result.asChannel)`** row
   each, so expand/preview/download reuse the Channels-tab paths (`expandedYouTubeChannels`,
-  `youtubeChannelVideos`). `hasYouTubeColumns` and `applyYouTubeColumnSort` accept the search view
+  `YouTubeChannelUploads`). `hasYouTubeColumns` and `applyYouTubeColumnSort` accept the search view
   (`isYouTubeChannelSearch`); the latter returns true with no video rows so the header isn't sorted
   into the channels.
 - **Subscribe**: double-click / Enter on an unsubscribed result, or the context-menu **Subscribe**,
@@ -277,7 +311,7 @@ subscriptions and the manifest.
 ### Row builder (`YouTubeRows.swift`)
 
 Every YouTube list row in both browsers comes from `YouTubeRowBuilder`, built per rebuild from the
-view's `expandedYouTubeChannels` and `youtubeChannelVideos`: `channels(_:)` (Channels tab),
+view's `expandedYouTubeChannels` and their cached uploads (`YouTubeChannelUploads.uploads(of:)`): `channels(_:)` (Channels tab),
 `channelSearch(_:)` (the YouTube source's Search tab) and `localSearch(query:excluding:)`. It
 returns view-independent `YouTubeRow`s, and each view maps them with a ten-line
 `ModernDisplayItem(_:)` / `PlexDisplayItem(_:)`. Row ids, titles, title prefixes, indents and the
@@ -331,7 +365,7 @@ when a new key is absent — `flac` → FLAC, `mp3High` → MP3 320, `mp3Low` �
 **Library → YouTube → Videos per Channel**
 - How many recent uploads to list per channel (`--playlist-end`); presets `YouTubeManager.videoLimitChoices` = 50/100/200/500, default 200, persisted under `YouTubeVideoLimit`
 - `videos(forChannel:limit:)` defaults `limit` to `videoLimit`
-- Changing it posts `youtubeVideoLimitDidChangeNotification`; both browser views clear `youtubeChannelVideos` and re-fetch expanded channels (`reloadExpandedYouTubeChannels`) so it applies live (no restart)
+- Changing it posts `youtubeVideoLimitDidChangeNotification`; a smaller limit shows fewer of the cached uploads at once, a larger one re-fetches the expanded channels (`YouTubeChannelUploads.load`), live with no restart
 
 ### UI Mode Support
 

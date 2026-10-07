@@ -1111,9 +1111,7 @@ class PlexBrowserView: NSView {
     private var radioPlayTask: Task<Void, Never>?
     private var loadGeneration: Int = 0
 
-    private var expandedYouTubeChannels: Set<String> = []
-    private var youtubeChannelVideos: [String: [YouTubeVideo]] = [:]
-    private var youtubeExpandTask: Task<Void, Never>?
+    private var expandedYouTubeChannels: [String: YouTubeChannel] = [:]
     /// A video row's Audio ▸ / Video ▸ menu and its downloads, which drive a per-row spinner.
     private lazy var youtubeVideoActions: YouTubeVideoActions = {
         let actions = YouTubeVideoActions(search: youtubeSearch)
@@ -1125,8 +1123,6 @@ class PlexBrowserView: NSView {
         actions.onFilesChanged = { [weak self] in self?.rebuildCurrentModeItems() }
         return actions
     }()
-    /// Channel IDs whose uploads are currently being fetched — drives a per-row spinner on the channel entry.
-    private var loadingChannelIds: Set<String> = []
     /// Search tab (YouTube source): channels found by the last submitted query.
     private let youtubeSearch = YouTubeChannelSearch()
 
@@ -1927,6 +1923,12 @@ class PlexBrowserView: NSView {
             name: YouTubeManager.youtubeVideoLimitDidChangeNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(youtubeUploadsDidChange),
+            name: YouTubeChannelUploads.didChangeNotification,
+            object: nil
+        )
         // Redraw when a YouTube row thumbnail / avatar finishes loading
         NotificationCenter.default.addObserver(
             self,
@@ -2490,7 +2492,6 @@ class PlexBrowserView: NSView {
                      subsonicLoadTask, subsonicExpandTask,
                      plexLoadTask, sourceConnectTask,
                      jellyfinLoadTask, jellyfinAlbumWarmTask, jellyfinExpandTask,
-                     youtubeExpandTask,
                      embyLoadTask, embyExpandTask,
                      ratingSubmitTask, artworkLoadTask, artworkCyclingTask,
                      radioLoadTask, radioPlayTask] {
@@ -2502,7 +2503,6 @@ class PlexBrowserView: NSView {
         subsonicLoadTask = nil; subsonicExpandTask = nil
         plexLoadTask = nil; sourceConnectTask = nil
         jellyfinLoadTask = nil; jellyfinAlbumWarmTask = nil; jellyfinExpandTask = nil
-        youtubeExpandTask = nil
         embyLoadTask = nil; embyExpandTask = nil
         ratingSubmitTask = nil; artworkLoadTask = nil; artworkCyclingTask = nil
         radioLoadTask = nil; radioPlayTask = nil
@@ -4757,7 +4757,7 @@ class PlexBrowserView: NSView {
                 // Expand/collapse indicator for hierarchical items — or an inline spinner
                 // while a YouTube channel's uploads load.
                 let isLoadingChannel: Bool = {
-                    if case .youtubeChannel(let channel) = item.type { return loadingChannelIds.contains(channel.id) }
+                    if case .youtubeChannel(let channel) = item.type { return YouTubeChannelUploads.shared.isFetching(channel.id) }
                     return false
                 }()
                 var titleSpinnerInset: CGFloat = 0
@@ -6819,7 +6819,7 @@ class PlexBrowserView: NSView {
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             self.loadingAnimationFrame += 1
-            if self.isLoading || self.youtubeVideoActions.hasFetchesInFlight || !self.loadingChannelIds.isEmpty {
+            if self.isLoading || self.youtubeVideoActions.hasFetchesInFlight || YouTubeChannelUploads.shared.hasFetchesInFlight {
                 // Only redraw the list area where the loading spinner is displayed
                 // This prevents menu items from shimmering on non-Retina displays
                 var listY = self.Layout.titleBarHeight + self.Layout.serverBarHeight + self.Layout.tabBarHeight
@@ -6844,7 +6844,7 @@ class PlexBrowserView: NSView {
     }
 
     private func stopLoadingAnimation() {
-        guard !isLibraryScanning && !youtubeVideoActions.hasFetchesInFlight && loadingChannelIds.isEmpty else { return }
+        guard !isLibraryScanning && !youtubeVideoActions.hasFetchesInFlight && !YouTubeChannelUploads.shared.hasFetchesInFlight else { return }
         loadingAnimationTimer?.invalidate()
         loadingAnimationTimer = nil
         loadingAnimationFrame = 0
@@ -11104,7 +11104,7 @@ class PlexBrowserView: NSView {
             if menu.items.isEmpty { return }
 
         case .youtubeChannel(let channel):
-            let expandTitle = expandedYouTubeChannels.contains(channel.id) ? "Collapse" : "Expand"
+            let expandTitle = expandedYouTubeChannels[channel.id] != nil ? "Collapse" : "Expand"
             let expandItem = NSMenuItem(title: expandTitle, action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
             menu.addItem(NSMenuItem.separator())
@@ -11557,31 +11557,14 @@ class PlexBrowserView: NSView {
 
     @objc private func contextMenuRefreshYouTubeChannel(_ sender: NSMenuItem) {
         guard let channel = sender.representedObject as? YouTubeChannel else { return }
-        youtubeChannelVideos.removeValue(forKey: channel.id)
-        expandedYouTubeChannels.insert(channel.id)
-        youtubeExpandTask?.cancel()
-        loadingChannelIds.insert(channel.id); startLoadingAnimation()
-        youtubeExpandTask = Task.detached { @MainActor [weak self] in
-            guard let self = self else { return }
-            defer { self.loadingChannelIds.remove(channel.id); self.stopLoadingAnimation(); self.needsDisplay = true }
-            do {
-                let videos = try await YouTubeManager.shared.videos(forChannel: channel)
-                youtubeChannelVideos[channel.id] = videos
-                rebuildCurrentModeItems()
-            } catch is CancellationError { }
-            catch where Task.isCancelled { }
-            catch {
-                NSLog("Failed to refresh YouTube channel '%@': %@", channel.title, error.localizedDescription.redactingSensitiveURLQueryItems)
-            }
-        }
-        rebuildCurrentModeItems(); needsDisplay = true
+        expandedYouTubeChannels[channel.id] = channel
+        YouTubeChannelUploads.shared.load([channel], force: true)
     }
 
     @objc private func contextMenuRemoveYouTubeChannel(_ sender: NSMenuItem) {
         guard let channel = sender.representedObject as? YouTubeChannel else { return }
         YouTubeManager.shared.removeChannel(channel)
-        expandedYouTubeChannels.remove(channel.id)
-        youtubeChannelVideos.removeValue(forKey: channel.id)
+        expandedYouTubeChannels.removeValue(forKey: channel.id)
         rebuildCurrentModeItems()
     }
 
@@ -14047,7 +14030,8 @@ class PlexBrowserView: NSView {
     }
 
     private var youtubeRows: YouTubeRowBuilder {
-        YouTubeRowBuilder(expanded: expandedYouTubeChannels, uploads: youtubeChannelVideos)
+        YouTubeRowBuilder(expanded: Set(expandedYouTubeChannels.keys),
+                          uploads: YouTubeChannelUploads.shared.uploads(of: expandedYouTubeChannels.keys))
     }
 
     private func buildYouTubeChannelItems() {
@@ -14653,47 +14637,22 @@ class PlexBrowserView: NSView {
         }
     }
 
+    /// A larger limit fetches the expanded channels again; a smaller one shows fewer of the cached uploads.
     @objc private func youtubeVideoLimitDidChange() {
-        // Drop cached video lists so the new limit applies. Re-fetch the channels that are
-        // currently expanded; otherwise just collapse them so a later expand fetches fresh.
-        youtubeChannelVideos.removeAll()
-        if currentSource.isYouTube {
-            reloadExpandedYouTubeChannels()
-        } else {
-            expandedYouTubeChannels.removeAll()
-        }
+        YouTubeChannelUploads.shared.load(expandedYouTubeChannels.values)
     }
 
-    /// Re-fetch the uploads for every currently-expanded YouTube channel (sequentially, in
-    /// one task) and rebuild as each arrives. Used when the per-channel video limit changes.
-    private func reloadExpandedYouTubeChannels() {
-        let channels = YouTubeManager.shared.channels.filter { expandedYouTubeChannels.contains($0.id) }
-        guard !channels.isEmpty else { rebuildCurrentModeItems(); return }
-        youtubeExpandTask?.cancel()
-        loadingChannelIds.formUnion(channels.map { $0.id }); startLoadingAnimation()
-        youtubeExpandTask = Task.detached { @MainActor [weak self] in
-            guard let self = self else { return }
-            defer {
-                for ch in channels { self.loadingChannelIds.remove(ch.id) }
-                self.stopLoadingAnimation(); self.needsDisplay = true
-            }
-            for ch in channels {
-                do {
-                    let videos = try await YouTubeManager.shared.videos(forChannel: ch)
-                    youtubeChannelVideos[ch.id] = videos
-                    loadingChannelIds.remove(ch.id)
-                    rebuildCurrentModeItems()
-                } catch is CancellationError { return }
-                catch where Task.isCancelled { return }
-                catch {
-                    loadingChannelIds.remove(ch.id)
-                    NSLog("Failed to reload YouTube videos for channel '%@': %@", ch.title, error.localizedDescription.redactingSensitiveURLQueryItems)
-                }
-            }
-        }
-        rebuildCurrentModeItems(); needsDisplay = true
+    @objc private func youtubeUploadsDidChange() {
+        if YouTubeChannelUploads.shared.hasFetchesInFlight { startLoadingAnimation() }
+        if showsYouTubeRows { rebuildCurrentModeItems(); needsDisplay = true }
     }
-    
+
+    /// The list shows YouTube rows: the YouTube source, or the Local search's channel and video rows.
+    private var showsYouTubeRows: Bool {
+        if case .local = currentSource { return browseMode == .search }
+        return currentSource.isYouTube
+    }
+
     /// Load Subsonic data for the current mode
     private func loadSubsonicData(serverId: String, generation: Int? = nil) {
         let generation = generation ?? loadGeneration
@@ -17124,32 +17083,12 @@ class PlexBrowserView: NSView {
             rebuildCurrentModeItems()
 
         case .youtubeChannel(let channel):
-            if expandedYouTubeChannels.contains(channel.id) {
-                expandedYouTubeChannels.remove(channel.id)
+            if expandedYouTubeChannels.removeValue(forKey: channel.id) == nil {
+                expandedYouTubeChannels[channel.id] = channel
+                YouTubeChannelUploads.shared.load([channel])  // rebuilds through youtubeUploadsDidChange
             } else {
-                expandedYouTubeChannels.insert(channel.id)
-                if youtubeChannelVideos[channel.id] == nil {
-                    youtubeExpandTask?.cancel()
-                    loadingChannelIds.insert(channel.id); startLoadingAnimation()
-                    youtubeExpandTask = Task.detached { @MainActor [weak self] in
-                        guard let self = self else { return }
-                        defer { self.loadingChannelIds.remove(channel.id); self.stopLoadingAnimation(); self.needsDisplay = true }
-                        do {
-                            let videos = try await YouTubeManager.shared.videos(forChannel: channel)
-                            youtubeChannelVideos[channel.id] = videos
-                            rebuildCurrentModeItems()
-                        } catch is CancellationError { }
-                        catch where Task.isCancelled { }
-                        catch {
-                            NSLog("Failed to load YouTube videos for channel '%@': %@", channel.title, error.localizedDescription.redactingSensitiveURLQueryItems)
-                        }
-                    }
-                    rebuildCurrentModeItems()
-                    needsDisplay = true
-                    return
-                }
+                rebuildCurrentModeItems()
             }
-            rebuildCurrentModeItems()
 
         default:
             break

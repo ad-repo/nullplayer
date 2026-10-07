@@ -471,9 +471,7 @@ class ModernLibraryBrowserView: NSView {
     private var activeYouTubeChannelSheet: AddYouTubeChannelSheet?
 
     // Cached data - YouTube
-    private var expandedYouTubeChannels: Set<String> = []
-    private var youtubeChannelVideos: [String: [YouTubeVideo]] = [:]
-    private var youtubeExpandTask: Task<Void, Never>?
+    private var expandedYouTubeChannels: [String: YouTubeChannel] = [:]
     /// A video row's Audio ▸ / Video ▸ menu and its downloads, which drive a per-row spinner.
     private lazy var youtubeVideoActions: YouTubeVideoActions = {
         let actions = YouTubeVideoActions(search: youtubeSearch)
@@ -485,8 +483,6 @@ class ModernLibraryBrowserView: NSView {
         actions.onFilesChanged = { [weak self] in self?.rebuildCurrentModeItems() }
         return actions
     }()
-    /// Channel IDs whose uploads are currently being fetched — drives a per-row spinner on the channel entry.
-    private var loadingChannelIds: Set<String> = []
     /// Search tab (YouTube source): channels found by the last submitted query.
     private let youtubeSearch = YouTubeChannelSearch()
 
@@ -869,6 +865,8 @@ class ModernLibraryBrowserView: NSView {
                                                name: YouTubeManager.youtubeChannelsDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(youtubeVideoLimitDidChange),
                                                name: YouTubeManager.youtubeVideoLimitDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(youtubeUploadsDidChange),
+                                               name: YouTubeChannelUploads.didChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(libraryRowThumbnailDidLoad),
                                                name: LibraryRowThumbnails.didLoadNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(trackDidChange),
@@ -952,7 +950,6 @@ class ModernLibraryBrowserView: NSView {
                      subsonicLoadTask, subsonicExpandTask,
                      plexLoadTask, sourceConnectTask,
                      jellyfinLoadTask, jellyfinAlbumWarmTask, jellyfinExpandTask,
-                     youtubeExpandTask,
                      embyLoadTask, embyExpandTask,
                      ratingSubmitTask, currentTrackArtworkLoadTask, artworkLoadTask, artworkCyclingTask,
                      radioLoadTask, radioPlayTask] {
@@ -964,7 +961,6 @@ class ModernLibraryBrowserView: NSView {
         subsonicLoadTask = nil; subsonicExpandTask = nil
         plexLoadTask = nil; sourceConnectTask = nil
         jellyfinLoadTask = nil; jellyfinAlbumWarmTask = nil; jellyfinExpandTask = nil
-        youtubeExpandTask = nil
         embyLoadTask = nil; embyExpandTask = nil
         ratingSubmitTask = nil
         currentTrackArtworkLoadTask = nil; artworkLoadTask = nil; artworkCyclingTask = nil
@@ -2532,7 +2528,7 @@ class ModernLibraryBrowserView: NSView {
 
                 // Expand/collapse indicator — or an inline spinner while a YouTube channel's uploads load.
                 let isLoadingChannel: Bool = {
-                    if case .youtubeChannel(let channel) = item.type { return loadingChannelIds.contains(channel.id) }
+                    if case .youtubeChannel(let channel) = item.type { return YouTubeChannelUploads.shared.isFetching(channel.id) }
                     return false
                 }()
                 var titleSpinnerInset: CGFloat = 0
@@ -5694,7 +5690,7 @@ class ModernLibraryBrowserView: NSView {
             }
             if menu.items.isEmpty { return }
         case .youtubeChannel(let channel):
-            let expandTitle = expandedYouTubeChannels.contains(channel.id) ? "Collapse" : "Expand"
+            let expandTitle = expandedYouTubeChannels[channel.id] != nil ? "Collapse" : "Expand"
             let expandItem = NSMenuItem(title: expandTitle, action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
             menu.addItem(NSMenuItem.separator())
@@ -6388,31 +6384,14 @@ class ModernLibraryBrowserView: NSView {
     }
     @objc private func contextMenuRefreshYouTubeChannel(_ sender: NSMenuItem) {
         guard let channel = sender.representedObject as? YouTubeChannel else { return }
-        youtubeChannelVideos.removeValue(forKey: channel.id)
-        expandedYouTubeChannels.insert(channel.id)
-        youtubeExpandTask?.cancel()
-        loadingChannelIds.insert(channel.id); startLoadingAnimation()
-        youtubeExpandTask = Task.detached { @MainActor [weak self] in
-            guard let self = self else { return }
-            defer { self.loadingChannelIds.remove(channel.id); self.stopLoadingAnimation(); self.needsDisplay = true }
-            do {
-                let videos = try await YouTubeManager.shared.videos(forChannel: channel)
-                youtubeChannelVideos[channel.id] = videos
-                rebuildCurrentModeItems()
-            } catch is CancellationError { }
-            catch where Task.isCancelled { }
-            catch {
-                NSLog("Failed to refresh YouTube channel '%@': %@", channel.title, error.localizedDescription.redactingSensitiveURLQueryItems)
-            }
-        }
-        rebuildCurrentModeItems(); needsDisplay = true
+        expandedYouTubeChannels[channel.id] = channel
+        YouTubeChannelUploads.shared.load([channel], force: true)
     }
 
     @objc private func contextMenuRemoveYouTubeChannel(_ sender: NSMenuItem) {
         guard let channel = sender.representedObject as? YouTubeChannel else { return }
         YouTubeManager.shared.removeChannel(channel)
-        expandedYouTubeChannels.remove(channel.id)
-        youtubeChannelVideos.removeValue(forKey: channel.id)
+        expandedYouTubeChannels.removeValue(forKey: channel.id)
         rebuildCurrentModeItems()
     }
 
@@ -6790,45 +6769,20 @@ class ModernLibraryBrowserView: NSView {
         needsDisplay = true
     }
 
+    /// A larger limit fetches the expanded channels again; a smaller one shows fewer of the cached uploads.
     @objc private func youtubeVideoLimitDidChange() {
-        // Drop cached video lists so the new limit applies. Re-fetch the channels that are
-        // currently expanded; otherwise just collapse them so a later expand fetches fresh.
-        youtubeChannelVideos.removeAll()
-        if case .youtube = currentSource {
-            reloadExpandedYouTubeChannels()
-        } else {
-            expandedYouTubeChannels.removeAll()
-        }
+        YouTubeChannelUploads.shared.load(expandedYouTubeChannels.values)
     }
 
-    /// Re-fetch the uploads for every currently-expanded YouTube channel (sequentially, in
-    /// one task) and rebuild as each arrives. Used when the per-channel video limit changes.
-    private func reloadExpandedYouTubeChannels() {
-        let channels = YouTubeManager.shared.channels.filter { expandedYouTubeChannels.contains($0.id) }
-        guard !channels.isEmpty else { rebuildCurrentModeItems(); return }
-        youtubeExpandTask?.cancel()
-        loadingChannelIds.formUnion(channels.map { $0.id }); startLoadingAnimation()
-        youtubeExpandTask = Task.detached { @MainActor [weak self] in
-            guard let self = self else { return }
-            defer {
-                for ch in channels { self.loadingChannelIds.remove(ch.id) }
-                self.stopLoadingAnimation(); self.needsDisplay = true
-            }
-            for ch in channels {
-                do {
-                    let videos = try await YouTubeManager.shared.videos(forChannel: ch)
-                    youtubeChannelVideos[ch.id] = videos
-                    loadingChannelIds.remove(ch.id)
-                    rebuildCurrentModeItems()
-                } catch is CancellationError { return }
-                catch where Task.isCancelled { return }
-                catch {
-                    loadingChannelIds.remove(ch.id)
-                    NSLog("Failed to reload YouTube videos for channel '%@': %@", ch.title, error.localizedDescription.redactingSensitiveURLQueryItems)
-                }
-            }
-        }
-        rebuildCurrentModeItems(); needsDisplay = true
+    @objc private func youtubeUploadsDidChange() {
+        if YouTubeChannelUploads.shared.hasFetchesInFlight { startLoadingAnimation() }
+        if showsYouTubeRows { rebuildCurrentModeItems(); needsDisplay = true }
+    }
+
+    /// The list shows YouTube rows: the YouTube source, or the Local search's channel and video rows.
+    private var showsYouTubeRows: Bool {
+        if case .local = currentSource { return browseMode == .search }
+        return currentSource.isYouTube
     }
 
     @objc private func trackDidChange(_ notification: Notification) {
@@ -7019,7 +6973,7 @@ class ModernLibraryBrowserView: NSView {
             self.loadingAnimationFrame += 1
             if self.isLoading {
                 self.needsDisplay = true
-            } else if self.youtubeVideoActions.hasFetchesInFlight || !self.loadingChannelIds.isEmpty {
+            } else if self.youtubeVideoActions.hasFetchesInFlight || YouTubeChannelUploads.shared.hasFetchesInFlight {
                 // Redraw the list area for the per-row download/channel-load spinner(s)
                 self.needsDisplay = true
             } else if self.isLibraryScanning {
@@ -7034,7 +6988,7 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func stopLoadingAnimation(force: Bool = false) {
-        guard force || (!isLibraryScanning && !youtubeVideoActions.hasFetchesInFlight && loadingChannelIds.isEmpty) else { return }
+        guard force || (!isLibraryScanning && !youtubeVideoActions.hasFetchesInFlight && !YouTubeChannelUploads.shared.hasFetchesInFlight) else { return }
         loadingAnimationTimer?.invalidate(); loadingAnimationTimer = nil; loadingAnimationFrame = 0
     }
 
@@ -9170,7 +9124,8 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private var youtubeRows: YouTubeRowBuilder {
-        YouTubeRowBuilder(expanded: expandedYouTubeChannels, uploads: youtubeChannelVideos)
+        YouTubeRowBuilder(expanded: Set(expandedYouTubeChannels.keys),
+                          uploads: YouTubeChannelUploads.shared.uploads(of: expandedYouTubeChannels.keys))
     }
 
     private func buildYouTubeChannelItems() {
@@ -10417,7 +10372,7 @@ class ModernLibraryBrowserView: NSView {
         case .embySeason(let s): return expandedEmbySeasons.contains(s.id)
         case .plexPlaylist(let p): return expandedPlexPlaylists.contains(p.id)
         case .radioFolder(let folder): return expandedRadioFolders.contains(folder.id)
-        case .youtubeChannel(let ch): return expandedYouTubeChannels.contains(ch.id)
+        case .youtubeChannel(let ch): return expandedYouTubeChannels[ch.id] != nil
         case .localPlaylist(let p): return expandedLocalPlaylists.contains(p.url.path)
         default: return false
         }
@@ -10737,27 +10692,10 @@ class ModernLibraryBrowserView: NSView {
                 rebuildCurrentModeItems()
             }
         case .youtubeChannel(let ch):
-            if expandedYouTubeChannels.contains(ch.id) {
-                expandedYouTubeChannels.remove(ch.id)
-            } else {
-                expandedYouTubeChannels.insert(ch.id)
-                if youtubeChannelVideos[ch.id] == nil {
-                    let id = ch.id; youtubeExpandTask?.cancel()
-                    loadingChannelIds.insert(id); startLoadingAnimation()
-                    youtubeExpandTask = Task.detached { @MainActor [weak self] in
-                        guard let self = self else { return }
-                        defer { self.loadingChannelIds.remove(id); self.stopLoadingAnimation(); self.needsDisplay = true }
-                        do {
-                            let videos = try await YouTubeManager.shared.videos(forChannel: ch)
-                            youtubeChannelVideos[id] = videos
-                            rebuildCurrentModeItems()
-                        } catch is CancellationError { }
-                        catch where Task.isCancelled { }
-                        catch {
-                            NSLog("Failed to load YouTube videos for channel '%@': %@", ch.title, error.localizedDescription.redactingSensitiveURLQueryItems)
-                        }
-                    }; rebuildCurrentModeItems(); needsDisplay = true; return
-                }
+            if expandedYouTubeChannels.removeValue(forKey: ch.id) == nil {
+                expandedYouTubeChannels[ch.id] = ch
+                YouTubeChannelUploads.shared.load([ch])  // rebuilds through youtubeUploadsDidChange
+                return
             }
         default: break
         }
