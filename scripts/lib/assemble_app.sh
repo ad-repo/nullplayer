@@ -213,27 +213,11 @@ assemble_app() {
         rm -rf "$ICONSET_DIR"
         mkdir -p "$ICONSET_DIR"
 
-        # Build a full-size rounded macOS icon from the source artwork.
-        #
-        # Main's previous pipeline trimmed the transparent padding and filled the
-        # rounded corners, which avoided edge fringes but produced an opaque square.
-        # Keep the trimmed full-size color layer, then apply a full-canvas rounded
-        # mask. That gives macOS rounded corners without adding a transparent outer
-        # inset that reads as a grey border on the Dock.
+        # AppIcon.png is finished 1024px macOS artwork (its own squircle, shadow
+        # and transparent padding), so each size is a plain downscale — no trim
+        # or mask, which would cut into the artwork's shape.
         resize_icon() {
-            local size=$1
-            local out=$2
-            local radius max_coord
-            radius=$(awk "BEGIN { printf \"%d\", $size * 0.219 }")
-            max_coord=$(( size - 1 ))
-            magick "$APP_ICON_PNG" -trim +repage \
-                \( +clone -blur 0x200 -alpha off \) \
-                -compose DstOver -composite \
-                -resize "${size}x${size}!" \
-                \( -size "${size}x${size}" xc:black -fill white \
-                   -draw "roundrectangle 0,0 ${max_coord},${max_coord} ${radius},${radius}" \) \
-                -alpha off -compose CopyOpacity -composite \
-                "PNG32:$out"
+            magick "$APP_ICON_PNG" -resize "$1x$1" "PNG32:$2"
         }
 
         # Generate all required icon sizes
