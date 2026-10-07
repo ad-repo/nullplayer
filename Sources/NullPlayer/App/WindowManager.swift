@@ -2023,6 +2023,17 @@ class WindowManager {
         return (mainWindowController as? WinampModernMainWindowController)?.hostVideoOutput() ?? false
     }
 
+    /// A play call's reveal: the loaded `.wmz` or `.wal` skin's own video window, opened and given
+    /// key focus. False for every other mode, and for a skin with no video window of its own.
+    @discardableResult
+    func hostVideoOutputInSkin() -> Bool {
+        if uiMode.controllerFamily == .wmp {
+            return (mainWindowController as? WMPMainWindowController)?
+                .revealSkinSurface(.video, switchingViews: true, activate: true) ?? false
+        }
+        return hostVideoOutputInWinampModernSkin()
+    }
+
     /// Put the skin's video window away (`autoclose="1"`). False when there is none showing.
     @discardableResult
     func hideWinampModernVideoSurface() -> Bool {

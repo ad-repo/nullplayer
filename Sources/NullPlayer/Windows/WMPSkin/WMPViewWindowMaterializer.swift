@@ -68,7 +68,7 @@ final class WMPViewWindowMaterializer: NSObject, NSWindowDelegate {
 
     /// The first open window showing a matching view — what a NullPlayer menu toggle asks before
     /// opening a window of its own, and what a play call gives key focus to.
-    func openWindow(where predicate: (String) -> Bool) -> NSWindow? {
+    func window(where predicate: (String) -> Bool) -> NSWindow? {
         openPresentations.first { predicate($0.viewID) }?.window
     }
 

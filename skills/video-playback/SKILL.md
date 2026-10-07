@@ -39,7 +39,10 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   first play, and `WindowManager.toggleVideoPlayer` returns early while it is nil.
 - **A play call moves key focus to the picture** (`revealVideoOutput`): the free window takes it
   itself, a `.wal` skin's video window takes it in `setAuxiliaryWindow`, and a `.wmz` skin window
-  showing the video takes it through `WMPMainWindowController.windowShowing(.video)`. Without that,
+  takes it through `revealSkinSurface(_:switchingViews:activate:)`. Both skin paths go through
+  `WindowManager.hostVideoOutputInSkin`. A `.wmz` video view that is not open yet is built in a
+  `Task`, so `loadView` makes it key once it exists; focusing right after the reveal call would find
+  no window. Without that,
   focus stayed on the Library Browser that started the film, where Return replays the selected row:
   a keystroke meant for the film restarted it from 0 and discarded the position (M5, measured
   2026-10-07). It goes to the skin window, never the parked video window: under `.wmz`, Esc there
