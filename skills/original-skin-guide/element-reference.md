@@ -87,21 +87,24 @@ If a timer character has no matching sprite, the Original renderer falls back to
 
 ## Main Window Toggle Row
 
-These 16×14 buttons appear between the seek bar and transport row. They are
-dynamically spaced from x=93 through x=269 at y=42.
+These 15×14 buttons appear between the seek bar and transport row. They are spread evenly from
+x=93 through x=269 at y=42; drawing and hit testing both read
+`ModernMainWindowView.windowToggleButtons` and `windowToggleRect(at:count:)`, so a button added there
+is placed and clickable at once.
 
 | Order | Element ID | Label | Description |
 |------:|------------|-------|-------------|
-| 1 | `btn_compact` | CP | Compact Mode toggle (active-state highlight forced on click) |
+| 1 | `btn_cava` | CV | Cava window toggle |
 | 2 | `btn_projectm` | VZ | Visualizations window toggle |
 | 3 | `btn_networkmonitor` | FL | Flow window toggle |
 | 4 | `btn_peppymeter` | PM | PeppyMeter window toggle |
-| 5 | `btn_eq` | EQ | Equalizer window toggle |
-| 6 | `btn_playlist` | PL | Playlist window toggle |
-| 7 | `btn_spectrum` | SP | Spectrum Analyzer window toggle |
-| 8 | `btn_audioanalysis` | AA | Audio Analyzer window toggle |
-| 9 | `btn_waveform` | WV | Waveform window toggle |
-| 10 | `btn_library` | LB | Library Browser window toggle |
+| 5 | `btn_art` | AR | Art window toggle |
+| 6 | `btn_eq` | EQ | Equalizer window toggle |
+| 7 | `btn_playlist` | PL | Playlist window toggle |
+| 8 | `btn_spectrum` | SP | Spectrum Analyzer window toggle |
+| 9 | `btn_audioanalysis` | AA | Audio Analyzer window toggle |
+| 10 | `btn_waveform` | WV | Waveform window toggle |
+| 11 | `btn_library` | LB | Library Browser window toggle |
 
 All buttons support `off`, `on`, `off_pressed`, and `on_pressed` image states.
 

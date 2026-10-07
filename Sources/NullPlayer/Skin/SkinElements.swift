@@ -832,35 +832,6 @@ struct SkinElements {
         }
     }
     
-    // MARK: - Art Visualizer Window
-    // Audio-reactive album art visualization window
-    // Uses same chrome style as ProjectM window
-    
-    struct ArtVisualizer {
-        /// Minimum window size
-        static let minSize = NSSize(width: 300, height: 300)
-        
-        /// Default window size - square for album art
-        static let defaultSize = NSSize(width: 500, height: 500)
-        
-        /// Title bar height (same as ProjectM/playlist)
-        static let titleBarHeight: CGFloat = 20
-
-        /// Layout constants
-        struct Layout {
-            static let titleBarHeight: CGFloat = 20
-            static let leftBorder: CGFloat = 3
-            static let rightBorder: CGFloat = 3
-            static let bottomBorder: CGFloat = 3
-        }
-
-        /// Window control button positions in title bar
-        struct TitleBarButtons {
-            // Relative to right edge of window (same as ProjectM)
-            static let closeOffset: CGFloat = 11
-        }
-    }
-    
     // MARK: - Spectrum Analyzer Window
     // Standalone spectrum analyzer visualization window
     // Uses same chrome style as ProjectM window

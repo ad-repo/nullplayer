@@ -209,16 +209,12 @@ class ModernLibraryBrowserView: NSView {
     private var browseMode: ModernBrowseMode = .artists {
         didSet {
             guard browseMode != oldValue else { return }
-            // Switching tabs always exits Art view and Cover Flow.
-            isArtOnlyMode = false
+            // Switching tabs always exits Cover Flow.
             isCoverFlowMode = false
             if oldValue == .folders, browseMode != .folders {
                 cancelLocalFolderBuild()
             }
             if browseMode.isHistoryMode {
-                if isRatingOverlayVisible {
-                    hideRatingOverlay()
-                }
                 historyAgent.scheduleRefresh()
             }
             updateHistoryHostingVisibility()
@@ -564,29 +560,10 @@ class ModernLibraryBrowserView: NSView {
     /// Highlight state for drag-mode visual feedback
     private var isHighlighted = false
     
-    // Art-only mode
-    private var isArtOnlyMode: Bool = false {
-        didSet {
-            artModeLifecycleGeneration &+= 1
-            needsDisplay = true
-            if isArtOnlyMode { isCoverFlowMode = false; fetchCurrentTrackRating(); loadAllArtworkForCurrentTrack() }
-            else {
-                artworkDisplayGeneration &+= 1
-                isVisualizingArt = false
-                artworkCyclingTask?.cancel()
-                artworkCyclingTask = nil
-                artworkImages = []
-                artworkIndex = 0
-            }
-        }
-    }
-    private var artModeLifecycleGeneration = 0
-
     // Cover flow mode — a 3D carousel over the current album list (see CoverFlowView).
     private var isCoverFlowMode: Bool = false {
         didSet {
             guard isCoverFlowMode != oldValue else { return }
-            if isCoverFlowMode { isArtOnlyMode = false }
             updateCoverFlowState()
             needsDisplay = true
         }
@@ -604,28 +581,12 @@ class ModernLibraryBrowserView: NSView {
     private var coverFlowPendingCenterId: String?
     private static let coverFlowBackId = "__coverflow_back__"
 
-    private var isVisualizingArt: Bool = false {
-        didSet {
-            if isVisualizingArt { startVisualizerTimer() } else { stopVisualizerTimer() }
-            needsDisplay = true
-        }
-    }
-    
-    // Rating overlay
-    private var isRatingOverlayVisible: Bool = false
-    // Delayed to differentiate single-click (rate) vs double-click (cycle artwork) in art mode.
-    private var pendingArtSingleClickWorkItem: DispatchWorkItem?
-    private var currentTrackRating: Int? = nil
-    private var rateButtonRect: NSRect = .zero
     private var refreshButtonRect: NSRect = .zero
-    private var artButtonRect: NSRect = .zero
-    private var visButtonRect: NSRect = .zero
     private var sourceButtonRect: NSRect = .zero
     private var libraryButtonRect: NSRect = .zero
     private var addButtonRect: NSRect = .zero
     private var tabButtonRects: [NSRect] = []
     private var sortButtonRect: NSRect = .zero
-    private var ratingSubmitTask: Task<Void, Never>?
     
     // Artwork
     private var currentArtwork: NSImage?
@@ -634,7 +595,6 @@ class ModernLibraryBrowserView: NSView {
     private var artworkTrackId: UUID?
     private var currentTrackArtworkLoadTask: Task<Void, Never>?
     private var artworkLoadTask: Task<Void, Never>?
-    private var artworkCyclingTask: Task<Void, Never>?
     private var artworkDisplayGeneration = 0
     private var radioLoadTask: Task<Void, Never>?
     private var radioPlayTask: Task<Void, Never>?
@@ -642,46 +602,6 @@ class ModernLibraryBrowserView: NSView {
     private var isPreparingForUITeardown = false
     private static let artworkCache = NSCache<NSString, NSImage>()
     private let rowThumbnails = LibraryRowThumbnailTracker()
-    private var artworkImages: [NSImage] = []
-    private var artworkIndex: Int = 0
-    
-    // Visualization
-    enum VisEffect: String, CaseIterable {
-        case psychedelic = "Psychedelic", kaleidoscope = "Kaleidoscope", vortex = "Vortex", spin = "Endless Spin"
-        case fractal = "Fractal Zoom", tunnel = "Time Tunnel", melt = "Acid Melt", wave = "Ocean Wave"
-        case glitch = "Glitch", rgbSplit = "RGB Split", twist = "Twist", fisheye = "Fisheye"
-        case shatter = "Shatter", stretch = "Rubber Band", zoom = "Zoom Pulse", shake = "Earthquake"
-        case bounce = "Bounce", feedback = "Feedback Loop", strobe = "Strobe", jitter = "Jitter"
-        case mirror = "Infinite Mirror", tile = "Tile Grid", prism = "Prism Split", doubleVision = "Double Vision"
-        case flipbook = "Flipbook", mosaic = "Mosaic", pixelate = "Pixelate", scanlines = "Scanlines"
-        case datamosh = "Datamosh", blocky = "Blocky"
-        static let groups: [(title: String, effects: [VisEffect])] = [
-            ("Rotation & Scaling", [.psychedelic, .kaleidoscope, .vortex, .spin, .fractal, .tunnel]),
-            ("Distortion",         [.melt, .wave, .glitch, .rgbSplit, .twist, .fisheye, .shatter, .stretch]),
-            ("Motion",             [.zoom, .shake, .bounce, .feedback, .strobe, .jitter]),
-            ("Copies & Mirrors",   [.mirror, .tile, .prism, .doubleVision, .flipbook, .mosaic]),
-            ("Pixel Effects",      [.pixelate, .scanlines, .datamosh, .blocky]),
-        ]
-    }
-    enum VisMode { case single, random, cycle }
-    private var currentVisEffect: VisEffect = .psychedelic
-    private var visMode: VisMode = .single
-    private var cycleTimer: Timer?
-    private var cycleInterval: TimeInterval = 10.0
-    private var lastBeatTime: TimeInterval = 0
-    private var visEffectIntensity: CGFloat = 1.0
-    private var visualizerTimer: Timer?
-    private var isVisualizerConsumerRegistered = false
-    private var visualizerTime: TimeInterval = 0
-    private var lastAudioLevel: Float = 0
-    private var silenceFrames: Int = 0
-    private var visualizerWasActiveBeforeHide: Bool = false
-    private lazy var ciContext: CIContext = {
-        if let mtlDevice = MTLCreateSystemDefaultDevice() {
-            return CIContext(mtlDevice: mtlDevice, options: [.cacheIntermediates: false])
-        }
-        return CIContext(options: [.useSoftwareRenderer: false])
-    }()
     
     /// Which edges are adjacent to another docked window (for seamless border rendering)
     private var adjacentEdges: AdjacentEdges = [] { didSet { updateCornerMask() } }
@@ -824,19 +744,6 @@ class ModernLibraryBrowserView: NSView {
             }
         }
 
-        // Art-only mode always starts disabled
-        isArtOnlyMode = false
-        
-        // Load saved visualizer preferences — default effect takes priority over last-used
-        let defaultEffectKey = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
-        let lastUsedKey = UserDefaults.standard.string(forKey: "browserVisEffect")
-        if let raw = defaultEffectKey ?? lastUsedKey, let effect = VisEffect(rawValue: raw) {
-            currentVisEffect = effect
-        }
-        if UserDefaults.standard.object(forKey: "browserVisIntensity") != nil {
-            visEffectIntensity = CGFloat(UserDefaults.standard.double(forKey: "browserVisIntensity"))
-        }
-        
         // Register notifications
         NotificationCenter.default.addObserver(self, selector: #selector(modernSkinDidChange),
                                                name: ModernSkinEngine.skinDidChangeNotification, object: nil)
@@ -925,12 +832,10 @@ class ModernLibraryBrowserView: NSView {
     }
     
     deinit {
-        cancelPendingArtSingleClickAction()
         localLibraryReloadWorkItem?.cancel()
         NotificationCenter.default.removeObserver(self)
         stopLoadingAnimation(force: true)
         stopServerNameScroll()
-        stopVisualizerTimer()
         backdropView?.stop()
     }
 
@@ -948,7 +853,7 @@ class ModernLibraryBrowserView: NSView {
                      plexLoadTask, sourceConnectTask,
                      jellyfinLoadTask, jellyfinAlbumWarmTask, jellyfinExpandTask,
                      embyLoadTask, embyExpandTask,
-                     ratingSubmitTask, currentTrackArtworkLoadTask, artworkLoadTask, artworkCyclingTask,
+                     currentTrackArtworkLoadTask, artworkLoadTask,
                      radioLoadTask, radioPlayTask] {
             task?.cancel()
         }
@@ -959,17 +864,14 @@ class ModernLibraryBrowserView: NSView {
         plexLoadTask = nil; sourceConnectTask = nil
         jellyfinLoadTask = nil; jellyfinAlbumWarmTask = nil; jellyfinExpandTask = nil
         embyLoadTask = nil; embyExpandTask = nil
-        ratingSubmitTask = nil
-        currentTrackArtworkLoadTask = nil; artworkLoadTask = nil; artworkCyclingTask = nil
+        currentTrackArtworkLoadTask = nil; artworkLoadTask = nil
         radioLoadTask = nil; radioPlayTask = nil
 
         // Work items + timers (timers with a target/captured self can also pin the view alive).
-        cancelPendingArtSingleClickAction()
         localLibraryReloadWorkItem?.cancel(); localLibraryReloadWorkItem = nil
         typeAheadTimer?.invalidate(); typeAheadTimer = nil
         stopLoadingAnimation(force: true)
         stopServerNameScroll()
-        stopVisualizerTimer()
         backdropView?.stop()
         backdropView?.removeFromSuperview()
         backdropView = nil
@@ -1090,7 +992,7 @@ class ModernLibraryBrowserView: NSView {
         // The embedded queue covers the content region in Playlist mode, so the SwiftUI
         // history subview must stay hidden there regardless of browseMode.
         let inQueueMode = compactMode && compactContentMode == .queue
-        let isVisible = browseMode.isHistoryMode && !isArtOnlyMode && !inQueueMode
+        let isVisible = browseMode.isHistoryMode && !inQueueMode
         historyHostingView?.isHidden = !isVisible
         updateEmbeddedSubviewFrames()
     }
@@ -1107,9 +1009,6 @@ class ModernLibraryBrowserView: NSView {
     private func updateEmbeddedSubviewFrames() {
         historyHostingView?.frame = embeddedHistoryContentRect()
         coverFlowView?.frame = embeddedHistoryContentRect()
-        if !isRatingOverlayVisible {
-            ratingOverlay.frame = bounds
-        }
         updateCompactPlayerBarFrame()
         updateCompactPlaylistFrame()
         updateBackdropFrame()
@@ -1424,10 +1323,6 @@ class ModernLibraryBrowserView: NSView {
             if browseMode.isHistoryMode {
                 drawArtworkBackground(in: context, listRect: listRect, artwork: capturedArtwork)
                 // SwiftUI-hosted history content is rendered via an embedded subview.
-            } else if isArtOnlyMode {
-                // Art-only mode takes precedence over loading/error states (matches PlexBrowserView)
-                // so that visualization continues uninterrupted during data refreshes
-                drawArtOnlyArea(in: context, contentRect: listRect, skin: skin, artwork: capturedArtwork)
             } else if currentSource.isPlex && !PlexManager.shared.isLinked {
                 drawNotLinkedState(in: context, listRect: listRect, skin: skin)
             } else if isLoading {
@@ -1494,15 +1389,7 @@ class ModernLibraryBrowserView: NSView {
         return natural.map { $0 + extra }
     }
 
-    private var hasRateableServerBarTrack: Bool {
-        guard isArtOnlyMode,
-              let track = WindowManager.shared.audioEngine.currentTrack else { return false }
-        return track.plexRatingKey != nil || track.subsonicId != nil ||
-            track.jellyfinId != nil || track.embyId != nil || track.url.isFileURL
-    }
-
     private func serverBarCountText() -> String? {
-        guard !isArtOnlyMode else { return nil }
         switch currentSource {
         case .local:
             let count: Int
@@ -1587,18 +1474,10 @@ class ModernLibraryBrowserView: NSView {
         }
 
         var rightWidth = 8 * m + textWidth("F5")
-        if currentArtwork != nil {
-            rightWidth += 12 * m + textWidth("ART") + 16 * m
-            if isArtOnlyMode {
-                rightWidth += 8 * m + textWidth("VIS") + 16 * m
-            }
+        if isCoverFlowMode || hasCoverFlowItems {
+            rightWidth += 12 * m + textWidth("FLOW") + 16 * m
         }
-        if hasRateableServerBarTrack {
-            let starSize = (compactMode ? 11 : 14) * m
-            let starSpacing = (compactMode ? 2 : 4) * m
-            let starsWidth = 5 * starSize + 4 * starSpacing
-            rightWidth += (compactMode ? 10 : 16) * m + starsWidth
-        } else if let countText = serverBarCountText() {
+        if let countText = serverBarCountText() {
             rightWidth += 24 * m + textWidth(countText)
         }
 
@@ -1848,9 +1727,6 @@ class ModernLibraryBrowserView: NSView {
         let textY = barRect.minY + (barRect.height - font.pointSize - 2 * m) / 2
 
         refreshButtonRect = .zero
-        artButtonRect = .zero
-        visButtonRect = .zero
-        rateButtonRect = .zero
         sourceButtonRect = .zero
         libraryButtonRect = .zero
         addButtonRect = .zero
@@ -1869,81 +1745,23 @@ class ModernLibraryBrowserView: NSView {
         refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                    width: barRect.maxX - refreshX, height: barRect.height)
         
-        // ART toggle button (modern boxed toggle style)
-        let artText = "ART"
-        let artTextWidth = artText.size(withAttributes: prefixAttrs).width
-        let artBtnWidth = artTextWidth + 16 * hm  // padding inside button
-        let artBtnHeight: CGFloat = Layout.serverBarHeight - 6 * m
-        var artX = refreshX - artBtnWidth - 12 * hm
-        
-        if currentArtwork != nil {
-            let artBtnRect = NSRect(x: artX, y: barRect.minY + 3 * m, width: artBtnWidth, height: artBtnHeight)
-            artButtonRect = artBtnRect
-            drawToggleTab(label: artText, isActive: isArtOnlyMode, rect: artBtnRect,
-                          font: font, skin: skin, context: context)
-        } else {
-            artX = refreshX
-        }
-        
-        // VIS button (only in art-only mode, modern boxed toggle style)
-        var visEndX = artX
-        if isArtOnlyMode && currentArtwork != nil {
-            let visText = "VIS"
-            let visTextWidth = visText.size(withAttributes: prefixAttrs).width
-            let visBtnWidth = visTextWidth + 16 * hm
-            let visX = artX - visBtnWidth - 8 * hm
-            let visBtnRect = NSRect(x: visX, y: barRect.minY + 3 * m, width: visBtnWidth, height: artBtnHeight)
-            visButtonRect = visBtnRect
-            drawToggleTab(label: visText, isActive: isVisualizingArt, rect: visBtnRect,
-                          font: font, skin: skin, context: context)
-            visEndX = visX
-        }
+        var visEndX = refreshX
 
-        // FLOW (cover flow) toggle — shown when the current list has eligible media and we're not in Art view.
+        // FLOW (cover flow) toggle — shown when the current list has eligible media.
         coverFlowButtonRect = .zero
-        if !isArtOnlyMode && (isCoverFlowMode || hasCoverFlowItems) {
+        if isCoverFlowMode || hasCoverFlowItems {
             let flowText = "FLOW"
             let flowTextWidth = flowText.size(withAttributes: prefixAttrs).width
             let flowBtnWidth = flowTextWidth + 16 * hm
-            let flowX = artX - flowBtnWidth - 8 * hm
-            let flowBtnRect = NSRect(x: flowX, y: barRect.minY + 3 * m, width: flowBtnWidth, height: artBtnHeight)
+            let flowX = refreshX - flowBtnWidth - 12 * hm
+            let flowBtnRect = NSRect(x: flowX, y: barRect.minY + 3 * m, width: flowBtnWidth,
+                                     height: Layout.serverBarHeight - 6 * m)
             coverFlowButtonRect = flowBtnRect
             drawToggleTab(label: flowText, isActive: isCoverFlowMode, rect: flowBtnRect,
                           font: font, skin: skin, context: context)
             visEndX = flowX
         }
 
-        // Star rating (art-only mode with a track playing)
-        if isArtOnlyMode,
-           let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-           currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.embyId != nil || currentTrack.url.isFileURL {
-            let starSize: CGFloat = (compactMode ? 11 : 14) * hm
-            let starSpacing: CGFloat = (compactMode ? 2 : 4) * hm
-            let starButtonGap: CGFloat = (compactMode ? 10 : 16) * hm
-            let totalStars = 5
-            let starsWidth = CGFloat(totalStars) * starSize + CGFloat(totalStars - 1) * starSpacing
-            let starsX = visEndX - starsWidth - starButtonGap
-            let starY = barRect.minY + (barRect.height - starSize) / 2
-            
-            // Get current rating (0-10 scale -> 0-5 filled stars)
-            let rating = currentTrackRating ?? 0
-            let filledCount = rating / 2
-            
-            let emptyColor = dimColor.withAlphaComponent(0.3)
-
-            for i in 0..<totalStars {
-                let x = starsX + CGFloat(i) * (starSize + starSpacing)
-                let starRect = NSRect(x: x, y: starY, width: starSize, height: starSize)
-                let isFilled = i < filledCount
-                drawEmojiStar(in: starRect, filled: isFilled, emptyColor: emptyColor)
-            }
-            
-            // Store hit rect for click detection
-            rateButtonRect = NSRect(x: starsX, y: barRect.minY, width: starsWidth, height: barRect.height)
-        } else {
-            rateButtonRect = .zero
-        }
-        
         // Source-specific content
         switch currentSource {
         case .local:
@@ -1961,21 +1779,19 @@ class ModernLibraryBrowserView: NSView {
                                    width: max(addText.size(withAttributes: activeAttrs).width, 50 * hm),
                                    height: barRect.height)
 
-            // Item count (only in list mode)
-            if !isArtOnlyMode {
-                let totalCount: Int
-                if browseMode == .artists {
-                    totalCount = localArtistTotal > 0 ? localArtistTotal : displayItems.count
-                } else if browseMode == .albums {
-                    totalCount = localAlbumTotal > 0 ? localAlbumTotal : displayItems.count
-                } else {
-                    totalCount = displayItems.count
-                }
-                let countText = "\(totalCount) items"
-                let countWidth = countText.size(withAttributes: dataAttrs).width
-                let countX = visEndX - countWidth - 24 * hm
-                drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
+            // Item count
+            let totalCount: Int
+            if browseMode == .artists {
+                totalCount = localArtistTotal > 0 ? localArtistTotal : displayItems.count
+            } else if browseMode == .albums {
+                totalCount = localAlbumTotal > 0 ? localAlbumTotal : displayItems.count
+            } else {
+                totalCount = displayItems.count
             }
+            let countText = "\(totalCount) items"
+            let countWidth = countText.size(withAttributes: dataAttrs).width
+            let countX = visEndX - countWidth - 24 * hm
+            drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
 
             // Scan animation: small spinner at center of bar while library is scanning
             if isLibraryScanning {
@@ -2038,21 +1854,19 @@ class ModernLibraryBrowserView: NSView {
                                   availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
                 
-                // Item count (only in list mode)
-                if !isArtOnlyMode {
-                    let itemCount: Int
-                    if manager.currentLibrary?.type == "artist" {
-                        itemCount = cachedArtists.count
-                    } else if manager.currentLibrary?.type == "movie" {
-                        itemCount = cachedMovies.count
-                    } else {
-                        itemCount = displayItems.count
-                    }
-                    let countText = "\(itemCount) ITEMS"
-                    let countWidth = countText.size(withAttributes: dataAttrs).width
-                    let countX = visEndX - countWidth - 24 * hm
-                    drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
+                // Item count
+                let itemCount: Int
+                if manager.currentLibrary?.type == "artist" {
+                    itemCount = cachedArtists.count
+                } else if manager.currentLibrary?.type == "movie" {
+                    itemCount = cachedMovies.count
+                } else {
+                    itemCount = displayItems.count
                 }
+                let countText = "\(itemCount) ITEMS"
+                let countWidth = countText.size(withAttributes: dataAttrs).width
+                let countX = visEndX - countWidth - 24 * hm
+                drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
             } else {
                 let linkText = "Click to link your Plex account"
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
@@ -2097,13 +1911,11 @@ class ModernLibraryBrowserView: NSView {
                                   availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
 
-                // Item count (only in list mode)
-                if !isArtOnlyMode {
-                    let countText = "\(displayItems.count) items"
-                    let countWidth = countText.size(withAttributes: dataAttrs).width
-                    let countX = visEndX - countWidth - 24 * hm
-                    drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
-                }
+                // Item count
+                let countText = "\(displayItems.count) items"
+                let countWidth = countText.size(withAttributes: dataAttrs).width
+                let countX = visEndX - countWidth - 24 * hm
+                drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
             } else {
                 let linkText = "Click to add a Subsonic server"
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
@@ -2148,13 +1960,11 @@ class ModernLibraryBrowserView: NSView {
                                   availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
 
-                // Item count (only in list mode)
-                if !isArtOnlyMode {
-                    let countText = "\(displayItems.count) items"
-                    let countWidth = countText.size(withAttributes: dataAttrs).width
-                    let countX = visEndX - countWidth - 24 * hm
-                    drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
-                }
+                // Item count
+                let countText = "\(displayItems.count) items"
+                let countWidth = countText.size(withAttributes: dataAttrs).width
+                let countX = visEndX - countWidth - 24 * hm
+                drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
             } else {
                 let linkText = "Click to add a Jellyfin server"
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
@@ -2199,13 +2009,11 @@ class ModernLibraryBrowserView: NSView {
                                   availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
 
-                // Item count (only in list mode)
-                if !isArtOnlyMode {
-                    let countText = "\(displayItems.count) items"
-                    let countWidth = countText.size(withAttributes: dataAttrs).width
-                    let countX = visEndX - countWidth - 24 * hm
-                    drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
-                }
+                // Item count
+                let countText = "\(displayItems.count) items"
+                let countWidth = countText.size(withAttributes: dataAttrs).width
+                let countX = visEndX - countWidth - 24 * hm
+                drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
             } else {
                 let linkText = "Click to add an Emby server"
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
@@ -2229,13 +2037,11 @@ class ModernLibraryBrowserView: NSView {
                                    width: max(addText.size(withAttributes: activeAttrs).width, 50 * hm),
                                    height: barRect.height)
 
-            // Item count (only in list mode)
-            if !isArtOnlyMode {
-                let countText = "\(displayItems.count) stations"
-                let countWidth = countText.size(withAttributes: dataAttrs).width
-                let countX = visEndX - countWidth - 24 * hm
-                drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
-            }
+            // Item count
+            let countText = "\(displayItems.count) stations"
+            let countWidth = countText.size(withAttributes: dataAttrs).width
+            let countX = visEndX - countWidth - 24 * hm
+            drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
 
         case .youtube:
             let sourceText = "YouTube"
@@ -2252,13 +2058,11 @@ class ModernLibraryBrowserView: NSView {
                                    width: max(addText.size(withAttributes: activeAttrs).width, 50 * hm),
                                    height: barRect.height)
 
-            // Item count (only in list mode)
-            if !isArtOnlyMode {
-                let countText = "\(displayItems.count) items"
-                let countWidth = countText.size(withAttributes: dataAttrs).width
-                let countX = visEndX - countWidth - 24 * hm
-                drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
-            }
+            // Item count
+            let countText = "\(displayItems.count) items"
+            let countWidth = countText.size(withAttributes: dataAttrs).width
+            let countX = visEndX - countWidth - 24 * hm
+            drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
         }
     }
     
@@ -2327,21 +2131,6 @@ class ModernLibraryBrowserView: NSView {
         context.setAlpha(1.0)
         text.draw(with: rect, options: options, attributes: attributes)
         context.restoreGState()
-    }
-
-    /// Draw an emoji-style rating star (matching the visualization menus) centered in `rect`.
-    /// Filled uses the color ⭐ emoji; empty uses the ☆ outline glyph tinted with `emptyColor`.
-    private func drawEmojiStar(in rect: NSRect, filled: Bool, emptyColor: NSColor) {
-        let glyph = filled ? "⭐" : "☆"
-        let font = NSFont.systemFont(ofSize: rect.height)
-        var attrs: [NSAttributedString.Key: Any] = [.font: font]
-        if !filled {
-            attrs[.foregroundColor] = emptyColor
-        }
-        let str = NSAttributedString(string: glyph, attributes: attrs)
-        let size = str.size()
-        let point = NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2)
-        str.draw(at: point)
     }
 
     // MARK: - Search Bar Drawing
@@ -2826,44 +2615,6 @@ class ModernLibraryBrowserView: NSView {
         drawText(message, at: NSPoint(x: textX, y: textY), withAttributes: attrs, context: context)
     }
     
-    // MARK: - Art Only Area
-    
-    private func drawArtOnlyArea(in context: CGContext, contentRect: NSRect, skin: ModernSkin, artwork: NSImage?) {
-        if isVisualizingArt {
-            contentFill(isMetalRenderStyle ? NSColor(calibratedRed: 0.34, green: 0.38, blue: 0.40, alpha: 1.0) : NSColor.black).setFill()
-        } else {
-            contentFill(isMetalRenderStyle ? metalControlFill : skin.surfaceColor).setFill()
-        }
-        context.fill(contentRect)
-        
-        if let artworkImage = artwork,
-           let cgImage = artworkImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            context.saveGState()
-            context.clip(to: contentRect)
-            
-            let imageSize = NSSize(width: cgImage.width, height: cgImage.height)
-            let artworkRect = calculateCenterFillRect(imageSize: imageSize, in: contentRect)
-            
-            if isVisualizingArt {
-                drawVisualizationEffect(context: context, cgImage: cgImage, artworkRect: artworkRect, contentRect: contentRect)
-            } else {
-                context.draw(cgImage, in: artworkRect)
-            }
-            
-            context.restoreGState()
-        } else {
-            let message = "No album art"
-            let font = skin.libraryFont(size: 14)
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: skin.applyTextOpacity(to: skin.textDimColor)
-            ]
-            let textSize = message.size(withAttributes: attrs)
-            drawText(message, at: NSPoint(x: contentRect.midX - textSize.width / 2,
-                                      y: contentRect.midY - textSize.height / 2), withAttributes: attrs, context: context)
-        }
-    }
-    
     // MARK: - Alphabet Index
     
     private func drawAlphabetIndex(in context: CGContext, rect: NSRect, skin: ModernSkin) {
@@ -2910,309 +2661,6 @@ class ModernLibraryBrowserView: NSView {
     
     private func drawStatusBarText(in context: CGContext, skin: ModernSkin) {
         // Status info shown in server bar; this is kept for future use
-    }
-    
-    // MARK: - Visualization Effect Drawing
-    
-    private func drawVisualizationEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect) {
-        let spectrumData = WindowManager.shared.audioEngine.spectrumData
-        let bass = CGFloat(spectrumData.prefix(10).reduce(0, +) / 10.0)
-        let mid = CGFloat(spectrumData.dropFirst(10).prefix(30).reduce(0, +) / 30.0)
-        let treble = CGFloat(spectrumData.dropFirst(40).prefix(35).reduce(0, +) / 35.0)
-        let level = (bass + mid + treble) / 3.0
-        let t = CGFloat(visualizerTime)
-        let intensity = visEffectIntensity
-        
-        var ciImage = CIImage(cgImage: cgImage)
-        let imageSize = ciImage.extent.size
-        let center = CIVector(x: imageSize.width / 2, y: imageSize.height / 2)
-        
-        switch currentVisEffect {
-        case .psychedelic:
-            let twirl = CIFilter(name: "CITwirlDistortion")!
-            twirl.setValue(ciImage, forKey: kCIInputImageKey)
-            twirl.setValue(center, forKey: kCIInputCenterKey)
-            twirl.setValue(min(imageSize.width, imageSize.height) * 0.4, forKey: kCIInputRadiusKey)
-            twirl.setValue(bass * 3 * intensity * sin(t * 2), forKey: kCIInputAngleKey)
-            ciImage = twirl.outputImage ?? ciImage
-            let hue = CIFilter(name: "CIHueAdjust")!
-            hue.setValue(ciImage, forKey: kCIInputImageKey)
-            hue.setValue(t * 0.5 + bass, forKey: kCIInputAngleKey)
-            ciImage = hue.outputImage ?? ciImage
-            let bloom = CIFilter(name: "CIBloom")!
-            bloom.setValue(ciImage, forKey: kCIInputImageKey)
-            bloom.setValue(10 * level * intensity, forKey: kCIInputRadiusKey)
-            bloom.setValue(1.0 + bass * intensity, forKey: kCIInputIntensityKey)
-            ciImage = bloom.outputImage ?? ciImage
-        case .kaleidoscope:
-            let kaleido = CIFilter(name: "CIKaleidoscope")!
-            kaleido.setValue(ciImage, forKey: kCIInputImageKey)
-            kaleido.setValue(center, forKey: kCIInputCenterKey)
-            kaleido.setValue(Int(6 + bass * 6 * intensity), forKey: "inputCount")
-            kaleido.setValue(t * 0.3 * intensity, forKey: kCIInputAngleKey)
-            ciImage = kaleido.outputImage ?? ciImage
-        case .vortex:
-            let vortex = CIFilter(name: "CIVortexDistortion")!
-            vortex.setValue(ciImage, forKey: kCIInputImageKey)
-            vortex.setValue(center, forKey: kCIInputCenterKey)
-            vortex.setValue(min(imageSize.width, imageSize.height) * 0.5, forKey: kCIInputRadiusKey)
-            vortex.setValue(bass * 10 * intensity * sin(t), forKey: kCIInputAngleKey)
-            ciImage = vortex.outputImage ?? ciImage
-        case .spin:
-            let zoomBlur = CIFilter(name: "CIZoomBlur")!
-            zoomBlur.setValue(ciImage, forKey: kCIInputImageKey)
-            zoomBlur.setValue(center, forKey: kCIInputCenterKey)
-            zoomBlur.setValue(bass * 20 * intensity, forKey: kCIInputAmountKey)
-            ciImage = zoomBlur.outputImage ?? ciImage
-        case .fractal:
-            let scale = 1.0 + sin(t * intensity) * 0.3 * bass
-            let transform = CIFilter(name: "CIAffineTransform")!
-            var affine = CGAffineTransform(translationX: imageSize.width/2, y: imageSize.height/2)
-            affine = affine.scaledBy(x: scale, y: scale)
-            affine = affine.rotated(by: t * 0.2 * intensity)
-            affine = affine.translatedBy(x: -imageSize.width/2, y: -imageSize.height/2)
-            transform.setValue(ciImage, forKey: kCIInputImageKey)
-            transform.setValue(affine, forKey: kCIInputTransformKey)
-            ciImage = transform.outputImage ?? ciImage
-        case .tunnel:
-            let hole = CIFilter(name: "CIHoleDistortion")!
-            hole.setValue(ciImage, forKey: kCIInputImageKey)
-            hole.setValue(center, forKey: kCIInputCenterKey)
-            hole.setValue(50 + bass * 100 * intensity * abs(sin(t)), forKey: kCIInputRadiusKey)
-            ciImage = hole.outputImage ?? ciImage
-        case .melt:
-            let glass = CIFilter(name: "CIGlassDistortion")!
-            glass.setValue(ciImage, forKey: kCIInputImageKey)
-            let noiseFilter = CIFilter(name: "CIRandomGenerator")!
-            if let noise = noiseFilter.outputImage?.cropped(to: ciImage.extent) {
-                glass.setValue(noise, forKey: "inputTexture")
-                glass.setValue(center, forKey: kCIInputCenterKey)
-                glass.setValue(50 * bass * intensity, forKey: kCIInputScaleKey)
-                ciImage = glass.outputImage ?? ciImage
-            }
-        case .wave:
-            let bump = CIFilter(name: "CIBumpDistortion")!
-            let waveX = imageSize.width * (0.5 + 0.4 * sin(t * 2))
-            let waveY = imageSize.height * (0.5 + 0.3 * cos(t * 1.5))
-            bump.setValue(ciImage, forKey: kCIInputImageKey)
-            bump.setValue(CIVector(x: waveX, y: waveY), forKey: kCIInputCenterKey)
-            bump.setValue(min(imageSize.width, imageSize.height) * 0.4, forKey: kCIInputRadiusKey)
-            bump.setValue(bass * 2 * intensity * sin(t * 3), forKey: kCIInputScaleKey)
-            ciImage = bump.outputImage ?? ciImage
-        case .glitch:
-            if bass > 0.3 {
-                let colorMatrix = CIFilter(name: "CIColorMatrix")!
-                colorMatrix.setValue(ciImage, forKey: kCIInputImageKey)
-                colorMatrix.setValue(CIVector(x: 1, y: 0, z: 0, w: 0), forKey: "inputRVector")
-                colorMatrix.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputGVector")
-                colorMatrix.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputBVector")
-                ciImage = colorMatrix.outputImage ?? ciImage
-            }
-            let posterize = CIFilter(name: "CIColorPosterize")!
-            posterize.setValue(ciImage, forKey: kCIInputImageKey)
-            posterize.setValue(4 + (1 - bass) * 10, forKey: "inputLevels")
-            ciImage = posterize.outputImage ?? ciImage
-        case .rgbSplit:
-            let offset = (10 + bass * 40) * intensity
-            let rFilter = CIFilter(name: "CIColorMatrix")!
-            rFilter.setValue(ciImage, forKey: kCIInputImageKey)
-            rFilter.setValue(CIVector(x: 1, y: 0, z: 0, w: 0), forKey: "inputRVector")
-            rFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputGVector")
-            rFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputBVector")
-            let rImage = rFilter.outputImage ?? ciImage
-            let rTransform = CIFilter(name: "CIAffineTransform")!
-            rTransform.setValue(rImage, forKey: kCIInputImageKey)
-            rTransform.setValue(CGAffineTransform(translationX: -offset, y: 0), forKey: kCIInputTransformKey)
-            let rOffset = rTransform.outputImage ?? rImage
-            let bFilter = CIFilter(name: "CIColorMatrix")!
-            bFilter.setValue(ciImage, forKey: kCIInputImageKey)
-            bFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputRVector")
-            bFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputGVector")
-            bFilter.setValue(CIVector(x: 0, y: 0, z: 1, w: 0), forKey: "inputBVector")
-            let bImage = bFilter.outputImage ?? ciImage
-            let bTransform = CIFilter(name: "CIAffineTransform")!
-            bTransform.setValue(bImage, forKey: kCIInputImageKey)
-            bTransform.setValue(CGAffineTransform(translationX: offset, y: 0), forKey: kCIInputTransformKey)
-            let bOffset = bTransform.outputImage ?? bImage
-            let gFilter = CIFilter(name: "CIColorMatrix")!
-            gFilter.setValue(ciImage, forKey: kCIInputImageKey)
-            gFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputRVector")
-            gFilter.setValue(CIVector(x: 0, y: 1, z: 0, w: 0), forKey: "inputGVector")
-            gFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputBVector")
-            let gImage = gFilter.outputImage ?? ciImage
-            let addR = CIFilter(name: "CIAdditionCompositing")!
-            addR.setValue(rOffset, forKey: kCIInputImageKey)
-            addR.setValue(gImage, forKey: kCIInputBackgroundImageKey)
-            let rg = addR.outputImage ?? ciImage
-            let addB = CIFilter(name: "CIAdditionCompositing")!
-            addB.setValue(bOffset, forKey: kCIInputImageKey)
-            addB.setValue(rg, forKey: kCIInputBackgroundImageKey)
-            ciImage = addB.outputImage ?? ciImage
-        case .twist:
-            let twirl = CIFilter(name: "CITwirlDistortion")!
-            twirl.setValue(ciImage, forKey: kCIInputImageKey)
-            twirl.setValue(center, forKey: kCIInputCenterKey)
-            twirl.setValue(min(imageSize.width, imageSize.height) * 0.6, forKey: kCIInputRadiusKey)
-            twirl.setValue(t * 2 * intensity + bass * 5, forKey: kCIInputAngleKey)
-            ciImage = twirl.outputImage ?? ciImage
-        case .fisheye:
-            let bump = CIFilter(name: "CIBumpDistortion")!
-            bump.setValue(ciImage, forKey: kCIInputImageKey)
-            bump.setValue(center, forKey: kCIInputCenterKey)
-            bump.setValue(min(imageSize.width, imageSize.height) * 0.8, forKey: kCIInputRadiusKey)
-            bump.setValue(-1.5 * intensity * (1 + bass * 0.5), forKey: kCIInputScaleKey)
-            ciImage = bump.outputImage ?? ciImage
-        case .shatter:
-            let triangle = CIFilter(name: "CITriangleTile")!
-            triangle.setValue(ciImage, forKey: kCIInputImageKey)
-            triangle.setValue(center, forKey: kCIInputCenterKey)
-            triangle.setValue(t * 0.5 * intensity, forKey: kCIInputAngleKey)
-            triangle.setValue(50 + bass * 100 * intensity, forKey: kCIInputWidthKey)
-            ciImage = triangle.outputImage?.cropped(to: CIImage(cgImage: cgImage).extent) ?? ciImage
-        case .stretch:
-            let pinch = CIFilter(name: "CIPinchDistortion")!
-            pinch.setValue(ciImage, forKey: kCIInputImageKey)
-            pinch.setValue(center, forKey: kCIInputCenterKey)
-            pinch.setValue(min(imageSize.width, imageSize.height) * 0.7, forKey: kCIInputRadiusKey)
-            pinch.setValue(bass * intensity * sin(t * 2), forKey: kCIInputScaleKey)
-            ciImage = pinch.outputImage ?? ciImage
-        case .zoom:
-            let zoomBlur = CIFilter(name: "CIZoomBlur")!
-            zoomBlur.setValue(ciImage, forKey: kCIInputImageKey)
-            zoomBlur.setValue(center, forKey: kCIInputCenterKey)
-            zoomBlur.setValue(bass * 50 * intensity, forKey: kCIInputAmountKey)
-            ciImage = zoomBlur.outputImage ?? ciImage
-        case .shake:
-            let shakeOffset = bass * 30 * intensity
-            let shakeX = sin(t * 30) * shakeOffset
-            let shakeY = cos(t * 25) * shakeOffset * 0.7
-            let transform = CIFilter(name: "CIAffineTransform")!
-            transform.setValue(ciImage, forKey: kCIInputImageKey)
-            transform.setValue(CGAffineTransform(translationX: shakeX, y: shakeY), forKey: kCIInputTransformKey)
-            ciImage = transform.outputImage ?? ciImage
-        case .bounce:
-            let bounceY = abs(sin(t * 3 * intensity)) * 50 * bass
-            let transform = CIFilter(name: "CIAffineTransform")!
-            transform.setValue(ciImage, forKey: kCIInputImageKey)
-            transform.setValue(CGAffineTransform(translationX: 0, y: bounceY), forKey: kCIInputTransformKey)
-            ciImage = transform.outputImage ?? ciImage
-        case .feedback:
-            let bloom = CIFilter(name: "CIBloom")!
-            bloom.setValue(ciImage, forKey: kCIInputImageKey)
-            bloom.setValue(15 * level * intensity, forKey: kCIInputRadiusKey)
-            bloom.setValue(0.5 + bass, forKey: kCIInputIntensityKey)
-            ciImage = bloom.outputImage ?? ciImage
-        case .strobe:
-            let strobeOn = Int(t * 10 * intensity) % 2 == 0 || bass > 0.6
-            let exposure = CIFilter(name: "CIExposureAdjust")!
-            exposure.setValue(ciImage, forKey: kCIInputImageKey)
-            exposure.setValue(strobeOn ? bass * 2 * intensity : -1.0, forKey: kCIInputEVKey)
-            ciImage = exposure.outputImage ?? ciImage
-        case .jitter:
-            let jitterX = CGFloat.random(in: -1...1) * bass * 20 * intensity
-            let jitterY = CGFloat.random(in: -1...1) * bass * 20 * intensity
-            let transform = CIFilter(name: "CIAffineTransform")!
-            transform.setValue(ciImage, forKey: kCIInputImageKey)
-            transform.setValue(CGAffineTransform(translationX: jitterX, y: jitterY), forKey: kCIInputTransformKey)
-            ciImage = transform.outputImage ?? ciImage
-        case .mirror:
-            let fourFold = CIFilter(name: "CIFourfoldReflectedTile")!
-            fourFold.setValue(ciImage, forKey: kCIInputImageKey)
-            fourFold.setValue(center, forKey: kCIInputCenterKey)
-            fourFold.setValue(t * 0.2 * intensity, forKey: kCIInputAngleKey)
-            fourFold.setValue(imageSize.width * (0.3 + bass * 0.2 * intensity), forKey: kCIInputWidthKey)
-            ciImage = fourFold.outputImage?.cropped(to: CIImage(cgImage: cgImage).extent) ?? ciImage
-        case .tile:
-            let op = CIFilter(name: "CIOpTile")!
-            op.setValue(ciImage, forKey: kCIInputImageKey)
-            op.setValue(center, forKey: kCIInputCenterKey)
-            op.setValue(t * intensity, forKey: kCIInputAngleKey)
-            op.setValue(1.5 + bass * intensity, forKey: kCIInputScaleKey)
-            op.setValue(imageSize.width * 0.3, forKey: kCIInputWidthKey)
-            ciImage = op.outputImage?.cropped(to: CIImage(cgImage: cgImage).extent) ?? ciImage
-        case .prism:
-            let triangle = CIFilter(name: "CITriangleKaleidoscope")!
-            triangle.setValue(ciImage, forKey: kCIInputImageKey)
-            triangle.setValue(CIVector(x: imageSize.width * 0.5, y: imageSize.height * 0.5), forKey: "inputPoint")
-            triangle.setValue(imageSize.width * (0.3 + bass * 0.2), forKey: "inputSize")
-            triangle.setValue(t * 0.5 * intensity, forKey: "inputRotation")
-            triangle.setValue(0.1, forKey: "inputDecay")
-            ciImage = triangle.outputImage?.cropped(to: CIImage(cgImage: cgImage).extent) ?? ciImage
-        case .doubleVision:
-            let dvOffset = 20 + bass * 50 * intensity
-            let t1 = CIFilter(name: "CIAffineTransform")!
-            t1.setValue(ciImage, forKey: kCIInputImageKey)
-            t1.setValue(CGAffineTransform(translationX: -dvOffset, y: 0), forKey: kCIInputTransformKey)
-            let img1 = t1.outputImage ?? ciImage
-            let t2 = CIFilter(name: "CIAffineTransform")!
-            t2.setValue(ciImage, forKey: kCIInputImageKey)
-            t2.setValue(CGAffineTransform(translationX: dvOffset, y: 0), forKey: kCIInputTransformKey)
-            let img2 = t2.outputImage ?? ciImage
-            let blend = CIFilter(name: "CIAdditionCompositing")!
-            blend.setValue(img1.applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0.5)]), forKey: kCIInputImageKey)
-            blend.setValue(img2.applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0.5)]), forKey: kCIInputBackgroundImageKey)
-            ciImage = blend.outputImage ?? ciImage
-        case .flipbook:
-            let flipPhase = Int(t * 8 * intensity) % 4
-            let transform = CIFilter(name: "CIAffineTransform")!
-            var affine = CGAffineTransform.identity
-            switch flipPhase {
-            case 0: affine = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: -imageSize.width, y: 0)
-            case 1: affine = CGAffineTransform(scaleX: 1, y: -1).translatedBy(x: 0, y: -imageSize.height)
-            case 2:
-                affine = CGAffineTransform(translationX: imageSize.width/2, y: imageSize.height/2)
-                affine = affine.rotated(by: .pi)
-                affine = affine.translatedBy(x: -imageSize.width/2, y: -imageSize.height/2)
-            default: break
-            }
-            transform.setValue(ciImage, forKey: kCIInputImageKey)
-            transform.setValue(affine, forKey: kCIInputTransformKey)
-            ciImage = transform.outputImage ?? ciImage
-        case .mosaic:
-            let hexagonal = CIFilter(name: "CIHexagonalPixellate")!
-            hexagonal.setValue(ciImage, forKey: kCIInputImageKey)
-            hexagonal.setValue(center, forKey: kCIInputCenterKey)
-            hexagonal.setValue(10 + (1 - level) * 30 * intensity, forKey: kCIInputScaleKey)
-            ciImage = hexagonal.outputImage ?? ciImage
-        case .pixelate:
-            let pixellate = CIFilter(name: "CIPixellate")!
-            pixellate.setValue(ciImage, forKey: kCIInputImageKey)
-            pixellate.setValue(center, forKey: kCIInputCenterKey)
-            pixellate.setValue(5 + (1 - level) * 40 * intensity, forKey: kCIInputScaleKey)
-            ciImage = pixellate.outputImage ?? ciImage
-        case .scanlines:
-            let lines = CIFilter(name: "CILineScreen")!
-            lines.setValue(ciImage, forKey: kCIInputImageKey)
-            lines.setValue(center, forKey: kCIInputCenterKey)
-            lines.setValue(t * 0.5, forKey: kCIInputAngleKey)
-            lines.setValue(3 + bass * 5 * intensity, forKey: kCIInputWidthKey)
-            lines.setValue(0.7 + bass * 0.3, forKey: kCIInputSharpnessKey)
-            ciImage = lines.outputImage ?? ciImage
-        case .datamosh:
-            let edges = CIFilter(name: "CIEdgeWork")!
-            edges.setValue(ciImage, forKey: kCIInputImageKey)
-            edges.setValue(3 + bass * 10 * intensity, forKey: kCIInputRadiusKey)
-            let edgeImage = edges.outputImage ?? ciImage
-            let blend = CIFilter(name: "CIMultiplyBlendMode")!
-            blend.setValue(edgeImage, forKey: kCIInputImageKey)
-            blend.setValue(ciImage, forKey: kCIInputBackgroundImageKey)
-            ciImage = blend.outputImage ?? ciImage
-            let hue = CIFilter(name: "CIHueAdjust")!
-            hue.setValue(ciImage, forKey: kCIInputImageKey)
-            hue.setValue(bass * 3 * intensity, forKey: kCIInputAngleKey)
-            ciImage = hue.outputImage ?? ciImage
-        case .blocky:
-            let pixellate = CIFilter(name: "CIPixellate")!
-            pixellate.setValue(ciImage, forKey: kCIInputImageKey)
-            pixellate.setValue(center, forKey: kCIInputCenterKey)
-            pixellate.setValue(20 + bass * 60 * intensity, forKey: kCIInputScaleKey)
-            ciImage = pixellate.outputImage ?? ciImage
-        }
-        
-        let outputExtent = ciImage.extent
-        if let outputCGImage = ciContext.createCGImage(ciImage, from: outputExtent) {
-            context.draw(outputCGImage, in: artworkRect)
-        }
     }
     
     // MARK: - List Layout
@@ -3876,15 +3324,6 @@ class ModernLibraryBrowserView: NSView {
         return listLayout().alphabet.contains(point)
     }
     
-    private func hitTestContentArea(at point: NSPoint) -> Bool {
-        let contentTopY = topChromeBottomY - Layout.serverBarHeight
-        let contentBottomY = contentRegionBottomY
-        let contentRect = NSRect(x: Layout.borderWidth, y: contentBottomY,
-                                 width: bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth,
-                                 height: contentTopY - contentBottomY)
-        return contentRect.contains(point)
-    }
-
     /// The column header when `point` is in its band, at any x — so a right-click above the
     /// alphabet index still opens the column menu.
     private func columnHeader(at point: NSPoint) -> ListLayout.Header? {
@@ -3953,41 +3392,8 @@ class ModernLibraryBrowserView: NSView {
         ))
     }
     
-    private func cancelPendingArtSingleClickAction() {
-        pendingArtSingleClickWorkItem?.cancel()
-        pendingArtSingleClickWorkItem = nil
-    }
-    
-    private func scheduleArtSingleClickRatingOverlay() {
-        cancelPendingArtSingleClickAction()
-        
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self else { return }
-            self.pendingArtSingleClickWorkItem = nil
-            guard self.isArtOnlyMode, !self.isVisualizingArt else { return }
-            self.showRatingOverlay()
-        }
-        
-        pendingArtSingleClickWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: workItem)
-    }
-    
-    private func handleArtOnlyContentClick(_ event: NSEvent) {
-        if event.clickCount >= 2 {
-            cancelPendingArtSingleClickAction()
-            cycleToNextArtwork()
-            return
-        }
-        
-        scheduleArtSingleClickRatingOverlay()
-    }
-    
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        
-        // Any new click should clear a pending single-click action unless this click
-        // re-schedules/handles the art-only interaction.
-        cancelPendingArtSingleClickAction()
 
         // When HT is on, record drag start point early so mouseDragged can move the window
         // from anywhere (title bar is hidden so there's no dedicated drag handle)
@@ -4032,7 +3438,7 @@ class ModernLibraryBrowserView: NSView {
         // Sort indicator
         if hitTestSortIndicator(at: point) { showSortMenu(at: event.locationInWindow); return }
         
-        // Tab bar (check before content area so tabs work in art-only/viz mode)
+        // Tab bar
         if let tabMode = hitTestTabBar(at: point) {
             // Special handling: double-click .plists slot while local source toggles Folders
             if event.clickCount == 2 && tabMode == .plists {
@@ -4061,16 +3467,6 @@ class ModernLibraryBrowserView: NSView {
         
         // Search bar
         if hitTestSearchBar(at: point) { window?.makeFirstResponder(self); return }
-        
-        // Art-only mode: visualization click cycles effects.
-        // In non-visualizer art mode, single-click rates and double-click cycles artwork.
-        // (checked AFTER server bar, tabs, and search bar so those still work)
-        if isArtOnlyMode && isVisualizingArt && hitTestContentArea(at: point) {
-            nextVisEffect(); return
-        }
-        if isArtOnlyMode && !isVisualizingArt && hitTestContentArea(at: point) {
-            handleArtOnlyContentClick(event); return
-        }
         
         // Column resize (check before sort so edge-drag doesn't trigger sort)
         if let header = columnHeader(at: point), let columnId = hitTestColumnResize(at: point) {
@@ -4175,7 +3571,7 @@ class ModernLibraryBrowserView: NSView {
         } else {
             NSCursor.arrow.set()
         }
-        let overList = !isArtOnlyMode && hitTestListArea(at: point) != nil
+        let overList = hitTestListArea(at: point) != nil
         rowThumbnails.hover(at: overList ? point : nil) { window?.convertToScreen(convert($0, to: nil)) }
     }
 
@@ -4185,8 +3581,6 @@ class ModernLibraryBrowserView: NSView {
     }
     
     override func rightMouseDown(with event: NSEvent) {
-        cancelPendingArtSingleClickAction()
-        
         let point = convert(event.locationInWindow, from: nil)
         
         // Right-click on column header: show column visibility menu
@@ -4194,14 +3588,7 @@ class ModernLibraryBrowserView: NSView {
             showColumnConfigMenu(at: event); return
         }
         
-        if isArtOnlyMode && isVisualizingArt && hitTestContentArea(at: point) {
-            showVisualizerMenu(at: event); return
-        }
-        if isArtOnlyMode && !isVisualizingArt && hitTestContentArea(at: point) {
-            showArtContextMenu(at: event); return
-        }
-        
-        if !isArtOnlyMode, let clickedIndex = hitTestListArea(at: point) {
+        if let clickedIndex = hitTestListArea(at: point) {
             if !selectedIndices.contains(clickedIndex) { selectedIndices = [clickedIndex]; needsDisplay = true }
             let item = displayItems[clickedIndex]
             showContextMenu(for: item, at: event); return
@@ -4339,44 +3726,6 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Keyboard Events
     
     override func keyDown(with event: NSEvent) {
-        // Rating overlay shortcuts:
-        // - Escape dismisses
-        // - Delete/Backspace clears rating
-        // - Number keys 1-5 set stars
-        if isRatingOverlayVisible {
-            if event.keyCode == 53 { hideRatingOverlay(); return }
-            if event.keyCode == 51 || event.keyCode == 117 {
-                ratingOverlay.setRating(0)
-                submitRating(0)
-                return
-            }
-            if event.keyCode >= 18 && event.keyCode <= 22 {
-                let starRating = Int(event.keyCode - 17)  // 1-5
-                ratingOverlay.setRating(starRating * 2)
-                submitRating(starRating * 2)
-                return
-            }
-        }
-        
-        if isVisualizingArt && isArtOnlyMode {
-            switch event.keyCode {
-            case 123: prevVisEffect(); return
-            case 124: nextVisEffect(); return
-            case 126: visEffectIntensity = min(2.0, visEffectIntensity + 0.25); return
-            case 125: visEffectIntensity = max(0.5, visEffectIntensity - 0.25); return
-            case 53: isVisualizingArt = false; return
-            case 15: visMode = visMode == .random ? .single : .random; return
-            case 8:
-                if visMode == .cycle { visMode = .single; cycleTimer?.invalidate() }
-                else { visMode = .cycle; startCycleTimer() }
-                return
-            case 3: window?.toggleFullScreen(nil); return
-            default: break
-            }
-        }
-        
-        if isArtOnlyMode && !isVisualizingArt && event.keyCode == 53 { isArtOnlyMode = false; return }
-        
         switch event.keyCode {
         case 36: // Enter
             if browseMode == .search && !searchQuery.isEmpty && (!isYouTubeChannelSearch || hasUnsubmittedYouTubeSearch) {
@@ -4595,21 +3944,10 @@ class ModernLibraryBrowserView: NSView {
             handleRefreshClick()
             return
         }
-        if artButtonRect.contains(point) {
-            isArtOnlyMode.toggle(); return
-        }
         if coverFlowButtonRect.contains(point) {
             isCoverFlowMode.toggle()
             // Hand keyboard focus to the carousel so arrows/enter work without a prior cover click.
             window?.makeFirstResponder(isCoverFlowMode ? coverFlowView : self)
-            return
-        }
-        if visButtonRect.contains(point) {
-            toggleVisualization()
-            return
-        }
-        if rateButtonRect.contains(point) {
-            showRatingOverlay()
             return
         }
 
@@ -5231,83 +4569,6 @@ class ModernLibraryBrowserView: NSView {
             submenu.addItem(item)
         }
         return submenu
-    }
-    
-    /// Appends grouped effect submenus to `menu`. Each item is checked when it
-    /// matches `currentVisEffect`; bullet-marked when it matches the saved default.
-    private func buildVisEffectGroupSubmenus(into menu: NSMenu) {
-        let savedDefault = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
-        for group in VisEffect.groups {
-            let groupItem = NSMenuItem(title: group.title, action: nil, keyEquivalent: "")
-            let sub = NSMenu(title: group.title)
-            for effect in group.effects {
-                let item = NSMenuItem(title: effect.rawValue,
-                                      action: #selector(menuSelectEffect(_:)),
-                                      keyEquivalent: "")
-                item.target = self
-                item.representedObject = effect.rawValue
-                if effect == currentVisEffect {
-                    item.state = .on
-                } else if effect.rawValue == savedDefault {
-                    item.state = .mixed
-                }
-                sub.addItem(item)
-            }
-            groupItem.submenu = sub
-            menu.addItem(groupItem)
-        }
-    }
-
-    private func showVisualizerMenu(at event: NSEvent) {
-        let menu = NSMenu(title: "Visualizer")
-        let currentItem = NSMenuItem(title: "▶ \(currentVisEffect.rawValue)", action: nil, keyEquivalent: "")
-        currentItem.isEnabled = false; menu.addItem(currentItem)
-        menu.addItem(NSMenuItem.separator())
-        buildVisEffectGroupSubmenus(into: menu)
-        menu.addItem(NSMenuItem.separator())
-        let defaultItem = NSMenuItem(title: "Set Current as Default",
-                                     action: #selector(menuSetDefaultEffect),
-                                     keyEquivalent: "")
-        defaultItem.target = self; menu.addItem(defaultItem)
-        menu.addItem(NSMenuItem.separator())
-        let offItem = NSMenuItem(title: "Turn Off", action: #selector(turnOffVisualization), keyEquivalent: "")
-        offItem.target = self; menu.addItem(offItem)
-        prependBackdropMenu(to: menu)
-        NSMenu.popUpContextMenu(menu, with: event, for: self)
-    }
-    
-    private func showArtContextMenu(at event: NSEvent) {
-        let menu = NSMenu(title: "Art")
-        let visItem = NSMenuItem(title: "Enable Visualization", action: #selector(enableArtVisualization), keyEquivalent: "")
-        visItem.target = self; menu.addItem(visItem)
-
-        // Visualization submenu — effect picker + set default
-        let visMenuContainer = NSMenuItem(title: "Visualization", action: nil, keyEquivalent: "")
-        let visSub = NSMenu(title: "Visualization")
-        buildVisEffectGroupSubmenus(into: visSub)
-        visSub.addItem(NSMenuItem.separator())
-        let defaultItem = NSMenuItem(title: "Set Current as Default",
-                                     action: #selector(menuSetDefaultEffect),
-                                     keyEquivalent: "")
-        defaultItem.target = self; visSub.addItem(defaultItem)
-        visMenuContainer.submenu = visSub
-        menu.addItem(visMenuContainer)
-
-        // Rate submenu (when a rateable track is playing)
-        if let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-           currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.embyId != nil || currentTrack.url.isFileURL {
-            menu.addItem(NSMenuItem.separator())
-            let rateMenu = buildRateSubmenu()
-            let rateItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
-            rateItem.submenu = rateMenu
-            menu.addItem(rateItem)
-        }
-
-        menu.addItem(NSMenuItem.separator())
-        let exitItem = NSMenuItem(title: "Exit Art View", action: #selector(exitArtView), keyEquivalent: "")
-        exitItem.target = self; menu.addItem(exitItem)
-        prependBackdropMenu(to: menu)
-        NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
     
     private func showColumnConfigMenu(at event: NSEvent) {
@@ -5955,23 +5216,6 @@ class ModernLibraryBrowserView: NSView {
         alert.addButton(withTitle: "Reset"); alert.addButton(withTitle: "Cancel"); alert.alertStyle = .warning
         if alert.runModal() == .alertFirstButtonReturn { RadioManager.shared.resetToDefaults(); if case .radio = currentSource { reloadInternetRadioForCurrentMode() } }
     }
-    @objc private func menuNextEffect() { nextVisEffect() }
-
-    @objc private func menuSelectEffect(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String,
-              let effect = VisEffect(rawValue: raw) else { return }
-        visMode = .single
-        currentVisEffect = effect
-        UserDefaults.standard.set(effect.rawValue, forKey: "browserVisEffect")
-    }
-
-    @objc private func menuSetDefaultEffect() {
-        UserDefaults.standard.set(currentVisEffect.rawValue, forKey: "browserVisDefaultEffect")
-    }
-    @objc private func enableArtVisualization() { isVisualizingArt = true }
-    @objc private func exitArtView() { isArtOnlyMode = false }
-    @objc private func turnOffVisualization() { isVisualizingArt = false }
-    
     @objc private func contextMenuToggleExpand(_ sender: NSMenuItem) {
         guard let item = sender.representedObject as? ModernDisplayItem else { return }; toggleExpand(item)
     }
@@ -6698,29 +5942,7 @@ class ModernLibraryBrowserView: NSView {
     }
 
     @objc private func trackDidChange(_ notification: Notification) {
-        artModeLifecycleGeneration &+= 1
-        let generation = artModeLifecycleGeneration
         let track = notification.userInfo?["track"] as? Track
-
-        if isArtOnlyMode {
-            guard track != nil else {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self,
-                          self.artModeLifecycleGeneration == generation,
-                          self.isArtOnlyMode,
-                          WindowManager.shared.audioEngine.currentTrack == nil else { return }
-                    self.exitArtOnlyModeForMissingArtwork()
-                }
-                return
-            }
-
-            // Art-only mode uses loadAllArtworkForCurrentTrack exclusively.
-            // Don't also call loadArtwork(for:) to avoid a race where loadArtwork
-            // finishes last with nil and overwrites valid artwork.
-            fetchCurrentTrackRating()
-            loadAllArtworkForCurrentTrack()
-            return
-        }
         let needsCurrentTrackArtwork = showsLegacyArtwork
         guard needsCurrentTrackArtwork else {
             artworkDisplayGeneration &+= 1
@@ -6752,15 +5974,12 @@ class ModernLibraryBrowserView: NSView {
     @objc private func windowDidMiniaturize(_ notification: Notification) {
         guard notification.object as? NSWindow == window else { return }
         stopServerNameScroll()
-        if isVisualizingArt { visualizerWasActiveBeforeHide = true; stopVisualizerTimer() }
         backdropView?.reload()
     }
     
     @objc private func windowDidDeminiaturize(_ notification: Notification) {
         guard notification.object as? NSWindow == window else { return }
         startServerNameScroll()
-        if visualizerWasActiveBeforeHide && isVisualizingArt { startVisualizerTimer() }
-        visualizerWasActiveBeforeHide = false
         backdropView?.reload()
     }
     
@@ -6768,10 +5987,8 @@ class ModernLibraryBrowserView: NSView {
         guard notification.object as? NSWindow == window else { return }
         if window?.occlusionState.contains(.visible) == true {
             startServerNameScroll()
-            if isVisualizingArt && visualizerTimer == nil { startVisualizerTimer() }
         } else {
             stopServerNameScroll()
-            if visualizerTimer != nil { visualizerWasActiveBeforeHide = isVisualizingArt; stopVisualizerTimer() }
         }
         backdropView?.reload()
     }
@@ -6821,8 +6038,6 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func onSourceChanged() {
-        // Changing source always exits Art view.
-        isArtOnlyMode = false
         resetCoverFlowNavigation()
         invalidateActiveLoads()
         if browseMode == .folders && !isLocalSource {
@@ -7048,149 +6263,6 @@ class ModernLibraryBrowserView: NSView {
         return NSRect(x: 0, y: barY, width: bounds.width, height: Layout.serverBarHeight)
     }
 
-    // MARK: - Visualizer Timer
-    
-    private func startVisualizerTimer() {
-        visualizerTime = 0; silenceFrames = 0; visualizerTimer?.invalidate()
-        setVisualizerConsumerRegistered(true)
-        let timer = Timer(timeInterval: 1.0/30.0, repeats: true) { [weak self] _ in self?.handleVisualizerTimerTick() }
-        RunLoop.main.add(timer, forMode: .common); visualizerTimer = timer
-        if visMode == .cycle { startCycleTimer() }
-    }
-    
-    private func handleVisualizerTimerTick() {
-        guard let window = window, window.isVisible, window.occlusionState.contains(.visible) else { return }
-        visualizerTime += 1.0/30.0
-        let spectrumData = WindowManager.shared.audioEngine.spectrumData
-        let currentLevel = spectrumData.reduce(0, +) / Float(spectrumData.count)
-        let isPlaying = WindowManager.shared.audioEngine.state == .playing
-        if currentLevel < 0.001 {
-            silenceFrames += 1
-            // Only skip redraws during silence when audio is NOT playing.
-            // When playing, streaming audio may still be buffering (no spectrum data yet)
-            // so we keep redrawing to show time-based effects on the artwork.
-            if silenceFrames > 15 && !isPlaying { return }
-        } else {
-            silenceFrames = 0
-            if visMode == .random {
-                let bass = spectrumData.prefix(10).reduce(0, +) / 10.0
-                if bass > 0.5 && visualizerTime - lastBeatTime > 0.3 {
-                    lastBeatTime = visualizerTime
-                    if Double.random(in: 0...1) < 0.3 { currentVisEffect = VisEffect.allCases.randomElement() ?? .psychedelic }
-                }
-            }
-        }
-        lastAudioLevel = currentLevel
-        needsDisplay = true
-    }
-    
-    private func stopVisualizerTimer() {
-        visualizerTimer?.invalidate(); visualizerTimer = nil
-        cycleTimer?.invalidate(); cycleTimer = nil
-        setVisualizerConsumerRegistered(false)
-    }
-
-    private func setVisualizerConsumerRegistered(_ registered: Bool) {
-        guard registered != isVisualizerConsumerRegistered else { return }
-        isVisualizerConsumerRegistered = registered
-        if registered {
-            WindowManager.shared.audioEngine.addSpectrumConsumer("modernLibraryBrowserVisualizer")
-        } else {
-            WindowManager.shared.audioEngine.removeSpectrumConsumer("modernLibraryBrowserVisualizer")
-        }
-    }
-    
-    private func startCycleTimer() {
-        cycleTimer?.invalidate()
-        let timer = Timer(timeInterval: cycleInterval, repeats: true) { [weak self] _ in
-            guard let self = self, self.visMode == .cycle else { return }
-            let effects = VisEffect.allCases
-            if let idx = effects.firstIndex(of: self.currentVisEffect) {
-                self.currentVisEffect = effects[(idx + 1) % effects.count]
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common); cycleTimer = timer
-    }
-    
-    func toggleVisualization() {
-        guard isArtOnlyMode && currentArtwork != nil else { return }
-        isVisualizingArt.toggle()
-    }
-    
-    private func nextVisEffect() {
-        visMode = .single
-        let effects = VisEffect.allCases
-        if let idx = effects.firstIndex(of: currentVisEffect) { currentVisEffect = effects[(idx + 1) % effects.count] }
-    }
-    
-    private func prevVisEffect() {
-        visMode = .single
-        let effects = VisEffect.allCases
-        if let idx = effects.firstIndex(of: currentVisEffect) { currentVisEffect = effects[(idx - 1 + effects.count) % effects.count] }
-    }
-    
-    // MARK: - Rating
-    
-    private lazy var ratingOverlay: RatingOverlayView = {
-        let overlay = RatingOverlayView(frame: bounds)
-        overlay.autoresizingMask = [.width, .height]; overlay.isHidden = true
-        overlay.onRatingSelected = { [weak self] rating in self?.submitRating(rating) }
-        overlay.onDismiss = { [weak self] in self?.hideRatingOverlay() }
-        addSubview(overlay); return overlay
-    }()
-    
-    private func showRatingOverlay() {
-        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-              currentTrack.plexRatingKey != nil || currentTrack.subsonicId != nil || currentTrack.jellyfinId != nil || currentTrack.url.isFileURL else { return }
-        if let historyHostingView {
-            addSubview(ratingOverlay, positioned: .above, relativeTo: historyHostingView)
-        }
-        ratingOverlay.frame = bounds; ratingOverlay.setRating(currentTrackRating ?? 0)
-        ratingOverlay.isHidden = false; isRatingOverlayVisible = true; needsDisplay = true
-    }
-    
-    private func hideRatingOverlay() {
-        ratingOverlay.isHidden = true; isRatingOverlayVisible = false
-        ratingSubmitTask?.cancel(); ratingSubmitTask = nil; needsDisplay = true
-    }
-    
-    private func submitRating(_ rating: Int) {
-        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else { return }
-        let normalizedRating = rating > 0 ? min(10, rating) : 0
-        currentTrackRating = normalizedRating; needsDisplay = true; ratingSubmitTask?.cancel()
-        ratingSubmitTask = Task {
-            do {
-                try await Task.sleep(nanoseconds: 500_000_000)
-                try Task.checkCancellation()
-
-                // Per-source scales and conversions live in `TrackRatingService`, so this row and a
-                // `.wal` skin's star row cannot disagree about what three stars means.
-                try await TrackRatingService.shared.setRating(
-                    normalizedRating > 0 ? normalizedRating : nil, for: currentTrack)
-
-                try await Task.sleep(nanoseconds: 300_000_000)
-                await MainActor.run { hideRatingOverlay() }
-            } catch is CancellationError { } catch { NSLog("Rating failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    
-    private func fetchCurrentTrackRating() {
-        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
-            currentTrackRating = nil; return
-        }
-
-        // A local file answers from the library without a round trip; every server source has to be
-        // asked, and `TrackRatingService` owns each one's scale. The guard re-checks the track on the
-        // way back so a rating that arrives after the song changed cannot land on the new one.
-        currentTrackRating = TrackRatingService.shared.localRating(for: currentTrack)
-        needsDisplay = true
-        Task { @MainActor in
-            let rating = await TrackRatingService.shared.rating(for: currentTrack)
-            guard WindowManager.shared.audioEngine.currentTrack?.id == currentTrack.id else { return }
-            currentTrackRating = rating; needsDisplay = true
-        }
-    }
-    
     // MARK: - Rate Submenus
 
     private static func goldStarAttributedTitle(_ label: String) -> NSAttributedString {
@@ -7209,23 +6281,6 @@ class ModernLibraryBrowserView: NSView {
         return astr
     }
 
-    /// Build rate submenu for the currently playing track (art mode overlay)
-    private func buildRateSubmenu() -> NSMenu {
-        let menu = NSMenu(title: "Rate")
-        for stars in 1...5 {
-            let label = String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
-            let item = NSMenuItem(title: label, action: #selector(contextMenuRateCurrentTrack(_:)), keyEquivalent: "")
-            item.target = self; item.tag = stars * 2  // 0-10 scale
-            item.attributedTitle = ModernLibraryBrowserView.goldStarAttributedTitle(label)
-            menu.addItem(item)
-        }
-        menu.addItem(NSMenuItem.separator())
-        let clearItem = NSMenuItem(title: "Clear Rating", action: #selector(contextMenuRateCurrentTrack(_:)), keyEquivalent: "")
-        clearItem.target = self; clearItem.tag = 0
-        menu.addItem(clearItem)
-        return menu
-    }
-    
     /// Build rate submenu for a Plex track
     private func buildRateSubmenuForPlex(ratingKey: String) -> NSMenu {
         let menu = NSMenu(title: "Rate")
@@ -7342,11 +6397,6 @@ class ModernLibraryBrowserView: NSView {
         return menu
     }
     
-    @objc private func contextMenuRateCurrentTrack(_ sender: NSMenuItem) {
-        let rating = sender.tag  // 0-10 scale, 0 = clear
-        submitRating(rating)
-    }
-    
     @objc private func contextMenuRatePlex(_ sender: NSMenuItem) {
         guard let ratingKey = sender.representedObject as? String else { return }
         let rating = sender.tag  // 0-10 scale
@@ -7354,11 +6404,6 @@ class ModernLibraryBrowserView: NSView {
             do {
                 try await PlexManager.shared.serverClient?.rateItem(ratingKey: ratingKey, rating: rating > 0 ? rating : nil)
                 await MainActor.run {
-                    // Update art mode rating if this is the current track
-                    if let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-                       currentTrack.plexRatingKey == ratingKey {
-                        currentTrackRating = rating > 0 ? rating : nil; needsDisplay = true
-                    }
                     updateCachedPlexRating(ratingKey: ratingKey, rating: rating)
                 }
             } catch { NSLog("Plex rating failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
@@ -7372,11 +6417,6 @@ class ModernLibraryBrowserView: NSView {
             do {
                 try await SubsonicManager.shared.setRating(songId: songId, rating: subsonicRating)
                 await MainActor.run {
-                    // Update art mode rating if this is the current track
-                    if let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-                       currentTrack.subsonicId == songId {
-                        currentTrackRating = subsonicRating > 0 ? subsonicRating * 2 : nil; needsDisplay = true
-                    }
                     // Update the cached song in displayItems
                     updateCachedSubsonicRating(songId: songId, rating: subsonicRating)
                 }
@@ -7391,11 +6431,6 @@ class ModernLibraryBrowserView: NSView {
             do {
                 try await JellyfinManager.shared.setRating(itemId: itemId, rating: rating)
                 await MainActor.run {
-                    // Update art mode rating if this is the current track
-                    if let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-                       currentTrack.jellyfinId == itemId {
-                        currentTrackRating = rating > 0 ? rating / 10 : nil; needsDisplay = true
-                    }
                     updateCachedJellyfinRating(itemId: itemId, rating: rating)
                 }
             } catch { NSLog("Jellyfin rating failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
@@ -7409,11 +6444,6 @@ class ModernLibraryBrowserView: NSView {
             do {
                 try await EmbyManager.shared.setRating(itemId: itemId, rating: rating)
                 await MainActor.run {
-                    // Update art mode rating if this is the current track
-                    if let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-                       currentTrack.embyId == itemId {
-                        currentTrackRating = rating > 0 ? rating / 10 : nil; needsDisplay = true
-                    }
                     updateCachedEmbyRating(itemId: itemId, rating: rating)
                 }
             } catch { NSLog("Emby rating failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
@@ -7424,12 +6454,6 @@ class ModernLibraryBrowserView: NSView {
         guard let trackId = sender.representedObject as? UUID else { return }
         let rating = sender.tag  // 0-10, or -1 for clear
         MediaLibrary.shared.setRating(for: trackId, rating: rating >= 0 ? rating : nil)
-        // Update art mode rating if this is the current track
-        if let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-           let libraryTrack = MediaLibrary.shared.findTrack(byURL: currentTrack.url),
-           libraryTrack.id == trackId {
-            currentTrackRating = rating >= 0 ? rating : nil; needsDisplay = true
-        }
         updateCachedLocalTrackRating(trackId: trackId, rating: rating)
         needsDisplay = true
     }
@@ -7737,79 +6761,6 @@ class ModernLibraryBrowserView: NSView {
         }
 
         return nil
-    }
-    
-    private func loadAllArtworkForCurrentTrack() {
-        currentTrackArtworkLoadTask?.cancel(); currentTrackArtworkLoadTask = nil
-        artworkLoadTask?.cancel(); artworkLoadTask = nil
-        artworkCyclingTask?.cancel(); artworkCyclingTask = nil
-        artworkDisplayGeneration &+= 1
-        let displayGeneration = artworkDisplayGeneration
-        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
-            exitArtOnlyModeForMissingArtwork()
-            return
-        }
-        artworkImages = []; artworkIndex = 0
-        artworkCyclingTask = Task { [weak self] in
-            guard let self = self else { return }
-            var images: [NSImage] = []
-            if currentTrack.url.isFileURL {
-                if let img = await self.loadLocalArtwork(url: currentTrack.url) { images.append(img) }
-            } else if let plexKey = currentTrack.plexRatingKey {
-                if let img = await self.loadPlexArtwork(ratingKey: plexKey, thumbPath: currentTrack.artworkThumb) { images.append(img) }
-            } else if let subId = currentTrack.subsonicId {
-                if let img = await self.loadSubsonicArtwork(songId: subId) { images.append(img) }
-            } else if let jellyfinId = currentTrack.jellyfinId {
-                if let img = await self.loadJellyfinArtwork(itemId: jellyfinId, imageTag: currentTrack.artworkThumb) { images.append(img) }
-            } else if let embyId = currentTrack.embyId {
-                if let img = await self.loadEmbyArtwork(itemId: embyId, imageTag: currentTrack.artworkThumb) { images.append(img) }
-            } else if RadioManager.shared.isActive {
-                if let img = await self.loadRadioArtwork(for: currentTrack) { images.append(img) }
-            } else if let thumb = currentTrack.artworkThumb {
-                if let img = await self.loadRemoteArtwork(urlString: thumb, cacheNamespace: "generic") { images.append(img) }
-            }
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard self.isArtOnlyMode,
-                      self.artworkDisplayGeneration == displayGeneration,
-                      WindowManager.shared.audioEngine.currentTrack?.id == currentTrack.id else { return }
-                guard !images.isEmpty else {
-                    self.exitArtOnlyModeForMissingArtwork()
-                    return
-                }
-
-                self.artworkImages = images; self.artworkIndex = 0
-                self.currentArtwork = images.first
-                self.currentTrackArtwork = images.first
-                self.artworkTrackId = currentTrack.id
-                self.needsDisplay = true
-            }
-        }
-    }
-
-    private func exitArtOnlyModeForMissingArtwork() {
-        artworkDisplayGeneration &+= 1
-        currentTrackArtworkLoadTask?.cancel()
-        currentTrackArtworkLoadTask = nil
-        artworkLoadTask?.cancel()
-        artworkLoadTask = nil
-        artworkCyclingTask?.cancel()
-        artworkCyclingTask = nil
-        artworkImages = []
-        artworkIndex = 0
-        currentArtwork = nil
-        currentTrackArtwork = nil
-        artworkTrackId = nil
-        isArtOnlyMode = false
-        needsDisplay = true
-    }
-    
-    private func cycleToNextArtwork() {
-        guard artworkImages.count > 1 else { return }
-        artworkIndex = (artworkIndex + 1) % artworkImages.count
-        currentArtwork = artworkImages[artworkIndex]
-        currentTrackArtwork = currentArtwork
-        needsDisplay = true
     }
     
     private func loadArtworkForSelection() {

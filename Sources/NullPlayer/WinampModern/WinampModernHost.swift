@@ -53,8 +53,8 @@ protocol WinampModernHost: AnyObject {
     /// `playItemMetadata(forKey:)`, which is what maps a skin's key onto a field.
     var trackMetadata: WinampModernTrackMetadata { get }
     /// The playing track's rating in **stars, 0–5** — Winamp's own unit for
-    /// `getCurrentTrackRating`/`setCurrentTrackRating`, and the same field NullPlayer's Library
-    /// Browser draws in ART mode. `TrackRatingService` owns the conversion to the app's internal
+    /// `getCurrentTrackRating`/`setCurrentTrackRating`, and the same field NullPlayer's Art
+    /// window rates. `TrackRatingService` owns the conversion to the app's internal
     /// 0–10 scale and to each server's; nothing here should do arithmetic on it.
     ///
     /// 0 is "unrated", because that is what a star widget draws as an empty row — Winamp has no

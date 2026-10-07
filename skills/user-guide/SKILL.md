@@ -35,6 +35,7 @@ their saved Classic, Original, Original-Metal, or WMP choice after upgrading. Se
 | **Spectrum Analyzer** | Large spectrum visualization | Context menu or Window menu |
 | **Audio Analyzer** | Friture-style multi-pane analyzer (Scope, Levels, Spectrogram, Octave, Pitch, Delay) | Context menu or Window menu |
 | **PeppyMeter** | Skinnable analog VU meter — needle/bar meters that track left/right levels; right-click to pick a meter or enable Random | Context menu or Window menu |
+| **Art** | The playing track's cover — click to rate, double-click to step through a file's embedded pictures, **V** for 30 audio-reactive effects, **F** for fullscreen; right-click for the effect, intensity and rating menus. Opens under the player, shaped to the cover | AR button (Original), Windows menu |
 | **Flow** | Live network throughput meter — download/upload views with interface selection | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media | Logo button or context menu |
 | **Visualizations** | Visualization engine host for ProjectM, Geiss and Tripex (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
@@ -140,7 +141,7 @@ Previous, Play, Pause, Stop, Next
 - **EQ**: Show/hide Equalizer
 - **PL**: Show/hide Playlist
 
-Original and Original-Metal UI add: **HT** (Hide Title Bars), **CP** (Compact Mode), **VZ** (Visualizations), **FL** (Flow), **PM** (PeppyMeter), **SP** (Spectrum), **AA** (Audio Analysis), **WV** (Waveform), **LB** (Library)
+Original and Original-Metal UI add: **HT** (Hide Title Bars), **CP** (Compact Mode), **VZ** (Visualizations), **FL** (Flow), **PM** (PeppyMeter), **AR** (Art), **SP** (Spectrum), **AA** (Audio Analysis), **WV** (Waveform), **LB** (Library)
 
 ## Media Sources
 
@@ -364,8 +365,9 @@ family drives its in-skin visualizer from the main window's own right-click menu
 The **Visuals** menu also has top-level **Spectrum Window** controls and a **Visualizations** submenu for
 the ProjectM/Geiss/Tripex/Met visualization host.
 
-### Album Art Visualizer
-30 effects transforming album artwork based on audio
+### Art Window (VIS)
+30 effects transforming the playing track's cover with the audio — press **V** in the **Art** window
+(Windows → Art), or right-click it. The Library Browser no longer has an ART view.
 
 ### ProjectM/MilkDrop
 100+ bundled presets, OpenGL rendering, fullscreen support.

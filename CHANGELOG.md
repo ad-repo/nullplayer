@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Art is its own window** — the Library Browser's ART view is now an **Art** window (Windows →
+  Art, or **AR** on the Original player) that follows the playing track and docks under the player
+  like PeppyMeter, opening at the player's width and shaped to the cover. Click it to rate the
+  track, double-click to step through a file's embedded pictures, press **V** for the 30
+  audio-reactive effects (formerly VIS) and **F** for fullscreen; right-click for effects,
+  intensity and rating. It is remembered across launches, and Winamp Modern skins that frame
+  NullPlayer's windows frame it too. You can browse while it is open: the Library Browser's ART
+  button is gone. Radio station logos now also show as the station's art, including in Control
+  Center.
 - **Find YouTube channels by name** — the YouTube source's **Search** tab now searches YouTube for
   channels instead of listing internet radio stations. Type a name and press Enter: each result
   shows its @handle and subscriber count, expands to preview its uploads, and subscribes on
@@ -103,6 +112,12 @@
   orange-to-yellow body, white controls and a lemon glow. It is now the default Original skin
   whenever no Original skin has been picked yet; a skin you already have selected stays selected.
   **October** puts the same orange, gold and lemon on a dark warm-brown body.
+- **Album art ratings stick** — a rating chosen in the star panel is no longer lost if you press
+  Esc, close the window or the next track starts within half a second of choosing it, and **Rate**
+  in the right-click menu saves the same way. The stars no longer appear for a file that is not in
+  your library, where a rating had nowhere to be saved; dragging its cover moves the window
+  instead. With **Hide Title Bars** on, and in Windows Media Player skins, the Art window now opens
+  exactly the size of the cover, without a black band.
 
 ## 0.31.4
 

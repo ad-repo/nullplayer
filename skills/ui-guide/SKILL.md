@@ -539,50 +539,12 @@ The offscreen buffer approach processes pixels at native resolution before scali
 | `Windows/*/View.swift` | Window views |
 | `App/WindowPlacement.swift` | The single definition of "on screen" — pure `NSRect` statics |
 
-## Art Visualizer Window
+## Art Window
 
-The Art Visualizer is an audio-reactive album art visualization window that uses Metal shaders to transform album artwork based on music frequencies.
-
-### Key Files
-
-| File | Purpose |
-|------|---------|
-| `Visualization/AudioReactiveUniforms.swift` | Audio data struct for shaders |
-| `Visualization/ShaderManager.swift` | Metal pipeline management |
-| `Visualization/ArtworkVisualizerView.swift` | MTKView rendering |
-| `Windows/ArtVisualizer/ArtVisualizerWindowController.swift` | Window controller |
-| `Windows/ArtVisualizer/ArtVisualizerContainerView.swift` | Window chrome |
-
-### Effect Presets
-
-| Effect | Description |
-|--------|-------------|
-| Clean | Original artwork, no effects |
-| Subtle Pulse | Gentle brightness/scale pulse on beats |
-| Liquid Dreams | Flowing displacement with color shifts |
-| Glitch City | Heavy RGB split and block glitches |
-| Cosmic Mirror | Kaleidoscope with chromatic aberration |
-| Deep Bass | Intense displacement on low frequencies |
-
-### Keyboard Controls (when focused)
-
-- `Escape` - Close window (or exit fullscreen)
-- `Enter` - Toggle fullscreen
-- `Left/Right` - Cycle through effects
-- `Up/Down` - Adjust intensity
-
-### Browser Integration
-
-When in ART-only mode in the Library Browser, a "VIS" button appears next to the ART button. Clicking it opens the Art Visualizer window with the currently displayed artwork.
-
-### Audio Analysis
-
-The visualizer uses the existing 75-band spectrum data from `AudioEngine`:
-- Bands 0-9: Bass (20-250Hz)
-- Bands 10-35: Mid (250-4000Hz)
-- Bands 36-74: Treble (4000-20000Hz)
-
-Beat detection triggers on bass energy spikes above threshold.
+The playing track's cover, star rating and VIS effects, in a centre-stack window that opens under
+the player at its width with its height cut to the cover's aspect ratio. One shared content view
+(`Art/ArtView.swift`) inside per-family chrome (`Windows/Art/`, `Windows/ModernArt/`). Owned by
+[album-art-visualizer](../album-art-visualizer/SKILL.md) — read it before changing the window.
 
 ## Spectrum Analyzer Window
 
@@ -932,9 +894,9 @@ library list, toggled by a **FLOW** button. It is a visual lens over the browser
 
 **Host wiring** — mirrored in `ModernLibraryBrowserView` (Modern+Metal) and `PlexBrowserView`
 (Classic):
-- An `isCoverFlowMode` toggle mirroring `isArtOnlyMode` (mutually exclusive with it). Modern draws a
-  **FLOW** boxed toggle next to **ART** in the source bar. Classic also places **FLOW** in the source
-  bar's ART/F5 accessory cluster, using its bitmap-text active/inactive treatment; it must not
+- An `isCoverFlowMode` toggle. Modern draws a **FLOW** boxed toggle beside **F5** in the source
+  bar. Classic also places **FLOW** in the source bar's F5 accessory cluster
+  (`drawCoverFlowServerBarButton`), using its bitmap-text active/inactive treatment; it must not
   consume tab-row width or present as another browse tab.
 - The overlay is a subview sized to the list content rect (`embeddedHistoryContentRect` /
   `embeddedContentRect`), added above the list and below the top chrome. In cover flow the draw path
@@ -970,7 +932,7 @@ library list, toggled by a **FLOW** button. It is a visual lens over the browser
 
 `ModernLibraryBrowserView` and `PlexBrowserView` each work out the list's geometry in one place,
 `listLayout()`, returning `area` (below the tab and search bars, full inner width; the loading,
-error and art views fill it), `header` (the column-header rect and its columns, `nil` when the list
+and error views fill it), `header` (the column-header rect and its columns, `nil` when the list
 has no columns), `rows` (under the header, left of the scrollbar and alphabet index),
 `alphabet`, and in the modern browser `banner` (the offline-volume banner under `area`, `nil` when
 no watch folder is offline). Drawing, every hit test, every column-width calculation and every
@@ -1004,7 +966,7 @@ genuinely its own.
   tracks. Local albums and artists have no cache key there, so they key on `item:<id>`.
 - A `LibraryRowThumbnailTracker` (`rowThumbnails`): `beginPass(placeholder:)` at the top of
   `drawListArea`, `draw(...)` at each thumbnail, `hover(at:toScreen:)` from `mouseMoved` (only
-  while the mouse is over the list and not in art-only mode). A row's art goes in its **Art**
+  while the mouse is over the list). A row's art goes in its **Art**
   column when it has one (YouTube videos), otherwise before the title. Every circle gets the
   placeholder until its art loads or when there is none, so titles never shift. The classic
   browser draws inside its text counter-flip; a rect centred on the row is the same in its skin

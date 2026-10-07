@@ -219,6 +219,7 @@ class AppStateManager {
         var isSpectrumVisible: Bool = false
         var isAudioAnalysisVisible: Bool = false
         var isPeppyMeterVisible: Bool = false
+        var isArtVisible: Bool = false
         var isNetworkMonitorVisible: Bool = false
         var isCavaVisible: Bool = false
         var isSonosVisible: Bool = false
@@ -258,6 +259,7 @@ class AppStateManager {
         var spectrumWindowFrame: String?
         var audioAnalysisWindowFrame: String?
         var peppyMeterWindowFrame: String?
+        var artWindowFrame: String?
         var networkMonitorWindowFrame: String?
         var cavaWindowFrame: String?
         var sonosWindowFrame: String?
@@ -337,8 +339,8 @@ class AppStateManager {
         // MARK: - Custom Decoding for Backward Compatibility
         
         enum CodingKeys: String, CodingKey {
-            case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isProjectMVisible, isSpectrumVisible, isAudioAnalysisVisible, isPeppyMeterVisible, isNetworkMonitorVisible, isCavaVisible, isSonosVisible, isWaveformVisible
-            case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, projectMWindowFrame, spectrumWindowFrame, audioAnalysisWindowFrame, peppyMeterWindowFrame, networkMonitorWindowFrame, cavaWindowFrame, sonosWindowFrame, waveformWindowFrame, isProjectMFullscreen
+            case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isProjectMVisible, isSpectrumVisible, isAudioAnalysisVisible, isPeppyMeterVisible, isArtVisible, isNetworkMonitorVisible, isCavaVisible, isSonosVisible, isWaveformVisible
+            case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, projectMWindowFrame, spectrumWindowFrame, audioAnalysisWindowFrame, peppyMeterWindowFrame, artWindowFrame, networkMonitorWindowFrame, cavaWindowFrame, sonosWindowFrame, waveformWindowFrame, isProjectMFullscreen
             case volume, balance, shuffleEnabled, repeatEnabled, gaplessPlaybackEnabled, volumeNormalizationEnabled
             case sweetFadeEnabled, sweetFadeDuration
             case eqEnabled, eqAutoEnabled, eqPreamp, eqBands, eqBandsByLayout
@@ -372,6 +374,7 @@ class AppStateManager {
             isSpectrumVisible = try container.decodeIfPresent(Bool.self, forKey: .isSpectrumVisible) ?? false
             isAudioAnalysisVisible = try container.decodeIfPresent(Bool.self, forKey: .isAudioAnalysisVisible) ?? false
             isPeppyMeterVisible = try container.decodeIfPresent(Bool.self, forKey: .isPeppyMeterVisible) ?? false
+            isArtVisible = try container.decodeIfPresent(Bool.self, forKey: .isArtVisible) ?? false
             isNetworkMonitorVisible = try container.decodeIfPresent(Bool.self, forKey: .isNetworkMonitorVisible) ?? false
             isCavaVisible = try container.decodeIfPresent(Bool.self, forKey: .isCavaVisible) ?? false
             isSonosVisible = try container.decodeIfPresent(Bool.self, forKey: .isSonosVisible) ?? false
@@ -391,6 +394,7 @@ class AppStateManager {
             spectrumWindowFrame = try container.decodeIfPresent(String.self, forKey: .spectrumWindowFrame)
             audioAnalysisWindowFrame = try container.decodeIfPresent(String.self, forKey: .audioAnalysisWindowFrame)
             peppyMeterWindowFrame = try container.decodeIfPresent(String.self, forKey: .peppyMeterWindowFrame)
+            artWindowFrame = try container.decodeIfPresent(String.self, forKey: .artWindowFrame)
             networkMonitorWindowFrame = try container.decodeIfPresent(String.self, forKey: .networkMonitorWindowFrame)
             cavaWindowFrame = try container.decodeIfPresent(String.self, forKey: .cavaWindowFrame)
             sonosWindowFrame = try container.decodeIfPresent(String.self, forKey: .sonosWindowFrame)
@@ -476,6 +480,7 @@ class AppStateManager {
             isSpectrumVisible: Bool = false,
             isAudioAnalysisVisible: Bool = false,
             isPeppyMeterVisible: Bool = false,
+            isArtVisible: Bool = false,
             isNetworkMonitorVisible: Bool = false,
             isCavaVisible: Bool = false,
             isSonosVisible: Bool = false,
@@ -489,6 +494,7 @@ class AppStateManager {
             spectrumWindowFrame: String? = nil,
             audioAnalysisWindowFrame: String? = nil,
             peppyMeterWindowFrame: String? = nil,
+            artWindowFrame: String? = nil,
             networkMonitorWindowFrame: String? = nil,
             cavaWindowFrame: String? = nil,
             sonosWindowFrame: String? = nil,
@@ -535,6 +541,7 @@ class AppStateManager {
             self.isSpectrumVisible = isSpectrumVisible
             self.isAudioAnalysisVisible = isAudioAnalysisVisible
             self.isPeppyMeterVisible = isPeppyMeterVisible
+            self.isArtVisible = isArtVisible
             self.isNetworkMonitorVisible = isNetworkMonitorVisible
             self.isCavaVisible = isCavaVisible
             self.isSonosVisible = isSonosVisible
@@ -549,6 +556,7 @@ class AppStateManager {
             self.spectrumWindowFrame = spectrumWindowFrame
             self.audioAnalysisWindowFrame = audioAnalysisWindowFrame
             self.peppyMeterWindowFrame = peppyMeterWindowFrame
+            self.artWindowFrame = artWindowFrame
             self.networkMonitorWindowFrame = networkMonitorWindowFrame
             self.cavaWindowFrame = cavaWindowFrame
             self.sonosWindowFrame = sonosWindowFrame
@@ -681,6 +689,7 @@ class AppStateManager {
             isSpectrumVisible: visibility("spectrum", wm.isSpectrumVisible),
             isAudioAnalysisVisible: visibility("audioAnalysis", wm.isAudioAnalysisVisible),
             isPeppyMeterVisible: visibility("peppyMeter", wm.isPeppyMeterVisible),
+            isArtVisible: visibility("art", wm.isArtVisible),
             isNetworkMonitorVisible: visibility("networkMonitor", wm.isNetworkMonitorVisible),
             isCavaVisible: visibility("cava", wm.isCavaVisible),
             isSonosVisible: visibility("sonos", wm.isSonosVisible),
@@ -698,6 +707,7 @@ class AppStateManager {
             spectrumWindowFrame: wm.spectrumWindowFrame.map { NSStringFromRect($0) },
             audioAnalysisWindowFrame: wm.audioAnalysisWindowFrame.map { NSStringFromRect($0) },
             peppyMeterWindowFrame: wm.peppyMeterWindowFrame.map { NSStringFromRect($0) },
+            artWindowFrame: wm.artWindowFrame.map { NSStringFromRect($0) },
             networkMonitorWindowFrame: wm.networkMonitorWindowFrame.map { NSStringFromRect($0) },
             cavaWindowFrame: wm.cavaWindowFrame.map { NSStringFromRect($0) },
             sonosWindowFrame: wm.sonosWindowFrame.map { NSStringFromRect($0) },
@@ -997,6 +1007,7 @@ class AppStateManager {
                 ("spectrum", state.spectrumWindowFrame),
                 ("audioAnalysis", state.audioAnalysisWindowFrame),
                 ("peppyMeter", state.peppyMeterWindowFrame),
+                ("art", state.artWindowFrame),
                 ("networkMonitor", state.networkMonitorWindowFrame),
                 ("cava", state.cavaWindowFrame),
                 ("sonos", state.sonosWindowFrame),
@@ -1048,6 +1059,7 @@ class AppStateManager {
         let spectrumFrame = restoredFrames["spectrum"]
         let audioAnalysisFrame = restoredFrames["audioAnalysis"]
         let peppyMeterFrame = restoredFrames["peppyMeter"]
+        let artFrame = restoredFrames["art"]
         let networkMonitorFrame = restoredFrames["networkMonitor"]
         let cavaFrame = restoredFrames["cava"]
         let sonosFrame = restoredFrames["sonos"]
@@ -1083,6 +1095,9 @@ class AppStateManager {
             }
             if state.isPeppyMeterVisible {
                 wm.showPeppyMeter(at: peppyMeterFrame)
+            }
+            if state.isArtVisible {
+                wm.showArt(at: artFrame)
             }
             if state.isNetworkMonitorVisible {
                 wm.showNetworkMonitor(at: networkMonitorFrame)
@@ -1494,6 +1509,7 @@ class AppStateManager {
         let waveformFrame: NSRect?
         let audioAnalysisFrame: NSRect?
         let peppyMeterFrame: NSRect?
+        let artFrame: NSRect?
         let networkMonitorFrame: NSRect?
         let cavaFrame: NSRect?
         let sonosFrame: NSRect?
@@ -1512,6 +1528,7 @@ class AppStateManager {
         waveformFrame: NSRect?,
         audioAnalysisFrame: NSRect?,
         peppyMeterFrame: NSRect?,
+        artFrame: NSRect? = nil,
         networkMonitorFrame: NSRect?,
         cavaFrame: NSRect? = nil,
         sonosFrame: NSRect? = nil,
@@ -1594,6 +1611,7 @@ class AppStateManager {
                 return abs(frame.height - legacyDoubleHeight) <= 2 ? floor : nil
             }
         )
+        let adjustedArt = repairCandidate(artFrame, preserveWidth: true)
         let adjustedNetworkMonitor = repairCandidate(networkMonitorFrame, preserveWidth: true)
         let adjustedCava = repairCandidate(cavaFrame, preserveWidth: true)
         let adjustedSonos = repairCandidate(sonosFrame, preserveWidth: true)
@@ -1606,6 +1624,7 @@ class AppStateManager {
             waveformFrame: adjustedWaveform,
             audioAnalysisFrame: adjustedAudioAnalysis,
             peppyMeterFrame: adjustedPeppyMeter,
+            artFrame: adjustedArt,
             networkMonitorFrame: adjustedNetworkMonitor,
             cavaFrame: adjustedCava,
             sonosFrame: adjustedSonos,
@@ -1627,6 +1646,7 @@ class AppStateManager {
         let waveformWindow = wm.waveformWindow
         let audioAnalysisWindow = wm.audioAnalysisWindow
         let peppyMeterWindow = wm.peppyMeterWindow
+        let artWindow = wm.artWindow
         let networkMonitorWindow = wm.networkMonitorWindow
         let cavaWindow = wm.cavaWindow
         let sonosWindow = wm.sonosWindow
@@ -1673,6 +1693,8 @@ class AppStateManager {
             peppyMeterFrame = nil
         }
 
+        let artFrame = artWindow?.isVisible == true ? artWindow?.frame : nil
+
         let networkMonitorFrame: NSRect?
         if let networkMonitorWindow, networkMonitorWindow.isVisible {
             networkMonitorFrame = networkMonitorWindow.frame
@@ -1701,6 +1723,7 @@ class AppStateManager {
             waveformFrame: waveformFrame,
             audioAnalysisFrame: audioAnalysisFrame,
             peppyMeterFrame: peppyMeterFrame,
+            artFrame: artFrame,
             networkMonitorFrame: networkMonitorFrame,
             cavaFrame: cavaFrame,
             sonosFrame: sonosFrame,
@@ -1745,6 +1768,12 @@ class AppStateManager {
            let repairedFrame = repairedFrames.peppyMeterFrame,
            repairedFrame != peppyMeterWindow.frame {
             peppyMeterWindow.setFrame(repairedFrame, display: true)
+        }
+        if let artWindow,
+           artWindow.isVisible,
+           let repairedFrame = repairedFrames.artFrame,
+           repairedFrame != artWindow.frame {
+            artWindow.setFrame(repairedFrame, display: true)
         }
         if let networkMonitorWindow,
            networkMonitorWindow.isVisible,

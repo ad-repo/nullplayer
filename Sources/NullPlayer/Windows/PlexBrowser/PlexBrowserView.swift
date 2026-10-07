@@ -236,16 +236,12 @@ class PlexBrowserView: NSView {
     private var browseMode: PlexBrowseMode = .artists {
         didSet {
             guard browseMode != oldValue else { return }
-            // Switching tabs always exits Art view and Cover Flow.
-            isArtOnlyMode = false
+            // Switching tabs always exits Cover Flow.
             isCoverFlowMode = false
             if oldValue == .folders, browseMode != .folders {
                 cancelLocalFolderBuild()
             }
             if browseMode.isHistoryMode {
-                if isRatingOverlayVisible {
-                    hideRatingOverlay()
-                }
                 historyAgent.scheduleRefresh()
             }
             updateHistoryHostingVisibility()
@@ -1211,37 +1207,10 @@ class PlexBrowserView: NSView {
     /// Highlight state for drag-mode visual feedback
     private var isHighlighted = false
     
-    /// Art-only mode - hides tabs and list, shows just album art (session only, not persisted)
-    private var isArtOnlyMode: Bool = false {
-        didSet {
-            artModeLifecycleGeneration &+= 1
-            updateHistoryHostingVisibility()
-            needsDisplay = true
-            if isArtOnlyMode {
-                // Cover flow and art view are mutually exclusive list-area modes.
-                isCoverFlowMode = false
-                // Fetch current track rating when entering art mode
-                fetchCurrentTrackRating()
-                // Load all artwork for cycling
-                loadAllArtworkForCurrentTrack()
-            } else {
-                // Stop visualization when exiting art-only mode
-                isVisualizingArt = false
-                artworkCyclingTask?.cancel()
-                artworkCyclingTask = nil
-                // Clear cycling state
-                artworkImages = []
-                artworkIndex = 0
-            }
-        }
-    }
-    private var artModeLifecycleGeneration = 0
-
     // Cover flow mode — a 3D carousel over the current album list (see CoverFlowView).
     private var isCoverFlowMode: Bool = false {
         didSet {
             guard isCoverFlowMode != oldValue else { return }
-            if isCoverFlowMode { isArtOnlyMode = false }
             updateCoverFlowState()
             needsDisplay = true
         }
@@ -1259,137 +1228,12 @@ class PlexBrowserView: NSView {
     private var coverFlowPendingCenterId: String?
     private static let coverFlowBackId = "__coverflow_back__"
 
-    /// Visualization mode - applies audio-reactive effects to album art
-    private var isVisualizingArt: Bool = false {
-        didSet {
-            if isVisualizingArt {
-                startVisualizerTimer()
-            } else {
-                stopVisualizerTimer()
-            }
-            needsDisplay = true
-        }
-    }
-    
-    /// Whether the rating overlay is visible
-    private var isRatingOverlayVisible: Bool = false
-    
-    /// Pending single-click action for art-only content clicks.
-    /// Delayed to distinguish single-click (rate) from double-click (cycle art).
-    private var pendingArtSingleClickWorkItem: DispatchWorkItem?
-    
-    /// Current user rating for the playing Plex track (0-10, nil if unrated)
-    private var currentTrackRating: Int? = nil
-    
-    /// Hit rect for the RATE button
-    private var rateButtonRect: NSRect = .zero
     private var refreshButtonRect: NSRect = .zero
-    private var artButtonRect: NSRect = .zero
-    private var visButtonRect: NSRect = .zero
     private var sourceButtonRect: NSRect = .zero
     private var libraryButtonRect: NSRect = .zero
     private var addButtonRect: NSRect = .zero
     private var tabButtonRects: [NSRect] = []
     private var sortButtonRect: NSRect = .zero
-    
-    /// Task for debounced rating submission (cancels previous if rapid selection)
-    private var ratingSubmitTask: Task<Void, Never>?
-    
-    /// All artwork images for the current track (for cycling in art mode)
-    private var artworkImages: [NSImage] = []
-    
-    /// Current index in artworkImages array
-    private var artworkIndex: Int = 0
-    
-    /// Current visualization effect (30 effects - all transform the image)
-    enum VisEffect: String, CaseIterable {
-        // Rotation & Scaling
-        case psychedelic = "Psychedelic"
-        case kaleidoscope = "Kaleidoscope"
-        case vortex = "Vortex"
-        case spin = "Endless Spin"
-        case fractal = "Fractal Zoom"
-        case tunnel = "Time Tunnel"
-        // Distortion
-        case melt = "Acid Melt"
-        case wave = "Ocean Wave"
-        case glitch = "Glitch"
-        case rgbSplit = "RGB Split"
-        case twist = "Twist"
-        case fisheye = "Fisheye"
-        case shatter = "Shatter"
-        case stretch = "Rubber Band"
-        // Motion
-        case zoom = "Zoom Pulse"
-        case shake = "Earthquake"
-        case bounce = "Bounce"
-        case feedback = "Feedback Loop"
-        case strobe = "Strobe"
-        case jitter = "Jitter"
-        // Copies & Mirrors
-        case mirror = "Infinite Mirror"
-        case tile = "Tile Grid"
-        case prism = "Prism Split"
-        case doubleVision = "Double Vision"
-        case flipbook = "Flipbook"
-        case mosaic = "Mosaic"
-        // Pixel effects
-        case pixelate = "Pixelate"
-        case scanlines = "Scanlines"
-        case datamosh = "Datamosh"
-        case blocky = "Blocky"
-        static let groups: [(title: String, effects: [VisEffect])] = [
-            ("Rotation & Scaling", [.psychedelic, .kaleidoscope, .vortex, .spin, .fractal, .tunnel]),
-            ("Distortion",         [.melt, .wave, .glitch, .rgbSplit, .twist, .fisheye, .shatter, .stretch]),
-            ("Motion",             [.zoom, .shake, .bounce, .feedback, .strobe, .jitter]),
-            ("Copies & Mirrors",   [.mirror, .tile, .prism, .doubleVision, .flipbook, .mosaic]),
-            ("Pixel Effects",      [.pixelate, .scanlines, .datamosh, .blocky]),
-        ]
-    }
-    
-    /// Visualization mode
-    enum VisMode {
-        case single      // Single selected effect
-        case random      // Random effect each beat
-        case cycle       // Cycle through all effects
-    }
-    
-    /// Current effect selection
-    private var currentVisEffect: VisEffect = .psychedelic
-    
-    /// Current visualization mode
-    private var visMode: VisMode = .single
-    
-    /// Timer for cycle mode
-    private var cycleTimer: Timer?
-    
-    /// Cycle interval in seconds
-    private var cycleInterval: TimeInterval = 10.0
-    
-    /// Last beat time for random mode
-    private var lastBeatTime: TimeInterval = 0
-    
-    /// Effect intensity (0.5 to 2.0)
-    private var visEffectIntensity: CGFloat = 1.0
-    
-    /// Timer for visualization animation
-    private var visualizerTimer: Timer?
-    private var isVisualizerConsumerRegistered = false
-    
-    /// Current visualization time
-    private var visualizerTime: TimeInterval = 0
-    
-    /// Whether audio is currently active (for stopping effects when silent)
-    private var lastAudioLevel: Float = 0
-    private var silenceFrames: Int = 0
-    
-    /// Core Image context for GPU-accelerated effects
-    private lazy var ciContext: CIContext = {
-        if let mtlDevice = MTLCreateSystemDefaultDevice() {
-            return CIContext(mtlDevice: mtlDevice, options: [.cacheIntermediates: false])
-        }
-        return CIContext(options: [.useSoftwareRenderer: false])
-    }()
     
     /// Button being pressed (for visual feedback)
     private var pressedButton: SkinRenderer.PlexBrowserButtonType?
@@ -1420,9 +1264,6 @@ class PlexBrowserView: NSView {
     
     /// Async task for loading artwork (can be cancelled)
     private var artworkLoadTask: Task<Void, Never>?
-    
-    /// Async task for loading all artwork images for cycling (can be cancelled)
-    private var artworkCyclingTask: Task<Void, Never>?
     
     /// Static image cache shared across all browser instances
     private static let artworkCache = NSCache<NSString, NSImage>()
@@ -1560,7 +1401,6 @@ class PlexBrowserView: NSView {
     private func serverBarCountText() -> String? {
         switch currentSource {
         case .local:
-            guard !isArtOnlyMode else { return nil }
             let count: Int
             if browseMode == .artists {
                 count = localArtistTotal > 0 ? localArtistTotal : displayItems.count
@@ -1571,7 +1411,6 @@ class PlexBrowserView: NSView {
             }
             return "\(count) items"
         case .plex:
-            guard !isArtOnlyMode else { return nil }
             let manager = PlexManager.shared
             let count: Int
             if manager.currentLibrary?.type == "artist" {
@@ -1593,7 +1432,7 @@ class PlexBrowserView: NSView {
         case .youtube:
             return "\(displayItems.count) items"
         case .subsonic, .jellyfin, .emby:
-            return isArtOnlyMode ? nil : "\(displayItems.count) items"
+            return "\(displayItems.count) items"
         }
     }
 
@@ -1608,11 +1447,7 @@ class PlexBrowserView: NSView {
         let remoteLeftWidth: (_ maxServerCharacters: Int, _ serverName: String) -> CGFloat = {
             maxServerCharacters, serverName in
             let maxServerWidth = CGFloat(maxServerCharacters) * charWidth
-            let serverTextWidth = textWidth(serverName)
-            let leftShift = self.libraryFieldLeftShift(serverTextWidth: serverTextWidth,
-                                                       maxServerWidth: maxServerWidth,
-                                                       horizontalScale: 1)
-            return leadingInset + prefixWidth + maxServerWidth + 16 - leftShift +
+            return leadingInset + prefixWidth + maxServerWidth + 16 +
                 textWidth("Lib:") + 4 + 10 * charWidth
         }
 
@@ -1667,7 +1502,7 @@ class PlexBrowserView: NSView {
         var rightWidth: CGFloat = 0
         if isConfigured {
             rightWidth = trailingInset + textWidth("F5")
-            if !isArtOnlyMode, isCoverFlowMode || hasCoverFlowItems {
+            if isCoverFlowMode || hasCoverFlowItems {
                 rightWidth += 12 + textWidth("FLOW")
             }
             switch currentSource {
@@ -1676,22 +1511,7 @@ class PlexBrowserView: NSView {
                     rightWidth += 24 + textWidth(countText)
                 }
             default:
-                let usesTightArtSpacing: Bool
-                switch currentSource {
-                case .local, .plex: usesTightArtSpacing = true
-                default: usesTightArtSpacing = false
-                }
-                if currentArtwork != nil {
-                    let artGap: CGFloat = usesTightArtSpacing && isArtOnlyMode ? 12 : 24
-                    rightWidth += artGap + textWidth("ART")
-                    if isArtOnlyMode {
-                        let visGap: CGFloat = usesTightArtSpacing ? 8 : 16
-                        rightWidth += visGap + textWidth("VIS")
-                    }
-                }
-                if shouldReserveServerBarRatingSpace() {
-                    rightWidth += 16 + 5 * 12 + 4 * 2
-                } else if let countText = serverBarCountText() {
+                if let countText = serverBarCountText() {
                     rightWidth += 24 + textWidth(countText)
                 }
             }
@@ -1865,19 +1685,6 @@ class PlexBrowserView: NSView {
             }
         }
 
-        // Art-only mode always starts disabled (don't persist across sessions)
-        isArtOnlyMode = false
-        
-        // Load saved visualizer preferences — default effect takes priority over last-used
-        let defaultEffectKey = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
-        let lastUsedKey = UserDefaults.standard.string(forKey: "browserVisEffect")
-        if let raw = defaultEffectKey ?? lastUsedKey, let effect = VisEffect(rawValue: raw) {
-            currentVisEffect = effect
-        }
-        if UserDefaults.standard.object(forKey: "browserVisIntensity") != nil {
-            visEffectIntensity = CGFloat(UserDefaults.standard.double(forKey: "browserVisIntensity"))
-        }
-        
         // A `.wal` colour-theme switch recolours this browser (Phase 16). The embedded case is told
         // directly through `applyWinampModernStyle`; a fallback window has no such handle.
         NotificationCenter.default.addObserver(
@@ -2002,7 +1809,7 @@ class PlexBrowserView: NSView {
         setupAccessibility()
         updateHistoryHostingVisibility()
         
-        // Observe window visibility changes to pause/resume visualizer timer for CPU efficiency
+        // Observe window visibility changes to pause/resume the server-name scroll
         NotificationCenter.default.addObserver(self, selector: #selector(plexWindowDidMiniaturize),
                                                name: NSWindow.didMiniaturizeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(plexWindowDidDeminiaturize),
@@ -2024,94 +1831,11 @@ class PlexBrowserView: NSView {
         setAccessibilityLabel("Plex Browser")
     }
     
-    // MARK: - Visualizer Animation
-    
-    /// Track if visualizer was active before window was hidden (to restore on unhide)
-    private var visualizerWasActiveBeforeHide: Bool = false
-    
-    /// Start the visualizer animation timer
-    private func startVisualizerTimer() {
-        visualizerTime = 0
-        silenceFrames = 0
-        visualizerTimer?.invalidate()
-        setVisualizerConsumerRegistered(true)
-        // 30fps for smooth effects (reduced from 60fps for CPU efficiency - still looks great)
-        // Use .common run loop mode so timer continues during context menu display
-        let timer = Timer(timeInterval: 1.0/30.0, repeats: true) { [weak self] _ in
-            self?.handleVisualizerTimerTick()
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        visualizerTimer = timer
-        
-        // Start cycle timer if in cycle mode
-        if visMode == .cycle {
-            startCycleTimer()
-        }
-    }
-    
-    /// Handle visualizer timer tick - with visibility checks
-    private func handleVisualizerTimerTick() {
-        // Skip updates if window is not visible or occluded
-        guard let window = window,
-              window.isVisible,
-              window.occlusionState.contains(.visible) else {
-            return
-        }
-        
-        visualizerTime += 1.0/30.0
-        
-        // Check audio level - only animate when music is playing
-        let spectrumData = WindowManager.shared.audioEngine.spectrumData
-        let currentLevel = spectrumData.reduce(0, +) / Float(spectrumData.count)
-        let isPlaying = WindowManager.shared.audioEngine.state == .playing
-        
-        // Detect silence (very low audio level)
-        if currentLevel < 0.001 {
-            silenceFrames += 1
-            // Only skip redraws during silence when audio is NOT playing.
-            // When playing, streaming audio may still be buffering (no spectrum data yet)
-            // so we keep redrawing to show time-based effects on the artwork.
-            if silenceFrames > 15 && !isPlaying {
-                return
-            }
-        } else {
-            silenceFrames = 0
-            
-            // Handle random mode - change on beats
-            if visMode == .random {
-                let bass = spectrumData.prefix(10).reduce(0, +) / 10.0
-                if bass > 0.5 && visualizerTime - lastBeatTime > 0.3 {
-                    lastBeatTime = visualizerTime
-                    // Random chance to change effect on beat
-                    if Double.random(in: 0...1) < 0.3 {
-                        let effects = VisEffect.allCases
-                        currentVisEffect = effects.randomElement() ?? .psychedelic
-                    }
-                }
-            }
-        }
-        
-        lastAudioLevel = currentLevel
-        
-        // Only redraw the visualization content area, not the entire view
-        // This prevents menu items (title bar, server bar) from shimmering on non-Retina displays
-        let contentY = Layout.titleBarHeight + Layout.serverBarHeight
-        let contentHeight = bounds.height - contentY - Layout.statusBarHeight
-        // Convert from skin top-down coordinates to macOS bottom-up coordinates
-        let nativeY = Layout.statusBarHeight
-        let contentRect = NSRect(x: 0, y: nativeY, width: bounds.width, height: contentHeight)
-        setNeedsDisplay(contentRect)
-    }
-    
     /// Stop timers when Plex browser window is minimized to save CPU
     @objc private func plexWindowDidMiniaturize(_ notification: Notification) {
         guard notification.object as? NSWindow == window else { return }
         // Stop timers when minimized to save CPU
         stopServerNameScroll()
-        if isVisualizingArt {
-            visualizerWasActiveBeforeHide = true
-            stopVisualizerTimer()
-        }
     }
     
     /// Restart timers when Plex browser window is restored from minimized state
@@ -2119,10 +1843,6 @@ class PlexBrowserView: NSView {
         guard notification.object as? NSWindow == window else { return }
         // Restart timers when restored
         startServerNameScroll()
-        if visualizerWasActiveBeforeHide && isVisualizingArt {
-            startVisualizerTimer()
-        }
-        visualizerWasActiveBeforeHide = false
     }
     
     /// Handle window occlusion state changes to pause/resume timers for CPU efficiency
@@ -2131,247 +1851,10 @@ class PlexBrowserView: NSView {
         if window?.occlusionState.contains(.visible) == true {
             // Window became visible - restart timers
             startServerNameScroll()
-            if isVisualizingArt && visualizerTimer == nil {
-                startVisualizerTimer()
-            }
         } else {
             // Window became occluded - stop timers to save CPU
             stopServerNameScroll()
-            if visualizerTimer != nil {
-                visualizerWasActiveBeforeHide = isVisualizingArt
-                stopVisualizerTimer()
-            }
         }
-    }
-    
-    /// Stop the visualizer animation timer
-    private func stopVisualizerTimer() {
-        visualizerTimer?.invalidate()
-        visualizerTimer = nil
-        cycleTimer?.invalidate()
-        cycleTimer = nil
-        setVisualizerConsumerRegistered(false)
-    }
-
-    private func setVisualizerConsumerRegistered(_ registered: Bool) {
-        guard registered != isVisualizerConsumerRegistered else { return }
-        isVisualizerConsumerRegistered = registered
-        if registered {
-            WindowManager.shared.audioEngine.addSpectrumConsumer("plexBrowserVisualizer")
-        } else {
-            WindowManager.shared.audioEngine.removeSpectrumConsumer("plexBrowserVisualizer")
-        }
-    }
-    
-    /// Start cycle mode timer
-    private func startCycleTimer() {
-        cycleTimer?.invalidate()
-        // Use .common run loop mode so timer continues during context menu display
-        let timer = Timer(timeInterval: cycleInterval, repeats: true) { [weak self] _ in
-            guard let self = self, self.visMode == .cycle else { return }
-            let effects = VisEffect.allCases
-            if let currentIndex = effects.firstIndex(of: self.currentVisEffect) {
-                let nextIndex = (currentIndex + 1) % effects.count
-                self.currentVisEffect = effects[nextIndex]
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        cycleTimer = timer
-    }
-    
-    /// Toggle visualization mode
-    func toggleVisualization() {
-        guard isArtOnlyMode, currentArtwork != nil else { return }
-        isVisualizingArt.toggle()
-    }
-    
-    // MARK: - Rating Overlay
-    
-    /// Lazy rating overlay view
-    private lazy var ratingOverlay: RatingOverlayView = {
-        let overlay = RatingOverlayView(frame: bounds)
-        overlay.autoresizingMask = [.width, .height]
-        overlay.isHidden = true
-        overlay.onRatingSelected = { [weak self] rating in
-            self?.submitRating(rating)
-        }
-        overlay.onDismiss = { [weak self] in
-            self?.hideRatingOverlay()
-        }
-        addSubview(overlay)
-        return overlay
-    }()
-    
-    /// Show the rating overlay
-    private func showRatingOverlay() {
-        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-              canRateTrack(currentTrack) else { return }
-        
-        ratingOverlay.frame = bounds
-        ratingOverlay.setRating(currentTrackRating ?? 0)
-        ratingOverlay.isHidden = false
-        isRatingOverlayVisible = true
-        needsDisplay = true
-    }
-    
-    /// Hide the rating overlay
-    private func hideRatingOverlay() {
-        ratingOverlay.isHidden = true
-        isRatingOverlayVisible = false
-        ratingSubmitTask?.cancel()  // Cancel any pending submission
-        ratingSubmitTask = nil
-        needsDisplay = true
-    }
-    
-    /// Submit rating (debounced to prevent rapid API calls)
-    /// Supports Plex, Subsonic, Jellyfin, Emby, and local file ratings
-    private func submitRating(_ rating: Int) {
-        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else { return }
-        let normalizedRating = rating > 0 ? min(10, rating) : 0
-        
-        // Update UI immediately for responsiveness
-        currentTrackRating = normalizedRating
-        needsDisplay = true
-        
-        // Cancel any pending submission
-        ratingSubmitTask?.cancel()
-        
-        // Debounce: wait 500ms before submitting to allow rapid selection changes
-        ratingSubmitTask = Task {
-            do {
-                try await Task.sleep(nanoseconds: 500_000_000)  // 0.5s debounce
-                try Task.checkCancellation()
-                
-                if let ratingKey = currentTrack.plexRatingKey {
-                    // Plex: 0-10 scale
-                    try await PlexManager.shared.serverClient?.rateItem(
-                        ratingKey: ratingKey,
-                        rating: normalizedRating > 0 ? normalizedRating : nil
-                    )
-                    NSLog("PlexBrowser: Rated track %@ with %d stars", ratingKey, normalizedRating / 2)
-                } else if let subsonicId = currentTrack.subsonicId {
-                    // Subsonic: 0-5 scale
-                    let subsonicRating = normalizedRating / 2
-                    try await SubsonicManager.shared.setRating(songId: subsonicId, rating: subsonicRating)
-                    NSLog("PlexBrowser: Rated Subsonic track %@ with %d stars", subsonicId, subsonicRating)
-                } else if let jellyfinId = currentTrack.jellyfinId {
-                    // Jellyfin: convert 0-10 to 0-100
-                    let jellyfinRating = normalizedRating * 10
-                    try await JellyfinManager.shared.setRating(itemId: jellyfinId, rating: jellyfinRating)
-                    NSLog("PlexBrowser: Rated Jellyfin track %@ with %d stars", jellyfinId, normalizedRating / 2)
-                } else if let embyId = currentTrack.embyId {
-                    // Emby: convert 0-10 to 0-100
-                    let embyRating = normalizedRating * 10
-                    try await EmbyManager.shared.setRating(itemId: embyId, rating: embyRating)
-                    NSLog("PlexBrowser: Rated Emby track %@ with %d stars", embyId, normalizedRating / 2)
-                } else if currentTrack.url.isFileURL {
-                    // Local file: 0-10 scale in MediaLibrary
-                    await MainActor.run {
-                        if let libraryTrack = MediaLibrary.shared.findTrack(byURL: currentTrack.url) {
-                            MediaLibrary.shared.setRating(
-                                for: libraryTrack.id,
-                                rating: normalizedRating > 0 ? normalizedRating : nil
-                            )
-                            NSLog("PlexBrowser: Rated local track with %d stars", normalizedRating / 2)
-                        }
-                    }
-                }
-                
-                // Dismiss after short delay to show the selection
-                try await Task.sleep(nanoseconds: 300_000_000)  // 0.3s
-                await MainActor.run {
-                    hideRatingOverlay()
-                }
-            } catch is CancellationError {
-                // Cancelled by newer selection - ignore
-            } catch {
-                NSLog("PlexBrowser: Failed to rate track: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-            }
-        }
-    }
-    
-    /// Fetch current track's rating from Plex, Subsonic, Jellyfin, Emby, or local library
-    private func fetchCurrentTrackRating() {
-        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
-            currentTrackRating = nil
-            return
-        }
-        
-        if let ratingKey = currentTrack.plexRatingKey {
-            // Plex: fetch from server (0-10 scale)
-            Task {
-                do {
-                    if let trackDetails = try await PlexManager.shared.serverClient?.fetchTrackDetails(trackID: ratingKey) {
-                        await MainActor.run {
-                            currentTrackRating = trackDetails.userRating.map { Int($0) }
-                            needsDisplay = true
-                        }
-                    }
-                } catch {
-                    NSLog("PlexBrowser: Failed to fetch track rating: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-                }
-            }
-        } else if let subsonicId = currentTrack.subsonicId {
-            // Subsonic: fetch from server (1-5 scale, convert to 0-10)
-            Task {
-                do {
-                    if let song = try await SubsonicManager.shared.serverClient?.fetchSong(id: subsonicId) {
-                        await MainActor.run {
-                            currentTrackRating = song.userRating.map { $0 * 2 }
-                            needsDisplay = true
-                        }
-                    }
-                } catch {
-                    NSLog("PlexBrowser: Failed to fetch Subsonic track rating: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-                }
-            }
-        } else if let jellyfinId = currentTrack.jellyfinId {
-            // Jellyfin: fetch from server (0-100 scale, convert to 0-10)
-            Task {
-                do {
-                    if let song = try await JellyfinManager.shared.serverClient?.fetchSong(id: jellyfinId) {
-                        await MainActor.run {
-                            currentTrackRating = song.userRating.map { $0 / 10 }
-                            needsDisplay = true
-                        }
-                    }
-                } catch {
-                    NSLog("PlexBrowser: Failed to fetch Jellyfin track rating: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-                }
-            }
-        } else if let embyId = currentTrack.embyId {
-            // Emby: fetch from server (0-100 scale, convert to 0-10)
-            Task {
-                do {
-                    if let song = try await EmbyManager.shared.serverClient?.fetchSong(id: embyId) {
-                        await MainActor.run {
-                            currentTrackRating = song.userRating.map { $0 / 10 }
-                            needsDisplay = true
-                        }
-                    }
-                } catch {
-                    NSLog("PlexBrowser: Failed to fetch Emby track rating: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-                }
-            }
-        } else if currentTrack.url.isFileURL {
-            // Local file: read from library (already 0-10 scale)
-            if let libraryTrack = MediaLibrary.shared.findTrack(byURL: currentTrack.url) {
-                currentTrackRating = libraryTrack.rating
-            } else {
-                currentTrackRating = nil
-            }
-            needsDisplay = true
-        } else {
-            currentTrackRating = nil
-        }
-    }
-
-    private func canRateTrack(_ track: Track) -> Bool {
-        track.plexRatingKey != nil ||
-        track.subsonicId != nil ||
-        track.jellyfinId != nil ||
-        track.embyId != nil ||
-        track.url.isFileURL
     }
     
     /// Called when source changes
@@ -2420,8 +1903,6 @@ class PlexBrowserView: NSView {
     }
     
     private func onSourceChanged() {
-        // Changing source always exits Art view.
-        isArtOnlyMode = false
         resetCoverFlowNavigation()
         invalidateActiveLoads()
         if browseMode == .folders && !isLocalSource {
@@ -2490,12 +1971,10 @@ class PlexBrowserView: NSView {
     }
     
     deinit {
-        cancelPendingArtSingleClickAction()
         localLibraryReloadWorkItem?.cancel()
         NotificationCenter.default.removeObserver(self)
         stopLoadingAnimation()
         stopServerNameScroll()
-        stopVisualizerTimer()
     }
 
     /// Synchronously cancel every in-flight task, work item, and timer this view owns so it can
@@ -2511,7 +1990,7 @@ class PlexBrowserView: NSView {
                      plexLoadTask, sourceConnectTask,
                      jellyfinLoadTask, jellyfinAlbumWarmTask, jellyfinExpandTask,
                      embyLoadTask, embyExpandTask,
-                     ratingSubmitTask, artworkLoadTask, artworkCyclingTask,
+                     artworkLoadTask,
                      radioLoadTask, radioPlayTask] {
             task?.cancel()
         }
@@ -2522,16 +2001,14 @@ class PlexBrowserView: NSView {
         plexLoadTask = nil; sourceConnectTask = nil
         jellyfinLoadTask = nil; jellyfinAlbumWarmTask = nil; jellyfinExpandTask = nil
         embyLoadTask = nil; embyExpandTask = nil
-        ratingSubmitTask = nil; artworkLoadTask = nil; artworkCyclingTask = nil
+        artworkLoadTask = nil
         radioLoadTask = nil; radioPlayTask = nil
 
         // Work items + timers (timers with a target/captured self can also pin the view alive).
-        cancelPendingArtSingleClickAction()
         localLibraryReloadWorkItem?.cancel(); localLibraryReloadWorkItem = nil
         typeAheadTimer?.invalidate(); typeAheadTimer = nil
         stopLoadingAnimation()
         stopServerNameScroll()
-        stopVisualizerTimer()
         coverFlowView?.removeFromSuperview()
         coverFlowView = nil
         coverFlowSourceItems = []
@@ -2754,7 +2231,7 @@ class PlexBrowserView: NSView {
         if browseMode.isHistoryMode {
             ensureHistoryHostingView()
         }
-        let isVisible = browseMode.isHistoryMode && !isArtOnlyMode
+        let isVisible = browseMode.isHistoryMode
         historyHostingView?.isHidden = !isVisible
         updateHistoryHostingFrame()
     }
@@ -3203,49 +2680,42 @@ class PlexBrowserView: NSView {
                 // Draw server/library selector bar
                 drawServerBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
 
-                if isArtOnlyMode {
-                    tabButtonRects.removeAll(keepingCapacity: true)
-                    sortButtonRect = .zero
-                    // Art-only mode: skip tabs and list, draw album art large
-                    drawArtOnlyArea(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer, artwork: capturedArtwork)
-                } else {
-                    // Normal mode: draw tabs, search, and list.
-                    // Skip expensive tab+list rendering if dirtyRect is entirely in the title/server bar zone
-                    // (server name scroll timer marks only serverBarArea dirty at 15Hz).
-                    let belowServerBar = bounds.height - CGFloat(Layout.titleBarHeight + Layout.serverBarHeight)
-                    if dirtyRect.minY < belowServerBar {
-                        // Draw tab bar
-                        drawTabBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+                // Draw tabs, search, and list.
+                // Skip expensive tab+list rendering if dirtyRect is entirely in the title/server bar zone
+                // (server name scroll timer marks only serverBarArea dirty at 15Hz).
+                let belowServerBar = bounds.height - CGFloat(Layout.titleBarHeight + Layout.serverBarHeight)
+                if dirtyRect.minY < belowServerBar {
+                    // Draw tab bar
+                    drawTabBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
 
-                        // Draw search bar (only in search mode)
-                        if browseMode == .search {
-                            drawSearchBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
-                        }
-
-                        if browseMode.isHistoryMode {
-                            // SwiftUI-hosted history content is rendered via an embedded subview.
-                        } else {
-                            // Draw list area or connection status
-                            // Only check Plex link status if using Plex source
-                            let needsPlexLink = currentSource.isPlex && !PlexManager.shared.isLinked
-                            if needsPlexLink {
-                                drawNotLinkedState(in: context, colors: colors, renderer: renderer)
-                            } else if isLoading {
-                                drawLoadingState(in: context, colors: colors, renderer: renderer)
-                            } else if let error = errorMessage {
-                                drawErrorState(in: context, message: error, colors: colors, renderer: renderer)
-                            } else if isCoverFlowMode {
-                                // The CoverFlowView overlay renders the carousel; just fill the list
-                                // area background so the interior isn't left stale behind the covers.
-                                drawCoverFlowBackground(in: context, colors: colors)
-                            } else {
-                                drawListArea(in: context, layout: listLayout(), colors: colors, renderer: renderer, artwork: capturedArtwork)
-                            }
-                        }
-
-                        // Draw status bar text
-                        drawStatusBarText(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+                    // Draw search bar (only in search mode)
+                    if browseMode == .search {
+                        drawSearchBar(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
                     }
+
+                    if browseMode.isHistoryMode {
+                        // SwiftUI-hosted history content is rendered via an embedded subview.
+                    } else {
+                        // Draw list area or connection status
+                        // Only check Plex link status if using Plex source
+                        let needsPlexLink = currentSource.isPlex && !PlexManager.shared.isLinked
+                        if needsPlexLink {
+                            drawNotLinkedState(in: context, colors: colors, renderer: renderer)
+                        } else if isLoading {
+                            drawLoadingState(in: context, colors: colors, renderer: renderer)
+                        } else if let error = errorMessage {
+                            drawErrorState(in: context, message: error, colors: colors, renderer: renderer)
+                        } else if isCoverFlowMode {
+                            // The CoverFlowView overlay renders the carousel; just fill the list
+                            // area background so the interior isn't left stale behind the covers.
+                            drawCoverFlowBackground(in: context, colors: colors)
+                        } else {
+                            drawListArea(in: context, layout: listLayout(), colors: colors, renderer: renderer, artwork: capturedArtwork)
+                        }
+                    }
+
+                    // Draw status bar text
+                    drawStatusBarText(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
                 }
             }
 
@@ -3335,59 +2805,6 @@ class PlexBrowserView: NSView {
         drawScaledWhiteSkinText(text, at: NSPoint(x: x, y: y), scale: scale, renderer: renderer, in: context)
     }
     
-    /// Draw a low-res pixel-art star for server bar rating display
-    /// Uses a bitmap pattern for authentic retro look
-    private func drawPixelStar(in rect: NSRect, color: NSColor, context: CGContext) {
-        // 9x9 pixel art star pattern (1 = filled, 0 = empty)
-        // Classic chunky star shape (top-down for flipped skin context)
-        let pattern: [[Int]] = [
-            [0, 0, 0, 0, 1, 0, 0, 0, 0],
-            [0, 0, 0, 1, 1, 1, 0, 0, 0],
-            [0, 0, 0, 1, 1, 1, 0, 0, 0],
-            [1, 1, 1, 1, 1, 1, 1, 1, 1],
-            [0, 1, 1, 1, 1, 1, 1, 1, 0],
-            [0, 0, 1, 1, 1, 1, 1, 0, 0],
-            [0, 0, 1, 1, 0, 1, 1, 0, 0],
-            [0, 1, 1, 0, 0, 0, 1, 1, 0],
-            [1, 1, 0, 0, 0, 0, 0, 1, 1],
-        ]
-        
-        let patternSize = 9
-        let pixelW = rect.width / CGFloat(patternSize)
-        let pixelH = rect.height / CGFloat(patternSize)
-        
-        context.setFillColor(color.cgColor)
-        
-        for row in 0..<patternSize {
-            for col in 0..<patternSize {
-                if pattern[row][col] == 1 {
-                    let x = rect.minX + CGFloat(col) * pixelW
-                    let y = rect.minY + CGFloat(row) * pixelH
-                    context.fill(CGRect(x: x, y: y, width: ceil(pixelW), height: ceil(pixelH)))
-                }
-            }
-        }
-    }
-
-    /// Returns true when the classic server bar should reserve horizontal space for the rating stars.
-    private func shouldReserveServerBarRatingSpace() -> Bool {
-        guard isArtOnlyMode,
-              let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
-            return false
-        }
-        return canRateTrack(currentTrack)
-    }
-
-    /// Shift the Lib field left into unused server-name width when rating stars are visible.
-    private func libraryFieldLeftShift(serverTextWidth: CGFloat, maxServerWidth: CGFloat,
-                                       horizontalScale: CGFloat) -> CGFloat {
-        guard shouldReserveServerBarRatingSpace() else { return 0 }
-        let usedServerWidth = min(serverTextWidth, maxServerWidth)
-        let unusedServerWidth = max(0, maxServerWidth - usedServerWidth)
-        let preferredShift = 24 * horizontalScale
-        return min(preferredShift, unusedServerWidth)
-    }
-
     /// Draw FLOW with the source-level controls, matching Modern's ART/FLOW/F5 grouping. Returns
     /// the leading edge that the next accessory (ART, count, or rating) should lay out before.
     private func drawCoverFlowServerBarButton(
@@ -3400,7 +2817,7 @@ class PlexBrowserView: NSView {
         renderer: SkinRenderer,
         context: CGContext
     ) -> CGFloat {
-        guard !isArtOnlyMode, isCoverFlowMode || hasCoverFlowItems else { return trailingX }
+        guard isCoverFlowMode || hasCoverFlowItems else { return trailingX }
         let text = "FLOW"
         let width = CGFloat(text.count) * scaledCharWidth
         let x = trailingX - width - 12 * chromeScale
@@ -3446,9 +2863,6 @@ class PlexBrowserView: NSView {
         let sourceNameStartX = barRect.minX + toolbarLeftInset + prefixWidth
         
         refreshButtonRect = .zero
-        artButtonRect = .zero
-        visButtonRect = .zero
-        rateButtonRect = .zero
         coverFlowButtonRect = .zero
         sourceButtonRect = .zero
         libraryButtonRect = .zero
@@ -3484,89 +2898,22 @@ class PlexBrowserView: NSView {
                 renderer: renderer, context: context
             )
             
-            // In art-only mode, use tighter spacing for right side items
-            let artModeSpacing: CGFloat = (isArtOnlyMode ? 12 : 24) * chromeScale
-            let artModeVisSpacing: CGFloat = (isArtOnlyMode ? 8 : 16) * chromeScale
-            
-            // ART toggle button (before F5) - only show if artwork available
-            let artText = "ART"
-            let artWidth = CGFloat(artText.count) * scaledCharWidth
-            var artX = accessoryX - artWidth - artModeSpacing
-            
-            // VIS button - only show in art-only mode
-            let visText = "VIS"
-            let visWidth = CGFloat(visText.count) * scaledCharWidth
-            var visX = artX - visWidth - artModeVisSpacing
-            
-            if currentArtwork != nil {
-                artButtonRect = NSRect(x: artX, y: barRect.minY,
-                                       width: artWidth, height: barRect.height)
-                if isArtOnlyMode {
-                    drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
-                    visButtonRect = NSRect(x: visX, y: barRect.minY,
-                                           width: visWidth, height: barRect.height)
-                    // Show VIS button in art-only mode (white when active, green when inactive)
-                    if isVisualizingArt {
-                        drawScaledWhiteSkinText(visText, at: NSPoint(x: visX, y: textY), scale: textScale, renderer: renderer, in: context)
-                    } else {
-                        drawScaledSkinText(visText, at: NSPoint(x: visX, y: textY), scale: textScale, renderer: renderer, in: context)
-                    }
-                } else {
-                    drawScaledSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
-                    visX = artX  // No VIS button, shift items
-                }
+            // Item count (only in list mode)
+            let totalCount: Int
+            if browseMode == .artists {
+                totalCount = localArtistTotal > 0 ? localArtistTotal : displayItems.count
+            } else if browseMode == .albums {
+                totalCount = localAlbumTotal > 0 ? localAlbumTotal : displayItems.count
             } else {
-                // No artwork - shift items over to where ART would be
-                artX = accessoryX
-                visX = artX  // No VIS button
+                totalCount = displayItems.count
             }
-            
-            // Star rating (art-only mode) or item count (list mode)
-            if isArtOnlyMode,
-               let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-               canRateTrack(currentTrack) {
-                let starSize: CGFloat = 12 * chromeScale
-                let starSpacing: CGFloat = 2 * chromeScale
-                let totalStars = 5
-                let starsWidth = CGFloat(totalStars) * starSize + CGFloat(totalStars - 1) * starSpacing
-                let starsX = visX - starsWidth - 16 * chromeScale
-                let starY = barRect.minY + (barRect.height - starSize) / 2
-                
-                let rating = currentTrackRating ?? 0
-                let filledCount = rating / 2
-                
-                let greenColor = accentTextColor(renderer)
-                let dimGreen = NSColor(red: greenColor.redComponent * 0.4,
-                                      green: greenColor.greenComponent * 0.4,
-                                      blue: greenColor.blueComponent * 0.4,
-                                      alpha: 0.6)
-                
-                for i in 0..<totalStars {
-                    let x = starsX + CGFloat(i) * (starSize + starSpacing)
-                    let starRect = NSRect(x: x, y: starY, width: starSize, height: starSize)
-                    let isFilled = i < filledCount
-                    drawPixelStar(in: starRect, color: isFilled ? greenColor : dimGreen, context: context)
-                }
-                
-                rateButtonRect = NSRect(x: starsX, y: barRect.minY, width: starsWidth, height: barRect.height)
-            } else if !isArtOnlyMode {
-                // Item count (only in list mode)
-                let totalCount: Int
-                if browseMode == .artists {
-                    totalCount = localArtistTotal > 0 ? localArtistTotal : displayItems.count
-                } else if browseMode == .albums {
-                    totalCount = localAlbumTotal > 0 ? localAlbumTotal : displayItems.count
-                } else {
-                    totalCount = displayItems.count
-                }
-                let countNumber = "\(totalCount)"
-                let countLabel = " items"
-                let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-                let countX = visX - countWidth - 24 * chromeScale
-                drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
-                let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-                drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
-            }
+            let countNumber = "\(totalCount)"
+            let countLabel = " items"
+            let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
+            let countX = accessoryX - countWidth - 24 * chromeScale
+            drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
+            let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
+            drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
 
             // Scan animation: small spinner at center of bar while library is scanning
             if isLibraryScanning {
@@ -3623,10 +2970,7 @@ class PlexBrowserView: NSView {
                 
                 // Library label and name after server name
                 let libLabel = "Lib:"
-                let libraryLeftShift = libraryFieldLeftShift(serverTextWidth: serverTextWidth,
-                                                             maxServerWidth: maxServerWidth,
-                                                             horizontalScale: chromeScale)
-                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * chromeScale - libraryLeftShift
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * chromeScale
                 drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
                 
                 let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4 * chromeScale
@@ -3665,97 +3009,30 @@ class PlexBrowserView: NSView {
                     renderer: renderer, context: context
                 )
 
-                // In art-only mode, use tighter spacing for right side items
-                let artModeSpacing: CGFloat = (isArtOnlyMode ? 12 : 24) * chromeScale
-                let artModeVisSpacing: CGFloat = (isArtOnlyMode ? 8 : 16) * chromeScale
+                let countSpacing: CGFloat = 24 * chromeScale
                 
-                // ART toggle button (before F5) - only show if artwork available
-                let artText = "ART"
-                let artWidth = CGFloat(artText.count) * scaledCharWidth
-                var artX = accessoryX - artWidth - artModeSpacing
-                
-                // VIS button - only show in art-only mode
-                let visText = "VIS"
-                let visWidth = CGFloat(visText.count) * scaledCharWidth
-                var visX = artX - visWidth - artModeVisSpacing
-                
-                if currentArtwork != nil {
-                    artButtonRect = NSRect(x: artX, y: barRect.minY,
-                                           width: artWidth, height: barRect.height)
-                    if isArtOnlyMode {
-                        drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
-                        visButtonRect = NSRect(x: visX, y: barRect.minY,
-                                               width: visWidth, height: barRect.height)
-                        // Show VIS button in art-only mode (white when active, green when inactive)
-                        if isVisualizingArt {
-                            drawScaledWhiteSkinText(visText, at: NSPoint(x: visX, y: textY), scale: textScale, renderer: renderer, in: context)
-                        } else {
-                            drawScaledSkinText(visText, at: NSPoint(x: visX, y: textY), scale: textScale, renderer: renderer, in: context)
-                        }
-                    } else {
-                        drawScaledSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
-                        visX = artX  // No VIS button, shift items
-                    }
+                // Show top-level item count (artists/albums/tracks), not expanded tree count
+                let itemCount: Int
+                if manager.currentLibrary?.type == "artist" {
+                    itemCount = cachedArtists.count
+                } else if manager.currentLibrary?.type == "album" {
+                    itemCount = cachedAlbums.count
+                } else if manager.currentLibrary?.type == "track" {
+                    itemCount = cachedTracks.count
+                } else if manager.currentLibrary?.type == "movie" {
+                    itemCount = cachedMovies.count
+                } else if manager.currentLibrary?.type == "show" {
+                    itemCount = cachedShows.count
                 } else {
-                    // No artwork - shift items over to where ART would be
-                    artX = accessoryX
-                    visX = artX  // No VIS button
+                    itemCount = displayItems.count
                 }
-                
-                // Star rating (art-only mode) or item count (list mode)
-                if isArtOnlyMode,
-                   let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-                   canRateTrack(currentTrack) {
-                    let starSize: CGFloat = 12 * chromeScale
-                    let starSpacing: CGFloat = 2 * chromeScale
-                    let totalStars = 5
-                    let starsWidth = CGFloat(totalStars) * starSize + CGFloat(totalStars - 1) * starSpacing
-                    let starsX = visX - starsWidth - 16 * chromeScale
-                    let starY = barRect.minY + (barRect.height - starSize) / 2
-                    
-                    let rating = currentTrackRating ?? 0
-                    let filledCount = rating / 2
-                    
-                    let greenColor = accentTextColor(renderer)
-                    let dimGreen = NSColor(red: greenColor.redComponent * 0.4,
-                                          green: greenColor.greenComponent * 0.4,
-                                          blue: greenColor.blueComponent * 0.4,
-                                          alpha: 0.6)
-                    
-                    for i in 0..<totalStars {
-                        let x = starsX + CGFloat(i) * (starSize + starSpacing)
-                        let starRect = NSRect(x: x, y: starY, width: starSize, height: starSize)
-                        let isFilled = i < filledCount
-                        drawPixelStar(in: starRect, color: isFilled ? greenColor : dimGreen, context: context)
-                    }
-                    
-                    rateButtonRect = NSRect(x: starsX, y: barRect.minY, width: starsWidth, height: barRect.height)
-                } else if !isArtOnlyMode {
-                    let countSpacing: CGFloat = 24 * chromeScale
-                    
-                    // Show top-level item count (artists/albums/tracks), not expanded tree count
-                    let itemCount: Int
-                    if manager.currentLibrary?.type == "artist" {
-                        itemCount = cachedArtists.count
-                    } else if manager.currentLibrary?.type == "album" {
-                        itemCount = cachedAlbums.count
-                    } else if manager.currentLibrary?.type == "track" {
-                        itemCount = cachedTracks.count
-                    } else if manager.currentLibrary?.type == "movie" {
-                        itemCount = cachedMovies.count
-                    } else if manager.currentLibrary?.type == "show" {
-                        itemCount = cachedShows.count
-                    } else {
-                        itemCount = displayItems.count
-                    }
-                    let countNumber = "\(itemCount)"
-                    let countLabel = " ITEMS"
-                    let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-                    let countX = visX - countWidth - countSpacing
-                    drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
-                    let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-                    drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
-                }
+                let countNumber = "\(itemCount)"
+                let countLabel = " ITEMS"
+                let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
+                let countX = accessoryX - countWidth - countSpacing
+                drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
+                let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
+                drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
             } else {
                 // Plex not linked and no servers - show link message
                 let linkText = "Click to link your Plex account"
@@ -3793,10 +3070,7 @@ class PlexBrowserView: NSView {
 
                 // Library label and selected folder after server name
                 let libLabel = "Lib:"
-                let libraryLeftShift = libraryFieldLeftShift(serverTextWidth: serverTextWidth,
-                                                             maxServerWidth: maxServerWidth,
-                                                             horizontalScale: chromeScale)
-                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * chromeScale - libraryLeftShift
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * chromeScale
                 drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
 
                 let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4 * chromeScale
@@ -3834,75 +3108,14 @@ class PlexBrowserView: NSView {
                     renderer: renderer, context: context
                 )
                 
-                // ART toggle button (before F5) - only show if artwork available
-                let artText = "ART"
-                let artWidth = CGFloat(artText.count) * scaledCharWidth
-                var artX = accessoryX - artWidth - 24 * chromeScale
-                
-                // VIS button - only show in art-only mode
-                let visText = "VIS"
-                let visWidth = CGFloat(visText.count) * scaledCharWidth
-                var visX = artX - visWidth - 16 * chromeScale
-                
-                if currentArtwork != nil {
-                    artButtonRect = NSRect(x: artX, y: barRect.minY,
-                                           width: artWidth, height: barRect.height)
-                    if isArtOnlyMode {
-                        drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
-                        visButtonRect = NSRect(x: visX, y: barRect.minY,
-                                               width: visWidth, height: barRect.height)
-                        if isVisualizingArt {
-                            drawScaledWhiteSkinText(visText, at: NSPoint(x: visX, y: textY), scale: textScale, renderer: renderer, in: context)
-                        } else {
-                            drawScaledSkinText(visText, at: NSPoint(x: visX, y: textY), scale: textScale, renderer: renderer, in: context)
-                        }
-                    } else {
-                        drawScaledSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
-                        visX = artX
-                    }
-                } else {
-                    artX = accessoryX
-                    visX = artX
-                }
-                
-                // Star rating (art-only mode) or item count (list mode)
-                if isArtOnlyMode,
-                   let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-                   canRateTrack(currentTrack) {
-                    let starSize: CGFloat = 12 * chromeScale
-                    let starSpacing: CGFloat = 2 * chromeScale
-                    let totalStars = 5
-                    let starsWidth = CGFloat(totalStars) * starSize + CGFloat(totalStars - 1) * starSpacing
-                    let starsX = visX - starsWidth - 16 * chromeScale
-                    let starY = barRect.minY + (barRect.height - starSize) / 2
-                    
-                    let rating = currentTrackRating ?? 0
-                    let filledCount = rating / 2
-                    
-                    let greenColor = accentTextColor(renderer)
-                    let dimGreen = NSColor(red: greenColor.redComponent * 0.4,
-                                          green: greenColor.greenComponent * 0.4,
-                                          blue: greenColor.blueComponent * 0.4,
-                                          alpha: 0.6)
-                    
-                    for i in 0..<totalStars {
-                        let x = starsX + CGFloat(i) * (starSize + starSpacing)
-                        let starRect = NSRect(x: x, y: starY, width: starSize, height: starSize)
-                        let isFilled = i < filledCount
-                        drawPixelStar(in: starRect, color: isFilled ? greenColor : dimGreen, context: context)
-                    }
-                    
-                    rateButtonRect = NSRect(x: starsX, y: barRect.minY, width: starsWidth, height: barRect.height)
-                } else if !isArtOnlyMode {
-                    // Item count (only in list mode)
-                    let countNumber = "\(displayItems.count)"
-                    let countLabel = " items"
-                    let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-                    let countX = visX - countWidth - 24 * chromeScale
-                    drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
-                    let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-                    drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
-                }
+                // Item count (only in list mode)
+                let countNumber = "\(displayItems.count)"
+                let countLabel = " items"
+                let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
+                let countX = accessoryX - countWidth - 24 * chromeScale
+                drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
+                let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
+                drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
             } else {
                 // No Subsonic server configured - show add server message
                 let linkText = "Click to add a Subsonic server"
@@ -3935,10 +3148,7 @@ class PlexBrowserView: NSView {
 
                 // Library label and selected library after server name
                 let libLabel = "Lib:"
-                let libraryLeftShift = libraryFieldLeftShift(serverTextWidth: serverTextWidth,
-                                                             maxServerWidth: maxServerWidth,
-                                                             horizontalScale: chromeScale)
-                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * chromeScale - libraryLeftShift
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * chromeScale
                 drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
 
                 let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4 * chromeScale
@@ -3975,66 +3185,13 @@ class PlexBrowserView: NSView {
                     renderer: renderer, context: context
                 )
 
-                let artText = "ART"
-                let artWidth = CGFloat(artText.count) * scaledCharWidth
-                var artX = accessoryX - artWidth - 24 * chromeScale
-                let visText = "VIS"
-                let visWidth = CGFloat(visText.count) * scaledCharWidth
-                var visX = artX - visWidth - 16 * chromeScale
-                
-                if currentArtwork != nil {
-                    artButtonRect = NSRect(x: artX, y: barRect.minY,
-                                           width: artWidth, height: barRect.height)
-                    if isArtOnlyMode {
-                        drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
-                        visButtonRect = NSRect(x: visX, y: barRect.minY,
-                                               width: visWidth, height: barRect.height)
-                        if isVisualizingArt {
-                            drawScaledWhiteSkinText(visText, at: NSPoint(x: visX, y: textY), scale: textScale, renderer: renderer, in: context)
-                        } else {
-                            drawScaledSkinText(visText, at: NSPoint(x: visX, y: textY), scale: textScale, renderer: renderer, in: context)
-                        }
-                    } else {
-                        drawScaledSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
-                        visX = artX
-                    }
-                } else {
-                    artX = accessoryX
-                    visX = artX
-                }
-                
-                if isArtOnlyMode,
-                   let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-                   canRateTrack(currentTrack) {
-                    let starSize: CGFloat = 12 * chromeScale
-                    let starSpacing: CGFloat = 2 * chromeScale
-                    let totalStars = 5
-                    let starsWidth = CGFloat(totalStars) * starSize + CGFloat(totalStars - 1) * starSpacing
-                    let starsX = visX - starsWidth - 16 * chromeScale
-                    let starY = barRect.minY + (barRect.height - starSize) / 2
-                    let rating = currentTrackRating ?? 0
-                    let filledCount = rating / 2
-                    let greenColor = accentTextColor(renderer)
-                    let dimGreen = NSColor(red: greenColor.redComponent * 0.4,
-                                          green: greenColor.greenComponent * 0.4,
-                                          blue: greenColor.blueComponent * 0.4,
-                                          alpha: 0.6)
-                    for i in 0..<totalStars {
-                        let x = starsX + CGFloat(i) * (starSize + starSpacing)
-                        let starRect = NSRect(x: x, y: starY, width: starSize, height: starSize)
-                        let isFilled = i < filledCount
-                        drawPixelStar(in: starRect, color: isFilled ? greenColor : dimGreen, context: context)
-                    }
-                    rateButtonRect = NSRect(x: starsX, y: barRect.minY, width: starsWidth, height: barRect.height)
-                } else if !isArtOnlyMode {
-                    let countNumber = "\(displayItems.count)"
-                    let countLabel = " items"
-                    let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-                    let countX = visX - countWidth - 24 * chromeScale
-                    drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
-                    let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-                    drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
-                }
+                let countNumber = "\(displayItems.count)"
+                let countLabel = " items"
+                let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
+                let countX = accessoryX - countWidth - 24 * chromeScale
+                drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
+                let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
+                drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
             } else {
                 let linkText = "Click to add a Jellyfin server"
                 let linkWidth = CGFloat(linkText.count) * scaledCharWidth
@@ -4067,10 +3224,7 @@ class PlexBrowserView: NSView {
 
                 // Library label and selected library after server name
                 let libLabel = "Lib:"
-                let libraryLeftShift = libraryFieldLeftShift(serverTextWidth: serverTextWidth,
-                                                             maxServerWidth: maxServerWidth,
-                                                             horizontalScale: chromeScale)
-                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * chromeScale - libraryLeftShift
+                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * chromeScale
                 drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
 
                 let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4 * chromeScale
@@ -4107,66 +3261,13 @@ class PlexBrowserView: NSView {
                     renderer: renderer, context: context
                 )
 
-                let artText = "ART"
-                let artWidth = CGFloat(artText.count) * scaledCharWidth
-                var artX = accessoryX - artWidth - 24 * chromeScale
-                let visText = "VIS"
-                let visWidth = CGFloat(visText.count) * scaledCharWidth
-                var visX = artX - visWidth - 16 * chromeScale
-
-                if currentArtwork != nil {
-                    artButtonRect = NSRect(x: artX, y: barRect.minY,
-                                           width: artWidth, height: barRect.height)
-                    if isArtOnlyMode {
-                        drawScaledWhiteSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
-                        visButtonRect = NSRect(x: visX, y: barRect.minY,
-                                               width: visWidth, height: barRect.height)
-                        if isVisualizingArt {
-                            drawScaledWhiteSkinText(visText, at: NSPoint(x: visX, y: textY), scale: textScale, renderer: renderer, in: context)
-                        } else {
-                            drawScaledSkinText(visText, at: NSPoint(x: visX, y: textY), scale: textScale, renderer: renderer, in: context)
-                        }
-                    } else {
-                        drawScaledSkinText(artText, at: NSPoint(x: artX, y: textY), scale: textScale, renderer: renderer, in: context)
-                        visX = artX
-                    }
-                } else {
-                    artX = accessoryX
-                    visX = artX
-                }
-
-                if isArtOnlyMode,
-                   let currentTrack = WindowManager.shared.audioEngine.currentTrack,
-                   canRateTrack(currentTrack) {
-                    let starSize: CGFloat = 12 * chromeScale
-                    let starSpacing: CGFloat = 2 * chromeScale
-                    let totalStars = 5
-                    let starsWidth = CGFloat(totalStars) * starSize + CGFloat(totalStars - 1) * starSpacing
-                    let starsX = visX - starsWidth - 16 * chromeScale
-                    let starY = barRect.minY + (barRect.height - starSize) / 2
-                    let rating = currentTrackRating ?? 0
-                    let filledCount = rating / 2
-                    let greenColor = accentTextColor(renderer)
-                    let dimGreen = NSColor(red: greenColor.redComponent * 0.4,
-                                          green: greenColor.greenComponent * 0.4,
-                                          blue: greenColor.blueComponent * 0.4,
-                                          alpha: 0.6)
-                    for i in 0..<totalStars {
-                        let x = starsX + CGFloat(i) * (starSize + starSpacing)
-                        let starRect = NSRect(x: x, y: starY, width: starSize, height: starSize)
-                        let isFilled = i < filledCount
-                        drawPixelStar(in: starRect, color: isFilled ? greenColor : dimGreen, context: context)
-                    }
-                    rateButtonRect = NSRect(x: starsX, y: barRect.minY, width: starsWidth, height: barRect.height)
-                } else if !isArtOnlyMode {
-                    let countNumber = "\(displayItems.count)"
-                    let countLabel = " items"
-                    let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-                    let countX = visX - countWidth - 24 * chromeScale
-                    drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
-                    let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-                    drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
-                }
+                let countNumber = "\(displayItems.count)"
+                let countLabel = " items"
+                let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
+                let countX = accessoryX - countWidth - 24 * chromeScale
+                drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
+                let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
+                drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
             } else {
                 let linkText = "Click to add an Emby server"
                 let linkWidth = CGFloat(linkText.count) * scaledCharWidth
@@ -4254,7 +3355,7 @@ class PlexBrowserView: NSView {
 
         // Keep an active FLOW escape hatch visible even when a remote source is unconfigured and
         // therefore has no normal F5/accessory cluster.
-        if coverFlowButtonRect == .zero, isCoverFlowMode, !isArtOnlyMode {
+        if coverFlowButtonRect == .zero, isCoverFlowMode {
             _ = drawCoverFlowServerBarButton(
                 before: barRect.maxX - toolbarRightInset,
                 barRect: barRect, textY: textY, textScale: textScale,
@@ -4976,1743 +4077,6 @@ class PlexBrowserView: NSView {
         context.restoreGState()
     }
     
-    /// Draw art-only mode: full album art without tabs and list
-    private func drawArtOnlyArea(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer, artwork: NSImage?) {
-        // Content area starts below server bar
-        let contentY = Layout.titleBarHeight + Layout.serverBarHeight
-        let contentHeight = drawBounds.height - contentY - Layout.statusBarHeight
-        let contentRect = NSRect(x: Layout.leftBorder, y: contentY,
-                                 width: drawBounds.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth,
-                                 height: contentHeight)
-        
-        // Fill background
-        if isVisualizingArt {
-            NSColor.black.setFill()
-        } else {
-            colors.normalBackground.setFill()
-        }
-        context.fill(contentRect)
-        
-        // Draw album art if available
-        if let artworkImage = artwork,
-           let cgImage = artworkImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            context.saveGState()
-            context.clip(to: contentRect)
-            
-            // Calculate centered fit rect
-            let imageSize = NSSize(width: cgImage.width, height: cgImage.height)
-            let artworkRect = calculateCenterFillRect(imageSize: imageSize, in: contentRect)
-            
-            // Apply visualization effects if enabled
-            if isVisualizingArt {
-                drawVisualizationEffect(context: context, cgImage: cgImage, artworkRect: artworkRect, contentRect: contentRect)
-            } else {
-                // Draw with full opacity in art-only mode (no effects)
-                context.saveGState()
-                context.translateBy(x: artworkRect.minX, y: artworkRect.maxY)
-                context.scaleBy(x: 1, y: -1)
-                context.draw(cgImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-                context.restoreGState()
-            }
-            
-            context.restoreGState()
-        } else {
-            // No artwork - show placeholder text
-            let message = "No album art"
-            let charWidth = SkinElements.TextFont.charWidth
-            let charHeight = SkinElements.TextFont.charHeight
-            let textScale = 2.0 * contentScale
-            let scaledCharWidth = charWidth * textScale
-            let scaledCharHeight = charHeight * textScale
-            let textWidth = CGFloat(message.count) * scaledCharWidth
-            let textX = contentRect.midX - textWidth / 2
-            let textY = contentRect.midY - scaledCharHeight / 2
-            
-            drawScaledSkinText(message, at: NSPoint(x: textX, y: textY), scale: textScale, renderer: renderer, in: context)
-        }
-    }
-    
-    /// Draw visualization effect using GPU-accelerated Core Image filters
-    private func drawVisualizationEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect) {
-        // Get audio levels for effects
-        let spectrumData = WindowManager.shared.audioEngine.spectrumData
-        let bass = CGFloat(spectrumData.prefix(10).reduce(0, +) / 10.0)
-        let mid = CGFloat(spectrumData.dropFirst(10).prefix(30).reduce(0, +) / 30.0)
-        let treble = CGFloat(spectrumData.dropFirst(40).prefix(35).reduce(0, +) / 35.0)
-        let level = (bass + mid + treble) / 3.0
-        let t = CGFloat(visualizerTime)
-        let intensity = visEffectIntensity
-        
-        // Create CIImage from CGImage
-        var ciImage = CIImage(cgImage: cgImage)
-        let imageSize = ciImage.extent.size
-        let center = CIVector(x: imageSize.width / 2, y: imageSize.height / 2)
-        
-        // Apply GPU filter based on effect
-        switch currentVisEffect {
-        case .psychedelic:
-            // Twirl + hue rotation + bloom
-            let twirl = CIFilter(name: "CITwirlDistortion")!
-            twirl.setValue(ciImage, forKey: kCIInputImageKey)
-            twirl.setValue(center, forKey: kCIInputCenterKey)
-            twirl.setValue(min(imageSize.width, imageSize.height) * 0.4, forKey: kCIInputRadiusKey)
-            twirl.setValue(bass * 3 * intensity * sin(t * 2), forKey: kCIInputAngleKey)
-            ciImage = twirl.outputImage ?? ciImage
-            
-            let hue = CIFilter(name: "CIHueAdjust")!
-            hue.setValue(ciImage, forKey: kCIInputImageKey)
-            hue.setValue(t * 0.5 + bass, forKey: kCIInputAngleKey)
-            ciImage = hue.outputImage ?? ciImage
-            
-            let bloom = CIFilter(name: "CIBloom")!
-            bloom.setValue(ciImage, forKey: kCIInputImageKey)
-            bloom.setValue(10 * level * intensity, forKey: kCIInputRadiusKey)
-            bloom.setValue(1.0 + bass * intensity, forKey: kCIInputIntensityKey)
-            ciImage = bloom.outputImage ?? ciImage
-            
-        case .kaleidoscope:
-            let kaleido = CIFilter(name: "CIKaleidoscope")!
-            kaleido.setValue(ciImage, forKey: kCIInputImageKey)
-            kaleido.setValue(center, forKey: kCIInputCenterKey)
-            kaleido.setValue(Int(6 + bass * 6 * intensity), forKey: "inputCount")
-            kaleido.setValue(t * 0.3 * intensity, forKey: kCIInputAngleKey)
-            ciImage = kaleido.outputImage ?? ciImage
-            
-        case .vortex:
-            let vortex = CIFilter(name: "CIVortexDistortion")!
-            vortex.setValue(ciImage, forKey: kCIInputImageKey)
-            vortex.setValue(center, forKey: kCIInputCenterKey)
-            vortex.setValue(min(imageSize.width, imageSize.height) * 0.5, forKey: kCIInputRadiusKey)
-            vortex.setValue(bass * 10 * intensity * sin(t), forKey: kCIInputAngleKey)
-            ciImage = vortex.outputImage ?? ciImage
-            
-        case .spin:
-            // Zoom blur + rotation
-            let zoomBlur = CIFilter(name: "CIZoomBlur")!
-            zoomBlur.setValue(ciImage, forKey: kCIInputImageKey)
-            zoomBlur.setValue(center, forKey: kCIInputCenterKey)
-            zoomBlur.setValue(bass * 20 * intensity, forKey: kCIInputAmountKey)
-            ciImage = zoomBlur.outputImage ?? ciImage
-            
-            let transform = CIFilter(name: "CIAffineTransform")!
-            var affine = CGAffineTransform(translationX: imageSize.width/2, y: imageSize.height/2)
-            affine = affine.rotated(by: t * 2 * intensity)
-            affine = affine.translatedBy(x: -imageSize.width/2, y: -imageSize.height/2)
-            transform.setValue(ciImage, forKey: kCIInputImageKey)
-            transform.setValue(affine, forKey: kCIInputTransformKey)
-            ciImage = transform.outputImage ?? ciImage
-            
-        case .fractal:
-            // Multiple zoom levels
-            let scale = 1.0 + sin(t * intensity) * 0.3 * bass
-            let transform = CIFilter(name: "CIAffineTransform")!
-            var affine = CGAffineTransform(translationX: imageSize.width/2, y: imageSize.height/2)
-            affine = affine.scaledBy(x: scale, y: scale)
-            affine = affine.rotated(by: t * 0.2 * intensity)
-            affine = affine.translatedBy(x: -imageSize.width/2, y: -imageSize.height/2)
-            transform.setValue(ciImage, forKey: kCIInputImageKey)
-            transform.setValue(affine, forKey: kCIInputTransformKey)
-            ciImage = transform.outputImage ?? ciImage
-            
-            let bloom = CIFilter(name: "CIBloom")!
-            bloom.setValue(ciImage, forKey: kCIInputImageKey)
-            bloom.setValue(20 * bass * intensity, forKey: kCIInputRadiusKey)
-            bloom.setValue(0.5 + level, forKey: kCIInputIntensityKey)
-            ciImage = bloom.outputImage ?? ciImage
-            
-        case .tunnel:
-            let hole = CIFilter(name: "CIHoleDistortion")!
-            hole.setValue(ciImage, forKey: kCIInputImageKey)
-            hole.setValue(center, forKey: kCIInputCenterKey)
-            hole.setValue(50 + bass * 100 * intensity * abs(sin(t)), forKey: kCIInputRadiusKey)
-            ciImage = hole.outputImage ?? ciImage
-            
-        case .melt:
-            // Glass distortion for melting effect
-            let glass = CIFilter(name: "CIGlassDistortion")!
-            glass.setValue(ciImage, forKey: kCIInputImageKey)
-            // Create a simple texture
-            let noiseFilter = CIFilter(name: "CIRandomGenerator")!
-            if let noise = noiseFilter.outputImage?.cropped(to: ciImage.extent) {
-                glass.setValue(noise, forKey: "inputTexture")
-                glass.setValue(center, forKey: kCIInputCenterKey)
-                glass.setValue(50 * bass * intensity, forKey: kCIInputScaleKey)
-                ciImage = glass.outputImage ?? ciImage
-            }
-            
-        case .wave:
-            // Bump distortion moving across
-            let bump = CIFilter(name: "CIBumpDistortion")!
-            let waveX = imageSize.width * (0.5 + 0.4 * sin(t * 2))
-            let waveY = imageSize.height * (0.5 + 0.3 * cos(t * 1.5))
-            bump.setValue(ciImage, forKey: kCIInputImageKey)
-            bump.setValue(CIVector(x: waveX, y: waveY), forKey: kCIInputCenterKey)
-            bump.setValue(min(imageSize.width, imageSize.height) * 0.4, forKey: kCIInputRadiusKey)
-            bump.setValue(bass * 2 * intensity * sin(t * 3), forKey: kCIInputScaleKey)
-            ciImage = bump.outputImage ?? ciImage
-            
-        case .glitch:
-            // RGB offset + posterize
-            if bass > 0.3 {
-                let offset = bass * 30 * intensity
-                
-                // Separate and offset RGB channels
-                let rOffset = CIFilter(name: "CIAffineTransform")!
-                rOffset.setValue(ciImage, forKey: kCIInputImageKey)
-                rOffset.setValue(CGAffineTransform(translationX: offset, y: 0), forKey: kCIInputTransformKey)
-                
-                let colorMatrix = CIFilter(name: "CIColorMatrix")!
-                colorMatrix.setValue(ciImage, forKey: kCIInputImageKey)
-                colorMatrix.setValue(CIVector(x: 1, y: 0, z: 0, w: 0), forKey: "inputRVector")
-                colorMatrix.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputGVector")
-                colorMatrix.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputBVector")
-                ciImage = colorMatrix.outputImage ?? ciImage
-            }
-            
-            let posterize = CIFilter(name: "CIColorPosterize")!
-            posterize.setValue(ciImage, forKey: kCIInputImageKey)
-            posterize.setValue(4 + (1 - bass) * 10, forKey: "inputLevels")
-            ciImage = posterize.outputImage ?? ciImage
-            
-        case .rgbSplit:
-            let offset = (10 + bass * 40) * intensity
-            
-            // Create offset versions
-            let rFilter = CIFilter(name: "CIColorMatrix")!
-            rFilter.setValue(ciImage, forKey: kCIInputImageKey)
-            rFilter.setValue(CIVector(x: 1, y: 0, z: 0, w: 0), forKey: "inputRVector")
-            rFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputGVector")
-            rFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputBVector")
-            let rImage = rFilter.outputImage ?? ciImage
-            
-            let gFilter = CIFilter(name: "CIColorMatrix")!
-            gFilter.setValue(ciImage, forKey: kCIInputImageKey)
-            gFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputRVector")
-            gFilter.setValue(CIVector(x: 0, y: 1, z: 0, w: 0), forKey: "inputGVector")
-            gFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputBVector")
-            let gImage = gFilter.outputImage ?? ciImage
-            
-            let bFilter = CIFilter(name: "CIColorMatrix")!
-            bFilter.setValue(ciImage, forKey: kCIInputImageKey)
-            bFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputRVector")
-            bFilter.setValue(CIVector(x: 0, y: 0, z: 0, w: 0), forKey: "inputGVector")
-            bFilter.setValue(CIVector(x: 0, y: 0, z: 1, w: 0), forKey: "inputBVector")
-            let bImage = bFilter.outputImage ?? ciImage
-            
-            // Offset red
-            let rTransform = CIFilter(name: "CIAffineTransform")!
-            rTransform.setValue(rImage, forKey: kCIInputImageKey)
-            rTransform.setValue(CGAffineTransform(translationX: -offset, y: 0), forKey: kCIInputTransformKey)
-            let rOffset = rTransform.outputImage ?? rImage
-            
-            // Offset blue
-            let bTransform = CIFilter(name: "CIAffineTransform")!
-            bTransform.setValue(bImage, forKey: kCIInputImageKey)
-            bTransform.setValue(CGAffineTransform(translationX: offset, y: 0), forKey: kCIInputTransformKey)
-            let bOffset = bTransform.outputImage ?? bImage
-            
-            // Combine
-            let addR = CIFilter(name: "CIAdditionCompositing")!
-            addR.setValue(rOffset, forKey: kCIInputImageKey)
-            addR.setValue(gImage, forKey: kCIInputBackgroundImageKey)
-            let rg = addR.outputImage ?? ciImage
-            
-            let addB = CIFilter(name: "CIAdditionCompositing")!
-            addB.setValue(bOffset, forKey: kCIInputImageKey)
-            addB.setValue(rg, forKey: kCIInputBackgroundImageKey)
-            ciImage = addB.outputImage ?? ciImage
-            
-        case .twist:
-            let twirl = CIFilter(name: "CITwirlDistortion")!
-            twirl.setValue(ciImage, forKey: kCIInputImageKey)
-            twirl.setValue(center, forKey: kCIInputCenterKey)
-            twirl.setValue(min(imageSize.width, imageSize.height) * 0.6, forKey: kCIInputRadiusKey)
-            twirl.setValue(t * 2 * intensity + bass * 5, forKey: kCIInputAngleKey)
-            ciImage = twirl.outputImage ?? ciImage
-            
-        case .fisheye:
-            let bump = CIFilter(name: "CIBumpDistortion")!
-            bump.setValue(ciImage, forKey: kCIInputImageKey)
-            bump.setValue(center, forKey: kCIInputCenterKey)
-            bump.setValue(min(imageSize.width, imageSize.height) * 0.8, forKey: kCIInputRadiusKey)
-            bump.setValue(-1.5 * intensity * (1 + bass * 0.5), forKey: kCIInputScaleKey)
-            ciImage = bump.outputImage ?? ciImage
-            
-        case .shatter:
-            // Triangular tile + displacement
-            let triangle = CIFilter(name: "CITriangleTile")!
-            triangle.setValue(ciImage, forKey: kCIInputImageKey)
-            triangle.setValue(center, forKey: kCIInputCenterKey)
-            triangle.setValue(t * 0.5 * intensity, forKey: kCIInputAngleKey)
-            triangle.setValue(50 + bass * 100 * intensity, forKey: kCIInputWidthKey)
-            ciImage = triangle.outputImage?.cropped(to: CIImage(cgImage: cgImage).extent) ?? ciImage
-            
-        case .stretch:
-            let pinch = CIFilter(name: "CIPinchDistortion")!
-            pinch.setValue(ciImage, forKey: kCIInputImageKey)
-            pinch.setValue(center, forKey: kCIInputCenterKey)
-            pinch.setValue(min(imageSize.width, imageSize.height) * 0.7, forKey: kCIInputRadiusKey)
-            pinch.setValue(bass * intensity * sin(t * 2), forKey: kCIInputScaleKey)
-            ciImage = pinch.outputImage ?? ciImage
-            
-        case .zoom:
-            let zoomBlur = CIFilter(name: "CIZoomBlur")!
-            zoomBlur.setValue(ciImage, forKey: kCIInputImageKey)
-            zoomBlur.setValue(center, forKey: kCIInputCenterKey)
-            zoomBlur.setValue(bass * 50 * intensity, forKey: kCIInputAmountKey)
-            ciImage = zoomBlur.outputImage ?? ciImage
-            
-        case .shake:
-            let offset = bass * 30 * intensity
-            let shakeX = sin(t * 30) * offset
-            let shakeY = cos(t * 25) * offset * 0.7
-            
-            let transform = CIFilter(name: "CIAffineTransform")!
-            transform.setValue(ciImage, forKey: kCIInputImageKey)
-            transform.setValue(CGAffineTransform(translationX: shakeX, y: shakeY), forKey: kCIInputTransformKey)
-            ciImage = transform.outputImage ?? ciImage
-            
-            let motionBlur = CIFilter(name: "CIMotionBlur")!
-            motionBlur.setValue(ciImage, forKey: kCIInputImageKey)
-            motionBlur.setValue(bass * 20 * intensity, forKey: kCIInputRadiusKey)
-            motionBlur.setValue(t * 10, forKey: kCIInputAngleKey)
-            ciImage = motionBlur.outputImage ?? ciImage
-            
-        case .bounce:
-            let bounceY = abs(sin(t * 3 * intensity)) * 50 * bass
-            let scaleY = 1.0 - (1 - abs(sin(t * 3 * intensity))) * bass * 0.2 * intensity
-            
-            let transform = CIFilter(name: "CIAffineTransform")!
-            var affine = CGAffineTransform(translationX: 0, y: bounceY)
-            affine = affine.concatenating(CGAffineTransform(scaleX: 1.0 / scaleY, y: scaleY))
-            transform.setValue(ciImage, forKey: kCIInputImageKey)
-            transform.setValue(affine, forKey: kCIInputTransformKey)
-            ciImage = transform.outputImage ?? ciImage
-            
-        case .feedback:
-            // Multiple scaled copies
-            for i in 1..<5 {
-                let scale = 1.0 - CGFloat(i) * 0.1
-                let alpha = 0.5 / CGFloat(i)
-                
-                let scaleTransform = CIFilter(name: "CIAffineTransform")!
-                var affine = CGAffineTransform(translationX: imageSize.width/2, y: imageSize.height/2)
-                affine = affine.scaledBy(x: scale, y: scale)
-                affine = affine.rotated(by: CGFloat(i) * 0.05 * bass * intensity)
-                affine = affine.translatedBy(x: -imageSize.width/2, y: -imageSize.height/2)
-                scaleTransform.setValue(CIImage(cgImage: cgImage), forKey: kCIInputImageKey)
-                scaleTransform.setValue(affine, forKey: kCIInputTransformKey)
-                
-                if let layerImage = scaleTransform.outputImage {
-                    let blend = CIFilter(name: "CISourceOverCompositing")!
-                    blend.setValue(layerImage.applyingFilter("CIColorMatrix", parameters: [
-                        "inputAVector": CIVector(x: 0, y: 0, z: 0, w: alpha)
-                    ]), forKey: kCIInputImageKey)
-                    blend.setValue(ciImage, forKey: kCIInputBackgroundImageKey)
-                    ciImage = blend.outputImage ?? ciImage
-                }
-            }
-            
-            let bloom = CIFilter(name: "CIBloom")!
-            bloom.setValue(ciImage, forKey: kCIInputImageKey)
-            bloom.setValue(15 * level * intensity, forKey: kCIInputRadiusKey)
-            bloom.setValue(0.5 + bass, forKey: kCIInputIntensityKey)
-            ciImage = bloom.outputImage ?? ciImage
-            
-        case .strobe:
-            let strobeOn = Int(t * 10 * intensity) % 2 == 0 || bass > 0.6
-            if strobeOn {
-                let exposure = CIFilter(name: "CIExposureAdjust")!
-                exposure.setValue(ciImage, forKey: kCIInputImageKey)
-                exposure.setValue(bass * 2 * intensity, forKey: kCIInputEVKey)
-                ciImage = exposure.outputImage ?? ciImage
-            } else {
-                let exposure = CIFilter(name: "CIExposureAdjust")!
-                exposure.setValue(ciImage, forKey: kCIInputImageKey)
-                exposure.setValue(-1.0, forKey: kCIInputEVKey)
-                ciImage = exposure.outputImage ?? ciImage
-            }
-            
-        case .jitter:
-            let jitterX = CGFloat.random(in: -1...1) * bass * 20 * intensity
-            let jitterY = CGFloat.random(in: -1...1) * bass * 20 * intensity
-            let jitterScale = 1.0 + CGFloat.random(in: -0.05...0.05) * bass * intensity
-            
-            let transform = CIFilter(name: "CIAffineTransform")!
-            var affine = CGAffineTransform(translationX: jitterX, y: jitterY)
-            affine = affine.scaledBy(x: jitterScale, y: jitterScale)
-            transform.setValue(ciImage, forKey: kCIInputImageKey)
-            transform.setValue(affine, forKey: kCIInputTransformKey)
-            ciImage = transform.outputImage ?? ciImage
-            
-        case .mirror:
-            // 4-way mirror
-            let fourFold = CIFilter(name: "CIFourfoldReflectedTile")!
-            fourFold.setValue(ciImage, forKey: kCIInputImageKey)
-            fourFold.setValue(center, forKey: kCIInputCenterKey)
-            fourFold.setValue(t * 0.2 * intensity, forKey: kCIInputAngleKey)
-            fourFold.setValue(imageSize.width * (0.3 + bass * 0.2 * intensity), forKey: kCIInputWidthKey)
-            ciImage = fourFold.outputImage?.cropped(to: CIImage(cgImage: cgImage).extent) ?? ciImage
-            
-        case .tile:
-            let op = CIFilter(name: "CIOpTile")!
-            op.setValue(ciImage, forKey: kCIInputImageKey)
-            op.setValue(center, forKey: kCIInputCenterKey)
-            op.setValue(t * intensity, forKey: kCIInputAngleKey)
-            op.setValue(1.5 + bass * intensity, forKey: kCIInputScaleKey)
-            op.setValue(imageSize.width * 0.3, forKey: kCIInputWidthKey)
-            ciImage = op.outputImage?.cropped(to: CIImage(cgImage: cgImage).extent) ?? ciImage
-            
-        case .prism:
-            // Triangular kaleidoscope
-            let triangle = CIFilter(name: "CITriangleKaleidoscope")!
-            triangle.setValue(ciImage, forKey: kCIInputImageKey)
-            triangle.setValue(CIVector(x: imageSize.width * 0.5, y: imageSize.height * 0.5), forKey: "inputPoint")
-            triangle.setValue(imageSize.width * (0.3 + bass * 0.2), forKey: "inputSize")
-            triangle.setValue(t * 0.5 * intensity, forKey: "inputRotation")
-            triangle.setValue(0.1, forKey: "inputDecay")
-            ciImage = triangle.outputImage?.cropped(to: CIImage(cgImage: cgImage).extent) ?? ciImage
-            
-        case .doubleVision:
-            let offset = 20 + bass * 50 * intensity
-            
-            let transform1 = CIFilter(name: "CIAffineTransform")!
-            transform1.setValue(ciImage, forKey: kCIInputImageKey)
-            transform1.setValue(CGAffineTransform(translationX: -offset, y: 0), forKey: kCIInputTransformKey)
-            let img1 = transform1.outputImage ?? ciImage
-            
-            let transform2 = CIFilter(name: "CIAffineTransform")!
-            transform2.setValue(ciImage, forKey: kCIInputImageKey)
-            transform2.setValue(CGAffineTransform(translationX: offset, y: 0), forKey: kCIInputTransformKey)
-            let img2 = transform2.outputImage ?? ciImage
-            
-            let blend = CIFilter(name: "CIAdditionCompositing")!
-            blend.setValue(img1.applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0.5)]), forKey: kCIInputImageKey)
-            blend.setValue(img2.applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0.5)]), forKey: kCIInputBackgroundImageKey)
-            ciImage = blend.outputImage ?? ciImage
-            
-        case .flipbook:
-            // Rapid flip between normal and transformed
-            let flipPhase = Int(t * 8 * intensity) % 4
-            
-            let transform = CIFilter(name: "CIAffineTransform")!
-            var affine = CGAffineTransform.identity
-            switch flipPhase {
-            case 0: affine = CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: -imageSize.width, y: 0)
-            case 1: affine = CGAffineTransform(scaleX: 1, y: -1).translatedBy(x: 0, y: -imageSize.height)
-            case 2:
-                affine = CGAffineTransform(translationX: imageSize.width/2, y: imageSize.height/2)
-                affine = affine.rotated(by: .pi)
-                affine = affine.translatedBy(x: -imageSize.width/2, y: -imageSize.height/2)
-            default: break
-            }
-            transform.setValue(ciImage, forKey: kCIInputImageKey)
-            transform.setValue(affine, forKey: kCIInputTransformKey)
-            ciImage = transform.outputImage ?? ciImage
-            
-        case .mosaic:
-            let hexagonal = CIFilter(name: "CIHexagonalPixellate")!
-            hexagonal.setValue(ciImage, forKey: kCIInputImageKey)
-            hexagonal.setValue(center, forKey: kCIInputCenterKey)
-            hexagonal.setValue(10 + (1 - level) * 30 * intensity, forKey: kCIInputScaleKey)
-            ciImage = hexagonal.outputImage ?? ciImage
-            
-        case .pixelate:
-            let pixellate = CIFilter(name: "CIPixellate")!
-            pixellate.setValue(ciImage, forKey: kCIInputImageKey)
-            pixellate.setValue(center, forKey: kCIInputCenterKey)
-            pixellate.setValue(5 + (1 - level) * 40 * intensity, forKey: kCIInputScaleKey)
-            ciImage = pixellate.outputImage ?? ciImage
-            
-        case .scanlines:
-            // CRT scanline effect
-            let lines = CIFilter(name: "CILineScreen")!
-            lines.setValue(ciImage, forKey: kCIInputImageKey)
-            lines.setValue(center, forKey: kCIInputCenterKey)
-            lines.setValue(t * 0.5, forKey: kCIInputAngleKey)
-            lines.setValue(3 + bass * 5 * intensity, forKey: kCIInputWidthKey)
-            lines.setValue(0.7 + bass * 0.3, forKey: kCIInputSharpnessKey)
-            ciImage = lines.outputImage ?? ciImage
-            
-            let bloom = CIFilter(name: "CIBloom")!
-            bloom.setValue(ciImage, forKey: kCIInputImageKey)
-            bloom.setValue(5 * level, forKey: kCIInputRadiusKey)
-            bloom.setValue(0.3, forKey: kCIInputIntensityKey)
-            ciImage = bloom.outputImage ?? ciImage
-            
-        case .datamosh:
-            // Simulate datamosh with edge work + color shift
-            let edges = CIFilter(name: "CIEdgeWork")!
-            edges.setValue(ciImage, forKey: kCIInputImageKey)
-            edges.setValue(3 + bass * 10 * intensity, forKey: kCIInputRadiusKey)
-            let edgeImage = edges.outputImage ?? ciImage
-            
-            let blend = CIFilter(name: "CIMultiplyBlendMode")!
-            blend.setValue(edgeImage, forKey: kCIInputImageKey)
-            blend.setValue(ciImage, forKey: kCIInputBackgroundImageKey)
-            ciImage = blend.outputImage ?? ciImage
-            
-            let hue = CIFilter(name: "CIHueAdjust")!
-            hue.setValue(ciImage, forKey: kCIInputImageKey)
-            hue.setValue(bass * 3 * intensity, forKey: kCIInputAngleKey)
-            ciImage = hue.outputImage ?? ciImage
-            
-        case .blocky:
-            // Large pixelation with color boost
-            let pixellate = CIFilter(name: "CIPixellate")!
-            pixellate.setValue(ciImage, forKey: kCIInputImageKey)
-            pixellate.setValue(center, forKey: kCIInputCenterKey)
-            pixellate.setValue(20 + bass * 60 * intensity, forKey: kCIInputScaleKey)
-            ciImage = pixellate.outputImage ?? ciImage
-            
-            let vibrance = CIFilter(name: "CIVibrance")!
-            vibrance.setValue(ciImage, forKey: kCIInputImageKey)
-            vibrance.setValue(0.5 + bass * intensity, forKey: "inputAmount")
-            ciImage = vibrance.outputImage ?? ciImage
-        }
-        
-        // Render the processed image
-        let outputExtent = ciImage.extent
-        if let outputCGImage = ciContext.createCGImage(ciImage, from: outputExtent) {
-            context.saveGState()
-            context.translateBy(x: artworkRect.minX, y: artworkRect.maxY)
-            context.scaleBy(x: 1, y: -1)
-            context.draw(outputCGImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-            context.restoreGState()
-        }
-    }
-    
-    // MARK: - Visualization Effects
-    
-    private func drawSubtleEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                  bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Gentle pulse
-        let pulse = 1.0 + bass * 0.1 * intensity * (0.5 + 0.5 * sin(t * 4))
-        let scaledRect = artworkRect.insetBy(dx: artworkRect.width * (1 - pulse) / 2, dy: artworkRect.height * (1 - pulse) / 2)
-        
-        context.saveGState()
-        context.translateBy(x: scaledRect.minX, y: scaledRect.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: scaledRect.width, height: scaledRect.height))
-        context.restoreGState()
-        
-        // Soft glow
-        let glowAlpha = level * 0.3 * intensity
-        let hue = fmod(t * 0.05, 1.0)
-        context.saveGState()
-        context.setBlendMode(.screen)
-        context.setFillColor(NSColor(hue: hue, saturation: 0.5, brightness: 1.0, alpha: glowAlpha).cgColor)
-        context.fill(contentRect)
-        context.restoreGState()
-    }
-    
-    private func drawPsychedelicEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                       bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Rotating hue shift with pulsing
-        let pulse = 1.0 + bass * 0.25 * intensity
-        let rotation = t * 0.5 * intensity + bass * 0.3
-        
-        let centerX = contentRect.midX
-        let centerY = contentRect.midY
-        
-        // Draw multiple rotated/scaled copies for trippy effect
-        for i in 0..<3 {
-            let layerIntensity = CGFloat(3 - i) / 3.0
-            let layerScale = pulse * (1.0 + CGFloat(i) * 0.05 * mid * intensity)
-            let layerRotation = rotation + CGFloat(i) * 0.1 * treble
-            
-            let scaledWidth = artworkRect.width * layerScale
-            let scaledHeight = artworkRect.height * layerScale
-            
-            context.saveGState()
-            context.translateBy(x: centerX, y: centerY)
-            context.rotate(by: layerRotation)
-            context.translateBy(x: -scaledWidth / 2, y: scaledHeight / 2)
-            context.scaleBy(x: 1, y: -1)
-            
-            if i > 0 {
-                context.setAlpha(0.4 * layerIntensity)
-                context.setBlendMode(.plusLighter)
-            }
-            
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: scaledWidth, height: scaledHeight))
-            context.restoreGState()
-        }
-        
-        // Intense color cycling overlay
-        let hue1 = fmod(t * 0.2 + bass, 1.0)
-        let hue2 = fmod(t * 0.15 + treble + 0.33, 1.0)
-        
-        context.saveGState()
-        context.setBlendMode(.overlay)
-        context.setFillColor(NSColor(hue: hue1, saturation: 0.8 * intensity, brightness: 1.0, alpha: 0.4 * level * intensity).cgColor)
-        context.fill(contentRect)
-        context.restoreGState()
-        
-        context.saveGState()
-        context.setBlendMode(.colorDodge)
-        context.setFillColor(NSColor(hue: hue2, saturation: 1.0, brightness: 1.0, alpha: 0.2 * mid * intensity).cgColor)
-        context.fill(contentRect)
-        context.restoreGState()
-    }
-    
-    private func drawKaleidoscopeEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                        bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        let segments = 6 + Int(bass * 4 * intensity)
-        let angleStep = CGFloat.pi * 2 / CGFloat(segments)
-        let rotation = t * 0.3 * intensity
-        let pulse = 1.0 + bass * 0.15 * intensity
-        
-        let centerX = contentRect.midX
-        let centerY = contentRect.midY
-        let scaledWidth = artworkRect.width * pulse * 0.5
-        let scaledHeight = artworkRect.height * pulse * 0.5
-        
-        for i in 0..<segments {
-            let angle = CGFloat(i) * angleStep + rotation
-            let flip = i % 2 == 0 ? 1.0 : -1.0
-            
-            context.saveGState()
-            context.translateBy(x: centerX, y: centerY)
-            context.rotate(by: angle)
-            context.scaleBy(x: CGFloat(flip), y: 1)
-            context.translateBy(x: -scaledWidth / 2, y: scaledHeight / 2)
-            context.scaleBy(x: 1, y: -1)
-            context.setAlpha(0.8)
-            context.setBlendMode(i % 2 == 0 ? .normal : .screen)
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: scaledWidth, height: scaledHeight))
-            context.restoreGState()
-        }
-        
-        // Trippy color wheel
-        let hue = fmod(t * 0.1, 1.0)
-        context.saveGState()
-        context.setBlendMode(.hue)
-        context.setFillColor(NSColor(hue: hue, saturation: 0.6 * intensity, brightness: 1.0, alpha: 0.3 * mid).cgColor)
-        context.fill(contentRect)
-        context.restoreGState()
-    }
-    
-    private func drawMeltEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Draw base image stretched/melted
-        let meltAmount = bass * 0.3 * intensity
-        let waveFreq = 3.0 + treble * 5.0
-        let wavePhase = t * 2.0
-        
-        // Draw with vertical wave distortion simulation using multiple strips
-        let strips = 20
-        let stripWidth = artworkRect.width / CGFloat(strips)
-        
-        for i in 0..<strips {
-            let x = artworkRect.minX + CGFloat(i) * stripWidth
-            let waveOffset = sin(CGFloat(i) / CGFloat(strips) * waveFreq + wavePhase) * meltAmount * artworkRect.height
-            let stretchFactor = 1.0 + cos(CGFloat(i) / CGFloat(strips) * waveFreq * 0.5 + wavePhase * 0.7) * meltAmount * 0.3
-            
-            let srcRect = CGRect(x: CGFloat(i) / CGFloat(strips) * CGFloat(cgImage.width),
-                                y: 0,
-                                width: CGFloat(cgImage.width) / CGFloat(strips),
-                                height: CGFloat(cgImage.height))
-            
-            if let stripImage = cgImage.cropping(to: srcRect) {
-                let destHeight = artworkRect.height * stretchFactor
-                let destRect = NSRect(x: x, y: artworkRect.minY + waveOffset + (artworkRect.height - destHeight) / 2,
-                                     width: stripWidth + 1, height: destHeight)
-                
-                context.saveGState()
-                context.translateBy(x: destRect.minX, y: destRect.maxY)
-                context.scaleBy(x: 1, y: -1)
-                context.draw(stripImage, in: CGRect(x: 0, y: 0, width: destRect.width, height: destRect.height))
-                context.restoreGState()
-            }
-        }
-        
-        // Acid color wash
-        let hue = fmod(t * 0.08, 1.0)
-        context.saveGState()
-        context.setBlendMode(.color)
-        context.setFillColor(NSColor(hue: hue, saturation: 0.7 * intensity, brightness: 1.0, alpha: 0.25 * level * intensity).cgColor)
-        context.fill(contentRect)
-        context.restoreGState()
-    }
-    
-    private func drawStrobeEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                  bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Fast strobe on bass hits
-        let strobeFreq = 8.0 + bass * 20.0 * intensity
-        let strobe = sin(t * strobeFreq) > 0.3 ? 1.0 : 0.3
-        
-        // Invert colors on beat
-        let invert = bass > 0.6 && sin(t * 15.0) > 0
-        
-        context.saveGState()
-        context.translateBy(x: artworkRect.minX, y: artworkRect.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.setAlpha(strobe)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        if invert {
-            context.saveGState()
-            context.setBlendMode(.difference)
-            context.setFillColor(NSColor.white.cgColor)
-            context.fill(artworkRect)
-            context.restoreGState()
-        }
-        
-        // Flash overlay
-        let flashIntensity = bass > 0.5 ? bass * intensity : 0
-        if flashIntensity > 0.1 {
-            let flashHue = fmod(t * 0.5, 1.0)
-            context.saveGState()
-            context.setBlendMode(.screen)
-            context.setFillColor(NSColor(hue: flashHue, saturation: 1.0, brightness: 1.0, alpha: flashIntensity * 0.6).cgColor)
-            context.fill(contentRect)
-            context.restoreGState()
-        }
-    }
-    
-    private func drawRGBSplitEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                    bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Chromatic aberration / RGB split
-        let splitAmount = (10 + bass * 30) * intensity
-        let angle = t * 0.5
-        
-        let redOffset = CGPoint(x: cos(angle) * splitAmount, y: sin(angle) * splitAmount)
-        let greenOffset = CGPoint.zero
-        let blueOffset = CGPoint(x: cos(angle + CGFloat.pi) * splitAmount, y: sin(angle + CGFloat.pi) * splitAmount)
-        
-        // Red channel
-        context.saveGState()
-        context.translateBy(x: artworkRect.minX + redOffset.x, y: artworkRect.maxY + redOffset.y)
-        context.scaleBy(x: 1, y: -1)
-        context.setBlendMode(.screen)
-        context.clip(to: CGRect(origin: .zero, size: artworkRect.size), mask: cgImage)
-        context.setFillColor(NSColor.red.cgColor)
-        context.fill(CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        // Green channel
-        context.saveGState()
-        context.translateBy(x: artworkRect.minX + greenOffset.x, y: artworkRect.maxY + greenOffset.y)
-        context.scaleBy(x: 1, y: -1)
-        context.setBlendMode(.screen)
-        context.clip(to: CGRect(origin: .zero, size: artworkRect.size), mask: cgImage)
-        context.setFillColor(NSColor.green.cgColor)
-        context.fill(CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        // Blue channel
-        context.saveGState()
-        context.translateBy(x: artworkRect.minX + blueOffset.x, y: artworkRect.maxY + blueOffset.y)
-        context.scaleBy(x: 1, y: -1)
-        context.setBlendMode(.screen)
-        context.clip(to: CGRect(origin: .zero, size: artworkRect.size), mask: cgImage)
-        context.setFillColor(NSColor.blue.cgColor)
-        context.fill(CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        // Scanlines
-        context.saveGState()
-        context.setBlendMode(.multiply)
-        for y in stride(from: contentRect.minY, to: contentRect.maxY, by: 4) {
-            context.setFillColor(NSColor(white: 0.8, alpha: 0.3 * intensity).cgColor)
-            context.fill(NSRect(x: contentRect.minX, y: y, width: contentRect.width, height: 2))
-        }
-        context.restoreGState()
-    }
-    
-    private func drawMirrorEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                  bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Infinite mirror tunnel effect
-        let layers = 5 + Int(bass * 5 * intensity)
-        let baseScale: CGFloat = 0.85
-        let rotation = t * 0.2 * intensity
-        
-        let centerX = contentRect.midX
-        let centerY = contentRect.midY
-        
-        for i in (0..<layers).reversed() {
-            let layerScale = pow(baseScale, CGFloat(i)) * (1.0 + bass * 0.1 * intensity)
-            let layerRotation = rotation * CGFloat(i) * 0.3
-            let alpha = 1.0 - CGFloat(i) * 0.15
-            
-            let scaledWidth = artworkRect.width * layerScale
-            let scaledHeight = artworkRect.height * layerScale
-            
-            context.saveGState()
-            context.translateBy(x: centerX, y: centerY)
-            context.rotate(by: layerRotation)
-            if i % 2 == 1 {
-                context.scaleBy(x: -1, y: 1)  // Mirror alternate layers
-            }
-            context.translateBy(x: -scaledWidth / 2, y: scaledHeight / 2)
-            context.scaleBy(x: 1, y: -1)
-            context.setAlpha(alpha)
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: scaledWidth, height: scaledHeight))
-            context.restoreGState()
-        }
-        
-        // Vignette
-        let vignetteColors = [NSColor.clear.cgColor, NSColor(white: 0, alpha: 0.7 * intensity).cgColor]
-        let locations: [CGFloat] = [0.3, 1.0]
-        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: vignetteColors as CFArray, locations: locations) {
-            context.drawRadialGradient(gradient,
-                                       startCenter: CGPoint(x: centerX, y: centerY),
-                                       startRadius: 0,
-                                       endCenter: CGPoint(x: centerX, y: centerY),
-                                       endRadius: contentRect.width * 0.7,
-                                       options: [])
-        }
-    }
-    
-    private func drawVortexEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                  bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Spinning vortex
-        let baseRotation = t * 1.5 * intensity
-        let spiralTightness = 0.1 + bass * 0.2 * intensity
-        let layers = 8
-        
-        let centerX = contentRect.midX
-        let centerY = contentRect.midY
-        
-        for i in 0..<layers {
-            let progress = CGFloat(i) / CGFloat(layers)
-            let layerScale = 1.0 - progress * 0.8
-            let layerRotation = baseRotation + progress * CGFloat.pi * 4 * spiralTightness
-            let alpha = (1.0 - progress) * 0.7
-            
-            let scaledWidth = artworkRect.width * layerScale
-            let scaledHeight = artworkRect.height * layerScale
-            
-            context.saveGState()
-            context.translateBy(x: centerX, y: centerY)
-            context.rotate(by: layerRotation)
-            context.translateBy(x: -scaledWidth / 2, y: scaledHeight / 2)
-            context.scaleBy(x: 1, y: -1)
-            context.setAlpha(alpha)
-            context.setBlendMode(.plusLighter)
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: scaledWidth, height: scaledHeight))
-            context.restoreGState()
-        }
-        
-        // Trippy radial color
-        let hue = fmod(t * 0.1 + level, 1.0)
-        context.saveGState()
-        context.setBlendMode(.softLight)
-        context.setFillColor(NSColor(hue: hue, saturation: 0.8 * intensity, brightness: 1.0, alpha: 0.4 * level).cgColor)
-        context.fill(contentRect)
-        context.restoreGState()
-    }
-    
-    private func drawGlitchEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                  bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Random glitch displacement
-        let glitchIntensity = bass * intensity
-        let shouldGlitch = bass > 0.4 && Int(t * 10) % 3 == 0
-        
-        // Base image
-        context.saveGState()
-        context.translateBy(x: artworkRect.minX, y: artworkRect.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        if shouldGlitch {
-            // Random horizontal slice displacement
-            let slices = Int.random(in: 3...8)
-            let sliceHeight = artworkRect.height / CGFloat(slices)
-            
-            for i in 0..<slices {
-                if Double.random(in: 0...1) < Double(glitchIntensity) {
-                    let offset = CGFloat.random(in: -50...50) * glitchIntensity
-                    let y = artworkRect.minY + CGFloat(i) * sliceHeight
-                    
-                    let srcY = CGFloat(cgImage.height) * CGFloat(i) / CGFloat(slices)
-                    let srcRect = CGRect(x: 0, y: srcY, width: CGFloat(cgImage.width), height: CGFloat(cgImage.height) / CGFloat(slices))
-                    
-                    if let sliceImage = cgImage.cropping(to: srcRect) {
-                        context.saveGState()
-                        context.translateBy(x: artworkRect.minX + offset, y: y + sliceHeight)
-                        context.scaleBy(x: 1, y: -1)
-                        context.setBlendMode(.normal)
-                        context.draw(sliceImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: sliceHeight))
-                        context.restoreGState()
-                    }
-                }
-            }
-            
-            // Color corruption
-            let corruptHue = CGFloat.random(in: 0...1)
-            context.saveGState()
-            context.setBlendMode(.exclusion)
-            context.setFillColor(NSColor(hue: corruptHue, saturation: 1.0, brightness: 1.0, alpha: glitchIntensity * 0.5).cgColor)
-            
-            // Random corrupt rectangles
-            for _ in 0..<Int(glitchIntensity * 10) {
-                let glitchRect = NSRect(
-                    x: artworkRect.minX + CGFloat.random(in: 0...artworkRect.width),
-                    y: artworkRect.minY + CGFloat.random(in: 0...artworkRect.height),
-                    width: CGFloat.random(in: 20...100),
-                    height: CGFloat.random(in: 5...30)
-                )
-                context.fill(glitchRect)
-            }
-            context.restoreGState()
-        }
-        
-        // Persistent noise overlay
-        context.saveGState()
-        context.setBlendMode(.overlay)
-        for _ in 0..<Int(50 * intensity) {
-            let noiseRect = NSRect(
-                x: artworkRect.minX + CGFloat.random(in: 0...artworkRect.width),
-                y: artworkRect.minY + CGFloat.random(in: 0...artworkRect.height),
-                width: CGFloat.random(in: 1...3),
-                height: CGFloat.random(in: 1...3)
-            )
-            context.setFillColor(NSColor(white: CGFloat.random(in: 0...1), alpha: 0.3).cgColor)
-            context.fill(noiseRect)
-        }
-        context.restoreGState()
-    }
-    
-    // MARK: - Geometric Effects
-    
-    private func drawFractalEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                   bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Recursive zoom fractal effect
-        let layers = 5 + Int(bass * 3 * intensity)
-        let zoomSpeed = 0.3 * intensity
-        let rotation = t * 0.2 * intensity
-        
-        for i in (0..<layers).reversed() {
-            let progress = CGFloat(i) / CGFloat(layers)
-            let scale = 1.0 + progress * (1.0 + sin(t * zoomSpeed) * 0.5) * intensity
-            let layerRotation = rotation * progress * 2
-            let alpha = 1.0 - progress * 0.7
-            
-            let centerX = contentRect.midX
-            let centerY = contentRect.midY
-            let scaledWidth = artworkRect.width / scale
-            let scaledHeight = artworkRect.height / scale
-            
-            context.saveGState()
-            context.translateBy(x: centerX, y: centerY)
-            context.rotate(by: layerRotation)
-            context.translateBy(x: -scaledWidth / 2, y: scaledHeight / 2)
-            context.scaleBy(x: 1, y: -1)
-            context.setAlpha(alpha)
-            context.setBlendMode(i % 2 == 0 ? .normal : .plusLighter)
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: scaledWidth, height: scaledHeight))
-            context.restoreGState()
-        }
-    }
-    
-    private func drawHexGridEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                   bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Draw base image
-        context.saveGState()
-        context.translateBy(x: artworkRect.minX, y: artworkRect.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        // Hexagonal grid overlay
-        let hexSize: CGFloat = 30 + bass * 20 * intensity
-        let rows = Int(contentRect.height / (hexSize * 0.866)) + 1
-        let cols = Int(contentRect.width / hexSize) + 1
-        
-        for row in 0..<rows {
-            for col in 0..<cols {
-                let offset = row % 2 == 0 ? 0 : hexSize * 0.5
-                let x = contentRect.minX + CGFloat(col) * hexSize + offset
-                let y = contentRect.minY + CGFloat(row) * hexSize * 0.866
-                
-                let pulsePhase = sin(t * 3 + CGFloat(row + col) * 0.5) * 0.5 + 0.5
-                let hue = fmod(t * 0.1 + CGFloat(row + col) * 0.05, 1.0)
-                let alpha = level * pulsePhase * 0.5 * intensity
-                
-                context.saveGState()
-                context.setBlendMode(.overlay)
-                context.setFillColor(NSColor(hue: hue, saturation: 0.8, brightness: 1.0, alpha: alpha).cgColor)
-                
-                // Draw hexagon
-                let path = CGMutablePath()
-                for i in 0..<6 {
-                    let angle = CGFloat(i) * CGFloat.pi / 3 - CGFloat.pi / 6
-                    let px = x + cos(angle) * hexSize * 0.4
-                    let py = y + sin(angle) * hexSize * 0.4
-                    if i == 0 {
-                        path.move(to: CGPoint(x: px, y: py))
-                    } else {
-                        path.addLine(to: CGPoint(x: px, y: py))
-                    }
-                }
-                path.closeSubpath()
-                context.addPath(path)
-                context.fillPath()
-                context.restoreGState()
-            }
-        }
-    }
-    
-    private func drawTrianglesEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                     bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Draw base
-        context.saveGState()
-        context.translateBy(x: artworkRect.minX, y: artworkRect.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        // Exploding triangles
-        let triCount = Int(10 + bass * 30 * intensity)
-        for i in 0..<triCount {
-            let angle = CGFloat(i) / CGFloat(triCount) * CGFloat.pi * 2 + t * 0.5
-            let distance = (50 + level * 100 * intensity) * (1 + sin(t * 2 + CGFloat(i)) * 0.3)
-            let size: CGFloat = 20 + mid * 30
-            
-            let x = contentRect.midX + cos(angle) * distance
-            let y = contentRect.midY + sin(angle) * distance
-            
-            let hue = fmod(CGFloat(i) / CGFloat(triCount) + t * 0.1, 1.0)
-            
-            context.saveGState()
-            context.translateBy(x: x, y: y)
-            context.rotate(by: angle + t)
-            context.setBlendMode(.plusLighter)
-            context.setFillColor(NSColor(hue: hue, saturation: 0.9, brightness: 1.0, alpha: 0.6 * intensity).cgColor)
-            
-            let path = CGMutablePath()
-            path.move(to: CGPoint(x: 0, y: -size/2))
-            path.addLine(to: CGPoint(x: size/2, y: size/2))
-            path.addLine(to: CGPoint(x: -size/2, y: size/2))
-            path.closeSubpath()
-            context.addPath(path)
-            context.fillPath()
-            context.restoreGState()
-        }
-    }
-    
-    private func drawRippleEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                  bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Draw base
-        context.saveGState()
-        context.translateBy(x: artworkRect.minX, y: artworkRect.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        // Concentric ripples
-        let rippleCount = 5 + Int(bass * 5)
-        let maxRadius = max(contentRect.width, contentRect.height) * 0.7
-        
-        for i in 0..<rippleCount {
-            let phase = fmod(t * 0.5 + CGFloat(i) * 0.2, 1.0)
-            let radius = phase * maxRadius
-            let alpha = (1 - phase) * level * 0.6 * intensity
-            let lineWidth = 2 + bass * 5 * intensity
-            
-            let hue = fmod(phase + t * 0.1, 1.0)
-            
-            context.saveGState()
-            context.setBlendMode(.screen)
-            context.setStrokeColor(NSColor(hue: hue, saturation: 0.7, brightness: 1.0, alpha: alpha).cgColor)
-            context.setLineWidth(lineWidth)
-            context.strokeEllipse(in: NSRect(x: contentRect.midX - radius, y: contentRect.midY - radius,
-                                            width: radius * 2, height: radius * 2))
-            context.restoreGState()
-        }
-    }
-    
-    private func drawPixelateEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                    bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Variable pixelation based on audio
-        let pixelSize = max(4, Int(8 + (1 - level) * 40 * intensity))
-        
-        // Create pixelated version by drawing small tiles
-        let cols = Int(artworkRect.width) / pixelSize + 1
-        let rows = Int(artworkRect.height) / pixelSize + 1
-        
-        for row in 0..<rows {
-            for col in 0..<cols {
-                let srcX = CGFloat(col * pixelSize) / artworkRect.width * CGFloat(cgImage.width)
-                let srcY = CGFloat(row * pixelSize) / artworkRect.height * CGFloat(cgImage.height)
-                let srcRect = CGRect(x: srcX, y: srcY, width: CGFloat(pixelSize), height: CGFloat(pixelSize))
-                
-                if let pixel = cgImage.cropping(to: srcRect) {
-                    let destX = artworkRect.minX + CGFloat(col * pixelSize)
-                    let destY = artworkRect.minY + CGFloat(row * pixelSize)
-                    
-                    context.saveGState()
-                    context.translateBy(x: destX, y: destY + CGFloat(pixelSize))
-                    context.scaleBy(x: 1, y: -1)
-                    context.draw(pixel, in: CGRect(x: 0, y: 0, width: CGFloat(pixelSize), height: CGFloat(pixelSize)))
-                    context.restoreGState()
-                }
-            }
-        }
-        
-        // Color overlay on beats
-        if bass > 0.5 {
-            let hue = fmod(t * 0.2, 1.0)
-            context.saveGState()
-            context.setBlendMode(.overlay)
-            context.setFillColor(NSColor(hue: hue, saturation: 1.0, brightness: 1.0, alpha: bass * 0.4 * intensity).cgColor)
-            context.fill(artworkRect)
-            context.restoreGState()
-        }
-    }
-    
-    // MARK: - Color Effects
-    
-    private func drawNeonEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Draw darkened base
-        context.saveGState()
-        context.translateBy(x: artworkRect.minX, y: artworkRect.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.setAlpha(0.3)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        // Neon glow layers
-        let glowColors: [NSColor] = [
-            NSColor(red: 1, green: 0, blue: 0.5, alpha: 1),    // Pink
-            NSColor(red: 0, green: 1, blue: 1, alpha: 1),      // Cyan
-            NSColor(red: 1, green: 1, blue: 0, alpha: 1),      // Yellow
-            NSColor(red: 0.5, green: 0, blue: 1, alpha: 1)     // Purple
-        ]
-        
-        let colorIndex = Int(fmod(t * 0.5, CGFloat(glowColors.count)))
-        let nextIndex = (colorIndex + 1) % glowColors.count
-        
-        // Multiple glow passes
-        for pass in 0..<3 {
-            let glowSize = CGFloat(pass + 1) * 3 * intensity * (1 + bass * 0.5)
-            let alpha = 0.3 / CGFloat(pass + 1) * level * intensity
-            
-            context.saveGState()
-            context.translateBy(x: artworkRect.minX, y: artworkRect.maxY)
-            context.scaleBy(x: 1, y: -1)
-            context.setBlendMode(.plusLighter)
-            context.setShadow(offset: .zero, blur: glowSize, color: glowColors[colorIndex].withAlphaComponent(alpha).cgColor)
-            context.setAlpha(alpha)
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-            context.restoreGState()
-        }
-        
-        // Pulsing border glow
-        let borderGlow = bass * 20 * intensity
-        context.saveGState()
-        context.setBlendMode(.plusLighter)
-        context.setStrokeColor(glowColors[nextIndex].withAlphaComponent(level * 0.8).cgColor)
-        context.setLineWidth(borderGlow)
-        context.stroke(artworkRect.insetBy(dx: -borderGlow/2, dy: -borderGlow/2))
-        context.restoreGState()
-    }
-    
-    private func drawThermalEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                   bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Draw base
-        context.saveGState()
-        context.translateBy(x: artworkRect.minX, y: artworkRect.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        // Thermal color mapping overlay
-        let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                  colors: [NSColor.blue.cgColor, NSColor.cyan.cgColor, NSColor.green.cgColor,
-                                          NSColor.yellow.cgColor, NSColor.orange.cgColor, NSColor.red.cgColor,
-                                          NSColor.white.cgColor] as CFArray,
-                                  locations: [0, 0.15, 0.3, 0.45, 0.6, 0.8, 1.0])!
-        
-        // Animated thermal threshold
-        let threshold = 0.3 + sin(t * 2) * 0.2 * intensity
-        
-        context.saveGState()
-        context.setBlendMode(.color)
-        context.setAlpha(0.7 * intensity)
-        context.clip(to: artworkRect)
-        
-        // Draw gradient based on audio
-        let startPoint = CGPoint(x: artworkRect.minX, y: artworkRect.minY + artworkRect.height * threshold)
-        let endPoint = CGPoint(x: artworkRect.minX, y: artworkRect.maxY)
-        context.drawLinearGradient(gradient, start: startPoint, end: endPoint, options: [])
-        context.restoreGState()
-        
-        // Heat pulse on bass
-        if bass > 0.5 {
-            context.saveGState()
-            context.setBlendMode(.screen)
-            context.setFillColor(NSColor.red.withAlphaComponent(bass * 0.4 * intensity).cgColor)
-            context.fill(artworkRect)
-            context.restoreGState()
-        }
-    }
-    
-    private func drawPosterizeEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                     bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Draw base
-        context.saveGState()
-        context.translateBy(x: artworkRect.minX, y: artworkRect.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        // Posterize overlay with shifting colors
-        let hueShift = fmod(t * 0.1, 1.0)
-        let satBoost = 1.0 + bass * 0.5 * intensity
-        
-        // High contrast overlay
-        context.saveGState()
-        context.setBlendMode(.hardLight)
-        context.setAlpha(0.4 * intensity)
-        
-        let hue1 = fmod(hueShift, 1.0)
-        let hue2 = fmod(hueShift + 0.33, 1.0)
-        let hue3 = fmod(hueShift + 0.66, 1.0)
-        
-        // Color bands
-        let bandHeight = artworkRect.height / 3
-        context.setFillColor(NSColor(hue: hue1, saturation: satBoost, brightness: 1.0, alpha: 1).cgColor)
-        context.fill(NSRect(x: artworkRect.minX, y: artworkRect.minY, width: artworkRect.width, height: bandHeight))
-        context.setFillColor(NSColor(hue: hue2, saturation: satBoost, brightness: 1.0, alpha: 1).cgColor)
-        context.fill(NSRect(x: artworkRect.minX, y: artworkRect.minY + bandHeight, width: artworkRect.width, height: bandHeight))
-        context.setFillColor(NSColor(hue: hue3, saturation: satBoost, brightness: 1.0, alpha: 1).cgColor)
-        context.fill(NSRect(x: artworkRect.minX, y: artworkRect.minY + bandHeight * 2, width: artworkRect.width, height: bandHeight))
-        context.restoreGState()
-    }
-    
-    private func drawInvertEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                  bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Draw base
-        context.saveGState()
-        context.translateBy(x: artworkRect.minX, y: artworkRect.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        // Animated inversion based on audio
-        let invertAmount = (sin(t * 4 * intensity) * 0.5 + 0.5) * bass
-        
-        if invertAmount > 0.3 {
-            context.saveGState()
-            context.setBlendMode(.difference)
-            context.setFillColor(NSColor.white.withAlphaComponent(invertAmount * intensity).cgColor)
-            context.fill(artworkRect)
-            context.restoreGState()
-        }
-        
-        // Hue rotation
-        let hue = fmod(t * 0.15, 1.0)
-        context.saveGState()
-        context.setBlendMode(.hue)
-        context.setFillColor(NSColor(hue: hue, saturation: 1.0, brightness: 1.0, alpha: 0.3 * level * intensity).cgColor)
-        context.fill(artworkRect)
-        context.restoreGState()
-    }
-    
-    private func drawSepiaEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                 bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Draw base
-        context.saveGState()
-        context.translateBy(x: artworkRect.minX, y: artworkRect.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        // Sepia overlay
-        let sepiaStrength = 0.5 + sin(t * 0.5) * 0.3 * intensity
-        context.saveGState()
-        context.setBlendMode(.color)
-        context.setFillColor(NSColor(red: 0.9, green: 0.7, blue: 0.4, alpha: sepiaStrength).cgColor)
-        context.fill(artworkRect)
-        context.restoreGState()
-        
-        // Vignette
-        let vignetteRadius = artworkRect.width * 0.8 * (1 + bass * 0.2 * intensity)
-        let vignetteColors = [NSColor.clear.cgColor, NSColor(white: 0, alpha: 0.6 * intensity).cgColor]
-        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: vignetteColors as CFArray, locations: [0.3, 1.0]) {
-            context.drawRadialGradient(gradient,
-                                       startCenter: CGPoint(x: artworkRect.midX, y: artworkRect.midY), startRadius: 0,
-                                       endCenter: CGPoint(x: artworkRect.midX, y: artworkRect.midY), endRadius: vignetteRadius,
-                                       options: [])
-        }
-        
-        // Film grain
-        for _ in 0..<Int(100 * intensity) {
-            let x = artworkRect.minX + CGFloat.random(in: 0...artworkRect.width)
-            let y = artworkRect.minY + CGFloat.random(in: 0...artworkRect.height)
-            context.setFillColor(NSColor(white: CGFloat.random(in: 0.3...0.7), alpha: 0.1).cgColor)
-            context.fill(NSRect(x: x, y: y, width: 1, height: 1))
-        }
-    }
-    
-    // MARK: - Motion Effects
-    
-    private func drawZoomEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Breathing zoom
-        let zoomCycle = sin(t * 2 * intensity) * 0.5 + 0.5
-        let scale = 1.0 + zoomCycle * bass * 0.3 * intensity
-        
-        let centerX = contentRect.midX
-        let centerY = contentRect.midY
-        let scaledWidth = artworkRect.width * scale
-        let scaledHeight = artworkRect.height * scale
-        
-        context.saveGState()
-        context.translateBy(x: centerX - scaledWidth / 2, y: centerY + scaledHeight / 2)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: scaledWidth, height: scaledHeight))
-        context.restoreGState()
-        
-        // Motion blur simulation
-        let blurLayers = 3
-        for i in 1...blurLayers {
-            let blurScale = scale - CGFloat(i) * 0.02 * intensity
-            let blurAlpha = 0.2 / CGFloat(i)
-            let blurWidth = artworkRect.width * blurScale
-            let blurHeight = artworkRect.height * blurScale
-            
-            context.saveGState()
-            context.translateBy(x: centerX - blurWidth / 2, y: centerY + blurHeight / 2)
-            context.scaleBy(x: 1, y: -1)
-            context.setAlpha(blurAlpha)
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: blurWidth, height: blurHeight))
-            context.restoreGState()
-        }
-    }
-    
-    private func drawShakeEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                 bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Earthquake shake
-        let shakeX = sin(t * 30 * intensity) * bass * 15 * intensity
-        let shakeY = cos(t * 25 * intensity) * bass * 10 * intensity
-        let rotation = sin(t * 20) * bass * 0.05 * intensity
-        
-        let centerX = contentRect.midX
-        let centerY = contentRect.midY
-        
-        context.saveGState()
-        context.translateBy(x: centerX + shakeX, y: centerY + shakeY)
-        context.rotate(by: rotation)
-        context.translateBy(x: -artworkRect.width / 2, y: artworkRect.height / 2)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        // Crack lines on heavy bass
-        if bass > 0.7 {
-            context.saveGState()
-            context.setStrokeColor(NSColor.white.withAlphaComponent(bass * 0.5).cgColor)
-            context.setLineWidth(2)
-            for _ in 0..<Int(bass * 5) {
-                let startX = contentRect.minX + CGFloat.random(in: 0...contentRect.width)
-                let startY = contentRect.minY + CGFloat.random(in: 0...contentRect.height)
-                context.move(to: CGPoint(x: startX, y: startY))
-                context.addLine(to: CGPoint(x: startX + CGFloat.random(in: -50...50),
-                                           y: startY + CGFloat.random(in: -50...50)))
-                context.strokePath()
-            }
-            context.restoreGState()
-        }
-    }
-    
-    private func drawSpinEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Continuous rotation with speed based on audio
-        let rotationSpeed = 0.5 + level * 2 * intensity
-        let rotation = t * rotationSpeed
-        let pulse = 1.0 + bass * 0.1 * intensity
-        
-        let centerX = contentRect.midX
-        let centerY = contentRect.midY
-        let scaledWidth = artworkRect.width * pulse
-        let scaledHeight = artworkRect.height * pulse
-        
-        context.saveGState()
-        context.translateBy(x: centerX, y: centerY)
-        context.rotate(by: rotation)
-        context.translateBy(x: -scaledWidth / 2, y: scaledHeight / 2)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: scaledWidth, height: scaledHeight))
-        context.restoreGState()
-        
-        // Trail effect
-        for i in 1..<4 {
-            let trailRotation = rotation - CGFloat(i) * 0.1
-            let trailAlpha = 0.3 / CGFloat(i)
-            
-            context.saveGState()
-            context.translateBy(x: centerX, y: centerY)
-            context.rotate(by: trailRotation)
-            context.translateBy(x: -scaledWidth / 2, y: scaledHeight / 2)
-            context.scaleBy(x: 1, y: -1)
-            context.setAlpha(trailAlpha)
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: scaledWidth, height: scaledHeight))
-            context.restoreGState()
-        }
-    }
-    
-    private func drawBounceEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                  bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Bouncing with squash and stretch
-        let bouncePhase = abs(sin(t * 3 * intensity))
-        let squash = 1.0 + (1 - bouncePhase) * bass * 0.2 * intensity
-        let stretch = 1.0 - (1 - bouncePhase) * bass * 0.15 * intensity
-        
-        let offsetY = bouncePhase * 30 * intensity
-        
-        let scaledWidth = artworkRect.width * squash
-        let scaledHeight = artworkRect.height * stretch
-        let centerX = contentRect.midX
-        let centerY = contentRect.midY - offsetY
-        
-        context.saveGState()
-        context.translateBy(x: centerX - scaledWidth / 2, y: centerY + scaledHeight / 2)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: scaledWidth, height: scaledHeight))
-        context.restoreGState()
-        
-        // Shadow
-        context.saveGState()
-        context.setFillColor(NSColor.black.withAlphaComponent(0.3 * (1 - bouncePhase)).cgColor)
-        let shadowWidth = scaledWidth * (0.8 + bouncePhase * 0.2)
-        let shadowHeight: CGFloat = 10 * (1 - bouncePhase * 0.5)
-        context.fillEllipse(in: NSRect(x: centerX - shadowWidth / 2, y: contentRect.midY + artworkRect.height / 2 - 5,
-                                      width: shadowWidth, height: shadowHeight))
-        context.restoreGState()
-    }
-    
-    private func drawWaveEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Ocean wave distortion using strips
-        let strips = 30
-        let stripWidth = artworkRect.width / CGFloat(strips)
-        let waveAmp = 20 * bass * intensity
-        let waveFreq: CGFloat = 3
-        
-        for i in 0..<strips {
-            let x = artworkRect.minX + CGFloat(i) * stripWidth
-            let waveOffset = sin(CGFloat(i) / CGFloat(strips) * waveFreq * CGFloat.pi * 2 + t * 3) * waveAmp
-            
-            let srcX = CGFloat(i) / CGFloat(strips) * CGFloat(cgImage.width)
-            let srcRect = CGRect(x: srcX, y: 0, width: CGFloat(cgImage.width) / CGFloat(strips), height: CGFloat(cgImage.height))
-            
-            if let stripImage = cgImage.cropping(to: srcRect) {
-                context.saveGState()
-                context.translateBy(x: x, y: artworkRect.maxY + waveOffset)
-                context.scaleBy(x: 1, y: -1)
-                context.draw(stripImage, in: CGRect(x: 0, y: 0, width: stripWidth + 1, height: artworkRect.height))
-                context.restoreGState()
-            }
-        }
-        
-        // Water reflection
-        context.saveGState()
-        context.setBlendMode(.overlay)
-        context.setFillColor(NSColor.cyan.withAlphaComponent(0.15 * intensity * level).cgColor)
-        context.fill(artworkRect)
-        context.restoreGState()
-    }
-    
-    // MARK: - Trippy Effects
-    
-    private func drawPlasmaEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                  bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Draw base
-        context.saveGState()
-        context.translateBy(x: artworkRect.minX, y: artworkRect.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        // Plasma overlay
-        let gridSize: CGFloat = 20
-        let cols = Int(contentRect.width / gridSize)
-        let rows = Int(contentRect.height / gridSize)
-        
-        context.saveGState()
-        context.setBlendMode(.screen)
-        
-        for row in 0..<rows {
-            for col in 0..<cols {
-                let x = contentRect.minX + CGFloat(col) * gridSize
-                let y = contentRect.minY + CGFloat(row) * gridSize
-                
-                // Plasma calculation
-                let v1 = sin(CGFloat(col) * 0.1 + t)
-                let v2 = sin(CGFloat(row) * 0.1 + t * 1.1)
-                let v3 = sin((CGFloat(col) + CGFloat(row)) * 0.1 + t * 0.7)
-                let v4 = sin(sqrt(pow(CGFloat(col) - CGFloat(cols)/2, 2) + pow(CGFloat(row) - CGFloat(rows)/2, 2)) * 0.1 + t)
-                let plasma = (v1 + v2 + v3 + v4) / 4
-                
-                let hue = fmod(plasma + 0.5 + t * 0.1, 1.0)
-                let alpha = 0.3 * level * intensity
-                
-                context.setFillColor(NSColor(hue: hue, saturation: 1.0, brightness: 1.0, alpha: alpha).cgColor)
-                context.fill(NSRect(x: x, y: y, width: gridSize, height: gridSize))
-            }
-        }
-        context.restoreGState()
-    }
-    
-    private func drawTunnelEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                  bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Time tunnel with zooming layers
-        let layers = 8
-        let zoomSpeed = t * 0.5 * intensity
-        
-        for i in (0..<layers).reversed() {
-            let progress = (CGFloat(i) / CGFloat(layers) + fmod(zoomSpeed, 1.0))
-            let scale = 0.2 + progress * 0.8
-            let rotation = progress * CGFloat.pi * 0.5 * intensity
-            let alpha = 1.0 - progress * 0.8
-            
-            let centerX = contentRect.midX
-            let centerY = contentRect.midY
-            let scaledWidth = artworkRect.width * scale
-            let scaledHeight = artworkRect.height * scale
-            
-            context.saveGState()
-            context.translateBy(x: centerX, y: centerY)
-            context.rotate(by: rotation)
-            context.translateBy(x: -scaledWidth / 2, y: scaledHeight / 2)
-            context.scaleBy(x: 1, y: -1)
-            context.setAlpha(alpha)
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: scaledWidth, height: scaledHeight))
-            context.restoreGState()
-        }
-        
-        // Center glow
-        let glowColors = [NSColor.white.withAlphaComponent(level * 0.6 * intensity).cgColor, NSColor.clear.cgColor]
-        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: glowColors as CFArray, locations: [0, 1.0]) {
-            context.drawRadialGradient(gradient,
-                                       startCenter: CGPoint(x: contentRect.midX, y: contentRect.midY), startRadius: 0,
-                                       endCenter: CGPoint(x: contentRect.midX, y: contentRect.midY), endRadius: 50 + bass * 50,
-                                       options: [])
-        }
-    }
-    
-    private func drawWarpEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Space warp with stretching
-        let warpStrength = bass * 0.3 * intensity
-        let warpAngle = t * 0.5
-        
-        // Draw warped strips radiating from center
-        let strips = 24
-        let angleStep = CGFloat.pi * 2 / CGFloat(strips)
-        
-        for i in 0..<strips {
-            let angle = CGFloat(i) * angleStep + warpAngle
-            let warp = 1.0 + sin(angle * 3 + t * 2) * warpStrength
-            
-            let startX = contentRect.midX
-            let startY = contentRect.midY
-            let endX = startX + cos(angle) * artworkRect.width * warp
-            let endY = startY + sin(angle) * artworkRect.height * warp
-            
-            // Sample color from image center area for this angle
-            let hue = fmod(CGFloat(i) / CGFloat(strips) + t * 0.1, 1.0)
-            
-            context.saveGState()
-            context.setBlendMode(.screen)
-            context.setStrokeColor(NSColor(hue: hue, saturation: 0.8, brightness: 1.0, alpha: 0.4 * level * intensity).cgColor)
-            context.setLineWidth(artworkRect.width / CGFloat(strips) * 1.5)
-            context.move(to: CGPoint(x: startX, y: startY))
-            context.addLine(to: CGPoint(x: endX, y: endY))
-            context.strokePath()
-            context.restoreGState()
-        }
-        
-        // Center image
-        let centerScale = 0.4 + bass * 0.2
-        let centerWidth = artworkRect.width * centerScale
-        let centerHeight = artworkRect.height * centerScale
-        
-        context.saveGState()
-        context.translateBy(x: contentRect.midX - centerWidth / 2, y: contentRect.midY + centerHeight / 2)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: centerWidth, height: centerHeight))
-        context.restoreGState()
-    }
-    
-    private func drawMatrixEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                  bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Draw darkened base
-        context.saveGState()
-        context.translateBy(x: artworkRect.minX, y: artworkRect.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.setAlpha(0.5)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        // Green tint
-        context.saveGState()
-        context.setBlendMode(.color)
-        context.setFillColor(NSColor.green.withAlphaComponent(0.4 * intensity).cgColor)
-        context.fill(artworkRect)
-        context.restoreGState()
-        
-        // Matrix rain
-        let columns = 30
-        let charWidth = artworkRect.width / CGFloat(columns)
-        let matrixChars = "01アイウエオカキクケコ"
-        
-        context.saveGState()
-        context.setBlendMode(.plusLighter)
-        
-        for col in 0..<columns {
-            let x = artworkRect.minX + CGFloat(col) * charWidth
-            let speed = 100 + CGFloat(col % 5) * 30
-            let offset = fmod(t * speed + CGFloat(col * 50), artworkRect.height + 200) - 100
-            
-            // Draw falling characters
-            for row in 0..<15 {
-                let y = artworkRect.minY + offset - CGFloat(row) * 15
-                if y < artworkRect.minY || y > artworkRect.maxY { continue }
-                
-                let charIndex = (col + row + Int(t * 10)) % matrixChars.count
-                let char = String(matrixChars[matrixChars.index(matrixChars.startIndex, offsetBy: charIndex)])
-                let alpha = 1.0 - CGFloat(row) / 15.0
-                
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .foregroundColor: NSColor.green.withAlphaComponent(alpha * level * intensity),
-                    .font: NSFont(name: "Menlo", size: 12) ?? NSFont.systemFont(ofSize: 12)
-                ]
-                
-                context.saveGState()
-                context.translateBy(x: 0, y: y + 12)
-                context.scaleBy(x: 1, y: -1)
-                context.translateBy(x: 0, y: -y)
-                char.draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
-                context.restoreGState()
-            }
-        }
-        context.restoreGState()
-    }
-    
-    private func drawFireEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Draw base
-        context.saveGState()
-        context.translateBy(x: artworkRect.minX, y: artworkRect.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        // Fire overlay from bottom
-        let fireHeight = artworkRect.height * (0.3 + bass * 0.4) * intensity
-        let flames = 40
-        
-        context.saveGState()
-        context.setBlendMode(.plusLighter)
-        
-        for i in 0..<flames {
-            let x = artworkRect.minX + CGFloat(i) / CGFloat(flames) * artworkRect.width
-            let flameHeight = fireHeight * (0.5 + CGFloat.random(in: 0...0.5))
-            let flameWidth: CGFloat = artworkRect.width / CGFloat(flames) * 2
-            let waveOffset = sin(t * 5 + CGFloat(i) * 0.5) * 10
-            
-            // Flame gradient
-            let flameColors = [
-                NSColor(red: 1, green: 1, blue: 0.3, alpha: 0.8 * level).cgColor,  // Yellow core
-                NSColor(red: 1, green: 0.5, blue: 0, alpha: 0.6 * level).cgColor,  // Orange
-                NSColor(red: 1, green: 0, blue: 0, alpha: 0.3 * level).cgColor,    // Red
-                NSColor.clear.cgColor
-            ]
-            
-            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: flameColors as CFArray,
-                                        locations: [0, 0.3, 0.6, 1.0]) {
-                let startPoint = CGPoint(x: x + waveOffset, y: artworkRect.maxY)
-                let endPoint = CGPoint(x: x + waveOffset, y: artworkRect.maxY - flameHeight)
-                
-                context.saveGState()
-                context.clip(to: NSRect(x: x - flameWidth/2, y: artworkRect.maxY - flameHeight,
-                                       width: flameWidth, height: flameHeight))
-                context.drawLinearGradient(gradient, start: startPoint, end: endPoint, options: [])
-                context.restoreGState()
-            }
-        }
-        context.restoreGState()
-        
-        // Heat distortion tint
-        context.saveGState()
-        context.setBlendMode(.overlay)
-        context.setFillColor(NSColor.orange.withAlphaComponent(0.2 * bass * intensity).cgColor)
-        context.fill(artworkRect)
-        context.restoreGState()
-    }
-    
-    private func drawElectricEffect(context: CGContext, cgImage: CGImage, artworkRect: NSRect, contentRect: NSRect,
-                                    bass: CGFloat, mid: CGFloat, treble: CGFloat, level: CGFloat, t: CGFloat, intensity: CGFloat) {
-        // Draw base
-        context.saveGState()
-        context.translateBy(x: artworkRect.minX, y: artworkRect.maxY)
-        context.scaleBy(x: 1, y: -1)
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: artworkRect.width, height: artworkRect.height))
-        context.restoreGState()
-        
-        // Electric bolts on beats
-        if bass > 0.4 {
-            let boltCount = Int(bass * 5 * intensity)
-            
-            context.saveGState()
-            context.setBlendMode(.plusLighter)
-            context.setStrokeColor(NSColor.cyan.withAlphaComponent(0.8 * bass).cgColor)
-            context.setLineWidth(2)
-            
-            for _ in 0..<boltCount {
-                var x = CGFloat.random(in: artworkRect.minX...artworkRect.maxX)
-                var y = artworkRect.minY
-                
-                context.move(to: CGPoint(x: x, y: y))
-                
-                while y < artworkRect.maxY {
-                    x += CGFloat.random(in: -20...20) * intensity
-                    y += CGFloat.random(in: 10...30)
-                    context.addLine(to: CGPoint(x: x, y: y))
-                }
-                context.strokePath()
-            }
-            context.restoreGState()
-            
-            // Glow
-            context.saveGState()
-            context.setBlendMode(.plusLighter)
-            context.setStrokeColor(NSColor.white.withAlphaComponent(0.3 * bass).cgColor)
-            context.setLineWidth(6)
-            
-            for _ in 0..<boltCount / 2 {
-                var x = CGFloat.random(in: artworkRect.minX...artworkRect.maxX)
-                var y = artworkRect.minY
-                
-                context.move(to: CGPoint(x: x, y: y))
-                
-                while y < artworkRect.maxY {
-                    x += CGFloat.random(in: -20...20) * intensity
-                    y += CGFloat.random(in: 10...30)
-                    context.addLine(to: CGPoint(x: x, y: y))
-                }
-                context.strokePath()
-            }
-            context.restoreGState()
-        }
-        
-        // Electric tint
-        let tintAlpha = 0.15 * level * intensity
-        context.saveGState()
-        context.setBlendMode(.screen)
-        context.setFillColor(NSColor.cyan.withAlphaComponent(tintAlpha).cgColor)
-        context.fill(artworkRect)
-        context.restoreGState()
-    }
-    
     private func drawAlphabetIndex(in context: CGContext, rect: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
         // Background
         colors.normalBackground.withAlphaComponent(0.3).setFill()
@@ -7234,30 +4598,8 @@ class PlexBrowserView: NSView {
     // MARK: - Artwork Background
     
     @objc private func trackDidChange(_ notification: Notification) {
-        artModeLifecycleGeneration &+= 1
-        let generation = artModeLifecycleGeneration
         let track = notification.userInfo?["track"] as? Track
 
-        if isArtOnlyMode {
-            guard track != nil else {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self,
-                          self.artModeLifecycleGeneration == generation,
-                          self.isArtOnlyMode,
-                          WindowManager.shared.audioEngine.currentTrack == nil else { return }
-                    self.exitArtOnlyModeForMissingArtwork()
-                }
-                return
-            }
-
-            // Art-only mode uses loadAllArtworkForCurrentTrack exclusively.
-            // Don't also call loadArtwork(for:) to avoid a race where loadArtwork
-            // finishes last with nil and overwrites valid artwork.
-            fetchCurrentTrackRating()
-            loadAllArtworkForCurrentTrack()
-            return
-        }
-        
         guard WindowManager.shared.showBrowserArtworkBackground else {
             // Clear artwork if feature is disabled
             if currentArtwork != nil {
@@ -7705,165 +5047,6 @@ class PlexBrowserView: NSView {
         }
 
         return nil
-    }
-    
-    /// Extract all embedded artwork images from a local audio file
-    /// Returns array of images (deduped across different metadata formats)
-    private func loadAllLocalArtwork(url: URL) async -> [NSImage] {
-        var images: [NSImage] = []
-        var seenData: Set<Int> = []  // Track seen images by data hash
-        
-        let asset = AVURLAsset(url: url)
-        
-        do {
-            // Check common metadata
-            let metadata = try await asset.load(.metadata)
-            for item in metadata {
-                if item.commonKey == .commonKeyArtwork {
-                    if let data = try await item.load(.dataValue),
-                       let image = NSImage(data: data) {
-                        let hash = data.hashValue
-                        if !seenData.contains(hash) {
-                            seenData.insert(hash)
-                            images.append(image)
-                        }
-                    }
-                }
-            }
-            
-            // Check ID3 metadata (MP3 files - may have multiple APIC frames)
-            let id3Metadata = try await asset.loadMetadata(for: .id3Metadata)
-            for item in id3Metadata {
-                if item.commonKey == .commonKeyArtwork {
-                    if let data = try await item.load(.dataValue),
-                       let image = NSImage(data: data) {
-                        let hash = data.hashValue
-                        if !seenData.contains(hash) {
-                            seenData.insert(hash)
-                            images.append(image)
-                        }
-                    }
-                }
-            }
-            
-            // Check iTunes metadata (M4A/AAC files)
-            let itunesMetadata = try await asset.loadMetadata(for: .iTunesMetadata)
-            for item in itunesMetadata {
-                if item.commonKey == .commonKeyArtwork {
-                    if let data = try await item.load(.dataValue),
-                       let image = NSImage(data: data) {
-                        let hash = data.hashValue
-                        if !seenData.contains(hash) {
-                            seenData.insert(hash)
-                            images.append(image)
-                        }
-                    }
-                }
-            }
-        } catch {
-            NSLog("PlexBrowserView: Failed to load all local artwork: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-        }
-        
-        return images
-    }
-    
-    /// Cycle to the next artwork image in art-only mode
-    private func cycleToNextArtwork() {
-        guard artworkImages.count > 1 else {
-            // Only one image (or none) - nothing to cycle
-            return
-        }
-        
-        artworkIndex = (artworkIndex + 1) % artworkImages.count
-        currentArtwork = artworkImages[artworkIndex]
-        needsDisplay = true
-    }
-    
-    /// Load all available artwork for the currently playing track
-    private func loadAllArtworkForCurrentTrack() {
-        // ART mode owns the displayed artwork while active.
-        artworkLoadTask?.cancel()
-        artworkLoadTask = nil
-
-        // Cancel any pending artwork cycling task
-        artworkCyclingTask?.cancel()
-        artworkCyclingTask = nil
-        
-        guard let currentTrack = WindowManager.shared.audioEngine.currentTrack else {
-            exitArtOnlyModeForMissingArtwork()
-            return
-        }
-        
-        // Clear cycling array immediately to prevent cycling through stale images
-        // Note: Don't clear currentArtwork here - loadArtwork(for:) handles the main display
-        artworkImages = []
-        artworkIndex = 0
-        
-        artworkCyclingTask = Task { [weak self] in
-            guard let self = self else { return }
-            
-            var images: [NSImage] = []
-            
-            if currentTrack.url.isFileURL {
-                // Local file - extract all embedded artwork
-                images = await self.loadAllLocalArtwork(url: currentTrack.url)
-            } else if let plexRatingKey = currentTrack.plexRatingKey {
-                // Plex track - load track artwork using existing method
-                // Pass artworkThumb directly for reliability (especially for Plex Radio tracks not in cache)
-                if let image = await self.loadPlexArtwork(ratingKey: plexRatingKey, albumName: currentTrack.album, thumbPath: currentTrack.artworkThumb) {
-                    images.append(image)
-                }
-            } else if let subsonicId = currentTrack.subsonicId {
-                // Subsonic track - load cover art using existing method
-                if let image = await self.loadSubsonicArtwork(songId: subsonicId, albumName: currentTrack.album) {
-                    images.append(image)
-                }
-            } else if let jellyfinId = currentTrack.jellyfinId {
-                // Jellyfin track - load cover art
-                if let image = await self.loadJellyfinArtwork(itemId: jellyfinId, imageTag: nil) {
-                    images.append(image)
-                }
-            } else if RadioManager.shared.isActive {
-                if let image = await self.loadRadioArtwork(for: currentTrack) {
-                    images.append(image)
-                }
-            } else if let thumb = currentTrack.artworkThumb {
-                if let image = await self.loadRemoteArtwork(urlString: thumb, cacheNamespace: "generic") {
-                    images.append(image)
-                }
-            }
-            
-            // Check if task was cancelled
-            guard !Task.isCancelled else { return }
-            
-            await MainActor.run {
-                guard self.isArtOnlyMode,
-                      WindowManager.shared.audioEngine.currentTrack?.id == currentTrack.id else { return }
-                guard !images.isEmpty else {
-                    self.exitArtOnlyModeForMissingArtwork()
-                    return
-                }
-
-                self.artworkImages = images
-                self.artworkIndex = 0
-                self.currentArtwork = images.first
-                self.artworkTrackId = currentTrack.id
-                self.needsDisplay = true
-            }
-        }
-    }
-
-    private func exitArtOnlyModeForMissingArtwork() {
-        artworkLoadTask?.cancel()
-        artworkLoadTask = nil
-        artworkCyclingTask?.cancel()
-        artworkCyclingTask = nil
-        artworkImages = []
-        artworkIndex = 0
-        currentArtwork = nil
-        artworkTrackId = nil
-        isArtOnlyMode = false
-        needsDisplay = true
     }
     
     /// Load artwork based on the currently selected item in the browser
@@ -8438,7 +5621,7 @@ class PlexBrowserView: NSView {
         } else {
             NSCursor.arrow.set()
         }
-        let overList = !isArtOnlyMode && hitTestListArea(at: skinPoint) != nil
+        let overList = hitTestListArea(at: skinPoint) != nil
         rowThumbnails.hover(at: overList ? skinPoint : nil) {
             window?.convertToScreen(convert(convertFromSkinCoordinates($0), to: nil))
         }
@@ -8456,23 +5639,9 @@ class PlexBrowserView: NSView {
     }
     
     override func rightMouseDown(with event: NSEvent) {
-        cancelPendingArtSingleClickAction()
-        
         let point = convert(event.locationInWindow, from: nil)
         let skinPoint = convertToSkinCoordinates(point)
         
-        // Show visualizer menu if in art-only mode with visualization
-        if isArtOnlyMode && isVisualizingArt && hitTestContentArea(at: skinPoint) {
-            showVisualizerMenu(at: event)
-            return
-        }
-        
-        // Show art context menu if in art-only mode without visualization
-        if isArtOnlyMode && !isVisualizingArt && hitTestContentArea(at: skinPoint) {
-            showArtContextMenu(at: event)
-            return
-        }
-
         // Right-click on column header: show column visibility menu
         if hitTestColumnHeaderArea(at: skinPoint) {
             showColumnConfigMenu(at: event)
@@ -8480,7 +5649,7 @@ class PlexBrowserView: NSView {
         }
         
         // Check list area for item context menu
-        if !isArtOnlyMode, !browseMode.isHistoryMode, let clickedIndex = hitTestListArea(at: skinPoint) {
+        if !browseMode.isHistoryMode, let clickedIndex = hitTestListArea(at: skinPoint) {
             // Select the clicked item if not already selected
             if !selectedIndices.contains(clickedIndex) {
                 selectedIndices = [clickedIndex]
@@ -8628,323 +5797,9 @@ class PlexBrowserView: NSView {
         needsDisplay = true
     }
     
-    /// Show the visualizer effect selection menu
-    private func showVisualizerMenu(at event: NSEvent) {
-        let menu = NSMenu(title: "Visualizer")
-        
-        // Current effect + navigation at top
-        let currentItem = NSMenuItem(title: "▶ \(currentVisEffect.rawValue)", action: nil, keyEquivalent: "")
-        currentItem.isEnabled = false
-        menu.addItem(currentItem)
-        
-        let nextItem = NSMenuItem(title: "Next Effect →", action: #selector(menuNextEffect), keyEquivalent: "")
-        nextItem.target = self
-        menu.addItem(nextItem)
-        
-        let prevItem = NSMenuItem(title: "← Previous Effect", action: #selector(menuPrevEffect), keyEquivalent: "")
-        prevItem.target = self
-        menu.addItem(prevItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Mode selection (flat, not submenu)
-        let randomItem = NSMenuItem(title: "Random Mode", action: #selector(toggleRandomMode), keyEquivalent: "")
-        randomItem.target = self
-        randomItem.state = visMode == .random ? .on : .off
-        menu.addItem(randomItem)
-        
-        let cycleItem = NSMenuItem(title: "Auto-Cycle Mode", action: #selector(toggleCycleMode), keyEquivalent: "")
-        cycleItem.target = self
-        cycleItem.state = visMode == .cycle ? .on : .off
-        menu.addItem(cycleItem)
-        
-        // Cycle interval submenu
-        let intervalMenu = NSMenu()
-        for (name, seconds) in [("5 seconds", 5.0), ("10 seconds", 10.0), ("20 seconds", 20.0), ("30 seconds", 30.0)] {
-            let item = NSMenuItem(title: name, action: #selector(selectCycleSpeed(_:)), keyEquivalent: "")
-            item.target = self
-            item.tag = Int(seconds)
-            item.state = abs(cycleInterval - seconds) < 0.5 ? .on : .off
-            intervalMenu.addItem(item)
-        }
-        let intervalMenuItem = NSMenuItem(title: "Cycle Interval", action: nil, keyEquivalent: "")
-        intervalMenuItem.submenu = intervalMenu
-        menu.addItem(intervalMenuItem)
-        
-        menu.addItem(NSMenuItem.separator())
-
-        buildVisEffectGroupSubmenus(into: menu)
-
-        menu.addItem(NSMenuItem.separator())
-
-        let defaultItem = NSMenuItem(title: "Set Current as Default",
-                                     action: #selector(menuSetDefaultEffect),
-                                     keyEquivalent: "")
-        defaultItem.target = self
-        menu.addItem(defaultItem)
-        
-        // Intensity submenu
-        let intensityItem = NSMenuItem(title: "Intensity", action: nil, keyEquivalent: "")
-        let intensityMenu = NSMenu()
-        
-        let intensityLevels: [(String, CGFloat)] = [
-            ("Low", 0.5),
-            ("Medium", 0.75),
-            ("Normal", 1.0),
-            ("High", 1.5),
-            ("Extreme", 2.0)
-        ]
-        
-        for (name, value) in intensityLevels {
-            let item = NSMenuItem(title: name, action: #selector(selectVisIntensity(_:)), keyEquivalent: "")
-            item.target = self
-            item.tag = Int(value * 100)
-            item.state = abs(visEffectIntensity - value) < 0.1 ? .on : .off
-            intensityMenu.addItem(item)
-        }
-        intensityItem.submenu = intensityMenu
-        menu.addItem(intensityItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Quick hint
-        let hintItem = NSMenuItem(title: "Click: next • R: random • C: cycle • F: fullscreen", action: nil, keyEquivalent: "")
-        hintItem.isEnabled = false
-        menu.addItem(hintItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Fullscreen
-        let isFullscreen = window?.styleMask.contains(.fullScreen) ?? false
-        let fullscreenItem = NSMenuItem(title: isFullscreen ? "Exit Fullscreen" : "Fullscreen", action: #selector(toggleVisFullscreen), keyEquivalent: "")
-        fullscreenItem.target = self
-        menu.addItem(fullscreenItem)
-        
-        // Turn off visualization
-        let offItem = NSMenuItem(title: "Turn Off", action: #selector(turnOffVisualization), keyEquivalent: "")
-        offItem.target = self
-        menu.addItem(offItem)
-        
-        NSMenu.popUpContextMenu(menu, with: event, for: self)
-    }
-    
-    /// Show context menu for art-only mode (when visualization is off)
-    private func showArtContextMenu(at event: NSEvent) {
-        let menu = NSMenu(title: "Art")
-
-        // Enable visualization
-        let visItem = NSMenuItem(title: "Enable Visualization", action: #selector(enableArtVisualization), keyEquivalent: "")
-        visItem.target = self
-        menu.addItem(visItem)
-
-        // Visualization submenu — effect picker + set default
-        let visMenuContainer = NSMenuItem(title: "Visualization", action: nil, keyEquivalent: "")
-        let visSub = NSMenu(title: "Visualization")
-        buildVisEffectGroupSubmenus(into: visSub)
-        visSub.addItem(NSMenuItem.separator())
-        let defaultItem = NSMenuItem(title: "Set Current as Default",
-                                     action: #selector(menuSetDefaultEffect),
-                                     keyEquivalent: "")
-        defaultItem.target = self
-        visSub.addItem(defaultItem)
-        visMenuContainer.submenu = visSub
-        menu.addItem(visMenuContainer)
-
-        menu.addItem(NSMenuItem.separator())
-
-        // Exit art view
-        let exitItem = NSMenuItem(title: "Exit Art View", action: #selector(exitArtView), keyEquivalent: "")
-        exitItem.target = self
-        menu.addItem(exitItem)
-
-        NSMenu.popUpContextMenu(menu, with: event, for: self)
-    }
-    
-    @objc private func enableArtVisualization() {
-        isVisualizingArt = true
-    }
-    
-    @objc private func exitArtView() {
-        isArtOnlyMode = false
-    }
-    
-    @objc private func menuSetDefaultEffect() {
-        UserDefaults.standard.set(currentVisEffect.rawValue, forKey: "browserVisDefaultEffect")
-    }
-
-    @objc private func menuNextEffect() {
-        nextVisEffect()
-    }
-    
-    @objc private func menuPrevEffect() {
-        prevVisEffect()
-    }
-    
-    @objc private func toggleRandomMode() {
-        visMode = visMode == .random ? .single : .random
-    }
-    
-    @objc private func toggleCycleMode() {
-        if visMode == .cycle {
-            visMode = .single
-            cycleTimer?.invalidate()
-        } else {
-            visMode = .cycle
-            startCycleTimer()
-        }
-    }
-    
-    @objc private func toggleVisFullscreen() {
-        window?.toggleFullScreen(nil)
-    }
-    
-    /// Appends grouped effect submenus to `menu`. Each item is checked when it
-    /// matches `currentVisEffect`; bullet-marked when it matches the saved default.
-    private func buildVisEffectGroupSubmenus(into menu: NSMenu) {
-        let savedDefault = UserDefaults.standard.string(forKey: "browserVisDefaultEffect")
-        for group in VisEffect.groups {
-            let groupItem = NSMenuItem(title: group.title, action: nil, keyEquivalent: "")
-            let sub = NSMenu(title: group.title)
-            for effect in group.effects {
-                let item = NSMenuItem(title: effect.rawValue,
-                                      action: #selector(selectVisEffect(_:)),
-                                      keyEquivalent: "")
-                item.target = self
-                item.representedObject = effect
-                if effect == currentVisEffect {
-                    item.state = .on
-                } else if effect.rawValue == savedDefault {
-                    item.state = .mixed
-                }
-                sub.addItem(item)
-            }
-            groupItem.submenu = sub
-            menu.addItem(groupItem)
-        }
-    }
-
-    private func addEffectItem(_ effect: VisEffect, to menu: NSMenu) {
-        let item = NSMenuItem(title: effect.rawValue, action: #selector(selectVisEffect(_:)), keyEquivalent: "")
-        item.target = self
-        item.representedObject = effect
-        item.state = currentVisEffect == effect ? .on : .off
-        menu.addItem(item)
-    }
-    
-    @objc private func selectVisEffect(_ sender: NSMenuItem) {
-        if let effect = sender.representedObject as? VisEffect {
-            currentVisEffect = effect
-            visMode = .single  // Switch to single mode when selecting an effect
-            UserDefaults.standard.set(effect.rawValue, forKey: "browserVisEffect")
-        }
-    }
-    
-    @objc private func selectVisMode(_ sender: NSMenuItem) {
-        switch sender.tag {
-        case 0: visMode = .single
-        case 1: visMode = .random
-        case 2:
-            visMode = .cycle
-            startCycleTimer()
-        default: break
-        }
-    }
-    
-    @objc private func selectCycleSpeed(_ sender: NSMenuItem) {
-        cycleInterval = TimeInterval(sender.tag)
-        if visMode == .cycle {
-            startCycleTimer()
-        }
-    }
-    
-    @objc private func selectVisIntensity(_ sender: NSMenuItem) {
-        visEffectIntensity = CGFloat(sender.tag) / 100.0
-        UserDefaults.standard.set(visEffectIntensity, forKey: "browserVisIntensity")
-    }
-    
-    @objc private func turnOffVisualization() {
-        isVisualizingArt = false
-    }
-    
-    /// Cycle to next effect
-    private func nextVisEffect() {
-        visMode = .single
-        let effects = VisEffect.allCases
-        if let currentIndex = effects.firstIndex(of: currentVisEffect) {
-            let nextIndex = (currentIndex + 1) % effects.count
-            currentVisEffect = effects[nextIndex]
-        }
-    }
-    
-    /// Cycle to previous effect
-    private func prevVisEffect() {
-        visMode = .single
-        let effects = VisEffect.allCases
-        if let currentIndex = effects.firstIndex(of: currentVisEffect) {
-            let prevIndex = (currentIndex - 1 + effects.count) % effects.count
-            currentVisEffect = effects[prevIndex]
-        }
-    }
-    
-    /// Check if point is in content area
-    private func hitTestContentArea(at point: NSPoint) -> Bool {
-        let contentY = Layout.titleBarHeight + Layout.serverBarHeight
-        let contentHeight = originalWindowSize.height - contentY - Layout.statusBarHeight
-        let contentRect = NSRect(x: Layout.leftBorder, y: contentY,
-                                 width: originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth,
-                                 height: contentHeight)
-        return contentRect.contains(point)
-    }
-    
-    private func cancelPendingArtSingleClickAction() {
-        pendingArtSingleClickWorkItem?.cancel()
-        pendingArtSingleClickWorkItem = nil
-    }
-    
-    private func scheduleArtSingleClickRatingOverlay() {
-        cancelPendingArtSingleClickAction()
-        
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self else { return }
-            self.pendingArtSingleClickWorkItem = nil
-            guard self.isArtOnlyMode, !self.isVisualizingArt else { return }
-            self.showRatingOverlay()
-        }
-        
-        pendingArtSingleClickWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: workItem)
-    }
-    
-    private func handleArtOnlyContentClick(_ event: NSEvent) {
-        if event.clickCount >= 2 {
-            cancelPendingArtSingleClickAction()
-            cycleToNextArtwork()
-            return
-        }
-        
-        scheduleArtSingleClickRatingOverlay()
-    }
-    
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let skinPoint = convertToSkinCoordinates(point)
-        
-        // Any new click should clear a pending single-click action unless this click
-        // re-schedules/handles the art-only interaction.
-        cancelPendingArtSingleClickAction()
-        
-        // In visualization mode, click anywhere in content to cycle effects
-        if isArtOnlyMode && isVisualizingArt && hitTestContentArea(at: skinPoint) {
-            nextVisEffect()
-            return
-        }
-        
-        // In art-only mode without visualization:
-        // single-click opens rating overlay, double-click cycles artwork.
-        if isArtOnlyMode && !isVisualizingArt && hitTestContentArea(at: skinPoint) {
-            handleArtOnlyContentClick(event)
-            return
-        }
         
         // Check for column resize
         if let header = columnHeader(at: skinPoint), let columnId = hitTestColumnResize(at: skinPoint) {
@@ -9074,18 +5929,6 @@ class PlexBrowserView: NSView {
     private func handleServerBarClick(at skinPoint: NSPoint, event: NSEvent) {
         if refreshButtonRect.contains(skinPoint) {
             handleRefreshClick()
-            return
-        }
-        if artButtonRect.contains(skinPoint) {
-            isArtOnlyMode.toggle()
-            return
-        }
-        if visButtonRect.contains(skinPoint) {
-            toggleVisualization()
-            return
-        }
-        if rateButtonRect.contains(skinPoint) {
-            showRatingOverlay()
             return
         }
 
@@ -10939,13 +7782,6 @@ class PlexBrowserView: NSView {
             playItem.target = self
             playItem.representedObject = item
             menu.addItem(playItem)
-            
-            menu.addItem(NSMenuItem.separator())
-            
-            let viewArtItem = NSMenuItem(title: "View Art", action: #selector(contextMenuViewPlexRadioArt(_:)), keyEquivalent: "")
-            viewArtItem.target = self
-            viewArtItem.representedObject = item
-            menu.addItem(viewArtItem)
 
         case .subsonicRadioStation:
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlaySubsonicRadioStation(_:)), keyEquivalent: "")
@@ -11440,12 +8276,6 @@ class PlexBrowserView: NSView {
         playLocalRadioStation(radioType)
     }
     
-    @objc private func contextMenuViewPlexRadioArt(_ sender: NSMenuItem) {
-        // Enter art-only mode - will display the currently playing track's artwork
-        if currentArtwork != nil {
-            isArtOnlyMode = true
-        }
-    }
     
     @objc private func contextMenuDeleteLocalArtist(_ sender: NSMenuItem) {
         guard let artist = sender.representedObject as? Artist else { return }
@@ -12625,91 +9455,6 @@ class PlexBrowserView: NSView {
     override var acceptsFirstResponder: Bool { true }
     
     override func keyDown(with event: NSEvent) {
-        // Rating overlay shortcuts:
-        // - Escape dismisses
-        // - Delete/Backspace clears rating
-        // - Number keys 1-5 set stars
-        if isRatingOverlayVisible {
-            switch event.keyCode {
-            case 53: // Escape
-                hideRatingOverlay()
-                return
-            case 51, 117: // Delete/Backspace or Forward Delete
-                ratingOverlay.setRating(0)
-                submitRating(0)
-                return
-            case 18...22: // 1-5 keys
-                let starRating = Int(event.keyCode - 17)
-                ratingOverlay.setRating(starRating * 2)
-                submitRating(starRating * 2)
-                return
-            default:
-                break
-            }
-        }
-        
-        // Handle visualizer controls when in visualization mode
-        if isVisualizingArt && isArtOnlyMode {
-            switch event.keyCode {
-            case 123: // Left arrow - previous effect
-                visMode = .single
-                let effects = VisEffect.allCases
-                if let currentIndex = effects.firstIndex(of: currentVisEffect) {
-                    let prevIndex = (currentIndex - 1 + effects.count) % effects.count
-                    currentVisEffect = effects[prevIndex]
-                }
-                return
-                
-            case 124: // Right arrow - next effect
-                visMode = .single
-                let effects = VisEffect.allCases
-                if let currentIndex = effects.firstIndex(of: currentVisEffect) {
-                    let nextIndex = (currentIndex + 1) % effects.count
-                    currentVisEffect = effects[nextIndex]
-                }
-                return
-                
-            case 126: // Up arrow - increase intensity
-                visEffectIntensity = min(2.0, visEffectIntensity + 0.25)
-                return
-                
-            case 125: // Down arrow - decrease intensity
-                visEffectIntensity = max(0.5, visEffectIntensity - 0.25)
-                return
-                
-            case 53: // Escape - turn off visualization
-                isVisualizingArt = false
-                return
-                
-            case 15: // R key - toggle random mode
-                visMode = visMode == .random ? .single : .random
-                return
-                
-            case 8: // C key - toggle cycle mode
-                if visMode == .cycle {
-                    visMode = .single
-                    cycleTimer?.invalidate()
-                } else {
-                    visMode = .cycle
-                    startCycleTimer()
-                }
-                return
-                
-            case 3: // F key - toggle fullscreen
-                window?.toggleFullScreen(nil)
-                return
-                
-            default:
-                break
-            }
-        }
-        
-        // Handle Escape in art-only mode (without visualization)
-        if isArtOnlyMode && !isVisualizingArt && event.keyCode == 53 {
-            isArtOnlyMode = false
-            return
-        }
-
         if browseMode.isHistoryMode {
             super.keyDown(with: event)
             return
@@ -12730,23 +9475,19 @@ class PlexBrowserView: NSView {
             }
             
         case 125: // Down arrow
-            if !isVisualizingArt {
-                if let maxIndex = selectedIndices.max(), maxIndex < displayItems.count - 1 {
-                    selectedIndices = [maxIndex + 1]
-                    ensureVisible(index: maxIndex + 1)
-                    loadArtworkForSelection()
-                    needsDisplay = true
-                }
+            if let maxIndex = selectedIndices.max(), maxIndex < displayItems.count - 1 {
+                selectedIndices = [maxIndex + 1]
+                ensureVisible(index: maxIndex + 1)
+                loadArtworkForSelection()
+                needsDisplay = true
             }
             
         case 126: // Up arrow
-            if !isVisualizingArt {
-                if let minIndex = selectedIndices.min(), minIndex > 0 {
-                    selectedIndices = [minIndex - 1]
-                    ensureVisible(index: minIndex - 1)
-                    loadArtworkForSelection()
-                    needsDisplay = true
-                }
+            if let minIndex = selectedIndices.min(), minIndex > 0 {
+                selectedIndices = [minIndex - 1]
+                ensureVisible(index: minIndex - 1)
+                loadArtworkForSelection()
+                needsDisplay = true
             }
             
         default:
@@ -17229,187 +13970,6 @@ extension PlexBrowserView: NSWindowDelegate {
                 activeEditVideoTagsPanel = nil
             }
         }
-    }
-}
-
-// MARK: - Rating Overlay
-
-/// Semi-transparent glass-style star rating overlay for rating Plex tracks
-class RatingOverlayView: NSView {
-    
-    var onRatingSelected: ((Int) -> Void)?
-    var onDismiss: (() -> Void)?
-    
-    private var hoveredStar: Int = 0
-    private var selectedRating: Int = 0
-    private let starCount = 5
-    private let starSize: CGFloat = 48
-    private let starSpacing: CGFloat = 12
-    
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        setupView()
-    }
-    
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        setupView()
-    }
-    
-    private func setupView() {
-        wantsLayer = true
-        // Semi-transparent dark background for the full overlay
-        layer?.backgroundColor = NSColor(white: 0, alpha: 0.5).cgColor
-    }
-    
-    func setRating(_ rating: Int) {
-        // rating is on Plex 0-10 scale, convert to 1-5 stars
-        selectedRating = rating / 2
-        needsDisplay = true
-    }
-    
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        
-        // Calculate centered position for star container
-        let totalWidth = CGFloat(starCount) * starSize + CGFloat(starCount - 1) * starSpacing
-        let containerWidth = totalWidth + 40  // padding
-        let containerHeight = starSize + 40
-        let containerX = (bounds.width - containerWidth) / 2
-        let containerY = (bounds.height - containerHeight) / 2
-        let containerRect = NSRect(x: containerX, y: containerY, width: containerWidth, height: containerHeight)
-        
-        // Draw frosted glass background for star container
-        context.saveGState()
-        let path = NSBezierPath(roundedRect: containerRect, xRadius: 16, yRadius: 16)
-        NSColor(white: 1.0, alpha: 0.15).setFill()
-        path.fill()
-        
-        // Draw subtle border
-        NSColor(white: 1.0, alpha: 0.3).setStroke()
-        path.lineWidth = 1
-        path.stroke()
-        context.restoreGState()
-        
-        // Draw stars
-        let startX = containerX + 20
-        let starY = containerY + 20
-        
-        for i in 0..<starCount {
-            let starX = startX + CGFloat(i) * (starSize + starSpacing)
-            let starRect = NSRect(x: starX, y: starY, width: starSize, height: starSize)
-            
-            let starNumber = i + 1
-            let isFilled = starNumber <= max(hoveredStar, selectedRating)
-            let isHovered = starNumber <= hoveredStar && hoveredStar > 0
-            
-            drawStar(in: starRect, filled: isFilled, hovered: isHovered, context: context)
-        }
-    }
-    
-    private func drawStar(in rect: NSRect, filled: Bool, hovered: Bool, context: CGContext) {
-        // Star path (5-pointed star)
-        let center = NSPoint(x: rect.midX, y: rect.midY)
-        let outerRadius = rect.width / 2
-        let innerRadius = outerRadius * 0.4
-        
-        let path = NSBezierPath()
-        for i in 0..<10 {
-            let radius = i % 2 == 0 ? outerRadius : innerRadius
-            // Start at the top point so stars render upright in AppKit coordinates.
-            let angle = CGFloat(i) * .pi / 5 + .pi / 2
-            let point = NSPoint(
-                x: center.x + radius * cos(angle),
-                y: center.y + radius * sin(angle)
-            )
-            if i == 0 {
-                path.move(to: point)
-            } else {
-                path.line(to: point)
-            }
-        }
-        path.close()
-        
-        // Glass effect colors
-        if filled {
-            // Filled star: warm gold (slightly brighter on hover).
-            (hovered
-                ? NSColor(calibratedRed: 1.00, green: 0.86, blue: 0.28, alpha: 0.98)
-                : NSColor(calibratedRed: 0.98, green: 0.78, blue: 0.20, alpha: 0.92)
-            ).setFill()
-        } else {
-            // Empty star: dim gold glass fill.
-            NSColor(calibratedRed: 0.75, green: 0.63, blue: 0.30, alpha: 0.22).setFill()
-        }
-        path.fill()
-        
-        // Gold-tinted outline for both filled and empty states.
-        (filled
-            ? NSColor(calibratedRed: 1.00, green: 0.90, blue: 0.45, alpha: 0.85)
-            : NSColor(calibratedRed: 0.86, green: 0.72, blue: 0.35, alpha: 0.45)
-        ).setStroke()
-        path.lineWidth = 1.5
-        path.stroke()
-    }
-    
-    // MARK: - Mouse Handling
-    
-    override func mouseMoved(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        hoveredStar = starAtPoint(point)
-        needsDisplay = true
-    }
-    
-    override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let clickedStar = starAtPoint(point)
-
-        if clickedStar > 0 {
-            selectedRating = clickedStar
-            needsDisplay = true
-            // Convert 1-5 stars to Plex 0-10 scale (each star = 2 points)
-            onRatingSelected?(clickedStar * 2)
-        } else {
-            // Clicked outside stars - dismiss
-            onDismiss?()
-        }
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        // Consume drag events to prevent them from propagating to the parent view,
-        // which would otherwise interpret the drag as a window move (when Hide Title Bars is on).
-    }
-
-    private func starAtPoint(_ point: NSPoint) -> Int {
-        let totalWidth = CGFloat(starCount) * starSize + CGFloat(starCount - 1) * starSpacing
-        let containerWidth = totalWidth + 40
-        let containerHeight = starSize + 40
-        let containerX = (bounds.width - containerWidth) / 2
-        let containerY = (bounds.height - containerHeight) / 2
-        let startX = containerX + 20
-        let starY = containerY + 20
-        
-        for i in 0..<starCount {
-            let starX = startX + CGFloat(i) * (starSize + starSpacing)
-            let starRect = NSRect(x: starX, y: starY, width: starSize, height: starSize)
-            if starRect.contains(point) {
-                return i + 1
-            }
-        }
-        return 0
-    }
-    
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach { removeTrackingArea($0) }
-        addTrackingArea(NSTrackingArea(
-            rect: bounds,
-            options: [.mouseMoved, .activeInKeyWindow],
-            owner: self,
-            userInfo: nil
-        ))
     }
 }
 

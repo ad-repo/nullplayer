@@ -793,35 +793,6 @@ public struct SkinElements {
         }
     }
     
-    // MARK: - Art Visualizer Window
-    // Audio-reactive album art visualization window
-    // Uses same chrome style as ProjectM window
-    
-    struct ArtVisualizer {
-        /// Minimum window size
-        public static let minSize = NSSize(width: 300, height: 300)
-        
-        /// Default window size - square for album art
-        public static let defaultSize = NSSize(width: 500, height: 500)
-        
-        /// Title bar height (same as ProjectM/playlist)
-        public static let titleBarHeight: CGFloat = 20
-
-        /// Layout constants
-        struct Layout {
-            public static let titleBarHeight: CGFloat = 20
-            public static let leftBorder: CGFloat = 3
-            public static let rightBorder: CGFloat = 3
-            public static let bottomBorder: CGFloat = 3
-        }
-
-        /// Window control button positions in title bar
-        struct TitleBarButtons {
-            // Relative to right edge of window (same as ProjectM)
-            public static let closeOffset: CGFloat = 11
-        }
-    }
-    
     // MARK: - GEN.BMP (Generic/AVS/ProjectM window)
     
     /// Sprites from GEN.BMP - used for AVS/ProjectM window chrome

@@ -113,9 +113,9 @@ final class WinampModernPlacementGatingTests: XCTestCase {
     /// substituted for one another.
     func testDockingMembershipOrderIsNotTheStackingOrder() {
         let stacking = ["main", "equalizer", "playlist", "spectrum", "audioAnalysis", "peppyMeter",
-                        "networkMonitor", "cava", "waveform", "video", "projectM", "library"]
+                        "art", "networkMonitor", "cava", "waveform", "video", "projectM", "library"]
         let dockingMembership = ["main", "playlist", "equalizer", "spectrum", "audioAnalysis",
-                                 "peppyMeter", "networkMonitor", "cava", "waveform", "library",
+                                 "peppyMeter", "art", "networkMonitor", "cava", "waveform", "library",
                                  "projectM", "video"]
 
         XCTAssertEqual(Set(stacking), Set(dockingMembership), "same windows")

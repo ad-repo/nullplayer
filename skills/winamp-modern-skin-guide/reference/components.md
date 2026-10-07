@@ -716,7 +716,7 @@ Two consequences worth knowing before changing it:
 
 #### NullPlayer-owned hosted windows are lazy
 
-Spectrum, Cava, Flow, PeppyMeter, Audio Analysis, Waveform, ProjectM — and the fallback equalizer —
+Spectrum, Cava, Flow, PeppyMeter, Art, Audio Analysis, Waveform, ProjectM — and the fallback equalizer —
 use a second, typed window catalog. All but the equalizer are application features rather than Winamp
 component GUIDs, so they must never be added to `WinampModernComponentRegistry` or to load-time
 component synthesis. The equalizer is the one exception, and only on its *fallback* path: it is still
