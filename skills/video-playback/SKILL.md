@@ -23,8 +23,13 @@ Video plays in its own window through VLCKit (libVLC 3.0.12.1, vendored in
 ## Routing rules
 
 - **Every way into a video goes through `loadTrack` routing.** A path that opens a playlist item
-  with `AVAudioFile` directly plays the video's audio with no window. Sweet Fades does this today:
-  `startCrossfade()` never checks `mediaType` (MISC_TASKS M3).
+  with `AVAudioFile` directly plays the video's audio with no window. Sweet Fades and gapless are
+  the two that pre-load the next track; both ask `AudioEngine.canHandOff(to:fromStreaming:)` first,
+  which refuses a video, so a new pre-load path must too.
+- **Routing a video halts the audio through `haltAudioOutput()`**, which invalidates
+  `playbackGeneration` before stopping. Stopping a node fires its track's completion, and a live
+  one ran as a natural end: double-clicking a video over playing audio loaded the next row behind
+  the window. It also stops the crossfade node, which holds the audio after a completed fade.
 - **The vendored VLCKit reports the end of a film as `.paused`, never `.ended`** — see the
   `mediaPlayerStateChanged` comment; end-of-film handling keys off that pause.
 - **Windows → Video Player is inert until a video has been opened** — the controller is created on

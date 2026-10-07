@@ -73,6 +73,10 @@
 - **Classic and Original skins each keep their own EQ** — Original and Metal skins use a 21-band EQ
   and the others use 10 bands. Each now remembers its own curve across relaunches, so switching
   between them no longer softens the EQ a little more each time.
+- **A video after a song opens in its window with Sweet Fades or Gapless on** — with either on, a
+  video that followed a song in the playlist played as audio only, with no video window. It now
+  opens in the video player like any other video. Double-clicking a video while music plays also no
+  longer starts the next song in the background.
 
 ## 0.31.4
 

@@ -2667,16 +2667,8 @@ class AudioEngine {
 
         // Capture position before stopping for Plex reporting
         let stopPosition = currentTime
-        
-        // Increment generation to invalidate completion handlers
-        playbackGeneration += 1
-        
-        if isStreamingPlayback {
-            streamingPlayer?.stop()
-        } else {
-            playerNode.stop()
-        }
-        resetLocalCrossfadeStateForDirectPlayback()
+
+        haltAudioOutput()
         resetStoppedTransportToStart()
         
         // Report stop to Plex (not finished - user manually stopped)
@@ -2693,6 +2685,19 @@ class AudioEngine {
 
         // Clear spectrum analyzer
         clearSpectrum()
+    }
+
+    /// Silences every player, whichever node or pipeline holds the audio. The generation moves
+    /// first: stopping a node fires its track's completion, which would otherwise run as a natural
+    /// end and advance the playlist (a video double-clicked over playing audio loaded the next row).
+    private func haltAudioOutput() {
+        playbackGeneration += 1
+        if isStreamingPlayback {
+            streamingPlayer?.stop()
+        } else {
+            playerNode.stop()
+        }
+        resetLocalCrossfadeStateForDirectPlayback()
     }
 
     /// Leaves playback whose players the caller has just stopped at 0:00, stopped, with a local
@@ -4566,12 +4571,7 @@ class AudioEngine {
             _currentTime = 0
             lastReportedTime = 0
             
-            // Stop any audio playback and reset streaming state
-            if isStreamingPlayback {
-                streamingPlayer?.stop()
-            } else {
-                playerNode.stop()
-            }
+            haltAudioOutput()
             isStreamingPlayback = false  // Reset to neutral state for video playback
             
             // Route to video player via WindowManager
@@ -5567,25 +5567,16 @@ class AudioEngine {
         }
         
         let nextTrack = playlist[nextIndex]
-        
+        guard Self.canHandOff(to: nextTrack, fromStreaming: isStreamingPlayback) else {
+            NSLog("Gapless: '%@' can't follow on this pipeline, leaving it to the end-of-track advance", nextTrack.title)
+            return
+        }
+
         if isStreamingPlayback {
-            // Streaming gapless - only if next track is also streaming
-            let nextIsStreaming = nextTrack.url.scheme == "http" || nextTrack.url.scheme == "https"
-            guard nextIsStreaming else {
-                NSLog("Gapless: Next track is local file, can't queue for streaming gapless")
-                return
-            }
-            
             streamingPlayer?.queue(url: nextTrack.url)
             nextScheduledTrackIndex = nextIndex
             NSLog("Gapless: Queued streaming track: %@", nextTrack.title)
         } else {
-            // Local file gapless
-            guard nextTrack.url.isFileURL else {
-                NSLog("Gapless: Next track is streaming, can't queue for local gapless")
-                return
-            }
-
             // Clear the currently prepared local file while we asynchronously prepare the next one.
             nextScheduledFile = nil
             nextScheduledTrackIndex = -1
@@ -5665,6 +5656,14 @@ class AudioEngine {
         }
     }
 
+    /// Whether `track` can be fed straight into the pipeline now playing, as gapless and Sweet
+    /// Fades do. Both bypass `loadTrack`'s routing, so a video (its own window), a placeholder
+    /// (resolved first) or a track for the other pipeline is left to the end-of-track advance.
+    static func canHandOff(to track: Track, fromStreaming isStreamingPlayback: Bool) -> Bool {
+        guard track.mediaType != .video, !track.isStreamingPlaceholder else { return false }
+        return isStreamingPlayback == (track.url.scheme == "http" || track.url.scheme == "https")
+    }
+
     private func clearCrossfadeDeclineLatch() {
         crossfadeDeclinedForBoundary = nil
     }
@@ -5700,14 +5699,9 @@ class AudioEngine {
         }
         
         let nextTrack = playlist[nextIndex]
-        
-        // Check if next track is same source type (can't crossfade mixed sources)
-        let currentIsStreaming = isStreamingPlayback
-        let nextIsStreaming = nextTrack.url.scheme == "http" || nextTrack.url.scheme == "https"
-        
-        guard currentIsStreaming == nextIsStreaming else {
+        guard Self.canHandOff(to: nextTrack, fromStreaming: isStreamingPlayback) else {
             markCrossfadeDeclinedForCurrentBoundary()
-            NSLog("Sweet Fades: Skipping crossfade - mixed source types")
+            NSLog("Sweet Fades: Skipping crossfade - '%@' can't follow on this pipeline", nextTrack.title)
             return
         }
         

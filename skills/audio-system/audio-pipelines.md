@@ -28,6 +28,7 @@ Local playback completion must use `scheduleFile(_:at:completionCallbackType:com
 | Sweet Fades enabled | Gapless disabled - crossfade handles transitions |
 | Casting active | Gapless disabled - playback is remote |
 | Mixed sources (local→streaming) | Gapless disabled for that transition |
+| Next track is a video or an unresolved placeholder | Not pre-scheduled; the end-of-track advance routes it (`canHandOff`) |
 | Repeat single track mode | Handled separately (gapless not needed) |
 | Shuffle mode | The next item from the active non-repeating shuffle cycle is pre-scheduled |
 
@@ -83,6 +84,7 @@ Configurable via **Playback Options → Fade Duration** when Sweet Fades is enab
 |----------|----------|
 | Casting active | Crossfade disabled - playback is remote |
 | Mixed sources (local→streaming) | Crossfade skipped for that transition |
+| Next track is a video or an unresolved placeholder | Crossfade skipped; the end-of-track advance routes it (`canHandOff`) |
 | Next track shorter than 2x fade | Crossfade skipped (track too short) |
 | Repeat single track mode | Crossfade skipped (unusual UX) |
 | End of playlist | No crossfade, normal stop |
