@@ -1417,9 +1417,7 @@ class ModernLibraryBrowserView: NSView {
             let listRect = layout.area
 
             // Offline volume banner (local source only, under the list)
-            if offlineBannerHeight > 0 {
-                let bannerRect = NSRect(x: listRect.minX, y: contentRegionBottomY,
-                                        width: listRect.width, height: offlineBannerHeight)
+            if let bannerRect = layout.banner {
                 drawOfflineBanner(in: context, rect: bannerRect, skin: skin)
             }
 
@@ -3232,6 +3230,8 @@ class ModernLibraryBrowserView: NSView {
         let rows: NSRect
         /// The alphabet index, beside the rows.
         let alphabet: NSRect
+        /// The offline-volume banner under `area`, when a local watch folder is offline.
+        let banner: NSRect?
 
         struct Header {
             let rect: NSRect
@@ -3245,12 +3245,9 @@ class ModernLibraryBrowserView: NSView {
             - (browseMode == .search ? Layout.searchBarHeight : 0)
     }
 
-    private var offlineBannerHeight: CGFloat {
-        isLocalSource && !offlineWatchFolders.isEmpty ? Layout.offlineBannerHeight : 0
-    }
-
     private func listLayout() -> ListLayout {
-        let bottomY = contentRegionBottomY + offlineBannerHeight
+        let showsBanner = isLocalSource && !offlineWatchFolders.isEmpty
+        let bottomY = contentRegionBottomY + (showsBanner ? Layout.offlineBannerHeight : 0)
         let area = NSRect(x: Layout.borderWidth, y: bottomY,
                           width: bounds.width - Layout.borderWidth * 2, height: listTopY - bottomY)
         let columns = currentVisibleColumns()
@@ -3263,7 +3260,8 @@ class ModernLibraryBrowserView: NSView {
             header: columns.isEmpty ? nil : .init(rect: NSRect(x: rows.minX, y: rows.maxY, width: rows.width, height: headerHeight),
                                                   columns: columns),
             rows: rows,
-            alphabet: NSRect(x: rows.maxX, y: rows.minY, width: Layout.alphabetWidth, height: rows.height)
+            alphabet: NSRect(x: rows.maxX, y: rows.minY, width: Layout.alphabetWidth, height: rows.height),
+            banner: showsBanner ? NSRect(x: area.minX, y: contentRegionBottomY, width: area.width, height: Layout.offlineBannerHeight) : nil
         )
     }
 
@@ -3421,10 +3419,9 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func clampHorizontalScrollOffset() {
-        let columns = currentVisibleColumns()
-        let group = currentColumnGroup()
-        let availableWidth = listLayout().rows.width
-        let maxOffset = max(0, totalColumnsWidth(columns: columns, availableWidth: availableWidth, group: group) - availableWidth)
+        guard let header = listLayout().header else { horizontalScrollOffset = 0; return }
+        let availableWidth = header.rect.width
+        let maxOffset = max(0, totalColumnsWidth(columns: header.columns, availableWidth: availableWidth, group: currentColumnGroup()) - availableWidth)
         horizontalScrollOffset = max(0, min(horizontalScrollOffset, maxOffset))
     }
     
@@ -4076,13 +4073,13 @@ class ModernLibraryBrowserView: NSView {
         }
         
         // Column resize (check before sort so edge-drag doesn't trigger sort)
-        if let columnId = hitTestColumnResize(at: point) {
+        if let header = columnHeader(at: point), let columnId = hitTestColumnResize(at: point) {
             resizingColumnId = columnId
             resizingColumnGroup = currentColumnGroup()
             resizeStartX = point.x
-            let columns = currentVisibleColumns()
+            let columns = header.columns
             let group = resizingColumnGroup
-            let headerWidth = listLayout().rows.width
+            let headerWidth = header.rect.width
             resizeStartWidth = widthForColumn(ModernBrowserColumn.findColumn(id: columnId)!, availableWidth: headerWidth, columns: columns, group: group)
             // Freeze the title column's current width so it doesn't flex during resize
             if let group, storedColumnWidth(for: .title, group: group) == nil {
@@ -4235,7 +4232,7 @@ class ModernLibraryBrowserView: NSView {
         let totalHeight = CGFloat(displayItems.count) * itemHeight
         let verticalDelta = verticalScrollDelta(from: event)
         // The list with its header and the offline banner: a horizontal scroll moves the header too.
-        let dirtyRect = NSRect(x: 0, y: contentRegionBottomY, width: bounds.width, height: listTopY - contentRegionBottomY)
+        let dirtyRect = layout.banner.map { layout.area.union($0) } ?? layout.area
 
         if totalHeight > listHeight && verticalDelta != 0 {
             scrollOffset = max(0, min(totalHeight - listHeight, scrollOffset - verticalDelta))
@@ -4243,11 +4240,9 @@ class ModernLibraryBrowserView: NSView {
         }
 
         let horizontalDelta = horizontalScrollDelta(from: event)
-        if horizontalDelta != 0 {
-            let columns = currentVisibleColumns()
-            let group = currentColumnGroup()
-            let availableWidth = layout.rows.width
-            let totalWidth = totalColumnsWidth(columns: columns, availableWidth: availableWidth, group: group)
+        if horizontalDelta != 0, let header = layout.header {
+            let availableWidth = header.rect.width
+            let totalWidth = totalColumnsWidth(columns: header.columns, availableWidth: availableWidth, group: currentColumnGroup())
             let maxOffset = max(0, totalWidth - availableWidth)
             if maxOffset > 0 {
                 horizontalScrollOffset = max(0, min(maxOffset, horizontalScrollOffset - horizontalDelta))

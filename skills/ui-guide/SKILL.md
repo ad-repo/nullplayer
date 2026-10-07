@@ -971,13 +971,17 @@ library list, toggled by a **FLOW** button. It is a visual lens over the browser
 `ModernLibraryBrowserView` and `PlexBrowserView` each work out the list's geometry in one place,
 `listLayout()`, returning `area` (below the tab and search bars, full inner width; the loading,
 error and art views fill it), `header` (the column-header rect and its columns, `nil` when the list
-has no columns), `rows` (under the header, left of the scrollbar and alphabet index) and
-`alphabet`. Drawing, every hit test, every column-width calculation and every scroll range read it.
+has no columns), `rows` (under the header, left of the scrollbar and alphabet index),
+`alphabet`, and in the modern browser `banner` (the offline-volume banner under `area`, `nil` when
+no watch folder is offline). Drawing, every hit test, every column-width calculation and every
+scroll range read it; a site that needs the columns takes `header.columns`, never a second
+`currentVisibleColumns()` call.
 Never rebuild "tab bar, then search bar, then header" at a call site: PR #480 was a header reserved
 on one condition when drawn and another when hit-tested, so every click landed one row up.
 
 - **Coordinates:** classic is skin space (top-left origin, `originalWindowSize`); modern is view
   space (bottom-left). `listTopY` is the bottom of the tab bar, or of the search bar in search mode.
+  A classic dirty rect goes through `convertFromSkinCoordinates`, which knows about Hide Title Bars.
 - **Scroll ranges use `rows.height`.** The header, and in the modern browser the offline-volume
   banner, are not visible list height; counting them hid the last row (M8).
 - **Header hit tests differ on purpose:** the modern browser matches the header band at any x, so

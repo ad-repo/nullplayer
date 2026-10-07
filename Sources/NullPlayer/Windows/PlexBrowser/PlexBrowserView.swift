@@ -562,10 +562,8 @@ class PlexBrowserView: NSView {
     }
 
     private func clampHorizontalScrollOffset() {
-        let columns = currentVisibleColumns()
-        let group = currentColumnGroup()
-        let availableWidth = listLayout().rows.width
-        let maxOffset = max(0, totalColumnsWidth(columns: columns, group: group) - availableWidth)
+        guard let header = listLayout().header else { horizontalScrollOffset = 0; return }
+        let maxOffset = max(0, totalColumnsWidth(columns: header.columns, group: currentColumnGroup()) - header.rect.width)
         horizontalScrollOffset = max(0, min(horizontalScrollOffset, maxOffset))
     }
     
@@ -4406,7 +4404,7 @@ class PlexBrowserView: NSView {
     }
     
     private func drawSearchBar(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
-        let searchY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
+        let searchY = listTopY - Layout.searchBarHeight
         let searchRect = NSRect(x: Layout.leftBorder + Layout.padding, y: searchY + 3,
                                width: drawBounds.width - Layout.leftBorder - Layout.rightBorder - Layout.padding * 2,
                                height: Layout.searchBarHeight - 6)
@@ -6784,11 +6782,9 @@ class PlexBrowserView: NSView {
             if self.isLoading || self.youtubeVideoActions.hasFetchesInFlight || YouTubeChannelUploads.shared.hasFetchesInFlight {
                 // Only redraw the list area where the loading spinner is displayed
                 // This prevents menu items from shimmering on non-Retina displays
-                let listHeight = self.listLayout().area.height
-                // Convert from skin top-down coordinates to macOS bottom-up coordinates
-                let nativeY = self.Layout.statusBarHeight
-                let listRect = NSRect(x: 0, y: nativeY, width: self.bounds.width, height: listHeight)
-                self.setNeedsDisplay(listRect)
+                let area = self.listLayout().area
+                self.setNeedsDisplay(self.convertFromSkinCoordinates(
+                    NSRect(x: 0, y: area.minY, width: self.bounds.width, height: area.height)))
             } else if self.isLibraryScanning {
                 // Redraw server bar only for the scan spinner
                 let nativeY = self.bounds.height - self.Layout.titleBarHeight - self.Layout.serverBarHeight
@@ -8300,8 +8296,7 @@ class PlexBrowserView: NSView {
     /// Check if point is in search bar
     private func hitTestSearchBar(at skinPoint: NSPoint) -> Bool {
         guard browseMode == .search else { return false }
-        let searchY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-        return skinPoint.y >= searchY && skinPoint.y < searchY + Layout.searchBarHeight
+        return skinPoint.y >= listTopY - Layout.searchBarHeight && skinPoint.y < listTopY
     }
     
     /// Check if point is in alphabet index
@@ -8952,19 +8947,16 @@ class PlexBrowserView: NSView {
         }
         
         // Check for column resize
-        if let columnId = hitTestColumnResize(at: skinPoint) {
+        if let header = columnHeader(at: skinPoint), let columnId = hitTestColumnResize(at: skinPoint) {
             resizingColumnId = columnId
             resizingColumnGroup = currentColumnGroup()
             resizingColumnFromLeadingEdge = hasYouTubeColumns && columnId == "duration"
             resizeStartX = skinPoint.x
-            let group = resizingColumnGroup
-            let columns = currentVisibleColumns()
-            let headerWidth = listLayout().rows.width
             resizeStartWidth = widthForColumn(
                 BrowserColumn.findColumn(id: columnId) ?? .title,
-                availableWidth: headerWidth,
-                columns: columns,
-                group: group
+                availableWidth: header.rect.width,
+                columns: header.columns,
+                group: resizingColumnGroup
             )
             NSCursor.resizeLeftRight.push()
             return
@@ -12587,14 +12579,12 @@ class PlexBrowserView: NSView {
         let totalHeight = CGFloat(displayItems.count) * itemHeight
         let verticalDelta = verticalScrollDelta(from: event)
         let horizontalDelta = horizontalScrollDelta(from: event)
-        let columns = currentVisibleColumns()
-        let group = currentColumnGroup()
         var needsRedraw = false
 
-        if !columns.isEmpty,
+        if let header = layout.header,
            event.modifierFlags.contains(.shift) || abs(horizontalDelta) > abs(verticalDelta) {
-            let totalWidth = totalColumnsWidth(columns: columns, group: group)
-            let maxOffset = max(0, totalWidth - layout.rows.width)
+            let totalWidth = totalColumnsWidth(columns: header.columns, group: currentColumnGroup())
+            let maxOffset = max(0, totalWidth - header.rect.width)
             if maxOffset > 0 {
                 let delta = event.modifierFlags.contains(.shift) ? verticalDelta : horizontalDelta
                 horizontalScrollOffset = max(0, min(maxOffset, horizontalScrollOffset - delta))
@@ -12608,11 +12598,9 @@ class PlexBrowserView: NSView {
         }
 
         if needsRedraw {
-            let scale = bounds.width / originalWindowSize.width
-            let scaledListY = bounds.height - layout.area.maxY * scale
-            let scaledListHeight = (layout.area.height + Layout.statusBarHeight) * scale
-            let listRect = NSRect(x: 0, y: scaledListY, width: bounds.width, height: scaledListHeight)
-            setNeedsDisplay(listRect)
+            // The list and the status bar under it, full width so the side borders' scroll thumb follows.
+            setNeedsDisplay(convertFromSkinCoordinates(NSRect(x: 0, y: layout.area.minY, width: bounds.width,
+                                                              height: layout.area.height + Layout.statusBarHeight)))
         }
 
         if case .local = currentSource { loadNextLocalPageIfNeeded(listHeight: listHeight) }
