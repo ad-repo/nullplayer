@@ -714,9 +714,6 @@ class ModernLibraryBrowserView: NSView {
     /// True when hide-title-bars mode primed drag hold timing on mouseDown.
     private var didPrimeWindowDragHold = false
     private var windowDragStartPoint: NSPoint = .zero
-    private var isDraggingScrollbar = false
-    private var scrollbarDragStartY: CGFloat = 0
-    private var scrollbarDragStartOffset: CGFloat = 0
     private let alphabetLetters = ["#"] + (65...90).map { String(UnicodeScalar($0)) }
     
     // MARK: - Layout Constants (independent of classic skin)
@@ -1099,14 +1096,11 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func embeddedHistoryContentRect() -> NSRect {
-        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
-        if browseMode == .search { contentTopY -= Layout.searchBarHeight }
-        let contentBottomY = contentRegionBottomY
-        return NSRect(
+        NSRect(
             x: Layout.borderWidth,
-            y: contentBottomY,
+            y: contentRegionBottomY,
             width: bounds.width - Layout.borderWidth * 2,
-            height: max(0, contentTopY - contentBottomY)
+            height: max(0, listTopY - contentRegionBottomY)
         )
     }
 
@@ -1415,28 +1409,17 @@ class ModernLibraryBrowserView: NSView {
             drawTabBar(in: context, tabBarY: tabBarY, skin: skin)
 
             // Search bar (below tab bar, only in search mode)
-            var contentTopY = tabBarY
             if browseMode == .search {
-                contentTopY -= Layout.searchBarHeight
-                drawSearchBar(in: context, searchBarY: contentTopY, skin: skin)
+                drawSearchBar(in: context, searchBarY: listTopY, skin: skin)
             }
 
-            // Content bottom: status-bar margin plus the compact footer band.
-            let contentBottomY = contentRegionBottomY
+            let layout = listLayout()
+            let listRect = layout.area
 
-            // Offline volume banner (local source only, above list content)
-            let showOfflineBanner = isLocalSource && !offlineWatchFolders.isEmpty
-            let bannerHeight = showOfflineBanner ? Layout.offlineBannerHeight : 0
-
-            // List area (between content top and content bottom)
-            let listAreaY = contentBottomY + bannerHeight
-            let listAreaHeight = contentTopY - contentBottomY - bannerHeight
-            let listRect = NSRect(x: Layout.borderWidth, y: listAreaY,
-                                  width: bounds.width - Layout.borderWidth * 2, height: listAreaHeight)
-
-            if showOfflineBanner {
-                let bannerRect = NSRect(x: Layout.borderWidth, y: contentBottomY,
-                                       width: bounds.width - Layout.borderWidth * 2, height: bannerHeight)
+            // Offline volume banner (local source only, under the list)
+            if offlineBannerHeight > 0 {
+                let bannerRect = NSRect(x: listRect.minX, y: contentRegionBottomY,
+                                        width: listRect.width, height: offlineBannerHeight)
                 drawOfflineBanner(in: context, rect: bannerRect, skin: skin)
             }
 
@@ -1459,7 +1442,7 @@ class ModernLibraryBrowserView: NSView {
                 // opaque otherwise) is exactly what should sit behind the covers, so the Cava
                 // backdrop shows through at full strength instead of behind a second scrim.
             } else {
-                drawListArea(in: context, listAreaY: listAreaY, listAreaHeight: listAreaHeight, skin: skin, artwork: capturedArtwork)
+                drawListArea(in: context, layout: layout, skin: skin, artwork: capturedArtwork)
             }
 
             // Status bar text
@@ -2432,39 +2415,25 @@ class ModernLibraryBrowserView: NSView {
 
     // MARK: - List Area Drawing
 
-    private func drawListArea(in context: CGContext, listAreaY: CGFloat, listAreaHeight: CGFloat, skin: ModernSkin, artwork: NSImage?) {
-        let alphabetWidth = Layout.alphabetWidth
-        let fullListRect = NSRect(x: Layout.borderWidth, y: listAreaY,
-                                  width: bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth - alphabetWidth,
-                                  height: listAreaHeight)
-        
+    private func drawListArea(in context: CGContext, layout: ListLayout, skin: ModernSkin, artwork: NSImage?) {
+        // An empty list has no columns, so `rows` is the whole list here.
         if displayItems.isEmpty {
-            drawEmptyState(in: context, listRect: fullListRect, skin: skin)
+            drawEmptyState(in: context, listRect: layout.rows, skin: skin)
             return
         }
-        
-        let headerColumns = headerColumnsForCurrentContent()
-        
-        // Draw column headers
-        if let columns = headerColumns {
-            let headerY = listAreaY + listAreaHeight - columnHeaderHeight
-            let headerRect = NSRect(x: fullListRect.minX, y: headerY,
-                                    width: fullListRect.width, height: columnHeaderHeight)
-            drawColumnHeaders(in: context, rect: headerRect, columns: columns, skin: skin)
+
+        if let header = layout.header {
+            drawColumnHeaders(in: context, rect: header.rect, columns: header.columns, skin: skin)
             // Fill the header-row gap above the alphabet index (and scrollbar) so it
             // matches the column-header band instead of showing the panel background.
-            let gapRect = NSRect(x: headerRect.maxX, y: headerY,
-                                 width: bounds.width - Layout.borderWidth - headerRect.maxX,
-                                 height: columnHeaderHeight)
+            let gapRect = NSRect(x: header.rect.maxX, y: header.rect.minY,
+                                 width: layout.area.maxX - header.rect.maxX, height: header.rect.height)
             contentFill(isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
             context.fill(gapRect)
         }
-        
-        // Content area
-        let contentHeight = listAreaHeight - (headerColumns != nil ? columnHeaderHeight : 0)
-        let listRect = NSRect(x: fullListRect.minX, y: listAreaY,
-                              width: fullListRect.width, height: contentHeight)
-        
+
+        let listRect = layout.rows
+
         // Clip to content area
         context.saveGState()
         context.clip(to: listRect)
@@ -2474,11 +2443,11 @@ class ModernLibraryBrowserView: NSView {
         
         // Draw items (bottom-left origin: item 0 at top of list, so we draw from top down)
         let visibleStart = max(0, Int(scrollOffset / itemHeight))
-        let visibleEnd = min(displayItems.count, visibleStart + Int(contentHeight / itemHeight) + 2)
+        let visibleEnd = min(displayItems.count, visibleStart + Int(listRect.height / itemHeight) + 2)
         
         guard visibleStart < visibleEnd else {
             context.restoreGState()
-            drawAlphabetIndex(in: context, rect: alphabetIndexRect(), skin: skin)
+            drawAlphabetIndex(in: context, rect: layout.alphabet, skin: skin)
             return
         }
         
@@ -2587,7 +2556,7 @@ class ModernLibraryBrowserView: NSView {
         context.restoreGState()
         
         // Draw alphabet index (exclude column header zone so # appears below column headers)
-        drawAlphabetIndex(in: context, rect: alphabetIndexRect(), skin: skin)
+        drawAlphabetIndex(in: context, rect: layout.alphabet, skin: skin)
     }
 
     private func drawArtworkBackground(in context: CGContext, listRect: NSRect, artwork: NSImage?) {
@@ -3248,14 +3217,57 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     
-    // MARK: - Column Support
-    
-    /// Whether the list draws a column header. Drawing and every hit test ask this, so a click
-    /// lands on the row drawn under it — rows with their own columns (YouTube videos in the
-    /// Local search) can sit in a list that draws no header.
-    private var hasColumnHeader: Bool {
-        headerColumnsForCurrentContent() != nil
+    // MARK: - List Layout
+
+    /// Where the list sits, worked out in one place. Drawing, every hit test and every scroll
+    /// range read it, so a click lands on the row drawn under it (PR #480: hit tests reserved the
+    /// header on a different condition than drawing, and every click landed one row up).
+    private struct ListLayout {
+        /// Below the tab bar (and search bar), above the offline banner, the window's full inner
+        /// width. Loading, error and art views fill it.
+        let area: NSRect
+        /// The column header band and the columns it shows, when the list has columns.
+        let header: Header?
+        /// Where rows are drawn: under the header, left of the scrollbar and alphabet index.
+        let rows: NSRect
+        /// The alphabet index, beside the rows.
+        let alphabet: NSRect
+
+        struct Header {
+            let rect: NSRect
+            let columns: [ModernBrowserColumn]
+        }
     }
+
+    /// The bottom of the tab bar, or of the search bar in search mode.
+    private var listTopY: CGFloat {
+        topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
+            - (browseMode == .search ? Layout.searchBarHeight : 0)
+    }
+
+    private var offlineBannerHeight: CGFloat {
+        isLocalSource && !offlineWatchFolders.isEmpty ? Layout.offlineBannerHeight : 0
+    }
+
+    private func listLayout() -> ListLayout {
+        let bottomY = contentRegionBottomY + offlineBannerHeight
+        let area = NSRect(x: Layout.borderWidth, y: bottomY,
+                          width: bounds.width - Layout.borderWidth * 2, height: listTopY - bottomY)
+        let columns = currentVisibleColumns()
+        let headerHeight = columns.isEmpty ? 0 : columnHeaderHeight
+        let rows = NSRect(x: area.minX, y: area.minY,
+                          width: area.width - Layout.scrollbarWidth - Layout.alphabetWidth,
+                          height: area.height - headerHeight)
+        return ListLayout(
+            area: area,
+            header: columns.isEmpty ? nil : .init(rect: NSRect(x: rows.minX, y: rows.maxY, width: rows.width, height: headerHeight),
+                                                  columns: columns),
+            rows: rows,
+            alphabet: NSRect(x: rows.maxX, y: rows.minY, width: Layout.alphabetWidth, height: rows.height)
+        )
+    }
+
+    // MARK: - Column Support
 
     private var hasInternetRadioColumns: Bool {
         guard case .radio = currentSource else { return false }
@@ -3279,18 +3291,6 @@ class ModernLibraryBrowserView: NSView {
             if case .youtubeVideo = $0.type { return true }
             return false
         }
-    }
-
-    private func headerColumnsForCurrentContent() -> [ModernBrowserColumn]? {
-        if hasInternetRadioColumns {
-            return ModernBrowserColumn.internetRadioColumns
-        }
-        if hasYouTubeColumns {
-            return ModernBrowserColumn.youtubeColumns
-        }
-        let columns = currentVisibleColumns()
-        guard !columns.isEmpty else { return nil }
-        return columns
     }
 
     private func visibleColumns(allColumns: [ModernBrowserColumn], visibleIds: [String]) -> [ModernBrowserColumn] {
@@ -3423,7 +3423,7 @@ class ModernLibraryBrowserView: NSView {
     private func clampHorizontalScrollOffset() {
         let columns = currentVisibleColumns()
         let group = currentColumnGroup()
-        let availableWidth = bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth - Layout.alphabetWidth
+        let availableWidth = listLayout().rows.width
         let maxOffset = max(0, totalColumnsWidth(columns: columns, availableWidth: availableWidth, group: group) - availableWidth)
         horizontalScrollOffset = max(0, min(horizontalScrollOffset, maxOffset))
     }
@@ -3833,35 +3833,16 @@ class ModernLibraryBrowserView: NSView {
     
     private func hitTestSearchBar(at point: NSPoint) -> Bool {
         guard browseMode == .search else { return false }
-        let tabBarBottomY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
-        let searchBarBottomY = tabBarBottomY - Layout.searchBarHeight
-        return point.y >= searchBarBottomY && point.y < tabBarBottomY
+        return point.y >= listTopY && point.y < listTopY + Layout.searchBarHeight
     }
     
     private func hitTestListArea(at point: NSPoint) -> Int? {
-        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
-        if browseMode == .search { contentTopY -= Layout.searchBarHeight }
-        
-        if hasColumnHeader { contentTopY -= columnHeaderHeight }
-        
-        let contentBottomY = contentRegionBottomY
-        let contentHeight = contentTopY - contentBottomY
-        
-        let alphabetWidth = Layout.alphabetWidth
-        let listRect = NSRect(x: Layout.borderWidth, y: contentBottomY,
-                              width: bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth - alphabetWidth,
-                              height: contentHeight)
-        
-        guard listRect.contains(point) else { return nil }
+        let rows = listLayout().rows
+        guard rows.contains(point) else { return nil }
         
         // In bottom-left origin, items are rendered from top down
-        let relativeFromTop = contentTopY - point.y + scrollOffset
-        let clickedIndex = Int(relativeFromTop / itemHeight)
-        
-        if clickedIndex >= 0 && clickedIndex < displayItems.count {
-            return clickedIndex
-        }
-        return nil
+        let clickedIndex = Int((rows.maxY - point.y + scrollOffset) / itemHeight)
+        return displayItems.indices.contains(clickedIndex) ? clickedIndex : nil
     }
 
     private func hitTestInternetRadioRating(at point: NSPoint, itemIndex: Int) -> Int? {
@@ -3869,19 +3850,7 @@ class ModernLibraryBrowserView: NSView {
         let item = displayItems[itemIndex]
         guard case .radioStation = item.type, let columns = columnsForItem(item) else { return nil }
 
-        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
-        if browseMode == .search { contentTopY -= Layout.searchBarHeight }
-        if hasColumnHeader { contentTopY -= columnHeaderHeight }
-
-        let contentBottomY = contentRegionBottomY
-        let alphabetWidth = Layout.alphabetWidth
-        let listRect = NSRect(
-            x: Layout.borderWidth,
-            y: contentBottomY,
-            width: bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth - alphabetWidth,
-            height: contentTopY - contentBottomY
-        )
-
+        let listRect = listLayout().rows
         let itemTopY = listRect.maxY - CGFloat(itemIndex) * itemHeight + scrollOffset
         let rowRect = NSRect(x: listRect.minX, y: itemTopY - itemHeight, width: listRect.width, height: itemHeight)
         guard rowRect.contains(point) else { return nil }
@@ -3905,31 +3874,9 @@ class ModernLibraryBrowserView: NSView {
         }
         return nil
     }
-    
-    /// Screen-space rect of the right-side alphabet index — the single source of truth
-    /// shared by drawing, hit-testing, and click-to-letter mapping. Mirrors the geometry
-    /// computed in `draw(_:)`/`drawListArea`, including the offline-banner offset and the
-    /// column-header exclusion, so the clickable strip always matches the drawn letters.
-    /// (Previously the hit-test and click math ignored the banner, so the alphabet picker
-    /// drifted and "ignored" clicks whenever a local watch folder went offline.)
-    private func alphabetIndexRect() -> NSRect {
-        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
-        if browseMode == .search { contentTopY -= Layout.searchBarHeight }
-
-        let showOfflineBanner = isLocalSource && !offlineWatchFolders.isEmpty
-        let bannerHeight = showOfflineBanner ? Layout.offlineBannerHeight : 0
-
-        let listAreaY = contentRegionBottomY + bannerHeight
-        let listAreaHeight = contentTopY - contentRegionBottomY - bannerHeight
-
-        let alphabetHeight = listAreaHeight - (hasColumnHeader ? columnHeaderHeight : 0)
-
-        let alphabetX = bounds.width - Layout.borderWidth - Layout.scrollbarWidth - Layout.alphabetWidth
-        return NSRect(x: alphabetX, y: listAreaY, width: Layout.alphabetWidth, height: alphabetHeight)
-    }
 
     private func hitTestAlphabetIndex(at point: NSPoint) -> Bool {
-        return alphabetIndexRect().contains(point)
+        return listLayout().alphabet.contains(point)
     }
     
     private func hitTestContentArea(at point: NSPoint) -> Bool {
@@ -3940,27 +3887,25 @@ class ModernLibraryBrowserView: NSView {
                                  height: contentTopY - contentBottomY)
         return contentRect.contains(point)
     }
+
+    /// The column header when `point` is in its band, at any x — so a right-click above the
+    /// alphabet index still opens the column menu.
+    private func columnHeader(at point: NSPoint) -> ListLayout.Header? {
+        guard let header = listLayout().header, point.y >= header.rect.minY, point.y < header.rect.maxY else { return nil }
+        return header
+    }
     
     private func hitTestColumnResize(at point: NSPoint) -> String? {
         if hasInternetRadioColumns { return nil }
-        guard hasColumnHeader else { return nil }
-        
-        var headerTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
-        if browseMode == .search { headerTopY -= Layout.searchBarHeight }
-        let headerBottomY = headerTopY - columnHeaderHeight
-        
-        guard point.y >= headerBottomY && point.y < headerTopY else { return nil }
-        
-        let columns = currentVisibleColumns()
+        guard let header = columnHeader(at: point), header.columns.count > 1 else { return nil }
+        let columns = header.columns
         let group = currentColumnGroup()
-        guard columns.count > 1 else { return nil }
         
-        let headerWidth = bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth - Layout.alphabetWidth
         let threshold: CGFloat = 4 * ModernSkinElements.sizeMultiplier
-        var x = Layout.borderWidth + 4 - horizontalScrollOffset
+        var x = header.rect.minX + 4 - horizontalScrollOffset
         
         for (index, column) in columns.enumerated() {
-            let width = widthForColumn(column, availableWidth: headerWidth, columns: columns, group: group)
+            let width = widthForColumn(column, availableWidth: header.rect.width, columns: columns, group: group)
             let edgeX = x + width
             
             // Allow resizing any non-last column by dragging its right edge
@@ -3981,36 +3926,17 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func hitTestColumnHeader(at point: NSPoint) -> String? {
-        guard hasColumnHeader else { return nil }
-        
-        var headerTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
-        if browseMode == .search { headerTopY -= Layout.searchBarHeight }
-        let headerBottomY = headerTopY - columnHeaderHeight
-        
-        guard point.y >= headerBottomY && point.y < headerTopY else { return nil }
-        
-        let columns = currentVisibleColumns()
+        guard let header = columnHeader(at: point) else { return nil }
+        let columns = header.columns
         let group = currentColumnGroup()
         
-        let headerWidth = bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth - Layout.alphabetWidth
-        var x = Layout.borderWidth + 4 - horizontalScrollOffset
+        var x = header.rect.minX + 4 - horizontalScrollOffset
         for column in columns {
-            let width = widthForColumn(column, availableWidth: headerWidth, columns: columns, group: group)
+            let width = widthForColumn(column, availableWidth: header.rect.width, columns: columns, group: group)
             if point.x >= x && point.x < x + width { return column.id }
             x += width
         }
         return nil
-    }
-    
-    /// Returns true if the point is within the column header area (for right-click detection)
-    private func hitTestColumnHeaderArea(at point: NSPoint) -> Bool {
-        guard hasColumnHeader else { return false }
-        
-        var headerTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
-        if browseMode == .search { headerTopY -= Layout.searchBarHeight }
-        let headerBottomY = headerTopY - columnHeaderHeight
-        
-        return point.y >= headerBottomY && point.y < headerTopY
     }
     
     // MARK: - Mouse Events
@@ -4156,7 +4082,7 @@ class ModernLibraryBrowserView: NSView {
             resizeStartX = point.x
             let columns = currentVisibleColumns()
             let group = resizingColumnGroup
-            let headerWidth = bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth - Layout.alphabetWidth
+            let headerWidth = listLayout().rows.width
             resizeStartWidth = widthForColumn(ModernBrowserColumn.findColumn(id: columnId)!, availableWidth: headerWidth, columns: columns, group: group)
             // Freeze the title column's current width so it doesn't flex during resize
             if let group, storedColumnWidth(for: .title, group: group) == nil {
@@ -4234,7 +4160,6 @@ class ModernLibraryBrowserView: NSView {
             if let window = window { WindowManager.shared.windowDidCancelDragPrime(window) }
             didPrimeWindowDragHold = false
         }
-        isDraggingScrollbar = false
 
         if let pressed = pressedButton {
             switch pressed {
@@ -4268,7 +4193,7 @@ class ModernLibraryBrowserView: NSView {
         let point = convert(event.locationInWindow, from: nil)
         
         // Right-click on column header: show column visibility menu
-        if hitTestColumnHeaderArea(at: point) {
+        if columnHeader(at: point) != nil {
             showColumnConfigMenu(at: event); return
         }
         
@@ -4305,9 +4230,7 @@ class ModernLibraryBrowserView: NSView {
             super.scrollWheel(with: event)
             return
         }
-        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
-        if browseMode == .search { contentTopY -= Layout.searchBarHeight }
-        let listHeight = contentTopY - contentRegionBottomY
+        let listHeight = listTopY - contentRegionBottomY
         let totalHeight = CGFloat(displayItems.count) * itemHeight
         let verticalDelta = verticalScrollDelta(from: event)
 
@@ -4322,7 +4245,7 @@ class ModernLibraryBrowserView: NSView {
         if horizontalDelta != 0 {
             let columns = currentVisibleColumns()
             let group = currentColumnGroup()
-            let availableWidth = bounds.width - Layout.borderWidth * 2 - Layout.scrollbarWidth - Layout.alphabetWidth
+            let availableWidth = listLayout().rows.width
             let totalWidth = totalColumnsWidth(columns: columns, availableWidth: availableWidth, group: group)
             let maxOffset = max(0, totalWidth - availableWidth)
             if maxOffset > 0 {
@@ -4564,10 +4487,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func ensureVisible(index: Int) {
-        var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
-        if browseMode == .search { contentTopY -= Layout.searchBarHeight }
-        let listHeight = contentTopY - contentRegionBottomY
-        let effectiveHeight = listHeight - (hasColumnHeader ? columnHeaderHeight : 0)
+        let effectiveHeight = listLayout().rows.height + offlineBannerHeight
 
         let itemTop = CGFloat(index) * itemHeight
         let itemBottom = itemTop + itemHeight
@@ -4818,7 +4738,7 @@ class ModernLibraryBrowserView: NSView {
     // MARK: - Alphabet Click
     
     private func handleAlphabetClick(at point: NSPoint) {
-        let rect = alphabetIndexRect()
+        let rect = listLayout().alphabet
         let letterCount = CGFloat(alphabetLetters.count)
         let letterHeight = rect.height / letterCount
         guard letterHeight > 0 else { return }
@@ -4872,10 +4792,7 @@ class ModernLibraryBrowserView: NSView {
         }
         for (index, item) in displayItems.enumerated() {
             if effectiveSortLetter(for: item) == letter {
-                var contentTopY = topChromeBottomY - Layout.serverBarHeight - Layout.tabBarHeight
-                if browseMode == .search { contentTopY -= Layout.searchBarHeight }
-                let listHeight = contentTopY - contentRegionBottomY
-                let effectiveHeight = listHeight - (hasColumnHeader ? columnHeaderHeight : 0)
+                let effectiveHeight = listLayout().rows.height + offlineBannerHeight
                 let maxScroll = max(0, CGFloat(displayItems.count) * itemHeight - effectiveHeight)
                 scrollOffset = min(maxScroll, CGFloat(index) * itemHeight)
                 selectedIndices = [index]; needsDisplay = true; return

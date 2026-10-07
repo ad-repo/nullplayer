@@ -365,11 +365,48 @@ class PlexBrowserView: NSView {
         currentSource.isYouTube ? youtubeColumnSortAscending : tabSort.columnSortAscending
     }
 
-    /// Whether the list draws a column header. Drawing and every hit test ask this, so a click
-    /// lands on the row drawn under it — rows with their own columns (YouTube videos in the
-    /// Local search) can sit in a list that draws no header.
-    private var hasColumnHeader: Bool {
-        headerColumnsForCurrentContent() != nil
+    /// Where the list sits, in skin coordinates (top-left origin), worked out in one place.
+    /// Drawing, every hit test and every scroll range read it, so a click lands on the row drawn
+    /// under it (PR #480: hit tests reserved the header on a different condition than drawing,
+    /// and every click landed one row up).
+    private struct ListLayout {
+        /// Below the tab bar (and search bar), above the status bar, the window's full inner
+        /// width. Loading, error and Cover Flow backgrounds fill it.
+        let area: NSRect
+        /// The column header band and the columns it shows, when the list has columns.
+        let header: Header?
+        /// Where rows are drawn: under the header, left of the scrollbar and alphabet index.
+        let rows: NSRect
+        /// The alphabet index, beside the header and the rows.
+        let alphabet: NSRect
+
+        struct Header {
+            let rect: NSRect
+            let columns: [BrowserColumn]
+        }
+    }
+
+    /// The bottom of the tab bar, or of the search bar in search mode.
+    private var listTopY: CGFloat {
+        Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
+            + (browseMode == .search ? Layout.searchBarHeight : 0)
+    }
+
+    private func listLayout() -> ListLayout {
+        let size = originalWindowSize
+        let area = NSRect(x: Layout.leftBorder, y: listTopY,
+                          width: size.width - Layout.leftBorder - Layout.rightBorder,
+                          height: size.height - listTopY - Layout.statusBarHeight)
+        let columns = currentVisibleColumns()
+        let headerHeight = columns.isEmpty ? 0 : columnHeaderHeight
+        let width = area.width - Layout.scrollbarWidth - Layout.alphabetWidth
+        return ListLayout(
+            area: area,
+            header: columns.isEmpty ? nil : .init(rect: NSRect(x: area.minX, y: area.minY, width: width, height: headerHeight),
+                                                  columns: columns),
+            rows: NSRect(x: area.minX, y: area.minY + headerHeight, width: width, height: area.height - headerHeight),
+            alphabet: NSRect(x: area.minX + width, y: area.minY, width: Layout.alphabetWidth, height: area.height)
+        )
     }
 
     private var hasInternetRadioColumns: Bool {
@@ -394,18 +431,6 @@ class PlexBrowserView: NSView {
             if case .youtubeVideo = $0.type { return true }
             return false
         }
-    }
-
-    private func headerColumnsForCurrentContent() -> [BrowserColumn]? {
-        if hasInternetRadioColumns {
-            return BrowserColumn.internetRadioColumns
-        }
-        if hasYouTubeColumns {
-            return BrowserColumn.youtubeColumns
-        }
-        let columns = currentVisibleColumns()
-        guard !columns.isEmpty else { return nil }
-        return columns
     }
 
     private func visibleColumns(allColumns: [BrowserColumn], visibleIds: [String]) -> [BrowserColumn] {
@@ -539,7 +564,7 @@ class PlexBrowserView: NSView {
     private func clampHorizontalScrollOffset() {
         let columns = currentVisibleColumns()
         let group = currentColumnGroup()
-        let availableWidth = originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - Layout.alphabetWidth
+        let availableWidth = listLayout().rows.width
         let maxOffset = max(0, totalColumnsWidth(columns: columns, group: group) - availableWidth)
         horizontalScrollOffset = max(0, min(horizontalScrollOffset, maxOffset))
     }
@@ -1383,11 +1408,6 @@ class PlexBrowserView: NSView {
     /// Embedded in a `.wal` holder there is no title bar of ours, so background the browser does not
     /// consume — the blank area below the last row — moves the skin's window instead (B60).
     private var embeddedWindowDrag = WinampModernHostedWindowDrag()
-    
-    /// Scrollbar dragging state
-    private var isDraggingScrollbar = false
-    private var scrollbarDragStartY: CGFloat = 0
-    private var scrollbarDragStartOffset: CGFloat = 0
     
     /// Alphabet index for quick navigation
     private let alphabetLetters = ["#"] + (65...90).map { String(UnicodeScalar($0)) } // # A-Z
@@ -2751,8 +2771,7 @@ class PlexBrowserView: NSView {
     private func embeddedContentRect() -> NSRect {
         let scale = scaleFactor
         let hiddenTitleBarOffset = hidesClassicTitleBar ? Layout.titleBarHeight : 0
-        let searchBarInset = browseMode == .search ? Layout.searchBarHeight : 0
-        let topInset = (Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight + searchBarInset - hiddenTitleBarOffset) * scale
+        let topInset = (listTopY - hiddenTitleBarOffset) * scale
         let bottomInset = Layout.statusBarHeight * scale
         let horizontalInset = (Layout.leftBorder + Layout.rightBorder) * scale
         return NSRect(
@@ -2780,15 +2799,9 @@ class PlexBrowserView: NSView {
     }
 
     /// Fill the list area behind the cover flow overlay (classic has no Cava backdrop).
-    private func drawCoverFlowBackground(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors) {
-        var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-        if browseMode == .search { listY += Layout.searchBarHeight }
-        let listHeight = drawBounds.height - listY - Layout.statusBarHeight
-        let listRect = NSRect(x: Layout.leftBorder, y: listY,
-                              width: drawBounds.width - Layout.leftBorder - Layout.rightBorder,
-                              height: listHeight)
+    private func drawCoverFlowBackground(in context: CGContext, colors: PlaylistColors) {
         colors.normalBackground.setFill()
-        context.fill(listRect)
+        context.fill(listLayout().area)
     }
 
     private func ensureCoverFlowView() {
@@ -3218,17 +3231,17 @@ class PlexBrowserView: NSView {
                             // Only check Plex link status if using Plex source
                             let needsPlexLink = currentSource.isPlex && !PlexManager.shared.isLinked
                             if needsPlexLink {
-                                drawNotLinkedState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+                                drawNotLinkedState(in: context, colors: colors, renderer: renderer)
                             } else if isLoading {
-                                drawLoadingState(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer)
+                                drawLoadingState(in: context, colors: colors, renderer: renderer)
                             } else if let error = errorMessage {
-                                drawErrorState(in: context, drawBounds: drawBounds, message: error, colors: colors, renderer: renderer)
+                                drawErrorState(in: context, message: error, colors: colors, renderer: renderer)
                             } else if isCoverFlowMode {
                                 // The CoverFlowView overlay renders the carousel; just fill the list
                                 // area background so the interior isn't left stale behind the covers.
-                                drawCoverFlowBackground(in: context, drawBounds: drawBounds, colors: colors)
+                                drawCoverFlowBackground(in: context, colors: colors)
                             } else {
-                                drawListArea(in: context, drawBounds: drawBounds, colors: colors, renderer: renderer, artwork: capturedArtwork)
+                                drawListArea(in: context, layout: listLayout(), colors: colors, renderer: renderer, artwork: capturedArtwork)
                             }
                         }
 
@@ -3248,11 +3261,7 @@ class PlexBrowserView: NSView {
 
     /// Calculate scroll position as 0-1 value
     private func calculateScrollPosition() -> CGFloat {
-        var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-        if browseMode == .search {
-            listY += Layout.searchBarHeight
-        }
-        let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
+        let listHeight = listLayout().area.height
         let totalContentHeight = CGFloat(displayItems.count) * itemHeight
         
         guard totalContentHeight > listHeight else { return 0 }
@@ -4449,15 +4458,8 @@ class PlexBrowserView: NSView {
         }
     }
     
-    private func drawNotLinkedState(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
-        var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-        if browseMode == .search {
-            listY += Layout.searchBarHeight
-        }
-        let listHeight = drawBounds.height - listY - Layout.statusBarHeight
-        let listRect = NSRect(x: Layout.leftBorder, y: listY,
-                             width: drawBounds.width - Layout.leftBorder - Layout.rightBorder,
-                             height: listHeight)
+    private func drawNotLinkedState(in context: CGContext, colors: PlaylistColors, renderer: SkinRenderer) {
+        let listRect = listLayout().area
         
         // Counter-flip for text
         context.saveGState()
@@ -4489,15 +4491,8 @@ class PlexBrowserView: NSView {
         context.restoreGState()
     }
     
-    private func drawLoadingState(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
-        var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-        if browseMode == .search {
-            listY += Layout.searchBarHeight
-        }
-        let listHeight = drawBounds.height - listY - Layout.statusBarHeight
-        let listRect = NSRect(x: Layout.leftBorder, y: listY,
-                             width: drawBounds.width - Layout.leftBorder - Layout.rightBorder,
-                             height: listHeight)
+    private func drawLoadingState(in context: CGContext, colors: PlaylistColors, renderer: SkinRenderer) {
+        let listRect = listLayout().area
         
         let centerY = listRect.midY
         let centerX = listRect.midX
@@ -4548,15 +4543,8 @@ class PlexBrowserView: NSView {
         context.restoreGState()
     }
 
-    private func drawErrorState(in context: CGContext, drawBounds: NSRect, message: String, colors: PlaylistColors, renderer: SkinRenderer) {
-        var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-        if browseMode == .search {
-            listY += Layout.searchBarHeight
-        }
-        let listHeight = drawBounds.height - listY - Layout.statusBarHeight
-        let listRect = NSRect(x: Layout.leftBorder, y: listY,
-                             width: drawBounds.width - Layout.leftBorder - Layout.rightBorder,
-                             height: listHeight)
+    private func drawErrorState(in context: CGContext, message: String, colors: PlaylistColors, renderer: SkinRenderer) {
+        let listRect = listLayout().area
         
         // Counter-flip for text
         context.saveGState()
@@ -4630,40 +4618,19 @@ class PlexBrowserView: NSView {
         drawScaledSkinText(message, at: NSPoint(x: textX, y: textY), scale: textScale, renderer: renderer, in: context)
     }
     
-    private func drawListArea(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer, artwork: NSImage?) {
-        var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-        if browseMode == .search {
-            listY += Layout.searchBarHeight
-        }
-        let listHeight = drawBounds.height - listY - Layout.statusBarHeight
-        
-        // Account for alphabet index on the right
-        let alphabetWidth = Layout.alphabetWidth
-        let fullListRect = NSRect(x: Layout.leftBorder, y: listY,
-                                  width: drawBounds.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - alphabetWidth,
-                                  height: listHeight)
-        
-        // Show empty state message if no items
+    private func drawListArea(in context: CGContext, layout: ListLayout, colors: PlaylistColors, renderer: SkinRenderer, artwork: NSImage?) {
+        // Show empty state message if no items (an empty list has no columns, so `rows` is the whole list)
         if displayItems.isEmpty {
-            drawEmptyState(in: context, listRect: fullListRect, colors: colors, renderer: renderer)
+            drawEmptyState(in: context, listRect: layout.rows, colors: colors, renderer: renderer)
             return
         }
         
-        let headerColumns = headerColumnsForCurrentContent()
-        
         // Draw column headers BEFORE clipping (so they stay fixed)
-        var contentListY = listY
-        if let columns = headerColumns {
-            let headerRect = NSRect(x: fullListRect.minX, y: listY,
-                                    width: fullListRect.width, height: columnHeaderHeight)
-            drawColumnHeaders(in: context, rect: headerRect, columns: columns, colors: colors)
-            contentListY += columnHeaderHeight
+        if let header = layout.header {
+            drawColumnHeaders(in: context, rect: header.rect, columns: header.columns, colors: colors)
         }
         
-        // Calculate content area (excluding headers)
-        let contentHeight = listHeight - (headerColumns != nil ? columnHeaderHeight : 0)
-        let listRect = NSRect(x: fullListRect.minX, y: contentListY,
-                              width: fullListRect.width, height: contentHeight)
+        let listRect = layout.rows
         
         // Clip to content area (below headers)
         context.saveGState()
@@ -4706,22 +4673,20 @@ class PlexBrowserView: NSView {
         rowThumbnails.beginPass(placeholder: colors.normalText.withAlphaComponent(0.15))
         
         let visibleStart = max(0, Int(scrollOffset / itemHeight))
-        let visibleEnd = min(displayItems.count, visibleStart + Int(contentHeight / itemHeight) + 2)
+        let visibleEnd = min(displayItems.count, visibleStart + Int(listRect.height / itemHeight) + 2)
         
         // Guard against invalid range during window resize
         guard visibleStart < visibleEnd else {
             context.restoreGState()
             // Still draw alphabet index
-            let alphabetRect = NSRect(x: drawBounds.width - Layout.rightBorder - Layout.scrollbarWidth - alphabetWidth,
-                                     y: listY, width: alphabetWidth, height: listHeight)
-            drawAlphabetIndex(in: context, rect: alphabetRect, colors: colors, renderer: renderer)
+            drawAlphabetIndex(in: context, rect: layout.alphabet, colors: colors, renderer: renderer)
             return
         }
         
         for index in visibleStart..<visibleEnd {
-            let y = contentListY + CGFloat(index) * itemHeight - roundedScrollOffset
+            let y = listRect.minY + CGFloat(index) * itemHeight - roundedScrollOffset
             
-            if y + itemHeight < contentListY || y > contentListY + contentHeight {
+            if y + itemHeight < listRect.minY || y > listRect.maxY {
                 continue
             }
             
@@ -4833,10 +4798,7 @@ class PlexBrowserView: NSView {
         
         context.restoreGState()
         
-        // Draw alphabet index
-        let alphabetRect = NSRect(x: drawBounds.width - Layout.rightBorder - Layout.scrollbarWidth - alphabetWidth,
-                                 y: listY, width: alphabetWidth, height: listHeight)
-        drawAlphabetIndex(in: context, rect: alphabetRect, colors: colors, renderer: renderer)
+        drawAlphabetIndex(in: context, rect: layout.alphabet, colors: colors, renderer: renderer)
     }
     
     /// Draw column headers with separator line and resize handles
@@ -6822,11 +6784,7 @@ class PlexBrowserView: NSView {
             if self.isLoading || self.youtubeVideoActions.hasFetchesInFlight || YouTubeChannelUploads.shared.hasFetchesInFlight {
                 // Only redraw the list area where the loading spinner is displayed
                 // This prevents menu items from shimmering on non-Retina displays
-                var listY = self.Layout.titleBarHeight + self.Layout.serverBarHeight + self.Layout.tabBarHeight
-                if self.browseMode == .search {
-                    listY += self.Layout.searchBarHeight
-                }
-                let listHeight = self.bounds.height - listY - self.Layout.statusBarHeight
+                let listHeight = self.listLayout().area.height
                 // Convert from skin top-down coordinates to macOS bottom-up coordinates
                 let nativeY = self.Layout.statusBarHeight
                 let listRect = NSRect(x: 0, y: nativeY, width: self.bounds.width, height: listHeight)
@@ -8349,52 +8307,17 @@ class PlexBrowserView: NSView {
     /// Check if point is in alphabet index
     private func hitTestAlphabetIndex(at skinPoint: NSPoint) -> Bool {
         guard !browseMode.isHistoryMode else { return false }
-        var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-        if browseMode == .search {
-            listY += Layout.searchBarHeight
-        }
-        let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
-        let alphabetX = originalWindowSize.width - Layout.rightBorder - Layout.scrollbarWidth - Layout.alphabetWidth
-        
-        return skinPoint.x >= alphabetX && skinPoint.x < alphabetX + Layout.alphabetWidth &&
-               skinPoint.y >= listY && skinPoint.y < listY + listHeight
+        return listLayout().alphabet.contains(skinPoint)
     }
     
     /// Check if point is in list area and return item index
     private func hitTestListArea(at skinPoint: NSPoint) -> Int? {
         guard !browseMode.isHistoryMode else { return nil }
-        var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-        if browseMode == .search {
-            listY += Layout.searchBarHeight
-        }
+        let rows = listLayout().rows
+        guard rows.contains(skinPoint) else { return nil }
         
-        // Check if columns are shown (affects content start position)
-        let hasColumns = hasColumnHeader
-        var contentY = listY
-        if hasColumns {
-            contentY += columnHeaderHeight
-        }
-        
-        let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
-        let contentHeight = listHeight - (hasColumns ? columnHeaderHeight : 0)
-        
-        let listRect = NSRect(
-            x: Layout.leftBorder,
-            y: contentY,
-            width: originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - Layout.alphabetWidth,
-            height: contentHeight
-        )
-        
-        guard listRect.contains(skinPoint) else { return nil }
-        
-        let relativeY = skinPoint.y - contentY + scrollOffset
-        let clickedIndex = Int(relativeY / itemHeight)
-        
-        if clickedIndex >= 0 && clickedIndex < displayItems.count {
-            return clickedIndex
-        }
-        
-        return nil
+        let clickedIndex = Int((skinPoint.y - rows.minY + scrollOffset) / itemHeight)
+        return displayItems.indices.contains(clickedIndex) ? clickedIndex : nil
     }
 
     private func hitTestInternetRadioRating(at skinPoint: NSPoint, itemIndex: Int) -> Int? {
@@ -8403,26 +8326,8 @@ class PlexBrowserView: NSView {
         let item = displayItems[itemIndex]
         guard case .radioStation = item.type, let columns = columnsForItem(item) else { return nil }
 
-        var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-        if browseMode == .search {
-            listY += Layout.searchBarHeight
-        }
-        let hasColumns = hasColumnHeader
-        var contentY = listY
-        if hasColumns {
-            contentY += columnHeaderHeight
-        }
-
-        let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
-        let contentHeight = listHeight - (hasColumns ? columnHeaderHeight : 0)
-        let listRect = NSRect(
-            x: Layout.leftBorder,
-            y: contentY,
-            width: originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - Layout.alphabetWidth,
-            height: contentHeight
-        )
-
-        let rowY = contentY + CGFloat(itemIndex) * itemHeight - scrollOffset
+        let listRect = listLayout().rows
+        let rowY = listRect.minY + CGFloat(itemIndex) * itemHeight - scrollOffset
         let rowRect = NSRect(x: listRect.minX, y: rowY, width: listRect.width, height: itemHeight)
         guard rowRect.contains(skinPoint) else { return nil }
 
@@ -8445,33 +8350,26 @@ class PlexBrowserView: NSView {
         }
         return nil
     }
+
+    /// The column header when `skinPoint` is on it.
+    private func columnHeader(at skinPoint: NSPoint) -> ListLayout.Header? {
+        guard !browseMode.isHistoryMode, let header = listLayout().header, header.rect.contains(skinPoint) else { return nil }
+        return header
+    }
     
     /// Check if point hits a column resize handle (returns column id to resize)
     private func hitTestColumnResize(at skinPoint: NSPoint) -> String? {
-        guard !browseMode.isHistoryMode else { return nil }
         if hasInternetRadioColumns { return nil }
-        // Only applies when columns are shown
-        guard let columns = headerColumnsForCurrentContent() else { return nil }
-
-        // Check if in header area (account for search bar when in search mode)
-        var headerY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-        if browseMode == .search {
-            headerY += Layout.searchBarHeight
-        }
-        let headerRect = NSRect(x: Layout.leftBorder, y: headerY,
-                               width: originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - Layout.alphabetWidth,
-                               height: columnHeaderHeight)
-        
-        guard headerRect.contains(skinPoint) else { return nil }
-
+        guard let header = columnHeader(at: skinPoint) else { return nil }
+        let columns = header.columns
         let group = currentColumnGroup()
 
         // Check if near a column separator (within 4 pixels)
-        var x = headerRect.minX + 4
+        var x = header.rect.minX + 4
         let hitMargin: CGFloat = 4
         
         for (index, column) in columns.enumerated() {
-            let width = widthForColumn(column, availableWidth: headerRect.width, columns: columns, group: group)
+            let width = widthForColumn(column, availableWidth: header.rect.width, columns: columns, group: group)
             let separatorX = x + width
             
             // YouTube's Time column is the final column, so resize it from its leading
@@ -8494,33 +8392,21 @@ class PlexBrowserView: NSView {
     
     /// Check if point hits a column header (returns column id for sorting)
     private func hitTestColumnHeader(at skinPoint: NSPoint) -> String? {
-        guard !browseMode.isHistoryMode else { return nil }
-        // Only applies when columns are shown
-        guard let columns = headerColumnsForCurrentContent() else { return nil }
-
-        // Check if in header area
-        var headerY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-        if browseMode == .search {
-            headerY += Layout.searchBarHeight
-        }
-        let headerRect = NSRect(x: Layout.leftBorder, y: headerY,
-                               width: originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - Layout.alphabetWidth,
-                               height: columnHeaderHeight)
-        
-        guard headerRect.contains(skinPoint) else { return nil }
+        guard let header = columnHeader(at: skinPoint) else { return nil }
         
         // Check if on a resize handle first (don't trigger sort)
         if hitTestColumnResize(at: skinPoint) != nil {
             return nil
         }
 
+        let columns = header.columns
         let group = currentColumnGroup()
         
         // Find which column was clicked
-        var x = headerRect.minX + 4
+        var x = header.rect.minX + 4
         
         for column in columns {
-            let width = widthForColumn(column, availableWidth: headerRect.width, columns: columns, group: group)
+            let width = widthForColumn(column, availableWidth: header.rect.width, columns: columns, group: group)
             if skinPoint.x >= x && skinPoint.x < x + width {
                 return column.id
             }
@@ -8531,26 +8417,7 @@ class PlexBrowserView: NSView {
     }
 
     private func hitTestColumnHeaderArea(at skinPoint: NSPoint) -> Bool {
-        guard !browseMode.isHistoryMode else { return false }
-        if hasInternetRadioColumns { return false }
-        guard hasColumnHeader else { return false }
-
-        var headerY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-        if browseMode == .search {
-            headerY += Layout.searchBarHeight
-        }
-        let headerRect = NSRect(
-            x: Layout.leftBorder,
-            y: headerY,
-            width: originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - Layout.alphabetWidth,
-            height: columnHeaderHeight
-        )
-        return headerRect.contains(skinPoint)
-    }
-    
-    /// Check if point hits the scrollbar (disabled - no scrollbar widget)
-    private func hitTestScrollbar(at skinPoint: NSPoint) -> Bool {
-        return false
+        !hasInternetRadioColumns && columnHeader(at: skinPoint) != nil
     }
     
     // MARK: - Cursor Tracking
@@ -9084,14 +8951,6 @@ class PlexBrowserView: NSView {
             return
         }
         
-        // Check scrollbar FIRST (priority over column operations)
-        if hitTestScrollbar(at: skinPoint) {
-            isDraggingScrollbar = true
-            scrollbarDragStartY = skinPoint.y
-            scrollbarDragStartOffset = scrollOffset
-            return
-        }
-        
         // Check for column resize
         if let columnId = hitTestColumnResize(at: skinPoint) {
             resizingColumnId = columnId
@@ -9100,7 +8959,7 @@ class PlexBrowserView: NSView {
             resizeStartX = skinPoint.x
             let group = resizingColumnGroup
             let columns = currentVisibleColumns()
-            let headerWidth = originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - Layout.alphabetWidth
+            let headerWidth = listLayout().rows.width
             resizeStartWidth = widthForColumn(
                 BrowserColumn.findColumn(id: columnId) ?? .title,
                 availableWidth: headerWidth,
@@ -10093,15 +9952,10 @@ class PlexBrowserView: NSView {
     }
     
     private func handleAlphabetClick(at skinPoint: NSPoint) {
-        var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-        if browseMode == .search {
-            listY += Layout.searchBarHeight
-        }
-        let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
-        
-        let relativeY = skinPoint.y - listY
+        let rect = listLayout().alphabet
+        let relativeY = skinPoint.y - rect.minY
         let letterCount = CGFloat(alphabetLetters.count)
-        let letterHeight = listHeight / letterCount
+        let letterHeight = rect.height / letterCount
         let letterIndex = Int(relativeY / letterHeight)
         
         guard letterIndex >= 0 && letterIndex < alphabetLetters.count else { return }
@@ -10191,11 +10045,7 @@ class PlexBrowserView: NSView {
         }
         for (index, item) in displayItems.enumerated() {
             if effectiveSortLetter(for: item) == letter {
-                var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-                if browseMode == .search {
-                    listY += Layout.searchBarHeight
-                }
-                let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
+                let listHeight = listLayout().area.height
                 let maxScroll = max(0, CGFloat(displayItems.count) * itemHeight - listHeight)
                 scrollOffset = min(maxScroll, CGFloat(index) * itemHeight)
                 selectedIndices = [index]
@@ -10340,36 +10190,6 @@ class PlexBrowserView: NSView {
             return
         }
         
-        // Handle scrollbar dragging
-        if isDraggingScrollbar {
-            let point = convert(event.locationInWindow, from: nil)
-            let skinPoint = convertToSkinCoordinates(point)
-            
-            let deltaY = skinPoint.y - scrollbarDragStartY
-            var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-            if browseMode == .search {
-                listY += Layout.searchBarHeight
-            }
-            let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
-            let totalContentHeight = CGFloat(displayItems.count) * itemHeight
-            
-            if totalContentHeight > listHeight {
-                let scrollRange = totalContentHeight - listHeight
-                let trackRange = listHeight - 18  // Thumb height
-                let scrollDelta = (deltaY / trackRange) * scrollRange
-                scrollOffset = max(0, min(scrollRange, scrollbarDragStartOffset + scrollDelta))
-                
-                // Only redraw the list area and scrollbar, not the entire view
-                let scale = bounds.width / originalWindowSize.width
-                let scaledListY = bounds.height - (listY + listHeight) * scale
-                let scaledListHeight = (listHeight + Layout.statusBarHeight) * scale
-                let listRect = NSRect(x: 0, y: scaledListY,
-                                     width: bounds.width, height: scaledListHeight)
-                setNeedsDisplay(listRect)
-            }
-            return
-        }
-        
         if embeddedWindowDrag.drag(event) { return }
 
         // Handle window dragging - snaps to other windows but doesn't dock
@@ -10406,9 +10226,6 @@ class PlexBrowserView: NSView {
         }
         embeddedWindowDrag.end()
         
-        // End scrollbar dragging
-        isDraggingScrollbar = false
-
         // Handle button releases
         if let pressed = pressedButton {
             switch pressed {
@@ -12765,11 +12582,8 @@ class PlexBrowserView: NSView {
             return
         }
 
-        var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-        if browseMode == .search {
-            listY += Layout.searchBarHeight
-        }
-        let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
+        let layout = listLayout()
+        let listHeight = layout.area.height
         let totalHeight = CGFloat(displayItems.count) * itemHeight
         let verticalDelta = verticalScrollDelta(from: event)
         let horizontalDelta = horizontalScrollDelta(from: event)
@@ -12779,9 +12593,8 @@ class PlexBrowserView: NSView {
 
         if !columns.isEmpty,
            event.modifierFlags.contains(.shift) || abs(horizontalDelta) > abs(verticalDelta) {
-            let availableWidth = originalWindowSize.width - Layout.leftBorder - Layout.rightBorder - Layout.scrollbarWidth - Layout.alphabetWidth
             let totalWidth = totalColumnsWidth(columns: columns, group: group)
-            let maxOffset = max(0, totalWidth - availableWidth)
+            let maxOffset = max(0, totalWidth - layout.rows.width)
             if maxOffset > 0 {
                 let delta = event.modifierFlags.contains(.shift) ? verticalDelta : horizontalDelta
                 horizontalScrollOffset = max(0, min(maxOffset, horizontalScrollOffset - delta))
@@ -12796,8 +12609,8 @@ class PlexBrowserView: NSView {
 
         if needsRedraw {
             let scale = bounds.width / originalWindowSize.width
-            let scaledListY = bounds.height - (listY + listHeight) * scale
-            let scaledListHeight = (listHeight + Layout.statusBarHeight) * scale
+            let scaledListY = bounds.height - layout.area.maxY * scale
+            let scaledListHeight = (layout.area.height + Layout.statusBarHeight) * scale
             let listRect = NSRect(x: 0, y: scaledListY, width: bounds.width, height: scaledListHeight)
             setNeedsDisplay(listRect)
         }
@@ -12971,11 +12784,7 @@ class PlexBrowserView: NSView {
     }
     
     private func ensureVisible(index: Int) {
-        var listY = Layout.titleBarHeight + Layout.serverBarHeight + Layout.tabBarHeight
-        if browseMode == .search {
-            listY += Layout.searchBarHeight
-        }
-        let listHeight = originalWindowSize.height - listY - Layout.statusBarHeight
+        let listHeight = listLayout().area.height
 
         let itemTop = CGFloat(index) * itemHeight
         let itemBottom = itemTop + itemHeight
