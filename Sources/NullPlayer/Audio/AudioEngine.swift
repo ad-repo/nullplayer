@@ -1435,9 +1435,7 @@ class AudioEngine {
     /// Streaming tracks run on AudioStreaming's own engine and EQ, so local graph
     /// recovery must never gate them.
     static func playbackUsesLocalAudioGraph(_ track: Track) -> Bool {
-        // Video plays in its own window, never through this graph.
-        if track.isStreamingPlaceholder || track.mediaType == .video { return false }
-        return !(track.url.scheme == "http" || track.url.scheme == "https")
+        track.playbackRoute == .local
     }
 
     /// True while the local graph must not carry playback: either recovery is pending, or a
@@ -2687,9 +2685,10 @@ class AudioEngine {
         clearSpectrum()
     }
 
-    /// Silences every player, whichever node or pipeline holds the audio. The generation moves
+    /// Stops the active pipeline's primary player and both crossfade players. The generation moves
     /// first: stopping a node fires its track's completion, which would otherwise run as a natural
     /// end and advance the playlist (a video double-clicked over playing audio loaded the next row).
+    /// `stopLocalForCasting` is the stronger variant: it stops both pipelines' primaries.
     private func haltAudioOutput() {
         playbackGeneration += 1
         if isStreamingPlayback {
@@ -4552,8 +4551,10 @@ class AudioEngine {
             staleStreamingRefreshRetriedServiceIdentity = nil
         }
 
+        let route = track.playbackRoute
+
         // Skip about:blank placeholder tracks — streaming URL not yet resolved via async fetch
-        if track.isStreamingPlaceholder {
+        if route == .unresolved {
             NSLog("loadTrack: skipping placeholder track '%@' — waiting for async URL fetch", track.title)
             return nil
         }
@@ -4564,7 +4565,7 @@ class AudioEngine {
         )
 
         // Route video tracks to the video player
-        if track.mediaType == .video {
+        if route == .video {
             NSLog("AudioEngine: Routing video track to video player: %@", track.title)
             currentTrack = track
             currentIndex = index
@@ -4593,8 +4594,7 @@ class AudioEngine {
             WindowManager.shared.stopVideo()
         }
 
-        // Check if this is a remote URL (streaming)
-        if track.url.scheme == "http" || track.url.scheme == "https" {
+        if route == .streaming {
             loadStreamingTrack(track)
         } else {
             guard rebuildAudioGraphIfDeferredAfterCast() else {
@@ -5568,7 +5568,7 @@ class AudioEngine {
         
         let nextTrack = playlist[nextIndex]
         guard Self.canHandOff(to: nextTrack, fromStreaming: isStreamingPlayback) else {
-            NSLog("Gapless: '%@' can't follow on this pipeline, leaving it to the end-of-track advance", nextTrack.title)
+            NSLog("Gapless: '%@' (%@) can't follow on this pipeline, leaving it to the end-of-track advance", nextTrack.title, nextTrack.playbackRoute.rawValue)
             return
         }
 
@@ -5657,11 +5657,10 @@ class AudioEngine {
     }
 
     /// Whether `track` can be fed straight into the pipeline now playing, as gapless and Sweet
-    /// Fades do. Both bypass `loadTrack`'s routing, so a video (its own window), a placeholder
-    /// (resolved first) or a track for the other pipeline is left to the end-of-track advance.
+    /// Fades do. Both bypass `loadTrack`, so anything it would route elsewhere (a video, a
+    /// placeholder, the other pipeline) is left to the end-of-track advance.
     static func canHandOff(to track: Track, fromStreaming isStreamingPlayback: Bool) -> Bool {
-        guard track.mediaType != .video, !track.isStreamingPlaceholder else { return false }
-        return isStreamingPlayback == (track.url.scheme == "http" || track.url.scheme == "https")
+        track.playbackRoute == (isStreamingPlayback ? .streaming : .local)
     }
 
     private func clearCrossfadeDeclineLatch() {
@@ -5701,7 +5700,7 @@ class AudioEngine {
         let nextTrack = playlist[nextIndex]
         guard Self.canHandOff(to: nextTrack, fromStreaming: isStreamingPlayback) else {
             markCrossfadeDeclinedForCurrentBoundary()
-            NSLog("Sweet Fades: Skipping crossfade - '%@' can't follow on this pipeline", nextTrack.title)
+            NSLog("Sweet Fades: Skipping crossfade - '%@' (%@) can't follow on this pipeline", nextTrack.title, nextTrack.playbackRoute.rawValue)
             return
         }
         

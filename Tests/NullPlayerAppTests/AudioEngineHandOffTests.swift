@@ -10,6 +10,14 @@ final class AudioEngineHandOffTests: XCTestCase {
     private let streamVideo = Track(url: URL(string: "https://example.com/v.mkv")!, title: "v", mediaType: .video)
     private let placeholder = Track(url: URL(string: "about:blank")!, title: "p")
 
+    func testPlaybackRouteMatchesLoadTrackRouting() {
+        XCTAssertEqual(localAudio.playbackRoute, .local)
+        XCTAssertEqual(streamAudio.playbackRoute, .streaming)
+        XCTAssertEqual(localVideo.playbackRoute, .video)
+        XCTAssertEqual(streamVideo.playbackRoute, .video)
+        XCTAssertEqual(placeholder.playbackRoute, .unresolved)
+    }
+
     func testSamePipelineAudioHandsOff() {
         XCTAssertTrue(AudioEngine.canHandOff(to: localAudio, fromStreaming: false))
         XCTAssertTrue(AudioEngine.canHandOff(to: streamAudio, fromStreaming: true))
