@@ -33,12 +33,16 @@ final class YouTubeChannelUploads {
     typealias Fetch = (YouTubeChannel, Int) async throws -> [YouTubeVideo]
 
     private let file: URL
+    private let limit: () -> Int
     private let fetch: Fetch
     private lazy var entries: [String: Entry] = Self.read(file)
     private var inFlight: Set<String> = []
 
-    init(file: URL, fetch: @escaping Fetch = { try await YouTubeManager.shared.videos(forChannel: $0, limit: $1) }) {
+    init(file: URL,
+         limit: @escaping () -> Int = { YouTubeManager.shared.videoLimit },
+         fetch: @escaping Fetch = { try await YouTubeManager.shared.videos(forChannel: $0, limit: $1) }) {
         self.file = file
+        self.limit = limit
         self.fetch = fetch
     }
 
@@ -47,8 +51,8 @@ final class YouTubeChannelUploads {
     func isFetching(_ channelId: String) -> Bool { inFlight.contains(channelId) }
 
     /// The cached uploads of these channels, cut to the current limit.
-    func uploads(of channelIds: Set<String>) -> [String: [YouTubeVideo]] {
-        let limit = YouTubeManager.shared.videoLimit
+    func uploads(of channelIds: some Sequence<String>) -> [String: [YouTubeVideo]] {
+        let limit = limit()
         var lists: [String: [YouTubeVideo]] = [:]
         for id in channelIds {
             if let entry = entries[id] { lists[id] = Array(entry.videos.prefix(limit)) }
@@ -56,16 +60,21 @@ final class YouTubeChannelUploads {
         return lists
     }
 
-    /// Fetch `channel`'s uploads unless a fresh list is cached (`force`: Refresh) or a fetch
-    /// is already running. Posts `didChangeNotification` when it starts and when it ends.
-    func load(_ channel: YouTubeChannel, force: Bool = false) {
-        let limit = YouTubeManager.shared.videoLimit
+    /// Fetch each channel's uploads unless a fresh list is cached (`force`: Refresh) or a fetch
+    /// is already running. Always posts `didChangeNotification` once, so a caller that changed
+    /// what is expanded rebuilds from it; each fetch posts again when it ends.
+    func load(_ channels: some Sequence<YouTubeChannel>, force: Bool = false) {
+        for channel in channels { startFetch(channel, force: force) }
+        didChange()
+    }
+
+    private func startFetch(_ channel: YouTubeChannel, force: Bool) {
+        let limit = limit()
         let cached = entries[channel.id]
         guard !inFlight.contains(channel.id), force || cached?.isFresh(limit: limit, now: Date()) != true else { return }
         NSLog("YouTubeChannelUploads: fetching '%@' (limit %d; cached: %@)", channel.title, limit,
               cached.map { "\($0.videos.count) at limit \($0.limit), \(Int(Date().timeIntervalSince($0.fetchedAt)))s old" } ?? "none")
         inFlight.insert(channel.id)
-        didChange()
         Task {
             let videos: [YouTubeVideo]?
             do {
@@ -80,9 +89,9 @@ final class YouTubeChannelUploads {
                 entries[channel.id] = Entry(limit: limit, fetchedAt: Date(), videos: videos)
                 write()
             }
-            didChange()
             // The limit grew while this fetch ran, so the list just stored is already short.
-            if videos != nil, limit < YouTubeManager.shared.videoLimit { load(channel) }
+            if videos != nil, limit < self.limit() { startFetch(channel, force: false) }
+            didChange()
         }
     }
 

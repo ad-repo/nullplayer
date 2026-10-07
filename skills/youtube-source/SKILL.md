@@ -61,7 +61,7 @@ var videoQuality: YouTubeVideoQuality        // persisted under "YouTubeVideoQua
 **Notifications:**
 - `YouTubeManager.youtubeChannelsDidChangeNotification` — Channel list modified
 - `YouTubeManager.youtubeVideoLimitDidChangeNotification` — Videos per Channel changed
-- `YouTubeChannelUploads.didChangeNotification` — an upload fetch started or finished
+- `YouTubeChannelUploads.didChangeNotification` — `load` was called, or an upload fetch finished
 
 ### Data Models
 
@@ -153,21 +153,26 @@ Videos appear as indented child rows. Their menu, and double-click / Enter, come
 
 A listing takes seconds, so each channel's last list is kept in one `@MainActor` store
 (`YouTubeChannelUploads.shared`) that both browsers, the channel search and the Local search's
-channel rows read; a browser holds only its `expandedYouTubeChannels`. Entries are keyed by channel
+channel rows read; a browser holds only its `expandedYouTubeChannels` (id → channel, so a limit
+change can re-load unsubscribed search previews too). Entries are keyed by channel
 id with the `limit` they were fetched under and `fetchedAt`, and written to
 `~/Library/Caches/NullPlayer/youtube_uploads.json` after each fetch, so the list survives view
 rebuilds, skin switches and relaunches. Entries older than 30 days are dropped when the file is read
 (previews of unsubscribed search results would otherwise pile up).
 
-- `load(channel)` fetches only when there is no entry, it is older than `maxAge` (1 h), or it was
-  fetched under a smaller limit; `load(channel, force: true)` is Refresh. The cached list stays on
+- `load(channels)` fetches each channel only when there is no entry, it is older than `maxAge` (1 h),
+  or it was fetched under a smaller limit; `load([channel], force: true)` is Refresh. The limit
+  comes from the `limit` closure passed to `init` (default `YouTubeManager.videoLimit`). The cached list stays on
   screen while a fetch runs. One fetch per channel at a time: a second `load` joins the running one.
   A fetch that lands under a limit that has since grown fetches again; a failed fetch keeps the old
   list and is not retried until the next `load`.
 - `uploads(of: expandedIds)` is what `YouTubeRowBuilder` gets: each list cut to the current limit,
   so a smaller Videos per Channel applies without a fetch.
 - `isFetching(id)` drives the channel row's spinner and `hasFetchesInFlight` the loading timer.
-  `didChangeNotification` posts when a fetch starts and when it ends; each view rebuilds on it.
+  `didChangeNotification` posts once per `load` call (fetching or not) and once when each fetch
+  ends. A view rebuilds on it only while it shows YouTube rows (`showsYouTubeRows`: the YouTube
+  source or the Local search), so expand, Refresh and a limit change don't rebuild themselves, and a
+  fetch doesn't reset the other browser's list.
 - Every fetch logs `YouTubeChannelUploads: fetching '<title>' (limit N; cached: …)` with the cached
   entry's size, limit and age — the line to read when a channel seems to re-fetch.
 - Remove Channel leaves the entry; it ages out, or is reused if the channel is added back.

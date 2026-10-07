@@ -471,7 +471,7 @@ class ModernLibraryBrowserView: NSView {
     private var activeYouTubeChannelSheet: AddYouTubeChannelSheet?
 
     // Cached data - YouTube
-    private var expandedYouTubeChannels: Set<String> = []
+    private var expandedYouTubeChannels: [String: YouTubeChannel] = [:]
     /// A video row's Audio ▸ / Video ▸ menu and its downloads, which drive a per-row spinner.
     private lazy var youtubeVideoActions: YouTubeVideoActions = {
         let actions = YouTubeVideoActions(search: youtubeSearch)
@@ -5690,7 +5690,7 @@ class ModernLibraryBrowserView: NSView {
             }
             if menu.items.isEmpty { return }
         case .youtubeChannel(let channel):
-            let expandTitle = expandedYouTubeChannels.contains(channel.id) ? "Collapse" : "Expand"
+            let expandTitle = expandedYouTubeChannels[channel.id] != nil ? "Collapse" : "Expand"
             let expandItem = NSMenuItem(title: expandTitle, action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
             menu.addItem(NSMenuItem.separator())
@@ -6384,15 +6384,14 @@ class ModernLibraryBrowserView: NSView {
     }
     @objc private func contextMenuRefreshYouTubeChannel(_ sender: NSMenuItem) {
         guard let channel = sender.representedObject as? YouTubeChannel else { return }
-        expandedYouTubeChannels.insert(channel.id)
-        YouTubeChannelUploads.shared.load(channel, force: true)
-        rebuildCurrentModeItems(); needsDisplay = true
+        expandedYouTubeChannels[channel.id] = channel
+        YouTubeChannelUploads.shared.load([channel], force: true)
     }
 
     @objc private func contextMenuRemoveYouTubeChannel(_ sender: NSMenuItem) {
         guard let channel = sender.representedObject as? YouTubeChannel else { return }
         YouTubeManager.shared.removeChannel(channel)
-        expandedYouTubeChannels.remove(channel.id)
+        expandedYouTubeChannels.removeValue(forKey: channel.id)
         rebuildCurrentModeItems()
     }
 
@@ -6772,15 +6771,18 @@ class ModernLibraryBrowserView: NSView {
 
     /// A larger limit fetches the expanded channels again; a smaller one shows fewer of the cached uploads.
     @objc private func youtubeVideoLimitDidChange() {
-        for channel in YouTubeManager.shared.channels where expandedYouTubeChannels.contains(channel.id) {
-            YouTubeChannelUploads.shared.load(channel)
-        }
-        rebuildCurrentModeItems()
+        YouTubeChannelUploads.shared.load(expandedYouTubeChannels.values)
     }
 
     @objc private func youtubeUploadsDidChange() {
         if YouTubeChannelUploads.shared.hasFetchesInFlight { startLoadingAnimation() }
-        rebuildCurrentModeItems(); needsDisplay = true
+        if showsYouTubeRows { rebuildCurrentModeItems(); needsDisplay = true }
+    }
+
+    /// The list shows YouTube rows: the YouTube source, or the Local search's channel and video rows.
+    private var showsYouTubeRows: Bool {
+        if case .local = currentSource { return browseMode == .search }
+        return currentSource.isYouTube
     }
 
     @objc private func trackDidChange(_ notification: Notification) {
@@ -9122,8 +9124,8 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private var youtubeRows: YouTubeRowBuilder {
-        YouTubeRowBuilder(expanded: expandedYouTubeChannels,
-                          uploads: YouTubeChannelUploads.shared.uploads(of: expandedYouTubeChannels))
+        YouTubeRowBuilder(expanded: Set(expandedYouTubeChannels.keys),
+                          uploads: YouTubeChannelUploads.shared.uploads(of: expandedYouTubeChannels.keys))
     }
 
     private func buildYouTubeChannelItems() {
@@ -10370,7 +10372,7 @@ class ModernLibraryBrowserView: NSView {
         case .embySeason(let s): return expandedEmbySeasons.contains(s.id)
         case .plexPlaylist(let p): return expandedPlexPlaylists.contains(p.id)
         case .radioFolder(let folder): return expandedRadioFolders.contains(folder.id)
-        case .youtubeChannel(let ch): return expandedYouTubeChannels.contains(ch.id)
+        case .youtubeChannel(let ch): return expandedYouTubeChannels[ch.id] != nil
         case .localPlaylist(let p): return expandedLocalPlaylists.contains(p.url.path)
         default: return false
         }
@@ -10690,9 +10692,10 @@ class ModernLibraryBrowserView: NSView {
                 rebuildCurrentModeItems()
             }
         case .youtubeChannel(let ch):
-            if expandedYouTubeChannels.remove(ch.id) == nil {
-                expandedYouTubeChannels.insert(ch.id)
-                YouTubeChannelUploads.shared.load(ch)
+            if expandedYouTubeChannels.removeValue(forKey: ch.id) == nil {
+                expandedYouTubeChannels[ch.id] = ch
+                YouTubeChannelUploads.shared.load([ch])  // rebuilds through youtubeUploadsDidChange
+                return
             }
         default: break
         }

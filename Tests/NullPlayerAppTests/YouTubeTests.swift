@@ -815,15 +815,10 @@ final class YouTubeTests: XCTestCase {
 
     @MainActor
     func testChannelUploadsAreFetchedOnceAndKeptOnDisk() async throws {
-        let manager = YouTubeManager.shared
-        let originalLimit = manager.videoLimit
         let file = FileManager.default.temporaryDirectory
             .appendingPathComponent("nullplayer-youtube-uploads-\(UUID().uuidString).json")
-        defer {
-            manager.videoLimit = originalLimit
-            try? FileManager.default.removeItem(at: file)
-        }
-        manager.videoLimit = 3
+        defer { try? FileManager.default.removeItem(at: file) }
+        var videoLimit = 3
         let channel = YouTubeChannel(id: "ch", title: "Chan", url: URL(string: "https://www.youtube.com/@ch")!, dateAdded: Date())
         var fetchedLimits: [Int] = []
         let fetch: YouTubeChannelUploads.Fetch = { _, limit in
@@ -834,35 +829,42 @@ final class YouTubeTests: XCTestCase {
             while uploads.hasFetchesInFlight { await Task.yield() }
         }
 
-        let uploads = YouTubeChannelUploads(file: file, fetch: fetch)
+        let uploads = YouTubeChannelUploads(file: file, limit: { videoLimit }, fetch: fetch)
+        var posts = 0
+        let observer = NotificationCenter.default.addObserver(
+            forName: YouTubeChannelUploads.didChangeNotification, object: uploads, queue: nil) { _ in posts += 1 }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
         XCTAssertTrue(uploads.uploads(of: ["ch"]).isEmpty)
-        uploads.load(channel)
-        uploads.load(channel)  // joins the running fetch
+        uploads.load([channel, channel])  // the second joins the first's fetch
         XCTAssertTrue(uploads.isFetching("ch"))
+        XCTAssertEqual(posts, 1)  // one post per load call, so a caller rebuilds once
         await settle(uploads)
+        XCTAssertEqual(posts, 2)  // and one when the fetch ends
         XCTAssertEqual(fetchedLimits, [3])
         XCTAssertEqual(uploads.uploads(of: ["ch"])["ch"]?.map(\.videoId), ["v0", "v1", "v2"])
 
-        uploads.load(channel)  // fresh: no fetch
+        uploads.load([channel])  // fresh: no fetch, but still posts
         XCTAssertFalse(uploads.hasFetchesInFlight)
-        uploads.load(channel, force: true)  // Refresh
+        XCTAssertEqual(posts, 3)
+        uploads.load([channel], force: true)  // Refresh
         await settle(uploads)
         XCTAssertEqual(fetchedLimits, [3, 3])
 
         // A smaller limit shows the newest cached uploads; a larger one fetches again.
-        manager.videoLimit = 2
-        uploads.load(channel)
+        videoLimit = 2
+        uploads.load([channel])
         XCTAssertFalse(uploads.hasFetchesInFlight)
         XCTAssertEqual(uploads.uploads(of: ["ch"])["ch"]?.count, 2)
-        manager.videoLimit = 4
-        uploads.load(channel)
+        videoLimit = 4
+        uploads.load([channel])
         await settle(uploads)
         XCTAssertEqual(fetchedLimits, [3, 3, 4])
 
         // A relaunch reads the list from disk instead of fetching it.
-        let relaunched = YouTubeChannelUploads(file: file, fetch: fetch)
+        let relaunched = YouTubeChannelUploads(file: file, limit: { videoLimit }, fetch: fetch)
         XCTAssertEqual(relaunched.uploads(of: ["ch"])["ch"]?.count, 4)
-        relaunched.load(channel)
+        relaunched.load([channel])
         XCTAssertFalse(relaunched.hasFetchesInFlight)
 
         let entry = YouTubeChannelUploads.Entry(limit: 4, fetchedAt: Date(), videos: [])

@@ -1111,7 +1111,7 @@ class PlexBrowserView: NSView {
     private var radioPlayTask: Task<Void, Never>?
     private var loadGeneration: Int = 0
 
-    private var expandedYouTubeChannels: Set<String> = []
+    private var expandedYouTubeChannels: [String: YouTubeChannel] = [:]
     /// A video row's Audio ▸ / Video ▸ menu and its downloads, which drive a per-row spinner.
     private lazy var youtubeVideoActions: YouTubeVideoActions = {
         let actions = YouTubeVideoActions(search: youtubeSearch)
@@ -11104,7 +11104,7 @@ class PlexBrowserView: NSView {
             if menu.items.isEmpty { return }
 
         case .youtubeChannel(let channel):
-            let expandTitle = expandedYouTubeChannels.contains(channel.id) ? "Collapse" : "Expand"
+            let expandTitle = expandedYouTubeChannels[channel.id] != nil ? "Collapse" : "Expand"
             let expandItem = NSMenuItem(title: expandTitle, action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
             menu.addItem(NSMenuItem.separator())
@@ -11557,15 +11557,14 @@ class PlexBrowserView: NSView {
 
     @objc private func contextMenuRefreshYouTubeChannel(_ sender: NSMenuItem) {
         guard let channel = sender.representedObject as? YouTubeChannel else { return }
-        expandedYouTubeChannels.insert(channel.id)
-        YouTubeChannelUploads.shared.load(channel, force: true)
-        rebuildCurrentModeItems(); needsDisplay = true
+        expandedYouTubeChannels[channel.id] = channel
+        YouTubeChannelUploads.shared.load([channel], force: true)
     }
 
     @objc private func contextMenuRemoveYouTubeChannel(_ sender: NSMenuItem) {
         guard let channel = sender.representedObject as? YouTubeChannel else { return }
         YouTubeManager.shared.removeChannel(channel)
-        expandedYouTubeChannels.remove(channel.id)
+        expandedYouTubeChannels.removeValue(forKey: channel.id)
         rebuildCurrentModeItems()
     }
 
@@ -14031,8 +14030,8 @@ class PlexBrowserView: NSView {
     }
 
     private var youtubeRows: YouTubeRowBuilder {
-        YouTubeRowBuilder(expanded: expandedYouTubeChannels,
-                          uploads: YouTubeChannelUploads.shared.uploads(of: expandedYouTubeChannels))
+        YouTubeRowBuilder(expanded: Set(expandedYouTubeChannels.keys),
+                          uploads: YouTubeChannelUploads.shared.uploads(of: expandedYouTubeChannels.keys))
     }
 
     private func buildYouTubeChannelItems() {
@@ -14640,15 +14639,18 @@ class PlexBrowserView: NSView {
 
     /// A larger limit fetches the expanded channels again; a smaller one shows fewer of the cached uploads.
     @objc private func youtubeVideoLimitDidChange() {
-        for channel in YouTubeManager.shared.channels where expandedYouTubeChannels.contains(channel.id) {
-            YouTubeChannelUploads.shared.load(channel)
-        }
-        rebuildCurrentModeItems()
+        YouTubeChannelUploads.shared.load(expandedYouTubeChannels.values)
     }
 
     @objc private func youtubeUploadsDidChange() {
         if YouTubeChannelUploads.shared.hasFetchesInFlight { startLoadingAnimation() }
-        rebuildCurrentModeItems(); needsDisplay = true
+        if showsYouTubeRows { rebuildCurrentModeItems(); needsDisplay = true }
+    }
+
+    /// The list shows YouTube rows: the YouTube source, or the Local search's channel and video rows.
+    private var showsYouTubeRows: Bool {
+        if case .local = currentSource { return browseMode == .search }
+        return currentSource.isYouTube
     }
 
     /// Load Subsonic data for the current mode
@@ -17081,11 +17083,12 @@ class PlexBrowserView: NSView {
             rebuildCurrentModeItems()
 
         case .youtubeChannel(let channel):
-            if expandedYouTubeChannels.remove(channel.id) == nil {
-                expandedYouTubeChannels.insert(channel.id)
-                YouTubeChannelUploads.shared.load(channel)
+            if expandedYouTubeChannels.removeValue(forKey: channel.id) == nil {
+                expandedYouTubeChannels[channel.id] = channel
+                YouTubeChannelUploads.shared.load([channel])  // rebuilds through youtubeUploadsDidChange
+            } else {
+                rebuildCurrentModeItems()
             }
-            rebuildCurrentModeItems()
 
         default:
             break
