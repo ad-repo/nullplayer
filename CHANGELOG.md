@@ -51,6 +51,14 @@
   download that already shows under its expanded channel is no longer listed again below it, and a
   video's title no longer changes between searches when its audio and video were saved under
   different titles.
+- **Your EQ and playlist survive quitting, a crash or a dead battery** — **Remember State on Quit**
+  is now on by default, so the EQ, playlist and window layout come back on the next launch instead
+  of resetting to flat and empty. The session is also saved every few seconds and before the Mac
+  sleeps, so it survives the app being killed or the laptop running out of power, not just a normal
+  quit. Turning Remember State off in the menu still turns all of this off.
+- **Classic and Original skins each keep their own EQ** — Original and Metal skins use a 21-band EQ
+  and the others use 10 bands. Each now remembers its own curve across relaunches, so switching
+  between them no longer softens the EQ a little more each time.
 
 ## 0.31.4
 

@@ -179,6 +179,7 @@ final class WMPPhase3Tests: XCTestCase {
             eqAutoEnabled: false,
             eqPreamp: 0,
             eqBands: Array(repeating: 0, count: 10),
+            eqBandsByLayout: [:],
             playlistTracks: [],
             currentTrackIndex: -1,
             playbackPosition: 0,

@@ -9,6 +9,20 @@ description: NullPlayer session-state restoration, AppStateManager, AppPersisten
 
 `AppStateManager` saves and restores session state (v2) for window visibility and layout, audio and EQ state, and playlist contents. It intentionally does not save or restore the selected or current track, seek position, or playing state, so launch starts paused with no track loaded solely because state was restored.
 
+Remember State is **on by default** (`register(defaults:)`; an explicit menu choice wins). Saving is not
+only on quit: power loss, a crash or a force quit never reach `applicationWillTerminate`, so
+`restoreSettingsState` starts an autosave once the restore has applied — every 10 s, plus before
+system sleep and power-off. `saveState` writes, and logs, only when the encoded state changed
+(`.sortedKeys`, or dictionary order defeats the check), so idle ticks write nothing. Never start the
+autosave before restoration: it would overwrite the saved session with the empty launch state.
+`clearSavedState` forgets the last-written copy so the next save writes.
+
+EQ is saved per band layout (`eqBandsByLayout`, the engine's `canonicalGains`: `classic10` for Classic,
+`.wal` and `.wmz`, `modern21` for Original and Metal) and restored through
+`AudioEngine.restoreEQGains`, so each family keeps its exact curve across a relaunch in the other.
+`eqBands` (the active layout only) is still written because older builds decode it as required; a
+state without `eqBandsByLayout` is upgraded on decode from `eqBands`.
+
 Restore state in two phases: settings first with `restoreSettingsState`, then the playlist with `restorePlaylistState`. Load streaming tracks as placeholder `Track` objects, then replace them asynchronously through `engine.replaceTrack(at:with:)`.
 
 Restore UI scale and window frames only when the saved and running `PlayerUIMode` values match exactly. Modern and Metal do not match. On a mismatch, use 100% scale and default frames while still restoring non-geometry state.

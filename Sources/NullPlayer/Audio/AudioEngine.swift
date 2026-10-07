@@ -6364,6 +6364,37 @@ class AudioEngine {
         guard band >= 0 && band < activeEQConfiguration.bandCount else { return 0 }
         return eqNode.bands[band].gain
     }
+
+    /// Every layout's exact gains, keyed by `EQConfiguration.name`, the active one read from
+    /// the live node. Saved with the session so each layout keeps its own curve across launches.
+    func eqGainsByLayout() -> [String: [Float]] {
+        var gains = canonicalGains
+        gains[activeEQConfiguration.name] = (0..<activeEQConfiguration.bandCount).map { eqNode.bands[$0].gain }
+        return gains
+    }
+
+    /// Replace every layout's gains with a saved session's and apply the active one. A layout the
+    /// session never used is seeded from one it did, the same way `applyEQLayout` seeds it.
+    func restoreEQGains(_ gainsByLayout: [String: [Float]]) {
+        let layouts = [EQConfiguration.classic10, .modern21]
+        canonicalGains = [:]
+        for layout in layouts {
+            if let gains = gainsByLayout[layout.name], gains.count == layout.bandCount {
+                canonicalGains[layout.name] = gains
+            }
+        }
+        let active = activeEQConfiguration
+        if canonicalGains[active.name] == nil,
+           let source = layouts.first(where: { canonicalGains[$0.name] != nil }),
+           let sourceGains = canonicalGains[source.name] {
+            canonicalGains[active.name] = EQBandRemapper.remap(gains: sourceGains, from: source, to: active)
+        }
+        programEQNode(for: active)
+        syncEQToStreamingPlayer()
+        if let crossfadeStreamingPlayer {
+            syncEQToStreamingPlayer(crossfadeStreamingPlayer)
+        }
+    }
     
     /// Set preamp gain (-12 to +12 dB)
     func setPreamp(_ gain: Float) {
