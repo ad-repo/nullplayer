@@ -161,6 +161,14 @@ enum YouTubeMediaKind: String, Codable, CaseIterable {
         case .video: return "Video"
         }
     }
+
+    /// The list-row icon for this form on disk: a text glyph, so it takes the row's text color.
+    var rowMarker: String {
+        switch self {
+        case .audio: return "♫"
+        case .video: return "▶\u{FE0E}"
+        }
+    }
 }
 
 /// Metadata about a downloaded YouTube video

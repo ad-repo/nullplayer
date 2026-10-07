@@ -385,11 +385,6 @@ final class YouTubeManager {
         return files
     }
 
-    /// Check if any form of a video has been downloaded
-    func isDownloaded(_ videoId: String) -> Bool {
-        !downloadedFiles(for: videoId).isEmpty
-    }
-
     /// The file whose embedded cover art stands for a video: the audio download, else the video.
     func coverArtFile(for videoId: String) -> URL? {
         let files = downloadedFiles(for: videoId)

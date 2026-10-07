@@ -1,7 +1,7 @@
 import Foundation
 
 /// A YouTube list row, shaped once for both library browsers. Each browser maps it to its own
-/// display item, so row ids, titles, indents and the `⬇ ` marker are decided here only.
+/// display item, so row ids, titles, indents and the downloaded-form markers are decided here only.
 struct YouTubeRow {
     enum Kind {
         case header
@@ -62,7 +62,7 @@ struct YouTubeRowBuilder {
         }
         let shownUploads = Set(found.channels.flatMap(expandedUploads(of:)).map(\.videoId))
         let downloads = found.videos.filter { !shownUploads.contains($0.videoId) }.map {
-            YouTubeRow(id: "youtube-download-\($0.videoId)", title: $0.title, indentLevel: 1, kind: .video($0))
+            videoRow($0, id: "youtube-download-\($0.videoId)", indentLevel: 1)
         }
         let count = found.channels.count + downloads.count
         guard count > 0 else { return [] }
@@ -74,11 +74,19 @@ struct YouTubeRowBuilder {
     private func channelRows(_ channel: YouTubeChannel, id: String, title: String, info: String? = nil,
                              indentLevel: Int) -> [YouTubeRow] {
         let row = YouTubeRow(id: id, title: title, info: info, indentLevel: indentLevel, kind: .channel(channel))
-        return [row] + expandedUploads(of: channel).map { video in
-            YouTubeRow(id: "youtube-video-\(video.videoId)",
-                       title: (manager.isDownloaded(video.videoId) ? "⬇ " : "") + video.title,
-                       info: video.formattedDuration, indentLevel: indentLevel + 1, kind: .video(video))
+        return [row] + expandedUploads(of: channel).map {
+            videoRow($0, id: "youtube-video-\($0.videoId)", indentLevel: indentLevel + 1)
         }
+    }
+
+    /// A video row, its title led by one marker per form on disk. The files are checked here,
+    /// once per rebuild, never while drawing: the list redraws at 10 Hz under a download spinner
+    /// and the download folder may be a network mount.
+    private func videoRow(_ video: YouTubeVideo, id: String, indentLevel: Int) -> YouTubeRow {
+        let onDisk = manager.downloadedFiles(for: video.videoId)
+        let markers = YouTubeMediaKind.allCases.filter { onDisk[$0] != nil }.map(\.rowMarker)
+        return YouTubeRow(id: id, title: (markers + [video.title]).joined(separator: " "), info: video.formattedDuration,
+                          indentLevel: indentLevel, kind: .video(video))
     }
 
     private func expandedUploads(of channel: YouTubeChannel) -> [YouTubeVideo] {

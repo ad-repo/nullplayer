@@ -82,6 +82,10 @@
   the browser, so pressing Return replayed the selected film from the beginning and lost your
   place, with nothing on screen to show why. Starting a film now moves the keyboard to the skin
   window showing it, as other skins already did.
+- **YouTube rows show which forms you downloaded** — a downloaded video is marked ♫ for its audio,
+  ▶ for its video, or both, instead of a single ⬇ that didn't say which. Downloads found by the
+  Local source's search carry the same marks; before, they had none. Sorting by Title ignores the
+  marks, so in Original skins downloaded videos no longer sort ahead of the rest.
 
 ## 0.31.4
 

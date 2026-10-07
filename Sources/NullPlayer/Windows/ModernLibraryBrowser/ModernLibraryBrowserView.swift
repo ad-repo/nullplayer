@@ -3624,8 +3624,8 @@ class ModernLibraryBrowserView: NSView {
             return ascending ? aDate < bDate : aDate > bDate
         }
 
-        let aVal = a.columnValue(for: sortColumn)
-        let bVal = b.columnValue(for: sortColumn)
+        let aVal = a.columnSortValue(for: sortColumn)
+        let bVal = b.columnSortValue(for: sortColumn)
 
         if sortColumn.id == "trackNum" || sortColumn.id == "year" || sortColumn.id == "plays" ||
            sortColumn.id == "albums" || sortColumn.id == "discNum" {
@@ -11604,6 +11604,13 @@ private struct ModernBrowserColumn {
 // MARK: - Column Value Extraction
 
 extension ModernDisplayItem {
+    /// What a column sorts by: its shown value, except a YouTube video's title, which sorts
+    /// by the video's own title without the downloaded-form markers that lead the row.
+    func columnSortValue(for column: ModernBrowserColumn) -> String {
+        if column.id == "title", case .youtubeVideo(let video) = type { return video.title }
+        return columnValue(for: column)
+    }
+
     func columnValue(for column: ModernBrowserColumn) -> String {
         if column.id == "title" { return title }
         switch type {

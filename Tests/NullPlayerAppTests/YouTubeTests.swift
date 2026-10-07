@@ -679,7 +679,6 @@ final class YouTubeTests: XCTestCase {
 
         manager.downloadRoot = root
         XCTAssertEqual(Set(manager.downloadedFiles(for: "v").keys), [.audio, .video])
-        XCTAssertTrue(manager.isDownloaded("v"))
         // Cover art comes from the audio file while there is one, then from the video
         XCTAssertEqual(manager.coverArtFile(for: "v")?.lastPathComponent, "V.mp3")
 
@@ -776,26 +775,36 @@ final class YouTubeTests: XCTestCase {
         }
 
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try Data().write(to: root.appendingPathComponent("Up.mp3"))
+        for name in ["Up.mp3", "Film.mp4", "Both.mp3", "Both.mp4"] {
+            try Data().write(to: root.appendingPathComponent(name))
+        }
         try writeManifestEntries(root: root, [
             "up.audio": ["videoId": "up", "title": "Up", "channelId": "ch", "fileName": "Up.mp3", "kind": "audio"],
+            "film.video": ["videoId": "film", "title": "Film", "channelId": "ch", "fileName": "Film.mp4", "kind": "video"],
+            "both.audio": ["videoId": "both", "title": "Both", "channelId": "ch", "fileName": "Both.mp3", "kind": "audio"],
+            "both.video": ["videoId": "both", "title": "Both", "channelId": "ch", "fileName": "Both.mp4", "kind": "video"],
         ])
         manager.downloadRoot = root
         let channel = YouTubeChannel(id: "ch", title: "Chan", url: URL(string: "https://www.youtube.com/@ch")!, dateAdded: Date())
-        let uploads = ["ch": [
-            YouTubeVideo(videoId: "up", title: "Up", channelId: "ch", duration: 75, publishedAt: nil),
-            YouTubeVideo(videoId: "new", title: "New", channelId: "ch", duration: nil, publishedAt: nil),
-        ]]
+        let uploads = ["ch": ["up", "film", "both", "new"].map {
+            YouTubeVideo(videoId: $0, title: $0.capitalized, channelId: "ch", duration: $0 == "up" ? 75 : nil, publishedAt: nil)
+        }]
 
         let collapsed = YouTubeRowBuilder(expanded: [], uploads: uploads).channels([channel])
         XCTAssertEqual(collapsed.map(\.id), ["youtube-channel-ch"])
 
         let rows = YouTubeRowBuilder(expanded: ["ch"], uploads: uploads).channels([channel])
-        XCTAssertEqual(rows.map(\.id), ["youtube-channel-ch", "youtube-video-up", "youtube-video-new"])
-        XCTAssertEqual(rows.map(\.indentLevel), [0, 1, 1])
-        XCTAssertEqual(rows.map(\.title), ["Chan", "⬇ Up", "New"])
-        XCTAssertEqual(rows.map(\.info), [nil, "1:15", nil])
-        XCTAssertEqual(rows.map(\.hasChildren), [true, false, false])
+        XCTAssertEqual(rows.map(\.id), ["youtube-channel-ch", "youtube-video-up", "youtube-video-film",
+                                         "youtube-video-both", "youtube-video-new"])
+        XCTAssertEqual(rows.map(\.indentLevel), [0, 1, 1, 1, 1])
+        // One marker per form on disk, audio first
+        XCTAssertEqual(rows.map(\.title), ["Chan", "♫ Up", "▶\u{FE0E} Film", "♫ ▶\u{FE0E} Both", "New"])
+        XCTAssertEqual(rows.map(\.info), [nil, "1:15", nil, nil, nil])
+        XCTAssertEqual(rows.map(\.hasChildren), [true, false, false, false, false])
+
+        // The Local search's download rows carry the same markers
+        let found = YouTubeRowBuilder(expanded: [], uploads: [:]).localSearch(query: "film", excluding: [])
+        XCTAssertEqual(found.filter { $0.id.hasPrefix("youtube-download-") }.map(\.title), ["▶\u{FE0E} Film"])
     }
 
     func testDoubleClickPlaysTheOnlyFormOnDiskAndOtherwiseAsks() {

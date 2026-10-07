@@ -16,7 +16,7 @@ Subscribe to YouTube channels in the **Radio tab** and browse their uploads. A v
 3. Channel appears as a folder; expand to see uploads
 4. Right-click a video → **Audio ▸** or **Video ▸** → Play, Play and Replace Queue, Play Next or
    Add to Queue. That form downloads first if it isn't on disk; the row shows a spinner
-   meanwhile and a `⬇ ` once a file is there. Double-click / Enter plays the one form on disk, and
+   meanwhile and `♫` (audio) / `▶` (video) for each form on disk. Double-click / Enter plays the one form on disk, and
    otherwise (both forms, or neither) pops the same menu
 5. **Library → YouTube → Set Download Folder…** to choose where downloads live
 6. **Library → YouTube → Audio Format** and **Video Quality** to pick what those downloads are
@@ -280,8 +280,8 @@ Every YouTube list row in both browsers comes from `YouTubeRowBuilder`, built pe
 view's `expandedYouTubeChannels` and `youtubeChannelVideos`: `channels(_:)` (Channels tab),
 `channelSearch(_:)` (the YouTube source's Search tab) and `localSearch(query:excluding:)`. It
 returns view-independent `YouTubeRow`s, and each view maps them with a ten-line
-`ModernDisplayItem(_:)` / `PlexDisplayItem(_:)`. Row ids, titles, indents, the `⬇ ` marker and the
-section headers are decided there only, so a change to YouTube rows is made once, not per browser.
+`ModernDisplayItem(_:)` / `PlexDisplayItem(_:)`. Row ids, titles, indents, the downloaded-form markers and
+the section headers are decided there only, so a change to YouTube rows is made once, not per browser.
 
 ### Download Flow
 
@@ -355,5 +355,5 @@ Downloaded files are local `file://` tracks. After download completes, the `Trac
 - **Streaming playback not offered**: YouTube streams (live, members-only, age-restricted) may fail silently if yt-dlp can't extract them; only downloadable videos are listed
 - **Video titles from yt-dlp**: Source of truth is yt-dlp's title extraction; titles are not synced with YouTube's API and may differ from what the web UI shows
 - **YouTube has its own session sort (default date order)**: The channels tab must NOT inherit the persisted library column sort (`columnSortId`, saved per tab by `LibraryBrowserTabSortStore`), or every rebuild — including after a download — re-sorts videos to A–Z. Both views keep session-only `youtubeColumnSortId`/`youtubeColumnSortAscending` (default nil = yt-dlp's newest-first order), read through `activeColumnSortId`/`activeColumnSortAscending` by every sort/header-draw path. A header click in the YouTube tab sets the session sort only; it never writes the library sort. This state resets to date order on relaunch (intended).
-- **Downloaded marker is rebuild-driven**: A downloading video draws a per-row spinner gated on `youtubeVideoActions.isFetching`; the **`⬇ ` prefix** (either form on disk) is added by `YouTubeRowBuilder` from `isDownloaded`. `onFilesChanged` fires when the download lands, and the view's handler calls `rebuildCurrentModeItems()` (adds the marker; the spinner is gone because the fetch left `fetches`) — so the spinner→icon transition only works because the row stays put, which is why the session-sort fix above matters (an A–Z re-sort would relocate the row mid-transition).
+- **Downloaded marker is rebuild-driven**: A downloading video draws a per-row spinner gated on `youtubeVideoActions.isFetching`; the **form markers** (`♫` audio, `▶︎` video, one per form on disk, from `YouTubeMediaKind.rowMarker`) are added by `YouTubeRowBuilder.videoRow` from `downloadedFiles(for:)` — at rebuild, never while drawing (it stats the files, the list redraws at 10 Hz under a spinner, and the folder may be a NAS mount). Uploads and the Local search's download rows both go through `videoRow`. The markers are part of the row title, so a Title sort must read `columnSortValue(for:)` (the video's own title) on `ModernDisplayItem` / `PlexDisplayItem`, never `columnValue`. `onFilesChanged` fires when the download lands, and the view's handler calls `rebuildCurrentModeItems()` (adds the marker; the spinner is gone because the fetch left `fetches`) — so the spinner→icon transition only works because the row stays put, which is why the session-sort fix above matters (an A–Z re-sort would relocate the row mid-transition).
 - **Channels tab uses the `.youtube` column group, not the radio column path**: Don't route YouTube videos through `internetRadioColumns` — those columns are fixed-width by design. Video rows use `youtubeColumns` (`[.thumbnail, .title, .youtubeDate, .duration]`) via the resizable `LibraryColumnVisibilityGroup.youtube` group; adding/changing that enum requires updating every exhaustive `switch group` in both `ModernLibraryBrowserView` and `PlexBrowserView`

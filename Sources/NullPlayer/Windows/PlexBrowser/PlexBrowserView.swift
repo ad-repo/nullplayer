@@ -763,8 +763,8 @@ class PlexBrowserView: NSView {
             return ascending ? aDate < bDate : aDate > bDate
         }
 
-        let aVal = columnSortValue(for: a, column: sortColumn)
-        let bVal = columnSortValue(for: b, column: sortColumn)
+        let aVal = a.columnSortValue(for: sortColumn)
+        let bVal = b.columnSortValue(for: sortColumn)
 
         // Try numeric comparison for numeric columns
         if sortColumn.id == "trackNum" || sortColumn.id == "year" || sortColumn.id == "plays" ||
@@ -811,13 +811,6 @@ class PlexBrowserView: NSView {
 
         // Default text comparison
         return compareNameStrings(aVal, bVal, ascending: ascending)
-    }
-
-    private func columnSortValue(for item: PlexDisplayItem, column: BrowserColumn) -> String {
-        if column.id == "title", case .youtubeVideo(let video) = item.type {
-            return video.title
-        }
-        return item.columnValue(for: column)
     }
 
     private func applyInternetRadioColumnSort(sortColumn: BrowserColumn, ascending: Bool) -> Bool {
@@ -17942,6 +17935,13 @@ private struct BrowserColumn {
 // MARK: - Column Value Extraction
 
 extension PlexDisplayItem {
+    /// What a column sorts by: its shown value, except a YouTube video's title, which sorts
+    /// by the video's own title without the downloaded-form markers that lead the row.
+    func columnSortValue(for column: BrowserColumn) -> String {
+        if column.id == "title", case .youtubeVideo(let video) = type { return video.title }
+        return columnValue(for: column)
+    }
+
     /// Get the display value for a specific column based on item type
     func columnValue(for column: BrowserColumn) -> String {
         // Title column always uses the display item's title (already set correctly on creation)
