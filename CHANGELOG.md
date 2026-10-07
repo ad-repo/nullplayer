@@ -97,6 +97,8 @@
   banner), whether you scrolled, jumped with the A–Z index, or moved the selection with the arrow
   keys. In Original skins, clicking the offline-volume banner no longer selects the row hidden
   behind it.
+- **New app icon** by Allan Nyholm Nielsen
+  ([#488](https://github.com/ad-repo/nullplayer/issues/488)).
 
 ## 0.31.4
 

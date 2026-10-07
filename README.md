@@ -574,6 +574,10 @@ See [AGENTS.md](AGENTS.md) for documentation links and key source files.
 
 **Note:** This project will never support Spotify, Youtube, Apple or Amazon. Please do not submit PRs for this type of integration.
 
+## Credits
+
+App icon by **Allan Nyholm Nielsen** ([#488](https://github.com/ad-repo/nullplayer/issues/488)).
+
 ## Privacy
 
 NullPlayer does not collect or transmit personal data to the developer. Playback
