@@ -5447,6 +5447,27 @@ class AudioEngine {
         advanceAfterNaturalTrackEnd()
     }
 
+    /// A playlist film that never played — missing, unreadable or unreachable — is a bad file, as
+    /// in `loadTrack`: reported, then skipped, or stopped on when its folder is gone. The window has
+    /// already closed, which stopped the engine the film paused.
+    func videoTrackDidFail() {
+        guard let track = currentTrack, track.mediaType == .video else { return }
+        let token = deferredLocalTrackLoadToken
+        // Off the main thread: both stats may hit the volume that just failed.
+        deferredIOQueue.async { [weak self] in
+            let isFile = track.url.isFileURL
+            let folderIsPresent = !isFile || Self.containingFolderIsPresent(track.url)
+            let error: Error = isFile && !FileManager.default.fileExists(atPath: track.url.path)
+                ? CocoaError(.fileReadNoSuchFile, userInfo: [NSURLErrorKey: track.url])
+                : NSError(domain: "NullPlayer.Video", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "The video could not be played"])
+            DispatchQueue.main.async {
+                guard let self, self.deferredLocalTrackLoadToken == token else { return }
+                self.handleLocalTrackLoadFailure(track: track, error: error, advanceToNextTrack: folderIsPresent)
+            }
+        }
+    }
+
     private func advanceAfterNaturalTrackEnd() {
         if repeatEnabled {
             if shuffleEnabled {

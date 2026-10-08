@@ -290,6 +290,47 @@ final class MissingFilesTests: XCTestCase {
         XCTAssertNil(engine.currentTrack)
     }
 
+    /// A playlist film VLC could not open left a black window over a paused engine and the queue
+    /// stuck on it (M25). It is now a bad file: reported, then skipped to the next entry.
+    func testAFailedFilmIsReportedAndSkipped() throws {
+        let folder = try albumFolderWithAnUnreadableFile()
+        let film = Track(url: folder.appendingPathComponent("missing.mp4"), title: "Film", mediaType: .video)
+        let next = folder.appendingPathComponent("next.mp3")
+        let engine = AudioEngine()
+        engine.setPlaylistTracks([film, Track(url: next)])
+        engine.debugSelectTrackForShuffleTesting(0)
+        let filmFailed = expectation(forNotification: .audioTrackDidFailToLoad, object: engine) { note in
+            let error = note.userInfo?["error"] as? CocoaError
+            return (note.userInfo?["track"] as? Track)?.id == film.id && error?.code == .fileReadNoSuchFile
+        }
+        // `next.mp3` does not exist either, so its own failure is the sign the skip reached it.
+        let nextFailed = expectation(forNotification: .audioTrackDidFailToLoad, object: engine) { note in
+            (note.userInfo?["track"] as? Track)?.url == next
+        }
+
+        engine.videoTrackDidFail()
+
+        wait(for: [filmFailed, nextFailed], timeout: 5, enforceOrder: true)
+    }
+
+    /// Control for the test above: a film whose folder is gone stops the queue, as audio does.
+    func testAFailedFilmWhoseFolderIsGoneStopsTheQueue() {
+        let gone = tempDirectoryURL.appendingPathComponent("gone", isDirectory: true)
+        let film = Track(url: gone.appendingPathComponent("film.mp4"), title: "Film", mediaType: .video)
+        let engine = AudioEngine()
+        engine.setPlaylistTracks([film, Track(url: gone.appendingPathComponent("next.mp3"))])
+        engine.debugSelectTrackForShuffleTesting(0)
+        let failed = expectation(forNotification: .audioTrackDidFailToLoad, object: engine)
+
+        engine.videoTrackDidFail()
+        wait(for: [failed], timeout: 5)
+        RunLoop.main.run(until: Date().addingTimeInterval(1))
+
+        XCTAssertEqual(engine.currentIndex, 0)
+        XCTAssertNil(engine.currentTrack)
+        XCTAssertEqual(engine.state, .stopped)
+    }
+
     /// A present, non-empty folder holding `bad.mp3`, which is not audio — one bad file, not a
     /// missing volume, so the failure path skips rather than stops.
     private func albumFolderWithAnUnreadableFile() throws -> URL {

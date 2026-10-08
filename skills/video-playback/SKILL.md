@@ -56,6 +56,18 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   a playlist double-click, and Play after closing the film each log one `Routing video track`.
 - **The vendored VLCKit reports the end of a film as `.paused`, never `.ended`** — see the
   `mediaPlayerStateChanged` comment; end-of-film handling keys off that pause.
+- **A film that never plays is a failed load, skipped like a bad audio file** (M25). VLC reports
+  no error we can see: a missing file reads back as `.stopped` (the state is read a main-queue turn
+  late, after `.error`), and non-video bytes run straight to their end, a `.paused`. Either one,
+  unrequested and before the current player first played, fires `VideoPlayerView.onPlaybackFailed`
+  (`reportFailureIfNeverPlayed`). It ignores a notification from a replaced player, which reads
+  the new player's state. The window closes (`stop()`), and a playlist film reaches
+  `AudioEngine.videoTrackDidFail` → `handleLocalTrackLoadFailure`: the marquee reports it, and the
+  queue skips to the next row, or stops when the film's folder is gone (`containingFolderIsPresent`).
+  Before this, the window stayed black at 0:00 over a paused engine. Measured 2026-10-08 on
+  Classic: a missing film, a non-video `.mp4` advanced into after a film ended in the same window,
+  and a deleted folder. A Stream Ripper **Play Now** film that fails closes with nothing in the
+  marquee, since it is not in the playlist.
 - **Windows → Video Player is inert until a video has been opened** — the controller is created on
   first play, and `WindowManager.toggleVideoPlayer` returns early while it is nil.
 - **A play call moves key focus to the picture** (`revealVideoOutput`): the free window takes it

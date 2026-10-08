@@ -222,9 +222,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         clearVideoCastState()
     }
     
-    /// Advances the playlist when the film ends. Set only by `WindowManager.playVideoTrack`, so
-    /// non-nil exactly while the loaded film came from the playlist.
-    var onVideoFinishedForPlaylist: (() -> Void)?
+    /// Advances the playlist when the film ends; `failed` when it never played. Set only by
+    /// `WindowManager.playVideoTrack`, so non-nil exactly while the loaded film came from the playlist.
+    var onVideoFinishedForPlaylist: ((_ failed: Bool) -> Void)?
 
     /// Current playback time
     var currentTime: TimeInterval {
@@ -359,7 +359,17 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             NSLog("VideoPlayer: Video finished from playlist, invoking callback")
             // Clear the callback BEFORE invoking it: it may load the next video, which sets a new one.
             self.onVideoFinishedForPlaylist = nil
-            callback()
+            callback(false)
+        }
+
+        // A film that never played closes rather than leaving a black window over a paused engine;
+        // a playlist film then goes to the engine as a failed load.
+        videoPlayerView.onPlaybackFailed = { [weak self] in
+            guard let self, !self.isCastingVideo else { return }
+            let callback = self.onVideoFinishedForPlaylist
+            self.onVideoFinishedForPlaylist = nil
+            self.stop()
+            callback?(true)
         }
         
         // Cast button callback

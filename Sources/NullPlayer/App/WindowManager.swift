@@ -3736,8 +3736,12 @@ class WindowManager {
         }
         
         // Set up callback for when video finishes (to advance playlist)
-        videoPlayerWindowController?.onVideoFinishedForPlaylist = { [weak self] in
-            self?.audioEngine.videoTrackDidFinish()
+        videoPlayerWindowController?.onVideoFinishedForPlaylist = { [weak self] failed in
+            if failed {
+                self?.audioEngine.videoTrackDidFail()
+            } else {
+                self?.audioEngine.videoTrackDidFinish()
+            }
         }
         
         videoPlayerWindowController?.volume = audioEngine.volume
