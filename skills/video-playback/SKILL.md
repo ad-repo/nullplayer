@@ -71,8 +71,10 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   2026-10-07). It goes to the skin window, never the parked video window.
 - **A parked film gets its keys from the skin window it is parked in** (M18). The video keys live
   in `VideoPlayerWindowController.handleVideoKey`; the free window's key monitor calls it, and a
-  skin view calls `handleParkedVideoKey` from its fallback once the skin has refused the key
-  (`WMPMainView.hostedSurfaceHandled`, the end of `WinampModernMainView.keyDown`). The film goes
+  skin view offers a key the skin refused to its video surface (`WMPVideoSurface.handleKeyDown`,
+  `WinampModernVideoSurface.handleKeyDown`), which passes it on only while the film is parked in
+  that box — the same seam the visualization surfaces take (`WMPMainView.hostedSurfaceHandled`,
+  the end of `WinampModernMainView.keyDown`). The film goes
   before a hosted visualization surface, which shares ←/→ and F; a skin's own key handler goes
   before both, so a `.wal` skin with any `System.onKeyDown` handler keeps the arrows (B20a counts
   any handler run as handled). Parked, `dismissVideoOutput` never closes: Esc hides a `.wal` skin's

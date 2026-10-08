@@ -6,7 +6,7 @@ import AppKit
 /// Parked over a skin's video box it stays unfocusable: it is a child laid over a skin window that
 /// holds key itself (`setAuxiliaryWindow` for `.wal`, `revealSkinSurface` for `.wmz`), and a click on
 /// the picture must not take focus from the skin. The skin window hands the film its keys
-/// (`handleParkedVideoKey`, M18).
+/// (the skin video surface's `handleKeyDown`, M18).
 final class VideoPlayerWindow: NSWindow {
     private var isParked: Bool { (windowController as? VideoPlayerWindowController)?.isVideoOutputHosted ?? false }
     override var canBecomeKey: Bool { !isParked }

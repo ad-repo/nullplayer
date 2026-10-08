@@ -816,7 +816,7 @@ final class WinampModernMainView: NSView {
         // window's own keys (←/→, R, F, P, C) — after the skin has had its say, so a skin accelerator
         // always wins (B20a). The film goes first: it is what is on screen, and the visualization
         // shares its keys while the engine feeding it is paused.
-        if WindowManager.shared.currentVideoPlayerController?.handleParkedVideoKey(event) == true { return }
+        if videoSurfaces.values.contains(where: { $0.handleKeyDown(event) }) { return }
         if let surface = hostedVisualizationSurface, surface.handleKeyDown(event) { return }
         super.keyDown(with: event)
     }

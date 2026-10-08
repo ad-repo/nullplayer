@@ -451,17 +451,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    /// The video keys for a film parked in a skin, offered by the skin window it is parked in once
-    /// the skin has refused the key. A parked window never becomes key, so the monitor above never
-    /// sees them (M18).
-    func handleParkedVideoKey(_ event: NSEvent) -> Bool {
-        guard isVideoOutputHosted, let parent = window?.parent, event.window === parent else { return false }
-        return handleVideoKey(event)
-    }
-
-    private func handleVideoKey(_ event: NSEvent) -> Bool {
+    /// The video keys, answering whether one was handled. The free window's monitor above calls this;
+    /// a parked window never becomes key, so the skin surface it is parked in offers it the keys the
+    /// skin refused (M18).
+    func handleVideoKey(_ event: NSEvent) -> Bool {
         guard let window else { return false }
-        NSLog("VideoPlayer keyDown: keyCode=%d, isFullScreen=%d", event.keyCode, window.styleMask.contains(.fullScreen) ? 1 : 0)
 
         // Check for Cmd+S to open track selection panel
         if event.keyCode == 1 && event.modifierFlags.contains(.command) { // Cmd+S
@@ -498,6 +492,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         default:
             return false
         }
+        NSLog("VideoPlayer keyDown: keyCode=%d, isFullScreen=%d", event.keyCode, window.styleMask.contains(.fullScreen) ? 1 : 0)
         return true
     }
     
@@ -1312,7 +1307,6 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// own video window (`autoclose="1"`) and leaves playback alone for the skin to reopen; in this
     /// controller's own window it closes, which is the stop it has always been. A `.wmz` box has no
     /// window of its own to hide, so there it does nothing: closing would stop the film (M18).
-    @discardableResult
     func dismissVideoOutput() -> Bool {
         if isVideoOutputHosted { return WindowManager.shared.hideWinampModernVideoSurface() }
         close()
@@ -1325,15 +1319,6 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// right-click rather than a second, thinner imitation of it. Its items target the video view, so
     /// it works wherever it is popped up.
     var contextMenu: NSMenu? { videoPlayerView?.menu }
-    
-    /// Handle Escape key via standard macOS cancel operation
-    @objc func cancel(_ sender: Any?) {
-        if let window, window.styleMask.contains(.fullScreen) {
-            window.toggleFullScreen(nil)
-        } else {
-            dismissVideoOutput()
-        }
-    }
 }
 
 #if DEBUG

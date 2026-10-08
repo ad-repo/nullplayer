@@ -882,7 +882,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     /// the engine feeding the visualization is paused. A skin's focused control always goes first —
     /// a slider's arrows are the slider's.
     private func hostedSurfaceHandled(_ event: NSEvent) -> Bool {
-        WindowManager.shared.currentVideoPlayerController?.handleParkedVideoKey(event) == true
+        videoSurface?.handleKeyDown(event) == true
             || widgetViews.values.compactMap { $0 as? WMPEffectsSurfaceView }.contains { $0.handleKeyDown(event) }
     }
 
