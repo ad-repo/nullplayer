@@ -38,9 +38,19 @@ struct EmbyServerCredentials: Codable {
 struct EmbyArtist: Identifiable, Equatable {
     let id: String           // Emby uses UUID strings
     let name: String
-    let albumCount: Int
+    var albumCount: Int
+    let genre: String?
     let imageTag: String?    // For artwork URL construction
     let isFavorite: Bool
+}
+
+extension Array where Element == EmbyArtist {
+    /// The server sends no album count for an artist, so count the album list's albums by album artist
+    /// (every one, as expanding the artist does: an album can have several).
+    func countingAlbums(_ albums: [EmbyAlbum]) -> [EmbyArtist] {
+        let counts = Dictionary(grouping: albums.flatMap(\.albumArtistIds), by: { $0 }).mapValues(\.count)
+        return map { var artist = $0; artist.albumCount = counts[artist.id] ?? 0; return artist }
+    }
 }
 
 /// An album in an Emby music library
@@ -49,6 +59,7 @@ struct EmbyAlbum: Identifiable, Equatable {
     let name: String
     let artist: String?
     let artistId: String?
+    let albumArtistIds: [String]
     let year: Int?
     let genre: String?
     let imageTag: String?
@@ -288,7 +299,8 @@ struct EmbyItemDTO: Decodable {
         EmbyArtist(
             id: Id,
             name: Name,
-            albumCount: ChildCount ?? 0,
+            albumCount: 0,  // filled in by `countingAlbums`: an artist's ChildCount is its song count
+            genre: Genres?.first,
             imageTag: ImageTags?["Primary"],
             isFavorite: UserData?.IsFavorite ?? false
         )
@@ -307,6 +319,7 @@ struct EmbyItemDTO: Decodable {
             name: Name,
             artist: AlbumArtist ?? AlbumArtists?.first?.Name,
             artistId: AlbumArtists?.first?.Id,
+            albumArtistIds: AlbumArtists?.map(\.Id) ?? [],
             year: ProductionYear,
             genre: Genres?.first,
             imageTag: ImageTags?["Primary"],

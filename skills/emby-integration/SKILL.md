@@ -50,8 +50,14 @@ The key differences from Jellyfin:
 - **All libraries/views**: `GET /Users/{userId}/Views`
   - `fetchMusicLibraries()` returns all views (unfiltered).
   - `fetchVideoLibraries()` uses the same endpoint but filters out non-video library types (`music`, `musicvideos`, `books`, `photos`, `playlists`, `livetv`).
-- **Artists**: `GET /Artists/AlbumArtists?parentId={libId}&userId={userId}&Recursive=true&SortBy=SortName`
-- **Albums**: `GET /Users/{userId}/Items?parentId={libId}&IncludeItemTypes=MusicAlbum&Recursive=true`
+- **Artists**: `GET /Artists/AlbumArtists?parentId={libId}&userId={userId}&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio,Genres`
+  — the server sends no album count for an artist: its `ChildCount` is the **song** count
+  (Slayer read 243 for 19 albums) and `Fields=ItemCounts` adds no `AlbumCount` to this list. The
+  browser's Albums column therefore comes from the album list: `EmbyManager` runs
+  `countingAlbums(_:)` over it, crediting every `AlbumArtists` entry, on preload and in both
+  `fetchArtists` paths. A path that builds artists without albums shows 0.
+- **Albums**: `GET /Users/{userId}/Items?parentId={libId}&IncludeItemTypes=MusicAlbum&Recursive=true&Fields=PrimaryImageAspectRatio,ProductionYear,Genres`
+  (without `Genres` the browser's album Genre column was blank on every row)
 - **Artist albums**: `GET /Users/{userId}/Items?AlbumArtistIds={artistId}&IncludeItemTypes=MusicAlbum` —
   `fetchAlbums(forArtistID:)`, one request (the artist item itself is not fetched)
 - **Album tracks**: `GET /Users/{userId}/Items?parentId={albumId}&IncludeItemTypes=Audio`

@@ -523,7 +523,7 @@ class JellyfinServerClient {
                 URLQueryItem(name: "Recursive", value: "true"),
                 URLQueryItem(name: "SortBy", value: "SortName"),
                 URLQueryItem(name: "SortOrder", value: "Ascending"),
-                URLQueryItem(name: "Fields", value: "PrimaryImageAspectRatio"),
+                URLQueryItem(name: "Fields", value: "PrimaryImageAspectRatio,Genres"),
                 URLQueryItem(name: "Limit", value: String(pageSize)),
                 URLQueryItem(name: "StartIndex", value: String(offset))
             ]
@@ -599,7 +599,7 @@ class JellyfinServerClient {
                 URLQueryItem(name: "Recursive", value: "true"),
                 URLQueryItem(name: "SortBy", value: "SortName"),
                 URLQueryItem(name: "SortOrder", value: "Ascending"),
-                URLQueryItem(name: "Fields", value: "PrimaryImageAspectRatio"),
+                URLQueryItem(name: "Fields", value: "PrimaryImageAspectRatio,ProductionYear,Genres"),
                 URLQueryItem(name: "Limit", value: String(pageSize)),
                 URLQueryItem(name: "StartIndex", value: String(offset))
             ]

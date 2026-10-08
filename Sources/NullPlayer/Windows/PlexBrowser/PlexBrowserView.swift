@@ -437,34 +437,6 @@ class PlexBrowserView: NSView {
         LibraryColumnVisibility.normalizedIds(ids, allIds: allColumns.map { $0.id })
     }
 
-    private func hasTrackRows() -> Bool {
-        displayItems.contains {
-            switch $0.type {
-            case .track, .subsonicTrack, .localTrack, .jellyfinTrack, .embyTrack: return true
-            default: return false
-            }
-        }
-    }
-
-    private func hasAlbumRows() -> Bool {
-        displayItems.contains {
-            switch $0.type {
-            case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum, .embyAlbum: return true
-            default: return false
-            }
-        }
-    }
-
-    private func hasArtistRows() -> Bool {
-        displayItems.contains {
-            guard $0.indentLevel == 0 else { return false }
-            switch $0.type {
-            case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist: return true
-            default: return false
-            }
-        }
-    }
-
     private func columnGroup(for item: PlexDisplayItem) -> LibraryColumnVisibilityGroup? {
         switch item.type {
         case .track, .subsonicTrack, .localTrack, .jellyfinTrack, .embyTrack:
@@ -482,10 +454,7 @@ class PlexBrowserView: NSView {
 
     private func currentColumnGroup() -> LibraryColumnVisibilityGroup? {
         if hasYouTubeColumns { return .youtube }
-        if hasTrackRows() { return .track }
-        if hasAlbumRows() { return .album }
-        if hasArtistRows() { return .artist }
-        return nil
+        return LibraryColumnVisibility.headerGroup(displayItems.lazy.map { self.columnGroup(for: $0) })
     }
 
     /// Get columns for a specific item (nil = use simple list rendering)
@@ -611,19 +580,11 @@ class PlexBrowserView: NSView {
         if hasInternetRadioColumns {
             return BrowserColumn.internetRadioColumns
         }
-        if hasYouTubeColumns {
-            return BrowserColumn.youtubeColumns
+        switch currentColumnGroup() {
+        case .youtube?: return BrowserColumn.youtubeColumns
+        case let group?: return visibleColumns(allColumns: allColumns(for: group), visibleIds: visibleColumnIds(for: group))
+        case nil: return []
         }
-        if hasTrackRows() {
-            return visibleColumns(allColumns: BrowserColumn.allTrackColumns, visibleIds: visibleTrackColumnIds)
-        }
-        if hasAlbumRows() {
-            return visibleColumns(allColumns: BrowserColumn.allAlbumColumns, visibleIds: visibleAlbumColumnIds)
-        }
-        if hasArtistRows() {
-            return visibleColumns(allColumns: BrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
-        }
-        return []
     }
     
     /// Apply column sort to display items
@@ -3574,6 +3535,7 @@ class PlexBrowserView: NSView {
         // Round scroll offset to integer pixels to prevent text shimmering on non-Retina displays
         let roundedScrollOffset = backingScale < 1.5 ? round(scrollOffset) : scrollOffset
         rowThumbnails.beginPass(placeholder: colors.normalText.withAlphaComponent(0.15))
+        let headerGroup = currentColumnGroup()
         
         let visibleStart = max(0, Int(scrollOffset / itemHeight))
         let visibleEnd = min(displayItems.count, visibleStart + Int(listRect.height / itemHeight) + 2)
@@ -3611,12 +3573,14 @@ class PlexBrowserView: NSView {
                 context.fill(itemRect)
             }
             
-            // Check if this item type should use column rendering
-            if let itemColumns = columnsForItem(item) {
-                // Column-based rendering for tracks/albums
+            // Artist, album and track rows all draw under the list's one header, Finder-style;
+            // radio and YouTube rows keep their own columns.
+            let itemGroup = columnGroup(for: item)
+            let sharesHeader = itemGroup?.sharesListHeader == true
+            if let itemColumns = sharesHeader ? layout.header?.columns : columnsForItem(item) {
                 let indent = CGFloat(item.indentLevel) * 16
-                drawColumnRow(item: item, columns: itemColumns, in: context, rect: itemRect, 
-                             isSelected: isSelected, colors: colors, indent: indent)
+                drawColumnRow(item: item, columns: itemColumns, group: sharesHeader ? headerGroup : itemGroup,
+                              in: context, rect: itemRect, isSelected: isSelected, colors: colors, indent: indent)
             } else {
                 // Original rendering for artists, playlists, headers, etc.
                 let indent = CGFloat(item.indentLevel) * 16
@@ -3797,9 +3761,9 @@ class PlexBrowserView: NSView {
     }
     
     /// Draw a single row with columns
-    private func drawColumnRow(item: PlexDisplayItem, columns: [BrowserColumn], in context: CGContext,
-                               rect: NSRect, isSelected: Bool, colors: PlaylistColors, indent: CGFloat = 0) {
-        let totalWidth = rect.width - indent
+    private func drawColumnRow(item: PlexDisplayItem, columns: [BrowserColumn], group: LibraryColumnVisibilityGroup?,
+                               in context: CGContext, rect: NSRect, isSelected: Bool, colors: PlaylistColors, indent: CGFloat = 0) {
+        let totalWidth = rect.width
         
         // Counter-flip for text drawing
         context.saveGState()
@@ -3813,17 +3777,19 @@ class PlexBrowserView: NSView {
         let font = contentFont(ofSize: 10)
         let smallFont = contentFont(ofSize: 9)
         
-        var x = rect.minX + indent + 4 - horizontalScrollOffset
-        let group = columnGroup(for: item)
+        var columnX = rect.minX + 4 - horizontalScrollOffset
         let hasArtColumn = columns.contains { $0.id == "thumbnail" }
         for column in columns {
-            let width = widthForColumn(column, availableWidth: totalWidth, columns: columns, group: group)
+            let columnWidth = widthForColumn(column, availableWidth: totalWidth, columns: columns, group: group)
+            defer { columnX += columnWidth }
+            // A child row indents inside its Title cell only, so every other cell stays under its heading.
+            let inset = column.id == "title" ? indent : 0
+            let x = columnX + inset, width = columnWidth - inset
             if column.id == "thumbnail" {
                 // Inside the counter-flip (y-up), centred on the row so the flip doesn't move it.
                 if let thumbnail = rowThumbnailSource(for: item) {
                     rowThumbnails.draw(thumbnail, in: context, at: x + 4, rowRect: rect, side: min(width - 8, rect.height - 2))
                 }
-                x += width
                 continue
             }
             let value = column.id == "title" ? item.shownTitle : item.columnValue(for: column)
@@ -3874,8 +3840,6 @@ class PlexBrowserView: NSView {
             } else {
                 value.draw(with: drawRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attrs)
             }
-            
-            x += width
         }
         
         context.restoreGState()
@@ -5316,12 +5280,10 @@ class PlexBrowserView: NSView {
         let rowRect = NSRect(x: listRect.minX, y: rowY, width: listRect.width, height: itemHeight)
         guard rowRect.contains(skinPoint) else { return nil }
 
-        let indent = CGFloat(item.indentLevel) * 16
-        let availableWidth = rowRect.width - indent
-        var x = rowRect.minX + indent + 4 - horizontalScrollOffset
+        var x = rowRect.minX + 4 - horizontalScrollOffset
         let group = columnGroup(for: item)
         for column in columns {
-            let width = widthForColumn(column, availableWidth: availableWidth, columns: columns, group: group)
+            let width = widthForColumn(column, availableWidth: rowRect.width, columns: columns, group: group)
             if column.id == "rating" {
                 let cellRect = NSRect(x: x, y: rowRect.minY, width: width, height: rowRect.height)
                 guard cellRect.contains(skinPoint) else { return nil }
@@ -5496,14 +5458,11 @@ class PlexBrowserView: NSView {
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
+    /// Only the header's own group: every row shows those columns, so nothing else is tickable.
+    /// (This browser has never offered the fixed YouTube channel columns.)
     private func columnGroupsForCurrentMenu() -> [LibraryColumnVisibilityGroup] {
-        LibraryColumnVisibility.menuGroups(
-            isArtistsMode: browseMode == .artists,
-            isAlbumsMode: browseMode == .albums,
-            hasTrackRows: hasTrackRows(),
-            hasAlbumRows: hasAlbumRows(),
-            hasArtistRows: hasArtistRows()
-        )
+        guard let group = currentColumnGroup(), group.sharesListHeader else { return [] }
+        return [group]
     }
 
     private func addColumnVisibilityGroup(_ group: LibraryColumnVisibilityGroup, to menu: NSMenu) {
@@ -14131,7 +14090,7 @@ extension PlexDisplayItem {
         case "albums":
             return String(artist.albumCount)
         case "genre":
-            return ""
+            return artist.genre ?? ""
         case "rating":
             return artist.isFavorite ? "★★★★★" : ""
         default:
@@ -14212,7 +14171,7 @@ extension PlexDisplayItem {
         case "albums":
             return String(artist.albumCount)
         case "genre":
-            return ""
+            return artist.genre ?? ""
         case "rating":
             return artist.isFavorite ? "★★★★★" : ""
         default:

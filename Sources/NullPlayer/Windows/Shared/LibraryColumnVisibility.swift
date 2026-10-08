@@ -15,6 +15,9 @@ enum LibraryColumnVisibilityGroup: String, CaseIterable {
         }
     }
 
+    /// Artist, album and track rows share the list's one header; YouTube rows keep their own.
+    var sharesListHeader: Bool { self != .youtube }
+
     var resetTitle: String {
         switch self {
         case .artist: return "Reset Artist Columns"
@@ -52,29 +55,12 @@ enum LibraryColumnVisibility {
         }
     }
 
-    static func menuGroups(
-        isArtistsMode: Bool,
-        isAlbumsMode: Bool,
-        hasTrackRows: Bool,
-        hasAlbumRows: Bool,
-        hasArtistRows: Bool
-    ) -> [LibraryColumnVisibilityGroup] {
-        if isArtistsMode {
-            return [.artist, .album, .track]
-        }
-        if isAlbumsMode {
-            return [.album, .track]
-        }
-        if hasTrackRows {
-            return [.track]
-        }
-        if hasAlbumRows {
-            return [.album]
-        }
-        if hasArtistRows {
-            return [.artist]
-        }
-        return []
+    /// The music group the list's one header shows: the most detailed one in the list, so expanding
+    /// an artist brings up album columns and expanding an album brings up track columns. Every row
+    /// fills those columns by meaning, so a parent's genre or rating stays under its own heading.
+    static func headerGroup(_ rows: some Sequence<LibraryColumnVisibilityGroup?>) -> LibraryColumnVisibilityGroup? {
+        let groups = Set(rows.compactMap { $0 })
+        return [LibraryColumnVisibilityGroup.track, .album, .artist].first { groups.contains($0) }
     }
 
     static func channelSortValue(_ label: String) -> Double {

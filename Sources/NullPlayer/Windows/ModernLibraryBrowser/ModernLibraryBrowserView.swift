@@ -2245,6 +2245,7 @@ class ModernLibraryBrowserView: NSView {
         
         drawArtworkBackground(in: context, listRect: listRect, artwork: artwork)
         rowThumbnails.beginPass(placeholder: skin.textDimColor.withAlphaComponent(0.15))
+        let headerGroup = currentColumnGroup()
         
         // Draw items (bottom-left origin: item 0 at top of list, so we draw from top down)
         let visibleStart = max(0, Int(scrollOffset / itemHeight))
@@ -2290,11 +2291,14 @@ class ModernLibraryBrowserView: NSView {
                 context.fill(itemRect)
             }
 
-            // Check for column rendering
-            if let itemColumns = columnsForItem(item) {
+            // Artist, album and track rows all draw under the list's one header, Finder-style;
+            // radio and YouTube rows keep their own columns.
+            let itemGroup = columnGroup(for: item)
+            let sharesHeader = itemGroup?.sharesListHeader == true
+            if let itemColumns = sharesHeader ? layout.header?.columns : columnsForItem(item) {
                 let indent = CGFloat(item.indentLevel) * 16
-                drawColumnRow(item: item, columns: itemColumns, in: context, rect: itemRect,
-                             isSelected: isSelected, skin: skin, indent: indent)
+                drawColumnRow(item: item, columns: itemColumns, group: sharesHeader ? headerGroup : itemGroup,
+                              in: context, rect: itemRect, isSelected: isSelected, skin: skin, indent: indent)
             } else {
                 // Simple list rendering
                 let indent = CGFloat(item.indentLevel) * 16
@@ -2442,24 +2446,26 @@ class ModernLibraryBrowserView: NSView {
     
     // MARK: - Column Row Drawing
     
-    private func drawColumnRow(item: ModernDisplayItem, columns: [ModernBrowserColumn], in context: CGContext,
-                               rect: NSRect, isSelected: Bool, skin: ModernSkin, indent: CGFloat = 0) {
-        let totalWidth = rect.width - indent
+    private func drawColumnRow(item: ModernDisplayItem, columns: [ModernBrowserColumn], group: LibraryColumnVisibilityGroup?,
+                               in context: CGContext, rect: NSRect, isSelected: Bool, skin: ModernSkin, indent: CGFloat = 0) {
+        let totalWidth = rect.width
         let textColor = isSelected ? (isMetalRenderStyle ? skin.textColor : skin.accentColor) : skin.textColor
         let dimColor = isSelected ? (isMetalRenderStyle ? skin.textColor : skin.accentColor) : skin.textDimColor
         let font = skin.scaledSystemFont(size: 8)
         let smallFont = skin.scaledSystemFont(size: 7.2)
         
-        var x = rect.minX + indent + 4 - horizontalScrollOffset
-        let group = columnGroup(for: item)
+        var columnX = rect.minX + 4 - horizontalScrollOffset
         let hasArtColumn = columns.contains { $0.id == "thumbnail" }
         for column in columns {
-            let width = widthForColumn(column, availableWidth: totalWidth, columns: columns, group: group)
+            let columnWidth = widthForColumn(column, availableWidth: totalWidth, columns: columns, group: group)
+            defer { columnX += columnWidth }
+            // A child row indents inside its Title cell only, so every other cell stays under its heading.
+            let inset = column.id == "title" ? indent : 0
+            let x = columnX + inset, width = columnWidth - inset
             if column.id == "thumbnail" {
                 if let thumbnail = rowThumbnailSource(for: item) {
                     rowThumbnails.draw(thumbnail, in: context, at: x + 4, rowRect: rect, side: min(width - 8, rect.height - 2))
                 }
-                x += width
                 continue
             }
             let value = column.id == "title" ? item.shownTitle : item.columnValue(for: column)
@@ -2517,8 +2523,6 @@ class ModernLibraryBrowserView: NSView {
                     context: context
                 )
             }
-            
-            x += width
         }
     }
     
@@ -2766,34 +2770,6 @@ class ModernLibraryBrowserView: NSView {
         LibraryColumnVisibility.normalizedIds(ids, allIds: allColumns.map { $0.id })
     }
 
-    private func hasTrackRows() -> Bool {
-        if displayItems.contains(where: {
-            switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack, .embyTrack: return true; default: return false }
-        }) {
-            return true
-        }
-        return false
-    }
-
-    private func hasAlbumRows() -> Bool {
-        if displayItems.contains(where: {
-            switch $0.type { case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum, .embyAlbum: return true; default: return false }
-        }) {
-            return true
-        }
-        return false
-    }
-
-    private func hasArtistRows() -> Bool {
-        if displayItems.contains(where: {
-            guard $0.indentLevel == 0 else { return false }
-            switch $0.type { case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist: return true; default: return false }
-        }) {
-            return true
-        }
-        return false
-    }
-
     private func columnGroup(for item: ModernDisplayItem) -> LibraryColumnVisibilityGroup? {
         switch item.type {
         case .track, .subsonicTrack, .localTrack, .jellyfinTrack, .embyTrack:
@@ -2811,10 +2787,7 @@ class ModernLibraryBrowserView: NSView {
 
     private func currentColumnGroup() -> LibraryColumnVisibilityGroup? {
         if hasYouTubeColumns { return .youtube }
-        if hasTrackRows() { return .track }
-        if hasAlbumRows() { return .album }
-        if hasArtistRows() { return .artist }
-        return nil
+        return LibraryColumnVisibility.headerGroup(displayItems.lazy.map { self.columnGroup(for: $0) })
     }
 
     private func columnsForItem(_ item: ModernDisplayItem) -> [ModernBrowserColumn]? {
@@ -2939,19 +2912,11 @@ class ModernLibraryBrowserView: NSView {
         if hasInternetRadioColumns {
             return ModernBrowserColumn.internetRadioColumns
         }
-        if hasYouTubeColumns {
-            return ModernBrowserColumn.youtubeColumns
+        switch currentColumnGroup() {
+        case .youtube?: return ModernBrowserColumn.youtubeColumns
+        case let group?: return visibleColumns(allColumns: allColumns(for: group), visibleIds: visibleColumnIds(for: group))
+        case nil: return []
         }
-        if hasTrackRows() {
-            return visibleColumns(allColumns: ModernBrowserColumn.allTrackColumns, visibleIds: visibleTrackColumnIds)
-        }
-        if hasAlbumRows() {
-            return visibleColumns(allColumns: ModernBrowserColumn.allAlbumColumns, visibleIds: visibleAlbumColumnIds)
-        }
-        if hasArtistRows() {
-            return visibleColumns(allColumns: ModernBrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
-        }
-        return []
     }
     
     private func applyColumnSort(collapseExpanded: Bool = false) {
@@ -3319,12 +3284,10 @@ class ModernLibraryBrowserView: NSView {
         let rowRect = NSRect(x: listRect.minX, y: itemTopY - itemHeight, width: listRect.width, height: itemHeight)
         guard rowRect.contains(point) else { return nil }
 
-        let indent = CGFloat(item.indentLevel) * 16
-        let availableWidth = rowRect.width - indent
-        var x = rowRect.minX + indent + 4 - horizontalScrollOffset
+        var x = rowRect.minX + 4 - horizontalScrollOffset
         let group = columnGroup(for: item)
         for column in columns {
-            let width = widthForColumn(column, availableWidth: availableWidth, columns: columns, group: group)
+            let width = widthForColumn(column, availableWidth: rowRect.width, columns: columns, group: group)
             if column.id == "rating" {
                 let cellRect = NSRect(x: x, y: rowRect.minY, width: width, height: rowRect.height)
                 guard cellRect.contains(point) else { return nil }
@@ -4622,17 +4585,9 @@ class ModernLibraryBrowserView: NSView {
         menu.insertItem(item, at: 0)
     }
 
+    /// Only the header's own group: every row shows those columns, so nothing else is tickable.
     private func columnGroupsForCurrentMenu() -> [LibraryColumnVisibilityGroup] {
-        if hasYouTubeColumns {
-            return [.youtube]
-        }
-        return LibraryColumnVisibility.menuGroups(
-            isArtistsMode: browseMode == .artists,
-            isAlbumsMode: browseMode == .albums,
-            hasTrackRows: hasTrackRows(),
-            hasAlbumRows: hasAlbumRows(),
-            hasArtistRows: hasArtistRows()
-        )
+        currentColumnGroup().map { [$0] } ?? []
     }
 
     private func addColumnVisibilityGroup(_ group: LibraryColumnVisibilityGroup, to menu: NSMenu) {
@@ -10223,10 +10178,12 @@ extension ModernDisplayItem {
         case .jellyfinArtist(let a):
             if column.id == "albums" { return String(a.albumCount) }
             if column.id == "rating" { return a.isFavorite ? "★★★★★" : "" }
+            if column.id == "genre" { return a.genre ?? "" }
             return ""
         case .embyArtist(let a):
             if column.id == "albums" { return String(a.albumCount) }
             if column.id == "rating" { return a.isFavorite ? "★★★★★" : "" }
+            if column.id == "genre" { return a.genre ?? "" }
             return ""
         case .localArtist(let a):
             if column.id == "albums" {

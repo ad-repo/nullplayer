@@ -1005,6 +1005,22 @@ on one condition when drawn and another when hit-tested, so every click landed o
   header rect.
 - The modern alphabet index stops under the header; the classic one spans `area`'s full height.
 
+**One header, every row under it (M19).** The list has one column header, Finder-style:
+- `currentColumnGroup()` → `LibraryColumnVisibility.headerGroup`: the most detailed music group
+  anywhere in `displayItems` (track, then album, then artist). Expanding an artist brings up album
+  columns; expanding an album brings up track columns. A row left expanded off screen, or in
+  another tab (expansion state is shared across tabs), counts too.
+- Every artist, album and track row draws **the header's columns** (`layout.header.columns`),
+  filling each by `columnValue(for:)`, which is keyed by column id. So an artist under album
+  headings shows its genre under Genre and nothing under Year. Never draw a row's own group's
+  columns under another group's header: that put an artist's album count under "Genre".
+  Radio and YouTube rows (`sharesListHeader == false`) keep their own columns.
+- A child row indents **inside its Title cell only** (`drawColumnRow`'s `inset`); every other cell
+  sits at the header's x. Shifting the whole row by the indent misaligned every cell once the
+  columns overflowed into horizontal scroll. A hit test over a row's cells (the radio rating)
+  uses the same unindented positions.
+- The column menu lists only the header's group, so every box ticked is on screen.
+
 ## Library row thumbnails (Library browser, all skin families)
 
 Every library list row that can carry art draws it as a small circle before its title; hovering
