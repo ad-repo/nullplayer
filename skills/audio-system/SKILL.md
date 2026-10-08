@@ -152,10 +152,11 @@ The flag covers stream → stream only. **An explicit `stop()` needs no guard:**
 `AudioPlayer.stop()` records `.userAction` before its finish callback runs, and
 `StreamingAudioPlayer` forwards only `.eof` / `.none` as an end of stream, so Stop, video routing
 and the cast handoff all share `haltAudioOutput()`, which stops both pipelines' players with no
-flag (measured 2026-10-08, radio cast to Sonos: `reason: userAction`, no reconnect). **The
-`.stopped` state arrives a main-queue turn after the `stop()`**, so leaving a stream for a local
-file or a film, it lands after the new playback set its own state; `streamingPlayerDidChangeState`
-applies it only while `isStreamingPlayback` (`AudioEngineStreamStopTests`).
+flag (measured 2026-10-08, radio cast to Sonos: `reason: userAction`, no reconnect). **Every
+state report arrives a main-queue turn after its cause** (AudioStreaming's `asyncOnMain`), so
+leaving a stream for a local file or a film, the stream's `.stopped` lands after the new playback
+set its own state; `streamingPlayerDidChangeState` ignores every report while `isStreamingPlayback`
+is false (`AudioEngineStreamStopTests`).
 
 ### NAS Responsiveness for Local Track Switches
 

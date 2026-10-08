@@ -4001,23 +4001,14 @@ class AudioEngine {
         // Check if we're currently casting - we want to keep the cast session active
         let wasCasting = isCastingActive
         
-        // Stop current local playback (but don't disconnect from cast device if casting)
-        if wasCasting {
-            // Just stop local playback, keep cast session
+        // Stop current playback. While casting, keep the cast session; for radio content, skip
+        // stop(), whose RadioManager.stop() would break radio tracking.
+        if wasCasting || isRadioContent {
             stopLocalOnly()
-            stopStreamingPlayer()
-            isStreamingPlayback = false
-        } else if isRadioContent {
-            // For radio content, stop local playback but don't call stop()
-            // which would call RadioManager.stop() and break radio tracking
-            stopLocalOnly()
-            stopStreamingPlayer()
-            isStreamingPlayback = false
         } else {
             stop()
-            stopStreamingPlayer()
-            isStreamingPlayback = false
         }
+        isStreamingPlayback = false
         
         playlist.removeAll()
         playlist.append(contentsOf: validTracks)
@@ -4787,7 +4778,7 @@ class AudioEngine {
         }
 
         // Stop any streaming playback.
-        stopStreamingPlayer()
+        streamingPlayer?.stop()
         isStreamingPlayback = false
         suspendedLocalPlaybackClockForSleep = false
 
@@ -5247,11 +5238,6 @@ class AudioEngine {
         }
         
         targetPlayer.syncEQSettings(bands: bands, preamp: eqNode.globalGain, enabled: !eqNode.bypass)
-    }
-    
-    private func stopStreamingPlayer() {
-        streamingPlayer?.stop()
-        // Note: We keep the streamingPlayer instance for reuse
     }
     
     /// Handle playback completion with generation check
@@ -6001,8 +5987,8 @@ class AudioEngine {
     
     /// Complete streaming crossfade
     private func completeStreamingCrossfade(nextIndex: Int) {
-        // Nil delegate BEFORE stopping to prevent stale synchronous callbacks
-        // (stop can trigger .stopped state change on the delegate)
+        // Nil delegate BEFORE stopping: the player reports .stopped on a later main-queue turn
+        // and reads its delegate then, so the outgoing player's report goes nowhere
         streamingPlayer?.delegate = nil
         streamingPlayer?.stop()
         
@@ -6466,7 +6452,6 @@ class AudioEngine {
         placeholderResolutionTasks.removeAll()
         staleStreamingRefreshRetriedServiceIdentity = nil
         stop()
-        stopStreamingPlayer()
         isStreamingPlayback = false
         playlist.removeAll()
         currentIndex = -1
@@ -6804,6 +6789,12 @@ class AudioEngine {
 
 extension AudioEngine: StreamingAudioPlayerDelegate {
     func streamingPlayerDidChangeState(_ state: AudioPlayerState) {
+        // The player reports on a later main-queue turn than the call that caused it. By then a
+        // local track or a film may own playback (`isStreamingPlayback` is cleared), and a report
+        // from the stream left behind is not the engine's state: switching from a stream to a
+        // local file left the engine stopped while the file played.
+        guard isStreamingPlayback else { return }
+
         // During crossfade, ignore stopped/error from the outgoing player
         // to prevent corrupting playback state mid-crossfade
         if isCrossfading {
@@ -6839,11 +6830,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
                 return
             }
             streamingPlaybackConfirmed = false
-            // The player reports a stop on a later main-queue turn than the `stop()` that caused
-            // it. By then a local track or a film may own playback (`isStreamingPlayback` is
-            // cleared), and the stream's stop is not the engine's state: switching from a stream
-            // to a local file left the engine stopped while the file played.
-            if isStreamingPlayback { self.state = .stopped }
+            self.state = .stopped
             isSeekingStreaming = false
             // Cancel any pending reset work item
             streamingSeekResetWorkItem?.cancel()
