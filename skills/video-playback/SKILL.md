@@ -195,8 +195,9 @@ reaches the window only from a browser (`app-control/reference/launch-recipes.md
   file; a talking-head frame shows a crop at a glance, a title card does not.
 - **The free window takes key focus; a parked one never does.** `VideoPlayerWindow` answers
   `canBecomeKey` / `canBecomeMain` true while free (a borderless `NSWindow` answers false, so the
-  video keys never reached it: M28) and false while parked over a skin's box, where Esc would
-  `close()` a `.wmz` film (M18). Check it with Accessibility: after a play, and after a click on the
+  video keys never reached it: M28) and false while parked over a skin's box, so a click on the
+  picture leaves focus with the skin window (it also keeps Esc from `close()`-ing a `.wmz` film,
+  M18). Check it with Accessibility: after a play, and after a click on the
   picture, `AXFocusedWindow` and `AXMainWindow` of the process are the film's window, and
   `winhelper key <pid> 49` logs `VideoPlayer keyDown`. Measured 2026-10-08 in Classic, Original,
   Metal, and parked in Cablemusic.
