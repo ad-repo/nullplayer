@@ -152,12 +152,13 @@ class CLIPlayer: AudioEngineDelegate {
         if options.art, let first = tracks.first {
             showArtworkIfChanged(for: first)
         }
+    }
 
-        // Casting
-        if let castName = options.cast {
-            Task { @MainActor in
-                await setupCasting(castValue: castName)
-            }
+    /// Hands the playing audio (tracks or a radio station) to `--cast`, if given.
+    func castAudioIfRequested() {
+        guard let castName = options.cast else { return }
+        Task { @MainActor in
+            await setupCasting(castValue: castName)
         }
     }
 
@@ -573,19 +574,23 @@ class CLIPlayer: AudioEngineDelegate {
         display.printVolume(audioEngine.volume)
     }
 
-    func quit() {
+    private var isQuitting = false
+
+    /// `q`, Ctrl-C and SIGTERM. A cast is stopped on the device before exiting, or the
+    /// speaker/TV keeps playing; a second request while that stop is pending exits at once.
+    func quit(code: Int32 = 0) {
+        guard !isQuitting else { Self.exitAndRestoreTerminal(code: code) }
+        isQuitting = true
         metadataTimer?.invalidate()
         stopVideoProgressTimer()
         removeVideoCastObservers()
-        if videoCastActive {
-            Task { @MainActor in
+        Task { @MainActor in
+            if videoCastActive || castSessionActive {
                 await CastManager.shared.stopCasting()
-                Self.exitAndRestoreTerminal(code: 0)
             }
-            return
+            audioEngine.stop()
+            Self.exitAndRestoreTerminal(code: code)
         }
-        audioEngine.stop()
-        Self.exitAndRestoreTerminal(code: 0)
     }
 
     // MARK: - AudioEngineDelegate
@@ -595,6 +600,8 @@ class CLIPlayer: AudioEngineDelegate {
     }
 
     func audioEngineDidChangeState(_ state: PlaybackState) {
+        // quit() owns the exit and its code; its own stop must not exit as end-of-playlist.
+        guard !isQuitting else { return }
         // While a cast session owns playback, the local engine is intentionally
         // stopped for the handoff and re-enters .playing once the device reports
         // status. Never treat a local .stopped as end-of-playlist here — audio is

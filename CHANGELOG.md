@@ -188,6 +188,9 @@
   name and artwork. About Playing on a Plex film now also lists its IMDB and TMDB ids. An Emby or
   Jellyfin film no longer opens a second, audio "now playing" session on the server, and a Plex
   song cast to a TV or DLNA device now sends its artwork.
+- **The CLI casts a radio station** — `--source radio --station … --cast …` played the station
+  on the Mac and never cast; it now plays on the named device. Quitting a CLI cast with `q`,
+  Ctrl-C or a kill now stops the speaker or TV instead of leaving it playing.
 
 ## 0.31.4
 
