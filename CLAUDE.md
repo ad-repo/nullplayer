@@ -69,6 +69,18 @@ Sources/NullPlayer/
 2. Check `Skin/SkinElements.swift` for classic sprite coordinates.
 3. Test multiple UI sizes and skins.
 
+## Writing Code
+
+Settle the structure before writing; it is cheap now and expensive once review finds it.
+
+- Put logic in the layer that already owns the concept and reuse its helpers; the owning skill names both.
+- No special-case conditionals scattered through shared or busy paths; a mode or feature check belongs
+  at the one seam where the paths split.
+- No pass-through wrappers, near-duplicate helpers, or optionals and casts that paper over an unclear invariant.
+- Don't add a new concern to a file already past ~1,000 lines; give it its own file.
+- Keep the change to the task. A restructuring beyond it is proposed, not done — review
+  (`thermo-nuclear-code-quality-review`) is where the ambitious rework gets weighed.
+
 ## Testing
 
 Run `swift test`. For UI or playback work, manually exercise local and server playback, radio, multiple skins, docking, visualizations, casting, and relevant window sizes.
