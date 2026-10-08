@@ -17,8 +17,8 @@ struct LoadedVideo {
 
     let source: Source
     let title: String
-    /// Lightweight video track used by the main window for artwork lookup, and to cast the film.
-    let artworkTrack: Track?
+    /// The film's video track: the main window's artwork lookup, and what a cast sends.
+    let track: Track
     /// The play event's content type ("video", "movie", "tv").
     let contentType: String
 
@@ -45,7 +45,7 @@ struct LoadedVideo {
 extension LoadedVideo {
     /// A server film, which takes its title and content type from its playlist track.
     init(source: Source, queuedTrack track: Track) {
-        self.init(source: source, title: track.displayTitle, artworkTrack: track,
+        self.init(source: source, title: track.displayTitle, track: track,
                   contentType: track.playHistoryContentType)
     }
 }

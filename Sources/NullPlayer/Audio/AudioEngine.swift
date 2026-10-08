@@ -3414,13 +3414,9 @@ class AudioEngine {
             
             // Update Plex playback position (for scrobble threshold detection)
             PlexPlaybackReporter.shared.updatePosition(current)
-
-            // A film reports through the video window's reporter; until the hand-over pauses this
-            // clock, the audio reporters below would open a second session for it.
-            let audioTrack = self.currentTrack.flatMap { $0.playbackRoute == .video ? nil : $0 }
-
+            
             // Update Subsonic playback position (for scrobbling)
-            if let track = audioTrack,
+            if let track = self.currentTrack,
                let subsonicId = track.subsonicId,
                let serverId = track.subsonicServerId {
                 SubsonicPlaybackReporter.shared.updatePlayback(
@@ -3432,7 +3428,7 @@ class AudioEngine {
             }
             
             // Update Jellyfin playback position (for scrobbling)
-            if let track = audioTrack,
+            if let track = self.currentTrack,
                let jellyfinId = track.jellyfinId,
                let serverId = track.jellyfinServerId {
                 JellyfinPlaybackReporter.shared.updatePlayback(
@@ -3444,7 +3440,7 @@ class AudioEngine {
             }
 
             // Update Emby playback position (for scrobbling)
-            if let track = audioTrack,
+            if let track = self.currentTrack,
                let embyId = track.embyId,
                let serverId = track.embyServerId {
                 EmbyPlaybackReporter.shared.updatePlayback(
@@ -4558,6 +4554,10 @@ class AudioEngine {
             currentIndex = index
             _currentTime = 0
             lastReportedTime = 0
+            // A film reports through the video window's reporter and shows the window's clock;
+            // ticking on until the hand-over pauses the engine would report it to the audio
+            // reporters, opening a second "now playing" session for it.
+            stopTimeUpdates()
             
             haltAudioOutput()
             isStreamingPlayback = false  // Reset to neutral state for video playback

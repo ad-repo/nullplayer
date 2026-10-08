@@ -91,6 +91,12 @@ that it is a stream rather than a stalled file.
 `Airplane!`. Confirm: an `Airplane!` window, and in the log
 `VideoPlayerView: Playing Airplane! from http://…/file.mkv?X-Plex-Token=<redacted>`.
 
+**Another server for one launch** without touching the saved source: pass `BrowserSource` (the
+JSON of `BrowserSource`, as data) in the argument domain, e.g.
+`launch.sh aquamp -- -BrowserSource "<$(printf '%s' '{"emby":{"serverId":"<id>"}}' | xxd -p | tr -d '\n')>"`
+(`{"local":{}}` for local files; the ids are `EmbyCurrentServerID` / `JellyfinCurrentServerID` in
+the `NullPlayer` domain).
+
 **CLI: casting only.** There is no headless local-playback path for video —
 
 ```bash

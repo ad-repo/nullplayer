@@ -30,7 +30,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     var currentTitle: String? { loadedVideo?.title }
 
     /// Lightweight video track used by the main window for artwork lookup.
-    var currentArtworkTrack: Track? { loadedVideo?.artworkTrack }
+    var currentArtworkTrack: Track? { loadedVideo?.track }
 
     /// True from the moment a film reaches its own end until something plays again. **Read by every
     /// mode**: `WindowManager.isVideoActivePlayback` and `.videoPlaybackState` answer from it, so a
@@ -531,7 +531,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     func play(url: URL, title: String) {
         endPreviousVideo()
         startVideo(LoadedVideo(source: url.isFileURL ? .localFile(url) : .stream, title: title,
-                               artworkTrack: Track(url: url, title: title, mediaType: .video), contentType: "video"),
+                               track: Track(url: url, title: title, mediaType: .video), contentType: "video"),
                    url: url)
     }
 
@@ -899,8 +899,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             }
         }
 
-        // Every film loads with a video track: `play(url:)` builds one, a queued item is its own
-        guard let track = await MainActor.run(body: { self.loadedVideo?.artworkTrack }) else {
+        guard let track = await MainActor.run(body: { self.loadedVideo?.track }) else {
             throw CastError.playbackFailed("No castable content loaded")
         }
         try await CastManager.shared.castVideoTrack(
@@ -1220,7 +1219,7 @@ extension VideoPlayerWindowController {
     }
 
     func debugSetCurrentTitleForTesting(_ title: String?) {
-        loadedVideo = title.map { LoadedVideo(source: .stream, title: $0, artworkTrack: nil, contentType: "video") }
+        loadedVideo = title.map { LoadedVideo(source: .stream, title: $0, track: Track(url: URL(string: "about:blank")!, title: $0, mediaType: .video), contentType: "video") }
     }
 
     func debugSetCastStateForTesting(device: CastDevice, startPosition: TimeInterval, duration: TimeInterval) {

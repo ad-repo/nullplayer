@@ -1198,7 +1198,7 @@ class CastManager {
         }
 
         // Video tracks in an audio playlist dispatch to the video cast path.
-        // Keep the teardown performed by castVideoURL serialized with audio track changes.
+        // Keep the teardown performed by _castVideoTrackCore serialized with audio track changes.
         if track.mediaType == .video {
             guard let device = activeSession?.device, device.supportsVideo else {
                 NSLog("CastManager: castNewTrack skipping video track '%@' — no video-capable session", track.title)
@@ -1210,14 +1210,7 @@ class CastManager {
                           track.title, self.castTrackGeneration)
                     return
                 }
-                try await self._castVideoURLCore(
-                    track.url,
-                    title: track.displayTitle,
-                    to: device,
-                    duration: track.duration,
-                    contentType: track.contentType,
-                    sourceTrack: track
-                )
+                try await self._castVideoTrackCore(track, to: device)
             }
             try await task.value
             return
@@ -1813,31 +1806,12 @@ class CastManager {
         }
 
         NSLog("CastManager: Casting local video '%@' to %@", title, device.name)
-        try await castVideoURL(
-            url,
-            title: title,
+        try await castVideoTrack(
+            Track(url: url, title: title, mediaType: .video, contentType: contentType),
             to: device,
             startPosition: startPosition,
-            duration: duration,
-            contentType: contentType
+            duration: duration
         )
-    }
-
-    /// Cast a generic video URL to a video-capable device.
-    /// Handles both local files and already-resolved remote video streams.
-    func castVideoURL(_ url: URL, title: String, to device: CastDevice, startPosition: TimeInterval = 0, duration: TimeInterval? = nil, contentType: String? = nil) async throws {
-        let task = await enqueueInflight { [self] in
-            try await self._castVideoURLCore(
-                url,
-                title: title,
-                to: device,
-                startPosition: startPosition,
-                duration: duration,
-                contentType: contentType
-            )
-        }
-
-        try await task.value
     }
 
     /// Cast a video playlist track, preserving server identity so authenticated/proxied URLs are used.
@@ -1847,22 +1821,14 @@ class CastManager {
         }
 
         let task = await enqueueInflight { [self] in
-            try await self._castVideoURLCore(
-                track.url,
-                title: track.displayTitle,
-                to: device,
-                startPosition: startPosition,
-                duration: duration ?? track.duration,
-                contentType: track.contentType,
-                sourceTrack: track
-            )
+            try await self._castVideoTrackCore(track, to: device, startPosition: startPosition, duration: duration)
         }
 
         try await task.value
     }
 
-    /// Core video URL cast implementation. Call only from inside an already serialized inflight operation.
-    private func _castVideoURLCore(_ url: URL, title: String, to device: CastDevice, startPosition: TimeInterval = 0, duration: TimeInterval? = nil, contentType: String? = nil, sourceTrack: Track? = nil) async throws {
+    /// Core video cast implementation. Call only from inside an already serialized inflight operation.
+    private func _castVideoTrackCore(_ track: Track, to device: CastDevice, startPosition: TimeInterval = 0, duration: TimeInterval? = nil) async throws {
         guard device.supportsVideo else {
             throw CastError.unsupportedDevice
         }
@@ -1876,9 +1842,10 @@ class CastManager {
 
         // A server's film goes out as video/mp4, as every server movie and episode cast sends it:
         // a Plex part URL ends in the extension of the file on the server's disk (.mkv).
-        let isServerItem = sourceTrack.map { $0.plexRatingKey != nil || $0.jellyfinId != nil || $0.embyId != nil } ?? false
+        let url = track.url
+        let isServerItem = track.plexRatingKey != nil || track.jellyfinId != nil || track.embyId != nil
         let detected = detectContentType(for: url)
-        let effectiveContentType = contentType ?? sourceTrack?.contentType
+        let effectiveContentType = track.contentType
             ?? (detected.mediaType == .video && !isServerItem ? detected.contentType : "video/mp4")
 
         let castURL: URL
@@ -1892,14 +1859,12 @@ class CastManager {
             }
             castURL = serverURL
         } else if url.scheme == "http" || url.scheme == "https" {
-            if let track = sourceTrack,
-               track.plexRatingKey == nil,
+            if track.plexRatingKey == nil,
                Self.isAudioContentType(effectiveContentType),
                (track.subsonicId != nil || track.jellyfinId != nil || track.embyId != nil) {
                 let result = try await prepareProxyURL(for: track, device: device, contentTypeOverride: effectiveContentType)
                 castURL = result.url
-            } else if let track = sourceTrack,
-                      track.plexRatingKey == nil,
+            } else if track.plexRatingKey == nil,
                       (track.subsonicId != nil || track.jellyfinId != nil || track.embyId != nil) {
                 // The Sonos proxy path is for audio metadata/content-type handling;
                 // remote video streams can be cast directly.
@@ -1915,16 +1880,16 @@ class CastManager {
 
         // A server episode's track carries its show and season, as an episode cast sends them
         let metadata = CastMetadata(
-            title: title,
-            artist: sourceTrack?.artist,
-            album: sourceTrack?.album,
-            artworkURL: sourceTrack.flatMap { castArtworkURL(for: $0, size: 600) },
-            duration: duration,
+            title: track.displayTitle,
+            artist: track.artist,
+            album: track.album,
+            artworkURL: castArtworkURL(for: track, size: 600),
+            duration: duration ?? track.duration,
             contentType: effectiveContentType,
             mediaType: .video
         )
 
-        NSLog("CastManager: Casting video URL '%@' to %@", title, device.name)
+        NSLog("CastManager: Casting video URL '%@' to %@", track.displayTitle, device.name)
         try await _castCore(to: device, url: castURL, metadata: metadata, startPosition: startPosition)
     }
     

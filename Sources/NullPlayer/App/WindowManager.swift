@@ -3647,8 +3647,9 @@ class WindowManager {
         return nil
     }
 
-    private func routeToVideoCastIfNeeded(title: String, artworkTrack: Track?, operation: @escaping (CastDevice) async throws -> Void) -> Bool {
+    private func routeToVideoCastIfNeeded(_ track: Track) -> Bool {
         guard let device = targetVideoCastDevice else { return false }
+        let title = track.displayTitle
 
         // If a video cast is already active, close it now — two simultaneous casts aren't possible.
         // Local video teardown is deferred until the cast succeeds so playback isn't lost on failure.
@@ -3665,18 +3666,18 @@ class WindowManager {
         }
 
         videoTitle = title
-        mainWindowController?.updateVideoTrackInfo(title: title, artworkTrack: artworkTrack)
+        mainWindowController?.updateVideoTrackInfo(title: title, artworkTrack: track)
         mainWindowController?.updatePlaybackState()
 
         Task {
             do {
-                try await operation(device)
+                try await CastManager.shared.castVideoTrack(track, to: device)
                 // Cast succeeded — safe to stop any local video that was running
                 if hasLocalVideoRunning {
                     await MainActor.run {
                         self.videoPlayerWindowController?.stop()
                         self.videoTitle = title
-                        self.mainWindowController?.updateVideoTrackInfo(title: title, artworkTrack: artworkTrack)
+                        self.mainWindowController?.updateVideoTrackInfo(title: title, artworkTrack: track)
                         self.mainWindowController?.updatePlaybackState()
                     }
                 }
@@ -3724,9 +3725,7 @@ class WindowManager {
             return
         }
 
-        if routeToVideoCastIfNeeded(title: track.displayTitle, artworkTrack: track, operation: { device in
-            try await CastManager.shared.castVideoTrack(track, to: device)
-        }) {
+        if routeToVideoCastIfNeeded(track) {
             return
         }
         

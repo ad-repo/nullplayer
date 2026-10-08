@@ -3442,156 +3442,85 @@ class MenuActions: NSObject {
     }
     
     private func showVideoInfo(_ controller: VideoPlayerWindowController) {
-        let alert = NSAlert()
-
-        if case .plexItem(let ratingKey) = controller.loadedVideo?.source {
+        let title = controller.currentTitle ?? "Video"
+        switch controller.loadedVideo?.source {
+        case .plexItem(let ratingKey):
             // A Plex film carries only its rating key, so fetch the movie or episode it names
             let isEpisode = controller.loadedVideo?.contentType == "tv"
-            let title = controller.currentTitle ?? "Video"
             Task { @MainActor in
-                if isEpisode, let episode = try? await PlexManager.shared.fetchEpisodeDetails(episodeID: ratingKey) {
-                    self.fillVideoInfo(alert, episode: episode)
-                } else if !isEpisode, let movie = try? await PlexManager.shared.fetchMovieDetails(movieID: ratingKey) {
-                    self.fillVideoInfo(alert, movie: movie)
-                } else {
-                    alert.messageText = title
-                    alert.informativeText = "Source: Plex"
-                }
-                alert.runModal()
+                let info = await self.plexVideoInfo(ratingKey: ratingKey, isEpisode: isEpisode)
+                self.runVideoInfoAlert(title: info?.title ?? title, lines: info?.lines ?? ["Source: Plex"])
             }
-            return
-
-        } else if case .localFile(let url) = controller.loadedVideo?.source {
-            // Local video file
-            alert.messageText = controller.currentTitle ?? url.lastPathComponent
-            var info = [String]()
-            info.append("Path: \(url.path)")
-            info.append("")
-            info.append("Source: Local File")
-            alert.informativeText = info.joined(separator: "\n")
-            
-        } else {
-            // Unknown video
-            alert.messageText = controller.currentTitle ?? "Video"
-            alert.informativeText = "Source: Unknown"
+        case .localFile(let url):
+            runVideoInfoAlert(title: controller.currentTitle ?? url.lastPathComponent,
+                              lines: ["Path: \(url.path)", "", "Source: Local File"])
+        default:
+            runVideoInfoAlert(title: title, lines: ["Source: Unknown"])
         }
-        
+    }
+
+    private func runVideoInfoAlert(title: String, lines: [String]) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = lines.joined(separator: "\n")
         alert.runModal()
     }
 
-    private func fillVideoInfo(_ alert: NSAlert, movie: PlexMovie) {
-        alert.messageText = movie.title
-        var info = [String]()
-        
-        if let year = movie.year { info.append("Year: \(year)") }
-        if let studio = movie.studio { info.append("Studio: \(studio)") }
-        info.append("Duration: \(movie.formattedDuration)")
-        info.append("")
-        
-        // Video/Audio format from media
-        if let media = movie.primaryMedia {
-            if let resolution = media.videoResolution {
-                var videoInfo = "Resolution: \(resolution)"
-                if let width = media.width, let height = media.height {
-                    videoInfo = "Resolution: \(width)x\(height)"
-                }
-                info.append(videoInfo)
-            }
-            if let videoCodec = media.videoCodec {
-                info.append("Video Codec: \(videoCodec.uppercased())")
-            }
-            if let audioCodec = media.audioCodec {
-                var audioInfo = "Audio: \(audioCodec.uppercased())"
-                if let channels = media.audioChannels {
-                    audioInfo += " (\(formatChannels(channels)))"
-                }
-                info.append(audioInfo)
-            }
-            if let bitrate = media.bitrate {
-                info.append("Bitrate: \(bitrate) kbps")
-            }
-        }
-        info.append("")
-        
-        if let contentRating = movie.contentRating {
-            info.append("Content Rating: \(contentRating)")
-        }
-        if let imdbId = movie.imdbId {
-            info.append("IMDB: \(imdbId)")
-        }
-        if let tmdbId = movie.tmdbId {
-            info.append("TMDB: \(tmdbId)")
-        }
-        info.append("")
-        
-        if let serverName = PlexManager.shared.currentServer?.name {
-            info.append("Source: Plex (\(serverName))")
+    /// The info sheet of a Plex movie or episode, fetched by rating key; nil when the fetch fails.
+    @MainActor
+    private func plexVideoInfo(ratingKey: String, isEpisode: Bool) async -> (title: String, lines: [String])? {
+        let title: String
+        var lines: [String]
+        let ids: [String?]
+        let media: PlexMedia?
+        let summary: String?
+        if isEpisode {
+            guard let episode = try? await PlexManager.shared.fetchEpisodeDetails(episodeID: ratingKey) else { return nil }
+            title = "\(episode.grandparentTitle ?? "Unknown Show") - \(episode.episodeIdentifier)"
+            lines = ["Episode: \(episode.title)"]
+            if let seasonTitle = episode.parentTitle { lines.append("Season: \(seasonTitle)") }
+            lines.append("Duration: \(episode.formattedDuration)")
+            ids = [episode.imdbId.map { "IMDB: \($0)" }]
+            media = episode.media.first
+            summary = episode.summary
         } else {
-            info.append("Source: Plex")
+            guard let movie = try? await PlexManager.shared.fetchMovieDetails(movieID: ratingKey) else { return nil }
+            title = movie.title
+            lines = []
+            if let year = movie.year { lines.append("Year: \(year)") }
+            if let studio = movie.studio { lines.append("Studio: \(studio)") }
+            lines.append("Duration: \(movie.formattedDuration)")
+            ids = [movie.contentRating.map { "Content Rating: \($0)" },
+                   movie.imdbId.map { "IMDB: \($0)" },
+                   movie.tmdbId.map { "TMDB: \($0)" }]
+            media = movie.primaryMedia
+            summary = movie.summary
         }
-        
-        if let summary = movie.summary, !summary.isEmpty {
-            info.append("")
-            info.append("Summary: \(summary.prefix(200))\(summary.count > 200 ? "..." : "")")
-        }
-        
-        alert.informativeText = info.joined(separator: "\n")
-    }
 
-    private func fillVideoInfo(_ alert: NSAlert, episode: PlexEpisode) {
-        let showTitle = episode.grandparentTitle ?? "Unknown Show"
-        alert.messageText = "\(showTitle) - \(episode.episodeIdentifier)"
-        
-        var info = [String]()
-        info.append("Episode: \(episode.title)")
-        if let seasonTitle = episode.parentTitle {
-            info.append("Season: \(seasonTitle)")
-        }
-        info.append("Duration: \(episode.formattedDuration)")
-        info.append("")
-        
-        // Video/Audio format from media
-        if let media = episode.media.first {
+        lines.append("")
+        if let media {
             if let resolution = media.videoResolution {
-                var videoInfo = "Resolution: \(resolution)"
                 if let width = media.width, let height = media.height {
-                    videoInfo = "Resolution: \(width)x\(height)"
+                    lines.append("Resolution: \(width)x\(height)")
+                } else {
+                    lines.append("Resolution: \(resolution)")
                 }
-                info.append(videoInfo)
             }
-            if let videoCodec = media.videoCodec {
-                info.append("Video Codec: \(videoCodec.uppercased())")
-            }
+            if let videoCodec = media.videoCodec { lines.append("Video Codec: \(videoCodec.uppercased())") }
             if let audioCodec = media.audioCodec {
-                var audioInfo = "Audio: \(audioCodec.uppercased())"
-                if let channels = media.audioChannels {
-                    audioInfo += " (\(formatChannels(channels)))"
-                }
-                info.append(audioInfo)
+                let channels = media.audioChannels.map { " (\(formatChannels($0)))" } ?? ""
+                lines.append("Audio: \(audioCodec.uppercased())\(channels)")
             }
-            if let bitrate = media.bitrate {
-                info.append("Bitrate: \(bitrate) kbps")
-            }
+            if let bitrate = media.bitrate { lines.append("Bitrate: \(bitrate) kbps") }
         }
-        info.append("")
-        
-        if let imdbId = episode.imdbId {
-            info.append("IMDB: \(imdbId)")
+        lines.append("")
+        lines += ids.compactMap { $0 }
+        lines.append("")
+        lines.append(PlexManager.shared.currentServer.map { "Source: Plex (\($0.name))" } ?? "Source: Plex")
+        if let summary, !summary.isEmpty {
+            lines += ["", "Summary: \(summary.prefix(200))\(summary.count > 200 ? "..." : "")"]
         }
-        info.append("")
-        
-        if let serverName = PlexManager.shared.currentServer?.name {
-            info.append("Source: Plex (\(serverName))")
-        } else {
-            info.append("Source: Plex")
-        }
-        
-        if let summary = episode.summary, !summary.isEmpty {
-            info.append("")
-            info.append("Summary: \(summary.prefix(200))\(summary.count > 200 ? "..." : "")")
-        }
-        
-        alert.informativeText = info.joined(separator: "\n")
+        return (title, lines)
     }
     
     private func showAudioTrackInfo(_ track: Track) {

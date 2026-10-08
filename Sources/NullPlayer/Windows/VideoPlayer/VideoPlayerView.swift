@@ -39,8 +39,6 @@ class VideoPlayerView: NSView {
     /// Available subtitle tracks (from VLCKit)
     private var availableSubtitleTracks: [VideoTrackInfo] = []
     
-    /// Plex streams for external subtitles
-    
     /// Current subtitle delay
     private var currentSubtitleDelay: TimeInterval = 0
     

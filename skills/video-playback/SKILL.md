@@ -150,15 +150,14 @@ handoff or loss) go through `unloadVideo(reportingStopAt:)`. A new source is a n
 film carries only its id on the `Track`, so `play(plexTrack:)` / `play(jellyfinTrack:)` /
 `play(embyTrack:)` load `.plexItem` / `.jellyfinItem` / `.embyItem` and start the reporter with
 `videoTrackDidStart`, taking episode-or-movie from `playHistoryContentType`. **About Playing**
-on a Plex film fetches the movie or episode by its rating key for the info sheet.
-**Only the video reporter hears a film.** Between `loadTrack` handing a film over and
-`videoPlaybackDidStart` pausing the engine, the engine's time timer still runs with the film as
-`currentTrack`; its Subsonic / Jellyfin / Emby progress calls skip a video track, or the audio
-reporter opened a second "now playing" session for the film with the previous song's duration
-(measured on Emby, 2026-10-08). The three
-reporters share their rules: scrobble at 90% (audio
-uses 50%), only after 60 s of play, with a timeline update every 10 s. Each server's API details
-are in its own integration skill.
+on a Plex film fetches the movie or episode by its rating key for the info sheet. The three
+reporters share their rules: scrobble at 90% (audio uses 50%), only after 60 s of play, with a
+timeline update every 10 s. Each server's API details are in its own integration skill.
+
+**Only the video reporter hears a film.** `loadTrack`'s video branch stops the engine's time
+timer when it hands a film over. Left ticking until `videoPlaybackDidStart` paused the engine,
+the timer's Subsonic / Jellyfin / Emby progress calls opened a second, audio "now playing" session for the film with the previous song's
+duration (measured on Emby, 2026-10-08).
 
 ## Casting
 
@@ -241,10 +240,5 @@ reaches the window only from a browser (`app-control/reference/launch-recipes.md
   `winhelper key <pid> 36 option` on a selected row queues it (Add to Queue) instead. Measured
   2026-10-08 (M17): the reporter lines of that sequence on Plex and Emby matched before and after
   a refactor except for timing values and async completion order.
-- **Start a browser on another server for one launch** with the argument domain, leaving the
-  saved source alone: `BrowserSource` is the JSON of `BrowserSource` as data, e.g.
-  `launch.sh aquamp -- -BrowserSource "<$(printf '%s' '{"emby":{"serverId":"<id>"}}' | xxd -p | tr -d '\n')>"`
-  (`{"local":{}}` for local files; the ids are `EmbyCurrentServerID` / `JellyfinCurrentServerID`
-  in the `NullPlayer` domain).
 - **Test fresh and reused windows separately.** A video played into the already-open window and one
   played after closing it go through different first-layout timing.
