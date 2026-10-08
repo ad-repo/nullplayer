@@ -342,6 +342,10 @@ class AudioEngine {
     /// Token used to invalidate stale deferred local track loads triggered by direct user selection.
     private var deferredLocalTrackLoadToken: UInt64 = 0
 
+    /// The video `loadTrack` has handed to the video player but which has not reached it yet: the
+    /// hand-off runs on the next main-queue turn, so until then `isVideoActivePlayback` is false.
+    private var pendingVideoHandOffTrackID: UUID?
+
     /// Temp file copied from a network-mounted volume for the current track.
     /// Using a local copy prevents AVAudioPlayerNode's render pre-fetch thread from doing
     /// NAS reads during playback, which causes dropouts on any network latency spike.
@@ -2421,6 +2425,18 @@ class AudioEngine {
         }
 
         if let track = currentTrack {
+            // A video belongs to the video player, never to the audio pipeline below. Right after
+            // `loadTrack` routed it (`loadTracks` and the playlist call `play()` straight behind
+            // the load) it is on its way, so routing it again would start it twice (M22).
+            // Otherwise, a film that was closed or ran out, it is routed again once.
+            if track.playbackRoute == .video {
+                if pendingVideoHandOffTrackID != track.id,
+                   let index = playlist.firstIndex(where: { $0.id == track.id }) {
+                    loadTrack(at: index)
+                }
+                return
+            }
+
             if track.isStreamingPlaceholder,
                currentIndex >= 0 && currentIndex < playlist.count {
                 resolvePlaceholderTrackAndOptionallyPlay(at: currentIndex, autoPlayOnSuccess: true)
@@ -4577,7 +4593,9 @@ class AudioEngine {
             
             // Route to video player via WindowManager
             guard !AudioEngine.isHeadless else { return nil }
+            pendingVideoHandOffTrackID = track.id
             DispatchQueue.main.async {
+                if self.pendingVideoHandOffTrackID == track.id { self.pendingVideoHandOffTrackID = nil }
                 WindowManager.shared.playVideoTrack(track)
             }
             return nil

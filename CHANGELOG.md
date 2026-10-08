@@ -144,6 +144,22 @@
   to the next track and, with Repeat off, stops at the end of the playlist instead of starting over.
 - **Picking a song while a video plays starts the song** — double-clicking an audio track while a
   video was playing closed the video and then played nothing. The song now plays.
+- **Queue movies and TV like music** — right-clicking a movie, episode, season or show in the
+  Library Browser now offers **Play**, **Play and Replace Queue**, **Play Next** and **Add to
+  Queue**, as music rows do, for Plex, Jellyfin, Emby and local video; Shift+Enter and Option+Enter
+  work on them too. A season or show queues all of its episodes in order. Double-clicking a movie
+  or episode still plays it straight away. Plex's separate **Add to Playlist** items are gone: use
+  **Add to Queue**.
+- **A playlist video starts once** — double-clicking a video in the playlist, or replacing the
+  queue with one, opened it twice, and Plex was told it had stopped at 0:00 in between. It now
+  starts once.
+- **Emby sees what you are playing** — Emby refused every "now playing" and progress report for
+  music and video, so the server never showed NullPlayer playing anything or where it was up to.
+  It now accepts them.
+- **Episode and movie titles read once** — a queued or playlist episode showed the show's name
+  twice ("Adults - Adults - S01E02 - Spitroast"), and a queued Plex movie was prefixed with its
+  studio ("Paramount Pictures - Airplane!"). They now read "Adults - S01E02 - Spitroast" and
+  "Airplane!", as when you double-click them.
 
 ## 0.31.4
 

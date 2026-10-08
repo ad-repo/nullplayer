@@ -145,11 +145,14 @@ Original and Original-Metal UI add: **HT** (Hide Title Bars), **CP** (Compact Mo
 
 ## Media Sources
 
-**One play menu everywhere**: right-click a track, album, artist, playlist, playlist entry or local folder
-in the Library Browser, from any source, for **Play** · **Play and Replace Queue** · **Play Next** · **Add to
-Queue**, then that row's own items (Rate, Edit Tags, Start Radio, Expand…). Play Next and Add to Queue start
-playback when the queue is empty. An artist plays album by album, oldest first. Radio stations and video rows
-keep their own menus. Code: `App/TrackVerb.swift` (verbs, menu) and `App/LibraryPlayable.swift` (row → tracks).
+**One play menu everywhere**: right-click a track, album, artist, playlist, playlist entry, local folder,
+movie, episode, season or show in the Library Browser, from any source, for **Play** · **Play and Replace
+Queue** · **Play Next** · **Add to Queue**, then that row's own items (Rate, Edit Tags, Start Radio, Cast to…,
+Expand…). Play Next and Add to Queue start playback when the queue is empty. An artist plays album by album,
+oldest first; a show season by season. A queued video plays in the video player when the queue reaches it.
+Double-clicking a movie or episode still opens it straight in the video player, outside the queue. Radio
+stations keep their own menus. Code: `App/TrackVerb.swift` (verbs, menu) and `App/LibraryPlayable.swift`
+(row → tracks).
 
 ### Plex Integration
 - Browse music, movies, and TV shows

@@ -226,7 +226,7 @@ class EmbyServerClient {
 
     /// Perform a request that returns no meaningful body (e.g. POST actions)
     private func performVoidRequest(_ request: URLRequest) async throws {
-        let (_, response) = try await session.data(for: request)
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw EmbyClientError.invalidResponse
@@ -236,6 +236,9 @@ class EmbyServerClient {
             if httpResponse.statusCode == 401 {
                 throw EmbyClientError.unauthorized
             }
+            // The status alone ("Server error: 400") does not say what the server objected to.
+            NSLog("EmbyServerClient: %@ %@ -> %d: %@", request.httpMethod ?? "?", request.url?.path ?? "?",
+                  httpResponse.statusCode, String(decoding: data.prefix(300), as: UTF8.self))
             throw EmbyClientError.httpError(statusCode: httpResponse.statusCode)
         }
     }
@@ -732,14 +735,19 @@ class EmbyServerClient {
         NSLog("EmbyServerClient: Scrobbled item %@", itemId)
     }
 
+    // A report without a `PlaySessionId` is refused with 400 "Value cannot be null. (Parameter
+    // 'key')" by start and progress (Stopped still accepts it): Emby keys the session's state on it.
+    // One id per play, made by the reporter when it starts tracking.
+
     /// Report playback start
-    func reportPlaybackStart(itemId: String) async throws {
+    func reportPlaybackStart(itemId: String, playSessionId: String) async throws {
         guard var request = buildRequest(path: "/Sessions/Playing", method: "POST") else {
             throw EmbyClientError.invalidURL
         }
 
         let body: [String: Any] = [
             "ItemId": itemId,
+            "PlaySessionId": playSessionId,
             "CanSeek": true,
             "PlayMethod": "DirectStream"
         ]
@@ -750,13 +758,14 @@ class EmbyServerClient {
     }
 
     /// Report playback progress
-    func reportPlaybackProgress(itemId: String, positionTicks: Int64, isPaused: Bool = false) async throws {
+    func reportPlaybackProgress(itemId: String, playSessionId: String, positionTicks: Int64, isPaused: Bool = false) async throws {
         guard var request = buildRequest(path: "/Sessions/Playing/Progress", method: "POST") else {
             throw EmbyClientError.invalidURL
         }
 
         let body: [String: Any] = [
             "ItemId": itemId,
+            "PlaySessionId": playSessionId,
             "PositionTicks": positionTicks,
             "IsPaused": isPaused
         ]
@@ -766,13 +775,14 @@ class EmbyServerClient {
     }
 
     /// Report playback stopped
-    func reportPlaybackStopped(itemId: String, positionTicks: Int64) async throws {
+    func reportPlaybackStopped(itemId: String, playSessionId: String, positionTicks: Int64) async throws {
         guard var request = buildRequest(path: "/Sessions/Playing/Stopped", method: "POST") else {
             throw EmbyClientError.invalidURL
         }
 
         let body: [String: Any] = [
             "ItemId": itemId,
+            "PlaySessionId": playSessionId,
             "PositionTicks": positionTicks
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)

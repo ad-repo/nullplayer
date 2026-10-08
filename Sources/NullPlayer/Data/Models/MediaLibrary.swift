@@ -326,6 +326,11 @@ struct LocalVideo: Identifiable, Codable {
         }
         return String(format: "%d:%02d", minutes, totalSeconds % 60)
     }
+
+    /// Convert to a `.video` Track, which `loadTrack` routes to the video player
+    func toTrack() -> Track {
+        Track(url: url, title: title, duration: duration > 0 ? duration : nil, mediaType: .video)
+    }
 }
 
 /// Represents a local playlist file (.m3u, .pls, .m3u8) in the library
@@ -399,6 +404,11 @@ struct LocalEpisode: Identifiable, Codable {
         }
         return String(format: "%d:%02d", minutes, totalSeconds % 60)
     }
+
+    /// Convert to a `.video` Track, which `loadTrack` routes to the video player
+    func toTrack() -> Track {
+        Track(url: url, title: title, artist: showTitle, duration: duration > 0 ? duration : nil, mediaType: .video)
+    }
 }
 
 /// A season within a local TV show (derived grouping, not persisted directly)
@@ -416,6 +426,9 @@ struct LocalShow: Identifiable {
     var episodeCount: Int {
         seasons.reduce(0) { $0 + $1.episodes.count }
     }
+
+    /// Every episode, season by season
+    var episodes: [LocalEpisode] { seasons.flatMap(\.episodes) }
 }
 
 /// Sort options for library browsing

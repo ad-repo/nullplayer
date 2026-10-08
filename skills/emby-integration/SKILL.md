@@ -91,13 +91,21 @@ The key differences from Jellyfin:
 Same Sessions endpoints as Jellyfin:
 
 - **Start**: `POST /Sessions/Playing`
-  - Body: `{"ItemId":"{id}","CanSeek":true,"PlayMethod":"DirectStream"}`
+  - Body: `{"ItemId":"{id}","PlaySessionId":"{uuid}","CanSeek":true,"PlayMethod":"DirectStream"}`
 
 - **Progress**: `POST /Sessions/Playing/Progress`
-  - Body: `{"ItemId":"{id}","PositionTicks":{ticks},"IsPaused":false}`
+  - Body: `{"ItemId":"{id}","PlaySessionId":"{uuid}","PositionTicks":{ticks},"IsPaused":false}`
 
 - **Stopped**: `POST /Sessions/Playing/Stopped`
-  - Body: `{"ItemId":"{id}","PositionTicks":{ticks}}`
+  - Body: `{"ItemId":"{id}","PlaySessionId":"{uuid}","PositionTicks":{ticks}}`
+
+**Emby needs `PlaySessionId`; Jellyfin does not.** Without it Emby refuses Start and Progress with
+400 `Value cannot be null. (Parameter 'key')` and still accepts Stopped, so a server showed nothing
+playing and no progress while stop reports went through. Both reporters make one id per play when
+tracking starts (`currentPlaySessionId`) and send it on all three. Measured 2026-10-08 against the
+NAS Emby server: a film and an album both report start with no 400s through several progress cycles.
+A failed `performVoidRequest` logs `EmbyServerClient: <METHOD> <path> -> <status>: <body>`, the
+server's own reason; the thrown error carries only the status.
 
 ## Rating Scale
 
