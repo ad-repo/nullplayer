@@ -3444,7 +3444,7 @@ class MenuActions: NSObject {
     private func showVideoInfo(_ controller: VideoPlayerWindowController) {
         let alert = NSAlert()
         
-        if let movie = controller.plexMovie {
+        if case .plexMovie(let movie) = controller.loadedVideo?.source {
             // Plex Movie
             alert.messageText = movie.title
             var info = [String]()
@@ -3503,7 +3503,7 @@ class MenuActions: NSObject {
             
             alert.informativeText = info.joined(separator: "\n")
             
-        } else if let episode = controller.plexEpisode {
+        } else if case .plexEpisode(let episode) = controller.loadedVideo?.source {
             // Plex Episode
             let showTitle = episode.grandparentTitle ?? "Unknown Show"
             alert.messageText = "\(showTitle) - \(episode.episodeIdentifier)"
@@ -3559,7 +3559,7 @@ class MenuActions: NSObject {
             
             alert.informativeText = info.joined(separator: "\n")
             
-        } else if let url = controller.localVideoURL {
+        } else if case .localFile(let url) = controller.loadedVideo?.source {
             // Local video file
             alert.messageText = controller.currentTitle ?? url.lastPathComponent
             var info = [String]()
