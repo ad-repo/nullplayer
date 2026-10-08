@@ -60,15 +60,35 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   first play, and `WindowManager.toggleVideoPlayer` returns early while it is nil.
 - **A play call moves key focus to the picture** (`revealVideoOutput`): the free window takes it
   itself (`VideoPlayerWindow`, see *Debugging a live defect*), a `.wal` skin's video window takes it in `setAuxiliaryWindow`, and a `.wmz` skin window
-  takes it through `revealSkinSurface(_:switchingViews:activate:)`. Both skin paths go through
+  takes it through `revealSkinSurface(_:switchingViews:activate:)`; a `.wal` video *tab* in the
+  player window (`hostVideoOutputInPlayer`) makes the skin view first responder, since the window
+  is already key with an embedded Library Browser holding the keys. Both skin paths go through
   `WindowManager.hostVideoOutputInSkin`. A `.wmz` video view that is not open yet is built in a
   `Task`, so `loadView` makes it key once it exists; focusing right after the reveal call would find
   no window. Without that,
   focus stayed on the Library Browser that started the film, where Return replays the selected row:
   a keystroke meant for the film restarted it from 0 and discarded the position (M5, measured
-  2026-10-07). It goes to the skin window, never the parked video window: under `.wmz`, Esc there
-  falls through to `close()` and stops the film. Hence the video keys do not reach a parked film
-  (M18).
+  2026-10-07). It goes to the skin window, never the parked video window.
+- **A parked film gets its keys from the skin window it is parked in** (M18). The video keys live
+  in `VideoPlayerWindowController.handleVideoKey`; the free window's key monitor calls it, and a
+  skin view offers a key the skin refused to its video surface (`WMPVideoSurface.handleKeyDown`,
+  `WinampModernVideoSurface.handleKeyDown`), which passes it on only while the film is parked in
+  that box — the same seam the visualization surfaces take (`WMPMainView.hostedSurfaceHandled`,
+  the end of `WinampModernMainView.keyDown`). The film goes
+  before a hosted visualization surface, which shares ←/→ and F; a skin's own key handler goes
+  before both, so a `.wal` skin with any `System.onKeyDown` handler keeps the arrows (B20a counts
+  any handler run as handled). Parked, `dismissVideoOutput` never closes: Esc hides a `.wal` skin's
+  video window (`closeVideoSurfaceWindow`) and does nothing where the box has no window of its own.
+  Under `.wmz`, `close()` would stop the film; in a `.wal` video tab, unparking (what the Video
+  Player menu item does there, B23) leaves the tab black while the film plays on, and selecting
+  the tab again does not refill it (measured 2026-10-08, `211786-Cpro_Winamp_Modern`). Esc is
+  consumed even then: **a fullscreen round trip leaves the parked window key** (the free window
+  took key for fullscreen, and `canBecomeKey` turning false later resigns nothing), so its own
+  monitor sees the keys, and an Esc it passed on reached `VideoPlayerView.cancelOperation`, which
+  stops and closes (measured on Cablemusic: F, Esc, Esc stopped the film). Measured 2026-10-08 on
+  Cablemusic, `211786-Cpro_Winamp_Modern`, winampmodern566 (own video window) and aquamp (Emby
+  `Airplane!`): Space, ←/→, F and Esc act with no click after the play, and after an F / Esc
+  round trip.
 
 ## Entry points
 
@@ -196,11 +216,11 @@ reaches the window only from a browser (`app-control/reference/launch-recipes.md
 - **The free window takes key focus; a parked one never does.** `VideoPlayerWindow` answers
   `canBecomeKey` / `canBecomeMain` true while free (a borderless `NSWindow` answers false, so the
   video keys never reached it: M28) and false while parked over a skin's box, so a click on the
-  picture leaves focus with the skin window (it also keeps Esc from `close()`-ing a `.wmz` film,
-  M18). Check it with Accessibility: after a play, and after a click on the
-  picture, `AXFocusedWindow` and `AXMainWindow` of the process are the film's window, and
-  `winhelper key <pid> 49` logs `VideoPlayer keyDown`. Measured 2026-10-08 in Classic, Original,
-  Metal, and parked in Cablemusic.
+  picture leaves focus with the skin window, which hands the film its keys (M18). Check it with
+  Accessibility: after a play, and after a click on the picture, `AXFocusedWindow` and
+  `AXMainWindow` of the process are the film's window when it is free and the skin window when it
+  is parked; in both, `winhelper key <pid> 49` logs `VideoPlayer keyDown`. Measured 2026-10-08 in
+  Classic, Original, Metal, and parked in Cablemusic.
 - **Drive a film by its transport.** Park the film off the main
   window (`winhelper park <pid> "<film title>" 0 650`) and use the main window's transport, which
   routes to the film while one plays: Play, Pause (pause and resume), Stop (`stop()`), a click on the

@@ -465,6 +465,9 @@ protocol WinampModernVideoSurface: AnyObject {
     /// has no window of its own to order out — and unparking with `detachVideoOutput()` there would
     /// reveal exactly the free-floating window the embedded route exists to avoid. Idempotent.
     func hideVideoOutput()
+    /// The video keys for the film parked over this box, offered once the skin has refused them: a
+    /// parked window never becomes key itself (M18). False when nothing is parked here.
+    func handleKeyDown(_ event: NSEvent) -> Bool
     /// Recolour to the skin's active colour theme.
     func applyPalette(_ palette: WasabiPalette)
     /// UI Size, as the `.wal` window's own skin scale.

@@ -2051,6 +2051,14 @@ class WindowManager {
         return (mainWindowController as? WinampModernMainWindowController)?.hideVideoSurfaceWindow() ?? false
     }
 
+    /// Escape on a parked film: shut the skin's own video window. False under `.wmz` and for a
+    /// `.wal` video tab, which have no window of their own to shut.
+    @discardableResult
+    func closeWinampModernVideoWindow() -> Bool {
+        guard uiMode.controllerFamily == .winampModern else { return false }
+        return (mainWindowController as? WinampModernMainWindowController)?.closeVideoSurfaceWindow() ?? false
+    }
+
     /// Unpark the video output from the skin's box — the picture is finished with, and the child
     /// window must stop hanging off a skin window that may be torn down next.
     func detachWinampModernVideoOutput() {

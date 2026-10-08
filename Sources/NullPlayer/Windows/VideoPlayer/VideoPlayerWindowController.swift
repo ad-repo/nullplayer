@@ -447,53 +447,55 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             guard isOurWindow else {
                 return event
             }
-            
-            NSLog("VideoPlayer keyDown: keyCode=%d, isFullScreen=%d", event.keyCode, window.styleMask.contains(.fullScreen) ? 1 : 0)
-            
-            // Check for Cmd+S to open track selection panel
-            if event.keyCode == 1 && event.modifierFlags.contains(.command) { // Cmd+S
-                self.videoPlayerView.showTrackSelectionPanel()
-                return nil
-            }
-            
-            switch event.keyCode {
-            case 53: // Escape
-                NSLog("VideoPlayer: Escape pressed, fullscreen=%d", window.styleMask.contains(.fullScreen) ? 1 : 0)
-                if window.styleMask.contains(.fullScreen) {
-                    window.toggleFullScreen(nil)
-                    return nil // Consume the event
-                } else {
-                    // If track selection panel is visible, close it instead of the window
-                    if self.videoPlayerView.trackSelectionPanelVisible {
-                        self.videoPlayerView.hideTrackSelectionPanel()
-                        return nil
-                    }
-                    self.dismissVideoOutput()
-                    return nil
-                }
-            case 49: // Space - toggle play/pause
-                self.togglePlayPause()
-                return nil
-            case 3: // F key - toggle fullscreen
-                if self.isVideoOutputHosted { self.enterFullScreenReclaimingOutput() }
-                else { window.toggleFullScreen(nil) }
-                return nil
-            case 1: // S key - cycle subtitles
-                self.videoPlayerView.cycleSubtitleTrack()
-                return nil
-            case 0: // A key - cycle audio tracks
-                self.videoPlayerView.cycleAudioTrack()
-                return nil
-            case 123: // Left arrow - skip back
-                self.skipBackward(10)
-                return nil
-            case 124: // Right arrow - skip forward
-                self.skipForward(10)
-                return nil
-            default:
-                return event
-            }
+            return self.handleVideoKey(event) ? nil : event
         }
+    }
+
+    /// The video keys, answering whether one was handled. The free window's monitor above calls this;
+    /// a parked window never becomes key, so the skin surface it is parked in offers it the keys the
+    /// skin refused (M18).
+    func handleVideoKey(_ event: NSEvent) -> Bool {
+        guard let window else { return false }
+
+        // Check for Cmd+S to open track selection panel
+        if event.keyCode == 1 && event.modifierFlags.contains(.command) { // Cmd+S
+            videoPlayerView.showTrackSelectionPanel()
+            return true
+        }
+
+        switch event.keyCode {
+        case 53: // Escape
+            NSLog("VideoPlayer: Escape pressed, fullscreen=%d", window.styleMask.contains(.fullScreen) ? 1 : 0)
+            if window.styleMask.contains(.fullScreen) {
+                window.toggleFullScreen(nil)
+                return true
+            }
+            // If track selection panel is visible, close it instead of the window
+            if videoPlayerView.trackSelectionPanelVisible {
+                videoPlayerView.hideTrackSelectionPanel()
+                return true
+            }
+            // Consumed even when nothing is dismissed: a parked window still key from a fullscreen
+            // round trip would otherwise pass Esc on to `VideoPlayerView`, which stops the film.
+            dismissVideoOutput()
+        case 49: // Space - toggle play/pause
+            togglePlayPause()
+        case 3: // F key - toggle fullscreen
+            if isVideoOutputHosted { enterFullScreenReclaimingOutput() }
+            else { window.toggleFullScreen(nil) }
+        case 1: // S key - cycle subtitles
+            videoPlayerView.cycleSubtitleTrack()
+        case 0: // A key - cycle audio tracks
+            videoPlayerView.cycleAudioTrack()
+        case 123: // Left arrow - skip back
+            skipBackward(10)
+        case 124: // Right arrow - skip forward
+            skipForward(10)
+        default:
+            return false
+        }
+        NSLog("VideoPlayer keyDown: keyCode=%d, isFullScreen=%d", event.keyCode, window.styleMask.contains(.fullScreen) ? 1 : 0)
+        return true
     }
     
     private func removeKeyboardMonitor() {
@@ -1303,11 +1305,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil)
     }
 
-    /// Escape, and anything else that means "put the picture away". Hosted, that hides the skin's
-    /// own video window (`autoclose="1"`) and leaves playback alone for the skin to reopen; in this
-    /// controller's own window it closes, which is the stop it has always been.
+    /// Escape. Hosted, that hides the skin's own video window (`autoclose="1"`) and leaves playback
+    /// alone for the skin to reopen; in this controller's own window it closes, which is the stop it
+    /// has always been. A `.wmz` box or a `.wal` video tab has no window of its own to hide, so there
+    /// it does nothing: closing would stop the film, and unparking strands a black tab (M18).
     func dismissVideoOutput() {
-        if isVideoOutputHosted, WindowManager.shared.hideWinampModernVideoSurface() { return }
+        if isVideoOutputHosted { WindowManager.shared.closeWinampModernVideoWindow(); return }
         close()
     }
 
@@ -1317,15 +1320,6 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// right-click rather than a second, thinner imitation of it. Its items target the video view, so
     /// it works wherever it is popped up.
     var contextMenu: NSMenu? { videoPlayerView?.menu }
-    
-    /// Handle Escape key via standard macOS cancel operation
-    @objc func cancel(_ sender: Any?) {
-        if let window, window.styleMask.contains(.fullScreen) {
-            window.toggleFullScreen(nil)
-        } else {
-            dismissVideoOutput()
-        }
-    }
 }
 
 #if DEBUG

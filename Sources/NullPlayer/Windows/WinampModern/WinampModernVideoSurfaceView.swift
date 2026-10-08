@@ -93,6 +93,13 @@ final class WinampModernVideoSurfaceView: WinampModernVideoSurface {
     /// out, so this is what putting its picture away has to mean (B23).
     func hideVideoOutput() { unpark(revealing: false) }
 
+    func handleKeyDown(_ event: NSEvent) -> Bool {
+        guard isAttached, event.window === container.window,
+              let controller = WindowManager.shared.currentVideoPlayerController,
+              controller.isVideoOutputHosted else { return false }
+        return controller.handleVideoKey(event)
+    }
+
     private func unpark(revealing reveal: Bool) {
         guard isAttached else { return }
         isAttached = false

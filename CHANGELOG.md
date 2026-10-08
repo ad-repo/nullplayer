@@ -167,6 +167,11 @@
 - **The video keys work in the video window** — in Classic, Original and Metal the video window
   never took keyboard focus, so Space, Left/Right, F and Esc went to the Library Browser that
   started the film. The window now takes focus when a film starts and when you click it.
+- **The video keys work on a film inside a Windows Media Player or Winamp Modern skin** — Space,
+  Left/Right, F and Esc did nothing to a film playing in the skin's own video box. They now act on
+  it, after any key the skin itself handles. Esc no longer stops a film in a Windows Media Player
+  skin, and a film started from a Winamp Modern skin's embedded Library Browser takes the keys
+  from it, so Return no longer replays the row.
 
 ## 0.31.4
 

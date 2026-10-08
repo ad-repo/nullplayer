@@ -1622,6 +1622,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         guard let surface = view.hostedVideoSurface else { return false }
         surface.attachVideoOutput()
         surface.updateOutputPlacement()
+        // Key focus goes with the picture: off an embedded Library Browser that started the film,
+        // where Return replays the row (M5), to the skin view, which hands the film its keys (M18).
+        view.window?.makeFirstResponder(view)
         // …and again once the reveal has settled. Switching the tab sets off the skin's own
         // `onResize` cascade, which is what gives the box its final width — it runs after this turn,
         // and a film started while the tab was closed otherwise parked the picture over the box's
@@ -1651,7 +1654,15 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             surface.hideVideoOutput()
             return true
         }
-        guard case .declaredContainer(let id) = coordinator.catalog.video,
+        return closeVideoSurfaceWindow()
+    }
+
+    /// Shut the skin's own video window, and nothing else — what Escape means. A video tab has no
+    /// window of its own, so this leaves it alone: unparking there leaves the tab black while the
+    /// film plays on, and selecting the tab again does not refill it.
+    @discardableResult
+    func closeVideoSurfaceWindow() -> Bool {
+        guard case .declaredContainer(let id) = surfaceCoordinator?.catalog.video,
               let container = auxiliaryContainers.first(where: { $0.containerID == id }),
               container.window.isVisible
         else { return false }

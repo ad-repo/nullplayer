@@ -128,6 +128,13 @@ final class WMPVideoSurface {
         return output.videoOutputMenu
     }
 
+    /// The video keys for the film parked in this box, offered once the skin has refused them: a
+    /// parked window never becomes key itself (M18). False when nothing is parked here.
+    func handleKeyDown(_ event: NSEvent) -> Bool {
+        guard let output, output.isVideoOutputHosted, anchor.superview != nil else { return false }
+        return output.handleVideoKey(event)
+    }
+
     func detach(reveal: Bool) {
         guard let output else { anchor.removeFromSuperview(); return }
         output.configureWMPVideoOutput(imageRect: nil)
