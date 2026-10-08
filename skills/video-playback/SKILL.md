@@ -75,9 +75,10 @@ Every `WindowManager` entry point first offers the video to `routeToVideoCastIfN
 **Library menu verbs.** A video row's **Play** · **Play and Replace Queue** · **Play Next** · **Add to
 Queue** (and Shift+Enter / Option+Enter) queue it through `TrackVerb` like a music row:
 `LibraryPlayable` turns a movie, episode, season or show of any source into `.video` tracks, which
-reach the window through `loadTrack` → `playVideoTrack`. That track path does less than the row
-path above: no Plex external subtitles, a Plex episode reported as a movie, no Jellyfin / Emby
-reporter start (M23).
+reach the window through `loadTrack` → `playVideoTrack`. That track path still differs from the
+row path above: it passes no Plex external subtitle streams, and while a video cast runs it casts
+the track's URL (`castVideoURL`) where a row casts the server item (`castPlexMovie` …), so
+double-click cannot simply become `TrackVerb.play` (M23).
 
 **Drag and drop.** The main window and the playlist each have their own drop handler, in Classic
 (`MainWindowView`, `PlaylistView`) and Modern (`ModernMainWindowView`, `ModernPlaylistView`). Each
@@ -100,7 +101,12 @@ A drop on a Library Browser imports instead (`local-library` § *Video import*).
 `VideoPlayerWindowController` sends pause, resume, position and stop to the reporter of whatever it
 has loaded (`PlexVideoPlaybackReporter`, `JellyfinVideoPlaybackReporter`,
 `EmbyVideoPlaybackReporter`); local files report nothing. Every `play(…)` first reports the previous
-item stopped (`finished: false`). The three reporters share their rules: scrobble at 90% (audio
+item stopped (`finished: false`). A queued video carries only its id on the `Track`, so
+`play(plexTrack:)` / `play(jellyfinTrack:)` / `play(embyTrack:)` store that id
+(`currentPlexRatingKey`, `currentJellyfinItemId`, `currentEmbyItemId`) and start the reporter with
+`videoTrackDidStart`, taking episode-or-movie from `playHistoryContentType`. Every `play(…)` resets
+what is loaded through `clearLoadedContent()`, so a new field joins that one list. The three
+reporters share their rules: scrobble at 90% (audio
 uses 50%), only after 60 s of play, with a timeline update every 10 s. Each server's API details
 are in its own integration skill.
 
