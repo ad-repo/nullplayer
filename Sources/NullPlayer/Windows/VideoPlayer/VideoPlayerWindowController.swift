@@ -2,6 +2,15 @@ import AppKit
 import NullPlayerCore
 
 /// Window controller for video playback with VLCKit and skinned UI
+/// A borderless `NSWindow` answers `canBecomeKey` / `canBecomeMain` false, so the free window never
+/// took focus and the video keys never reached it (M28). Parked over a skin's box it stays
+/// unfocusable, as before: Esc in a parked `.wmz` picture would `close()` and stop the film (M18).
+private final class VideoPlayerWindow: NSWindow {
+    private var isParked: Bool { (windowController as? VideoPlayerWindowController)?.isVideoOutputHosted ?? false }
+    override var canBecomeKey: Bool { !isParked }
+    override var canBecomeMain: Bool { !isParked }
+}
+
 class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     
     // MARK: - Properties
@@ -259,7 +268,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Create a borderless resizable window for video playback
         let contentRect = NSRect(x: 0, y: 0, width: 854, height: 480)
         let styleMask: NSWindow.StyleMask = [.borderless, .resizable, .fullSizeContentView]
-        let window = NSWindow(
+        let window = VideoPlayerWindow(
             contentRect: contentRect,
             styleMask: styleMask,
             backing: .buffered,

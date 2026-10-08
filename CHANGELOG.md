@@ -164,6 +164,9 @@
   or server track was streaming left the player stopped, its clock at 0:00, while the song played.
   It now shows the song playing. A playlist film started over a stream no longer leaves the player
   reading stopped either.
+- **The video keys work in the video window** — in Classic, Original and Metal the video window
+  never took keyboard focus, so Space, Left/Right, F and Esc went to the Library Browser that
+  started the film. The window now takes focus when a film starts and when you click it.
 
 ## 0.31.4
 
