@@ -723,10 +723,10 @@ class AppStateManager {
                 ? UserDefaults.standard.string(forKey: WinampModernSkinImporter.selectedSkinNameKey)
                 : nil
         )
-        for kind in WindowManager.CenterStackWindowKind.featureWindows {
-            let feature = wm.centerStackFeatureWindow(kind)
-            state[keyPath: kind.savedVisibility] = wm.visibilityForStateSaving(kind, current: feature.isVisible)
-            state[keyPath: kind.savedFrame] = feature.window.map { NSStringFromRect($0.frame) }
+        for feature in WindowManager.CenterStackFeature.allCases {
+            state[keyPath: feature.savedVisibility] =
+                wm.visibilityForStateSaving(feature, current: wm.isCenterStackWindowVisible(feature))
+            state[keyPath: feature.savedFrame] = wm.centerStackWindow(feature).map { NSStringFromRect($0.frame) }
         }
 
         saveQueue.async { [self, state] in
@@ -961,7 +961,7 @@ class AppStateManager {
                 ("equalizer", state.equalizerWindowFrame),
                 ("browser", state.plexBrowserWindowFrame),
                 ("projectM", state.projectMWindowFrame)
-            ] + WindowManager.CenterStackWindowKind.featureWindows.map {
+            ] + WindowManager.CenterStackFeature.allCases.map {
                 ($0.stateKey, state[keyPath: $0.savedFrame])
             }
             for (key, string) in sources {
@@ -1030,8 +1030,8 @@ class AppStateManager {
             if state.isPlaylistVisible {
                 wm.showPlaylist(at: playlistFrame)
             }
-            for kind in WindowManager.CenterStackWindowKind.featureWindows where state[keyPath: kind.savedVisibility] {
-                wm.centerStackFeatureWindow(kind).show(restoredFrames[kind.stateKey])
+            for feature in WindowManager.CenterStackFeature.allCases where state[keyPath: feature.savedVisibility] {
+                wm.centerStackFeatureWindow(feature).show(restoredFrames[feature.stateKey])
             }
             if state.isPlexBrowserVisible {
                 wm.showPlexBrowser(at: browserFrame)
