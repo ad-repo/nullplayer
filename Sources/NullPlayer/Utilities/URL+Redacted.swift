@@ -5,38 +5,11 @@ extension URL {
     /// Covers media-server auth, URL user info, and local casting capability paths.
     /// For logging only; never use the result for requests or persistence.
     var redacted: String {
-        guard var components = URLComponents(url: self, resolvingAgainstBaseURL: false) else {
-            return "<invalid URL>"
-        }
-        if components.user != nil { components.user = "<redacted>" }
-        if components.password != nil { components.password = "<redacted>" }
-        components.queryItems = components.queryItems?.map {
-            Self.sensitiveQueryItemNames.contains($0.name.lowercased())
-                ? URLQueryItem(name: $0.name, value: "<redacted>")
-                : $0
-        }
-        guard let value = components.url?.absoluteString else { return "<invalid URL>" }
-        // Re-encode the replacement markers to retain a valid URL-shaped log value.
-        return URL(string: value.redactingSensitiveURLQueryItems)?.absoluteString ?? "<invalid URL>"
+        // Redact the string as sent. Rebuilding it through URLComponents would decode and
+        // re-encode every query item, so a sent `%2B` would log as `+`.
+        absoluteString.redactingSensitiveURLQueryItems
+            .replacingOccurrences(of: "<redacted>", with: "%3Credacted%3E")
     }
-
-    private static let sensitiveQueryItemNames: Set<String> = [
-        "u",
-        "t",
-        "s",
-        "x-plex-token",
-        "token",
-        "access_token",
-        "auth_token",
-        "apikey",
-        "api_key",
-        "x-emby-token",
-        "p",
-        "password",
-        "auth",
-        "signature",
-        "sig"
-    ]
 }
 
 extension String {

@@ -12,6 +12,15 @@ final class SensitiveURLRedactionTests: XCTestCase {
         XCTAssertFalse(url.redacted.contains("secret-token"))
     }
 
+    func testURLRedactedKeepsExistingPercentEscapes() throws {
+        let url = try XCTUnwrap(URL(string: "https://plex.example/library/sections/3/all?album.addedAt%3E%3E=-1mon&title=AC%2FDC&q=a%2Bb&X-Plex-Token=secret-token"))
+
+        XCTAssertEqual(
+            url.redacted,
+            "https://plex.example/library/sections/3/all?album.addedAt%3E%3E=-1mon&title=AC%2FDC&q=a%2Bb&X-Plex-Token=%3Credacted%3E"
+        )
+    }
+
     func testURLRedactedHidesKnownTokenParameters() throws {
         let url = try XCTUnwrap(URL(string: "https://music.example/rest/stream.view?u=alice&t=token&s=salt&id=1"))
 

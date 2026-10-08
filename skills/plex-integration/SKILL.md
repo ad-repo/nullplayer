@@ -410,6 +410,19 @@ let url = "\(baseURL)/library/sections/\(id)/all?type=10&userRating>=8&..."
 let url = "...&ratingCount<=999&..."  // equivalent to <1000
 ```
 
+### Smart playlists whose library was deleted
+
+A smart playlist's `content` is `library://x/directory/<encoded /library/sections/N/all?…>`. It
+stores the section **number**, so deleting and re-adding a library orphans every smart playlist
+built over the old one: `/playlists/<id>/items` answers 500 and `/library/sections/N/all` 404.
+`fetchPlaylistTracks` falls back to running the decoded filter when items 500s, and that fallback
+maps the 404 to `PlexServerError.smartPlaylistLibraryMissing` ("recreate the playlist in Plex").
+Nothing on the client can recover the old section, and the leftover `leafCount` is stale. Measured
+2026-10-07 on NAS3-PLEX: five smart playlists pointing at removed section 3 all failed this way,
+and their twins on section 9 load. The decoded `album.addedAt>>=-1mon` goes out as
+`album.addedAt%3E%3E=-1mon` (Foundation escapes `>`) and still filters: 1,165 of 78,478 tracks,
+the same as the literal form. Only an escaped `=` (`%3D`, the `URLQueryItem` case above) breaks it.
+
 ## References
 
 - [Python PlexAPI](https://github.com/pkkid/python-plexapi)
