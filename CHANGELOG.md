@@ -136,6 +136,9 @@
   Flow and Tiles. Click a letter to jump to the first item starting with it.
 - **Keyboard on the album screen** — opening an album from Flow or Tiles with Return, or leaving it
   with Esc, no longer needs a click before the arrow keys, Return and Esc work again.
+- **Broken Plex smart playlists say why** — a Plex smart playlist built over a library that has
+  since been deleted can't be loaded by the server itself. Playing one now says the library no
+  longer exists and to recreate the playlist in Plex, instead of *Server error: 404*.
 
 ## 0.31.4
 

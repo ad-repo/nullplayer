@@ -16,8 +16,10 @@ extension URL {
                 : $0
         }
         guard let value = components.url?.absoluteString else { return "<invalid URL>" }
-        // Re-encode the replacement markers to retain a valid URL-shaped log value.
-        return URL(string: value.redactingSensitiveURLQueryItems)?.absoluteString ?? "<invalid URL>"
+        // Re-encode only the replacement markers: re-parsing through URL(string:) would
+        // escape every existing `%` as well, so the log would show `%253E` for a sent `%3E`.
+        return value.redactingSensitiveURLQueryItems
+            .replacingOccurrences(of: "<redacted>", with: "%3Credacted%3E")
     }
 
     private static let sensitiveQueryItemNames: Set<String> = [

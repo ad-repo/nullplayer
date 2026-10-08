@@ -764,21 +764,21 @@ class PlexServerClient {
             throw PlexServerError.invalidURL
         }
         
-        #if DEBUG
-        if var sanitized = URLComponents(url: finalURL, resolvingAgainstBaseURL: false) {
-            sanitized.queryItems = sanitized.queryItems?.map {
-                $0.name == "X-Plex-Token" ? URLQueryItem(name: $0.name, value: "<redacted>") : $0
-            }
-            NSLog("PlexServerClient: Final smart playlist URL: %@", sanitized.url?.redacted ?? "?")
-        }
-        #endif
+        NSLog("PlexServerClient: Final smart playlist URL: %@", redactedURL(finalURL))
 
         var request = URLRequest(url: finalURL)
         for (key, value) in standardHeaders {
             request.setValue(value, forHTTPHeaderField: key)
         }
-        
-        let response: PlexResponse<PlexMetadataResponse> = try await performRequest(request)
+
+        let response: PlexResponse<PlexMetadataResponse>
+        do {
+            response = try await performRequest(request)
+        } catch PlexServerError.httpError(statusCode: 404) {
+            // The playlist's filter names a library section the server no longer has, which is
+            // also why its /items endpoint answered 500. Only re-creating it in Plex fixes it.
+            throw PlexServerError.smartPlaylistLibraryMissing
+        }
         let tracks = response.mediaContainer.metadata?.map { $0.toTrack() } ?? []
         
         NSLog("PlexServerClient: Smart playlist content returned %d tracks", tracks.count)
@@ -1535,7 +1535,8 @@ enum PlexServerError: LocalizedError {
     case noVideoLibrary
     case noMovieLibrary
     case noShowLibrary
-    
+    case smartPlaylistLibraryMissing
+
     var errorDescription: String? {
         switch self {
         case .invalidURL:
@@ -1560,6 +1561,8 @@ enum PlexServerError: LocalizedError {
             return "No movie library on this server"
         case .noShowLibrary:
             return "No TV show library on this server"
+        case .smartPlaylistLibraryMissing:
+            return "This smart playlist's library no longer exists on the server. Recreate the playlist in Plex."
         }
     }
 }
