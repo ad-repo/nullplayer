@@ -9,22 +9,15 @@ struct LoadedVideo {
         /// A stream with no server behind it and no file on disk.
         case stream
         case localFile(URL)
-        case plexMovie(PlexMovie)
-        case plexEpisode(PlexEpisode)
-        /// A queued video: the `Track` carries only the server's id, not the full movie or episode.
+        /// A server movie or episode: its `Track` carries only the server's id.
         case plexItem(ratingKey: String)
-        case jellyfinMovie(JellyfinMovie)
-        case jellyfinEpisode(JellyfinEpisode)
         case jellyfinItem(id: String)
-        case embyMovie(EmbyMovie)
-        case embyEpisode(EmbyEpisode)
         case embyItem(id: String)
     }
 
     let source: Source
     let title: String
-    /// Lightweight video track used by the main window for artwork lookup, and to cast anything
-    /// that is not a server movie or episode.
+    /// Lightweight video track used by the main window for artwork lookup, and to cast the film.
     let artworkTrack: Track?
     /// The play event's content type ("video", "movie", "tv").
     let contentType: String
@@ -32,9 +25,9 @@ struct LoadedVideo {
     var playHistorySource: PlayHistorySource {
         switch source {
         case .stream, .localFile: .local
-        case .plexMovie, .plexEpisode, .plexItem: .plex
-        case .jellyfinMovie, .jellyfinEpisode, .jellyfinItem: .jellyfin
-        case .embyMovie, .embyEpisode, .embyItem: .emby
+        case .plexItem: .plex
+        case .jellyfinItem: .jellyfin
+        case .embyItem: .emby
         }
     }
 
@@ -42,15 +35,15 @@ struct LoadedVideo {
     var reporter: VideoPlaybackReporting? {
         switch source {
         case .stream, .localFile: nil
-        case .plexMovie, .plexEpisode, .plexItem: PlexVideoPlaybackReporter.shared
-        case .jellyfinMovie, .jellyfinEpisode, .jellyfinItem: JellyfinVideoPlaybackReporter.shared
-        case .embyMovie, .embyEpisode, .embyItem: EmbyVideoPlaybackReporter.shared
+        case .plexItem: PlexVideoPlaybackReporter.shared
+        case .jellyfinItem: JellyfinVideoPlaybackReporter.shared
+        case .embyItem: EmbyVideoPlaybackReporter.shared
         }
     }
 }
 
 extension LoadedVideo {
-    /// A queued video, which takes its title and content type from its playlist track.
+    /// A server film, which takes its title and content type from its playlist track.
     init(source: Source, queuedTrack track: Track) {
         self.init(source: source, title: track.displayTitle, artworkTrack: track,
                   contentType: track.playHistoryContentType)

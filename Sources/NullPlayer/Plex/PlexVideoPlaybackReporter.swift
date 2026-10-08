@@ -68,41 +68,7 @@ class PlexVideoPlaybackReporter {
     
     // MARK: - Public API
     
-    /// Called when a Plex movie starts playing
-    /// - Parameters:
-    ///   - movie: The movie that started playing
-    ///   - position: Starting position in seconds (for resume)
-    func movieDidStart(_ movie: PlexMovie, at position: TimeInterval = 0) {
-        NSLog("PlexVideoPlaybackReporter: Movie started - %@ (key: %@)", movie.title, movie.id)
-        
-        startTracking(
-            ratingKey: movie.id,
-            title: movie.title,
-            durationMs: movie.duration ?? 0,
-            videoType: .movie,
-            position: position
-        )
-    }
-    
-    /// Called when a Plex episode starts playing
-    /// - Parameters:
-    ///   - episode: The episode that started playing
-    ///   - position: Starting position in seconds (for resume)
-    func episodeDidStart(_ episode: PlexEpisode, at position: TimeInterval = 0) {
-        let title = "\(episode.grandparentTitle ?? "Unknown") - \(episode.episodeIdentifier) - \(episode.title)"
-        NSLog("PlexVideoPlaybackReporter: Episode started - %@ (key: %@)", title, episode.id)
-        
-        startTracking(
-            ratingKey: episode.id,
-            title: title,
-            durationMs: episode.duration ?? 0,
-            videoType: .episode,
-            position: position
-        )
-    }
-    
-    /// Called when a Plex video track from playlist starts playing
-    /// Used when we have a Track with plexRatingKey but not the full PlexMovie/PlexEpisode object
+    /// Called when a Plex film starts playing in the video window
     /// - Parameters:
     ///   - ratingKey: The Plex rating key
     ///   - title: Video title

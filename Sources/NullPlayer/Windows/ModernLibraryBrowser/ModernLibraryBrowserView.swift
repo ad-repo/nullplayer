@@ -9599,13 +9599,6 @@ class ModernLibraryBrowserView: NSView {
         }
     }
 
-    private func playMovie(_ movie: PlexMovie) { WindowManager.shared.playMovie(movie) }
-    private func playEpisode(_ episode: PlexEpisode) { WindowManager.shared.playEpisode(episode) }
-    private func playJellyfinMovie(_ movie: JellyfinMovie) { WindowManager.shared.playJellyfinMovie(movie) }
-    private func playJellyfinEpisode(_ episode: JellyfinEpisode) { WindowManager.shared.playJellyfinEpisode(episode) }
-    private func playEmbyMovie(_ movie: EmbyMovie) { WindowManager.shared.playEmbyMovie(movie) }
-    private func playEmbyEpisode(_ episode: EmbyEpisode) { WindowManager.shared.playEmbyEpisode(episode) }
-
     private func playRadioStation(_ station: RadioStation) { RadioManager.shared.play(station: station) }
     private func playPlexRadioStation(_ radioType: PlexRadioType) {
         radioPlayTask?.cancel()
@@ -9759,31 +9752,24 @@ class ModernLibraryBrowserView: NSView {
         switch item.type {
         case .track, .album, .plexPlaylist, .localTrack, .localAlbum, .localPlaylist, .localPlaylistTrack,
              .subsonicTrack, .subsonicAlbum, .subsonicPlaylist, .jellyfinTrack, .jellyfinAlbum, .jellyfinPlaylist,
-             .embyTrack, .embyAlbum, .embyPlaylist:
+             .embyTrack, .embyAlbum, .embyPlaylist, .movie, .episode, .localMovie, .localEpisode,
+             .jellyfinMovie, .jellyfinEpisode, .embyMovie, .embyEpisode:
             if let playable = playable(for: item) { TrackVerb.play.run(playable) }
         case .artist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id, name: a.title) } else { toggleExpand(item) }
-        case .movie(let m): playMovie(m)
         case .show: toggleExpand(item)
         case .season: toggleExpand(item)
-        case .episode(let e): playEpisode(e)
         case .header: break
         case .localArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: item.id, name: a.name) } else { toggleExpand(item) }
         case .localFolder: toggleExpand(item)
-        case .localMovie(let m): WindowManager.shared.showVideoPlayer(url: m.url, title: m.title)
         case .localShow: toggleExpand(item)
         case .localSeason: toggleExpand(item)
-        case .localEpisode(let e): WindowManager.shared.showVideoPlayer(url: e.url, title: e.title)
         case .subsonicArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id, name: a.name) } else { toggleExpand(item) }
         case .jellyfinArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id, name: a.name) } else { toggleExpand(item) }
-        case .jellyfinMovie(let m): playJellyfinMovie(m)
         case .jellyfinShow: toggleExpand(item)
         case .jellyfinSeason: toggleExpand(item)
-        case .jellyfinEpisode(let e): playJellyfinEpisode(e)
         case .embyArtist(let a): if browseMode == .search { navigateToArtistFromSearch(id: a.id, name: a.name) } else { toggleExpand(item) }
-        case .embyMovie(let m): playEmbyMovie(m)
         case .embyShow: toggleExpand(item)
         case .embySeason: toggleExpand(item)
-        case .embyEpisode(let e): playEmbyEpisode(e)
         case .radioStation(let s): playRadioStation(s)
         case .radioFolder(let folder):
             if folder.hasChildren {

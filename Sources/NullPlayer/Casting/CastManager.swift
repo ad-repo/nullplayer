@@ -1167,27 +1167,6 @@ class CastManager {
             castURL = serverURL
         }
         
-        // Get artwork URL if available
-        var artworkURL: URL?
-        if let plexTrack = findPlexTrack(matching: track) {
-            artworkURL = PlexManager.shared.artworkURL(thumb: plexTrack.thumb)
-        } else if track.subsonicId != nil, let coverArtId = track.artworkThumb {
-            // Subsonic/Navidrome tracks have artwork via coverArt ID
-            if let subsonicArtwork = SubsonicManager.shared.coverArtURL(coverArtId: coverArtId) {
-                artworkURL = rewriteLocalhostForCasting(subsonicArtwork)
-            }
-        } else if track.jellyfinId != nil, let imageTag = track.artworkThumb {
-            // Jellyfin track - use server's image URL
-            if let jellyfinArtwork = JellyfinManager.shared.imageURL(itemId: track.jellyfinId!, imageTag: imageTag, size: 300) {
-                artworkURL = rewriteLocalhostForCasting(jellyfinArtwork)
-            }
-        } else if track.embyId != nil, let imageTag = track.artworkThumb {
-            // Emby track - use server's image URL
-            if let embyArtwork = EmbyManager.shared.imageURL(itemId: track.embyId!, imageTag: imageTag, size: 300) {
-                artworkURL = rewriteLocalhostForCasting(embyArtwork)
-            }
-        }
-
         // Use effective content type (from track or upstream HEAD detection),
         // otherwise fall back to URL extension detection (works for Plex and local files)
         let contentType = effectiveContentType ?? Self.detectAudioContentType(for: track.url)
@@ -1199,7 +1178,7 @@ class CastManager {
             title: track.title,
             artist: track.artist,
             album: track.album,
-            artworkURL: artworkURL,
+            artworkURL: castArtworkURL(for: track),
             duration: track.duration,
             contentType: contentType
         )
@@ -1233,7 +1212,7 @@ class CastManager {
                 }
                 try await self._castVideoURLCore(
                     track.url,
-                    title: track.title,
+                    title: track.displayTitle,
                     to: device,
                     duration: track.duration,
                     contentType: track.contentType,
@@ -1420,27 +1399,6 @@ class CastManager {
             return
         }
         
-        // Get artwork URL if available
-        var artworkURL: URL?
-        if let plexTrack = findPlexTrack(matching: trackToCast) {
-            artworkURL = PlexManager.shared.artworkURL(thumb: plexTrack.thumb)
-        } else if trackToCast.subsonicId != nil, let coverArtId = trackToCast.artworkThumb {
-            // Subsonic/Navidrome tracks have artwork via coverArt ID
-            if let subsonicArtwork = SubsonicManager.shared.coverArtURL(coverArtId: coverArtId) {
-                artworkURL = rewriteLocalhostForCasting(subsonicArtwork)
-            }
-        } else if trackToCast.jellyfinId != nil, let imageTag = trackToCast.artworkThumb {
-            // Jellyfin track - use server's image URL
-            if let jellyfinArtwork = JellyfinManager.shared.imageURL(itemId: trackToCast.jellyfinId!, imageTag: imageTag, size: 300) {
-                artworkURL = rewriteLocalhostForCasting(jellyfinArtwork)
-            }
-        } else if trackToCast.embyId != nil, let imageTag = trackToCast.artworkThumb {
-            // Emby track - use server's image URL
-            if let embyArtwork = EmbyManager.shared.imageURL(itemId: trackToCast.embyId!, imageTag: imageTag, size: 300) {
-                artworkURL = rewriteLocalhostForCasting(embyArtwork)
-            }
-        }
-
         // Use effective content type (from track or upstream HEAD detection),
         // otherwise fall back to URL extension detection (works for Plex and local files)
         let contentType = effectiveContentType ?? Self.detectAudioContentType(for: trackToCast.url)
@@ -1452,7 +1410,7 @@ class CastManager {
             title: trackToCast.title,
             artist: trackToCast.artist,
             album: trackToCast.album,
-            artworkURL: artworkURL,
+            artworkURL: castArtworkURL(for: trackToCast),
             duration: trackToCast.duration,
             contentType: contentType
         )
@@ -1916,8 +1874,12 @@ class CastManager {
             await _stopCastingAndAwaitTeardownCore()
         }
 
+        // A server's film goes out as video/mp4, as every server movie and episode cast sends it:
+        // a Plex part URL ends in the extension of the file on the server's disk (.mkv).
+        let isServerItem = sourceTrack.map { $0.plexRatingKey != nil || $0.jellyfinId != nil || $0.embyId != nil } ?? false
         let detected = detectContentType(for: url)
-        let effectiveContentType = contentType ?? sourceTrack?.contentType ?? (detected.mediaType == .video ? detected.contentType : "video/mp4")
+        let effectiveContentType = contentType ?? sourceTrack?.contentType
+            ?? (detected.mediaType == .video && !isServerItem ? detected.contentType : "video/mp4")
 
         let castURL: URL
         if url.isFileURL {
@@ -1951,11 +1913,12 @@ class CastManager {
             throw CastError.invalidURL
         }
 
+        // A server episode's track carries its show and season, as an episode cast sends them
         let metadata = CastMetadata(
             title: title,
-            artist: nil,
-            album: nil,
-            artworkURL: nil,
+            artist: sourceTrack?.artist,
+            album: sourceTrack?.album,
+            artworkURL: sourceTrack.flatMap { castArtworkURL(for: $0, size: 600) },
             duration: duration,
             contentType: effectiveContentType,
             mediaType: .video
@@ -2836,10 +2799,23 @@ class CastManager {
     
     // MARK: - Helpers
     
-    /// Find a matching PlexTrack for metadata
-    private func findPlexTrack(matching track: Track) -> PlexTrack? {
-        // This is a simplified lookup - in production, you'd want to track this association
-        return nil
+    /// The server's artwork for a track, as the cast device reaches it; nil for a local file or a stream.
+    private func castArtworkURL(for track: Track, size: Int = 300) -> URL? {
+        guard let thumb = track.artworkThumb else { return nil }
+        if track.plexRatingKey != nil {
+            return PlexManager.shared.artworkURL(thumb: thumb, size: size)
+        }
+        let serverURL: URL?
+        if track.subsonicId != nil {
+            serverURL = SubsonicManager.shared.coverArtURL(coverArtId: thumb)
+        } else if let id = track.jellyfinId {
+            serverURL = JellyfinManager.shared.imageURL(itemId: id, imageTag: thumb, size: size)
+        } else if let id = track.embyId {
+            serverURL = EmbyManager.shared.imageURL(itemId: id, imageTag: thumb, size: size)
+        } else {
+            serverURL = nil
+        }
+        return serverURL.map(rewriteLocalhostForCasting)
     }
     
     /// Redact sensitive tokens from URL for safe logging

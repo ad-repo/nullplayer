@@ -92,26 +92,28 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
 
 ## Entry points
 
-Every `WindowManager` entry point first offers the video to `routeToVideoCastIfNeeded` (see
-*Casting* below), then creates the controller if needed and plays. The direct ones (every row
-below except `playVideoTrack`) go through `playDirectVideo`, which first calls
-`TrackVerb.supersedePendingPlays()`: a library **Play** still fetching (a show resolves season by
-season) would otherwise replace the film double-clicked after it when its fetch lands.
-`playVideoTrack` must not, since the verbs themselves reach it.
+Two `WindowManager` entry points create the controller if needed and play.
 
 | Entry point | Called by | Notes |
 |---|---|---|
-| `playVideoTrack(_:)` | `AudioEngine.loadTrack` (any playlist video) | the **only** one that sets `onVideoFinishedForPlaylist`, so the only one whose end advances the playlist. Picks `play(plexTrack:)` / `play(jellyfinTrack:)` / `play(embyTrack:)` from `plexRatingKey` / `jellyfinId` / `embyId`, else `play(url:title:)` |
-| `showVideoPlayer(url:title:allowCasting:)` | double-click / Return on a local movie or episode row in both browsers, Stream Ripper **Play Now** | `allowCasting: false` skips cast routing: Play Now opens the file just ripped in the local window even while a video cast runs |
-| `playMovie` / `playEpisode`, `playJellyfinMovie` / `playJellyfinEpisode`, `playEmbyMovie` / `playEmbyEpisode` | double-click / Return on a server movie or episode row | load the server item into `play(movie:)`, `play(jellyfinMovie:)`, `play(embyEpisode:)` … so its reporter runs |
+| `playVideoTrack(_:)` | `AudioEngine.loadTrack` (any playlist video) | every film from a library row. First offers the film to `routeToVideoCastIfNeeded` (see *Casting* below); sets `onVideoFinishedForPlaylist`, so its end advances the playlist. Picks `play(plexTrack:)` / `play(jellyfinTrack:)` / `play(embyTrack:)` from `plexRatingKey` / `jellyfinId` / `embyId`, else `play(url:title:)` |
+| `showVideoPlayer(url:title:)` | Stream Ripper **Play Now** | opens the file just ripped in the local window, outside the queue, even while a video cast runs. Calls `TrackVerb.supersedePendingPlays()` first: a library **Play** still fetching (a show resolves season by season) would otherwise replace this film when its fetch lands |
 
-**Library menu verbs.** A video row's **Play** · **Play and Replace Queue** · **Play Next** · **Add to
-Queue** (and Shift+Enter / Option+Enter) queue it through `TrackVerb` like a music row:
-`LibraryPlayable` turns a movie, episode, season or show of any source into `.video` tracks, which
-reach the window through `loadTrack` → `playVideoTrack`. That track path still differs from the
-row path above: it passes no Plex external subtitle streams, and while a video cast runs it casts
-the track's URL (`castVideoURL`) where a row casts the server item (`castPlexMovie` …), so
-double-click cannot simply become `TrackVerb.play` (M23).
+**A film row plays like a music row.** Double-click / Return on a movie or episode row of any
+source, in both browsers, runs `TrackVerb.play`, and its menu's **Play** · **Play and Replace
+Queue** · **Play Next** · **Add to Queue** (and Shift+Enter / Option+Enter) the other verbs:
+`LibraryPlayable` turns a movie, episode, season or show into `.video` tracks, which reach the
+window through `loadTrack` → `playVideoTrack`. So a double-clicked film joins the playlist after
+the current row, and the playlist carries on when it ends. Measured 2026-10-08 (M23): a Plex movie
+and episode, an Emby and a Jellyfin movie, and a local film each log one `Routing video track`
+and start their server's reporter from the track; the local film, double-clicked during row 1 of
+a three-row cue, played and advanced to row 2.
+
+**There are no Plex external subtitles.** Plex's library listings and season `/children` carry no
+`Stream` elements (only `/library/metadata/<id>` does; 0 of 99 movies, measured 2026-10-08), and a
+subtitle stream's `key` is a server-relative path VLC cannot open, so the half-built
+external-subtitle path never showed an entry and was removed. Embedded subtitle tracks come from
+VLC (`discoverTracks`).
 
 **Drag and drop.** The main window and the playlist each have their own drop handler, in Classic
 (`MainWindowView`, `PlaylistView`) and Modern (`ModernMainWindowView`, `ModernPlaylistView`). Each
@@ -132,22 +134,28 @@ A drop on a Library Browser imports instead (`local-library` § *Video import*).
 ## Server progress reporting
 
 What the window has loaded is one value, `loadedVideo: LoadedVideo?` (`Windows/VideoPlayer/LoadedVideo.swift`):
-its `source` (a stream, a local file, a server movie or episode, or a queued server item by id),
+its `source` (a stream, a local file, or a server film by id),
 title, artwork track and play-event content type; `currentTitle` and `currentArtworkTrack` read
 from it. Its `reporter` is the server that hears pause, resume, position and stop
 (`VideoPlaybackReporting`, which `PlexVideoPlaybackReporter`, `JellyfinVideoPlaybackReporter`
 and `EmbyVideoPlaybackReporter` conform to); a stream or local file has none and reports
-nothing. Its `playHistorySource` is the play event's source, and `performCast` switches on
-`source` to cast a server movie or episode as itself and anything else by its track. Every
+nothing. Its `playHistorySource` is the play event's source; `performCast` casts the film by its
+track. Every
 `play(…)` starts with `endPreviousVideo()` (drop a stale cast, then `reportVideoEnded`) and loads
 through `startVideo(…)`, which sets `loadedVideo` in one assignment, so a new item cannot inherit
 anything from the previous one. Every way a film ends goes through `reportVideoEnded(at:finished:)`
 (report the stop, record the play); the paths that also drop the film (stop, window close, cast
 handoff or loss) go through `unloadVideo(reportingStopAt:)`. A new source is a new
-`LoadedVideo.Source` case; the compiler then names every switch it must join. A queued
-video carries only its id on the `Track`, so `play(plexTrack:)` / `play(jellyfinTrack:)` /
+`LoadedVideo.Source` case; the compiler then names every switch it must join. A server
+film carries only its id on the `Track`, so `play(plexTrack:)` / `play(jellyfinTrack:)` /
 `play(embyTrack:)` load `.plexItem` / `.jellyfinItem` / `.embyItem` and start the reporter with
-`videoTrackDidStart`, taking episode-or-movie from `playHistoryContentType`. The three
+`videoTrackDidStart`, taking episode-or-movie from `playHistoryContentType`. **About Playing**
+on a Plex film fetches the movie or episode by its rating key for the info sheet.
+**Only the video reporter hears a film.** Between `loadTrack` handing a film over and
+`videoPlaybackDidStart` pausing the engine, the engine's time timer still runs with the film as
+`currentTrack`; its Subsonic / Jellyfin / Emby progress calls skip a video track, or the audio
+reporter opened a second "now playing" session for the film with the previous song's duration
+(measured on Emby, 2026-10-08). The three
 reporters share their rules: scrobble at 90% (audio
 uses 50%), only after 60 s of play, with a timeline update every 10 s. Each server's API details
 are in its own integration skill.
@@ -164,6 +172,11 @@ Cast protocols are in `chromecast-casting`; this is the video player's side.
   after relaunch or after an earlier cast. This holds for local files, HTTP streams, Plex, Jellyfin,
   Emby and mixed playlists. The local window is also what carries the video metadata and a
   stop-casting control.
+- **A film is cast by its track** (`CastManager.castVideoTrack`), from the playlist route and the
+  window's cast button alike. A server film's track supplies the show and season (Chromecast's
+  subtitle line), its artwork, and `video/mp4`, as the item casts (`castPlexMovie` …, still used by
+  the CLI and the browser's cast menu) send; year, summary and resolution (UPnP DIDL only) are not
+  on the track and are not sent.
 - **A routed cast stops the local film only once the cast succeeds**, so a failed cast leaves local
   playback running. A video cast already running from the window is closed first
   (`closeForCastTransition`).
@@ -224,9 +237,14 @@ reaches the window only from a browser (`app-control/reference/launch-recipes.md
 - **Drive a film by its transport.** Park the film off the main
   window (`winhelper park <pid> "<film title>" 0 650`) and use the main window's transport, which
   routes to the film while one plays: Play, Pause (pause and resume), Stop (`stop()`), a click on the
-  position bar (seek); Next skips 10 s. A row's double-click is the row path;
-  `winhelper key <pid> 36 option` on a selected row queues it (Add to Queue), and Play then takes
-  the track path. Measured 2026-10-08 (M17): the reporter lines of that sequence on Plex and Emby
-  matched before and after a refactor except for timing values and async completion order.
+  position bar (seek); Next skips 10 s. A row's double-click plays it through the playlist;
+  `winhelper key <pid> 36 option` on a selected row queues it (Add to Queue) instead. Measured
+  2026-10-08 (M17): the reporter lines of that sequence on Plex and Emby matched before and after
+  a refactor except for timing values and async completion order.
+- **Start a browser on another server for one launch** with the argument domain, leaving the
+  saved source alone: `BrowserSource` is the JSON of `BrowserSource` as data, e.g.
+  `launch.sh aquamp -- -BrowserSource "<$(printf '%s' '{"emby":{"serverId":"<id>"}}' | xxd -p | tr -d '\n')>"`
+  (`{"local":{}}` for local files; the ids are `EmbyCurrentServerID` / `JellyfinCurrentServerID`
+  in the `NullPlayer` domain).
 - **Test fresh and reused windows separately.** A video played into the already-open window and one
   played after closing it go through different first-layout timing.

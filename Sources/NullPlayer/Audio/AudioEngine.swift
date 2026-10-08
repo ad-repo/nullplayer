@@ -3414,9 +3414,13 @@ class AudioEngine {
             
             // Update Plex playback position (for scrobble threshold detection)
             PlexPlaybackReporter.shared.updatePosition(current)
-            
+
+            // A film reports through the video window's reporter; until the hand-over pauses this
+            // clock, the audio reporters below would open a second session for it.
+            let audioTrack = self.currentTrack.flatMap { $0.playbackRoute == .video ? nil : $0 }
+
             // Update Subsonic playback position (for scrobbling)
-            if let track = self.currentTrack,
+            if let track = audioTrack,
                let subsonicId = track.subsonicId,
                let serverId = track.subsonicServerId {
                 SubsonicPlaybackReporter.shared.updatePlayback(
@@ -3428,7 +3432,7 @@ class AudioEngine {
             }
             
             // Update Jellyfin playback position (for scrobbling)
-            if let track = self.currentTrack,
+            if let track = audioTrack,
                let jellyfinId = track.jellyfinId,
                let serverId = track.jellyfinServerId {
                 JellyfinPlaybackReporter.shared.updatePlayback(
@@ -3440,7 +3444,7 @@ class AudioEngine {
             }
 
             // Update Emby playback position (for scrobbling)
-            if let track = self.currentTrack,
+            if let track = audioTrack,
                let embyId = track.embyId,
                let serverId = track.embyServerId {
                 EmbyPlaybackReporter.shared.updatePlayback(

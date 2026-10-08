@@ -13062,47 +13062,22 @@ class PlexBrowserView: NSView {
 
     // MARK: - Playback
 
-    private func playMovie(_ movie: PlexMovie) {
-        NSLog("Playing movie: %@", movie.title)
-        WindowManager.shared.playMovie(movie)
-    }
-    
-    private func playEpisode(_ episode: PlexEpisode) {
-        NSLog("Playing episode: %@ - %@", episode.episodeIdentifier, episode.title)
-        WindowManager.shared.playEpisode(episode)
-    }
-    
-    private func playJellyfinMovie(_ movie: JellyfinMovie) {
-        NSLog("Playing Jellyfin movie: %@", movie.title)
-        WindowManager.shared.playJellyfinMovie(movie)
-    }
-    
-    private func playJellyfinEpisode(_ episode: JellyfinEpisode) {
-        NSLog("Playing Jellyfin episode: %@ - %@", episode.episodeIdentifier, episode.title)
-        WindowManager.shared.playJellyfinEpisode(episode)
-    }
-    
     private func handleDoubleClick(on item: PlexDisplayItem) {
         switch item.type {
         case .track, .album, .plexPlaylist, .localTrack, .localAlbum, .localPlaylist, .localPlaylistTrack,
              .subsonicTrack, .subsonicAlbum, .subsonicPlaylist, .jellyfinTrack, .jellyfinAlbum, .jellyfinPlaylist,
-             .embyTrack, .embyAlbum, .embyPlaylist:
+             .embyTrack, .embyAlbum, .embyPlaylist, .movie, .episode, .localMovie, .localEpisode,
+             .jellyfinMovie, .jellyfinEpisode, .embyMovie, .embyEpisode:
             if let playable = playable(for: item) { TrackVerb.play.run(resolver(for: playable)) }
 
         case .artist(let artist):
             if browseMode == .search { navigateToArtistFromSearch(id: artist.id, name: artist.title) } else { toggleExpand(item) }
-            
-        case .movie(let movie):
-            playMovie(movie)
             
         case .show:
             toggleExpand(item)
             
         case .season:
             toggleExpand(item)
-            
-        case .episode(let episode):
-            playEpisode(episode)
             
         case .header:
             break
@@ -13113,26 +13088,17 @@ class PlexBrowserView: NSView {
         case .localFolder:
             toggleExpand(item)
 
-        case .localMovie(let movie):
-            WindowManager.shared.showVideoPlayer(url: movie.url, title: movie.title)
-
         case .localShow:
             toggleExpand(item)
 
         case .localSeason:
             toggleExpand(item)
 
-        case .localEpisode(let episode):
-            WindowManager.shared.showVideoPlayer(url: episode.url, title: episode.title)
-            
         case .subsonicArtist(let artist):
             if browseMode == .search { navigateToArtistFromSearch(id: artist.id, name: artist.name) } else { toggleExpand(item) }
             
         case .jellyfinArtist(let artist):
             if browseMode == .search { navigateToArtistFromSearch(id: artist.id, name: artist.name) } else { toggleExpand(item) }
-            
-        case .jellyfinMovie(let movie):
-            playJellyfinMovie(movie)
             
         case .jellyfinShow:
             toggleExpand(item)
@@ -13140,23 +13106,14 @@ class PlexBrowserView: NSView {
         case .jellyfinSeason:
             toggleExpand(item)
             
-        case .jellyfinEpisode(let episode):
-            playJellyfinEpisode(episode)
-
         case .embyArtist(let artist):
             if browseMode == .search { navigateToArtistFromSearch(id: artist.id, name: artist.name) } else { toggleExpand(item) }
-
-        case .embyMovie(let movie):
-            playEmbyMovie(movie)
 
         case .embyShow:
             toggleExpand(item)
 
         case .embySeason:
             toggleExpand(item)
-
-        case .embyEpisode(let episode):
-            playEmbyEpisode(episode)
 
         case .radioStation(let station):
             playRadioStation(station)
@@ -13366,19 +13323,7 @@ class PlexBrowserView: NSView {
         let audioEngine = WindowManager.shared.audioEngine
         audioEngine.loadTracks(tracks)
     }
-    
-    // MARK: - Emby Playback
-
-    private func playEmbyMovie(_ movie: EmbyMovie) {
-        NSLog("Playing Emby movie: %@", movie.title)
-        WindowManager.shared.playEmbyMovie(movie)
     }
-
-    private func playEmbyEpisode(_ episode: EmbyEpisode) {
-        NSLog("Playing Emby episode: %@ - %@", episode.episodeIdentifier, episode.title)
-        WindowManager.shared.playEmbyEpisode(episode)
-    }
-}
 
 // MARK: - NSWindowDelegate
 

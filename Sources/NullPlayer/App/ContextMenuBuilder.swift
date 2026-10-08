@@ -3443,122 +3443,24 @@ class MenuActions: NSObject {
     
     private func showVideoInfo(_ controller: VideoPlayerWindowController) {
         let alert = NSAlert()
-        
-        if case .plexMovie(let movie) = controller.loadedVideo?.source {
-            // Plex Movie
-            alert.messageText = movie.title
-            var info = [String]()
-            
-            if let year = movie.year { info.append("Year: \(year)") }
-            if let studio = movie.studio { info.append("Studio: \(studio)") }
-            info.append("Duration: \(movie.formattedDuration)")
-            info.append("")
-            
-            // Video/Audio format from media
-            if let media = movie.primaryMedia {
-                if let resolution = media.videoResolution {
-                    var videoInfo = "Resolution: \(resolution)"
-                    if let width = media.width, let height = media.height {
-                        videoInfo = "Resolution: \(width)x\(height)"
-                    }
-                    info.append(videoInfo)
+
+        if case .plexItem(let ratingKey) = controller.loadedVideo?.source {
+            // A Plex film carries only its rating key, so fetch the movie or episode it names
+            let isEpisode = controller.loadedVideo?.contentType == "tv"
+            let title = controller.currentTitle ?? "Video"
+            Task { @MainActor in
+                if isEpisode, let episode = try? await PlexManager.shared.fetchEpisodeDetails(episodeID: ratingKey) {
+                    self.fillVideoInfo(alert, episode: episode)
+                } else if !isEpisode, let movie = try? await PlexManager.shared.fetchMovieDetails(movieID: ratingKey) {
+                    self.fillVideoInfo(alert, movie: movie)
+                } else {
+                    alert.messageText = title
+                    alert.informativeText = "Source: Plex"
                 }
-                if let videoCodec = media.videoCodec {
-                    info.append("Video Codec: \(videoCodec.uppercased())")
-                }
-                if let audioCodec = media.audioCodec {
-                    var audioInfo = "Audio: \(audioCodec.uppercased())"
-                    if let channels = media.audioChannels {
-                        audioInfo += " (\(formatChannels(channels)))"
-                    }
-                    info.append(audioInfo)
-                }
-                if let bitrate = media.bitrate {
-                    info.append("Bitrate: \(bitrate) kbps")
-                }
+                alert.runModal()
             }
-            info.append("")
-            
-            if let contentRating = movie.contentRating {
-                info.append("Content Rating: \(contentRating)")
-            }
-            if let imdbId = movie.imdbId {
-                info.append("IMDB: \(imdbId)")
-            }
-            if let tmdbId = movie.tmdbId {
-                info.append("TMDB: \(tmdbId)")
-            }
-            info.append("")
-            
-            if let serverName = PlexManager.shared.currentServer?.name {
-                info.append("Source: Plex (\(serverName))")
-            } else {
-                info.append("Source: Plex")
-            }
-            
-            if let summary = movie.summary, !summary.isEmpty {
-                info.append("")
-                info.append("Summary: \(summary.prefix(200))\(summary.count > 200 ? "..." : "")")
-            }
-            
-            alert.informativeText = info.joined(separator: "\n")
-            
-        } else if case .plexEpisode(let episode) = controller.loadedVideo?.source {
-            // Plex Episode
-            let showTitle = episode.grandparentTitle ?? "Unknown Show"
-            alert.messageText = "\(showTitle) - \(episode.episodeIdentifier)"
-            
-            var info = [String]()
-            info.append("Episode: \(episode.title)")
-            if let seasonTitle = episode.parentTitle {
-                info.append("Season: \(seasonTitle)")
-            }
-            info.append("Duration: \(episode.formattedDuration)")
-            info.append("")
-            
-            // Video/Audio format from media
-            if let media = episode.media.first {
-                if let resolution = media.videoResolution {
-                    var videoInfo = "Resolution: \(resolution)"
-                    if let width = media.width, let height = media.height {
-                        videoInfo = "Resolution: \(width)x\(height)"
-                    }
-                    info.append(videoInfo)
-                }
-                if let videoCodec = media.videoCodec {
-                    info.append("Video Codec: \(videoCodec.uppercased())")
-                }
-                if let audioCodec = media.audioCodec {
-                    var audioInfo = "Audio: \(audioCodec.uppercased())"
-                    if let channels = media.audioChannels {
-                        audioInfo += " (\(formatChannels(channels)))"
-                    }
-                    info.append(audioInfo)
-                }
-                if let bitrate = media.bitrate {
-                    info.append("Bitrate: \(bitrate) kbps")
-                }
-            }
-            info.append("")
-            
-            if let imdbId = episode.imdbId {
-                info.append("IMDB: \(imdbId)")
-            }
-            info.append("")
-            
-            if let serverName = PlexManager.shared.currentServer?.name {
-                info.append("Source: Plex (\(serverName))")
-            } else {
-                info.append("Source: Plex")
-            }
-            
-            if let summary = episode.summary, !summary.isEmpty {
-                info.append("")
-                info.append("Summary: \(summary.prefix(200))\(summary.count > 200 ? "..." : "")")
-            }
-            
-            alert.informativeText = info.joined(separator: "\n")
-            
+            return
+
         } else if case .localFile(let url) = controller.loadedVideo?.source {
             // Local video file
             alert.messageText = controller.currentTitle ?? url.lastPathComponent
@@ -3575,6 +3477,121 @@ class MenuActions: NSObject {
         }
         
         alert.runModal()
+    }
+
+    private func fillVideoInfo(_ alert: NSAlert, movie: PlexMovie) {
+        alert.messageText = movie.title
+        var info = [String]()
+        
+        if let year = movie.year { info.append("Year: \(year)") }
+        if let studio = movie.studio { info.append("Studio: \(studio)") }
+        info.append("Duration: \(movie.formattedDuration)")
+        info.append("")
+        
+        // Video/Audio format from media
+        if let media = movie.primaryMedia {
+            if let resolution = media.videoResolution {
+                var videoInfo = "Resolution: \(resolution)"
+                if let width = media.width, let height = media.height {
+                    videoInfo = "Resolution: \(width)x\(height)"
+                }
+                info.append(videoInfo)
+            }
+            if let videoCodec = media.videoCodec {
+                info.append("Video Codec: \(videoCodec.uppercased())")
+            }
+            if let audioCodec = media.audioCodec {
+                var audioInfo = "Audio: \(audioCodec.uppercased())"
+                if let channels = media.audioChannels {
+                    audioInfo += " (\(formatChannels(channels)))"
+                }
+                info.append(audioInfo)
+            }
+            if let bitrate = media.bitrate {
+                info.append("Bitrate: \(bitrate) kbps")
+            }
+        }
+        info.append("")
+        
+        if let contentRating = movie.contentRating {
+            info.append("Content Rating: \(contentRating)")
+        }
+        if let imdbId = movie.imdbId {
+            info.append("IMDB: \(imdbId)")
+        }
+        if let tmdbId = movie.tmdbId {
+            info.append("TMDB: \(tmdbId)")
+        }
+        info.append("")
+        
+        if let serverName = PlexManager.shared.currentServer?.name {
+            info.append("Source: Plex (\(serverName))")
+        } else {
+            info.append("Source: Plex")
+        }
+        
+        if let summary = movie.summary, !summary.isEmpty {
+            info.append("")
+            info.append("Summary: \(summary.prefix(200))\(summary.count > 200 ? "..." : "")")
+        }
+        
+        alert.informativeText = info.joined(separator: "\n")
+    }
+
+    private func fillVideoInfo(_ alert: NSAlert, episode: PlexEpisode) {
+        let showTitle = episode.grandparentTitle ?? "Unknown Show"
+        alert.messageText = "\(showTitle) - \(episode.episodeIdentifier)"
+        
+        var info = [String]()
+        info.append("Episode: \(episode.title)")
+        if let seasonTitle = episode.parentTitle {
+            info.append("Season: \(seasonTitle)")
+        }
+        info.append("Duration: \(episode.formattedDuration)")
+        info.append("")
+        
+        // Video/Audio format from media
+        if let media = episode.media.first {
+            if let resolution = media.videoResolution {
+                var videoInfo = "Resolution: \(resolution)"
+                if let width = media.width, let height = media.height {
+                    videoInfo = "Resolution: \(width)x\(height)"
+                }
+                info.append(videoInfo)
+            }
+            if let videoCodec = media.videoCodec {
+                info.append("Video Codec: \(videoCodec.uppercased())")
+            }
+            if let audioCodec = media.audioCodec {
+                var audioInfo = "Audio: \(audioCodec.uppercased())"
+                if let channels = media.audioChannels {
+                    audioInfo += " (\(formatChannels(channels)))"
+                }
+                info.append(audioInfo)
+            }
+            if let bitrate = media.bitrate {
+                info.append("Bitrate: \(bitrate) kbps")
+            }
+        }
+        info.append("")
+        
+        if let imdbId = episode.imdbId {
+            info.append("IMDB: \(imdbId)")
+        }
+        info.append("")
+        
+        if let serverName = PlexManager.shared.currentServer?.name {
+            info.append("Source: Plex (\(serverName))")
+        } else {
+            info.append("Source: Plex")
+        }
+        
+        if let summary = episode.summary, !summary.isEmpty {
+            info.append("")
+            info.append("Summary: \(summary.prefix(200))\(summary.count > 200 ? "..." : "")")
+        }
+        
+        alert.informativeText = info.joined(separator: "\n")
     }
     
     private func showAudioTrackInfo(_ track: Track) {

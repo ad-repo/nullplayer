@@ -40,7 +40,6 @@ class VideoPlayerView: NSView {
     private var availableSubtitleTracks: [VideoTrackInfo] = []
     
     /// Plex streams for external subtitles
-    private var plexStreams: [PlexStream] = []
     
     /// Current subtitle delay
     private var currentSubtitleDelay: TimeInterval = 0
@@ -852,9 +851,6 @@ class VideoPlayerView: NSView {
         didReportVideoOutputSize = false
         availableAudioTracks = []
         availableSubtitleTracks = []
-        // Clear Plex external-subtitle entries so a stale set can't carry into
-        // the next item; callers re-populate via setPlexStreams() after play().
-        plexStreams = []
 
         // Build the media. VLC has no arbitrary-header API; for remote/relay Plex
         // the auth token rides in the URL query string, and only the user-agent
@@ -1007,12 +1003,6 @@ class VideoPlayerView: NSView {
     
     // MARK: - Track Selection
     
-    /// Set Plex streams for external subtitle support
-    func setPlexStreams(_ streams: [PlexStream]) {
-        plexStreams = streams
-        updateTrackSelectionPanel()
-    }
-    
     /// Discover available tracks from VLCKit.
     ///
     /// VLCKit exposes tracks as parallel index/name arrays that are only
@@ -1073,15 +1063,12 @@ class VideoPlayerView: NSView {
                 language: nil,
                 codec: nil,
                 isSelected: track.index == currentAudioIndex,
-                isExternal: false,
-                externalURL: nil,
-                vlcTrackIndex: track.index,
-                plexStream: nil
+                vlcTrackIndex: track.index
             )
         }
 
         // Convert VLCKit subtitle tracks to SelectableTracks
-        var subtitleTracks = availableSubtitleTracks.map { track in
+        let subtitleTracks = availableSubtitleTracks.map { track in
             SelectableTrack(
                 id: "subtitle_\(track.index)",
                 type: .subtitle,
@@ -1089,37 +1076,17 @@ class VideoPlayerView: NSView {
                 language: nil,
                 codec: nil,
                 isSelected: track.index == currentSubtitleIndex,
-                isExternal: false,
-                externalURL: nil,
-                vlcTrackIndex: track.index,
-                plexStream: nil
+                vlcTrackIndex: track.index
             )
         }
-
-        // Add Plex external subtitles
-        let externalSubtitles = plexStreams.filter { $0.streamType == .subtitle && $0.isExternal }.map { stream in
-            SelectableTrack(
-                id: "plex_sub_\(stream.id)",
-                type: .subtitle,
-                name: stream.localizedDisplayTitle,
-                language: stream.language,
-                codec: stream.codec,
-                isSelected: false,  // External subtitles need to be explicitly selected
-                isExternal: true,
-                externalURL: stream.key.flatMap { URL(string: $0) },
-                vlcTrackIndex: nil,
-                plexStream: stream
-            )
-        }
-        subtitleTracks.append(contentsOf: externalSubtitles)
 
         panel.updateTracks(audioTracks: audioTracks, subtitleTracks: subtitleTracks)
     }
     
     /// Select an audio track
     func selectAudioTrack(_ track: SelectableTrack?) {
-        guard let player = mediaPlayer, let track = track, let vlcIndex = track.vlcTrackIndex else { return }
-        player.currentAudioTrackIndex = vlcIndex
+        guard let player = mediaPlayer, let track = track else { return }
+        player.currentAudioTrackIndex = track.vlcTrackIndex
         NSLog("VideoPlayerView: Selected audio track: %@", track.name)
         updateTrackSelectionPanel()
     }
@@ -1129,20 +1096,8 @@ class VideoPlayerView: NSView {
         guard let player = mediaPlayer else { return }
 
         if let track = track {
-            if let vlcIndex = track.vlcTrackIndex {
-                // Embedded subtitle
-                player.currentVideoSubTitleIndex = vlcIndex
-                NSLog("VideoPlayerView: Selected subtitle track: %@", track.name)
-            } else if let externalURL = track.externalURL, externalURL.scheme != nil {
-                // External subtitle from an absolute URL (e.g. a sidecar file).
-                player.addPlaybackSlave(externalURL, type: .subtitle, enforce: true)
-                NSLog("VideoPlayerView: Loaded external subtitle from: %@", externalURL.redacted)
-            } else {
-                // Plex external-subtitle keys are server-relative API paths; loading
-                // them needs the Plex server base URL + token, which lives in
-                // PlexManager rather than this view. Left as a follow-up.
-                NSLog("VideoPlayerView: External subtitle '%@' has no absolute URL; skipping", track.name)
-            }
+            player.currentVideoSubTitleIndex = track.vlcTrackIndex
+            NSLog("VideoPlayerView: Selected subtitle track: %@", track.name)
         } else {
             // Real "Off" — VLCKit disables subtitles at index -1.
             player.currentVideoSubTitleIndex = -1
@@ -1895,23 +1850,6 @@ extension VideoPlayerView: NSMenuDelegate {
                     item.target = self
                     item.tag = index
                     item.state = track.index == currentSubtitleIndex ? .on : .off
-                    menu.addItem(item)
-                }
-            }
-            
-            // Add Plex external subtitles if available
-            let externalSubs = plexStreams.filter { $0.streamType == .subtitle && $0.isExternal }
-            if !externalSubs.isEmpty {
-                menu.addItem(NSMenuItem.separator())
-                
-                let headerItem = NSMenuItem(title: "External Subtitles", action: nil, keyEquivalent: "")
-                headerItem.isEnabled = false
-                menu.addItem(headerItem)
-                
-                for stream in externalSubs {
-                    let title = stream.localizedDisplayTitle
-                    let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-                    item.isEnabled = false  // External subtitle loading needs additional implementation
                     menu.addItem(item)
                 }
             }

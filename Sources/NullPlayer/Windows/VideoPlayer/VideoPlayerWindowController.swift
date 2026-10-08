@@ -554,101 +554,6 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         NSLog("VideoPlayerWindowController: Playing Plex track from playlist: %@ (key: %@)", track.displayTitle, ratingKey)
     }
 
-    /// Play a Plex movie
-    func play(movie: PlexMovie) {
-        endPreviousVideo()
-        guard let url = PlexManager.shared.streamURL(for: movie) else {
-            NSLog("Failed to get stream URL for movie: %@", movie.title)
-            return
-        }
-        // Full streaming headers are required for remote/relay connections
-        let headers = PlexManager.shared.streamingHeaders
-        NSLog("Playing Plex movie: %@ with URL: %@", movie.title, url.redacted)
-        startVideo(LoadedVideo(source: .plexMovie(movie), title: movie.title,
-                               artworkTrack: PlexManager.shared.convertToTrack(movie), contentType: "movie"),
-                   url: url, plexHeaders: headers)
-        PlexVideoPlaybackReporter.shared.movieDidStart(movie)
-        // Pass Plex streams for external subtitle support
-        videoPlayerView.setPlexStreams(movie.media.flatMap { $0.parts.flatMap { $0.streams } })
-    }
-
-    /// Play a Plex episode
-    func play(episode: PlexEpisode) {
-        endPreviousVideo()
-        guard let url = PlexManager.shared.streamURL(for: episode) else {
-            NSLog("Failed to get stream URL for episode: %@", episode.title)
-            return
-        }
-        // Full streaming headers are required for remote/relay connections
-        let headers = PlexManager.shared.streamingHeaders
-        let title = "\(episode.grandparentTitle ?? "Unknown") - \(episode.episodeIdentifier) - \(episode.title)"
-        NSLog("Playing Plex episode: %@ with URL: %@", title, url.redacted)
-        startVideo(LoadedVideo(source: .plexEpisode(episode), title: title,
-                               artworkTrack: PlexManager.shared.convertToTrack(episode), contentType: "tv"),
-                   url: url, plexHeaders: headers)
-        PlexVideoPlaybackReporter.shared.episodeDidStart(episode)
-        // Pass Plex streams for external subtitle support
-        videoPlayerView.setPlexStreams(episode.media.flatMap { $0.parts.flatMap { $0.streams } })
-    }
-
-    /// Play a Jellyfin movie
-    func play(jellyfinMovie movie: JellyfinMovie) {
-        endPreviousVideo()
-        guard let url = JellyfinManager.shared.videoStreamURL(for: movie) else {
-            NSLog("Failed to get stream URL for Jellyfin movie: %@", movie.title)
-            return
-        }
-        NSLog("Playing Jellyfin movie: %@ with URL: %@", movie.title, url.redacted)
-        startVideo(LoadedVideo(source: .jellyfinMovie(movie), title: movie.title,
-                               artworkTrack: JellyfinManager.shared.convertToTrack(movie), contentType: "movie"),
-                   url: url)
-        JellyfinVideoPlaybackReporter.shared.movieDidStart(movie)
-    }
-
-    /// Play a Jellyfin episode
-    func play(jellyfinEpisode episode: JellyfinEpisode) {
-        endPreviousVideo()
-        guard let url = JellyfinManager.shared.videoStreamURL(for: episode) else {
-            NSLog("Failed to get stream URL for Jellyfin episode: %@", episode.title)
-            return
-        }
-        let title = episode.seriesName.map { "\($0) - \(episode.episodeIdentifier) - \(episode.title)" } ?? episode.title
-        NSLog("Playing Jellyfin episode: %@ with URL: %@", title, url.redacted)
-        startVideo(LoadedVideo(source: .jellyfinEpisode(episode), title: title,
-                               artworkTrack: JellyfinManager.shared.convertToTrack(episode), contentType: "tv"),
-                   url: url)
-        JellyfinVideoPlaybackReporter.shared.episodeDidStart(episode)
-    }
-
-    /// Play an Emby movie
-    func play(embyMovie movie: EmbyMovie) {
-        endPreviousVideo()
-        guard let url = EmbyManager.shared.videoStreamURL(for: movie) else {
-            NSLog("Failed to get stream URL for Emby movie: %@", movie.title)
-            return
-        }
-        NSLog("Playing Emby movie: %@ with URL: %@", movie.title, url.redacted)
-        startVideo(LoadedVideo(source: .embyMovie(movie), title: movie.title,
-                               artworkTrack: EmbyManager.shared.convertToTrack(movie), contentType: "movie"),
-                   url: url)
-        EmbyVideoPlaybackReporter.shared.movieDidStart(movie)
-    }
-
-    /// Play an Emby episode
-    func play(embyEpisode episode: EmbyEpisode) {
-        endPreviousVideo()
-        guard let url = EmbyManager.shared.videoStreamURL(for: episode) else {
-            NSLog("Failed to get stream URL for Emby episode: %@", episode.title)
-            return
-        }
-        let title = episode.seriesName.map { "\($0) - \(episode.episodeIdentifier) - \(episode.title)" } ?? episode.title
-        NSLog("Playing Emby episode: %@ with URL: %@", title, url.redacted)
-        startVideo(LoadedVideo(source: .embyEpisode(episode), title: title,
-                               artworkTrack: EmbyManager.shared.convertToTrack(episode), contentType: "tv"),
-                   url: url)
-        EmbyVideoPlaybackReporter.shared.episodeDidStart(episode)
-    }
-
     /// Play a Jellyfin video track from the playlist
     func play(jellyfinTrack track: Track) {
         guard let jellyfinId = track.jellyfinId else {
@@ -994,35 +899,16 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             }
         }
 
-        // A server movie or episode is cast as itself; anything else by its track
-        guard let loaded = await MainActor.run(body: { self.loadedVideo }) else {
+        // Every film loads with a video track: `play(url:)` builds one, a queued item is its own
+        guard let track = await MainActor.run(body: { self.loadedVideo?.artworkTrack }) else {
             throw CastError.playbackFailed("No castable content loaded")
         }
-        switch loaded.source {
-        case .plexMovie(let movie):
-            try await CastManager.shared.castPlexMovie(movie, to: device, startPosition: startPosition)
-        case .plexEpisode(let episode):
-            try await CastManager.shared.castPlexEpisode(episode, to: device, startPosition: startPosition)
-        case .jellyfinMovie(let movie):
-            try await CastManager.shared.castJellyfinMovie(movie, to: device, startPosition: startPosition)
-        case .jellyfinEpisode(let episode):
-            try await CastManager.shared.castJellyfinEpisode(episode, to: device, startPosition: startPosition)
-        case .embyMovie(let movie):
-            try await CastManager.shared.castEmbyMovie(movie, to: device, startPosition: startPosition)
-        case .embyEpisode(let episode):
-            try await CastManager.shared.castEmbyEpisode(episode, to: device, startPosition: startPosition)
-        case .stream, .localFile, .plexItem, .jellyfinItem, .embyItem:
-            // These always load with a video track: `play(url:)` builds one, a queued item is its own
-            guard let track = loaded.artworkTrack else {
-                throw CastError.playbackFailed("No castable content loaded")
-            }
-            try await CastManager.shared.castVideoTrack(
-                track,
-                to: device,
-                startPosition: startPosition,
-                duration: videoDuration > 0 ? videoDuration : track.duration
-            )
-        }
+        try await CastManager.shared.castVideoTrack(
+            track,
+            to: device,
+            startPosition: startPosition,
+            duration: videoDuration > 0 ? videoDuration : track.duration
+        )
 
         // Update casting state and time tracking
         await MainActor.run {

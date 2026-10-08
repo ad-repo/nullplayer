@@ -3704,74 +3704,16 @@ class WindowManager {
         return true
     }
     
-    /// Start a video picked outside the queue (a row double-click, Stream Ripper **Play Now**):
-    /// supersede a library Play still resolving, so it cannot replace this film when its fetch
-    /// lands, then cast it if a video cast is running, else play it in the window.
-    private func playDirectVideo(title: String, artworkTrack: Track?, allowCasting: Bool = true,
-                                 cast: @escaping (CastDevice) async throws -> Void,
-                                 play: (VideoPlayerWindowController) -> Void) {
+    /// Play a file in the local video window outside the queue (Stream Ripper **Play Now**), even
+    /// while a video cast runs. It supersedes a library Play still resolving, so that play cannot
+    /// replace this film when its fetch lands.
+    func showVideoPlayer(url: URL, title: String) {
         MainActor.assumeIsolated { TrackVerb.supersedePendingPlays() }
-        if allowCasting, routeToVideoCastIfNeeded(title: title, artworkTrack: artworkTrack, operation: cast) {
-            return
-        }
-
         let controller = videoPlayerWindowController ?? VideoPlayerWindowController()
         videoPlayerWindowController = controller
         controller.volume = audioEngine.volume
-        play(controller)
+        controller.play(url: url, title: title)
         applyAlwaysOnTopToWindow(controller.window)
-    }
-
-    /// Show the video player with a URL and title
-    func showVideoPlayer(url: URL, title: String, allowCasting: Bool = true) {
-        playDirectVideo(title: title, artworkTrack: Track(url: url, title: title, mediaType: .video), allowCasting: allowCasting,
-                        cast: { try await CastManager.shared.castVideoURL(url, title: title, to: $0) },
-                        play: { $0.play(url: url, title: title) })
-    }
-
-    /// Play a Plex movie in the video player
-    func playMovie(_ movie: PlexMovie) {
-        playDirectVideo(title: movie.title, artworkTrack: PlexManager.shared.convertToTrack(movie),
-                        cast: { try await CastManager.shared.castPlexMovie(movie, to: $0) },
-                        play: { $0.play(movie: movie) })
-    }
-
-    /// Play a Plex episode in the video player
-    func playEpisode(_ episode: PlexEpisode) {
-        let title = episode.grandparentTitle.map { "\($0) - \(episode.episodeIdentifier) - \(episode.title)" } ?? episode.title
-        playDirectVideo(title: title, artworkTrack: PlexManager.shared.convertToTrack(episode),
-                        cast: { try await CastManager.shared.castPlexEpisode(episode, to: $0) },
-                        play: { $0.play(episode: episode) })
-    }
-
-    /// Play a Jellyfin movie in the video player
-    func playJellyfinMovie(_ movie: JellyfinMovie) {
-        playDirectVideo(title: movie.title, artworkTrack: JellyfinManager.shared.convertToTrack(movie),
-                        cast: { try await CastManager.shared.castJellyfinMovie(movie, to: $0) },
-                        play: { $0.play(jellyfinMovie: movie) })
-    }
-
-    /// Play a Jellyfin episode in the video player
-    func playJellyfinEpisode(_ episode: JellyfinEpisode) {
-        let title = episode.seriesName.map { "\($0) - \(episode.episodeIdentifier) - \(episode.title)" } ?? episode.title
-        playDirectVideo(title: title, artworkTrack: JellyfinManager.shared.convertToTrack(episode),
-                        cast: { try await CastManager.shared.castJellyfinEpisode(episode, to: $0) },
-                        play: { $0.play(jellyfinEpisode: episode) })
-    }
-
-    /// Play an Emby movie in the video player
-    func playEmbyMovie(_ movie: EmbyMovie) {
-        playDirectVideo(title: movie.title, artworkTrack: EmbyManager.shared.convertToTrack(movie),
-                        cast: { try await CastManager.shared.castEmbyMovie(movie, to: $0) },
-                        play: { $0.play(embyMovie: movie) })
-    }
-
-    /// Play an Emby episode in the video player
-    func playEmbyEpisode(_ episode: EmbyEpisode) {
-        let title = episode.seriesName.map { "\($0) - \(episode.episodeIdentifier) - \(episode.title)" } ?? episode.title
-        playDirectVideo(title: title, artworkTrack: EmbyManager.shared.convertToTrack(episode),
-                        cast: { try await CastManager.shared.castEmbyEpisode(episode, to: $0) },
-                        play: { $0.play(embyEpisode: episode) })
     }
 
     /// Play a video Track from the playlist
@@ -3783,13 +3725,7 @@ class WindowManager {
         }
 
         if routeToVideoCastIfNeeded(title: track.displayTitle, artworkTrack: track, operation: { device in
-            try await CastManager.shared.castVideoURL(
-                track.url,
-                title: track.displayTitle,
-                to: device,
-                duration: track.duration,
-                contentType: track.contentType
-            )
+            try await CastManager.shared.castVideoTrack(track, to: device)
         }) {
             return
         }

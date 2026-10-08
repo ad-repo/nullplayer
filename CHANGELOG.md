@@ -182,6 +182,12 @@
 - **Playlist films carry the video glyph** — a video in the playlist was prefixed with "[V]". It
   now shows the same ▶ the Library Browser's YouTube rows use, in the row's own colour, in
   Classic, Original and Metal.
+- **Double-clicking a film plays it through the playlist** — a movie or episode row, from any
+  server or the local library, now plays like a music row: it joins the playlist after the
+  current track, and the playlist carries on when it ends. Cast to a TV, it still shows the show
+  name and artwork. About Playing on a Plex film now also lists its IMDB and TMDB ids. An Emby or
+  Jellyfin film no longer opens a second, audio "now playing" session on the server, and a Plex
+  song cast to a TV or DLNA device now sends its artwork.
 
 ## 0.31.4
 
