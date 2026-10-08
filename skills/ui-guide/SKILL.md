@@ -990,8 +990,8 @@ and error views fill it), `header` (the column-header rect and its columns, `nil
 has no columns), `rows` (under the header, left of the scrollbar and alphabet index),
 `alphabet`, and in the modern browser `banner` (the offline-volume banner under `area`, `nil` when
 no watch folder is offline). Drawing, every hit test, every column-width calculation and every
-scroll range read it; a site that needs the columns takes `header.columns`, never a second
-`currentVisibleColumns()` call.
+scroll range read it; a site that needs the columns or the group their widths are keyed by takes
+`header.columns` / `header.group`, never a second `currentColumnGroup()` call.
 Never rebuild "tab bar, then search bar, then header" at a call site: PR #480 was a header reserved
 on one condition when drawn and another when hit-tested, so every click landed one row up.
 
@@ -1010,16 +1010,19 @@ on one condition when drawn and another when hit-tested, so every click landed o
   anywhere in `displayItems` (track, then album, then artist). Expanding an artist brings up album
   columns; expanding an album brings up track columns. A row left expanded off screen, or in
   another tab (expansion state is shared across tabs), counts too.
-- Every artist, album and track row draws **the header's columns** (`layout.header.columns`),
-  filling each by `columnValue(for:)`, which is keyed by column id. So an artist under album
+- Every artist, album and track row draws **the header's columns** and keys their widths by
+  `header.group` (`rowColumns(for:header:)`), filling each by `columnValue(for:)`, keyed by column id. So an artist under album
   headings shows its genre under Genre and nothing under Year. Never draw a row's own group's
   columns under another group's header: that put an artist's album count under "Genre".
-  Radio and YouTube rows (`sharesListHeader == false`) keep their own columns.
+  Radio and YouTube video rows keep their own fixed columns (`rowColumns`' other two arms).
 - A child row indents **inside its Title cell only** (`drawColumnRow`'s `inset`); every other cell
   sits at the header's x. Shifting the whole row by the indent misaligned every cell once the
   columns overflowed into horizontal scroll. A hit test over a row's cells (the radio rating)
   uses the same unindented positions.
-- The column menu lists only the header's group, so every box ticked is on screen.
+- The column menu lists only the header's group, so every box ticked is on screen. YouTube's
+  columns are fixed: the Original browser's YouTube section has no checkboxes, only
+  "Reset YouTube Columns" (it resets the Time column's width); the Classic browser offers no
+  YouTube section.
 
 ## Library row thumbnails (Library browser, all skin families)
 

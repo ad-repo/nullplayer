@@ -176,7 +176,8 @@
   expand: album headings once an artist is open, track headings once an album is, and back when
   you close them. Every row shows its values under the matching heading, so an artist's genre no
   longer lands under "Year" and an expanded album's tracks show their length under Time. The
-  right-click column menu offers only the columns on screen. Emby and Jellyfin artists now show
+  right-click column menu offers only the columns on screen, and a YouTube channel's menu drops
+  its greyed-out checkboxes, keeping Reset. Emby and Jellyfin artists now show
   their real album count (it read 0) and their genre, and Emby and Jellyfin albums their genre.
 
 ## 0.31.4

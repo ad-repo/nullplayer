@@ -51,8 +51,9 @@ All requests include header: `Authorization: MediaBrowser Client="NullPlayer", D
   — the server sends no album count for an artist: its `ChildCount` is the **song** count
   (Slayer read 243 for 19 albums) and `Fields=ItemCounts` adds no `AlbumCount` to this list. The
   browser's Albums column therefore comes from the album list: `JellyfinManager` runs
-  `countingAlbums(_:)` over it, crediting every `AlbumArtists` entry, on preload and in both
-  `fetchArtists` paths. A path that builds artists without albums shows 0.
+  `countingAlbums(_:)` (`Utilities/ArtistAlbumCount.swift`, shared with the other server) over
+  it, crediting every `AlbumArtists` entry, on preload and in both `fetchArtists` paths. Search
+  artists are not counted; their rows hide a 0 count.
 - **Albums**: `GET /Users/{userId}/Items?parentId={libId}&IncludeItemTypes=MusicAlbum&Recursive=true&Fields=PrimaryImageAspectRatio,ProductionYear,Genres`
   (without `Genres` the browser's album Genre column was blank on every row)
 - **Artist albums**: `GET /Users/{userId}/Items?AlbumArtistIds={artistId}&IncludeItemTypes=MusicAlbum` —

@@ -15,9 +15,6 @@ enum LibraryColumnVisibilityGroup: String, CaseIterable {
         }
     }
 
-    /// Artist, album and track rows share the list's one header; YouTube rows keep their own.
-    var sharesListHeader: Bool { self != .youtube }
-
     var resetTitle: String {
         switch self {
         case .artist: return "Reset Artist Columns"

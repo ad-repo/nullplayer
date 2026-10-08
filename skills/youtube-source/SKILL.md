@@ -252,7 +252,7 @@ static let youtubeColumns: [ModernBrowserColumn] = [.thumbnail, .title, .youtube
 - **Channel (parent) rows stay on the simple-list path** so they keep their ▶/▼ expand arrows; only video rows use columns — mirroring radio folders vs. stations.
 - Column headers appear only once a channel is expanded (video rows exist), gated by `hasYouTubeColumns` (`radioSlotShowingChannels` + any `.youtubeVideo` in `displayItems`).
 - Clicking a header sorts via **`applyYouTubeColumnSort`** — an in-place sort of each contiguous run of video rows (leaving channel leaders put), mirroring `applyInternetRadioColumnSort`.
-- Plumbing touched: `columnGroup(for:)`, `currentColumnGroup()`, `columnsForItem`, `currentVisibleColumns`, `headerColumnsForCurrentContent`, `columnValue`, plus the four `allColumns`/`defaultColumnIds`/`visibleColumnIds`/`setVisibleColumnIds` group switches.
+- Plumbing touched: `columnGroup(for:)`, `currentColumnGroup()`, `rowColumns(for:header:)`, `headerColumns(for:)`, `columnValue`, plus the four `allColumns`/`defaultColumnIds`/`visibleColumnIds`/`setVisibleColumnIds` group switches.
 - **Both UIs implement this independently**: the classic `PlexBrowserView` mirrors the whole column set (its own `BrowserColumn.youtubeColumns`, `columnValue`, `columnDateValue`, `applyYouTubeColumnSort`, session sort, etc.). Any change to YouTube columns/sorting must be made in **both** `ModernLibraryBrowserView` and `PlexBrowserView` — they share no code.
 
 ### Video row menu (`YouTubeVideoActions`)

@@ -35,7 +35,7 @@ struct EmbyServerCredentials: Codable {
 // MARK: - Library Content
 
 /// An artist in an Emby music library
-struct EmbyArtist: Identifiable, Equatable {
+struct EmbyArtist: Identifiable, Equatable, AlbumCountedArtist {
     let id: String           // Emby uses UUID strings
     let name: String
     var albumCount: Int
@@ -44,17 +44,8 @@ struct EmbyArtist: Identifiable, Equatable {
     let isFavorite: Bool
 }
 
-extension Array where Element == EmbyArtist {
-    /// The server sends no album count for an artist, so count the album list's albums by album artist
-    /// (every one, as expanding the artist does: an album can have several).
-    func countingAlbums(_ albums: [EmbyAlbum]) -> [EmbyArtist] {
-        let counts = Dictionary(grouping: albums.flatMap(\.albumArtistIds), by: { $0 }).mapValues(\.count)
-        return map { var artist = $0; artist.albumCount = counts[artist.id] ?? 0; return artist }
-    }
-}
-
 /// An album in an Emby music library
-struct EmbyAlbum: Identifiable, Equatable {
+struct EmbyAlbum: Identifiable, Equatable, AlbumArtistCredited {
     let id: String
     let name: String
     let artist: String?

@@ -379,6 +379,8 @@ class PlexBrowserView: NSView {
         struct Header {
             let rect: NSRect
             let columns: [BrowserColumn]
+            /// The group the columns' widths are keyed by; nil for radio's fixed columns.
+            let group: LibraryColumnVisibilityGroup?
         }
     }
 
@@ -393,13 +395,14 @@ class PlexBrowserView: NSView {
         let area = NSRect(x: Layout.leftBorder, y: listTopY,
                           width: size.width - Layout.leftBorder - Layout.rightBorder,
                           height: size.height - listTopY - Layout.statusBarHeight)
-        let columns = currentVisibleColumns()
+        let group = currentColumnGroup()
+        let columns = headerColumns(for: group)
         let headerHeight = columns.isEmpty ? 0 : columnHeaderHeight
         let width = area.width - Layout.scrollbarWidth - Layout.alphabetWidth
         return ListLayout(
             area: area,
             header: columns.isEmpty ? nil : .init(rect: NSRect(x: area.minX, y: area.minY, width: width, height: headerHeight),
-                                                  columns: columns),
+                                                  columns: columns, group: group),
             rows: NSRect(x: area.minX, y: area.minY + headerHeight, width: width, height: area.height - headerHeight),
             alphabet: NSRect(x: area.minX + width, y: area.minY, width: Layout.alphabetWidth, height: area.height)
         )
@@ -457,29 +460,19 @@ class PlexBrowserView: NSView {
         return LibraryColumnVisibility.headerGroup(displayItems.lazy.map { self.columnGroup(for: $0) })
     }
 
-    /// Get columns for a specific item (nil = use simple list rendering)
-    private func columnsForItem(_ item: PlexDisplayItem) -> [BrowserColumn]? {
-        switch columnGroup(for: item) {
-        case .track:
-            return visibleColumns(allColumns: BrowserColumn.allTrackColumns, visibleIds: visibleTrackColumnIds)
-        case .album:
-            return visibleColumns(allColumns: BrowserColumn.allAlbumColumns, visibleIds: visibleAlbumColumnIds)
-        case .artist:
-            return visibleColumns(allColumns: BrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
-        case .youtube:
-            return BrowserColumn.youtubeColumns
-        case nil:
-            break
-        }
+    /// Whether a row draws columns rather than a plain title line.
+    private func drawsColumns(_ item: PlexDisplayItem) -> Bool {
+        columnGroup(for: item) != nil || isInternetRadioItem(item)
+    }
 
-        switch item.type {
-        case .radioStation:
-            if isInternetRadioItem(item) {
-                return BrowserColumn.internetRadioColumns
-            }
-            return nil
-        default:
-            return nil
+    /// The columns a row draws and the group their widths are keyed by (nil = simple list rendering).
+    /// Artist, album and track rows all draw the list's one header, Finder-style; radio and
+    /// YouTube rows draw their own fixed columns.
+    private func rowColumns(for item: PlexDisplayItem, header: ListLayout.Header?) -> (columns: [BrowserColumn], group: LibraryColumnVisibilityGroup?)? {
+        switch columnGroup(for: item) {
+        case .youtube?: return (BrowserColumn.youtubeColumns, .youtube)
+        case _?: return header.map { ($0.columns, $0.group) }
+        case nil: return isInternetRadioItem(item) ? (BrowserColumn.internetRadioColumns, nil) : nil
         }
     }
     
@@ -528,7 +521,7 @@ class PlexBrowserView: NSView {
 
     private func clampHorizontalScrollOffset() {
         guard let header = listLayout().header else { horizontalScrollOffset = 0; return }
-        let maxOffset = max(0, totalColumnsWidth(columns: header.columns, group: currentColumnGroup()) - header.rect.width)
+        let maxOffset = max(0, totalColumnsWidth(columns: header.columns, group: header.group) - header.rect.width)
         horizontalScrollOffset = max(0, min(horizontalScrollOffset, maxOffset))
     }
     
@@ -576,15 +569,11 @@ class PlexBrowserView: NSView {
         }
     }
 
-    private func currentVisibleColumns() -> [BrowserColumn] {
-        if hasInternetRadioColumns {
-            return BrowserColumn.internetRadioColumns
-        }
-        switch currentColumnGroup() {
-        case .youtube?: return BrowserColumn.youtubeColumns
-        case let group?: return visibleColumns(allColumns: allColumns(for: group), visibleIds: visibleColumnIds(for: group))
-        case nil: return []
-        }
+    /// The header's columns for the list's column group; radio has its own fixed set and no group.
+    private func headerColumns(for group: LibraryColumnVisibilityGroup?) -> [BrowserColumn] {
+        if hasInternetRadioColumns { return BrowserColumn.internetRadioColumns }
+        guard let group else { return [] }
+        return visibleColumns(allColumns: allColumns(for: group), visibleIds: visibleColumnIds(for: group))
     }
     
     /// Apply column sort to display items
@@ -660,7 +649,7 @@ class PlexBrowserView: NSView {
         var sortableItems: [PlexDisplayItem] = []
         
         for (index, item) in displayItems.enumerated() {
-            if columnsForItem(item) != nil && item.indentLevel == 0 {
+            if drawsColumns(item) && item.indentLevel == 0 {
                 sortableIndices.append(index)
                 sortableItems.append(item)
             }
@@ -690,7 +679,7 @@ class PlexBrowserView: NSView {
         var groups: [[PlexDisplayItem]] = []
         for item in displayItems {
             if item.indentLevel == 0 {
-                guard columnsForItem(item) != nil else { needsDisplay = true; return }
+                guard drawsColumns(item) else { needsDisplay = true; return }
                 groups.append([item])
             } else if !groups.isEmpty {
                 groups[groups.count - 1].append(item)
@@ -3491,7 +3480,7 @@ class PlexBrowserView: NSView {
         
         // Draw column headers BEFORE clipping (so they stay fixed)
         if let header = layout.header {
-            drawColumnHeaders(in: context, rect: header.rect, columns: header.columns, colors: colors)
+            drawColumnHeaders(in: context, header: header, colors: colors)
         }
         
         let listRect = layout.rows
@@ -3535,7 +3524,6 @@ class PlexBrowserView: NSView {
         // Round scroll offset to integer pixels to prevent text shimmering on non-Retina displays
         let roundedScrollOffset = backingScale < 1.5 ? round(scrollOffset) : scrollOffset
         rowThumbnails.beginPass(placeholder: colors.normalText.withAlphaComponent(0.15))
-        let headerGroup = currentColumnGroup()
         
         let visibleStart = max(0, Int(scrollOffset / itemHeight))
         let visibleEnd = min(displayItems.count, visibleStart + Int(listRect.height / itemHeight) + 2)
@@ -3573,13 +3561,9 @@ class PlexBrowserView: NSView {
                 context.fill(itemRect)
             }
             
-            // Artist, album and track rows all draw under the list's one header, Finder-style;
-            // radio and YouTube rows keep their own columns.
-            let itemGroup = columnGroup(for: item)
-            let sharesHeader = itemGroup?.sharesListHeader == true
-            if let itemColumns = sharesHeader ? layout.header?.columns : columnsForItem(item) {
+            if let row = rowColumns(for: item, header: layout.header) {
                 let indent = CGFloat(item.indentLevel) * 16
-                drawColumnRow(item: item, columns: itemColumns, group: sharesHeader ? headerGroup : itemGroup,
+                drawColumnRow(item: item, columns: row.columns, group: row.group,
                               in: context, rect: itemRect, isSelected: isSelected, colors: colors, indent: indent)
             } else {
                 // Original rendering for artists, playlists, headers, etc.
@@ -3669,7 +3653,8 @@ class PlexBrowserView: NSView {
     }
     
     /// Draw column headers with separator line and resize handles
-    private func drawColumnHeaders(in context: CGContext, rect: NSRect, columns: [BrowserColumn], colors: PlaylistColors) {
+    private func drawColumnHeaders(in context: CGContext, header: ListLayout.Header, colors: PlaylistColors) {
+        let rect = header.rect, columns = header.columns, group = header.group
         // Clip to the header rect to prevent drawing over scrollbar/alphabet index
         context.saveGState()
         context.clip(to: rect)
@@ -3677,7 +3662,6 @@ class PlexBrowserView: NSView {
         let totalWidth = rect.width
         
         // Calculate total columns width to determine if horizontal scroll is needed
-        let group = currentColumnGroup()
         let columnsWidth = totalColumnsWidth(columns: columns, group: group)
         let maxHorizontalScroll = max(0, columnsWidth - totalWidth)
         
@@ -5273,17 +5257,17 @@ class PlexBrowserView: NSView {
         guard !browseMode.isHistoryMode else { return nil }
         guard hasInternetRadioColumns, itemIndex >= 0, itemIndex < displayItems.count else { return nil }
         let item = displayItems[itemIndex]
-        guard case .radioStation = item.type, let columns = columnsForItem(item) else { return nil }
+        let layout = listLayout()
+        guard case .radioStation = item.type, let row = rowColumns(for: item, header: layout.header) else { return nil }
 
-        let listRect = listLayout().rows
+        let listRect = layout.rows
         let rowY = listRect.minY + CGFloat(itemIndex) * itemHeight - scrollOffset
         let rowRect = NSRect(x: listRect.minX, y: rowY, width: listRect.width, height: itemHeight)
         guard rowRect.contains(skinPoint) else { return nil }
 
         var x = rowRect.minX + 4 - horizontalScrollOffset
-        let group = columnGroup(for: item)
-        for column in columns {
-            let width = widthForColumn(column, availableWidth: rowRect.width, columns: columns, group: group)
+        for column in row.columns {
+            let width = widthForColumn(column, availableWidth: rowRect.width, columns: row.columns, group: row.group)
             if column.id == "rating" {
                 let cellRect = NSRect(x: x, y: rowRect.minY, width: width, height: rowRect.height)
                 guard cellRect.contains(skinPoint) else { return nil }
@@ -5309,7 +5293,7 @@ class PlexBrowserView: NSView {
         if hasInternetRadioColumns { return nil }
         guard let header = columnHeader(at: skinPoint) else { return nil }
         let columns = header.columns
-        let group = currentColumnGroup()
+        let group = header.group
 
         // Check if near a column separator (within 4 pixels)
         var x = header.rect.minX + 4
@@ -5347,7 +5331,7 @@ class PlexBrowserView: NSView {
         }
 
         let columns = header.columns
-        let group = currentColumnGroup()
+        let group = header.group
         
         // Find which column was clicked
         var x = header.rect.minX + 4
@@ -5461,7 +5445,7 @@ class PlexBrowserView: NSView {
     /// Only the header's own group: every row shows those columns, so nothing else is tickable.
     /// (This browser has never offered the fixed YouTube channel columns.)
     private func columnGroupsForCurrentMenu() -> [LibraryColumnVisibilityGroup] {
-        guard let group = currentColumnGroup(), group.sharesListHeader else { return [] }
+        guard let group = currentColumnGroup(), group != .youtube else { return [] }
         return [group]
     }
 
@@ -5570,7 +5554,7 @@ class PlexBrowserView: NSView {
         // Check for column resize
         if let header = columnHeader(at: skinPoint), let columnId = hitTestColumnResize(at: skinPoint) {
             resizingColumnId = columnId
-            resizingColumnGroup = currentColumnGroup()
+            resizingColumnGroup = header.group
             resizingColumnFromLeadingEdge = hasYouTubeColumns && columnId == "duration"
             resizeStartX = skinPoint.x
             resizeStartWidth = widthForColumn(
@@ -8854,7 +8838,7 @@ class PlexBrowserView: NSView {
 
         if let header = layout.header,
            event.modifierFlags.contains(.shift) || abs(horizontalDelta) > abs(verticalDelta) {
-            let totalWidth = totalColumnsWidth(columns: header.columns, group: currentColumnGroup())
+            let totalWidth = totalColumnsWidth(columns: header.columns, group: header.group)
             let maxOffset = max(0, totalWidth - header.rect.width)
             if maxOffset > 0 {
                 let delta = event.modifierFlags.contains(.shift) ? verticalDelta : horizontalDelta

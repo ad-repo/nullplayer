@@ -35,7 +35,7 @@ struct JellyfinServerCredentials: Codable {
 // MARK: - Library Content
 
 /// An artist in a Jellyfin music library
-struct JellyfinArtist: Identifiable, Equatable {
+struct JellyfinArtist: Identifiable, Equatable, AlbumCountedArtist {
     let id: String           // Jellyfin uses UUID strings
     let name: String
     var albumCount: Int
@@ -44,17 +44,8 @@ struct JellyfinArtist: Identifiable, Equatable {
     let isFavorite: Bool
 }
 
-extension Array where Element == JellyfinArtist {
-    /// The server sends no album count for an artist, so count the album list's albums by album artist
-    /// (every one, as expanding the artist does: an album can have several).
-    func countingAlbums(_ albums: [JellyfinAlbum]) -> [JellyfinArtist] {
-        let counts = Dictionary(grouping: albums.flatMap(\.albumArtistIds), by: { $0 }).mapValues(\.count)
-        return map { var artist = $0; artist.albumCount = counts[artist.id] ?? 0; return artist }
-    }
-}
-
 /// An album in a Jellyfin music library
-struct JellyfinAlbum: Identifiable, Equatable {
+struct JellyfinAlbum: Identifiable, Equatable, AlbumArtistCredited {
     let id: String
     let name: String
     let artist: String?
