@@ -39,6 +39,12 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   film started), and `next()` resumes only a `.playing` engine, so it loaded the next row and never
   played it (M13). `next()` also wraps at the end of the playlist where a natural end stops.
   Measured 2026-10-07 on Classic: `1-audio.m4a`, `2-video.mp4`, `3-audio.m4a` play through and stop.
+- **An audio load closes the film before it takes its token and generation.**
+  `stopVideoBeforeLoadingAudio` runs first in `loadTrack` and `loadLocalTrackForImmediatePlayback`:
+  closing the film stops the engine it paused (`videoPlaybackDidStop` → `AudioEngine.stop()`), which
+  bumps `deferredLocalTrackLoadToken` and `playbackGeneration`. Captured before it, the async open
+  was dropped and the audio never started (M14). Measured 2026-10-07 on Classic: double-clicking
+  `audio-long` mid-film closes the window and plays it.
 - **The vendored VLCKit reports the end of a film as `.paused`, never `.ended`** — see the
   `mediaPlayerStateChanged` comment; end-of-film handling keys off that pause.
 - **Windows → Video Player is inert until a video has been opened** — the controller is created on
