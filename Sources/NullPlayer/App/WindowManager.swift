@@ -3827,7 +3827,7 @@ class WindowManager {
         
         // Set up callback for when video finishes (to advance playlist)
         videoPlayerWindowController?.onVideoFinishedForPlaylist = { [weak self] in
-            self?.videoTrackDidFinish()
+            self?.audioEngine.videoTrackDidFinish()
         }
         
         videoPlayerWindowController?.volume = audioEngine.volume
@@ -3845,16 +3845,6 @@ class WindowManager {
         
         applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
         NSLog("WindowManager: Playing video track from playlist: %@", track.title)
-    }
-    
-    /// Called when a video track from the playlist finishes playing
-    private func videoTrackDidFinish() {
-        NSLog("WindowManager: Video track finished, advancing playlist")
-        if uiMode.controllerFamily == .wmp {
-            audioEngine.wmpVideoTrackDidFinish()
-            return
-        }
-        audioEngine.next()
     }
     
     var isVideoPlayerVisible: Bool {

@@ -24,7 +24,7 @@ final class WMPVideoTests: XCTestCase {
             ) { _ in exhausted.fulfill() }
             defer { NotificationCenter.default.removeObserver(observer) }
 
-            engine.wmpVideoTrackDidFinish()
+            engine.videoTrackDidFinish()
 
             wait(for: [exhausted], timeout: 1)
             XCTAssertEqual(engine.state, .stopped)
