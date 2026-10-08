@@ -5,6 +5,14 @@ import AVFoundation
 enum MediaType: String, Codable {
     case audio
     case video
+
+    /// The row marker for this media type: a text glyph, so it takes the row's text color.
+    var rowMarker: String {
+        switch self {
+        case .audio: return "♫"
+        case .video: return "▶\u{FE0E}"
+        }
+    }
 }
 
 /// The pipeline a track plays through; see `Track.playbackRoute`.
@@ -354,6 +362,11 @@ struct Track: Identifiable, Equatable {
         return result.replacingOccurrences(of: "\n", with: " ")
                      .replacingOccurrences(of: "\r", with: " ")
                      .replacingOccurrences(of: "\t", with: " ")
+    }
+
+    /// The title a playlist row draws: a video is marked with its glyph, audio is not.
+    var playlistTitle: String {
+        mediaType == .video ? "\(MediaType.video.rowMarker) \(displayTitle)" : displayTitle
     }
     
     /// Formatted duration string (MM:SS)

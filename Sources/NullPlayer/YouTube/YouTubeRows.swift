@@ -88,22 +88,12 @@ struct YouTubeRowBuilder {
     /// and the download folder may be a network mount.
     private func videoRow(_ video: YouTubeVideo, id: String, indentLevel: Int) -> YouTubeRow {
         let onDisk = manager.downloadedFiles(for: video.videoId)
-        let markers = YouTubeMediaKind.allCases.filter { onDisk[$0] != nil }.map(\.rowMarker)
+        let markers = YouTubeMediaKind.allCases.filter { onDisk[$0] != nil }.map(\.mediaType.rowMarker)
         return YouTubeRow(id: id, title: video.title, titlePrefix: markers.isEmpty ? nil : markers.joined(separator: " "),
                           info: video.formattedDuration, indentLevel: indentLevel, kind: .video(video))
     }
 
     private func expandedUploads(of channel: YouTubeChannel) -> [YouTubeVideo] {
         expanded.contains(channel.id) ? uploads[channel.id] ?? [] : []
-    }
-}
-
-private extension YouTubeMediaKind {
-    /// The row marker for this form on disk: a text glyph, so it takes the row's text color.
-    var rowMarker: String {
-        switch self {
-        case .audio: return "♫"
-        case .video: return "▶\u{FE0E}"
-        }
     }
 }

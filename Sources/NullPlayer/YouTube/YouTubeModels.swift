@@ -161,6 +161,13 @@ enum YouTubeMediaKind: String, Codable, CaseIterable {
         case .video: return "Video"
         }
     }
+
+    var mediaType: MediaType {
+        switch self {
+        case .audio: return .audio
+        case .video: return .video
+        }
+    }
 }
 
 /// Metadata about a downloaded YouTube video

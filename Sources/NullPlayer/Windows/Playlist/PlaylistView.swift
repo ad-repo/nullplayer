@@ -336,8 +336,7 @@ class PlaylistView: NSView {
         }
 
         let track = engine.playlist[currentIndex]
-        let videoPrefix = track.mediaType == .video ? "[V] " : ""
-        let titleText = "\(currentIndex + 1). \(videoPrefix)\(track.displayTitle)"
+        let titleText = "\(currentIndex + 1). \(track.playlistTitle)"
 
         // Check if we need system font fallback for non-Latin characters
         if cachedTextBitmapCGImage == nil || containsNonLatinCharacters(titleText) {
@@ -777,8 +776,7 @@ class PlaylistView: NSView {
         let durationStr = String(format: "%d:%02d", Int(duration) / 60, Int(duration) % 60)
         let titleX = rect.minX + 2
 
-        let videoPrefix = track.mediaType == .video ? "[V] " : ""
-        let titleText = "\(index + 1). \(videoPrefix)\(track.displayTitle)"
+        let titleText = "\(index + 1). \(track.playlistTitle)"
 
         let durationWidth = systemFontTextWidth(durationStr)
         let durationX = rect.maxX - durationWidth - 4

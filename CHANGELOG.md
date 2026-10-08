@@ -179,6 +179,9 @@
   right-click column menu offers only the columns on screen, and a YouTube channel's menu drops
   its greyed-out checkboxes, keeping Reset. Emby and Jellyfin artists now show
   their real album count (it read 0) and their genre, and Emby and Jellyfin albums their genre.
+- **Playlist films carry the video glyph** — a video in the playlist was prefixed with "[V]". It
+  now shows the same ▶ the Library Browser's YouTube rows use, in the row's own colour, in
+  Classic, Original and Metal.
 
 ## 0.31.4
 

@@ -230,8 +230,7 @@ class ModernPlaylistView: NSView {
 
         // Check if text needs scrolling
         let numberText = "\(currentIndex + 1). "
-        let videoPrefix = track.mediaType == .video ? "[V] " : ""
-        let titleText = "\(videoPrefix)\(track.displayTitle)"
+        let titleText = track.playlistTitle
         let fullText = numberText + titleText
         let fullSize = NSAttributedString(string: fullText, attributes: titleAttrs).size()
 
@@ -494,8 +493,7 @@ class ModernPlaylistView: NSView {
             
             // Build track text components
             let numberText = "\(index + 1). "
-            let videoPrefix = track.mediaType == .video ? "[V] " : ""
-            let titleText = "\(videoPrefix)\(track.displayTitle)"
+            let titleText = track.playlistTitle
             let fullText = numberText + titleText
             let duration = track.duration ?? 0
             let durationStr = String(format: "%d:%02d", Int(duration) / 60, Int(duration) % 60)
