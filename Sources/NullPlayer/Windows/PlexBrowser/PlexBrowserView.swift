@@ -8142,7 +8142,7 @@ class PlexBrowserView: NSView {
         case .localMovie(let m): return .localMovie(m)
         case .localEpisode(let e): return .localEpisodes([e])
         case .localSeason(let s, _): return .localEpisodes(s.episodes)
-        case .localShow(let s): return .localEpisodes(s.seasons.flatMap(\.episodes))
+        case .localShow(let s): return .localEpisodes(s.episodes)
         case .jellyfinMovie(let m): return .jellyfinMovie(m)
         case .jellyfinEpisode(let e): return .jellyfinEpisode(e)
         case .jellyfinSeason(let s): return .jellyfinSeason(s)

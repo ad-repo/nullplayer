@@ -3,7 +3,8 @@ import NullPlayerCore
 
 /// A library browser row that plays as a list of tracks, from any source. `tracks()` is the one
 /// place a row is resolved to what the play verbs (`TrackVerb`) queue, for both browsers' menus,
-/// Enter shortcuts and double-click.
+/// Enter shortcuts and double-click (a movie or episode row's double-click plays it straight in the
+/// video player instead).
 enum LibraryPlayable {
     /// Tracks already in hand (a local playlist's entry).
     case tracks([Track])
@@ -80,11 +81,10 @@ enum LibraryPlayable {
         case .plexArtistGroup(let members, let albums):
             let plex = PlexManager.shared
             let albums = albums.isEmpty ? try await Self.plexAlbums(ofArtistGroup: members) : albums
-            var tracks: [PlexTrack] = []
-            for album in Self.oldestFirst(albums, year: \.year) { tracks.append(contentsOf: try await plex.fetchTracks(forAlbum: album)) }
+            var tracks = try await Self.concatenated(Self.oldestFirst(albums, year: \.year)) { try await plex.fetchTracks(forAlbum: $0) }
             // An artist whose tracks belong to no album the server lists.
             if tracks.isEmpty {
-                for member in members { tracks.append(contentsOf: try await plex.fetchTracks(forArtist: member)) }
+                tracks = try await Self.concatenated(members) { try await plex.fetchTracks(forArtist: $0) }
             }
             return plex.convertToTracks(PlexIdentity.unique(tracks))
         case .plexPlaylist(let playlist):
@@ -129,10 +129,9 @@ enum LibraryPlayable {
             return EmbyManager.shared.convertToTracks(songs)
 
         case .localMovie(let movie):
-            return [Track(url: movie.url, title: movie.title, duration: movie.duration > 0 ? movie.duration : nil, mediaType: .video)]
+            return [movie.toTrack()]
         case .localEpisodes(let episodes):
-            return episodes.map { Track(url: $0.url, title: $0.title, artist: $0.showTitle,
-                                        duration: $0.duration > 0 ? $0.duration : nil, mediaType: .video) }
+            return episodes.map { $0.toTrack() }
 
         case .plexMovie(let movie):
             return PlexManager.shared.convertToTrack(movie).map { [$0] } ?? []
@@ -181,11 +180,11 @@ enum LibraryPlayable {
         try await concatenated(oldestFirst(albums, year: year), tracks)
     }
 
-    /// Each container's tracks in turn.
+    /// Each container's items in turn.
     @MainActor
-    private static func concatenated<C>(_ containers: [C], _ tracks: (C) async throws -> [Track]) async throws -> [Track] {
-        var result: [Track] = []
-        for container in containers { result.append(contentsOf: try await tracks(container)) }
+    private static func concatenated<C, T>(_ containers: [C], _ items: (C) async throws -> [T]) async throws -> [T] {
+        var result: [T] = []
+        for container in containers { result.append(contentsOf: try await items(container)) }
         return result
     }
 

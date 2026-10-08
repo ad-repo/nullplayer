@@ -107,15 +107,16 @@ class PlexVideoPlaybackReporter {
     ///   - ratingKey: The Plex rating key
     ///   - title: Video title
     ///   - durationSeconds: Duration in seconds
+    ///   - isEpisode: Report it as an episode rather than a movie
     ///   - position: Starting position in seconds (for resume)
-    func videoTrackDidStart(ratingKey: String, title: String, durationSeconds: TimeInterval, at position: TimeInterval = 0) {
+    func videoTrackDidStart(ratingKey: String, title: String, durationSeconds: TimeInterval, isEpisode: Bool, at position: TimeInterval = 0) {
         NSLog("PlexVideoPlaybackReporter: Video track started - %@ (key: %@)", title, ratingKey)
         
         startTracking(
             ratingKey: ratingKey,
             title: title,
             durationMs: Int(durationSeconds * 1000),
-            videoType: .movie,  // Default to movie type for playlist tracks
+            videoType: isEpisode ? .episode : .movie,
             position: position
         )
     }

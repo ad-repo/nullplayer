@@ -106,6 +106,22 @@ class EmbyVideoPlaybackReporter {
         )
     }
 
+    /// Called when a Emby video track from the playlist starts playing, where there is a Track
+    /// with its item id but not the full movie / episode
+    func videoTrackDidStart(itemId: String, title: String, durationSeconds: TimeInterval, isEpisode: Bool, at position: TimeInterval = 0) {
+        let serverId = EmbyManager.shared.currentServer?.id ?? ""
+        NSLog("EmbyVideoPlaybackReporter: Video track started - %@ (id: %@)", title, itemId)
+
+        startTracking(
+            itemId: itemId,
+            serverId: serverId,
+            title: title,
+            durationSeconds: durationSeconds,
+            videoType: isEpisode ? .episode : .movie,
+            position: position
+        )
+    }
+
     /// Called when playback is paused
     func videoDidPause(at position: TimeInterval) {
         guard currentItemId != nil else { return }

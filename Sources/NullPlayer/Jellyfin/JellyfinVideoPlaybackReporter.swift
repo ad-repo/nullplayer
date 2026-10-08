@@ -105,6 +105,22 @@ class JellyfinVideoPlaybackReporter {
             position: position
         )
     }
+
+    /// Called when a Jellyfin video track from the playlist starts playing, where there is a Track
+    /// with its item id but not the full movie / episode
+    func videoTrackDidStart(itemId: String, title: String, durationSeconds: TimeInterval, isEpisode: Bool, at position: TimeInterval = 0) {
+        let serverId = JellyfinManager.shared.currentServer?.id ?? ""
+        NSLog("JellyfinVideoPlaybackReporter: Video track started - %@ (id: %@)", title, itemId)
+
+        startTracking(
+            itemId: itemId,
+            serverId: serverId,
+            title: title,
+            durationSeconds: durationSeconds,
+            videoType: isEpisode ? .episode : .movie,
+            position: position
+        )
+    }
     
     /// Called when playback is paused
     func videoDidPause(at position: TimeInterval) {
