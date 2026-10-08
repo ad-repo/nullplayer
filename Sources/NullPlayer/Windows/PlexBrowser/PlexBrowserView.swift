@@ -6662,11 +6662,7 @@ class PlexBrowserView: NSView {
     }
     
     private func scrollToLetter(_ letter: String) {
-        // Flow / Tiles jump within the level shown; only their root pages a local library to the letter.
-        if artLens.isPresenting,
-           artLens.center(onFirst: { effectiveSortLetter(for: $0) == letter }) || !artLens.focusStack.isEmpty {
-            return
-        }
+        if artLens.jump(to: { effectiveSortLetter(for: $0) == letter }) { return }
         if currentSource == .local {
             switch browseMode {
             case .artists:

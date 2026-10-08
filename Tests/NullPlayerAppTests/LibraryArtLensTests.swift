@@ -32,8 +32,8 @@ final class LibraryArtLensTests: XCTestCase {
 
     override func tearDown() { LibraryViewMode.saved = savedMode }
 
-    private func makeLens() -> LibraryArtLens<Row> {
-        LibraryArtLens(container: NSView(), host: .init(
+    private func makeLens(container: NSView = NSView()) -> LibraryArtLens<Row> {
+        LibraryArtLens(container: container, host: .init(
             rows: { [unowned self] in rows },
             isSearch: { false },
             selectedIndex: { nil },
@@ -110,6 +110,23 @@ final class LibraryArtLensTests: XCTestCase {
         lens.mode = .list
         XCTAssertNil(lens.view)
         XCTAssertTrue(lens.focusStack.isEmpty)
+    }
+
+    func testKeyboardFocusFollowsTheAlbumScreenInAndOut() {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        let lens = makeLens(container: window.contentView!)
+        lens.mode = .tiles
+        XCTAssertTrue(window.firstResponder === lens.view)
+
+        lens.activate(at: 0)
+        lens.activate(at: 1)
+        XCTAssertTrue(lens.view is ArtAlbumView)
+        XCTAssertTrue(window.firstResponder === lens.view, "opening an album keeps the keyboard")
+
+        lens.activate(at: 0)
+        XCTAssertTrue(lens.view is ArtTileGridView)
+        XCTAssertTrue(window.firstResponder === lens.view, "…and so does Back")
     }
 
     func testListWithoutArtRowsPresentsTheList() {

@@ -873,7 +873,9 @@ kept across tab switches and relaunches. The buttons show only while the list ha
 root (`artLens.hasItems`); over a list without any (Radio, playlists) the browser draws its list
 whatever the mode, and the art view hides.
 
-**`LibraryArtLens`** (`Windows/ModernLibraryBrowser/LibraryArtLens.swift`) owns everything the two
+The shared art views live in `Windows/LibraryArt/`, beside neither browser: both use them equally.
+
+**`LibraryArtLens`** (`Windows/LibraryArt/LibraryArtLens.swift`) owns everything the two
 browsers share: the mode, the art view standing in for the list, and the tree navigation. Each
 browser holds one `artLens` and keeps only what is its own, passed as `LibraryArtLens.Host`
 closures: its rows, search state, selection, blocked state (loading, error, Plex not linked), style,
@@ -888,15 +890,17 @@ recolours its other embedded views (skin change, and in the classic browser a pu
 tiles in the old skin's colours), `frame` from the
 embedded content rect, `teardown()` in `prepareForUITeardown`, `isPresenting` in the draw path (draw
 nothing over the list area so a Cava backdrop shows through; classic fills its list background), and
-`mode` from the buttons. The lens hands keyboard focus to the art view on a mode change.
+`mode` from the buttons. The lens hands keyboard focus to the art view on a mode change, and from
+the old view to the new one when it swaps them (an album opening, Back out of it) — read before the
+old view is removed, since removing the first responder hands focus to the window.
 
 The **alphabet index stays beside Flow and Tiles**: the art view's `frame` is the list area less the
 alphabet strip (mode-independent, since the lens reuses `frame` on every mode change), the art
 branch of the draw path still draws the index, and the modern `listLayout()` drops the column
 header while `isPresenting`, so the index runs full height. A letter goes to
-`artLens.center(onFirst:)` — the first row of the level shown with that sort letter — before
-`scrollToLetter`'s list path; only at the root does it fall through to a local library's
-letter-offset paging (inside a container that would rebuild the rows out from under the focus).
+`artLens.jump(to:)` — the first row of the level shown with that sort letter — before
+`scrollToLetter`'s list path; only at the root does an unmatched letter fall through to a local
+library's letter-offset paging (inside a container that would rebuild the rows out from under the focus).
 
 - **Tree navigation**: a focus **stack** of the containers drilled into. `isArtItem` covers
   artists, albums, folders, tracks, movies, shows, seasons and episodes across every supported
@@ -943,7 +947,7 @@ subtitle, the browser's in-memory full-size art (`cachedArtwork`), and the row's
   click the centred cover to activate it. Artwork loads are throttled to covers near centre,
   ordered centre-out, and each index loads **at most once** (`attemptedIndices`).
 
-**`ArtAlbumView`** (an open album, `Windows/ModernLibraryBrowser/ArtAlbumView.swift`): whenever the
+**`ArtAlbumView`** (an open album, `Windows/LibraryArt/ArtAlbumView.swift`): whenever the
 top of the focus stack is an album the lens shows this instead of the mode's view, and Back returns
 to it. It is a flipped, `draw(_:)`-based view: ‹ Back, the cover (memory preview, else
 `previewImage`), title, a detail line it builds from the opener the lens hands it (the opener's
@@ -957,14 +961,14 @@ cover or title the album's, Esc goes back. The backdrop is the opener's (the art
 art, aspect-filled behind the scrolling content at 14 % — stronger washed out Classic's dimmed text
 on light skins.
 
-**`LibraryAlbumInfo`** (`LibraryAlbumInfo.swift`) is built once from `LibraryPlayable`, so neither
+**`LibraryAlbumInfo`** (`Windows/LibraryArt/LibraryAlbumInfo.swift`) is built once from `LibraryPlayable`, so neither
 browser has a per-source switch for it: Plex gives genre, label (`studio`), release date, length and
 `summary` from the album list; local albums genre and length from their tracks; Subsonic genre and
 length; Jellyfin and Emby genre and length, with the description fetched on open
 (`fetchOverview(itemId:)`, the single-item endpoint — the album list requests leave `Overview` out,
 and asking for it there would pull every description during preload).
 
-**`ArtTileGridView`** (Tiles, `Windows/ModernLibraryBrowser/ArtTileGridView.swift`):
+**`ArtTileGridView`** (Tiles, `Windows/LibraryArt/ArtTileGridView.swift`):
 - Tiles at least 120 pt wide, grown to share a row's spare width, with title and subtitle under
   each. Square, or 2:3 posters when every item on the level is one (`LibraryArtItem.artAspect`, set
   from each browser's `ItemType.isPoster`: movies, shows and seasons; episodes carry a landscape

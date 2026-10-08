@@ -325,6 +325,8 @@ final class LibraryArtLens<Row: LibraryArtRow> {
 
     private func installedView(_ kind: ViewKind) -> any LibraryArtView {
         if let view, viewKind == kind { return view }
+        // Read before the removal: removing the first responder hands focus to the window.
+        let movesFocus = self.view != nil && container?.window?.firstResponder === self.view
         view?.removeFromSuperview()
         let view: any LibraryArtView
         switch kind {
@@ -352,7 +354,6 @@ final class LibraryArtLens<Row: LibraryArtRow> {
         }
         view.frame = frame
         container?.addSubview(view)
-        let movesFocus = container?.window?.firstResponder === self.view
         self.view = view
         viewKind = kind
         if movesFocus { container?.window?.makeFirstResponder(view) }
@@ -365,11 +366,13 @@ final class LibraryArtLens<Row: LibraryArtRow> {
 
     // MARK: Navigation
 
-    /// Centre the first row of the level shown that `matches`; false when none does. The alphabet
-    /// index beside Flow and Tiles jumps this way.
-    @discardableResult
-    func center(onFirst matches: (Row) -> Bool) -> Bool {
-        guard let view, let index = levelRows.firstIndex(where: matches) else { return false }
+    /// The alphabet index beside Flow and Tiles: centre the first row of the level shown that
+    /// `matches`. False when the browser should take the letter instead — the list is showing, or
+    /// nothing at the root matches (a local library pages to the letter; inside a container that
+    /// would rebuild the rows out from under the focus).
+    func jump(to matches: (Row) -> Bool) -> Bool {
+        guard isPresenting else { return false }
+        guard let view, let index = levelRows.firstIndex(where: matches) else { return !focusStack.isEmpty }
         view.setCenterIndex(index + backOffset, animated: true)
         return true
     }

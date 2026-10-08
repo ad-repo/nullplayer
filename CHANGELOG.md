@@ -134,6 +134,8 @@
   Browser's Tiles view instead of square ones, so their artwork is no longer cropped.
 - **A–Z in Flow and Tiles** — the alphabet index on the right of the Library Browser now stays beside
   Flow and Tiles. Click a letter to jump to the first item starting with it.
+- **Keyboard on the album screen** — opening an album from Flow or Tiles with Return, or leaving it
+  with Esc, no longer needs a click before the arrow keys, Return and Esc work again.
 
 ## 0.31.4
 
