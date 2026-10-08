@@ -326,6 +326,20 @@ func scroll(_ x: Double, _ y: Double, count: Int, delta: Int32, precise: Bool, h
     }
 }
 
+/// A key press-release posted to one process, so it can land nowhere else.
+///
+/// System Events `key code` goes to whatever is frontmost and, from an agent shell, was dropped
+/// without an error (2026-10-08): the app logged no keyDown at all. Posting to the pid needs no
+/// frontmost check; the app delivers it to its own key window.
+func key(pid: Int, code: CGKeyCode, flags: CGEventFlags) {
+    for down in [true, false] {
+        let event = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: down)
+        event?.flags = flags
+        event?.postToPid(pid_t(pid))
+        usleep(60_000)
+    }
+}
+
 func pairs(_ label: String, _ raw: ArraySlice<String>, minimum: Int) -> [CGPoint] {
     let numbers = raw.compactMap(Double.init)
     guard numbers.count >= minimum, numbers.count % 2 == 0 else {
@@ -435,6 +449,15 @@ case "scroll":
     requireNullPlayer(at: CGPoint(x: x, y: y), verb: "scroll")
     scroll(x, y, count: count, delta: delta, precise: args.count > 6 && args[6] == "precise",
            horizontal: args.count > 7 && args[7] == "h")
+case "key":
+    let modifiers: [String: CGEventFlags] = ["shift": .maskShift, "option": .maskAlternate,
+                                            "command": .maskCommand, "control": .maskControl]
+    guard args.count >= 4, let pid = Int(args[2]), let code = CGKeyCode(args[3]),
+          let flags = args.dropFirst(4).reduce(Optional(CGEventFlags()), { acc, m in
+              modifiers[m].flatMap { acc?.union($0) } }) else {
+        fail("usage: winhelper key <pid> <keycode> [shift|option|command|control …]")
+    }
+    key(pid: pid, code: code, flags: flags)
 case "move":
     move(pairs("move", args.dropFirst(2), minimum: 2))
 case "drag":
@@ -444,6 +467,6 @@ case "drag":
     drag(points)
 default:
     FileHandle.standardError.write(
-        "usage: winhelper windows|screens|raise|park|capture|capture-all|capture-region|click|dblclick|clickdiff|dblclickdiff|scroll|move|drag\n".data(using: .utf8)!)
+        "usage: winhelper windows|screens|raise|park|capture|capture-all|capture-region|click|dblclick|clickdiff|dblclickdiff|scroll|key|move|drag\n".data(using: .utf8)!)
     exit(1)
 }

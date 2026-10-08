@@ -58,8 +58,8 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   `mediaPlayerStateChanged` comment; end-of-film handling keys off that pause.
 - **Windows → Video Player is inert until a video has been opened** — the controller is created on
   first play, and `WindowManager.toggleVideoPlayer` returns early while it is nil.
-- **A play call moves key focus to the picture** (`revealVideoOutput`): the free window takes it
-  itself, a `.wal` skin's video window takes it in `setAuxiliaryWindow`, and a `.wmz` skin window
+- **A play call moves key focus to the picture** (`revealVideoOutput`): the free window is meant
+  to take it itself (in Classic it does not, M28), a `.wal` skin's video window takes it in `setAuxiliaryWindow`, and a `.wmz` skin window
   takes it through `revealSkinSurface(_:switchingViews:activate:)`. Both skin paths go through
   `WindowManager.hostVideoOutputInSkin`. A `.wmz` video view that is not open yet is built in a
   `Task`, so `loadView` makes it key once it exists; focusing right after the reveal call would find
@@ -111,14 +111,19 @@ A drop on a Library Browser imports instead (`local-library` § *Video import*).
 
 ## Server progress reporting
 
-`VideoPlayerWindowController` sends pause, resume, position and stop to the reporter of whatever it
-has loaded (`PlexVideoPlaybackReporter`, `JellyfinVideoPlaybackReporter`,
-`EmbyVideoPlaybackReporter`); local files report nothing. Every `play(…)` first reports the previous
-item stopped (`finished: false`). A queued video carries only its id on the `Track`, so
-`play(plexTrack:)` / `play(jellyfinTrack:)` / `play(embyTrack:)` store that id
-(`currentPlexRatingKey`, `currentJellyfinItemId`, `currentEmbyItemId`) and start the reporter with
-`videoTrackDidStart`, taking episode-or-movie from `playHistoryContentType`. Every `play(…)` resets
-what is loaded through `clearLoadedContent()`, so a new field joins that one list. The three
+What the window has loaded is one value, `loadedVideo: LoadedVideo` (`Windows/VideoPlayer/LoadedVideo.swift`):
+a local file, a server movie or episode, or a queued server item by id. Its `reporter` is the
+server that hears pause, resume, position and stop (`VideoPlaybackReporting`, which
+`PlexVideoPlaybackReporter`, `JellyfinVideoPlaybackReporter` and `EmbyVideoPlaybackReporter`
+conform to); a local file has none and reports nothing. Its `playHistorySource` is the play
+event's source, and `performCast` switches on it to cast a server movie or episode as itself.
+Every `play(…)` starts with `endPreviousVideo()` (drop a stale cast, report the previous item
+stopped with `finished: false`, record its play) and loads through `startVideo(…)`, which sets
+`loadedVideo` in one assignment, so a new item cannot inherit the previous one's server. A new
+source is a new `LoadedVideo` case; the compiler then names every switch it must join. A queued
+video carries only its id on the `Track`, so `play(plexTrack:)` / `play(jellyfinTrack:)` /
+`play(embyTrack:)` load `.plexItem` / `.jellyfinItem` / `.embyItem` and start the reporter with
+`videoTrackDidStart`, taking episode-or-movie from `playHistoryContentType`. The three
 reporters share their rules: scrobble at 90% (audio
 uses 50%), only after 60 s of play, with a timeline update every 10 s. Each server's API details
 are in its own integration skill.
@@ -184,5 +189,13 @@ reaches the window only from a browser (`app-control/reference/launch-recipes.md
 - **Judge the picture against the file, not by eye.** Capture the window
   (`winhelper capture`) and compare it with `ffmpeg -ss <t> -i <file> -frames:v 1` from the same
   file; a talking-head frame shows a crop at a glance, a title card does not.
+- **Drive a film without the video keys.** In Classic the free window never becomes key (M28), so
+  Space / arrows / Esc posted to the app go to the Library Browser. Park the film off the main
+  window (`winhelper park <pid> "<film title>" 0 650`) and use the main window's transport, which
+  routes to the film while one plays: Play, Pause (pause and resume), Stop (`stop()`), a click on the
+  position bar (seek); Next skips 10 s. A row's double-click is the row path;
+  `winhelper key <pid> 36 option` on a selected row queues it (Add to Queue), and Play then takes
+  the track path. Measured 2026-10-08 (M17): the reporter lines of that sequence on Plex and Emby
+  matched before and after a refactor except for timing values and async completion order.
 - **Test fresh and reused windows separately.** A video played into the already-open window and one
   played after closing it go through different first-layout timing.
