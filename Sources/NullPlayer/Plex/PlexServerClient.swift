@@ -737,7 +737,6 @@ class PlexServerClient {
                     decoded = decoded.removingPercentEncoding ?? decoded
                 }
                 apiPath = decoded
-                NSLog("PlexServerClient: Decoded library URI to path: %@", apiPath)
             }
         }
         
@@ -764,7 +763,7 @@ class PlexServerClient {
             throw PlexServerError.invalidURL
         }
         
-        NSLog("PlexServerClient: Final smart playlist URL: %@", redactedURL(finalURL))
+        NSLog("PlexServerClient: Final smart playlist URL: %@", finalURL.redacted)
 
         var request = URLRequest(url: finalURL)
         for (key, value) in standardHeaders {

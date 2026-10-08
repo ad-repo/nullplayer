@@ -13,11 +13,11 @@ final class SensitiveURLRedactionTests: XCTestCase {
     }
 
     func testURLRedactedKeepsExistingPercentEscapes() throws {
-        let url = try XCTUnwrap(URL(string: "https://plex.example/library/sections/3/all?album.addedAt%3E%3E=-1mon&X-Plex-Token=secret-token"))
+        let url = try XCTUnwrap(URL(string: "https://plex.example/library/sections/3/all?album.addedAt%3E%3E=-1mon&title=AC%2FDC&q=a%2Bb&X-Plex-Token=secret-token"))
 
         XCTAssertEqual(
             url.redacted,
-            "https://plex.example/library/sections/3/all?album.addedAt%3E%3E=-1mon&X-Plex-Token=%3Credacted%3E"
+            "https://plex.example/library/sections/3/all?album.addedAt%3E%3E=-1mon&title=AC%2FDC&q=a%2Bb&X-Plex-Token=%3Credacted%3E"
         )
     }
 
