@@ -168,6 +168,12 @@ final class LibraryRowThumbnails {
         previews.object(forKey: source.key as NSString)?.image
     }
 
+    /// True once `source` has loaded: both renditions are stored together, so `previewImage(for:)`
+    /// reads the preview back from memory or disk instead of starting a load past the queue.
+    func hasLoaded(_ source: Source) -> Bool {
+        thumbnails.object(forKey: source.key as NSString) != nil
+    }
+
     /// Replace the queue with `sources`, highest priority first: one list pass's rows on screen,
     /// then the rows around them. Rows a scroll has left behind drop out on the next pass.
     func request(_ sources: [Source]) {

@@ -350,7 +350,9 @@ class ModernLibraryBrowserView: NSView {
 
     // Offline volume state (populated by loadLocalData)
     private var offlineWatchFolders: [WatchFolderSummary] = [] {
-        didSet { updateEmbeddedSubviewFrames() }   // the banner takes list height from Flow / Tiles
+        // The banner (local source, a folder offline) takes list height from Flow / Tiles; the
+        // source half re-lays out in `onSourceChanged`.
+        didSet { needsLayout = true }
     }
     private var offlineVolumePrefixes: Set<String> = []
 
@@ -6046,6 +6048,7 @@ class ModernLibraryBrowserView: NSView {
     
     private func onSourceChanged() {
         artLens.resetNavigation()
+        needsLayout = true   // the offline banner shows on the local source only
         invalidateActiveLoads()
         if browseMode == .folders && !isLocalSource {
             browseMode = .plists
@@ -9581,7 +9584,8 @@ class ModernLibraryBrowserView: NSView {
         let cacheKey = itemArtwork(for: item).cacheKey
         return LibraryArtItem(id: item.id, title: item.title, subtitle: item.info ?? "",
                               cachedArtwork: { cacheKey.flatMap { Self.artworkCache.object(forKey: NSString(string: $0)) } },
-                              art: rowThumbnailSource(for: item))
+                              art: rowThumbnailSource(for: item),
+                              artAspect: item.type.isPoster ? LibraryArtItem.posterAspect : 1)
     }
 
     /// Resolve a display item to its artwork cache key and async loader (reusing the per-source
@@ -10003,6 +10007,17 @@ private struct ModernDisplayItem {
                 return true
             default:
                 return isAlbumItem
+            }
+        }
+
+        /// Movies, shows and seasons: their art is a 2:3 poster. Episodes carry a landscape still.
+        var isPoster: Bool {
+            switch self {
+            case .movie, .show, .season, .localMovie, .localShow, .localSeason,
+                 .jellyfinMovie, .jellyfinShow, .jellyfinSeason, .embyMovie, .embyShow, .embySeason:
+                return true
+            default:
+                return false
             }
         }
 

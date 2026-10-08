@@ -2274,7 +2274,8 @@ class PlexBrowserView: NSView {
         let cacheKey = itemArtwork(for: item).cacheKey
         return LibraryArtItem(id: item.id, title: item.title, subtitle: item.info ?? "",
                               cachedArtwork: { cacheKey.flatMap { Self.artworkCache.object(forKey: NSString(string: $0)) } },
-                              art: rowThumbnailSource(for: item))
+                              art: rowThumbnailSource(for: item),
+                              artAspect: item.type.isPoster ? LibraryArtItem.posterAspect : 1)
     }
 
     /// Resolve a display item to its artwork cache key and async loader (reusing the per-source
@@ -13865,6 +13866,17 @@ private struct PlexDisplayItem {
                 return true
             default:
                 return isAlbumItem
+            }
+        }
+
+        /// Movies, shows and seasons: their art is a 2:3 poster. Episodes carry a landscape still.
+        var isPoster: Bool {
+            switch self {
+            case .movie, .show, .season, .localMovie, .localShow, .localSeason,
+                 .jellyfinMovie, .jellyfinShow, .jellyfinSeason, .embyMovie, .embyShow, .embySeason:
+                return true
+            default:
+                return false
             }
         }
 

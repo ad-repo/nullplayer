@@ -48,6 +48,10 @@ struct LibraryArtItem {
     /// 400 px preview through `LibraryRowThumbnails`, which shares its loads with the list rows.
     let art: LibraryRowThumbnails.Source?
     var isBack = false
+    /// The art's width over its height: 1 for covers, `posterAspect` for movies, shows and seasons.
+    var artAspect: CGFloat = 1
+
+    static let posterAspect: CGFloat = 2.0 / 3.0
 
     static let back = LibraryArtItem(id: "__art_back__", title: "‹ Back", subtitle: "",
                                      cachedArtwork: { nil }, art: nil, isBack: true)
@@ -301,10 +305,9 @@ final class LibraryArtLens<Row: LibraryArtRow> {
         let level = currentLevelRows(in: rows)
         levelRows = level
         if let album, let albumView = view as? ArtAlbumView {
-            // The container it was opened from (its artist) is the screen's backdrop.
+            // The container it was opened from: its artist, the header's name and the backdrop.
             let opener = focusStack.dropLast().last.flatMap { id in rows.first { $0.id == id } }
-            albumView.setAlbum(host.item(album), detail: albumDetail(album, trackCount: level.count, in: rows),
-                               info: host.albumInfo(album), backdrop: opener.map(host.item))
+            albumView.setAlbum(host.item(album), opener: opener.map(host.item), info: host.albumInfo(album))
         }
 
         let items = (focusStack.isEmpty ? [] : [LibraryArtItem.back]) + level.map(host.item)
@@ -318,15 +321,6 @@ final class LibraryArtLens<Row: LibraryArtRow> {
             view.setCenterIndex(idx + backOffset, animated: false)
         }
         updateVisibility()
-    }
-
-    /// The album header's second line: the artist (the container it was opened from), the album's
-    /// own detail (its year), and the track count.
-    private func albumDetail(_ album: Row, trackCount: Int, in rows: [Row]) -> String {
-        let artist = focusStack.dropLast().last.flatMap { id in rows.first { $0.id == id } }.map { host.item($0).title }
-        let tracks = trackCount == 1 ? "1 track" : "\(trackCount) tracks"
-        return [artist, host.item(album).subtitle, tracks].compactMap { $0 }.filter { !$0.isEmpty }
-            .joined(separator: " · ")
     }
 
     private func installedView(_ kind: ViewKind) -> any LibraryArtView {

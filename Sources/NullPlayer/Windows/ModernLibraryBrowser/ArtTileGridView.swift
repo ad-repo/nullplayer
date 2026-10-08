@@ -16,8 +16,10 @@ final class ArtTileGridView: NSView, LibraryArtView {
     /// The selected tile.
     private(set) var centerIndex = 0
 
-    /// Smallest tile side; tiles grow to share a row's spare width evenly.
+    /// Smallest tile width; tiles grow to share a row's spare width evenly.
     private let minTileSide: CGFloat = 120
+    /// Every tile's art width over height: posters when the whole level is posters, else square.
+    private var artAspect: CGFloat = 1
     private let gap: CGFloat = 12
     private let labelHeight: CGFloat = 34
 
@@ -50,6 +52,8 @@ final class ArtTileGridView: NSView, LibraryArtView {
         let previousId = items.indices.contains(centerIndex) ? items[centerIndex].id : nil
         if newItems.isEmpty || newItems.first?.id != items.first?.id { lastApproachingEndItemCount = nil }
         items = newItems
+        let aspects = Set(newItems.filter { !$0.isBack }.map(\.artAspect))
+        artAspect = aspects.count == 1 ? aspects.first! : 1
         removeAllTiles()
         if preservingCenter, let previousId, let kept = newItems.firstIndex(where: { $0.id == previousId }) {
             centerIndex = kept
@@ -71,16 +75,17 @@ final class ArtTileGridView: NSView, LibraryArtView {
 
     private var columns: Int { max(1, Int((bounds.width - gap) / (minTileSide + gap))) }
     private var tileSide: CGFloat { (bounds.width - gap * CGFloat(columns + 1)) / CGFloat(columns) }
-    private var rowHeight: CGFloat { tileSide + labelHeight + gap }
+    private var artHeight: CGFloat { tileSide / artAspect }
+    private var rowHeight: CGFloat { artHeight + labelHeight + gap }
     private var rowCount: Int { (items.count + columns - 1) / columns }
     private var maxScrollOffset: CGFloat { max(0, gap + CGFloat(rowCount) * rowHeight - bounds.height) }
 
-    /// A tile's art square in view coordinates (bottom-left origin).
+    /// A tile's art in view coordinates (bottom-left origin).
     private func artRect(for index: Int) -> CGRect {
         let column = index % columns, row = index / columns
         let top = gap + CGFloat(row) * rowHeight - scrollOffset
-        return CGRect(x: gap + CGFloat(column) * (tileSide + gap), y: bounds.height - top - tileSide,
-                      width: tileSide, height: tileSide)
+        return CGRect(x: gap + CGFloat(column) * (tileSide + gap), y: bounds.height - top - artHeight,
+                      width: tileSide, height: artHeight)
     }
 
     private var visibleRows: ClosedRange<Int>? {
@@ -157,7 +162,7 @@ final class ArtTileGridView: NSView, LibraryArtView {
         var wanted: [LibraryRowThumbnails.Source] = []
         for index in visible {
             guard let tile = tiles[index], !tile.hasImage, let source = items[index].art else { continue }
-            guard cache.thumbnail(for: source) != nil else { wanted.append(source); continue }
+            guard cache.hasLoaded(source) else { wanted.append(source); continue }
             let id = items[index].id
             guard resolving.insert(id).inserted else { continue }
             Task { [weak self] in

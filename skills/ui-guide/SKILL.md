@@ -938,10 +938,12 @@ subtitle, the browser's in-memory full-size art (`cachedArtwork`), and the row's
 **`ArtAlbumView`** (an open album, `Windows/ModernLibraryBrowser/ArtAlbumView.swift`): whenever the
 top of the focus stack is an album the lens shows this instead of the mode's view, and Back returns
 to it. It is a flipped, `draw(_:)`-based view: ‹ Back, the cover (memory preview, else
-`previewImage`), title, the lens's detail line (the opener's title — the artist — · the album's own
-subtitle, its year · track count), the facts line and **▶ Play** (plays the album), the description
-cut to three lines with **More** / **Less**, then the tracks (number, title, duration). Item 0 is
-‹ Back and the rest are the tracks, so it is driven like the other views: click selects,
+`previewImage`), title, a detail line it builds from the opener the lens hands it (the opener's
+title — the artist — · the album's own subtitle, its year · track count), the facts line and
+**▶ Play** (plays the album), the description cut to three lines with **More** / **Less** (measured
+once per text and width — text layout per track row was the cost), then the tracks (number, title,
+duration). Item 0 is always ‹ Back (an album is only ever drilled into) and the rest are the tracks,
+so it is driven like the other views: click selects,
 double-click or Return plays **that track alone**, right-click shows the track's row menu and on the
 cover or title the album's, Esc goes back. The backdrop is the opener's (the artist's) full-size
 art, aspect-filled behind the scrolling content at 14 % — stronger washed out Classic's dimmed text
@@ -955,15 +957,18 @@ length; Jellyfin and Emby genre and length, with the description fetched on open
 and asking for it there would pull every description during preload).
 
 **`ArtTileGridView`** (Tiles, `Windows/ModernLibraryBrowser/ArtTileGridView.swift`):
-- Square tiles at least 120 pt, grown to share a row's spare width, with title and subtitle under
-  each. Layer-backed and virtualised: only on-screen rows have `TileLayer`s; the view scrolls itself
+- Tiles at least 120 pt wide, grown to share a row's spare width, with title and subtitle under
+  each. Square, or 2:3 posters when every item on the level is one (`LibraryArtItem.artAspect`, set
+  from each browser's `ItemType.isPoster`: movies, shows and seasons; episodes carry a landscape
+  still and stay square). A mixed level (search results) stays square. Layer-backed and virtualised: only on-screen rows have `TileLayer`s; the view scrolls itself
   (no scroller). Click selects (`centerIndex` is the selection), double-click or Return activates,
   arrows move by one or by a row.
 - Art is the 400 px **preview** rendition from `LibraryRowThumbnails` (below), so tiles share loads,
   the 4-at-once queue and the disk cache with the list's row thumbnails: a new tile takes the
   memory preview (`cachedPreview`) or the browser's `cachedArtwork` synchronously; otherwise each
   layout pass requests the visible tiles (then a row either side) and redraws on
-  `didLoadNotification`, reading a loaded preview back with `previewImage(for:)`.
+  `didLoadNotification`, reading a loaded preview back with `previewImage(for:)` once
+  `hasLoaded(_:)` says both renditions are stored; the rest wait in the queue.
 
 ## Library browser list layout (both browsers)
 

@@ -4,7 +4,8 @@ import AppKit
 /// lines and a Play button, its description (three lines until **More**), then its tracks — over
 /// the artist's picture, dimmed, when it was opened from an artist. Click selects a track, double-click or Return plays it, right-click
 /// shows its row's menu; right-click on the cover or title shows the album's. Esc goes back.
-/// Item 0 is ‹ Back and the rest are the tracks, so the lens drives it like the other art views.
+/// Item 0 is ‹ Back (an album is always drilled into) and the rest are the tracks, so the lens
+/// drives it like the other art views.
 final class ArtAlbumView: NSView, LibraryArtView {
     var onActivate: ((Int) -> Void)?
     var onMenu: ((Int, NSEvent) -> Void)?
@@ -18,9 +19,12 @@ final class ArtAlbumView: NSView, LibraryArtView {
     private(set) var centerIndex = 0
 
     private var album: LibraryArtItem?
-    private var detail = ""
+    /// The container the album was opened from (its artist): named in the header, and the backdrop.
+    private var openerTitle: String?
     private var facts = ""
-    private var summary: String?
+    private var summary: String? { didSet { summaryMetrics = nil } }
+    /// The description measured at `width`; text layout is too slow to repeat per track row.
+    private var summaryMetrics: (width: CGFloat, full: CGFloat, collapsed: CGFloat)?
     private var summaryExpanded = false
     private var cover: CGImage?
     private var backdrop: CGImage?
@@ -46,10 +50,10 @@ final class ArtAlbumView: NSView, LibraryArtView {
 
     // MARK: Data
 
-    func setAlbum(_ album: LibraryArtItem, detail: String, info: LibraryAlbumInfo?, backdrop: LibraryArtItem?) {
-        self.detail = detail
+    func setAlbum(_ album: LibraryArtItem, opener: LibraryArtItem?, info: LibraryAlbumInfo?) {
+        openerTitle = opener?.title
         facts = info?.facts.joined(separator: " · ") ?? ""
-        setBackdrop(backdrop)
+        setBackdrop(opener)
         guard album.id != self.album?.id else { needsDisplay = true; return }
         self.album = album
         summary = info?.summary
@@ -93,19 +97,27 @@ final class ArtAlbumView: NSView, LibraryArtView {
     func setItems(_ newItems: [LibraryArtItem], preservingCenter: Bool) {
         let previousId = items.indices.contains(centerIndex) ? items[centerIndex].id : nil
         items = newItems
-        centerIndex = preservingCenter ? newItems.firstIndex { $0.id == previousId } ?? firstTrack : firstTrack
+        centerIndex = preservingCenter ? newItems.firstIndex { $0.id == previousId } ?? Self.firstTrack : Self.firstTrack
         if !preservingCenter { scrollOffset = 0 }
         needsDisplay = true
     }
 
     func setCenterIndex(_ index: Int, animated: Bool) {
-        guard items.indices.contains(firstTrack) else { return }
-        centerIndex = min(max(index, firstTrack), items.count - 1)
+        guard items.indices.contains(Self.firstTrack) else { return }
+        centerIndex = min(max(index, Self.firstTrack), items.count - 1)
         scrollToSelection()
         needsDisplay = true
     }
 
-    private var firstTrack: Int { items.first?.isBack == true ? 1 : 0 }
+    /// Item 0 is ‹ Back.
+    private static let firstTrack = 1
+
+    /// The header's second line: the artist, the album's own detail (its year), and the track count.
+    private var detail: String {
+        let count = max(0, items.count - Self.firstTrack)
+        return [openerTitle, album?.subtitle, count == 1 ? "1 track" : "\(count) tracks"]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
 
     // MARK: Geometry (flipped: y grows down, everything scrolls together)
 
@@ -124,35 +136,39 @@ final class ArtAlbumView: NSView, LibraryArtView {
     private var factsRect: CGRect { CGRect(x: textX, y: detailRect.maxY + 2, width: titleRect.width, height: 16) }
     private var playRect: CGRect { CGRect(x: textX, y: factsRect.maxY + 12, width: 84, height: 26) }
 
-    private let summaryFont = NSFont.systemFont(ofSize: 12)
-    private let collapsedSummaryLines: CGFloat = 3
+    private static let summaryFont = NSFont.systemFont(ofSize: 12)
+    /// Three lines until **More**.
+    private static let collapsedSummaryHeight = 3 * NSLayoutManager().defaultLineHeight(for: summaryFont).rounded(.up)
 
-    /// The description's full height at the view's width, and its collapsed height.
-    private func summaryHeights(_ summary: String) -> (full: CGFloat, collapsed: CGFloat) {
+    /// The description's full and collapsed heights at the view's width; nil without one.
+    private var summaryHeights: (full: CGFloat, collapsed: CGFloat)? {
+        guard let summary else { return nil }
+        let width = bounds.width - 2 * pad
+        if let metrics = summaryMetrics, metrics.width == width { return (metrics.full, metrics.collapsed) }
         let full = (summary as NSString).boundingRect(
-            with: CGSize(width: bounds.width - 2 * pad, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin], attributes: [.font: summaryFont]).height.rounded(.up)
-        let lineHeight = NSLayoutManager().defaultLineHeight(for: summaryFont).rounded(.up)
-        return (full, min(full, lineHeight * collapsedSummaryLines))
+            with: CGSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin], attributes: [.font: Self.summaryFont]).height.rounded(.up)
+        let collapsed = min(full, Self.collapsedSummaryHeight)
+        summaryMetrics = (width, full, collapsed)
+        return (full, collapsed)
     }
 
     /// Under the cover; nil without a description.
     private var summaryRect: CGRect? {
-        guard let summary else { return nil }
-        let heights = summaryHeights(summary)
+        guard let heights = summaryHeights else { return nil }
         return CGRect(x: pad, y: coverRect.maxY + 12, width: bounds.width - 2 * pad,
                       height: summaryExpanded ? heights.full : heights.collapsed)
     }
 
     /// More / Less, under the description; nil when it fits in three lines.
     private var moreRect: CGRect? {
-        guard let summary, let summaryRect, summaryHeights(summary).full > summaryHeights(summary).collapsed else { return nil }
+        guard let heights = summaryHeights, heights.full > heights.collapsed, let summaryRect else { return nil }
         return CGRect(x: pad, y: summaryRect.maxY + 2, width: 50, height: 16)
     }
 
     private func trackRect(_ index: Int) -> CGRect {
         let top = (moreRect ?? summaryRect ?? coverRect).maxY + 14
-        return CGRect(x: pad, y: top + CGFloat(index - firstTrack) * rowHeight,
+        return CGRect(x: pad, y: top + CGFloat(index - Self.firstTrack) * rowHeight,
                       width: bounds.width - 2 * pad, height: rowHeight)
     }
 
@@ -172,7 +188,7 @@ final class ArtAlbumView: NSView, LibraryArtView {
     }
 
     private func trackIndex(at point: CGPoint) -> Int? {
-        (firstTrack..<items.count).first { trackRect($0).contains(point) }
+        (Self.firstTrack..<items.count).first { trackRect($0).contains(point) }
     }
 
     // MARK: Drawing
@@ -206,7 +222,7 @@ final class ArtAlbumView: NSView, LibraryArtView {
             let paragraph = NSMutableParagraphStyle()
             paragraph.lineBreakMode = .byWordWrapping
             (summary as NSString).draw(with: summaryRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-                                       attributes: [.font: summaryFont, .foregroundColor: style.subtitleColor,
+                                       attributes: [.font: Self.summaryFont, .foregroundColor: style.subtitleColor,
                                                     .paragraphStyle: paragraph])
         }
         if let moreRect {
@@ -218,7 +234,7 @@ final class ArtAlbumView: NSView, LibraryArtView {
         text("▶ Play", in: playRect.insetBy(dx: 0, dy: 5), size: 12, weight: .semibold, color: style.titleColor,
              alignment: .center)
 
-        for index in firstTrack..<items.count {
+        for index in Self.firstTrack..<items.count {
             let row = trackRect(index)
             guard row.maxY >= dirtyRect.minY, row.minY <= dirtyRect.maxY else { continue }
             if index == centerIndex {
@@ -226,7 +242,7 @@ final class ArtAlbumView: NSView, LibraryArtView {
                 NSBezierPath(roundedRect: row, xRadius: 3, yRadius: 3).fill()
             }
             let textRow = row.insetBy(dx: 0, dy: 3)
-            text("\(index - firstTrack + 1)", in: CGRect(x: row.minX, y: textRow.minY, width: 24, height: textRow.height),
+            text("\(index - Self.firstTrack + 1)", in: CGRect(x: row.minX, y: textRow.minY, width: 24, height: textRow.height),
                  size: 12, weight: .regular, color: style.subtitleColor, alignment: .right)
             text(items[index].subtitle, in: CGRect(x: row.maxX - 56, y: textRow.minY, width: 50, height: textRow.height),
                  size: 12, weight: .regular, color: style.subtitleColor, alignment: .right)
@@ -274,7 +290,7 @@ final class ArtAlbumView: NSView, LibraryArtView {
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
-        if backRect.contains(point), items.first?.isBack == true {
+        if backRect.contains(point) {
             onActivate?(0)
         } else if playRect.contains(point) {
             onPlayAlbum?()
@@ -302,8 +318,8 @@ final class ArtAlbumView: NSView, LibraryArtView {
         switch event.keyCode {
         case 126: setCenterIndex(centerIndex - 1, animated: false) // up
         case 125: setCenterIndex(centerIndex + 1, animated: false) // down
-        case 36, 76: if items.indices.contains(centerIndex), centerIndex >= firstTrack { onActivate?(centerIndex) }
-        case 53: if items.first?.isBack == true { onActivate?(0) } // esc
+        case 36, 76: if items.indices.contains(centerIndex) { onActivate?(centerIndex) }
+        case 53: onActivate?(0) // esc
         default: super.keyDown(with: event)
         }
     }

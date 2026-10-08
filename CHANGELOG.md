@@ -130,6 +130,8 @@
   your library, where a rating had nowhere to be saved; dragging its cover moves the window
   instead. With **Hide Title Bars** on, and in Windows Media Player skins, the Art window now opens
   exactly the size of the cover, without a black band.
+- **Posters in Tiles** — movies, TV shows and seasons now show as tall poster tiles in the Library
+  Browser's Tiles view instead of square ones, so their artwork is no longer cropped.
 
 ## 0.31.4
 
