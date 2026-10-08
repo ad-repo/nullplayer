@@ -202,21 +202,8 @@ class CLIMode: NSObject, NSApplicationDelegate {
         let opts = CLIOptions.parse(CommandLine.arguments)
 
         // Signal handlers (must use DispatchSourceSignal — signal() requires C function pointers)
-        signal(SIGINT, SIG_IGN)
-        sigintSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
-        sigintSource?.setEventHandler { [weak self] in
-            guard let player = self?.player else { CLIPlayer.exitAndRestoreTerminal(code: 130) }
-            player.quit(code: 130)
-        }
-        sigintSource?.resume()
-
-        signal(SIGTERM, SIG_IGN)
-        sigtermSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-        sigtermSource?.setEventHandler { [weak self] in
-            guard let player = self?.player else { CLIPlayer.exitAndRestoreTerminal(code: 0) }
-            player.quit(code: 0)
-        }
-        sigtermSource?.resume()
+        sigintSource = installQuitSignal(SIGINT, code: 130)
+        sigtermSource = installQuitSignal(SIGTERM, code: 0)
 
         // Help
         if opts.help {
@@ -266,15 +253,13 @@ class CLIMode: NSObject, NSApplicationDelegate {
                         CLIPlayer.exitAndRestoreTerminal(code: 1)
                     }
                     cliPlayer.play(tracks: tracks)
+                    cliPlayer.castAudioIfRequested()
                 case .radioStation:
                     // RadioManager is already playing; CLIPlayer just monitors
                     cliPlayer.monitorRadio()
+                    cliPlayer.castAudioIfRequested()
                 case .video(let item):
                     try await cliPlayer.castVideo(item, castValue: opts.cast)
-                }
-                switch result {
-                case .tracks, .radioStation: cliPlayer.castAudioIfRequested()
-                case .video: break  // castVideo routes it
                 }
 
                 let kb = CLIKeyboard(player: cliPlayer)
@@ -285,5 +270,17 @@ class CLIMode: NSObject, NSApplicationDelegate {
                 CLIPlayer.exitAndRestoreTerminal(code: 1)
             }
         }
+    }
+
+    /// Routes a signal through `CLIPlayer.quit(code:)` so a cast device is stopped before exit.
+    private func installQuitSignal(_ sig: Int32, code: Int32) -> DispatchSourceSignal {
+        signal(sig, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+        source.setEventHandler { [weak self] in
+            guard let player = self?.player else { CLIPlayer.exitAndRestoreTerminal(code: code) }
+            player.quit(code: code)
+        }
+        source.resume()
+        return source
     }
 }

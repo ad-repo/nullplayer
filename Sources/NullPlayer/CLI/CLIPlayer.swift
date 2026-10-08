@@ -584,15 +584,13 @@ class CLIPlayer: AudioEngineDelegate {
         metadataTimer?.invalidate()
         stopVideoProgressTimer()
         removeVideoCastObservers()
-        if videoCastActive || castSessionActive {
-            Task { @MainActor in
+        Task { @MainActor in
+            if videoCastActive || castSessionActive {
                 await CastManager.shared.stopCasting()
-                Self.exitAndRestoreTerminal(code: code)
             }
-            return
+            audioEngine.stop()
+            Self.exitAndRestoreTerminal(code: code)
         }
-        audioEngine.stop()
-        Self.exitAndRestoreTerminal(code: code)
     }
 
     // MARK: - AudioEngineDelegate
