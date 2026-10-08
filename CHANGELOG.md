@@ -142,6 +142,8 @@
 - **The playlist keeps going after a video** — when a video in the playlist finished, the next
   track was loaded but never played, except in Windows Media Player skins. Every skin now moves on
   to the next track and, with Repeat off, stops at the end of the playlist instead of starting over.
+- **Picking a song while a video plays starts the song** — double-clicking an audio track while a
+  video was playing closed the video and then played nothing. The song now plays.
 
 ## 0.31.4
 

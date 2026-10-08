@@ -4583,16 +4583,7 @@ class AudioEngine {
             return nil
         }
 
-        // Stop local video playback before loading audio track.
-        // Skip when casting — cast() handles video→audio teardown via mismatch check,
-        // so calling stopVideo() here would race with castNewTrack.
-        // `isVideoContentActive`, not `isVideoActivePlayback`: the latter goes false at end of
-        // media, and a film that has run out still owns its window — it has to be torn down here
-        // or it is left hanging over the app while the new audio track plays.
-        if !AudioEngine.isHeadless && WindowManager.shared.isVideoContentActive && !isAnyCastingActive {
-            NSLog("loadTrack: Stopping video playback before loading audio track")
-            WindowManager.shared.stopVideo()
-        }
+        stopVideoBeforeLoadingAudio(logPrefix: "loadTrack")
 
         if route == .streaming {
             loadStreamingTrack(track)
@@ -4631,6 +4622,7 @@ class AudioEngine {
     private func loadLocalTrackForImmediatePlayback(_ track: Track, at index: Int, userInitiated: Bool = false) {
         NSLog("loadLocalTrackForImmediatePlayback: %@", track.url.lastPathComponent)
         clearCrossfadeDeclineLatch()
+        stopVideoBeforeLoadingAudio(logPrefix: "loadLocalTrackForImmediatePlayback")
 
         // Invalidate any prior deferred local opens; only latest selection should win.
         deferredLocalTrackLoadToken &+= 1
@@ -4640,16 +4632,6 @@ class AudioEngine {
         // Invalidate outgoing completion handlers now so stale EOF callbacks are ignored.
         playbackGeneration += 1
         let currentGeneration = playbackGeneration
-
-        // Stop local video playback before loading audio track.
-        // Skip when casting — cast() handles video→audio teardown via mismatch check.
-        // `isVideoContentActive`, not `isVideoActivePlayback`: the latter goes false at end of
-        // media, and a film that has run out still owns its window — it has to be torn down here
-        // or it is left hanging over the app while the new audio track plays.
-        if !AudioEngine.isHeadless && WindowManager.shared.isVideoContentActive && !isAnyCastingActive {
-            NSLog("loadLocalTrackForImmediatePlayback: Stopping video playback before loading audio track")
-            WindowManager.shared.stopVideo()
-        }
 
         guard rebuildAudioGraphIfDeferredAfterCast() else {
             deferPlaybackIntentUntilAudioGraphReady(.loadLocalImmediate(index: index))
@@ -4733,6 +4715,20 @@ class AudioEngine {
                 }
             }
         }
+    }
+
+    /// Closes a local film before an audio track loads in its place. Runs before the load takes
+    /// its `deferredLocalTrackLoadToken` and `playbackGeneration`: closing the film stops the
+    /// engine it paused (`videoPlaybackDidStop`), which bumps both, so a load that captured them
+    /// first dropped its own open and the audio never started (M14).
+    /// Skipped while casting — cast() handles video→audio teardown via its mismatch check, so
+    /// stopping here would race with castNewTrack. `isVideoContentActive`, not
+    /// `isVideoActivePlayback`: the latter goes false at end of media, and a film that has run out
+    /// still owns its window, which would be left hanging over the app while the audio plays.
+    private func stopVideoBeforeLoadingAudio(logPrefix: String) {
+        guard !AudioEngine.isHeadless && WindowManager.shared.isVideoContentActive && !isAnyCastingActive else { return }
+        NSLog("%@: Stopping video playback before loading audio track", logPrefix)
+        WindowManager.shared.stopVideo()
     }
 
     /// Returns the failure, or `nil` once the track is loaded.
