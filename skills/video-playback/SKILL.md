@@ -33,6 +33,12 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   `playbackGeneration` before stopping. Stopping a node fires its track's completion, and a live
   one ran as a natural end: double-clicking a video over playing audio loaded the next row behind
   the window. It also stops the crossfade node, which holds the audio after a completed fade.
+- **A playlist film's end advances by natural-end rules, in every family.**
+  `onVideoFinishedForPlaylist` calls `AudioEngine.videoTrackDidFinish` → `advanceAfterNaturalTrackEnd`,
+  never `next()`. By then `videoPlaybackDidReachEndOfMedia` has stopped the engine (paused when the
+  film started), and `next()` resumes only a `.playing` engine, so it loaded the next row and never
+  played it (M13). `next()` also wraps at the end of the playlist where a natural end stops.
+  Measured 2026-10-07 on Classic: `1-audio.m4a`, `2-video.mp4`, `3-audio.m4a` play through and stop.
 - **The vendored VLCKit reports the end of a film as `.paused`, never `.ended`** — see the
   `mediaPlayerStateChanged` comment; end-of-film handling keys off that pause.
 - **Windows → Video Player is inert until a video has been opened** — the controller is created on

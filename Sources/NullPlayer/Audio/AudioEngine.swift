@@ -5458,9 +5458,12 @@ class AudioEngine {
         advanceAfterNaturalTrackEnd()
     }
 
-    /// WMP video completion follows natural queue rules without audio reporters or gapless state.
-    func wmpVideoTrackDidFinish() {
+    /// A playlist video's natural end follows the same queue rules as an audio track's — never
+    /// `next()`, which wraps and only resumes a `.playing` engine — without audio reporters or
+    /// gapless state.
+    func videoTrackDidFinish() {
         guard currentTrack?.mediaType == .video else { return }
+        NSLog("AudioEngine: Video track finished, advancing playlist")
         advanceAfterNaturalTrackEnd()
     }
 

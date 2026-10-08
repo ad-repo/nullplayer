@@ -139,6 +139,9 @@
 - **Broken Plex smart playlists say why** — a Plex smart playlist built over a library that has
   since been deleted can't be loaded by the server itself. Playing one now says the library no
   longer exists and to recreate the playlist in Plex, instead of *Server error: 404*.
+- **The playlist keeps going after a video** — when a video in the playlist finished, the next
+  track was loaded but never played, except in Windows Media Player skins. Every skin now moves on
+  to the next track and, with Repeat off, stops at the end of the playlist instead of starting over.
 
 ## 0.31.4
 

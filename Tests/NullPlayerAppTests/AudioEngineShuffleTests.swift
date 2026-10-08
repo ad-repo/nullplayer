@@ -84,6 +84,36 @@ final class AudioEngineShuffleTests: XCTestCase {
         XCTAssertNil(engine.debugPeekNextShuffleIndexForPlayback())
     }
 
+    @MainActor
+    func testVideoEndExhaustsQueueWithoutWrappingWhenRepeatIsOff() {
+        // Cover both the reported one-video loop and the last entry of a longer queue.
+        for count in [1, 3] {
+            let engine = AudioEngine()
+            let tracks = (0..<count).map { index in
+                Track(url: URL(string: "https://example.invalid/video-\(index).mp4")!,
+                      title: "Video \(index)", mediaType: .video)
+            }
+            engine.setPlaylistTracks(tracks)
+            engine.repeatEnabled = false
+            engine.shuffleEnabled = false
+            // Select without starting a decoder or making a network request.
+            engine.debugSelectTrackForShuffleTesting(count - 1)
+
+            let exhausted = expectation(description: "Video queue of \(count) exhausts at EOF")
+            let observer = NotificationCenter.default.addObserver(
+                forName: .audioQueueDidExhaust, object: engine, queue: nil
+            ) { _ in exhausted.fulfill() }
+            defer { NotificationCenter.default.removeObserver(observer) }
+
+            engine.videoTrackDidFinish()
+
+            wait(for: [exhausted], timeout: 1)
+            XCTAssertEqual(engine.state, .stopped)
+            XCTAssertEqual(engine.currentIndex, count - 1, "EOF must not wrap to the first video")
+            XCTAssertEqual(engine.currentTrack?.id, tracks.last?.id)
+        }
+    }
+
     private func makePlaceholderTracks(count: Int) -> [Track] {
         let placeholderURL = URL(string: "about:blank")!
         return (0..<count).map { index in
