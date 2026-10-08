@@ -7127,31 +7127,6 @@ class PlexBrowserView: NSView {
             menu.addItem(radioItem)
             
         case .movie(let movie):
-            let playItem = NSMenuItem(title: "Play Movie", action: #selector(contextMenuPlayMovie(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = movie
-            menu.addItem(playItem)
-            
-            let playReplaceItem = NSMenuItem(title: "Play Movie and Replace Queue", action: #selector(contextMenuPlayMovieAndReplace(_:)), keyEquivalent: "")
-            playReplaceItem.target = self
-            playReplaceItem.representedObject = movie
-            menu.addItem(playReplaceItem)
-            
-            let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddMovieToPlaylist(_:)), keyEquivalent: "")
-            addItem.target = self
-            addItem.representedObject = movie
-            menu.addItem(addItem)
-            
-            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayMovieNext(_:)), keyEquivalent: "")
-            playNextItem.target = self
-            playNextItem.representedObject = movie
-            menu.addItem(playNextItem)
-            
-            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddMovieToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self
-            queueItem.representedObject = movie
-            menu.addItem(queueItem)
-            
             // Cast submenu (for video-capable devices)
             let videoDevices = CastManager.shared.videoCapableDevices
             if !videoDevices.isEmpty {
@@ -7200,27 +7175,7 @@ class PlexBrowserView: NSView {
             expandItem.target = self
             expandItem.representedObject = item
             menu.addItem(expandItem)
-            
-            let playReplaceItem = NSMenuItem(title: "Play Show and Replace Queue", action: #selector(contextMenuPlayShowAndReplace(_:)), keyEquivalent: "")
-            playReplaceItem.target = self
-            playReplaceItem.representedObject = show
-            menu.addItem(playReplaceItem)
-            
-            let addItem = NSMenuItem(title: "Add All Episodes to Playlist", action: #selector(contextMenuAddShowToPlaylist(_:)), keyEquivalent: "")
-            addItem.target = self
-            addItem.representedObject = show
-            menu.addItem(addItem)
-            
-            let playNextItem = NSMenuItem(title: "Play Show Next", action: #selector(contextMenuPlayShowNext(_:)), keyEquivalent: "")
-            playNextItem.target = self
-            playNextItem.representedObject = show
-            menu.addItem(playNextItem)
-            
-            let queueItem = NSMenuItem(title: "Add Show to Queue", action: #selector(contextMenuAddShowToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self
-            queueItem.representedObject = show
-            menu.addItem(queueItem)
-            
+
             // External links submenu
             menu.addItem(NSMenuItem.separator())
             
@@ -7250,53 +7205,8 @@ class PlexBrowserView: NSView {
             expandItem.target = self
             expandItem.representedObject = item
             menu.addItem(expandItem)
-            
-            let playReplaceItem = NSMenuItem(title: "Play Season and Replace Queue", action: #selector(contextMenuPlaySeasonAndReplace(_:)), keyEquivalent: "")
-            playReplaceItem.target = self
-            playReplaceItem.representedObject = season
-            menu.addItem(playReplaceItem)
-            
-            let addItem = NSMenuItem(title: "Add Season to Playlist", action: #selector(contextMenuAddSeasonToPlaylist(_:)), keyEquivalent: "")
-            addItem.target = self
-            addItem.representedObject = season
-            menu.addItem(addItem)
-            
-            let playNextItem = NSMenuItem(title: "Play Season Next", action: #selector(contextMenuPlaySeasonNext(_:)), keyEquivalent: "")
-            playNextItem.target = self
-            playNextItem.representedObject = season
-            menu.addItem(playNextItem)
-            
-            let queueItem = NSMenuItem(title: "Add Season to Queue", action: #selector(contextMenuAddSeasonToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self
-            queueItem.representedObject = season
-            menu.addItem(queueItem)
-            
+
         case .episode(let episode):
-            let playItem = NSMenuItem(title: "Play Episode", action: #selector(contextMenuPlayEpisode(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = episode
-            menu.addItem(playItem)
-            
-            let playReplaceItem = NSMenuItem(title: "Play Episode and Replace Queue", action: #selector(contextMenuPlayEpisodeAndReplace(_:)), keyEquivalent: "")
-            playReplaceItem.target = self
-            playReplaceItem.representedObject = episode
-            menu.addItem(playReplaceItem)
-            
-            let addItem = NSMenuItem(title: "Add to Playlist", action: #selector(contextMenuAddEpisodeToPlaylist(_:)), keyEquivalent: "")
-            addItem.target = self
-            addItem.representedObject = episode
-            menu.addItem(addItem)
-            
-            let playNextItem = NSMenuItem(title: "Play Next", action: #selector(contextMenuPlayEpisodeNext(_:)), keyEquivalent: "")
-            playNextItem.target = self
-            playNextItem.representedObject = episode
-            menu.addItem(playNextItem)
-            
-            let queueItem = NSMenuItem(title: "Add to Queue", action: #selector(contextMenuAddEpisodeToQueue(_:)), keyEquivalent: "")
-            queueItem.target = self
-            queueItem.representedObject = episode
-            menu.addItem(queueItem)
-            
             // Cast submenu (for video-capable devices)
             let videoDevicesEpisode = CastManager.shared.videoCapableDevices
             if !videoDevicesEpisode.isEmpty {
@@ -7449,12 +7359,6 @@ class PlexBrowserView: NSView {
             expandItem3.representedObject = item
             menu.addItem(expandItem3)
             
-        case .jellyfinMovie(let movie):
-            let playItem = NSMenuItem(title: "Play Movie", action: #selector(contextMenuPlayJellyfinMovie(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = movie
-            menu.addItem(playItem)
-            
         case .jellyfinShow:
             let expandItem4 = NSMenuItem(title: "Expand/Collapse", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem4.target = self
@@ -7467,24 +7371,14 @@ class PlexBrowserView: NSView {
             expandItem5.representedObject = item
             menu.addItem(expandItem5)
             
-        case .jellyfinEpisode(let episode):
-            let playItem = NSMenuItem(title: "Play Episode", action: #selector(contextMenuPlayJellyfinEpisode(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = episode
-            menu.addItem(playItem)
-
         case .embyArtist(let artist):
             let ex = NSMenuItem(title: expandedEmbyArtists.contains(artist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: ""); ex.target = self; ex.representedObject = item; menu.addItem(ex)
         case .embyPlaylist(let playlist):
             let ex = NSMenuItem(title: expandedEmbyPlaylists.contains(playlist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: ""); ex.target = self; ex.representedObject = item; menu.addItem(ex)
-        case .embyMovie(let movie):
-            let p = NSMenuItem(title: "Play Movie", action: #selector(contextMenuPlayEmbyMovie(_:)), keyEquivalent: ""); p.target = self; p.representedObject = movie; menu.addItem(p)
         case .embyShow:
             let ex = NSMenuItem(title: "Expand/Collapse", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: ""); ex.target = self; ex.representedObject = item; menu.addItem(ex)
         case .embySeason:
             let ex = NSMenuItem(title: "Expand/Collapse", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: ""); ex.target = self; ex.representedObject = item; menu.addItem(ex)
-        case .embyEpisode(let episode):
-            let p = NSMenuItem(title: "Play Episode", action: #selector(contextMenuPlayEmbyEpisode(_:)), keyEquivalent: ""); p.target = self; p.representedObject = episode; menu.addItem(p)
 
         case .plexPlaylist(let playlist):
             let expandItem = NSMenuItem(title: expandedPlexPlaylists.contains(playlist.id) ? "Collapse" : "Expand", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
@@ -7608,10 +7502,6 @@ class PlexBrowserView: NSView {
             menu.addItem(playItem)
             
         case .localMovie(let movie):
-            let playItem = NSMenuItem(title: "Play Movie", action: #selector(contextMenuActivate(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = item
-            menu.addItem(playItem)
             let videoDevices = CastManager.shared.videoCapableDevices
             if !videoDevices.isEmpty {
                 menu.addItem(NSMenuItem.separator())
@@ -7652,10 +7542,6 @@ class PlexBrowserView: NSView {
             menu.addItem(expandItem)
 
         case .localEpisode(let episode):
-            let playItem = NSMenuItem(title: "Play Episode", action: #selector(contextMenuActivate(_:)), keyEquivalent: "")
-            playItem.target = self
-            playItem.representedObject = item
-            menu.addItem(playItem)
             let videoDevices = CastManager.shared.videoCapableDevices
             if !videoDevices.isEmpty {
                 menu.addItem(NSMenuItem.separator())
@@ -7681,7 +7567,8 @@ class PlexBrowserView: NSView {
             editEpisodeItem.representedObject = episode
             menu.addItem(editEpisodeItem)
 
-        case .subsonicTrack, .subsonicAlbum, .jellyfinTrack, .jellyfinAlbum, .embyTrack, .embyAlbum, .localPlaylist, .localPlaylistTrack:
+        case .subsonicTrack, .subsonicAlbum, .jellyfinTrack, .jellyfinAlbum, .embyTrack, .embyAlbum, .localPlaylist, .localPlaylistTrack,
+             .jellyfinMovie, .jellyfinEpisode, .embyMovie, .embyEpisode:
             break
 
         case .header:
@@ -7810,47 +7697,6 @@ class PlexBrowserView: NSView {
         needsDisplay = true
     }
     
-    // MARK: - Play and Replace Queue Handlers
-
-    @objc private func contextMenuPlayMovieAndReplace(_ sender: NSMenuItem) {
-        guard let movie = sender.representedObject as? PlexMovie else { return }
-        // Movies use video player, just play the movie (video player handles its own queue)
-        playMovie(movie)
-    }
-    
-    @objc private func contextMenuPlayShowAndReplace(_ sender: NSMenuItem) {
-        guard let show = sender.representedObject as? PlexShow else { return }
-        Task { @MainActor in
-            do {
-                let seasons = try await PlexManager.shared.fetchSeasons(forShow: show)
-                var allEpisodes: [PlexEpisode] = []
-                for season in seasons {
-                    let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
-                    allEpisodes.append(contentsOf: episodes)
-                }
-                let tracks = PlexManager.shared.convertToTracks(allEpisodes)
-                if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
-            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    
-    @objc private func contextMenuPlaySeasonAndReplace(_ sender: NSMenuItem) {
-        guard let season = sender.representedObject as? PlexSeason else { return }
-        Task { @MainActor in
-            do {
-                let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
-                let tracks = PlexManager.shared.convertToTracks(episodes)
-                if !tracks.isEmpty { WindowManager.shared.audioEngine.loadTracks(tracks) }
-            } catch { NSLog("Failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    
-    @objc private func contextMenuPlayEpisodeAndReplace(_ sender: NSMenuItem) {
-        guard let episode = sender.representedObject as? PlexEpisode,
-              let track = PlexManager.shared.convertToTrack(episode) else { return }
-        WindowManager.shared.audioEngine.loadTracks([track])
-    }
-
     @objc private func contextMenuShowInFinder(_ sender: NSMenuItem) {
         guard let track = sender.representedObject as? LibraryTrack else { return }
         NSWorkspace.shared.activateFileViewerSelecting([track.url])
@@ -8226,154 +8072,11 @@ class PlexBrowserView: NSView {
 
     // MARK: - Plex Context Menu Actions
 
-    // MARK: - Plex Video Context Menu Actions
-    
-    @objc private func contextMenuAddMovieToPlaylist(_ sender: NSMenuItem) {
-        guard let movie = sender.representedObject as? PlexMovie,
-              let track = PlexManager.shared.convertToTrack(movie) else {
-            NSLog("Failed to convert movie to track for playlist")
-            return
-        }
-        WindowManager.shared.audioEngine.appendTracks([track])
-        NSLog("Added movie to playlist: %@", movie.title)
-    }
-    
-    @objc private func contextMenuAddEpisodeToPlaylist(_ sender: NSMenuItem) {
-        guard let episode = sender.representedObject as? PlexEpisode,
-              let track = PlexManager.shared.convertToTrack(episode) else {
-            NSLog("Failed to convert episode to track for playlist")
-            return
-        }
-        WindowManager.shared.audioEngine.appendTracks([track])
-        NSLog("Added episode to playlist: %@", episode.title)
-    }
-    
-    @objc private func contextMenuAddSeasonToPlaylist(_ sender: NSMenuItem) {
-        guard let season = sender.representedObject as? PlexSeason else { return }
-        Task { @MainActor in
-            do {
-                let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
-                let tracks = PlexManager.shared.convertToTracks(episodes)
-                if !tracks.isEmpty {
-                    WindowManager.shared.audioEngine.appendTracks(tracks)
-                    NSLog("Added %d episodes from season to playlist: %@", tracks.count, season.title)
-                }
-            } catch {
-                NSLog("Failed to add season to playlist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-            }
-        }
-    }
-    
-    @objc private func contextMenuAddShowToPlaylist(_ sender: NSMenuItem) {
-        guard let show = sender.representedObject as? PlexShow else { return }
-        Task { @MainActor in
-            do {
-                let seasons = try await PlexManager.shared.fetchSeasons(forShow: show)
-                var allTracks: [Track] = []
-                for season in seasons {
-                    let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
-                    let tracks = PlexManager.shared.convertToTracks(episodes)
-                    allTracks.append(contentsOf: tracks)
-                }
-                if !allTracks.isEmpty {
-                    WindowManager.shared.audioEngine.appendTracks(allTracks)
-                    NSLog("Added %d episodes from show to playlist: %@", allTracks.count, show.title)
-                }
-            } catch {
-                NSLog("Failed to add show to playlist: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-            }
-        }
-    }
-    
-    // MARK: - Play Next / Add to Queue Handlers
-
     @objc private func contextMenuRevealLocalFolderInFinder(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
-    // MARK: - Jellyfin Context Menu Actions
-    @objc private func contextMenuPlayMovieNext(_ sender: NSMenuItem) {
-        guard let movie = sender.representedObject as? PlexMovie,
-              let track = PlexManager.shared.convertToTrack(movie) else { return }
-        WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
-    }
-    @objc private func contextMenuAddMovieToQueue(_ sender: NSMenuItem) {
-        guard let movie = sender.representedObject as? PlexMovie,
-              let track = PlexManager.shared.convertToTrack(movie) else { return }
-        let engine = WindowManager.shared.audioEngine
-        let wasEmpty = engine.playlist.isEmpty
-        engine.appendTracks([track])
-        if wasEmpty { engine.playTrack(at: 0) }
-    }
-    @objc private func contextMenuPlayEpisodeNext(_ sender: NSMenuItem) {
-        guard let episode = sender.representedObject as? PlexEpisode,
-              let track = PlexManager.shared.convertToTrack(episode) else { return }
-        WindowManager.shared.audioEngine.insertTracksAfterCurrent([track])
-    }
-    @objc private func contextMenuAddEpisodeToQueue(_ sender: NSMenuItem) {
-        guard let episode = sender.representedObject as? PlexEpisode,
-              let track = PlexManager.shared.convertToTrack(episode) else { return }
-        let engine = WindowManager.shared.audioEngine
-        let wasEmpty = engine.playlist.isEmpty
-        engine.appendTracks([track])
-        if wasEmpty { engine.playTrack(at: 0) }
-    }
-    @objc private func contextMenuPlaySeasonNext(_ sender: NSMenuItem) {
-        guard let season = sender.representedObject as? PlexSeason else { return }
-        Task { @MainActor in
-            do {
-                let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
-                let tracks = PlexManager.shared.convertToTracks(episodes)
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent(tracks)
-            } catch { NSLog("Failed to play season next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    @objc private func contextMenuAddSeasonToQueue(_ sender: NSMenuItem) {
-        guard let season = sender.representedObject as? PlexSeason else { return }
-        Task { @MainActor in
-            do {
-                let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
-                let tracks = PlexManager.shared.convertToTracks(episodes)
-                let engine = WindowManager.shared.audioEngine
-                let wasEmpty = engine.playlist.isEmpty
-                engine.appendTracks(tracks)
-                if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add season to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    @objc private func contextMenuPlayShowNext(_ sender: NSMenuItem) {
-        guard let show = sender.representedObject as? PlexShow else { return }
-        Task { @MainActor in
-            do {
-                let seasons = try await PlexManager.shared.fetchSeasons(forShow: show)
-                var allTracks: [Track] = []
-                for season in seasons {
-                    let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
-                    allTracks.append(contentsOf: PlexManager.shared.convertToTracks(episodes))
-                }
-                WindowManager.shared.audioEngine.insertTracksAfterCurrent(allTracks)
-            } catch { NSLog("Failed to play show next: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    @objc private func contextMenuAddShowToQueue(_ sender: NSMenuItem) {
-        guard let show = sender.representedObject as? PlexShow else { return }
-        Task { @MainActor in
-            do {
-                let seasons = try await PlexManager.shared.fetchSeasons(forShow: show)
-                var allTracks: [Track] = []
-                for season in seasons {
-                    let episodes = try await PlexManager.shared.fetchEpisodes(forSeason: season)
-                    allTracks.append(contentsOf: PlexManager.shared.convertToTracks(episodes))
-                }
-                let engine = WindowManager.shared.audioEngine
-                let wasEmpty = engine.playlist.isEmpty
-                engine.appendTracks(allTracks)
-                if wasEmpty { engine.playTrack(at: 0) }
-            } catch { NSLog("Failed to add show to queue: %@", error.localizedDescription.redactingSensitiveURLQueryItems) }
-        }
-    }
-    
     // MARK: - Keyboard Shortcut Helpers
     
     /// Shift+Enter / Option+Enter: the menu's Play Next / Add to Queue on the selected row.
@@ -8404,7 +8107,7 @@ class PlexBrowserView: NSView {
         }
     }
 
-    /// The row as tracks for the play verbs; nil for a row with no basic play menu (radio, video,
+    /// The row as tracks for the play verbs; nil for a row with no basic play menu (radio,
     /// YouTube, containers that only expand).
     private func playable(for item: PlexDisplayItem) -> LibraryPlayable? {
         switch item.type {
@@ -8432,18 +8135,26 @@ class PlexBrowserView: NSView {
         case .embyAlbum(let a): return .embyAlbum(a)
         case .embyArtist(let a): return .embyArtist(a)
         case .embyPlaylist(let p): return .embyPlaylist(p)
-        case .movie, .show, .season, .episode, .header, .localMovie, .localShow, .localSeason, .localEpisode,
-             .jellyfinMovie, .jellyfinShow, .jellyfinSeason, .jellyfinEpisode,
-             .embyMovie, .embyShow, .embySeason, .embyEpisode,
-             .radioStation, .radioFolder, .youtubeChannel, .youtubeVideo, .plexRadioStation,
+        case .movie(let m): return .plexMovie(m)
+        case .episode(let e): return .plexEpisode(e)
+        case .season(let s): return .plexSeason(s)
+        case .show(let s): return .plexShow(s)
+        case .localMovie(let m): return .localMovie(m)
+        case .localEpisode(let e): return .localEpisodes([e])
+        case .localSeason(let s, _): return .localEpisodes(s.episodes)
+        case .localShow(let s): return .localEpisodes(s.seasons.flatMap(\.episodes))
+        case .jellyfinMovie(let m): return .jellyfinMovie(m)
+        case .jellyfinEpisode(let e): return .jellyfinEpisode(e)
+        case .jellyfinSeason(let s): return .jellyfinSeason(s)
+        case .jellyfinShow(let s): return .jellyfinShow(s)
+        case .embyMovie(let m): return .embyMovie(m)
+        case .embyEpisode(let e): return .embyEpisode(e)
+        case .embySeason(let s): return .embySeason(s)
+        case .embyShow(let s): return .embyShow(s)
+        case .header, .radioStation, .radioFolder, .youtubeChannel, .youtubeVideo, .plexRadioStation,
              .subsonicRadioStation, .jellyfinRadioStation, .embyRadioStation, .localRadioStation:
             return nil
         }
-    }
-
-    @objc private func contextMenuActivate(_ sender: NSMenuItem) {
-        guard let item = sender.representedObject as? PlexDisplayItem else { return }
-        handleDoubleClick(on: item)
     }
 
     // MARK: - Plex Radio Actions
@@ -8563,35 +8274,6 @@ class PlexBrowserView: NSView {
         toggleExpand(item)
     }
     
-    @objc private func contextMenuPlayMovie(_ sender: NSMenuItem) {
-        guard let movie = sender.representedObject as? PlexMovie else { return }
-        playMovie(movie)
-    }
-    
-    @objc private func contextMenuPlayEpisode(_ sender: NSMenuItem) {
-        guard let episode = sender.representedObject as? PlexEpisode else { return }
-        playEpisode(episode)
-    }
-    
-    @objc private func contextMenuPlayJellyfinMovie(_ sender: NSMenuItem) {
-        guard let movie = sender.representedObject as? JellyfinMovie else { return }
-        playJellyfinMovie(movie)
-    }
-    
-    @objc private func contextMenuPlayJellyfinEpisode(_ sender: NSMenuItem) {
-        guard let episode = sender.representedObject as? JellyfinEpisode else { return }
-        playJellyfinEpisode(episode)
-    }
-
-    @objc private func contextMenuPlayEmbyMovie(_ sender: NSMenuItem) {
-        guard let movie = sender.representedObject as? EmbyMovie else { return }
-        playEmbyMovie(movie)
-    }
-    @objc private func contextMenuPlayEmbyEpisode(_ sender: NSMenuItem) {
-        guard let episode = sender.representedObject as? EmbyEpisode else { return }
-        playEmbyEpisode(episode)
-    }
-
     @objc private func contextMenuCastMovie(_ sender: NSMenuItem) {
         NSLog("PlexBrowserView: contextMenuCastMovie ENTER")
         guard let (movie, device) = sender.representedObject as? (PlexMovie, CastDevice) else {

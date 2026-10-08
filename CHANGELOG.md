@@ -144,6 +144,12 @@
   to the next track and, with Repeat off, stops at the end of the playlist instead of starting over.
 - **Picking a song while a video plays starts the song** — double-clicking an audio track while a
   video was playing closed the video and then played nothing. The song now plays.
+- **Queue movies and TV like music** — right-clicking a movie, episode, season or show in the
+  Library Browser now offers **Play**, **Play and Replace Queue**, **Play Next** and **Add to
+  Queue**, as music rows do, for Plex, Jellyfin, Emby and local video; Shift+Enter and Option+Enter
+  work on them too. A season or show queues all of its episodes in order. Double-clicking a movie
+  or episode still plays it straight away. Plex's separate **Add to Playlist** items are gone: use
+  **Add to Queue**.
 
 ## 0.31.4
 

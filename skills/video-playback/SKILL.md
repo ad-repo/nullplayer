@@ -69,8 +69,15 @@ Every `WindowManager` entry point first offers the video to `routeToVideoCastIfN
 | Entry point | Called by | Notes |
 |---|---|---|
 | `playVideoTrack(_:)` | `AudioEngine.loadTrack` (any playlist video) | the **only** one that sets `onVideoFinishedForPlaylist`, so the only one whose end advances the playlist. Picks `play(plexTrack:)` / `play(jellyfinTrack:)` / `play(embyTrack:)` from `plexRatingKey` / `jellyfinId` / `embyId`, else `play(url:title:)` |
-| `showVideoPlayer(url:title:allowCasting:)` | local movie / episode rows in both browsers, Stream Ripper **Play Now** | `allowCasting: false` skips cast routing: Play Now opens the file just ripped in the local window even while a video cast runs |
-| `playMovie` / `playEpisode`, `playJellyfinMovie` / `playJellyfinEpisode`, `playEmbyMovie` / `playEmbyEpisode` | server movie / episode rows | load the server item into `play(movie:)`, `play(jellyfinMovie:)`, `play(embyEpisode:)` … so its reporter runs |
+| `showVideoPlayer(url:title:allowCasting:)` | double-click / Return on a local movie or episode row in both browsers, Stream Ripper **Play Now** | `allowCasting: false` skips cast routing: Play Now opens the file just ripped in the local window even while a video cast runs |
+| `playMovie` / `playEpisode`, `playJellyfinMovie` / `playJellyfinEpisode`, `playEmbyMovie` / `playEmbyEpisode` | double-click / Return on a server movie or episode row | load the server item into `play(movie:)`, `play(jellyfinMovie:)`, `play(embyEpisode:)` … so its reporter runs |
+
+**Library menu verbs.** A video row's **Play** · **Play and Replace Queue** · **Play Next** · **Add to
+Queue** (and Shift+Enter / Option+Enter) queue it through `TrackVerb` like a music row:
+`LibraryPlayable` turns a movie, episode, season or show of any source into `.video` tracks, which
+reach the window through `loadTrack` → `playVideoTrack`. That track path does less than the row
+path above: no Plex external subtitles, a Plex episode reported as a movie, no Jellyfin / Emby
+reporter start (M23).
 
 **Drag and drop.** The main window and the playlist each have their own drop handler, in Classic
 (`MainWindowView`, `PlaylistView`) and Modern (`ModernMainWindowView`, `ModernPlaylistView`). Each

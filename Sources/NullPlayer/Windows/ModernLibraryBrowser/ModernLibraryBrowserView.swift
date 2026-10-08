@@ -4825,7 +4825,8 @@ class ModernLibraryBrowserView: NSView {
             let rateItem = NSMenuItem(title: "Rate", action: nil, keyEquivalent: "")
             rateItem.submenu = buildRateSubmenuForEmby(itemId: song.id); menu.addItem(rateItem)
         case .subsonicArtist, .subsonicPlaylist, .jellyfinAlbum, .jellyfinArtist, .jellyfinPlaylist,
-             .embyAlbum, .embyArtist, .embyPlaylist, .plexPlaylist, .localPlaylist, .localPlaylistTrack:
+             .embyAlbum, .embyArtist, .embyPlaylist, .plexPlaylist, .localPlaylist, .localPlaylistTrack,
+             .movie, .episode, .jellyfinMovie, .jellyfinEpisode, .embyMovie, .embyEpisode:
             break
         case .radioStation(let station):
             let playItem = NSMenuItem(title: "Play Station", action: #selector(contextMenuPlayRadioStation(_:)), keyEquivalent: "")
@@ -4897,45 +4898,10 @@ class ModernLibraryBrowserView: NSView {
         case .plexRadioStation:
             let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayPlexRadioStation(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = item; menu.addItem(playItem)
-        case .movie(let movie):
-            let playItem = NSMenuItem(title: "Play Movie", action: #selector(contextMenuPlayMovie(_:)), keyEquivalent: "")
-            playItem.target = self; playItem.representedObject = movie; menu.addItem(playItem)
-        case .show:
+        case .show, .season, .jellyfinShow, .jellyfinSeason, .embyShow, .embySeason:
             let expandItem = NSMenuItem(title: "Expand/Collapse", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
             expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
-        case .season:
-            let expandItem = NSMenuItem(title: "Expand/Collapse", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
-            expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
-        case .episode(let episode):
-            let playItem = NSMenuItem(title: "Play Episode", action: #selector(contextMenuPlayEpisode(_:)), keyEquivalent: "")
-            playItem.target = self; playItem.representedObject = episode; menu.addItem(playItem)
-        case .jellyfinMovie(let movie):
-            let playItem = NSMenuItem(title: "Play Movie", action: #selector(contextMenuPlayJellyfinMovie(_:)), keyEquivalent: "")
-            playItem.target = self; playItem.representedObject = movie; menu.addItem(playItem)
-        case .jellyfinShow:
-            let expandItem = NSMenuItem(title: "Expand/Collapse", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
-            expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
-        case .jellyfinSeason:
-            let expandItem = NSMenuItem(title: "Expand/Collapse", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
-            expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
-        case .jellyfinEpisode(let episode):
-            let playItem = NSMenuItem(title: "Play Episode", action: #selector(contextMenuPlayJellyfinEpisode(_:)), keyEquivalent: "")
-            playItem.target = self; playItem.representedObject = episode; menu.addItem(playItem)
-        case .embyMovie(let movie):
-            let playItem = NSMenuItem(title: "Play Movie", action: #selector(contextMenuPlayEmbyMovie(_:)), keyEquivalent: "")
-            playItem.target = self; playItem.representedObject = movie; menu.addItem(playItem)
-        case .embyShow:
-            let expandItem = NSMenuItem(title: "Expand/Collapse", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
-            expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
-        case .embySeason:
-            let expandItem = NSMenuItem(title: "Expand/Collapse", action: #selector(contextMenuToggleExpand(_:)), keyEquivalent: "")
-            expandItem.target = self; expandItem.representedObject = item; menu.addItem(expandItem)
-        case .embyEpisode(let episode):
-            let playItem = NSMenuItem(title: "Play Episode", action: #selector(contextMenuPlayEmbyEpisode(_:)), keyEquivalent: "")
-            playItem.target = self; playItem.representedObject = episode; menu.addItem(playItem)
         case .localMovie(let movie):
-            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalMovie(_:)), keyEquivalent: "")
-            playItem.target = self; playItem.representedObject = movie; menu.addItem(playItem)
             let videoDevices = CastManager.shared.videoCapableDevices
             if !videoDevices.isEmpty {
                 menu.addItem(NSMenuItem.separator())
@@ -4971,8 +4937,6 @@ class ModernLibraryBrowserView: NSView {
             let removeSeasonItem = NSMenuItem(title: "Remove Season from Library", action: #selector(contextMenuRemoveLocalSeason(_:)), keyEquivalent: "")
             removeSeasonItem.target = self; removeSeasonItem.representedObject = SeasonRef(season: season, showTitle: showTitle); menu.addItem(removeSeasonItem)
         case .localEpisode(let episode):
-            let playItem = NSMenuItem(title: "Play", action: #selector(contextMenuPlayLocalEpisode(_:)), keyEquivalent: "")
-            playItem.target = self; playItem.representedObject = episode; menu.addItem(playItem)
             let videoDevices = CastManager.shared.videoCapableDevices
             if !videoDevices.isEmpty {
                 menu.addItem(NSMenuItem.separator())
@@ -5419,14 +5383,6 @@ class ModernLibraryBrowserView: NSView {
         var seen = Set<URL>()
         return items.filter { seen.insert($0[keyPath: keyPath]).inserted }
     }
-    @objc private func contextMenuPlayLocalMovie(_ sender: NSMenuItem) {
-        guard let movie = sender.representedObject as? LocalVideo else { return }
-        WindowManager.shared.showVideoPlayer(url: movie.url, title: movie.title)
-    }
-    @objc private func contextMenuPlayLocalEpisode(_ sender: NSMenuItem) {
-        guard let episode = sender.representedObject as? LocalEpisode else { return }
-        WindowManager.shared.showVideoPlayer(url: episode.url, title: episode.title)
-    }
     @objc private func contextMenuShowLocalVideoInFinder(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? NSURL as URL? else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])
@@ -5625,18 +5581,6 @@ class ModernLibraryBrowserView: NSView {
               case .localRadioStation(let radioType) = item.type else { return }
         playLocalRadioStation(radioType)
     }
-    @objc private func contextMenuPlayMovie(_ sender: NSMenuItem) {
-        guard let movie = sender.representedObject as? PlexMovie else { return }; playMovie(movie)
-    }
-    @objc private func contextMenuPlayEpisode(_ sender: NSMenuItem) {
-        guard let episode = sender.representedObject as? PlexEpisode else { return }; playEpisode(episode)
-    }
-    @objc private func contextMenuPlayJellyfinMovie(_ sender: NSMenuItem) {
-        guard let movie = sender.representedObject as? JellyfinMovie else { return }; playJellyfinMovie(movie)
-    }
-    @objc private func contextMenuPlayJellyfinEpisode(_ sender: NSMenuItem) {
-        guard let episode = sender.representedObject as? JellyfinEpisode else { return }; playJellyfinEpisode(episode)
-    }
     @objc private func contextMenuPlayEmbySongAlbum(_ sender: NSMenuItem) {
         guard let song = sender.representedObject as? EmbySong,
               let albumId = song.albumId else { return }
@@ -5661,12 +5605,6 @@ class ModernLibraryBrowserView: NSView {
             return EmbyManager.shared.convertToTracks(results.songs)
         }
     }
-    @objc private func contextMenuPlayEmbyMovie(_ sender: NSMenuItem) {
-        guard let movie = sender.representedObject as? EmbyMovie else { return }; playEmbyMovie(movie)
-    }
-    @objc private func contextMenuPlayEmbyEpisode(_ sender: NSMenuItem) {
-        guard let episode = sender.representedObject as? EmbyEpisode else { return }; playEmbyEpisode(episode)
-    }
 
     @objc private func contextMenuRevealLocalFolderInFinder(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
@@ -5682,7 +5620,7 @@ class ModernLibraryBrowserView: NSView {
         verb.run(playable)
     }
 
-    /// The row as tracks for the play verbs; nil for a row with no basic play menu (radio, video,
+    /// The row as tracks for the play verbs; nil for a row with no basic play menu (radio,
     /// YouTube, containers that only expand).
     private func playable(for item: ModernDisplayItem) -> LibraryPlayable? {
         switch item.type {
@@ -5710,10 +5648,23 @@ class ModernLibraryBrowserView: NSView {
         case .embyAlbum(let a): return .embyAlbum(a)
         case .embyArtist(let a): return .embyArtist(a)
         case .embyPlaylist(let p): return .embyPlaylist(p)
-        case .movie, .show, .season, .episode, .header, .localMovie, .localShow, .localSeason, .localEpisode,
-             .jellyfinMovie, .jellyfinShow, .jellyfinSeason, .jellyfinEpisode,
-             .embyMovie, .embyShow, .embySeason, .embyEpisode,
-             .radioStation, .radioFolder, .youtubeChannel, .youtubeVideo, .plexRadioStation,
+        case .movie(let m): return .plexMovie(m)
+        case .episode(let e): return .plexEpisode(e)
+        case .season(let s): return .plexSeason(s)
+        case .show(let s): return .plexShow(s)
+        case .localMovie(let m): return .localMovie(m)
+        case .localEpisode(let e): return .localEpisodes([e])
+        case .localSeason(let s, _): return .localEpisodes(s.episodes)
+        case .localShow(let s): return .localEpisodes(s.seasons.flatMap(\.episodes))
+        case .jellyfinMovie(let m): return .jellyfinMovie(m)
+        case .jellyfinEpisode(let e): return .jellyfinEpisode(e)
+        case .jellyfinSeason(let s): return .jellyfinSeason(s)
+        case .jellyfinShow(let s): return .jellyfinShow(s)
+        case .embyMovie(let m): return .embyMovie(m)
+        case .embyEpisode(let e): return .embyEpisode(e)
+        case .embySeason(let s): return .embySeason(s)
+        case .embyShow(let s): return .embyShow(s)
+        case .header, .radioStation, .radioFolder, .youtubeChannel, .youtubeVideo, .plexRadioStation,
              .subsonicRadioStation, .jellyfinRadioStation, .embyRadioStation, .localRadioStation:
             return nil
         }

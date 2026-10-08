@@ -30,8 +30,24 @@ enum LibraryPlayable {
     case embyAlbum(EmbyAlbum)
     case embyArtist(EmbyArtist)
     case embyPlaylist(EmbyPlaylist)
+    // Video rows queue as `.video` tracks, which `loadTrack` routes to the video player.
+    case localMovie(LocalVideo)
+    /// A local episode, season or show: its episodes, in order.
+    case localEpisodes([LocalEpisode])
+    case plexMovie(PlexMovie)
+    case plexEpisode(PlexEpisode)
+    case plexSeason(PlexSeason)
+    case plexShow(PlexShow)
+    case jellyfinMovie(JellyfinMovie)
+    case jellyfinEpisode(JellyfinEpisode)
+    case jellyfinSeason(JellyfinSeason)
+    case jellyfinShow(JellyfinShow)
+    case embyMovie(EmbyMovie)
+    case embyEpisode(EmbyEpisode)
+    case embySeason(EmbySeason)
+    case embyShow(EmbyShow)
 
-    /// An artist plays album by album, oldest first.
+    /// An artist plays album by album, oldest first; a show season by season.
     @MainActor
     func tracks() async throws -> [Track] {
         switch self {
@@ -111,6 +127,45 @@ enum LibraryPlayable {
         case .embyPlaylist(let playlist):
             let (_, songs) = try await EmbyManager.shared.serverClient?.fetchPlaylist(id: playlist.id) ?? (playlist, [])
             return EmbyManager.shared.convertToTracks(songs)
+
+        case .localMovie(let movie):
+            return [Track(url: movie.url, title: movie.title, duration: movie.duration > 0 ? movie.duration : nil, mediaType: .video)]
+        case .localEpisodes(let episodes):
+            return episodes.map { Track(url: $0.url, title: $0.title, artist: $0.showTitle,
+                                        duration: $0.duration > 0 ? $0.duration : nil, mediaType: .video) }
+
+        case .plexMovie(let movie):
+            return PlexManager.shared.convertToTrack(movie).map { [$0] } ?? []
+        case .plexEpisode(let episode):
+            return PlexManager.shared.convertToTrack(episode).map { [$0] } ?? []
+        case .plexSeason(let season):
+            return PlexManager.shared.convertToTracks(try await PlexManager.shared.fetchEpisodes(forSeason: season))
+        case .plexShow(let show):
+            return try await Self.concatenated(try await PlexManager.shared.fetchSeasons(forShow: show)) {
+                try await LibraryPlayable.plexSeason($0).tracks()
+            }
+
+        case .jellyfinMovie(let movie):
+            return JellyfinManager.shared.convertToTrack(movie).map { [$0] } ?? []
+        case .jellyfinEpisode(let episode):
+            return JellyfinManager.shared.convertToTrack(episode).map { [$0] } ?? []
+        case .jellyfinSeason(let season):
+            return try await JellyfinManager.shared.fetchEpisodes(forSeason: season).compactMap(JellyfinManager.shared.convertToTrack)
+        case .jellyfinShow(let show):
+            return try await Self.concatenated(try await JellyfinManager.shared.fetchSeasons(forShow: show)) {
+                try await LibraryPlayable.jellyfinSeason($0).tracks()
+            }
+
+        case .embyMovie(let movie):
+            return EmbyManager.shared.convertToTrack(movie).map { [$0] } ?? []
+        case .embyEpisode(let episode):
+            return EmbyManager.shared.convertToTrack(episode).map { [$0] } ?? []
+        case .embySeason(let season):
+            return try await EmbyManager.shared.fetchEpisodes(forSeason: season).compactMap(EmbyManager.shared.convertToTrack)
+        case .embyShow(let show):
+            return try await Self.concatenated(try await EmbyManager.shared.fetchSeasons(forShow: show)) {
+                try await LibraryPlayable.embySeason($0).tracks()
+            }
         }
     }
 
@@ -123,8 +178,14 @@ enum LibraryPlayable {
     @MainActor
     private static func artistTracks<A>(_ albums: [A], year: KeyPath<A, Int?>,
                                         tracks: (A) async throws -> [Track]) async throws -> [Track] {
+        try await concatenated(oldestFirst(albums, year: year), tracks)
+    }
+
+    /// Each container's tracks in turn.
+    @MainActor
+    private static func concatenated<C>(_ containers: [C], _ tracks: (C) async throws -> [Track]) async throws -> [Track] {
         var result: [Track] = []
-        for album in oldestFirst(albums, year: year) { result.append(contentsOf: try await tracks(album)) }
+        for container in containers { result.append(contentsOf: try await tracks(container)) }
         return result
     }
 
