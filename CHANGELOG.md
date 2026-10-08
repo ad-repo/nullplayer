@@ -160,6 +160,9 @@
   twice ("Adults - Adults - S01E02 - Spitroast"), and a queued Plex movie was prefixed with its
   studio ("Paramount Pictures - Airplane!"). They now read "Adults - S01E02 - Spitroast" and
   "Airplane!", as when you double-click them.
+- **A local song after a stream reads as playing** — starting a local file while a radio station
+  or server track was streaming left the player stopped, its clock at 0:00, while the song played.
+  It now shows the song playing.
 
 ## 0.31.4
 

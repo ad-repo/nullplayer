@@ -17,6 +17,12 @@ Everything here then operates on the binary it produced:
 BIN=.build/arm64-apple-macosx/debug/NullPlayer     # Intel: .build/x86_64-apple-macosx/debug/…
 ```
 
+That path belongs to the native build system, which the scripts pin (`scripts/lib/swiftpm.sh`). A
+bare `swift build` or `swift test` uses the toolchain's default, which on Swift 6.4+ writes to
+`.build/out/Products/Debug/` instead, so `BIN` silently keeps naming the last script-built binary
+(2026-10-08: after a bare `swift build`, `BIN` was older than the edit under test). To rebuild `BIN` without
+launching the GUI: `source scripts/lib/swiftpm.sh && swift build ${SWIFTPM_ARGS[@]+"${SWIFTPM_ARGS[@]}"}`.
+
 **Never invoke the installed app.** Not `nullplayer`, not `open -a NullPlayer`, not
 `/Applications/NullPlayer.app/Contents/MacOS/NullPlayer`, not `activate application "NullPlayer"`.
 Its version is unknown, it is not what you changed, and a clean result from it is worthless.

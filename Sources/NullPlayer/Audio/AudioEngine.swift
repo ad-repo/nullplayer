@@ -2701,17 +2701,16 @@ class AudioEngine {
         clearSpectrum()
     }
 
-    /// Stops the active pipeline's primary player and both crossfade players. The generation moves
+    /// Stops both pipelines' primary players and both crossfade players, so no local audio is left
+    /// running whichever pipeline was active; stopping the idle one is a no-op. The generation moves
     /// first: stopping a node fires its track's completion, which would otherwise run as a natural
     /// end and advance the playlist (a video double-clicked over playing audio loaded the next row).
-    /// `stopLocalForCasting` is the stronger variant: it stops both pipelines' primaries.
+    /// A streaming stop needs no guard: `AudioPlayer.stop()` records `.userAction` before its finish
+    /// callback, and `StreamingAudioPlayer` forwards only `.eof` / `.none` as an end of stream.
     private func haltAudioOutput() {
         playbackGeneration += 1
-        if isStreamingPlayback {
-            streamingPlayer?.stop()
-        } else {
-            playerNode.stop()
-        }
+        streamingPlayer?.stop()
+        playerNode.stop()
         resetLocalCrossfadeStateForDirectPlayback()
     }
 
@@ -2773,30 +2772,7 @@ class AudioEngine {
         playbackStartDate = nil
         suspendedLocalPlaybackClockForSleep = false
 
-        // Invalidate pending completion handlers so stale callbacks can't restart local flow
-        playbackGeneration += 1
-
-        // Force-stop any in-progress crossfade before casting handoff.
-        // This avoids mixed local+cast playback when crossfade players are active.
-        resetLocalCrossfadeStateForDirectPlayback()
-
-        // Fully stop ALL local playback paths (primary + crossfade, local + streaming).
-        // This ensures no local audio leaks while cast playback is active.
-        //
-        // Set flag before stopping the streaming player. AudioStreaming fires an EOF callback
-        // when stop() is called (even for intentional stops), which would trigger
-        // RadioManager.streamDidDisconnect → scheduleReconnect. That reconnect can fire
-        // while the Sonos session is still connecting (isCastingActive is still false),
-        // causing loadTracks to restart local radio while Sonos also plays the stream.
-        isLoadingNewStreamingTrack = true
-        streamingPlayer?.stop()
-        playerNode.stop()
-
-        // Clear the flag after a brief delay (enough for the EOF callback to have fired)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.isLoadingNewStreamingTrack = false
-        }
-        
+        haltAudioOutput()
         state = .stopped
         stopTimeUpdates()
         
@@ -6863,7 +6839,11 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
                 return
             }
             streamingPlaybackConfirmed = false
-            self.state = .stopped
+            // The player reports a stop on a later main-queue turn than the `stop()` that caused
+            // it. By then a local track or a film may own playback (`isStreamingPlayback` is
+            // cleared), and the stream's stop is not the engine's state: switching from a stream
+            // to a local file left the engine stopped while the file played.
+            if isStreamingPlayback { self.state = .stopped }
             isSeekingStreaming = false
             // Cancel any pending reset work item
             streamingSeekResetWorkItem?.cancel()

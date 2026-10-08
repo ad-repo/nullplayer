@@ -148,6 +148,15 @@ func streamingPlayerDidFinishPlaying() {
 }
 ```
 
+The flag covers stream → stream only. **An explicit `stop()` needs no guard:** the vendored
+`AudioPlayer.stop()` records `.userAction` before its finish callback runs, and
+`StreamingAudioPlayer` forwards only `.eof` / `.none` as an end of stream, so Stop, video routing
+and the cast handoff all share `haltAudioOutput()`, which stops both pipelines' players with no
+flag (measured 2026-10-08, radio cast to Sonos: `reason: userAction`, no reconnect). **The
+`.stopped` state arrives a main-queue turn after the `stop()`**, so leaving a stream for a local
+file or a film, it lands after the new playback set its own state; `streamingPlayerDidChangeState`
+applies it only while `isStreamingPlayback` (`AudioEngineStreamStopTests`).
+
 ### NAS Responsiveness for Local Track Switches
 
 See `skills/local-library/SKILL.md` — NAS Responsiveness section.
@@ -537,7 +546,7 @@ Route-change graph rebuilds catch Objective-C exceptions from disconnect/connect
 
 Local graph recovery gates only playback paths that use the local graph. Streaming renders through AudioStreaming's own engine and EQ, so `play()`'s streaming branch and `loadStreamingTrack` are deliberately ungated — a local graph awaiting replacement must never block a stream.
 
-Casting stops the local player node (`stopLocalForCasting()`), which discards everything scheduled on it. When a cast ends, `stopCastPlayback()` leaves the local file where Stop leaves it — position 0, file queued again via `resetStoppedTransportToStart`, which Stop (`stopLocalOnly`) shares — because `play()` sees `audioFile` still set, skips the reload, and would otherwise run an empty node: the clock advances, the output device runs, and nothing is heard (`AudioEngineCastHandoffTests`). It stops the node before re-queueing — a Stop pressed during the cast (Sonos soft stop, or Chromecast Stop, which also ends the cast) already queued the file through `stopLocalOnly`, and a second copy would play the file twice. A track picked during the cast replaces only `currentIndex`/`currentTrack`, never `audioFile`, so when `audioFile.url` is not the current track's the file is dropped instead, and `play()`'s pipeline-reload check loads the track on screen. Every local schedule of the current track — load, seek, Stop, Stop Casting, graph rebuild — goes through `scheduleLocalFile(_:fromTrackPosition:generation:)`, which takes a position within the track and adds the cue track's `cueStartOffset`, so none can start a cue track at the file's first track (`testReplacementReschedulesCueTrackAtItsOffset`). Position 0 schedules the whole file; a later start uses a segment, whose frame count is 32-bit.
+Casting stops the local players (`stopLocalForCasting()` → `haltAudioOutput()`), which discards everything scheduled on it. When a cast ends, `stopCastPlayback()` leaves the local file where Stop leaves it — position 0, file queued again via `resetStoppedTransportToStart`, which Stop (`stopLocalOnly`) shares — because `play()` sees `audioFile` still set, skips the reload, and would otherwise run an empty node: the clock advances, the output device runs, and nothing is heard (`AudioEngineCastHandoffTests`). It stops the node before re-queueing — a Stop pressed during the cast (Sonos soft stop, or Chromecast Stop, which also ends the cast) already queued the file through `stopLocalOnly`, and a second copy would play the file twice. A track picked during the cast replaces only `currentIndex`/`currentTrack`, never `audioFile`, so when `audioFile.url` is not the current track's the file is dropped instead, and `play()`'s pipeline-reload check loads the track on screen. Every local schedule of the current track — load, seek, Stop, Stop Casting, graph rebuild — goes through `scheduleLocalFile(_:fromTrackPosition:generation:)`, which takes a position within the track and adds the cue track's `cueStartOffset`, so none can start a cue track at the file's first track (`testReplacementReschedulesCueTrackAtItsOffset`). Position 0 schedules the whole file; a later start uses a segment, whose frame count is 32-bit.
 
 A configuration change during streaming leaves the local engine paused and does **not** restart it: streaming renders through AudioStreaming's own engine, the spectrum tap is not on the local mixer while streaming, and the next local `play()` starts the engine itself. The local graph is still reconnected so it is ready when playback returns to a file.
 
