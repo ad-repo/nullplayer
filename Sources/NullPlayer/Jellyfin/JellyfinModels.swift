@@ -35,20 +35,22 @@ struct JellyfinServerCredentials: Codable {
 // MARK: - Library Content
 
 /// An artist in a Jellyfin music library
-struct JellyfinArtist: Identifiable, Equatable {
+struct JellyfinArtist: Identifiable, Equatable, AlbumCountedArtist {
     let id: String           // Jellyfin uses UUID strings
     let name: String
-    let albumCount: Int
+    var albumCount: Int
+    let genre: String?
     let imageTag: String?    // For artwork URL construction
     let isFavorite: Bool
 }
 
 /// An album in a Jellyfin music library
-struct JellyfinAlbum: Identifiable, Equatable {
+struct JellyfinAlbum: Identifiable, Equatable, AlbumArtistCredited {
     let id: String
     let name: String
     let artist: String?
     let artistId: String?
+    let albumArtistIds: [String]
     let year: Int?
     let genre: String?
     let imageTag: String?
@@ -288,7 +290,8 @@ struct JellyfinItemDTO: Decodable {
         JellyfinArtist(
             id: Id,
             name: Name,
-            albumCount: ChildCount ?? 0,
+            albumCount: 0,  // filled in by `countingAlbums`: an artist's ChildCount is its song count
+            genre: Genres?.first,
             imageTag: ImageTags?["Primary"],
             isFavorite: UserData?.IsFavorite ?? false
         )
@@ -307,6 +310,7 @@ struct JellyfinItemDTO: Decodable {
             name: Name,
             artist: AlbumArtist ?? AlbumArtists?.first?.Name,
             artistId: AlbumArtists?.first?.Id,
+            albumArtistIds: AlbumArtists?.map(\.Id) ?? [],
             year: ProductionYear,
             genre: Genres?.first,
             imageTag: ImageTags?["Primary"],

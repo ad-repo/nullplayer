@@ -2228,7 +2228,7 @@ class ModernLibraryBrowserView: NSView {
         }
 
         if let header = layout.header {
-            drawColumnHeaders(in: context, rect: header.rect, columns: header.columns, skin: skin)
+            drawColumnHeaders(in: context, header: header, skin: skin)
             // Fill the header-row gap above the alphabet index (and scrollbar) so it
             // matches the column-header band instead of showing the panel background.
             let gapRect = NSRect(x: header.rect.maxX, y: header.rect.minY,
@@ -2290,11 +2290,10 @@ class ModernLibraryBrowserView: NSView {
                 context.fill(itemRect)
             }
 
-            // Check for column rendering
-            if let itemColumns = columnsForItem(item) {
+            if let row = rowColumns(for: item, header: layout.header) {
                 let indent = CGFloat(item.indentLevel) * 16
-                drawColumnRow(item: item, columns: itemColumns, in: context, rect: itemRect,
-                             isSelected: isSelected, skin: skin, indent: indent)
+                drawColumnRow(item: item, columns: row.columns, group: row.group,
+                              in: context, rect: itemRect, isSelected: isSelected, skin: skin, indent: indent)
             } else {
                 // Simple list rendering
                 let indent = CGFloat(item.indentLevel) * 16
@@ -2380,7 +2379,8 @@ class ModernLibraryBrowserView: NSView {
     
     // MARK: - Column Headers
     
-    private func drawColumnHeaders(in context: CGContext, rect: NSRect, columns: [ModernBrowserColumn], skin: ModernSkin) {
+    private func drawColumnHeaders(in context: CGContext, header: ListLayout.Header, skin: ModernSkin) {
+        let rect = header.rect, columns = header.columns, group = header.group
         context.saveGState()
         context.clip(to: rect)
         
@@ -2393,7 +2393,6 @@ class ModernLibraryBrowserView: NSView {
         let separatorColor = skin.textDimColor.withAlphaComponent(0.2)
         
         var x = rect.minX + 4 - horizontalScrollOffset
-        let group = currentColumnGroup()
         for (index, column) in columns.enumerated() {
             let width = widthForColumn(column, availableWidth: rect.width, columns: columns, group: group)
             let isSortColumn = activeColumnSortId == column.id
@@ -2442,24 +2441,26 @@ class ModernLibraryBrowserView: NSView {
     
     // MARK: - Column Row Drawing
     
-    private func drawColumnRow(item: ModernDisplayItem, columns: [ModernBrowserColumn], in context: CGContext,
-                               rect: NSRect, isSelected: Bool, skin: ModernSkin, indent: CGFloat = 0) {
-        let totalWidth = rect.width - indent
+    private func drawColumnRow(item: ModernDisplayItem, columns: [ModernBrowserColumn], group: LibraryColumnVisibilityGroup?,
+                               in context: CGContext, rect: NSRect, isSelected: Bool, skin: ModernSkin, indent: CGFloat = 0) {
+        let totalWidth = rect.width
         let textColor = isSelected ? (isMetalRenderStyle ? skin.textColor : skin.accentColor) : skin.textColor
         let dimColor = isSelected ? (isMetalRenderStyle ? skin.textColor : skin.accentColor) : skin.textDimColor
         let font = skin.scaledSystemFont(size: 8)
         let smallFont = skin.scaledSystemFont(size: 7.2)
         
-        var x = rect.minX + indent + 4 - horizontalScrollOffset
-        let group = columnGroup(for: item)
+        var columnX = rect.minX + 4 - horizontalScrollOffset
         let hasArtColumn = columns.contains { $0.id == "thumbnail" }
         for column in columns {
-            let width = widthForColumn(column, availableWidth: totalWidth, columns: columns, group: group)
+            let columnWidth = widthForColumn(column, availableWidth: totalWidth, columns: columns, group: group)
+            defer { columnX += columnWidth }
+            // A child row indents inside its Title cell only, so every other cell stays under its heading.
+            let inset = column.id == "title" ? indent : 0
+            let x = columnX + inset, width = columnWidth - inset
             if column.id == "thumbnail" {
                 if let thumbnail = rowThumbnailSource(for: item) {
                     rowThumbnails.draw(thumbnail, in: context, at: x + 4, rowRect: rect, side: min(width - 8, rect.height - 2))
                 }
-                x += width
                 continue
             }
             let value = column.id == "title" ? item.shownTitle : item.columnValue(for: column)
@@ -2517,8 +2518,6 @@ class ModernLibraryBrowserView: NSView {
                     context: context
                 )
             }
-            
-            x += width
         }
     }
     
@@ -2702,6 +2701,8 @@ class ModernLibraryBrowserView: NSView {
         struct Header {
             let rect: NSRect
             let columns: [ModernBrowserColumn]
+            /// The group the columns' widths are keyed by; nil for radio's fixed columns.
+            let group: LibraryColumnVisibilityGroup?
         }
     }
 
@@ -2717,7 +2718,8 @@ class ModernLibraryBrowserView: NSView {
         let area = NSRect(x: Layout.borderWidth, y: bottomY,
                           width: bounds.width - Layout.borderWidth * 2, height: listTopY - bottomY)
         // Flow / Tiles draw no column header, so the alphabet index beside them runs full height.
-        let columns = artLens.isPresenting ? [] : currentVisibleColumns()
+        let group = currentColumnGroup()
+        let columns = artLens.isPresenting ? [] : headerColumns(for: group)
         let headerHeight = columns.isEmpty ? 0 : columnHeaderHeight
         let rows = NSRect(x: area.minX, y: area.minY,
                           width: area.width - Layout.scrollbarWidth - Layout.alphabetWidth,
@@ -2725,7 +2727,7 @@ class ModernLibraryBrowserView: NSView {
         return ListLayout(
             area: area,
             header: columns.isEmpty ? nil : .init(rect: NSRect(x: rows.minX, y: rows.maxY, width: rows.width, height: headerHeight),
-                                                  columns: columns),
+                                                  columns: columns, group: group),
             rows: rows,
             alphabet: NSRect(x: rows.maxX, y: rows.minY, width: Layout.alphabetWidth, height: rows.height),
             banner: showsBanner ? NSRect(x: area.minX, y: contentRegionBottomY, width: area.width, height: Layout.offlineBannerHeight) : nil
@@ -2766,34 +2768,6 @@ class ModernLibraryBrowserView: NSView {
         LibraryColumnVisibility.normalizedIds(ids, allIds: allColumns.map { $0.id })
     }
 
-    private func hasTrackRows() -> Bool {
-        if displayItems.contains(where: {
-            switch $0.type { case .track, .subsonicTrack, .localTrack, .jellyfinTrack, .embyTrack: return true; default: return false }
-        }) {
-            return true
-        }
-        return false
-    }
-
-    private func hasAlbumRows() -> Bool {
-        if displayItems.contains(where: {
-            switch $0.type { case .album, .subsonicAlbum, .localAlbum, .jellyfinAlbum, .embyAlbum: return true; default: return false }
-        }) {
-            return true
-        }
-        return false
-    }
-
-    private func hasArtistRows() -> Bool {
-        if displayItems.contains(where: {
-            guard $0.indentLevel == 0 else { return false }
-            switch $0.type { case .artist, .subsonicArtist, .localArtist, .jellyfinArtist, .embyArtist: return true; default: return false }
-        }) {
-            return true
-        }
-        return false
-    }
-
     private func columnGroup(for item: ModernDisplayItem) -> LibraryColumnVisibilityGroup? {
         switch item.type {
         case .track, .subsonicTrack, .localTrack, .jellyfinTrack, .embyTrack:
@@ -2811,34 +2785,22 @@ class ModernLibraryBrowserView: NSView {
 
     private func currentColumnGroup() -> LibraryColumnVisibilityGroup? {
         if hasYouTubeColumns { return .youtube }
-        if hasTrackRows() { return .track }
-        if hasAlbumRows() { return .album }
-        if hasArtistRows() { return .artist }
-        return nil
+        return LibraryColumnVisibility.headerGroup(displayItems.lazy.map { self.columnGroup(for: $0) })
     }
 
-    private func columnsForItem(_ item: ModernDisplayItem) -> [ModernBrowserColumn]? {
-        switch columnGroup(for: item) {
-        case .track:
-            return visibleColumns(allColumns: ModernBrowserColumn.allTrackColumns, visibleIds: visibleTrackColumnIds)
-        case .album:
-            return visibleColumns(allColumns: ModernBrowserColumn.allAlbumColumns, visibleIds: visibleAlbumColumnIds)
-        case .artist:
-            return visibleColumns(allColumns: ModernBrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
-        case .youtube:
-            return ModernBrowserColumn.youtubeColumns
-        case nil:
-            break
-        }
+    /// Whether a row draws columns rather than a plain title line.
+    private func drawsColumns(_ item: ModernDisplayItem) -> Bool {
+        columnGroup(for: item) != nil || isInternetRadioItem(item)
+    }
 
-        switch item.type {
-        case .radioStation:
-            if isInternetRadioItem(item) {
-                return ModernBrowserColumn.internetRadioColumns
-            }
-            return nil
-        default:
-            return nil
+    /// The columns a row draws and the group their widths are keyed by (nil = simple list rendering).
+    /// Artist, album and track rows all draw the list's one header, Finder-style; radio and
+    /// YouTube rows draw their own fixed columns.
+    private func rowColumns(for item: ModernDisplayItem, header: ListLayout.Header?) -> (columns: [ModernBrowserColumn], group: LibraryColumnVisibilityGroup?)? {
+        switch columnGroup(for: item) {
+        case .youtube?: return (ModernBrowserColumn.youtubeColumns, .youtube)
+        case _?: return header.map { ($0.columns, $0.group) }
+        case nil: return isInternetRadioItem(item) ? (ModernBrowserColumn.internetRadioColumns, nil) : nil
         }
     }
     
@@ -2888,7 +2850,7 @@ class ModernLibraryBrowserView: NSView {
     private func clampHorizontalScrollOffset() {
         guard let header = listLayout().header else { horizontalScrollOffset = 0; return }
         let availableWidth = header.rect.width
-        let maxOffset = max(0, totalColumnsWidth(columns: header.columns, availableWidth: availableWidth, group: currentColumnGroup()) - availableWidth)
+        let maxOffset = max(0, totalColumnsWidth(columns: header.columns, availableWidth: availableWidth, group: header.group) - availableWidth)
         horizontalScrollOffset = max(0, min(horizontalScrollOffset, maxOffset))
     }
     
@@ -2934,24 +2896,11 @@ class ModernLibraryBrowserView: NSView {
         }
     }
     
-    /// Returns the currently visible columns based on what type of items are displayed
-    private func currentVisibleColumns() -> [ModernBrowserColumn] {
-        if hasInternetRadioColumns {
-            return ModernBrowserColumn.internetRadioColumns
-        }
-        if hasYouTubeColumns {
-            return ModernBrowserColumn.youtubeColumns
-        }
-        if hasTrackRows() {
-            return visibleColumns(allColumns: ModernBrowserColumn.allTrackColumns, visibleIds: visibleTrackColumnIds)
-        }
-        if hasAlbumRows() {
-            return visibleColumns(allColumns: ModernBrowserColumn.allAlbumColumns, visibleIds: visibleAlbumColumnIds)
-        }
-        if hasArtistRows() {
-            return visibleColumns(allColumns: ModernBrowserColumn.allArtistColumns, visibleIds: visibleArtistColumnIds)
-        }
-        return []
+    /// The header's columns for the list's column group; radio has its own fixed set and no group.
+    private func headerColumns(for group: LibraryColumnVisibilityGroup?) -> [ModernBrowserColumn] {
+        if hasInternetRadioColumns { return ModernBrowserColumn.internetRadioColumns }
+        guard let group else { return [] }
+        return visibleColumns(allColumns: allColumns(for: group), visibleIds: visibleColumnIds(for: group))
     }
     
     private func applyColumnSort(collapseExpanded: Bool = false) {
@@ -3007,7 +2956,7 @@ class ModernLibraryBrowserView: NSView {
         var sortableItems: [ModernDisplayItem] = []
         
         for (index, item) in displayItems.enumerated() {
-            if columnsForItem(item) != nil && item.indentLevel == 0 {
+            if drawsColumns(item) && item.indentLevel == 0 {
                 sortableIndices.append(index)
                 sortableItems.append(item)
             }
@@ -3031,7 +2980,7 @@ class ModernLibraryBrowserView: NSView {
         var groups: [[ModernDisplayItem]] = []
         for item in displayItems {
             if item.indentLevel == 0 {
-                guard columnsForItem(item) != nil else { needsDisplay = true; return }
+                guard drawsColumns(item) else { needsDisplay = true; return }
                 groups.append([item])
             } else if !groups.isEmpty {
                 groups[groups.count - 1].append(item)
@@ -3312,19 +3261,17 @@ class ModernLibraryBrowserView: NSView {
     private func hitTestInternetRadioRating(at point: NSPoint, itemIndex: Int) -> Int? {
         guard hasInternetRadioColumns, itemIndex >= 0, itemIndex < displayItems.count else { return nil }
         let item = displayItems[itemIndex]
-        guard case .radioStation = item.type, let columns = columnsForItem(item) else { return nil }
+        let layout = listLayout()
+        guard case .radioStation = item.type, let row = rowColumns(for: item, header: layout.header) else { return nil }
 
-        let listRect = listLayout().rows
+        let listRect = layout.rows
         let itemTopY = listRect.maxY - CGFloat(itemIndex) * itemHeight + scrollOffset
         let rowRect = NSRect(x: listRect.minX, y: itemTopY - itemHeight, width: listRect.width, height: itemHeight)
         guard rowRect.contains(point) else { return nil }
 
-        let indent = CGFloat(item.indentLevel) * 16
-        let availableWidth = rowRect.width - indent
-        var x = rowRect.minX + indent + 4 - horizontalScrollOffset
-        let group = columnGroup(for: item)
-        for column in columns {
-            let width = widthForColumn(column, availableWidth: availableWidth, columns: columns, group: group)
+        var x = rowRect.minX + 4 - horizontalScrollOffset
+        for column in row.columns {
+            let width = widthForColumn(column, availableWidth: rowRect.width, columns: row.columns, group: row.group)
             if column.id == "rating" {
                 let cellRect = NSRect(x: x, y: rowRect.minY, width: width, height: rowRect.height)
                 guard cellRect.contains(point) else { return nil }
@@ -3354,7 +3301,7 @@ class ModernLibraryBrowserView: NSView {
         if hasInternetRadioColumns { return nil }
         guard let header = columnHeader(at: point), header.columns.count > 1 else { return nil }
         let columns = header.columns
-        let group = currentColumnGroup()
+        let group = header.group
         
         let threshold: CGFloat = 4 * ModernSkinElements.sizeMultiplier
         var x = header.rect.minX + 4 - horizontalScrollOffset
@@ -3383,7 +3330,7 @@ class ModernLibraryBrowserView: NSView {
     private func hitTestColumnHeader(at point: NSPoint) -> String? {
         guard let header = columnHeader(at: point) else { return nil }
         let columns = header.columns
-        let group = currentColumnGroup()
+        let group = header.group
         
         var x = header.rect.minX + 4 - horizontalScrollOffset
         for column in columns {
@@ -3490,7 +3437,7 @@ class ModernLibraryBrowserView: NSView {
         // Column resize (check before sort so edge-drag doesn't trigger sort)
         if let header = columnHeader(at: point), let columnId = hitTestColumnResize(at: point) {
             resizingColumnId = columnId
-            resizingColumnGroup = currentColumnGroup()
+            resizingColumnGroup = header.group
             resizeStartX = point.x
             let columns = header.columns
             let group = resizingColumnGroup
@@ -3648,7 +3595,7 @@ class ModernLibraryBrowserView: NSView {
         let horizontalDelta = horizontalScrollDelta(from: event)
         if horizontalDelta != 0, let header = layout.header {
             let availableWidth = header.rect.width
-            let totalWidth = totalColumnsWidth(columns: header.columns, availableWidth: availableWidth, group: currentColumnGroup())
+            let totalWidth = totalColumnsWidth(columns: header.columns, availableWidth: availableWidth, group: header.group)
             let maxOffset = max(0, totalWidth - availableWidth)
             if maxOffset > 0 {
                 horizontalScrollOffset = max(0, min(maxOffset, horizontalScrollOffset - horizontalDelta))
@@ -4622,17 +4569,9 @@ class ModernLibraryBrowserView: NSView {
         menu.insertItem(item, at: 0)
     }
 
+    /// Only the header's own group: every row shows those columns, so nothing else is tickable.
     private func columnGroupsForCurrentMenu() -> [LibraryColumnVisibilityGroup] {
-        if hasYouTubeColumns {
-            return [.youtube]
-        }
-        return LibraryColumnVisibility.menuGroups(
-            isArtistsMode: browseMode == .artists,
-            isAlbumsMode: browseMode == .albums,
-            hasTrackRows: hasTrackRows(),
-            hasAlbumRows: hasAlbumRows(),
-            hasArtistRows: hasArtistRows()
-        )
+        currentColumnGroup().map { [$0] } ?? []
     }
 
     private func addColumnVisibilityGroup(_ group: LibraryColumnVisibilityGroup, to menu: NSMenu) {
@@ -4645,12 +4584,14 @@ class ModernLibraryBrowserView: NSView {
         menu.addItem(header)
 
         let visibleIds = Set(visibleColumnIds(for: group))
-        for column in allColumns(for: group) {
+        // YouTube's columns are fixed: its section offers only the width reset.
+        let tickableColumns = group == .youtube ? [] : allColumns(for: group)
+        for column in tickableColumns {
             let item = NSMenuItem()
             item.view = ColumnVisibilityCheckboxView(
                 title: column.title,
                 isChecked: column.id == "title" || visibleIds.contains(column.id),
-                isEnabled: group != .youtube && column.id != "title"
+                isEnabled: column.id != "title"
             ) { [weak self] isVisible in
                 self?.toggleColumnVisibility(group: group, columnId: column.id, visible: isVisible)
             }
@@ -10223,10 +10164,12 @@ extension ModernDisplayItem {
         case .jellyfinArtist(let a):
             if column.id == "albums" { return String(a.albumCount) }
             if column.id == "rating" { return a.isFavorite ? "★★★★★" : "" }
+            if column.id == "genre" { return a.genre ?? "" }
             return ""
         case .embyArtist(let a):
             if column.id == "albums" { return String(a.albumCount) }
             if column.id == "rating" { return a.isFavorite ? "★★★★★" : "" }
+            if column.id == "genre" { return a.genre ?? "" }
             return ""
         case .localArtist(let a):
             if column.id == "albums" {

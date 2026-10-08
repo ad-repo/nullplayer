@@ -47,8 +47,15 @@ All requests include header: `Authorization: MediaBrowser Client="NullPlayer", D
 - **All libraries/views**: `GET /Users/{userId}/Views`
   - `fetchMusicLibraries()` returns all views (no `CollectionType` filtering).
   - `fetchVideoLibraries()` uses the same endpoint but filters out non-video library types (`music`, `musicvideos`, `books`, `photos`, `playlists`, `livetv`).
-- **Artists**: `GET /Artists/AlbumArtists?parentId={libId}&userId={userId}&Recursive=true&SortBy=SortName`
-- **Albums**: `GET /Users/{userId}/Items?parentId={libId}&IncludeItemTypes=MusicAlbum&Recursive=true`
+- **Artists**: `GET /Artists/AlbumArtists?parentId={libId}&userId={userId}&Recursive=true&SortBy=SortName&Fields=PrimaryImageAspectRatio,Genres`
+  — the server sends no album count for an artist: its `ChildCount` is the **song** count
+  (Slayer read 243 for 19 albums) and `Fields=ItemCounts` adds no `AlbumCount` to this list. The
+  browser's Albums column therefore comes from the album list: `JellyfinManager` runs
+  `countingAlbums(_:)` (`Utilities/ArtistAlbumCount.swift`, shared with the other server) over
+  it, crediting every `AlbumArtists` entry, on preload and in both `fetchArtists` paths. Search
+  artists are not counted; their rows hide a 0 count.
+- **Albums**: `GET /Users/{userId}/Items?parentId={libId}&IncludeItemTypes=MusicAlbum&Recursive=true&Fields=PrimaryImageAspectRatio,ProductionYear,Genres`
+  (without `Genres` the browser's album Genre column was blank on every row)
 - **Artist albums**: `GET /Users/{userId}/Items?AlbumArtistIds={artistId}&IncludeItemTypes=MusicAlbum` —
   `fetchAlbums(forArtistID:)`, one request (the artist item itself is not fetched)
 - **Album tracks**: `GET /Users/{userId}/Items?parentId={albumId}&IncludeItemTypes=Audio`

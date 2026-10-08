@@ -41,63 +41,17 @@ final class LibraryColumnVisibilityTests: XCTestCase {
         XCTAssertEqual(visible.map(\.id), ["title", "rating", "artist"])
     }
 
-    func testArtistsModeMenuIncludesArtistAlbumAndTrackSections() {
-        let groups = LibraryColumnVisibility.menuGroups(
-            isArtistsMode: true,
-            isAlbumsMode: false,
-            hasTrackRows: false,
-            hasAlbumRows: false,
-            hasArtistRows: true
-        )
-
-        XCTAssertEqual(groups, [.artist, .album, .track])
+    func testHeaderGroupFollowsTheMostDetailedExpandedRows() {
+        // Artists tab: collapsed, an artist expanded, then one of its albums expanded.
+        XCTAssertEqual(LibraryColumnVisibility.headerGroup([.artist, .artist]), .artist)
+        XCTAssertEqual(LibraryColumnVisibility.headerGroup([.artist, .album, .artist]), .album)
+        XCTAssertEqual(LibraryColumnVisibility.headerGroup([.artist, .album, .track, .album]), .track)
     }
 
-    func testAlbumsModeMenuIncludesAlbumAndTrackSections() {
-        let groups = LibraryColumnVisibility.menuGroups(
-            isArtistsMode: false,
-            isAlbumsMode: true,
-            hasTrackRows: false,
-            hasAlbumRows: true,
-            hasArtistRows: false
-        )
-
-        XCTAssertEqual(groups, [.album, .track])
-    }
-
-    func testFallbackMenuGroupUsesCurrentRowTypePrecedence() {
-        XCTAssertEqual(
-            LibraryColumnVisibility.menuGroups(
-                isArtistsMode: false,
-                isAlbumsMode: false,
-                hasTrackRows: true,
-                hasAlbumRows: true,
-                hasArtistRows: true
-            ),
-            [.track]
-        )
-
-        XCTAssertEqual(
-            LibraryColumnVisibility.menuGroups(
-                isArtistsMode: false,
-                isAlbumsMode: false,
-                hasTrackRows: false,
-                hasAlbumRows: true,
-                hasArtistRows: true
-            ),
-            [.album]
-        )
-
-        XCTAssertEqual(
-            LibraryColumnVisibility.menuGroups(
-                isArtistsMode: false,
-                isAlbumsMode: false,
-                hasTrackRows: false,
-                hasAlbumRows: false,
-                hasArtistRows: true
-            ),
-            [.artist]
-        )
+    func testHeaderGroupIgnoresRowsWithoutSharedColumns() {
+        // Plists tab: playlist rows carry no columns, their tracks do. YouTube rows keep their own.
+        XCTAssertEqual(LibraryColumnVisibility.headerGroup([nil, .track, nil]), .track)
+        XCTAssertEqual(LibraryColumnVisibility.headerGroup([.youtube, nil]), nil)
     }
 
     func testColumnVisibilityGroupMenuLabelsMatchUserFacingSections() {

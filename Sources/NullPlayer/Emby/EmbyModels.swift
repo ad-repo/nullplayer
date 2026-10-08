@@ -35,20 +35,22 @@ struct EmbyServerCredentials: Codable {
 // MARK: - Library Content
 
 /// An artist in an Emby music library
-struct EmbyArtist: Identifiable, Equatable {
+struct EmbyArtist: Identifiable, Equatable, AlbumCountedArtist {
     let id: String           // Emby uses UUID strings
     let name: String
-    let albumCount: Int
+    var albumCount: Int
+    let genre: String?
     let imageTag: String?    // For artwork URL construction
     let isFavorite: Bool
 }
 
 /// An album in an Emby music library
-struct EmbyAlbum: Identifiable, Equatable {
+struct EmbyAlbum: Identifiable, Equatable, AlbumArtistCredited {
     let id: String
     let name: String
     let artist: String?
     let artistId: String?
+    let albumArtistIds: [String]
     let year: Int?
     let genre: String?
     let imageTag: String?
@@ -288,7 +290,8 @@ struct EmbyItemDTO: Decodable {
         EmbyArtist(
             id: Id,
             name: Name,
-            albumCount: ChildCount ?? 0,
+            albumCount: 0,  // filled in by `countingAlbums`: an artist's ChildCount is its song count
+            genre: Genres?.first,
             imageTag: ImageTags?["Primary"],
             isFavorite: UserData?.IsFavorite ?? false
         )
@@ -307,6 +310,7 @@ struct EmbyItemDTO: Decodable {
             name: Name,
             artist: AlbumArtist ?? AlbumArtists?.first?.Name,
             artistId: AlbumArtists?.first?.Id,
+            albumArtistIds: AlbumArtists?.map(\.Id) ?? [],
             year: ProductionYear,
             genre: Genres?.first,
             imageTag: ImageTags?["Primary"],

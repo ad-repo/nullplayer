@@ -470,7 +470,7 @@ class EmbyManager {
             let preloadedMovies = movies
             let preloadedShows = shows
             await MainActor.run {
-                self.cachedArtists = artists
+                self.cachedArtists = artists.countingAlbums(albums)
                 self.cachedAlbums = albums
                 self.cachedPlaylists = playlists
                 self.cachedMovies = preloadedMovies
@@ -512,13 +512,19 @@ class EmbyManager {
         }
 
         guard let client = serverClient else { return [] }
-        return try await client.fetchAllArtists(libraryId: currentMusicLibrary?.id)
+        return try await fetchArtistsCountingAlbums(client, libraryId: currentMusicLibrary?.id)
     }
 
     /// Fetch all artists across all music libraries (no library filter, bypasses cache)
     func fetchArtistsUnfiltered() async throws -> [EmbyArtist] {
         guard let client = serverClient else { return [] }
-        return try await client.fetchAllArtists(libraryId: nil)
+        return try await fetchArtistsCountingAlbums(client, libraryId: nil)
+    }
+
+    private func fetchArtistsCountingAlbums(_ client: EmbyServerClient, libraryId: String?) async throws -> [EmbyArtist] {
+        async let artists = client.fetchAllArtists(libraryId: libraryId)
+        async let albums = client.fetchAllAlbums(libraryId: libraryId)
+        return try await artists.countingAlbums(albums)
     }
 
     /// Fetch albums (uses cache if available)
