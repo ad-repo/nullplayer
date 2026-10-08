@@ -20,6 +20,9 @@ protocol ModeDependentWindow: AnyObject {
     /// Default implementation is a no-op; controllers that own render loops, timers, or
     /// in-flight tasks should override (or inherit one of the protocol-specific defaults below).
     func prepareForUITeardown()
+
+    /// Redraw for the skin just loaded.
+    func skinDidChange()
 }
 
 extension ModeDependentWindow {

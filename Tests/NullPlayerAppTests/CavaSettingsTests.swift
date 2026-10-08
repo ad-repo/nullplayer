@@ -455,19 +455,12 @@ final class CavaSettingsTests: XCTestCase {
 
         let repaired = AppStateManager.repairClassicCenterStackFrames(
             mainFrame: main,
-            equalizerFrame: nil,
-            playlistFrame: nil,
-            spectrumFrame: nil,
-            waveformFrame: nil,
-            audioAnalysisFrame: nil,
-            peppyMeterFrame: nil,
-            networkMonitorFrame: flow,
-            cavaFrame: cava,
+            frames: [.networkMonitor: flow, .cava: cava],
             scale: 1
         )
 
-        let repairedFlow = try XCTUnwrap(repaired.networkMonitorFrame)
-        let repairedCava = try XCTUnwrap(repaired.cavaFrame)
+        let repairedFlow = try XCTUnwrap(repaired.frames[.networkMonitor])
+        let repairedCava = try XCTUnwrap(repaired.frames[.cava])
         XCTAssertEqual(repairedFlow.maxY, repaired.mainFrame.minY, accuracy: 0.001)
         XCTAssertEqual(repairedCava.maxY, repairedFlow.minY, accuracy: 0.001)
         XCTAssertEqual(repairedCava.minX, repaired.mainFrame.minX, accuracy: 0.001)

@@ -477,28 +477,12 @@ class AppStateManager {
             isEqualizerVisible: Bool,
             isPlexBrowserVisible: Bool,
             isProjectMVisible: Bool,
-            isSpectrumVisible: Bool = false,
-            isAudioAnalysisVisible: Bool = false,
-            isPeppyMeterVisible: Bool = false,
-            isArtVisible: Bool = false,
-            isNetworkMonitorVisible: Bool = false,
-            isCavaVisible: Bool = false,
-            isSonosVisible: Bool = false,
-            isWaveformVisible: Bool = false,
             mainWindowFrame: String?,
             mainScreenVisibleFrame: String? = nil,
             playlistWindowFrame: String?,
             equalizerWindowFrame: String?,
             plexBrowserWindowFrame: String?,
             projectMWindowFrame: String?,
-            spectrumWindowFrame: String? = nil,
-            audioAnalysisWindowFrame: String? = nil,
-            peppyMeterWindowFrame: String? = nil,
-            artWindowFrame: String? = nil,
-            networkMonitorWindowFrame: String? = nil,
-            cavaWindowFrame: String? = nil,
-            sonosWindowFrame: String? = nil,
-            waveformWindowFrame: String? = nil,
             isProjectMFullscreen: Bool = false,
             volume: Float,
             balance: Float,
@@ -538,14 +522,6 @@ class AppStateManager {
             self.isEqualizerVisible = isEqualizerVisible
             self.isPlexBrowserVisible = isPlexBrowserVisible
             self.isProjectMVisible = isProjectMVisible
-            self.isSpectrumVisible = isSpectrumVisible
-            self.isAudioAnalysisVisible = isAudioAnalysisVisible
-            self.isPeppyMeterVisible = isPeppyMeterVisible
-            self.isArtVisible = isArtVisible
-            self.isNetworkMonitorVisible = isNetworkMonitorVisible
-            self.isCavaVisible = isCavaVisible
-            self.isSonosVisible = isSonosVisible
-            self.isWaveformVisible = isWaveformVisible
             self.mainWindowFrame = mainWindowFrame
             self.mainScreenVisibleFrame = mainScreenVisibleFrame
             self.winampModernSkinName = winampModernSkinName
@@ -553,14 +529,6 @@ class AppStateManager {
             self.equalizerWindowFrame = equalizerWindowFrame
             self.plexBrowserWindowFrame = plexBrowserWindowFrame
             self.projectMWindowFrame = projectMWindowFrame
-            self.spectrumWindowFrame = spectrumWindowFrame
-            self.audioAnalysisWindowFrame = audioAnalysisWindowFrame
-            self.peppyMeterWindowFrame = peppyMeterWindowFrame
-            self.artWindowFrame = artWindowFrame
-            self.networkMonitorWindowFrame = networkMonitorWindowFrame
-            self.cavaWindowFrame = cavaWindowFrame
-            self.sonosWindowFrame = sonosWindowFrame
-            self.waveformWindowFrame = waveformWindowFrame
             self.isProjectMFullscreen = isProjectMFullscreen
             self.volume = volume
             self.balance = balance
@@ -680,20 +648,12 @@ class AppStateManager {
         let eqGains = engine.canonicalGains
 
         // Capture window visibility
-        let state = AppState(
+        var state = AppState(
             // Window visibility
             isPlaylistVisible: visibility("playlist", wm.isPlaylistVisible),
             isEqualizerVisible: visibility("equalizer", wm.isEqualizerVisible),
             isPlexBrowserVisible: visibility("plexBrowser", wm.isPlexBrowserVisible),
             isProjectMVisible: visibility("projectM", wm.isProjectMVisible),
-            isSpectrumVisible: visibility("spectrum", wm.isSpectrumVisible),
-            isAudioAnalysisVisible: visibility("audioAnalysis", wm.isAudioAnalysisVisible),
-            isPeppyMeterVisible: visibility("peppyMeter", wm.isPeppyMeterVisible),
-            isArtVisible: visibility("art", wm.isArtVisible),
-            isNetworkMonitorVisible: visibility("networkMonitor", wm.isNetworkMonitorVisible),
-            isCavaVisible: visibility("cava", wm.isCavaVisible),
-            isSonosVisible: visibility("sonos", wm.isSonosVisible),
-            isWaveformVisible: visibility("waveform", wm.isWaveformVisible),
             
             // Window frames
             mainWindowFrame: wm.mainWindowController?.window.map { NSStringFromRect($0.frame) },
@@ -704,14 +664,6 @@ class AppStateManager {
             plexBrowserWindowFrame: wm.plexBrowserFrameForPersistence.map { NSStringFromRect($0) },
             // Don't save frame when fullscreen (it would be screen bounds)
             projectMWindowFrame: wm.isProjectMVisible && !wm.isProjectMFullscreen ? wm.projectMWindowFrame.map { NSStringFromRect($0) } : nil,
-            spectrumWindowFrame: wm.spectrumWindowFrame.map { NSStringFromRect($0) },
-            audioAnalysisWindowFrame: wm.audioAnalysisWindowFrame.map { NSStringFromRect($0) },
-            peppyMeterWindowFrame: wm.peppyMeterWindowFrame.map { NSStringFromRect($0) },
-            artWindowFrame: wm.artWindowFrame.map { NSStringFromRect($0) },
-            networkMonitorWindowFrame: wm.networkMonitorWindowFrame.map { NSStringFromRect($0) },
-            cavaWindowFrame: wm.cavaWindowFrame.map { NSStringFromRect($0) },
-            sonosWindowFrame: wm.sonosWindowFrame.map { NSStringFromRect($0) },
-            waveformWindowFrame: wm.waveformWindowFrame.map { NSStringFromRect($0) },
             isProjectMFullscreen: wm.isProjectMFullscreen,
             
             // Audio settings
@@ -771,8 +723,13 @@ class AppStateManager {
                 ? UserDefaults.standard.string(forKey: WinampModernSkinImporter.selectedSkinNameKey)
                 : nil
         )
+        for feature in WindowManager.CenterStackFeature.allCases {
+            state[keyPath: feature.savedVisibility] =
+                wm.visibilityForStateSaving(feature, current: wm.isCenterStackWindowVisible(feature))
+            state[keyPath: feature.savedFrame] = wm.centerStackWindow(feature).map { NSStringFromRect($0.frame) }
+        }
 
-        saveQueue.async { [self] in
+        saveQueue.async { [self, state] in
             var state = state
             state.playlistTracks = playlist.map { SavedTrack.from($0, radioStations: radioStations) }
             write(state)
@@ -1003,16 +960,10 @@ class AppStateManager {
                 ("playlist", state.playlistWindowFrame),
                 ("equalizer", state.equalizerWindowFrame),
                 ("browser", state.plexBrowserWindowFrame),
-                ("projectM", state.projectMWindowFrame),
-                ("spectrum", state.spectrumWindowFrame),
-                ("audioAnalysis", state.audioAnalysisWindowFrame),
-                ("peppyMeter", state.peppyMeterWindowFrame),
-                ("art", state.artWindowFrame),
-                ("networkMonitor", state.networkMonitorWindowFrame),
-                ("cava", state.cavaWindowFrame),
-                ("sonos", state.sonosWindowFrame),
-                ("waveform", state.waveformWindowFrame)
-            ]
+                ("projectM", state.projectMWindowFrame)
+            ] + WindowManager.CenterStackFeature.allCases.map {
+                ($0.stateKey, state[keyPath: $0.savedFrame])
+            }
             for (key, string) in sources {
                 guard let rect = string.flatMap({ NSRectFromString($0) }), rect != .zero else { continue }
                 savedFrames[key] = rect
@@ -1056,14 +1007,6 @@ class AppStateManager {
         let equalizerFrame = restoredFrames["equalizer"]
         let browserFrame = restoredFrames["browser"]
         let projectMFrame = restoredFrames["projectM"]
-        let spectrumFrame = restoredFrames["spectrum"]
-        let audioAnalysisFrame = restoredFrames["audioAnalysis"]
-        let peppyMeterFrame = restoredFrames["peppyMeter"]
-        let artFrame = restoredFrames["art"]
-        let networkMonitorFrame = restoredFrames["networkMonitor"]
-        let cavaFrame = restoredFrames["cava"]
-        let sonosFrame = restoredFrames["sonos"]
-        let waveformFrame = restoredFrames["waveform"]
         let projectMPresetIndex = state.projectMPresetIndex
         let visualizationEngineType = UserDefaults.standard.string(forKey: "visualizationEngineType")
             .flatMap(VisualizationType.init(rawValue:)) ?? .projectM
@@ -1087,29 +1030,8 @@ class AppStateManager {
             if state.isPlaylistVisible {
                 wm.showPlaylist(at: playlistFrame)
             }
-            if state.isSpectrumVisible {
-                wm.showSpectrum(at: spectrumFrame)
-            }
-            if state.isAudioAnalysisVisible {
-                wm.showAudioAnalysis(at: audioAnalysisFrame)
-            }
-            if state.isPeppyMeterVisible {
-                wm.showPeppyMeter(at: peppyMeterFrame)
-            }
-            if state.isArtVisible {
-                wm.showArt(at: artFrame)
-            }
-            if state.isNetworkMonitorVisible {
-                wm.showNetworkMonitor(at: networkMonitorFrame)
-            }
-            if state.isCavaVisible {
-                wm.showCava(at: cavaFrame)
-            }
-            if state.isSonosVisible {
-                wm.showSonos(at: sonosFrame)
-            }
-            if state.isWaveformVisible {
-                wm.showWaveform(at: waveformFrame)
+            for feature in WindowManager.CenterStackFeature.allCases where state[keyPath: feature.savedVisibility] {
+                wm.centerStackFeatureWindow(feature).show(restoredFrames[feature.stateKey])
             }
             if state.isPlexBrowserVisible {
                 wm.showPlexBrowser(at: browserFrame)
@@ -1503,35 +1425,18 @@ class AppStateManager {
 
     struct ClassicCenterStackRepairResult {
         let mainFrame: NSRect
-        let equalizerFrame: NSRect?
-        let playlistFrame: NSRect?
-        let spectrumFrame: NSRect?
-        let waveformFrame: NSRect?
-        let audioAnalysisFrame: NSRect?
-        let peppyMeterFrame: NSRect?
-        let artFrame: NSRect?
-        let networkMonitorFrame: NSRect?
-        let cavaFrame: NSRect?
-        let sonosFrame: NSRect?
+        /// Every frame passed in, repaired or as it was.
+        let frames: [WindowManager.CenterStackWindowKind: NSRect]
         let repaired: Bool
     }
 
-    /// Pure geometry helper for restoring classic center-stack windows
-    /// (Main/EQ/Playlist/Spectrum/Waveform/Audio Analysis).
-    /// Repairs near-docked gaps and snaps repaired windows flush below the current anchor
-    /// in stack order. Width is preserved for windows that support horizontal stretching.
+    /// Pure geometry helper for restoring classic center-stack windows: `frames` holds the visible
+    /// ones. Repairs near-docked gaps and snaps repaired windows flush below the current anchor in
+    /// `CenterStackWindowKind.columnOrder`. Width is preserved for windows that support horizontal
+    /// stretching — every one but the equalizer.
     static func repairClassicCenterStackFrames(
         mainFrame: NSRect,
-        equalizerFrame: NSRect?,
-        playlistFrame: NSRect?,
-        spectrumFrame: NSRect?,
-        waveformFrame: NSRect?,
-        audioAnalysisFrame: NSRect?,
-        peppyMeterFrame: NSRect?,
-        artFrame: NSRect? = nil,
-        networkMonitorFrame: NSRect?,
-        cavaFrame: NSRect? = nil,
-        sonosFrame: NSRect? = nil,
+        frames: [WindowManager.CenterStackWindowKind: NSRect],
         scale: CGFloat
     ) -> ClassicCenterStackRepairResult {
         let widthEpsilon: CGFloat = 0.5
@@ -1595,41 +1500,20 @@ class AppStateManager {
             return repairedFrame
         }
 
-        let adjustedEQ = repairCandidate(equalizerFrame)
-        let adjustedPlaylist = repairCandidate(playlistFrame, preserveWidth: true)
-        let adjustedSpectrum = repairCandidate(spectrumFrame, preserveWidth: true)
-        let adjustedWaveform = repairCandidate(waveformFrame, preserveWidth: true)
-        let adjustedAudioAnalysis = repairCandidate(audioAnalysisFrame, preserveWidth: true)
-        // Collapse only the previous double-height default to the current 1.75x floor; otherwise
-        // preserve the saved (possibly user-stretched) height so PeppyMeter remembers its size.
-        let adjustedPeppyMeter = repairCandidate(
-            peppyMeterFrame,
-            preserveWidth: true,
-            targetHeight: peppyMeterFrame.flatMap { frame -> CGFloat? in
+        var adjusted: [WindowManager.CenterStackWindowKind: NSRect] = [:]
+        for kind in WindowManager.CenterStackWindowKind.columnOrder {
+            // Collapse only the previous double-height default to the current 1.75x floor; otherwise
+            // preserve the saved (possibly user-stretched) height so PeppyMeter remembers its size.
+            let targetHeight = kind == .peppyMeter ? frames[kind].flatMap { frame -> CGFloat? in
                 let legacyDoubleHeight = (SkinElements.SpectrumWindow.windowSize.height * 2 * scale).rounded()
                 let floor = (SkinElements.PeppyMeterWindow.windowSize.height * scale).rounded()
                 return abs(frame.height - legacyDoubleHeight) <= 2 ? floor : nil
-            }
-        )
-        let adjustedArt = repairCandidate(artFrame, preserveWidth: true)
-        let adjustedNetworkMonitor = repairCandidate(networkMonitorFrame, preserveWidth: true)
-        let adjustedCava = repairCandidate(cavaFrame, preserveWidth: true)
-        let adjustedSonos = repairCandidate(sonosFrame, preserveWidth: true)
+            } : nil
+            adjusted[kind] = repairCandidate(frames[kind], preserveWidth: kind != .equalizer,
+                                             targetHeight: targetHeight)
+        }
 
-        return ClassicCenterStackRepairResult(
-            mainFrame: adjustedMain,
-            equalizerFrame: adjustedEQ,
-            playlistFrame: adjustedPlaylist,
-            spectrumFrame: adjustedSpectrum,
-            waveformFrame: adjustedWaveform,
-            audioAnalysisFrame: adjustedAudioAnalysis,
-            peppyMeterFrame: adjustedPeppyMeter,
-            artFrame: adjustedArt,
-            networkMonitorFrame: adjustedNetworkMonitor,
-            cavaFrame: adjustedCava,
-            sonosFrame: adjustedSonos,
-            repaired: repaired
-        )
+        return ClassicCenterStackRepairResult(mainFrame: adjustedMain, frames: adjusted, repaired: repaired)
     }
 
     /// Repair classic-mode docked stack geometry if corrupted by cross-mode frame restore.
@@ -1639,159 +1523,21 @@ class AppStateManager {
         guard !wm.isRunningModernUI else { return }
         guard let mainWindow = wm.mainWindowController?.window else { return }
 
-        let scale = wm.classicScaleMultiplier
-        let equalizerWindow = wm.equalizerWindowController?.window
-        let playlistWindow = wm.playlistWindowController?.window
-        let spectrumWindow = wm.spectrumWindow
-        let waveformWindow = wm.waveformWindow
-        let audioAnalysisWindow = wm.audioAnalysisWindow
-        let peppyMeterWindow = wm.peppyMeterWindow
-        let artWindow = wm.artWindow
-        let networkMonitorWindow = wm.networkMonitorWindow
-        let cavaWindow = wm.cavaWindow
-        let sonosWindow = wm.sonosWindow
-
-        let equalizerFrame: NSRect?
-        if let equalizerWindow, equalizerWindow.isVisible {
-            equalizerFrame = equalizerWindow.frame
-        } else {
-            equalizerFrame = nil
-        }
-
-        let playlistFrame: NSRect?
-        if let playlistWindow, playlistWindow.isVisible {
-            playlistFrame = playlistWindow.frame
-        } else {
-            playlistFrame = nil
-        }
-
-        let spectrumFrame: NSRect?
-        if let spectrumWindow, spectrumWindow.isVisible {
-            spectrumFrame = spectrumWindow.frame
-        } else {
-            spectrumFrame = nil
-        }
-
-        let waveformFrame: NSRect?
-        if let waveformWindow, waveformWindow.isVisible {
-            waveformFrame = waveformWindow.frame
-        } else {
-            waveformFrame = nil
-        }
-
-        let audioAnalysisFrame: NSRect?
-        if let audioAnalysisWindow, audioAnalysisWindow.isVisible {
-            audioAnalysisFrame = audioAnalysisWindow.frame
-        } else {
-            audioAnalysisFrame = nil
-        }
-
-        let peppyMeterFrame: NSRect?
-        if let peppyMeterWindow, peppyMeterWindow.isVisible {
-            peppyMeterFrame = peppyMeterWindow.frame
-        } else {
-            peppyMeterFrame = nil
-        }
-
-        let artFrame = artWindow?.isVisible == true ? artWindow?.frame : nil
-
-        let networkMonitorFrame: NSRect?
-        if let networkMonitorWindow, networkMonitorWindow.isVisible {
-            networkMonitorFrame = networkMonitorWindow.frame
-        } else {
-            networkMonitorFrame = nil
-        }
-
-        let cavaFrame: NSRect?
-        if let cavaWindow, cavaWindow.isVisible {
-            cavaFrame = cavaWindow.frame
-        } else {
-            cavaFrame = nil
-        }
-        let sonosFrame: NSRect?
-        if let sonosWindow, sonosWindow.isVisible {
-            sonosFrame = sonosWindow.frame
-        } else {
-            sonosFrame = nil
-        }
-
+        let windows = wm.visibleCenterStackColumn(routingFeatureWindows: true)
         let repairedFrames = Self.repairClassicCenterStackFrames(
             mainFrame: mainWindow.frame,
-            equalizerFrame: equalizerFrame,
-            playlistFrame: playlistFrame,
-            spectrumFrame: spectrumFrame,
-            waveformFrame: waveformFrame,
-            audioAnalysisFrame: audioAnalysisFrame,
-            peppyMeterFrame: peppyMeterFrame,
-            artFrame: artFrame,
-            networkMonitorFrame: networkMonitorFrame,
-            cavaFrame: cavaFrame,
-            sonosFrame: sonosFrame,
-            scale: scale
+            frames: windows.mapValues(\.frame),
+            scale: wm.classicScaleMultiplier
         )
 
         if repairedFrames.mainFrame != mainWindow.frame {
             mainWindow.setFrame(repairedFrames.mainFrame, display: true)
         }
-        if let equalizerWindow,
-           equalizerWindow.isVisible,
-           let repairedFrame = repairedFrames.equalizerFrame,
-           repairedFrame != equalizerWindow.frame {
-            equalizerWindow.setFrame(repairedFrame, display: true)
-        }
-        if let playlistWindow,
-           playlistWindow.isVisible,
-           let repairedFrame = repairedFrames.playlistFrame,
-           repairedFrame != playlistWindow.frame {
-            playlistWindow.setFrame(repairedFrame, display: true)
-        }
-        if let spectrumWindow,
-           spectrumWindow.isVisible,
-           let repairedFrame = repairedFrames.spectrumFrame,
-           repairedFrame != spectrumWindow.frame {
-            spectrumWindow.setFrame(repairedFrame, display: true)
-        }
-        if let waveformWindow,
-           waveformWindow.isVisible,
-           let repairedFrame = repairedFrames.waveformFrame,
-           repairedFrame != waveformWindow.frame {
-            waveformWindow.setFrame(repairedFrame, display: true)
-        }
-        if let audioAnalysisWindow,
-           audioAnalysisWindow.isVisible,
-           let repairedFrame = repairedFrames.audioAnalysisFrame,
-           repairedFrame != audioAnalysisWindow.frame {
-            audioAnalysisWindow.setFrame(repairedFrame, display: true)
-        }
-        if let peppyMeterWindow,
-           peppyMeterWindow.isVisible,
-           let repairedFrame = repairedFrames.peppyMeterFrame,
-           repairedFrame != peppyMeterWindow.frame {
-            peppyMeterWindow.setFrame(repairedFrame, display: true)
-        }
-        if let artWindow,
-           artWindow.isVisible,
-           let repairedFrame = repairedFrames.artFrame,
-           repairedFrame != artWindow.frame {
-            artWindow.setFrame(repairedFrame, display: true)
-        }
-        if let networkMonitorWindow,
-           networkMonitorWindow.isVisible,
-           let repairedFrame = repairedFrames.networkMonitorFrame,
-           repairedFrame != networkMonitorWindow.frame {
-            networkMonitorWindow.setFrame(repairedFrame, display: true)
-        }
-        if let cavaWindow,
-           cavaWindow.isVisible,
-           let repairedFrame = repairedFrames.cavaFrame,
-           repairedFrame != cavaWindow.frame {
-            cavaWindow.setFrame(repairedFrame, display: true)
-        }
-        if let sonosWindow,
-           sonosWindow.isVisible,
-           let repairedFrame = repairedFrames.sonosFrame,
-           repairedFrame != sonosWindow.frame {
-            sonosWindow.setFrame(repairedFrame, display: true)
+        for kind in WindowManager.CenterStackWindowKind.columnOrder {
+            if let window = windows[kind], let repairedFrame = repairedFrames.frames[kind],
+               repairedFrame != window.frame {
+                window.setFrame(repairedFrame, display: true)
+            }
         }
 
         if repairedFrames.repaired {

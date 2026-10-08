@@ -183,17 +183,11 @@ final class PeppyMeterConfigTests: XCTestCase {
 
         let repaired = AppStateManager.repairClassicCenterStackFrames(
             mainFrame: mainFrame,
-            equalizerFrame: nil,
-            playlistFrame: nil,
-            spectrumFrame: nil,
-            waveformFrame: nil,
-            audioAnalysisFrame: nil,
-            peppyMeterFrame: legacyPeppyFrame,
-            networkMonitorFrame: nil,
+            frames: [.peppyMeter: legacyPeppyFrame],
             scale: 1
         )
 
-        let peppyFrame = try? XCTUnwrap(repaired.peppyMeterFrame)
+        let peppyFrame = try? XCTUnwrap(repaired.frames[.peppyMeter])
         guard let peppyFrame else { return }
         XCTAssertEqual(peppyFrame.height, SkinElements.PeppyMeterWindow.windowSize.height, accuracy: 0.001)
         XCTAssertEqual(peppyFrame.maxY, mainFrame.minY, accuracy: 0.001)

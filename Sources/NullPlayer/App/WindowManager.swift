@@ -221,14 +221,7 @@ private struct CompactWindowSnapshot {
     var main: WindowSnapshot?
     var equalizer: WindowSnapshot?
     var playlist: WindowSnapshot?
-    var spectrum: WindowSnapshot?
-    var audioAnalysis: WindowSnapshot?
-    var peppyMeter: WindowSnapshot?
-    var art: WindowSnapshot?
-    var networkMonitor: WindowSnapshot?
-    var cava: WindowSnapshot?
-    var sonos: WindowSnapshot?
-    var waveform: WindowSnapshot?
+    var centerStack: [WindowManager.CenterStackFeature: WindowSnapshot] = [:]
     var projectM: WindowSnapshot?
     var library: WindowSnapshot?
     var debug: WindowSnapshot?
@@ -728,14 +721,9 @@ class WindowManager {
         add(mainWindowController?.window, centerStack: true, snapTarget: true)
         add(playlistWindowController?.window, centerStack: true, snapTarget: true)
         add(equalizerWindowController?.window, centerStack: true, snapTarget: true)
-        add(spectrumWindowController?.window, centerStack: true, snapTarget: true)
-        add(audioAnalysisWindowController?.window, centerStack: true, snapTarget: true)
-        add(peppyMeterWindowController?.window, centerStack: true, snapTarget: true)
-        add(artWindowController?.window, centerStack: true, snapTarget: true)
-        add(networkMonitorWindowController?.window, centerStack: true, snapTarget: true)
-        add(cavaWindowController?.window, centerStack: true, snapTarget: true)
-        add(sonosWindowController?.window, centerStack: true, snapTarget: true)
-        add(waveformWindowController?.window, centerStack: true, snapTarget: true)
+        for feature in CenterStackFeature.allCases {
+            add(centerStackFeatureWindow(feature).controller?.window, centerStack: true, snapTarget: true)
+        }
         add(plexBrowserWindowController?.window, snapTarget: true)
         add(projectMWindowController?.window, snapTarget: true)
         add(videoPlayerWindowController?.window, modeDependent: false)
@@ -769,7 +757,56 @@ class WindowManager {
         }
         return records
     }
-    
+
+    /// The visible windows of the column below the main window, by kind.
+    ///
+    /// `routingFeatureWindows` picks how a feature window is read. The launch repair passes `true`
+    /// and reads each through its `.wal` route (`centerStackWindow(_:)`). The post-drag tighten
+    /// passes `false` and reads the controllers only, as it did before hosted windows existed, so
+    /// under `.wal` it leaves a hosted window where it is. Classic and Original read the same
+    /// windows either way.
+    func visibleCenterStackColumn(routingFeatureWindows: Bool) -> [CenterStackWindowKind: NSWindow] {
+        var windows: [CenterStackWindowKind: NSWindow] = [:]
+        func add(_ window: NSWindow?, _ kind: CenterStackWindowKind) {
+            if let window, window.isVisible { windows[kind] = window }
+        }
+        add(equalizerWindowController?.window, .equalizer)
+        add(playlistWindowController?.window, .playlist)
+        for feature in CenterStackFeature.allCases {
+            add(routingFeatureWindows ? centerStackWindow(feature) : centerStackFeatureWindow(feature).controller?.window,
+                feature.kind)
+        }
+        return windows
+    }
+
+    /// The row for one feature window.
+    func centerStackFeatureWindow(_ feature: CenterStackFeature) -> CenterStackFeatureWindow {
+        switch feature {
+        case .spectrum: CenterStackFeatureWindow(controller: spectrumWindowController, show: showSpectrum)
+        case .audioAnalysis: CenterStackFeatureWindow(controller: audioAnalysisWindowController, show: showAudioAnalysis)
+        case .peppyMeter: CenterStackFeatureWindow(controller: peppyMeterWindowController, show: showPeppyMeter)
+        case .art: CenterStackFeatureWindow(controller: artWindowController, show: showArt)
+        case .networkMonitor: CenterStackFeatureWindow(controller: networkMonitorWindowController, show: showNetworkMonitor)
+        case .cava: CenterStackFeatureWindow(controller: cavaWindowController, show: showCava)
+        case .sonos: CenterStackFeatureWindow(controller: sonosWindowController, show: showSonos)
+        case .waveform: CenterStackFeatureWindow(controller: waveformWindowController, show: showWaveform)
+        }
+    }
+
+    /// The feature window on screen: the hosted one while a `.wal` skin hosts it, else the
+    /// controller's.
+    func centerStackWindow(_ feature: CenterStackFeature) -> NSWindow? {
+        if winampModernHostedController?.handlesHostedWindow(feature.hostedID) == true {
+            return winampModernHostedController?.hostedWindow(ifMaterialized: feature.hostedID)
+        }
+        return centerStackFeatureWindow(feature).controller?.window
+    }
+
+    /// Whether the feature window is open, in either chrome.
+    func isCenterStackWindowVisible(_ feature: CenterStackFeature) -> Bool {
+        centerStackWindow(feature)?.isVisible == true
+    }
+
     /// Debug console window controller
     private var debugWindowController: DebugWindowController?
     
@@ -3117,14 +3154,9 @@ class WindowManager {
             equalizer: snap(equalizerWindowController, trackDetachedState: true)
                 ?? snapWindow(equalizerWindow, trackDetachedState: true),
             playlist: snap(playlistWindowController, trackDetachedState: true),
-            spectrum: snapWindow(spectrumWindow, trackDetachedState: true),
-            audioAnalysis: snapWindow(audioAnalysisWindow, trackDetachedState: true),
-            peppyMeter: snapWindow(peppyMeterWindow, trackDetachedState: true),
-            art: snapWindow(artWindow, trackDetachedState: true),
-            networkMonitor: snapWindow(networkMonitorWindow, trackDetachedState: true),
-            cava: snapWindow(cavaWindow, trackDetachedState: true),
-            sonos: snapWindow(sonosWindow, trackDetachedState: true),
-            waveform: snapWindow(waveformWindow, trackDetachedState: true),
+            centerStack: CenterStackFeature.allCases.reduce(into: [:]) { snapshots, feature in
+                snapshots[feature] = snapWindow(centerStackWindow(feature), trackDetachedState: true)
+            },
             projectM: snap(projectMWindowController, trackDetachedState: true)
                 ?? snapWindow(winampModernHostedController?.hostedWindow(ifMaterialized: .projectM),
                               trackDetachedState: true),
@@ -3246,18 +3278,6 @@ class WindowManager {
             }
         }
 
-        /// Prefer the per-feature controller; fall back to the routed path only when there is none,
-        /// which is the hosted `.wal` case. Keeps Classic and Original on the path they had before
-        /// the hosted surfaces existed.
-        func restoreCentreStackWindow(_ snapshot: WindowSnapshot?, controller: ModeDependentWindow?,
-                                      window: NSWindow?, show: (NSRect?) -> Void) {
-            if controller != nil {
-                restore(snapshot, controller: controller)
-            } else {
-                restoreRouted(snapshot, window: window, show: show)
-            }
-        }
-
         restore(snapshot.main, controller: mainWindowController)
         if equalizerWindowController != nil {
             restore(snapshot.equalizer, controller: equalizerWindowController)
@@ -3269,22 +3289,16 @@ class WindowManager {
         // rather than by a per-feature controller. Where a controller exists — which is every one of
         // these in Classic and Original — the original `restore` runs, so Compact Mode gives back the
         // frame it took and nothing else. `showX(at:)` does considerably more than that.
-        restoreCentreStackWindow(snapshot.spectrum, controller: spectrumWindowController,
-                                 window: spectrumWindow, show: showSpectrum)
-        restoreCentreStackWindow(snapshot.audioAnalysis, controller: audioAnalysisWindowController,
-                                 window: audioAnalysisWindow, show: showAudioAnalysis)
-        restoreCentreStackWindow(snapshot.peppyMeter, controller: peppyMeterWindowController,
-                                 window: peppyMeterWindow, show: showPeppyMeter)
-        restoreCentreStackWindow(snapshot.art, controller: artWindowController,
-                                 window: artWindow, show: showArt)
-        restoreCentreStackWindow(snapshot.networkMonitor, controller: networkMonitorWindowController,
-                                 window: networkMonitorWindow, show: showNetworkMonitor)
-        restoreCentreStackWindow(snapshot.cava, controller: cavaWindowController,
-                                 window: cavaWindow, show: showCava)
-        restoreCentreStackWindow(snapshot.sonos, controller: sonosWindowController,
-                                 window: sonosWindow, show: showSonos)
-        restoreCentreStackWindow(snapshot.waveform, controller: waveformWindowController,
-                                 window: waveformWindow, show: showWaveform)
+        // Prefer the per-feature controller; fall back to the routed path only when there is none,
+        // which is the hosted `.wal` case.
+        for feature in CenterStackFeature.allCases {
+            let row = centerStackFeatureWindow(feature)
+            if row.controller != nil {
+                restore(snapshot.centerStack[feature], controller: row.controller)
+            } else {
+                restoreRouted(snapshot.centerStack[feature], window: centerStackWindow(feature), show: row.show)
+            }
+        }
         restore(snapshot.projectM, controller: projectMWindowController)
         restore(snapshot.library, controller: plexBrowserWindowController)
         // Restart the Library Cava backdrop we stopped on entry (orderOutRegularWindows). Restoring
@@ -3314,20 +3328,17 @@ class WindowManager {
         case "main": return snapshot.main?.wasVisible ?? current
         case "equalizer": return snapshot.equalizer?.wasVisible ?? current
         case "playlist": return snapshot.playlist?.wasVisible ?? current
-        case "spectrum": return snapshot.spectrum?.wasVisible ?? current
-        case "audioAnalysis": return snapshot.audioAnalysis?.wasVisible ?? current
-        case "peppyMeter": return snapshot.peppyMeter?.wasVisible ?? current
-        case "art": return snapshot.art?.wasVisible ?? current
-        case "networkMonitor": return snapshot.networkMonitor?.wasVisible ?? current
-        case "cava": return snapshot.cava?.wasVisible ?? current
-        case "sonos": return snapshot.sonos?.wasVisible ?? current
-        case "waveform": return snapshot.waveform?.wasVisible ?? current
         case "projectM": return snapshot.projectM?.wasVisible ?? current
         case "plexBrowser": return snapshot.library?.wasVisible ?? current
         // "video" and "debug" are intentionally omitted: Compact Mode no longer hides them,
         // so their live visibility is already the value worth saving (falls through to `current`).
         default: return current
         }
+    }
+
+    func visibilityForStateSaving(_ feature: CenterStackFeature, current: Bool) -> Bool {
+        guard compactModeState != .regular, let snapshot = regularWindowSnapshot else { return current }
+        return snapshot.centerStack[feature]?.wasVisible ?? current
     }
 
     /// Switching activation policy `.accessory` → `.regular` makes macOS forget the bundle's
@@ -4354,28 +4365,10 @@ class WindowManager {
         postLayoutChangeNotification()
     }
     
-    var isSpectrumVisible: Bool {
-        if winampModernHostedController?.handlesHostedWindow(.spectrum) == true {
-            return winampModernHostedController?.isHostedWindowVisible(.spectrum) == true
-        }
-        return spectrumWindowController?.window?.isVisible == true
-    }
+    var isSpectrumVisible: Bool { isCenterStackWindowVisible(.spectrum) }
     
-    /// Get the Spectrum window frame (for state saving)
-    var spectrumWindowFrame: NSRect? {
-        if winampModernHostedController?.handlesHostedWindow(.spectrum) == true {
-            return winampModernHostedController?.hostedWindow(ifMaterialized: .spectrum)?.frame
-        }
-        return spectrumWindowController?.window?.frame
-    }
-
     /// Access the spectrum window when visible/internal geometry repairs need direct frame updates.
-    var spectrumWindow: NSWindow? {
-        if winampModernHostedController?.handlesHostedWindow(.spectrum) == true {
-            return winampModernHostedController?.hostedWindow(ifMaterialized: .spectrum)
-        }
-        return spectrumWindowController?.window
-    }
+    var spectrumWindow: NSWindow? { centerStackWindow(.spectrum) }
     
     func toggleSpectrum() {
         if routeWinampModernHostedWindow(.spectrum, toggle: true) { return }
@@ -4434,27 +4427,7 @@ class WindowManager {
         postLayoutChangeNotification()
     }
 
-    var isAudioAnalysisVisible: Bool {
-        if winampModernHostedController?.handlesHostedWindow(.audioAnalysis) == true {
-            return winampModernHostedController?.isHostedWindowVisible(.audioAnalysis) == true
-        }
-        return audioAnalysisWindowController?.window?.isVisible == true
-    }
-
-    /// Get the Audio Analysis window frame (for state saving)
-    var audioAnalysisWindowFrame: NSRect? {
-        if winampModernHostedController?.handlesHostedWindow(.audioAnalysis) == true {
-            return winampModernHostedController?.hostedWindow(ifMaterialized: .audioAnalysis)?.frame
-        }
-        return audioAnalysisWindowController?.window?.frame
-    }
-
-    var audioAnalysisWindow: NSWindow? {
-        if winampModernHostedController?.handlesHostedWindow(.audioAnalysis) == true {
-            return winampModernHostedController?.hostedWindow(ifMaterialized: .audioAnalysis)
-        }
-        return audioAnalysisWindowController?.window
-    }
+    var isAudioAnalysisVisible: Bool { isCenterStackWindowVisible(.audioAnalysis) }
 
     func toggleAudioAnalysis() {
         if routeWinampModernHostedWindow(.audioAnalysis, toggle: true) { return }
@@ -4512,32 +4485,13 @@ class WindowManager {
         postLayoutChangeNotification()
     }
 
-    var isPeppyMeterVisible: Bool {
-        if winampModernHostedController?.handlesHostedWindow(.peppyMeter) == true {
-            return winampModernHostedController?.isHostedWindowVisible(.peppyMeter) == true
-        }
-        return peppyMeterWindowController?.window?.isVisible == true
-    }
+    var isPeppyMeterVisible: Bool { isCenterStackWindowVisible(.peppyMeter) }
 
     var isPeppyMeterFullscreen: Bool {
         if let window = winampModernHostedController?.hostedWindow(ifMaterialized: .peppyMeter) {
             return window.styleMask.contains(.fullScreen)
         }
         return peppyMeterWindowController?.isFullscreen ?? false
-    }
-
-    var peppyMeterWindowFrame: NSRect? {
-        if winampModernHostedController?.handlesHostedWindow(.peppyMeter) == true {
-            return winampModernHostedController?.hostedWindow(ifMaterialized: .peppyMeter)?.frame
-        }
-        return peppyMeterWindowController?.window?.frame
-    }
-
-    var peppyMeterWindow: NSWindow? {
-        if winampModernHostedController?.handlesHostedWindow(.peppyMeter) == true {
-            return winampModernHostedController?.hostedWindow(ifMaterialized: .peppyMeter)
-        }
-        return peppyMeterWindowController?.window
     }
 
     func togglePeppyMeterFullscreen() {
@@ -4600,15 +4554,7 @@ class WindowManager {
         postLayoutChangeNotification()
     }
 
-    var artWindow: NSWindow? {
-        if winampModernHostedController?.handlesHostedWindow(.art) == true {
-            return winampModernHostedController?.hostedWindow(ifMaterialized: .art)
-        }
-        return artWindowController?.window
-    }
-
-    var isArtVisible: Bool { artWindow?.isVisible == true }
-    var artWindowFrame: NSRect? { artWindow?.frame }
+    var isArtVisible: Bool { isCenterStackWindowVisible(.art) }
 
     func toggleArt() {
         if routeWinampModernHostedWindow(.art, toggle: true) { return }
@@ -4665,26 +4611,7 @@ class WindowManager {
         postLayoutChangeNotification()
     }
 
-    var isNetworkMonitorVisible: Bool {
-        if winampModernHostedController?.handlesHostedWindow(.flow) == true {
-            return winampModernHostedController?.isHostedWindowVisible(.flow) == true
-        }
-        return networkMonitorWindowController?.window?.isVisible == true
-    }
-
-    var networkMonitorWindowFrame: NSRect? {
-        if winampModernHostedController?.handlesHostedWindow(.flow) == true {
-            return winampModernHostedController?.hostedWindow(ifMaterialized: .flow)?.frame
-        }
-        return networkMonitorWindowController?.window?.frame
-    }
-
-    var networkMonitorWindow: NSWindow? {
-        if winampModernHostedController?.handlesHostedWindow(.flow) == true {
-            return winampModernHostedController?.hostedWindow(ifMaterialized: .flow)
-        }
-        return networkMonitorWindowController?.window
-    }
+    var isNetworkMonitorVisible: Bool { isCenterStackWindowVisible(.networkMonitor) }
 
     func toggleNetworkMonitor() {
         if routeWinampModernHostedWindow(.flow, toggle: true) { return }
@@ -4706,15 +4633,7 @@ class WindowManager {
 
     // MARK: - Sonos Rooms Window
 
-    var sonosWindow: NSWindow? {
-        if winampModernHostedController?.handlesHostedWindow(.sonos) == true {
-            return winampModernHostedController?.hostedWindow(ifMaterialized: .sonos)
-        }
-        return sonosWindowController?.window
-    }
-
-    var isSonosVisible: Bool { sonosWindow?.isVisible == true }
-    var sonosWindowFrame: NSRect? { sonosWindow?.frame }
+    var isSonosVisible: Bool { isCenterStackWindowVisible(.sonos) }
 
     func showSonos(at restoredFrame: NSRect? = nil) {
         if routeWinampModernHostedWindow(.sonos, toggle: false, restoredFrame: restoredFrame) { return }
@@ -4798,26 +4717,7 @@ class WindowManager {
         postLayoutChangeNotification()
     }
 
-    var isCavaVisible: Bool {
-        if winampModernHostedController?.handlesHostedWindow(.cava) == true {
-            return winampModernHostedController?.isHostedWindowVisible(.cava) == true
-        }
-        return cavaWindowController?.window?.isVisible == true
-    }
-
-    var cavaWindowFrame: NSRect? {
-        if winampModernHostedController?.handlesHostedWindow(.cava) == true {
-            return winampModernHostedController?.hostedWindow(ifMaterialized: .cava)?.frame
-        }
-        return cavaWindowController?.window?.frame
-    }
-
-    var cavaWindow: NSWindow? {
-        if winampModernHostedController?.handlesHostedWindow(.cava) == true {
-            return winampModernHostedController?.hostedWindow(ifMaterialized: .cava)
-        }
-        return cavaWindowController?.window
-    }
+    var isCavaVisible: Bool { isCenterStackWindowVisible(.cava) }
 
     func toggleCava() {
         if routeWinampModernHostedWindow(.cava, toggle: true) { return }
@@ -4892,27 +4792,10 @@ class WindowManager {
         postLayoutChangeNotification()
     }
 
-    var isWaveformVisible: Bool {
-        if winampModernHostedController?.handlesHostedWindow(.waveform) == true {
-            return winampModernHostedController?.isHostedWindowVisible(.waveform) == true
-        }
-        return waveformWindowController?.window?.isVisible == true
-    }
-
-    var waveformWindowFrame: NSRect? {
-        if winampModernHostedController?.handlesHostedWindow(.waveform) == true {
-            return winampModernHostedController?.hostedWindow(ifMaterialized: .waveform)?.frame
-        }
-        return waveformWindowController?.window?.frame
-    }
+    var isWaveformVisible: Bool { isCenterStackWindowVisible(.waveform) }
 
     /// Access the waveform window when visible/internal geometry repairs need direct frame updates.
-    var waveformWindow: NSWindow? {
-        if winampModernHostedController?.handlesHostedWindow(.waveform) == true {
-            return winampModernHostedController?.hostedWindow(ifMaterialized: .waveform)
-        }
-        return waveformWindowController?.window
-    }
+    var waveformWindow: NSWindow? { centerStackWindow(.waveform) }
 
     func toggleWaveform() {
         if routeWinampModernHostedWindow(.waveform, toggle: true) {
@@ -5408,14 +5291,9 @@ class WindowManager {
         equalizerWindowController?.skinDidChange()
         plexBrowserWindowController?.skinDidChange()
         projectMWindowController?.skinDidChange()
-        spectrumWindowController?.skinDidChange()
-        audioAnalysisWindowController?.skinDidChange()
-        peppyMeterWindowController?.skinDidChange()
-        artWindowController?.skinDidChange()
-        networkMonitorWindowController?.skinDidChange()
-        cavaWindowController?.skinDidChange()
-        sonosWindowController?.skinDidChange()
-        waveformWindowController?.skinDidChange()
+        for feature in CenterStackFeature.allCases {
+            centerStackFeatureWindow(feature).controller?.skinDidChange()
+        }
         compactWindowController?.skinDidChange()
     }
 
@@ -5735,12 +5613,10 @@ class WindowManager {
                 window.setContentSize(NSSize(width: newWidth, height: newHeight))
             }
         }
-        restackSpectrumFamilyWindow(audioAnalysisWindowController?.window, kind: .audioAnalysis)
-        restackSpectrumFamilyWindow(peppyMeterWindowController?.window, kind: .peppyMeter)
-        restackSpectrumFamilyWindow(artWindowController?.window, kind: .art)
-        restackSpectrumFamilyWindow(networkMonitorWindowController?.window, kind: .networkMonitor)
-        restackSpectrumFamilyWindow(cavaWindowController?.window, kind: .cava)
-        restackSpectrumFamilyWindow(sonosWindowController?.window, kind: .sonos)
+        // Spectrum and Waveform were restacked above, each by its own rules.
+        for feature in CenterStackFeature.spectrumFamily {
+            restackSpectrumFamilyWindow(centerStackFeatureWindow(feature).controller?.window, kind: feature.kind)
+        }
 
         // Side windows - match the vertical stack height and reposition
         let stackTopY = mainFrame.maxY
@@ -5774,15 +5650,8 @@ class WindowManager {
         // layer-backed with `.onSetNeedsDisplay`, so resizing alone just stretches/leaves the
         // cached bitmap (a stale "ghost" of the old size) until something marks them dirty —
         // switching Spaces and back used to be the only thing that cleared it. Redraw explicitly.
-        for controller in [mainWindowController, equalizerWindowController, playlistWindowController,
-                           spectrumWindowController, waveformWindowController, audioAnalysisWindowController,
-                           peppyMeterWindowController,
-                           artWindowController,
-                           networkMonitorWindowController,
-                           cavaWindowController,
-                           sonosWindowController,
-                           plexBrowserWindowController, projectMWindowController] {
-            guard let window = controller?.window, window.isVisible,
+        for controller in modeDependentWindowControllers {
+            guard let window = controller.window, window.isVisible,
                   let contentView = window.contentView else { continue }
             contentView.markSubtreeForDisplayAndLayout()
             window.displayIfNeeded()
@@ -5814,7 +5683,7 @@ class WindowManager {
         // `managedWindowRecords`, whose order exists to describe docking membership and is free to
         // change for reasons that have nothing to do with stacking. Reading it from there silently
         // raised the equalizer above the playlist, and the video window above the visualizer and the
-        // library, in Classic.
+        // library, in Classic. The feature windows keep the case order of `CenterStackWindowKind`.
         //
         // A `.wmz` or `.wal` skin's own windows are not controllers, so they are not in this list;
         // `raiseOrder` appends them in those two modes only.
@@ -5822,14 +5691,7 @@ class WindowManager {
             mainWindowController?.window,
             equalizerWindowController?.window,
             playlistWindowController?.window,
-            spectrumWindowController?.window,
-            audioAnalysisWindowController?.window,
-            peppyMeterWindowController?.window,
-            artWindowController?.window,
-            networkMonitorWindowController?.window,
-            cavaWindowController?.window,
-            sonosWindowController?.window,
-            waveformWindowController?.window,
+        ] + CenterStackFeature.allCases.map { centerStackFeatureWindow($0).controller?.window } + [
             videoPlayerWindowController?.window,
             projectMWindowController?.window,
             plexBrowserWindowController?.window
@@ -5942,45 +5804,19 @@ class WindowManager {
         return bounds
     }
 
-    enum CenterStackWindowKind {
-        case sonos
-        case equalizer
-        case playlist
-        case spectrum
-        case waveform
-        case audioAnalysis
-        case peppyMeter
-        case art
-        case networkMonitor
-        case cava
-    }
-
     private func centerStackKind(for id: WinampModernHostedWindowID) -> CenterStackWindowKind? {
-        switch id {
-        case .spectrum: return .spectrum
-        case .equalizer: return .equalizer
-        case .cava: return .cava
-        case .sonos: return .sonos
-        case .flow: return .networkMonitor
-        case .peppyMeter: return .peppyMeter
-        case .art: return .art
-        case .audioAnalysis: return .audioAnalysis
-        case .waveform: return .waveform
-        case .projectM: return nil
-        }
+        if id == .equalizer { return .equalizer }
+        return CenterStackFeature.allCases.first { $0.hostedID == id }?.kind
     }
 
     private func centerStackWindowKind(for window: NSWindow) -> CenterStackWindowKind? {
         if window === equalizerWindowController?.window { return .equalizer }
         if window === playlistWindowController?.window { return .playlist }
-        if window === spectrumWindowController?.window { return .spectrum }
-        if window === waveformWindowController?.window { return .waveform }
-        if window === audioAnalysisWindowController?.window { return .audioAnalysis }
-        if window === peppyMeterWindowController?.window { return .peppyMeter }
-        if window === artWindowController?.window { return .art }
-        if window === networkMonitorWindowController?.window { return .networkMonitor }
-        if window === cavaWindowController?.window { return .cava }
-        if window === sonosWindowController?.window { return .sonos }
+        if let feature = CenterStackFeature.allCases.first(where: {
+            centerStackFeatureWindow($0).controller?.window === window
+        }) {
+            return feature.kind
+        }
         if let hosted = winampModernHostedController?.materializedHostedWindows.first(where: {
             $0.window === window
         }) {
@@ -6370,29 +6206,10 @@ class WindowManager {
         guard let mainWindow = mainWindowController?.window else { return false }
 
         let scale = uiScaleLevel.scaleFactor
-        let equalizerWindow = equalizerWindowController?.window
-        let playlistWindow = playlistWindowController?.window
-        let spectrumWindow = spectrumWindowController?.window
-        let waveformWindow = waveformWindowController?.window
-        let audioAnalysisWindow = audioAnalysisWindowController?.window
-        let peppyMeterWindow = peppyMeterWindowController?.window
-        let artWindow = artWindowController?.window
-        let networkMonitorWindow = networkMonitorWindowController?.window
-        let cavaWindow = cavaWindowController?.window
-        let sonosWindow = sonosWindowController?.window
-
+        let windows = visibleCenterStackColumn(routingFeatureWindows: false)
         let repaired = AppStateManager.repairClassicCenterStackFrames(
             mainFrame: mainWindow.frame,
-            equalizerFrame: (equalizerWindow?.isVisible == true) ? equalizerWindow?.frame : nil,
-            playlistFrame: (playlistWindow?.isVisible == true) ? playlistWindow?.frame : nil,
-            spectrumFrame: (spectrumWindow?.isVisible == true) ? spectrumWindow?.frame : nil,
-            waveformFrame: (waveformWindow?.isVisible == true) ? waveformWindow?.frame : nil,
-            audioAnalysisFrame: (audioAnalysisWindow?.isVisible == true) ? audioAnalysisWindow?.frame : nil,
-            peppyMeterFrame: (peppyMeterWindow?.isVisible == true) ? peppyMeterWindow?.frame : nil,
-            artFrame: (artWindow?.isVisible == true) ? artWindow?.frame : nil,
-            networkMonitorFrame: (networkMonitorWindow?.isVisible == true) ? networkMonitorWindow?.frame : nil,
-            cavaFrame: (cavaWindow?.isVisible == true) ? cavaWindow?.frame : nil,
-            sonosFrame: (sonosWindow?.isVisible == true) ? sonosWindow?.frame : nil,
+            frames: windows.mapValues(\.frame),
             scale: scale
         )
 
@@ -6409,65 +6226,11 @@ class WindowManager {
         if repaired.mainFrame != mainWindow.frame {
             mainWindow.setFrame(repaired.mainFrame, display: true, animate: false)
         }
-        if let equalizerWindow,
-           equalizerWindow.isVisible,
-           let repairedFrame = repaired.equalizerFrame,
-           repairedFrame != equalizerWindow.frame {
-            equalizerWindow.setFrame(repairedFrame, display: true, animate: false)
-        }
-        if let playlistWindow,
-           playlistWindow.isVisible,
-           let repairedFrame = repaired.playlistFrame,
-           repairedFrame != playlistWindow.frame {
-            playlistWindow.setFrame(repairedFrame, display: true, animate: false)
-        }
-        if let spectrumWindow,
-           spectrumWindow.isVisible,
-           let repairedFrame = repaired.spectrumFrame,
-           repairedFrame != spectrumWindow.frame {
-            spectrumWindow.setFrame(repairedFrame, display: true, animate: false)
-        }
-        if let waveformWindow,
-           waveformWindow.isVisible,
-           let repairedFrame = repaired.waveformFrame,
-           repairedFrame != waveformWindow.frame {
-            waveformWindow.setFrame(repairedFrame, display: true, animate: false)
-        }
-        if let audioAnalysisWindow,
-           audioAnalysisWindow.isVisible,
-           let repairedFrame = repaired.audioAnalysisFrame,
-           repairedFrame != audioAnalysisWindow.frame {
-            audioAnalysisWindow.setFrame(repairedFrame, display: true, animate: false)
-        }
-        if let peppyMeterWindow,
-           peppyMeterWindow.isVisible,
-           let repairedFrame = repaired.peppyMeterFrame,
-           repairedFrame != peppyMeterWindow.frame {
-            peppyMeterWindow.setFrame(repairedFrame, display: true, animate: false)
-        }
-        if let artWindow,
-           artWindow.isVisible,
-           let repairedFrame = repaired.artFrame,
-           repairedFrame != artWindow.frame {
-            artWindow.setFrame(repairedFrame, display: true, animate: false)
-        }
-        if let networkMonitorWindow,
-           networkMonitorWindow.isVisible,
-           let repairedFrame = repaired.networkMonitorFrame,
-           repairedFrame != networkMonitorWindow.frame {
-            networkMonitorWindow.setFrame(repairedFrame, display: true, animate: false)
-        }
-        if let cavaWindow,
-           cavaWindow.isVisible,
-           let repairedFrame = repaired.cavaFrame,
-           repairedFrame != cavaWindow.frame {
-            cavaWindow.setFrame(repairedFrame, display: true, animate: false)
-        }
-        if let sonosWindow,
-           sonosWindow.isVisible,
-           let repairedFrame = repaired.sonosFrame,
-           repairedFrame != sonosWindow.frame {
-            sonosWindow.setFrame(repairedFrame, display: true, animate: false)
+        for kind in CenterStackWindowKind.columnOrder {
+            if let window = windows[kind], let repairedFrame = repaired.frames[kind],
+               repairedFrame != window.frame {
+                window.setFrame(repairedFrame, display: true, animate: false)
+            }
         }
 
         return true
@@ -6753,9 +6516,8 @@ class WindowManager {
 
     /// The windows Snap To Default stacks beneath the main window, top to bottom.
     private var centerStackWindowsBelowMain: [NSWindow] {
-        [equalizerWindowController?.window, playlistWindowController?.window, spectrumWindow,
-         waveformWindow, audioAnalysisWindow, peppyMeterWindow, artWindow, networkMonitorWindow,
-         cavaWindow, sonosWindow].compactMap { $0 }
+        ([equalizerWindowController?.window, playlistWindowController?.window]
+            + CenterStackFeature.stackOrder.map(centerStackWindow)).compactMap { $0 }
     }
 
     /// Reset all windows to their default positions
@@ -7814,19 +7576,12 @@ class WindowManager {
     /// `videoPlayerWindowController` and the DEBUG console are deliberately excluded:
     /// the video player must survive a switch (closing it stops playback / casts).
     private var modeDependentWindowControllers: [ModeDependentWindow] {
-        [mainWindowController,
-         playlistWindowController,
-         equalizerWindowController,
-         plexBrowserWindowController,
-         projectMWindowController,
-         spectrumWindowController,
-         audioAnalysisWindowController,
-         peppyMeterWindowController,
-         artWindowController,
-         networkMonitorWindowController,
-         cavaWindowController,
-         sonosWindowController,
-         waveformWindowController].compactMap { $0 }
+        ([mainWindowController,
+          playlistWindowController,
+          equalizerWindowController,
+          plexBrowserWindowController,
+          projectMWindowController]
+            + CenterStackFeature.allCases.map { centerStackFeatureWindow($0).controller }).compactMap { $0 }
     }
 
     /// Tear down only the mode-dependent window layer, leaving audio, casting, the video
@@ -7937,14 +7692,7 @@ class WindowManager {
         var equalizer: UIWindowSnapshot?
         var library: UIWindowSnapshot?
         var projectM: UIWindowSnapshot?
-        var spectrum: UIWindowSnapshot?
-        var audioAnalysis: UIWindowSnapshot?
-        var peppyMeter: UIWindowSnapshot?
-        var art: UIWindowSnapshot?
-        var networkMonitor: UIWindowSnapshot?
-        var cava: UIWindowSnapshot?
-        var sonos: UIWindowSnapshot?
-        var waveform: UIWindowSnapshot?
+        var centerStack: [CenterStackFeature: UIWindowSnapshot] = [:]
         /// Live ProjectM preset index, carried across the rebuild so the visualization stays on the
         /// exact preset the user was viewing rather than reverting to the saved startup default.
         var projectMPresetIndex: Int?
@@ -7974,14 +7722,9 @@ class WindowManager {
             library: snap(plexBrowserWindowController, normalFrame: plexBrowserWindowController?.frameForPositionMemory),
             projectM: snap(projectMWindowController)
                 ?? snapWindow(winampModernHostedController?.hostedWindow(ifMaterialized: .projectM)),
-            spectrum: snapWindow(spectrumWindow),
-            audioAnalysis: snapWindow(audioAnalysisWindow),
-            peppyMeter: snapWindow(peppyMeterWindow),
-            art: snapWindow(artWindow),
-            networkMonitor: snapWindow(networkMonitorWindow),
-            cava: snapWindow(cavaWindow),
-            sonos: snapWindow(sonosWindow),
-            waveform: snapWindow(waveformWindow),
+            centerStack: CenterStackFeature.allCases.reduce(into: [:]) { snapshots, feature in
+                snapshots[feature] = snapWindow(centerStackWindow(feature))
+            },
             projectMPresetIndex: restorableProjectMPresetIndex(),
             family: uiMode.controllerFamily
         )
@@ -8057,21 +7800,10 @@ class WindowManager {
             let normalFrame = library.normalFrame ?? library.frame
             showPlexBrowser(at: carried(normalFrame))
         }
-        if let spectrum = snapshot.spectrum, spectrum.visible {
-            showSpectrum(at: carried(spectrum.frame))
-        }
-        if snapshot.audioAnalysis?.visible == true {
-            showAudioAnalysis(at: carried(snapshot.audioAnalysis?.frame))
-        }
-        if snapshot.peppyMeter?.visible == true { showPeppyMeter(at: carried(snapshot.peppyMeter?.frame)) }
-        if snapshot.art?.visible == true { showArt(at: carried(snapshot.art?.frame)) }
-        if snapshot.networkMonitor?.visible == true {
-            showNetworkMonitor(at: carried(snapshot.networkMonitor?.frame))
-        }
-        if snapshot.cava?.visible == true { showCava(at: carried(snapshot.cava?.frame)) }
-        if snapshot.sonos?.visible == true { showSonos(at: carried(snapshot.sonos?.frame)) }
-        if let waveform = snapshot.waveform, waveform.visible {
-            showWaveform(at: carried(waveform.frame))
+        for feature in CenterStackFeature.allCases {
+            if let window = snapshot.centerStack[feature], window.visible {
+                centerStackFeatureWindow(feature).show(carried(window.frame))
+            }
         }
         if let projectM = snapshot.projectM, projectM.visible {
             showProjectM(
@@ -8294,14 +8026,7 @@ class WindowManager {
     private struct DetachedWindowFrames {
         var equalizer: NSRect?
         var playlist: NSRect?
-        var spectrum: NSRect?
-        var waveform: NSRect?
-        var audioAnalysis: NSRect?
-        var peppyMeter: NSRect?
-        var art: NSRect?
-        var networkMonitor: NSRect?
-        var cava: NSRect?
-        var sonos: NSRect?
+        var centerStack: [CenterStackFeature: NSRect] = [:]
         var library: NSRect?
         var projectM: NSRect?
     }
@@ -8340,14 +8065,9 @@ class WindowManager {
         return DetachedWindowFrames(
             equalizer: detachedFrame(equalizerWindow),
             playlist: detachedFrame(playlistWindowController?.window),
-            spectrum: detachedFrame(spectrumWindow),
-            waveform: detachedFrame(waveformWindow),
-            audioAnalysis: detachedFrame(audioAnalysisWindow),
-            peppyMeter: detachedFrame(peppyMeterWindow),
-            art: detachedFrame(artWindow),
-            networkMonitor: detachedFrame(networkMonitorWindow),
-            cava: detachedFrame(cavaWindow),
-            sonos: detachedFrame(sonosWindow),
+            centerStack: CenterStackFeature.allCases.reduce(into: [:]) { frames, feature in
+                frames[feature] = detachedFrame(centerStackWindow(feature))
+            },
             library: detachedFrame(plexBrowserWindowController?.window),
             projectM: detachedFrame(projectMWindowController?.window
                 ?? winampModernHostedController?.hostedWindow(ifMaterialized: .projectM))
@@ -8383,14 +8103,7 @@ class WindowManager {
         return DetachedWindowFrames(
             equalizer: detachedFrame(snapshot.equalizer),
             playlist: detachedFrame(snapshot.playlist),
-            spectrum: detachedFrame(snapshot.spectrum),
-            waveform: detachedFrame(snapshot.waveform),
-            audioAnalysis: detachedFrame(snapshot.audioAnalysis),
-            peppyMeter: detachedFrame(snapshot.peppyMeter),
-            art: detachedFrame(snapshot.art),
-            networkMonitor: detachedFrame(snapshot.networkMonitor),
-            cava: detachedFrame(snapshot.cava),
-            sonos: detachedFrame(snapshot.sonos),
+            centerStack: snapshot.centerStack.compactMapValues(detachedFrame),
             library: detachedFrame(snapshot.library),
             projectM: detachedFrame(snapshot.projectM)
         )
@@ -8404,14 +8117,9 @@ class WindowManager {
         let restorations: [(NSRect?, NSWindow?, native: Bool)] = [
             (frames.equalizer, equalizerWindow, false),
             (frames.playlist, playlistWindowController?.window, false),
-            (frames.spectrum, spectrumWindow, true),
-            (frames.waveform, waveformWindow, true),
-            (frames.audioAnalysis, audioAnalysisWindow, true),
-            (frames.peppyMeter, peppyMeterWindow, true),
-            (frames.art, artWindow, true),
-            (frames.networkMonitor, networkMonitorWindow, true),
-            (frames.cava, cavaWindow, true),
-            (frames.sonos, sonosWindow, true),
+        ] + CenterStackFeature.stackOrder.map {
+            (frames.centerStack[$0], centerStackWindow($0), true)
+        } + [
             (frames.library, plexBrowserWindowController?.window, true),
             (frames.projectM, projectMWindowController?.window, true),
         ]
@@ -8477,14 +8185,7 @@ class WindowManager {
             equalizer: conv(snapshot.equalizer),
             library: convScaled(snapshot.library),
             projectM: convScaled(snapshot.projectM),
-            spectrum: convScaled(snapshot.spectrum),
-            audioAnalysis: convScaled(snapshot.audioAnalysis),
-            peppyMeter: convScaled(snapshot.peppyMeter),
-            art: convScaled(snapshot.art),
-            networkMonitor: convScaled(snapshot.networkMonitor),
-            cava: convScaled(snapshot.cava),
-            sonos: convScaled(snapshot.sonos),
-            waveform: convScaled(snapshot.waveform),
+            centerStack: snapshot.centerStack.compactMapValues(convScaled),
             projectMPresetIndex: restorableProjectMPresetIndex(),
             family: uiMode.controllerFamily
         )
