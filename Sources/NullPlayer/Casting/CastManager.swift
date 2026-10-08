@@ -2768,7 +2768,7 @@ class CastManager {
     private func castArtworkURL(for track: Track, size: Int = 300) -> URL? {
         guard let thumb = track.artworkThumb else { return nil }
         if track.plexRatingKey != nil {
-            return PlexManager.shared.artworkURL(thumb: thumb, size: size)
+            return PlexManager.shared.artworkURL(thumb: thumb, size: size).map(rewriteLocalhostForCasting)
         }
         let serverURL: URL?
         if track.subsonicId != nil {

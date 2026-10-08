@@ -3713,6 +3713,8 @@ class WindowManager {
         let controller = videoPlayerWindowController ?? VideoPlayerWindowController()
         videoPlayerWindowController = controller
         controller.volume = audioEngine.volume
+        // A film from outside the queue must not advance the playlist when it ends
+        controller.onVideoFinishedForPlaylist = nil
         controller.play(url: url, title: title)
         applyAlwaysOnTopToWindow(controller.window)
     }
