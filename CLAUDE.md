@@ -36,6 +36,7 @@ Technical documentation lives in `skills/`. Read the owning skill before changin
 - `testing`: UI test workflows; `non-retina-fixes`: 1x display fixes; `local-library`: SQLite and scanning; `cli`: headless mode
 - `skin-screenshots`: per-skin main-window captures across all skin systems, and slideshow GIFs
 - `window-census`: every sub-window's default size and position, per skin or across the corpus
+- `thermo-nuclear-code-quality-review`: the strict maintainability lens every code review uses
 
 ## Architecture
 
@@ -78,8 +79,9 @@ Settle the structure before writing; it is cheap now and expensive once review f
   at the one seam where the paths split.
 - No pass-through wrappers, near-duplicate helpers, or optionals and casts that paper over an unclear invariant.
 - Don't add a new concern to a file already past ~1,000 lines; give it its own file.
-- Keep the change to the task. A restructuring beyond it is proposed, not done — review
-  (`thermo-nuclear-code-quality-review`) is where the ambitious rework gets weighed.
+- Keep the change to the task. A restructuring beyond it is proposed, not done — review is where
+  the ambitious rework gets weighed, with `thermo-nuclear-code-quality-review` (vendored from
+  cursor/plugins under MIT; user-invoked).
 
 ## Testing
 
