@@ -841,7 +841,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         // running both is one keypress acting twice.
         if skinHandled(event, named: "keydown", focused: focused) { return }
         guard let target = focused else {
-            if visualizationHandled(event) { return }
+            if hostedSurfaceHandled(event) { return }
             return super.keyDown(with: event)
         }
         if event.keyCode == 49 || event.keyCode == 36 {
@@ -860,7 +860,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             widgetValues[target.stableID] = value
             onElementValueChanged?(target.stableID, target.nodeID, value); return
         }
-        if visualizationHandled(event) { return }
+        if hostedSurfaceHandled(event) { return }
         super.keyDown(with: event)
     }
 
@@ -876,12 +876,14 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         super.keyUp(with: event)
     }
 
-    /// The skin has refused the key: offer it to a hosted `<EFFECTS>` surface, which answers the
-    /// same visualization keys as NullPlayer's own window. A skin's focused control always goes
-    /// first — a slider's arrows are the slider's.
-    private func visualizationHandled(_ event: NSEvent) -> Bool {
-        widgetViews.values.compactMap { $0 as? WMPEffectsSurfaceView }
-            .contains { $0.handleKeyDown(event) }
+    /// The skin has refused the key: offer it to a film parked in the skin's video box, which never
+    /// becomes key itself (M18), then to a hosted `<EFFECTS>` surface, which answers the same
+    /// visualization keys as NullPlayer's own window. The film goes first: it shares those keys while
+    /// the engine feeding the visualization is paused. A skin's focused control always goes first —
+    /// a slider's arrows are the slider's.
+    private func hostedSurfaceHandled(_ event: NSEvent) -> Bool {
+        WindowManager.shared.currentVideoPlayerController?.handleParkedVideoKey(event) == true
+            || widgetViews.values.compactMap { $0 as? WMPEffectsSurfaceView }.contains { $0.handleKeyDown(event) }
     }
 
     override func accessibilityChildren() -> [Any]? {

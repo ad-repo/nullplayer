@@ -1622,6 +1622,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         guard let surface = view.hostedVideoSurface else { return false }
         surface.attachVideoOutput()
         surface.updateOutputPlacement()
+        // Key focus goes with the picture: off an embedded Library Browser that started the film,
+        // where Return replays the row (M5), to the skin view, which hands the film its keys (M18).
+        view.window?.makeFirstResponder(view)
         // …and again once the reveal has settled. Switching the tab sets off the skin's own
         // `onResize` cascade, which is what gives the box its final width — it runs after this turn,
         // and a film started while the tab was closed otherwise parked the picture over the box's
