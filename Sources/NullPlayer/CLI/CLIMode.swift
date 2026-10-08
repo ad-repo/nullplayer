@@ -204,15 +204,17 @@ class CLIMode: NSObject, NSApplicationDelegate {
         // Signal handlers (must use DispatchSourceSignal — signal() requires C function pointers)
         signal(SIGINT, SIG_IGN)
         sigintSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
-        sigintSource?.setEventHandler {
-            CLIPlayer.exitAndRestoreTerminal(code: 130)
+        sigintSource?.setEventHandler { [weak self] in
+            guard let player = self?.player else { CLIPlayer.exitAndRestoreTerminal(code: 130) }
+            player.quit(code: 130)
         }
         sigintSource?.resume()
 
         signal(SIGTERM, SIG_IGN)
         sigtermSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-        sigtermSource?.setEventHandler {
-            CLIPlayer.exitAndRestoreTerminal(code: 0)
+        sigtermSource?.setEventHandler { [weak self] in
+            guard let player = self?.player else { CLIPlayer.exitAndRestoreTerminal(code: 0) }
+            player.quit(code: 0)
         }
         sigtermSource?.resume()
 
@@ -269,6 +271,10 @@ class CLIMode: NSObject, NSApplicationDelegate {
                     cliPlayer.monitorRadio()
                 case .video(let item):
                     try await cliPlayer.castVideo(item, castValue: opts.cast)
+                }
+                switch result {
+                case .tracks, .radioStation: cliPlayer.castAudioIfRequested()
+                case .video: break  // castVideo routes it
                 }
 
                 let kb = CLIKeyboard(player: cliPlayer)

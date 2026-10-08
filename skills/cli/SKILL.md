@@ -34,6 +34,10 @@ Do not describe it as a daemon, background control server, or remote-control pro
 > "$BIN" --cli --list-libraries --source plex --json
 > ```
 >
+> Build that path with `swift build --build-system native` (what `scripts/lib/swiftpm.sh` passes).
+> A plain `swift build` on a toolchain that defaults to Swift Build writes to `.build/out/Products/`
+> instead, reports success, and leaves the binary above stale.
+>
 > The examples below are flag documentation and are written with the shim; this banner governs
 > them. See `app-control` Rule zero.
 
@@ -440,6 +444,16 @@ playlist), the `catch` sets `castSessionActive = false` — otherwise the guard 
 every future `.stopped` and hang the CLI at natural end. It then exits (code 1) if local
 playback is no longer running (it was stopped for the failed handoff), or lets local playback
 continue to its natural end if the throw happened before local playback was touched.
+
+**Casting starts after the switch on the resolve result.** `CLIMode` calls
+`castAudioIfRequested()` once for both audio results, `.tracks` and `.radioStation`
+(RadioManager is already playing the station); `.video` casts through `castVideo`.
+
+**Quitting stops the cast device.** `q`, SIGINT and SIGTERM all go through `CLIPlayer.quit(code:)`.
+With a cast (`castSessionActive` or `videoCastActive`) it awaits `CastManager.stopCasting()` before
+exiting; `audioEngine.stop()` alone sends the device stop from a `Task` the exit cuts off, leaving
+a Sonos playing. A second quit while that stop is pending exits at once. While quitting,
+`audioEngineDidChangeState` is ignored so the engine's own `.stopped` does not exit 0 over Ctrl-C's 130.
 
 ## Exit Codes
 
