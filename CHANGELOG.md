@@ -11,6 +11,18 @@
   NullPlayer's windows frame it too. You can browse while it is open: the Library Browser's ART
   button is gone. Radio station logos now also show as the station's art, including in Control
   Center.
+- **Tile view in the Library Browser** — three icons in the source bar switch the Library Browser
+  between **List**, **Flow** (Cover Flow, formerly the FLOW button) and **Tiles**, a grid of art
+  tiles with each name underneath. Click a tile to select it; double-click or Return plays a track,
+  movie or episode, or opens an artist, folder, show or season, with a **‹ Back** tile to return.
+  Arrow keys move the selection, and right-click gives the same menu as the row in the list.
+  Switching between Flow and Tiles keeps your place, and the choice is remembered across tabs and
+  launches. Every source, every skin.
+- **Album screen** — opening an album from Flow or Tiles shows its cover, artist, year, genre,
+  label, release date and length, its review (three lines, **More** for the rest), a **▶ Play**
+  button and the track list, over the artist's picture. Double-click a track to play it, or
+  right-click it for Play Next, Add to Queue, Rate and the rest. Reviews come from Plex, Jellyfin
+  and Emby.
 - **Find YouTube channels by name** — the YouTube source's **Search** tab now searches YouTube for
   channels instead of listing internet radio stations. Type a name and press Enter: each result
   shows its @handle and subscriber count, expands to preview its uploads, and subscribes on
@@ -118,6 +130,12 @@
   your library, where a rating had nowhere to be saved; dragging its cover moves the window
   instead. With **Hide Title Bars** on, and in Windows Media Player skins, the Art window now opens
   exactly the size of the cover, without a black band.
+- **Posters in Tiles** — movies, TV shows and seasons now show as tall poster tiles in the Library
+  Browser's Tiles view instead of square ones, so their artwork is no longer cropped.
+- **A–Z in Flow and Tiles** — the alphabet index on the right of the Library Browser now stays beside
+  Flow and Tiles. Click a letter to jump to the first item starting with it.
+- **Keyboard on the album screen** — opening an album from Flow or Tiles with Return, or leaving it
+  with Esc, no longer needs a click before the arrow keys, Return and Esc work again.
 
 ## 0.31.4
 

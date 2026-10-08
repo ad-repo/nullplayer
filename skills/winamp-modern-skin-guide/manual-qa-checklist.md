@@ -249,7 +249,7 @@ synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares pl
       window; Winamp Modern's `MLibrary` window) — **not** a classic library window
 - [ ] Browse local files and every configured remote source; artwork, tabs, and search all work
 - [ ] Link a new server from the embedded browser; the sheet attaches to the `.wal` window
-- [ ] CoverFlow and history hosting behave as they do in the classic window
+- [ ] Flow, Tiles and history hosting behave as they do in the classic window
 - [ ] Switch tabs/layouts away and back — the browser is torn down and rebuilt without leaking tasks
 - [ ] Browse mode is remembered across a quit and relaunch
 

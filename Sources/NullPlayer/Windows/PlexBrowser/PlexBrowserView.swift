@@ -236,8 +236,8 @@ class PlexBrowserView: NSView {
     private var browseMode: PlexBrowseMode = .artists {
         didSet {
             guard browseMode != oldValue else { return }
-            // Switching tabs always exits Cover Flow.
-            isCoverFlowMode = false
+            // A new tab opens Flow or Tiles at its root.
+            artLens.resetNavigation()
             if oldValue == .folders, browseMode != .folders {
                 cancelLocalFolderBuild()
             }
@@ -957,12 +957,8 @@ class PlexBrowserView: NSView {
     
     /// Current display items
     private var displayItems: [PlexDisplayItem] = [] {
-        didSet {
-            // Coalesce to one rebuild — the browser mutates displayItems many times per reload.
-            if isCoverFlowMode { scheduleCoverFlowRebuild() }
-        }
+        didSet { artLens.rowsDidChange() }
     }
-    private var coverFlowRebuildScheduled = false
 
     /// Expanded artists for hierarchical view (by ID)
     private var expandedArtists: Set<String> = []
@@ -978,12 +974,12 @@ class PlexBrowserView: NSView {
     
     /// Loading state
     private var isLoading: Bool = false {
-        didSet { updateCoverFlowVisibility() }
+        didSet { artLens.updateVisibility() }
     }
     
     /// Error message
     private var errorMessage: String? {
-        didSet { updateCoverFlowVisibility() }
+        didSet { artLens.updateVisibility() }
     }
     
     /// Cached data - Music (Plex)
@@ -1207,26 +1203,41 @@ class PlexBrowserView: NSView {
     /// Highlight state for drag-mode visual feedback
     private var isHighlighted = false
     
-    // Cover flow mode — a 3D carousel over the current album list (see CoverFlowView).
-    private var isCoverFlowMode: Bool = false {
-        didSet {
-            guard isCoverFlowMode != oldValue else { return }
-            updateCoverFlowState()
-            needsDisplay = true
-        }
-    }
-    private var coverFlowView: CoverFlowView?
-    private var coverFlowButtonRect: NSRect = .zero
-    /// The current level's display items (excludes the synthetic Back cover), aligned with the
-    /// carousel for activation mapping.
-    private var coverFlowSourceItems: [PlexDisplayItem] = []
-    /// Navigation stack of container ids the carousel has drilled into (top level when empty).
-    private var coverFlowFocusStack: [String] = []
-    /// After a drill-in, center on the first child once children appear.
-    private var coverFlowCenterFirstChild = false
-    /// After a drill-out (Back), re-center on this container id once the level is rebuilt.
-    private var coverFlowPendingCenterId: String?
-    private static let coverFlowBackId = "__coverflow_back__"
+    /// List, Flow or Tiles, and the Flow / Tiles view standing in for the list (see LibraryArtLens).
+    /// Classic's taller, freely stretchable window keeps the Flow label under the centred cover.
+    private lazy var artLens = LibraryArtLens<PlexDisplayItem>(
+        container: self, flowLabelPlacement: .belowCenteredCover, host: .init(
+            rows: { [unowned self] in displayItems },
+            isSearch: { [unowned self] in browseMode == .search },
+            selectedIndex: { [unowned self] in selectedIndices.min() },
+            isBlocked: { [unowned self] in
+                isLoading || errorMessage != nil || (currentSource.isPlex && !PlexManager.shared.isLinked)
+            },
+            style: { [unowned self] in
+                let colors = currentPlaylistColors()
+                return LibraryArtStyle(
+                    titleColor: colors.normalText,
+                    subtitleColor: colors.normalText.withAlphaComponent(0.6),
+                    placeholderFill: colors.normalBackground.blended(withFraction: 0.15, of: .white) ?? colors.normalBackground,
+                    placeholderTextColor: colors.normalText.withAlphaComponent(0.6)
+                )
+            },
+            item: { [unowned self] in artItem(for: $0) },
+            isExpanded: { [unowned self] in isExpanded($0) },
+            toggleExpand: { [unowned self] in toggleExpand($0) },
+            play: { [unowned self] in handleDoubleClick(on: $0) },
+            menu: { [unowned self] row, event in
+                // As a right-click on the row in the list: select it, then its menu.
+                if let index = displayItems.firstIndex(where: { $0.id == row.id }) { selectedIndices = [index] }
+                showContextMenu(for: row, at: event)
+            },
+            albumInfo: { [unowned self] in playable(for: $0).flatMap(LibraryAlbumInfo.init) },
+            loadNextPage: { [unowned self] in
+                if case .local = currentSource { appendNextLocalPage() }
+            }
+        ))
+    /// The List / Flow / Tiles buttons in the server bar, as last drawn (skin coordinates).
+    private var viewModeButtonRects: [(mode: LibraryViewMode, rect: NSRect)] = []
 
     private var refreshButtonRect: NSRect = .zero
     private var sourceButtonRect: NSRect = .zero
@@ -1381,6 +1392,7 @@ class PlexBrowserView: NSView {
         guard embeddedWinampModernStyle != style else { return }
         embeddedWinampModernStyle = style
         refreshHistoryHostingColors()
+        artLens.restyle()
         needsDisplay = true
     }
 
@@ -1502,8 +1514,8 @@ class PlexBrowserView: NSView {
         var rightWidth: CGFloat = 0
         if isConfigured {
             rightWidth = trailingInset + textWidth("F5")
-            if isCoverFlowMode || hasCoverFlowItems {
-                rightWidth += 12 + textWidth("FLOW")
+            if artLens.hasItems {
+                rightWidth += 12 + viewModeButtonsWidth(textScale: textScale, chromeScale: 1)
             }
             switch currentSource {
             case .radio, .youtube:
@@ -1903,7 +1915,7 @@ class PlexBrowserView: NSView {
     }
     
     private func onSourceChanged() {
-        resetCoverFlowNavigation()
+        artLens.resetNavigation()
         invalidateActiveLoads()
         if browseMode == .folders && !isLocalSource {
             browseMode = .plists
@@ -2009,9 +2021,7 @@ class PlexBrowserView: NSView {
         typeAheadTimer?.invalidate(); typeAheadTimer = nil
         stopLoadingAnimation()
         stopServerNameScroll()
-        coverFlowView?.removeFromSuperview()
-        coverFlowView = nil
-        coverFlowSourceItems = []
+        artLens.teardown()
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -2238,7 +2248,8 @@ class PlexBrowserView: NSView {
 
     private func updateHistoryHostingFrame() {
         historyHostingView?.frame = embeddedContentRect()
-        coverFlowView?.frame = embeddedContentRect()
+        // Flow / Tiles leave the alphabet index beside them.
+        artLens.frame = embeddedContentRect().divided(atDistance: Layout.alphabetWidth * scaleFactor, from: .maxXEdge).remainder
     }
 
     /// Content rect (view coordinates) below the tab bar and above the status bar — shared by the
@@ -2257,184 +2268,20 @@ class PlexBrowserView: NSView {
         )
     }
 
-    // MARK: - Cover Flow
+    // MARK: - Art (Flow, Tiles, row thumbnails)
 
-    /// Items shown at the root of Cover Flow. Search results live one level below synthetic
-    /// category headers, while normal browse modes use their real top-level rows.
-    private func coverFlowRootItems() -> [PlexDisplayItem] {
-        let rootLevel = browseMode == .search ? 1 : 0
-        return displayItems.filter { $0.indentLevel == rootLevel && $0.type.isCoverFlowItem }
-    }
-
-    /// True when the current list has a non-empty Cover Flow root. Evaluated in the server-bar draw
-    /// path on every redraw, so it short-circuits instead of allocating a filtered array.
-    private var hasCoverFlowItems: Bool {
-        let rootLevel = browseMode == .search ? 1 : 0
-        return displayItems.contains { $0.indentLevel == rootLevel && $0.type.isCoverFlowItem }
-    }
-
-    /// Fill the list area behind the cover flow overlay (classic has no Cava backdrop).
-    private func drawCoverFlowBackground(in context: CGContext, colors: PlaylistColors) {
-        colors.normalBackground.setFill()
-        context.fill(listLayout().area)
-    }
-
-    private func ensureCoverFlowView() {
-        guard coverFlowView == nil else { return }
-        let view = CoverFlowView()
-        view.labelPlacement = .belowCenteredCover
-        view.onActivate = { [weak self] index in self?.playCoverFlowItem(at: index) }
-        view.onApproachingEnd = { [weak self] in self?.loadNextLocalCoverFlowPageIfNeeded() }
-        addSubview(view)
-        coverFlowView = view
-        applyCoverFlowStyle()
-        rebuildCoverFlowItems()
-    }
-
-    private func applyCoverFlowStyle() {
-        let colors = currentPlaylistColors()
-        coverFlowView?.style = CoverFlowStyle(
-            titleColor: colors.normalText,
-            subtitleColor: colors.normalText.withAlphaComponent(0.6),
-            placeholderFill: colors.normalBackground.blended(withFraction: 0.15, of: .white) ?? colors.normalBackground,
-            placeholderTextColor: colors.normalText.withAlphaComponent(0.6)
-        )
-    }
-
-    private func updateCoverFlowState() {
-        if isCoverFlowMode {
-            seedCoverFlowFocusFromSelection()
-            ensureCoverFlowView()
-            applyCoverFlowStyle()
-            rebuildCoverFlowItems()
-        } else {
-            resetCoverFlowNavigation()
-        }
-        updateCoverFlowVisibility()
-        updateHistoryHostingFrame()
-    }
-
-    private func resetCoverFlowNavigation() {
-        coverFlowFocusStack.removeAll()
-        coverFlowCenterFirstChild = false
-        coverFlowPendingCenterId = nil
-    }
-
-    /// When FLOW is switched on with a container already expanded/selected in the list (e.g. an
-    /// artist showing its albums), open Cover Flow *inside* that container rather than dumping the
-    /// user back at the root. Seeds the focus stack from the current selection's ancestor chain.
-    private func seedCoverFlowFocusFromSelection() {
-        resetCoverFlowNavigation()
-        guard let idx = selectedIndices.min(), displayItems.indices.contains(idx) else { return }
-        let rootLevel = browseMode == .search ? 1 : 0
-        let selected = displayItems[idx]
-        guard selected.indentLevel >= rootLevel, selected.type.isCoverFlowItem else { return }
-
-        let ancestors = coverFlowAncestorIds(ofIndex: idx, rootLevel: rootLevel)
-        // Albums (and other leaves) play rather than drill, so never focus *into* them; an expanded
-        // eligible container opens to show its children.
-        if selected.hasChildren, !selected.type.isAlbumItem, isExpanded(selected) {
-            coverFlowFocusStack = ancestors + [selected.id]
-            coverFlowCenterFirstChild = true
-        } else {
-            // A leaf, a collapsed container, or an album: show its own level, centered on it.
-            coverFlowFocusStack = ancestors
-            coverFlowPendingCenterId = selected.id
-        }
-    }
-
-    /// The chain of eligible container ids from the root down to the item's immediate parent (empty
-    /// when the item sits at the root level). Bails to root if any ancestor isn't Cover Flow-eligible.
-    private func coverFlowAncestorIds(ofIndex idx: Int, rootLevel: Int) -> [String] {
-        var chain: [String] = []
-        var neededLevel = displayItems[idx].indentLevel - 1
-        var i = idx - 1
-        while i >= 0, neededLevel >= rootLevel {
-            if displayItems[i].indentLevel == neededLevel {
-                guard displayItems[i].type.isCoverFlowItem else { return [] }
-                chain.insert(displayItems[i].id, at: 0)
-                neededLevel -= 1
-            }
-            i -= 1
-        }
-        return chain
-    }
-
-    private func updateCoverFlowVisibility() {
-        let needsPlexLink = currentSource.isPlex && !PlexManager.shared.isLinked
-        coverFlowView?.isHidden = !isCoverFlowMode || isLoading || errorMessage != nil || needsPlexLink
-    }
-
-    /// Coalesce cover flow rebuilds onto the next runloop turn so a burst of `displayItems`
-    /// mutations collapses into a single carousel rebuild.
-    private func scheduleCoverFlowRebuild() {
-        guard !coverFlowRebuildScheduled else { return }
-        coverFlowRebuildScheduled = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.coverFlowRebuildScheduled = false
-            if self.isCoverFlowMode { self.rebuildCoverFlowItems() }
-        }
-    }
-
-    /// The display items at the current cover flow level: the top-level cover items, or the direct
-    /// children of the container we've drilled into.
-    private func coverFlowVisibleItems() -> [PlexDisplayItem] {
-        guard let parentId = coverFlowFocusStack.last else {
-            return coverFlowRootItems()
-        }
-        guard let parentIdx = displayItems.firstIndex(where: { $0.id == parentId }) else { return [] }
-        let parentLevel = displayItems[parentIdx].indentLevel
-        var children: [PlexDisplayItem] = []
-        var i = parentIdx + 1
-        while i < displayItems.count, displayItems[i].indentLevel > parentLevel {
-            if displayItems[i].indentLevel == parentLevel + 1, displayItems[i].type.isCoverFlowItem {
-                children.append(displayItems[i])
-            }
-            i += 1
-        }
-        return children
-    }
-
-    /// Build the carousel for the current level: a synthetic Back cover when drilled in, then the
-    /// level's items. Keeps `coverFlowSourceItems` aligned (Back excluded) for activation mapping.
-    private func rebuildCoverFlowItems() {
-        let visible = coverFlowVisibleItems()
-        coverFlowSourceItems = visible
-        let hasBack = !coverFlowFocusStack.isEmpty
-
-        var items: [CoverFlowItem] = []
-        if hasBack {
-            items.append(CoverFlowItem(id: Self.coverFlowBackId, title: "‹ Back", subtitle: "",
-                                       artwork: { nil }, loadArtwork: { nil }, isBack: true))
-        }
-        items += visible.map { item in
-            let (cacheKey, load) = coverFlowArtwork(for: item)
-            return CoverFlowItem(
-                id: item.id,
-                title: item.title,
-                subtitle: item.info ?? "",
-                artwork: { cacheKey.flatMap { Self.artworkCache.object(forKey: NSString(string: $0)) } },
-                loadArtwork: load
-            )
-        }
-
-        let navigating = coverFlowCenterFirstChild || coverFlowPendingCenterId != nil
-        coverFlowView?.setItems(items, preservingCenter: !navigating)
-
-        if coverFlowCenterFirstChild, !visible.isEmpty {
-            coverFlowCenterFirstChild = false
-            coverFlowView?.setCenterIndex(hasBack ? 1 : 0, animated: false)
-        } else if let cid = coverFlowPendingCenterId,
-                  let idx = visible.firstIndex(where: { $0.id == cid }) {
-            coverFlowPendingCenterId = nil
-            coverFlowView?.setCenterIndex(idx + (hasBack ? 1 : 0), animated: false)
-        }
+    /// A row as the Flow / Tiles views show it.
+    private func artItem(for item: PlexDisplayItem) -> LibraryArtItem {
+        let cacheKey = itemArtwork(for: item).cacheKey
+        return LibraryArtItem(id: item.id, title: item.title, subtitle: item.info ?? "",
+                              cachedArtwork: { cacheKey.flatMap { Self.artworkCache.object(forKey: NSString(string: $0)) } },
+                              art: rowThumbnailSource(for: item),
+                              artAspect: item.type.isPoster ? LibraryArtItem.posterAspect : 1)
     }
 
     /// Resolve a display item to its artwork cache key and async loader (reusing the per-source
     /// loaders that back `loadArtworkForSelection`).
-    private func coverFlowArtwork(for item: PlexDisplayItem) -> (cacheKey: String?, load: () async -> NSImage?) {
+    private func itemArtwork(for item: PlexDisplayItem) -> (cacheKey: String?, load: () async -> NSImage?) {
         switch item.type {
         case .album(let album):
             guard let thumb = album.thumb else { return ("plex:\(album.id)", { nil }) }
@@ -2553,7 +2400,7 @@ class PlexBrowserView: NSView {
     }
 
     /// The art for a row's round thumbnail, or nil for rows that never carry art. Cover Flow items
-    /// reuse `coverFlowArtwork`'s loaders, keyed within the current server.
+    /// reuse `itemArtwork`'s loaders, keyed within the current server.
     private func rowThumbnailSource(for item: PlexDisplayItem) -> LibraryRowThumbnails.Source? {
         switch item.type {
         case .localFolder: return nil
@@ -2562,48 +2409,12 @@ class PlexBrowserView: NSView {
         case .radioStation(let station): return .radio(station)
         case .localPlaylistTrack(let track): return .localFile(track.url)
         default:
-            guard item.type.isCoverFlowItem else { return nil }
-            let (cacheKey, load) = coverFlowArtwork(for: item)
+            guard item.type.isArtItem else { return nil }
+            let (cacheKey, load) = itemArtwork(for: item)
             return .item(key: cacheKey ?? "item:\(item.id)", server: currentSource.serverId, owner: self, load: load)
         }
     }
 
-    /// Activate a centered cover. Back pops a level; albums and tracks play; any other container
-    /// (artist, folder, …) drills into its children.
-    private func playCoverFlowItem(at index: Int) {
-        let hasBack = !coverFlowFocusStack.isEmpty
-        if hasBack && index == 0 {
-            coverFlowNavigateBack()
-            return
-        }
-        let realIndex = index - (hasBack ? 1 : 0)
-        guard realIndex >= 0, realIndex < coverFlowSourceItems.count else { return }
-        let item = coverFlowSourceItems[realIndex]
-
-        if item.type.isAlbumItem {
-            handleDoubleClick(on: item)
-        } else if item.hasChildren, browseMode != .search || item.type.isVideoContainer {
-            coverFlowDrillIn(item)
-        } else {
-            handleDoubleClick(on: item)
-        }
-    }
-
-    private func coverFlowDrillIn(_ item: PlexDisplayItem) {
-        if !isExpanded(item) { toggleExpand(item) }
-        coverFlowFocusStack.append(item.id)
-        coverFlowCenterFirstChild = true
-        coverFlowPendingCenterId = nil
-        rebuildCoverFlowItems()
-    }
-
-    private func coverFlowNavigateBack() {
-        guard let popped = coverFlowFocusStack.popLast() else { return }
-        coverFlowCenterFirstChild = false
-        coverFlowPendingCenterId = popped
-        rebuildCoverFlowItems()
-    }
-    
     /// Convert a point from view coordinates to skin coordinates (top-left origin)
     private func convertToSkinCoordinates(_ point: NSPoint) -> NSPoint {
         // No scaling, just flip Y coordinate (macOS bottom-left to skin top-left)
@@ -2705,10 +2516,13 @@ class PlexBrowserView: NSView {
                             drawLoadingState(in: context, colors: colors, renderer: renderer)
                         } else if let error = errorMessage {
                             drawErrorState(in: context, message: error, colors: colors, renderer: renderer)
-                        } else if isCoverFlowMode {
-                            // The CoverFlowView overlay renders the carousel; just fill the list
-                            // area background so the interior isn't left stale behind the covers.
-                            drawCoverFlowBackground(in: context, colors: colors)
+                        } else if artLens.isPresenting {
+                            // The Flow / Tiles view renders the art; just fill the list area
+                            // background so the interior isn't left stale behind it.
+                            let layout = listLayout()
+                            colors.normalBackground.setFill()
+                            context.fill(layout.area)
+                            drawAlphabetIndex(in: context, rect: layout.alphabet, colors: colors, renderer: renderer)
                         } else {
                             drawListArea(in: context, layout: listLayout(), colors: colors, renderer: renderer, artwork: capturedArtwork)
                         }
@@ -2805,31 +2619,39 @@ class PlexBrowserView: NSView {
         drawScaledWhiteSkinText(text, at: NSPoint(x: x, y: y), scale: scale, renderer: renderer, in: context)
     }
     
-    /// Draw FLOW with the source-level controls, matching Modern's ART/FLOW/F5 grouping. Returns
-    /// the leading edge that the next accessory (ART, count, or rating) should lay out before.
-    private func drawCoverFlowServerBarButton(
+    /// Draw the List / Flow / Tiles buttons with the source-level controls, before F5. Returns the
+    /// leading edge that the next accessory (count, rating) should lay out before.
+    private func drawViewModeButtons(
         before trailingX: CGFloat,
-        barRect: NSRect,
         textY: CGFloat,
         textScale: CGFloat,
-        scaledCharWidth: CGFloat,
         chromeScale: CGFloat,
-        renderer: SkinRenderer,
         context: CGContext
     ) -> CGFloat {
-        guard isCoverFlowMode || hasCoverFlowItems else { return trailingX }
-        let text = "FLOW"
-        let width = CGFloat(text.count) * scaledCharWidth
-        let x = trailingX - width - 12 * chromeScale
-        coverFlowButtonRect = NSRect(x: x, y: barRect.minY, width: width, height: barRect.height)
-        if isCoverFlowMode {
-            drawScaledWhiteSkinText(text, at: NSPoint(x: x, y: textY), scale: textScale,
-                                    renderer: renderer, in: context)
-        } else {
-            drawScaledSkinText(text, at: NSPoint(x: x, y: textY), scale: textScale,
-                               renderer: renderer, in: context)
+        guard artLens.hasItems else { return trailingX }
+        let side = viewModeIconSide(textScale: textScale)
+        let leadingX = trailingX - 12 * chromeScale - viewModeButtonsWidth(textScale: textScale, chromeScale: chromeScale)
+        let colors = currentPlaylistColors()
+        var x = leadingX
+        for mode in LibraryViewMode.allCases {
+            // Centred on the bitmap text's line, padded out to a comfortable hit target.
+            let icon = NSRect(x: x, y: textY - textScale, width: side, height: side)
+            mode.drawIcon(in: icon, color: artLens.mode == mode ? colors.currentText : colors.normalText,
+                          context: context)
+            viewModeButtonRects.append((mode, icon.insetBy(dx: -1.5 * chromeScale, dy: -3 * textScale)))
+            x += side + 3 * chromeScale
         }
-        return x
+        return leadingX
+    }
+
+    /// The icons sit on the bitmap font's 6 px line, a pixel over it each side.
+    private func viewModeIconSide(textScale: CGFloat) -> CGFloat {
+        (SkinElements.TextFont.charHeight + 2) * textScale
+    }
+
+    private func viewModeButtonsWidth(textScale: CGFloat, chromeScale: CGFloat) -> CGFloat {
+        let count = CGFloat(LibraryViewMode.allCases.count)
+        return count * viewModeIconSide(textScale: textScale) + (count - 1) * 3 * chromeScale
     }
     
     private func drawServerBar(in context: CGContext, drawBounds: NSRect, colors: PlaylistColors, renderer: SkinRenderer) {
@@ -2863,7 +2685,7 @@ class PlexBrowserView: NSView {
         let sourceNameStartX = barRect.minX + toolbarLeftInset + prefixWidth
         
         refreshButtonRect = .zero
-        coverFlowButtonRect = .zero
+        viewModeButtonRects = []
         sourceButtonRect = .zero
         libraryButtonRect = .zero
         addButtonRect = .zero
@@ -2892,10 +2714,9 @@ class PlexBrowserView: NSView {
             drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
             refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                        width: barRect.maxX - refreshX, height: barRect.height)
-            let accessoryX = drawCoverFlowServerBarButton(
-                before: refreshX, barRect: barRect, textY: textY, textScale: textScale,
-                scaledCharWidth: scaledCharWidth, chromeScale: chromeScale,
-                renderer: renderer, context: context
+            let accessoryX = drawViewModeButtons(
+                before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
+                context: context
             )
             
             // Item count (only in list mode)
@@ -3003,10 +2824,9 @@ class PlexBrowserView: NSView {
                 drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
                 refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                            width: barRect.maxX - refreshX, height: barRect.height)
-                let accessoryX = drawCoverFlowServerBarButton(
-                    before: refreshX, barRect: barRect, textY: textY, textScale: textScale,
-                    scaledCharWidth: scaledCharWidth, chromeScale: chromeScale,
-                    renderer: renderer, context: context
+                let accessoryX = drawViewModeButtons(
+                    before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
+                    context: context
                 )
 
                 let countSpacing: CGFloat = 24 * chromeScale
@@ -3102,10 +2922,9 @@ class PlexBrowserView: NSView {
                 drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
                 refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                            width: barRect.maxX - refreshX, height: barRect.height)
-                let accessoryX = drawCoverFlowServerBarButton(
-                    before: refreshX, barRect: barRect, textY: textY, textScale: textScale,
-                    scaledCharWidth: scaledCharWidth, chromeScale: chromeScale,
-                    renderer: renderer, context: context
+                let accessoryX = drawViewModeButtons(
+                    before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
+                    context: context
                 )
                 
                 // Item count (only in list mode)
@@ -3179,10 +2998,9 @@ class PlexBrowserView: NSView {
                 drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
                 refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                            width: barRect.maxX - refreshX, height: barRect.height)
-                let accessoryX = drawCoverFlowServerBarButton(
-                    before: refreshX, barRect: barRect, textY: textY, textScale: textScale,
-                    scaledCharWidth: scaledCharWidth, chromeScale: chromeScale,
-                    renderer: renderer, context: context
+                let accessoryX = drawViewModeButtons(
+                    before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
+                    context: context
                 )
 
                 let countNumber = "\(displayItems.count)"
@@ -3255,10 +3073,9 @@ class PlexBrowserView: NSView {
                 drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
                 refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                            width: barRect.maxX - refreshX, height: barRect.height)
-                let accessoryX = drawCoverFlowServerBarButton(
-                    before: refreshX, barRect: barRect, textY: textY, textScale: textScale,
-                    scaledCharWidth: scaledCharWidth, chromeScale: chromeScale,
-                    renderer: renderer, context: context
+                let accessoryX = drawViewModeButtons(
+                    before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
+                    context: context
                 )
 
                 let countNumber = "\(displayItems.count)"
@@ -3299,10 +3116,9 @@ class PlexBrowserView: NSView {
             drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
             refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                        width: barRect.maxX - refreshX, height: barRect.height)
-            let accessoryX = drawCoverFlowServerBarButton(
-                before: refreshX, barRect: barRect, textY: textY, textScale: textScale,
-                scaledCharWidth: scaledCharWidth, chromeScale: chromeScale,
-                renderer: renderer, context: context
+            let accessoryX = drawViewModeButtons(
+                before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
+                context: context
             )
             
             // Item count
@@ -3337,10 +3153,9 @@ class PlexBrowserView: NSView {
             drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
             refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                        width: barRect.maxX - refreshX, height: barRect.height)
-            let accessoryX = drawCoverFlowServerBarButton(
-                before: refreshX, barRect: barRect, textY: textY, textScale: textScale,
-                scaledCharWidth: scaledCharWidth, chromeScale: chromeScale,
-                renderer: renderer, context: context
+            let accessoryX = drawViewModeButtons(
+                before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
+                context: context
             )
 
             // Item count
@@ -3351,17 +3166,6 @@ class PlexBrowserView: NSView {
             drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
             let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
             drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
-        }
-
-        // Keep an active FLOW escape hatch visible even when a remote source is unconfigured and
-        // therefore has no normal F5/accessory cluster.
-        if coverFlowButtonRect == .zero, isCoverFlowMode {
-            _ = drawCoverFlowServerBarButton(
-                before: barRect.maxX - toolbarRightInset,
-                barRect: barRect, textY: textY, textScale: textScale,
-                scaledCharWidth: scaledCharWidth, chromeScale: chromeScale,
-                renderer: renderer, context: context
-            )
         }
     }
 
@@ -4434,6 +4238,7 @@ class PlexBrowserView: NSView {
     
     func skinDidChange() {
         refreshHistoryHostingColors()
+        artLens.restyle()
         updateHistoryHostingFrame()
         needsDisplay = true
     }
@@ -4461,6 +4266,8 @@ class PlexBrowserView: NSView {
         // A colour-theme switch recolours the Data tab too. Classic windows resolve no style, and
         // their Data tab is recoloured by `skinDidChange` instead.
         if winampModernStyle != nil { refreshHistoryHostingColors() }
+        // The palette resolved for Flow / Tiles may predate this style (a switch into `.wmz`).
+        artLens.restyle()
         // A borrowed frame moves the content hole this view lays its list and its controls out
         // from, and it lands after the first layout pass — see the same note on the rest of the
         // hosted family (W220).
@@ -4471,7 +4278,7 @@ class PlexBrowserView: NSView {
     @objc private func plexStateDidChange() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, case .plex = self.currentSource else { return }
-            self.updateCoverFlowVisibility()
+            self.artLens.updateVisibility()
             if case .connecting = PlexManager.shared.connectionState {
                 self.isLoading = true
                 self.errorMessage = nil
@@ -4485,7 +4292,7 @@ class PlexBrowserView: NSView {
     @objc private func plexServerDidChange() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.updateCoverFlowVisibility()
+            self.artLens.updateVisibility()
             
             if case .connecting = PlexManager.shared.connectionState {
                 NSLog("PlexBrowserView: Server list changed, but still connecting - just updating display")
@@ -5844,10 +5651,9 @@ class PlexBrowserView: NSView {
 
         // Check server bar
         if hitTestServerBar(at: skinPoint) {
-            if coverFlowButtonRect.contains(skinPoint) {
-                isCoverFlowMode.toggle()
-                // Hand keyboard focus to the carousel so arrows/enter work without a prior cover click.
-                window?.makeFirstResponder(isCoverFlowMode ? coverFlowView : self)
+            if let hit = viewModeButtonRects.first(where: { $0.rect.contains(skinPoint) }) {
+                artLens.mode = hit.mode
+                needsDisplay = true
                 return
             }
             // For local files, radio, or subsonic - always handle the click
@@ -6856,6 +6662,7 @@ class PlexBrowserView: NSView {
     }
     
     private func scrollToLetter(_ letter: String) {
+        if artLens.jump(to: { effectiveSortLetter(for: $0) == letter }) { return }
         if currentSource == .local {
             switch browseMode {
             case .artists:
@@ -7079,13 +6886,6 @@ class PlexBrowserView: NSView {
         let threshold = itemHeight * 10
         let loadedHeight = CGFloat(displayItems.count) * itemHeight
         guard scrollOffset + listHeight + threshold >= loadedHeight else { return }
-        appendNextLocalPage()
-    }
-
-    /// Cover Flow owns the list area's scroll events, so it requests pagination directly when its
-    /// centered cover approaches the end of the currently loaded local page.
-    private func loadNextLocalCoverFlowPageIfNeeded() {
-        guard isCoverFlowMode, coverFlowFocusStack.isEmpty, case .local = currentSource else { return }
         appendNextLocalPage()
     }
 
@@ -13976,6 +13776,12 @@ extension PlexBrowserView: NSWindowDelegate {
 // MARK: - Display Item
 
 /// Represents an item to display in the Plex browser list
+extension PlexDisplayItem: LibraryArtRow {
+    var isArtItem: Bool { type.isArtItem }
+    var isAlbumItem: Bool { type.isAlbumItem }
+    var isVideoContainer: Bool { type.isVideoContainer }
+}
+
 private struct PlexDisplayItem {
     let id: String
     let title: String
@@ -14050,9 +13856,9 @@ private struct PlexDisplayItem {
             }
         }
 
-        /// Items shown in the cover flow carousel. Containers (artists, folders, shows, seasons)
+        /// Rows shown in Flow and Tiles. Containers (artists, folders, shows, seasons)
         /// drill in; albums, tracks, movies, and episodes are leaves that play.
-        var isCoverFlowItem: Bool {
+        var isArtItem: Bool {
             switch self {
             case .artist, .localArtist, .subsonicArtist, .jellyfinArtist, .embyArtist,
                  .localFolder,
@@ -14067,8 +13873,19 @@ private struct PlexDisplayItem {
             }
         }
 
+        /// Movies, shows and seasons: their art is a 2:3 poster. Episodes carry a landscape still.
+        var isPoster: Bool {
+            switch self {
+            case .movie, .show, .season, .localMovie, .localShow, .localSeason,
+                 .jellyfinMovie, .jellyfinShow, .jellyfinSeason, .embyMovie, .embyShow, .embySeason:
+                return true
+            default:
+                return false
+            }
+        }
+
         /// Search results keep music containers as navigation links, but video containers retain
-        /// their show → season → episode hierarchy inside Cover Flow.
+        /// their show → season → episode hierarchy inside Flow and Tiles.
         var isVideoContainer: Bool {
             switch self {
             case .show, .season, .localShow, .localSeason,

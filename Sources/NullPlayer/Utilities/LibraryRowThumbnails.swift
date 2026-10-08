@@ -37,7 +37,7 @@ final class LibraryRowThumbnails {
 
         var isOrphaned: Bool { hasOwner && owner == nil }
 
-        /// A browser item through the browser's own loader. `key` is `coverFlowArtwork`'s
+        /// A browser item through the browser's own loader. `key` is `itemArtwork`'s
         /// `<service>:<id>`, scoped to `server` because ids repeat across servers (Plex rating keys
         /// are small integers).
         static func item(key: String, server: String?, owner: AnyObject,
@@ -161,6 +161,17 @@ final class LibraryRowThumbnails {
     /// The row thumbnail, or nil while it is wanted or loading, or when the row has no art.
     func thumbnail(for source: Source) -> CGImage? {
         thumbnails.object(forKey: source.key as NSString)?.image
+    }
+
+    /// The preview if memory holds it; `previewImage(for:)` also reads disk.
+    func cachedPreview(for source: Source) -> CGImage? {
+        previews.object(forKey: source.key as NSString)?.image
+    }
+
+    /// True once `source` has loaded: both renditions are stored together, so `previewImage(for:)`
+    /// reads the preview back from memory or disk instead of starting a load past the queue.
+    func hasLoaded(_ source: Source) -> Bool {
+        thumbnails.object(forKey: source.key as NSString) != nil
     }
 
     /// Replace the queue with `sources`, highest priority first: one list pass's rows on screen,

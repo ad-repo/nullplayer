@@ -1,38 +1,9 @@
 import AppKit
 
-/// A source-agnostic media item for the cover flow carousel. Both the modern/metal
-/// (`ModernLibraryBrowserView`) and classic (`PlexBrowserView`) browsers build these from
-/// whatever eligible library list they are currently showing.
-struct CoverFlowItem {
-    let id: String                          // stable identity for diffing/caching
-    let title: String                       // display title
-    let subtitle: String                    // secondary metadata
-    let artwork: () -> NSImage?             // synchronous cache hit, if present
-    let loadArtwork: () async -> NSImage?   // async per-source loader
-    var isBack: Bool = false               // synthetic "‹ Back" cover for drill-out navigation
-}
-
-/// Theming for the cover flow overlay. Background is always clear so the Cava/art backdrop
-/// shows through; callers supply text and placeholder colors from their active skin.
-struct CoverFlowStyle {
-    var titleColor: NSColor
-    var subtitleColor: NSColor
-    var placeholderFill: NSColor
-    var placeholderTextColor: NSColor
-    var reflectionStrength: CGFloat = 0.35
-
-    static let fallback = CoverFlowStyle(
-        titleColor: .white,
-        subtitleColor: NSColor.white.withAlphaComponent(0.6),
-        placeholderFill: NSColor(white: 0.16, alpha: 1),
-        placeholderTextColor: NSColor.white.withAlphaComponent(0.5)
-    )
-}
-
 /// A self-contained Core Animation cover-flow carousel: a 3D, horizontally-scrolling wall of
 /// media artwork. Layer-backed so the covers are GPU-composited, leaving CPU headroom for the
-/// Cava backdrop that renders behind this view. Hosted as a toggled overlay by each browser.
-final class CoverFlowView: NSView {
+/// Cava backdrop that renders behind this view. The Library Browser's Flow mode (see LibraryArtLens).
+final class CoverFlowView: NSView, LibraryArtView {
 
     enum LabelPlacement {
         case bottomBand
@@ -45,13 +16,15 @@ final class CoverFlowView: NSView {
     var onCenterChanged: ((Int) -> Void)?
     /// Fired when the already-centered cover is clicked — activates that media item.
     var onActivate: ((Int) -> Void)?
+    /// Fired on a right-click on a cover.
+    var onMenu: ((Int, NSEvent) -> Void)?
     /// Fired once when navigation reaches the final preload window. Hosts use this to append the
     /// next page of a paginated library before the user reaches the final loaded cover.
     var onApproachingEnd: (() -> Void)?
 
     // MARK: Configuration
 
-    var style: CoverFlowStyle = .fallback {
+    var style: LibraryArtStyle = .fallback {
         didSet { rebuildLayers(); updateCenterLabel() }
     }
 
@@ -61,7 +34,7 @@ final class CoverFlowView: NSView {
         didSet { needsLayout = true }
     }
 
-    private(set) var items: [CoverFlowItem] = []
+    private(set) var items: [LibraryArtItem] = []
 
     // MARK: Layout tuning
 
@@ -87,7 +60,7 @@ final class CoverFlowView: NSView {
     /// Fractional index of the centered cover; animates toward `targetOffset`.
     private var selectedOffset: CGFloat = 0
     private var targetOffset: CGFloat = 0
-    private var centerIndex = 0
+    private(set) var centerIndex = 0
 
     private var animationTimer: Timer?
 
@@ -152,7 +125,7 @@ final class CoverFlowView: NSView {
 
     /// Replace the carousel contents. Preserves the centered album by id when possible so a
     /// list refresh (source/search change) doesn't jump the user to a different cover.
-    func setItems(_ newItems: [CoverFlowItem], preservingCenter: Bool = true) {
+    func setItems(_ newItems: [LibraryArtItem], preservingCenter: Bool = true) {
         let previousCenteredId = (centerIndex >= 0 && centerIndex < items.count) ? items[centerIndex].id : nil
         let previousFirstId = items.first?.id
         let previousLastId = items.last?.id
@@ -370,7 +343,7 @@ final class CoverFlowView: NSView {
         guard abs(CGFloat(index) - selectedOffset) <= CGFloat(radius) else { return }
         let item = items[index]
 
-        if let cached = item.artwork() {
+        if let cached = item.cachedArtwork() {
             apply(image: cached, to: index, fade: false)
             attemptedIndices.insert(index)
             return
@@ -380,7 +353,7 @@ final class CoverFlowView: NSView {
         attemptedIndices.insert(index)
         loadingIndices.insert(index)
         Task { [weak self] in
-            let image = await item.loadArtwork()
+            let image = await item.art?.load()
             await MainActor.run {
                 guard let self else { return }
                 self.loadingIndices.remove(index)
@@ -486,6 +459,11 @@ final class CoverFlowView: NSView {
         } else {
             setCenterIndex(hit, animated: true)
         }
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let hit = coverIndex(at: convert(event.locationInWindow, from: nil)) else { return }
+        onMenu?(hit, event)
     }
 
     /// Hit-test in view space: covers are checked front-to-back (nearest center first) so the
