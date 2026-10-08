@@ -1013,7 +1013,8 @@ class ModernLibraryBrowserView: NSView {
 
     private func updateEmbeddedSubviewFrames() {
         historyHostingView?.frame = embeddedHistoryContentRect()
-        artLens.frame = listLayout().area
+        // Flow / Tiles leave the alphabet index beside them.
+        artLens.frame = listLayout().area.divided(atDistance: Layout.alphabetWidth, from: .maxXEdge).remainder
         updateCompactPlayerBarFrame()
         updateCompactPlaylistFrame()
         updateBackdropFrame()
@@ -1339,6 +1340,7 @@ class ModernLibraryBrowserView: NSView {
                 // background (already filled above — translucent when a Cava backdrop is active,
                 // opaque otherwise) is exactly what should sit behind the covers, so the Cava
                 // backdrop shows through at full strength instead of behind a second scrim.
+                drawAlphabetIndex(in: context, rect: layout.alphabet, skin: skin)
             } else {
                 drawListArea(in: context, layout: layout, skin: skin, artwork: capturedArtwork)
             }
@@ -2714,7 +2716,8 @@ class ModernLibraryBrowserView: NSView {
         let bottomY = contentRegionBottomY + (showsBanner ? Layout.offlineBannerHeight : 0)
         let area = NSRect(x: Layout.borderWidth, y: bottomY,
                           width: bounds.width - Layout.borderWidth * 2, height: listTopY - bottomY)
-        let columns = currentVisibleColumns()
+        // Flow / Tiles draw no column header, so the alphabet index beside them runs full height.
+        let columns = artLens.isPresenting ? [] : currentVisibleColumns()
         let headerHeight = columns.isEmpty ? 0 : columnHeaderHeight
         let rows = NSRect(x: area.minX, y: area.minY,
                           width: area.width - Layout.scrollbarWidth - Layout.alphabetWidth,
@@ -4109,6 +4112,11 @@ class ModernLibraryBrowserView: NSView {
     }
 
     private func scrollToLetter(_ letter: String) {
+        // Flow / Tiles jump within the level shown; only their root pages a local library to the letter.
+        if artLens.isPresenting,
+           artLens.center(onFirst: { effectiveSortLetter(for: $0) == letter }) || !artLens.focusStack.isEmpty {
+            return
+        }
         if case .local = currentSource {
             switch browseMode {
             case .artists:

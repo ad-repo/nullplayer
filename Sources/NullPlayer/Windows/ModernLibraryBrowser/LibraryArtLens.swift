@@ -365,6 +365,15 @@ final class LibraryArtLens<Row: LibraryArtRow> {
 
     // MARK: Navigation
 
+    /// Centre the first row of the level shown that `matches`; false when none does. The alphabet
+    /// index beside Flow and Tiles jumps this way.
+    @discardableResult
+    func center(onFirst matches: (Row) -> Bool) -> Bool {
+        guard let view, let index = levelRows.firstIndex(where: matches) else { return false }
+        view.setCenterIndex(index + backOffset, animated: true)
+        return true
+    }
+
     /// The row behind a view index; nil for ‹ Back.
     private func row(at index: Int) -> Row? {
         let realIndex = index - backOffset

@@ -132,6 +132,8 @@
   exactly the size of the cover, without a black band.
 - **Posters in Tiles** — movies, TV shows and seasons now show as tall poster tiles in the Library
   Browser's Tiles view instead of square ones, so their artwork is no longer cropped.
+- **A–Z in Flow and Tiles** — the alphabet index on the right of the Library Browser now stays beside
+  Flow and Tiles. Click a letter to jump to the first item starting with it.
 
 ## 0.31.4
 

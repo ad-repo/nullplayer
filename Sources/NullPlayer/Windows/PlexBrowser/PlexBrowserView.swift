@@ -2248,7 +2248,8 @@ class PlexBrowserView: NSView {
 
     private func updateHistoryHostingFrame() {
         historyHostingView?.frame = embeddedContentRect()
-        artLens.frame = embeddedContentRect()
+        // Flow / Tiles leave the alphabet index beside them.
+        artLens.frame = embeddedContentRect().divided(atDistance: Layout.alphabetWidth * scaleFactor, from: .maxXEdge).remainder
     }
 
     /// Content rect (view coordinates) below the tab bar and above the status bar — shared by the
@@ -2518,8 +2519,10 @@ class PlexBrowserView: NSView {
                         } else if artLens.isPresenting {
                             // The Flow / Tiles view renders the art; just fill the list area
                             // background so the interior isn't left stale behind it.
+                            let layout = listLayout()
                             colors.normalBackground.setFill()
-                            context.fill(listLayout().area)
+                            context.fill(layout.area)
+                            drawAlphabetIndex(in: context, rect: layout.alphabet, colors: colors, renderer: renderer)
                         } else {
                             drawListArea(in: context, layout: listLayout(), colors: colors, renderer: renderer, artwork: capturedArtwork)
                         }
@@ -6659,6 +6662,11 @@ class PlexBrowserView: NSView {
     }
     
     private func scrollToLetter(_ letter: String) {
+        // Flow / Tiles jump within the level shown; only their root pages a local library to the letter.
+        if artLens.isPresenting,
+           artLens.center(onFirst: { effectiveSortLetter(for: $0) == letter }) || !artLens.focusStack.isEmpty {
+            return
+        }
         if currentSource == .local {
             switch browseMode {
             case .artists:

@@ -890,6 +890,14 @@ embedded content rect, `teardown()` in `prepareForUITeardown`, `isPresenting` in
 nothing over the list area so a Cava backdrop shows through; classic fills its list background), and
 `mode` from the buttons. The lens hands keyboard focus to the art view on a mode change.
 
+The **alphabet index stays beside Flow and Tiles**: the art view's `frame` is the list area less the
+alphabet strip (mode-independent, since the lens reuses `frame` on every mode change), the art
+branch of the draw path still draws the index, and the modern `listLayout()` drops the column
+header while `isPresenting`, so the index runs full height. A letter goes to
+`artLens.center(onFirst:)` — the first row of the level shown with that sort letter — before
+`scrollToLetter`'s list path; only at the root does it fall through to a local library's
+letter-offset paging (inside a container that would rebuild the rows out from under the focus).
+
 - **Tree navigation**: a focus **stack** of the containers drilled into. `isArtItem` covers
   artists, albums, folders, tracks, movies, shows, seasons and episodes across every supported
   source. Activating a **track**, **movie** or **episode** plays it; any container (`hasChildren`)
