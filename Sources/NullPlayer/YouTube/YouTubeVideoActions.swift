@@ -37,7 +37,7 @@ final class YouTubeVideoActions: NSObject {
     // MARK: - Menu
 
     func addMenuItems(for video: YouTubeVideo, to menu: NSMenu) {
-        for kind in YouTubeMediaKind.allCases {
+        for kind in MediaType.allCases {
             let submenu = NSMenu()
             TrackVerb.addMenuItems(to: submenu) { [weak self] in
                 guard let self else { throw CancellationError() }
@@ -54,7 +54,7 @@ final class YouTubeVideoActions: NSObject {
         let finderItem = NSMenuItem(title: "Show in Finder", action: #selector(showInFinder(_:)), keyEquivalent: "")
         finderItem.target = self; finderItem.representedObject = Array(files.values)
         menu.addItem(finderItem)
-        for kind in YouTubeMediaKind.allCases where files[kind] != nil {
+        for kind in MediaType.allCases where files[kind] != nil {
             let removeItem = NSMenuItem(title: "Remove \(kind.displayName) File", action: #selector(removeFile(_:)), keyEquivalent: "")
             removeItem.target = self; removeItem.representedObject = YouTubeDownload.Key(videoId: video.videoId, kind: kind)
             menu.addItem(removeItem)
@@ -75,7 +75,7 @@ final class YouTubeVideoActions: NSObject {
     }
 
     /// The form `activate` plays: the only one on disk. nil — pop the menu — for both or neither.
-    nonisolated static func formToPlay(_ files: [YouTubeMediaKind: URL]) -> YouTubeMediaKind? {
+    nonisolated static func formToPlay(_ files: [MediaType: URL]) -> MediaType? {
         files.count == 1 ? files.keys.first : nil
     }
 
@@ -93,7 +93,7 @@ final class YouTubeVideoActions: NSObject {
     // MARK: - Verbs
 
     /// The form on disk, or fetched first. A fetch outliving `cancel()` resolves to nothing.
-    private func tracks(for video: YouTubeVideo, kind: YouTubeMediaKind) async throws -> [Track] {
+    private func tracks(for video: YouTubeVideo, kind: MediaType) async throws -> [Track] {
         if let url = YouTubeManager.shared.downloadedFiles(for: video.videoId)[kind] {
             return [Track(url: url, isYouTubeOrigin: true)]
         }
@@ -103,7 +103,7 @@ final class YouTubeVideoActions: NSObject {
         return [Track(url: url, isYouTubeOrigin: true)]
     }
 
-    private func fetch(_ video: YouTubeVideo, kind: YouTubeMediaKind) -> Task<URL, Error> {
+    private func fetch(_ video: YouTubeVideo, kind: MediaType) -> Task<URL, Error> {
         let key = YouTubeDownload.Key(videoId: video.videoId, kind: kind)
         if let existing = fetches[key] { return existing }
         let channelTitle = search.channelTitle(forVideo: video)

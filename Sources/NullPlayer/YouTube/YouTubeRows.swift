@@ -88,7 +88,7 @@ struct YouTubeRowBuilder {
     /// and the download folder may be a network mount.
     private func videoRow(_ video: YouTubeVideo, id: String, indentLevel: Int) -> YouTubeRow {
         let onDisk = manager.downloadedFiles(for: video.videoId)
-        let markers = YouTubeMediaKind.allCases.filter { onDisk[$0] != nil }.map(\.mediaType.rowMarker)
+        let markers = MediaType.allCases.filter { onDisk[$0] != nil }.map(\.rowMarker)
         return YouTubeRow(id: id, title: video.title, titlePrefix: markers.isEmpty ? nil : markers.joined(separator: " "),
                           info: video.formattedDuration, indentLevel: indentLevel, kind: .video(video))
     }

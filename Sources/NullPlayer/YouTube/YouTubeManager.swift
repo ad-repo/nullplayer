@@ -305,7 +305,7 @@ final class YouTubeManager {
     /// MP4 (capped at `videoQuality`); the two can coexist.
     /// `channelTitle` names the folder for a channel that isn't subscribed (a search
     /// result's preview), so it isn't named after a bare ID.
-    func download(video: YouTubeVideo, kind: YouTubeMediaKind, channelTitle: String? = nil) async throws -> URL {
+    func download(video: YouTubeVideo, kind: MediaType, channelTitle: String? = nil) async throws -> URL {
         guard isDownloadFolderReachable() else {
             throw YouTubeManagerError.downloadFolderNotReachable("Download folder is not accessible")
         }
@@ -373,10 +373,10 @@ final class YouTubeManager {
     }
 
     /// A video's downloaded files that are on disk, by kind (empty when none are).
-    func downloadedFiles(for videoId: String) -> [YouTubeMediaKind: URL] {
+    func downloadedFiles(for videoId: String) -> [MediaType: URL] {
         loadManifestIfNeeded()
-        var files: [YouTubeMediaKind: URL] = [:]
-        for kind in YouTubeMediaKind.allCases {
+        var files: [MediaType: URL] = [:]
+        for kind in MediaType.allCases {
             guard let download = downloadManifest[YouTubeDownload.Key(videoId: videoId, kind: kind)],
                   let fileURL = manifestFileURL(for: download),
                   FileManager.default.fileExists(atPath: fileURL.path) else { continue }

@@ -2,7 +2,7 @@ import Foundation
 import AVFoundation
 
 /// Media type for a track (audio or video)
-enum MediaType: String, Codable {
+enum MediaType: String, Codable, CaseIterable {
     case audio
     case video
 
@@ -366,7 +366,7 @@ struct Track: Identifiable, Equatable {
 
     /// The title a playlist row draws: a video is marked with its glyph, audio is not.
     var playlistTitle: String {
-        mediaType == .video ? "\(MediaType.video.rowMarker) \(displayTitle)" : displayTitle
+        mediaType == .video ? "\(mediaType.rowMarker) \(displayTitle)" : displayTitle
     }
     
     /// Formatted duration string (MM:SS)

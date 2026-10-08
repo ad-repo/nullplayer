@@ -101,8 +101,8 @@ struct YouTubeDownload: Codable {
     let title: String
     let channelId: String
     let fileName: String            // Path relative to downloadRoot (channel/file)
-    let kind: YouTubeMediaKind      // .audio / .video; inferred from the extension for older entries
-    struct Key: Hashable { let videoId: String; let kind: YouTubeMediaKind }
+    let kind: MediaType             // .audio / .video; inferred from the extension for older entries
+    struct Key: Hashable { let videoId: String; let kind: MediaType }
     var key: Key
 }
 

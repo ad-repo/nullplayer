@@ -151,21 +151,12 @@ extension YouTubeVideo {
     }
 }
 
-/// Which form of a video a download is: its audio track or the MP4. A video can have both.
-enum YouTubeMediaKind: String, Codable, CaseIterable {
-    case audio, video
-
+/// A download's form is a `MediaType`: its audio track or the MP4. A video can have both.
+extension MediaType {
     var displayName: String {
         switch self {
         case .audio: return "Audio"
         case .video: return "Video"
-        }
-    }
-
-    var mediaType: MediaType {
-        switch self {
-        case .audio: return .audio
-        case .video: return .video
         }
     }
 }
@@ -184,12 +175,12 @@ struct YouTubeDownload: Codable {
     /// Local filename (relative to downloadRoot)
     let fileName: String
 
-    let kind: YouTubeMediaKind
+    let kind: MediaType
 
     /// A manifest entry's identity: one video can have an audio and a video download.
     struct Key: Hashable {
         let videoId: String
-        let kind: YouTubeMediaKind
+        let kind: MediaType
     }
 
     var key: Key { Key(videoId: videoId, kind: kind) }
@@ -203,7 +194,7 @@ extension YouTubeDownload {
         title = try container.decode(String.self, forKey: .title)
         channelId = try container.decode(String.self, forKey: .channelId)
         fileName = try container.decode(String.self, forKey: .fileName)
-        kind = try container.decodeIfPresent(YouTubeMediaKind.self, forKey: .kind)
+        kind = try container.decodeIfPresent(MediaType.self, forKey: .kind)
             ?? (AudioFileValidator.isVideoFile(url: URL(fileURLWithPath: fileName)) ? .video : .audio)
     }
 }
