@@ -111,16 +111,20 @@ A drop on a Library Browser imports instead (`local-library` § *Video import*).
 
 ## Server progress reporting
 
-What the window has loaded is one value, `loadedVideo: LoadedVideo` (`Windows/VideoPlayer/LoadedVideo.swift`):
-a local file, a server movie or episode, or a queued server item by id. Its `reporter` is the
-server that hears pause, resume, position and stop (`VideoPlaybackReporting`, which
-`PlexVideoPlaybackReporter`, `JellyfinVideoPlaybackReporter` and `EmbyVideoPlaybackReporter`
-conform to); a local file has none and reports nothing. Its `playHistorySource` is the play
-event's source, and `performCast` switches on it to cast a server movie or episode as itself.
-Every `play(…)` starts with `endPreviousVideo()` (drop a stale cast, report the previous item
-stopped with `finished: false`, record its play) and loads through `startVideo(…)`, which sets
-`loadedVideo` in one assignment, so a new item cannot inherit the previous one's server. A new
-source is a new `LoadedVideo` case; the compiler then names every switch it must join. A queued
+What the window has loaded is one value, `loadedVideo: LoadedVideo?` (`Windows/VideoPlayer/LoadedVideo.swift`):
+its `source` (a stream, a local file, a server movie or episode, or a queued server item by id),
+title, artwork track and play-event content type; `currentTitle` and `currentArtworkTrack` read
+from it. Its `reporter` is the server that hears pause, resume, position and stop
+(`VideoPlaybackReporting`, which `PlexVideoPlaybackReporter`, `JellyfinVideoPlaybackReporter`
+and `EmbyVideoPlaybackReporter` conform to); a stream or local file has none and reports
+nothing. Its `playHistorySource` is the play event's source, and `performCast` switches on
+`source` to cast a server movie or episode as itself and anything else by its track. Every
+`play(…)` starts with `endPreviousVideo()` (drop a stale cast, then `reportVideoEnded`) and loads
+through `startVideo(…)`, which sets `loadedVideo` in one assignment, so a new item cannot inherit
+anything from the previous one. Every way a film ends goes through `reportVideoEnded(at:finished:)`
+(report the stop, record the play); the paths that also drop the film (stop, window close, cast
+handoff or loss) go through `unloadVideo(reportingStopAt:)`. A new source is a new
+`LoadedVideo.Source` case; the compiler then names every switch it must join. A queued
 video carries only its id on the `Track`, so `play(plexTrack:)` / `play(jellyfinTrack:)` /
 `play(embyTrack:)` load `.plexItem` / `.jellyfinItem` / `.embyItem` and start the reporter with
 `videoTrackDidStart`, taking episode-or-movie from `playHistoryContentType`. The three

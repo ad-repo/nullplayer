@@ -452,10 +452,12 @@ case "scroll":
 case "key":
     let modifiers: [String: CGEventFlags] = ["shift": .maskShift, "option": .maskAlternate,
                                             "command": .maskCommand, "control": .maskControl]
-    guard args.count >= 4, let pid = Int(args[2]), let code = CGKeyCode(args[3]),
-          let flags = args.dropFirst(4).reduce(Optional(CGEventFlags()), { acc, m in
-              modifiers[m].flatMap { acc?.union($0) } }) else {
-        fail("usage: winhelper key <pid> <keycode> [shift|option|command|control …]")
+    let usage = "usage: winhelper key <pid> <keycode> [shift|option|command|control …]"
+    guard args.count >= 4, let pid = Int(args[2]), let code = CGKeyCode(args[3]) else { fail(usage) }
+    var flags = CGEventFlags()
+    for name in args.dropFirst(4) {
+        guard let flag = modifiers[name] else { fail(usage) }
+        flags.insert(flag)
     }
     key(pid: pid, code: code, flags: flags)
 case "move":

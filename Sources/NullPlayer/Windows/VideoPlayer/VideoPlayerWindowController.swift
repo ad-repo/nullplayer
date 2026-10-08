@@ -23,11 +23,14 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Sum of completed playback segments for the current item.
     private var accumulatedPlaybackDuration: TimeInterval = 0
 
-    /// Content type of the currently playing item (for analytics)
-    private var currentContentType: String = "video"
+    /// What is loaded: its source, title, artwork track and content type, set in one assignment.
+    private(set) var loadedVideo: LoadedVideo?
 
     /// Current video title
-    private(set) var currentTitle: String?
+    var currentTitle: String? { loadedVideo?.title }
+
+    /// Lightweight video track used by the main window for artwork lookup.
+    var currentArtworkTrack: Track? { loadedVideo?.artworkTrack }
 
     /// True from the moment a film reaches its own end until something plays again. **Read by every
     /// mode**: `WindowManager.isVideoActivePlayback` and `.videoPlaybackState` answer from it, so a
@@ -35,7 +38,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Classic and Original too, and the `.wal` host (`WinampModernAudioEngineHost.videoSession` /
     /// `.videoTransport`) keys its session on the same flag.
     ///
-    /// The session itself is deliberately *not* cleared. `clearLoadedContentState()` belongs to the
+    /// The session itself is deliberately *not* cleared. `unloadVideo(reportingStopAt:)` belongs to the
     /// paths that also close the window; end of media leaves the picture up on its last frame with
     /// the film still loaded, so it can be seeked back and replayed. What ends is the session, not
     /// the content.
@@ -64,12 +67,6 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         didReachEndOfMedia = true
         WindowManager.shared.videoPlaybackDidReachEndOfMedia()
     }
-
-    /// Lightweight video track used by the main window for artwork lookup.
-    private(set) var currentArtworkTrack: Track?
-    
-    /// What is loaded, which decides the server that hears its reports and how it is cast.
-    private(set) var loadedVideo: LoadedVideo = .none
 
     /// Whether we're actively casting video from this player
     private(set) var isCastingVideo: Bool = false
@@ -177,12 +174,22 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         videoPlayerView.updateCastState(isPlaying: false, deviceName: nil)
     }
 
-    private func clearLoadedContentState() {
-        currentTitle = nil
+    /// Report the loaded film's end to its server and record its play. Every way a film ends goes
+    /// through here: replaced by another, run out, stopped, or its window closed.
+    private func reportVideoEnded(at position: TimeInterval, finished: Bool = false) {
+        loadedVideo?.reporter?.videoDidStop(at: position, finished: finished)
+        recordVideoPlayEvent()
+    }
+
+    /// Report the film stopped at `position`, stop local playback and forget what was loaded.
+    private func unloadVideo(reportingStopAt position: TimeInterval) {
+        reportVideoEnded(at: position)
+        videoPlayerView.stop()
+        isPlaying = false
         // A newly loaded film must never inherit the previous one's ended state.
         didReachEndOfMedia = false
-        currentArtworkTrack = nil
-        loadedVideo = .none
+        loadedVideo = nil
+        WindowManager.shared.videoPlaybackDidStop()
     }
 
     /// Close the video player window when an audio cast supersedes an active video cast.
@@ -193,22 +200,13 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         isClosing = true
 
         let castPosition = cacheLastKnownVideoCastPosition()
-        loadedVideo.reporter?.videoDidStop(at: castPosition, finished: false)
 
         // Clear cast flags before close() so windowWillClose skips the cast-stop block
         stopCastUpdateTimer()
         isCastingVideo = false
         didInitiateCast = false
 
-        // Record analytics before clearing state, matching stop() and windowWillClose.
-        recordVideoPlayEvent()
-
-        // Stop local playback and clear content state
-        videoPlayerView.stop()
-        isPlaying = false
-        clearLoadedContentState()
-
-        WindowManager.shared.videoPlaybackDidStop()
+        unloadVideo(reportingStopAt: castPosition)
         close()
     }
 
@@ -219,13 +217,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         if isCastingVideo || didInitiateCast {
-            let castPosition = cacheLastKnownVideoCastPosition()
-            loadedVideo.reporter?.videoDidStop(at: castPosition, finished: false)
-            recordVideoPlayEvent()
-            videoPlayerView.stop()
-            isPlaying = false
-            clearLoadedContentState()
-            WindowManager.shared.videoPlaybackDidStop()
+            unloadVideo(reportingStopAt: cacheLastKnownVideoCastPosition())
         }
         clearVideoCastState()
     }
@@ -338,26 +330,24 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         videoPlayerView.onPlaybackPaused = { [weak self] position in
             guard let self = self else { return }
             self.pausePlaybackAnalytics()
-            self.loadedVideo.reporter?.videoDidPause(at: position)
+            self.loadedVideo?.reporter?.videoDidPause(at: position)
         }
 
         videoPlayerView.onPlaybackResumed = { [weak self] position in
             guard let self = self else { return }
             self.resumePlaybackAnalytics()
-            self.loadedVideo.reporter?.videoDidResume(at: position)
+            self.loadedVideo?.reporter?.videoDidResume(at: position)
         }
 
         videoPlayerView.onPositionUpdate = { [weak self] position in
-            self?.loadedVideo.reporter?.updatePosition(position)
+            self?.loadedVideo?.reporter?.updatePosition(position)
         }
 
         // Track playback completion for Plex/Jellyfin/Emby scrobbling and playlist advancement
         videoPlayerView.onPlaybackFinished = { [weak self] position in
             guard let self = self else { return }
-            self.loadedVideo.reporter?.videoDidStop(at: position, finished: true)
-
-            // Record analytics before advancing playlist
-            self.recordVideoPlayEvent()
+            // Report and record before advancing the playlist
+            self.reportVideoEnded(at: position, finished: true)
 
             // A queued film's callback loads the next item and starts it, which clears the flag
             // through `updatePlayingState(true)` anyway, so only a film from outside the queue
@@ -402,8 +392,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     
     // MARK: - Playback Analytics
 
-    private func beginPlaybackAnalyticsSession(contentType: String) {
-        currentContentType = contentType
+    private func beginPlaybackAnalyticsSession() {
         accumulatedPlaybackDuration = 0
         playbackStartTime = Date()
     }
@@ -437,9 +426,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             genre: nil,
             playedAt: eventTimestamp,
             durationListened: duration,
-            source: loadedVideo.playHistorySource.rawValue,
+            source: (loadedVideo?.playHistorySource ?? .local).rawValue,
             skipped: false,
-            contentType: currentContentType,
+            contentType: loadedVideo?.contentType ?? "video",
             outputDevice: CastManager.currentPlaybackDeviceName)
 
         playbackStartTime = nil
@@ -520,22 +509,18 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// video stopped to its server, and record its play.
     private func endPreviousVideo() {
         resetCastState()
-        loadedVideo.reporter?.videoDidStop(at: videoPlayerView.currentPlaybackTime, finished: false)
-        recordVideoPlayEvent()
+        reportVideoEnded(at: videoPlayerView.currentPlaybackTime)
     }
 
-    /// Load `video` and start it in the window. Only a Plex stream passes `plexHeaders`; the view
-    /// reads them only for a Plex URL.
-    private func startVideo(_ video: LoadedVideo, url: URL, title: String, artworkTrack: Track?,
-                            contentType: String, plexHeaders: [String: String]? = nil) {
+    /// Load `video` from `url` and start it in the window. Only a Plex stream passes `plexHeaders`;
+    /// the view reads them only for a Plex URL.
+    private func startVideo(_ video: LoadedVideo, url: URL, plexHeaders: [String: String]? = nil) {
         loadedVideo = video
-        currentTitle = title
-        currentArtworkTrack = artworkTrack
-        window?.title = title
+        window?.title = video.title
         revealVideoOutput()
-        videoPlayerView.play(url: url, title: title, isPlexURL: plexHeaders != nil, plexHeaders: plexHeaders)
+        videoPlayerView.play(url: url, title: video.title, isPlexURL: plexHeaders != nil, plexHeaders: plexHeaders)
         isPlaying = true
-        beginPlaybackAnalyticsSession(contentType: contentType)
+        beginPlaybackAnalyticsSession()
         WindowManager.shared.videoPlaybackDidStart()
     }
 
@@ -543,8 +528,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// If called from WindowManager.playVideoTrack, the onVideoFinishedForPlaylist callback will be set
     func play(url: URL, title: String) {
         endPreviousVideo()
-        startVideo(url.isFileURL ? .localFile(url) : .none, url: url, title: title,
-                   artworkTrack: Track(url: url, title: title, mediaType: .video), contentType: "video")
+        startVideo(LoadedVideo(source: url.isFileURL ? .localFile(url) : .stream, title: title,
+                               artworkTrack: Track(url: url, title: title, mediaType: .video), contentType: "video"),
+                   url: url)
     }
 
     /// Play a Plex video track from the playlist
@@ -555,8 +541,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         endPreviousVideo()
-        startVideo(.plexItem(ratingKey: ratingKey), url: track.url, title: track.displayTitle, artworkTrack: track,
-                   contentType: track.playHistoryContentType, plexHeaders: PlexManager.shared.streamingHeaders)
+        startVideo(LoadedVideo(source: .plexItem(ratingKey: ratingKey), queuedTrack: track), url: track.url,
+                   plexHeaders: PlexManager.shared.streamingHeaders)
         PlexVideoPlaybackReporter.shared.videoTrackDidStart(
             ratingKey: ratingKey,
             title: track.displayTitle,
@@ -576,8 +562,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // Full streaming headers are required for remote/relay connections
         let headers = PlexManager.shared.streamingHeaders
         NSLog("Playing Plex movie: %@ with URL: %@", movie.title, url.redacted)
-        startVideo(.plexMovie(movie), url: url, title: movie.title,
-                   artworkTrack: PlexManager.shared.convertToTrack(movie), contentType: "movie", plexHeaders: headers)
+        startVideo(LoadedVideo(source: .plexMovie(movie), title: movie.title,
+                               artworkTrack: PlexManager.shared.convertToTrack(movie), contentType: "movie"),
+                   url: url, plexHeaders: headers)
         PlexVideoPlaybackReporter.shared.movieDidStart(movie)
         // Pass Plex streams for external subtitle support
         videoPlayerView.setPlexStreams(movie.media.flatMap { $0.parts.flatMap { $0.streams } })
@@ -594,8 +581,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         let headers = PlexManager.shared.streamingHeaders
         let title = "\(episode.grandparentTitle ?? "Unknown") - \(episode.episodeIdentifier) - \(episode.title)"
         NSLog("Playing Plex episode: %@ with URL: %@", title, url.redacted)
-        startVideo(.plexEpisode(episode), url: url, title: title,
-                   artworkTrack: PlexManager.shared.convertToTrack(episode), contentType: "tv", plexHeaders: headers)
+        startVideo(LoadedVideo(source: .plexEpisode(episode), title: title,
+                               artworkTrack: PlexManager.shared.convertToTrack(episode), contentType: "tv"),
+                   url: url, plexHeaders: headers)
         PlexVideoPlaybackReporter.shared.episodeDidStart(episode)
         // Pass Plex streams for external subtitle support
         videoPlayerView.setPlexStreams(episode.media.flatMap { $0.parts.flatMap { $0.streams } })
@@ -609,8 +597,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         NSLog("Playing Jellyfin movie: %@ with URL: %@", movie.title, url.redacted)
-        startVideo(.jellyfinMovie(movie), url: url, title: movie.title,
-                   artworkTrack: JellyfinManager.shared.convertToTrack(movie), contentType: "movie")
+        startVideo(LoadedVideo(source: .jellyfinMovie(movie), title: movie.title,
+                               artworkTrack: JellyfinManager.shared.convertToTrack(movie), contentType: "movie"),
+                   url: url)
         JellyfinVideoPlaybackReporter.shared.movieDidStart(movie)
     }
 
@@ -623,8 +612,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         }
         let title = episode.seriesName.map { "\($0) - \(episode.episodeIdentifier) - \(episode.title)" } ?? episode.title
         NSLog("Playing Jellyfin episode: %@ with URL: %@", title, url.redacted)
-        startVideo(.jellyfinEpisode(episode), url: url, title: title,
-                   artworkTrack: JellyfinManager.shared.convertToTrack(episode), contentType: "tv")
+        startVideo(LoadedVideo(source: .jellyfinEpisode(episode), title: title,
+                               artworkTrack: JellyfinManager.shared.convertToTrack(episode), contentType: "tv"),
+                   url: url)
         JellyfinVideoPlaybackReporter.shared.episodeDidStart(episode)
     }
 
@@ -636,8 +626,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         NSLog("Playing Emby movie: %@ with URL: %@", movie.title, url.redacted)
-        startVideo(.embyMovie(movie), url: url, title: movie.title,
-                   artworkTrack: EmbyManager.shared.convertToTrack(movie), contentType: "movie")
+        startVideo(LoadedVideo(source: .embyMovie(movie), title: movie.title,
+                               artworkTrack: EmbyManager.shared.convertToTrack(movie), contentType: "movie"),
+                   url: url)
         EmbyVideoPlaybackReporter.shared.movieDidStart(movie)
     }
 
@@ -650,8 +641,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         }
         let title = episode.seriesName.map { "\($0) - \(episode.episodeIdentifier) - \(episode.title)" } ?? episode.title
         NSLog("Playing Emby episode: %@ with URL: %@", title, url.redacted)
-        startVideo(.embyEpisode(episode), url: url, title: title,
-                   artworkTrack: EmbyManager.shared.convertToTrack(episode), contentType: "tv")
+        startVideo(LoadedVideo(source: .embyEpisode(episode), title: title,
+                               artworkTrack: EmbyManager.shared.convertToTrack(episode), contentType: "tv"),
+                   url: url)
         EmbyVideoPlaybackReporter.shared.episodeDidStart(episode)
     }
 
@@ -662,8 +654,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         endPreviousVideo()
-        startVideo(.jellyfinItem(id: jellyfinId), url: track.url, title: track.displayTitle, artworkTrack: track,
-                   contentType: track.playHistoryContentType)
+        startVideo(LoadedVideo(source: .jellyfinItem(id: jellyfinId), queuedTrack: track), url: track.url)
         JellyfinVideoPlaybackReporter.shared.videoTrackDidStart(
             itemId: jellyfinId,
             title: track.displayTitle,
@@ -680,8 +671,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         endPreviousVideo()
-        startVideo(.embyItem(id: embyId), url: track.url, title: track.displayTitle, artworkTrack: track,
-                   contentType: track.playHistoryContentType)
+        startVideo(LoadedVideo(source: .embyItem(id: embyId), queuedTrack: track), url: track.url)
         EmbyVideoPlaybackReporter.shared.videoTrackDidStart(
             itemId: embyId,
             title: track.displayTitle,
@@ -718,16 +708,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             didInitiateCast = false
         }
 
-        loadedVideo.reporter?.videoDidStop(at: wasCasting ? castPosition : videoPlayerView.currentPlaybackTime,
-                                           finished: false)
-
-        // Record analytics before clearing state
-        recordVideoPlayEvent()
-
-        videoPlayerView.stop()
-        isPlaying = false
-        clearLoadedContentState()
-        WindowManager.shared.videoPlaybackDidStop()
+        unloadVideo(reportingStopAt: wasCasting ? castPosition : videoPlayerView.currentPlaybackTime)
         // A parked picture lives over the skin's own video window, which declares `autoclose="1"`:
         // the component closing is what shuts that window. Unpark before closing, so no child window
         // is left hanging off a skin window that a skin or mode switch may take away next.
@@ -1011,9 +992,11 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             }
         }
 
-        // A server movie or episode is cast as itself; anything else by its track or file
-        let (loaded, track, title) = await MainActor.run { (self.loadedVideo, self.currentArtworkTrack, self.currentTitle) }
-        switch loaded {
+        // A server movie or episode is cast as itself; anything else by its track
+        guard let loaded = await MainActor.run(body: { self.loadedVideo }) else {
+            throw CastError.playbackFailed("No castable content loaded")
+        }
+        switch loaded.source {
         case .plexMovie(let movie):
             try await CastManager.shared.castPlexMovie(movie, to: device, startPosition: startPosition)
         case .plexEpisode(let episode):
@@ -1026,25 +1009,17 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             try await CastManager.shared.castEmbyMovie(movie, to: device, startPosition: startPosition)
         case .embyEpisode(let episode):
             try await CastManager.shared.castEmbyEpisode(episode, to: device, startPosition: startPosition)
-        case .none, .localFile, .plexItem, .jellyfinItem, .embyItem:
-            if let track, track.mediaType == .video {
-                try await CastManager.shared.castVideoTrack(
-                    track,
-                    to: device,
-                    startPosition: startPosition,
-                    duration: videoDuration > 0 ? videoDuration : track.duration
-                )
-            } else if case .localFile(let url) = loaded {
-                try await CastManager.shared.castLocalVideo(
-                    url,
-                    title: title ?? "Video",
-                    to: device,
-                    startPosition: startPosition,
-                    duration: videoDuration > 0 ? videoDuration : nil
-                )
-            } else {
+        case .stream, .localFile, .plexItem, .jellyfinItem, .embyItem:
+            // These always load with a video track: `play(url:)` builds one, a queued item is its own
+            guard let track = loaded.artworkTrack else {
                 throw CastError.playbackFailed("No castable content loaded")
             }
+            try await CastManager.shared.castVideoTrack(
+                track,
+                to: device,
+                startPosition: startPosition,
+                duration: videoDuration > 0 ? videoDuration : track.duration
+            )
         }
 
         // Update casting state and time tracking
@@ -1140,15 +1115,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                 didInitiateCast = false
             }
             
-            loadedVideo.reporter?.videoDidStop(at: videoPlayerView.currentPlaybackTime, finished: false)
-
-            // Record analytics before clearing state
-            recordVideoPlayEvent()
-
-            videoPlayerView.stop()
-            isPlaying = false
-            clearLoadedContentState()
-            WindowManager.shared.videoPlaybackDidStop()
+            unloadVideo(reportingStopAt: videoPlayerView.currentPlaybackTime)
         }
         removeKeyboardMonitor()
         isClosing = false  // Reset for potential reuse
@@ -1373,7 +1340,7 @@ extension VideoPlayerWindowController {
     }
 
     func debugSetCurrentTitleForTesting(_ title: String?) {
-        currentTitle = title
+        loadedVideo = title.map { LoadedVideo(source: .stream, title: $0, artworkTrack: nil, contentType: "video") }
     }
 
     func debugSetCastStateForTesting(device: CastDevice, startPosition: TimeInterval, duration: TimeInterval) {
