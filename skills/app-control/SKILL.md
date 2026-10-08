@@ -246,6 +246,10 @@ read -r WID _ X Y W H _ < <("$WH" windows --pid "$PID" --size 289x283)   # the s
   on the next launch, and one it left open comes back. B154 was filed as "the equalizer is shown
   during load and then hidden". The hiding was the harness's own `closeaux`. Before blaming the
   app for a window that appears or vanishes, check what the previous run's toggles left behind.
+  `closeaux` unticks **every** checked Windows-menu item past Main Window, so it also turns off
+  **Save State on Exit**: a run that relies on quit-and-restore must close windows by toggling only
+  the `windowitems` rows whose checked column is `1` (2026-10-08, M20: the saved state silently
+  stopped updating).
 - **A contextual menu is not drivable. That is Route D.**
 - **`capture` refuses a picture that is not the window.** `screencapture -l` returns a
   **full-screen** image for an off-screen or stale id, and the **whole docked group** for a window

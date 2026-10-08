@@ -253,6 +253,20 @@ For new center-stack windows, follow the waveform/spectrum pattern:
 3. Modern chrome in `Windows/Modern...`
 4. Registration and docking behavior in `WindowManager`
 
+Registration is one case and two rows. Add the case to `CenterStackWindowKind`
+(`App/CenterStackWindows.swift`) where it should open and be raised among the feature windows, its
+`savedVisibility` / `savedFrame` key paths there, and its row in
+`WindowManager.centerStackFeatureWindow(_:)` (controller, routed window, visibility, `show`). Every
+list that tracks feature windows walks `featureWindows` or `stackOrder` and reads that row: docking
+records, Compact Mode and UI-switch snapshots, detached frames, saved state, launch restore, the
+classic stack repair, the UI Size reflow, Snap To Default, skin-change fan-out and teardown. The
+exhaustive switches make a missing row a compile error; `CenterStackWindowTests` fails if the
+`AppState` fields are missing from `CodingKeys` or the decoder. `AppState` keeps the flat
+`isXVisible` / `xWindowFrame` keys on disk, so states written by earlier builds still restore.
+What stays per window is what differs per window: the stored controller, `showX` / `toggleX`, the
+teardown's `close()` + `nil`, `nativeWindowDefaultSize`, `hostedBorderWindows` and the hosted-id
+switches.
+
 Sonos Rooms uses a shared controller/content view with separate Original/Metal chrome and a
 `.wal` hosted-surface adapter. Its scrollable list must leave Refresh and casting controls in a
 fixed footer. Explicitly lay out controls on first show and resize, including when the room list

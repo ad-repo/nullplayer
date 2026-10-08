@@ -126,10 +126,9 @@ Window visibility + frame are saved in `AppStateManager` session state (`isPeppy
 ## WindowManager integration
 
 Registered as `CenterStackWindowKind.peppyMeter`. `showPeppyMeter` / `togglePeppyMeter` /
-`isPeppyMeterVisible` / `peppyMeterWindowFrame` mirror the Audio Analyzer / Network Monitor methods
-exactly, and the controller is threaded through every window collection (docking, snapshots,
-always-on-top, UI Size, Hide Title Bars, compact-mode snapshots, mode teardown/rebuild) and the
-classic frame-repair path (`repairClassicCenterStackFrames`). It docks/snaps flush in the vertical
+`isPeppyMeterVisible` mirror the Audio Analyzer / Network Monitor methods exactly, and its row in
+`centerStackFeatureWindow(_:)` threads it through every window collection and the classic
+frame-repair path (`ui-guide` § *Dockable Center-Stack Windows*). It docks/snaps flush in the vertical
 stack, opens at main-window width, and is vertically stretchable like the spectrum/analyzer windows.
 Its default/minimum height is `1.75×` the normal center-stack height, rounded to whole pixels, because
 the bundled meter templates are landscape-oriented. Saved legacy double-height PeppyMeter frames are
