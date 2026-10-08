@@ -475,7 +475,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                 videoPlayerView.hideTrackSelectionPanel()
                 return true
             }
-            return dismissVideoOutput()
+            // Consumed even when nothing is dismissed: a parked window still key from a fullscreen
+            // round trip would otherwise pass Esc on to `VideoPlayerView`, which stops the film.
+            dismissVideoOutput()
         case 49: // Space - toggle play/pause
             togglePlayPause()
         case 3: // F key - toggle fullscreen
@@ -1307,10 +1309,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// alone for the skin to reopen; in this controller's own window it closes, which is the stop it
     /// has always been. A `.wmz` box or a `.wal` video tab has no window of its own to hide, so there
     /// it does nothing: closing would stop the film, and unparking strands a black tab (M18).
-    func dismissVideoOutput() -> Bool {
-        if isVideoOutputHosted { return WindowManager.shared.closeWinampModernVideoWindow() }
+    func dismissVideoOutput() {
+        if isVideoOutputHosted { WindowManager.shared.closeWinampModernVideoWindow(); return }
         close()
-        return true
     }
 
     /// The video view's own context menu — play/pause, skip, audio and subtitle tracks, settings.

@@ -81,9 +81,14 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   video window (`closeVideoSurfaceWindow`) and does nothing where the box has no window of its own.
   Under `.wmz`, `close()` would stop the film; in a `.wal` video tab, unparking (what the Video
   Player menu item does there, B23) leaves the tab black while the film plays on, and selecting
-  the tab again does not refill it (measured 2026-10-08, `211786-Cpro_Winamp_Modern`). Measured
-  2026-10-08 on Cablemusic and `211786-Cpro_Winamp_Modern` (Emby `Airplane!`): Space, ←/→, F and
-  Esc act with no click after the play.
+  the tab again does not refill it (measured 2026-10-08, `211786-Cpro_Winamp_Modern`). Esc is
+  consumed even then: **a fullscreen round trip leaves the parked window key** (the free window
+  took key for fullscreen, and `canBecomeKey` turning false later resigns nothing), so its own
+  monitor sees the keys, and an Esc it passed on reached `VideoPlayerView.cancelOperation`, which
+  stops and closes (measured on Cablemusic: F, Esc, Esc stopped the film). Measured 2026-10-08 on
+  Cablemusic, `211786-Cpro_Winamp_Modern`, winampmodern566 (own video window) and aquamp (Emby
+  `Airplane!`): Space, ←/→, F and Esc act with no click after the play, and after an F / Esc
+  round trip.
 
 ## Entry points
 
