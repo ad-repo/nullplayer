@@ -252,8 +252,7 @@ The `PlexVideoPlaybackReporter` singleton manages Plex reporting for **video con
 
 ```swift
 // Automatic integration - VideoPlayerWindowController calls the reporter:
-- movieDidStart()      // When a Plex movie begins playing
-- episodeDidStart()    // When a Plex episode begins playing
+- videoTrackDidStart() // When a Plex film begins playing (movie or episode, from its track)
 - videoDidPause()      // When video playback is paused
 - videoDidResume()     // When video playback resumes
 - videoDidStop()       // When video playback stops or finishes
@@ -266,8 +265,8 @@ The `PlexVideoPlaybackReporter` singleton manages Plex reporting for **video con
 - Reports `type: "movie"` or `type: "episode"` to distinguish video from audio
 
 **Video Integration:**
-- `VideoPlayerWindowController.play(movie:)` - Starts tracking for movies
-- `VideoPlayerWindowController.play(episode:)` - Starts tracking for TV episodes
+- `VideoPlayerWindowController.play(plexTrack:)` - Starts tracking for every Plex film; a row
+  double-click queues the film like any library verb (`video-playback` § *Entry points*)
 - Non-Plex videos (local files) are not reported
 
 #### The end of a film is a `.paused`, not an `.ended`

@@ -70,44 +70,7 @@ class JellyfinVideoPlaybackReporter {
     
     // MARK: - Public API
     
-    /// Called when a Jellyfin movie starts playing
-    func movieDidStart(_ movie: JellyfinMovie, at position: TimeInterval = 0) {
-        let serverId = JellyfinManager.shared.currentServer?.id ?? ""
-        NSLog("JellyfinVideoPlaybackReporter: Movie started - %@ (id: %@)", movie.title, movie.id)
-        
-        startTracking(
-            itemId: movie.id,
-            serverId: serverId,
-            title: movie.title,
-            durationSeconds: TimeInterval(movie.duration ?? 0),
-            videoType: .movie,
-            position: position
-        )
-    }
-    
-    /// Called when a Jellyfin episode starts playing
-    func episodeDidStart(_ episode: JellyfinEpisode, at position: TimeInterval = 0) {
-        let serverId = JellyfinManager.shared.currentServer?.id ?? ""
-        let title: String
-        if let showName = episode.seriesName {
-            title = "\(showName) - \(episode.episodeIdentifier) - \(episode.title)"
-        } else {
-            title = episode.title
-        }
-        NSLog("JellyfinVideoPlaybackReporter: Episode started - %@ (id: %@)", title, episode.id)
-        
-        startTracking(
-            itemId: episode.id,
-            serverId: serverId,
-            title: title,
-            durationSeconds: TimeInterval(episode.duration ?? 0),
-            videoType: .episode,
-            position: position
-        )
-    }
-
-    /// Called when a Jellyfin video track from the playlist starts playing, where there is a Track
-    /// with its item id but not the full movie / episode
+    /// Called when a Jellyfin film starts playing in the video window
     func videoTrackDidStart(itemId: String, title: String, durationSeconds: TimeInterval, isEpisode: Bool, at position: TimeInterval = 0) {
         let serverId = JellyfinManager.shared.currentServer?.id ?? ""
         NSLog("JellyfinVideoPlaybackReporter: Video track started - %@ (id: %@)", title, itemId)

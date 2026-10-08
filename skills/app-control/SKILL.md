@@ -224,6 +224,9 @@ read -r WID _ X Y W H _ < <("$WH" windows --pid "$PID" --size 289x283)   # the s
   NullPlayer. An empty lookup reads as 0 in shell arithmetic: on 2026-09-27 an unchecked
   `read … < <(winhelper windows | grep …)` clicked the menu bar and dragged from the screen's
   top-left corner, and hung Finder and the Dock. Check the lookup anyway (`[ -n "$X" ] || exit 1`).
+  The Dock can hold a transparent full-screen window above every app (seen 2026-10-08, macOS 27),
+  which refused every press as `on Dock`; a Dock window over a point inside a screen's
+  `visibleFrame` is passed over, and the window under it must still be NullPlayer's.
 - **`clickState` is why clicks used to do nothing.** An event posted without it arrives
   `clickCount == 0`: any handler gating on `clickCount == 1` ignores it while the window still
   highlights. Both `click` and `drag` set it. Measured A/B on the same browser row: the pre-fix

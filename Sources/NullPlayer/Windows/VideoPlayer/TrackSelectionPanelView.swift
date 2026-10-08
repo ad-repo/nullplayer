@@ -7,7 +7,7 @@ enum TrackType {
     case subtitle
 }
 
-/// Represents a track that can be selected (either from VLCKit or Plex)
+/// An audio or subtitle track VLCKit reports for the playing film
 struct SelectableTrack: Identifiable, Equatable {
     let id: String
     let type: TrackType
@@ -15,10 +15,7 @@ struct SelectableTrack: Identifiable, Equatable {
     let language: String?
     let codec: String?
     let isSelected: Bool
-    let isExternal: Bool      // For Plex external subtitles
-    let externalURL: URL?     // URL for external subtitle download
-    let vlcTrackIndex: Int32?  // VLCKit track index (nil for external Plex subtitles)
-    let plexStream: PlexStream?     // Reference to Plex stream
+    let vlcTrackIndex: Int32
     
     static func == (lhs: SelectableTrack, rhs: SelectableTrack) -> Bool {
         lhs.id == rhs.id && lhs.type == rhs.type && lhs.isSelected == rhs.isSelected
@@ -258,10 +255,6 @@ class TrackSelectionPanelView: NSView {
         
         if let codec = track.codec {
             parts.append(codec.uppercased())
-        }
-        
-        if track.isExternal {
-            parts.append("External")
         }
         
         return parts.isEmpty ? nil : parts.joined(separator: " • ")

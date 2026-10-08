@@ -58,6 +58,15 @@ func fail(_ message: String) -> Never {
 /// 2026-09-27 that posted a click into the menu bar at (100,60) and a drag from the screen's top-left
 /// corner (-2,-2), which hung Finder and the Dock. So the frontmost on-screen window at the press
 /// point, across every app, must be NullPlayer's, or nothing is posted and this exits 1.
+/// Whether a top-left global point lies inside some screen's visibleFrame (menu bar and Dock excluded).
+func visibleFrameContains(_ p: CGPoint) -> Bool {
+    let top = NSScreen.screens.first?.frame.maxY ?? 0
+    return NSScreen.screens.contains { s in
+        let v = s.visibleFrame
+        return CGRect(x: v.minX, y: top - v.maxY, width: v.width, height: v.height).contains(p)
+    }
+}
+
 func requireNullPlayer(at p: CGPoint, verb: String) {
     let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
     for w in list {
@@ -71,6 +80,10 @@ func requireNullPlayer(at p: CGPoint, verb: String) {
         if w[kCGWindowName as String] as? String == shadowMarker { continue }
         let owner = w[kCGWindowOwnerName as String] as? String ?? "?"
         if owner == "NullPlayer" { return }
+        // The Dock keeps a transparent full-screen window above every app (macOS 27) that only
+        // its bar answers clicks on: outside visibleFrame when shown, or auto-hidden and so
+        // absent unless the pointer is already there. A NullPlayer window must still lie under it.
+        if owner == "Dock", visibleFrameContains(p) { continue }
         fail("\(verb) refused: (\(Int(p.x)),\(Int(p.y))) is on \(owner), not a NullPlayer window — nothing posted")
     }
     fail("\(verb) refused: no window at (\(Int(p.x)),\(Int(p.y))) — nothing posted")

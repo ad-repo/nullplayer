@@ -69,7 +69,7 @@ The cue this writes is consumed by the **cue-sheets** feature (direct-play virtu
 
 `presentSuccess(outputPath:mode:cueTrackCount:)` branches by `mode`:
 - **audio** → `audioEngine.loadFiles([url]); audioEngine.play()` (same path as opening a file from Finder)
-- **video** → `WindowManager.shared.showVideoPlayer(url:title:allowCasting: false)` using the final compatibility-transcoded `.mp4` (the local window even while a video cast runs; `video-playback` § *Entry points*)
+- **video** → `WindowManager.shared.showVideoPlayer(url:title:)` using the final compatibility-transcoded `.mp4` (the local window even while a video cast runs; `video-playback` § *Entry points*)
 
 ## Gotchas
 

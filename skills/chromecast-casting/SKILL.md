@@ -188,7 +188,7 @@ cast closes the window: `video-playback` § *Casting*.
 ### Mixed-Type Playlists (`castNewTrack`)
 
 `castNewTrack(track:)` dispatches by `track.mediaType`:
-- Video tracks → `castVideoURL(...)` (requires an active video-capable cast session)
+- Video tracks → `_castVideoTrackCore(...)` (requires an active video-capable cast session)
 - Audio tracks → existing audio cast path
 
 Do not assume all playlist tracks are audio. Video items can appear in audio playlists.

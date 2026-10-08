@@ -1289,7 +1289,7 @@ final class StreamRipper {
         switch mode {
         case .video:
             let track = Track(url: url)
-            WindowManager.shared.showVideoPlayer(url: url, title: track.displayTitle, allowCasting: false)
+            WindowManager.shared.showVideoPlayer(url: url, title: track.displayTitle)
         case .audio:
             let engine = WindowManager.shared.audioEngine
             engine.loadFiles([url])

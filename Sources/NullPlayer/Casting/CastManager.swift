@@ -1167,27 +1167,6 @@ class CastManager {
             castURL = serverURL
         }
         
-        // Get artwork URL if available
-        var artworkURL: URL?
-        if let plexTrack = findPlexTrack(matching: track) {
-            artworkURL = PlexManager.shared.artworkURL(thumb: plexTrack.thumb)
-        } else if track.subsonicId != nil, let coverArtId = track.artworkThumb {
-            // Subsonic/Navidrome tracks have artwork via coverArt ID
-            if let subsonicArtwork = SubsonicManager.shared.coverArtURL(coverArtId: coverArtId) {
-                artworkURL = rewriteLocalhostForCasting(subsonicArtwork)
-            }
-        } else if track.jellyfinId != nil, let imageTag = track.artworkThumb {
-            // Jellyfin track - use server's image URL
-            if let jellyfinArtwork = JellyfinManager.shared.imageURL(itemId: track.jellyfinId!, imageTag: imageTag, size: 300) {
-                artworkURL = rewriteLocalhostForCasting(jellyfinArtwork)
-            }
-        } else if track.embyId != nil, let imageTag = track.artworkThumb {
-            // Emby track - use server's image URL
-            if let embyArtwork = EmbyManager.shared.imageURL(itemId: track.embyId!, imageTag: imageTag, size: 300) {
-                artworkURL = rewriteLocalhostForCasting(embyArtwork)
-            }
-        }
-
         // Use effective content type (from track or upstream HEAD detection),
         // otherwise fall back to URL extension detection (works for Plex and local files)
         let contentType = effectiveContentType ?? Self.detectAudioContentType(for: track.url)
@@ -1199,7 +1178,7 @@ class CastManager {
             title: track.title,
             artist: track.artist,
             album: track.album,
-            artworkURL: artworkURL,
+            artworkURL: castArtworkURL(for: track),
             duration: track.duration,
             contentType: contentType
         )
@@ -1219,7 +1198,7 @@ class CastManager {
         }
 
         // Video tracks in an audio playlist dispatch to the video cast path.
-        // Keep the teardown performed by castVideoURL serialized with audio track changes.
+        // Keep the teardown performed by _castVideoTrackCore serialized with audio track changes.
         if track.mediaType == .video {
             guard let device = activeSession?.device, device.supportsVideo else {
                 NSLog("CastManager: castNewTrack skipping video track '%@' — no video-capable session", track.title)
@@ -1231,14 +1210,7 @@ class CastManager {
                           track.title, self.castTrackGeneration)
                     return
                 }
-                try await self._castVideoURLCore(
-                    track.url,
-                    title: track.title,
-                    to: device,
-                    duration: track.duration,
-                    contentType: track.contentType,
-                    sourceTrack: track
-                )
+                try await self._castVideoTrackCore(track, to: device)
             }
             try await task.value
             return
@@ -1420,27 +1392,6 @@ class CastManager {
             return
         }
         
-        // Get artwork URL if available
-        var artworkURL: URL?
-        if let plexTrack = findPlexTrack(matching: trackToCast) {
-            artworkURL = PlexManager.shared.artworkURL(thumb: plexTrack.thumb)
-        } else if trackToCast.subsonicId != nil, let coverArtId = trackToCast.artworkThumb {
-            // Subsonic/Navidrome tracks have artwork via coverArt ID
-            if let subsonicArtwork = SubsonicManager.shared.coverArtURL(coverArtId: coverArtId) {
-                artworkURL = rewriteLocalhostForCasting(subsonicArtwork)
-            }
-        } else if trackToCast.jellyfinId != nil, let imageTag = trackToCast.artworkThumb {
-            // Jellyfin track - use server's image URL
-            if let jellyfinArtwork = JellyfinManager.shared.imageURL(itemId: trackToCast.jellyfinId!, imageTag: imageTag, size: 300) {
-                artworkURL = rewriteLocalhostForCasting(jellyfinArtwork)
-            }
-        } else if trackToCast.embyId != nil, let imageTag = trackToCast.artworkThumb {
-            // Emby track - use server's image URL
-            if let embyArtwork = EmbyManager.shared.imageURL(itemId: trackToCast.embyId!, imageTag: imageTag, size: 300) {
-                artworkURL = rewriteLocalhostForCasting(embyArtwork)
-            }
-        }
-
         // Use effective content type (from track or upstream HEAD detection),
         // otherwise fall back to URL extension detection (works for Plex and local files)
         let contentType = effectiveContentType ?? Self.detectAudioContentType(for: trackToCast.url)
@@ -1452,7 +1403,7 @@ class CastManager {
             title: trackToCast.title,
             artist: trackToCast.artist,
             album: trackToCast.album,
-            artworkURL: artworkURL,
+            artworkURL: castArtworkURL(for: trackToCast),
             duration: trackToCast.duration,
             contentType: contentType
         )
@@ -1855,31 +1806,12 @@ class CastManager {
         }
 
         NSLog("CastManager: Casting local video '%@' to %@", title, device.name)
-        try await castVideoURL(
-            url,
-            title: title,
+        try await castVideoTrack(
+            Track(url: url, title: title, mediaType: .video, contentType: contentType),
             to: device,
             startPosition: startPosition,
-            duration: duration,
-            contentType: contentType
+            duration: duration
         )
-    }
-
-    /// Cast a generic video URL to a video-capable device.
-    /// Handles both local files and already-resolved remote video streams.
-    func castVideoURL(_ url: URL, title: String, to device: CastDevice, startPosition: TimeInterval = 0, duration: TimeInterval? = nil, contentType: String? = nil) async throws {
-        let task = await enqueueInflight { [self] in
-            try await self._castVideoURLCore(
-                url,
-                title: title,
-                to: device,
-                startPosition: startPosition,
-                duration: duration,
-                contentType: contentType
-            )
-        }
-
-        try await task.value
     }
 
     /// Cast a video playlist track, preserving server identity so authenticated/proxied URLs are used.
@@ -1889,22 +1821,14 @@ class CastManager {
         }
 
         let task = await enqueueInflight { [self] in
-            try await self._castVideoURLCore(
-                track.url,
-                title: track.displayTitle,
-                to: device,
-                startPosition: startPosition,
-                duration: duration ?? track.duration,
-                contentType: track.contentType,
-                sourceTrack: track
-            )
+            try await self._castVideoTrackCore(track, to: device, startPosition: startPosition, duration: duration)
         }
 
         try await task.value
     }
 
-    /// Core video URL cast implementation. Call only from inside an already serialized inflight operation.
-    private func _castVideoURLCore(_ url: URL, title: String, to device: CastDevice, startPosition: TimeInterval = 0, duration: TimeInterval? = nil, contentType: String? = nil, sourceTrack: Track? = nil) async throws {
+    /// Core video cast implementation. Call only from inside an already serialized inflight operation.
+    private func _castVideoTrackCore(_ track: Track, to device: CastDevice, startPosition: TimeInterval = 0, duration: TimeInterval? = nil) async throws {
         guard device.supportsVideo else {
             throw CastError.unsupportedDevice
         }
@@ -1916,8 +1840,13 @@ class CastManager {
             await _stopCastingAndAwaitTeardownCore()
         }
 
+        // A server's film goes out as video/mp4, as every server movie and episode cast sends it:
+        // a Plex part URL ends in the extension of the file on the server's disk (.mkv).
+        let url = track.url
+        let isServerItem = track.plexRatingKey != nil || track.jellyfinId != nil || track.embyId != nil
         let detected = detectContentType(for: url)
-        let effectiveContentType = contentType ?? sourceTrack?.contentType ?? (detected.mediaType == .video ? detected.contentType : "video/mp4")
+        let effectiveContentType = track.contentType
+            ?? (detected.mediaType == .video && !isServerItem ? detected.contentType : "video/mp4")
 
         let castURL: URL
         if url.isFileURL {
@@ -1930,14 +1859,12 @@ class CastManager {
             }
             castURL = serverURL
         } else if url.scheme == "http" || url.scheme == "https" {
-            if let track = sourceTrack,
-               track.plexRatingKey == nil,
+            if track.plexRatingKey == nil,
                Self.isAudioContentType(effectiveContentType),
                (track.subsonicId != nil || track.jellyfinId != nil || track.embyId != nil) {
                 let result = try await prepareProxyURL(for: track, device: device, contentTypeOverride: effectiveContentType)
                 castURL = result.url
-            } else if let track = sourceTrack,
-                      track.plexRatingKey == nil,
+            } else if track.plexRatingKey == nil,
                       (track.subsonicId != nil || track.jellyfinId != nil || track.embyId != nil) {
                 // The Sonos proxy path is for audio metadata/content-type handling;
                 // remote video streams can be cast directly.
@@ -1951,17 +1878,18 @@ class CastManager {
             throw CastError.invalidURL
         }
 
+        // A server episode's track carries its show and season, as an episode cast sends them
         let metadata = CastMetadata(
-            title: title,
-            artist: nil,
-            album: nil,
-            artworkURL: nil,
-            duration: duration,
+            title: track.displayTitle,
+            artist: track.artist,
+            album: track.album,
+            artworkURL: castArtworkURL(for: track, size: 600),
+            duration: duration ?? track.duration,
             contentType: effectiveContentType,
             mediaType: .video
         )
 
-        NSLog("CastManager: Casting video URL '%@' to %@", title, device.name)
+        NSLog("CastManager: Casting video URL '%@' to %@", track.displayTitle, device.name)
         try await _castCore(to: device, url: castURL, metadata: metadata, startPosition: startPosition)
     }
     
@@ -2836,10 +2764,23 @@ class CastManager {
     
     // MARK: - Helpers
     
-    /// Find a matching PlexTrack for metadata
-    private func findPlexTrack(matching track: Track) -> PlexTrack? {
-        // This is a simplified lookup - in production, you'd want to track this association
-        return nil
+    /// The server's artwork for a track, as the cast device reaches it; nil for a local file or a stream.
+    private func castArtworkURL(for track: Track, size: Int = 300) -> URL? {
+        guard let thumb = track.artworkThumb else { return nil }
+        if track.plexRatingKey != nil {
+            return PlexManager.shared.artworkURL(thumb: thumb, size: size).map(rewriteLocalhostForCasting)
+        }
+        let serverURL: URL?
+        if track.subsonicId != nil {
+            serverURL = SubsonicManager.shared.coverArtURL(coverArtId: thumb)
+        } else if let id = track.jellyfinId {
+            serverURL = JellyfinManager.shared.imageURL(itemId: id, imageTag: thumb, size: size)
+        } else if let id = track.embyId {
+            serverURL = EmbyManager.shared.imageURL(itemId: id, imageTag: thumb, size: size)
+        } else {
+            serverURL = nil
+        }
+        return serverURL.map(rewriteLocalhostForCasting)
     }
     
     /// Redact sensitive tokens from URL for safe logging

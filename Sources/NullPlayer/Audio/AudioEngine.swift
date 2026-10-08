@@ -4554,6 +4554,10 @@ class AudioEngine {
             currentIndex = index
             _currentTime = 0
             lastReportedTime = 0
+            // A film reports through the video window's reporter and shows the window's clock;
+            // ticking on until the hand-over pauses the engine would report it to the audio
+            // reporters, opening a second "now playing" session for it.
+            stopTimeUpdates()
             
             haltAudioOutput()
             isStreamingPlayback = false  // Reset to neutral state for video playback
