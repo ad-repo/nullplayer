@@ -3685,120 +3685,74 @@ class WindowManager {
         return true
     }
     
+    /// Start a video picked outside the queue (a row double-click, Stream Ripper **Play Now**):
+    /// supersede a library Play still resolving, so it cannot replace this film when its fetch
+    /// lands, then cast it if a video cast is running, else play it in the window.
+    private func playDirectVideo(title: String, artworkTrack: Track?, allowCasting: Bool = true,
+                                 cast: @escaping (CastDevice) async throws -> Void,
+                                 play: (VideoPlayerWindowController) -> Void) {
+        MainActor.assumeIsolated { TrackVerb.supersedePendingPlays() }
+        if allowCasting, routeToVideoCastIfNeeded(title: title, artworkTrack: artworkTrack, operation: cast) {
+            return
+        }
+
+        let controller = videoPlayerWindowController ?? VideoPlayerWindowController()
+        videoPlayerWindowController = controller
+        controller.volume = audioEngine.volume
+        play(controller)
+        applyAlwaysOnTopToWindow(controller.window)
+    }
+
     /// Show the video player with a URL and title
     func showVideoPlayer(url: URL, title: String, allowCasting: Bool = true) {
-        let artworkTrack = Track(url: url, title: title, mediaType: .video)
-        if allowCasting, routeToVideoCastIfNeeded(title: title, artworkTrack: artworkTrack, operation: { device in
-            try await CastManager.shared.castVideoURL(url, title: title, to: device)
-        }) {
-            return
-        }
-
-        if videoPlayerWindowController == nil {
-            videoPlayerWindowController = VideoPlayerWindowController()
-        }
-        videoPlayerWindowController?.volume = audioEngine.volume
-        videoPlayerWindowController?.play(url: url, title: title)
-        applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
+        playDirectVideo(title: title, artworkTrack: Track(url: url, title: title, mediaType: .video), allowCasting: allowCasting,
+                        cast: { try await CastManager.shared.castVideoURL(url, title: title, to: $0) },
+                        play: { $0.play(url: url, title: title) })
     }
-    
+
     /// Play a Plex movie in the video player
     func playMovie(_ movie: PlexMovie) {
-        if routeToVideoCastIfNeeded(title: movie.title, artworkTrack: PlexManager.shared.convertToTrack(movie), operation: { device in
-            try await CastManager.shared.castPlexMovie(movie, to: device)
-        }) {
-            return
-        }
-
-        if videoPlayerWindowController == nil {
-            videoPlayerWindowController = VideoPlayerWindowController()
-        }
-        videoPlayerWindowController?.volume = audioEngine.volume
-        videoPlayerWindowController?.play(movie: movie)
-        applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
+        playDirectVideo(title: movie.title, artworkTrack: PlexManager.shared.convertToTrack(movie),
+                        cast: { try await CastManager.shared.castPlexMovie(movie, to: $0) },
+                        play: { $0.play(movie: movie) })
     }
-    
+
     /// Play a Plex episode in the video player
     func playEpisode(_ episode: PlexEpisode) {
         let title = episode.grandparentTitle.map { "\($0) - \(episode.episodeIdentifier) - \(episode.title)" } ?? episode.title
-        if routeToVideoCastIfNeeded(title: title, artworkTrack: PlexManager.shared.convertToTrack(episode), operation: { device in
-            try await CastManager.shared.castPlexEpisode(episode, to: device)
-        }) {
-            return
-        }
-
-        if videoPlayerWindowController == nil {
-            videoPlayerWindowController = VideoPlayerWindowController()
-        }
-        videoPlayerWindowController?.volume = audioEngine.volume
-        videoPlayerWindowController?.play(episode: episode)
-        applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
+        playDirectVideo(title: title, artworkTrack: PlexManager.shared.convertToTrack(episode),
+                        cast: { try await CastManager.shared.castPlexEpisode(episode, to: $0) },
+                        play: { $0.play(episode: episode) })
     }
-    
+
     /// Play a Jellyfin movie in the video player
     func playJellyfinMovie(_ movie: JellyfinMovie) {
-        if routeToVideoCastIfNeeded(title: movie.title, artworkTrack: JellyfinManager.shared.convertToTrack(movie), operation: { device in
-            try await CastManager.shared.castJellyfinMovie(movie, to: device)
-        }) {
-            return
-        }
-
-        if videoPlayerWindowController == nil {
-            videoPlayerWindowController = VideoPlayerWindowController()
-        }
-        videoPlayerWindowController?.volume = audioEngine.volume
-        videoPlayerWindowController?.play(jellyfinMovie: movie)
-        applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
+        playDirectVideo(title: movie.title, artworkTrack: JellyfinManager.shared.convertToTrack(movie),
+                        cast: { try await CastManager.shared.castJellyfinMovie(movie, to: $0) },
+                        play: { $0.play(jellyfinMovie: movie) })
     }
-    
+
     /// Play a Jellyfin episode in the video player
     func playJellyfinEpisode(_ episode: JellyfinEpisode) {
         let title = episode.seriesName.map { "\($0) - \(episode.episodeIdentifier) - \(episode.title)" } ?? episode.title
-        if routeToVideoCastIfNeeded(title: title, artworkTrack: JellyfinManager.shared.convertToTrack(episode), operation: { device in
-            try await CastManager.shared.castJellyfinEpisode(episode, to: device)
-        }) {
-            return
-        }
-
-        if videoPlayerWindowController == nil {
-            videoPlayerWindowController = VideoPlayerWindowController()
-        }
-        videoPlayerWindowController?.volume = audioEngine.volume
-        videoPlayerWindowController?.play(jellyfinEpisode: episode)
-        applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
+        playDirectVideo(title: title, artworkTrack: JellyfinManager.shared.convertToTrack(episode),
+                        cast: { try await CastManager.shared.castJellyfinEpisode(episode, to: $0) },
+                        play: { $0.play(jellyfinEpisode: episode) })
     }
 
     /// Play an Emby movie in the video player
     func playEmbyMovie(_ movie: EmbyMovie) {
-        if routeToVideoCastIfNeeded(title: movie.title, artworkTrack: EmbyManager.shared.convertToTrack(movie), operation: { device in
-            try await CastManager.shared.castEmbyMovie(movie, to: device)
-        }) {
-            return
-        }
-
-        if videoPlayerWindowController == nil {
-            videoPlayerWindowController = VideoPlayerWindowController()
-        }
-        videoPlayerWindowController?.volume = audioEngine.volume
-        videoPlayerWindowController?.play(embyMovie: movie)
-        applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
+        playDirectVideo(title: movie.title, artworkTrack: EmbyManager.shared.convertToTrack(movie),
+                        cast: { try await CastManager.shared.castEmbyMovie(movie, to: $0) },
+                        play: { $0.play(embyMovie: movie) })
     }
 
     /// Play an Emby episode in the video player
     func playEmbyEpisode(_ episode: EmbyEpisode) {
         let title = episode.seriesName.map { "\($0) - \(episode.episodeIdentifier) - \(episode.title)" } ?? episode.title
-        if routeToVideoCastIfNeeded(title: title, artworkTrack: EmbyManager.shared.convertToTrack(episode), operation: { device in
-            try await CastManager.shared.castEmbyEpisode(episode, to: device)
-        }) {
-            return
-        }
-
-        if videoPlayerWindowController == nil {
-            videoPlayerWindowController = VideoPlayerWindowController()
-        }
-        videoPlayerWindowController?.volume = audioEngine.volume
-        videoPlayerWindowController?.play(embyEpisode: episode)
-        applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
+        playDirectVideo(title: title, artworkTrack: EmbyManager.shared.convertToTrack(episode),
+                        cast: { try await CastManager.shared.castEmbyEpisode(episode, to: $0) },
+                        play: { $0.play(embyEpisode: episode) })
     }
 
     /// Play a video Track from the playlist

@@ -150,6 +150,9 @@
   work on them too. A season or show queues all of its episodes in order. Double-clicking a movie
   or episode still plays it straight away. Plex's separate **Add to Playlist** items are gone: use
   **Add to Queue**.
+- **A playlist video starts once** — double-clicking a video in the playlist, or replacing the
+  queue with one, opened it twice, and Plex was told it had stopped at 0:00 in between. It now
+  starts once.
 
 ## 0.31.4
 

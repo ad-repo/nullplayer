@@ -38,6 +38,11 @@ enum TrackVerb: CaseIterable {
     /// so a slow server fetch never starts playing over what the user picked after it.
     @MainActor private static var playEpoch = 0
 
+    /// A play started outside the verbs (a film opened straight in the video player) supersedes a
+    /// verb's play still resolving, as a newer verb would.
+    @MainActor
+    static func supersedePendingPlays() { playEpoch += 1 }
+
     /// Resolve the tracks, then perform. A failed resolve is logged and does nothing.
     @MainActor
     func run(_ resolve: @escaping @MainActor () async throws -> [Track]) {
