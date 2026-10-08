@@ -78,7 +78,10 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   before a hosted visualization surface, which shares ←/→ and F; a skin's own key handler goes
   before both, so a `.wal` skin with any `System.onKeyDown` handler keeps the arrows (B20a counts
   any handler run as handled). Parked, `dismissVideoOutput` never closes: Esc hides a `.wal` skin's
-  video window and does nothing under `.wmz`, where `close()` would stop the film. Measured
+  video window (`closeVideoSurfaceWindow`) and does nothing where the box has no window of its own.
+  Under `.wmz`, `close()` would stop the film; in a `.wal` video tab, unparking (what the Video
+  Player menu item does there, B23) leaves the tab black while the film plays on, and selecting
+  the tab again does not refill it (measured 2026-10-08, `211786-Cpro_Winamp_Modern`). Measured
   2026-10-08 on Cablemusic and `211786-Cpro_Winamp_Modern` (Emby `Airplane!`): Space, ←/→, F and
   Esc act with no click after the play.
 
@@ -208,10 +211,11 @@ reaches the window only from a browser (`app-control/reference/launch-recipes.md
 - **The free window takes key focus; a parked one never does.** `VideoPlayerWindow` answers
   `canBecomeKey` / `canBecomeMain` true while free (a borderless `NSWindow` answers false, so the
   video keys never reached it: M28) and false while parked over a skin's box, so a click on the
-  picture leaves focus with the skin window, which hands the film its keys (M18). Check it with Accessibility: after a play, and after a click on the
-  picture, `AXFocusedWindow` and `AXMainWindow` of the process are the film's window, and
-  `winhelper key <pid> 49` logs `VideoPlayer keyDown`. Measured 2026-10-08 in Classic, Original,
-  Metal, and parked in Cablemusic.
+  picture leaves focus with the skin window, which hands the film its keys (M18). Check it with
+  Accessibility: after a play, and after a click on the picture, `AXFocusedWindow` and
+  `AXMainWindow` of the process are the film's window when it is free and the skin window when it
+  is parked; in both, `winhelper key <pid> 49` logs `VideoPlayer keyDown`. Measured 2026-10-08 in
+  Classic, Original, Metal, and parked in Cablemusic.
 - **Drive a film by its transport.** Park the film off the main
   window (`winhelper park <pid> "<film title>" 0 650`) and use the main window's transport, which
   routes to the film while one plays: Play, Pause (pause and resume), Stop (`stop()`), a click on the

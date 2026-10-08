@@ -1303,12 +1303,12 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil)
     }
 
-    /// Escape, and anything else that means "put the picture away". Hosted, that hides the skin's
-    /// own video window (`autoclose="1"`) and leaves playback alone for the skin to reopen; in this
-    /// controller's own window it closes, which is the stop it has always been. A `.wmz` box has no
-    /// window of its own to hide, so there it does nothing: closing would stop the film (M18).
+    /// Escape. Hosted, that hides the skin's own video window (`autoclose="1"`) and leaves playback
+    /// alone for the skin to reopen; in this controller's own window it closes, which is the stop it
+    /// has always been. A `.wmz` box or a `.wal` video tab has no window of its own to hide, so there
+    /// it does nothing: closing would stop the film, and unparking strands a black tab (M18).
     func dismissVideoOutput() -> Bool {
-        if isVideoOutputHosted { return WindowManager.shared.hideWinampModernVideoSurface() }
+        if isVideoOutputHosted { return WindowManager.shared.closeWinampModernVideoWindow() }
         close()
         return true
     }

@@ -1654,7 +1654,15 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             surface.hideVideoOutput()
             return true
         }
-        guard case .declaredContainer(let id) = coordinator.catalog.video,
+        return closeVideoSurfaceWindow()
+    }
+
+    /// Shut the skin's own video window, and nothing else — what Escape means. A video tab has no
+    /// window of its own, so this leaves it alone: unparking there leaves the tab black while the
+    /// film plays on, and selecting the tab again does not refill it.
+    @discardableResult
+    func closeVideoSurfaceWindow() -> Bool {
+        guard case .declaredContainer(let id) = surfaceCoordinator?.catalog.video,
               let container = auxiliaryContainers.first(where: { $0.containerID == id }),
               container.window.isVisible
         else { return false }
