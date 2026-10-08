@@ -374,6 +374,15 @@ class EmbyServerClient {
         return dto.toMovie()
     }
 
+    /// An item's description (an album's review), which the list requests leave out.
+    func fetchOverview(itemId: String) async throws -> String? {
+        guard let request = buildRequest(path: "/Users/\(server.userId)/Items/\(itemId)") else {
+            throw EmbyClientError.invalidURL
+        }
+        let dto: EmbyItemDTO = try await performRequest(request)
+        return dto.Overview
+    }
+
     // MARK: - Show Operations
 
     /// Fetch all TV shows from a library (paginated). If libraryId is nil, fetches from entire server.

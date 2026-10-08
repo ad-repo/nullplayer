@@ -209,8 +209,8 @@ class ModernLibraryBrowserView: NSView {
     private var browseMode: ModernBrowseMode = .artists {
         didSet {
             guard browseMode != oldValue else { return }
-            // Switching tabs always exits Cover Flow.
-            isCoverFlowMode = false
+            // A new tab opens Flow or Tiles at its root.
+            artLens.resetNavigation()
             if oldValue == .folders, browseMode != .folders {
                 cancelLocalFolderBuild()
             }
@@ -292,14 +292,8 @@ class ModernLibraryBrowserView: NSView {
 
     // Display items
     private var displayItems: [ModernDisplayItem] = [] {
-        didSet {
-            // Keep the cover flow carousel in sync with the current list. Coalesce to one rebuild:
-            // buildArtistItems (and peers) mutate displayItems many times per logical reload, and a
-            // synchronous rebuild here would re-run the whole carousel build on every mutation.
-            if isCoverFlowMode { scheduleCoverFlowRebuild() }
-        }
+        didSet { artLens.rowsDidChange() }
     }
-    private var coverFlowRebuildScheduled = false
 
     // Expanded state
     private var expandedArtists: Set<String> = []
@@ -323,10 +317,10 @@ class ModernLibraryBrowserView: NSView {
     
     // Loading state
     private var isLoading: Bool = false {
-        didSet { updateCoverFlowVisibility() }
+        didSet { artLens.updateVisibility() }
     }
     private var errorMessage: String? {
-        didSet { updateCoverFlowVisibility() }
+        didSet { artLens.updateVisibility() }
     }
     
     // Cached data - Plex
@@ -355,7 +349,9 @@ class ModernLibraryBrowserView: NSView {
     private var localLibraryReloadWorkItem: DispatchWorkItem?
 
     // Offline volume state (populated by loadLocalData)
-    private var offlineWatchFolders: [WatchFolderSummary] = []
+    private var offlineWatchFolders: [WatchFolderSummary] = [] {
+        didSet { updateEmbeddedSubviewFrames() }   // the banner takes list height from Flow / Tiles
+    }
     private var offlineVolumePrefixes: Set<String> = []
 
     /// Content shown below the compact player bar: the library browser or the play queue.
@@ -560,26 +556,35 @@ class ModernLibraryBrowserView: NSView {
     /// Highlight state for drag-mode visual feedback
     private var isHighlighted = false
     
-    // Cover flow mode — a 3D carousel over the current album list (see CoverFlowView).
-    private var isCoverFlowMode: Bool = false {
-        didSet {
-            guard isCoverFlowMode != oldValue else { return }
-            updateCoverFlowState()
-            needsDisplay = true
+    /// List, Flow or Tiles, and the Flow / Tiles view standing in for the list (see LibraryArtLens).
+    private lazy var artLens = LibraryArtLens<ModernDisplayItem>(container: self, host: .init(
+        rows: { [unowned self] in displayItems },
+        isSearch: { [unowned self] in browseMode == .search },
+        selectedIndex: { [unowned self] in selectedIndices.min() },
+        isBlocked: { [unowned self] in
+            isLoading || errorMessage != nil || (currentSource.isPlex && !PlexManager.shared.isLinked)
+        },
+        style: { [unowned self] in
+            let skin = currentSkin()
+            return LibraryArtStyle(titleColor: skin.textColor, subtitleColor: skin.textDimColor,
+                                   placeholderFill: skin.surfaceColor, placeholderTextColor: skin.textDimColor)
+        },
+        item: { [unowned self] in artItem(for: $0) },
+        isExpanded: { [unowned self] in isExpanded($0) },
+        toggleExpand: { [unowned self] in toggleExpand($0) },
+        play: { [unowned self] in handleDoubleClick(on: $0) },
+        menu: { [unowned self] row, event in
+            // As a right-click on the row in the list: select it, then its menu.
+            if let index = displayItems.firstIndex(where: { $0.id == row.id }) { selectedIndices = [index] }
+            showContextMenu(for: row, at: event)
+        },
+        albumInfo: { [unowned self] in playable(for: $0).flatMap(LibraryAlbumInfo.init) },
+        loadNextPage: { [unowned self] in
+            if case .local = currentSource { appendNextLocalPage() }
         }
-    }
-    private var coverFlowView: CoverFlowView?
-    private var coverFlowButtonRect: NSRect = .zero
-    /// The current level's display items (excludes the synthetic Back cover), aligned with the
-    /// carousel so `onActivate(index)` can map a cover back to its source item.
-    private var coverFlowSourceItems: [ModernDisplayItem] = []
-    /// Navigation stack of container ids the carousel has drilled into (top level when empty).
-    private var coverFlowFocusStack: [String] = []
-    /// After a drill-in, center on the first child once children appear.
-    private var coverFlowCenterFirstChild = false
-    /// After a drill-out (Back), re-center on this container id once the level is rebuilt.
-    private var coverFlowPendingCenterId: String?
-    private static let coverFlowBackId = "__coverflow_back__"
+    ))
+    /// The List / Flow / Tiles buttons in the server bar, as last drawn.
+    private var viewModeButtonRects: [(mode: LibraryViewMode, rect: NSRect)] = []
 
     private var refreshButtonRect: NSRect = .zero
     private var sourceButtonRect: NSRect = .zero
@@ -875,9 +880,7 @@ class ModernLibraryBrowserView: NSView {
         backdropView?.stop()
         backdropView?.removeFromSuperview()
         backdropView = nil
-        coverFlowView?.removeFromSuperview()
-        coverFlowView = nil
-        coverFlowSourceItems = []
+        artLens.teardown()
     }
 
     override func viewDidMoveToWindow() {
@@ -1008,7 +1011,7 @@ class ModernLibraryBrowserView: NSView {
 
     private func updateEmbeddedSubviewFrames() {
         historyHostingView?.frame = embeddedHistoryContentRect()
-        coverFlowView?.frame = embeddedHistoryContentRect()
+        artLens.frame = listLayout().area
         updateCompactPlayerBarFrame()
         updateCompactPlaylistFrame()
         updateBackdropFrame()
@@ -1329,8 +1332,8 @@ class ModernLibraryBrowserView: NSView {
                 drawLoadingState(in: context, listRect: listRect, skin: skin)
             } else if let error = errorMessage {
                 drawErrorState(in: context, message: error, listRect: listRect, skin: skin)
-            } else if isCoverFlowMode {
-                // The CoverFlowView overlay renders the carousel. Draw nothing here: the window
+            } else if artLens.isPresenting {
+                // The Flow / Tiles view renders the art. Draw nothing here: the window
                 // background (already filled above — translucent when a Cava backdrop is active,
                 // opaque otherwise) is exactly what should sit behind the covers, so the Cava
                 // backdrop shows through at full strength instead of behind a second scrim.
@@ -1474,8 +1477,8 @@ class ModernLibraryBrowserView: NSView {
         }
 
         var rightWidth = 8 * m + textWidth("F5")
-        if isCoverFlowMode || hasCoverFlowItems {
-            rightWidth += 12 * m + textWidth("FLOW") + 16 * m
+        if artLens.hasItems {
+            rightWidth += 12 * m + viewModeButtonsWidth(m: m)
         }
         if let countText = serverBarCountText() {
             rightWidth += 24 * m + textWidth(countText)
@@ -1574,7 +1577,6 @@ class ModernLibraryBrowserView: NSView {
                               font: font, skin: skin, context: context)
     }
     
-    /// Draw a modern boxed toggle button
     /// Full band of the Library|Playlist toggle footer at the bottom (compact window only),
     /// sitting just above the thin status-bar margin.
     private var compactFooterRect: NSRect {
@@ -1618,6 +1620,19 @@ class ModernLibraryBrowserView: NSView {
 
     private func drawToggleTab(label: String, isActive: Bool, rect: NSRect,
                                font: NSFont, skin: ModernSkin, context: CGContext) {
+        let color = drawToggleBox(isActive: isActive, rect: rect, skin: skin, context: context)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: skin.applyTextOpacity(to: color)
+        ]
+        let textSize = label.size(withAttributes: attrs)
+        let textOrigin = NSPoint(x: rect.midX - textSize.width / 2,
+                                  y: rect.midY - textSize.height / 2)
+        drawText(label, at: textOrigin, withAttributes: attrs, context: context)
+    }
+
+    /// The boxed outline of a toggle button; returns the color its label is drawn in.
+    private func drawToggleBox(isActive: Bool, rect: NSRect, skin: ModernSkin, context: CGContext) -> NSColor {
         let scale = ModernSkinElements.scaleFactor
         let outlineColor = isMetalRenderStyle ? metalControlStroke : skin.elementColor(for: "tab_outline", fallback: skin.accentColor)
         let activeTextColor = isMetalRenderStyle ? skin.textColor : skin.elementColor(for: "tab_text", fallback: skin.accentColor)
@@ -1657,17 +1672,14 @@ class ModernLibraryBrowserView: NSView {
             context.addPath(strokePath)
             context.strokePath()
         }
-
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: skin.applyTextOpacity(to: color)
-        ]
-        let textSize = label.size(withAttributes: attrs)
-        let textOrigin = NSPoint(x: rect.midX - textSize.width / 2,
-                                  y: rect.midY - textSize.height / 2)
-        drawText(label, at: textOrigin, withAttributes: attrs, context: context)
-        
         context.restoreGState()
+        return color
+    }
+
+    /// The List / Flow / Tiles buttons: three squares the server bar's height, 2 pt apart.
+    private func viewModeButtonsWidth(m: CGFloat) -> CGFloat {
+        let count = CGFloat(LibraryViewMode.allCases.count)
+        return count * (Layout.serverBarHeight - 6 * m) + (count - 1) * 2 * m
     }
 
     private func drawInlineTabBarLabel(label: String, rect: NSRect,
@@ -1747,19 +1759,21 @@ class ModernLibraryBrowserView: NSView {
         
         var visEndX = refreshX
 
-        // FLOW (cover flow) toggle — shown when the current list has eligible media.
-        coverFlowButtonRect = .zero
-        if isCoverFlowMode || hasCoverFlowItems {
-            let flowText = "FLOW"
-            let flowTextWidth = flowText.size(withAttributes: prefixAttrs).width
-            let flowBtnWidth = flowTextWidth + 16 * hm
-            let flowX = refreshX - flowBtnWidth - 12 * hm
-            let flowBtnRect = NSRect(x: flowX, y: barRect.minY + 3 * m, width: flowBtnWidth,
-                                     height: Layout.serverBarHeight - 6 * m)
-            coverFlowButtonRect = flowBtnRect
-            drawToggleTab(label: flowText, isActive: isCoverFlowMode, rect: flowBtnRect,
-                          font: font, skin: skin, context: context)
-            visEndX = flowX
+        // List / Flow / Tiles — shown when the current list has art to show.
+        viewModeButtonRects = []
+        if artLens.hasItems {
+            let side = Layout.serverBarHeight - 6 * m
+            let leadingX = refreshX - 12 * hm - viewModeButtonsWidth(m: m)
+            var x = leadingX
+            for mode in LibraryViewMode.allCases {
+                let rect = NSRect(x: x, y: barRect.minY + 3 * m, width: side, height: side)
+                let color = drawToggleBox(isActive: artLens.mode == mode, rect: rect, skin: skin, context: context)
+                mode.drawIcon(in: rect.insetBy(dx: side * 0.28, dy: side * 0.28),
+                              color: skin.applyTextOpacity(to: color), context: context)
+                viewModeButtonRects.append((mode, rect))
+                x += side + 2 * m
+            }
+            visEndX = leadingX
         }
 
         // Source-specific content
@@ -3662,13 +3676,6 @@ class ModernLibraryBrowserView: NSView {
         appendNextLocalPage()
     }
 
-    /// Cover Flow owns the list area's scroll events, so it requests pagination directly when its
-    /// centered cover approaches the end of the currently loaded local page.
-    private func loadNextLocalCoverFlowPageIfNeeded() {
-        guard isCoverFlowMode, coverFlowFocusStack.isEmpty, case .local = currentSource else { return }
-        appendNextLocalPage()
-    }
-
     @discardableResult
     private func appendNextLocalPage() -> Bool {
         switch browseMode {
@@ -3944,10 +3951,9 @@ class ModernLibraryBrowserView: NSView {
             handleRefreshClick()
             return
         }
-        if coverFlowButtonRect.contains(point) {
-            isCoverFlowMode.toggle()
-            // Hand keyboard focus to the carousel so arrows/enter work without a prior cover click.
-            window?.makeFirstResponder(isCoverFlowMode ? coverFlowView : self)
+        if let hit = viewModeButtonRects.first(where: { $0.rect.contains(point) }) {
+            artLens.mode = hit.mode
+            needsDisplay = true
             return
         }
 
@@ -5729,6 +5735,7 @@ class ModernLibraryBrowserView: NSView {
                                                         heatmapTheme: ContributionHeatmapTheme(modernSkin: skin))
         historyHostingView?.appearance = skinAppearance(for: skin)
         updateHistoryHostingBackground()
+        artLens.restyle()
         backdropView?.reload()
         invalidateServerBarFontCache()
         updateCornerMask()
@@ -5782,7 +5789,7 @@ class ModernLibraryBrowserView: NSView {
     @objc private func plexStateDidChange() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, case .plex = self.currentSource else { return }
-            self.updateCoverFlowVisibility()
+            self.artLens.updateVisibility()
             if case .connecting = PlexManager.shared.connectionState {
                 self.isLoading = true; self.errorMessage = nil; self.needsDisplay = true; return
             }
@@ -5793,7 +5800,7 @@ class ModernLibraryBrowserView: NSView {
     @objc private func plexServerDidChange() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.updateCoverFlowVisibility()
+            self.artLens.updateVisibility()
             if case .connecting = PlexManager.shared.connectionState { self.needsDisplay = true; return }
             if !self.currentSource.isPlex && self.pendingSourceRestore == nil { return }
             
@@ -6038,7 +6045,7 @@ class ModernLibraryBrowserView: NSView {
     }
     
     private func onSourceChanged() {
-        resetCoverFlowNavigation()
+        artLens.resetNavigation()
         invalidateActiveLoads()
         if browseMode == .folders && !isLocalSource {
             browseMode = .plists
@@ -9567,178 +9574,19 @@ class ModernLibraryBrowserView: NSView {
     
     // MARK: - Playback
     
-    // MARK: - Cover Flow
+    // MARK: - Art (Flow, Tiles, row thumbnails)
 
-    /// Items shown at the root of Cover Flow. Search results live one level below synthetic
-    /// category headers, while normal browse modes use their real top-level rows.
-    private func coverFlowRootItems() -> [ModernDisplayItem] {
-        let rootLevel = browseMode == .search ? 1 : 0
-        return displayItems.filter { $0.indentLevel == rootLevel && $0.type.isCoverFlowItem }
-    }
-
-    /// True when the current list has a non-empty Cover Flow root. Evaluated in the server-bar draw
-    /// path on every redraw, so it short-circuits instead of allocating a filtered array.
-    private var hasCoverFlowItems: Bool {
-        let rootLevel = browseMode == .search ? 1 : 0
-        return displayItems.contains { $0.indentLevel == rootLevel && $0.type.isCoverFlowItem }
-    }
-
-    private func ensureCoverFlowView() {
-        guard coverFlowView == nil else { return }
-        let view = CoverFlowView()
-        view.onActivate = { [weak self] index in self?.playCoverFlowItem(at: index) }
-        view.onApproachingEnd = { [weak self] in self?.loadNextLocalCoverFlowPageIfNeeded() }
-        addSubview(view)
-        coverFlowView = view
-        applyCoverFlowStyle()
-        rebuildCoverFlowItems()
-    }
-
-    private func applyCoverFlowStyle() {
-        let skin = currentSkin()
-        coverFlowView?.style = CoverFlowStyle(
-            titleColor: skin.textColor,
-            subtitleColor: skin.textDimColor,
-            placeholderFill: skin.surfaceColor,
-            placeholderTextColor: skin.textDimColor
-        )
-    }
-
-    private func updateCoverFlowState() {
-        if isCoverFlowMode {
-            seedCoverFlowFocusFromSelection()
-            ensureCoverFlowView()
-            applyCoverFlowStyle()
-            rebuildCoverFlowItems()
-        } else {
-            resetCoverFlowNavigation()
-        }
-        updateCoverFlowVisibility()
-        updateEmbeddedSubviewFrames()
-    }
-
-    private func resetCoverFlowNavigation() {
-        coverFlowFocusStack.removeAll()
-        coverFlowCenterFirstChild = false
-        coverFlowPendingCenterId = nil
-    }
-
-    /// When FLOW is switched on with a container already expanded/selected in the list (e.g. an
-    /// artist showing its albums), open Cover Flow *inside* that container rather than dumping the
-    /// user back at the root. Seeds the focus stack from the current selection's ancestor chain.
-    private func seedCoverFlowFocusFromSelection() {
-        resetCoverFlowNavigation()
-        guard let idx = selectedIndices.min(), displayItems.indices.contains(idx) else { return }
-        let rootLevel = browseMode == .search ? 1 : 0
-        let selected = displayItems[idx]
-        guard selected.indentLevel >= rootLevel, selected.type.isCoverFlowItem else { return }
-
-        let ancestors = coverFlowAncestorIds(ofIndex: idx, rootLevel: rootLevel)
-        // Albums (and other leaves) play rather than drill, so never focus *into* them; an expanded
-        // eligible container opens to show its children.
-        if selected.hasChildren, !selected.type.isAlbumItem, isExpanded(selected) {
-            coverFlowFocusStack = ancestors + [selected.id]
-            coverFlowCenterFirstChild = true
-        } else {
-            // A leaf, a collapsed container, or an album: show its own level, centered on it.
-            coverFlowFocusStack = ancestors
-            coverFlowPendingCenterId = selected.id
-        }
-    }
-
-    /// The chain of eligible container ids from the root down to the item's immediate parent (empty
-    /// when the item sits at the root level). Bails to root if any ancestor isn't Cover Flow-eligible.
-    private func coverFlowAncestorIds(ofIndex idx: Int, rootLevel: Int) -> [String] {
-        var chain: [String] = []
-        var neededLevel = displayItems[idx].indentLevel - 1
-        var i = idx - 1
-        while i >= 0, neededLevel >= rootLevel {
-            if displayItems[i].indentLevel == neededLevel {
-                guard displayItems[i].type.isCoverFlowItem else { return [] }
-                chain.insert(displayItems[i].id, at: 0)
-                neededLevel -= 1
-            }
-            i -= 1
-        }
-        return chain
-    }
-
-    private func updateCoverFlowVisibility() {
-        let needsPlexLink = currentSource.isPlex && !PlexManager.shared.isLinked
-        coverFlowView?.isHidden = !isCoverFlowMode || isLoading || errorMessage != nil || needsPlexLink
-    }
-
-    /// Coalesce cover flow rebuilds onto the next runloop turn so a burst of `displayItems`
-    /// mutations (e.g. an incremental `buildArtistItems`) collapses into a single carousel rebuild.
-    private func scheduleCoverFlowRebuild() {
-        guard !coverFlowRebuildScheduled else { return }
-        coverFlowRebuildScheduled = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.coverFlowRebuildScheduled = false
-            if self.isCoverFlowMode { self.rebuildCoverFlowItems() }
-        }
-    }
-
-    /// The display items at the current cover flow level: the top-level cover items, or the direct
-    /// children of the container we've drilled into.
-    private func coverFlowVisibleItems() -> [ModernDisplayItem] {
-        guard let parentId = coverFlowFocusStack.last else {
-            return coverFlowRootItems()
-        }
-        guard let parentIdx = displayItems.firstIndex(where: { $0.id == parentId }) else { return [] }
-        let parentLevel = displayItems[parentIdx].indentLevel
-        var children: [ModernDisplayItem] = []
-        var i = parentIdx + 1
-        while i < displayItems.count, displayItems[i].indentLevel > parentLevel {
-            if displayItems[i].indentLevel == parentLevel + 1, displayItems[i].type.isCoverFlowItem {
-                children.append(displayItems[i])
-            }
-            i += 1
-        }
-        return children
-    }
-
-    /// Build the carousel for the current level: a synthetic Back cover when drilled in, then the
-    /// level's items. Keeps `coverFlowSourceItems` aligned (Back excluded) for activation mapping.
-    private func rebuildCoverFlowItems() {
-        let visible = coverFlowVisibleItems()
-        coverFlowSourceItems = visible
-        let hasBack = !coverFlowFocusStack.isEmpty
-
-        var items: [CoverFlowItem] = []
-        if hasBack {
-            items.append(CoverFlowItem(id: Self.coverFlowBackId, title: "‹ Back", subtitle: "",
-                                       artwork: { nil }, loadArtwork: { nil }, isBack: true))
-        }
-        items += visible.map { item in
-            let (cacheKey, load) = coverFlowArtwork(for: item)
-            return CoverFlowItem(
-                id: item.id,
-                title: item.title,
-                subtitle: item.info ?? "",
-                artwork: { cacheKey.flatMap { Self.artworkCache.object(forKey: NSString(string: $0)) } },
-                loadArtwork: load
-            )
-        }
-
-        // Don't preserve the previous center across a level change; the explicit centering below owns it.
-        let navigating = coverFlowCenterFirstChild || coverFlowPendingCenterId != nil
-        coverFlowView?.setItems(items, preservingCenter: !navigating)
-
-        if coverFlowCenterFirstChild, !visible.isEmpty {
-            coverFlowCenterFirstChild = false
-            coverFlowView?.setCenterIndex(hasBack ? 1 : 0, animated: false)
-        } else if let cid = coverFlowPendingCenterId,
-                  let idx = visible.firstIndex(where: { $0.id == cid }) {
-            coverFlowPendingCenterId = nil
-            coverFlowView?.setCenterIndex(idx + (hasBack ? 1 : 0), animated: false)
-        }
+    /// A row as the Flow / Tiles views show it.
+    private func artItem(for item: ModernDisplayItem) -> LibraryArtItem {
+        let cacheKey = itemArtwork(for: item).cacheKey
+        return LibraryArtItem(id: item.id, title: item.title, subtitle: item.info ?? "",
+                              cachedArtwork: { cacheKey.flatMap { Self.artworkCache.object(forKey: NSString(string: $0)) } },
+                              art: rowThumbnailSource(for: item))
     }
 
     /// Resolve a display item to its artwork cache key and async loader (reusing the per-source
     /// loaders that back `loadArtworkForSelection`).
-    private func coverFlowArtwork(for item: ModernDisplayItem) -> (cacheKey: String?, load: () async -> NSImage?) {
+    private func itemArtwork(for item: ModernDisplayItem) -> (cacheKey: String?, load: () async -> NSImage?) {
         switch item.type {
         case .album(let album):
             return ("plex:\(album.id)", { [weak self] in await self?.loadPlexArtwork(ratingKey: album.id, thumbPath: album.thumb) })
@@ -9836,7 +9684,7 @@ class ModernLibraryBrowserView: NSView {
     }
 
     /// The art for a row's round thumbnail, or nil for rows that never carry art. Cover Flow items
-    /// reuse `coverFlowArtwork`'s loaders, keyed within the current server.
+    /// reuse `itemArtwork`'s loaders, keyed within the current server.
     private func rowThumbnailSource(for item: ModernDisplayItem) -> LibraryRowThumbnails.Source? {
         switch item.type {
         case .localFolder: return nil
@@ -9845,48 +9693,10 @@ class ModernLibraryBrowserView: NSView {
         case .radioStation(let station): return .radio(station)
         case .localPlaylistTrack(let track): return .localFile(track.url)
         default:
-            guard item.type.isCoverFlowItem else { return nil }
-            let (cacheKey, load) = coverFlowArtwork(for: item)
+            guard item.type.isArtItem else { return nil }
+            let (cacheKey, load) = itemArtwork(for: item)
             return .item(key: cacheKey ?? "item:\(item.id)", server: currentSource.serverId, owner: self, load: load)
         }
-    }
-
-    /// Activate a centered cover. Back pops a level; albums and tracks play; any other container
-    /// (artist, folder, …) drills into its children.
-    private func playCoverFlowItem(at index: Int) {
-        let hasBack = !coverFlowFocusStack.isEmpty
-        if hasBack && index == 0 {
-            coverFlowNavigateBack()
-            return
-        }
-        let realIndex = index - (hasBack ? 1 : 0)
-        guard realIndex >= 0, realIndex < coverFlowSourceItems.count else { return }
-        let item = coverFlowSourceItems[realIndex]
-
-        if item.type.isAlbumItem {
-            handleDoubleClick(on: item)   // albums play the whole album
-        } else if item.hasChildren, browseMode != .search || item.type.isVideoContainer {
-            coverFlowDrillIn(item)        // artists, folders, shows, seasons, … enter their children
-        } else {
-            handleDoubleClick(on: item)   // tracks and other leaves play
-        }
-    }
-
-    private func coverFlowDrillIn(_ item: ModernDisplayItem) {
-        // Ensure the container is expanded so its children are present in `displayItems`
-        // (may load asynchronously; the retained flags re-center once they arrive).
-        if !isExpanded(item) { toggleExpand(item) }
-        coverFlowFocusStack.append(item.id)
-        coverFlowCenterFirstChild = true
-        coverFlowPendingCenterId = nil
-        rebuildCoverFlowItems()
-    }
-
-    private func coverFlowNavigateBack() {
-        guard let popped = coverFlowFocusStack.popLast() else { return }
-        coverFlowCenterFirstChild = false
-        coverFlowPendingCenterId = popped   // re-center on the container we came out of
-        rebuildCoverFlowItems()
     }
 
     private func playMovie(_ movie: PlexMovie) { WindowManager.shared.playMovie(movie) }
@@ -10107,6 +9917,12 @@ extension ModernLibraryBrowserView {
 
 // MARK: - Display Item
 
+extension ModernDisplayItem: LibraryArtRow {
+    var isArtItem: Bool { type.isArtItem }
+    var isAlbumItem: Bool { type.isAlbumItem }
+    var isVideoContainer: Bool { type.isVideoContainer }
+}
+
 private struct ModernDisplayItem {
     let id: String
     let title: String
@@ -10173,9 +9989,9 @@ private struct ModernDisplayItem {
             }
         }
 
-        /// Items shown in the cover flow carousel. Containers (artists, folders, shows, seasons)
+        /// Rows shown in Flow and Tiles. Containers (artists, folders, shows, seasons)
         /// drill in; albums, tracks, movies, and episodes are leaves that play.
-        var isCoverFlowItem: Bool {
+        var isArtItem: Bool {
             switch self {
             case .artist, .localArtist, .subsonicArtist, .jellyfinArtist, .embyArtist,
                  .localFolder,
@@ -10191,7 +10007,7 @@ private struct ModernDisplayItem {
         }
 
         /// Search results keep music containers as navigation links, but video containers retain
-        /// their show → season → episode hierarchy inside Cover Flow.
+        /// their show → season → episode hierarchy inside Flow and Tiles.
         var isVideoContainer: Bool {
             switch self {
             case .show, .season, .localShow, .localSeason,

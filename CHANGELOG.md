@@ -11,6 +11,18 @@
   NullPlayer's windows frame it too. You can browse while it is open: the Library Browser's ART
   button is gone. Radio station logos now also show as the station's art, including in Control
   Center.
+- **Tile view in the Library Browser** — three icons in the source bar switch the Library Browser
+  between **List**, **Flow** (Cover Flow, formerly the FLOW button) and **Tiles**, a grid of art
+  tiles with each name underneath. Click a tile to select it; double-click or Return plays a track,
+  movie or episode, or opens an artist, folder, show or season, with a **‹ Back** tile to return.
+  Arrow keys move the selection, and right-click gives the same menu as the row in the list.
+  Switching between Flow and Tiles keeps your place, and the choice is remembered across tabs and
+  launches. Every source, every skin.
+- **Album screen** — opening an album from Flow or Tiles shows its cover, artist, year, genre,
+  label, release date and length, its review (three lines, **More** for the rest), a **▶ Play**
+  button and the track list, over the artist's picture. Double-click a track to play it, or
+  right-click it for Play Next, Add to Queue, Rate and the rest. Reviews come from Plex, Jellyfin
+  and Emby.
 - **Find YouTube channels by name** — the YouTube source's **Search** tab now searches YouTube for
   channels instead of listing internet radio stations. Type a name and press Enter: each result
   shows its @handle and subscriber count, expands to preview its uploads, and subscribes on

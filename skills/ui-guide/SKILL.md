@@ -863,13 +863,60 @@ Implementation rules:
   surface context-menu injection, the shared menu builder, and its selection action. This is a UI
   visibility seam only; backdrop rendering and persisted mode resolution remain independent.
 
-## Cover Flow (Library browser, all skin families)
+## List, Flow and Tiles (Library browser, all skin families)
 
-Cover Flow is a 3D, GPU-composited carousel of music, movie, and TV artwork shown *in place of* the
-library list, toggled by a **FLOW** button. It is a visual lens over the browser's current
-`displayItems`, not a separate query. It ships in Modern, Metal, and Classic at once.
+Three icon buttons in the source bar, before **F5**, switch how the browser shows its rows:
+**List**, **Flow** (a 3D Cover Flow carousel) and **Tiles** (a grid of art tiles). Flow and Tiles
+are visual lenses over the browser's current `displayItems`, not separate queries. The mode is
+`LibraryViewMode`, persisted under the `LibraryBrowserViewMode` default, shared by both browsers and
+kept across tab switches and relaunches. The buttons show only while the list has art rows at its
+root (`artLens.hasItems`); over a list without any (Radio, playlists) the browser draws its list
+whatever the mode, and the art view hides.
 
-**Shared component** — `Windows/ModernLibraryBrowser/CoverFlowView.swift` (used by both browsers):
+**`LibraryArtLens`** (`Windows/ModernLibraryBrowser/LibraryArtLens.swift`) owns everything the two
+browsers share: the mode, the art view standing in for the list, and the tree navigation. Each
+browser holds one `artLens` and keeps only what is its own, passed as `LibraryArtLens.Host`
+closures: its rows, search state, selection, blocked state (loading, error, Plex not linked), style,
+the `LibraryArtItem` for a row (`artItem(for:)`), expand, play (`handleDoubleClick`), the row's
+context menu (select it, then `showContextMenu` — every art view's right-click goes there), album
+info (`playable(for:)` → `LibraryAlbumInfo`) and next page.
+Rows conform to `LibraryArtRow` (`isArtItem`, `isAlbumItem`, `isVideoContainer` from the item type).
+Browser touch points: `rowsDidChange()` from `displayItems.didSet`, `resetNavigation()` on a tab or
+source change, `updateVisibility()` when loading/error/Plex link state changes, `restyle()` wherever the browser
+recolours its other embedded views (skin change, and in the classic browser a pushed or re-resolved
+`.wal`/`.wmz` palette — the art view takes its colours only when made, so a family switch left
+tiles in the old skin's colours), `frame` from the
+embedded content rect, `teardown()` in `prepareForUITeardown`, `isPresenting` in the draw path (draw
+nothing over the list area so a Cava backdrop shows through; classic fills its list background), and
+`mode` from the buttons. The lens hands keyboard focus to the art view on a mode change.
+
+- **Tree navigation**: a focus **stack** of the containers drilled into. `isArtItem` covers
+  artists, albums, folders, tracks, movies, shows, seasons and episodes across every supported
+  source. Activating a **track**, **movie** or **episode** plays it; any container (`hasChildren`)
+  drills in — an **album** into its own screen (below) — the lens expands the row (guarded by `isExpanded`, since
+  `toggleExpand` toggles) and pushes its id; the visible level is the container's direct children
+  (`indentLevel == parentLevel+1`), so TV follows show → season → episode. A synthetic **‹ Back**
+  item at index 0 pops. Re-centring: `centerFirstChild` on drill-in, `pendingCenterId` on Back and on
+  a Flow ↔ Tiles switch (which keeps the level and the item) — both retained across rebuilds because
+  children may load asynchronously. Search results drill only into albums and video containers. Switching on
+  from List with an expanded, selected container opens inside it (`seedFocusFromSelection`).
+- **Rebuilds are coalesced.** `rowsDidChange()` schedules one `DispatchQueue.main.async` rebuild:
+  `buildArtistItems` and peers mutate `displayItems` many times per reload, and a synchronous
+  rebuild per mutation beachballs.
+- Root eligibility matches what the view can show: normal modes use art rows at level 0, Search
+  uses level-1 rows beneath its synthetic category headers. Local Artists/Albums are paginated: the
+  view's `onApproachingEnd` reaches `Host.loadNextPage` only at the root level.
+- Art comes from the browser's per-source loaders, `itemArtwork(for:)`; Plex, Jellyfin and Emby
+  video items use their native posters, local video items embedded art from the file (shows and
+  seasons use their first episode). Local track/album resolution (`MediaLibraryStore` lookups)
+  happens **inside** the async loader via `Task.detached`, never in the item-mapping pass.
+
+**Both views** conform to `LibraryArtView` (`setItems`, `setCenterIndex`, `centerIndex`,
+`onActivate`, `onApproachingEnd`, `style: LibraryArtStyle`) and take `LibraryArtItem`s — title,
+subtitle, the browser's in-memory full-size art (`cachedArtwork`), and the row's
+`LibraryRowThumbnails.Source` (`art`).
+
+**`CoverFlowView`** (Flow):
 - A layer-backed `NSView` with a `containerLayer` whose `sublayerTransform` applies perspective
   (`m34 ≈ -1/900`). The view's own layer sets `masksToBounds`: the stacked side covers are laid
   out past its width, and unclipped they drew over the host window's borders in every skin family
@@ -877,56 +924,46 @@ library list, toggled by a **FLOW** button. It is a visual lens over the browser
   gradient-masked flipped reflection sublayer, and a solid-color placeholder). **Never** render
   placeholders with `NSImage.lockFocus` — that bitmap path was a main-thread hang; use the layer's
   `backgroundColor`. The Back cover uses one cheap `CATextLayer`.
-- Source-agnostic input `CoverFlowItem { id, title, subtitle, artwork() /*sync cache hit*/,
-  loadArtwork() /*async*/, isBack }`. Cover size is keyed to the view **height** (minus a reserved
-  bottom label band); a wider window shows **more** covers (`virtualRadius` grows with width, capped
-  by `maxRadius`), not bigger ones. Classic sets `labelPlacement = .belowCenteredCover` so its
-  freely stretchable/taller Library window keeps the centered title/subtitle visually attached to
-  the artwork rather than stranded at the bottom edge; Modern keeps the standard bottom band.
+- Full-size art: `cachedArtwork()`, else `art.load()`. Cover size is keyed to the view **height**
+  (minus a reserved bottom label band); a wider window shows **more** covers (`virtualRadius` grows
+  with width, capped by `maxRadius`), not bigger ones. Classic passes
+  `flowLabelPlacement: .belowCenteredCover` so its freely stretchable, taller window keeps the title
+  attached to the artwork rather than stranded at the bottom edge.
 - Interaction: continuous 1:1 scroll snapped to the nearest cover on release, using the dominant
   horizontal/vertical axis so trackpads and ordinary mouse wheels both work, with a `maxLead` cap so
-  a momentum fling can't outrun artwork loads; Left/Right arrows; click a side cover to center it,
-  click the centered cover to fire `onActivate(index)`. Artwork loads are throttled to covers near
-  center, ordered center-out, and each index loads **at most once** (`attemptedIndices`) so a
-  nil-artwork cover never re-triggers on every layout pass. The centered item's name/subtitle render
-  in the reserved bottom band via two `CATextLayer`s. `onApproachingEnd` fires once per item count
-  when the center enters the final preload window, allowing a paginated host to append its next page.
+  a momentum fling can't outrun artwork loads; Left/Right arrows; click a side cover to centre it,
+  click the centred cover to activate it. Artwork loads are throttled to covers near centre,
+  ordered centre-out, and each index loads **at most once** (`attemptedIndices`).
 
-**Host wiring** — mirrored in `ModernLibraryBrowserView` (Modern+Metal) and `PlexBrowserView`
-(Classic):
-- An `isCoverFlowMode` toggle. Modern draws a **FLOW** boxed toggle beside **F5** in the source
-  bar. Classic also places **FLOW** in the source bar's F5 accessory cluster
-  (`drawCoverFlowServerBarButton`), using its bitmap-text active/inactive treatment; it must not
-  consume tab-row width or present as another browse tab.
-- The overlay is a subview sized to the list content rect (`embeddedHistoryContentRect` /
-  `embeddedContentRect`), added above the list and below the top chrome. In cover flow the draw path
-  fills **nothing** over the list area so the window background (translucent over a Cava backdrop,
-  opaque otherwise) shows through — do not add a second `contentFill` scrim or Cava disappears.
-- **Tree navigation**: cover flow keeps a focus **stack** (`coverFlowFocusStack`). `isCoverFlowItem`
-  covers artists, albums, folders, tracks, movies, shows, seasons, and episodes across every
-  supported source. Activating an **album**, **track**, **movie**, or **episode** plays it; any other
-  container (`hasChildren`) drills in — `coverFlowDrillIn` ensures the row is expanded (guarded by
-  `isExpanded`, since `toggleExpand` toggles) and pushes its id; the visible level is the container's
-  direct children (`indentLevel == parentLevel+1`). TV navigation therefore follows
-  show → season → episode. A synthetic **‹ Back** cover at index 0 pops. Re-centering:
-  `coverFlowCenterFirstChild` on drill-in, `coverFlowPendingCenterId` on back — retained across
-  rebuilds because children may load asynchronously. Search-result shows preserve this hierarchy;
-  music containers keep their existing search-navigation behavior.
-- **Rebuilds must be coalesced.** `displayItems.didSet` calls `scheduleCoverFlowRebuild()` (one
-  `DispatchQueue.main.async` pass), never a synchronous rebuild — `buildArtistItems` and peers mutate
-  `displayItems` many times per reload, and a synchronous carousel rebuild per mutation beachballs.
-- Root eligibility must match the items the carousel can actually show. Normal modes use eligible
-  level-0 rows; Search uses eligible level-1 rows beneath its synthetic category headers. Do not
-  enable FLOW merely because an ineligible top-level container (for example a server playlist) has
-  an expanded eligible descendant, or the user gets an empty carousel. Local Artists/Albums remain
-  paginated: wire `onApproachingEnd` to the same next-page append logic used by list scrolling, but
-  only while the Cover Flow focus stack is at its root.
-- Artwork loaders reuse the per-source loaders behind `loadArtworkForSelection`; Plex, Jellyfin,
-  and Emby video items use their native posters, while local video items try embedded artwork from
-  the file (shows and seasons use their first episode). Local track/album resolution
-  (`MediaLibraryStore` lookups) happens **inside** the async loader via `Task.detached`, never
-  synchronously in the item-mapping pass. Teardown removes the cover flow view in
-  `prepareForUITeardown`; toggling the mode off clears the focus stack.
+**`ArtAlbumView`** (an open album, `Windows/ModernLibraryBrowser/ArtAlbumView.swift`): whenever the
+top of the focus stack is an album the lens shows this instead of the mode's view, and Back returns
+to it. It is a flipped, `draw(_:)`-based view: ‹ Back, the cover (memory preview, else
+`previewImage`), title, the lens's detail line (the opener's title — the artist — · the album's own
+subtitle, its year · track count), the facts line and **▶ Play** (plays the album), the description
+cut to three lines with **More** / **Less**, then the tracks (number, title, duration). Item 0 is
+‹ Back and the rest are the tracks, so it is driven like the other views: click selects,
+double-click or Return plays **that track alone**, right-click shows the track's row menu and on the
+cover or title the album's, Esc goes back. The backdrop is the opener's (the artist's) full-size
+art, aspect-filled behind the scrolling content at 14 % — stronger washed out Classic's dimmed text
+on light skins.
+
+**`LibraryAlbumInfo`** (`LibraryAlbumInfo.swift`) is built once from `LibraryPlayable`, so neither
+browser has a per-source switch for it: Plex gives genre, label (`studio`), release date, length and
+`summary` from the album list; local albums genre and length from their tracks; Subsonic genre and
+length; Jellyfin and Emby genre and length, with the description fetched on open
+(`fetchOverview(itemId:)`, the single-item endpoint — the album list requests leave `Overview` out,
+and asking for it there would pull every description during preload).
+
+**`ArtTileGridView`** (Tiles, `Windows/ModernLibraryBrowser/ArtTileGridView.swift`):
+- Square tiles at least 120 pt, grown to share a row's spare width, with title and subtitle under
+  each. Layer-backed and virtualised: only on-screen rows have `TileLayer`s; the view scrolls itself
+  (no scroller). Click selects (`centerIndex` is the selection), double-click or Return activates,
+  arrows move by one or by a row.
+- Art is the 400 px **preview** rendition from `LibraryRowThumbnails` (below), so tiles share loads,
+  the 4-at-once queue and the disk cache with the list's row thumbnails: a new tile takes the
+  memory preview (`cachedPreview`) or the browser's `cachedArtwork` synchronously; otherwise each
+  layout pass requests the visible tiles (then a row either side) and redraws on
+  `didLoadNotification`, reading a loaded preview back with `previewImage(for:)`.
 
 ## Library browser list layout (both browsers)
 
@@ -961,7 +998,7 @@ genuinely its own.
 **Per browser** — three touch points, mirrored in both:
 - `rowThumbnailSource(for:)` maps a display item to a `LibraryRowThumbnails.Source` (a cache key
   plus an async loader), or nil for rows that never carry art (folders, headers, playlists).
-  It reuses `coverFlowArtwork(for:)` — the Cover Flow loaders above — for artists, albums, tracks
+  It reuses `itemArtwork(for:)` — the Flow / Tiles loaders above — for artists, albums, tracks
   and video items, and adds YouTube channels and videos, radio station icons and local playlist
   tracks. Local albums and artists have no cache key there, so they key on `item:<id>`.
 - A `LibraryRowThumbnailTracker` (`rowThumbnails`): `beginPass(placeholder:)` at the top of

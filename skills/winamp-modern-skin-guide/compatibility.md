@@ -72,7 +72,7 @@ Its content is `N items/h:mm:ss`; the `/` is load-bearing — Defix reads the du
 
 | Playlist | Embedded and bound to `AudioEngine` — rows, now-playing marker, selection, bounded scroll, click/double-click/wheel, Delete/Forward-Delete removal while focused, `PE_Info` status line. Drawn in the skin's palette and list font. Scriptable through **`PlEdit`** (Phase 42): length/current entry, per-entry title, length, filename and metadata, and play/remove/move/clear/scroll-to. `System.getPlaylistIndex()`/`getPlaylistLength()` answer from the same queue |
 | EQ | Embedded classic 10-band + preamp, enabled/auto, presets, `<eqvis>`, bound to `AudioEngine`; gains persist across mode switches |
-| Library | **The real browser, embedded** in the skin's holder — servers, tabs, search, CoverFlow, history, linking. Falls back to a window of its own only when the skin offers no home for it; either way it is drawn in the skin's palette, not with classic `.wsz` artwork |
+| Library | **The real browser, embedded** in the skin's holder — servers, tabs, search, Flow and Tiles, history, linking. Falls back to a window of its own only when the skin offers no home for it; either way it is drawn in the skin's palette, not with classic `.wsz` artwork |
 | Visualization / video | Holder discovered and framed; content per the component host |
 
 A holder is any of `<windowholder hold=…>`, `<componentbucket>`, or `<component param=…>` — the last

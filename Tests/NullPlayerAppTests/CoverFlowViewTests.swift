@@ -4,15 +4,10 @@ import XCTest
 
 @MainActor
 final class CoverFlowViewTests: XCTestCase {
-    private func items(count: Int) -> [CoverFlowItem] {
+    private func items(count: Int) -> [LibraryArtItem] {
         (0..<count).map { index in
-            CoverFlowItem(
-                id: "item-\(index)",
-                title: "Item \(index)",
-                subtitle: "",
-                artwork: { nil },
-                loadArtwork: { nil }
-            )
+            LibraryArtItem(id: "item-\(index)", title: "Item \(index)", subtitle: "",
+                           cachedArtwork: { nil }, art: nil)
         }
     }
 
