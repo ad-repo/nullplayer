@@ -884,7 +884,7 @@ class PlexManager {
         return Track(
             url: streamURL,
             title: movie.title,
-            artist: movie.studio,  // Use studio as "artist" for movies
+            artist: nil,  // `displayTitle` puts the artist first; a studio there read "Paramount Pictures - Airplane!"
             album: nil,
             duration: movie.durationInSeconds,
             bitrate: movie.media.first?.bitrate,
@@ -905,9 +905,10 @@ class PlexManager {
             return nil
         }
         
-        // Build a descriptive title: "Show - S01E02 - Episode Title"
+        // The show is the artist, so `displayTitle` reads "Show - S01E02 - Episode Title"; the
+        // title carrying the show too doubled it.
         let showTitle = episode.grandparentTitle ?? "Unknown Show"
-        let episodeTitle = "\(showTitle) - \(episode.episodeIdentifier) - \(episode.title)"
+        let episodeTitle = "\(episode.episodeIdentifier) - \(episode.title)"
         
         return Track(
             url: streamURL,

@@ -643,12 +643,9 @@ class EmbyManager {
     func convertToTrack(_ episode: EmbyEpisode) -> Track? {
         guard let streamURL = videoStreamURL(for: episode) else { return nil }
 
-        let title: String
-        if let showName = episode.seriesName {
-            title = "\(showName) - \(episode.episodeIdentifier) - \(episode.title)"
-        } else {
-            title = episode.title
-        }
+        // The show is the artist, so `displayTitle` reads "Show - S01E02 - Title"; the title
+        // carrying the show too doubled it.
+        let title = episode.seriesName == nil ? episode.title : "\(episode.episodeIdentifier) - \(episode.title)"
 
         return Track(
             url: streamURL,

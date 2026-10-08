@@ -32,6 +32,9 @@ class EmbyVideoPlaybackReporter {
     /// Emby item ID of the current video
     private var currentItemId: String?
 
+    /// Ties this play's start, progress and stop reports together on the server
+    private var currentPlaySessionId = ""
+
     /// Server ID for routing to the correct client
     private var currentServerId: String?
 
@@ -240,6 +243,7 @@ class EmbyVideoPlaybackReporter {
 
         // Set up tracking
         currentItemId = itemId
+        currentPlaySessionId = UUID().uuidString
         currentServerId = serverId
         currentTitle = title
         currentDurationSeconds = durationSeconds
@@ -266,10 +270,11 @@ class EmbyVideoPlaybackReporter {
     private func reportPlaybackStart(position: TimeInterval) {
         guard let itemId = currentItemId,
               let client = getClient() else { return }
+        let playSessionId = currentPlaySessionId
 
         Task {
             do {
-                try await client.reportPlaybackStart(itemId: itemId)
+                try await client.reportPlaybackStart(itemId: itemId, playSessionId: playSessionId)
                 NSLog("EmbyVideoPlaybackReporter: Reported playback start for %@", self.currentTitle ?? "unknown")
             } catch {
                 NSLog("EmbyVideoPlaybackReporter: Failed to report start: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
@@ -280,12 +285,13 @@ class EmbyVideoPlaybackReporter {
     private func reportProgress(position: TimeInterval, paused: Bool) {
         guard let itemId = currentItemId,
               let client = getClient() else { return }
+        let playSessionId = currentPlaySessionId
 
         let positionTicks = Int64(position * 10_000_000)
 
         Task {
             do {
-                try await client.reportPlaybackProgress(itemId: itemId, positionTicks: positionTicks, isPaused: paused)
+                try await client.reportPlaybackProgress(itemId: itemId, playSessionId: playSessionId, positionTicks: positionTicks, isPaused: paused)
             } catch {
                 // Silently ignore progress report failures
             }
@@ -295,12 +301,13 @@ class EmbyVideoPlaybackReporter {
     private func reportStopped(position: TimeInterval) {
         guard let itemId = currentItemId,
               let client = getClient() else { return }
+        let playSessionId = currentPlaySessionId
 
         let positionTicks = Int64(position * 10_000_000)
 
         Task {
             do {
-                try await client.reportPlaybackStopped(itemId: itemId, positionTicks: positionTicks)
+                try await client.reportPlaybackStopped(itemId: itemId, playSessionId: playSessionId, positionTicks: positionTicks)
                 NSLog("EmbyVideoPlaybackReporter: Reported stopped for %@", self.currentTitle ?? "unknown")
             } catch {
                 NSLog("EmbyVideoPlaybackReporter: Failed to report stopped: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
@@ -345,12 +352,13 @@ class EmbyVideoPlaybackReporter {
         guard let itemId = currentItemId,
               !isPaused,
               let client = getClient() else { return }
+        let playSessionId = currentPlaySessionId
 
         let positionTicks = Int64(lastReportedPosition * 10_000_000)
 
         Task {
             do {
-                try await client.reportPlaybackProgress(itemId: itemId, positionTicks: positionTicks)
+                try await client.reportPlaybackProgress(itemId: itemId, playSessionId: playSessionId, positionTicks: positionTicks)
             } catch {
                 NSLog("EmbyVideoPlaybackReporter: Timeline update failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }

@@ -153,6 +153,13 @@
 - **A playlist video starts once** — double-clicking a video in the playlist, or replacing the
   queue with one, opened it twice, and Plex was told it had stopped at 0:00 in between. It now
   starts once.
+- **Emby sees what you are playing** — Emby refused every "now playing" and progress report for
+  music and video, so the server never showed NullPlayer playing anything or where it was up to.
+  It now accepts them.
+- **Episode and movie titles read once** — a queued or playlist episode showed the show's name
+  twice ("Adults - Adults - S01E02 - Spitroast"), and a queued Plex movie was prefixed with its
+  studio ("Paramount Pictures - Airplane!"). They now read "Adults - S01E02 - Spitroast" and
+  "Airplane!", as when you double-click them.
 
 ## 0.31.4
 

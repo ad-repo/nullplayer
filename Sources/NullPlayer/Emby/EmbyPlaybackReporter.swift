@@ -11,6 +11,9 @@ class EmbyPlaybackReporter {
 
     /// Currently playing track info (for scrobbling)
     private var currentTrackId: String?
+
+    /// Ties this play's start, progress and stop reports together on the server
+    private var currentPlaySessionId = ""
     private var currentServerId: String?
     private var trackStartTime: Date?
     private var trackDuration: TimeInterval = 0
@@ -44,6 +47,7 @@ class EmbyPlaybackReporter {
         let sid = serverId ?? ""
         // Reset state for new track
         currentTrackId = trackId
+        currentPlaySessionId = UUID().uuidString
         currentServerId = sid
         trackStartTime = Date()
         trackDuration = duration
@@ -106,11 +110,12 @@ class EmbyPlaybackReporter {
         if let trackId = currentTrackId,
            let serverId = currentServerId,
            let client = getClient(for: serverId) {
+            let playSessionId = currentPlaySessionId
             Task {
                 do {
                     // Report paused state (positionTicks with isPaused=true)
                     let ticks = Int64(self.lastKnownPosition * 10_000_000)
-                    try await client.reportPlaybackProgress(itemId: trackId, positionTicks: ticks, isPaused: true)
+                    try await client.reportPlaybackProgress(itemId: trackId, playSessionId: playSessionId, positionTicks: ticks, isPaused: true)
                 } catch {
                     NSLog("EmbyPlaybackReporter: Failed to report pause: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 }
@@ -138,6 +143,7 @@ class EmbyPlaybackReporter {
               let client = getClient(for: serverId) else {
             return
         }
+        let playSessionId = currentPlaySessionId
 
         guard !hasReportedNowPlaying else { return }
 
@@ -145,7 +151,7 @@ class EmbyPlaybackReporter {
 
         Task {
             do {
-                try await client.reportPlaybackStart(itemId: trackId)
+                try await client.reportPlaybackStart(itemId: trackId, playSessionId: playSessionId)
                 NSLog("EmbyPlaybackReporter: Reported 'now playing' for track %@", trackId)
             } catch {
                 NSLog("EmbyPlaybackReporter: Failed to report 'now playing': %@", error.localizedDescription.redactingSensitiveURLQueryItems)
@@ -160,12 +166,13 @@ class EmbyPlaybackReporter {
               let client = getClient(for: serverId) else {
             return
         }
+        let playSessionId = currentPlaySessionId
 
         let positionTicks = Int64(position * 10_000_000)
 
         Task {
             do {
-                try await client.reportPlaybackProgress(itemId: trackId, positionTicks: positionTicks)
+                try await client.reportPlaybackProgress(itemId: trackId, playSessionId: playSessionId, positionTicks: positionTicks)
             } catch {
                 // Silently ignore progress report failures
             }
@@ -179,12 +186,13 @@ class EmbyPlaybackReporter {
               let client = getClient(for: serverId) else {
             return
         }
+        let playSessionId = currentPlaySessionId
 
         let positionTicks = Int64(lastKnownPosition * 10_000_000)
 
         Task {
             do {
-                try await client.reportPlaybackStopped(itemId: trackId, positionTicks: positionTicks)
+                try await client.reportPlaybackStopped(itemId: trackId, playSessionId: playSessionId, positionTicks: positionTicks)
             } catch {
                 NSLog("EmbyPlaybackReporter: Failed to report stopped: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
@@ -215,6 +223,7 @@ class EmbyPlaybackReporter {
               let client = getClient(for: serverId) else {
             return
         }
+        let playSessionId = currentPlaySessionId
 
         guard !hasScrobbled else { return }
 
