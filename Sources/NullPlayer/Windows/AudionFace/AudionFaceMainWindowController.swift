@@ -52,7 +52,8 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
             forName: RadioManager.connectionStateDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in MainActor.assumeIsolated { self?.refreshHostState() } }
         unskinnedView.onLoadFace = { [weak self] in self?.importFaceFromPanel() }
-        present(nil, message: nil)
+        // No placeholder while the selected face loads: it would flash at its own size first.
+        // `reloadSelectedFace` presents it when there is no face to show.
         reloadSelectedFace()
     }
 
@@ -150,6 +151,9 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
         if window.contentView !== view { window.contentView = view }
         fitWindow()
         refreshHostState()
+        // The shape comes from the pixels, so draw at the new size first: a face that loads after
+        // the window is on screen otherwise keeps the placeholder's outline until focus changes.
+        window.displayIfNeeded()
         window.invalidateShadow()
     }
 

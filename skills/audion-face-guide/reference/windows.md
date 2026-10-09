@@ -36,6 +36,13 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
   false for Audion. `invalidateShadow` runs only when the canvas reports `outlineChanged` (an
   animation frame clears the base under it, a mask swaps, a new face), after `displayIfNeeded()` so
   the shadow is taken from the new pixels; a marquee tick or a clock digit never recomputes it.
+  `present` keeps the same order after resizing for a new face. The borderless clear window takes
+  its outline from those pixels, so recomputing it first left the new area see-through until a focus
+  change. That only showed on screen: `screencapture`, which reads the window's own pixels, saw a
+  complete window.
+- **Launch:** the controller shows no placeholder while the selected face loads (~0.7 s on a debug
+  build), so the window never appears at `unskinnedSize` first. `reloadSelectedFace` presents the
+  unskinned view itself when there is no face, or the face fails to load.
 - **Buttons** (decision record § *Button mapping*): play, pause, stop, rw/ff (previous/next), eject
   (Open Files…), menu (toggle the playlist), close (quit, as every NullPlayer main window's close
   does), mode (toggle the Library Browser, `WindowManager.toggleMediaLibrary`; labelled "Library"). Volume
