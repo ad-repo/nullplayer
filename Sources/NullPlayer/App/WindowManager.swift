@@ -3714,7 +3714,7 @@ class WindowManager {
         videoPlayerWindowController = controller
         controller.volume = audioEngine.volume
         // A film from outside the queue must not advance the playlist when it ends
-        controller.onVideoFinishedForPlaylist = nil
+        controller.onQueuedVideoEnded = nil
         controller.play(url: url, title: title)
         applyAlwaysOnTopToWindow(controller.window)
     }
@@ -3736,8 +3736,8 @@ class WindowManager {
         }
         
         // Set up callback for when video finishes (to advance playlist)
-        videoPlayerWindowController?.onVideoFinishedForPlaylist = { [weak self] in
-            self?.audioEngine.videoTrackDidFinish()
+        videoPlayerWindowController?.onQueuedVideoEnded = { [weak self] end in
+            self?.audioEngine.videoTrackDidEnd(end)
         }
         
         videoPlayerWindowController?.volume = audioEngine.volume

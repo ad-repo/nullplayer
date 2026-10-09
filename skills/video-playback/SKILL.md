@@ -34,7 +34,7 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   one ran as a natural end: double-clicking a video over playing audio loaded the next row behind
   the window. It also stops the crossfade node, which holds the audio after a completed fade.
 - **A playlist film's end advances by natural-end rules, in every family.**
-  `onVideoFinishedForPlaylist` calls `AudioEngine.videoTrackDidFinish` → `advanceAfterNaturalTrackEnd`,
+  `onQueuedVideoEnded(.finished)` calls `AudioEngine.videoTrackDidEnd` → `advanceAfterNaturalTrackEnd`,
   never `next()`. By then `videoPlaybackDidReachEndOfMedia` has stopped the engine (paused when the
   film started), and `next()` resumes only a `.playing` engine, so it loaded the next row and never
   played it (M13). `next()` also wraps at the end of the playlist where a natural end stops.
@@ -56,6 +56,26 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   a playlist double-click, and Play after closing the film each log one `Routing video track`.
 - **The vendored VLCKit reports the end of a film as `.paused`, never `.ended`** — see the
   `mediaPlayerStateChanged` comment; end-of-film handling keys off that pause.
+- **A film that never plays is a failed load, skipped like a bad audio file** (M25). VLC reports
+  no error we can see: a missing file reads back as `.stopped` (the state is read a main-queue turn
+  late, after `.error`), and non-video bytes run straight to their end, a `.paused`. Either one,
+  unrequested and before the current player first played, fires `VideoPlayerView.onPlaybackFailed`
+  from the gate at the top of `mediaPlayerStateChanged`. A requested stop clears
+  `isAwaitingFirstPlay` itself: the `.paused` it sends consumes `didRequestPause`, and the
+  `.stopped` after would otherwise read as a failure. The handler drops a notification from a
+  replaced player, which would read the new player's state. The window closes (`stop()`), and a
+  playlist film reaches `AudioEngine.videoTrackDidEnd(.failed)` → `reportFailedLocalOpen`, the
+  audio open's failure path: the marquee reports it, and the queue skips to the next row, or
+  stops when the film's folder is gone (`containingFolderIsPresent`; a server film always skips).
+  A **Play Now** film keeps Play Now's bound, though it fails after `startPlayNowLocally` returned:
+  the engine holds the request (`videoPlayNow`) until the film ends, and `continuePlayNow` skips
+  only to the next inserted track, or takes the request back out and reports it, never starting
+  the queue the user already had. A film that plays to its end resets the failure streak
+  (`consecutiveTrackLoadFailures`), as an audio file that opens does.
+  Before this, the window stayed black at 0:00 over a paused engine. Measured 2026-10-08 on
+  Classic: a missing film, a non-video `.mp4` advanced into after a film ended in the same window,
+  and a deleted folder. A Stream Ripper **Play Now** film that fails closes with nothing in the
+  marquee, since it is not in the playlist.
 - **Windows → Video Player is inert until a video has been opened** — the controller is created on
   first play, and `WindowManager.toggleVideoPlayer` returns early while it is nil.
 - **A play call moves key focus to the picture** (`revealVideoOutput`): the free window takes it
@@ -96,7 +116,7 @@ Two `WindowManager` entry points create the controller if needed and play.
 
 | Entry point | Called by | Notes |
 |---|---|---|
-| `playVideoTrack(_:)` | `AudioEngine.loadTrack` (any playlist video) | every film from a library row. First offers the film to `routeToVideoCastIfNeeded` (see *Casting* below); sets `onVideoFinishedForPlaylist`, so its end advances the playlist. Picks `play(plexTrack:)` / `play(jellyfinTrack:)` / `play(embyTrack:)` from `plexRatingKey` / `jellyfinId` / `embyId`, else `play(url:title:)` |
+| `playVideoTrack(_:)` | `AudioEngine.loadTrack` (any playlist video) | every film from a library row. First offers the film to `routeToVideoCastIfNeeded` (see *Casting* below); sets `onQueuedVideoEnded`, so its end advances the playlist. Picks `play(plexTrack:)` / `play(jellyfinTrack:)` / `play(embyTrack:)` from `plexRatingKey` / `jellyfinId` / `embyId`, else `play(url:title:)` |
 | `showVideoPlayer(url:title:)` | Stream Ripper **Play Now** | opens the file just ripped in the local window, outside the queue, even while a video cast runs. Calls `TrackVerb.supersedePendingPlays()` first: a library **Play** still fetching (a show resolves season by season) would otherwise replace this film when its fetch lands |
 
 **A film row plays like a music row.** Double-click / Return on a movie or episode row of any

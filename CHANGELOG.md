@@ -191,6 +191,10 @@
 - **The CLI casts a radio station** — `--source radio --station … --cast …` played the station
   on the Mac and never cast; it now plays on the named device. Quitting a CLI cast with `q`,
   Ctrl-C or a kill now stops the speaker or TV instead of leaving it playing.
+- **A film that can't be opened is skipped** — a missing or unreadable film left a black video
+  window at 0:00 and a paused player, with no message. The window now closes, the marquee says
+  why, and the playlist moves on to the next row, as it does for a bad audio file; a film whose
+  folder is gone stops playback instead.
 
 ## 0.31.4
 

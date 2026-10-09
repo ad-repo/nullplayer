@@ -222,9 +222,19 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         clearVideoCastState()
     }
     
+    /// How a queued film ended: played to its end, or never played (missing, unreadable, unreachable).
+    enum VideoEnd { case finished, failed }
+
     /// Advances the playlist when the film ends. Set only by `WindowManager.playVideoTrack`, so
     /// non-nil exactly while the loaded film came from the playlist.
-    var onVideoFinishedForPlaylist: (() -> Void)?
+    var onQueuedVideoEnded: ((VideoEnd) -> Void)?
+
+    /// Clears the callback before invoking it: it may load the next video, which sets a new one.
+    private func endQueuedVideo(_ end: VideoEnd) {
+        let callback = onQueuedVideoEnded
+        onQueuedVideoEnded = nil
+        callback?(end)
+    }
 
     /// Current playback time
     var currentTime: TimeInterval {
@@ -352,14 +362,21 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             // A queued film's callback loads the next item and starts it, which clears the flag
             // through `updatePlayingState(true)` anyway, so only a film from outside the queue
             // marks its end.
-            guard let callback = self.onVideoFinishedForPlaylist else {
+            guard self.onQueuedVideoEnded != nil else {
                 self.markReachedEndOfMedia()
                 return
             }
             NSLog("VideoPlayer: Video finished from playlist, invoking callback")
-            // Clear the callback BEFORE invoking it: it may load the next video, which sets a new one.
-            self.onVideoFinishedForPlaylist = nil
-            callback()
+            self.endQueuedVideo(.finished)
+        }
+
+        // A film that never played closes rather than leaving a black window over a paused engine;
+        // a playlist film then goes to the engine as a failed load. Not while casting: the film is
+        // on the device, and the local open failing does not end it.
+        videoPlayerView.onPlaybackFailed = { [weak self] in
+            guard let self, !self.isCastingVideo else { return }
+            self.stop()
+            self.endQueuedVideo(.failed)
         }
         
         // Cast button callback
@@ -527,7 +544,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     }
 
     /// Play a video from URL with optional title
-    /// If called from WindowManager.playVideoTrack, the onVideoFinishedForPlaylist callback will be set
+    /// If called from WindowManager.playVideoTrack, the onQueuedVideoEnded callback will be set
     func play(url: URL, title: String) {
         endPreviousVideo()
         startVideo(LoadedVideo(source: url.isFileURL ? .localFile(url) : .stream, title: title,

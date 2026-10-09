@@ -193,6 +193,10 @@ class VideoPlayerView: NSView {
     /// `.paused` scrobbles and advances the playlist once. Re-armed on the transition into playing,
     /// which is what lets a film seeked back and resumed finish again.
     private var didReportPlaybackFinished = false
+
+    /// From `play(url:)` until the media first plays, is stopped on request, or is reported as
+    /// failed (`onPlaybackFailed`).
+    private var isAwaitingFirstPlay = false
     var isPlaying: Bool { mediaPlayer?.isPlaying == true }
 
     /// Volume level (0.0 - 1.0)
@@ -232,6 +236,9 @@ class VideoPlayerView: NSView {
     
     /// Callback when playback finishes naturally (with final position)
     var onPlaybackFinished: ((TimeInterval) -> Void)?
+
+    /// Callback when the media stops before it ever played: missing, unreadable or unreachable
+    var onPlaybackFailed: (() -> Void)?
     
     /// Callback when track selection panel is requested
     var onTrackSelectionRequested: (() -> Void)?
@@ -846,6 +853,7 @@ class VideoPlayerView: NSView {
         isActivelyPlaying = false
         didReportPlaybackFinished = false
         didRequestPause = false
+        isAwaitingFirstPlay = true
         didReportVideoOutputSize = false
         availableAudioTracks = []
         availableSubtitleTracks = []
@@ -887,6 +895,9 @@ class VideoPlayerView: NSView {
         controlsHideTimer?.invalidate()
         isActivelyPlaying = false
         didRequestPause = true
+        // Not left to `didRequestPause`: the `.paused` this sends consumes it, and the `.stopped`
+        // after would then read as a film that failed to open.
+        isAwaitingFirstPlay = false
         mediaPlayer?.pause()
         mediaPlayer?.stop()
         showLoading(false)
@@ -936,6 +947,7 @@ class VideoPlayerView: NSView {
         NSLog("VideoPlayerView: Playing")
         let wasPaused = (previousState == .paused)
         isActivelyPlaying = true
+        isAwaitingFirstPlay = false
         didReportPlaybackFinished = false
         didRequestPause = false
         resetControlsHideTimer()
@@ -1245,10 +1257,34 @@ extension VideoPlayerView {
 // MARK: - VLCMediaPlayerDelegate
 
 extension VideoPlayerView: VLCMediaPlayerDelegate {
+    private func showStopped() {
+        isActivelyPlaying = false
+        showLoading(false)
+        controlBarView.updatePlayState(isPlaying: false)
+        onPlaybackStateChanged?(false)
+    }
+
     func mediaPlayerStateChanged(_ aNotification: Notification) {
         DispatchQueue.main.async { [weak self] in
-            guard let self = self, let player = self.mediaPlayer else { return }
+            // The state is read here, a main-queue turn late, so a replaced player's notification
+            // would read the new player's state: it is not this player's, and is dropped.
+            guard let self = self, let player = self.mediaPlayer,
+                  (aNotification.object as AnyObject?) === player else { return }
             let state = player.state
+            defer { self.previousState = state }
+
+            // A film VLC cannot play never plays. A missing file reads back as `.stopped` (`.error`
+            // has moved on by the time the state is read); bytes it cannot demux run straight to
+            // their end, which this VLCKit reports as `.paused`. Any of them, unrequested and before
+            // this player first played, is that failure.
+            if self.isAwaitingFirstPlay, !self.didRequestPause, [.stopped, .error, .paused].contains(state) {
+                NSLog("VideoPlayerView: %@ reached %@ before it played — failed to open",
+                      self.currentTitle, VLCMediaPlayerStateToString(state))
+                self.isAwaitingFirstPlay = false
+                self.showStopped()
+                self.onPlaybackFailed?()
+                return
+            }
 
             switch state {
             case .opening:
@@ -1305,23 +1341,12 @@ extension VideoPlayerView: VLCMediaPlayerDelegate {
             case .ended:
                 NSLog("VideoPlayerView: Played to end")
                 self.reportPlaybackFinished()
-            case .stopped:
-                NSLog("VideoPlayerView: Stopped")
-                self.isActivelyPlaying = false
-                self.showLoading(false)
-                self.controlBarView.updatePlayState(isPlaying: false)
-                self.onPlaybackStateChanged?(false)
-            case .error:
-                NSLog("VideoPlayerView: Playback error")
-                self.isActivelyPlaying = false
-                self.showLoading(false)
-                self.controlBarView.updatePlayState(isPlaying: false)
-                self.onPlaybackStateChanged?(false)
+            case .stopped, .error:
+                NSLog("VideoPlayerView: %@", state == .error ? "Playback error" : "Stopped")
+                self.showStopped()
             @unknown default:
                 break
             }
-
-            self.previousState = state
         }
     }
 

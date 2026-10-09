@@ -105,7 +105,7 @@ final class AudioEngineShuffleTests: XCTestCase {
             ) { _ in exhausted.fulfill() }
             defer { NotificationCenter.default.removeObserver(observer) }
 
-            engine.videoTrackDidFinish()
+            engine.videoTrackDidEnd(.finished)
 
             wait(for: [exhausted], timeout: 1)
             XCTAssertEqual(engine.state, .stopped)
