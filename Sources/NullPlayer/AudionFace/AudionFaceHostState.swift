@@ -10,11 +10,9 @@ struct AudionFaceHostState: Equatable {
 
     var playState = PlayState.stopped
     var elapsedSeconds = 0
-    /// Zero means no track: stop is disabled and the MP3, NET and pause indicators stay off.
     var durationSeconds = 0
     /// The playlist position, 1-based. Nil draws the blank track-digit frame, as FaceKit always does.
     var trackIndex: Int?
-    var volume = 0.5
     var title: String?
     var artist: String?
     var album: String?
@@ -26,8 +24,11 @@ struct AudionFaceHostState: Equatable {
 
     var isPlaying: Bool { playState == .playing }
 
-    /// The artist line shows the title, as Panic's player fills it.
-    var artistLine: String? { title }
+    /// A zero duration means no track: stop is disabled and the MP3, NET and pause indicators stay off.
+    var hasTrack: Bool { durationSeconds != 0 }
+
+    /// The artist line shows the title, as Panic's player fills it; an empty one shows nothing.
+    var artistLine: String? { title.flatMap { $0.isEmpty ? nil : $0 } }
 
     /// The album line is `artist—album—format`, skipping the parts there are none of.
     var albumLine: String? {

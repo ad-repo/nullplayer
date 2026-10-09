@@ -6,7 +6,7 @@
 
 The baseline is the ratchet `AudionFaceCorpusLoadTests` enforces: a face recorded `ok` that later
 fails to load is a regression. Re-record only after improving the loader, never to turn a red
-suite green. Rows the census could not measure (`not-run`) are skipped.
+suite green. Rows the census could not measure (`not-run`, or no digest) are skipped.
 """
 import csv, os, sys
 
@@ -31,7 +31,7 @@ def main():
         sys.exit("no census.tsv in %s — run scripts/audion_face_census.sh first" % sys.argv[1])
     rows = [(r["sha256"], r["load"], r["code"], r["face"])
             for r in csv.DictReader(open(census, encoding="utf-8"), delimiter="\t")
-            if r["load"] in ("ok", "failed")]
+            if r["load"] in ("ok", "failed") and r["sha256"] != "-"]
     rows.sort(key=lambda row: row[3].lower())
     with open(DEST, "w", encoding="utf-8") as out:
         out.write(HEADER)

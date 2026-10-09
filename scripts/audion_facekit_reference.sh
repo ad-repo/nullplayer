@@ -16,15 +16,15 @@
 # frame count), and a trap must cost that face, not the run.
 
 set -u -o pipefail
+source "$(dirname "$0")/lib/audion_corpus.sh"
 
 readonly PIN=5b7c847
 readonly UPSTREAM=https://gitlab.com/panicinc/facekit.git
 readonly CACHE="${AUDION_FACEKIT_CACHE:-$HOME/Library/Caches/NullPlayer/facekit}"
-readonly CORPUS_DEFAULT="${AUDION_CORPUS_PATH:-$HOME/Library/Application Support/NullPlayer/AudionFaces}"
 
 usage() { echo "usage: audion_facekit_reference.sh <outdir> [--corpus <dir>] [--jobs <n>]" >&2; exit 2; }
 
-out="" corpus="$CORPUS_DEFAULT" jobs="$(sysctl -n hw.ncpu)"
+out="" corpus="$AUDION_CORPUS_DEFAULT" jobs="$(sysctl -n hw.ncpu)"
 while [ $# -gt 0 ]; do
     case "$1" in
         --corpus) corpus="${2:-}"; shift 2 ;;
@@ -143,11 +143,12 @@ fi
 
 mkdir -p "$out/png"
 echo "audion_facekit_reference started $(date '+%F %T') — not finished" > "$out/INCOMPLETE"
-# A face is any folder holding index.json. A process that dies prints nothing, so a face with no
-# ORACLE line is reported below rather than passing as absent.
-find "$corpus" -name index.json -type f -print0 | xargs -0 -n 1 dirname | tr '\n' '\0' |
+# The same face list the sweep measures, exclusions applied. A process that dies prints nothing, so
+# a face with no ORACLE line is reported below rather than passing as absent.
+faces=$(audion_face_list "$corpus" "$out/faces.txt" audion_facekit_reference)
+[ "$faces" -gt 0 ] || { echo "audion_facekit_reference: no faces in $corpus" >&2; exit 1; }
+tr '\n' '\0' < "$out/faces.txt" |
     xargs -0 -n 1 -P "$jobs" "$CACHE/build/oracle" "$out" > "$out/oracle.txt" 2> "$out/stderr.txt"
-faces=$(find "$corpus" -name index.json -type f | wc -l | tr -d ' ')
 ok=$(grep -c ' ok$' "$out/oracle.txt")
 failed=$(grep -c ' FAILED ' "$out/oracle.txt")
 echo "audion_facekit_reference: $faces faces, $ok rendered, $failed FaceKit refused, $((faces - ok - failed)) died"

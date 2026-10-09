@@ -6,10 +6,11 @@ This file owns the one draw path the harness and the screen share:
 
 | Type | Role |
 |---|---|
-| `AudionFaceHostState` | pure playback snapshot: play state, elapsed and duration, track index, volume, title/artist/album/format, stream phase, window active, Reduce Motion |
+| `AudionFaceHostState` | pure playback snapshot: play state, elapsed and duration, track index, title/artist/album/format, stream phase, window active, Reduce Motion; derives `hasTrack`, `artistLine` and `albumLine` |
 | `AudionFaceInteractionState` | hovered and pressed button, and buttons the window disables (the volume button while its slider is open) |
-| `AudionFaceScene` | `(face, host, interaction, frame, scale) → [AudionFaceDrawOp]`; also `visibleButtons` and `button(atX:y:)`, the hit test |
-| `AudionFaceRenderer` | ops to a `CGImage`; `textImage`, adapted from FaceKit's `draw(text:…)` |
+| `AudionFaceScene` | `(face, host, interaction, frame, scale) → [AudionFaceDrawOp]`, one function per element kind; also `visibleButtons` and `button(atX:y:)`, the hit test. Each op's `Element` (`.button(.stop)`, `.label(.album, offset:)`, …) decides its layer |
+| `AudionFaceText` | one text line to a `CGImage`, adapted from FaceKit's `draw(text:…)` (carries Panic's header) |
+| `AudionFaceRenderer` | ops to a `CGImage`; depends on the scene, never the other way |
 
 The rules are FaceKit `AudionFaceView`'s, verified against the oracle (`harness.md` § *The oracle*,
 856/856 geometry-identical). A change here is checked with the census, the sweep and the oracle
@@ -64,7 +65,7 @@ every corpus face, by the planning session's count in the decision record).
 
 ## Text
 
-`AudionFaceRenderer.textImage` is FaceKit's `draw(text:…)`: the font scaled by the view scale, the
+`AudionFaceText.image` is FaceKit's `draw(text:…)`: the font scaled by the view scale, the
 bold/italic/condense/extend traits substituted (extend is requested under the *condensed* mask, as
 FaceKit does), underline, a 4 px shadow, outline as a clear fill with a stroke, then one CoreText
 line in an image as wide as the whole string, baseline at `(ascent − descent) / 2`.
@@ -74,7 +75,7 @@ line in an image as wide as the whole string, baseline at `(ascent − descent) 
 | artist | the title; nothing for an empty one | always cut from the middle with `…` | never |
 | album | `artist—album—format`, skipping absent parts | only when justified, or under Reduce Motion | scrolls unless Reduce Motion — **even when justified**, because FaceKit sets the album label's own `justify` to false |
 
-A box under 12 px wide draws no text. The cut trims one character from each side of the middle
+A box 12 px wide or narrower draws no text (FaceKit's `rect.width > 12`). The cut trims one character from each side of the middle
 until the line is strictly narrower than the box; one exactly as wide as the box draws nothing, as
 in FaceKit. NullPlayer stops when nothing is left to trim, where FaceKit would loop forever.
 

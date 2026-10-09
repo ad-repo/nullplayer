@@ -18,7 +18,7 @@ import Foundation
 /// happened to be holding. `print` writes into that buffer. A lost buffer is lost measurements, and
 /// a silently missing row reads exactly like a skin that stopped drawing — the failure mode this
 /// whole harness exists to escape. Writing each line unbuffered and whole removes the buffer that
-/// can be lost, and `WMPRenderDumpTests.testEmitsEveryLineWholeUnderConcurrentWriters` proves the emitter itself.
+/// can be lost, and `HarnessOutputTests.testEmitsEveryLineWholeUnderConcurrentWriters` proves the emitter itself.
 ///
 /// The `fflush` keeps stdio's own output (XCTest's case lines) ordered against ours; without it the
 /// two streams would reach the file in different orders and a block boundary could move.

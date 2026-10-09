@@ -15,3 +15,15 @@ struct AudionFaceRect: Hashable {
         CGRect(x: x, y: containerHeight - y - height, width: width, height: height)
     }
 }
+
+extension CGContext {
+    /// A transparent 8-bit premultiplied RGBA bitmap that draws images nearest-neighbour: every
+    /// buffer the face engine draws into.
+    static func audionFaceBitmap(width: Int, height: Int) -> CGContext? {
+        let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        context?.interpolationQuality = .none
+        return context
+    }
+}

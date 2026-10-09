@@ -3,7 +3,7 @@
 
     scripts/audion_facekit_reference.sh <oracle-out>
     scripts/audion_render_sweep.sh capture <sweep-out>
-    scripts/audion_oracle_compare.py <oracle-out> <sweep-out> [--corpus <dir>]
+    scripts/audion_oracle_compare.py <oracle-out> <sweep-out>
 
 Each face gets the worst verdict of its states:
 
@@ -11,14 +11,15 @@ Each face gets the worst verdict of its states:
   rounding    no premultiplied channel off by more than 1: compositing arithmetic. Core Animation
               composites FaceKit's layers in 16-bit backing stores and NullPlayer in 8 bits; compared
               un-premultiplied, a 1-level difference at alpha 8 reads as 32 levels
-  text-only   every pixel past rounding lies inside the artist or album box: font rasterisation
+  text-only   every pixel past rounding lies inside a text box the sweep drew (its `PROBE … label:`
+              lines, so the loader stays the only reader of index.json): font rasterisation
   geometry    a pixel differs outside the text boxes — a defect, unless it is a listed departure
   missing     one side has no image (the oracle died, or the sweep did not render that face)
 
 Writes <sweep-out>/oracle-compare.tsv (face, verdict, per-state pixel counts) and prints the tally
 and every geometry face. See skills/audion-face-guide/reference/harness.md § *The oracle*.
 """
-import argparse, json, os, sys
+import argparse, os, re, sys
 import numpy as np
 from PIL import Image
 
@@ -27,21 +28,27 @@ ORDER = ["identical", "rounding", "text-only", "geometry", "missing"]
 ROUNDING = 1
 
 
-def text_boxes(face_dir, shape):
-    """The artist and album boxes as a boolean mask, top-left origin, face pixels."""
+def label_boxes(raw):
+    """Each face's label boxes from the sweep's PROBE lines, as (x, y, width, height), top-left."""
+    boxes, face = {}, None
+    probe = re.compile(r"PROBE \S+ label:\w+ (-?\d+),(-?\d+) (\d+)x(\d+)")
+    for line in open(raw, encoding="utf-8", errors="replace"):
+        if line.startswith("FACE ") and " FAILED " not in line:
+            face = line[5:].rstrip("\n")
+            boxes[face] = set()
+        elif face and (match := probe.match(line)):
+            boxes[face].add(tuple(map(int, match.groups())))
+    return boxes
+
+
+def text_mask(boxes, shape):
     mask = np.zeros(shape, dtype=bool)
-    try:
-        index = json.load(open(os.path.join(face_dir, "index.json"), encoding="utf-8", errors="replace"))
-    except (OSError, ValueError):
-        return mask
-    for key in ("artistDisplayRect", "albumDisplayRect"):
-        rect = index.get(key)
-        if isinstance(rect, dict) and all(isinstance(rect.get(k), int) for k in ("top", "left", "bottom", "right")):
-            mask[max(rect["top"], 0):max(rect["bottom"], 0), max(rect["left"], 0):max(rect["right"], 0)] = True
+    for x, y, width, height in boxes:
+        mask[max(y, 0):max(y + height, 0), max(x, 0):max(x + width, 0)] = True
     return mask
 
 
-def compare(oracle_png, ours_png, face_dir):
+def compare(oracle_png, ours_png, boxes):
     """(verdict, pixels past rounding, of which outside the text boxes)."""
     if not (os.path.exists(oracle_png) and os.path.exists(ours_png)):
         return "missing", 0, 0
@@ -52,7 +59,7 @@ def compare(oracle_png, ours_png, face_dir):
         return "identical", 0, 0
     differs = (np.abs(a - b) > ROUNDING).any(axis=2)
     total = int(differs.sum())
-    outside = int((differs & ~text_boxes(face_dir, differs.shape)).sum())
+    outside = int((differs & ~text_mask(boxes, differs.shape)).sum())
     return ("rounding" if total == 0 else "text-only" if outside == 0 else "geometry"), total, outside
 
 
@@ -66,9 +73,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("oracle")
     parser.add_argument("sweep")
-    parser.add_argument("--corpus", default=os.environ.get("AUDION_CORPUS_PATH", os.path.expanduser(
-        "~/Library/Application Support/NullPlayer/AudionFaces")))
     args = parser.parse_args()
+    raw = os.path.join(args.sweep, "raw.txt")
+    # A capture without PROBE lines would read every text difference as geometry.
+    if not os.path.exists(raw) or not any(line.startswith("PROBE ") for line in open(raw, encoding="utf-8", errors="replace")):
+        sys.exit("audion_oracle_compare: %s has no PROBE lines; recapture with scripts/audion_render_sweep.sh" % raw)
+    boxes = label_boxes(raw)
 
     oracle_root, sweep_root = os.path.join(args.oracle, "png"), os.path.join(args.sweep, "png")
     faces = sorted(set(os.listdir(oracle_root)) | set(os.listdir(sweep_root)))
@@ -76,7 +86,7 @@ def main():
     for face in faces:
         results = [compare(os.path.join(oracle_root, face, state + ".png"),
                            os.path.join(sweep_root, face, state + ".png"),
-                           os.path.join(args.corpus, face)) for state in STATES]
+                           boxes.get(face, ())) for state in STATES]
         verdict = max((r[0] for r in results), key=ORDER.index)
         tally[verdict] += 1
         rows.append([face, verdict] + ["%d/%d" % (r[1], r[2]) for r in results])

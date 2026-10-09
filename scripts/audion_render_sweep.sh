@@ -6,7 +6,8 @@
 #   scripts/audion_render_sweep.sh compare <base-outdir> <curr-outdir>
 #
 # `capture` renders every face in the oracle's canonical states (stopped, playing) through the
-# harness, so the same capture feeds scripts/audion_oracle_compare.py. `compare` diffs two captures:
+# harness, so the same capture feeds scripts/audion_oracle_compare.py, which reads the text boxes
+# from its PROBE lines in raw.txt. `compare` diffs two captures:
 # the invariant lines, then every image through scripts/png_diff.py. A diff between two captures is
 # unclassified until the oracle has classified it. The flags are documented only in
 # skills/audion-face-guide/reference/harness.md.
@@ -47,7 +48,7 @@ capture() {
     local faces; faces=$(audion_face_list "$corpus" "$out/faces.txt" audion_render_sweep)
     [ "$faces" -gt 0 ] || { echo "audion_render_sweep: no faces in $corpus" >&2; exit 1; }
     echo "audion_render_sweep: capturing $faces faces -> $out"
-    AUDION_FACE="$out/faces.txt" AUDION_RENDER_DUMP="$out/png" AUDION_RENDER_STATE=stopped,playing \
+    AUDION_FACE="$out/faces.txt" AUDION_RENDER_DUMP="$out/png" AUDION_RENDER_STATE=stopped,playing AUDION_RENDER_PROBE=1 \
         swift test ${SWIFTPM_ARGS[@]+"${SWIFTPM_ARGS[@]}"} --filter AudionFaceRenderDumpTests/testSweepsFaceOrCorpus \
         > "$out/raw.txt" 2> "$out/stderr.txt"
     local status=$?

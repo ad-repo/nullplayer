@@ -54,12 +54,13 @@ One fact per line, inside a `FACE` block.
 |---|---|
 | `HARNESS <n> face(s) from <path>` | the run |
 | `FACE <name>` | opens a face's block; every face prints exactly one |
+| `DIGEST <sha256>` or `DIGEST FAILED <why>` | the census digest (below), before the face loads |
 | `FACE <name> FAILED [AUD####] <message>` | a fatal finding; the block ends |
 | `LOAD size=WxH mask=WxH\|none inactiveMask=WxH\|none findings=<n>` | the loaded face |
 | `FINDING [AUD####] <message>` | each warning, in the loader's stable order |
 | `ELEMENTS buttons=… indicators=… digits=… animations=… text=…` | the roles that survived loading, `-` for none |
 | `RENDER-DUMP <label>: WxH ops=<n> [hovered=<role>] [pressed=<role>]` | one per rendered state and tick |
-| `PROBE <label> <element> x,y WxH [offset=<px> text=WxH]` | one per draw op, face pixels, top-left; labels add the marquee offset and text image size |
+| `PROBE <label> <element> x,y WxH [offset=<px> text=WxH]` | one per draw op (`AudionFaceDrawOp.Element`'s description), face pixels, top-left; labels add the marquee offset and text image size |
 | `PNG <label>: <face>/<file>` or `PNG <label> FAILED <why>` | the dump written, or why not |
 
 ## Scripts
@@ -71,15 +72,16 @@ are in `scripts/lib/audion_corpus.sh`. Never capture a baseline with `git stash`
 
 | Command | Does |
 |---|---|
-| `scripts/audion_face_census.sh <out> [--corpus <dir>]` | `census.tsv`: one row per face — sha256, load and fatal code, size, masks, warnings by code, surviving elements, what the six files FaceKit ignores hold, the limits' inputs, and the rev. Prints the tallies and the headroom maxima. |
+| `scripts/audion_face_census.sh <out> [--corpus <dir>]` | `census.tsv`: one row per face — the harness's `DIGEST`, load and fatal code, size, masks, warnings by code, surviving elements, what the six files FaceKit ignores hold, the limits' inputs, and the rev. Prints the tallies and the headroom maxima. |
 | `scripts/audion_corpus_baseline.py <census-out>` | Re-records `Tests/NullPlayerAppTests/Fixtures/AudionFace/corpus-baseline.tsv`, the ratchet `AudionFaceCorpusLoadTests` enforces on every `swift test`. Only after improving the loader. |
-| `scripts/audion_render_sweep.sh capture <out>` | Renders every face `stopped` and `playing` into `<out>/png`, keeps `invariants.txt`, and fails a capture reporting fewer faces than it was given. |
+| `scripts/audion_render_sweep.sh capture <out>` | Renders every face `stopped` and `playing` into `<out>/png` with `AUDION_RENDER_PROBE` on, keeps `invariants.txt` (`PROBE` and `DIGEST` lines stay in `raw.txt` only), and fails a capture reporting fewer faces than it was given. |
 | `scripts/audion_render_sweep.sh compare <a> <b>` | Diffs two captures' invariant lines, then their images through `scripts/png_diff.py --summary`. |
-| `scripts/audion_facekit_reference.sh <out>` | The oracle: FaceKit's own rendering of every face (below). |
-| `scripts/audion_oracle_compare.py <oracle-out> <sweep-out>` | Classifies each face against the oracle; writes `<sweep-out>/oracle-compare.tsv`. |
+| `scripts/audion_facekit_reference.sh <out> [--corpus <dir>]` | The oracle: FaceKit's own rendering of every face in the sweep's face list, exclusions applied (below). |
+| `scripts/audion_oracle_compare.py <oracle-out> <sweep-out>` | Classifies each face against the oracle, taking the text boxes from the sweep's `PROBE … label:` lines (so the loader is the only reader of `index.json`; a capture without them is refused); writes `<sweep-out>/oracle-compare.tsv`. |
 
-The census digest is SHA-256 over every file in the face, in UTF-8 byte order of its relative path:
-the path, a NUL, the contents. `AudionFaceCorpusLoadTests.sha256(of:)` computes the same one.
+The census digest is SHA-256 over every regular file in the face, in UTF-8 byte order of its
+relative path: the path, a NUL, the contents. `AudionFaceHarness.digest(of:)` is its one definition:
+the harness prints it and `AudionFaceCorpusLoadTests` keys the ratchet with it.
 
 ## The oracle
 
@@ -114,7 +116,7 @@ itself — **re-check them before trusting a change to the host**:
 |---|---|
 | `identical` | every byte equal |
 | `rounding` | no premultiplied channel off by more than 1 — compositing arithmetic: Core Animation composites FaceKit's layers in 16-bit backing stores, the renderer in 8 bits. Compared un-premultiplied, a 1-level step at alpha 8 reads as 32 levels, which is why the metric is premultiplied |
-| `text-only` | every pixel past rounding is inside the artist or album box: glyph rasterization |
+| `text-only` | every pixel past rounding is inside a label box the sweep drew: glyph rasterization |
 | `geometry` | a pixel past rounding outside the text boxes — a defect, or a listed departure |
 | `missing` | one side has no image |
 

@@ -4,7 +4,7 @@
 #
 #   scripts/audion_face_census.sh <outdir> [--corpus <dir>] [--allow-dirty]
 #
-# One census.tsv row per face: a sha256 over its files, whether it loaded and the fatal code if
+# One census.tsv row per face: the harness's DIGEST of its files, whether it loaded and the fatal code if
 # not, its size and mask, its warnings by code, which elements survived, and what each of the six
 # files FaceKit ignores holds (window.png, drag.png, inactive.png, active-alpha.png, about.png,
 # icon.png). Prints the measured count and the tallies; it never asserts a fixed count, because the
@@ -38,7 +38,7 @@ AUDION_FACE="$out/faces.txt" \
     > "$out/raw.txt" 2> "$out/stderr.txt"
 
 python3 - "$out" "$(git rev-parse --short HEAD)" <<'PY' || exit 1
-import collections, hashlib, os, re, sys
+import collections, os, re, sys
 import numpy as np
 from PIL import Image
 
@@ -57,7 +57,11 @@ for line in open(os.path.join(out, "raw.txt"), encoding="utf-8", errors="replace
             blocks[failed.group(1)]["failed"] = code.group(1) if code else "untyped"
         else:
             face = name
-            blocks[face] = {"failed": None, "findings": collections.Counter()}
+            blocks[face] = {"failed": None, "findings": collections.Counter(), "sha256": "-"}
+    elif face and line.startswith("DIGEST "):
+        # `DIGEST FAILED <why>` leaves "-", which the baseline skips.
+        if re.fullmatch(r"[0-9a-f]{64}", line[7:]):
+            blocks[face]["sha256"] = line[7:]
     elif face and line.startswith("LOAD "):
         blocks[face].update(kv.split("=", 1) for kv in line[5:].split() if not kv.startswith("findings="))
     elif face and line.startswith("FINDING "):
@@ -67,18 +71,6 @@ for line in open(os.path.join(out, "raw.txt"), encoding="utf-8", errors="replace
         for kv in line[9:].split():
             key, value = kv.split("=", 1)
             blocks[face][key] = 0 if value == "-" else len(value.split(","))
-
-def digest(folder):
-    """sha256 over every file in the face, in UTF-8 byte order of its relative path: path, NUL,
-    contents. AudionFaceCorpusLoadTests computes the same digest to key the ratchet."""
-    paths = []
-    for root, _, names in os.walk(folder):
-        paths += [os.path.relpath(os.path.join(root, n), folder) for n in names]
-    sha = hashlib.sha256()
-    for path in sorted(paths, key=lambda p: p.encode("utf-8")):
-        sha.update(path.encode("utf-8") + b"\0")
-        sha.update(open(os.path.join(folder, path), "rb").read())
-    return sha.hexdigest()
 
 def headroom(folder):
     """The locked limits' inputs, over every file (AUD0003, AUD0004, AUD0005, AUD0011). Images are
@@ -154,7 +146,7 @@ rows, loads, fatal, warnings = [], collections.Counter(), collections.Counter(),
 for folder in folders:
     name = os.path.basename(folder)
     block = blocks.get(name)
-    row = {"face": name, "sha256": digest(folder), "rev": rev, **headroom(folder)}
+    row = {"face": name, "sha256": block["sha256"] if block else "-", "rev": rev, **headroom(folder)}
     if block is None:
         row["load"] = "not-run"
     elif block["failed"]:
