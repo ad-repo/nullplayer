@@ -4082,6 +4082,8 @@ class AudioEngine {
         delegate?.audioEngineDidChangePlaylist()
     }
     
+    /// The context menu's Play Folder: audio only, like its Play File panel. The playlist's own
+    /// Add Directory discovers video and calls `loadFiles` directly.
     func loadFolder(_ url: URL) {
         LocalFileDiscovery.discoverMediaURLsAsync(from: [url], includeVideo: false) { [weak self] urls in
             guard let self, !urls.isEmpty else { return }
@@ -4089,25 +4091,7 @@ class AudioEngine {
             self.loadFiles(urls)
         }
     }
-    
-    /// Append files to the playlist without starting playback
-    func appendFiles(_ urls: [URL]) {
-        // Quick validate files (checks existence and extension - fast)
-        // Full format validation happens at playback time
-        let validation = AudioFileValidator.quickValidate(urls: urls)
-        
-        // Notify about invalid files
-        if validation.hasInvalidFiles {
-            AudioFileValidator.notifyInvalidFiles(validation.invalidFiles)
-        }
-        
-        let tracks = validation.validURLs.compactMap { Track(lightweightURL: $0) }
-        playlist.append(contentsOf: tracks)
-        invalidateShufflePlaybackStateAfterPlaylistMutation()
-        delegate?.audioEngineDidChangePlaylist()
-        enrichPlaylistDurationsAsync(for: tracks.map(\.id))
-    }
-    
+
     /// Fills in duration for tracks that have duration == nil.
     /// Looks up each URL in the MediaLibrary in-memory index first (instant, no I/O).
     /// Falls back to AVAudioFile only for tracks not in the library — done off the main thread.

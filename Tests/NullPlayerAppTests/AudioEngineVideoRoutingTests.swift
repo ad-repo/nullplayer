@@ -42,6 +42,6 @@ final class AudioEngineVideoRoutingTests: XCTestCase {
 
         XCTAssertEqual(engine.playlist.map(\.url), [film])
         XCTAssertEqual(engine.playlist.first?.mediaType, .video)
-        XCTAssertNotNil(AudioFileValidator.quickValidate(url: film))
+        XCTAssertNotNil(AudioFileValidator.quickValidate(url: film, includeVideo: false))
     }
 }

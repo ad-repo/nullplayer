@@ -26,7 +26,7 @@ enum AudioFileValidator {
     /// Quick validation - checks existence and extension only (fast, for batch operations)
     /// Returns nil if valid, or an error message if invalid. `includeVideo` admits the video
     /// extensions too, for the playlist, which routes a film to the video window.
-    static func quickValidate(url: URL, includeVideo: Bool = false) -> String? {
+    static func quickValidate(url: URL, includeVideo: Bool) -> String? {
         // Remote URLs (streaming) don't need validation
         if url.scheme == "http" || url.scheme == "https" {
             return nil
@@ -39,7 +39,8 @@ enum AudioFileValidator {
         
         // Check extension is supported
         let ext = url.pathExtension.lowercased()
-        if !supportedExtensions.contains(ext) && !(includeVideo && supportedVideoExtensions.contains(ext)) {
+        let accepted = supportedExtensions.contains(ext) || (includeVideo && supportedVideoExtensions.contains(ext))
+        if !accepted {
             return "Unsupported format: .\(ext)"
         }
         
@@ -79,7 +80,7 @@ enum AudioFileValidator {
     }
     
     /// Quick validate multiple URLs (fast - just checks existence and extension)
-    static func quickValidate(urls: [URL], includeVideo: Bool = false) -> ValidationResult {
+    static func quickValidate(urls: [URL], includeVideo: Bool) -> ValidationResult {
         var validURLs: [URL] = []
         var invalidFiles: [(url: URL, reason: String)] = []
         
