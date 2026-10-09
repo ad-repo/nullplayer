@@ -136,5 +136,6 @@ Classic → Original → Original-Metal → Modern → Media Player → Audion F
 
 Panic's archive is 856 faces, so a whole-menu sweep is about two hours of Audion alone; pick a set
 with `--only` or `../exclude.txt`. Past 40 faces the menu is grouped into A–Z submenus, which
-`menu.applescript` `list` and `skin` reach into. Face names can start or end with a space (five do),
-so `enumerate_skins.sh` keeps them: trimming made those rows `MENU-FAIL`.
+`menu.applescript` `list`, `current` and `skin` read in place. Face names can start or end with a
+space (five do), so `list` prints one name per line and `enumerate_skins.sh` never trims: trimming
+made those rows `MENU-FAIL`.
