@@ -381,17 +381,11 @@ class WindowManager {
 
     /// Runtime UI mode inferred from the active main window controller.
     /// Falls back to the persisted preference before controllers exist.
-    var isRunningModernUI: Bool {
-        if let controller = mainWindowController {
-            if controller is ModernMainWindowController { return true }
-            if controller is MainWindowController { return false }
-            if controller is WMPMainWindowController { return false }
-        }
-        return isModernUIEnabled
-    }
+    var isRunningModernUI: Bool { runningControllerFamily == .nullPlayerModern }
 
     /// The family of the running main window controller, or the persisted mode before one exists.
-    /// A four-way answer, where `isRunningModernUI` / `isRunningWMPUI` fold `.wal` into Classic.
+    /// `isRunningModernUI` / `isRunningWMPUI` are derived from it, so a new family is a compile error
+    /// here rather than a silent fall-through.
     var runningControllerFamily: PlayerUIControllerFamily {
         switch mainWindowController {
         case is WinampModernMainWindowController: return .winampModern
@@ -402,10 +396,7 @@ class WindowManager {
         }
     }
 
-    var isRunningWMPUI: Bool {
-        if mainWindowController is WMPMainWindowController { return true }
-        return mainWindowController == nil && uiMode.controllerFamily == .wmp
-    }
+    var isRunningWMPUI: Bool { runningControllerFamily == .wmp }
 
     /// The families whose skinned windows carry a `SkinShadowWindow` child. Every shared path that
     /// treats that child specially is gated on this, so Classic and Original run unchanged.
