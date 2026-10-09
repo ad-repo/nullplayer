@@ -23,7 +23,7 @@ installed skins and authored views, and **Remove “name”...** deletes the sel
 returns to the unskinned player. **Windows > Window Shadows** (on by default) gives skin windows a
 soft macOS-style drop shadow that follows the skin's own shape. Existing users keep
 their saved Classic, Original, Original-Metal, or WMP choice after upgrading. See
-`docs/wmp-skin/user-guide.md` for recovery and security limitations.
+`skills/wmp-skin-guide/reference/user-guide.md` for recovery and security limitations.
 
 ### Audion faces
 
@@ -33,7 +33,7 @@ Faces...** opens Panic's download page; **Load Face...** installs a face folder 
 40). **Remove “name”...** deletes the installed copy. Every face button works: the menu button toggles
 the playlist, the mode button the Library Browser, eject is Open Files…, info shows track or face
 credits, volume and the clock open sliders. NullPlayer's windows take their colours from the face.
-See `docs/audion-face/user-guide.md`.
+See `skills/audion-face-guide/reference/user-guide.md`.
 
 ### Windows
 

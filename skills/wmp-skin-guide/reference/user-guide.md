@@ -51,7 +51,7 @@ script filesystem access.
 
 NullPlayer accepts ZIP-based `.wmz` archives containing the XML/JScript `.wms` format associated
 with Windows Media Player 7 through 12, subject to the implemented subset in
-[`compatibility.md`](compatibility.md). Compatibility is capability-based, not guaranteed by a skin's
+[`compatibility.md`](../../../docs/wmp-skin/compatibility.md). Compatibility is capability-based, not guaranteed by a skin's
 claimed player version. Definitions may use UTF-8, UTF-16LE, UTF-16BE, or legacy Windows-1252.
 
 ActiveX, registry and shell access, DLLs, WMP plug-ins, arbitrary filesystem/network access,
@@ -76,4 +76,4 @@ available in WMP mode. They wear a frame borrowed from the skin when one is avai
 colours derived from the skin otherwise. Playlist and equalizer use the skin's own surface when
 provided, with themed native windows as fallbacks. Video, radio sheets, compact mode, and debug
 windows retain their unskinned presentation. See the
-[current hosting contract](../../skills/wmp-skin-guide/reference/windows.md#current-hosting-contract).
+[current hosting contract](windows/hosting.md#current-hosting-contract).

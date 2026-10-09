@@ -316,7 +316,7 @@ NullPlayer is the only Mac app that runs Windows Media Player skins. The `.wmz` 
 2. Pick an installed skin from **Skins > Media Player**; a skin with several views lists them under **Views**.
 3. **Remove “name”...** deletes NullPlayer's installed copy of the current skin (never your download) and returns to the built-in player.
 
-Skin scripts run in a restricted, sandboxed object model: ActiveX, registry and shell access, DLLs, WMP plug-ins, and skin-authored HTML are not supported. See the [WMP skin guide](docs/wmp-skin/user-guide.md) and the [compatibility reference](docs/wmp-skin/compatibility.md) for the supported surface.
+Skin scripts run in a restricted, sandboxed object model: ActiveX, registry and shell access, DLLs, WMP plug-ins, and skin-authored HTML are not supported. See the [WMP skin guide](skills/wmp-skin-guide/reference/user-guide.md) and the [compatibility reference](docs/wmp-skin/compatibility.md) for the supported surface.
 
 ### Audion Faces
 
@@ -326,7 +326,7 @@ Panic Audion faces (a folder of `index.json` and PNGs) are drawn by a port of Pa
 2. **Load Face...** installs a face folder, or a `.zip` holding any number of them, then switches to it.
 3. Pick an installed face from **Skins > Audion Faces**; **Remove “name”...** deletes NullPlayer's copy and returns to the plain player.
 
-See the [Audion faces guide](docs/audion-face/user-guide.md).
+See the [Audion faces guide](skills/audion-face-guide/reference/user-guide.md).
 
 ### Winamp Classic Mode
 

@@ -19,7 +19,7 @@ and position sliders, the marquee and animation clock, keys and accessibility (`
 NullPlayer's windows beside a face wear a palette sampled from the drawn face, checked for
 legibility across the corpus (`reference/windows.md`). The window follows UI Size, redraws only what
 changed (`AudionFaceCanvas`), and the loader survives a seeded fuzz (`reference/loading.md`). User
-support is `docs/audion-face/user-guide.md`.
+support is [reference/user-guide.md](reference/user-guide.md).
 
 ## The rule that outranks everything
 
@@ -71,6 +71,7 @@ worked version.
 | wrong pixels: order, nearest-neighbour, mask shape, digits, indicators, marquee, scale | [reference/rendering.md](reference/rendering.md) |
 | the face window: hit testing, drag, docking, the sliders, NullPlayer's windows beside a face, placement | [reference/windows.md](reference/windows.md) |
 | any measurement — every `AUDION_*` flag, the census, the sweep, the oracle | [reference/harness.md](reference/harness.md) |
+| what the user sees: menus, buttons, recovery, the user-facing wording | [reference/user-guide.md](reference/user-guide.md) |
 | what to work on next | `tasks/AUDION_TASKS.md` |
 | why a decision was made | `docs/audion-face/phase-0-decision-record.md` |
 
