@@ -40,7 +40,7 @@ worked version.
 |---|---|
 | Engine and model: pure, no AppKit windows | `Sources/NullPlayer/AudionFace/` |
 | AppKit: controller, window, view, host, sliders | `Sources/NullPlayer/Windows/AudionFace/` |
-| Tests | `Tests/NullPlayerAppTests/AudionFace*Tests.swift`, fixtures in `Fixtures/AudionFace/` |
+| Tests | `Tests/NullPlayerAppTests/AudionFace*Tests.swift`; fixture faces are synthesized in-test, and `Tests/NullPlayerAppTests/Fixtures/AudionFace/` holds only the corpus load baseline |
 | Shared files | only through a gated seam, recorded in `reference/windows.md` |
 
 - Never teach another family's types about faces, and never share code with `WMPArchive` or the
@@ -87,8 +87,7 @@ What is specific to this engine:
 3. **Confirm the face before diagnosing.** A launch that failed to select the face shows the
    unskinned view, which looks like a face that does nothing.
 4. **A sweep proves the default state only.** Hover, press, a ticking marquee, an animation and
-   playback need the state probes (`AUDION_RENDER_HOVER`, `…_CLICK`, `…_STATE`, `…_CLOCK`) or the
-   live app. A byte-identical sweep across a change to any of those is unmeasured, not unchanged.
+   playback need the state probes (Phase 2, `reference/harness.md`) or the live app. A byte-identical sweep across a change to any of those is unmeasured, not unchanged.
 
 The flags and launch command arrive in Phases 2 and 3; until then this section is the routing only.
 

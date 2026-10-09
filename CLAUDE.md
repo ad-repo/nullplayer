@@ -12,6 +12,20 @@ swift test                  # Run unit tests
 
 See `docs/development-workflow.md` for build details, log monitoring, and versioning.
 
+## Active project: Audion faces
+
+A fifth skin family, built phase by phase from the plan at
+`~/.claude/plans/in-a-worktree-only-rippling-kay.md`; open rows are in `AUDION_TASKS.md`, the locked
+decisions in `docs/audion-face/phase-0-decision-record.md`. Read the plan before starting work.
+
+- **When you finish a phase, update the plan in detail before stopping:** mark the phase done, and
+  record what was built (files, types, seams), what was measured and how, any deviation from the plan
+  and why, and what the next phase must know. The next agent starts from the plan, not from you.
+- **Worktree rules:** work only in `.claude/worktrees/audion-faces` on `feat/audion-faces`; never
+  touch the main checkout, which holds the user's uncommitted work. Diff against `origin/main`. One
+  build at a time, no edits during a build. Ask before launching the app — `launch.sh` kills the
+  user's running instance. Commit per phase on this branch; open a PR only when asked.
+
 ## Skills
 
 Technical documentation lives in `skills/`. Read the owning skill before changing a subsystem.

@@ -89,10 +89,10 @@ Button names: `play`, `pause`, `stop`, `rw`, `ff`, `close`, `info`, `volume`, `m
 `music` (mode), `eject`. Indicator names: `play-indicator`, `pause-indicator`, `net`, `mp3`, `cd`,
 `cddb`.
 
-The files FaceKit ignores are read by NullPlayer only after Phase 1 confirms their meaning against
-the corpus. Working hypothesis: `window.png` is a hit region, `drag.png` a drag region,
-`inactive.png` the full inactive artwork, `about.png` the face's credit art. Until confirmed, none
-changes what is drawn.
+The files FaceKit ignores are not read by the Phase 1 loader. Their meaning is confirmed against the
+corpus by the Phase 2 census, and a later row reads one only after that. Working hypothesis:
+`window.png` is a hit region, `drag.png` a drag region, `inactive.png` the full inactive artwork,
+`about.png` the face's credit art.
 
 ### Geometry
 
@@ -155,7 +155,7 @@ Each is classified as an expected oracle difference, never silently.
 |---|---|---|
 | A missing `…TextMode` or `…FirstPICTID` key throws, and the whole face fails to load | the element is dropped with a finding | one malformed key must not cost the face; FaceKit's own handling of every other key is already per-element |
 | The mask is resized with `interpolationQuality = .high` at scale > 1 | nearest-neighbour at an integer scale | a 1-bit window shape should stay 1-bit; antialiased mask edges blend into the desktop. Oracle comparison runs at 1×, where the two agree |
-| Track digits always draw the blank frame | the real playlist index 01–99, blank when there is none | NullPlayer has a playlist; the face authored the digits |
+| Track digits always draw the blank frame | the real playlist index 01–99, blank when there is none | NullPlayer has a playlist; the face authored the digits. The oracle comparison renders with no track index, so the two agree |
 | eject, close, info, playlist and mode are disabled | wired (see *Button mapping*) | user decision, 2026-10-08 |
 | The volume and position sliders are FaceKit's own `NSWindow` subclass | ported into `Windows/AudionFace/`, drawn the same way | layering |
 
@@ -229,17 +229,23 @@ their wording may improve without changing their meaning.
 | `AUD0001` | missing `index.json` | fatal |
 | `AUD0002` | missing `base.png` | fatal |
 | `AUD0003` | `index.json` larger than 256 KB | fatal |
-| `AUD0004` | image larger than 4096 px on a side, or more than 8 MB on disk | fatal |
+| `AUD0004` | an image the loader decodes is larger than 4096 px on a side, or more than 8 MB on disk | fatal |
 | `AUD0005` | more than 2,000 files or 64 MB total | fatal |
 | `AUD0006` | a symlink, or a path that escapes the face folder | fatal |
 | `AUD0007` | a PICT ID outside 0…99,999 | warning; element dropped |
 | `AUD0008` | mask size differs from `base.png` | warning; mask anchored as FaceKit does |
-| `AUD0009` | missing state sprite | warning; normal sprite used |
+| `AUD0009` | a button with a non-zero rect but no normal sprite | warning; button dropped, as FaceKit does |
 | `AUD0010` | zip ratio or size over its limit | fatal |
-| `AUD0011` | more than 64 Mpx decoded across the face's PNGs, summed from headers | fatal |
+| `AUD0011` | more than 64 Mpx across the images the loader decodes, summed from headers | fatal |
 
 `AUD0011` is added to the plan's table here. Without it the other limits allow 2,000 images at 4096²,
 about 128 GB of decoded RGBA; 64 Mpx caps a face at 256 MB decoded.
+
+**What each limit covers.** `AUD0005` bounds the walk, so it counts every file in the folder.
+`AUD0004` and `AUD0011` bound decode memory and time, so they apply only to the images the loader
+decodes; a file the loader never opens poses neither threat, and `AUD0005` still caps it on disk.
+A missing `-active`, `-disabled` or `-hover` sprite is not a finding: FaceKit treats each as
+optional, and only about 260 of the 856 faces ship `-hover`.
 
 `AUD0010`'s exact zip bounds are set in Phase 1 alongside the fixtures that prove them, under the
 same rule as `.wmz`'s Amendment 1: absolute expanded bytes bound the threat, and a ratio test applies
@@ -259,7 +265,8 @@ only above a size floor.
 | `AUD0011` decoded pixels | 64 Mpx | 5,368,982 px | Escher∆ |
 
 The median face decodes 355,603 px. Every file in the corpus besides `index.json` is a PNG. The
-tightest margin is `AUD0004`'s side at 2.5×. Measured with throwaway Python over PNG headers; the
+tightest margin is `AUD0004`'s side at 2.5×. These maxima were taken over every PNG, including the
+files the loader does not decode, so they overstate the decoded-image figures. Measured with throwaway Python over PNG headers; the
 Phase 2 census replaces these numbers with ones a committed script reproduces.
 
 ## Corpus facts carried into Phase 1
@@ -281,4 +288,5 @@ From the planning session's measurement, to be re-measured by the Phase 2 census
   adds the `facekit` notice row with the first adapted file.
 - Phase 2's census and oracle replace every measured number in this record with one a committed
   script reproduces, recorded in `skills/audion-face-guide/reference/harness.md`.
-- Phase 1 confirms or refutes the meaning of the five files FaceKit ignores before anything reads them.
+- The Phase 2 census confirms or refutes the meaning of the five files FaceKit ignores; nothing
+  reads them before that.
