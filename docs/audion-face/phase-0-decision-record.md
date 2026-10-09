@@ -90,6 +90,7 @@ Each is classified as an expected oracle difference, never silently.
 | A rect with negative width or height is kept as a `CGRect` | dropped as malformed, `AUD0013` (Phase 1) | not a shape anyone authored; the corpus has four, two on buttons (which read only `top` and `left`, so unaffected) and two on elements the canonical oracle states never draw (Detonator b1's lag animation, lungruen's album line) |
 | A negative animation frame count traps; zero keeps an animation with no frames | dropped, `AUD0013` (Phase 1) | neither draws anything; a hostile count must not crash the loader |
 | `NSImage` loads any image format under a `.png` name | only a PNG signature counts; anything else is an absent file | dimensions are read from the PNG header before decode (§ *Threat model*); every image file in the corpus is a PNG |
+| Middle truncation trims until the line fits, and loops forever when even `…` alone is wider than the box | stops when nothing is left to trim, drawing nothing (Phase 2) | a hostile font size must not hang the renderer; FaceKit rendered every corpus face's canonical states, so the stop never fires there |
 
 ## Button mapping
 
@@ -218,7 +219,9 @@ symlink entry is `AUD0006`. `AudionFaceZipLimits` holds the values; the fixtures
 The median face decodes 355,603 px. Every file in the corpus besides `index.json` is a PNG. The
 tightest margin is `AUD0004`'s side at 2.5×. These maxima were taken over every PNG, including the
 files the loader does not decode, so they overstate the decoded-image figures. Measured with throwaway Python over PNG headers; the
-Phase 2 census replaces these numbers with ones a committed script reproduces.
+Phase 2 census replaces these numbers with ones a committed script reproduces. **Done:**
+`scripts/audion_face_census.sh` reproduces every row of this table exactly; the command and its
+output are `skills/audion-face-guide/reference/harness.md` § *Measured*.
 
 ## Corpus facts carried into Phase 1
 
@@ -237,7 +240,11 @@ From the planning session's measurement, to be re-measured by the Phase 2 census
 
 - ~~Phase 1 implements `AudionFacePolicy` with every code above and a hostile-input test per code, and
   adds the `facekit` notice row with the first adapted file.~~ Done; see `skills/audion-face-guide/reference/loading.md` § *Codes*.
-- Phase 2's census and oracle replace every measured number in this record with one a committed
-  script reproduces, recorded in `skills/audion-face-guide/reference/harness.md`.
-- The Phase 2 census confirms or refutes the meaning of the five files FaceKit ignores; nothing
-  reads them before that.
+- ~~Phase 2's census and oracle replace every measured number in this record with one a committed
+  script reproduces, recorded in `skills/audion-face-guide/reference/harness.md`.~~ Done for the
+  face count, the loads, the findings and § *Measured headroom*. The key-presence, `version`,
+  `useAlphaChannel` and `base.png`-size facts under § *Corpus facts carried into Phase 1* stay the
+  planning session's: no decision rests on them.
+- ~~The Phase 2 census confirms or refutes the meaning of the five files FaceKit ignores; nothing
+  reads them before that.~~ Confirmed, and a sixth found (`icon.png`, in every face):
+  `skills/audion-face-guide/reference/format.md` § *Files FaceKit ignores*.

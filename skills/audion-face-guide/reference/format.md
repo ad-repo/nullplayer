@@ -37,16 +37,14 @@ a row in `docs/audion-face/phase-0-decision-record.md` § *Deliberate departures
 | `<name>.png`, `<name>-active.png`, `<name>-disabled.png`, `<name>-hover.png` | normal only | a button and its states | `decodeButton` |
 | `<name>.png` + `<name>-on.png` | both | an indicator | `decodeIndicator` |
 | `<PICTID>.png` | per range | digits and animation frames | `decodeDigit`, `decodeAnimation` |
-| `window.png`, `drag.png`, `inactive.png`, `active-alpha.png`, `about.png` | no | **ignored by FaceKit** | — |
+| `window.png`, `drag.png`, `inactive.png`, `active-alpha.png`, `about.png`, `icon.png` | no | **ignored by FaceKit**; see § *Files FaceKit ignores* | — |
 
 Button names: `play`, `pause`, `stop`, `rw`, `ff`, `close`, `info`, `volume`, `menu` (playlist),
 `music` (mode), `eject`. Indicator names: `play-indicator`, `pause-indicator`, `net`, `mp3`, `cd`,
 `cddb`.
 
-The files FaceKit ignores are not read by the Phase 1 loader. Their meaning is confirmed against the
-corpus by the Phase 2 census, and a later row reads one only after that. Working hypothesis:
-`window.png` is a hit region, `drag.png` a drag region, `inactive.png` the full inactive artwork,
-`about.png` the face's credit art.
+The loader reads none of the files FaceKit ignores; § *Files FaceKit ignores* is what the census
+measured in them.
 
 ## Geometry
 
@@ -77,17 +75,21 @@ corpus by the Phase 2 census, and a later row reads one only after that. Working
   that size; a missing name or size falls back to Helvetica 12.
 - Style: eight booleans (bold, italic, underline, outline, shadow, condense, extend, justify). If
   **any one** of the eight keys fails to decode, the whole style is empty.
-- XOR text (`…TextMode & 2`) is parsed and deliberately not drawn.
+- XOR text (`…TextMode & 2`) is parsed and drawn plainly: FaceKit leaves its invert filter
+  commented out.
 - The artist line truncates in the middle of the string. The album line scrolls as a marquee: an
-  80-frame startup hold, then one pixel per two frames, with a 60 px gap before it repeats. `justify`
-  or Reduce Motion pins it at offset 0.
+  80-frame startup hold, then one pixel per two frames, with a 60 px gap before it repeats. Only
+  Reduce Motion pins it; `justify` truncates its text but it still scrolls (FaceKit sets the album
+  label's own `justify` to false). `rendering.md` § *Text* has the full rule.
 - Panic's player fills the artist line with the title (or the file name) and the album line with
   `artist—album—format`. NullPlayer does the same.
 
 ## Draw order and state
 
-Order: `base`, the current animation, time digits, track digits, indicators, then buttons and labels.
-All images draw with `interpolationQuality = .none`.
+Layers, bottom to top: `base` and the current animation; the buttons; time digits, track digits
+and indicators (FaceKit's `sublayer`, zPosition 2, **above** the buttons at 1); the labels; the
+mask. All images draw with `interpolationQuality = .none`. `rendering.md` § *Draw order* has how
+each layer composites.
 
 | Element | State rule (`AudionFaceView`) |
 |---|---|
@@ -103,5 +105,18 @@ All images draw with `interpolationQuality = .none`.
 
 ## Files FaceKit ignores
 
-Not read. The Phase 2 census confirms or refutes the working hypothesis above, and the result goes
-here.
+FaceKit reads none of these, so neither does NullPlayer. What they hold, from
+`scripts/audion_face_census.sh` over the 856-face corpus (2026-10-08; commands and raw tallies in
+`harness.md` § *Measured*):
+
+| File | Faces | What it is |
+|---|---:|---|
+| `window.png` | 853 | **The window region**, 1-bit: opaque, black inside, white outside — Mac OS 9's shape for a window with no per-pixel alpha. Against `base-alpha.png`'s non-zero alpha its region has a median IoU of 0.973 (548 of 803 measurable at ≥ 0.95); it is coarser where the mask carries a soft glow or shadow. 30 are another size than `base.png`. |
+| `drag.png` | 853 | **The drag region**, 1-bit like `window.png`. Inside the window region in 800 of 818 measurable faces, and smaller than it in 566; the rest of the face (artwork the author meant as a control or a label) does not drag. |
+| `inactive.png` | 376 | **The whole face's inactive artwork**, opaque, `base.png`'s size in 374. Repaints none of `base.png`'s visible pixels in 180, under 5% in 67, 5% or more in 127. |
+| `active-alpha.png` | 225 | **The active window's mask**, a duplicate of `base-alpha.png`: alpha identical in 151, different in 69, another size in 5. |
+| `about.png` | 848 | **Credit art**, any size (`faceInfo` is the text form). |
+| `icon.png` | 856 | **A 32×32 icon** for the face, in every face. Not in the Phase 0 list of five. |
+
+The plan's Phase 3 view hit-tests by mask alpha, then control rects, then `drag.png`; these numbers
+are what that rests on.

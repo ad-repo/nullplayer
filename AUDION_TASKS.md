@@ -18,7 +18,6 @@ to the capture before it.
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| A3 | **Phase 2 — scene, renderer, harness and FaceKit oracle**, before any window: `AudionFaceHostState`, `AudionFaceInteractionState`, `AudionFaceScene`, `AudionFaceRenderer`; `AudionFaceRenderDumpTests.testSweepsFaceOrCorpus` with the `AUDION_*` flags; census, render sweep and load ratchet; `scripts/audion_facekit_reference.sh` + `scripts/audion_oracle_compare.py` | whole corpus | *Autonomous.* One draw path for harness and screen. Output through the locked `write(2)` emitter shared with `.wmz`, not a copy: as its own first commit, move `WMPHarnessOutput` (`WMPRenderDumpTests.swift`) to `Tests/NullPlayerAppTests/HarnessOutput.swift` as `HarnessOutput`, rename its call sites, keep `WMPDumpLineAccountingTests` as the emitter's one regression test, update `wmp-skin-guide/reference/harness/scripts.md`, and show the WMP sweep is byte-identical across the move. Test plumbing is not family code, so isolation does not apply. Oracle output never committed. The census confirms or refutes the meaning of the five files FaceKit ignores. The oracle comparison renders with no track index (decision record § *Deliberate departures from FaceKit*). **Exit:** census prints the measured count with failures classified by code; ≥ 95% of the corpus geometry-identical to the oracle, each remaining face an `A` row or a dossier; two identical captures prove determinism. |
 
 ## App integration
 

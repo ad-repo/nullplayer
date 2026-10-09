@@ -80,6 +80,26 @@ def digest(folder):
         sha.update(open(os.path.join(folder, path), "rb").read())
     return sha.hexdigest()
 
+def headroom(folder):
+    """The locked limits' inputs, over every file (AUD0003, AUD0004, AUD0005, AUD0011). Images are
+    taken over every PNG, not only those the loader decodes, so they overstate the decode."""
+    row = {"index_bytes": os.path.getsize(os.path.join(folder, "index.json")), "entries": 0, "bytes": 0,
+           "max_side": 0, "max_png_bytes": 0, "png_pixels": 0}
+    for root, dirs, names in os.walk(folder):
+        row["entries"] += len(dirs) + len(names)
+        for name in names:
+            path = os.path.join(root, name)
+            size = os.path.getsize(path)
+            row["bytes"] += size
+            with open(path, "rb") as handle:
+                header = handle.read(24)
+            if header[:8] == b"\x89PNG\r\n\x1a\n" and header[12:16] == b"IHDR":
+                width, height = int.from_bytes(header[16:20], "big"), int.from_bytes(header[20:24], "big")
+                row["max_side"] = max(row["max_side"], width, height)
+                row["max_png_bytes"] = max(row["max_png_bytes"], size)
+                row["png_pixels"] += width * height
+    return row
+
 def rgba(folder, name):
     path = os.path.join(folder, name)
     return np.asarray(Image.open(path).convert("RGBA")) if os.path.exists(path) else None
@@ -128,12 +148,13 @@ def ignored(folder):
 
 columns = ["face", "sha256", "load", "code", "size", "mask", "inactiveMask", "findings", "buttons",
            "indicators", "digits", "animations", "text", "window_vs_mask_iou", "drag_in_window",
-           "inactive_vs_base", "active_alpha", "about", "icon", "rev"]
+           "inactive_vs_base", "active_alpha", "about", "icon", "index_bytes", "entries", "bytes", "max_side",
+           "max_png_bytes", "png_pixels", "rev"]
 rows, loads, fatal, warnings = [], collections.Counter(), collections.Counter(), collections.Counter()
 for folder in folders:
     name = os.path.basename(folder)
     block = blocks.get(name)
-    row = {"face": name, "sha256": digest(folder), "rev": rev}
+    row = {"face": name, "sha256": digest(folder), "rev": rev, **headroom(folder)}
     if block is None:
         row["load"] = "not-run"
     elif block["failed"]:
@@ -170,6 +191,13 @@ tally("inactive_vs_base", lambda v: "same" if float(v) == 0 else "<5%" if float(
 tally("active_alpha", str)
 tally("about", lambda v: "present")
 tally("icon", str)
+for key, limit in (("index_bytes", "AUD0003 256 KiB"), ("max_side", "AUD0004 4096 px"),
+                   ("max_png_bytes", "AUD0004 8 MiB"), ("entries", "AUD0005 2,000"), ("bytes", "AUD0005 64 MiB"),
+                   ("png_pixels", "AUD0011 64 Mpx")):
+    top = max(rows, key=lambda r: r[key])
+    print("audion_face_census: headroom %s — max %d (%r) against %s" % (key, top[key], top["face"], limit))
+pixels = sorted(r["png_pixels"] for r in rows)
+print("audion_face_census: median png_pixels %d" % pixels[len(pixels) // 2])
 if loads["not-run"]:
     print("audion_face_census: %d face(s) have no harness block — the run died; see raw.txt and stderr.txt" % loads["not-run"])
     sys.exit(1)
