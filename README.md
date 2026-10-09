@@ -60,7 +60,8 @@ No Winamp or Windows Media Player skins are distributed with the project
 - Original mode: JSON-based skin system with color theming, custom assets, procedural backgrounds, and bloom effects and full skinning documentation for authors
 - Original-Metal mode: seven brushed-metal finishes with backlit LCD displays
 - Windows Media Player mode: the only Mac player that runs WMP 7–12 `.wmz` skins, loaded through a bounded, isolated engine with a sandboxed JScript runtime; import, select, remove, and switch views from **Skins > Media Player**, or fall back to a built-in unskinned player
-- Live skin switching. Cycle through Classic, Modern, Original, Original-Metal, and Windows Media Player skins with no restart or interuption in playback
+- Panic Audion faces: the 2021 face archive, drawn by a port of Panic's own FaceKit viewer and checked against it face by face; every face button drives NullPlayer, and its windows take their colours from the face. Install and select from **Skins > Audion Faces**
+- Live skin switching. Cycle through Classic, Modern, Original, Original-Metal, Windows Media Player skins and Audion faces with no restart or interuption in playback
 - Full development harness for debugging and reverse engineering Winamp 5, ClassicPro, and Windows Media Player skins
 - Native nullplayer windows are themed to the host skin
 

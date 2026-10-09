@@ -19,7 +19,7 @@ done
 [ -z "$DEST" ] && DEST="$IN/nullplayer-skins.gif"
 cd "$IN" || exit 1
 if [ "$ORDER" = "system" ]; then
-  list=$(for p in classic original original-metal modern wmp; do ls ${p}_*.png 2>/dev/null | sort; done)
+  list=$(for p in classic original original-metal modern wmp audion; do ls ${p}_*.png 2>/dev/null | sort; done)
 else
   list=$(ls *.png 2>/dev/null | sort -R)
 fi

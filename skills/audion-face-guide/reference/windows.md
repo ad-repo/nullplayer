@@ -38,7 +38,7 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
   the shadow is taken from the new pixels; a marquee tick or a clock digit never recomputes it.
 - **Buttons** (decision record § *Button mapping*): play, pause, stop, rw/ff (previous/next), eject
   (Open Files…), menu (toggle the playlist), close (quit, as every NullPlayer main window's close
-  does), mode (shuffle and repeat as a two-bit counter: off → shuffle → repeat → both → off). Volume
+  does), mode (toggle the Library Browser, `WindowManager.toggleMediaLibrary`; labelled "Library"). Volume
   and info are the view's own: volume opens the vertical slider (19 × 96, FaceKit's size) at the
   engine's volume, read when it opens (no face draws volume, so it is not in the host state), with its
   top-left at the button's bottom-right, and the button stays disabled (`interaction.disabled`)
@@ -77,7 +77,7 @@ Every change outside the family's directories, each gated on the Audion family.
 | Seam | Audion answer | Why not local |
 |---|---|---|
 | `PlayerUIMode.audion` / `PlayerUIControllerFamily.audion` | display name "Audion Faces"; no modern EQ, no modern skin family | the mode enum is the routing seam |
-| `AppFeature.audionFaceMode`, `AppCapabilities.supports` | true only in DEBUG; `PlayerUIMode.isAvailable` reads it, and `reloadUI`, `argumentOverride` and the init-time stored-mode check refuse an unavailable mode | the one capability seam |
+| `AppFeature.audionFaceMode`, `AppCapabilities.supports` | true in every build since Phase 7 (an edition may still refuse it); `PlayerUIMode.isAvailable` reads it, and `reloadUI`, `argumentOverride` and the init-time stored-mode check refuse an unavailable mode | the one capability seam |
 | `PlayerUIControllerFamily.hostsForeignSkin` | true, as `.wal`/`.wmz`: NullPlayer's windows float free — `appliesPlacementRecovery`, `reopensWhereLeft`, `positionSubWindow`'s tiling, no slide-up on close, no library refit, library reopen keeps its height, `prepareUIRuntime` forgets the Spectrum profile's skin, no compact or main-window vis menu items | one exhaustive switch, so a sixth family is a compile error, not a silent Classic answer |
 | `PlayerUIControllerFamily.bringsOwnRuntime` | true, as `.wmz`: no default Classic skin load at init, `prepareUIRuntime` returns early, Compact Mode/Window unavailable (4 `WindowManager` guards, `AppDelegate`), `playlistChromeScale` is the app scale, `tightenClassicCenterStackIfNeeded` skipped, restored centre-stack frames kept | as above |
 | `WindowManager.makeMainWindowController` / `runningControllerFamily` | `AudionFaceMainWindowController` | factory |
@@ -116,8 +116,8 @@ wear the titleless gloss rim. Corpus contrasts and the goldens: `harness.md` § 
   hosted style (`.wal`, `.wmz`, Audion) the white goes through `style.legibleText(_:on: background)`
   (resolved once per draw in `PlaylistView.draw`); on a light face it was white on white. Classic and Original
   have no hosted style and still get plain white.
-- **Route to a track:** the face's menu button toggles the playlist, eject is Open Files…, and the
-  Library Browser opens from the Windows menu or the right-click menu.
+- **Route to a track:** the face's menu button toggles the playlist, its mode button the Library
+  Browser, and eject is Open Files….
 - **Checked live** (A7, debug build, user confirmed): playlist, EQ, Library Browser and Spectrum
   Analyzer beside AppleClassic, Cracked, Chromium, Smart and >maxk_typo<.
 
@@ -125,4 +125,7 @@ wear the titleless gloss rim. Corpus contrasts and the goldens: `harness.md` § 
 
 The face window is a snap target. NullPlayer's windows tile beside it through the shared tiler on
 first open and stay where the user leaves them; `AUDION_PLACE_TRACE` (`harness.md`) logs each
-placement.
+placement. A launch straight into Audion (`-uiMode audion`) skips frame restoration, so windows open
+where the previous family left them, overlapping the face until moved. Once (Phase 7, release build,
+just after that launch) a face switch moved the window's left edge from 740 to 1038; four switches
+afterwards held the top-left, so it is not filed.

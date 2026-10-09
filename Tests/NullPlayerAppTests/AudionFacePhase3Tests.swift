@@ -1,7 +1,7 @@
 import XCTest
 @testable import NullPlayer
 
-/// Audion mode's app integration: the factory route, the DEBUG capability, the menu, persistence,
+/// Audion mode's app integration: the factory route, the capability, the menu, persistence,
 /// the importer and the face-derived palette. Faces are synthesized; nothing here launches the app.
 final class AudionFacePhase3Tests: XCTestCase {
 
@@ -19,11 +19,10 @@ final class AudionFacePhase3Tests: XCTestCase {
         }
     }
 
-    func testTheModeIsDebugOnlyAndHasItsOwnMenu() {
+    func testTheModeIsAvailableAndHasItsOwnMenu() {
         XCTAssertEqual(PlayerUIMode.audion.controllerFamily, .audion)
         XCTAssertFalse(PlayerUIMode.audion.usesModernEQLayout)
         XCTAssertNil(PlayerUIMode.audion.modernSkinFamily)
-        #if DEBUG
         XCTAssertTrue(AppCapabilities.supports(.audionFaceMode))
         XCTAssertEqual(PlayerUIMode.argumentOverride(from: ["uiMode": "audion"]), .audion)
         let item = ContextMenuBuilder.buildMenuBarUIMenu().items.first { $0.title == "Audion Faces" }
@@ -31,10 +30,6 @@ final class AudionFacePhase3Tests: XCTestCase {
         for option in ["Load Face...", "Get More Faces...", "Open Faces Folder..."] {
             XCTAssertTrue(titles.contains(option), option)
         }
-        #else
-        XCTAssertFalse(AppCapabilities.supports(.audionFaceMode))
-        XCTAssertNil(PlayerUIMode.argumentOverride(from: ["uiMode": "audion"]))
-        #endif
     }
 
     func testALongFaceListIsGroupedByInitialAndTheCheckedLetterIsMarked() {

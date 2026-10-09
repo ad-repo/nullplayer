@@ -187,9 +187,10 @@ Live, debug build, playing, `top -pid` over 5 s: Been Hexxed? 15% at 100%, 30% a
 300%; AppleClassic ~11% at 100%, ~17% at 300%. Before the view drew through `draw(_:)`, Been
 Hexxed? ran 28 / 68 / 95%: `sample` put 1,953 of 2,557 main-thread samples in Core Animation copying
 and colour-converting the whole new `layer.contents` image every tick. What remains at 300% is
-CoreGraphics compositing the album box (760×37 face pixels, 1 Mpx at scale 6). A release build cannot
-show a face until the DEBUG gate goes (A9), so no release profile exists yet and nothing past these
-algorithmic fixes was optimized.
+CoreGraphics compositing the album box (760×37 face pixels, 1 Mpx at scale 6). Nothing past these
+algorithmic fixes was optimized. Release builds show faces since A9, but no release profile has been
+taken: release has no auto-play hook and `menu.applescript` cannot set UI Size, so it needs the user
+to play a track at 300%. Take one before optimizing further.
 
 ### Palette legibility (A7, 2026-10-09)
 

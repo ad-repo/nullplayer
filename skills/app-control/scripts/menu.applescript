@@ -3,7 +3,8 @@
 --   skin <pid> <submenu> <item>   select a skin; switches into that family when another is on screen
 --   list <pid> <submenu>          the submenu's item names
 --   current <pid> <submenu>       the checked (loaded) skin in that submenu, or empty
---                                 (both reach into a family's A-Z submenus, e.g. Audion Faces)
+--                                 (list, current and skin reach into a family's A-Z submenus,
+--                                 e.g. Audion Faces)
 --   family <pid>                  the checked Skins submenu, i.e. the family on screen
 --   load <pid> <submenu> <path>   press that submenu's Load ... Skin... and open <path> in its panel
 --   closeaux <pid>                toggle off every checked window except Main Window
@@ -159,7 +160,20 @@ on drive(argv, targetPid)
 
       else if act is "list" then
         set subName to item 3 of argv
-        return name of every menu item of menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
+        set sm to menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
+        set nms to name of every menu item of sm
+        -- A long list is grouped into one-letter A-Z submenus (`groupedAlphabetically`): list
+        -- their items in the letter's place. Other submenus (Views, Color Themes) stay one name.
+        set out to {}
+        repeat with i from 1 to count of nms
+          set nm to item i of nms
+          if nm is not missing value and (count of nm) is 1 and (exists menu 1 of menu item i of sm) then
+            set out to out & (name of every menu item of menu 1 of menu item i of sm)
+          else
+            set end of out to nm
+          end if
+        end repeat
+        return out
 
       else if act is "current" then
         -- The checked skin in a submenu: which skin a mode switch landed on. Every family submenu

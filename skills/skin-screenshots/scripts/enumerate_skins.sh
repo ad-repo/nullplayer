@@ -19,7 +19,7 @@ export NULLPLAYER_PID="$PID"
 
 non_skin='^(Switch to |Load |Get More |Open |Import |Reimport |Download |Engine: |Skin Colors|Skin Settings|Spectrum Analyzer$|Waveform Seeker$|Color Themes$|Reset Skin to Default$|No skins |Views$|Remove )'
 emit() { # $1 system  $2 submenu
-  osascript "$MENU" list "$PID" "$2" 2>/dev/null | tr ',' '\n' | sed 's/^ *//; s/ *$//' |
+  osascript "$MENU" list "$PID" "$2" 2>/dev/null | tr ',' '\n' | sed 's/^ //' |  # drop only the list separator's space: face names can start or end with one
   while IFS= read -r item; do
     [ -z "$item" ] && continue
     [ "$item" = "missing value" ] && continue
@@ -28,5 +28,5 @@ emit() { # $1 system  $2 submenu
     printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$item" "$label"
   done
 }
-{ emit classic "Classic"; emit original "Original"; emit original-metal "Original-Metal"; emit modern "Modern"; emit wmp "Media Player"; } |
+{ emit classic "Classic"; emit original "Original"; emit original-metal "Original-Metal"; emit modern "Modern"; emit wmp "Media Player"; emit audion "Audion Faces"; } |
 if [ -s "$EXCLUDE_FILE" ]; then grep -vFf "$EXCLUDE_FILE"; else cat; fi

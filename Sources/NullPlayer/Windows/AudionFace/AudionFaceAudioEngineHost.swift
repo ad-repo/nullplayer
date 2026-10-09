@@ -66,11 +66,7 @@ enum AudionFaceAudioEngineHost {
         case .eject: MenuActions.shared.openFile()
         case .playlist: WindowManager.shared.togglePlaylist()
         case .close: NSApp.terminate(nil)
-        case .mode:
-            // Off → shuffle → repeat → both → off.
-            let next = (engine.shuffleEnabled ? 1 : 0) + (engine.repeatEnabled ? 2 : 0) + 1
-            engine.shuffleEnabled = next & 1 != 0
-            engine.repeatEnabled = next & 2 != 0
+        case .mode: WindowManager.shared.toggleMediaLibrary()
         case .info, .volume: break
         }
     }

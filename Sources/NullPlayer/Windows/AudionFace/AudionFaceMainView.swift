@@ -313,7 +313,7 @@ final class AudionFaceMainView: NSView {
         case .info: "Info"
         case .volume: "Show Volume Slider"
         case .playlist: "Playlist"
-        case .mode: "Play Mode"
+        case .mode: "Library"
         }
     }
 }

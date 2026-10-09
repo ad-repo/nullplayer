@@ -10,16 +10,16 @@ Read this skill before changing `Sources/NullPlayer/AudionFace/` or
 mapping, window policy — are `docs/audion-face/phase-0-decision-record.md`. The backlog is
 `AUDION_TASKS.md`.
 
-**Status:** Phase 6. The model, bounded loader, scene and renderer exist in
+**Status:** public (Phase 7). The model, bounded loader, scene and renderer exist in
 `Sources/NullPlayer/AudionFace/`, with the harness, census, render sweep, load ratchet and FaceKit
-oracle; all 856 corpus faces are geometry-identical to FaceKit (`reference/harness.md` § *Measured*).
-Audion Faces is a DEBUG-only mode: the face window, transport, drag and docking, install/select/
+oracle; all 856 corpus faces are geometry-identical to FaceKit (`reference/harness.md` § *Measured*),
+so no face owes a dossier. Audion Faces ships in every build: the face window, transport, drag and docking, install/select/
 remove, persistence, NullPlayer's windows in a face-derived gloss frame, every button, the volume
 and position sliders, the marquee and animation clock, keys and accessibility (`reference/windows.md`).
 NullPlayer's windows beside a face wear a palette sampled from the drawn face, checked for
 legibility across the corpus (`reference/windows.md`). The window follows UI Size, redraws only what
-changed (`AudionFaceCanvas`), and the loader survives a seeded fuzz (`reference/loading.md`). Phase 7
-is public exposure.
+changed (`AudionFaceCanvas`), and the loader survives a seeded fuzz (`reference/loading.md`). User
+support is `docs/audion-face/user-guide.md`.
 
 ## The rule that outranks everything
 

@@ -3,7 +3,7 @@
 **Date:** 2026-10-08
 **Implementation branch:** `feat/audion-faces` (worktree `.claude/worktrees/audion-faces`)
 **Implementation base:** `a950f44e` (`origin/main`)
-**Product exposure:** none — `AppFeature.audionFaceMode` is DEBUG-only until Phase 7
+**Product exposure:** public since Phase 7 (A9, 2026-10-09); `AppFeature.audionFaceMode` was DEBUG-only before it
 **Baseline at the base commit:** `swift build --build-system native` passes; `swift test --build-system native`
 executes 2,972 tests, 18 skipped, 0 failures.
 
@@ -109,7 +109,7 @@ Each button maps to an existing NullPlayer action. No new behaviour is introduce
 | playlist (`menu*.png`) | toggle the NullPlayer playlist window |
 | eject | Open Files… |
 | info | a menu: About Playing… (the app's track info panel), and About This Face… (`faceInfo` and `about.png`) |
-| mode (`music*.png`) | cycle shuffle/repeat: off → shuffle → repeat → both → off |
+| mode (`music*.png`) | toggle the Library Browser (user decision, 2026-10-09, A10). Until Phase 7 it cycled shuffle/repeat, a four-state toggle no face can show: no face has a shuffle or repeat indicator, so a press sent the user to the Playback menu to learn what it did. The library shows its result, like the playlist button beside it, and the artwork backs it: nearly every `music.png` draws "M"/"MODE", a few "mp3 net cd" (Audion's source switch) |
 | close | quit, the same as every NullPlayer main window's close button |
 | track digits | real playlist index 01–99; blank frame 10 when there is none |
 | MP3 / NET / CD / CDDB | local file / stream / off / off |

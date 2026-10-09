@@ -25,6 +25,16 @@ soft macOS-style drop shadow that follows the skin's own shape. Existing users k
 their saved Classic, Original, Original-Metal, or WMP choice after upgrading. See
 `docs/wmp-skin/user-guide.md` for recovery and security limitations.
 
+### Audion faces
+
+**Skins > Audion Faces** wears Panic Audion faces (a folder of `index.json` + PNGs). **Get More
+Faces...** opens Panic's download page; **Load Face...** installs a face folder or a `.zip` of them
+(Panic's archive) and switches to it; installed faces are listed in the same menu (A–Z submenus past
+40). **Remove “name”...** deletes the installed copy. Every face button works: the menu button toggles
+the playlist, the mode button the Library Browser, eject is Open Files…, info shows track or face
+credits, volume and the clock open sliders. NullPlayer's windows take their colours from the face.
+See `docs/audion-face/user-guide.md`.
+
 ### Windows
 
 | Window | Description | Toggle |
