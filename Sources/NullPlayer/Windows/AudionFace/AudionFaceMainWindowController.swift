@@ -151,10 +151,6 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
         if window.contentView !== view { window.contentView = view }
         fitWindow()
         refreshHostState()
-        // The shape comes from the pixels, so draw at the new size first: a face that loads after
-        // the window is on screen otherwise keeps the placeholder's outline until focus changes.
-        window.displayIfNeeded()
-        window.invalidateShadow()
     }
 
     func applyUIScale(_ scale: CGFloat) {
@@ -169,12 +165,16 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
         return NSSize(width: CGFloat(face.base.width) * scale, height: CGFloat(face.base.height) * scale)
     }
 
-    /// Sizes the window to what it shows at the current scale, holding its top-left corner.
+    /// Sizes the window to what it shows at the current scale, holding its top-left corner. The
+    /// outline comes from the pixels, so the shadow is recomputed only after drawing at the new size:
+    /// the view's own recompute, on a new face or scale, ran at the old one.
     private func fitWindow() {
         guard let window, let size = mainWindowSize(atScale: uiScale) else { return }
         let topLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
         window.setContentSize(size)
         window.setFrameTopLeftPoint(topLeft)
+        window.displayIfNeeded()
+        window.invalidateShadow()
     }
 
     // MARK: - Host state
