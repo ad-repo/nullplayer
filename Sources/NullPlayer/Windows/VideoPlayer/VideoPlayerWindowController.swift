@@ -492,8 +492,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                 videoPlayerView.hideTrackSelectionPanel()
                 return true
             }
-            // Consumed even when nothing is dismissed: a parked window still key from a fullscreen
-            // round trip would otherwise pass Esc on to `VideoPlayerView`, which stops the film.
+            // Consumed even when nothing is dismissed, should a parked window ever hold key again
+            // (`hostOutputWindow` hands it back, M33): passed on, Esc reaches `VideoPlayerView`,
+            // which stops the film.
             dismissVideoOutput()
         case 49: // Space - toggle play/pause
             togglePlayPause()
@@ -1088,6 +1089,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         isVideoOutputHosted = true
         updateHostedOutputFrame(over: host)
         window.orderFront(nil)
+        // A parked window never holds focus, but `canBecomeKey` turning false resigns nothing: one
+        // re-parked after fullscreen (which took key while free) kept it, and the skin's own key
+        // handlers heard nothing until it was clicked (M33).
+        if window.isKeyWindow { parent.makeKey() }
     }
 
     /// Keep the parked window on the box. Called whenever the skin lays its holder out again — a

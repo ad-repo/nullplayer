@@ -228,6 +228,10 @@
   titleless gloss frame, F5 sat about 50pt in from the right edge to stay clear of the corner close
   area. It now sits where it does in every other mode; F5 and the view-mode buttons beside it take
   their own clicks, and the rest of the corner still closes the window.
+- **A skin hears its keys again after a film leaves fullscreen** — in a Windows Media Player skin
+  or a Winamp Modern video tab, pressing F on the film and then Esc left the keyboard with the
+  film, so the skin's own shortcuts did nothing until you clicked it. The skin now gets the
+  keyboard back.
 
 ## 0.31.4
 
