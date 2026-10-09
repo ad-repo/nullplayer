@@ -29,7 +29,7 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   the two that pre-load the next track; both ask `AudioEngine.canHandOff(to:fromStreaming:)` first,
   which refuses a video, so a new pre-load path must too. It reads `Track.playbackRoute`, the same
   classification `loadTrack` routes on, so a new route is added in one place.
-- **Routing a video halts the audio through `haltAudioOutput()`**, which invalidates
+- **Routing a video halts the audio through `haltAudioOutput()`** (inside `stopLocalOnly()`), which invalidates
   `playbackGeneration` before stopping. Stopping a node fires its track's completion, and a live
   one ran as a natural end: double-clicking a video over playing audio loaded the next row behind
   the window. It also stops the crossfade node, which holds the audio after a completed fade.
@@ -174,15 +174,17 @@ on a Plex film fetches the movie or episode by its rating key for the info sheet
 reporters share their rules: scrobble at 90% (audio uses 50%), only after 60 s of play, with a
 timeline update every 10 s. Each server's API details are in its own integration skill.
 
-**Only the video reporter hears a film.** `loadTrack`'s video branch stops the engine's time
-timer when it hands a film over. Left ticking until `videoPlaybackDidStart` paused the engine,
-the timer's Subsonic / Jellyfin / Emby progress calls opened a second, audio "now playing" session for the film with the previous song's
-duration (measured on Emby, 2026-10-08). The same branch zeroes the engine's clock
-(`_currentTime` **and** `playbackStartDate`): the engine stays `.playing` until that pause, and a
-start date left from the outgoing track made `currentTime` — and the pause that stores it — read
-that track's elapsed time for the film (M26: `time=18.0` on a just-loaded film, read with
-`playback-snapshot.sh`). The main window hid it, since the film's own time pushes replace the
-engine's while a film plays; Now Playing and anything else reading `audioEngine.currentTime` did not.
+**Only the video reporter hears a film.** `loadTrack`'s video branch stops the outgoing track
+through `stopLocalOnly()` — Stop's own path — before it makes the film current: its reporters
+hear a stop at its real position, and the engine hands over stopped at 0:00, timer off. It used to
+halt the audio by hand and leave the engine `.playing` until `videoPlaybackDidStart` paused it,
+and each field left running in that gap was a bug: the time timer's Subsonic / Jellyfin / Emby
+progress calls opened a second, audio "now playing" session for the film with the previous song's
+duration (measured on Emby, 2026-10-08), and the outgoing start date made `currentTime` read that
+song's elapsed time for the film (M26: `time=18.0` on a just-loaded film, read with
+`playback-snapshot.sh`; Now Playing showed it, the main window did not, since the film's own time
+pushes replace the engine's). Measured 2026-10-08 on Classic: `audio-long` playing, then
+`2-video` from MOVIES, reads `engine state=stopped track='2-video' … time=0.0`.
 
 ## Casting
 
