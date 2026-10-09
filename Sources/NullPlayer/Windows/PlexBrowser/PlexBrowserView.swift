@@ -1145,6 +1145,9 @@ class PlexBrowserView: NSView {
     private var serverScrollTimer: Timer?
     private var lastServerName: String = ""
     private var lastLibraryName: String = ""
+    /// Library field text and field widths, written by drawServerBar each draw.
+    private var libraryNameTextWidth: CGFloat = 0
+    private var libraryNameMaxWidth: CGFloat = 0
 
     /// Cached skin renderer — avoids recreating (and discarding its whiteTextImage cache) every frame
     private var cachedRenderer: SkinRenderer?
@@ -1360,7 +1363,12 @@ class PlexBrowserView: NSView {
         return tabsWidth + sortWidth + insets
     }
 
-    private func serverBarCountText() -> String? {
+    /// A server-bar name with the item count appended: "FLAC_LIB (988 items)".
+    private func withItemCount(_ name: String) -> String {
+        "\(name) (\(serverBarCountText()))"
+    }
+
+    private func serverBarCountText() -> String {
         switch currentSource {
         case .local:
             let count: Int
@@ -1388,7 +1396,7 @@ class PlexBrowserView: NSView {
             } else {
                 count = displayItems.count
             }
-            return "\(count) ITEMS"
+            return "\(count) items"
         case .radio:
             return "\(displayItems.count) stations"
         case .youtube:
@@ -1418,11 +1426,11 @@ class PlexBrowserView: NSView {
         let leftWidth: CGFloat
         switch currentSource {
         case .local:
-            leftWidth = leadingInset + prefixWidth + textWidth("Local Files") + 28 + textWidth("+ADD")
+            leftWidth = leadingInset + prefixWidth + textWidth(withItemCount("Local Files")) + 28 + textWidth("+ADD")
         case .radio:
-            leftWidth = leadingInset + prefixWidth + textWidth("Internet Radio") + 28 + textWidth("+ADD")
+            leftWidth = leadingInset + prefixWidth + textWidth(withItemCount("Internet Radio")) + 28 + textWidth("+ADD")
         case .youtube:
-            leftWidth = leadingInset + prefixWidth + textWidth("YouTube") + 28 + textWidth("+ADD")
+            leftWidth = leadingInset + prefixWidth + textWidth(withItemCount("YouTube")) + 28 + textWidth("+ADD")
         case .plex(let serverId):
             let configuredServer = PlexManager.shared.servers.first(where: { $0.id == serverId })
             isConfigured = configuredServer != nil || PlexManager.shared.isLinked
@@ -1466,16 +1474,6 @@ class PlexBrowserView: NSView {
             rightWidth = trailingInset + textWidth("F5")
             if artLens.hasItems {
                 rightWidth += 12 + viewModeButtonsWidth(textScale: textScale, chromeScale: 1)
-            }
-            switch currentSource {
-            case .radio, .youtube:
-                if let countText = serverBarCountText() {
-                    rightWidth += 24 + textWidth(countText)
-                }
-            default:
-                if let countText = serverBarCountText() {
-                    rightWidth += 24 + textWidth(countText)
-                }
             }
         }
 
@@ -2643,7 +2641,7 @@ class PlexBrowserView: NSView {
         switch currentSource {
         case .local:
             // LOCAL FILES mode
-            let sourceText = "Local Files"
+            let sourceText = withItemCount("Local Files")
             drawScaledWhiteSkinText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
             let sourceTextWidth = CGFloat(sourceText.count) * scaledCharWidth
             sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
@@ -2664,27 +2662,10 @@ class PlexBrowserView: NSView {
             drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
             refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                        width: barRect.maxX - refreshX, height: barRect.height)
-            let accessoryX = drawViewModeButtons(
+            _ = drawViewModeButtons(
                 before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
                 context: context
             )
-            
-            // Item count (only in list mode)
-            let totalCount: Int
-            if browseMode == .artists {
-                totalCount = localArtistTotal > 0 ? localArtistTotal : displayItems.count
-            } else if browseMode == .albums {
-                totalCount = localAlbumTotal > 0 ? localAlbumTotal : displayItems.count
-            } else {
-                totalCount = displayItems.count
-            }
-            let countNumber = "\(totalCount)"
-            let countLabel = " items"
-            let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-            let countX = accessoryX - countWidth - 24 * chromeScale
-            drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
-            let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-            drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
 
             // Scan animation: small spinner at center of bar while library is scanning
             if isLibraryScanning {
@@ -2718,10 +2699,8 @@ class PlexBrowserView: NSView {
             if hasConfiguredServer {
                 // Max widths for server and library names (in characters)
                 let maxServerChars = 12
-                let maxLibraryChars = 10
                 let maxServerWidth = CGFloat(maxServerChars) * scaledCharWidth
-                let maxLibraryWidth = CGFloat(maxLibraryChars) * scaledCharWidth
-                
+
                 // Server name right after "Source:" - with clipping to prevent artifacts
                 let serverName = configuredServer?.name ?? "Select Server"
                 let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
@@ -2739,14 +2718,30 @@ class PlexBrowserView: NSView {
                 }
                 context.restoreGState()
                 
+                // Right side: F5 refresh label
+                let refreshText = "F5"
+                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
+                drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
+                refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
+                                           width: barRect.maxX - refreshX, height: barRect.height)
+                let accessoryX = drawViewModeButtons(
+                    before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
+                    context: context
+                )
+
                 // Library label and name after server name
                 let libLabel = "Lib:"
                 let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * chromeScale
                 drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
                 
                 let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4 * chromeScale
-                let libraryText = manager.currentLibrary?.title ?? "Select"
+                let libraryText = withItemCount(manager.currentLibrary?.title ?? "Select")
                 let libraryTextWidth = CGFloat(libraryText.count) * scaledCharWidth
+                // The field grows into the free space before the right cluster; it scrolls when even that is short.
+                let maxLibraryWidth = max(10 * scaledCharWidth, accessoryX - 24 * chromeScale - libraryX)
+                libraryNameMaxWidth = maxLibraryWidth
+                libraryNameTextWidth = libraryTextWidth
+                if libraryTextWidth > maxLibraryWidth { startServerNameScroll() }
                 sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
                                           width: libraryLabelX - barRect.minX,
                                           height: barRect.height)
@@ -2767,42 +2762,6 @@ class PlexBrowserView: NSView {
                                      renderer: renderer, in: context)
                 }
                 context.restoreGState()
-                
-                // Right side: F5 refresh label
-                let refreshText = "F5"
-                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
-                drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
-                refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
-                                           width: barRect.maxX - refreshX, height: barRect.height)
-                let accessoryX = drawViewModeButtons(
-                    before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
-                    context: context
-                )
-
-                let countSpacing: CGFloat = 24 * chromeScale
-                
-                // Show top-level item count (artists/albums/tracks), not expanded tree count
-                let itemCount: Int
-                if manager.currentLibrary?.type == "artist" {
-                    itemCount = cachedArtists.count
-                } else if manager.currentLibrary?.type == "album" {
-                    itemCount = cachedAlbums.count
-                } else if manager.currentLibrary?.type == "track" {
-                    itemCount = cachedTracks.count
-                } else if manager.currentLibrary?.type == "movie" {
-                    itemCount = cachedMovies.count
-                } else if manager.currentLibrary?.type == "show" {
-                    itemCount = cachedShows.count
-                } else {
-                    itemCount = displayItems.count
-                }
-                let countNumber = "\(itemCount)"
-                let countLabel = " ITEMS"
-                let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-                let countX = accessoryX - countWidth - countSpacing
-                drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
-                let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-                drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
             } else {
                 // Plex not linked and no servers - show link message
                 let linkText = "Click to link your Plex account"
@@ -2821,10 +2780,8 @@ class PlexBrowserView: NSView {
             if configuredServer != nil {
                 // Max width for server name (in characters)
                 let maxServerChars = 20
-                let maxLibraryChars = 10
                 let maxServerWidth = CGFloat(maxServerChars) * scaledCharWidth
-                let maxLibraryWidth = CGFloat(maxLibraryChars) * scaledCharWidth
-                
+
                 // Server name right after "Source:"
                 let serverName = configuredServer?.name ?? "Select Server"
                 let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
@@ -2838,14 +2795,30 @@ class PlexBrowserView: NSView {
                                      renderer: renderer, in: context)
                 }
 
+                // Right side: F5 refresh label
+                let refreshText = "F5"
+                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
+                drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
+                refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
+                                           width: barRect.maxX - refreshX, height: barRect.height)
+                let accessoryX = drawViewModeButtons(
+                    before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
+                    context: context
+                )
+
                 // Library label and selected folder after server name
                 let libLabel = "Lib:"
                 let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * chromeScale
                 drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
 
                 let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4 * chromeScale
-                let folderText = manager.currentMusicFolder?.name ?? "All"
+                let folderText = withItemCount(manager.currentMusicFolder?.name ?? "All")
                 let folderTextWidth = CGFloat(folderText.count) * scaledCharWidth
+                // The field grows into the free space before the right cluster; it scrolls when even that is short.
+                let maxLibraryWidth = max(10 * scaledCharWidth, accessoryX - 24 * chromeScale - libraryX)
+                libraryNameMaxWidth = maxLibraryWidth
+                libraryNameTextWidth = folderTextWidth
+                if folderTextWidth > maxLibraryWidth { startServerNameScroll() }
                 sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
                                           width: libraryLabelX - barRect.minX,
                                           height: barRect.height)
@@ -2865,26 +2838,6 @@ class PlexBrowserView: NSView {
                                       renderer: renderer, in: context)
                 }
                 context.restoreGState()
-                
-                // Right side: F5 refresh label
-                let refreshText = "F5"
-                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
-                drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
-                refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
-                                           width: barRect.maxX - refreshX, height: barRect.height)
-                let accessoryX = drawViewModeButtons(
-                    before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
-                    context: context
-                )
-                
-                // Item count (only in list mode)
-                let countNumber = "\(displayItems.count)"
-                let countLabel = " items"
-                let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-                let countX = accessoryX - countWidth - 24 * chromeScale
-                drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
-                let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-                drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
             } else {
                 // No Subsonic server configured - show add server message
                 let linkText = "Click to add a Subsonic server"
@@ -2900,9 +2853,7 @@ class PlexBrowserView: NSView {
             
             if configuredServer != nil {
                 let maxServerChars = 20
-                let maxLibraryChars = 10
                 let maxServerWidth = CGFloat(maxServerChars) * scaledCharWidth
-                let maxLibraryWidth = CGFloat(maxLibraryChars) * scaledCharWidth
                 let serverName = configuredServer?.name ?? "Select Server"
                 let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
                 
@@ -2915,14 +2866,29 @@ class PlexBrowserView: NSView {
                                      renderer: renderer, in: context)
                 }
 
+                let refreshText = "F5"
+                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
+                drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
+                refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
+                                           width: barRect.maxX - refreshX, height: barRect.height)
+                let accessoryX = drawViewModeButtons(
+                    before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
+                    context: context
+                )
+
                 // Library label and selected library after server name
                 let libLabel = "Lib:"
                 let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * chromeScale
                 drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
 
                 let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4 * chromeScale
-                let libraryText = jellyfinCurrentLibraryName
+                let libraryText = withItemCount(jellyfinCurrentLibraryName)
                 let libraryTextWidth = CGFloat(libraryText.count) * scaledCharWidth
+                // The field grows into the free space before the right cluster; it scrolls when even that is short.
+                let maxLibraryWidth = max(10 * scaledCharWidth, accessoryX - 24 * chromeScale - libraryX)
+                libraryNameMaxWidth = maxLibraryWidth
+                libraryNameTextWidth = libraryTextWidth
+                if libraryTextWidth > maxLibraryWidth { startServerNameScroll() }
                 sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
                                           width: libraryLabelX - barRect.minX,
                                           height: barRect.height)
@@ -2942,24 +2908,6 @@ class PlexBrowserView: NSView {
                                       renderer: renderer, in: context)
                 }
                 context.restoreGState()
-                
-                let refreshText = "F5"
-                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
-                drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
-                refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
-                                           width: barRect.maxX - refreshX, height: barRect.height)
-                let accessoryX = drawViewModeButtons(
-                    before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
-                    context: context
-                )
-
-                let countNumber = "\(displayItems.count)"
-                let countLabel = " items"
-                let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-                let countX = accessoryX - countWidth - 24 * chromeScale
-                drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
-                let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-                drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
             } else {
                 let linkText = "Click to add a Jellyfin server"
                 let linkWidth = CGFloat(linkText.count) * scaledCharWidth
@@ -2975,9 +2923,7 @@ class PlexBrowserView: NSView {
 
             if configuredServer != nil {
                 let maxServerChars = 20
-                let maxLibraryChars = 10
                 let maxServerWidth = CGFloat(maxServerChars) * scaledCharWidth
-                let maxLibraryWidth = CGFloat(maxLibraryChars) * scaledCharWidth
                 let serverName = configuredServer?.name ?? "Select Server"
                 let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
 
@@ -2990,14 +2936,29 @@ class PlexBrowserView: NSView {
                                      renderer: renderer, in: context)
                 }
 
+                let refreshText = "F5"
+                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
+                drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
+                refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
+                                           width: barRect.maxX - refreshX, height: barRect.height)
+                let accessoryX = drawViewModeButtons(
+                    before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
+                    context: context
+                )
+
                 // Library label and selected library after server name
                 let libLabel = "Lib:"
                 let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * chromeScale
                 drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
 
                 let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4 * chromeScale
-                let libraryText = embyCurrentLibraryName
+                let libraryText = withItemCount(embyCurrentLibraryName)
                 let libraryTextWidth = CGFloat(libraryText.count) * scaledCharWidth
+                // The field grows into the free space before the right cluster; it scrolls when even that is short.
+                let maxLibraryWidth = max(10 * scaledCharWidth, accessoryX - 24 * chromeScale - libraryX)
+                libraryNameMaxWidth = maxLibraryWidth
+                libraryNameTextWidth = libraryTextWidth
+                if libraryTextWidth > maxLibraryWidth { startServerNameScroll() }
                 sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
                                           width: libraryLabelX - barRect.minX,
                                           height: barRect.height)
@@ -3017,24 +2978,6 @@ class PlexBrowserView: NSView {
                                       renderer: renderer, in: context)
                 }
                 context.restoreGState()
-
-                let refreshText = "F5"
-                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
-                drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
-                refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
-                                           width: barRect.maxX - refreshX, height: barRect.height)
-                let accessoryX = drawViewModeButtons(
-                    before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
-                    context: context
-                )
-
-                let countNumber = "\(displayItems.count)"
-                let countLabel = " items"
-                let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-                let countX = accessoryX - countWidth - 24 * chromeScale
-                drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
-                let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-                drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
             } else {
                 let linkText = "Click to add an Emby server"
                 let linkWidth = CGFloat(linkText.count) * scaledCharWidth
@@ -3045,7 +2988,7 @@ class PlexBrowserView: NSView {
 
         case .radio:
             // INTERNET RADIO mode
-            let sourceText = "Internet Radio"
+            let sourceText = withItemCount("Internet Radio")
             drawScaledWhiteSkinText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
             let sourceTextWidth = CGFloat(sourceText.count) * scaledCharWidth
             sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
@@ -3066,23 +3009,14 @@ class PlexBrowserView: NSView {
             drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
             refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                        width: barRect.maxX - refreshX, height: barRect.height)
-            let accessoryX = drawViewModeButtons(
+            _ = drawViewModeButtons(
                 before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
                 context: context
             )
-            
-            // Item count
-            let countNumber = "\(displayItems.count)"
-            let countLabel = " stations"
-            let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-            let countX = accessoryX - countWidth - 24 * chromeScale
-            drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
-            let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-            drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
 
         case .youtube:
             // YOUTUBE mode (shares the radio tab UI)
-            let sourceText = "YouTube"
+            let sourceText = withItemCount("YouTube")
             drawScaledWhiteSkinText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
             let sourceTextWidth = CGFloat(sourceText.count) * scaledCharWidth
             sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
@@ -3103,19 +3037,10 @@ class PlexBrowserView: NSView {
             drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
             refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                        width: barRect.maxX - refreshX, height: barRect.height)
-            let accessoryX = drawViewModeButtons(
+            _ = drawViewModeButtons(
                 before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
                 context: context
             )
-
-            // Item count
-            let countNumber = "\(displayItems.count)"
-            let countLabel = " items"
-            let countWidth = CGFloat(countNumber.count + countLabel.count) * scaledCharWidth
-            let countX = accessoryX - countWidth - 24 * chromeScale
-            drawScaledWhiteSkinText(countNumber, at: NSPoint(x: countX, y: textY), scale: textScale, renderer: renderer, in: context)
-            let labelX = countX + CGFloat(countNumber.count) * scaledCharWidth
-            drawScaledWhiteSkinText(countLabel, at: NSPoint(x: labelX, y: textY), scale: textScale, renderer: renderer, in: context)
         }
     }
 
@@ -3997,7 +3922,6 @@ class PlexBrowserView: NSView {
 
         let maxPlexServerWidth = CGFloat(12) * scaledCharWidth
         let maxRemoteServerWidth = CGFloat(20) * scaledCharWidth
-        let maxLibraryWidth = CGFloat(10) * scaledCharWidth
 
         let serverName: String
         let libraryName: String
@@ -4071,11 +3995,10 @@ class PlexBrowserView: NSView {
         }
         
         let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
-        let libraryTextWidth = CGFloat(libraryName.count) * scaledCharWidth
         
         // Only scroll if text actually overflows - otherwise skip entirely
         let serverNeedsScroll = serverTextWidth > serverWidth
-        let libraryNeedsScroll = libraryTextWidth > maxLibraryWidth
+        let libraryNeedsScroll = libraryNameTextWidth > libraryNameMaxWidth
         
         // Early exit if nothing needs scrolling
         if !serverNeedsScroll && !libraryNeedsScroll {
@@ -4111,7 +4034,7 @@ class PlexBrowserView: NSView {
         if libraryNeedsScroll {
             let separator = "   "
             let separatorWidth = CGFloat(separator.count) * scaledCharWidth
-            let totalCycleWidth = libraryTextWidth + separatorWidth
+            let totalCycleWidth = libraryNameTextWidth + separatorWidth
 
             libraryNameScrollOffset += 1
             if libraryNameScrollOffset >= totalCycleWidth {

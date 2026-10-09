@@ -1396,7 +1396,12 @@ class ModernLibraryBrowserView: NSView {
         return natural.map { $0 + extra }
     }
 
-    private func serverBarCountText() -> String? {
+    /// A server-bar name with the item count appended: "FLAC_LIB (988 items)".
+    private func withItemCount(_ name: String) -> String {
+        "\(name) (\(serverBarCountText()))"
+    }
+
+    private func serverBarCountText() -> String {
         switch currentSource {
         case .local:
             let count: Int
@@ -1418,7 +1423,7 @@ class ModernLibraryBrowserView: NSView {
             } else {
                 count = displayItems.count
             }
-            return "\(count) ITEMS"
+            return "\(count) items"
         case .radio:
             return "\(displayItems.count) stations"
         case .subsonic, .jellyfin, .emby, .youtube:
@@ -1439,11 +1444,11 @@ class ModernLibraryBrowserView: NSView {
         let leftWidth: CGFloat
         switch currentSource {
         case .local:
-            leftWidth = leadingInset + prefixWidth + textWidth("Local Files") + 28 * m + textWidth("+ADD")
+            leftWidth = leadingInset + prefixWidth + textWidth(withItemCount("Local Files")) + 28 * m + textWidth("+ADD")
         case .radio:
-            leftWidth = leadingInset + prefixWidth + textWidth("Internet Radio") + 28 * m + textWidth("+ADD")
+            leftWidth = leadingInset + prefixWidth + textWidth(withItemCount("Internet Radio")) + 28 * m + textWidth("+ADD")
         case .youtube:
-            leftWidth = leadingInset + prefixWidth + textWidth("YouTube") + 28 * m + textWidth("+ADD")
+            leftWidth = leadingInset + prefixWidth + textWidth(withItemCount("YouTube")) + 28 * m + textWidth("+ADD")
         case .plex(let serverId):
             let configured = PlexManager.shared.servers.contains(where: { $0.id == serverId }) ||
                 PlexManager.shared.isLinked
@@ -1480,12 +1485,9 @@ class ModernLibraryBrowserView: NSView {
             }
         }
 
-        var rightWidth = 8 * m + textWidth("F5")
+        var rightWidth = 8 * m + (Layout.serverBarHeight - 6 * m)
         if artLens.hasItems {
             rightWidth += 12 * m + viewModeButtonsWidth(m: m)
-        }
-        if let countText = serverBarCountText() {
-            rightWidth += 24 * m + textWidth(countText)
         }
 
         let clusteredWidth = leftWidth + minimumGap + rightWidth
@@ -1753,11 +1755,13 @@ class ModernLibraryBrowserView: NSView {
         let prefixWidth = prefix.size(withAttributes: prefixAttrs).width
         let sourceNameStartX = barRect.minX + 4 * hm + prefixWidth
         
-        // Right side: F5 refresh label
-        let refreshText = "F5"
-        let refreshWidth = refreshText.size(withAttributes: prefixAttrs).width
-        let refreshX = barRect.maxX - refreshWidth - 8 * hm
-        drawText(refreshText, at: NSPoint(x: refreshX, y: textY), withAttributes: prefixAttrs, context: context)
+        // Right side: refresh button (F5), boxed like the view-mode buttons
+        let buttonSide = Layout.serverBarHeight - 6 * m
+        let refreshX = barRect.maxX - buttonSide - 8 * hm
+        let refreshBox = NSRect(x: refreshX, y: barRect.minY + 3 * m, width: buttonSide, height: buttonSide)
+        let refreshColor = drawToggleBox(isActive: false, rect: refreshBox, skin: skin, context: context)
+        LibraryViewMode.drawRefreshIcon(in: refreshBox.insetBy(dx: buttonSide * 0.28, dy: buttonSide * 0.28),
+                                        color: skin.applyTextOpacity(to: refreshColor), context: context)
         refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
                                    width: barRect.maxX - refreshX, height: barRect.height)
         
@@ -1766,7 +1770,7 @@ class ModernLibraryBrowserView: NSView {
         // List / Flow / Tiles — shown when the current list has art to show.
         viewModeButtonRects = []
         if artLens.hasItems {
-            let side = Layout.serverBarHeight - 6 * m
+            let side = buttonSide
             let leadingX = refreshX - 12 * hm - viewModeButtonsWidth(m: m)
             var x = leadingX
             for mode in LibraryViewMode.allCases {
@@ -1783,7 +1787,7 @@ class ModernLibraryBrowserView: NSView {
         // Source-specific content
         switch currentSource {
         case .local:
-            let sourceText = "Local Files"
+            let sourceText = withItemCount("Local Files")
             drawText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs, context: context)
             let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
             sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
@@ -1796,20 +1800,6 @@ class ModernLibraryBrowserView: NSView {
             addButtonRect = NSRect(x: addX, y: barRect.minY,
                                    width: max(addText.size(withAttributes: activeAttrs).width, 50 * hm),
                                    height: barRect.height)
-
-            // Item count
-            let totalCount: Int
-            if browseMode == .artists {
-                totalCount = localArtistTotal > 0 ? localArtistTotal : displayItems.count
-            } else if browseMode == .albums {
-                totalCount = localAlbumTotal > 0 ? localAlbumTotal : displayItems.count
-            } else {
-                totalCount = displayItems.count
-            }
-            let countText = "\(totalCount) items"
-            let countWidth = countText.size(withAttributes: dataAttrs).width
-            let countX = visEndX - countWidth - 24 * hm
-            drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
 
             // Scan animation: small spinner at center of bar while library is scanning
             if isLibraryScanning {
@@ -1855,8 +1845,9 @@ class ModernLibraryBrowserView: NSView {
                 
                 let libLabelWidth = libLabel.size(withAttributes: prefixAttrs).width
                 let libraryX = libraryLabelX + libLabelWidth + 4 * hm
-                let libraryText = manager.currentLibrary?.title ?? "Select"
-                let maxLibraryWidth: CGFloat = 80 * hm
+                let libraryText = withItemCount(manager.currentLibrary?.title ?? "Select")
+                // The field grows into the free space before the right cluster; it scrolls when even that is short.
+                let maxLibraryWidth = max(80 * hm, visEndX - 24 * hm - libraryX)
                 sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
                                           width: sourceNameStartX + maxServerWidth - barRect.minX,
                                           height: barRect.height)
@@ -1867,24 +1858,11 @@ class ModernLibraryBrowserView: NSView {
                 // Store widths for scroll logic
                 libraryNameMaxWidth = maxLibraryWidth
                 libraryNameTextWidth = (libraryText as NSString).size(withAttributes: dataAttrs).width
+                if libraryNameTextWidth > maxLibraryWidth { startServerNameScroll() }
 
                 drawScrollingText(libraryText, startX: libraryX, textY: textY,
                                   availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
-                
-                // Item count
-                let itemCount: Int
-                if manager.currentLibrary?.type == "artist" {
-                    itemCount = cachedArtists.count
-                } else if manager.currentLibrary?.type == "movie" {
-                    itemCount = cachedMovies.count
-                } else {
-                    itemCount = displayItems.count
-                }
-                let countText = "\(itemCount) ITEMS"
-                let countWidth = countText.size(withAttributes: dataAttrs).width
-                let countX = visEndX - countWidth - 24 * hm
-                drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
             } else {
                 let linkText = "Click to link your Plex account"
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
@@ -1913,8 +1891,9 @@ class ModernLibraryBrowserView: NSView {
 
                 let libLabelWidth = libLabel.size(withAttributes: prefixAttrs).width
                 let libraryX = libraryLabelX + libLabelWidth + 4 * hm
-                let folderText = SubsonicManager.shared.currentMusicFolder?.name ?? "All"
-                let maxLibraryWidth: CGFloat = 80 * hm
+                let folderText = withItemCount(SubsonicManager.shared.currentMusicFolder?.name ?? "All")
+                // The field grows into the free space before the right cluster; it scrolls when even that is short.
+                let maxLibraryWidth = max(80 * hm, visEndX - 24 * hm - libraryX)
                 sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
                                           width: sourceNameStartX + maxServerWidth - barRect.minX,
                                           height: barRect.height)
@@ -1924,16 +1903,11 @@ class ModernLibraryBrowserView: NSView {
 
                 libraryNameMaxWidth = maxLibraryWidth
                 libraryNameTextWidth = (folderText as NSString).size(withAttributes: dataAttrs).width
+                if libraryNameTextWidth > maxLibraryWidth { startServerNameScroll() }
 
                 drawScrollingText(folderText, startX: libraryX, textY: textY,
                                   availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
-
-                // Item count
-                let countText = "\(displayItems.count) items"
-                let countWidth = countText.size(withAttributes: dataAttrs).width
-                let countX = visEndX - countWidth - 24 * hm
-                drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
             } else {
                 let linkText = "Click to add a Subsonic server"
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
@@ -1962,8 +1936,9 @@ class ModernLibraryBrowserView: NSView {
 
                 let libLabelWidth = libLabel.size(withAttributes: prefixAttrs).width
                 let libraryX = libraryLabelX + libLabelWidth + 4 * hm
-                let libraryText = jellyfinCurrentLibraryName
-                let maxLibraryWidth: CGFloat = 80 * hm
+                let libraryText = withItemCount(jellyfinCurrentLibraryName)
+                // The field grows into the free space before the right cluster; it scrolls when even that is short.
+                let maxLibraryWidth = max(80 * hm, visEndX - 24 * hm - libraryX)
                 sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
                                           width: sourceNameStartX + maxServerWidth - barRect.minX,
                                           height: barRect.height)
@@ -1973,16 +1948,11 @@ class ModernLibraryBrowserView: NSView {
 
                 libraryNameMaxWidth = maxLibraryWidth
                 libraryNameTextWidth = (libraryText as NSString).size(withAttributes: dataAttrs).width
+                if libraryNameTextWidth > maxLibraryWidth { startServerNameScroll() }
 
                 drawScrollingText(libraryText, startX: libraryX, textY: textY,
                                   availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
-
-                // Item count
-                let countText = "\(displayItems.count) items"
-                let countWidth = countText.size(withAttributes: dataAttrs).width
-                let countX = visEndX - countWidth - 24 * hm
-                drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
             } else {
                 let linkText = "Click to add a Jellyfin server"
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
@@ -2011,8 +1981,9 @@ class ModernLibraryBrowserView: NSView {
 
                 let libLabelWidth = libLabel.size(withAttributes: prefixAttrs).width
                 let libraryX = libraryLabelX + libLabelWidth + 4 * hm
-                let libraryText = embyCurrentLibraryName
-                let maxLibraryWidth: CGFloat = 80 * hm
+                let libraryText = withItemCount(embyCurrentLibraryName)
+                // The field grows into the free space before the right cluster; it scrolls when even that is short.
+                let maxLibraryWidth = max(80 * hm, visEndX - 24 * hm - libraryX)
                 sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
                                           width: sourceNameStartX + maxServerWidth - barRect.minX,
                                           height: barRect.height)
@@ -2022,16 +1993,11 @@ class ModernLibraryBrowserView: NSView {
 
                 libraryNameMaxWidth = maxLibraryWidth
                 libraryNameTextWidth = (libraryText as NSString).size(withAttributes: dataAttrs).width
+                if libraryNameTextWidth > maxLibraryWidth { startServerNameScroll() }
 
                 drawScrollingText(libraryText, startX: libraryX, textY: textY,
                                   availableWidth: maxLibraryWidth, scrollOffset: libraryNameScrollOffset,
                                   textHeight: textH, attributes: dataAttrs, in: context)
-
-                // Item count
-                let countText = "\(displayItems.count) items"
-                let countWidth = countText.size(withAttributes: dataAttrs).width
-                let countX = visEndX - countWidth - 24 * hm
-                drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
             } else {
                 let linkText = "Click to add an Emby server"
                 let linkWidth = linkText.size(withAttributes: prefixAttrs).width
@@ -2041,7 +2007,7 @@ class ModernLibraryBrowserView: NSView {
             }
 
         case .radio:
-            let sourceText = "Internet Radio"
+            let sourceText = withItemCount("Internet Radio")
             drawText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs, context: context)
             let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
             sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
@@ -2054,15 +2020,9 @@ class ModernLibraryBrowserView: NSView {
             addButtonRect = NSRect(x: addX, y: barRect.minY,
                                    width: max(addText.size(withAttributes: activeAttrs).width, 50 * hm),
                                    height: barRect.height)
-
-            // Item count
-            let countText = "\(displayItems.count) stations"
-            let countWidth = countText.size(withAttributes: dataAttrs).width
-            let countX = visEndX - countWidth - 24 * hm
-            drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
 
         case .youtube:
-            let sourceText = "YouTube"
+            let sourceText = withItemCount("YouTube")
             drawText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), withAttributes: dataAttrs, context: context)
             let sourceTextWidth = sourceText.size(withAttributes: dataAttrs).width
             sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
@@ -2075,12 +2035,6 @@ class ModernLibraryBrowserView: NSView {
             addButtonRect = NSRect(x: addX, y: barRect.minY,
                                    width: max(addText.size(withAttributes: activeAttrs).width, 50 * hm),
                                    height: barRect.height)
-
-            // Item count
-            let countText = "\(displayItems.count) items"
-            let countWidth = countText.size(withAttributes: dataAttrs).width
-            let countX = visEndX - countWidth - 24 * hm
-            drawText(countText, at: NSPoint(x: countX, y: textY), withAttributes: dataAttrs, context: context)
         }
     }
     

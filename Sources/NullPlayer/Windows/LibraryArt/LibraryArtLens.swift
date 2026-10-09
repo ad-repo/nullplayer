@@ -16,8 +16,6 @@ enum LibraryViewMode: String, CaseIterable {
     /// stays crisp at whole-number scales, and symmetric top to bottom so a flipped context draws
     /// it the same.
     func drawIcon(in rect: CGRect, color: NSColor, context: CGContext) {
-        let unit = min(rect.width, rect.height) / 8
-        let origin = CGPoint(x: rect.midX - 4 * unit, y: rect.midY - 4 * unit)
         let cells: [CGRect]
         switch self {
         case .list:  cells = [CGRect(x: 0, y: 0, width: 8, height: 2), CGRect(x: 0, y: 3, width: 8, height: 2),
@@ -27,6 +25,25 @@ enum LibraryViewMode: String, CaseIterable {
         case .tiles: cells = [CGRect(x: 0, y: 0, width: 3, height: 3), CGRect(x: 5, y: 0, width: 3, height: 3),
                               CGRect(x: 0, y: 5, width: 3, height: 3), CGRect(x: 5, y: 5, width: 3, height: 3)]
         }
+        Self.fill(cells, in: rect, color: color, context: context)
+    }
+
+    /// The modern browser's refresh button icon, a clockwise arrow drawn on the same 8×8 grid.
+    /// Not symmetric, so it expects a y-up context.
+    static func drawRefreshIcon(in rect: CGRect, color: NSColor, context: CGContext) {
+        let cells = [CGRect(x: 2, y: 7, width: 4, height: 1), CGRect(x: 1, y: 6, width: 1, height: 1),
+                     CGRect(x: 0, y: 2, width: 1, height: 4), CGRect(x: 1, y: 1, width: 1, height: 1),
+                     CGRect(x: 2, y: 0, width: 4, height: 1), CGRect(x: 6, y: 1, width: 1, height: 1),
+                     CGRect(x: 7, y: 2, width: 1, height: 2),
+                     // Arrowhead in the top-right gap of the ring.
+                     CGRect(x: 7, y: 5, width: 1, height: 3), CGRect(x: 6, y: 5, width: 1, height: 2),
+                     CGRect(x: 5, y: 5, width: 1, height: 1)]
+        fill(cells, in: rect, color: color, context: context)
+    }
+
+    private static func fill(_ cells: [CGRect], in rect: CGRect, color: NSColor, context: CGContext) {
+        let unit = min(rect.width, rect.height) / 8
+        let origin = CGPoint(x: rect.midX - 4 * unit, y: rect.midY - 4 * unit)
         context.saveGState()
         context.setFillColor(color.cgColor)
         for cell in cells {

@@ -882,7 +882,8 @@ Implementation rules:
 
 ## List, Flow and Tiles (Library browser, all skin families)
 
-Three icon buttons in the source bar, before **F5**, switch how the browser shows its rows:
+Three icon buttons in the source bar, before refresh (**F5** in Classic, a boxed refresh icon
+drawn by `LibraryViewMode.drawRefreshIcon` in the modern browser), switch how the browser shows its rows:
 **List**, **Flow** (a 3D Cover Flow carousel) and **Tiles** (a grid of art tiles). Flow and Tiles
 are visual lenses over the browser's current `displayItems`, not separate queries. The mode is
 `LibraryViewMode`, persisted under the `LibraryBrowserViewMode` default, shared by both browsers and
@@ -891,6 +892,12 @@ root (`artLens.hasItems`); over a list without any (Radio, playlists) the browse
 whatever the mode, and the art view hides.
 
 The shared art views live in `Windows/LibraryArt/`, beside neither browser: both use them equally.
+
+The source bar has no separate item-count field: `withItemCount(_:)` appends `serverBarCountText()`
+to the library name (server sources) or the source name (Local, Radio, YouTube) — "Music (1110
+items)". A server's library field grows from its minimum width (80 pt modern, 10 chars classic) to
+the free space before the right-side buttons, and scrolls when even that is short; the draw writes
+`libraryNameMaxWidth`/`libraryNameTextWidth` for the scroll tick and starts the tick on overflow.
 
 **`LibraryArtLens`** (`Windows/LibraryArt/LibraryArtLens.swift`) owns everything the two
 browsers share: the mode, the art view standing in for the list, and the tree navigation. Each
