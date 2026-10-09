@@ -1,244 +1,141 @@
 # Changelog
 
-## Unreleased
+## 0.32.0
 
-- **Audion faces** — NullPlayer now wears the faces of Panic's Audion, the classic Mac MP3 player.
-  Choose **Skins › Audion Faces › Get More Faces...** to download Panic's archive, then **Load
-  Face...** to install a face folder or the whole `.zip`; the installed faces are listed in the same
-  menu, A–Z. Faces are drawn by a port of Panic's own viewer, so they look the way Audion drew them,
-  at any UI Size. Every button works, including the ones Panic's viewer left off: the menu button
-  shows the playlist, the mode button the Library Browser, eject opens files, info shows the track or
-  the face's credits, and the volume button and the clock open sliders. The playlist, EQ, Library
-  Browser and visualizers take their colours from the face and dock to it. See
-  `docs/audion-face/user-guide.md`.
-- **Art is its own window** — the Library Browser's ART view is now an **Art** window (Windows →
-  Art, or **AR** on the Original player) that follows the playing track and docks under the player
-  like PeppyMeter, opening at the player's width and shaped to the cover. Click it to rate the
-  track, double-click to step through a file's embedded pictures, press **V** for the 30
-  audio-reactive effects (formerly VIS) and **F** for fullscreen; right-click for effects,
-  intensity and rating. It is remembered across launches, and Winamp Modern skins that frame
-  NullPlayer's windows frame it too. You can browse while it is open: the Library Browser's ART
-  button is gone. Radio station logos now also show as the station's art, including in Control
-  Center.
-- **Tile view in the Library Browser** — three icons in the source bar switch the Library Browser
-  between **List**, **Flow** (Cover Flow, formerly the FLOW button) and **Tiles**, a grid of art
-  tiles with each name underneath. Click a tile to select it; double-click or Return plays a track,
-  movie or episode, or opens an artist, folder, show or season, with a **‹ Back** tile to return.
-  Arrow keys move the selection, and right-click gives the same menu as the row in the list.
-  Switching between Flow and Tiles keeps your place, and the choice is remembered across tabs and
-  launches. Every source, every skin.
-- **Album screen** — opening an album from Flow or Tiles shows its cover, artist, year, genre,
-  label, release date and length, its review (three lines, **More** for the rest), a **▶ Play**
-  button and the track list, over the artist's picture. Double-click a track to play it, or
-  right-click it for Play Next, Add to Queue, Rate and the rest. Reviews come from Plex, Jellyfin
-  and Emby.
-- **Find YouTube channels by name** — the YouTube source's **Search** tab now searches YouTube for
-  channels instead of listing internet radio stations. Type a name and press Enter: each result
-  shows its @handle and subscriber count, expands to preview its uploads, and subscribes on
-  double-click (or **Subscribe** in its right-click menu). Channels you already follow are marked
-  ✓. Pasting a URL into **+ → Add Channel…** still works.
-- **YouTube thumbnails and channel avatars** — YouTube video lists have a new **Art** column with
-  each video's thumbnail, channel rows show the channel's avatar, and selecting a video or channel
-  shows its art behind the list. New audio and video downloads embed the thumbnail cropped square,
-  so it reads as album art in the player; video downloads had no cover art before.
-- **Round thumbnails on every Library Browser row** — artists, albums, tracks, movies, shows,
-  episodes, radio stations and YouTube videos and channels now show their art as a small circle
-  before the title, from every source, in every skin. Hover the circle to see the art large in its
-  real shape. Thumbnails for the rows just off screen load ahead of a scroll, and all of them are
-  kept on disk, so they show straight away after a relaunch.
-- **Build scripts work with Swift 6.4** — Swift 6.4 switched SwiftPM to a new build system that
-  puts the app somewhere else, so `kill_build_run.sh`, `build_dmg.sh` and `build_mas.sh` launched
-  or packaged an old build without saying so. The scripts now use SwiftPM's native build system
-  when the toolchain offers it, and ask SwiftPM where the built app is instead of assuming.
-- **Library browser sorting simplified underneath** — every Library Browser (classic, modern and
-  the one inside Winamp Modern skins) now reads each tab's sort from one shared, saved copy instead
-  of keeping its own. Sorting behaves as before.
-- **Plex library loading uses one pager** — Plex artists in the Library Browser, and movies and TV
-  on the command line, now page through Plex the same way albums, movies and TV already did in the
-  Library Browser. No change to what loads.
-- **Choose audio or video for each YouTube video** — a video's right-click menu now has **Audio**
-  and **Video** submenus with the library's usual Play, Play and Replace Queue, Add to Playlist,
-  Play Next and Add to Queue. The chosen form downloads first if it isn't on disk yet, then plays or
-  queues. A video can keep both its audio and its video, and **Show in Finder**, **Remove Audio
-  File** and **Remove Video File** manage them. Double-click and Enter open the same menu instead
-  of downloading straight away. This replaces "Download & Play".
-- **More YouTube download formats, up to 4K** — **Libraries → YouTube → Format** is now two
-  settings. **Audio Format**: FLAC, ALAC, MP3 at 320/256/192/128 kbps, AAC at 256/192/128 kbps, or
-  YouTube's original AAC or Opus stream with no re-encode. **Video Quality**: 360p, 480p, 720p,
-  1080p, 1440p, 2160p (4K) or Best Available; above 1080p videos come as VP9/AV1. Your previous
-  choice carries over (MP3 High becomes MP3 320, MP3 Low becomes MP3 128).
-- **Videos no longer show cropped or in a corner** — on Retina screens a video could fill only the
-  bottom-left quarter of the video window, or show just the bottom-left corner of the picture (most
-  visible with 1440p and 4K files). The picture now fits the window.
-- **Local search finds your YouTube channels and downloads** — the Local source's **Search** tab
-  now ends with a **YouTube** section: subscribed channels whose name matches, and downloaded videos
-  whose title matches, with no YouTube-specific page and nothing sent to YouTube. A download that
-  already shows under Tracks (because the download folder is also a watch folder) isn't listed
-  twice. Double-clicking a YouTube video, here or on the Channels tab, now plays it when exactly one
-  of its audio or video is downloaded; with both, or neither, it opens the Audio / Video menu as
-  before.
-- **Local search lists each YouTube video once** — in the Local search's YouTube section, a
-  download that already shows under its expanded channel is no longer listed again below it, and a
-  video's title no longer changes between searches when its audio and video were saved under
-  different titles.
-- **Original skin glow works when built with Swift 6.4's default build system** — built that way,
-  Original skins drew without their glow, because the effect looked for its shader in a fixed
-  place and the new build system puts it somewhere else. Every shader, the glow and the
-  visualizers alike, is now found and loaded the same way. The released app was not affected.
-- **One play menu for every Library Browser row** — right-clicking a track, album, artist,
-  playlist, playlist entry or local folder now offers the same four items on every source:
-  **Play**, **Play and Replace Queue**, **Play Next** and **Add to Queue**. Many rows had
-  only some of them before (local folders, local and server playlists, and Subsonic, Jellyfin and
-  Emby rows in the classic browser). **Add to Playlist** is gone, including from YouTube's Audio and
-  Video submenus: **Add to Queue** does the same and starts playback when the queue is empty.
-  **Shift+Enter** and **Option+Enter** now match the menu's Play Next and Add to Queue, so they too
-  start an empty queue. An artist plays album by album, oldest first, however you start it, and a
-  newer Play wins over a slow server fetch still loading. In the classic browser, **Play Movie** and
-  **Play Episode** on local videos did nothing; they now play.
-- **Your EQ and playlist survive quitting, a crash or a dead battery** — **Remember State on Quit**
-  is now on by default, so the EQ, playlist and window layout come back on the next launch instead
-  of resetting to flat and empty. The session is also saved every few seconds and before the Mac
-  sleeps, so it survives the app being killed or the laptop running out of power, not just a normal
-  quit. Turning Remember State off in the menu still turns all of this off.
-- **Classic and Original skins each keep their own EQ** — Original and Metal skins use a 21-band EQ
-  and the others use 10 bands. Each now remembers its own curve across relaunches, so switching
-  between them no longer softens the EQ a little more each time.
-- **A video after a song opens in its window with Sweet Fades or Gapless on** — with either on, a
-  video that followed a song in the playlist played as audio only, with no video window. It now
-  opens in the video player like any other video. Double-clicking a video while music plays also no
-  longer starts the next song in the background.
-- **A film in a Windows Media Player skin no longer restarts when you press Return** — a Plex or
-  local film started from the Library Browser into a `.wmz` skin's video area left the keyboard on
-  the browser, so pressing Return replayed the selected film from the beginning and lost your
-  place, with nothing on screen to show why. Starting a film now moves the keyboard to the skin
-  window showing it, as other skins already did.
-- **YouTube rows show which forms you downloaded** — a downloaded video is marked ♫ for its audio,
-  ▶ for its video, or both, instead of a single ⬇ that didn't say which. Downloads found by the
-  Local source's search carry the same marks; before, they had none. Sorting by Title, the A–Z
-  index and typing a name to jump to it all ignore the marks, so in Original skins downloaded
-  videos no longer sort ahead of the rest, and typing a downloaded video's name now finds it.
-- **YouTube channels open instantly** — a channel's upload list is kept, so expanding it again
-  shows it at once instead of asking YouTube every time, also after a relaunch, after switching
-  skins, and in either library browser. The list is fetched again when it is over an hour old (the
-  old one stays on screen meanwhile), when you pick a larger **Videos per Channel**, or on
-  **Refresh**. A smaller **Videos per Channel** now applies without fetching anything.
-- **The Library Browser scrolls all the way to the last row** — while a column header showed, the
-  last row stayed hidden below the list (in Original skins, also behind the offline-volume
-  banner), whether you scrolled, jumped with the A–Z index, or moved the selection with the arrow
-  keys. In Original skins, clicking the offline-volume banner no longer selects the row hidden
-  behind it.
-- **New app icon** by Allan Nyholm Nielsen
-  ([#488](https://github.com/ad-repo/nullplayer/issues/488)).
-- **Two new Original skins from the new icon** — **NullPlayer-Orange** wears the icon itself: an
-  orange-to-yellow body, white controls and a lemon glow. It is now the default Original skin
-  whenever no Original skin has been picked yet; a skin you already have selected stays selected.
-  **October** puts the same orange, gold and lemon on a dark warm-brown body.
-- **Album art ratings stick** — a rating chosen in the star panel is no longer lost if you press
-  Esc, close the window or the next track starts within half a second of choosing it, and **Rate**
-  in the right-click menu saves the same way. The stars no longer appear for a file that is not in
-  your library, where a rating had nowhere to be saved; dragging its cover moves the window
-  instead. With **Hide Title Bars** on, and in Windows Media Player skins, the Art window now opens
-  exactly the size of the cover, without a black band.
-- **Posters in Tiles** — movies, TV shows and seasons now show as tall poster tiles in the Library
-  Browser's Tiles view instead of square ones, so their artwork is no longer cropped.
-- **A–Z in Flow and Tiles** — the alphabet index on the right of the Library Browser now stays beside
-  Flow and Tiles. Click a letter to jump to the first item starting with it.
-- **Keyboard on the album screen** — opening an album from Flow or Tiles with Return, or leaving it
-  with Esc, no longer needs a click before the arrow keys, Return and Esc work again.
-- **Broken Plex smart playlists say why** — a Plex smart playlist built over a library that has
-  since been deleted can't be loaded by the server itself. Playing one now says the library no
-  longer exists and to recreate the playlist in Plex, instead of *Server error: 404*.
-- **The playlist keeps going after a video** — when a video in the playlist finished, the next
-  track was loaded but never played, except in Windows Media Player skins. Every skin now moves on
-  to the next track and, with Repeat off, stops at the end of the playlist instead of starting over.
-- **Picking a song while a video plays starts the song** — double-clicking an audio track while a
-  video was playing closed the video and then played nothing. The song now plays.
-- **Queue movies and TV like music** — right-clicking a movie, episode, season or show in the
-  Library Browser now offers **Play**, **Play and Replace Queue**, **Play Next** and **Add to
-  Queue**, as music rows do, for Plex, Jellyfin, Emby and local video; Shift+Enter and Option+Enter
-  work on them too. A season or show queues all of its episodes in order. Double-clicking a movie
-  or episode still plays it straight away. Plex's separate **Add to Playlist** items are gone: use
-  **Add to Queue**.
-- **A playlist video starts once** — double-clicking a video in the playlist, or replacing the
-  queue with one, opened it twice, and Plex was told it had stopped at 0:00 in between. It now
-  starts once.
-- **Emby sees what you are playing** — Emby refused every "now playing" and progress report for
-  music and video, so the server never showed NullPlayer playing anything or where it was up to.
-  It now accepts them.
-- **Episode and movie titles read once** — a queued or playlist episode showed the show's name
-  twice ("Adults - Adults - S01E02 - Spitroast"), and a queued Plex movie was prefixed with its
-  studio ("Paramount Pictures - Airplane!"). They now read "Adults - S01E02 - Spitroast" and
-  "Airplane!", as when you double-click them.
-- **A local song after a stream reads as playing** — starting a local file while a radio station
-  or server track was streaming left the player stopped, its clock at 0:00, while the song played.
-  It now shows the song playing. A playlist film started over a stream no longer leaves the player
-  reading stopped either.
-- **The video keys work in the video window** — in Classic, Original and Metal the video window
-  never took keyboard focus, so Space, Left/Right, F and Esc went to the Library Browser that
-  started the film. The window now takes focus when a film starts and when you click it.
-- **The video keys work on a film inside a Windows Media Player or Winamp Modern skin** — Space,
-  Left/Right, F and Esc did nothing to a film playing in the skin's own video box. They now act on
-  it, after any key the skin itself handles. Esc no longer stops a film in a Windows Media Player
-  skin, and a film started from a Winamp Modern skin's embedded Library Browser takes the keys
-  from it, so Return no longer replays the row.
-- **Library Browser columns line up with their headings** — the column headings follow what you
-  expand: album headings once an artist is open, track headings once an album is, and back when
-  you close them. Every row shows its values under the matching heading, so an artist's genre no
-  longer lands under "Year" and an expanded album's tracks show their length under Time. The
-  right-click column menu offers only the columns on screen, and a YouTube channel's menu drops
-  its greyed-out checkboxes, keeping Reset. Emby and Jellyfin artists now show
-  their real album count (it read 0) and their genre, and Emby and Jellyfin albums their genre.
-- **Playlist films carry the video glyph** — a video in the playlist was prefixed with "[V]". It
-  now shows the same ▶ the Library Browser's YouTube rows use, in the row's own colour, in
-  Classic, Original and Metal.
-- **Double-clicking a film plays it through the playlist** — a movie or episode row, from any
-  server or the local library, now plays like a music row: it joins the playlist after the
-  current track, and the playlist carries on when it ends. Cast to a TV, it still shows the show
-  name and artwork. About Playing on a Plex film now also lists its IMDB and TMDB ids. An Emby or
-  Jellyfin film no longer opens a second, audio "now playing" session on the server, and a Plex
-  song cast to a TV or DLNA device now sends its artwork.
-- **The CLI casts a radio station** — `--source radio --station … --cast …` played the station
-  on the Mac and never cast; it now plays on the named device. Quitting a CLI cast with `q`,
-  Ctrl-C or a kill now stops the speaker or TV instead of leaving it playing.
-- **A film that can't be opened is skipped** — a missing or unreadable film left a black video
-  window at 0:00 and a paused player, with no message. The window now closes, the marquee says
-  why, and the playlist moves on to the next row, as it does for a bad audio file; a film whose
-  folder is gone stops playback instead.
-- **Library Browser item count sits beside the library name** — the source bar shows the count
-  after the library ("Lib: Music (1110 items)") or source ("Local Files (988 items)") instead of
-  in a field of its own, so a narrow window has room for the name. Plex reads "items" like the
-  rest. In the Original and Metal browsers, **F5** is now a refresh button styled like the
-  List / Flow / Tiles icons; F5 still refreshes.
-- **A playlist film starts its clock at 0:00** — a film played after a song or a radio station
-  carried that track's elapsed time as its own position (macOS Now Playing showed it); it now
-  starts from zero.
-- **Video files can be added from the playlist's menus** — in Winamp Modern skins, **Add Files**,
-  **Add Directory** and **Load Playlist** offered video files and then dropped them as an
-  "unsupported format". A film added this way now joins the playlist and plays in the video
-  window, as a dropped one already did.
-- **A server or radio stream no longer plays over the previous song during or after Sweet Fades**
-  — once a local song had crossfaded into the next, starting a Plex, Jellyfin, Emby, Subsonic or
-  radio stream left that local song playing underneath it. A stream started with Play Now while
-  two streams were crossfading was replaced by the incoming song when the fade finished. Both now
-  play the stream you picked.
-- **The selected playlist row is readable in light skins** — in Winamp Modern and Windows Media
-  Player skins with a light playlist background, the selected row (the playing track, by default)
-  was drawn in white on white. It now takes the skin's own text colour there; dark skins keep white.
-- **Library Browser F5 lines up with the window edge in Audion, WMP and Winamp Modern** — in the
-  titleless gloss frame, F5 sat about 50pt in from the right edge to stay clear of the corner close
-  area. It now sits where it does in every other mode; F5 and the view-mode buttons beside it take
-  their own clicks, and the rest of the corner still closes the window.
-- **A skin hears its keys again after a film leaves fullscreen** — in a Windows Media Player skin
-  or a Winamp Modern video tab, pressing F on the film and then Esc left the keyboard with the
-  film, so the skin's own shortcuts did nothing until you clicked it. The skin now gets the
-  keyboard back.
-- **Skipping a paused film adds up** — pressing ← or → twice while a film was paused moved it
-  only 10 seconds, since the second press started from where the film was before the first.
-  Each press now moves another 10 seconds.
-- **Switching films or tracks tells Plex the right length** — starting one Plex film while another
-  was playing reported the first film's stop with the second film's duration, and a Plex track's
-  stop went out with no duration at all, or the next track's. Each stop now carries the length of
-  what it is for, and the Plex, Jellyfin and Emby logs name the right film.
+### New features
+
+**Audion faces**
+- Support for Panic Audion faces. **Skins › Audion Faces › Get More Faces...** downloads Panic's
+  archive; **Load Face...** installs a face folder or `.zip`. Rendered by a port of Panic's
+  FaceKit viewer, at any UI Size.
+- All face buttons are wired, including ones Panic's viewer left inert: menu → playlist, mode →
+  Library Browser, eject → open files, info → track/face credits, volume and clock → sliders.
+- Playlist, EQ, Library Browser and visualizer windows take the face's colours and dock to it.
+  See `docs/audion-face/user-guide.md`.
+
+**Art window**
+- The Library Browser's ART view is now a standalone **Art** window (Windows → Art, or **AR** on
+  Original). Follows the playing track, docks under the player, sizes to the cover.
+- Click to rate, double-click to cycle embedded pictures, **V** for the 30 audio-reactive effects
+  (formerly VIS), **F** for fullscreen. Persists across launches; framed by Winamp Modern skins.
+- Radio station logos show as station art, including in Control Center.
+
+**Library Browser**
+- View switcher in the source bar: **List**, **Flow** (Cover Flow) and **Tiles**. Tiles is an art
+  grid with keyboard navigation, the row context menu, and a **‹ Back** tile. Movies, shows and
+  seasons use poster-shaped tiles. Selection is kept when switching; the choice persists.
+- A–Z index works in Flow and Tiles.
+- Album screen from Flow/Tiles: cover, metadata, review (Plex/Jellyfin/Emby), **▶ Play** and the
+  track list over the artist image.
+- Round art thumbnails on every row for every source and skin, with a hover preview. Thumbnails
+  prefetch ahead of scrolling and are cached on disk.
+- Movies, episodes, seasons and shows get **Play / Play and Replace Queue / Play Next / Add to
+  Queue** (Plex, Jellyfin, Emby, local). Seasons and shows queue episodes in order.
+
+**YouTube**
+- The **Search** tab searches YouTube channels by name (@handle, subscriber count, upload preview,
+  subscribe on double-click). Already-followed channels are marked ✓.
+- **Art** column with video thumbnails, channel avatars, and art behind the list. Downloads embed a
+  square-cropped thumbnail as cover art (video downloads had none before).
+- Per-video **Audio** and **Video** submenus. The chosen form downloads on demand, then plays or
+  queues. Both forms can coexist; **Show in Finder** / **Remove Audio File** / **Remove Video
+  File** manage them. Replaces "Download & Play".
+- Format setting split in two. Audio: FLAC, ALAC, MP3 320/256/192/128, AAC 256/192/128, or the
+  original AAC/Opus stream with no re-encode. Video: 360p through 2160p, or Best Available (VP9/AV1
+  above 1080p). Old settings migrate (MP3 High → 320, MP3 Low → 128).
+- Local search includes a **YouTube** section (matching subscribed channels and downloaded videos),
+  without querying YouTube. Downloads already listed under Tracks or an expanded channel are not
+  duplicated.
+
+**Branding**
+- New app icon by Allan Nyholm Nielsen ([#488](https://github.com/ad-repo/nullplayer/issues/488)).
+
+### Changes
+
+- **Unified play menu.** Tracks, albums, artists, playlists, playlist entries and local folders
+  offer **Play**, **Play and Replace Queue**, **Play Next** and **Add to Queue** on every source.
+  **Add to Playlist** is removed (including from YouTube and Plex video menus); **Add to Queue**
+  starts playback on an empty queue. **Shift+Enter** / **Option+Enter** match Play Next / Add to
+  Queue. Artists play album by album, oldest first; a newer Play supersedes a pending server fetch.
+- **Remember State on Quit** is on by default. Session state is also autosaved every few seconds
+  and before sleep, so it survives crashes, kills and power loss.
+- Classic (10-band) and Original/Metal (21-band) EQs persist separately. Switching between them no
+  longer degrades the curve.
+- Double-clicking a movie or episode inserts it into the playlist after the current track instead
+  of playing standalone. Casts keep show name and artwork. About Playing on Plex films lists IMDB
+  and TMDB ids.
+- Playlist videos use the ▶ glyph instead of "[V]" (Classic, Original, Metal).
+- YouTube rows mark downloaded forms as ♫ (audio) and/or ▶ (video) instead of ⬇. Sorting, A–Z and
+  type-to-find ignore the marks.
+- YouTube channel upload lists are cached (memory and disk) and refetched after an hour, on a larger
+  **Videos per Channel**, or on **Refresh**.
+- Double-clicking a YouTube video plays it when exactly one form is downloaded; otherwise it opens
+  the Audio/Video menu.
+- Item count moved into the source bar label ("Lib: Music (1110 items)"). Original/Metal browsers
+  get an F5 refresh button styled like the view icons.
+- Library Browser column headings follow expansion (artist → album → track columns), values align
+  under the right headings, and the column menu lists only visible columns. Emby/Jellyfin artists
+  show real album counts and genres; Emby/Jellyfin albums show genres.
+- Plex smart playlists over a deleted library report that the library is gone instead of
+  *Server error: 404*.
+
+### Fixes
+
+**Video playback**
+- Videos on Retina screens could render in the bottom-left quarter or show only a cropped corner.
+- With Sweet Fades or Gapless on, a video following a song played audio-only.
+- The playlist stalled after a video ended (except in WMP skins). It now advances, and stops at the
+  end with Repeat off.
+- Double-clicking a song while a video played closed the video and played nothing.
+- Playlist videos opened twice, sending Plex a spurious stop at 0:00.
+- Unopenable films left a black window at 0:00. They are now skipped with a marquee message; a
+  missing folder stops playback.
+- A film after a song or station inherited that track's elapsed time.
+- Pausing a film and pressing ←/→ twice moved only 10 s instead of 20 s.
+- Video keys (Space, ←/→, F, Esc) didn't reach the video window in Classic, Original and Metal,
+  or films embedded in WMP and Winamp Modern skins. Esc no longer stops a film in WMP skins.
+- WMP skins: Return replayed a film from the start because focus stayed on the Library Browser.
+- WMP and Winamp Modern skins lost keyboard focus after leaving film fullscreen.
+- Winamp Modern **Add Files** / **Add Directory** / **Load Playlist** rejected video files.
+
+**Playback and streaming**
+- A server or radio stream started after a Sweet Fades crossfade played over the previous local
+  song; Play Now during a stream crossfade was overridden when the fade finished.
+- Starting a local file over a stream left the player showing stopped at 0:00.
+- Double-clicking a video while music played also started the next song in the background.
+- CLI: `--source radio --station … --cast …` played locally instead of casting. Quitting a CLI cast
+  (`q`, Ctrl-C, kill) now stops the device.
+
+**Media servers**
+- Emby rejected all now-playing and progress reports.
+- Emby/Jellyfin films opened a second, audio now-playing session.
+- Plex stop reports carried the wrong (or no) duration when switching films or tracks.
+- Plex songs cast to TV/DLNA now send artwork.
+- Queued episodes repeated the show name, and queued Plex movies were prefixed with the studio.
+
+**Library Browser**
+- The last row was hidden below the list when a column header was shown (and behind the offline
+  banner in Original skins). Clicking that banner no longer selects the row under it.
+- Return/Esc on the album screen needed an extra click before keys worked.
+- Local search titles for YouTube videos varied when audio and video were saved under different
+  titles.
+- In the classic browser, **Play Movie** / **Play Episode** on local videos did nothing.
+- Library Browser F5 sat 50pt in from the edge in Audion, WMP and Winamp Modern frames.
+
+**Skins**
+- Art window ratings were lost on Esc, close, or a track change within 0.5 s, and offered stars
+  for files outside the library. With **Hide Title Bars** or in WMP skins it opened with a black
+  band.
+- Selected playlist row drew white-on-white in light Winamp Modern and WMP skins.
+
+### Build and internals
+
+- Build scripts support Swift 6.4: they use SwiftPM's native build system when available and query
+  SwiftPM for the product path instead of assuming it.
+- Shader lookup is unified, fixing the missing Original skin glow under Swift 6.4's default build
+  system (release builds were unaffected).
+- All Library Browsers read per-tab sort from one shared, persisted store.
+- Plex artists (browser) and movies/TV (CLI) use the same pager as albums.
 
 ## 0.31.4
 

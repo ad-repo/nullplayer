@@ -1,6 +1,6 @@
 ---
 name: app-control
-description: Launch, configure, drive, screenshot and measure the running NullPlayer app. Use when asked to run / launch / start the app, click or drag a control, reproduce a defect on screen, "open skin X", "show me it working", set up a test scenario, capture a window, check that every window opens, stretches and closes, or hand the user a loaded interactive session. Covers every skin family (Classic, Original, Original-Metal, Winamp Modern .wal, Windows Media Player .wmz) and names the canonical test-data targets.
+description: Launch, configure, drive, screenshot and measure the running NullPlayer app. Use when asked to run / launch / start the app, click or drag a control, reproduce a defect on screen, "open skin X", "show me it working", set up a test scenario, capture a window, check that every window opens, stretches and closes, or hand the user a loaded interactive session. Covers every skin family (Classic, Original, Original-Metal, Winamp Modern .wal, Windows Media Player .wmz, Audion faces) and names the canonical test-data targets.
 ---
 
 # Controlling the app

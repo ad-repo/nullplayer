@@ -27,13 +27,13 @@ Nullplayer is the **first macOS and only open-source engine capable of rendering
 
 NullPlayer is also the **first macOS and only open-source engine capable of rendering Windows Media Player (`.wmz`) skins**:from WMP 7, 7.1, XP (8), 9, 10, 11 and 12. It supports their views, JScript, EQ, SRS and visualizer controls, all driving NullPlayer's playback engine. Skin scripts run sandboxed in an isolated JavaScriptCore context with no ActiveX, registry, shell, DLL, plug-in or HTML access.
 
-NullPlayer is not affiliated with, endorsed by, or connected to Winamp, Nullsoft, Microsoft, Winamp Group SA, Llama Group, Radionomy Group, Jamendo, Hotmix, Bridger, SHOUTcast, Sonos, Plex, WACUP, Emby, Jellyfin, Google or anyone else
+NullPlayer is not affiliated with, endorsed by, or connected to Winamp, Nullsoft, Microsoft, Winamp Group SA, Llama Group, Radionomy Group, Jamendo, Hotmix, Bridger, SHOUTcast, Sonos, Plex, WACUP, Emby, Jellyfin, Google, Panic or anyone else
 
-No Winamp or Windows Media Player skins are distributed with the project
+No Winamp or Windows Media Player skins or Audion faces are distributed with the project
 
 ### General Features
 
-- Library browser for Plex, Jellyfin, Emby, Navidrome/Subsonic, YouTube and local files
+- Library browser for Plex, Jellyfin, Emby, Navidrome/Subsonic, YouTube and local files, with List, Cover Flow and Tiles views
 - 21-band EQ (Original/Original-Metal) and 10-band EQ (Classic, Modern)
 - Gapless + Sweet Fades (configurable crossfade), volume normalization, play speed (0.25×–4×), and Reference Tuning (432/440 Hz/custom)
 - SRS inspired audio enhancements: WOW stereo widening and TruBass low-frequency enhancement plus a Headphones profile for TruBass
@@ -51,7 +51,7 @@ No Winamp or Windows Media Player skins are distributed with the project
 - Local media library with metadata parsing, editing, and management
 - Mixed playlists — combine tracks or video from any sources (local, Plex, Jellyfin, Emby, Subsonic/Navidrome, radio, movies, YouTube) into a single playlist
 - Internet radio (Shoutcast/Icecast) with live metadata and auto-reconnect
-- YouTube as a library source — subscribe to channels, browse uploads, download audio/video ad-free (requires `yt-dlp` + `ffmpeg`)
+- YouTube as a library source — search and subscribe to channels, browse uploads, download audio (FLAC/ALAC/MP3/AAC/Opus) or video up to 4K ad-free (requires `yt-dlp` + `ffmpeg`)
 
 ### Skin System Support
 
@@ -62,7 +62,7 @@ No Winamp or Windows Media Player skins are distributed with the project
 - Windows Media Player mode: the only Mac player that runs WMP 7–12 `.wmz` skins, loaded through a bounded, isolated engine with a sandboxed JScript runtime; import, select, remove, and switch views from **Skins > Media Player**, or fall back to a built-in unskinned player
 - Panic Audion faces: the 2021 face archive, drawn by a port of Panic's own FaceKit viewer and checked against it face by face; every face button drives NullPlayer, and its windows take their colours from the face. Install and select from **Skins > Audion Faces**
 - Live skin switching. Cycle through Classic, Modern, Original, Original-Metal, Windows Media Player skins and Audion faces with no restart or interuption in playback
-- Full development harness for debugging and reverse engineering Winamp 5, ClassicPro, and Windows Media Player skins
+- Full development harness for debugging and reverse engineering Winamp 5, ClassicPro, and Windows Media Player skins, and for checking Audion faces against Panic's FaceKit
 - Native nullplayer windows are themed to the host skin
 
 ### Media Support
@@ -73,7 +73,7 @@ No Winamp or Windows Media Player skins are distributed with the project
 
 ### Unique Nullplayer Windows
 
-- Visualizations -  ProjectM (100 presets included), Geiss and Tripex ports, album art effects, and spectrum analyzer
+- Visualizations -  ProjectM (100 presets included), Geiss and Tripex ports, Art window with album art effects, and spectrum analyzer
 - Audio Analysis window — oscilloscope, stereo peak/RMS meters, scrolling Metal spectrogram
 - Cava spectrum analyzer — bar spectrum with mono/stereo modes, gradient presets, and configurable smoothing
 - PeppyMeter — skinnable analog VU meter with 25 templates and auto-switch mode
@@ -91,7 +91,7 @@ NullPlayer's visualizations span its windows, from the in-skin main-window displ
 - **ProjectM/MilkDrop** — 100+ bundled presets with OpenGL rendering and fullscreen support
 - **Geiss** — port of Ryan Geiss's classic visualization with runtime controls (sensitivity, gamma, beat detection, palettes, auto-switch)
 - **Tripex** — Winamp-era 3D visualization port
-- **Album Art Visualizer** — 30 audio-reactive effects (Core Image) transforming album art in the Library Browser
+- **Album Art Visualizer** — 30 audio-reactive effects (Core Image) transforming album art in the Art window
 - **Winamp Modern (`.wal`) skins** — the skin draws its own in-skin visualizations, including workscope/oscilloscope analyzers and custom engine visuals (e.g. the MMD3 and ClassicPro beat visualizers) 
 - **Windows Media Player (`.wmz`) skins** — a skin's `<EFFECTS>` area renders native Spikes, Bars, Ambience, Cava, or vis_classic visuals inside the rectangle the skin draws for them
 - **Audio Analysis** — Friture-style multi-pane window: Scope, Levels (peak/RMS), Spectrogram, Octave, Pitch, and Delay
@@ -103,14 +103,14 @@ NullPlayer's visualizations span its windows, from the in-skin main-window displ
   NullPlayer is built to be worked on by coding agents as well as people. The repo ships the
   context an agent needs instead of making it rediscover the codebase every session.
 
- - **40 subsystem skills** in [`skills/`](skills/) — ~44,000 lines of maintained technical documentation, one owner per subsystem: audio and EQ, each skin engine, every media-server integration, casting, each visualizer, the local library, CLI, and testing. The clean-room skin engines add per-skin dossiers (what each problem skin taught the engine and what was ruled out), a canonical probe/harness reference, and a `skin-subsystem-blueprint` for adding a new skin family.
- - **Invocable skills, not just docs** — `/wal-skin-report <skin.wal>` produces a full compatibility report for a Winamp 5 skin; `skin-screenshots` drives the live app to capture one main-window frame per skin across all four skin systems and assembles a slideshow GIF.
+ - **Subsystem skills** in [`skills/`](skills/) — maintained technical documentation, one owner per subsystem: audio and EQ, each skin engine, every media-server integration, casting, each visualizer, the local library, CLI, and testing. The clean-room skin engines add per-skin dossiers (what each problem skin taught the engine and what was ruled out), a canonical probe/harness reference, and a `skin-subsystem-blueprint` for adding a new skin family.
+ - **Invocable skills, not just docs** — `/wal-skin-report <skin.wal>` produces a full compatibility report for a Winamp 5 skin; `skin-screenshots` drives the live app to capture one main-window frame per skin across every skin system and assembles a slideshow GIF.
  - **Automation-first surfaces** — a headless `--cli` mode for querying libraries, resolving sources, starting playback, and routing to Sonos / Chromecast / DLNA, plus a `--ui-testing`launch mode and accessibility identifiers so the UI can be driven programmatically.
  - **Scripted workflows** — one-command bootstrap, build-and-run, DMG/MAS packaging, third-partynotice generation and validation, `.wal` and `.wmz` corpus render sweeps and census (with a corpus exclusion list and baseline diffing), and backlog validation, so an agent verifies its work the same way a maintainer does.
  - **Live-defect workflow** — a `live-ui-testing` process skill for bugs that only show on screen: instrument first, drive the running app with AppleScript and synthesized input, and measure what is actually drawn; every subsystem skill routes its *Debugging a live defect* section there.
- - **291 test files** under [`Tests/`](Tests/), with a documented testing philosophy (`skills/testing`) that explicitly forbids weakening tests changing app code just to make them pass.
+ - **Unit tests** under [`Tests/`](Tests/), with a documented testing philosophy (`skills/testing`) that explicitly forbids weakening tests changing app code just to make them pass.
  - **Explicit architectural guardrails** encoded where an agent will read them: skin engines must not cross-import, Winamp Modern (`.wal`) and Windows Media Player (`.wmz`) work must never alter Classic or Original behavior, the sprite-origin and `Data`-slicing gotchas are stated up front.
- - **App control: agents drive the real app** — the [`app-control`](skills/app-control/SKILL.md) skill lets an agent launch, configure, drive, screenshot, and measure the running debug build across every skin family (Classic, Original, Original-Metal, `.wal`, `.wmz`):
+ - **App control: agents drive the real app** — the [`app-control`](skills/app-control/SKILL.md) skill lets an agent launch, configure, drive, screenshot, and measure the running debug build across every skin family (Classic, Original, Original-Metal, `.wal`, `.wmz`, Audion faces):
 - **Token friendly agent routing** A routing table picks the cheapest way to answer a question, from a headless probe to handing the user a preloaded interactive session. Canonical test media and launch recipes come with it.
   
 ## Installation
@@ -269,7 +269,7 @@ open Package.swift
 
 | Library | Purpose |
 |---------|---------|
-| [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) | .wsz / .wmz skin file extraction |
+| [ZIPFoundation](https://github.com/weichsel/ZIPFoundation) | .wsz / .wmz skin and Audion face `.zip` extraction |
 | [SQLite.swift](https://github.com/stephencelis/SQLite.swift) | Media library storage |
 | [AudioStreaming](https://github.com/dimitris-c/AudioStreaming) | HTTP audio streaming for Plex |
 | [FlyingFox](https://github.com/swhitty/FlyingFox) | Embedded HTTP server for local file casting |
@@ -292,7 +292,7 @@ Backups are stored in `~/Library/Application Support/NullPlayer/Backups/`.
 
 ## Skins
 
-NullPlayer has five looks — Modern, Classic, Original, Original-Metal, and Windows Media Player — selectable from the right-click context menu under **Skins**. Switching between them happens **live, with no restart** — playback, casting, and the open playlist continue uninterrupted while the windows rebuild in the new look:
+NullPlayer has six looks — Modern, Classic, Original, Original-Metal, Windows Media Player, and Audion Faces — selectable from the right-click context menu under **Skins**. Switching between them happens **live, with no restart** — playback, casting, and the open playlist continue uninterrupted while the windows rebuild in the new look:
 
 ### Winamp Modern (`.wal`) / ClassicPro
 
@@ -317,6 +317,16 @@ NullPlayer is the only Mac app that runs Windows Media Player skins. The `.wmz` 
 3. **Remove “name”...** deletes NullPlayer's installed copy of the current skin (never your download) and returns to the built-in player.
 
 Skin scripts run in a restricted, sandboxed object model: ActiveX, registry and shell access, DLLs, WMP plug-ins, and skin-authored HTML are not supported. See the [WMP skin guide](docs/wmp-skin/user-guide.md) and the [compatibility reference](docs/wmp-skin/compatibility.md) for the supported surface.
+
+### Audion Faces
+
+Panic Audion faces (a folder of `index.json` and PNGs) are drawn by a port of Panic's own FaceKit viewer, checked against it face by face. No faces are bundled; with none selected NullPlayer shows a plain Audion player.
+
+1. **Skins > Audion Faces > Get More Faces...** opens Panic's download page for the 2021 face archive.
+2. **Load Face...** installs a face folder, or a `.zip` holding any number of them, then switches to it.
+3. Pick an installed face from **Skins > Audion Faces**; **Remove “name”...** deletes NullPlayer's copy and returns to the plain player.
+
+See the [Audion faces guide](docs/audion-face/user-guide.md).
 
 ### Winamp Classic Mode
 
@@ -589,7 +599,7 @@ network features.
 ## License
 
 This project is open source. Because it bundles GPL-licensed components
-(aubio and the PeppyMeter meter templates), the combined application is
+(aubio, the PeppyMeter meter templates and the FaceKit port), the combined application is
 distributed under the terms of the **GNU GPL v3.0 only**. (The video engine
 is VLCKit/libVLC, which is LGPL — see below.)
 
@@ -613,7 +623,7 @@ Bundled third-party components:
 
 **Swift packages (compiled into the binary)**
 - **SQLite.swift** (MIT) + **swift-toolchain-sqlite** (Apache-2.0) / **SQLite** (public domain) — media library
-- **ZIPFoundation** (MIT) — `.wsz`/`.nps`/`.wmz` extraction
+- **ZIPFoundation** (MIT) — `.wsz`/`.nps`/`.wmz` and Audion face `.zip` extraction
 - **AudioStreaming** (MIT) — streaming audio engine
 - **FlyingFox** (MIT) — local HTTP server for casting
 
@@ -623,10 +633,11 @@ Bundled third-party components:
 - **aubio** (GPL-3.0) — BPM/tempo detection
 - **libsndfile** (LGPL-2.1), **FLAC** (BSD-3), **libogg** (BSD-3), **libvorbis** (BSD-3), **Opus** (BSD-3), **LAME** (LGPL-2.0+), **mpg123** (LGPL-2.1) — audio codecs
 
-**Native visualization ports (compiled into the binary)**
+**Native ports (compiled into the binary)**
 - **vis_classic** (MIT) — Winamp AVS classic port
 - **Geiss** (BSD-3) — Geiss visualization port
 - **Tripex** (MIT) — Winamp-era visualization port by Ben Marsh
+- **FaceKit** (GPL-3.0-or-later) — Panic's Audion face viewer, adapted
 - **Nullsoft FFT** (BSD-3) — spectrum analysis
 
 **Fonts & assets**
