@@ -2773,10 +2773,10 @@ class CastManager {
         let serverURL: URL?
         if track.subsonicId != nil {
             serverURL = SubsonicManager.shared.coverArtURL(coverArtId: thumb)
-        } else if let id = track.jellyfinId {
-            serverURL = JellyfinManager.shared.imageURL(itemId: id, imageTag: thumb, size: size)
-        } else if let id = track.embyId {
-            serverURL = EmbyManager.shared.imageURL(itemId: id, imageTag: thumb, size: size)
+        } else if track.jellyfinId != nil {
+            serverURL = JellyfinManager.shared.imageURL(itemId: thumb, imageTag: nil, size: size)
+        } else if track.embyId != nil {
+            serverURL = EmbyManager.shared.imageURL(itemId: thumb, imageTag: nil, size: size)
         } else {
             serverURL = nil
         }

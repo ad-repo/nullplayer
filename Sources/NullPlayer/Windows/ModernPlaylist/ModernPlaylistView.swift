@@ -678,7 +678,7 @@ class ModernPlaylistView: NSView {
                 // Subsonic track - load cover art
                 image = await self.loadSubsonicArtwork(songId: subsonicId)
             } else if let jellyfinId = track.jellyfinId {
-                image = await self.loadJellyfinArtwork(itemId: jellyfinId)
+                image = await self.loadJellyfinArtwork(itemId: track.artworkThumb ?? jellyfinId)
             } else if track.url.isFileURL {
                 // Local file - extract embedded artwork
                 image = await self.loadLocalArtwork(url: track.url)

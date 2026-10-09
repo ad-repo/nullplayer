@@ -336,13 +336,13 @@ class NowPlayingManager {
                 }
             } else if track.jellyfinId != nil {
                 // Jellyfin track - load cover art
-                if let imageTag = track.artworkThumb {
-                    image = await self.loadJellyfinArtwork(itemId: track.jellyfinId!, imageTag: imageTag)
+                if let imageItemId = track.artworkThumb {
+                    image = await self.loadJellyfinArtwork(itemId: imageItemId)
                 }
             } else if track.embyId != nil {
                 // Emby track - load cover art
-                if let imageTag = track.artworkThumb {
-                    image = await self.loadEmbyArtwork(itemId: track.embyId!, imageTag: imageTag)
+                if let imageItemId = track.artworkThumb {
+                    image = await self.loadEmbyArtwork(itemId: imageItemId)
                 }
             } else if let thumb = track.artworkThumb, let url = URL(string: thumb),
                       ["http", "https"].contains(url.scheme?.lowercased()) {
@@ -506,8 +506,8 @@ class NowPlayingManager {
     }
     
     /// Load cover art from Jellyfin server
-    private func loadJellyfinArtwork(itemId: String, imageTag: String) async -> NSImage? {
-        guard let artworkURL = JellyfinManager.shared.imageURL(itemId: itemId, imageTag: imageTag, size: 400) else { return nil }
+    private func loadJellyfinArtwork(itemId: String) async -> NSImage? {
+        guard let artworkURL = JellyfinManager.shared.imageURL(itemId: itemId, imageTag: nil, size: 400) else { return nil }
         do {
             let (data, response) = try await URLSession.shared.data(from: artworkURL)
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return nil }
@@ -518,8 +518,8 @@ class NowPlayingManager {
         }
     }
     
-    private func loadEmbyArtwork(itemId: String, imageTag: String) async -> NSImage? {
-        guard let artworkURL = EmbyManager.shared.imageURL(itemId: itemId, imageTag: imageTag, size: 400) else { return nil }
+    private func loadEmbyArtwork(itemId: String) async -> NSImage? {
+        guard let artworkURL = EmbyManager.shared.imageURL(itemId: itemId, imageTag: nil, size: 400) else { return nil }
         do {
             let (data, response) = try await URLSession.shared.data(from: artworkURL)
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return nil }

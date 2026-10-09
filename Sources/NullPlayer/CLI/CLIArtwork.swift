@@ -17,10 +17,10 @@ enum CLIArtwork {
             return await loadRemoteImage(url: PlexManager.shared.artworkURL(thumb: thumb, size: 300))
         } else if track.subsonicId != nil, let coverArt = track.artworkThumb {
             return await loadRemoteImage(url: SubsonicManager.shared.coverArtURL(coverArtId: coverArt, size: 300))
-        } else if track.jellyfinId != nil, let imageTag = track.artworkThumb {
-            return await loadRemoteImage(url: JellyfinManager.shared.imageURL(itemId: track.jellyfinId!, imageTag: imageTag, size: 300))
-        } else if track.embyId != nil, let imageTag = track.artworkThumb {
-            return await loadRemoteImage(url: EmbyManager.shared.imageURL(itemId: track.embyId!, imageTag: imageTag, size: 300))
+        } else if track.jellyfinId != nil, let imageItemId = track.artworkThumb {
+            return await loadRemoteImage(url: JellyfinManager.shared.imageURL(itemId: imageItemId, imageTag: nil, size: 300))
+        } else if track.embyId != nil, let imageItemId = track.artworkThumb {
+            return await loadRemoteImage(url: EmbyManager.shared.imageURL(itemId: imageItemId, imageTag: nil, size: 300))
         }
         return nil
     }

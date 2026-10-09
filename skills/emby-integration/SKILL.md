@@ -86,6 +86,11 @@ The key differences from Jellyfin:
 
 - **Image**: `GET /Items/{itemId}/Images/Primary?maxHeight={size}&maxWidth={size}&tag={imageTag}`
   - `imageTag` is from `ImageTags.Primary` in the item response
+- **A song's cover is usually its album's.** A song with no `ImageTags.Primary` of its own
+  (most Emby songs) answers 404/500 for its own image. A `Track`'s `artworkThumb` is therefore the *item id*
+  whose image to fetch — `EmbySong.artworkItemId`: the song's own id when it has a picture, else
+  its `AlbumId` — and every track-art consumer fetches that id with no tag. Films and episodes
+  store their own id.
 
 ## User Actions
 

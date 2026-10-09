@@ -3937,7 +3937,7 @@ class PlexBrowserView: NSView {
                 image = await self.loadSubsonicArtwork(songId: subsonicId, albumName: track.album)
             } else if let jellyfinId = track.jellyfinId {
                 // Jellyfin track - load from server
-                image = await self.loadJellyfinArtwork(itemId: jellyfinId, imageTag: nil)
+                image = await self.loadJellyfinArtwork(itemId: track.artworkThumb ?? jellyfinId, imageTag: nil)
             } else if track.url.isFileURL {
                 // Local file - extract embedded artwork
                 image = await self.loadLocalArtwork(url: track.url)

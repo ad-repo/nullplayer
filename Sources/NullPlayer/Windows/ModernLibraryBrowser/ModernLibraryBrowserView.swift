@@ -6262,9 +6262,9 @@ class ModernLibraryBrowserView: NSView {
             } else if let subsonicId = track.subsonicId {
                 image = await self.loadSubsonicArtwork(songId: subsonicId)
             } else if let jellyfinId = track.jellyfinId {
-                image = await self.loadJellyfinArtwork(itemId: jellyfinId, imageTag: track.artworkThumb)
+                image = await self.loadJellyfinArtwork(itemId: track.artworkThumb ?? jellyfinId, imageTag: nil)
             } else if let embyId = track.embyId {
-                image = await self.loadEmbyArtwork(itemId: embyId, imageTag: track.artworkThumb)
+                image = await self.loadEmbyArtwork(itemId: track.artworkThumb ?? embyId, imageTag: nil)
             } else if track.url.isFileURL {
                 image = await self.loadLocalArtwork(url: track.url)
             } else if RadioManager.shared.isActive {

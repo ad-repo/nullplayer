@@ -105,6 +105,10 @@ struct JellyfinSong: Identifiable, Equatable {
     var durationInSeconds: TimeInterval {
         TimeInterval(duration)
     }
+
+    /// The item whose Primary image is this song's cover: its own when it has one, else its
+    /// album's (many songs carry none of their own). A `Track`'s `artworkThumb`.
+    var artworkItemId: String? { imageTag == nil ? albumId : id }
 }
 
 /// A playlist in Jellyfin
