@@ -58,8 +58,9 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   `mediaPlayerStateChanged` comment; end-of-film handling keys off that pause.
 - **A skip steps from the last seek requested, not `player.time`** (M34). VLC leaves
   `player.time` at the old value until a seek lands, which while paused is not before the next
-  press, so two ← presses moved 10 s. `seek(to:)` keeps `pendingSeekTarget` until the next time
-  update, and `skipForward` / `skipBackward` step from it (`skipBase`). Measured 2026-10-09 on
+  press, so two ← presses moved 10 s. `seek(to:)` and `seekToPosition` keep `pendingSeekTarget`
+  until the next time update, and `skip(by:)` (behind `skipForward` / `skipBackward`, and the WMP
+  scan buttons) steps from it. Measured 2026-10-09 on
   Classic, a local 300 s film, A/B in one binary: paused ←, ← read −9.25 s before and −19.25 s
   after (0.6 s of play between readings); one → while playing read +10.8 s.
 - **A film that never plays is a failed load, skipped like a bad audio file** (M25). VLC reports

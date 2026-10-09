@@ -474,8 +474,7 @@ final class WMPAudioEngineHost: WMPHost {
     private func scanStep() {
         guard let scanDirection else { return }
         if let video = Self.localVideoController {
-            video.seek(to: max(0, min(video.duration,
-                                     video.currentTime + (scanDirection == .forward ? 5 : -5))))
+            scanDirection == .forward ? video.skipForward(5) : video.skipBackward(5)
             return
         }
         engine.seekBy(seconds: scanDirection == .forward ? 5 : -5)

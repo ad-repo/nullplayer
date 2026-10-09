@@ -127,7 +127,7 @@ class VideoPlayerView: NSView {
     /// Current playback time and duration
     private(set) var currentTime: TimeInterval = 0
     private(set) var totalDuration: TimeInterval = 0
-    /// A seek VLC has not reported landing yet; cleared by the next time update (`skipBase`).
+    /// The last seek requested, until the next time update; `skip(by:)` steps from it.
     private var pendingSeekTarget: TimeInterval?
     
     /// Public accessors for playback time
@@ -989,36 +989,27 @@ class VideoPlayerView: NSView {
     /// Seek to normalized position (0-1)
     func seekToPosition(_ position: Double) {
         guard let player = mediaPlayer else { return }
-        pendingSeekTarget = nil
+        pendingSeekTarget = totalDuration > 0 ? position * totalDuration : nil
         player.position = Float(position)
     }
 
-    /// Seek to time
+    /// Seek to time, clamped to the film
     func seek(to time: TimeInterval) {
         guard let player = mediaPlayer else { return }
-        pendingSeekTarget = max(0, time)
-        player.time = VLCTime(int: Int32(max(0, time) * 1000))
+        let target = totalDuration > 0 ? min(max(0, time), totalDuration) : max(0, time)
+        pendingSeekTarget = target
+        player.time = VLCTime(int: Int32(target * 1000))
     }
 
-    /// Where a skip steps from: the last requested target until VLC reports a time after it,
-    /// since `player.time` holds the old time until the seek lands — paused, that is until the
-    /// next press, so two presses moved 10 s, not 20 (M34).
-    private var skipBase: TimeInterval? {
-        guard let player = mediaPlayer else { return nil }
-        return pendingSeekTarget ?? Double(player.time.intValue) / 1000.0
+    /// Steps from the last requested target until the next time update: `player.time` holds the
+    /// old time until a seek lands, which while paused is not before the next press (M34).
+    func skip(by seconds: TimeInterval) {
+        guard let player = mediaPlayer else { return }
+        seek(to: (pendingSeekTarget ?? Double(player.time.intValue) / 1000.0) + seconds)
     }
 
-    /// Skip forward by seconds
-    func skipForward(_ seconds: TimeInterval = 10) {
-        guard let current = skipBase else { return }
-        seek(to: totalDuration > 0 ? min(current + seconds, totalDuration) : current + seconds)
-    }
-
-    /// Skip backward by seconds
-    func skipBackward(_ seconds: TimeInterval = 10) {
-        guard let current = skipBase else { return }
-        seek(to: current - seconds)
-    }
+    func skipForward(_ seconds: TimeInterval = 10) { skip(by: seconds) }
+    func skipBackward(_ seconds: TimeInterval = 10) { skip(by: -seconds) }
     
     // MARK: - Track Selection
     
