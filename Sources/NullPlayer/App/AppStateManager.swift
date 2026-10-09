@@ -322,6 +322,8 @@ class AppStateManager {
         var metalSkinName: String?
         var wmpSkinName: String?
         var wmpViewID: String?
+        /// The face on screen, recorded only in Audion mode.
+        var audionFaceName: String?
         
         // Audio output device
         var selectedOutputDeviceUID: String?
@@ -349,7 +351,7 @@ class AppStateManager {
             case customSkinPath
             case projectMPresetIndex
             // v2 fields
-            case uiScaleLevel, isDoubleSize, modernSkinName, metalSkinName, wmpSkinName, wmpViewID, selectedOutputDeviceUID
+            case uiScaleLevel, isDoubleSize, modernSkinName, metalSkinName, wmpSkinName, wmpViewID, audionFaceName, selectedOutputDeviceUID
             case browserBrowseMode, uiMode, savedInModernMode
             case winampModernSkinName
             case mainScreenVisibleFrame
@@ -462,6 +464,7 @@ class AppStateManager {
             metalSkinName = try container.decodeIfPresent(String.self, forKey: .metalSkinName)
             wmpSkinName = try container.decodeIfPresent(String.self, forKey: .wmpSkinName)
             wmpViewID = try container.decodeIfPresent(String.self, forKey: .wmpViewID)
+            audionFaceName = try container.decodeIfPresent(String.self, forKey: .audionFaceName)
             selectedOutputDeviceUID = try container.decodeIfPresent(String.self, forKey: .selectedOutputDeviceUID)
             browserBrowseMode = try container.decodeIfPresent(Int.self, forKey: .browserBrowseMode)
             uiMode = try container.decodeIfPresent(String.self, forKey: .uiMode)
@@ -511,6 +514,7 @@ class AppStateManager {
             metalSkinName: String? = nil,
             wmpSkinName: String? = nil,
             wmpViewID: String? = nil,
+            audionFaceName: String? = nil,
             selectedOutputDeviceUID: String? = nil,
             browserBrowseMode: Int? = nil,
             uiMode: String? = nil,
@@ -559,6 +563,7 @@ class AppStateManager {
             self.metalSkinName = metalSkinName
             self.wmpSkinName = wmpSkinName
             self.wmpViewID = wmpViewID
+            self.audionFaceName = audionFaceName
             self.selectedOutputDeviceUID = selectedOutputDeviceUID
             self.browserBrowseMode = browserBrowseMode
             self.uiMode = uiMode
@@ -713,6 +718,7 @@ class AppStateManager {
                 ? UserDefaults.standard.string(forKey: WMPSkinImporter.selectedSkinNameKey) : nil,
             wmpViewID: wm.uiMode == .wmp
                 ? UserDefaults.standard.string(forKey: WMPSkinImporter.selectedViewIDKey) : nil,
+            audionFaceName: wm.uiMode == .audion ? AudionFaceImporter().selectedFaceName : nil,
             selectedOutputDeviceUID: UserDefaults.standard.string(forKey: "selectedOutputDeviceUID"),
             browserBrowseMode: browserBrowseMode,
             uiMode: wm.uiMode.rawValue,
@@ -857,6 +863,11 @@ class AppStateManager {
             }
         }
 
+        if restoredMode == .audion, state.restoredUIMode == .audion {
+            let importer = AudionFaceImporter()
+            if let name = state.audionFaceName { importer.select(name) } else { importer.resetSelection() }
+        }
+
         // reloadUI(to:) can defer the actual mode swap until Compact Mode teardown completes.
         // The rest of the restore reads wm.uiMode / wm.isRunningModernFamilyUI and rebuilds
         // skin/window state, so it must run only once the target-mode controllers exist.
@@ -928,6 +939,10 @@ class AppStateManager {
             // Selection preferences are restored before the mode swap. Reload here as well for
             // the no-swap case, where the existing WMP controller may still hold the old archive.
             (wm.mainWindowController as? WMPMainWindowController)?.reloadSelectedSkin()
+        }
+        if runningMode == .audion {
+            // As for `.wmp`: the no-swap case may still hold the previous face.
+            (wm.mainWindowController as? AudionFaceMainWindowController)?.reloadSelectedFace()
         }
         
         // Restore audio output device
@@ -1359,6 +1374,10 @@ class AppStateManager {
             // skin's to decide, inside `restoreFrame`.
             controller.restoreFrame(correctedMainFrame ?? NSRectFromString(frameString),
                                     skinName: state.wmpSkinName, viewID: state.wmpViewID)
+        } else if let frameString = state.mainWindowFrame,
+                  let controller = wm.mainWindowController as? AudionFaceMainWindowController {
+            // The face decides the size; the saved frame places its top-left.
+            controller.restoreFrame(correctedMainFrame ?? NSRectFromString(frameString))
         } else if let frameString = state.mainWindowFrame,
            let controller = wm.mainWindowController,
            let window = controller.window {

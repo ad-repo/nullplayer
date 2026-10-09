@@ -42,6 +42,7 @@ flow	Flow	MIT (upstream; clean-room reimplementation)	Copyright (c) 2026 flow co
 cava	Cava	MIT (upstream; clean-room reimplementation)	Copyright (c) 2015 Karl Stavestrand	https://github.com/karlstav/cava	clean-room algorithm reference (no code bundled)	ThirdPartyLicenses/cava_NOTICE.txt	-
 webamp-modern	Webamp Modern	MIT	Copyright (c) 2015 Jordan Eldredge	https://github.com/captbaritone/webamp	5f56a5369c3e2346f4f6e045f214856ef9abaad4 (behavioral reference; no code bundled)	ThirdPartyLicenses/WebampModern_LICENSE.txt	-
 fft-nullsoft	Nullsoft FFT	BSD-3-Clause	Copyright 2005-2013 Nullsoft, Inc.	https://github.com/WACUP/vis_classic	bundled source	ThirdPartyLicenses/FFTNullsoft_LICENSE.txt	-
+facekit	FaceKit (Panic Audion face viewer)	GPL-3.0-or-later	Copyright 2020-2021 Panic Inc.	https://gitlab.com/panicinc/facekit	5b7c847 (adapted source)	ThirdPartyLicenses/licenses/GPL-3.0.txt	-
 #
 # === Fonts and bundled assets ===
 departuremono	Departure Mono	OFL-1.1	Copyright (c) 2024 Helena Zhang	https://departuremono.com	1.422	Fonts/DepartureMono-LICENSE.txt	-

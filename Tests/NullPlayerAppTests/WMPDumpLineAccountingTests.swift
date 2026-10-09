@@ -52,7 +52,7 @@ final class WMPDumpLineAccountingTests: XCTestCase {
         ])
     }
 
-    /// `WMPHarnessOutput` writes to `STDOUT_FILENO` unbuffered and whole — that is the point of it —
+    /// `HarnessOutput` writes to `STDOUT_FILENO` unbuffered and whole — that is the point of it —
     /// so reading it back means owning the descriptor for the duration. The capture is small (a
     /// dozen lines) and stays well inside the pipe buffer, so the write side cannot block while
     /// nothing is draining it.

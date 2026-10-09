@@ -1,0 +1,10 @@
+# Faces deliberately kept out of the measured Audion corpus.
+#
+# One face folder name per line, exactly as on disk (names can carry leading and trailing spaces);
+# `#` starts a comment. scripts/audion_face_census.sh and scripts/audion_render_sweep.sh both read
+# this file and print what they dropped, so the count they report is the corpus they measured.
+# Faces are folders and cannot be hard-linked into a farm, so the scripts hand the harness a list.
+#
+# Removing a line is a decision, not a cleanup: say why the face is back in scope.
+#
+# Empty: every face in Panic's 2021 distribution is in scope (2026-10-08).

@@ -1,8 +1,10 @@
 -- Drives the Skins / Windows menus of ONE process, addressed by unix id. Verbs:
 --   mode <pid> <submenu>          click that submenu's "Switch to ..." item if present
 --   skin <pid> <submenu> <item>   select a skin; switches into that family when another is on screen
---   list <pid> <submenu>          the submenu's item names
+--   list <pid> <submenu>          the submenu's item names, one per line
 --   current <pid> <submenu>       the checked (loaded) skin in that submenu, or empty
+--                                 (list, current and skin read a family's A-Z submenus in place,
+--                                 e.g. Audion Faces: `familyItems`)
 --   family <pid>                  the checked Skins submenu, i.e. the family on screen
 --   load <pid> <submenu> <path>   press that submenu's Load ... Skin... and open <path> in its panel
 --   closeaux <pid>                toggle off every checked window except Main Window
@@ -36,6 +38,42 @@ on closeMenus(targetPid)
     end tell
   end tell
 end closeMenus
+
+-- A family submenu's items, each one-letter A-Z submenu (`groupedAlphabetically`) read in its
+-- letter's place; other submenus (Views, Color Themes) stay one item. Returns {names, marks,
+-- places}: a place is {i} for item i of `sm`, {i, j} for item j of letter i's submenu.
+on familyItems(sm)
+  tell application "System Events"
+    set nms to name of every menu item of sm
+    set mks to value of attribute "AXMenuItemMarkChar" of every menu item of sm
+    set outNames to {}
+    set outMarks to {}
+    set outPlaces to {}
+    repeat with i from 1 to count of nms
+      set nm to item i of nms
+      if nm is not missing value and (count of nm) is 1 and (exists menu 1 of menu item i of sm) then
+        set lm to menu 1 of menu item i of sm
+        set outNames to outNames & (name of every menu item of lm)
+        set outMarks to outMarks & (value of attribute "AXMenuItemMarkChar" of every menu item of lm)
+        repeat with j from 1 to count of menu items of lm
+          set end of outPlaces to {i, j}
+        end repeat
+      else
+        set end of outNames to nm
+        set end of outMarks to item i of mks
+        set end of outPlaces to {i}
+      end if
+    end repeat
+    return {outNames, outMarks, outPlaces}
+  end tell
+end familyItems
+
+on itemAt(sm, place)
+  tell application "System Events"
+    if (count of place) is 1 then return menu item (item 1 of place) of sm
+    return menu item (item 2 of place) of menu 1 of menu item (item 1 of place) of sm
+  end tell
+end itemAt
 
 on run argv
   if (count of argv) < 2 then
@@ -158,7 +196,14 @@ on drive(argv, targetPid)
 
       else if act is "list" then
         set subName to item 3 of argv
-        return name of every menu item of menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
+        set sm to menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
+        -- One name per line: a list comes back joined by ", ", which splits a name holding a comma.
+        set out to {}
+        repeat with nm in item 1 of my familyItems(sm)
+          if contents of nm is not missing value then set end of out to contents of nm
+        end repeat
+        set AppleScript's text item delimiters to linefeed
+        return out as text
 
       else if act is "current" then
         -- The checked skin in a submenu: which skin a mode switch landed on. Every family submenu
@@ -166,8 +211,7 @@ on drive(argv, targetPid)
         -- read: options above it are checked too, such as "Reimport ClassicPro Engine...".
         set subName to item 3 of argv
         set sm to menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
-        set nms to name of every menu item of sm
-        set mks to value of attribute "AXMenuItemMarkChar" of every menu item of sm
+        set {nms, mks, places} to my familyItems(sm)
         set found to ""
         repeat with i from 1 to count of nms
           set nm to item i of nms
@@ -247,8 +291,19 @@ on drive(argv, targetPid)
       else if act is "skin" then
         set subName to item 3 of argv
         set skinName to item 4 of argv
-        perform action "AXPress" of menu item skinName of menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
-        return "ok"
+        set sm to menu 1 of menu item subName of menu 1 of menu bar item "Skins" of menu bar 1
+        set {nms, mks, places} to my familyItems(sm)
+        repeat with i from 1 to count of nms
+          considering case
+            set hit to (item i of nms is skinName)
+          end considering
+          if hit then
+            set mi to my itemAt(sm, item i of places)
+            perform action "AXPress" of mi
+            return "ok"
+          end if
+        end repeat
+        error "menu.applescript skin: no '" & skinName & "' in " & subName number 7
       end if
     end tell
   end tell

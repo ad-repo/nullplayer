@@ -6,7 +6,7 @@
 #   skills/app-control/scripts/window-census.sh --list <families>     # print the skin list, run nothing
 #
 # <skin> is anything launch.sh takes. <families> is a comma list of classic, wal, wmz, original,
-# metal, or `all`: every installed skin of those families, classic/wal/wmz as `name.ext` (the
+# metal, audion, or `all`: every installed skin of those families, classic/wal/wmz as `name.ext` (the
 # extension pins the family, so a name found in two families never fails as ambiguous). Geometry is top-left global points (`winhelper windows`).
 # Each item is toggled on, measured, and toggled off again before the next, so every row is
 # independent of the order. Output in <dir> (default /tmp/np-window-census/<timestamp>/):
@@ -43,6 +43,8 @@ enumerate() {
       for d in Sources/NullPlayer/Resources/Skins/*/ "$SUPPORT/ModernSkins"/*/; do
         [ -f "$d/skin.json" ] && echo "modern:$(basename "$d")"
       done | sort -uf ;;
+    audion)    # installed face folders; selected by folder name
+      for d in "$SUPPORT/AudionFaces"/*/; do [ -f "$d/index.json" ] && echo "audion:$(basename "$d")"; done | sort -f ;;
     metal)     # code-defined finishes (ModernSkinLoader.builtInMetalSkinNames) + user folders
       { grep -o 'builtInMetalSkinNames = \[[^]]*\]' Sources/NullPlayer/ModernSkin/ModernSkinLoader.swift \
           | grep -o '"[^"]*"' | tr -d '"'
@@ -53,9 +55,9 @@ enumerate() {
 families() {
   local f; for f in $(tr ',' ' ' <<<"$1"); do
     case "$f" in
-      all) enumerate classic; enumerate original; enumerate metal; enumerate wal; enumerate wmz ;;
-      classic|original|metal|wal|wmz) enumerate "$f" ;;
-      *) echo "window-census.sh: unknown family '$f' (classic, original, metal, wal, wmz, all)" >&2; exit 2 ;;
+      all) enumerate classic; enumerate original; enumerate metal; enumerate wal; enumerate wmz; enumerate audion ;;
+      classic|original|metal|wal|wmz|audion) enumerate "$f" ;;
+      *) echo "window-census.sh: unknown family '$f' (classic, original, metal, wal, wmz, audion, all)" >&2; exit 2 ;;
     esac
   done
 }

@@ -1,18 +1,18 @@
 ---
 name: skin-screenshots
-description: Capture one centred main-window screenshot per skin across every skin system (Classic, Original, Original-Metal, Modern/.wal, Media Player/.wmz) and assemble them into a fixed-duration slideshow GIF. Use when producing marketing imagery, a skin gallery, or any before/after visual comparison across the skin corpus.
+description: Capture one centred main-window screenshot per skin across every skin system (Classic, Original, Original-Metal, Modern/.wal, Media Player/.wmz, Audion Faces) and assemble them into a fixed-duration slideshow GIF. Use when producing marketing imagery, a skin gallery, or any before/after visual comparison across the skin corpus.
 ---
 
 # Skin screenshot sweep
 
-> **Scope.** This skill produces a **gallery GIF** and nothing else. It sweeps five skin
-> families — Classic, Original, Original-Metal, Modern and Media Player (`.wmz`):
-> `enumerate_skins.sh` emits every skin in those five Skins submenus, and `capture.sh` photographs
+> **Scope.** This skill produces a **gallery GIF** and nothing else. It sweeps six skin
+> families — Classic, Original, Original-Metal, Modern, Media Player (`.wmz`) and Audion Faces:
+> `enumerate_skins.sh` emits every skin in those six Skins submenus, and `capture.sh` photographs
 > each entry it emits. To launch, configure, drive,
 > screenshot or test the running app — for any reason other than assembling that GIF — see
 > **`app-control`**. It owns `winhelper` and `menu.applescript`, which this sweep only borrows.
 
-Photographs the **main window only**, one frame per skin, across all five skin systems, centres each
+Photographs the **main window only**, one frame per skin, across all six skin systems, centres each
 on an identical white frame, and builds a slideshow GIF whose cycle is exactly the length you ask for.
 
 Everything is in `scripts/`. Run them in this order:
@@ -130,4 +130,12 @@ to include them — the frame is the GIF's canvas, so raising it shrinks every o
 `makegif.sh` computes an integer centisecond delay per frame and spreads the remainder over the
 leading frames, so 114 frames over 30s is exact rather than drifting. It verifies the assembled
 duration and prints it. `--order random` interleaves the systems; `--order system` groups them
-Classic → Original → Original-Metal → Modern.
+Classic → Original → Original-Metal → Modern → Media Player → Audion Faces.
+
+## Audion faces
+
+Panic's archive is 856 faces, so a whole-menu sweep is about two hours of Audion alone; pick a set
+with `--only` or `../exclude.txt`. Past 40 faces the menu is grouped into A–Z submenus, which
+`menu.applescript` `list`, `current` and `skin` read in place. Face names can start or end with a
+space (five do), so `list` prints one name per line and `enumerate_skins.sh` never trims: trimming
+made those rows `MENU-FAIL`.

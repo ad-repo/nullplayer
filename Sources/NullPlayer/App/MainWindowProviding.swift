@@ -116,3 +116,16 @@ extension MainWindowProviding {
             .removeFromSuperview()
     }
 }
+
+/// A main window whose size is its skin's own canvas (`.wal`, `.wmz`, an Audion face): UI Size
+/// multiplies that canvas, not `Skin.mainWindowSize`. `WindowManager.applyDoubleSize` tells the
+/// controller the scale, then sets the player's frame from `mainWindowSize(atScale:)`.
+protocol SkinSizedMainWindow: MainWindowProviding {
+    func applyUIScale(_ scale: CGFloat)
+    /// The window size the skin wants at `scale`; nil when it cannot answer yet.
+    func mainWindowSize(atScale scale: CGFloat) -> NSSize?
+}
+
+extension WinampModernMainWindowController: SkinSizedMainWindow {}
+extension WMPMainWindowController: SkinSizedMainWindow {}
+extension AudionFaceMainWindowController: SkinSizedMainWindow {}

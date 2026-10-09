@@ -12,7 +12,7 @@
 #
 # The chain enters every mode from another mode and switches skin within every mode:
 #   Ice → anemone → Classic → Classic' → Original → Original' → Metal → Metal' → .wal → .wal' →
-#   .wmz (anemone) → Ice
+#   .wmz (anemone) → Ice → Audion → Audion' → Classic
 # Before every switch the window is resized by +38x28, so a leak is visible. After every switch:
 #   open      the window is still open
 #   no-leak   its size is not the size it had just before the switch
@@ -192,6 +192,9 @@ switch "Metal → .wal"          wal      change mode "Modern"
 switch ".wal (in place)"       wal      change skin "Modern" "$(other Firefox 2222-cPro__Bento)"
 switch ".wal → .wmz"           wmz      change mode "Media Player"
 switch ".wmz (in place)"       wmz      change skin "Media Player" "$(other Ice anemone)"
+switch ".wmz → Audion"         audion   change mode "Audion Faces"
+switch "Audion (in place)"     audion   keep   skin "Audion Faces" "$(other AppleClassic Agitator)"
+switch "Audion → Classic"      classic  change mode "Classic"
 echo
 if [ "$FAILS" = 0 ]; then echo "SWITCH-TEST PASS"; exit 0; fi
 echo "SWITCH-TEST FAIL ($FAILS)"; exit 1

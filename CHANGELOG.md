@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Audion faces** — NullPlayer now wears the faces of Panic's Audion, the classic Mac MP3 player.
+  Choose **Skins › Audion Faces › Get More Faces...** to download Panic's archive, then **Load
+  Face...** to install a face folder or the whole `.zip`; the installed faces are listed in the same
+  menu, A–Z. Faces are drawn by a port of Panic's own viewer, so they look the way Audion drew them,
+  at any UI Size. Every button works, including the ones Panic's viewer left off: the menu button
+  shows the playlist, the mode button the Library Browser, eject opens files, info shows the track or
+  the face's credits, and the volume button and the clock open sliders. The playlist, EQ, Library
+  Browser and visualizers take their colours from the face and dock to it. See
+  `docs/audion-face/user-guide.md`.
 - **Art is its own window** — the Library Browser's ART view is now an **Art** window (Windows →
   Art, or **AR** on the Original player) that follows the playing track and docks under the player
   like PeppyMeter, opening at the player's width and shaped to the cover. Click it to rate the
@@ -212,6 +221,9 @@
   radio stream left that local song playing underneath it. A stream started with Play Now while
   two streams were crossfading was replaced by the incoming song when the fade finished. Both now
   play the stream you picked.
+- **The selected playlist row is readable in light skins** — in Winamp Modern and Windows Media
+  Player skins with a light playlist background, the selected row (the playing track, by default)
+  was drawn in white on white. It now takes the skin's own text colour there; dark skins keep white.
 
 ## 0.31.4
 

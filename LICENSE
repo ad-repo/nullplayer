@@ -23,6 +23,13 @@ NullPlayer application.
 This trademark and branding term does not limit the GPL rights to copy,
 modify, or distribute the covered source code.
 
+Audion faces support is adapted from FaceKit, Panic's Audion face viewer
+(https://gitlab.com/panicinc/facekit, commit 5b7c847), Copyright 2020-2021
+Panic Inc., licensed under the GNU General Public License version 3 or (at
+your option) any later version. The adapted files keep Panic's copyright
+headers. No Panic artwork is included. Every bundled third-party component
+is listed in Sources/NullPlayer/Resources/ThirdPartyLicenses/ThirdPartyNotices.txt.
+
                     GNU GENERAL PUBLIC LICENSE
                        Version 3, 29 June 2007
 

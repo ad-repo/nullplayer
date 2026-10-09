@@ -556,7 +556,10 @@ class PlaylistView: NSView {
 
         // Draw track list in the content area
         let colors = style?.playlistColors ?? skin?.playlistColors ?? .default
-        drawTrackList(in: context, colors: colors, drawBounds: drawBounds)
+        // Selected rows are white, the classic idiom, with no selection fill under them; beside a
+        // hosted skin or face whose ground is light, white is corrected against that ground.
+        let selectedText = style.map { $0.legibleText(.white, on: $0.background) } ?? .white
+        drawTrackList(in: context, colors: colors, selectedText: selectedText, drawBounds: drawBounds)
 
         // Bottom bar removed - no track info or playback time rendering needed
 
@@ -715,7 +718,8 @@ class PlaylistView: NSView {
     }
 
     /// Draw the track list
-    private func drawTrackList(in context: CGContext, colors: PlaylistColors, drawBounds: NSRect) {
+    private func drawTrackList(in context: CGContext, colors: PlaylistColors, selectedText: NSColor,
+                               drawBounds: NSRect) {
         let titleHeight = Layout.titleBarHeight
         let bottomHeight = Layout.bottomBarHeight
 
@@ -757,11 +761,11 @@ class PlaylistView: NSView {
             // Draw track info
             let track = tracks[index]
             let isCurrentTrack = index == currentIndex
-            let isSelected = selectedIndices.contains(index)
-            let textColor = isCurrentTrack ? colors.currentText : colors.normalText
+            let textColor = selectedIndices.contains(index) ? selectedText
+                : isCurrentTrack ? colors.currentText : colors.normalText
 
             // Draw track text with clipping and marquee for current track
-            drawTrackText(in: context, track: track, index: index, rect: itemRect, color: textColor, font: colors.font, isCurrentTrack: isCurrentTrack, isSelected: isSelected)
+            drawTrackText(in: context, track: track, index: index, rect: itemRect, color: textColor, font: colors.font, isCurrentTrack: isCurrentTrack)
         }
 
         context.restoreGState()
@@ -769,9 +773,8 @@ class PlaylistView: NSView {
 
     /// Draw track text using bitmap font (TEXT.BMP) - same font as main window
     /// Current track uses marquee scrolling for long titles
-    /// Selected tracks are drawn in white
     /// Falls back to system font for non-Latin characters (Japanese, Chinese, Cyrillic, etc.)
-    private func drawTrackText(in context: CGContext, track: Track, index: Int, rect: NSRect, color: NSColor, font: NSFont, isCurrentTrack: Bool = false, isSelected: Bool = false) {
+    private func drawTrackText(in context: CGContext, track: Track, index: Int, rect: NSRect, color: NSColor, font: NSFont, isCurrentTrack: Bool = false) {
         let duration = track.duration ?? 0
         let durationStr = String(format: "%d:%02d", Int(duration) / 60, Int(duration) % 60)
         let titleX = rect.minX + 2
@@ -785,7 +788,7 @@ class PlaylistView: NSView {
         // Vertical centering using system font size
         let textY = rect.minY + (rect.height - playlistFontSize) / 2
 
-        drawSystemFontText(durationStr, at: NSPoint(x: durationX, y: textY), in: context, color: color, isSelected: isSelected)
+        drawSystemFontText(durationStr, at: NSPoint(x: durationX, y: textY), in: context, color: color)
 
         // Draw title (clipped to available width)
         context.saveGState()
@@ -793,22 +796,21 @@ class PlaylistView: NSView {
 
         let titleWidth = systemFontTextWidth(titleText)
 
-        let effectiveTitleColor: NSColor = isSelected ? .white : color
-        if isCurrentTrack && titleWidth > titleMaxWidth && configurePlaylistMarqueeLayer(text: titleText, titleX: titleX, titleMaxWidth: titleMaxWidth, rowRect: rect, color: effectiveTitleColor) {
+        if isCurrentTrack && titleWidth > titleMaxWidth && configurePlaylistMarqueeLayer(text: titleText, titleX: titleX, titleMaxWidth: titleMaxWidth, rowRect: rect, color: color) {
             // The layer-backed marquee draws this title smoothly; duration stays in CGContext.
         } else if isCurrentTrack && titleWidth > titleMaxWidth {
             // Current track with long title - draw with marquee scrolling
             let cycleWidth = titleWidth + marqueeSeparatorWidth
 
             let xOffset1 = titleX - marqueeOffset
-            drawSystemFontText(titleText, at: NSPoint(x: xOffset1, y: textY), in: context, color: color, isSelected: isSelected)
+            drawSystemFontText(titleText, at: NSPoint(x: xOffset1, y: textY), in: context, color: color)
 
             let xOffset2 = xOffset1 + cycleWidth
             if xOffset2 < titleX + titleMaxWidth {
-                drawSystemFontText(titleText, at: NSPoint(x: xOffset2, y: textY), in: context, color: color, isSelected: isSelected)
+                drawSystemFontText(titleText, at: NSPoint(x: xOffset2, y: textY), in: context, color: color)
             }
         } else {
-            drawSystemFontText(titleText, at: NSPoint(x: titleX, y: textY), in: context, color: color, isSelected: isSelected)
+            drawSystemFontText(titleText, at: NSPoint(x: titleX, y: textY), in: context, color: color)
         }
 
         context.restoreGState()
@@ -955,10 +957,9 @@ class PlaylistView: NSView {
     /// Draw text using system font (fallback for non-Latin characters).
     /// Context is already flipped to skin coordinates (Y=0 at top), so we need to unflip
     /// temporarily for NSAttributedString.draw() to render correctly.
-    private func drawSystemFontText(_ text: String, at position: NSPoint, in context: CGContext, color: NSColor, isSelected: Bool = false) {
-        let textColor = isSelected ? NSColor.white : color
+    private func drawSystemFontText(_ text: String, at position: NSPoint, in context: CGContext, color: NSColor) {
         let attrs: [NSAttributedString.Key: Any] = [
-            .foregroundColor: textColor,
+            .foregroundColor: color,
             .font: NSFont.systemFont(ofSize: playlistFontSize, weight: .regular)
         ]
 
