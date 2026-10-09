@@ -142,6 +142,14 @@ dragging a video does nothing. The `.wal` playlist's **Add Directory** does the 
 (`WinampModernHostActionMenus`). Discovered videos join the playlist and play through `loadTrack`.
 A drop on a Library Browser imports instead (`local-library` § *Video import*).
 
+**Add Files, Add Directory and Load Playlist** reach the playlist through `AudioEngine.loadFiles`,
+which validates with `AudioFileValidator.quickValidate(urls:includeVideo: true)`; the library's
+callers keep the audio-only default, since video is imported by its own path. Before, a film the
+panel offered was dropped as "Unsupported format" (M27). Only the `.wal` playlist (`PE_ADD`,
+`PE_LIST`) reaches these panels today: the Classic playlist's ADD/LIST row is gone, and the Original
+playlist's `showAddMenu` has no caller. Measured 2026-10-08 on winampmodern566: each panel added
+`video-short`, which played in the video window, and a film row advanced to the audio row after it.
+
 ## Window lifetime
 
 - **The controller is mode-independent.** `reloadUI(to:)`'s teardown keeps

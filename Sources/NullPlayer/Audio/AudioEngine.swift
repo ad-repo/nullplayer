@@ -3901,7 +3901,7 @@ class AudioEngine {
         
         // Quick validate files (checks existence and extension - fast)
         // Full format validation happens at playback time
-        let validation = AudioFileValidator.quickValidate(urls: urls)
+        let validation = AudioFileValidator.quickValidate(urls: urls, includeVideo: true)
         
         // Notify about invalid files
         if validation.hasInvalidFiles {

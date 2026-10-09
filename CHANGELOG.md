@@ -203,6 +203,10 @@
 - **A playlist film starts its clock at 0:00** — a film played after a song or a radio station
   carried that track's elapsed time as its own position (macOS Now Playing showed it); it now
   starts from zero.
+- **Video files can be added from the playlist's menus** — in Winamp Modern skins, **Add Files**,
+  **Add Directory** and **Load Playlist** offered video files and then dropped them as an
+  "unsupported format". A film added this way now joins the playlist and plays in the video
+  window, as a dropped one already did.
 
 ## 0.31.4
 

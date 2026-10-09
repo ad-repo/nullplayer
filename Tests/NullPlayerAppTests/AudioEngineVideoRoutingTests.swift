@@ -25,4 +25,23 @@ final class AudioEngineVideoRoutingTests: XCTestCase {
         XCTAssertEqual(engine.state, .stopped)
         XCTAssertEqual(engine.currentTime, 0)
     }
+
+    /// The playlist's Add Files, Add Directory and Load Playlist all go through `loadFiles`, which
+    /// rejected a film as "Unsupported format" (M27). The library's validation still refuses one:
+    /// video is imported by its own path.
+    func testLoadFilesKeepsAFilmRowAndTheLibraryStillRefusesIt() throws {
+        let film = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).mp4")
+        try Data().write(to: film)
+        defer { try? FileManager.default.removeItem(at: film) }
+
+        let engine = AudioEngine()
+        defer { engine.stop() }
+        AudioEngine.isHeadless = true
+        defer { AudioEngine.isHeadless = false }
+        engine.loadFiles([film])
+
+        XCTAssertEqual(engine.playlist.map(\.url), [film])
+        XCTAssertEqual(engine.playlist.first?.mediaType, .video)
+        XCTAssertNotNil(AudioFileValidator.quickValidate(url: film))
+    }
 }
