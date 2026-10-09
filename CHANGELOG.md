@@ -224,9 +224,10 @@
 - **The selected playlist row is readable in light skins** — in Winamp Modern and Windows Media
   Player skins with a light playlist background, the selected row (the playing track, by default)
   was drawn in white on white. It now takes the skin's own text colour there; dark skins keep white.
-- **Library Browser F5 lines up with the window edge in Audion and WMP** — F5 sat about 50pt in
-  from the right edge to stay clear of the corner close area. It now sits where it does in every
-  other mode; clicking F5 refreshes, and the corner beside it still closes the window.
+- **Library Browser F5 lines up with the window edge in Audion, WMP and Winamp Modern** — in the
+  titleless gloss frame, F5 sat about 50pt in from the right edge to stay clear of the corner close
+  area. It now sits where it does in every other mode; F5 and the view-mode buttons beside it take
+  their own clicks, and the rest of the corner still closes the window.
 
 ## 0.31.4
 

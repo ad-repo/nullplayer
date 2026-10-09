@@ -2103,9 +2103,9 @@ class PlexBrowserView: NSView {
         !isEmbeddedInSkin && WindowManager.shared.hideTitleBars
     }
 
-    /// True for a titleless WMP or Audion library with no borrowed frame: its close is a corner hit
-    /// area over the server bar. The bar's F5 keeps its usual place and its label carves itself out
-    /// of that area (`hitTestCloseButton`).
+    /// True for a library in the titleless gloss frame (WMP, Audion, or a `.wal` palette with no
+    /// borrowed frame): its close is a corner hit area over the server bar. The bar's right-edge
+    /// controls keep their usual place and carve themselves out of that area (`hitTestCloseButton`).
     private var closesFromCorner: Bool {
         !isEmbeddedInSkin && hostedFrame == nil && SkinnedSurfaceChrome.hidesPaletteTitleBar
     }
@@ -2637,7 +2637,8 @@ class PlexBrowserView: NSView {
         let refreshText = "F5"
         let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
         drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
-        // Under a corner close the label alone is F5's, so the close keeps the corner beside it.
+        // Under a corner close F5 owns its label plus a 2pt hit margin, so the close keeps the
+        // corner beside it.
         let refreshWidth = closesFromCorner
             ? CGFloat(refreshText.count) * scaledCharWidth + 2 * chromeScale : barRect.maxX - refreshX
         refreshButtonRect = NSRect(x: refreshX, y: barRect.minY, width: refreshWidth, height: barRect.height)
@@ -4712,10 +4713,17 @@ class PlexBrowserView: NSView {
             ? NSRect(x: originalSize.width - 20, y: 0, width: 20, height: 14)
             : SkinnedSurfaceChrome.closeButtonRect(in: NSRect(origin: .zero, size: originalSize),
                                                    captionHeight: Layout.titleBarHeight, width: 20)
-        if closesFromCorner, refreshButtonRect.contains(skinPoint) { return false }
+        // The corner closes except where the server bar draws a control into it.
+        if closesFromCorner, refreshButtonRect.contains(skinPoint) || viewModeButton(at: skinPoint) != nil {
+            return false
+        }
         return closeRect.contains(skinPoint)
     }
-    
+
+    private func viewModeButton(at skinPoint: NSPoint) -> LibraryViewMode? {
+        viewModeButtonRects.first(where: { $0.rect.contains(skinPoint) })?.mode
+    }
+
     /// Check if point is in server bar
     private func hitTestServerBar(at skinPoint: NSPoint) -> Bool {
         let serverBarY = Layout.titleBarHeight
@@ -5104,8 +5112,8 @@ class PlexBrowserView: NSView {
 
         // Check server bar
         if hitTestServerBar(at: skinPoint) {
-            if let hit = viewModeButtonRects.first(where: { $0.rect.contains(skinPoint) }) {
-                artLens.mode = hit.mode
+            if let mode = viewModeButton(at: skinPoint) {
+                artLens.mode = mode
                 needsDisplay = true
                 return
             }
