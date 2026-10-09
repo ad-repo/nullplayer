@@ -95,9 +95,11 @@ struct AudionFace {
 
     // MARK: - Roles. Each case order is FaceKit's draw order.
 
+    /// FaceKit adds the buttons as subviews in this order, so a later one draws over (and is hit
+    /// before) an earlier one it overlaps.
     enum ButtonRole: String, CaseIterable {
-        case play, pause, stop, rewind = "rw", fastForward = "ff"
-        case close, info, volume, playlist = "menu", mode = "music", eject
+        case play, pause, stop, rewind = "rw", fastForward = "ff", eject
+        case close, info, volume, playlist = "menu", mode = "music"
 
         /// The sprite's base name: `<sprite>.png`, `-active`, `-disabled`, `-hover`.
         var sprite: String { rawValue }

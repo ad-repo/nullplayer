@@ -16,8 +16,9 @@ struct AudionFaceFixture {
         try data.write(to: folder.appendingPathComponent(name))
     }
 
-    func png(_ name: String, width: Int = 1, height: Int = 1) throws {
-        let rgba = [UInt8](repeating: 255, count: width * height * 4)
+    /// Every pixel `fill`, RGBA.
+    func png(_ name: String, width: Int = 1, height: Int = 1, fill: [UInt8] = [255, 255, 255, 255]) throws {
+        let rgba = Array([[UInt8]](repeating: fill, count: width * height).joined())
         try write(name, WMPSkinTestSupport.encodedImage(width: width, height: height, rgba: rgba))
     }
 
