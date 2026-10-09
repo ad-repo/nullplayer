@@ -63,6 +63,25 @@ One fact per line, inside a `FACE` block.
 | `PROBE <label> <element> x,y WxH [offset=<px> text=WxH]` | one per draw op (`AudionFaceDrawOp.Element`'s description), face pixels, top-left; labels add the marquee offset and text image size |
 | `PNG <label>: <face>/<file>` or `PNG <label> FAILED <why>` | the dump written, or why not |
 
+## The live app
+
+Launch the debug build on an installed face with app-control's one command; it kills any running
+NullPlayer, so say so first. `-audionFacePath <folder>` is what it passes: an installed face is
+selected in place, anything else is installed first.
+
+```bash
+skills/app-control/scripts/launch.sh "audion:Black Bar"   # LAUNCH PASS: audion skin 'Black Bar' …
+```
+
+| Env var (DEBUG and release) | Effect |
+|---|---|
+| `AUDION_PLACE_TRACE=1` | Logs `[place/tile] hosted <frame>` each time the shared tiler places one of NullPlayer's windows beside a face (`WindowManager.positionSubWindow`). |
+
+`skills/app-control/scripts/skin-mode-switch-test.sh` runs `.wmz → Audion → Audion' → Classic`
+at the end of its chain; `skin-pick-matrix.py` picks AppleClassic and Agitator; `window-census.sh`
+takes `audion`. Long face lists are A–Z submenus, which `menu.applescript`'s `skin` and `current`
+verbs reach into.
+
 ## Scripts
 
 All refuse a dirty tree without `--allow-dirty` (a sweep is a build), redirect `swift test` to files

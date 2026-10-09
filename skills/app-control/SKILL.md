@@ -101,6 +101,7 @@ skills/app-control/scripts/launch.sh aquamp                 # .wsz   → -uiMode
 skills/app-control/scripts/launch.sh 2222-cPro__Bento       # .wal   → -uiMode winampModern
 skills/app-control/scripts/launch.sh modern:NeonWave        # Original submenu
 skills/app-control/scripts/launch.sh "metal:Brushed Steel"  # Original-Metal submenu
+skills/app-control/scripts/launch.sh "audion:Black Bar"     # Audion face → -uiMode audion
 ```
 
 It prints one line — `LAUNCH PASS: wmp skin 'corona'  pid … log /tmp/np.log` — or `LAUNCH FAIL: …`
@@ -112,6 +113,8 @@ a past session, silently.
 - `<skin>` is a bare installed name (searched across `Skins/`, `WinampModernSkins/`, `WMPSkins/`),
   `name.ext` to pin a family, or an absolute path. A name found in two families **fails and lists
   both** rather than guessing. A `.wmz` path outside `WMPSkins/` is imported via `-wmpSkinPath`.
+  `audion:<name>` names a folder under `AudionFaces/` holding `index.json`, passed as
+  `-audionFacePath`; it is confirmed by the log line `AudionFace: loaded '<name>'`.
 - `--no-play` skips `NULLPLAYER_PLAY` (default: `audio-long` playing; an exported
   `NULLPLAYER_PLAY` replaces it). `--log <path>` (default
   `/tmp/np.log`). App arguments go after `--`; trace env vars are simply exported in front:

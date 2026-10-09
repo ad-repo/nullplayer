@@ -10,10 +10,12 @@ Read this skill before changing `Sources/NullPlayer/AudionFace/` or
 mapping, window policy — are `docs/audion-face/phase-0-decision-record.md`. The backlog is
 `AUDION_TASKS.md`.
 
-**Status:** Phase 2. The model, bounded loader, scene and renderer exist in
+**Status:** Phase 3. The model, bounded loader, scene and renderer exist in
 `Sources/NullPlayer/AudionFace/`, with the harness, census, render sweep, load ratchet and FaceKit
 oracle; all 856 corpus faces are geometry-identical to FaceKit (`reference/harness.md` § *Measured*).
-There is no window yet: `reference/windows.md` is a stub until Phase 3.
+Audion Faces is a DEBUG-only mode: the face window, transport, drag and docking, install/select/
+remove, persistence, and NullPlayer's windows in a face-derived gloss frame (`reference/windows.md`).
+Phase 4 wires the remaining buttons, sliders, marquee clock and accessibility.
 
 ## The rule that outranks everything
 
@@ -91,7 +93,7 @@ What is specific to this engine:
 4. **A sweep proves the default state only.** Hover, press, a ticking marquee, an animation and
    playback need the state probes (Phase 2, `reference/harness.md`) or the live app. A byte-identical sweep across a change to any of those is unmeasured, not unchanged.
 
-The probe flags are in `reference/harness.md`; the launch command arrives in Phase 3.
+The probe flags and the launch command are in `reference/harness.md`.
 
 ## Verification
 
