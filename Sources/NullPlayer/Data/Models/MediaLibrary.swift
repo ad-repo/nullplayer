@@ -694,7 +694,7 @@ class MediaLibrary {
         
         // Quick validate file (existence + extension check - fast)
         if !skipValidation {
-            if let error = AudioFileValidator.quickValidate(url: url) {
+            if let error = AudioFileValidator.quickValidate(url: url, includeVideo: false) {
                 NSLog("MediaLibrary: Skipping invalid file '%@': %@", url.lastPathComponent, error)
                 return nil
             }
@@ -736,7 +736,7 @@ class MediaLibrary {
         guard !urls.isEmpty else { return }
 
         // Quick validate all files first (existence + extension - fast)
-        let validation = AudioFileValidator.quickValidate(urls: urls)
+        let validation = AudioFileValidator.quickValidate(urls: urls, includeVideo: false)
 
         // Notify about invalid files
         if validation.hasInvalidFiles {

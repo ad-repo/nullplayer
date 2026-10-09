@@ -222,9 +222,19 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         clearVideoCastState()
     }
     
+    /// How a queued film ended: played to its end, or never played (missing, unreadable, unreachable).
+    enum VideoEnd { case finished, failed }
+
     /// Advances the playlist when the film ends. Set only by `WindowManager.playVideoTrack`, so
     /// non-nil exactly while the loaded film came from the playlist.
-    var onVideoFinishedForPlaylist: (() -> Void)?
+    var onQueuedVideoEnded: ((VideoEnd) -> Void)?
+
+    /// Clears the callback before invoking it: it may load the next video, which sets a new one.
+    private func endQueuedVideo(_ end: VideoEnd) {
+        let callback = onQueuedVideoEnded
+        onQueuedVideoEnded = nil
+        callback?(end)
+    }
 
     /// Current playback time
     var currentTime: TimeInterval {
@@ -352,14 +362,21 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             // A queued film's callback loads the next item and starts it, which clears the flag
             // through `updatePlayingState(true)` anyway, so only a film from outside the queue
             // marks its end.
-            guard let callback = self.onVideoFinishedForPlaylist else {
+            guard self.onQueuedVideoEnded != nil else {
                 self.markReachedEndOfMedia()
                 return
             }
             NSLog("VideoPlayer: Video finished from playlist, invoking callback")
-            // Clear the callback BEFORE invoking it: it may load the next video, which sets a new one.
-            self.onVideoFinishedForPlaylist = nil
-            callback()
+            self.endQueuedVideo(.finished)
+        }
+
+        // A film that never played closes rather than leaving a black window over a paused engine;
+        // a playlist film then goes to the engine as a failed load. Not while casting: the film is
+        // on the device, and the local open failing does not end it.
+        videoPlayerView.onPlaybackFailed = { [weak self] in
+            guard let self, !self.isCastingVideo else { return }
+            self.stop()
+            self.endQueuedVideo(.failed)
         }
         
         // Cast button callback
@@ -514,20 +531,23 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         reportVideoEnded(at: videoPlayerView.currentPlaybackTime)
     }
 
-    /// Load `video` from `url` and start it in the window. Only a Plex stream passes `plexHeaders`;
-    /// the view reads them only for a Plex URL.
-    private func startVideo(_ video: LoadedVideo, url: URL, plexHeaders: [String: String]? = nil) {
+    /// Load `video` from `url`, start it in the window and tell its server it started. Only a Plex
+    /// film streams with Plex's headers.
+    private func startVideo(_ video: LoadedVideo, url: URL) {
         loadedVideo = video
         window?.title = video.title
         revealVideoOutput()
+        let plexHeaders: [String: String]? =
+            if case .serverItem(.plex, _) = video.source { PlexManager.shared.streamingHeaders } else { nil }
         videoPlayerView.play(url: url, title: video.title, isPlexURL: plexHeaders != nil, plexHeaders: plexHeaders)
         isPlaying = true
         beginPlaybackAnalyticsSession()
         WindowManager.shared.videoPlaybackDidStart()
+        video.reportStart()
     }
 
-    /// Play a video from URL with optional title
-    /// If called from WindowManager.playVideoTrack, the onVideoFinishedForPlaylist callback will be set
+    /// Play a film with no server behind it: a local file or a stream. A queued film with no
+    /// server id reaches this through `play(track:)`.
     func play(url: URL, title: String) {
         endPreviousVideo()
         startVideo(LoadedVideo(source: url.isFileURL ? .localFile(url) : .stream, title: title,
@@ -535,57 +555,15 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                    url: url)
     }
 
-    /// Play a Plex video track from the playlist
-    /// Used when the Track has a plexRatingKey but we don't have the full PlexMovie/PlexEpisode
-    func play(plexTrack track: Track) {
-        guard let ratingKey = track.plexRatingKey else {
+    /// Play a film from the playlist. A server film carries only its id on the track, which picks
+    /// the server that hears its reports; any other plays as its URL.
+    func play(track: Track) {
+        guard let video = LoadedVideo(serverTrack: track) else {
             play(url: track.url, title: track.displayTitle)
             return
         }
         endPreviousVideo()
-        startVideo(LoadedVideo(source: .plexItem(ratingKey: ratingKey), queuedTrack: track), url: track.url,
-                   plexHeaders: PlexManager.shared.streamingHeaders)
-        PlexVideoPlaybackReporter.shared.videoTrackDidStart(
-            ratingKey: ratingKey,
-            title: track.displayTitle,
-            durationSeconds: track.duration ?? 0,
-            isEpisode: track.playHistoryContentType == "tv"
-        )
-        NSLog("VideoPlayerWindowController: Playing Plex track from playlist: %@ (key: %@)", track.displayTitle, ratingKey)
-    }
-
-    /// Play a Jellyfin video track from the playlist
-    func play(jellyfinTrack track: Track) {
-        guard let jellyfinId = track.jellyfinId else {
-            play(url: track.url, title: track.displayTitle)
-            return
-        }
-        endPreviousVideo()
-        startVideo(LoadedVideo(source: .jellyfinItem(id: jellyfinId), queuedTrack: track), url: track.url)
-        JellyfinVideoPlaybackReporter.shared.videoTrackDidStart(
-            itemId: jellyfinId,
-            title: track.displayTitle,
-            durationSeconds: track.duration ?? 0,
-            isEpisode: track.playHistoryContentType == "tv"
-        )
-        NSLog("VideoPlayerWindowController: Playing Jellyfin track from playlist: %@ (id: %@)", track.displayTitle, jellyfinId)
-    }
-
-    /// Play an Emby video track from the playlist
-    func play(embyTrack track: Track) {
-        guard let embyId = track.embyId else {
-            play(url: track.url, title: track.displayTitle)
-            return
-        }
-        endPreviousVideo()
-        startVideo(LoadedVideo(source: .embyItem(id: embyId), queuedTrack: track), url: track.url)
-        EmbyVideoPlaybackReporter.shared.videoTrackDidStart(
-            itemId: embyId,
-            title: track.displayTitle,
-            durationSeconds: track.duration ?? 0,
-            isEpisode: track.playHistoryContentType == "tv"
-        )
-        NSLog("VideoPlayerWindowController: Playing Emby track from playlist: %@ (id: %@)", track.displayTitle, embyId)
+        startVideo(video, url: track.url)
     }
 
     /// Stop playback

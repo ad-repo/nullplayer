@@ -71,7 +71,7 @@ class JellyfinVideoPlaybackReporter {
     // MARK: - Public API
     
     /// Called when a Jellyfin film starts playing in the video window
-    func videoTrackDidStart(itemId: String, title: String, durationSeconds: TimeInterval, isEpisode: Bool, at position: TimeInterval = 0) {
+    func videoTrackDidStart(itemId: String, title: String, durationSeconds: TimeInterval, isEpisode: Bool) {
         let serverId = JellyfinManager.shared.currentServer?.id ?? ""
         NSLog("JellyfinVideoPlaybackReporter: Video track started - %@ (id: %@)", title, itemId)
 
@@ -81,7 +81,7 @@ class JellyfinVideoPlaybackReporter {
             title: title,
             durationSeconds: durationSeconds,
             videoType: isEpisode ? .episode : .movie,
-            position: position
+            position: 0
         )
     }
     

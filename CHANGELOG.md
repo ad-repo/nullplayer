@@ -191,6 +191,27 @@
 - **The CLI casts a radio station** — `--source radio --station … --cast …` played the station
   on the Mac and never cast; it now plays on the named device. Quitting a CLI cast with `q`,
   Ctrl-C or a kill now stops the speaker or TV instead of leaving it playing.
+- **A film that can't be opened is skipped** — a missing or unreadable film left a black video
+  window at 0:00 and a paused player, with no message. The window now closes, the marquee says
+  why, and the playlist moves on to the next row, as it does for a bad audio file; a film whose
+  folder is gone stops playback instead.
+- **Library Browser item count sits beside the library name** — the source bar shows the count
+  after the library ("Lib: Music (1110 items)") or source ("Local Files (988 items)") instead of
+  in a field of its own, so a narrow window has room for the name. Plex reads "items" like the
+  rest. In the Original and Metal browsers, **F5** is now a refresh button styled like the
+  List / Flow / Tiles icons; F5 still refreshes.
+- **A playlist film starts its clock at 0:00** — a film played after a song or a radio station
+  carried that track's elapsed time as its own position (macOS Now Playing showed it); it now
+  starts from zero.
+- **Video files can be added from the playlist's menus** — in Winamp Modern skins, **Add Files**,
+  **Add Directory** and **Load Playlist** offered video files and then dropped them as an
+  "unsupported format". A film added this way now joins the playlist and plays in the video
+  window, as a dropped one already did.
+- **A server or radio stream no longer plays over the previous song during or after Sweet Fades**
+  — once a local song had crossfaded into the next, starting a Plex, Jellyfin, Emby, Subsonic or
+  radio stream left that local song playing underneath it. A stream started with Play Now while
+  two streams were crossfading was replaced by the incoming song when the fade finished. Both now
+  play the stream you picked.
 
 ## 0.31.4
 

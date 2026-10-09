@@ -29,12 +29,12 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   the two that pre-load the next track; both ask `AudioEngine.canHandOff(to:fromStreaming:)` first,
   which refuses a video, so a new pre-load path must too. It reads `Track.playbackRoute`, the same
   classification `loadTrack` routes on, so a new route is added in one place.
-- **Routing a video halts the audio through `haltAudioOutput()`**, which invalidates
+- **Routing a video halts the audio through `haltAudioOutput()`** (inside `stopLocalOnly()`), which invalidates
   `playbackGeneration` before stopping. Stopping a node fires its track's completion, and a live
   one ran as a natural end: double-clicking a video over playing audio loaded the next row behind
   the window. It also stops the crossfade node, which holds the audio after a completed fade.
 - **A playlist film's end advances by natural-end rules, in every family.**
-  `onVideoFinishedForPlaylist` calls `AudioEngine.videoTrackDidFinish` → `advanceAfterNaturalTrackEnd`,
+  `onQueuedVideoEnded(.finished)` calls `AudioEngine.videoTrackDidEnd` → `advanceAfterNaturalTrackEnd`,
   never `next()`. By then `videoPlaybackDidReachEndOfMedia` has stopped the engine (paused when the
   film started), and `next()` resumes only a `.playing` engine, so it loaded the next row and never
   played it (M13). `next()` also wraps at the end of the playlist where a natural end stops.
@@ -56,6 +56,26 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   a playlist double-click, and Play after closing the film each log one `Routing video track`.
 - **The vendored VLCKit reports the end of a film as `.paused`, never `.ended`** — see the
   `mediaPlayerStateChanged` comment; end-of-film handling keys off that pause.
+- **A film that never plays is a failed load, skipped like a bad audio file** (M25). VLC reports
+  no error we can see: a missing file reads back as `.stopped` (the state is read a main-queue turn
+  late, after `.error`), and non-video bytes run straight to their end, a `.paused`. Either one,
+  unrequested and before the current player first played, fires `VideoPlayerView.onPlaybackFailed`
+  from the gate at the top of `mediaPlayerStateChanged`. A requested stop clears
+  `isAwaitingFirstPlay` itself: the `.paused` it sends consumes `didRequestPause`, and the
+  `.stopped` after would otherwise read as a failure. The handler drops a notification from a
+  replaced player, which would read the new player's state. The window closes (`stop()`), and a
+  playlist film reaches `AudioEngine.videoTrackDidEnd(.failed)` → `reportFailedLocalOpen`, the
+  audio open's failure path: the marquee reports it, and the queue skips to the next row, or
+  stops when the film's folder is gone (`containingFolderIsPresent`; a server film always skips).
+  A **Play Now** film keeps Play Now's bound, though it fails after `startPlayNowLocally` returned:
+  the engine holds the request (`videoPlayNow`) until the film ends, and `continuePlayNow` skips
+  only to the next inserted track, or takes the request back out and reports it, never starting
+  the queue the user already had. A film that plays to its end resets the failure streak
+  (`consecutiveTrackLoadFailures`), as an audio file that opens does.
+  Before this, the window stayed black at 0:00 over a paused engine. Measured 2026-10-08 on
+  Classic: a missing film, a non-video `.mp4` advanced into after a film ended in the same window,
+  and a deleted folder. A Stream Ripper **Play Now** film that fails closes with nothing in the
+  marquee, since it is not in the playlist.
 - **Windows → Video Player is inert until a video has been opened** — the controller is created on
   first play, and `WindowManager.toggleVideoPlayer` returns early while it is nil.
 - **A play call moves key focus to the picture** (`revealVideoOutput`): the free window takes it
@@ -96,7 +116,7 @@ Two `WindowManager` entry points create the controller if needed and play.
 
 | Entry point | Called by | Notes |
 |---|---|---|
-| `playVideoTrack(_:)` | `AudioEngine.loadTrack` (any playlist video) | every film from a library row. First offers the film to `routeToVideoCastIfNeeded` (see *Casting* below); sets `onVideoFinishedForPlaylist`, so its end advances the playlist. Picks `play(plexTrack:)` / `play(jellyfinTrack:)` / `play(embyTrack:)` from `plexRatingKey` / `jellyfinId` / `embyId`, else `play(url:title:)` |
+| `playVideoTrack(_:)` | `AudioEngine.loadTrack` (any playlist video) | every film from a library row. First offers the film to `routeToVideoCastIfNeeded` (see *Casting* below); sets `onQueuedVideoEnded`, so its end advances the playlist. Hands every film to `play(track:)`, which plays a server film by its id and anything else through `play(url:title:)` |
 | `showVideoPlayer(url:title:)` | Stream Ripper **Play Now** | opens the file just ripped in the local window, outside the queue, even while a video cast runs. Calls `TrackVerb.supersedePendingPlays()` first: a library **Play** still fetching (a show resolves season by season) would otherwise replace this film when its fetch lands |
 
 **A film row plays like a music row.** Double-click / Return on a movie or episode row of any
@@ -122,6 +142,18 @@ dragging a video does nothing. The `.wal` playlist's **Add Directory** does the 
 (`WinampModernHostActionMenus`). Discovered videos join the playlist and play through `loadTrack`.
 A drop on a Library Browser imports instead (`local-library` § *Video import*).
 
+**Add Files, Add Directory and Load Playlist** reach the playlist through `AudioEngine.loadFiles`,
+which validates with `AudioFileValidator.quickValidate(urls:includeVideo: true)`; the library passes
+`false`, since video is imported by its own path. Before, a film the panel offered was dropped as
+"Unsupported format" (M27). The `.wal` playlist reaches the panels through `PE_ADD` / `PE_LIST`.
+The Classic playlist no longer draws its ADD/REM/SEL/MISC/LIST buttons, but
+`PlaylistView.hitTestBottomButton` still hit-tests them inside the 7 px bottom border (ADD at
+x 11–40, LIST at the right 22 px), so a click there opens the same menus; its mini-transport Open
+needs y ≥ 12 and is unreachable. The Original playlist's `showAddMenu` has no caller. The context
+menu's Play File / Play Folder stay audio-only (`AudioEngine.loadFolder`). Measured 2026-10-08 on
+winampmodern566: each panel added `video-short`, which played in the video window, and a film row
+advanced to the audio row after it.
+
 ## Window lifetime
 
 - **The controller is mode-independent.** `reloadUI(to:)`'s teardown keeps
@@ -143,21 +175,33 @@ nothing. Its `playHistorySource` is the play event's source; `performCast` casts
 track. Every
 `play(…)` starts with `endPreviousVideo()` (drop a stale cast, then `reportVideoEnded`) and loads
 through `startVideo(…)`, which sets `loadedVideo` in one assignment, so a new item cannot inherit
-anything from the previous one. Every way a film ends goes through `reportVideoEnded(at:finished:)`
+anything from the previous one, and ends by reporting the start (`LoadedVideo.reportStart()`, a
+no-op for local playback). Every way a film ends goes through `reportVideoEnded(at:finished:)`
 (report the stop, record the play); the paths that also drop the film (stop, window close, cast
 handoff or loss) go through `unloadVideo(reportingStopAt:)`. A new source is a new
-`LoadedVideo.Source` case; the compiler then names every switch it must join. A server
-film carries only its id on the `Track`, so `play(plexTrack:)` / `play(jellyfinTrack:)` /
-`play(embyTrack:)` load `.plexItem` / `.jellyfinItem` / `.embyItem` and start the reporter with
-`videoTrackDidStart`, taking episode-or-movie from `playHistoryContentType`. **About Playing**
+`LoadedVideo.Source` case; the compiler then names every switch it must join. A server film is
+`.serverItem(Server, id:)`, and a new server is a new `LoadedVideo.Server` case, which owns its
+reporter. Every reporter event, start included, is on `VideoPlaybackReporting`. A server film
+carries only its id on the `Track`, so `play(track:)` builds it with `LoadedVideo(serverTrack:)`
+(the server from `plexRatingKey` / `jellyfinId` / `embyId`; nil for any other track, which plays
+through `play(url:title:)`). `reportStart()` calls the server's `videoTrackDidStart`, taking
+episode-or-movie from `playHistoryContentType`. Only a Plex film streams with
+`streamingHeaders`, which `startVideo` adds. **About Playing**
 on a Plex film fetches the movie or episode by its rating key for the info sheet. The three
 reporters share their rules: scrobble at 90% (audio uses 50%), only after 60 s of play, with a
 timeline update every 10 s. Each server's API details are in its own integration skill.
 
-**Only the video reporter hears a film.** `loadTrack`'s video branch stops the engine's time
-timer when it hands a film over. Left ticking until `videoPlaybackDidStart` paused the engine,
-the timer's Subsonic / Jellyfin / Emby progress calls opened a second, audio "now playing" session for the film with the previous song's
-duration (measured on Emby, 2026-10-08).
+**Only the video reporter hears a film.** `loadTrack`'s video branch stops the outgoing track
+through `stopLocalOnly()` — Stop's own path — before it makes the film current: its reporters
+hear a stop at its real position, and the engine hands over stopped at 0:00, timer off. It used to
+halt the audio by hand and leave the engine `.playing` until `videoPlaybackDidStart` paused it,
+and each field left running in that gap was a bug: the time timer's Subsonic / Jellyfin / Emby
+progress calls opened a second, audio "now playing" session for the film with the previous song's
+duration (measured on Emby, 2026-10-08), and the outgoing start date made `currentTime` read that
+song's elapsed time for the film (M26: `time=18.0` on a just-loaded film, read with
+`playback-snapshot.sh`; Now Playing showed it, the main window did not, since the film's own time
+pushes replace the engine's). Measured 2026-10-08 on Classic: `audio-long` playing, then
+`2-video` from MOVIES, reads `engine state=stopped track='2-video' … time=0.0`.
 
 ## Casting
 
