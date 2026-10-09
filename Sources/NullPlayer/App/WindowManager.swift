@@ -324,7 +324,7 @@ class WindowManager {
     /// that — and reading it as a zoom drew our playlist title and rows at 3x. UI Size in WMP mode
     /// zooms the skin's window and nothing else, so these windows stay at the app's own scale.
     var playlistChromeScale: CGFloat {
-        if uiMode.controllerFamily != .wmp, uiMode.controllerFamily != .audion,
+        if !uiMode.controllerFamily.bringsOwnRuntime,
            let mainWindow = mainWindowController?.window, mainWindow.frame.width > 0 {
             return mainWindow.frame.width / Skin.baseMainSize.width
         }
@@ -906,11 +906,7 @@ class WindowManager {
     // MARK: - Initialization
     
     private init() {
-        if storedUIMode == .wmp, !AppCapabilities.supports(.wmpSkinMode) {
-            storedUIMode = .classic
-            storedUIMode.persist()
-        }
-        if storedUIMode == .audion, !AppCapabilities.supports(.audionFaceMode) {
+        if !storedUIMode.isAvailable {
             storedUIMode = .classic
             storedUIMode.persist()
         }
@@ -929,7 +925,7 @@ class WindowManager {
         hostedBorderLayout = MainActor.assumeIsolated { HostedWindowBorderLayout() }
 
         // WMP and Audion own app-authored unskinned fallbacks and must not consult another skin engine.
-        if storedUIMode.controllerFamily != .wmp, storedUIMode.controllerFamily != .audion {
+        if !storedUIMode.controllerFamily.bringsOwnRuntime {
             loadDefaultSkin()
         }
 
@@ -1152,10 +1148,7 @@ class WindowManager {
     /// Classic and Original stay out, and that exclusion is the load-bearing part: B56 is the record
     /// of what happens when these corrections reach families whose window positions people have laid
     /// their desktops out around.
-    var appliesPlacementRecovery: Bool {
-        uiMode.controllerFamily == .winampModern || uiMode.controllerFamily == .wmp
-            || uiMode.controllerFamily == .audion
-    }
+    var appliesPlacementRecovery: Bool { uiMode.controllerFamily.hostsForeignSkin }
 
     private var winampModernHostedController: WinampModernMainWindowController? {
         guard uiMode.controllerFamily == .winampModern else { return nil }
@@ -2544,8 +2537,7 @@ class WindowManager {
     /// reopen after that is where the user left it. Registers the window, so call it once per show,
     /// before any branch — a launch restore counts as the first placement.
     private func reopensWhereLeft(_ window: NSWindow) -> Bool {
-        let family = uiMode.controllerFamily
-        guard family == .wmp || family == .winampModern || family == .audion else { return false }
+        guard uiMode.controllerFamily.hostsForeignSkin else { return false }
         if placedFreeFloatingWindows.contains(window) { return true }
         placedFreeFloatingWindows.add(window)
         return false
@@ -2590,9 +2582,7 @@ class WindowManager {
         // by. The tiler this branch uses clamps every slot onto the visible frame on both axes, which
         // is the protection the Classic path has never had and does not need — its stack is a layout
         // the user has arranged their desktop around.
-        let familyTiles = uiMode.controllerFamily == .winampModern || uiMode.controllerFamily == .wmp
-            || uiMode.controllerFamily == .audion
-        if familyTiles {
+        if uiMode.controllerFamily.hostsForeignSkin {
             // `tiledOrigin` now only declines when there is no player window or screen to tile
             // against at all; the reachability fallback covers that, so no path here can leave a
             // window at an off-screen origin.
@@ -2606,7 +2596,7 @@ class WindowManager {
                 let traceKey = switch uiMode.controllerFamily {
                 case .wmp: "WMP_PLACE_TRACE"
                 case .audion: "AUDION_PLACE_TRACE"
-                default: "WINAMP_MODERN_PLACE_TRACE"
+                case .winampModern, .classic, .nullPlayerModern: "WINAMP_MODERN_PLACE_TRACE"
                 }
                 if ProcessInfo.processInfo.environment[traceKey] == "1" {
                     NSLog("[place/tile] hosted %@", NSStringFromRect(window.frame))
@@ -2711,8 +2701,7 @@ class WindowManager {
     func handleCenterStackWindowWillClose(_ window: NSWindow) {
         guard !isRunningModernUI else { return }
         // No stack in WMP or `.wal`: closing one window must not move the others.
-        let family = uiMode.controllerFamily
-        if family != .wmp, family != .winampModern, family != .audion {
+        if !uiMode.controllerFamily.hostsForeignSkin {
             slideUpWindowsBelow(closingFrame: window.frame)
         }
         _ = tightenClassicCenterStackIfNeeded()
@@ -2765,9 +2754,7 @@ class WindowManager {
                     window.setFrame(Self.dockedLibraryReopenFrame(
                         reDerived: dockedFrame,
                         remembered: frame,
-                        preservingRememberedHeight: isRunningWMPUI
-                            || uiMode.controllerFamily == .winampModern
-                            || uiMode.controllerFamily == .audion
+                        preservingRememberedHeight: runningControllerFamily.hostsForeignSkin
                     ), display: true)
                 } else {
                     window.setFrame(frame, display: true)
@@ -2913,7 +2900,7 @@ class WindowManager {
 
     /// Toggle the menu-bar Compact Mode (works in both classic and modern UI). Live — no restart.
     func toggleCompactMode() {
-        guard uiMode.controllerFamily != .wmp, uiMode.controllerFamily != .audion else { return }
+        guard !uiMode.controllerFamily.bringsOwnRuntime else { return }
         if compactModeEnabled {
             exitCompactMode()
         } else {
@@ -2924,7 +2911,7 @@ class WindowManager {
     /// Toggle the free-floating Compact Window. This reuses the compact mini-player surface
     /// without changing activation policy or hiding any secondary windows.
     func toggleCompactWindow() {
-        guard uiMode.controllerFamily != .wmp, uiMode.controllerFamily != .audion else { return }
+        guard !uiMode.controllerFamily.bringsOwnRuntime else { return }
         if compactWindowEnabled {
             exitCompactWindow()
         } else {
@@ -2937,7 +2924,7 @@ class WindowManager {
     /// - Parameter treatMainAsVisible: Used at launch restore when the main window was created
     ///   hidden only to avoid flash. Exiting Compact Window should still bring it back.
     func enterCompactWindow(treatMainAsVisible: Bool = false) {
-        guard uiMode.controllerFamily != .wmp, uiMode.controllerFamily != .audion else { return }
+        guard !uiMode.controllerFamily.bringsOwnRuntime else { return }
         if compactModeState != .regular {
             exitCompactMode { [weak self] in
                 self?.enterCompactWindow(treatMainAsVisible: treatMainAsVisible)
@@ -2999,7 +2986,7 @@ class WindowManager {
     ///   regular layout, so this matches the live-toggle behavior. Defaults to `false` so the
     ///   live menu toggle keeps recording the main window's actual visibility.
     func enterCompactMode(revealWindow: Bool = true, treatMainAsVisible: Bool = false) {
-        guard uiMode.controllerFamily != .wmp, uiMode.controllerFamily != .audion else { return }
+        guard !uiMode.controllerFamily.bringsOwnRuntime else { return }
         let compactWindowMainWasVisible = compactWindowEnabled && mainWasVisibleBeforeCompactWindow
         if compactWindowEnabled {
             exitCompactWindow(restoreMainWindow: false)
@@ -5374,24 +5361,10 @@ class WindowManager {
         // For modern UI, sizes already include the multiplier via scaleFactor.
         // For classic UI, sizes are base sizes that need explicit * scale.
         let mainTargetSize: NSSize
-        if uiMode == .winampModern,
-           let controller = mainWindowController as? WinampModernMainWindowController {
-            // A `.wal` skin's window size comes from its own layout, not `Skin.mainWindowSize` —
-            // UI Size multiplies the skin's pixel grid. The view is told the scale here too, so the
-            // window and its contents change together.
-            controller.applyUIScale(scale)
-            mainTargetSize = controller.mainWindowSize(atScale: scale) ?? mainWindow.frame.size
-        } else if uiMode.controllerFamily == .wmp,
-                  let controller = mainWindowController as? WMPMainWindowController {
-            // A `.wmz` window is sized by the skin's own view, exactly as a `.wal` one is, so UI
-            // Size multiplies that rather than `Skin.mainWindowSize`. The controller keeps the
-            // scene on the skin's authored pixel grid and carries the multiplier on the window
-            // frame and the rasterization scale alone.
-            controller.applyUIScale(scale)
-            mainTargetSize = controller.mainWindowSize(atScale: scale) ?? mainWindow.frame.size
-        } else if uiMode.controllerFamily == .audion,
-                  let controller = mainWindowController as? AudionFaceMainWindowController {
-            // A face is sized by its own base image; UI Size multiplies it.
+        if let controller = mainWindowController as? SkinSizedMainWindow {
+            // A `.wal` layout, a `.wmz` view or an Audion face sizes the window, not
+            // `Skin.mainWindowSize` — UI Size multiplies the skin's pixel grid. The controller is
+            // told the scale here too, so the window and its contents change together.
             controller.applyUIScale(scale)
             mainTargetSize = controller.mainWindowSize(atScale: scale) ?? mainWindow.frame.size
         } else if runningModernMode {
@@ -5879,8 +5852,7 @@ class WindowManager {
         // ~15 other call sites (W214). `.wal` too (B147): a skin that draws no library of its own
         // gets this window, its place is the `.wal` tiler's, and the refit re-derived its dock edge
         // from a cluster a Cava tiled under the library had widened — a 9pt gap on Sony_Walkman.
-        guard !isRunningWMPUI else { return }
-        guard uiMode.controllerFamily != .winampModern, uiMode.controllerFamily != .audion else { return }
+        guard !runningControllerFamily.hostsForeignSkin else { return }
         guard let window = plexBrowserWindowController?.window, window.isVisible else { return }
         guard sideFrameIsRightDockedToCurrentStack(window.frame) else { return }
         guard let frame = rightDockedSideFrame(for: window, width: window.frame.width),
@@ -6079,7 +6051,7 @@ class WindowManager {
                 peppyMeterFloor: (SkinElements.PeppyMeterWindow.windowSize.height * classicScaleMultiplier).rounded(),
                 peppyMeterLegacyDoubleHeight: (SkinElements.SpectrumWindow.windowSize.height * 2 * classicScaleMultiplier).rounded(),
                 networkMonitorMinimumHeight: SkinElements.SpectrumWindow.minSize.height * classicScaleMultiplier,
-                preservingSavedFrame: isRunningWMPUI || runningControllerFamily == .audion
+                preservingSavedFrame: runningControllerFamily.bringsOwnRuntime
             )
         }
         let target = expectedMainHeightForCurrentHT(mainWindowController?.window)
@@ -6160,9 +6132,8 @@ class WindowManager {
         // never the skin's. This is `WMP_TASKS.md` W217's G4 arriving through a second door (that
         // row was filed as W196 and renumbered for an ID collision); the gate is the mode, per
         // CLAUDE.md, and Classic, Original and `.wal` reach this exactly as before.
-        guard !isRunningWMPUI else { return false }
-        // A face's size is the face's, for the same reason.
-        guard runningControllerFamily != .audion else { return false }
+        // An Audion face's size is the face's for the same reason, so the gate is `bringsOwnRuntime`.
+        guard !runningControllerFamily.bringsOwnRuntime else { return false }
         guard !isTighteningClassicCenterStack else { return false }
         guard let mainWindow = mainWindowController?.window else { return false }
 
@@ -6316,8 +6287,6 @@ class WindowManager {
     /// `openPresentations` order. `WMPViewWindowMaterializer.place` is once-only by design, so this
     /// walks the tiler directly rather than through it.
     private func snapWMPToDefaultPositions() {
-        isSnappingWindow = true
-        defer { isSnappingWindow = false }
         guard let controller = mainWindowController as? WMPMainWindowController,
               let playerWindow = controller.window,
               snapHostedFamilyToDefaultPositions(playerWindow: playerWindow,
@@ -6331,16 +6300,17 @@ class WindowManager {
                       window.title, NSStringFromRect(window.frame))
             }
         }
-
-        postLayoutChangeNotification()
     }
 
     /// The body of Snap To Default for a family whose windows float free of any stack (`.wmz`,
     /// Audion): the player re-centred, then `skinWindows` and NullPlayer's own visible windows
     /// re-placed through one clamped tiler, then anything still unreachable rescued. False when
-    /// there was no screen or tiler to place against, and nothing moved past the player. The caller
-    /// holds `isSnappingWindow` across this and its own layout notification.
+    /// there was no screen or tiler to place against, and nothing moved past the player; the layout
+    /// notification is posted only when the walk ran.
+    @discardableResult
     private func snapHostedFamilyToDefaultPositions(playerWindow: NSWindow, skinWindows: [NSWindow]) -> Bool {
+        isSnappingWindow = true
+        defer { isSnappingWindow = false }
         guard let region = (playerWindow.screen ?? NSScreen.main)?.visibleFrame else { return false }
 
         clearSavedWindowFramePositions()
@@ -6388,6 +6358,7 @@ class WindowManager {
             guard let origin = rescuedOrigin(for: window) else { continue }
             window.setFrameOrigin(origin)
         }
+        postLayoutChangeNotification()
         return true
     }
 
@@ -6514,11 +6485,8 @@ class WindowManager {
         }
         // A face's window is borderless too, and has no stack to build.
         if uiMode.controllerFamily == .audion {
-            isSnappingWindow = true
-            defer { isSnappingWindow = false }
-            if let playerWindow = mainWindowController?.window,
-               snapHostedFamilyToDefaultPositions(playerWindow: playerWindow, skinWindows: []) {
-                postLayoutChangeNotification()
+            if let playerWindow = mainWindowController?.window {
+                snapHostedFamilyToDefaultPositions(playerWindow: playerWindow, skinWindows: [])
             }
             return
         }
@@ -7928,13 +7896,8 @@ class WindowManager {
     /// `completion` — it runs after `performReloadUI`, on the main thread, in both the
     /// synchronous and deferred paths. It also fires when no switch is needed.
     func reloadUI(to targetMode: PlayerUIMode, completion: (() -> Void)? = nil) {
-        guard targetMode != .wmp || AppCapabilities.supports(.wmpSkinMode) else {
-            NSLog("WindowManager: Ignoring switch to unavailable Windows Media Player UI")
-            completion?()
-            return
-        }
-        guard targetMode != .audion || AppCapabilities.supports(.audionFaceMode) else {
-            NSLog("WindowManager: Ignoring switch to unavailable Audion Faces UI")
+        guard targetMode.isAvailable else {
+            NSLog("WindowManager: Ignoring switch to unavailable %@ UI", targetMode.displayName)
             completion?()
             return
         }
@@ -8226,15 +8189,14 @@ class WindowManager {
     /// defaults when entering classic. The classic `currentSkin` is loaded once at init and
     /// survives across switches, so no classic skin reload is needed here.
     private func prepareUIRuntime(for targetMode: PlayerUIMode) {
-        if targetMode.controllerFamily == .wmp || targetMode.controllerFamily == .winampModern
-            || targetMode.controllerFamily == .audion {
+        if targetMode.controllerFamily.hostsForeignSkin {
             // Entering `.wal` / `.wmz` / Audion is a skin change for the shared Spectrum window profile key,
             // which still holds whatever Classic ("Purple Neon") or Original left there. Forget the
             // skin it was matched for, so the skin's own match is written once its style resolves.
             VisClassicProfileMatcher.forgetAppliedSkin(for: [.spectrumWindow])
         }
-        if targetMode.controllerFamily == .wmp || targetMode.controllerFamily == .audion {
-            // WMP runtime state is loaded by its dedicated controller. Do not consult or mutate
+        if targetMode.controllerFamily.bringsOwnRuntime {
+            // WMP and Audion runtime state is loaded by its dedicated controller. Do not consult or mutate
             // Classic/Original skin engines, modern engines, or their appearance bridges here.
             return
         }

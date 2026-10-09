@@ -317,13 +317,14 @@ extension ContextMenuBuilder {
                 .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).uppercased()
             return ("A"..."Z").contains(initial) && initial.count == 1 ? initial : "#"
         }
-        let groups = Dictionary(grouping: items, by: key)
-        return groups.keys.sorted { $0 == "#" ? false : $1 == "#" ? true : $0 < $1 }.map { letter in
+        func rank(_ letter: String) -> String { letter == "#" ? "~" : letter } // `#` after Z
+        let groups = Dictionary(grouping: items, by: key).sorted { rank($0.key) < rank($1.key) }
+        return groups.map { letter, group in
             let menu = NSMenu()
             menu.autoenablesItems = false
-            groups[letter]!.forEach(menu.addItem)
+            group.forEach(menu.addItem)
             let parent = NSMenuItem(title: letter, action: nil, keyEquivalent: "")
-            if groups[letter]!.contains(where: { $0.state == .on }) { parent.state = .on }
+            if group.contains(where: { $0.state == .on }) { parent.state = .on }
             parent.submenu = menu
             return parent
         }
@@ -669,8 +670,11 @@ extension MenuActions {
 
     @objc func loadAudionFaceFromFile() {
         guard AppCapabilities.supports(.audionFaceMode) else { return }
-        if let controller = audionController { return controller.importFaceFromPanel() }
-        WindowManager.shared.reloadUI(to: .audion) { [weak self] in self?.audionController?.importFaceFromPanel() }
+        if let controller = audionController {
+            controller.importFaceFromPanel()
+        } else {
+            WindowManager.shared.reloadUI(to: .audion) { [weak self] in self?.audionController?.importFaceFromPanel() }
+        }
     }
 
     @objc func getMoreAudionFaces() {

@@ -60,8 +60,7 @@ class ContextMenuBuilder {
         // toggles. A `.wal` skin supplies its own compact/shade layouts, so showing NullPlayer's
         // alternatives there creates a second, unrelated compact-window model; the menu-bar
         // Windows menu suppresses them the same way. WMP skins own their views the same way.
-        if wm.uiMode.controllerFamily != .winampModern, wm.uiMode.controllerFamily != .wmp,
-           wm.uiMode.controllerFamily != .audion {
+        if !wm.uiMode.controllerFamily.hostsForeignSkin {
             let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
             compactMode.target = MenuActions.shared
             compactMode.state = wm.compactModeEnabled ? .on : .off
@@ -215,8 +214,7 @@ class ContextMenuBuilder {
         // Compact controls belong to the classic and NullPlayer-owned UI families. A `.wal` or
         // `.wmz` skin supplies its own compact/shade layouts, so showing NullPlayer's alternatives
         // here creates a second, unrelated compact-window model.
-        if wm.uiMode.controllerFamily != .winampModern, wm.uiMode.controllerFamily != .wmp,
-           wm.uiMode.controllerFamily != .audion {
+        if !wm.uiMode.controllerFamily.hostsForeignSkin {
             let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
             compactMode.target = MenuActions.shared
             compactMode.state = wm.compactModeEnabled ? .on : .off
@@ -606,8 +604,7 @@ class ContextMenuBuilder {
         // so the menu-bar entry is suppressed there. A `.wmz` skin draws its own player and hosts
         // this player's visuals in its authored effects rect, so WMP suppresses it too.
         // Classic and NullPlayer modern keep it.
-        let family = wm.uiMode.controllerFamily
-        if family != .winampModern && family != .wmp && family != .audion {
+        if !wm.uiMode.controllerFamily.hostsForeignSkin {
             let mainWindowItem = NSMenuItem(title: "Main Window", action: nil, keyEquivalent: "")
             mainWindowItem.submenu = buildMainVisualizationSubmenu()
             menu.addItem(mainWindowItem)

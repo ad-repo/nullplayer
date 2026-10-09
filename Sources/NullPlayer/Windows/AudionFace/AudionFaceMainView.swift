@@ -13,7 +13,7 @@ final class AudionFaceMainView: NSView {
 
     private var interaction = AudionFaceInteractionState() { didSet { if interaction != oldValue { redraw() } } }
     private var image: CGImage?
-    private var dragStart: NSPoint?
+    private var drag = AudionFaceWindowDrag()
 
     override var isFlipped: Bool { true }
     /// The face drags itself, through `WindowManager`; AppKit's background drag would bypass docking.
@@ -58,7 +58,7 @@ final class AudionFaceMainView: NSView {
     private func button(at event: NSEvent) -> AudionFace.ButtonRole? {
         guard let face, let point = facePoint(event),
               let role = AudionFaceScene.button(atX: point.x, y: point.y, face: face, host: host),
-              role != .stop || host.hasTrack else { return nil }
+              AudionFaceScene.isEnabled(role, host: host, interaction: interaction) else { return nil }
         return role
     }
 
@@ -99,26 +99,15 @@ final class AudionFaceMainView: NSView {
     override func mouseDown(with event: NSEvent) {
         if let role = button(at: event) {
             interaction.pressed = role
-        } else if let window {
-            dragStart = event.locationInWindow
-            WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
+        } else {
+            drag.begin(event)
         }
     }
 
-    override func mouseDragged(with event: NSEvent) {
-        if let start = dragStart, let window {
-            var origin = window.frame.origin
-            origin.x += event.locationInWindow.x - start.x
-            origin.y += event.locationInWindow.y - start.y
-            window.setFrameOrigin(WindowManager.shared.windowWillMove(window, to: origin))
-        }
-    }
+    override func mouseDragged(with event: NSEvent) { drag.move(event) }
 
     override func mouseUp(with event: NSEvent) {
-        if dragStart != nil, let window {
-            dragStart = nil
-            WindowManager.shared.windowDidFinishDragging(window)
-        }
+        drag.end(event)
         guard let pressed = interaction.pressed else { return }
         interaction.pressed = nil
         if button(at: event) == pressed { onButton?(pressed) }
@@ -126,5 +115,31 @@ final class AudionFaceMainView: NSView {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         ContextMenuBuilder.buildMenu(includeOutputDevices: false, includeRepeatShuffle: false)
+    }
+}
+
+/// A drag of the borderless Audion window, through `WindowManager` so docking and snapping see it;
+/// AppKit's own background drag would bypass both. Both of the mode's views drag with it.
+struct AudionFaceWindowDrag {
+    private var start: NSPoint?
+
+    mutating func begin(_ event: NSEvent) {
+        guard let window = event.window else { return }
+        start = event.locationInWindow
+        WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
+    }
+
+    func move(_ event: NSEvent) {
+        guard let start, let window = event.window else { return }
+        var origin = window.frame.origin
+        origin.x += event.locationInWindow.x - start.x
+        origin.y += event.locationInWindow.y - start.y
+        window.setFrameOrigin(WindowManager.shared.windowWillMove(window, to: origin))
+    }
+
+    mutating func end(_ event: NSEvent) {
+        guard start != nil, let window = event.window else { return }
+        start = nil
+        WindowManager.shared.windowDidFinishDragging(window)
     }
 }

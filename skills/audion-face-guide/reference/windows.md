@@ -15,15 +15,17 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
 | `AudionFace/AudionFacePalette.swift` | The `SkinnedSurfaceStyle` NullPlayer's windows wear beside a face |
 
 - **Hit testing:** a pixel whose rendered alpha is 0 is not the window (`hitTest` returns nil);
-  then the topmost visible button by `AudionFaceScene.button(atX:y:face:host:)`; anything else
-  drags. Stop with no track is not a hit. `drag.png` is not read yet: every opaque non-button
+  then the topmost visible button by `AudionFaceScene.button(atX:y:face:host:)`, a hit only if
+  `AudionFaceScene.isEnabled` (the rule `buttonOps` draws the disabled sprite by: stop needs a
+  track, and `interaction.disabled`); anything else drags. `drag.png` is not read yet: every opaque non-button
   pixel drags, a superset of the authored drag region. Narrowing it to `drag.png` is Phase 4's.
 - **Drag** goes through `WindowManager.windowWillStartDragging` / `windowWillMove` /
-  `windowDidFinishDragging`, and `windowDidMove` applies the snapped position, the Classic recipe —
-  so snapping and docked groups work. AppKit's background drag is off for the face view.
-- **Shadow:** AppKit's own (`hasShadow`, `invalidateShadow` on every redraw), not
-  `SkinWindowShadow`. A face's outline changes only when the face (or its active/inactive mask)
-  does, which is the case the native shadow handles; `hostsSkinShadowWindows` is false for Audion.
+  `windowDidFinishDragging` (`AudionFaceWindowDrag`, used by both the face and the unskinned
+  view), and `windowDidMove` applies the snapped position, the Classic recipe — so snapping and
+  docked groups work. AppKit's background drag is off for the window and both views.
+- **Shadow:** AppKit's own (`hasShadow`), not `SkinWindowShadow`; `hostsSkinShadowWindows` is
+  false for Audion. `invalidateShadow` runs on every redraw on purpose: the outline is mostly the
+  face's, but an animation frame clears the base under it, so a state change can reshape it.
 - **Buttons wired in Phase 3:** play, pause, stop, rw/ff (previous/next), eject (Open Files…),
   menu (toggle the playlist). Close, info, volume and mode are Phase 4.
 - **Not yet:** the frame clock (marquee, animations), streaming phases beyond "non-file URL is
@@ -36,7 +38,9 @@ Every change outside the family's directories, each gated on the Audion family.
 | Seam | Audion answer | Why not local |
 |---|---|---|
 | `PlayerUIMode.audion` / `PlayerUIControllerFamily.audion` | display name "Audion Faces"; no modern EQ, no modern skin family | the mode enum is the routing seam |
-| `AppFeature.audionFaceMode`, `AppCapabilities.supports` | true only in DEBUG; `reloadUI`, `argumentOverride` and the init-time stored-mode check refuse it otherwise | the one capability seam |
+| `AppFeature.audionFaceMode`, `AppCapabilities.supports` | true only in DEBUG; `PlayerUIMode.isAvailable` reads it, and `reloadUI`, `argumentOverride` and the init-time stored-mode check refuse an unavailable mode | the one capability seam |
+| `PlayerUIControllerFamily.hostsForeignSkin` | true, as `.wal`/`.wmz`: NullPlayer's windows float free — `appliesPlacementRecovery`, `reopensWhereLeft`, `positionSubWindow`'s tiling, no slide-up on close, no library refit, library reopen keeps its height, `prepareUIRuntime` forgets the Spectrum profile's skin, no compact or main-window vis menu items | one exhaustive switch, so a sixth family is a compile error, not a silent Classic answer |
+| `PlayerUIControllerFamily.bringsOwnRuntime` | true, as `.wmz`: no default Classic skin load at init, `prepareUIRuntime` returns early, Compact Mode/Window unavailable (4 `WindowManager` guards, `AppDelegate`), `playlistChromeScale` is the app scale, `tightenClassicCenterStackIfNeeded` skipped, restored centre-stack frames kept | as above |
 | `WindowManager.makeMainWindowController` / `runningControllerFamily` | `AudionFaceMainWindowController` | factory |
 | `auxiliaryControllerStyle` | `.wmp` — the shared NullPlayer controllers, chrome from `hostedSurfaceStyle` | |
 | `hostedSurfaceStyle` → `audionSurfaceStyle` | the controller's face palette, neutral before a face loads | the one style seam |
@@ -45,18 +49,10 @@ Every change outside the family's directories, each gated on the Audion family.
 | frame-lending switches (`hostedSurfaceFrameArtwork`, `…BorderInsets`, `…Settled…`, `demand…`, `prewarm…`, `…LiveResize`) | lends nothing | a face has no frame to lend |
 | `hostedInteriorScope` | `"audion"` | |
 | `hostsSkinShadowWindows` | false (native shadow, above) | |
-| `appliesPlacementRecovery`, `reopensWhereLeft`, `positionSubWindow`'s `familyTiles` | included: windows tile beside the face, placed once, rescued if unreachable | free-floating, like `.wal`/`.wmz` |
 | `managedWindowRecords` | main window is a snap target, not a centre-stack member | a face has no column |
-| `tightenClassicCenterStackIfNeeded` | skipped | it would resize the face to Classic's height |
-| `handleCenterStackWindowWillClose`, `refitDockedPlexBrowserToVerticalStack` | no slide, no refit | no stack |
-| `normalizedCenterStackRestoredFrame`, library reopen | keep saved frames/heights | as `.wmz` |
-| `playlistChromeScale` | app scale, not main-width / 275 | a face's width is not a classic zoom |
-| `applyDoubleSize` | `controller.applyUIScale`, size `base × scale` | |
-| `snapToDefaultPositions` | `snapHostedFamilyToDefaultPositions(playerWindow:skinWindows: [])`, the body shared with `.wmz` | |
+| `applyDoubleSize` | `SkinSizedMainWindow` (with `.wal`/`.wmz`): `applyUIScale`, size `base × scale` | |
+| `snapToDefaultPositions` | `snapHostedFamilyToDefaultPositions(playerWindow:skinWindows: [])`, the body shared with `.wmz`; it holds `isSnappingWindow` and posts the layout change itself | |
 | fallback main size | `AudionFaceMainWindowController.unskinnedSize` | |
-| init default-skin gate, `prepareUIRuntime` | no Classic skin loaded; early return | never another family's skin |
-| compact mode (4 guards in `WindowManager`, `AppDelegate`, two menus) | unavailable | |
-| main-window visualization menu | hidden | a face has no vis box |
 | `VisualizationPreferences` reset | the `.wal`/`.wmz` arm | |
 | `ContextMenuBuilder+SkinFamilies` | `buildAudionFacesMenu`, `groupedAlphabetically` (A–Z past 40), `RemovableSkin.audion`, actions | |
 | `AppStateManager` | `audionFaceName`, saved only in Audion mode; frame restore keeps the top-left | |

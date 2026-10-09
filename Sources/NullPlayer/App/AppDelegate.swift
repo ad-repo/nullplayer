@@ -91,8 +91,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Restore settings state (skin, volume, EQ, windows). Compact Mode must be
         // entered only after the asynchronous window restoration has completed, so it
         // can capture and hide the actual restored window set.
-        let supportsCompactSurfaces = windowManager.uiMode.controllerFamily != .wmp
-            && windowManager.uiMode.controllerFamily != .audion
+        let supportsCompactSurfaces = !windowManager.uiMode.controllerFamily.bringsOwnRuntime
         let shouldRestoreCompactMode = supportsCompactSurfaces
             && UserDefaults.standard.bool(forKey: "compactModeEnabled")
         let shouldRestoreCompactWindow = !shouldRestoreCompactMode

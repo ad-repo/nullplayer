@@ -98,11 +98,13 @@ struct SkinnedSurfaceChrome {
     /// metrics. The gate is the skin family, never a flag, so Classic and Original never reach it.
     static var hidesPaletteTitleBar: Bool {
         let manager = WindowManager.shared
-        if manager.isRunningWMPUI { return true }
+        switch manager.runningControllerFamily {
         // An Audion face lends no frame either, so its windows wear the same rim.
-        if manager.uiMode.controllerFamily == .audion { return true }
-        return manager.uiMode.controllerFamily == .winampModern
-            && (manager.mainWindowController as? WinampModernMainWindowController)?.currentPalette != nil
+        case .wmp, .audion: return true
+        case .winampModern:
+            return (manager.mainWindowController as? WinampModernMainWindowController)?.currentPalette != nil
+        case .classic, .nullPlayerModern: return false
+        }
     }
 
     /// The border a window wears when no frame is lent: `fallback`, less its title bar in WMP.

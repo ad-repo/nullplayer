@@ -17,8 +17,10 @@ final class AudionFaceUnskinnedView: NSView {
         (NSButton(title: "▶▶", target: nil, action: nil), .fastForward),
     ]
 
+    private var drag = AudionFaceWindowDrag()
+
     override var isFlipped: Bool { true }
-    override var mouseDownCanMoveWindow: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -64,6 +66,10 @@ final class AudionFaceUnskinnedView: NSView {
     @objc private func transportPressed(_ sender: NSButton) {
         if let role = transport.first(where: { $0.0 === sender })?.1 { onButton?(role) }
     }
+
+    override func mouseDown(with event: NSEvent) { drag.begin(event) }
+    override func mouseDragged(with event: NSEvent) { drag.move(event) }
+    override func mouseUp(with event: NSEvent) { drag.end(event) }
 
     override func menu(for event: NSEvent) -> NSMenu? {
         ContextMenuBuilder.buildMenu(includeOutputDevices: false, includeRepeatShuffle: false)

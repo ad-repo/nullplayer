@@ -8,6 +8,7 @@ struct AudionInstalledFace: Hashable {
 enum AudionFaceImportError: LocalizedError {
     case noFaceFound(String)
     case selectionMissing(String)
+    case notInstalled(String)
 
     var errorDescription: String? {
         switch self {
@@ -15,6 +16,8 @@ enum AudionFaceImportError: LocalizedError {
             return "“\(name)” is not an Audion face: it holds no folder with an index.json."
         case let .selectionMissing(name):
             return "The selected Audion face “\(name)” is no longer installed. Load it again or choose another face."
+        case let .notInstalled(name):
+            return "No Audion face named “\(name)” is installed."
         }
     }
 }
@@ -51,8 +54,13 @@ struct AudionFaceImporter {
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    /// The installed face of that name, looked up directly; a name that is not a plain visible
+    /// folder name (`installedFaces` skips hidden entries) never resolves outside the directory.
     func face(named name: String) -> AudionInstalledFace? {
-        installedFaces().first { $0.name == name }
+        guard !name.isEmpty, !name.contains("/"), !name.hasPrefix(".") else { return nil }
+        let url = directoryURL.appendingPathComponent(name, isDirectory: true)
+        guard fileManager.fileExists(atPath: url.appendingPathComponent("index.json").path) else { return nil }
+        return AudionInstalledFace(name: name, url: url)
     }
 
     /// The selected face's folder, nil when nothing is selected; throws when the selection is gone.
@@ -114,7 +122,7 @@ struct AudionFaceImporter {
     /// Deletes an installed face off the main thread; removing the selected one clears the selection.
     func removeFace(named name: String) async throws {
         try await Task.detached(priority: .userInitiated) { [self] in
-            guard let face = face(named: name) else { throw AudionFaceImportError.selectionMissing(name) }
+            guard let face = face(named: name) else { throw AudionFaceImportError.notInstalled(name) }
             try fileManager.removeItem(at: face.url)
         }.value
         if selectedFaceName == name { resetSelection() }

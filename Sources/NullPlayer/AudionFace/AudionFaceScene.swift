@@ -87,6 +87,13 @@ struct AudionFaceScene {
         }?.0
     }
 
+    /// Whether a button takes a press and draws its own sprites rather than its disabled one: stop
+    /// needs a track, and the window can disable any button.
+    static func isEnabled(_ role: AudionFace.ButtonRole, host: AudionFaceHostState,
+                          interaction: AudionFaceInteractionState) -> Bool {
+        (role != .stop || host.hasTrack) && !interaction.disabled.contains(role)
+    }
+
     /// FaceKit `LabelView.frameNum`: an 80-tick hold, then one pixel every two ticks, the text
     /// re-entering from the right after a 60 px gap. All widths in device pixels.
     static func marqueeOffset(frame: Int, textWidth: Int, boxWidth: Int) -> Int {
@@ -110,8 +117,7 @@ struct AudionFaceScene {
     private static func buttonOps(_ face: AudionFace, _ host: AudionFaceHostState,
                                   _ interaction: AudionFaceInteractionState) -> [AudionFaceDrawOp] {
         visibleButtons(face, host).map { role, button in
-            let enabled = (role != .stop || host.hasTrack) && !interaction.disabled.contains(role)
-            let image = !enabled ? button.disabledImage ?? button.image
+            let image = !isEnabled(role, host: host, interaction: interaction) ? button.disabledImage ?? button.image
                 : interaction.pressed == role ? button.pressedImage ?? button.image
                 : interaction.hovered == role ? button.hoverImage ?? button.image
                 : button.image

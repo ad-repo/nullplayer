@@ -19,6 +19,28 @@ enum PlayerUIControllerFamily {
     case winampModern
     case wmp
     case audion
+
+    /// Draws a third-party skin format (`.wal`, `.wmz`, an Audion face), so the skin owns the player
+    /// and NullPlayer's own windows float free beside it rather than in Classic's centre stack: tiled
+    /// on first show, reopened where they were left, recovered when off screen, never slid up or
+    /// refit to a stack, and with none of NullPlayer's compact or inline-visualization alternatives.
+    var hostsForeignSkin: Bool {
+        switch self {
+        case .winampModern, .wmp, .audion: return true
+        case .classic, .nullPlayerModern: return false
+        }
+    }
+
+    /// Brings its own player runtime, app-authored fallback included (`.wmz`, Audion). Nothing built
+    /// on the Classic/Original skin engines runs beside it: no default skin load, no Compact Mode or
+    /// Compact Window, no Classic stack size floor, no classic-zoom reading of the main window's
+    /// width. `.wal` hosts a Classic skin beneath its own, so it is not one.
+    var bringsOwnRuntime: Bool {
+        switch self {
+        case .wmp, .audion: return true
+        case .classic, .nullPlayerModern, .winampModern: return false
+        }
+    }
 }
 
 enum PlayerUIMode: String, CaseIterable {
@@ -52,6 +74,15 @@ enum PlayerUIMode: String, CaseIterable {
         case .winampModern: return .winampModern
         case .wmp: return .wmp
         case .audion: return .audion
+        }
+    }
+
+    /// Whether this build offers the mode at all; a mode it does not is never stored or entered.
+    var isAvailable: Bool {
+        switch controllerFamily {
+        case .wmp: return AppCapabilities.supports(.wmpSkinMode)
+        case .audion: return AppCapabilities.supports(.audionFaceMode)
+        case .classic, .nullPlayerModern, .winampModern: return true
         }
     }
 
@@ -125,9 +156,7 @@ enum PlayerUIMode: String, CaseIterable {
 
     static func argumentOverride(from arguments: [String: Any]) -> PlayerUIMode? {
         guard let rawValue = arguments[userDefaultsKey] as? String,
-              let mode = PlayerUIMode(rawValue: rawValue),
-              mode != .wmp || AppCapabilities.supports(.wmpSkinMode),
-              mode != .audion || AppCapabilities.supports(.audionFaceMode) else { return nil }
+              let mode = PlayerUIMode(rawValue: rawValue), mode.isAvailable else { return nil }
         return mode
     }
 }

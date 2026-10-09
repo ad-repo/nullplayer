@@ -420,6 +420,10 @@ at `maxdelta=130 over 83 px`, a bbox that moves every pass. Any sweep of a drawi
 it. Confirm it the cheap way before spending a thought on it: capture twice off one build with
 `--corpus` a directory holding just that archive, and compare those two.
 
+**One invariant line is nondeterministic too.** `S7Reflex`'s `RENDER-DUMP MLibrary/normal` reports
+`min=452x164` on some runs and `min=354x164` on others, from one binary — measured 2026-10-08, two
+solo runs of the same baseline build giving one of each. Confirm it the same way.
+
 Those grep-selected lines are the invariants worth diffing: the container list, the surface catalog,
 the window menu, every layout's canvas size and node count, every hosted holder's frame, and the
 resolved/missing bitmap counts. Every archive prints **`SKIN <file.wal>`** first, which is what makes

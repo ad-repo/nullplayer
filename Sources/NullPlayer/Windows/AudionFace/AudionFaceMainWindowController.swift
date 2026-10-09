@@ -20,8 +20,9 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
     private let unskinnedView = AudionFaceUnskinnedView()
     private var loadTask: Task<Void, Never>?
     private var uiScale: CGFloat = 1
-    /// The face on screen, nil while the unskinned player is up.
-    private(set) var loadedFaceURL: URL?
+    /// The face on screen and its folder, nil while the unskinned player is up.
+    private var shown: (face: AudionFace, url: URL)? { didSet { faceView.face = shown?.face } }
+    var loadedFaceURL: URL? { shown?.url }
     /// NullPlayer's own windows, coloured from the face on screen (`AudionFacePalette`).
     private(set) var surfaceStyle = AudionFacePalette.neutral
 
@@ -31,7 +32,7 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true
-        window.isMovableByWindowBackground = true
+        window.isMovableByWindowBackground = false
         window.title = "NullPlayer — Audion Faces"
         window.setAccessibilityIdentifier("AudionFaceMainWindow")
         window.center()
@@ -43,7 +44,7 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
         faceView.onButton = perform
         unskinnedView.onButton = perform
         unskinnedView.onLoadFace = { [weak self] in self?.importFaceFromPanel() }
-        present(face: nil, url: nil, message: nil)
+        present(nil, message: nil)
         reloadSelectedFace()
     }
 
@@ -57,21 +58,21 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
         do {
             url = try importer.selectedFaceURL()
         } catch {
-            present(face: nil, url: nil, message: error.localizedDescription)
+            present(nil, message: error.localizedDescription)
             return
         }
-        guard let url else { return present(face: nil, url: nil, message: nil) }
+        guard let url else { return present(nil, message: nil) }
         loadTask = Task { @MainActor [weak self] in
             do {
                 let face = try await AudionFaceLoader.load(folder: url)
                 try Task.checkCancellation()
-                self?.present(face: face, url: url, message: nil)
+                self?.present((face, url), message: nil)
                 NSLog("AudionFace: loaded '%@' (%dx%d, %d findings)", url.lastPathComponent,
                       face.base.width, face.base.height, face.findings.count)
             } catch is CancellationError {
                 return
             } catch {
-                self?.present(face: nil, url: nil, message: error.localizedDescription)
+                self?.present(nil, message: error.localizedDescription)
             }
         }
     }
@@ -109,7 +110,7 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
             } catch is CancellationError {
                 return
             } catch {
-                self?.present(face: nil, url: nil, message: error.localizedDescription)
+                self?.present(nil, message: error.localizedDescription)
             }
         }
     }
@@ -117,7 +118,7 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
     func resetToUnskinned() {
         loadTask?.cancel()
         importer.resetSelection()
-        present(face: nil, url: nil, message: nil)
+        present(nil, message: nil)
     }
 
     /// Only the top-left is restored: the size is the face's.
@@ -128,26 +129,18 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
 
     // MARK: - Presenting
 
-    private var contentSize: NSSize {
-        guard let face = faceView.face, loadedFaceURL != nil else { return Self.unskinnedSize }
-        return NSSize(width: CGFloat(face.base.width) * uiScale, height: CGFloat(face.base.height) * uiScale)
-    }
-
-    private func present(face: AudionFace?, url: URL?, message: String?) {
+    private func present(_ shown: (face: AudionFace, url: URL)?, message: String?) {
         guard let window else { return }
-        loadedFaceURL = face == nil ? nil : url
-        faceView.face = face
-        let style = face.map(AudionFacePalette.surfaceStyle(for:)) ?? AudionFacePalette.neutral
+        self.shown = shown
+        let style = shown.map { AudionFacePalette.surfaceStyle(for: $0.face) } ?? AudionFacePalette.neutral
         if style != surfaceStyle {
             surfaceStyle = style
             NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
         }
         unskinnedView.show(message: message)
-        let view: NSView = face == nil ? unskinnedView : faceView
+        let view: NSView = shown == nil ? unskinnedView : faceView
         if window.contentView !== view { window.contentView = view }
-        let topLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
-        window.setContentSize(contentSize)
-        window.setFrameTopLeftPoint(topLeft)
+        fitWindow()
         refreshHostState()
         window.invalidateShadow()
     }
@@ -155,15 +148,21 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
     func applyUIScale(_ scale: CGFloat) {
         uiScale = max(0.1, scale)
         faceView.uiScale = uiScale
-        guard let window else { return }
-        let topLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
-        window.setContentSize(contentSize)
-        window.setFrameTopLeftPoint(topLeft)
+        fitWindow()
     }
 
+    /// The face's size times `scale`; the unskinned player keeps its own fixed size.
     func mainWindowSize(atScale scale: CGFloat) -> NSSize? {
-        guard let face = faceView.face, loadedFaceURL != nil else { return Self.unskinnedSize }
+        guard let face = shown?.face else { return Self.unskinnedSize }
         return NSSize(width: CGFloat(face.base.width) * scale, height: CGFloat(face.base.height) * scale)
+    }
+
+    /// Sizes the window to what it shows at the current scale, holding its top-left corner.
+    private func fitWindow() {
+        guard let window, let size = mainWindowSize(atScale: uiScale) else { return }
+        let topLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
+        window.setContentSize(size)
+        window.setFrameTopLeftPoint(topLeft)
     }
 
     // MARK: - Host state
