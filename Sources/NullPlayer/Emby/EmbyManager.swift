@@ -638,7 +638,7 @@ class EmbyManager {
             jellyfinServerId: nil,
             embyId: movie.id,
             embyServerId: currentServer?.id,
-            artworkThumb: movie.imageTag == nil ? nil : movie.id,
+            artworkThumb: movie.artworkItemId,
             mediaType: .video,
             genre: nil,
             playHistoryContentTypeOverride: "movie"
@@ -669,7 +669,7 @@ class EmbyManager {
             jellyfinServerId: nil,
             embyId: episode.id,
             embyServerId: currentServer?.id,
-            artworkThumb: episode.imageTag == nil ? nil : episode.id,
+            artworkThumb: episode.artworkItemId,
             mediaType: .video,
             genre: nil,
             playHistoryContentTypeOverride: "tv"

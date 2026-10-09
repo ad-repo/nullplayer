@@ -9,14 +9,8 @@ enum WMPArtworkLoader {
             return await localArtwork(at: track.url)
         }
         let remoteURL: URL?
-        if track.plexRatingKey != nil, let thumb = track.artworkThumb {
-            remoteURL = PlexManager.shared.artworkURL(thumb: thumb, size: 300)
-        } else if track.subsonicId != nil, let coverArt = track.artworkThumb {
-            remoteURL = SubsonicManager.shared.coverArtURL(coverArtId: coverArt, size: 300)
-        } else if track.jellyfinId != nil, let imageItemId = track.artworkThumb {
-            remoteURL = JellyfinManager.shared.imageURL(itemId: imageItemId, imageTag: nil, size: 300)
-        } else if track.embyId != nil, let imageItemId = track.artworkThumb {
-            remoteURL = EmbyManager.shared.imageURL(itemId: imageItemId, imageTag: nil, size: 300)
+        if let serverURL = track.serverArtworkURL(size: 300) {
+            remoteURL = serverURL
         } else if let value = track.artworkThumb, let url = URL(string: value),
                   ["http", "https"].contains(url.scheme?.lowercased()) {
             remoteURL = url

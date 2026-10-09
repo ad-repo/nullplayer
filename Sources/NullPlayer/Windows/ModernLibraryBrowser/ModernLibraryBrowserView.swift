@@ -6261,10 +6261,10 @@ class ModernLibraryBrowserView: NSView {
                 image = await self.loadPlexArtwork(ratingKey: plexRatingKey, thumbPath: track.artworkThumb)
             } else if let subsonicId = track.subsonicId {
                 image = await self.loadSubsonicArtwork(songId: subsonicId)
-            } else if let jellyfinId = track.jellyfinId {
-                image = await self.loadJellyfinArtwork(itemId: track.artworkThumb ?? jellyfinId, imageTag: nil)
-            } else if let embyId = track.embyId {
-                image = await self.loadEmbyArtwork(itemId: track.artworkThumb ?? embyId, imageTag: nil)
+            } else if track.jellyfinId != nil {
+                if let itemId = track.artworkThumb { image = await self.loadJellyfinArtwork(itemId: itemId, imageTag: nil) }
+            } else if track.embyId != nil {
+                if let itemId = track.artworkThumb { image = await self.loadEmbyArtwork(itemId: itemId, imageTag: nil) }
             } else if track.url.isFileURL {
                 image = await self.loadLocalArtwork(url: track.url)
             } else if RadioManager.shared.isActive {

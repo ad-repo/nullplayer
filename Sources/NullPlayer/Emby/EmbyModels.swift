@@ -161,6 +161,9 @@ struct EmbyMovie: Identifiable, Equatable {
         }
         return String(format: "%dm", minutes)
     }
+
+    /// The item whose Primary image is this video's cover — its own, when it has one. A `Track`'s `artworkThumb`.
+    var artworkItemId: String? { imageTag == nil ? nil : id }
 }
 
 /// A TV show (series) in an Emby video library
@@ -218,6 +221,9 @@ struct EmbyEpisode: Identifiable, Equatable {
         }
         return String(format: "%dm", minutes)
     }
+
+    /// The item whose Primary image is this video's cover — its own, when it has one. A `Track`'s `artworkThumb`.
+    var artworkItemId: String? { imageTag == nil ? nil : id }
 }
 
 // MARK: - Search Results

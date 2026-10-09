@@ -1051,56 +1051,7 @@ class ModernMainWindowView: NSView {
 
             var image: NSImage?
 
-            if let plexRatingKey = track.plexRatingKey {
-                let key = NSString(string: "marquee_plex:\(plexRatingKey)")
-                if let cached = Self.artworkCache.object(forKey: key) {
-                    image = cached
-                } else if let thumbPath = track.artworkThumb,
-                          let url = PlexManager.shared.artworkURL(thumb: thumbPath, size: 400) {
-                    if let (data, resp) = try? await URLSession.shared.data(from: url),
-                       (resp as? HTTPURLResponse)?.statusCode == 200,
-                       let img = NSImage(data: data) {
-                        Self.artworkCache.setObject(img, forKey: key)
-                        image = img
-                    }
-                }
-            } else if let subsonicId = track.subsonicId {
-                let key = NSString(string: "marquee_subsonic:\(subsonicId)")
-                if let cached = Self.artworkCache.object(forKey: key) {
-                    image = cached
-                } else if let url = SubsonicManager.shared.coverArtURL(coverArtId: subsonicId, size: 400) {
-                    if let (data, resp) = try? await URLSession.shared.data(from: url),
-                       (resp as? HTTPURLResponse)?.statusCode == 200,
-                       let img = NSImage(data: data) {
-                        Self.artworkCache.setObject(img, forKey: key)
-                        image = img
-                    }
-                }
-            } else if track.jellyfinId != nil, let imageItemId = track.artworkThumb {
-                let key = NSString(string: "marquee_jellyfin:\(imageItemId)")
-                if let cached = Self.artworkCache.object(forKey: key) {
-                    image = cached
-                } else if let url = JellyfinManager.shared.imageURL(itemId: imageItemId, imageTag: nil, size: 400) {
-                    if let (data, resp) = try? await URLSession.shared.data(from: url),
-                       (resp as? HTTPURLResponse)?.statusCode == 200,
-                       let img = NSImage(data: data) {
-                        Self.artworkCache.setObject(img, forKey: key)
-                        image = img
-                    }
-                }
-            } else if track.embyId != nil, let imageItemId = track.artworkThumb {
-                let key = NSString(string: "marquee_emby:\(imageItemId)")
-                if let cached = Self.artworkCache.object(forKey: key) {
-                    image = cached
-                } else if let url = EmbyManager.shared.imageURL(itemId: imageItemId, imageTag: nil, size: 400) {
-                    if let (data, resp) = try? await URLSession.shared.data(from: url),
-                       (resp as? HTTPURLResponse)?.statusCode == 200,
-                       let img = NSImage(data: data) {
-                        Self.artworkCache.setObject(img, forKey: key)
-                        image = img
-                    }
-                }
-            } else if track.url.isFileURL {
+            if track.url.isFileURL {
                 let key = NSString(string: "marquee_local:\(track.url.path)")
                 if let cached = Self.artworkCache.object(forKey: key) {
                     image = cached
@@ -1108,10 +1059,9 @@ class ModernMainWindowView: NSView {
                     image = await self.loadLocalArtwork(url: track.url)
                     if let img = image { Self.artworkCache.setObject(img, forKey: key) }
                 }
-            } else if let artworkThumb = track.artworkThumb,
-                      let url = URL(string: artworkThumb),
-                      ["http", "https"].contains(url.scheme?.lowercased()) {
-                let key = NSString(string: "marquee_url:\(artworkThumb)")
+            } else if let url = track.serverArtworkURL(size: 400) ?? Self.webArtworkURL(track.artworkThumb) {
+                // A media server's cover, or a stream's cover named by URL (a radio station's logo)
+                let key = NSString(string: "marquee_url:\(url.absoluteString)")
                 if let cached = Self.artworkCache.object(forKey: key) {
                     image = cached
                 } else if let (data, resp) = try? await URLSession.shared.data(from: url),
@@ -1130,6 +1080,12 @@ class ModernMainWindowView: NSView {
                 self.marqueeLayer.artworkImage = image
             }
         }
+    }
+
+    private static func webArtworkURL(_ thumb: String?) -> URL? {
+        guard let thumb, let url = URL(string: thumb),
+              ["http", "https"].contains(url.scheme?.lowercased()) else { return nil }
+        return url
     }
 
     private func clearArtwork() {

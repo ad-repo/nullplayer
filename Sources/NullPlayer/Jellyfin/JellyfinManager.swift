@@ -612,7 +612,7 @@ class JellyfinManager {
             subsonicServerId: nil,
             jellyfinId: movie.id,
             jellyfinServerId: currentServer?.id,
-            artworkThumb: movie.imageTag == nil ? nil : movie.id,
+            artworkThumb: movie.artworkItemId,
             mediaType: .video,
             genre: nil,
             playHistoryContentTypeOverride: "movie"
@@ -641,7 +641,7 @@ class JellyfinManager {
             subsonicServerId: nil,
             jellyfinId: episode.id,
             jellyfinServerId: currentServer?.id,
-            artworkThumb: episode.imageTag == nil ? nil : episode.id,
+            artworkThumb: episode.artworkItemId,
             mediaType: .video,
             genre: nil,
             playHistoryContentTypeOverride: "tv"
