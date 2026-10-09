@@ -333,6 +333,38 @@ final class MissingFilesTests: XCTestCase {
         XCTAssertEqual(engine.state, .stopped)
     }
 
+    /// A Play Now film that fails in the video window is taken back out and reported, as an audio
+    /// Play Now is, and the queue the user already had is not started.
+    func testAFailedPlayNowFilmIsWithdrawnWithoutStartingTheQueue() throws {
+        let folder = try albumFolderWithAnUnreadableFile()
+        let queued = Track(url: folder.appendingPathComponent("queued.mp3"))
+        let film = Track(url: folder.appendingPathComponent("missing.mp4"), title: "Film", mediaType: .video)
+        let engine = AudioEngine()
+        let recorder = UserPlayFailureRecorder()
+        engine.delegate = recorder
+        engine.setPlaylistTracks([queued])
+        // No video window: the film's failure is the call below.
+        AudioEngine.isHeadless = true
+        defer { AudioEngine.isHeadless = false }
+        engine.playNow([film])
+        XCTAssertEqual(engine.playlist.map(\.id), [film.id, queued.id])
+        let filmFailed = expectation(forNotification: .audioTrackDidFailToLoad, object: engine) { note in
+            (note.userInfo?["track"] as? Track)?.id == film.id
+        }
+        // `queued.mp3` does not exist, so a load of it would post its own failure.
+        let queueStarted = expectation(forNotification: .audioTrackDidFailToLoad, object: engine) { note in
+            (note.userInfo?["track"] as? Track)?.url == queued.url
+        }
+        queueStarted.isInverted = true
+
+        engine.videoTrackDidEnd(.failed)
+
+        wait(for: [filmFailed], timeout: 5)
+        wait(for: [queueStarted], timeout: 1)
+        XCTAssertEqual(engine.playlist.map(\.id), [queued.id])
+        XCTAssertEqual(recorder.failedURLs, [film.url])
+    }
+
     /// A present, non-empty folder holding `bad.mp3`, which is not audio — one bad file, not a
     /// missing volume, so the failure path skips rather than stops.
     private func albumFolderWithAnUnreadableFile() throws -> URL {

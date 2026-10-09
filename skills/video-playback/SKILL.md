@@ -67,6 +67,11 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   playlist film reaches `AudioEngine.videoTrackDidEnd(.failed)` → `reportFailedLocalOpen`, the
   audio open's failure path: the marquee reports it, and the queue skips to the next row, or
   stops when the film's folder is gone (`containingFolderIsPresent`; a server film always skips).
+  A **Play Now** film keeps Play Now's bound, though it fails after `startPlayNowLocally` returned:
+  the engine holds the request (`videoPlayNow`) until the film ends, and `continuePlayNow` skips
+  only to the next inserted track, or takes the request back out and reports it, never starting
+  the queue the user already had. A film that plays to its end resets the failure streak
+  (`consecutiveTrackLoadFailures`), as an audio file that opens does.
   Before this, the window stayed black at 0:00 over a paused engine. Measured 2026-10-08 on
   Classic: a missing film, a non-video `.mp4` advanced into after a film ended in the same window,
   and a deleted folder. A Stream Ripper **Play Now** film that fails closes with nothing in the

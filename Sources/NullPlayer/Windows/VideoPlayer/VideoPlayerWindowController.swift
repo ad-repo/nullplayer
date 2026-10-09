@@ -371,8 +371,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         }
 
         // A film that never played closes rather than leaving a black window over a paused engine;
-        // a playlist film then goes to the engine as a failed load. Not while casting: a cast taking
-        // over during Opening stops the local player before it ever plays.
+        // a playlist film then goes to the engine as a failed load. Not while casting: the film is
+        // on the device, and the local open failing does not end it.
         videoPlayerView.onPlaybackFailed = { [weak self] in
             guard let self, !self.isCastingVideo else { return }
             self.stop()
