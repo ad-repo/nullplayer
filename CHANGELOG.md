@@ -195,6 +195,11 @@
   window at 0:00 and a paused player, with no message. The window now closes, the marquee says
   why, and the playlist moves on to the next row, as it does for a bad audio file; a film whose
   folder is gone stops playback instead.
+- **Library Browser item count sits beside the library name** — the source bar shows the count
+  after the library ("Lib: Music (1110 items)") or source ("Local Files (988 items)") instead of
+  in a field of its own, so a narrow window has room for the name. Plex reads "items" like the
+  rest. In the Original and Metal browsers, **F5** is now a refresh button styled like the
+  List / Flow / Tiles icons; F5 still refreshes.
 
 ## 0.31.4
 

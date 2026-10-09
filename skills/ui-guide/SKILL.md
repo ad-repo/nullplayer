@@ -882,7 +882,8 @@ Implementation rules:
 
 ## List, Flow and Tiles (Library browser, all skin families)
 
-Three icon buttons in the source bar, before **F5**, switch how the browser shows its rows:
+Three icon buttons in the source bar, before refresh (**F5** in Classic, a boxed refresh icon
+drawn from `LibraryBarIcon.refresh` in the modern browser), switch how the browser shows its rows:
 **List**, **Flow** (a 3D Cover Flow carousel) and **Tiles** (a grid of art tiles). Flow and Tiles
 are visual lenses over the browser's current `displayItems`, not separate queries. The mode is
 `LibraryViewMode`, persisted under the `LibraryBrowserViewMode` default, shared by both browsers and
@@ -891,6 +892,16 @@ root (`artLens.hasItems`); over a list without any (Radio, playlists) the browse
 whatever the mode, and the art view hides.
 
 The shared art views live in `Windows/LibraryArt/`, beside neither browser: both use them equally.
+
+The source bar has no separate item-count field: `withItemCount(_:)` appends the count to the
+library name (server sources) or the source name (Local, Radio, YouTube) — "Music (1110 items)".
+Each browser's `serverBarContent` (`ServerBarContent`: built-in source, configured server, or
+unconfigured prompt) is the one switch over the source; the draw and the natural-width measure both
+read it. A server's library field grows from its minimum (`minLibraryFieldWidth` 80 pt modern,
+`minLibraryFieldChars` 10 classic) to the free space before the right-side buttons, and scrolls when
+even that is short. The draw owns the scroll state: it writes the server and library field widths
+(zero when no server shows), resets an offset when its name changes, and starts the tick on
+overflow; the tick only advances offsets from those widths and stops when nothing overflows.
 
 **`LibraryArtLens`** (`Windows/LibraryArt/LibraryArtLens.swift`) owns everything the two
 browsers share: the mode, the art view standing in for the list, and the tree navigation. Each
