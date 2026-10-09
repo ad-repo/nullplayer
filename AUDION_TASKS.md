@@ -23,7 +23,6 @@ to the capture before it.
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| A6 | **Phase 4 — full face behaviour**: built and confirmed on screen (plan § *Phase 4*); left: radio playback on screen, so a face's connecting and streaming animations are seen following `RadioManager.connectionState` | every face | *UI.* **Exit:** the user sees a radio station connect and stream on a face with those animations (Aqua Platinum has both). |
 | A7 | **Phase 5 — NullPlayer's windows beside a face**: the palette, `audionSurfaceStyle`, the gloss frame, the shared controllers, the tiler and `AUDION_PLACE_TRACE` landed in A5 (`reference/windows.md`); left: every NullPlayer window checked beside a few faces, legibility across the corpus, and the route to a track | every face | *UI.* **Exit:** the user confirms on screen; palette goldens for a handful of faces in `Goldens/AudionFace/`. |
 | A8 | **Phase 6 — scale, retina and hardening**: integer scale 1×–3× through `applyDoubleSize`; dirty-rect redraw (the clock already stops when nothing moves, A6); `index.json` fuzzing and hostile zip/folder fixtures; every family's regression sweep once more | every face | *UI* for scale, *autonomous* for hardening. Profile the release build before optimising past algorithmic defects. |
 | A9 | **Phase 7 — public exposure**: remove the DEBUG gate; `docs/audion-face/user-guide.md`; the FaceKit credit in `LICENSE`; a `CHANGELOG.md` entry under the current version; finalise the skill and `skin-screenshots` support | release | Only when the user asks. Never bump the version. |

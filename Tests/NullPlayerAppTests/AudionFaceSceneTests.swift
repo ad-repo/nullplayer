@@ -102,6 +102,10 @@ final class AudionFaceSceneTests: XCTestCase {
         host.streamPhase = .streaming
         XCTAssertTrue(image(.indicator(.net), host) === face.indicators[.net]?.onImage)
         XCTAssertTrue(image(.indicator(.mp3), host) === face.indicators[.mp3]?.image)
+
+        host.durationSeconds = 0
+        XCTAssertTrue(image(.indicator(.net), host) === face.indicators[.net]?.onImage, "live radio has no duration")
+        XCTAssertTrue(AudionFaceScene.isEnabled(.stop, host: host, interaction: .init()), "and can be stopped")
     }
 
     /// FaceKit `LabelView.frameNum`, worked by hand for a 40 px string in a 100 px box.

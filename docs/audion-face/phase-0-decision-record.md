@@ -90,6 +90,7 @@ Each is classified as an expected oracle difference, never silently.
 | A rect with negative width or height is kept as a `CGRect` | dropped as malformed, `AUD0013` (Phase 1) | not a shape anyone authored; the corpus has four, two on buttons (which read only `top` and `left`, so unaffected) and two on elements the canonical oracle states never draw (Detonator b1's lag animation, lungruen's album line) |
 | A negative animation frame count traps; zero keeps an animation with no frames | dropped, `AUD0013` (Phase 1) | neither draws anything; a hostile count must not crash the loader |
 | `NSImage` loads any image format under a `.png` name | only a PNG signature counts; anything else is an absent file | dimensions are read from the PNG header before decode (§ *Threat model*); every image file in the corpus is a PNG |
+| Stop, and the NET, MP3 and pause indicators, need `durationInSeconds != 0` | a stream phase counts as a track too (Phase 4) | live radio has no duration: NET stayed dark and stop disabled while a station played. Every oracle state has a duration, so the comparison never sees it |
 | Middle truncation trims until the line fits, and loops forever when even `…` alone is wider than the box | stops when nothing is left to trim, drawing nothing (Phase 2) | a hostile font size must not hang the renderer; FaceKit rendered every corpus face's canonical states, so the stop never fires there |
 
 ## Button mapping

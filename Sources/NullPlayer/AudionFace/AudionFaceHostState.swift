@@ -26,8 +26,9 @@ struct AudionFaceHostState: Equatable {
 
     var isPlaying: Bool { playState == .playing }
 
-    /// A zero duration means no track: stop is disabled and the MP3, NET and pause indicators stay off.
-    var hasTrack: Bool { durationSeconds != 0 }
+    /// A track is loaded: one with a duration (FaceKit's whole rule), or a live stream, which has
+    /// none. Without one, stop is disabled and the MP3, NET and pause indicators stay off.
+    var hasTrack: Bool { durationSeconds != 0 || streamPhase != .none }
 
     /// The artist line shows the title, as Panic's player fills it; an empty one shows nothing.
     var artistLine: String? { title.flatMap { $0.isEmpty ? nil : $0 } }

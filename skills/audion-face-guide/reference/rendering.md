@@ -37,7 +37,7 @@ sorts by it (`harness.md` § *The oracle*); 88 faces have a button overlapping a
   scale. Digits, indicators and animation frames fill their authored rect; a button's rect takes its
   size from the sprite.
 - **Button state**, first match wins: disabled → `-disabled` (else normal); pressed → `-active`;
-  hovered → `-hover`; normal. Stop is disabled while the duration is zero; every other button is
+  hovered → `-hover`; normal. Stop is disabled with no track (`hasTrack`, below); every other button is
   enabled (all are wired, decision record § *Button mapping*) unless the window disables it.
 - Play hides while playing **if** the face has a pause button; otherwise play stays. Pause shows
   only while playing. Both share `playButtonRect`, so the hit test answers whichever is visible.
@@ -60,8 +60,11 @@ decision record's count), so gating on it would retire `inactive-alpha.png` ever
   (100 minutes or more) leaves that digit undrawn, as FaceKit does.
 - Track digits show the 1-based playlist index 01–99, or frame 10 (blank) with no index — a
   departure; FaceKit always draws the blank.
-- Indicators: CD and CDDB off; NET on with a duration and a stream phase; MP3 on with a duration and
-  none; play on while playing; pause on with a duration while not playing.
+- Indicators: CD and CDDB off; NET on with a track and a stream phase; MP3 on with a track and
+  none; play on while playing; pause on with a track while not playing.
+- **`hasTrack`** is FaceKit's `durationInSeconds != 0`, **or a stream phase** — a departure: live
+  radio has no duration, and FaceKit's rule left NET dark and stop disabled for it. The position
+  slider still needs a duration (FaceKit's `showTimeSlider`).
 - Animation: `streamPhase` picks connecting, streaming or net-lag; the frame is
   `(tick / FrameDelay) % count`, frame 0 when the delay is not positive.
 

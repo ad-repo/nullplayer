@@ -113,9 +113,9 @@ final class AudionFaceMainView: NSView {
         return role
     }
 
-    /// The time digit under the event, while there is a track to scrub (FaceKit `showTimeSlider`).
+    /// The time digit under the event, while there is a duration to scrub (FaceKit `showTimeSlider`).
     private func timeDigit(at event: NSEvent) -> AudionFaceRect? {
-        guard let face, host.hasTrack, let point = facePoint(event) else { return nil }
+        guard let face, host.durationSeconds > 0, let point = facePoint(event) else { return nil }
         return AudionFaceScene.timeDigitRects(face).first { $0.contains(x: point.x, y: point.y) }
     }
 
@@ -158,7 +158,7 @@ final class AudionFaceMainView: NSView {
     }
 
     private func showPositionSlider(below rect: AudionFaceRect) {
-        guard host.hasTrack else { return }
+        guard host.durationSeconds > 0 else { return }
         let below = screenRect(rect)
         positionSlider.show(topLeft: NSPoint(x: below.maxX, y: below.minY), value: Double(host.elapsedSeconds),
                             range: 0...Double(host.durationSeconds))
