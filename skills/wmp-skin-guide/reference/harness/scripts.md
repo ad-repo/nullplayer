@@ -9,7 +9,7 @@ Moved verbatim from `reference/harness.md` on 2026-09-25; that file is the route
 *What is the state of the corpus?* One TSV row per archive: sha256, whether it loaded, the codes it
 was rejected for, encoding, view/node/script counts, findings by code, per-view node/command/hit
 counts, resolved and missing artwork, the unimplemented tags and host members it demands, and the
-git rev it was measured at. This is the only honest source for the reach numbers in `WMP_TASKS.md`
+git rev it was measured at. This is the only honest source for the reach numbers in `tasks/WMP_TASKS.md`
 **for anything a view reaches on load**.
 
 **It drives `onLoad` and nothing else, and that bounds every demand number it produces.** A member
@@ -144,7 +144,7 @@ The blacklist both scripts read before anything measures. Each script links the 
 into `<outdir>/corpus` (a hard link, because the harness enumerates with `isRegularFile` and a
 symlink is not one) and sweeps *that*, so an excluded skin cannot reach a log, a PNG, or a column —
 filtering afterwards would still let its diagnostics rank work. Both print what they dropped and the
-count they actually measured; the corpus denominator in `WMP_TASKS.md` is that number, not the
+count they actually measured; the corpus denominator in `tasks/WMP_TASKS.md` is that number, not the
 directory listing.
 
 A skin belongs here when no work in this engine changes its outcome — not when it is merely broken.

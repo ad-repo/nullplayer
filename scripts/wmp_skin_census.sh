@@ -5,7 +5,7 @@
 # One TSV row per **archive**: whether it loaded at all, what the loader rejected it for, how many
 # views and nodes came out, how much artwork resolved, what tags and host members it asks for that
 # the engine does not implement, and the git rev it was measured at. This is the row that ranks
-# `WMP_TASKS.md`, and it is the only honest source for the counts in that file — everything in there
+# `tasks/WMP_TASKS.md`, and it is the only honest source for the counts in that file — everything in there
 # today is inherited hand measurement.
 #
 #   scripts/wmp_skin_census.sh <outdir> [--corpus <dir>] [--allow-dirty] [--parse-only]

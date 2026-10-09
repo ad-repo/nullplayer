@@ -1,6 +1,6 @@
 # Audion Faces backlog archive
 
-Closed entries moved out of [`AUDION_TASKS.md`](../../AUDION_TASKS.md) so the live backlog stays a
+Closed entries moved out of [`AUDION_TASKS.md`](../../tasks/AUDION_TASKS.md) so the live backlog stays a
 list of work that is still open. Every row below is preserved **verbatim**, including the evidence it
 was closed on.
 

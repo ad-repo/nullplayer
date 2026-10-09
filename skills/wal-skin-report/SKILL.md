@@ -193,7 +193,7 @@ the author's screenshot, a user answer). This section is the point of the report
 
 ## 11. Follow-ups
 Proposed `skins/<skin>.md` content plus its `skins.md` row. Capability requests for the demand index, each with this skin as a
-test case. Anything that belongs in `WINAMP5_TASKS.md`.
+test case. Anything that belongs in `tasks/WINAMP5_TASKS.md`.
 ```
 
 ## 5. Grading

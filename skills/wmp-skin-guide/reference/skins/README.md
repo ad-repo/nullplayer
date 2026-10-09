@@ -2,7 +2,7 @@
 
 One file per `.wmz` that has **taught this engine something a probe could not**, and nothing else.
 
-A dossier is not a bug list and not a compatibility report — `WMP_TASKS.md` ranks work and
+A dossier is not a bug list and not a compatibility report — `tasks/WMP_TASKS.md` ranks work and
 `docs/wmp-skin/compatibility.md` states the contract. A dossier answers a different question, and it
 is the one that keeps costing whole sessions:
 

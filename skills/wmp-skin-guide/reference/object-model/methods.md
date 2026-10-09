@@ -28,7 +28,7 @@ dies as a bare `TypeError` — the same abort at the same statement, but classif
 property* rather than as unrecognised method demand, so it ranks in Tier 2b ("recognised, answered,
 nothing behind it") when it belongs in Tier 2a. `view.returnToMediaCenter` is the evidence: it had
 to be found by a live reporter (W100) because `WMP_CALL_TRACE` could not see it, and
-`WMP_CALL_TRACE` is what every row in `WMP_TASKS.md` is ranked from.
+`WMP_CALL_TRACE` is what every row in `tasks/WMP_TASKS.md` is ranked from.
 
 Two consequences bind any change to this set:
 

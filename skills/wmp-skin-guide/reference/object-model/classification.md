@@ -83,7 +83,7 @@ slider that fights the pointer is what a counter-example to that would look like
 
 ## Verified **not** gaps — check this before opening a row
 
-These were `WMP_TASKS.md` § *2c-note* until 2026-09-19; they rank nothing and cannot be taken, so
+These were `tasks/WMP_TASKS.md` § *2c-note* until 2026-09-19; they rank nothing and cannot be taken, so
 they live here with the rest of the documented refusals.
 
 The SDK conformance audit (2026-09-11) disproved nine candidate gaps, and **that is the more valuable
@@ -133,14 +133,14 @@ this list before opening a row that came from reading the SDK against a corpus s
 * **`<CONTROLS>` (77 skins), `<VIDEOSETTINGS>` (84), `windowed` (114), `allowAll`,
   `dropDownVisible` (114)** — real gaps, but already tracked as W103 and the documented
   refusals in this file (`<CONTROLS>`/`<VIDEOSETTINGS>` were W111, moved to
-  `LOW_QUALITY_TASKS.md` 2026-09-19 — they cost no pixels and no longer rank anything). Not
+  `tasks/LOW_QUALITY_TASKS.md` 2026-09-19 — they cost no pixels and no longer rank anything). Not
   re-opened.
 
 ---
 
 ## Recognised, answered, and nothing behind them (`INERT`)
 
-This was `WMP_TASKS.md` § *2b* until 2026-09-19. It ranks nothing: it is the tier you do not take
+This was `tasks/WMP_TASKS.md` § *2b* until 2026-09-19. It ranks nothing: it is the tier you do not take
 runtime work from.
 
 These do **not** stop a handler; they are the ranked list of "properties skins set that nothing

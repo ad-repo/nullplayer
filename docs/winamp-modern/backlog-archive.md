@@ -1,6 +1,6 @@
 # Winamp Modern backlog archive
 
-Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
+Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
 ## B160 — a window the user stretched did not tell its own scene — closed 2026-09-30
@@ -65,7 +65,7 @@ Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entri
 
 ## B147 — the library follows the centre stack in a `.wal` session — closed 2026-09-28
 
-| B147 | **The library window follows the main window's height in a `.wal` session.** `toggleHideTitleBars` (`App/WindowManager.swift:511`) resizes the side-docked library and projectM windows by the main window's height delta — Original centre-stack behaviour. Its guard `isRunningModernUI` (`:390`) does not name `WinampModernMainWindowController`, so `.wal` falls through to the stale `isModernUIEnabled` preference. **Gate the resize itself on the mode; do not add the controller to the predicate**, whose other callers would all inherit the answer. Classic and Original byte-identical. The `.wmz` half is W237 in [`WMP_TASKS.md`](../../WMP_TASKS.md) | every `.wal` session with the library open | S | Live-reported |
+| B147 | **The library window follows the main window's height in a `.wal` session.** `toggleHideTitleBars` (`App/WindowManager.swift:511`) resizes the side-docked library and projectM windows by the main window's height delta — Original centre-stack behaviour. Its guard `isRunningModernUI` (`:390`) does not name `WinampModernMainWindowController`, so `.wal` falls through to the stale `isModernUIEnabled` preference. **Gate the resize itself on the mode; do not add the controller to the predicate**, whose other callers would all inherit the answer. Classic and Original byte-identical. The `.wmz` half is W237 in [`WMP_TASKS.md`](../../tasks/WMP_TASKS.md) | every `.wal` session with the library open | S | Live-reported |
 
 ### B147
 
@@ -1240,7 +1240,7 @@ to give the user a way to outrank it. See
 ## B117(b) — streaming starved the `.wal` analyzer — closed 2026-09-04
 
 Half of a two-part item. **B117(a)** — WMP11-BlueVU's window repainting at ~7 fps — is still open and
-keeps the `B117` row in [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md); only the closed half moved here.
+keeps the `B117` row in [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md); only the closed half moved here.
 
 ### B117(b)
 
@@ -4285,7 +4285,7 @@ collision avoidance; the reasoning and the measurements that ruled the alternati
 skin's windows go". Verified in the running app on Defix and Anaheim, 2026-08-28. Regression
 coverage: `WinampModernWindowTilingTests` (8 cases; the property test caught a real overlap bug
 in the right-edge clamp that the manual pass missed). Remaining verification is tracked as B56a
-in [`WINAMP5_TASKS.md`](../../WINAMP5_TASKS.md).
+in [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 ---
 

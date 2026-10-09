@@ -593,7 +593,7 @@ If you see "Sonos rejected the command":
    instance keeps its session and still acts on the room; the new cast then reports `STOPPED` at
    position 0 at a steady point (~45 s in, every run, 2026-09-24) and pauses as "ended externally".
    It looks exactly like a renderer or stream defect and survives a bisect, because the fault is in
-   the other process. Open as `WMP_TASKS.md` W276 (detect a replaced `TrackURI` and drop the session).
+   the other process. Open as `tasks/WMP_TASKS.md` W276 (detect a replaced `TrackURI` and drop the session).
 2. Check if Sonos speaker went to sleep (idle timeout)
 3. Check if someone paused via Sonos app (NullPlayer detects this)
 4. Check if Mac went to sleep (NullPlayer recovers on wake)

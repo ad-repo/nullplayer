@@ -117,7 +117,7 @@ loader defect; it is also why `windowlessSuccessors` has to rank undeclared ids 
   `openView('eqView')` was taken as "go to the equaliser" and the 265x207 EQ panel became the app's
   player window. `mainView` carries the transport, the metadata readout and every button that opens
   another view, so nothing on screen could reach it. **W175** — see
-  [`../../../../WMP_TASKS.md`](../../../../WMP_TASKS.md) and the archive. The reporter's word
+  [`../../../../tasks/WMP_TASKS.md`](../../../../tasks/WMP_TASKS.md) and the archive. The reporter's word
   *"playlist"* is the shape of the panel, not its id; the window on screen was `eqView`.
 
 ## What was ruled out

@@ -299,9 +299,9 @@ So the dropout needs **two** conditions: the thread hop (latent on every skin) *
 stalled past the 150 ms timeout. WMP11-BlueVU supplies the second with a ~7 fps repaint whose **cause is not
 established** — the scene-memo explanation first written here was disproved (`frame` is already
 scene-neutral; 148 of 150 beat-only mutation windows resolve the scene zero times), and every
-number is from a debug build. See B117 in `WINAMP5_TASKS.md`. On a skin that repaints normally the coalescer clears every frame and buffers are merely
+number is from a debug build. See B117 in `tasks/WINAMP5_TASKS.md`. On a skin that repaints normally the coalescer clears every frame and buffers are merely
 late. That is why this reads as skin-specific and got filed against the renderer. See B117 in
-`WINAMP5_TASKS.md`.
+`tasks/WINAMP5_TASKS.md`.
 
 Do not read the 10 Hz cadence in this section as the cause of a choppy analyzer again without
 checking `WM-VIS-STALL` first — two sessions have now done exactly that.

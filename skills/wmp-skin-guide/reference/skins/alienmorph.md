@@ -38,7 +38,7 @@ window's *title bar* and the top of its *inner border*, not just a corner.
 |---|---|---|
 | "the animation fps is low in general" | Every rebuild restarted the repaint loop — this skin's own 100 ms view timer restarted it ten times a second — and a 0/1-cs GIF delay was clamped to 0.1s | W142 |
 | "the playlist and eq windows are not properly constructed and the window border and details are not correct and there are large gaps" | `verticalAlignment="center"` was read as a margin, so both side columns of all five windows collapsed to `top=0` and painted over the corner pieces that carry the title bar and inner border | W143 |
-| "ALXMorph does nothing — no animation and nothing reacts" | The animation half was `alphaBlendTo` (W38), `backgroundImage` from script (W75) and an unset-preference default (W76), all closed. The starvation half was never real and the 5-hit half was an intro (W242, retired) — the reacting half was the engine dispatching one click twice | W68 (moved to `LOW_QUALITY_TASKS.md` 2026-09-19), **W243** |
+| "ALXMorph does nothing — no animation and nothing reacts" | The animation half was `alphaBlendTo` (W38), `backgroundImage` from script (W75) and an unset-preference default (W76), all closed. The starvation half was never real and the 5-hit half was an intro (W242, retired) — the reacting half was the engine dispatching one click twice | W68 (moved to `tasks/LOW_QUALITY_TASKS.md` 2026-09-19), **W243** |
 | "when i start the video the video player window does not open" + "the video adjustment drawer is open by default" | One handler, two symptoms: `onChangeVidPlayerState()` reads `player.fullScreen`, which was unrecognised on the Player object and therefore **threw** — taking `toggleVidDrawer('0')` with it — and before that, in the interval where `playState` said 3 and `imageSourceWidth` was still 0, its `view.close()` shut the video window inside 200 ms of the app opening it | closed 2026-09-20, `player.fullScreen` + `State.transitioning`; see `reference/object-model/reads.md` § *What a property read answers* rule 8 |
 | "in all the alien type skins the numeric display is illegible" | A `<BUTTON>`'s `image` was scaled to its authored frame, blowing one tenth of one digit up ten times | W122 |
 | "the animation sometimes does not fully run when first opened — it runs what appears to be half" | The animation clock was per **view**, not per image: the epoch was set on the first animated GIF in the view and `AlienMorph` assigns its shutter a second later from `timerInterval="1000"`, so anything that animated first stole that much off the head | W182 (closed 2026-09-15) |
@@ -74,7 +74,7 @@ starvation number that has since evaporated — `ALXMorph/mainView` quoted at 15
 nodes, re-measured 2026-09-19 as **3**, all in classes since proven phantom (`<controls>` W111, a
 `locSub` string table W232, an anonymous wrapper whose children all resolve W231). Twelve of the
 fifteen were string-table text. **Do not re-derive anything from that row's figures**; the full
-re-measurement is in `LOW_QUALITY_TASKS.md` § W68.
+re-measurement is in `tasks/LOW_QUALITY_TASKS.md` § W68.
 
 **The observation underneath it was that the view the skin opens on dispatches 5 hit targets where
 its own `eqView` dispatches 24**, with the family live-reported as "ALXMorph does nothing — no
