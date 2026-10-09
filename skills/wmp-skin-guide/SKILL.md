@@ -306,7 +306,7 @@ tests first, the user-supplied `WMP_TEST_WMZ` corpus check when available, then 
 - Public UI owns import, installed-skin selection, selected-skin removal, authored view selection,
   unskinned recovery, and bounded JSON compatibility-report export. Archive removal never deletes
   the user's original downloaded file.
-- User support instructions live in `docs/wmp-skin/user-guide.md`; the exact implemented object-model
+- User support instructions live in [reference/user-guide.md](reference/user-guide.md); the exact implemented object-model
   contract stays in `docs/wmp-skin/compatibility.md`.
 
 ## Phase 7 hardening contracts

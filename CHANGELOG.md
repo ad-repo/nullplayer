@@ -11,7 +11,7 @@
 - All face buttons are wired, including ones Panic's viewer left inert: menu → playlist, mode →
   Library Browser, eject → open files, info → track/face credits, volume and clock → sliders.
 - Playlist, EQ, Library Browser and visualizer windows take the face's colours and dock to it.
-  See `docs/audion-face/user-guide.md`.
+  See `skills/audion-face-guide/reference/user-guide.md`.
 
 **Art window**
 - The Library Browser's ART view is now a standalone **Art** window (Windows → Art, or **AR** on
