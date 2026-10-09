@@ -40,7 +40,8 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   playlist, library and EQ call it from their own palette painters. The close is the same
   un-drawn 40×26 corner hit area a borrowed frame gets (`closeButtonRect`), so views whose content
   is a subview that eats clicks (Audio Analyzer's SwiftUI panes, Sonos's status line) override
-  `hitTest` to claim it; the library moves its server-bar right-edge items in by `cornerCloseInset`.
+  `hitTest` to claim it; the library's server-bar controls (F5, view modes) keep their usual place
+  and are carved out of that area (`hitTestCloseButton`).
   The EQ is a fixed 275x116 layout, so its old band stays as ground inside a thinner rim, clipped
   to `glossOutline` so it does not show as square corners outside the rounded rim.
   `hostedGroundRect` returns the gloss hole, not `bounds`: PeppyMeter (and Cava, Flow) paint their
