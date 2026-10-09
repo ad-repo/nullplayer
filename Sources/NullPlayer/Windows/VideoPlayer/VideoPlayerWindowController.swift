@@ -492,8 +492,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
                 videoPlayerView.hideTrackSelectionPanel()
                 return true
             }
-            // Consumed even when nothing is dismissed: a parked window still key from a fullscreen
-            // round trip would otherwise pass Esc on to `VideoPlayerView`, which stops the film.
+            // Consumed even when nothing is dismissed, should a parked window ever hold key again
+            // (`hostOutputWindow` hands it back, M33): passed on, Esc reaches `VideoPlayerView`,
+            // which stops the film.
             dismissVideoOutput()
         case 49: // Space - toggle play/pause
             togglePlayPause()
