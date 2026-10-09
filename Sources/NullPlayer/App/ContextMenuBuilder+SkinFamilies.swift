@@ -284,6 +284,50 @@ extension ContextMenuBuilder {
             switchItem: switchItem(to: .wmp, action: #selector(MenuActions.setWMPMode)),
             options: options, skins: skins)
     }
+
+    // MARK: - Audion Faces
+
+    /// Above this many faces the list is grouped into A–Z submenus: Panic's archive alone is 856.
+    static let audionFacesFlatListLimit = 40
+
+    static func buildAudionFacesMenu() -> NSMenu {
+        let importer = AudionFaceImporter()
+        let isActive = WindowManager.shared.uiMode == .audion
+        let options = [
+            skinMenuItem("Load Face...", #selector(MenuActions.loadAudionFaceFromFile)),
+            skinMenuItem("Get More Faces...", #selector(MenuActions.getMoreAudionFaces)),
+            skinMenuItem("Open Faces Folder...", #selector(MenuActions.openAudionFacesFolder)),
+            removeSkinItem(for: .audion),
+        ].compactMap { $0 }
+        let faces = importer.installedFaces().map {
+            skinMenuItem($0.name, #selector(MenuActions.selectAudionFace(_:)), representedObject: $0.name,
+                         isOn: isActive && importer.selectedFaceName == $0.name)
+        }
+        return buildSkinFamilyMenu(
+            switchItem: switchItem(to: .audion, action: #selector(MenuActions.setAudionMode)),
+            options: options, skins: groupedAlphabetically(faces, over: audionFacesFlatListLimit))
+    }
+
+    /// `items` as one submenu per initial letter (`#` for the rest) once there are more than `limit`.
+    /// A submenu holding the checked item is checked too, so the current face can be found.
+    static func groupedAlphabetically(_ items: [NSMenuItem], over limit: Int) -> [NSMenuItem] {
+        guard items.count > limit else { return items }
+        func key(_ item: NSMenuItem) -> String {
+            let initial = item.title.trimmingCharacters(in: .whitespaces).prefix(1)
+                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil).uppercased()
+            return ("A"..."Z").contains(initial) && initial.count == 1 ? initial : "#"
+        }
+        let groups = Dictionary(grouping: items, by: key)
+        return groups.keys.sorted { $0 == "#" ? false : $1 == "#" ? true : $0 < $1 }.map { letter in
+            let menu = NSMenu()
+            menu.autoenablesItems = false
+            groups[letter]!.forEach(menu.addItem)
+            let parent = NSMenuItem(title: letter, action: nil, keyEquivalent: "")
+            if groups[letter]!.contains(where: { $0.state == .on }) { parent.state = .on }
+            parent.submenu = menu
+            return parent
+        }
+    }
 }
 
 // MARK: - Original and Original-Metal actions
@@ -502,13 +546,14 @@ extension MenuActions {
         case modernFamily(ModernSkinEngine.SkinInfo, ModernSkinFamily)
         case winampModern(WinampModernImportedSkin)
         case wmp(name: String)
+        case audion(name: String)
 
         var name: String {
             switch self {
             case .classic(let url): return url.deletingPathExtension().lastPathComponent
             case .modernFamily(let skin, _): return skin.name
             case .winampModern(let skin): return skin.name
-            case .wmp(let name): return name
+            case .wmp(let name), .audion(let name): return name
             }
         }
     }
@@ -526,6 +571,9 @@ extension MenuActions {
         case .wmp:
             guard AppCapabilities.supports(.wmpSkinMode) else { return nil }
             return WMPSkinImporter().selectedSkinName.map { .wmp(name: $0) }
+        case .audion:
+            guard AppCapabilities.supports(.audionFaceMode) else { return nil }
+            return AudionFaceImporter().selectedFaceName.map { .audion(name: $0) }
         }
     }
 
@@ -538,10 +586,11 @@ extension MenuActions {
               let skin = Self.removableSkin(for: mode) else { return }
         let alert = NSAlert()
         alert.messageText = "Remove Skin?"
-        if case .wmp = skin {
+        switch skin {
+        case .wmp, .audion:
             alert.informativeText = "\u{201c}\(skin.name)\u{201d} will be removed from NullPlayer. "
                 + "The original downloaded file is not affected."
-        } else {
+        case .classic, .modernFamily, .winampModern:
             alert.informativeText = "\u{201c}\(skin.name)\u{201d} will be moved to the Trash."
         }
         alert.addButton(withTitle: "Remove")
@@ -568,6 +617,8 @@ extension MenuActions {
                 }
             case .wmp(let name):
                 removeWMPSkin(named: name)
+            case .audion(let name):
+                removeAudionFace(named: name)
             }
         } catch {
             NSAlert(error: error).runModal()
@@ -587,6 +638,63 @@ extension MenuActions {
                 }
             } catch {
                 _ = await MainActor.run { NSAlert(error: error).runModal() }
+            }
+        }
+    }
+}
+
+// MARK: - Audion Faces actions
+
+extension MenuActions {
+
+    private var audionController: AudionFaceMainWindowController? {
+        WindowManager.shared.mainWindowController as? AudionFaceMainWindowController
+    }
+
+    @objc func setAudionMode() {
+        guard AppCapabilities.supports(.audionFaceMode), WindowManager.shared.uiMode != .audion else { return }
+        WindowManager.shared.reloadUI(to: .audion)
+    }
+
+    /// In place inside the family; otherwise the selection is saved and entering the family loads it.
+    @objc func selectAudionFace(_ sender: NSMenuItem) {
+        guard AppCapabilities.supports(.audionFaceMode), let name = sender.representedObject as? String else { return }
+        if let controller = audionController {
+            controller.selectFace(named: name)
+        } else {
+            AudionFaceImporter().select(name)
+            WindowManager.shared.reloadUI(to: .audion)
+        }
+    }
+
+    @objc func loadAudionFaceFromFile() {
+        guard AppCapabilities.supports(.audionFaceMode) else { return }
+        if let controller = audionController { return controller.importFaceFromPanel() }
+        WindowManager.shared.reloadUI(to: .audion) { [weak self] in self?.audionController?.importFaceFromPanel() }
+    }
+
+    @objc func getMoreAudionFaces() {
+        guard let url = URL(string: "https://download.panic.com/audion/") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc func openAudionFacesFolder() {
+        let importer = AudionFaceImporter()
+        do {
+            try importer.ensureDirectoryExists()
+            NSWorkspace.shared.open(importer.directoryURL)
+        } catch {
+            NSAlert(error: error).runModal()
+        }
+    }
+
+    fileprivate func removeAudionFace(named name: String) {
+        Task { @MainActor in
+            do {
+                try await AudionFaceImporter().removeFace(named: name)
+                self.audionController?.resetToUnskinned()
+            } catch {
+                NSAlert(error: error).runModal()
             }
         }
     }

@@ -12,11 +12,13 @@ import Foundation
 ///   geometry, and auxiliary-window decisions through this enum, never through a boolean that
 ///   would silently fold `winampModern` into one of the other families.
 /// - `wmp`: the Windows Media Player `.wmz`/`.wms` family.
+/// - `audion`: Panic Audion faces (folders of `index.json` + PNGs).
 enum PlayerUIControllerFamily {
     case classic
     case nullPlayerModern
     case winampModern
     case wmp
+    case audion
 }
 
 enum PlayerUIMode: String, CaseIterable {
@@ -25,6 +27,7 @@ enum PlayerUIMode: String, CaseIterable {
     case metal
     case winampModern
     case wmp
+    case audion
 
     static let userDefaultsKey = "uiMode"
     private static let legacyModernEnabledKey = "modernUIEnabled"
@@ -36,6 +39,7 @@ enum PlayerUIMode: String, CaseIterable {
         case .metal: return ModernSkinFamily.metal.displayName
         case .winampModern: return "Modern"
         case .wmp: return "Media Player"
+        case .audion: return "Audion Faces"
         }
     }
 
@@ -47,6 +51,7 @@ enum PlayerUIMode: String, CaseIterable {
         case .modern, .metal: return .nullPlayerModern
         case .winampModern: return .winampModern
         case .wmp: return .wmp
+        case .audion: return .audion
         }
     }
 
@@ -68,14 +73,14 @@ enum PlayerUIMode: String, CaseIterable {
     /// it returns `false` here even though it is a "modern" skin system.
     var usesModernEQLayout: Bool {
         switch self {
-        case .classic, .winampModern, .wmp: return false
+        case .classic, .winampModern, .wmp, .audion: return false
         case .modern, .metal: return true
         }
     }
 
     var modernSkinFamily: ModernSkinFamily? {
         switch self {
-        case .classic, .winampModern, .wmp: return nil
+        case .classic, .winampModern, .wmp, .audion: return nil
         case .modern: return .modern
         case .metal: return .metal
         }
@@ -121,7 +126,8 @@ enum PlayerUIMode: String, CaseIterable {
     static func argumentOverride(from arguments: [String: Any]) -> PlayerUIMode? {
         guard let rawValue = arguments[userDefaultsKey] as? String,
               let mode = PlayerUIMode(rawValue: rawValue),
-              mode != .wmp || AppCapabilities.supports(.wmpSkinMode) else { return nil }
+              mode != .wmp || AppCapabilities.supports(.wmpSkinMode),
+              mode != .audion || AppCapabilities.supports(.audionFaceMode) else { return nil }
         return mode
     }
 }

@@ -17,7 +17,7 @@ class ContextMenuBuilder {
     /// decision, not a default*.
     static func supportsSkinnedAuxiliaryWindows(for mode: PlayerUIMode) -> Bool {
         switch mode.controllerFamily {
-        case .classic, .nullPlayerModern, .winampModern, .wmp: return true
+        case .classic, .nullPlayerModern, .winampModern, .wmp, .audion: return true
         }
     }
     
@@ -60,7 +60,8 @@ class ContextMenuBuilder {
         // toggles. A `.wal` skin supplies its own compact/shade layouts, so showing NullPlayer's
         // alternatives there creates a second, unrelated compact-window model; the menu-bar
         // Windows menu suppresses them the same way. WMP skins own their views the same way.
-        if wm.uiMode.controllerFamily != .winampModern, wm.uiMode.controllerFamily != .wmp {
+        if wm.uiMode.controllerFamily != .winampModern, wm.uiMode.controllerFamily != .wmp,
+           wm.uiMode.controllerFamily != .audion {
             let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
             compactMode.target = MenuActions.shared
             compactMode.state = wm.compactModeEnabled ? .on : .off
@@ -214,7 +215,8 @@ class ContextMenuBuilder {
         // Compact controls belong to the classic and NullPlayer-owned UI families. A `.wal` or
         // `.wmz` skin supplies its own compact/shade layouts, so showing NullPlayer's alternatives
         // here creates a second, unrelated compact-window model.
-        if wm.uiMode.controllerFamily != .winampModern, wm.uiMode.controllerFamily != .wmp {
+        if wm.uiMode.controllerFamily != .winampModern, wm.uiMode.controllerFamily != .wmp,
+           wm.uiMode.controllerFamily != .audion {
             let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
             compactMode.target = MenuActions.shared
             compactMode.state = wm.compactModeEnabled ? .on : .off
@@ -605,7 +607,7 @@ class ContextMenuBuilder {
         // this player's visuals in its authored effects rect, so WMP suppresses it too.
         // Classic and NullPlayer modern keep it.
         let family = wm.uiMode.controllerFamily
-        if family != .winampModern && family != .wmp {
+        if family != .winampModern && family != .wmp && family != .audion {
             let mainWindowItem = NSMenuItem(title: "Main Window", action: nil, keyEquivalent: "")
             mainWindowItem.submenu = buildMainVisualizationSubmenu()
             menu.addItem(mainWindowItem)
@@ -849,6 +851,9 @@ class ContextMenuBuilder {
         }
         if AppCapabilities.supports(.wmpSkinMode) {
             uiMenu.addItem(skinFamilyItem(.wmp, menu: buildWMPSkinsMenu()))
+        }
+        if AppCapabilities.supports(.audionFaceMode) {
+            uiMenu.addItem(skinFamilyItem(.audion, menu: buildAudionFacesMenu()))
         }
         return uiMenu
     }

@@ -29,6 +29,7 @@ final class WMPPhase3Tests: XCTestCase {
                     case .nullPlayerModern: XCTAssertTrue(controller is ModernMainWindowController)
                     case .winampModern: XCTAssertTrue(controller is WinampModernMainWindowController)
                     case .wmp: XCTAssertTrue(controller is WMPMainWindowController)
+                    case .audion: XCTAssertTrue(controller is AudionFaceMainWindowController)
                     }
                     controller.prepareForUITeardown()
                     controller.window?.close()

@@ -92,6 +92,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // entered only after the asynchronous window restoration has completed, so it
         // can capture and hide the actual restored window set.
         let supportsCompactSurfaces = windowManager.uiMode.controllerFamily != .wmp
+            && windowManager.uiMode.controllerFamily != .audion
         let shouldRestoreCompactMode = supportsCompactSurfaces
             && UserDefaults.standard.bool(forKey: "compactModeEnabled")
         let shouldRestoreCompactWindow = !shouldRestoreCompactMode
@@ -121,6 +122,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // `restorePlaylistState` below, so the first save records the restored session.
             AppStateManager.shared.startAutosave()
             self?.loadDiagnosticWMPSkinIfRequested()
+            self?.loadDiagnosticAudionFaceIfRequested()
             // Everything the launch puts on screen is finally up: the player at its restored frame,
             // the skin's own windows at their final sizes, and any hosted window the session had
             // open. This is the first moment a `.wal` arrangement can be computed — see
@@ -179,6 +181,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         controller.importSkin(from: URL(fileURLWithPath: path))
     }
 
+    /// `-uiMode audion -audionFacePath /absolute/face-folder`: show that face. An installed face is
+    /// selected in place; any other folder or `.zip` is installed first. Runs after state restoration
+    /// for the same reason as the `.wmz` path above.
+    private func loadDiagnosticAudionFaceIfRequested() {
+        guard windowManager.uiMode == .audion,
+              let path = UserDefaults.standard.string(forKey: "audionFacePath"), path.hasPrefix("/"),
+              let controller = windowManager.mainWindowController as? AudionFaceMainWindowController else { return }
+        controller.showFace(at: URL(fileURLWithPath: path))
+    }
+
     #if DEBUG
     /// DEBUG-only Phase 1 acceptance loop. Repeatedly live-switches through all four UI modes and
     /// verifies the running main-window controller matches the target mode's controller family
@@ -202,6 +214,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return controller is WinampModernMainWindowController
             case .wmp:
                 return controller is WMPMainWindowController
+            case .audion:
+                return controller is AudionFaceMainWindowController
             }
         }
 

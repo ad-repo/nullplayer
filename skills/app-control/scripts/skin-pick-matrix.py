@@ -36,6 +36,7 @@ FAMILIES = {  # submenu -> two skins, alternated so every pick is a real change
     "Original-Metal": ["Brushed Steel", "Gunmetal"],
     "Modern": ["2222-cPro__Bento", "211786-Cpro_Winamp_Modern"],
     "Media Player": ["corona", "9SeriesDefault"],
+    "Audion Faces": ["AppleClassic", "Agitator"],
 }
 # Load pass: submenu -> (name it is listed under, file, where the import lands)
 LOADS = {"Classic": ("MatrixClassic", "MatrixClassic.wsz", "Skins"),
@@ -100,6 +101,9 @@ def load_evidence(fam, skin, new, kind):
     if fam == "Media Player":
         n = sh("defaults", "read", "NullPlayer", "wmpSkinName")
         return n.lower() == skin.lower(), f"wmpSkinName={n}"
+    if fam == "Audion Faces":
+        ok = f"AudionFace: loaded '{skin}'" in text
+        return ok, "loaded line" if ok else "no loaded line"
     if kind == "load":  # a `.nsz` loads from a temporary extraction, which names nothing
         return True, "n/a"
     hits = [l for l in new if "Loaded" in l and ("ModernSkinLoader" in l or "metal skin" in l)]
