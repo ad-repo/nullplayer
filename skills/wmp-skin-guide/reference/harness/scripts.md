@@ -277,7 +277,8 @@ that could not run for exactly this reason.
   stalls both.
 - **Redirect to a file and grep the file.** Piping a long `swift test` into a filter drops lines
   silently. stderr gets its own file.
-- **Every harness line is one `write(2)`, never `print`.** `WMPHarnessOutput.emit` takes a lock,
+- **Every harness line is one `write(2)`, never `print`.** `HarnessOutput.emit`
+  (`Tests/NullPlayerAppTests/HarnessOutput.swift`, shared with the Audion face harness) takes a lock,
   flushes stdio so XCTest's own lines stay ordered against ours, and writes the line and its
   terminator in a single unbuffered call. It exists because `print` did not: in the 180-archive
   sweep at rev `171cf89a` a `CALL` line and the `SKIN` line opening the next archive landed inside
