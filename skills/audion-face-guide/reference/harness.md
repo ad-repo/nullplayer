@@ -59,7 +59,7 @@ One fact per line, inside a `FACE` block.
 | `LOAD size=WxH mask=WxH\|none inactiveMask=WxH\|none findings=<n>` | the loaded face |
 | `FINDING [AUD####] <message>` | each warning, in the loader's stable order |
 | `ELEMENTS buttons=… indicators=… digits=… animations=… text=…` | the roles that survived loading, `-` for none |
-| `PALETTE authored=<album>/<artist> ground=… text=… current=… selection=… selected=… text/ground=… current/ground=… selected/selection=… selection/ground=… overruled=…` | `AudionFacePalette.surfaceStyle(for:)` as hex roles (`authored` is the face's own text colours, `-` with no display), the four contrasts NullPlayer's windows depend on, and which authored colours `legible` replaced (`text`, `current`, or `-`) |
+| `PALETTE authored=<album>/<artist> ground=… text=… current=… selection=… selected=… text/ground=… current/ground=… selected/selection=… selection/ground=… overruled=…` | `AudionFacePalette.surfaceStyle(for:)` as hex roles (`authored` is `AudionFacePalette.roles(for:)`'s text and current text — the face's own colours, or the neutral ones with no display), the four contrasts NullPlayer's windows depend on, and which of those roles the style's `legible` replaced (`text`, `current`, or `-`) |
 | `RENDER-DUMP <label>: WxH ops=<n> [hovered=<role>] [pressed=<role>]` | one per rendered state and tick |
 | `PROBE <label> <element> x,y WxH [offset=<px> text=WxH]` | one per draw op (`AudionFaceDrawOp.Element`'s description), face pixels, top-left; labels add the marquee offset and text image size |
 | `PNG <label>: <face>/<file>` or `PNG <label> FAILED <why>` | the dump written, or why not |
@@ -176,15 +176,22 @@ From the sweep's `PALETTE` lines over all 856 faces (a throwaway tally over `inv
 
 | Contrast | Minimum | Median | Guarded by |
 |---|---:|---:|---|
-| text / ground | 3.00 | 9.12 | `legible`, 3.0 |
-| current text / ground | 3.04 | 9.22 | `legible`, 3.0 |
-| selected text / selection | 3.01 | 6.22 | `legible`, 3.0 |
-| selection / ground | 1.31 | 2.40 | the palette's `legible(threshold: 1.3)` |
+| text / ground | 3.00 | 8.98 | `legible`, 3.0 |
+| current text / ground | 3.04 | 9.06 | `legible`, 3.0 |
+| selected text / selection | 3.01 | 6.27 | `legible`, 3.0 |
+| selection / ground | 1.31 | 2.41 | the palette's `legible(threshold: 1.3)` |
 
-`overruled`: none 670, both 163, current only 17, text only 6. The overrules are the faces' own
-low-contrast pairs (Cracked's pale yellow and green on white), not sampling errors; 107 faces have no
-real display. 30 selections fall back to black or white. Before the A7 fixes, 89 faces had a selection
-under 1.3 against the ground (down to 1.00) and 85 sampled a 1×1 placeholder display's corner pixel.
+`overruled` (the guarded style against `roles(for:)`): of the 764 faces with a real display, none
+476, both 143, current only 16, text only 5 — the faces' own low-contrast pairs (Cracked's pale
+yellow and green on white), not sampling errors. The 92 without one wear the neutral roles, which a
+light ground overrules (both 35, text only 5). 27 selections fall back to black or white. Before the
+A7 fixes, 89 faces had a selection under 1.3 against the ground (down to 1.00) and 85 sampled a 1×1
+placeholder display's corner pixel.
+
+The line is deterministic: `dominantColor` breaks a bucket tie by key. Before the A7 review it broke
+ties in `Dictionary` order, seeded per process, so a tied face (Contragravity, gayheart, Time) got a
+different palette from one run — or launch — to the next. Two captures of one tree must give
+identical `PALETTE` lines; a difference is a defect.
 
 `Tests/NullPlayerAppTests/Goldens/AudionFace/palettes.tsv` pins the line for six faces
 (`AudionFacePhase5Tests.testPaletteGoldens`, skipped without the corpus); re-record with

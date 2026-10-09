@@ -39,6 +39,15 @@ final class AudionFacePhase5Tests: XCTestCase {
         XCTAssertEqual(rgb(AudionFacePalette.surfaceStyle(for: face).background), [0, 0, 255])
     }
 
+    /// Two colours covering the face equally: the tie goes to the higher bucket, the same in every
+    /// process (iteration order of the counts is not).
+    func testADominantColourTieIsStable() throws {
+        let red: [UInt8] = [255, 0, 0, 255], blue: [UInt8] = [0, 0, 255, 255]
+        let image = try XCTUnwrap(NSBitmapImageRep(data: try WMPSkinTestSupport.encodedImage(
+            width: 2, height: 2, rgba: Array([blue, red, blue, red].joined())))?.cgImage)
+        XCTAssertEqual(rgb(try XCTUnwrap(AudionFacePalette.dominantColor(of: image, in: nil))), [255, 0, 0])
+    }
+
     /// A face whose authored text is its ground's colour still gets a selection that stands off it:
     /// the blend goes toward a colour that can be read there, not toward the authored one.
     func testSelectionStandsOffAGroundItsAuthoredTextMatches() async throws {
