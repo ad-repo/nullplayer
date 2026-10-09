@@ -12,7 +12,8 @@ final class AudionFaceMainView: NSView {
     var onCommand: ((AudionFaceCommand) -> Void)?
 
     private var interaction = AudionFaceInteractionState() { didSet { if interaction != oldValue { redraw() } } }
-    private var image: CGImage?
+    /// The face's pixels, redrawn only where a new scene differs from the last.
+    private var canvas = AudionFaceCanvas()
     private var drag = AudionFaceWindowDrag()
     /// FaceKit's 60 Hz tick count. The clock runs only while `AudionFaceScene.isAnimated` and the
     /// window is on screen.
@@ -35,8 +36,9 @@ final class AudionFaceMainView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.contentsGravity = .resize
-        layer?.magnificationFilter = .nearest
+        // Drawn in `draw(_:)`, so a redraw updates only the rects marked: new layer contents would
+        // be copied and colour-converted whole every tick.
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
         setAccessibilityIdentifier("AudionFaceMainView")
         setAccessibilityRole(.group)
         volumeSlider.onChange = { [weak self] value, _ in self?.onCommand?(.volume(value)) }
@@ -60,17 +62,33 @@ final class AudionFaceMainView: NSView {
     }
 
     /// Rendered at the device scale (rounded up to an integer), so text stays sharp on a 2x display.
+    /// Only what changed is redrawn, and the shadow is recomputed only when the outline moved.
     private func redraw() {
         defer { updateClock() }
-        guard let face else { image = nil; layer?.contents = nil; return }
+        guard let face else { canvas = AudionFaceCanvas(); needsDisplay = true; return }
         let backing = window?.backingScaleFactor ?? 2
         let scale = max(1, Int((uiScale * backing).rounded(.up)))
-        // ponytail: every tick re-renders the whole face, text included; Phase 6 owns dirty rects.
-        image = AudionFaceRenderer.render(AudionFaceScene(face: face, host: host, interaction: interaction,
-                                                          frame: tick, scale: scale))
-        layer?.contents = image
-        layer?.contentsScale = backing
+        let change = canvas.draw(AudionFaceScene(face: face, host: host, interaction: interaction, frame: tick, scale: scale))
+        for rect in change.rects { setNeedsDisplay(localRect(rect)) }
+        guard change.outlineChanged else { return }
+        displayIfNeeded()
         window?.invalidateShadow()
+    }
+
+    /// A new UI size redraws the whole face: under `.onSetNeedsDisplay` a resize alone does not.
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let image = canvas.image, let context = NSGraphicsContext.current?.cgContext else { return }
+        // The view is flipped and the image is not.
+        context.translateBy(x: 0, y: bounds.height)
+        context.scaleBy(x: 1, y: -1)
+        // Device pixel for device pixel at an integer UI size; smoothed at a fractional one.
+        context.interpolationQuality = uiScale == uiScale.rounded() ? .none : .default
+        context.draw(image, in: bounds)
     }
 
     /// Starts or stops the frame clock for the state on screen; the controller calls it when the
@@ -125,7 +143,7 @@ final class AudionFaceMainView: NSView {
 
     /// The window shape is the rendered alpha: a click on a clear pixel goes to whatever is behind.
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard let image, let local = superview.map({ convert(point, from: $0) }),
+        guard let image = canvas.image, let local = superview.map({ convert(point, from: $0) }),
               bounds.contains(local) else { return super.hitTest(point) }
         let x = Int(local.x * CGFloat(image.width) / bounds.width)
         let y = Int(local.y * CGFloat(image.height) / bounds.height)

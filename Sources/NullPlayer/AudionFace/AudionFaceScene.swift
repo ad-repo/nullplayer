@@ -10,7 +10,7 @@ struct AudionFaceDrawOp {
     enum Layer: CaseIterable { case base, buttons, readouts, labels, mask }
 
     /// What the op draws, which decides its layer. The description is what the harness's probe prints.
-    enum Element: Equatable, CustomStringConvertible {
+    enum Element: Hashable, CustomStringConvertible {
         case base, mask
         case animation(AudionFace.AnimationRole)
         case button(AudionFace.ButtonRole)

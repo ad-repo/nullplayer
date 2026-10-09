@@ -17,6 +17,12 @@ enum AudionFacePolicy {
     static let faceBytes = 64 * 1_024 * 1_024
     /// AUD0007.
     static let pictIDs = 0...99_999
+    /// AUD0013: a rect edge outside this is malformed, so no rect arithmetic can overflow. The corpus's
+    /// largest is 1,318.
+    static let coordinates = -65_536...65_536
+    /// A font size outside this reads as absent (Helvetica 12, FaceKit's rule for a missing size), so
+    /// text rasterizes into a bounded image. The corpus spans 0–90.
+    static let fontSizes = 0...1_024
     /// AUD0011, summed over the distinct files decoded. 64 Mpx is 256 MB of RGBA.
     static let decodedPixels = 64 * 1_024 * 1_024
 }

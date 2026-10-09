@@ -154,6 +154,7 @@ At the commit that closed A3 (2026-10-08), over the 856 faces of Panic's 2021 di
 | `scripts/audion_facekit_reference.sh` | 856 rendered, 0 refused, 0 died; 19 s on all cores. |
 | `scripts/audion_oracle_compare.py` | **856/856 geometry-identical**: identical 484, rounding 371, text-only 1 (`subzero`, playing: its album and artist boxes overlap by a row, and only its glyphs differ), geometry 0. |
 | `swift test --build-system native` | 3,007 tests, 19 skipped, 0 failures; `AudionFaceCorpusLoadTests` 856/856, 0 unranked, ~5.5 s. |
+| Phase 6 re-check (A8) | Census identical in tallies and headroom; the sweep identical to `93ff3dd4` (9,457 lines, 1,712 images, every `PROBE` line); oracle 856/856 geometry-identical (484 / 371 / 1 / 0); `swift test` 3,034, 19 skipped, 0 failures. |
 
 Limit headroom, from the census (`headroom` lines; images over every PNG, not only decoded ones):
 
@@ -169,6 +170,26 @@ Limit headroom, from the census (`headroom` lines; images over every PNG, not on
 Median face: 355,603 px. What the census found in the files FaceKit ignores is
 `format.md` § *Files FaceKit ignores*; the counts behind it are the census's `window_vs_mask_iou`,
 `drag_in_window`, `inactive_vs_base`, `active_alpha`, `about` and `icon` tallies.
+
+### Redraw cost (A8, 2026-10-09)
+
+Per tick with the album marquee scrolling, debug build, from a throwaway test timing 120 ticks of
+`AudionFaceCanvas.draw` (before: a full `AudionFaceRenderer.render`). Scale is device pixels per face
+pixel, so 6 is UI Size 300% on a retina display.
+
+| Face (base) | Scale 2 | Scale 4 | Scale 6 |
+|---|---:|---:|---:|
+| Izam (288×185, the median) | 1.17 → 0.09 ms | 3.80 → 0.15 | 8.47 → 0.25 |
+| DeepBlue (487×275, p90) | 2.64 → 0.10 | 9.63 → 0.21 | 21.33 → 0.38 |
+| Been Hexxed? (800×600, the largest) | 8.01 → 0.38 | 32.09 → 1.38 | 72.03 → 3.06 |
+
+Live, debug build, playing, `top -pid` over 5 s: Been Hexxed? 15% at 100%, 30% at 200%, 50% at
+300%; AppleClassic ~11% at 100%, ~17% at 300%. Before the view drew through `draw(_:)`, Been
+Hexxed? ran 28 / 68 / 95%: `sample` put 1,953 of 2,557 main-thread samples in Core Animation copying
+and colour-converting the whole new `layer.contents` image every tick. What remains at 300% is
+CoreGraphics compositing the album box (760×37 face pixels, 1 Mpx at scale 6). A release build cannot
+show a face until the DEBUG gate goes (A9), so no release profile exists yet and nothing past these
+algorithmic fixes was optimized.
 
 ### Palette legibility (A7, 2026-10-09)
 

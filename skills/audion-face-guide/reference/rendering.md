@@ -10,7 +10,8 @@ This file owns the one draw path the harness and the screen share:
 | `AudionFaceInteractionState` | hovered and pressed button, and buttons the window disables (the volume button while its slider is open) |
 | `AudionFaceScene` | `(face, host, interaction, frame, scale) → [AudionFaceDrawOp]`, one function per element kind; also `visibleButtons` and `button(atX:y:)`, the hit test. Each op's `Element` (`.button(.stop)`, `.label(.album, offset:)`, …) decides its layer |
 | `AudionFaceText` | one text line to a `CGImage`, adapted from FaceKit's `draw(text:…)` (carries Panic's header) |
-| `AudionFaceRenderer` | ops to a `CGImage`; depends on the scene, never the other way |
+| `AudionFaceRenderer` | ops to a `CGImage` — the whole face, or one region of it; depends on the scene, never the other way |
+| `AudionFaceCanvas` | the window's pixels between scenes: redraws only the rects whose ops changed, and says whether the outline moved |
 
 The rules are FaceKit `AudionFaceView`'s, verified against the oracle (`harness.md` § *The oracle*,
 856/856 geometry-identical). A change here is checked with the census, the sweep and the oracle
@@ -89,6 +90,31 @@ the text re-entering from the right edge after a 60 px gap; all widths in device
 
 **XOR text** (`…TextMode & 2`) is drawn plainly. FaceKit parses it and leaves its invert filter
 commented out.
+
+## Redrawing only what changed
+
+`AudionFaceRenderer.render(_:region:)` renders one face-pixel rect into an image of just that rect.
+Every op composites only inside its own rect, and every draw lands on whole device pixels (rects ×
+integer scale, integer marquee offsets), so a region is pixel for pixel the full render there.
+
+`AudionFaceCanvas.draw(_:)` keeps the last scene and its pixels. An op is unchanged when its element
+(marquee offset included), rect and image **instance** match; `AudionFaceText` hands back the same
+instance for the same line, scale and flags (a 16-entry memo, emptied when full), so a marquee tick
+rasterizes nothing. The rects of the ops either scene lacks are re-rendered and copied in; a mask
+change, a new size or a new scale redraws everything, since the mask cuts pixels outside its own rect
+too. `outlineChanged` compares the redrawn rows against an alpha plane kept beside the canvas (reading
+the canvas back would copy all of it after `makeImage`): the window's shadow needs recomputing only
+then. Text and digits cannot be assumed opaque — 625 faces put a label or readout over translucent
+base that the mask keeps. `AudionFacePhase6Tests` checks the canvas byte for byte against a full
+render through every kind of change. Costs: `harness.md` § *Redraw cost*.
+
+## Scale
+
+UI Size sets window points per face pixel; the face renders at `ceil(UI scale × backing scale)`
+device pixels per face pixel. At a whole-number level that is the screen's pixel grid exactly and the
+view draws it with interpolation off; at a fractional level (125%, …) the view draws the next integer
+scale down to the window with default interpolation, so text stays smooth. The mask is scaled
+nearest-neighbour with everything else.
 
 ## Departures from FaceKit
 

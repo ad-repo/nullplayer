@@ -92,6 +92,8 @@ Each is classified as an expected oracle difference, never silently.
 | `NSImage` loads any image format under a `.png` name | only a PNG signature counts; anything else is an absent file | dimensions are read from the PNG header before decode (§ *Threat model*); every image file in the corpus is a PNG |
 | Stop, and the NET, MP3 and pause indicators, need `durationInSeconds != 0` | a stream phase counts as a track too (Phase 4) | live radio has no duration: NET stayed dark and stop disabled while a station played. Every oracle state has a duration, so the comparison never sees it |
 | Middle truncation trims until the line fits, and loops forever when even `…` alone is wider than the box | stops when nothing is left to trim, drawing nothing (Phase 2) | a hostile font size must not hang the renderer; FaceKit rendered every corpus face's canonical states, so the stop never fires there |
+| Any integer rect edge and font size is accepted | an edge outside ±65,536 is malformed (`AUD0013`); a font size outside 0–1,024 reads as absent, Helvetica 12 (Phase 6) | an edge of `Int.max` trapped the rect arithmetic and a huge size the text rasterizer, both found by fuzzing; the corpus's largest edge is 1,318 and its sizes span 0–90, so no corpus face changes |
+| No UI Size; a face draws at its own size (Retina through Core Animation) | a fractional UI Size draws the next integer scale down with default interpolation (Phase 6) | NullPlayer's UI Size offers 50–300%; nearest-neighbour downsampling would drop text strokes unevenly. Whole-number levels stay device-pixel exact |
 
 ## Button mapping
 
@@ -172,7 +174,7 @@ their wording may improve without changing their meaning.
 | `AUD0010` | zip ratio or size over its limit | fatal |
 | `AUD0011` | more than 64 Mpx across the images the loader decodes, summed from headers | fatal |
 | `AUD0012` | `index.json` unreadable, or not a JSON object | fatal |
-| `AUD0013` | an element with a non-zero rect dropped: a key it needs is missing or malformed, or one of its images is absent | warning; element dropped |
+| `AUD0013` | an element with a non-zero rect dropped: a key it needs is missing or malformed (from Phase 6, a rect edge outside ±65,536 is malformed), or one of its images is absent | warning; element dropped |
 | `AUD0014` | a zip that cannot be read, or an entry that fails its CRC or size check | fatal |
 
 `AUD0012`–`AUD0014` were added in Phase 1. The table above had no code for a face whose

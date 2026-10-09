@@ -80,6 +80,32 @@ final class AudionFaceHostileInputTests: XCTestCase {
         }
     }
 
+    /// Only regular files are read: a FIFO named like a sprite would block the read forever.
+    func testAFIFOIsAbsentNeverOpened() async throws {
+        let sprite = try AudionFaceFixture(json: ["playButtonRect": AudionFaceFixture.rect(top: 0, left: 0, bottom: 1, right: 1)])
+        XCTAssertEqual(mkfifo(sprite.folder.appendingPathComponent("play.png").path, 0o600), 0)
+        let face = try await sprite.load()
+        XCTAssertEqual(face.findings.map(\.code), [.buttonWithoutSprite])
+        for name in ["index.json", "base.png"] {
+            let fixture = try AudionFaceFixture()
+            try FileManager.default.removeItem(at: fixture.folder.appendingPathComponent(name))
+            XCTAssertEqual(mkfifo(fixture.folder.appendingPathComponent(name).path, 0o600), 0)
+            let code = try await failure(fixture)
+            XCTAssertEqual(code, name == "base.png" ? .missingBase : .missingIndex)
+        }
+    }
+
+    /// A sprite whose header passes and whose data does not decode is a missing file, in both passes.
+    func testATruncatedSpriteIsMissing() async throws {
+        let fixture = try AudionFaceFixture(json: ["playButtonRect": AudionFaceFixture.rect(top: 0, left: 0, bottom: 1, right: 1)])
+        try fixture.png("play.png", width: 8, height: 8)
+        let png = try Data(contentsOf: fixture.folder.appendingPathComponent("play.png"))
+        try fixture.write("play.png", png.prefix(33))   // signature + IHDR, no image data
+        let face = try await fixture.load()
+        XCTAssertNil(face.buttons[.play])
+        XCTAssertEqual(face.findings.map(\.code), [.buttonWithoutSprite])
+    }
+
     func testAUD0006Symlinks() async throws {
         let inside = try AudionFaceFixture()
         try FileManager.default.createSymbolicLink(at: inside.folder.appendingPathComponent("play.png"),
@@ -109,6 +135,27 @@ final class AudionFaceHostileInputTests: XCTestCase {
         ]).load()
         XCTAssertTrue(face.digits.isEmpty && face.animations.isEmpty)
         XCTAssertEqual(face.findings.map(\.code), [.pictOutOfRange, .pictOutOfRange, .pictOutOfRange])
+    }
+
+    /// Found by `AudionFaceFuzzTests`: an edge of `Int.max` trapped in the rect arithmetic, and a
+    /// huge font size in the text rasterizer.
+    func testAUD0013ExtremeCoordinatesAndFontSizesNeitherTrapNorDraw() async throws {
+        let fixture = try AudionFaceFixture(json: [
+            "playButtonRect": AudionFaceFixture.rect(top: 0, left: -1, bottom: 1, right: Int.max),
+            "stopButtonRect": AudionFaceFixture.rect(top: 0, left: Int.max - 1, bottom: 1, right: Int.max),
+            "artistDisplayRect": AudionFaceFixture.rect(top: 0, left: 0, bottom: 4, right: 40),
+            "artistTextMode": 1, "artistDisplayFontName": "Helvetica", "artistFontSize": Int.max,
+        ])
+        try fixture.png("play.png")
+        try fixture.png("stop.png")
+        let face = try await fixture.load()
+        XCTAssertTrue(face.buttons.isEmpty)
+        // Play and pause share the malformed `playButtonRect`; stop is the third.
+        XCTAssertEqual(face.findings.map(\.code), [.elementDropped, .elementDropped, .elementDropped])
+        XCTAssertEqual(CTFontGetSize(try XCTUnwrap(face.artist).font), 12, "an out-of-range size reads as absent")
+        var host = AudionFaceHostState()
+        host.title = String(repeating: "W", count: 200)
+        XCTAssertNotNil(AudionFaceRenderer.render(AudionFaceScene(face: face, host: host, scale: 6)))
     }
 
     func testAUD0011PixelBudgetIsCheckedFromHeadersBeforeAnyDecode() async throws {

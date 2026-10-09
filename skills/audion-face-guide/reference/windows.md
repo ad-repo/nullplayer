@@ -8,7 +8,7 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
 | File | Owns |
 |---|---|
 | `AudionFaceMainWindowController.swift` | `AudionFaceWindow` (borderless, clear, key/main-capable) and the `MainWindowProviding` controller: loads the selected face off the main thread, swaps between the face and the unskinned view, sizes the window to `base` × UI scale keeping the top-left, holds `surfaceStyle` |
-| `AudionFaceMainView.swift` | Draws `AudionFaceRenderer.render(AudionFaceScene(...))` as layer contents at `ceil(uiScale × backing)`; the frame clock; hit-tests; drags; the two slider popups and the info menu; keys; right-click menu; accessibility |
+| `AudionFaceMainView.swift` | Draws `AudionFaceScene`s through an `AudionFaceCanvas` at `ceil(uiScale × backing)`, marking only the changed rects dirty and painting them in `draw(_:)`; the frame clock; hit-tests; drags; the two slider popups and the info menu; keys; right-click menu; accessibility |
 | `AudionFaceSliderWindow.swift` | FaceKit's `AudionSliderWindow`, ported (Panic's header): a borderless popup holding one `NSSlider`, closed when it resigns key |
 | `AudionFaceAudioEngineHost.swift` | `AudioEngine` → `AudionFaceHostState`, and an `AudionFaceCommand` (a button, a volume, a seek) → its NullPlayer action |
 | `AudionFaceUnskinnedView.swift` | The app-authored fallback when no face is selected or the selected one fails |
@@ -26,9 +26,15 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
   `windowDidFinishDragging` (`AudionFaceWindowDrag`, used by both the face and the unskinned
   view), and `windowDidMove` applies the snapped position, the Classic recipe — so snapping and
   docked groups work. AppKit's background drag is off for the window and both views.
+- **Drawing:** the view is layer-backed with `layerContentsRedrawPolicy = .onSetNeedsDisplay` and
+  paints the canvas image in `draw(_:)`, so AppKit updates only the rects marked with
+  `setNeedsDisplay(_:)`. Setting `layer.contents` instead made Core Animation copy and colour-convert
+  the whole image every tick (95% CPU at 300% on the largest face; `harness.md` § *Redraw cost*). A
+  size change marks the whole view.
 - **Shadow:** AppKit's own (`hasShadow`), not `SkinWindowShadow`; `hostsSkinShadowWindows` is
-  false for Audion. `invalidateShadow` runs on every redraw on purpose: the outline is mostly the
-  face's, but an animation frame clears the base under it, so a state change can reshape it.
+  false for Audion. `invalidateShadow` runs only when the canvas reports `outlineChanged` (an
+  animation frame clears the base under it, a mask swaps, a new face), after `displayIfNeeded()` so
+  the shadow is taken from the new pixels; a marquee tick or a clock digit never recomputes it.
 - **Buttons** (decision record § *Button mapping*): play, pause, stop, rw/ff (previous/next), eject
   (Open Files…), menu (toggle the playlist), close (quit, as every NullPlayer main window's close
   does), mode (shuffle and repeat as a two-bit counter: off → shuffle → repeat → both → off). Volume
@@ -45,8 +51,8 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
   `AudionFaceCommand`, so a seek while paused shows at once.
 - **Frame clock:** a 60 Hz `Timer` (common run-loop modes) advances the scene's `frame` only while
   `AudionFaceScene.isAnimated` (a multi-frame animation, or an album line that scrolls) and the
-  window is visible (`windowDidChangeOcclusionState`). Every tick re-renders the whole face; dirty
-  rects are Phase 6's. The tick count is never reset, as FaceKit's is not, so a new track's
+  window is visible (`windowDidChangeOcclusionState`). A tick redraws only what moved (`rendering.md`
+  § *Redrawing only what changed*). The tick count is never reset, as FaceKit's is not, so a new track's
   marquee can start mid-cycle.
 - **Stream phase:** radio's `RadioManager.connectionState` picks connecting (connecting),
   lag (reconnecting) or streaming; the controller observes

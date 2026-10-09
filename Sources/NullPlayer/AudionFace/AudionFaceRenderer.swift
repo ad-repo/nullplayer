@@ -5,16 +5,24 @@ import CoreGraphics
 /// The compositing reproduces FaceKit `AudionFaceView`'s layer stack in one CGContext; see
 /// `AudionFaceDrawOp.Layer`.
 enum AudionFaceRenderer {
-    static func render(_ scene: AudionFaceScene) -> CGImage? {
+    /// The whole face, or only `region` (face pixels): an image of the region alone, pixel for pixel
+    /// what the whole face shows there, because every op composites only within its own rect.
+    /// `AudionFaceCanvas` redraws the face window through regions.
+    static func render(_ scene: AudionFaceScene, region: AudionFaceRect? = nil) -> CGImage? {
         let scale = scene.scale
-        let width = scene.width * scale, height = scene.height * scale
-        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
-        guard let canvas = CGContext.audionFaceBitmap(width: width, height: height) else { return nil }
         func device(_ rect: AudionFaceRect) -> CGRect {
             let flipped = rect.flipped(inHeight: scene.height)
             return CGRect(x: flipped.minX * CGFloat(scale), y: flipped.minY * CGFloat(scale),
                           width: flipped.width * CGFloat(scale), height: flipped.height * CGFloat(scale))
         }
+        let bounds = device(region ?? AudionFaceRect(x: 0, y: 0, width: scene.width, height: scene.height))
+        /// A buffer the size of `bounds`, drawn into in the whole face's device coordinates.
+        func buffer() -> CGContext? {
+            let context = CGContext.audionFaceBitmap(width: Int(bounds.width), height: Int(bounds.height))
+            context?.translateBy(x: -bounds.minX, y: -bounds.minY)
+            return context
+        }
+        guard let canvas = buffer() else { return nil }
 
         for layer in AudionFaceDrawOp.Layer.allCases {
             let ops = scene.ops.filter { $0.element.layer == layer }
@@ -24,8 +32,7 @@ enum AudionFaceRenderer {
             case .buttons:
                 for op in ops { canvas.draw(op.image, in: device(op.rect)) }
             case .readouts:
-                guard !ops.isEmpty, let readouts = CGContext.audionFaceBitmap(width: width, height: height)
-                else { continue }
+                guard !ops.isEmpty, let readouts = buffer() else { continue }
                 for op in ops { readouts.clear(device(op.rect)); readouts.draw(op.image, in: device(op.rect)) }
                 readouts.makeImage().map { canvas.draw($0, in: bounds) }
             case .labels:
@@ -42,7 +49,7 @@ enum AudionFaceRenderer {
                 }
             case .mask:
                 guard let op = ops.first, let content = canvas.makeImage(),
-                      let masked = CGContext.audionFaceBitmap(width: width, height: height) else { continue }
+                      let masked = buffer() else { continue }
                 masked.draw(op.image, in: device(op.rect))
                 masked.setBlendMode(.sourceIn)
                 masked.draw(content, in: bounds)

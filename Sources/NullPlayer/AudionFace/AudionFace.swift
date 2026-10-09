@@ -58,7 +58,7 @@ struct AudionFace {
         static let justify = TextStyle(rawValue: 1 << 7)
     }
 
-    struct TextLine {
+    struct TextLine: Hashable {
         let rect: AudionFaceRect
         let font: CTFont
         let color: CGColor

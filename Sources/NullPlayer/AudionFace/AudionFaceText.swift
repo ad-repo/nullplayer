@@ -25,8 +25,35 @@ enum AudionFaceText {
     /// FaceKit `draw(text:…)`: the line rasterized at `scale`, in an image as wide as the whole
     /// string. When justified or under Reduce Motion, a string wider than its box is cut from the
     /// middle with an ellipsis. Nil for a string with no width.
+    ///
+    /// The same arguments give back the same image instance: a scene rebuilt every tick for the
+    /// marquee rasterizes nothing, and `AudionFaceCanvas` sees by identity that the label is unchanged.
     static func image(_ text: String, line: AudionFace.TextLine, justify: Bool, scale: Int,
                       reduceMotion: Bool) -> CGImage? {
+        let key = Key(text: text, line: line, justify: justify, scale: scale, reduceMotion: reduceMotion)
+        lock.lock()
+        defer { lock.unlock() }
+        if let image = cache[key] { return image }
+        // ponytail: dropped whole when full; the window shows two lines, so 16 never thrashes.
+        if cache.count >= 16 { cache.removeAll() }
+        let image = rasterize(key)
+        cache[key] = image
+        return image
+    }
+
+    private struct Key: Hashable {
+        let text: String
+        let line: AudionFace.TextLine
+        let justify: Bool
+        let scale: Int
+        let reduceMotion: Bool
+    }
+
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var cache: [Key: CGImage?] = [:]
+
+    private static func rasterize(_ key: Key) -> CGImage? {
+        let (text, line, justify, scale, reduceMotion) = (key.text, key.line, key.justify, key.scale, key.reduceMotion)
         var font = line.font
         if scale > 1 {
             font = CTFontCreateCopyWithAttributes(font, CTFontGetSize(font) * CGFloat(scale), nil, nil)

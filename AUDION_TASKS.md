@@ -23,5 +23,4 @@ to the capture before it.
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
-| A8 | **Phase 6 — scale, retina and hardening**: integer scale 1×–3× through `applyDoubleSize`; dirty-rect redraw (the clock already stops when nothing moves, A6); `index.json` fuzzing and hostile zip/folder fixtures; every family's regression sweep once more | every face | *UI* for scale, *autonomous* for hardening. Profile the release build before optimising past algorithmic defects. |
 | A9 | **Phase 7 — public exposure**: remove the DEBUG gate; `docs/audion-face/user-guide.md`; the FaceKit credit in `LICENSE`; a `CHANGELOG.md` entry under the current version; finalise the skill and `skin-screenshots` support | release | Only when the user asks. Never bump the version. |

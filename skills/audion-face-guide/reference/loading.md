@@ -50,6 +50,12 @@ Nothing is decoded until every bound that could refuse the face has passed.
   optional.
 - Malformed key, missing companion key, absent artwork for an element with a rect: that element is
   dropped with a warning; the face loads. See format.md for what each element needs.
+- A rect edge outside `AudionFacePolicy.coordinates` (±65,536) is malformed (`AUD0013`), so no rect
+  arithmetic can overflow; a font size outside `AudionFacePolicy.fontSizes` (0–1,024) reads as absent
+  (Helvetica 12), so text rasterizes into a bounded image. Both trapped before Phase 6, found by
+  `AudionFaceFuzzTests`; the corpus spans 1,318 and 0–90.
+- A file that is not regular (a FIFO, a device) is absent, never opened; a sprite whose header
+  passes and whose data does not decode is missing.
 
 ## Zip import
 
@@ -75,7 +81,7 @@ declared size and CRC (`AUD0014`).
 | `AUD0010` | `testAUD0010ZipBounds`, `testAUD0010RatioAppliesOnlyAboveItsFloor` |
 | `AUD0011` | `testAUD0011PixelBudgetIsCheckedFromHeadersBeforeAnyDecode` |
 | `AUD0012` | `testAUD0012MalformedIndex` (including 100,000 nested `[`) |
-| `AUD0013` | `AudionFaceLoaderTests`: the digit, animation and malformed-key tests |
+| `AUD0013` | `AudionFaceLoaderTests`: the digit, animation and malformed-key tests; `testAUD0013ExtremeCoordinatesAndFontSizesNeitherTrapNorDraw` |
 | `AUD0014` | `testAUD0014UnreadableOrCorruptZip` |
 
 Fixtures are synthesized in-test by `AudionFaceFixture` (in `AudionFaceLoaderTests.swift`): sparse
@@ -84,3 +90,9 @@ files and header-only PNGs reach the production bounds without building large fi
 ## Install, select, remove
 
 Phase 3 (`AudionFaceImporter`).
+
+Beyond the codes: `testAFIFOIsAbsentNeverOpened`, `testATruncatedSpriteIsMissing`, and
+`AudionFaceFuzzTests` — 400 seeded mutations of an every-element face (hostile values per key, byte
+damage to `index.json` and to one sprite), each of which must load or fail with a finding and then
+render every host and interaction state. A failing iteration prints its mutation; the seed makes it
+reproduce.

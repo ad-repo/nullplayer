@@ -12,6 +12,13 @@ struct AudionFaceRect: Hashable {
         (x..<x + width).contains(px) && (y..<y + height).contains(py)
     }
 
+    /// The part of this rect inside `other`; nil when they do not overlap.
+    func intersection(_ other: AudionFaceRect) -> AudionFaceRect? {
+        let left = max(x, other.x), top = max(y, other.y)
+        let right = min(x + width, other.x + other.width), bottom = min(y + height, other.y + other.height)
+        return right > left && bottom > top ? AudionFaceRect(x: left, y: top, width: right - left, height: bottom - top) : nil
+    }
+
     /// The same rect in a bottom-left space `containerHeight` pixels tall, which is CoreGraphics'
     /// and AppKit's (FaceKit `flippedRect(from:height:)` before its scale). This is the family's
     /// one flip; never re-derive it at a call site.
