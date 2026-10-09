@@ -329,21 +329,9 @@ class NowPlayingManager {
                 } else {
                     NSLog("NowPlayingManager: Plex track has no artworkThumb")
                 }
-            } else if track.subsonicId != nil {
-                // Subsonic track - load cover art
-                if let coverArt = track.artworkThumb {
-                    image = await self.loadSubsonicArtwork(coverArt: coverArt)
-                }
-            } else if track.jellyfinId != nil {
-                // Jellyfin track - load cover art
-                if let imageTag = track.artworkThumb {
-                    image = await self.loadJellyfinArtwork(itemId: track.jellyfinId!, imageTag: imageTag)
-                }
-            } else if track.embyId != nil {
-                // Emby track - load cover art
-                if let imageTag = track.artworkThumb {
-                    image = await self.loadEmbyArtwork(itemId: track.embyId!, imageTag: imageTag)
-                }
+            } else if let serverURL = track.serverArtworkURL(size: 400) {
+                // Subsonic, Jellyfin or Emby track - load cover art
+                image = await self.loadServerArtwork(url: serverURL)
             } else if let thumb = track.artworkThumb, let url = URL(string: thumb),
                       ["http", "https"].contains(url.scheme?.lowercased()) {
                 // A radio station's logo (`RadioStation.toTrack`), or any stream that names its
@@ -484,48 +472,14 @@ class NowPlayingManager {
         }
     }
     
-    /// Load cover art from Subsonic server
-    private func loadSubsonicArtwork(coverArt: String) async -> NSImage? {
-        guard let artworkURL = SubsonicManager.shared.coverArtURL(coverArtId: coverArt, size: 400) else {
-            return nil
-        }
-        
+    /// Load cover art from a Subsonic, Jellyfin or Emby server
+    private func loadServerArtwork(url: URL) async -> NSImage? {
         do {
-            let (data, response) = try await URLSession.shared.data(from: artworkURL)
-            
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                return nil
-            }
-            
-            return NSImage(data: data)
-        } catch {
-            NSLog("NowPlayingManager: Failed to load Subsonic artwork: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-            return nil
-        }
-    }
-    
-    /// Load cover art from Jellyfin server
-    private func loadJellyfinArtwork(itemId: String, imageTag: String) async -> NSImage? {
-        guard let artworkURL = JellyfinManager.shared.imageURL(itemId: itemId, imageTag: imageTag, size: 400) else { return nil }
-        do {
-            let (data, response) = try await URLSession.shared.data(from: artworkURL)
+            let (data, response) = try await URLSession.shared.data(from: url)
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return nil }
             return NSImage(data: data)
         } catch {
-            NSLog("NowPlayingManager: Failed to load Jellyfin artwork: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-            return nil
-        }
-    }
-    
-    private func loadEmbyArtwork(itemId: String, imageTag: String) async -> NSImage? {
-        guard let artworkURL = EmbyManager.shared.imageURL(itemId: itemId, imageTag: imageTag, size: 400) else { return nil }
-        do {
-            let (data, response) = try await URLSession.shared.data(from: artworkURL)
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return nil }
-            return NSImage(data: data)
-        } catch {
-            NSLog("NowPlayingManager: Failed to load Emby artwork: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
+            NSLog("NowPlayingManager: Failed to load server artwork: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             return nil
         }
     }

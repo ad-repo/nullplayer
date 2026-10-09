@@ -154,7 +154,7 @@ enum StreamingTrackResolver {
                 subsonicServerId: nil,
                 jellyfinId: song.id,
                 jellyfinServerId: serverId ?? JellyfinManager.shared.currentServer?.id,
-                artworkThumb: song.imageTag,
+                artworkThumb: song.artworkItemId,
                 genre: song.genre,
                 contentType: mimeType
             )
@@ -203,7 +203,7 @@ enum StreamingTrackResolver {
                 jellyfinServerId: nil,
                 embyId: song.id,
                 embyServerId: serverId ?? EmbyManager.shared.currentServer?.id,
-                artworkThumb: song.imageTag,
+                artworkThumb: song.artworkItemId,
                 genre: song.genre,
                 contentType: mimeType
             )

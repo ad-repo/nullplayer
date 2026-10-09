@@ -105,6 +105,10 @@ struct EmbySong: Identifiable, Equatable {
     var durationInSeconds: TimeInterval {
         TimeInterval(duration)
     }
+
+    /// The item whose Primary image is this song's cover: its own when it has one, else its
+    /// album's (most songs carry none of their own). A `Track`'s `artworkThumb`.
+    var artworkItemId: String? { imageTag == nil ? albumId : id }
 }
 
 /// A playlist in Emby
@@ -157,6 +161,9 @@ struct EmbyMovie: Identifiable, Equatable {
         }
         return String(format: "%dm", minutes)
     }
+
+    /// The item whose Primary image is this video's cover — its own, when it has one. A `Track`'s `artworkThumb`.
+    var artworkItemId: String? { imageTag == nil ? nil : id }
 }
 
 /// A TV show (series) in an Emby video library
@@ -214,6 +221,9 @@ struct EmbyEpisode: Identifiable, Equatable {
         }
         return String(format: "%dm", minutes)
     }
+
+    /// The item whose Primary image is this video's cover — its own, when it has one. A `Track`'s `artworkThumb`.
+    var artworkItemId: String? { imageTag == nil ? nil : id }
 }
 
 // MARK: - Search Results

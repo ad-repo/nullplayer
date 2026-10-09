@@ -2766,21 +2766,7 @@ class CastManager {
     
     /// The server's artwork for a track, as the cast device reaches it; nil for a local file or a stream.
     private func castArtworkURL(for track: Track, size: Int = 300) -> URL? {
-        guard let thumb = track.artworkThumb else { return nil }
-        if track.plexRatingKey != nil {
-            return PlexManager.shared.artworkURL(thumb: thumb, size: size).map(rewriteLocalhostForCasting)
-        }
-        let serverURL: URL?
-        if track.subsonicId != nil {
-            serverURL = SubsonicManager.shared.coverArtURL(coverArtId: thumb)
-        } else if let id = track.jellyfinId {
-            serverURL = JellyfinManager.shared.imageURL(itemId: id, imageTag: thumb, size: size)
-        } else if let id = track.embyId {
-            serverURL = EmbyManager.shared.imageURL(itemId: id, imageTag: thumb, size: size)
-        } else {
-            serverURL = nil
-        }
-        return serverURL.map(rewriteLocalhostForCasting)
+        track.serverArtworkURL(size: size).map(rewriteLocalhostForCasting)
     }
     
     /// Redact sensitive tokens from URL for safe logging

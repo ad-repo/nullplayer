@@ -85,7 +85,7 @@ struct Track: Identifiable, Equatable {
     /// Emby server ID to identify which server the track belongs to
     let embyServerId: String?
 
-    /// Artwork identifier for casting (Plex thumb path or Subsonic coverArt ID)
+    /// Artwork identifier (Plex thumb path, Subsonic coverArt ID, or the Jellyfin/Emby item id whose image to show)
     let artworkThumb: String?
     
     /// Media type (audio or video)

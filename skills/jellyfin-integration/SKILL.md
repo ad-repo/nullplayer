@@ -86,6 +86,11 @@ All requests include header: `Authorization: MediaBrowser Client="NullPlayer", D
 
 - **Image**: `GET /Items/{itemId}/Images/Primary?maxHeight={size}&maxWidth={size}&tag={imageTag}`
   - `imageTag` is from `ImageTags.Primary` in the item response
+- **A song's cover is usually its album's.** A song with no `ImageTags.Primary` of its own
+  (146 of 400 sampled) answers 404/500 for its own image. A `Track`'s `artworkThumb` is therefore the *item id*
+  whose image to fetch — `JellyfinSong.artworkItemId`: the song's own id when it has a picture, else
+  its `AlbumId` — and every track-art consumer fetches that id with no tag (`Track.serverArtworkURL(size:)` resolves a track's cover for every server). Films and episodes
+  store their own id (`artworkItemId` on the film and episode models).
 
 ## User Actions
 

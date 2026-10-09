@@ -638,7 +638,7 @@ class EmbyManager {
             jellyfinServerId: nil,
             embyId: movie.id,
             embyServerId: currentServer?.id,
-            artworkThumb: movie.imageTag,
+            artworkThumb: movie.artworkItemId,
             mediaType: .video,
             genre: nil,
             playHistoryContentTypeOverride: "movie"
@@ -669,7 +669,7 @@ class EmbyManager {
             jellyfinServerId: nil,
             embyId: episode.id,
             embyServerId: currentServer?.id,
-            artworkThumb: episode.imageTag,
+            artworkThumb: episode.artworkItemId,
             mediaType: .video,
             genre: nil,
             playHistoryContentTypeOverride: "tv"
@@ -756,7 +756,7 @@ class EmbyManager {
             jellyfinServerId: nil,
             embyId: song.id,
             embyServerId: currentServer?.id,
-            artworkThumb: song.imageTag,
+            artworkThumb: song.artworkItemId,
             genre: song.genre,
             contentType: mimeType
         )

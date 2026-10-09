@@ -3935,9 +3935,12 @@ class PlexBrowserView: NSView {
             } else if let subsonicId = track.subsonicId {
                 // Subsonic track - load from server
                 image = await self.loadSubsonicArtwork(songId: subsonicId, albumName: track.album)
-            } else if let jellyfinId = track.jellyfinId {
+            } else if track.jellyfinId != nil {
                 // Jellyfin track - load from server
-                image = await self.loadJellyfinArtwork(itemId: jellyfinId, imageTag: nil)
+                if let itemId = track.artworkThumb { image = await self.loadJellyfinArtwork(itemId: itemId, imageTag: nil) }
+            } else if track.embyId != nil {
+                // Emby track - load from server
+                if let itemId = track.artworkThumb { image = await self.loadEmbyArtwork(itemId: itemId, imageTag: nil) }
             } else if track.url.isFileURL {
                 // Local file - extract embedded artwork
                 image = await self.loadLocalArtwork(url: track.url)

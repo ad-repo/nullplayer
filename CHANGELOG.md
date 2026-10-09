@@ -137,6 +137,11 @@
 - All Library Browsers read per-tab sort from one shared, persisted store.
 - Plex artists (browser) and movies/TV (CLI) use the same pager as albums.
 
+**Media servers**
+- Emby and Jellyfin songs showed no cover art when the art was on the album rather than the track,
+  including after a restored session. They now show the album's cover in Control Center, skins,
+  playlists, casts and the CLI.
+
 ## 0.31.4
 
 - **Each library tab keeps its own sort** — choosing a sort in the Library Browser, from the Sort
