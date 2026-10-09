@@ -209,6 +209,7 @@ class PlexPlaybackReporter {
               let client = PlexManager.shared.serverClient else { return }
         
         let positionMs = Int(position * 1000)
+        let durationMs = currentDurationMs
         
         Task {
             do {
@@ -216,7 +217,7 @@ class PlexPlaybackReporter {
                     ratingKey: ratingKey,
                     state: state,
                     time: positionMs,
-                    duration: currentDurationMs,
+                    duration: durationMs,
                     type: "music"
                 )
                 NSLog("PlexPlaybackReporter: Reported state '%@' at %dms", state.rawValue, positionMs)
@@ -265,6 +266,7 @@ class PlexPlaybackReporter {
               let client = PlexManager.shared.serverClient else { return }
         
         let positionMs = lastReportedPosition
+        let durationMs = currentDurationMs
         
         Task {
             do {
@@ -272,7 +274,7 @@ class PlexPlaybackReporter {
                     ratingKey: ratingKey,
                     state: .playing,
                     time: positionMs,
-                    duration: currentDurationMs,
+                    duration: durationMs,
                     type: "music"
                 )
             } catch {
