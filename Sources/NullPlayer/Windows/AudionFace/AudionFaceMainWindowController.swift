@@ -22,6 +22,8 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
     private var uiScale: CGFloat = 1
     /// The face on screen, nil while the unskinned player is up.
     private(set) var loadedFaceURL: URL?
+    /// NullPlayer's own windows, coloured from the face on screen (`AudionFacePalette`).
+    private(set) var surfaceStyle = AudionFacePalette.neutral
 
     init() {
         let window = AudionFaceWindow(contentRect: NSRect(origin: .zero, size: Self.unskinnedSize),
@@ -135,6 +137,11 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
         guard let window else { return }
         loadedFaceURL = face == nil ? nil : url
         faceView.face = face
+        let style = face.map(AudionFacePalette.surfaceStyle(for:)) ?? AudionFacePalette.neutral
+        if style != surfaceStyle {
+            surfaceStyle = style
+            NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
+        }
         unskinnedView.show(message: message)
         let view: NSView = face == nil ? unskinnedView : faceView
         if window.contentView !== view { window.contentView = view }

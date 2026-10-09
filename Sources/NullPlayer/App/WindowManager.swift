@@ -983,8 +983,8 @@ class WindowManager {
             return (mainWindowController as? WinampModernMainWindowController)?.loadedSkinURL?.path
         case .wmp:
             return (mainWindowController as? WMPMainWindowController)?.loadedSkinURL?.path
-        // Phase 5: the vis_classic default follows a face-derived palette.
-        case .audion: return nil
+        case .audion:
+            return (mainWindowController as? AudionFaceMainWindowController)?.loadedFaceURL?.path
         }
     }
 
@@ -1191,7 +1191,7 @@ class WindowManager {
     /// The colours NullPlayer's own windows wear beside a face (`AudionFacePalette`).
     var audionSurfaceStyle: SkinnedSurfaceStyle? {
         guard uiMode.controllerFamily == .audion else { return nil }
-        return AudionFacePalette.neutral
+        return (mainWindowController as? AudionFaceMainWindowController)?.surfaceStyle ?? AudionFacePalette.neutral
     }
 
     /// How the surfaces NullPlayer draws itself should look right now, whichever foreign skin family
@@ -8226,8 +8226,9 @@ class WindowManager {
     /// defaults when entering classic. The classic `currentSkin` is loaded once at init and
     /// survives across switches, so no classic skin reload is needed here.
     private func prepareUIRuntime(for targetMode: PlayerUIMode) {
-        if targetMode.controllerFamily == .wmp || targetMode.controllerFamily == .winampModern {
-            // Entering `.wal` / `.wmz` is a skin change for the shared Spectrum window profile key,
+        if targetMode.controllerFamily == .wmp || targetMode.controllerFamily == .winampModern
+            || targetMode.controllerFamily == .audion {
+            // Entering `.wal` / `.wmz` / Audion is a skin change for the shared Spectrum window profile key,
             // which still holds whatever Classic ("Purple Neon") or Original left there. Forget the
             // skin it was matched for, so the skin's own match is written once its style resolves.
             VisClassicProfileMatcher.forgetAppliedSkin(for: [.spectrumWindow])

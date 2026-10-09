@@ -89,7 +89,7 @@ struct SkinnedSurfaceChrome {
         WindowManager.shared.hostedSurfaceFrameArtwork(for: bounds.size)?.metrics ?? paletteMetrics(fallback)
     }
 
-    /// **A `.wmz` or `.wal` session draws our unskinned windows without a title bar.** Where the
+    /// **A `.wmz`, `.wal` or Audion session draws our unskinned windows without a title bar.** Where the
     /// skin lends no frame, the palette chrome keeps its side and bottom borders, and its top edge
     /// becomes a border as thin as the bottom one — the Original family's *Hide Title Bars*, but
     /// always on and with no setting. The close control stays, as the same top-right corner hit area
@@ -99,6 +99,8 @@ struct SkinnedSurfaceChrome {
     static var hidesPaletteTitleBar: Bool {
         let manager = WindowManager.shared
         if manager.isRunningWMPUI { return true }
+        // An Audion face lends no frame either, so its windows wear the same rim.
+        if manager.uiMode.controllerFamily == .audion { return true }
         return manager.uiMode.controllerFamily == .winampModern
             && (manager.mainWindowController as? WinampModernMainWindowController)?.currentPalette != nil
     }
