@@ -30,14 +30,16 @@ class PlexVideoPlaybackReporter {
         case episode = "episode"
     }
     
-    /// Rating key of the current Plex item
-    private var currentRatingKey: String?
+    /// The film being reported. A request captures it before its `Task`, so a film replaced while
+    /// the request is in flight still reports as itself.
+    private struct Playing: Equatable {
+        let ratingKey: String
+        let title: String
+        let durationMs: Int
+        let videoType: VideoType
+    }
     
-    /// Type of video being played
-    private var currentVideoType: VideoType = .movie
-    
-    /// Duration of the current video in milliseconds
-    private var currentDurationMs: Int = 0
+    private var playing: Playing?
     
     /// Whether the current video has been scrobbled
     private var hasScrobbled: Bool = false
@@ -57,9 +59,6 @@ class PlexVideoPlaybackReporter {
     /// Last reported position in milliseconds
     private var lastReportedPosition: Int = 0
     
-    /// Title of current video (for logging)
-    private var currentTitle: String?
-    
     // MARK: - Initialization
     
     private init() {
@@ -78,10 +77,12 @@ class PlexVideoPlaybackReporter {
         NSLog("PlexVideoPlaybackReporter: Video track started - %@ (key: %@)", title, ratingKey)
         
         startTracking(
-            ratingKey: ratingKey,
-            title: title,
-            durationMs: Int(durationSeconds * 1000),
-            videoType: isEpisode ? .episode : .movie,
+            Playing(
+                ratingKey: ratingKey,
+                title: title,
+                durationMs: Int(durationSeconds * 1000),
+                videoType: isEpisode ? .episode : .movie
+            ),
             position: 0
         )
     }
@@ -89,7 +90,7 @@ class PlexVideoPlaybackReporter {
     /// Called when playback is paused
     /// - Parameter position: Current position in seconds
     func videoDidPause(at position: TimeInterval) {
-        guard currentRatingKey != nil else { return }
+        guard playing != nil else { return }
         
         NSLog("PlexVideoPlaybackReporter: Video paused at %.1fs", position)
         
@@ -110,7 +111,7 @@ class PlexVideoPlaybackReporter {
     /// Called when playback resumes
     /// - Parameter position: Current position in seconds
     func videoDidResume(at position: TimeInterval) {
-        guard currentRatingKey != nil else { return }
+        guard playing != nil else { return }
         
         NSLog("PlexVideoPlaybackReporter: Video resumed at %.1fs", position)
         
@@ -129,7 +130,7 @@ class PlexVideoPlaybackReporter {
     ///   - position: Final position in seconds
     ///   - finished: Whether the video finished naturally (vs user stopped)
     func videoDidStop(at position: TimeInterval, finished: Bool) {
-        guard let ratingKey = currentRatingKey else { return }
+        guard playing != nil else { return }
         
         NSLog("PlexVideoPlaybackReporter: Video stopped at %.1fs (finished: %@)", position, finished ? "yes" : "no")
         
@@ -143,7 +144,7 @@ class PlexVideoPlaybackReporter {
         if !hasScrobbled {
             let shouldScrobble = finished || shouldScrobbleAtPosition(position)
             if shouldScrobble && totalPlayTime >= minimumPlayTime {
-                scrobble(ratingKey: ratingKey)
+                scrobble()
             }
         }
         
@@ -157,7 +158,7 @@ class PlexVideoPlaybackReporter {
     /// Called periodically to update timeline
     /// - Parameter position: Current position in seconds
     func updatePosition(_ position: TimeInterval) {
-        guard currentRatingKey != nil, currentState == .playing else { return }
+        guard playing != nil, currentState == .playing else { return }
         
         let positionMs = Int(position * 1000)
         
@@ -170,9 +171,7 @@ class PlexVideoPlaybackReporter {
             }
             
             if currentPlayTime >= minimumPlayTime {
-                if let ratingKey = currentRatingKey {
-                    scrobble(ratingKey: ratingKey)
-                }
+                scrobble()
             }
         }
         
@@ -183,9 +182,7 @@ class PlexVideoPlaybackReporter {
     /// Force stop tracking (e.g., when closing video player)
     func stopTracking() {
         stopTimelineTimer()
-        currentRatingKey = nil
-        currentTitle = nil
-        currentDurationMs = 0
+        playing = nil
         hasScrobbled = false
         totalPlayTime = 0
         playbackStartTime = nil
@@ -195,26 +192,17 @@ class PlexVideoPlaybackReporter {
     
     /// Check if currently tracking a Plex video
     var isTracking: Bool {
-        currentRatingKey != nil
+        playing != nil
     }
     
     // MARK: - Private Methods
     
-    private func startTracking(
-        ratingKey: String,
-        title: String,
-        durationMs: Int,
-        videoType: VideoType,
-        position: TimeInterval
-    ) {
+    private func startTracking(_ film: Playing, position: TimeInterval) {
         // Stop any existing tracking
         stopTracking()
         
         // Set up tracking for this video
-        currentRatingKey = ratingKey
-        currentTitle = title
-        currentDurationMs = durationMs
-        currentVideoType = videoType
+        playing = film
         hasScrobbled = false
         totalPlayTime = 0  // Track actual session playtime, not resume position
         playbackStartTime = Date()
@@ -229,51 +217,50 @@ class PlexVideoPlaybackReporter {
     }
     
     private func shouldScrobbleAtPosition(_ position: TimeInterval) -> Bool {
-        guard currentDurationMs > 0 else { return false }
-        let durationSeconds = Double(currentDurationMs) / 1000.0
+        guard let playing, playing.durationMs > 0 else { return false }
+        let durationSeconds = Double(playing.durationMs) / 1000.0
         let progress = position / durationSeconds
         return progress >= scrobbleThreshold
     }
     
     private func reportState(_ state: PlaybackReportState, at position: TimeInterval) {
-        guard let ratingKey = currentRatingKey,
+        guard let playing,
               let client = PlexManager.shared.serverClient else { return }
         
         let positionMs = Int(position * 1000)
-        let videoType = currentVideoType.rawValue
         
         Task {
             do {
                 try await client.reportPlaybackState(
-                    ratingKey: ratingKey,
+                    ratingKey: playing.ratingKey,
                     state: state,
                     time: positionMs,
-                    duration: currentDurationMs,
-                    type: videoType
+                    duration: playing.durationMs,
+                    type: playing.videoType.rawValue
                 )
                 NSLog("PlexVideoPlaybackReporter: Reported state '%@' at %dms for %@", 
-                      state.rawValue, positionMs, self.currentTitle ?? "unknown")
+                      state.rawValue, positionMs, playing.title)
             } catch {
                 NSLog("PlexVideoPlaybackReporter: Failed to report state: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
     
-    private func scrobble(ratingKey: String) {
-        guard !hasScrobbled else { return }
+    private func scrobble() {
+        guard !hasScrobbled, let playing else { return }
         hasScrobbled = true
         
         guard let client = PlexManager.shared.serverClient else { return }
         
-        Task {
+        Task { @MainActor in
             do {
-                try await client.scrobble(ratingKey: ratingKey)
+                try await client.scrobble(ratingKey: playing.ratingKey)
                 NSLog("PlexVideoPlaybackReporter: Scrobbled video (key: %@, title: %@)", 
-                      ratingKey, self.currentTitle ?? "unknown")
+                      playing.ratingKey, playing.title)
             } catch {
                 NSLog("PlexVideoPlaybackReporter: Failed to scrobble: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-                // Reset flag so we can try again
-                hasScrobbled = false
+                // Try again on a later update, unless another film has started since
+                if self.playing == playing { self.hasScrobbled = false }
             }
         }
     }
@@ -294,21 +281,20 @@ class PlexVideoPlaybackReporter {
     }
     
     private func sendTimelineUpdate() {
-        guard let ratingKey = currentRatingKey,
+        guard let playing,
               currentState == .playing,
               let client = PlexManager.shared.serverClient else { return }
         
         let positionMs = lastReportedPosition
-        let videoType = currentVideoType.rawValue
         
         Task {
             do {
                 try await client.reportPlaybackState(
-                    ratingKey: ratingKey,
+                    ratingKey: playing.ratingKey,
                     state: .playing,
                     time: positionMs,
-                    duration: currentDurationMs,
-                    type: videoType
+                    duration: playing.durationMs,
+                    type: playing.videoType.rawValue
                 )
             } catch {
                 // Silently fail timeline updates - they're not critical

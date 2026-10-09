@@ -23,23 +23,17 @@ class JellyfinVideoPlaybackReporter {
     
     // MARK: - State
     
-    /// Type of video content
-    enum VideoType: String {
-        case movie = "movie"
-        case episode = "episode"
+    /// The film being reported. A request captures it before its `Task`, so a film replaced while
+    /// the request is in flight still reports as itself.
+    private struct Playing: Equatable {
+        let itemId: String
+        /// Routes requests to the film's own server
+        let serverId: String
+        let title: String
+        let durationSeconds: TimeInterval
     }
     
-    /// Jellyfin item ID of the current video
-    private var currentItemId: String?
-    
-    /// Server ID for routing to the correct client
-    private var currentServerId: String?
-    
-    /// Type of video being played
-    private var currentVideoType: VideoType = .movie
-    
-    /// Duration of the current video in seconds
-    private var currentDurationSeconds: TimeInterval = 0
+    private var playing: Playing?
     
     /// Whether the current video has been scrobbled
     private var hasScrobbled: Bool = false
@@ -59,9 +53,6 @@ class JellyfinVideoPlaybackReporter {
     /// Last reported position in seconds
     private var lastReportedPosition: TimeInterval = 0
     
-    /// Title of current video (for logging)
-    private var currentTitle: String?
-    
     // MARK: - Initialization
     
     private init() {
@@ -76,18 +67,19 @@ class JellyfinVideoPlaybackReporter {
         NSLog("JellyfinVideoPlaybackReporter: Video track started - %@ (id: %@)", title, itemId)
 
         startTracking(
-            itemId: itemId,
-            serverId: serverId,
-            title: title,
-            durationSeconds: durationSeconds,
-            videoType: isEpisode ? .episode : .movie,
+            Playing(
+                itemId: itemId,
+                serverId: serverId,
+                title: title,
+                durationSeconds: durationSeconds
+            ),
             position: 0
         )
     }
     
     /// Called when playback is paused
     func videoDidPause(at position: TimeInterval) {
-        guard currentItemId != nil else { return }
+        guard playing != nil else { return }
         
         NSLog("JellyfinVideoPlaybackReporter: Video paused at %.1fs", position)
         
@@ -107,7 +99,7 @@ class JellyfinVideoPlaybackReporter {
     
     /// Called when playback resumes
     func videoDidResume(at position: TimeInterval) {
-        guard currentItemId != nil else { return }
+        guard playing != nil else { return }
         
         NSLog("JellyfinVideoPlaybackReporter: Video resumed at %.1fs", position)
         
@@ -123,7 +115,7 @@ class JellyfinVideoPlaybackReporter {
     
     /// Called when playback stops (manually or video ends)
     func videoDidStop(at position: TimeInterval, finished: Bool) {
-        guard let itemId = currentItemId else { return }
+        guard playing != nil else { return }
         
         NSLog("JellyfinVideoPlaybackReporter: Video stopped at %.1fs (finished: %@)", position, finished ? "yes" : "no")
         
@@ -137,7 +129,7 @@ class JellyfinVideoPlaybackReporter {
         if !hasScrobbled {
             let shouldScrobble = finished || shouldScrobbleAtPosition(position)
             if shouldScrobble && totalPlayTime >= minimumPlayTime {
-                scrobble(itemId: itemId)
+                scrobble()
             }
         }
         
@@ -150,7 +142,7 @@ class JellyfinVideoPlaybackReporter {
     
     /// Called periodically to update position
     func updatePosition(_ position: TimeInterval) {
-        guard currentItemId != nil, !isPaused else { return }
+        guard playing != nil, !isPaused else { return }
         
         // Check if we should scrobble
         if !hasScrobbled && shouldScrobbleAtPosition(position) {
@@ -160,9 +152,7 @@ class JellyfinVideoPlaybackReporter {
             }
             
             if currentPlayTime >= minimumPlayTime {
-                if let itemId = currentItemId {
-                    scrobble(itemId: itemId)
-                }
+                scrobble()
             }
         }
         
@@ -172,10 +162,7 @@ class JellyfinVideoPlaybackReporter {
     /// Force stop tracking (e.g., when closing video player)
     func stopTracking() {
         stopTimelineTimer()
-        currentItemId = nil
-        currentServerId = nil
-        currentTitle = nil
-        currentDurationSeconds = 0
+        playing = nil
         hasScrobbled = false
         totalPlayTime = 0
         playbackStartTime = nil
@@ -185,28 +172,17 @@ class JellyfinVideoPlaybackReporter {
     
     /// Check if currently tracking a Jellyfin video
     var isTracking: Bool {
-        currentItemId != nil
+        playing != nil
     }
     
     // MARK: - Private Methods
     
-    private func startTracking(
-        itemId: String,
-        serverId: String,
-        title: String,
-        durationSeconds: TimeInterval,
-        videoType: VideoType,
-        position: TimeInterval
-    ) {
+    private func startTracking(_ film: Playing, position: TimeInterval) {
         // Stop any existing tracking
         stopTracking()
         
         // Set up tracking
-        currentItemId = itemId
-        currentServerId = serverId
-        currentTitle = title
-        currentDurationSeconds = durationSeconds
-        currentVideoType = videoType
+        playing = film
         hasScrobbled = false
         totalPlayTime = 0
         playbackStartTime = Date()
@@ -221,19 +197,19 @@ class JellyfinVideoPlaybackReporter {
     }
     
     private func shouldScrobbleAtPosition(_ position: TimeInterval) -> Bool {
-        guard currentDurationSeconds > 0 else { return false }
-        let progress = position / currentDurationSeconds
+        guard let playing, playing.durationSeconds > 0 else { return false }
+        let progress = position / playing.durationSeconds
         return progress >= scrobbleThreshold
     }
     
     private func reportPlaybackStart(position: TimeInterval) {
-        guard let itemId = currentItemId,
+        guard let playing,
               let client = getClient() else { return }
         
         Task {
             do {
-                try await client.reportPlaybackStart(itemId: itemId)
-                NSLog("JellyfinVideoPlaybackReporter: Reported playback start for %@", self.currentTitle ?? "unknown")
+                try await client.reportPlaybackStart(itemId: playing.itemId)
+                NSLog("JellyfinVideoPlaybackReporter: Reported playback start for %@", playing.title)
             } catch {
                 NSLog("JellyfinVideoPlaybackReporter: Failed to report start: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
@@ -241,14 +217,14 @@ class JellyfinVideoPlaybackReporter {
     }
     
     private func reportProgress(position: TimeInterval, paused: Bool) {
-        guard let itemId = currentItemId,
+        guard let playing,
               let client = getClient() else { return }
         
         let positionTicks = Int64(position * 10_000_000)
         
         Task {
             do {
-                try await client.reportPlaybackProgress(itemId: itemId, positionTicks: positionTicks, isPaused: paused)
+                try await client.reportPlaybackProgress(itemId: playing.itemId, positionTicks: positionTicks, isPaused: paused)
             } catch {
                 // Silently ignore progress report failures
             }
@@ -256,35 +232,36 @@ class JellyfinVideoPlaybackReporter {
     }
     
     private func reportStopped(position: TimeInterval) {
-        guard let itemId = currentItemId,
+        guard let playing,
               let client = getClient() else { return }
         
         let positionTicks = Int64(position * 10_000_000)
         
         Task {
             do {
-                try await client.reportPlaybackStopped(itemId: itemId, positionTicks: positionTicks)
-                NSLog("JellyfinVideoPlaybackReporter: Reported stopped for %@", self.currentTitle ?? "unknown")
+                try await client.reportPlaybackStopped(itemId: playing.itemId, positionTicks: positionTicks)
+                NSLog("JellyfinVideoPlaybackReporter: Reported stopped for %@", playing.title)
             } catch {
                 NSLog("JellyfinVideoPlaybackReporter: Failed to report stopped: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
         }
     }
     
-    private func scrobble(itemId: String) {
-        guard !hasScrobbled else { return }
+    private func scrobble() {
+        guard !hasScrobbled, let playing else { return }
         hasScrobbled = true
         
         guard let client = getClient() else { return }
         
-        Task {
+        Task { @MainActor in
             do {
-                try await client.scrobble(itemId: itemId)
+                try await client.scrobble(itemId: playing.itemId)
                 NSLog("JellyfinVideoPlaybackReporter: Scrobbled video (id: %@, title: %@)",
-                      itemId, self.currentTitle ?? "unknown")
+                      playing.itemId, playing.title)
             } catch {
                 NSLog("JellyfinVideoPlaybackReporter: Failed to scrobble: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-                hasScrobbled = false
+                // Try again on a later update, unless another film has started since
+                if self.playing == playing { self.hasScrobbled = false }
             }
         }
     }
@@ -305,7 +282,7 @@ class JellyfinVideoPlaybackReporter {
     }
     
     private func sendTimelineUpdate() {
-        guard let itemId = currentItemId,
+        guard let playing,
               !isPaused,
               let client = getClient() else { return }
         
@@ -313,7 +290,7 @@ class JellyfinVideoPlaybackReporter {
         
         Task {
             do {
-                try await client.reportPlaybackProgress(itemId: itemId, positionTicks: positionTicks)
+                try await client.reportPlaybackProgress(itemId: playing.itemId, positionTicks: positionTicks)
             } catch {
                 NSLog("JellyfinVideoPlaybackReporter: Timeline update failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
@@ -322,7 +299,7 @@ class JellyfinVideoPlaybackReporter {
     
     /// Get the client for the current server
     private func getClient() -> JellyfinServerClient? {
-        guard let serverId = currentServerId else { return nil }
+        guard let serverId = playing?.serverId else { return nil }
         
         if JellyfinManager.shared.currentServer?.id == serverId {
             return JellyfinManager.shared.serverClient

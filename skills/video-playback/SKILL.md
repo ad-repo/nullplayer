@@ -204,6 +204,18 @@ on a Plex film fetches the movie or episode by its rating key for the info sheet
 reporters share their rules: scrobble at 90% (audio uses 50%), only after 60 s of play, with a
 timeline update every 10 s. Each server's API details are in its own integration skill.
 
+**A reporter's request reads its film from a snapshot, never from `self`.** Each video reporter
+holds the film it reports as one `Playing` value, set by `startTracking` and cleared by
+`stopTracking`, and every request captures it before its `Task`: replacing a film runs
+`videoDidStop` and then the new film's `videoTrackDidStart` in the same main-queue turn, so by the
+time a stop's `Task` runs the reporter already holds the new film (M35: Plex sent `Airplane!`'s
+stop with `30 Rock`'s duration and title). A failed scrobble re-arms its retry on the main actor,
+and only while the same `Playing` is still current. The audio `PlexPlaybackReporter` captures its
+duration before the `Task` for the same reason: its stop read the duration after `stopTracking()`
+had zeroed it. Measured 2026-10-09 on Classic, Plex, Jellyfin and Emby: replacing a playing
+film logs `Reported state 'stopped'` / `Reported stopped for` under the old title, after the new
+film's `Video track started`.
+
 **Only the video reporter hears a film.** `loadTrack`'s video branch stops the outgoing track
 through `stopLocalOnly()` — Stop's own path — before it makes the film current: its reporters
 hear a stop at its real position, and the engine hands over stopped at 0:00, timer off. It used to
