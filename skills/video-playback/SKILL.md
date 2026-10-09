@@ -177,7 +177,12 @@ timeline update every 10 s. Each server's API details are in its own integration
 **Only the video reporter hears a film.** `loadTrack`'s video branch stops the engine's time
 timer when it hands a film over. Left ticking until `videoPlaybackDidStart` paused the engine,
 the timer's Subsonic / Jellyfin / Emby progress calls opened a second, audio "now playing" session for the film with the previous song's
-duration (measured on Emby, 2026-10-08).
+duration (measured on Emby, 2026-10-08). The same branch zeroes the engine's clock
+(`_currentTime` **and** `playbackStartDate`): the engine stays `.playing` until that pause, and a
+start date left from the outgoing track made `currentTime` — and the pause that stores it — read
+that track's elapsed time for the film (M26: `time=18.0` on a just-loaded film, read with
+`playback-snapshot.sh`). The main window hid it, since the film's own time pushes replace the
+engine's while a film plays; Now Playing and anything else reading `audioEngine.currentTime` did not.
 
 ## Casting
 

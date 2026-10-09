@@ -4594,7 +4594,11 @@ class AudioEngine {
             videoPlayNow = nil
             currentTrack = track
             currentIndex = index
+            // The engine stays `.playing` until `videoPlaybackDidStart` pauses it; with the outgoing
+            // track's start date left set, `currentTime` (and the pause that stores it) read that
+            // track's elapsed time for the film (M26).
             _currentTime = 0
+            playbackStartDate = nil
             lastReportedTime = 0
             // A film reports through the video window's reporter and shows the window's clock;
             // ticking on until the hand-over pauses the engine would report it to the audio
