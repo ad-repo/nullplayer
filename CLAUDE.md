@@ -22,6 +22,7 @@ Technical documentation lives in `skills/`. Read the owning skill before changin
   regression — it may be newly unlocked behaviour (Classic/Original diffs are always regressions)
 - `original-skin-guide`: Original skins; `winamp-modern-skin-guide`: `.wal` support, a slim router over `reference/`; `wal-skin-report`: `/wal-skin-report <skin.wal>`
 - `wmp-skin-guide`: Windows Media Player `.wmz`/`.wms` loading, rendering, scripting, menus, state, and WMP-owned windows
+- `audion-face-guide`: Panic Audion faces — a FaceKit port with a FaceKit oracle, so a diff against the oracle is a defect
 - `plex-integration`, `jellyfin-integration`, `subsonic-integration`, `emby-integration`: media servers
 - `sonos-casting`, `chromecast-casting`: casting protocols and debugging
 - `stream-ripper`: URL ripping; `youtube-source`: YouTube audio; `cue-sheets`: cue playback/splitting; `radio-streaming`: radio
@@ -30,7 +31,7 @@ Technical documentation lives in `skills/`. Read the owning skill before changin
 - `projectm-milkdrop`: MilkDrop; `metal-gotchas`: Metal rules
 - `geiss-port`, `tripex-port`, `vis-classic-guide`: visualization ports and compatibility
 - `app-control`: launching, configuring, driving and measuring the running app; test-data targets
-- Backlogs: `WMP_TASKS.md` (`.wmz`), `WINAMP5_TASKS.md` (`.wal`), `docs/local-library/backlog.md`
+- Backlogs: `WMP_TASKS.md` (`.wmz`), `WINAMP5_TASKS.md` (`.wal`), `AUDION_TASKS.md` (Audion faces), `docs/local-library/backlog.md`
   (library scanning and playlist playback)
 - `live-ui-testing`: process skill for screen-only defects — instrument first, drive the app yourself, measure what is drawn
 - `testing`: UI test workflows; `non-retina-fixes`: 1x display fixes; `local-library`: SQLite and scanning; `cli`: headless mode

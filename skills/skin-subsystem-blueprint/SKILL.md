@@ -9,6 +9,11 @@ NullPlayer hosts several independent skin engines. Four exist — `classic`, `nu
 (Original/Original-Metal), `winampModern` (`.wal`), `wmp` (`.wmz`) — and the pattern below is what
 the last two paid to discover. Follow it rather than re-deriving it.
 
+A fifth, `audion` (Panic Audion faces, `audion-face-guide`, backlog `AUDION_TASKS.md`), is under
+construction on this pattern. It is the one family that is a port rather than a clean-room effort:
+Panic's GPL FaceKit defines the format and renders an oracle, so a diff against that oracle is a
+defect, not an unclassified change.
+
 **The reference implementation is `winamp-modern-skin-guide`**: the most successful engine here, and
 the model for the engine rules, the harness, the corpus census, the demand-driven backlog and the
 skill layout. `wmp-skin-guide` is the same shape at an earlier phase. Read whichever is closer to
