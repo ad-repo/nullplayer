@@ -235,10 +235,12 @@ class EmbyVideoPlaybackReporter {
               let client = getClient() else { return }
         let playSessionId = currentPlaySessionId
 
+        let title = currentTitle ?? "unknown"
+
         Task {
             do {
                 try await client.reportPlaybackStart(itemId: itemId, playSessionId: playSessionId)
-                NSLog("EmbyVideoPlaybackReporter: Reported playback start for %@", self.currentTitle ?? "unknown")
+                NSLog("EmbyVideoPlaybackReporter: Reported playback start for %@", title)
             } catch {
                 NSLog("EmbyVideoPlaybackReporter: Failed to report start: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
@@ -268,10 +270,12 @@ class EmbyVideoPlaybackReporter {
 
         let positionTicks = Int64(position * 10_000_000)
 
+        let title = currentTitle ?? "unknown"
+
         Task {
             do {
                 try await client.reportPlaybackStopped(itemId: itemId, playSessionId: playSessionId, positionTicks: positionTicks)
-                NSLog("EmbyVideoPlaybackReporter: Reported stopped for %@", self.currentTitle ?? "unknown")
+                NSLog("EmbyVideoPlaybackReporter: Reported stopped for %@", title)
             } catch {
                 NSLog("EmbyVideoPlaybackReporter: Failed to report stopped: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
@@ -284,11 +288,13 @@ class EmbyVideoPlaybackReporter {
 
         guard let client = getClient() else { return }
 
+        let title = currentTitle ?? "unknown"
+
         Task {
             do {
                 try await client.scrobble(itemId: itemId)
                 NSLog("EmbyVideoPlaybackReporter: Scrobbled video (id: %@, title: %@)",
-                      itemId, self.currentTitle ?? "unknown")
+                      itemId, title)
             } catch {
                 NSLog("EmbyVideoPlaybackReporter: Failed to scrobble: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 hasScrobbled = false

@@ -235,6 +235,9 @@
 - **Skipping a paused film adds up** — pressing ← or → twice while a film was paused moved it
   only 10 seconds, since the second press started from where the film was before the first.
   Each press now moves another 10 seconds.
+- **Switching films tells Plex the right length** — starting one Plex film while another was
+  playing reported the first film's stop with the second film's duration. The stop now carries the
+  film it is for, and the Plex, Jellyfin and Emby logs name the right film.
 
 ## 0.31.4
 

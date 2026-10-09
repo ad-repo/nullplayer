@@ -240,7 +240,9 @@ class PlexVideoPlaybackReporter {
               let client = PlexManager.shared.serverClient else { return }
         
         let positionMs = Int(position * 1000)
+        let durationMs = currentDurationMs
         let videoType = currentVideoType.rawValue
+        let title = currentTitle ?? "unknown"
         
         Task {
             do {
@@ -248,11 +250,11 @@ class PlexVideoPlaybackReporter {
                     ratingKey: ratingKey,
                     state: state,
                     time: positionMs,
-                    duration: currentDurationMs,
+                    duration: durationMs,
                     type: videoType
                 )
                 NSLog("PlexVideoPlaybackReporter: Reported state '%@' at %dms for %@", 
-                      state.rawValue, positionMs, self.currentTitle ?? "unknown")
+                      state.rawValue, positionMs, title)
             } catch {
                 NSLog("PlexVideoPlaybackReporter: Failed to report state: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
@@ -264,12 +266,13 @@ class PlexVideoPlaybackReporter {
         hasScrobbled = true
         
         guard let client = PlexManager.shared.serverClient else { return }
+        let title = currentTitle ?? "unknown"
         
         Task {
             do {
                 try await client.scrobble(ratingKey: ratingKey)
                 NSLog("PlexVideoPlaybackReporter: Scrobbled video (key: %@, title: %@)", 
-                      ratingKey, self.currentTitle ?? "unknown")
+                      ratingKey, title)
             } catch {
                 NSLog("PlexVideoPlaybackReporter: Failed to scrobble: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 // Reset flag so we can try again
@@ -299,6 +302,7 @@ class PlexVideoPlaybackReporter {
               let client = PlexManager.shared.serverClient else { return }
         
         let positionMs = lastReportedPosition
+        let durationMs = currentDurationMs
         let videoType = currentVideoType.rawValue
         
         Task {
@@ -307,7 +311,7 @@ class PlexVideoPlaybackReporter {
                     ratingKey: ratingKey,
                     state: .playing,
                     time: positionMs,
-                    duration: currentDurationMs,
+                    duration: durationMs,
                     type: videoType
                 )
             } catch {

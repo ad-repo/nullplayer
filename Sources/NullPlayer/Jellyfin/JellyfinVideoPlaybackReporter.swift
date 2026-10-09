@@ -230,10 +230,12 @@ class JellyfinVideoPlaybackReporter {
         guard let itemId = currentItemId,
               let client = getClient() else { return }
         
+        let title = currentTitle ?? "unknown"
+        
         Task {
             do {
                 try await client.reportPlaybackStart(itemId: itemId)
-                NSLog("JellyfinVideoPlaybackReporter: Reported playback start for %@", self.currentTitle ?? "unknown")
+                NSLog("JellyfinVideoPlaybackReporter: Reported playback start for %@", title)
             } catch {
                 NSLog("JellyfinVideoPlaybackReporter: Failed to report start: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
@@ -261,10 +263,12 @@ class JellyfinVideoPlaybackReporter {
         
         let positionTicks = Int64(position * 10_000_000)
         
+        let title = currentTitle ?? "unknown"
+
         Task {
             do {
                 try await client.reportPlaybackStopped(itemId: itemId, positionTicks: positionTicks)
-                NSLog("JellyfinVideoPlaybackReporter: Reported stopped for %@", self.currentTitle ?? "unknown")
+                NSLog("JellyfinVideoPlaybackReporter: Reported stopped for %@", title)
             } catch {
                 NSLog("JellyfinVideoPlaybackReporter: Failed to report stopped: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
             }
@@ -277,11 +281,13 @@ class JellyfinVideoPlaybackReporter {
         
         guard let client = getClient() else { return }
         
+        let title = currentTitle ?? "unknown"
+        
         Task {
             do {
                 try await client.scrobble(itemId: itemId)
                 NSLog("JellyfinVideoPlaybackReporter: Scrobbled video (id: %@, title: %@)",
-                      itemId, self.currentTitle ?? "unknown")
+                      itemId, title)
             } catch {
                 NSLog("JellyfinVideoPlaybackReporter: Failed to scrobble: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                 hasScrobbled = false
