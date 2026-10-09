@@ -114,6 +114,39 @@ final class AudionFaceSceneTests: XCTestCase {
         XCTAssertEqual(offset(80 + 2 * 200), 0, "one full cycle of 200 steps")
     }
 
+    /// The window's clock runs only while `frame` moves something: a multi-frame animation that
+    /// advances, or an album line that scrolls (never under Reduce Motion).
+    func testTheClockRunsOnlyWhileSomethingMoves() async throws {
+        let fixture = try AudionFaceFixture(json: [
+            "timeDigit2Rect": AudionFaceFixture.rect(top: 0, left: 1, bottom: 1, right: 2), "timeDigit2FirstPICTID": 100,
+            "streamingAnimRect": AudionFaceFixture.rect(top: 1, left: 0, bottom: 2, right: 1),
+            "streamingFirstPICTID": 200, "streamingNumPICTs": 2, "streamingFrameDelay": 3,
+            "connectingAnimRect": AudionFaceFixture.rect(top: 1, left: 1, bottom: 2, right: 2),
+            "connectingFirstPICTID": 300, "connectingNumPICTs": 1, "connectingFrameDelay": 3,
+            "albumDisplayRect": AudionFaceFixture.rect(top: 2, left: 0, bottom: 4, right: 20), "albumTextMode": 1,
+            "albumDisplayTextFaceColorFromFace": ["red": 0, "green": 0, "blue": 0],
+        ])
+        try fixture.png("base.png", width: 20, height: 4)
+        try fixture.picts(100, count: 10)
+        try fixture.picts(200, count: 2)
+        try fixture.png("300.png")
+        let face = try await fixture.load()
+
+        var host = AudionFaceHostState()
+        XCTAssertFalse(AudionFaceScene.isAnimated(face, host), "nothing to scroll and no animation")
+        host.streamPhase = .connecting
+        XCTAssertFalse(AudionFaceScene.isAnimated(face, host), "a one-frame animation never steps")
+        host.streamPhase = .streaming
+        XCTAssertTrue(AudionFaceScene.isAnimated(face, host))
+        host.streamPhase = .none
+        host.artist = "Someone"
+        XCTAssertTrue(AudionFaceScene.isAnimated(face, host), "the album line scrolls")
+        host.reduceMotion = true
+        XCTAssertFalse(AudionFaceScene.isAnimated(face, host))
+
+        XCTAssertEqual(AudionFaceScene.timeDigitRects(face), [AudionFaceRect(x: 1, y: 0, width: 1, height: 1)])
+    }
+
     /// The pixel at `x`, `y`, top-left origin, as RGBA.
     static func pixel(_ image: CGImage, _ x: Int, _ y: Int) -> [UInt8] {
         var bytes = [UInt8](repeating: 0, count: 4)

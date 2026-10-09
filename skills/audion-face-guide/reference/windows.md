@@ -8,8 +8,9 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
 | File | Owns |
 |---|---|
 | `AudionFaceMainWindowController.swift` | `AudionFaceWindow` (borderless, clear, key/main-capable) and the `MainWindowProviding` controller: loads the selected face off the main thread, swaps between the face and the unskinned view, sizes the window to `base` × UI scale keeping the top-left, holds `surfaceStyle` |
-| `AudionFaceMainView.swift` | Draws `AudionFaceRenderer.render(AudionFaceScene(...))` as layer contents at `ceil(uiScale × backing)`; hit-tests; drags; right-click menu |
-| `AudionFaceAudioEngineHost.swift` | `AudioEngine` → `AudionFaceHostState`, and a pressed button → its NullPlayer action |
+| `AudionFaceMainView.swift` | Draws `AudionFaceRenderer.render(AudionFaceScene(...))` as layer contents at `ceil(uiScale × backing)`; the frame clock; hit-tests; drags; the two slider popups and the info menu; keys; right-click menu; accessibility |
+| `AudionFaceSliderWindow.swift` | FaceKit's `AudionSliderWindow`, ported (Panic's header): a borderless popup holding one `NSSlider`, closed when it resigns key |
+| `AudionFaceAudioEngineHost.swift` | `AudioEngine` → `AudionFaceHostState`, and an `AudionFaceCommand` (a button, a volume, a seek; also built from a key) → its NullPlayer action |
 | `AudionFaceUnskinnedView.swift` | The app-authored fallback when no face is selected or the selected one fails |
 | `AudionFace/AudionFaceImporter.swift` | Installed faces, the `audionFaceName` selection, folder/zip install (validate the copy, then one move), remove |
 | `AudionFace/AudionFacePalette.swift` | The `SkinnedSurfaceStyle` NullPlayer's windows wear beside a face |
@@ -17,8 +18,10 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
 - **Hit testing:** a pixel whose rendered alpha is 0 is not the window (`hitTest` returns nil);
   then the topmost visible button by `AudionFaceScene.button(atX:y:face:host:)`, a hit only if
   `AudionFaceScene.isEnabled` (the rule `buttonOps` draws the disabled sprite by: stop needs a
-  track, and `interaction.disabled`); anything else drags. `drag.png` is not read yet: every opaque non-button
-  pixel drags, a superset of the authored drag region. Narrowing it to `drag.png` is Phase 4's.
+  track, and `interaction.disabled`); then, with a track, a time digit (`AudionFaceScene.timeDigitRects`)
+  opens the position slider; anything else drags. `drag.png` is not read: every opaque non-button
+  pixel drags, a superset of the authored drag region, and FaceKit ignores the file too (decided in
+  Phase 4; `format.md` § *Files FaceKit ignores*).
 - **Drag** goes through `WindowManager.windowWillStartDragging` / `windowWillMove` /
   `windowDidFinishDragging` (`AudionFaceWindowDrag`, used by both the face and the unskinned
   view), and `windowDidMove` applies the snapped position, the Classic recipe — so snapping and
@@ -26,10 +29,34 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
 - **Shadow:** AppKit's own (`hasShadow`), not `SkinWindowShadow`; `hostsSkinShadowWindows` is
   false for Audion. `invalidateShadow` runs on every redraw on purpose: the outline is mostly the
   face's, but an animation frame clears the base under it, so a state change can reshape it.
-- **Buttons wired in Phase 3:** play, pause, stop, rw/ff (previous/next), eject (Open Files…),
-  menu (toggle the playlist). Close, info, volume and mode are Phase 4.
-- **Not yet:** the frame clock (marquee, animations), streaming phases beyond "non-file URL is
-  streaming", sliders, accessibility — Phase 4.
+- **Buttons** (decision record § *Button mapping*): play, pause, stop, rw/ff (previous/next), eject
+  (Open Files…), menu (toggle the playlist), close (quit, as every NullPlayer main window's close
+  does), mode (shuffle and repeat as a two-bit counter: off → shuffle → repeat → both → off). Volume
+  and info are the view's own: volume opens the vertical slider (19 × 96, FaceKit's size) with its
+  top-left at the button's bottom-right, and the button stays disabled (`interaction.disabled`)
+  until the slider closes; info pops a menu of **About Playing…** (`MenuActions.showAboutPlaying`,
+  the app's track info) and **About This Face…** (an alert with `faceInfo` and `about.png`).
+- **Position slider:** 192 × 19 under the clicked time digit, range `0…duration`. A scrub pauses a
+  playing track, seeks on every move, and resumes on mouse-up (FaceKit `adjustTime`).
+- **Commands refresh the host:** the controller re-snapshots `AudionFaceHostState` after every
+  `AudionFaceCommand`, so the face and the slider's starting value follow at once.
+- **Frame clock:** a 60 Hz `Timer` (common run-loop modes) advances the scene's `frame` only while
+  `AudionFaceScene.isAnimated` (a multi-frame animation, or an album line that scrolls) and the
+  window is visible (`windowDidChangeOcclusionState`). Every tick re-renders the whole face; dirty
+  rects are Phase 6's. The tick count is never reset, as FaceKit's is not, so a new track's
+  marquee can start mid-cycle.
+- **Stream phase:** radio's `RadioManager.connectionState` picks connecting (connecting),
+  lag (reconnecting) or streaming; the controller observes
+  `RadioManager.connectionStateDidChangeNotification`. Any other non-file track reads as streaming:
+  a server stream's buffering is private to `AudioEngine`.
+- **Keys** (`AudionFaceCommand(key:host:)`), the Modern main window's set: space play/pause, Return
+  stop, z x c v b transport, p playlist, ←/→ seek 5 s, ↑/↓ volume ±0.05. Menu key equivalents reach
+  the main menu as in any window. The view takes first responder when it joins the window.
+- **Accessibility** (FaceKit's elements): one button per visible face button (`audion.<sprite>`,
+  labelled with FaceKit's tooltip or NullPlayer's action, enabled by `isEnabled`, pressable), the
+  time digits as one button (`Time Digits`, label `mm:ss — Show Position Slider`, press opens the
+  slider), and the artist and album lines as static text with their string as value.
+- **Not done:** FaceKit's hover tooltips on the buttons and time digits.
 
 ## Shared-code seams
 

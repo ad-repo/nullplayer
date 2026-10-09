@@ -4,7 +4,7 @@ import AppKit
 /// load. It carries no Panic artwork and stays usable whatever the faces folder holds.
 final class AudionFaceUnskinnedView: NSView {
     var onLoadFace: (() -> Void)?
-    var onButton: ((AudionFace.ButtonRole) -> Void)?
+    var onCommand: ((AudionFaceCommand) -> Void)?
 
     private let titleLabel = NSTextField(labelWithString: "Audion Faces")
     private let messageLabel = NSTextField(wrappingLabelWithString: "")
@@ -64,7 +64,7 @@ final class AudionFaceUnskinnedView: NSView {
 
     @objc private func loadPressed() { onLoadFace?() }
     @objc private func transportPressed(_ sender: NSButton) {
-        if let role = transport.first(where: { $0.0 === sender })?.1 { onButton?(role) }
+        if let role = transport.first(where: { $0.0 === sender })?.1 { onCommand?(.button(role)) }
     }
 
     override func mouseDown(with event: NSEvent) { drag.begin(event) }

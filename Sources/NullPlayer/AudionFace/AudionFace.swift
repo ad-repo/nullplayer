@@ -41,6 +41,8 @@ struct AudionFace {
 
     /// The author's credit lines, as authored.
     let faceInfo: [String]
+    /// `about.png`, the author's credit art, any size. FaceKit ignores it; the info button shows it.
+    let about: CGImage?
     /// Warnings only; a fatal finding is thrown instead of producing a face.
     let findings: [AudionFaceFinding]
 

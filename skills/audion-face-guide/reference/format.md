@@ -43,7 +43,8 @@ Button names: `play`, `pause`, `stop`, `rw`, `ff`, `close`, `info`, `volume`, `m
 `music` (mode), `eject`. Indicator names: `play-indicator`, `pause-indicator`, `net`, `mp3`, `cd`,
 `cddb`.
 
-The loader reads none of the files FaceKit ignores; § *Files FaceKit ignores* is what the census
+Of the files FaceKit ignores, the loader reads only `about.png` (Phase 4: the info button's credit
+art, decoded under the same limits as every image); § *Files FaceKit ignores* is what the census
 measured in them.
 
 ## Geometry

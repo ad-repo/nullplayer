@@ -18,6 +18,8 @@ struct AudionFaceHostState: Equatable {
     var album: String?
     var format: String?
     var streamPhase = StreamPhase.none
+    /// 0–1. No face draws it; the volume slider opens at it and the arrow keys step from it.
+    var volume = 0.5
     var isWindowActive = true
     /// Pins the album marquee and truncates it instead (FaceKit reads the system setting).
     var reduceMotion = false

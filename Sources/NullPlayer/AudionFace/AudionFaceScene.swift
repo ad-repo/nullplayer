@@ -81,10 +81,7 @@ struct AudionFaceScene {
 
     /// The topmost visible button under a point in face pixels, top-left origin.
     static func button(atX x: Int, y: Int, face: AudionFace, host: AudionFaceHostState) -> AudionFace.ButtonRole? {
-        visibleButtons(face, host).last { _, button in
-            (button.rect.x..<button.rect.x + button.rect.width).contains(x)
-                && (button.rect.y..<button.rect.y + button.rect.height).contains(y)
-        }?.0
+        visibleButtons(face, host).last { $0.1.rect.contains(x: x, y: y) }?.0
     }
 
     /// Whether a button takes a press and draws its own sprites rather than its disabled one: stop
@@ -92,6 +89,20 @@ struct AudionFaceScene {
     static func isEnabled(_ role: AudionFace.ButtonRole, host: AudionFaceHostState,
                           interaction: AudionFaceInteractionState) -> Bool {
         (role != .stop || host.hasTrack) && !interaction.disabled.contains(role)
+    }
+
+    /// The time digits' rects: a press on one opens the position slider beneath it (FaceKit
+    /// `mouseDown`), and their union is the time readout's accessibility frame.
+    static func timeDigitRects(_ face: AudionFace) -> [AudionFaceRect] {
+        [AudionFace.DigitRole.timeDigit1, .timeDigit2, .timeDigit3, .timeDigit4].compactMap { face.digits[$0]?.rect }
+    }
+
+    /// Whether `frame` moves anything in this state — an animation with frames to step through, or
+    /// an album line that scrolls — so the window runs its clock only then.
+    static func isAnimated(_ face: AudionFace, _ host: AudionFaceHostState) -> Bool {
+        if let role = host.streamPhase.animation, let animation = face.animations[role],
+           animation.frames.count > 1, animation.frameDelay > 0 { return true }
+        return !host.reduceMotion && host.albumLine != nil && (face.album?.rect.width ?? 0) > 12
     }
 
     /// FaceKit `LabelView.frameNum`: an 80-tick hold, then one pixel every two ticks, the text

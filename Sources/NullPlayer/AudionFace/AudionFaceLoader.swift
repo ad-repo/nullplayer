@@ -7,8 +7,9 @@ import ImageIO
 /// the pixel budgets, and only then any decode. A fatal finding is thrown; warnings ride on the face.
 ///
 /// Files are matched case-insensitively at the folder's top level, as FaceKit's lookups behave on a
-/// default macOS volume. The files FaceKit ignores (`window.png`, `drag.png`, `inactive.png`,
-/// `active-alpha.png`, `about.png`) are counted by the walk and never read.
+/// default macOS volume. Of the files FaceKit ignores, only `about.png` is read (the info button's
+/// credit art); `window.png`, `drag.png`, `inactive.png` and `active-alpha.png` are counted by the
+/// walk and never read.
 enum AudionFaceLoader {
     /// The production entry point. Even a MainActor caller leaves the UI executor before the
     /// folder is touched, and receives only the completed face.
@@ -162,7 +163,7 @@ private struct Plan<Asset> {
         let disabled, pressed, hover: Asset?
     }
 
-    var mask, inactiveMask: Asset?
+    var mask, inactiveMask, about: Asset?
     var buttons: [AudionFace.ButtonRole: Button] = [:]
     var indicators: [AudionFace.IndicatorRole: (rect: AudionFaceRect, off: Asset, on: Asset)] = [:]
     var digits: [AudionFace.DigitRole: (rect: AudionFaceRect, frames: [Asset])] = [:]
@@ -173,6 +174,7 @@ private struct Plan<Asset> {
     init(document: AudionFaceDocument, lookup: (String) -> Asset?) {
         mask = lookup("base-alpha.png")
         inactiveMask = lookup("inactive-alpha.png")
+        about = lookup("about.png")
 
         for role in AudionFace.ButtonRole.allCases {
             guard let spec = document.buttons[role] else { continue }
@@ -233,7 +235,7 @@ private struct Plan<Asset> {
 extension Plan where Asset == PNGFile {
     /// Every distinct file the planned elements decode, by name.
     var files: [PNGFile] {
-        var all = [mask, inactiveMask].compactMap { $0 }
+        var all = [mask, inactiveMask, about].compactMap { $0 }
         for button in buttons.values {
             all += [button.normal] + [button.disabled, button.pressed, button.hover].compactMap { $0 }
         }
@@ -269,6 +271,7 @@ extension Plan where Asset == CGImage {
                 AudionFace.Animation(rect: $0.rect, frames: $0.frames, frameDelay: $0.delay)
             },
             faceInfo: document.faceInfo,
+            about: about,
             findings: findings)
     }
 }

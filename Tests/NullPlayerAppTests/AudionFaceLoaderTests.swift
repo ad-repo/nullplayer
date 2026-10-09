@@ -57,7 +57,17 @@ final class AudionFaceLoaderTests: XCTestCase {
         XCTAssertNil(face.mask)
         XCTAssertTrue(face.buttons.isEmpty && face.indicators.isEmpty && face.digits.isEmpty && face.animations.isEmpty)
         XCTAssertNil(face.artist)
+        XCTAssertNil(face.about)
         XCTAssertEqual(face.findings, [])
+    }
+
+    /// The one file FaceKit ignores that the loader reads: the info button's credit art.
+    func testAboutArtIsReadForTheInfoButton() async throws {
+        let fixture = try AudionFaceFixture(json: ["faceInfo": ["Made by someone"]])
+        try fixture.png("About.png", width: 3, height: 2)
+        let face = try await fixture.load()
+        XCTAssertEqual(face.about.map { [$0.width, $0.height] }, [3, 2])
+        XCTAssertEqual(face.faceInfo, ["Made by someone"])
     }
 
     func testEveryElementResolvesAsFaceKitReadsIt() async throws {

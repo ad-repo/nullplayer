@@ -19,6 +19,8 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
     private let faceView = AudionFaceMainView()
     private let unskinnedView = AudionFaceUnskinnedView()
     private var loadTask: Task<Void, Never>?
+    /// Radio's connection state picks the face's connecting, streaming or lag animation.
+    private var radioObserver: NSObjectProtocol?
     private var uiScale: CGFloat = 1
     /// The face on screen and its folder, nil while the unskinned player is up.
     private var shown: (face: AudionFace, url: URL)? { didSet { faceView.face = shown?.face } }
@@ -38,11 +40,17 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
         window.center()
         super.init(window: window)
         window.delegate = self
-        let perform: (AudionFace.ButtonRole) -> Void = { role in
-            MainActor.assumeIsolated { AudionFaceAudioEngineHost.perform(role, engine: WindowManager.shared.audioEngine) }
+        let perform: (AudionFaceCommand) -> Void = { [weak self] command in
+            MainActor.assumeIsolated {
+                AudionFaceAudioEngineHost.perform(command, engine: WindowManager.shared.audioEngine)
+                self?.refreshHostState()
+            }
         }
-        faceView.onButton = perform
-        unskinnedView.onButton = perform
+        faceView.onCommand = perform
+        unskinnedView.onCommand = perform
+        radioObserver = NotificationCenter.default.addObserver(
+            forName: RadioManager.connectionStateDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in MainActor.assumeIsolated { self?.refreshHostState() } }
         unskinnedView.onLoadFace = { [weak self] in self?.importFaceFromPanel() }
         present(nil, message: nil)
         reloadSelectedFace()
@@ -186,6 +194,8 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
     func prepareForUITeardown() {
         loadTask?.cancel()
         loadTask = nil
+        radioObserver.map(NotificationCenter.default.removeObserver)
+        radioObserver = nil
     }
 
     // MARK: - Window delegate
@@ -197,4 +207,5 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
 
     func windowDidBecomeKey(_ notification: Notification) { refreshHostState() }
     func windowDidResignKey(_ notification: Notification) { refreshHostState() }
+    func windowDidChangeOcclusionState(_ notification: Notification) { faceView.updateClock() }
 }

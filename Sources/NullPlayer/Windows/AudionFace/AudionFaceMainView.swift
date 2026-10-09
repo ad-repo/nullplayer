@@ -1,23 +1,33 @@
 import AppKit
 
 /// Shows a face: blits `AudionFaceRenderer`'s output for the current state, the same draw path the
-/// harness measures. A press on a button runs it; a press anywhere else the face is opaque drags
-/// the window through `WindowManager`, so docking and snapping see it; a transparent pixel is not
-/// part of the window at all.
+/// harness measures. A press on a button runs it; a press on a time digit opens the position
+/// slider; a press anywhere else the face is opaque drags the window through `WindowManager`, so
+/// docking and snapping see it; a transparent pixel is not part of the window at all.
 final class AudionFaceMainView: NSView {
     var face: AudionFace? { didSet { interaction = .init(); redraw() } }
     var host = AudionFaceHostState() { didSet { if host != oldValue { redraw() } } }
     /// Window points per face pixel.
     var uiScale: CGFloat = 1 { didSet { if uiScale != oldValue { redraw() } } }
-    var onButton: ((AudionFace.ButtonRole) -> Void)?
+    var onCommand: ((AudionFaceCommand) -> Void)?
 
     private var interaction = AudionFaceInteractionState() { didSet { if interaction != oldValue { redraw() } } }
     private var image: CGImage?
     private var drag = AudionFaceWindowDrag()
+    /// FaceKit's 60 Hz tick count. The clock runs only while `AudionFaceScene.isAnimated` and the
+    /// window is on screen.
+    private var tick = 0 { didSet { redraw() } }
+    private var clock: Timer?
+    /// FaceKit's two popups, at FaceKit's sizes.
+    private let volumeSlider = AudionFaceSliderWindow(size: NSSize(width: 19, height: 96), vertical: true, label: "Volume")
+    private let positionSlider = AudionFaceSliderWindow(size: NSSize(width: 192, height: 19), vertical: false,
+                                                        label: "Position")
+    private var playingBeforeScrub = false
 
     override var isFlipped: Bool { true }
     /// The face drags itself, through `WindowManager`; AppKit's background drag would bypass docking.
     override var mouseDownCanMoveWindow: Bool { false }
+    override var acceptsFirstResponder: Bool { true }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -25,6 +35,11 @@ final class AudionFaceMainView: NSView {
         layer?.contentsGravity = .resize
         layer?.magnificationFilter = .nearest
         setAccessibilityIdentifier("AudionFaceMainView")
+        setAccessibilityRole(.group)
+        volumeSlider.onChange = { [weak self] value, _ in self?.onCommand?(.volume(value)) }
+        // FaceKit disables the volume button while its slider is up.
+        volumeSlider.onClose = { [weak self] in self?.interaction.disabled.remove(.volume) }
+        positionSlider.onChange = { [weak self] value, finished in self?.scrub(to: value, finished: finished) }
     }
 
     required init?(coder: NSCoder) { nil }
@@ -34,19 +49,44 @@ final class AudionFaceMainView: NSView {
         redraw()
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.makeFirstResponder(self)
+        updateClock()
+    }
+
     /// Rendered at the device scale (rounded up to an integer), so text stays sharp on a 2x display.
     private func redraw() {
+        defer { updateClock() }
         guard let face else { image = nil; layer?.contents = nil; return }
         let backing = window?.backingScaleFactor ?? 2
         let scale = max(1, Int((uiScale * backing).rounded(.up)))
+        // ponytail: every tick re-renders the whole face, text included; Phase 6 owns dirty rects.
         image = AudionFaceRenderer.render(AudionFaceScene(face: face, host: host, interaction: interaction,
-                                                          scale: scale))
+                                                          frame: tick, scale: scale))
         layer?.contents = image
         layer?.contentsScale = backing
         window?.invalidateShadow()
     }
 
-    // MARK: - Hit testing, in face pixels with a top-left origin
+    /// Starts or stops the frame clock for the state on screen; the controller calls it when the
+    /// window's occlusion changes.
+    func updateClock() {
+        let animates = face.map { AudionFaceScene.isAnimated($0, host) } == true
+            && window?.occlusionState.contains(.visible) == true
+        guard animates else { clock?.invalidate(); clock = nil; return }
+        guard clock == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self else { return timer.invalidate() }
+                self.tick += 1
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        clock = timer
+    }
+
+    // MARK: - Geometry: face pixels, top-left origin
 
     private func facePoint(_ event: NSEvent) -> (x: Int, y: Int)? {
         guard let face, bounds.width > 0, bounds.height > 0 else { return nil }
@@ -55,11 +95,28 @@ final class AudionFaceMainView: NSView {
                 Int(point.y * CGFloat(face.base.height) / bounds.height))
     }
 
+    private func localRect(_ rect: AudionFaceRect) -> NSRect {
+        guard let face else { return .zero }
+        let sx = bounds.width / CGFloat(face.base.width), sy = bounds.height / CGFloat(face.base.height)
+        return NSRect(x: CGFloat(rect.x) * sx, y: CGFloat(rect.y) * sy,
+                      width: CGFloat(rect.width) * sx, height: CGFloat(rect.height) * sy)
+    }
+
+    private func screenRect(_ rect: AudionFaceRect) -> NSRect {
+        window?.convertToScreen(convert(localRect(rect), to: nil)) ?? .zero
+    }
+
     private func button(at event: NSEvent) -> AudionFace.ButtonRole? {
         guard let face, let point = facePoint(event),
               let role = AudionFaceScene.button(atX: point.x, y: point.y, face: face, host: host),
               AudionFaceScene.isEnabled(role, host: host, interaction: interaction) else { return nil }
         return role
+    }
+
+    /// The time digit under the event, while there is a track to scrub (FaceKit `showTimeSlider`).
+    private func timeDigit(at event: NSEvent) -> AudionFaceRect? {
+        guard let face, host.hasTrack, let point = facePoint(event) else { return nil }
+        return AudionFaceScene.timeDigitRects(face).first { $0.contains(x: point.x, y: point.y) }
     }
 
     /// The window shape is the rendered alpha: a click on a clear pixel goes to whatever is behind.
@@ -82,7 +139,71 @@ final class AudionFaceMainView: NSView {
         return pixel
     }
 
-    // MARK: - Mouse
+    // MARK: - Actions
+
+    /// A button's press. Volume and info open this view's popups beneath the button; the rest are
+    /// `AudionFaceCommand`s.
+    private func press(_ role: AudionFace.ButtonRole) {
+        guard let rect = face?.buttons[role]?.rect else { return }
+        switch role {
+        case .volume:
+            interaction.disabled.insert(.volume)
+            let below = screenRect(rect)
+            volumeSlider.show(topLeft: NSPoint(x: below.maxX, y: below.minY), value: host.volume, range: 0...1)
+        case .info:
+            showInfoMenu(below: rect)
+        default:
+            onCommand?(.button(role))
+        }
+    }
+
+    private func showPositionSlider(below rect: AudionFaceRect) {
+        guard host.hasTrack else { return }
+        let below = screenRect(rect)
+        positionSlider.show(topLeft: NSPoint(x: below.maxX, y: below.minY), value: Double(host.elapsedSeconds),
+                            range: 0...Double(host.durationSeconds))
+    }
+
+    /// FaceKit `adjustTime`: scrubbing pauses a playing track and resumes it on mouse-up.
+    private func scrub(to seconds: Double, finished: Bool) {
+        if host.isPlaying {
+            playingBeforeScrub = true
+            onCommand?(.button(.pause))
+        }
+        onCommand?(.seek(seconds))
+        if finished, playingBeforeScrub {
+            playingBeforeScrub = false
+            onCommand?(.button(.play))
+        }
+    }
+
+    private func showInfoMenu(below rect: AudionFaceRect) {
+        let menu = NSMenu()
+        let playing = NSMenuItem(title: "About Playing…", action: #selector(MenuActions.showAboutPlaying), keyEquivalent: "")
+        playing.target = MenuActions.shared
+        let about = NSMenuItem(title: "About This Face…", action: #selector(showFaceAbout), keyEquivalent: "")
+        about.target = self
+        menu.items = [playing, about]
+        let below = localRect(rect)
+        menu.popUp(positioning: nil, at: NSPoint(x: below.minX, y: below.maxY), in: self)
+    }
+
+    /// The face's credit: `faceInfo` as text, `about.png` beside it.
+    @objc private func showFaceAbout() {
+        guard let face else { return }
+        let alert = NSAlert()
+        alert.messageText = "About This Face"
+        alert.informativeText = face.faceInfo.isEmpty ? "The face carries no credit." : face.faceInfo.joined(separator: "\n")
+        if let about = face.about {
+            let view = NSImageView(image: NSImage(cgImage: about, size: .zero))
+            view.imageScaling = .scaleProportionallyDown
+            view.frame.size = NSSize(width: min(about.width, 480), height: min(about.height, 480))
+            alert.accessoryView = view
+        }
+        alert.runModal()
+    }
+
+    // MARK: - Mouse and keyboard
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -99,6 +220,8 @@ final class AudionFaceMainView: NSView {
     override func mouseDown(with event: NSEvent) {
         if let role = button(at: event) {
             interaction.pressed = role
+        } else if let digit = timeDigit(at: event) {
+            showPositionSlider(below: digit)
         } else {
             drag.begin(event)
         }
@@ -110,11 +233,90 @@ final class AudionFaceMainView: NSView {
         drag.end(event)
         guard let pressed = interaction.pressed else { return }
         interaction.pressed = nil
-        if button(at: event) == pressed { onButton?(pressed) }
+        if button(at: event) == pressed { press(pressed) }
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
         ContextMenuBuilder.buildMenu(includeOutputDevices: false, includeRepeatShuffle: false)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard let command = AudionFaceCommand(key: event, host: host) else { return super.keyDown(with: event) }
+        onCommand?(command)
+    }
+
+    // MARK: - Accessibility (FaceKit: a button per face button, the time digits, the two labels)
+
+    override func accessibilityChildren() -> [Any]? {
+        guard let face else { return [] }
+        var children = AudionFaceScene.visibleButtons(face, host).map { role, button in
+            let element = AudionFaceAccessibilityElement(role: .button, label: Self.title(for: role)) { [weak self] in
+                self?.press(role)
+            }
+            element.setAccessibilityIdentifier("audion.\(role.sprite)")
+            element.setAccessibilityEnabled(AudionFaceScene.isEnabled(role, host: host, interaction: interaction))
+            element.setAccessibilityFrame(screenRect(button.rect))
+            return element
+        }
+        let digits = AudionFaceScene.timeDigitRects(face)
+        if let first = digits.first {
+            let union = digits.dropFirst().reduce(localRect(first)) { $0.union(localRect($1)) }
+            let time = String(format: "%02d:%02d", host.elapsedSeconds / 60, host.elapsedSeconds % 60)
+            let element = AudionFaceAccessibilityElement(role: .button, label: "\(time) — Show Position Slider") { [weak self] in
+                self?.showPositionSlider(below: first)
+            }
+            element.setAccessibilityIdentifier("Time Digits")
+            element.setAccessibilityFrame(window?.convertToScreen(convert(union, to: nil)) ?? .zero)
+            children.append(element)
+        }
+        let labels: [(String, AudionFace.TextLine?, String?)] = [
+            ("Artist", face.artist, host.artistLine), ("Album", face.album, host.albumLine),
+        ]
+        for (identifier, line, text) in labels {
+            guard let line, let text else { continue }
+            let element = AudionFaceAccessibilityElement(role: .staticText, label: text, press: nil)
+            element.setAccessibilityIdentifier(identifier)
+            element.setAccessibilityValue(text)
+            element.setAccessibilityFrame(screenRect(line.rect))
+            children.append(element)
+        }
+        children.forEach { $0.setAccessibilityParent(self) }
+        return children
+    }
+
+    /// FaceKit's tooltips, naming NullPlayer's action where the button maps to one of its own.
+    private static func title(for role: AudionFace.ButtonRole) -> String {
+        switch role {
+        case .play: "Play"
+        case .pause: "Pause"
+        case .stop: "Stop"
+        case .rewind: "Previous Track"
+        case .fastForward: "Next Track"
+        case .eject: "Open Files"
+        case .close: "Quit"
+        case .info: "Info"
+        case .volume: "Show Volume Slider"
+        case .playlist: "Playlist"
+        case .mode: "Play Mode"
+        }
+    }
+}
+
+/// One of the face's accessibility children; a button presses through `press`.
+private final class AudionFaceAccessibilityElement: NSAccessibilityElement {
+    private let press: (() -> Void)?
+
+    init(role: NSAccessibility.Role, label: String, press: (() -> Void)?) {
+        self.press = press
+        super.init()
+        setAccessibilityRole(role)
+        setAccessibilityLabel(label)
+        setAccessibilityElement(true)
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        press?()
+        return press != nil
     }
 }
 

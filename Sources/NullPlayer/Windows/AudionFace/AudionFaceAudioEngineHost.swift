@@ -1,7 +1,35 @@
 import AppKit
 
-/// `AudioEngine` to `AudionFaceHostState`, and a pressed face button back to a NullPlayer action
-/// (decision record § *Button mapping*). The scene reads only the snapshot.
+/// What the face window asks NullPlayer to do: a pressed button, or a slider's value.
+enum AudionFaceCommand: Equatable {
+    case button(AudionFace.ButtonRole)
+    /// 0–1.
+    case volume(Double)
+    /// Seconds into the track.
+    case seek(Double)
+
+    /// The main window's keys (the Modern main window's set): space toggles play, Return stops,
+    /// z x c v b are the transport, p the playlist, the arrows seek 5 s and step the volume.
+    init?(key event: NSEvent, host: AudionFaceHostState) {
+        switch event.keyCode {
+        case 49: self = .button(host.isPlaying ? .pause : .play)
+        case 36: self = .button(.stop)
+        case 123: self = .seek(Double(max(0, host.elapsedSeconds - 5)))
+        case 124: self = .seek(Double(min(host.durationSeconds, host.elapsedSeconds + 5)))
+        case 125: self = .volume(max(0, host.volume - 0.05))
+        case 126: self = .volume(min(1, host.volume + 0.05))
+        default:
+            let keys: [String: AudionFace.ButtonRole] = ["z": .rewind, "x": .play, "c": .pause, "v": .stop,
+                                                         "b": .fastForward, "p": .playlist]
+            guard let role = event.charactersIgnoringModifiers.flatMap({ keys[$0.lowercased()] }) else { return nil }
+            self = .button(role)
+        }
+    }
+}
+
+/// `AudioEngine` to `AudionFaceHostState`, and an `AudionFaceCommand` back to a NullPlayer action
+/// (decision record § *Button mapping*). The scene reads only the snapshot. The volume and info
+/// buttons open `AudionFaceMainView`'s own popups and never arrive here.
 @MainActor
 enum AudionFaceAudioEngineHost {
     static func snapshot(_ engine: AudioEngine, isWindowActive: Bool) -> AudionFaceHostState {
@@ -19,15 +47,35 @@ enum AudionFaceAudioEngineHost {
         state.artist = track?.artist
         state.album = track?.album
         state.format = track.map { $0.url.pathExtension.uppercased() }.flatMap { $0.isEmpty ? nil : $0 }
-        // ponytail: any non-file track reads as streaming; connecting and lag need the stream
-        // player's buffering state (Phase 4).
-        state.streamPhase = track.map { $0.url.isFileURL ? .none : .streaming } ?? .none
+        state.streamPhase = streamPhase(of: track)
+        state.volume = Double(engine.volume)
         state.isWindowActive = isWindowActive
         state.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         return state
     }
 
-    static func perform(_ role: AudionFace.ButtonRole, engine: AudioEngine) {
+    /// Radio reports its connection; any other non-file track reads as streaming.
+    // ponytail: a server stream's own buffering is private to `AudioEngine`; expose it if a face's
+    // connecting or lag animation is wanted outside radio.
+    private static func streamPhase(of track: Track?) -> AudionFaceHostState.StreamPhase {
+        guard let track, !track.url.isFileURL else { return .none }
+        guard RadioManager.shared.isActive else { return .streaming }
+        switch RadioManager.shared.connectionState {
+        case .connecting: return .connecting
+        case .reconnecting: return .lag
+        default: return .streaming
+        }
+    }
+
+    static func perform(_ command: AudionFaceCommand, engine: AudioEngine) {
+        switch command {
+        case .volume(let value): engine.volume = Float(value)
+        case .seek(let seconds): engine.seek(to: seconds)
+        case .button(let role): perform(role, engine: engine)
+        }
+    }
+
+    private static func perform(_ role: AudionFace.ButtonRole, engine: AudioEngine) {
         switch role {
         case .play: engine.play()
         case .pause: engine.pause()
@@ -36,8 +84,13 @@ enum AudionFaceAudioEngineHost {
         case .fastForward: engine.next()
         case .eject: MenuActions.shared.openFile()
         case .playlist: WindowManager.shared.togglePlaylist()
-        // Phase 4: volume slider, info, mode, close.
-        case .close, .info, .volume, .mode: break
+        case .close: NSApp.terminate(nil)
+        case .mode:
+            // Off → shuffle → repeat → both → off.
+            let next = (engine.shuffleEnabled ? 1 : 0) + (engine.repeatEnabled ? 2 : 0) + 1
+            engine.shuffleEnabled = next & 1 != 0
+            engine.repeatEnabled = next & 2 != 0
+        case .info, .volume: break
         }
     }
 

@@ -49,8 +49,10 @@ when the face has one (FaceKit `updateMask`). It is drawn at its own size from t
 corner (`contentsGravity = .bottomLeft`), so a mask of another size (`AUD0008`) is anchored, never
 stretched, and pixels it does not cover become transparent. At a scale above 1 it is scaled
 nearest-neighbour (a departure; FaceKit uses high-quality resampling). No mask: the full rectangle.
-Whether an inactive window really swaps masks is Phase 4's decision (`useInactiveState` is false in
-every corpus face, by the planning session's count in the decision record).
+**Decided in Phase 4: the inactive mask is used whenever the window is not key**, as FaceKit's
+host does through `isInactive`; `isWindowActive` follows key status (`windowDidBecomeKey` /
+`windowDidResignKey`). `useInactiveState` is not read: it is false in every corpus face (the
+decision record's count), so gating on it would retire `inactive-alpha.png` everywhere.
 
 ## Digits and indicators
 

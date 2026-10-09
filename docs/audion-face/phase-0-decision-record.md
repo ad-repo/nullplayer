@@ -105,12 +105,12 @@ Each button maps to an existing NullPlayer action. No new behaviour is introduce
 | time digits (click) | position slider; scrubbing pauses and resumes like FaceKit |
 | playlist (`menu*.png`) | toggle the NullPlayer playlist window |
 | eject | Open Files… |
-| info | track info panel; `faceInfo` and `about.png` in a sub-item |
-| mode (`music*.png`) | cycle shuffle/repeat |
-| close | close the main window, the same as the app's close action |
+| info | a menu: About Playing… (the app's track info panel), and About This Face… (`faceInfo` and `about.png`) |
+| mode (`music*.png`) | cycle shuffle/repeat: off → shuffle → repeat → both → off |
+| close | quit, the same as every NullPlayer main window's close button |
 | track digits | real playlist index 01–99; blank frame 10 when there is none |
 | MP3 / NET / CD / CDDB | local file / stream / off / off |
-| connecting / streaming / lag animations | radio and stream buffering states from `AudioEngine` / `StreamingAudioPlayer` |
+| connecting / streaming / lag animations | radio's connection state (connecting / connected / reconnecting); any other non-file track is streaming (Phase 4) |
 
 Right-click opens the standard main context menu. Keyboard shortcuts go through the existing handlers.
 

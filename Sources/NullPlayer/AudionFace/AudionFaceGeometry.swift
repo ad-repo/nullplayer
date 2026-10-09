@@ -8,6 +8,10 @@ struct AudionFaceRect: Hashable {
     let width: Int
     let height: Int
 
+    func contains(x px: Int, y py: Int) -> Bool {
+        (x..<x + width).contains(px) && (y..<y + height).contains(py)
+    }
+
     /// The same rect in a bottom-left space `containerHeight` pixels tall, which is CoreGraphics'
     /// and AppKit's (FaceKit `flippedRect(from:height:)` before its scale). This is the family's
     /// one flip; never re-derive it at a call site.
