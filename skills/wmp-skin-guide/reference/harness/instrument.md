@@ -44,7 +44,7 @@ the skin, or trails a drag, the parent-child link is gone — do not go looking 
 animation is not a human-scale job, and Phase 5 shipped its AppKit half unmeasured for exactly that
 reason. So **a genuine gap in instrument reach ranks above a skin-side defect when one is found** —
 and a probe that reports work already done is a gap in reach exactly as a missing probe is. That is
-how a row is ranked in `WMP_TASKS.md`: an instrument gap goes above the skin-side rows, not among them.
+how a row is ranked in `tasks/WMP_TASKS.md`: an instrument gap goes above the skin-side rows, not among them.
 
 ## Numbers that are void, and why
 
@@ -208,8 +208,8 @@ tab, a setting, a hover, a drawer, the window's shape and its shadow, and anythi
 playback; W69's flicker is in that remainder, which is why it needs its own instrumentation rather
 than another sweep.
 
-*(This paragraph and the one above it are what `WMP_TASKS.md`'s W73 carried as a backlog row. It was
-moved to `LOW_QUALITY_TASKS.md` on 2026-09-19 because it was a permanently-open caveat rather than a
+*(This paragraph and the one above it are what `tasks/WMP_TASKS.md`'s W73 carried as a backlog row. It was
+moved to `tasks/LOW_QUALITY_TASKS.md` on 2026-09-19 because it was a permanently-open caveat rather than a
 unit of work — the caveat is true, and this is where it belongs.)*
 
 ---

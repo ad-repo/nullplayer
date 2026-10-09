@@ -3,9 +3,9 @@
 The only live backlog for the Audion face subsystem, and a list of open rows — nothing else. Read
 `skills/audion-face-guide/SKILL.md` before picking anything up.
 
-- The locked decisions are [`docs/audion-face/phase-0-decision-record.md`](docs/audion-face/phase-0-decision-record.md).
+- The locked decisions are [`docs/audion-face/phase-0-decision-record.md`](../docs/audion-face/phase-0-decision-record.md).
   The phased plan the rows below were seeded from is `~/.claude/plans/in-a-worktree-only-rippling-kay.md`.
-- Closed rows move to [`docs/audion-face/backlog-archive.md`](docs/audion-face/backlog-archive.md) in
+- Closed rows move to [`docs/audion-face/backlog-archive.md`](../docs/audion-face/backlog-archive.md) in
   the change that closes them. That file's § *Issuing a number* holds the next free number.
 - `.wmz` work goes in [`WMP_TASKS.md`](WMP_TASKS.md), `.wal` work in [`WINAMP5_TASKS.md`](WINAMP5_TASKS.md).
 

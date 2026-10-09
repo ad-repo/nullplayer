@@ -210,8 +210,8 @@ top to bottom. Rows are grouped by area; within a group, follow the most specifi
 | Measure one skin end to end | `/wal-skin-report <skin.wal>` |
 | The GUI verification pass before handing work over | [manual-qa-checklist.md](manual-qa-checklist.md) |
 | One named skin's current state | [skins.md](skins.md) → `skins/<skin>.md` |
-| Choose the next cross-skin capability | [triage-playbook.md](triage-playbook.md), then the ranked Reach table in `WINAMP5_TASKS.md` |
-| Current open work | `WINAMP5_TASKS.md` — the only live backlog; closed history is [the archive](../../docs/winamp-modern/backlog-archive.md) |
+| Choose the next cross-skin capability | [triage-playbook.md](triage-playbook.md), then the ranked Reach table in `tasks/WINAMP5_TASKS.md` |
+| Current open work | `tasks/WINAMP5_TASKS.md` — the only live backlog; closed history is [the archive](../../docs/winamp-modern/backlog-archive.md) |
 
 The backward-compatibility map for section-title pointers in old handoffs lives in
 [`docs/winamp-modern/section-title-map.md`](../../docs/winamp-modern/section-title-map.md).
@@ -231,7 +231,7 @@ Routing rules:
 - A `<layout>` or `<container>` changing its own window geometry is core rendering behavior. A
   `<Wasabi:Frame>` changing the division between its children is splitter behavior.
 - Historical handoffs are evidence, not current routing. Resolve their old section titles through
-  the map, then use the focused reference and the live `WINAMP5_TASKS.md` ranking.
+  the map, then use the focused reference and the live `tasks/WINAMP5_TASKS.md` ranking.
 - When two rows appear plausible, read both section headings before loading either whole file; the
   split is designed so the narrower file normally settles the ownership question immediately.
 
@@ -357,7 +357,7 @@ named section of [reference/harness.md](reference/harness.md).
 - A fact about one named skin → `skins/<skin>.md` (indexed from [skins.md](skins.md)).
 - A supported/unsupported surface fact → [compatibility.md](compatibility.md).
 - A corpus-scale method or disposition → [triage-playbook.md](triage-playbook.md).
-- A new backlog item → `WINAMP5_TASKS.md` with a Reach measurement; move it to the archive in the same change that closes it.
+- A new backlog item → `tasks/WINAMP5_TASKS.md` with a Reach measurement; move it to the archive in the same change that closes it.
 - A `/wal-skin-report` run itself → **outside the repo** unless the user asks for it; only what it
   taught you lands in the files above.
 - This file grows **only** when a new *category* appears — then add a row to the routing table.

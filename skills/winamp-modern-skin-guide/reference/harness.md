@@ -851,7 +851,7 @@ came from a `writers=12` window and the resolve counts from a `writers=41` one. 
 and count, or you will invent a mechanism. The same applies to any probe with a multi-line report.
 
 **8. Hand the fix back for on-screen judgment before writing anything down.** The reporter's *"it
-looks much better now"* comes first; the confirming numbers come second; `WINAMP5_TASKS.md`, the skill docs
+looks much better now"* comes first; the confirming numbers come second; `tasks/WINAMP5_TASKS.md`, the skill docs
 and any test come last. See `verify-before-investing`.
 
 ### A measured value written into a doc goes stale silently (B50, 2026-08-26)

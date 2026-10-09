@@ -9,7 +9,7 @@ NullPlayer hosts several independent skin engines. Four exist — `classic`, `nu
 (Original/Original-Metal), `winampModern` (`.wal`), `wmp` (`.wmz`) — and the pattern below is what
 the last two paid to discover. Follow it rather than re-deriving it.
 
-A fifth, `audion` (Panic Audion faces, `audion-face-guide`, backlog `AUDION_TASKS.md`), is under
+A fifth, `audion` (Panic Audion faces, `audion-face-guide`, backlog `tasks/AUDION_TASKS.md`), is under
 construction on this pattern. It is the one family that is a port rather than a clean-room effort:
 Panic's GPL FaceKit defines the format and renders an oracle, so a diff against that oracle is a
 defect, not an unclassified change.

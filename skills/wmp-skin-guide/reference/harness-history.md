@@ -86,7 +86,7 @@ from a **blank page** to the whole skin; `WoW/videoView` gained the logo its `on
 `Grinch/view-2` and `Plus! SlimLine/perfectVSkin` *lost* pixels because their scripts hide a video
 pane and a stray close box when nothing is playing, which is what WMP does.
 
-The remaining 228 handler errors are ranked in `WMP_TASKS.md`, and 102 of them are one missing host
+The remaining 228 handler errors are ranked in `tasks/WMP_TASKS.md`, and 102 of them are one missing host
 object (`mediacenter`). *(W37 closed that object in Phase 6; see* § After W37 *below for the
 re-measurement, and note the count here is a Phase 3 number kept as written.)*
 
@@ -509,7 +509,7 @@ the two empty-value cases W240 split off as malformed authoring (`STALKER`'s `vi
 
 **`<controls>` appears nowhere in that tail**, which is what retired W111: its only stated
 justification was that it distorts this ranking, and it does not distort the part of it that ranks
-anything. See `LOW_QUALITY_TASKS.md`.
+anything. See `tasks/LOW_QUALITY_TASKS.md`.
 
 ### The empty-value class: an empty attribute is not an attribute (W241, closed 2026-09-20)
 
@@ -688,7 +688,7 @@ it. **Read a byte-identical sweep across an interaction-state change as "unmeasu
 **What it does not close.** `<controls>` (103 nodes / 67 skins) and `<VIDEOSETTINGS>` (28 / 24) are
 still counted as unresolved and are objects rather than controls — phantom rows in `starved.tsv`
 that cost no pixels. `currentPositionText`, `durationText`, `statusText` and `automenu` are unknown
-tags in the same shape. See `WMP_TASKS.md`.
+tags in the same shape. See `tasks/WMP_TASKS.md`.
 
 ---
 

@@ -8,7 +8,7 @@ description: Panic Audion face (folder of index.json + PNGs) skin engine — the
 Read this skill before changing `Sources/NullPlayer/AudionFace/` or
 `Sources/NullPlayer/Windows/AudionFace/`. The locked decisions — format, provenance, limits, button
 mapping, window policy — are `docs/audion-face/phase-0-decision-record.md`. The backlog is
-`AUDION_TASKS.md`.
+`tasks/AUDION_TASKS.md`.
 
 **Status:** public (Phase 7). The model, bounded loader, scene and renderer exist in
 `Sources/NullPlayer/AudionFace/`, with the harness, census, render sweep, load ratchet and FaceKit
@@ -71,7 +71,7 @@ worked version.
 | wrong pixels: order, nearest-neighbour, mask shape, digits, indicators, marquee, scale | [reference/rendering.md](reference/rendering.md) |
 | the face window: hit testing, drag, docking, the sliders, NullPlayer's windows beside a face, placement | [reference/windows.md](reference/windows.md) |
 | any measurement — every `AUDION_*` flag, the census, the sweep, the oracle | [reference/harness.md](reference/harness.md) |
-| what to work on next | `AUDION_TASKS.md` |
+| what to work on next | `tasks/AUDION_TASKS.md` |
 | why a decision was made | `docs/audion-face/phase-0-decision-record.md` |
 
 `reference/harness.md` is the **only** place a probe flag or corpus command is documented. Add a

@@ -111,7 +111,7 @@ fix shrank.
 
 ## The parked backlog row (W234)
 
-**Taken out of `WMP_TASKS.md` on 2026-09-21 so it is not picked up by ranking.** It is not a
+**Taken out of `tasks/WMP_TASKS.md` on 2026-09-21 so it is not picked up by ranking.** It is not a
 low-quality row and it is not closed: it reproduces, the triage is done, and the only direction left
 changes how every hosted window is sized, which is a decision rather than a fix. Revive it
 deliberately — and re-measure first, because everything below is a reading from one day.

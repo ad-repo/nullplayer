@@ -6,7 +6,7 @@ lost its own stated justification, is a bundle assembled to game a ranking, or d
 not worth doing.
 
 **This is not a rejection of the underlying work and not an archive of closed items.** Closed `.wmz`
-rows go to [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md) with the
+rows go to [`docs/wmp-skin/wmp-backlog-archive.md`](../docs/wmp-skin/wmp-backlog-archive.md) with the
 evidence they closed on; work that was declined on its merits stays in the owning skill as a
 documented refusal. A row here could still be real — it just cannot be taken in the shape it is in,
 and leaving it in a ranked file makes every row above and below it harder to trust.
@@ -88,7 +88,7 @@ that it is a state flag spelled as a percentage.
 
 **The row, verbatim:**
 
-> | W251 | `<NETWORK>`'s live numbers: `bufferingProgress` and `receptionQuality` are fields nothing writes | **26 + 9 script uses across 11 and 4 of 184 archives**, plus **55 `wmpprop:` buffer-bar bindings across ~36** riding the same field (measured 2026-09-21; `harness/corpus.md` § *Grepping the corpus's script text*) | Successor to **W104, closed 2026-09-21** ([archive](docs/wmp-skin/wmp-backlog-archive.md)), which made the member surface answer instead of abort but left the value a dead `0`. **Feed both from the streaming player's own statistics, never from Flow** — `NetworkMonitor` measures interface throughput for the whole machine and would draw a confident wrong number. **The cost of leaving it is already on screen**: `tubeframe.wmz` reads `Playing: 0% downloaded` on every track because its `GetMetaData` prints the field whenever it is under 100, and ~36 archives draw a permanently empty buffer bar. A constant `100` was declined as unmeasured; the live field corrects both together. Flow is still the right *window* for a `<NETWORK>` view — the object and the window are two separate answers. Evidence: `object-model/elements.md` § *The `<NETWORK>` element (W104)*. |
+> | W251 | `<NETWORK>`'s live numbers: `bufferingProgress` and `receptionQuality` are fields nothing writes | **26 + 9 script uses across 11 and 4 of 184 archives**, plus **55 `wmpprop:` buffer-bar bindings across ~36** riding the same field (measured 2026-09-21; `harness/corpus.md` § *Grepping the corpus's script text*) | Successor to **W104, closed 2026-09-21** ([archive](../docs/wmp-skin/wmp-backlog-archive.md)), which made the member surface answer instead of abort but left the value a dead `0`. **Feed both from the streaming player's own statistics, never from Flow** — `NetworkMonitor` measures interface throughput for the whole machine and would draw a confident wrong number. **The cost of leaving it is already on screen**: `tubeframe.wmz` reads `Playing: 0% downloaded` on every track because its `GetMetaData` prints the field whenever it is under 100, and ~36 archives draw a permanently empty buffer bar. A constant `100` was declined as unmeasured; the live field corrects both together. Flow is still the right *window* for a `<NETWORK>` view — the object and the window are two separate answers. Evidence: `object-model/elements.md` § *The `<NETWORK>` element (W104)*. |
 
 ### W249 — A pre-resize trace was read as a refused resize
 
@@ -145,7 +145,7 @@ Re-measured 2026-09-19: the row quotes `ALXMorph/mainView` as `15 nodes, 8 comma
 
 Beyond the stale numbers, the row had become a research log rather than a task — a single table cell of roughly 1,500 words quoting six rows that have since closed inside it (W38, W54, W75, W76, W143, W71) and deferring its own ranking to a file that disagrees with it.
 
-**Its live remainder was preserved, not discarded**: `mainView` drawing its shell with only 5 hit targets became **W242**, asked as a hits question instead of an unresolved one. **W242 retired 2026-09-20**: the 5 is a transport authored behind an 800 ms intro and the family is clean under `WMP_RENDER_OCCLUDED=1`, while the *reacting* half of the original report was real and closed as **W243** — one click dispatched twice. Both are in [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md).
+**Its live remainder was preserved, not discarded**: `mainView` drawing its shell with only 5 hit targets became **W242**, asked as a hits question instead of an unresolved one. **W242 retired 2026-09-20**: the 5 is a transport authored behind an 800 ms intro and the family is clean under `WMP_RENDER_OCCLUDED=1`, while the *reacting* half of the original report was real and closed as **W243** — one click dispatched twice. Both are in [`docs/wmp-skin/wmp-backlog-archive.md`](../docs/wmp-skin/wmp-backlog-archive.md).
 
 **The row, verbatim:**
 

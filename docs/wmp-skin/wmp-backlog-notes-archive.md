@@ -1,6 +1,6 @@
 # WMP backlog — retired notes and tier prose (archived 2026-09-22)
 
-This is the narrative that had accumulated in [`WMP_TASKS.md`](../../WMP_TASKS.md): the ranking
+This is the narrative that had accumulated in [`WMP_TASKS.md`](../../tasks/WMP_TASKS.md): the ranking
 preamble, the tier headers and the per-tier post-mortems of rows that are already closed in
 [`wmp-backlog-archive.md`](wmp-backlog-archive.md). It was moved out verbatim on 2026-09-22 because
 the backlog is a list of open work, not a place to keep documentation. Nothing here ranks anything.
@@ -14,7 +14,7 @@ own archive entry; read those first. Kept here only so a number or a claim can b
 # Windows Media Player (`.wmz`) — ranked open backlog
 
 This is the only live backlog for the WMP skin subsystem. It is the `.wmz` counterpart to
-[`WINAMP5_TASKS.md`](WINAMP5_TASKS.md), and the two never share entries: a `.wmz` item goes here, a
+[`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md), and the two never share entries: a `.wmz` item goes here, a
 `.wal` item goes there. Read `skills/wmp-skin-guide/SKILL.md` before picking anything up.
 
 A defect in the **shared video path** belongs to neither and goes in
@@ -27,7 +27,7 @@ A skin is a test case, not a milestone: take measured capability work from the t
 entries move to [`docs/wmp-skin/wmp-backlog-archive.md`](docs/wmp-skin/wmp-backlog-archive.md) in the
 same change that closes them, so this file stays a list of work that is still open.
 
-**A row with a defect in the *row* goes to [`LOW_QUALITY_TASKS.md`](LOW_QUALITY_TASKS.md), which is
+**A row with a defect in the *row* goes to [`LOW_QUALITY_TASKS.md`](../../tasks/LOW_QUALITY_TASKS.md), which is
 neither the archive nor a rejection of the work.** Six went there on 2026-09-19 — W68, W239, W73,
 W111, W135 and W67 — and two left real work behind, both now archived: **W241**, closed 2026-09-20
 (the empty-value class; its corpus number came out **970 uses / 135 of 182 archives**, and the
@@ -108,7 +108,7 @@ written down, and so no count here includes them: every Phase 5 closure in the a
 Phase 6 recovered of it is `harness-history.md` § *After Phase 6*; the traps a live report sets are
 § *Attributing a live report to the change in front of you*.
 
-**W68 was this tier's other row and moved to [`LOW_QUALITY_TASKS.md`](LOW_QUALITY_TASKS.md) on
+**W68 was this tier's other row and moved to [`LOW_QUALITY_TASKS.md`](../../tasks/LOW_QUALITY_TASKS.md) on
 2026-09-19 with its central number false.** Do not re-derive anything from its figures; what survived
 it was W242, **retired 2026-09-20 as measured** — the Alienware family's 5 hit targets are a
 transport authored behind an 800 ms intro, `WMP_RENDER_OCCLUDED=1` is clean across all six archives,
@@ -197,7 +197,7 @@ not interleaving**, and **a flagged count that exactly matches an already-explai
 own cause**. The sweep's damage detector had silently dropped 48 of 184 archives from every
 invariants comparison, so any figure taken from a sweep `compare` before 2026-09-20 covers three
 quarters of the corpus rather than all of it. W239 and W73 moved to
-[`LOW_QUALITY_TASKS.md`](LOW_QUALITY_TASKS.md); **W73's caveat is still true and still matters** — a
+[`LOW_QUALITY_TASKS.md`](../../tasks/LOW_QUALITY_TASKS.md); **W73's caveat is still true and still matters** — a
 clean sweep proves only the default state, and a tab, a hover, a drawer, the window's shape and
 anything driven by live playback remain outside every headless instrument here. It is prose in
 `harness/probe-flags.md` § *The probe flags*, where a reader meets it before trusting a capture.
@@ -260,7 +260,7 @@ Three rules follow, and they are why these rows do not rank against a starved vi
   applies at its strictest: gated on the mode, never justified as a no-op, Classic and Original
   byte-identical.
 
-**W249 moved to [LOW_QUALITY_TASKS.md](LOW_QUALITY_TASKS.md) on 2026-09-20:** its claimed docking refusal did not reproduce. The cited border trace prints before applying the size; live return trips preserved both an 822-point and an 825-point interior. See that entry for the measurements and the evidence needed to revive it.
+**W249 moved to [LOW_QUALITY_TASKS.md](../../tasks/LOW_QUALITY_TASKS.md) on 2026-09-20:** its claimed docking refusal did not reproduce. The cited border trace prints before applying the size; live return trips preserved both an 822-point and an 825-point interior. See that entry for the measurements and the evidence needed to revive it.
 
 **Empty: W214’s remaining candidate, `expectedMainHeightForCurrentHT`, is unreachable in WMP.**
 All callers require `isRunningModernUI`, directly or through their caller. Removed from the active
@@ -303,7 +303,7 @@ the trap that rule exists for.
 | `<VIDEOSETTINGS>` | 94 | 94 | 93 | no | — |
 | `<NETWORK>` | 6 | 4 | 4 | object-only, correctly (W104) | — |
 
-**Empty since 2026-09-21: both rows moved to [`LOW_QUALITY_TASKS.md`](LOW_QUALITY_TASKS.md) the same
+**Empty since 2026-09-21: both rows moved to [`LOW_QUALITY_TASKS.md`](../../tasks/LOW_QUALITY_TASKS.md) the same
 day, for two different defects in the rows.** **W251** instructed that `bufferingProgress` and
 `receptionQuality` be fed from the streaming player's own statistics, and that player keeps no such
 statistics — a `.buffering` state and a bare `didFinishBuffering` edge are the whole surface, so the

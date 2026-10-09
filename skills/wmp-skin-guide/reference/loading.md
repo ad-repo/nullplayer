@@ -86,7 +86,7 @@ first non-whitespace unit, so a single-byte file that merely carries a NUL stays
 rejection rather than being silently reinterpreted.
 
 It claims nothing in either corpus today and is not why any skin loads. That is the intended state:
-it is a guard, and it was added with proof it changes nothing — see `WMP_TASKS.md` W1 for the `.wal`
+it is a guard, and it was added with proof it changes nothing — see `tasks/WMP_TASKS.md` W1 for the `.wal`
 measurement (827 of 2,384 non-UTF-8 entries reach the changed fallback across 80 archives; zero are
 claimed).
 
@@ -266,7 +266,7 @@ above prints exactly the seven named here.
 
 All 14 archives load. Two of them (`claw`, `iconic`) still produce **zero** layouts, and nine views
 across six skins fail `WMP0032` because their size is computed in script. A skin that loads and draws
-nothing is indistinguishable from a rejection to anyone using the app — which is why `WMP_TASKS.md`
+nothing is indistinguishable from a rejection to anyone using the app — which is why `tasks/WMP_TASKS.md`
 Tier 1 did not empty when the loader stopped rejecting. Load level is a floor, never a result.
 
 On the 180-archive corpus at rev `9939e871` that floor holds at **180 of 180 loading and 515 views

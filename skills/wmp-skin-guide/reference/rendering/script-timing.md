@@ -63,7 +63,7 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   it differed, and four runs of it produce four distinct hashes because its intro never settles, so
   the diff is the skin's own animation and not the change. Its ON run ran **zero** tweens, which is
   what says so. A skin that never settles needs a same-mode control before any comparison is read.
-  **The corpus numbers on this row are void.** `WMP_TASKS.md` carried 108 of 184 archives and a
+  **The corpus numbers on this row are void.** `tasks/WMP_TASKS.md` carried 108 of 184 archives and a
   static walk of `onLoad` handlers gives 67; both count markup rather than execution. `Blinx`'s only
   `moveTo` sits inside a `/* */` block, and a walk that follows every call from `onLoad` follows
   branches that never run. Only `WMP_TWEEN_TRACE` can count this, per skin, and it has not been run

@@ -2,7 +2,7 @@
 
 set -eu
 
-backlog=${1:-WINAMP5_TASKS.md}
+backlog=${1:-tasks/WINAMP5_TASKS.md}
 
 if grep -n '^- \[x\]' "$backlog"; then
   echo "closed item still in $backlog — archive it" >&2
