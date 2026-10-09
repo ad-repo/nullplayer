@@ -10,8 +10,10 @@ Read this skill before changing `Sources/NullPlayer/AudionFace/` or
 mapping, window policy — are `docs/audion-face/phase-0-decision-record.md`. The backlog is
 `AUDION_TASKS.md`.
 
-**Status:** Phase 0. The worktree, decision record and these skeletons exist; no engine code does
-yet. Every reference file below is a stub that names what it will own.
+**Status:** Phase 1. The model and bounded loader exist in `Sources/NullPlayer/AudionFace/`
+(`AudionFace`, `AudionFaceDocument`, `AudionFaceLoader`, `AudionFaceZipImport`, policy, diagnostics
+and geometry); `reference/format.md` and `reference/loading.md` are live. Nothing renders yet, and the
+other reference files are stubs that name what they will own.
 
 ## The rule that outranks everything
 

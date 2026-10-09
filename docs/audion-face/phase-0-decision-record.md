@@ -72,80 +72,9 @@ Rules:
 A face is a folder holding `index.json` and PNGs. FaceKit is the authority; each rule below names
 the FaceKit code it comes from.
 
-### Files
-
-| File | Required | Meaning | FaceKit |
-|---|---|---|---|
-| `index.json` | yes | geometry, colours, fonts, styles, PICT ranges | `AudionFace.load` |
-| `base.png` | yes | the face artwork, drawn into the view's bounds | `init(from:)`, `draw(_:in:)` |
-| `base-alpha.png` | no | window shape while active | `mask` |
-| `inactive-alpha.png` | no | window shape while inactive | `inactiveMask` |
-| `<name>.png`, `<name>-active.png`, `<name>-disabled.png`, `<name>-hover.png` | normal only | a button and its states | `decodeButton` |
-| `<name>.png` + `<name>-on.png` | both | an indicator | `decodeIndicator` |
-| `<PICTID>.png` | per range | digits and animation frames | `decodeDigit`, `decodeAnimation` |
-| `window.png`, `drag.png`, `inactive.png`, `active-alpha.png`, `about.png` | no | **ignored by FaceKit** | — |
-
-Button names: `play`, `pause`, `stop`, `rw`, `ff`, `close`, `info`, `volume`, `menu` (playlist),
-`music` (mode), `eject`. Indicator names: `play-indicator`, `pause-indicator`, `net`, `mp3`, `cd`,
-`cddb`.
-
-The files FaceKit ignores are not read by the Phase 1 loader. Their meaning is confirmed against the
-corpus by the Phase 2 census, and a later row reads one only after that. Working hypothesis:
-`window.png` is a hit region, `drag.png` a drag region, `inactive.png` the full inactive artwork,
-`about.png` the face's credit art.
-
-### Geometry
-
-- **Rects are top-left**, `{top, left, bottom, right}` in pixels, `right` and `bottom` exclusive.
-- **A zero-width or zero-height rect means the element is absent** (`decodeRect` returns `nil`).
-- **A button's size comes from its sprite**; only `top` and `left` are read from its rect.
-  Indicators, digits, animations and text rects use all four edges.
-- **`pause` shares `playButtonRect`.** While playing, play is hidden and pause is shown.
-- **The window shape is `base-alpha.png`**, or `inactive-alpha.png` while the window is inactive and
-  that file exists (`updateMask`). The mask layer uses `contentsGravity = .bottomLeft`: a mask whose
-  size differs from `base.png` is anchored bottom-left, never stretched to fit. At a view scale above
-  1 it is resized by that scale (`FaceKit.resize`).
-- No `base-alpha.png` means no mask: the window is the full `base.png` rectangle.
-
-### Digits and animations
-
-- Time digits: four, 10 frames each starting at `timeDigitNFirstPICTID`. They show elapsed `mm:ss`.
-- Track digits: two, **11 frames** each; frame 10 is blank. FaceKit always draws frame 10.
-- **A digit with any frame missing is dropped whole**, and so is an animation (`return nil`).
-- Animations — `connecting`, `streaming`, `netLag` — have `NumPICTs` frames at `FrameDelay` ticks of
-  FaceKit's 60 Hz timer.
-
-### Text
-
-- Two lines: **artist** (`artistDisplayRect`) and **album** (`albumDisplayRect`).
-- Colour: the `…TextFaceColorFromTxtr` key when it decodes, else `…TextFaceColorFromFace`, else black.
-- Font: `…DisplayFontName` at `…FontSize`. A name that does not resolve falls back to Helvetica at
-  that size; a missing name or size falls back to Helvetica 12.
-- Style: eight booleans (bold, italic, underline, outline, shadow, condense, extend, justify). If
-  **any one** of the eight keys fails to decode, the whole style is empty.
-- XOR text (`…TextMode & 2`) is parsed and deliberately not drawn.
-- The artist line truncates in the middle of the string. The album line scrolls as a marquee: an
-  80-frame startup hold, then one pixel per two frames, with a 60 px gap before it repeats. `justify`
-  or Reduce Motion pins it at offset 0.
-- Panic's player fills the artist line with the title (or the file name) and the album line with
-  `artist—album—format`. NullPlayer does the same.
-
-### Draw order and state
-
-Order: `base`, the current animation, time digits, track digits, indicators, then buttons and labels.
-All images draw with `interpolationQuality = .none`.
-
-| Element | State rule (`AudionFaceView`) |
-|---|---|
-| button image | disabled, then pressed, then hover, then normal — the first present wins |
-| CD, CDDB | always off |
-| NET | on when duration ≠ 0 and a stream animation is active |
-| MP3 | on when duration ≠ 0 and no stream animation is active |
-| play indicator | on while playing |
-| pause indicator | on when duration ≠ 0 and not playing |
-| stop | enabled while there is a duration |
-| volume | a popup slider window, 19×96 |
-| time digits (click) | a popup position slider, 192×19; scrubbing pauses playback and resumes on mouse-up |
+The specification moved to `skills/audion-face-guide/reference/format.md` in Phase 1, where it
+sits beside the code that implements it (`AudionFaceDocument`, `AudionFaceLoader`). That file is the
+only copy; this record keeps the departures below, which are decisions rather than format.
 
 ### Deliberate departures from FaceKit
 
@@ -158,6 +87,9 @@ Each is classified as an expected oracle difference, never silently.
 | Track digits always draw the blank frame | the real playlist index 01–99, blank when there is none | NullPlayer has a playlist; the face authored the digits. The oracle comparison renders with no track index, so the two agree |
 | eject, close, info, playlist and mode are disabled | wired (see *Button mapping*) | user decision, 2026-10-08 |
 | The volume and position sliders are FaceKit's own `NSWindow` subclass | ported into `Windows/AudionFace/`, drawn the same way | layering |
+| A rect with negative width or height is kept as a `CGRect` | dropped as malformed, `AUD0013` (Phase 1) | not a shape anyone authored; the corpus has four, two on buttons (which read only `top` and `left`, so unaffected) and two on elements the canonical oracle states never draw (Detonator b1's lag animation, lungruen's album line) |
+| A negative animation frame count traps; zero keeps an animation with no frames | dropped, `AUD0013` (Phase 1) | neither draws anything; a hostile count must not crash the loader |
+| `NSImage` loads any image format under a `.png` name | only a PNG signature counts; anything else is an absent file | dimensions are read from the PNG header before decode (§ *Threat model*); every image file in the corpus is a PNG |
 
 ## Button mapping
 
@@ -237,6 +169,14 @@ their wording may improve without changing their meaning.
 | `AUD0009` | a button with a non-zero rect but no normal sprite | warning; button dropped, as FaceKit does |
 | `AUD0010` | zip ratio or size over its limit | fatal |
 | `AUD0011` | more than 64 Mpx across the images the loader decodes, summed from headers | fatal |
+| `AUD0012` | `index.json` unreadable, or not a JSON object | fatal |
+| `AUD0013` | an element with a non-zero rect dropped: a key it needs is missing or malformed, or one of its images is absent | warning; element dropped |
+| `AUD0014` | a zip that cannot be read, or an entry that fails its CRC or size check | fatal |
+
+`AUD0012`–`AUD0014` were added in Phase 1. The table above had no code for a face whose
+`index.json` does not parse, for the per-element drops the departures table promises "with a
+finding", or for a corrupt zip, and folding any of them into an existing code would have changed
+that code's meaning.
 
 `AUD0011` is added to the plan's table here. Without it the other limits allow 2,000 images at 4096²,
 about 128 GB of decoded RGBA; 64 Mpx caps a face at 256 MB decoded.
@@ -247,9 +187,20 @@ decodes; a file the loader never opens poses neither threat, and `AUD0005` still
 A missing `-active`, `-disabled` or `-hover` sprite is not a finding: FaceKit treats each as
 optional, and only about 260 of the 856 faces ship `-hover`.
 
-`AUD0010`'s exact zip bounds are set in Phase 1 alongside the fixtures that prove them, under the
-same rule as `.wmz`'s Amendment 1: absolute expanded bytes bound the threat, and a ratio test applies
-only above a size floor.
+**`AUD0010`'s bounds (set in Phase 1).** Under the same rule as `.wmz`'s Amendment 1 — absolute
+expanded bytes bound the threat, and a ratio test applies only above a size floor:
+
+| Bound | Value | Panic's `Faces - 2021-01-05.zip` |
+|---|---:|---:|
+| entries | 131,072 | 81,111 |
+| expanded total | 512 MiB | 235,586,373 B |
+| expanded entry | 64 MiB (the `AUD0005` face total: a larger entry can never belong to a loadable face) | 613,876 B |
+| ratio, tested only above 1 MiB | 200:1 | 52:1 worst; no entry over 1 MiB |
+
+The bounds admit Panic's whole distribution as one import. `__MACOSX/` entries count toward the entry
+bound and are never written out. An entry path that is absolute, holds `..`, `.` or a backslash, or a
+symlink entry is `AUD0006`. `AudionFaceZipLimits` holds the values; the fixtures are in
+`AudionFaceHostileInputTests`.
 
 ### Measured headroom (2026-10-08, the 856 faces in `/Users/ad/Downloads/Faces`)
 
@@ -284,8 +235,8 @@ From the planning session's measurement, to be re-measured by the Phase 2 census
 
 ## Follow-up requirements
 
-- Phase 1 implements `AudionFacePolicy` with every code above and a hostile-input test per code, and
-  adds the `facekit` notice row with the first adapted file.
+- ~~Phase 1 implements `AudionFacePolicy` with every code above and a hostile-input test per code, and
+  adds the `facekit` notice row with the first adapted file.~~ Done; see `skills/audion-face-guide/reference/loading.md` § *Codes*.
 - Phase 2's census and oracle replace every measured number in this record with one a committed
   script reproduces, recorded in `skills/audion-face-guide/reference/harness.md`.
 - The Phase 2 census confirms or refutes the meaning of the five files FaceKit ignores; nothing
