@@ -3742,17 +3742,8 @@ class WindowManager {
         
         videoPlayerWindowController?.volume = audioEngine.volume
         
-        // Use server-aware playback for scrobbling/progress
-        if track.plexRatingKey != nil {
-            videoPlayerWindowController?.play(plexTrack: track)
-        } else if track.jellyfinId != nil {
-            videoPlayerWindowController?.play(jellyfinTrack: track)
-        } else if track.embyId != nil {
-            videoPlayerWindowController?.play(embyTrack: track)
-        } else {
-            videoPlayerWindowController?.play(url: track.url, title: track.displayTitle)
-        }
-        
+        videoPlayerWindowController?.play(track: track)
+
         applyAlwaysOnTopToWindow(videoPlayerWindowController?.window)
         NSLog("WindowManager: Playing video track from playlist: %@", track.title)
     }

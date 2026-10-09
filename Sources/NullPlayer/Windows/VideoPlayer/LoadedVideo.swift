@@ -43,10 +43,36 @@ struct LoadedVideo {
 }
 
 extension LoadedVideo {
-    /// A server film, which takes its title and content type from its playlist track.
-    init(source: Source, queuedTrack track: Track) {
+    /// A server film from the playlist, by the id its track carries; nil for a track with none.
+    /// It takes its title and content type from that track.
+    init?(serverTrack track: Track) {
+        let source: Source
+        if let ratingKey = track.plexRatingKey { source = .plexItem(ratingKey: ratingKey) }
+        else if let id = track.jellyfinId { source = .jellyfinItem(id: id) }
+        else if let id = track.embyId { source = .embyItem(id: id) }
+        else { return nil }
         self.init(source: source, title: track.displayTitle, track: track,
                   contentType: track.playHistoryContentType)
+    }
+
+    /// Tells the film's server it started, which `reporter` then hears the rest of; nothing for
+    /// local playback.
+    func reportStart() {
+        let duration = track.duration ?? 0
+        let isEpisode = contentType == "tv"
+        switch source {
+        case .stream, .localFile:
+            break
+        case .plexItem(let ratingKey):
+            PlexVideoPlaybackReporter.shared.videoTrackDidStart(
+                ratingKey: ratingKey, title: title, durationSeconds: duration, isEpisode: isEpisode)
+        case .jellyfinItem(let id):
+            JellyfinVideoPlaybackReporter.shared.videoTrackDidStart(
+                itemId: id, title: title, durationSeconds: duration, isEpisode: isEpisode)
+        case .embyItem(let id):
+            EmbyVideoPlaybackReporter.shared.videoTrackDidStart(
+                itemId: id, title: title, durationSeconds: duration, isEpisode: isEpisode)
+        }
     }
 }
 
