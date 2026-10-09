@@ -59,6 +59,7 @@ One fact per line, inside a `FACE` block.
 | `LOAD size=WxH mask=WxH\|none inactiveMask=WxH\|none findings=<n>` | the loaded face |
 | `FINDING [AUD####] <message>` | each warning, in the loader's stable order |
 | `ELEMENTS buttons=… indicators=… digits=… animations=… text=…` | the roles that survived loading, `-` for none |
+| `PALETTE authored=<album>/<artist> ground=… text=… current=… selection=… selected=… text/ground=… current/ground=… selected/selection=… selection/ground=… overruled=…` | `AudionFacePalette.surfaceStyle(for:)` as hex roles (`authored` is the face's own text colours, `-` with no display), the four contrasts NullPlayer's windows depend on, and which authored colours `legible` replaced (`text`, `current`, or `-`) |
 | `RENDER-DUMP <label>: WxH ops=<n> [hovered=<role>] [pressed=<role>]` | one per rendered state and tick |
 | `PROBE <label> <element> x,y WxH [offset=<px> text=WxH]` | one per draw op (`AudionFaceDrawOp.Element`'s description), face pixels, top-left; labels add the marquee offset and text image size |
 | `PNG <label>: <face>/<file>` or `PNG <label> FAILED <why>` | the dump written, or why not |
@@ -93,7 +94,7 @@ are in `scripts/lib/audion_corpus.sh`. Never capture a baseline with `git stash`
 |---|---|
 | `scripts/audion_face_census.sh <out> [--corpus <dir>]` | `census.tsv`: one row per face — the harness's `DIGEST`, load and fatal code, size, masks, warnings by code, surviving elements, what the six files FaceKit ignores hold, the limits' inputs, and the rev. Prints the tallies and the headroom maxima. |
 | `scripts/audion_corpus_baseline.py <census-out>` | Re-records `Tests/NullPlayerAppTests/Fixtures/AudionFace/corpus-baseline.tsv`, the ratchet `AudionFaceCorpusLoadTests` enforces on every `swift test`. Only after improving the loader. |
-| `scripts/audion_render_sweep.sh capture <out>` | Renders every face `stopped` and `playing` into `<out>/png` with `AUDION_RENDER_PROBE` on, keeps `invariants.txt` (`PROBE` and `DIGEST` lines stay in `raw.txt` only), and fails a capture reporting fewer faces than it was given. |
+| `scripts/audion_render_sweep.sh capture <out>` | Renders every face `stopped` and `playing` into `<out>/png` with `AUDION_RENDER_PROBE` on, keeps `invariants.txt` (`PALETTE` lines included, so a palette change diffs) (`PROBE` and `DIGEST` lines stay in `raw.txt` only), and fails a capture reporting fewer faces than it was given. |
 | `scripts/audion_render_sweep.sh compare <a> <b>` | Diffs two captures' invariant lines, then their images through `scripts/png_diff.py --summary`. |
 | `scripts/audion_facekit_reference.sh <out> [--corpus <dir>]` | The oracle: FaceKit's own rendering of every face in the sweep's face list, exclusions applied (below). |
 | `scripts/audion_oracle_compare.py <oracle-out> <sweep-out>` | Classifies each face against the oracle, taking the text boxes from the sweep's `PROBE … label:` lines (so the loader is the only reader of `index.json`; a capture without them is refused); writes `<sweep-out>/oracle-compare.tsv`. |
@@ -168,6 +169,26 @@ Limit headroom, from the census (`headroom` lines; images over every PNG, not on
 Median face: 355,603 px. What the census found in the files FaceKit ignores is
 `format.md` § *Files FaceKit ignores*; the counts behind it are the census's `window_vs_mask_iou`,
 `drag_in_window`, `inactive_vs_base`, `active_alpha`, `about` and `icon` tallies.
+
+### Palette legibility (A7, 2026-10-09)
+
+From the sweep's `PALETTE` lines over all 856 faces (a throwaway tally over `invariants.txt`):
+
+| Contrast | Minimum | Median | Guarded by |
+|---|---:|---:|---|
+| text / ground | 3.00 | 9.12 | `legible`, 3.0 |
+| current text / ground | 3.04 | 9.22 | `legible`, 3.0 |
+| selected text / selection | 3.01 | 6.22 | `legible`, 3.0 |
+| selection / ground | 1.31 | 2.40 | the palette's `legible(threshold: 1.3)` |
+
+`overruled`: none 670, both 163, current only 17, text only 6. The overrules are the faces' own
+low-contrast pairs (Cracked's pale yellow and green on white), not sampling errors; 107 faces have no
+real display. 30 selections fall back to black or white. Before the A7 fixes, 89 faces had a selection
+under 1.3 against the ground (down to 1.00) and 85 sampled a 1×1 placeholder display's corner pixel.
+
+`Tests/NullPlayerAppTests/Goldens/AudionFace/palettes.tsv` pins the line for six faces
+(`AudionFacePhase5Tests.testPaletteGoldens`, skipped without the corpus); re-record with
+`AUDION_PALETTE_GOLDEN_UPDATE=1` and read the diff.
 
 ## What the sweep raises
 

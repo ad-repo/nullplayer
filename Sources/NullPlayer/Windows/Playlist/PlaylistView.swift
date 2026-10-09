@@ -793,7 +793,7 @@ class PlaylistView: NSView {
 
         let titleWidth = systemFontTextWidth(titleText)
 
-        let effectiveTitleColor: NSColor = isSelected ? .white : color
+        let effectiveTitleColor: NSColor = isSelected ? selectedRowTextColor : color
         if isCurrentTrack && titleWidth > titleMaxWidth && configurePlaylistMarqueeLayer(text: titleText, titleX: titleX, titleMaxWidth: titleMaxWidth, rowRect: rect, color: effectiveTitleColor) {
             // The layer-backed marquee draws this title smoothly; duration stays in CGContext.
         } else if isCurrentTrack && titleWidth > titleMaxWidth {
@@ -952,11 +952,18 @@ class PlaylistView: NSView {
         return false
     }
 
+    /// Selected rows are white, the classic idiom, with no selection fill under them; beside a
+    /// hosted skin or face whose ground is light, white is corrected against that ground.
+    private var selectedRowTextColor: NSColor {
+        guard let style = WindowManager.shared.hostedSurfaceStyle else { return .white }
+        return style.legibleText(.white, on: style.background)
+    }
+
     /// Draw text using system font (fallback for non-Latin characters).
     /// Context is already flipped to skin coordinates (Y=0 at top), so we need to unflip
     /// temporarily for NSAttributedString.draw() to render correctly.
     private func drawSystemFontText(_ text: String, at position: NSPoint, in context: CGContext, color: NSColor, isSelected: Bool = false) {
-        let textColor = isSelected ? NSColor.white : color
+        let textColor = isSelected ? selectedRowTextColor : color
         let attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: textColor,
             .font: NSFont.systemFont(ofSize: playlistFontSize, weight: .regular)

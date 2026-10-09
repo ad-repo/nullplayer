@@ -212,6 +212,9 @@
   radio stream left that local song playing underneath it. A stream started with Play Now while
   two streams were crossfading was replaced by the incoming song when the fade finished. Both now
   play the stream you picked.
+- **The selected playlist row is readable in light skins** — in Winamp Modern and Windows Media
+  Player skins with a light playlist background, the selected row (the playing track, by default)
+  was drawn in white on white. It now takes the skin's own text colour there; dark skins keep white.
 
 ## 0.31.4
 

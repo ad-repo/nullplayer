@@ -1,0 +1,10 @@
+# Palette goldens: the harness PALETTE line for each face, from AudionFacePalette.surfaceStyle(for:).
+# AppleClassic keeps its authored colours; Agitator a dark body; Cracked overrules low-contrast text;
+# Chromium has a 1x1 placeholder display; Smart a transparent display; >maxk_typo< a selection that
+# falls back to black on white. Re-record: see AudionFacePhase5Tests.testPaletteGoldens.
+AppleClassic	authored=fffc4f/ffffff ground=234444 text=fffc4f current=ffffff selection=336666 selected=ffffff text/ground=9.71 current/ground=10.60 selected/selection=6.50 selection/ground=1.63 overruled=-
+Agitator	authored=9f9f9f/9f9f9f ground=0a0603 text=9f9f9f current=9f9f9f selection=c7c7c7 selected=0a0603 text/ground=7.65 current/ground=7.65 selected/selection=11.97 selection/ground=11.97 overruled=-
+Cracked	authored=00d906/ffd000 ground=fcfcfc text=000000 current=000000 selection=a4a4a4 selected=000000 text/ground=20.48 current/ground=20.48 selected/selection=8.41 selection/ground=2.44 overruled=text,current
+Chromium	authored=-/- ground=010201 text=d1d1d1 current=ffffff selection=5a5b5a selected=ffffff text/ground=13.64 current/ground=20.77 selected/selection=6.85 selection/ground=3.03 overruled=-
+Smart	authored=000000/000000 ground=000000 text=ffffff current=ffffff selection=595959 selected=000000 text/ground=21.00 current/ground=21.00 selected/selection=3.01 selection/ground=3.01 overruled=text,current
+>maxk_typo<	authored=000000/000000 ground=ffffff text=000000 current=000000 selection=000000 selected=ffffff text/ground=21.00 current/ground=21.00 selected/selection=21.00 selection/ground=21.00 overruled=-

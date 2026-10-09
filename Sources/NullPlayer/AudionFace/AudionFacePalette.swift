@@ -2,10 +2,12 @@ import AppKit
 
 /// The colours NullPlayer's own windows wear beside a face, taken from what the face authored:
 ///
-/// - **ground**: the dominant colour of `base` under the text display (the album line's box, else
-///   the artist line's) — the surface the face itself puts lettering on;
+/// - **ground**: the dominant colour of the drawn face under the text display (the album line's box,
+///   else the artist line's) — the surface the face itself puts lettering on;
 /// - **text / current text**: the face's album and artist colours;
-/// - **selection**: the dominant colour of the whole face, its body.
+/// - **selection**: the dominant colour of the whole drawn face, its body.
+///
+/// "Drawn" is the stopped face through `AudionFaceRenderer`, so the mask has cut it to its window.
 ///
 /// A role the face cannot answer falls back to `neutral`, which is app-authored, never another
 /// family's chrome. `SkinnedSurfaceStyle` runs every foreground through `legible`.
@@ -15,16 +17,27 @@ enum AudionFacePalette {
                                selection: NSColor(calibratedRed: 0.22, green: 0.36, blue: 0.62, alpha: 1))
 
     static func surfaceStyle(for face: AudionFace) -> SkinnedSurfaceStyle {
-        let display = face.album?.rect ?? face.artist?.rect
-        let ground = display.flatMap { dominantColor(of: face.base, in: $0) }
-            ?? dominantColor(of: face.base, in: nil) ?? neutral.background
-        let text = (face.album ?? face.artist).flatMap { NSColor(cgColor: $0.color) } ?? neutral.text
-        let current = (face.artist ?? face.album).flatMap { NSColor(cgColor: $0.color) } ?? neutral.currentText
-        let body = dominantColor(of: face.base, in: nil) ?? neutral.selectionBackground
-        // A face whose body and display are one colour would give selection no contrast with rows.
-        let selection = SkinnedSurfaceStyle.contrastRatio(body, ground) < 1.3
-            ? SkinnedSurfaceStyle.blend(ground, toward: current, by: 0.35) : body
+        // The face as it stands stopped, mask applied: a pixel the mask cuts away is not the face.
+        let drawn = AudionFaceRenderer.render(AudionFaceScene(face: face, host: AudionFaceHostState())) ?? face.base
+        let (album, artist) = (displayed(face.album), displayed(face.artist))
+        let ground = (album ?? artist).flatMap { dominantColor(of: drawn, in: $0.rect) }
+            ?? dominantColor(of: drawn, in: nil) ?? neutral.background
+        let text = (album ?? artist).flatMap { NSColor(cgColor: $0.color) } ?? neutral.text
+        let current = (artist ?? album).flatMap { NSColor(cgColor: $0.color) } ?? neutral.currentText
+        let body = dominantColor(of: drawn, in: nil) ?? neutral.selectionBackground
+        // A face whose body and display are one colour would give selection no contrast with rows;
+        // blend toward a text colour that can be read there, since the authored one may be the ground.
+        let readable = SkinnedSurfaceStyle.legible(preferring: [current, text], on: ground)
+        let selection = SkinnedSurfaceStyle.legible(
+            preferring: [body, SkinnedSurfaceStyle.blend(ground, toward: readable, by: 0.35)],
+            on: ground, threshold: 1.3)
         return style(background: ground, text: text, currentText: current, selection: selection)
+    }
+
+    /// A line that can show text. 85 faces author a 1×1 box at 0,0 as a placeholder for "no display";
+    /// its colour is a default and the pixel under it is a corner, so neither is the face's.
+    static func displayed(_ line: AudionFace.TextLine?) -> AudionFace.TextLine? {
+        line.flatMap { $0.rect.width > 1 && $0.rect.height > 1 ? $0 : nil }
     }
 
     private static func style(background: NSColor, text: NSColor, currentText: NSColor,

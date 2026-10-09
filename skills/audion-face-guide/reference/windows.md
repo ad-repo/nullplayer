@@ -93,11 +93,25 @@ Every change outside the family's directories, each gated on the Audion family.
 
 ## NullPlayer's windows beside a face
 
-`AudionFacePalette.surfaceStyle(for:)`: ground = the dominant colour of `base` under the album
-(else artist) display rect; text = the album colour; current text = the artist colour; selection =
-the face body's dominant colour (blended toward the current text when it matches the ground).
-`SkinnedSurfaceStyle` runs every foreground through `legible`. A face change posts
-`.hostedSurfaceStyleDidChange`, so open windows recolour. The windows wear the titleless gloss rim.
+`AudionFacePalette.surfaceStyle(for:)` samples the face **as drawn** — stopped, through
+`AudionFaceRenderer`, so the mask has cut it to its window: ground = the dominant colour under the
+album (else artist) display rect; text = the album colour; current text = the artist colour;
+selection = the face body's dominant colour. A display counts only when its rect is wider and taller
+than one pixel (`AudionFacePalette.displayed`): 85 faces author a 1×1 box at 0,0 meaning "no display",
+whose colour is a default and whose pixel is a corner. Selection must stand 1.3:1 off the ground,
+else it is the ground blended 35% toward a text colour that is legible there (the authored one can
+be the ground itself), else black or white. `SkinnedSurfaceStyle` runs every foreground through
+`legible`. A face change posts `.hostedSurfaceStyleDidChange`, so open windows recolour. The windows
+wear the titleless gloss rim. Corpus contrasts and the goldens: `harness.md` § *Palette legibility*.
+
+- **Playlist selected rows** keep the classic idiom — white text, no selection fill — but under any
+  hosted style (`.wal`, `.wmz`, Audion) the white goes through `style.legibleText(_:on: background)`
+  (`PlaylistView.selectedRowTextColor`); on a light face it was white on white. Classic and Original
+  have no hosted style and still get plain white.
+- **Route to a track:** the face's menu button toggles the playlist, eject is Open Files…, and the
+  Library Browser opens from the Windows menu or the right-click menu.
+- **Checked live** (A7, debug build, user confirmed): playlist, EQ, Library Browser and Spectrum
+  Analyzer beside AppleClassic, Cracked, Chromium, Smart and >maxk_typo<.
 
 ## Docking
 

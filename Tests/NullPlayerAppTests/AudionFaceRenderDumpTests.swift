@@ -106,6 +106,7 @@ enum AudionFaceHarness {
             + " digits=\(names(AudionFace.DigitRole.allCases) { face.digits[$0] != nil })"
             + " animations=\(names(AudionFace.AnimationRole.allCases) { face.animations[$0] != nil })"
             + " text=\(names(AudionFace.TextRole.allCases) { ($0 == .artist ? face.artist : face.album) != nil })")
+        HarnessOutput.emit("PALETTE \(paletteLine(face))")
 
         for (state, host) in probe.states {
             var interaction = AudionFaceInteractionState()
@@ -152,6 +153,34 @@ enum AudionFaceHarness {
                 }
             }
         }
+    }
+
+    /// `AudionFacePalette.surfaceStyle(for:)` as hex roles, the contrasts the windows depend on, and
+    /// which of the face's own text colours `legible` overruled.
+    static func paletteLine(_ face: AudionFace) -> String {
+        let style = AudionFacePalette.surfaceStyle(for: face)
+        func hex(_ color: NSColor) -> String {
+            let c = color.usingColorSpace(.deviceRGB) ?? .black
+            return String(format: "%02x%02x%02x", Int((c.redComponent * 255).rounded()),
+                          Int((c.greenComponent * 255).rounded()), Int((c.blueComponent * 255).rounded()))
+        }
+        func ratio(_ a: NSColor, _ b: NSColor) -> String {
+            String(format: "%.2f", SkinnedSurfaceStyle.contrastRatio(a, b))
+        }
+        let (album, artist) = (AudionFacePalette.displayed(face.album), AudionFacePalette.displayed(face.artist))
+        let authored = [("text", (album ?? artist).flatMap { NSColor(cgColor: $0.color) }),
+                        ("current", (artist ?? album).flatMap { NSColor(cgColor: $0.color) })]
+        // `legible` keeps an authored colour exactly when it clears the threshold on the ground.
+        let overruled = authored.filter { _, color in
+            color.map { SkinnedSurfaceStyle.contrastRatio($0, style.background) < SkinnedSurfaceStyle.minimumContrast } ?? false
+        }
+        return "authored=\(authored.map { $0.1.map(hex) ?? "-" }.joined(separator: "/")) "
+            + "ground=\(hex(style.background)) text=\(hex(style.text)) current=\(hex(style.currentText)) "
+            + "selection=\(hex(style.selectionBackground)) selected=\(hex(style.selectedText)) "
+            + "text/ground=\(ratio(style.text, style.background)) current/ground=\(ratio(style.currentText, style.background)) "
+            + "selected/selection=\(ratio(style.selectedText, style.selectionBackground)) "
+            + "selection/ground=\(ratio(style.selectionBackground, style.background)) "
+            + "overruled=\(overruled.isEmpty ? "-" : overruled.map(\.0).joined(separator: ","))"
     }
 
     /// The census digest, the key of `Fixtures/AudionFace/corpus-baseline.tsv`: every regular file

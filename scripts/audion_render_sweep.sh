@@ -21,7 +21,7 @@ set -u -o pipefail
 source "$(dirname "$0")/lib/swiftpm.sh"
 source "$(dirname "$0")/lib/audion_corpus.sh"
 
-readonly INVARIANT_PATTERN='^(HARNESS |FACE |LOAD |FINDING |ELEMENTS |RENDER-DUMP |PNG )'
+readonly INVARIANT_PATTERN='^(HARNESS |FACE |LOAD |FINDING |ELEMENTS |PALETTE |RENDER-DUMP |PNG )'
 
 usage() {
     echo "usage: audion_render_sweep.sh capture <outdir> [--allow-dirty] [--corpus <dir>]" >&2
