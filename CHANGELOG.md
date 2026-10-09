@@ -207,6 +207,9 @@
   **Add Directory** and **Load Playlist** offered video files and then dropped them as an
   "unsupported format". A film added this way now joins the playlist and plays in the video
   window, as a dropped one already did.
+- **A server or radio stream no longer plays over the previous song after Sweet Fades** — once a
+  local song had crossfaded into the next, starting a Plex, Jellyfin, Emby, Subsonic or radio
+  stream left that local song playing underneath it. It now stops.
 
 ## 0.31.4
 

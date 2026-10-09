@@ -5168,7 +5168,12 @@ class AudioEngine {
         // local graph recovery. The local node calls below are safe on a graph awaiting
         // replacement: they only stop a node and remove a tap.
         
-        // Stop local playback and REMOVE spectrum tap (streaming player has its own)
+        // Stop local playback and REMOVE spectrum tap (streaming player has its own).
+        // After a Sweet Fades crossfade the local track plays on crossfadePlayerNode,
+        // so stopping playerNode alone would leave it playing under the stream.
+        if !isStreamingPlayback {
+            resetLocalCrossfadeStateForDirectPlayback()
+        }
         playerNode.stop()
         mixerNode.removeTap(onBus: 0)  // Critical: remove local spectrum tap
         audioFile = nil
