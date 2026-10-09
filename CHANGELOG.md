@@ -232,6 +232,9 @@
   or a Winamp Modern video tab, pressing F on the film and then Esc left the keyboard with the
   film, so the skin's own shortcuts did nothing until you clicked it. The skin now gets the
   keyboard back.
+- **Skipping a paused film adds up** — pressing ← or → twice while a film was paused moved it
+  only 10 seconds, since the second press started from where the film was before the first.
+  Each press now moves another 10 seconds.
 
 ## 0.31.4
 

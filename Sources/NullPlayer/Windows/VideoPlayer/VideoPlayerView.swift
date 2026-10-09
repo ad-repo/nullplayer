@@ -127,6 +127,8 @@ class VideoPlayerView: NSView {
     /// Current playback time and duration
     private(set) var currentTime: TimeInterval = 0
     private(set) var totalDuration: TimeInterval = 0
+    /// The last seek requested, until the next time update; `skip(by:)` steps from it.
+    private var pendingSeekTarget: TimeInterval?
     
     /// Public accessors for playback time
     var currentPlaybackTime: TimeInterval { currentTime }
@@ -840,6 +842,7 @@ class VideoPlayerView: NSView {
         // Reset time display
         currentTime = 0
         totalDuration = 0
+        pendingSeekTarget = nil
         controlBarView.updateTime(current: 0, total: 0)
         controlBarView.updatePlayState(isPlaying: false)
         
@@ -986,30 +989,27 @@ class VideoPlayerView: NSView {
     /// Seek to normalized position (0-1)
     func seekToPosition(_ position: Double) {
         guard let player = mediaPlayer else { return }
+        pendingSeekTarget = totalDuration > 0 ? position * totalDuration : nil
         player.position = Float(position)
     }
 
-    /// Seek to time
+    /// Seek to time, clamped to the film
     func seek(to time: TimeInterval) {
         guard let player = mediaPlayer else { return }
-        player.time = VLCTime(int: Int32(max(0, time) * 1000))
+        let target = totalDuration > 0 ? min(max(0, time), totalDuration) : max(0, time)
+        pendingSeekTarget = target
+        player.time = VLCTime(int: Int32(target * 1000))
     }
 
-    /// Skip forward by seconds
-    func skipForward(_ seconds: TimeInterval = 10) {
+    /// Steps from the last requested target until the next time update: `player.time` holds the
+    /// old time until a seek lands, which while paused is not before the next press (M34).
+    func skip(by seconds: TimeInterval) {
         guard let player = mediaPlayer else { return }
-        let current = Double(player.time.intValue) / 1000.0
-        let newTime = totalDuration > 0 ? min(current + seconds, totalDuration) : current + seconds
-        player.time = VLCTime(int: Int32(newTime * 1000))
+        seek(to: (pendingSeekTarget ?? Double(player.time.intValue) / 1000.0) + seconds)
     }
 
-    /// Skip backward by seconds
-    func skipBackward(_ seconds: TimeInterval = 10) {
-        guard let player = mediaPlayer else { return }
-        let current = Double(player.time.intValue) / 1000.0
-        let newTime = max(0, current - seconds)
-        player.time = VLCTime(int: Int32(newTime * 1000))
-    }
+    func skipForward(_ seconds: TimeInterval = 10) { skip(by: seconds) }
+    func skipBackward(_ seconds: TimeInterval = 10) { skip(by: -seconds) }
     
     // MARK: - Track Selection
     
@@ -1378,6 +1378,7 @@ extension VideoPlayerView: VLCMediaPlayerDelegate {
                 total = current / Double(player.position)
             }
 
+            self.pendingSeekTarget = nil
             self.currentTime = current
             self.totalDuration = total
             self.controlBarView.updateTime(current: current, total: total)
