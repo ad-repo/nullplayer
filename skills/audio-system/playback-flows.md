@@ -265,7 +265,7 @@ The `PlexVideoPlaybackReporter` singleton manages Plex reporting for **video con
 - Reports `type: "movie"` or `type: "episode"` to distinguish video from audio
 
 **Video Integration:**
-- `VideoPlayerWindowController.play(track:)` - Starts tracking for every Plex film (`LoadedVideo.reportStart`); a row
+- `VideoPlayerWindowController.play(track:)` - Starts tracking for every Plex film (`startVideo` → `LoadedVideo.reportStart`); a row
   double-click queues the film like any library verb (`video-playback` § *Entry points*)
 - Non-Plex videos (local files) are not reported
 

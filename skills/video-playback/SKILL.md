@@ -175,16 +175,18 @@ nothing. Its `playHistorySource` is the play event's source; `performCast` casts
 track. Every
 `play(…)` starts with `endPreviousVideo()` (drop a stale cast, then `reportVideoEnded`) and loads
 through `startVideo(…)`, which sets `loadedVideo` in one assignment, so a new item cannot inherit
-anything from the previous one. Every way a film ends goes through `reportVideoEnded(at:finished:)`
+anything from the previous one, and ends by reporting the start (`LoadedVideo.reportStart()`, a
+no-op for local playback). Every way a film ends goes through `reportVideoEnded(at:finished:)`
 (report the stop, record the play); the paths that also drop the film (stop, window close, cast
 handoff or loss) go through `unloadVideo(reportingStopAt:)`. A new source is a new
-`LoadedVideo.Source` case; the compiler then names every switch it must join. A server
-film carries only its id on the `Track`, so `play(track:)` builds it with
-`LoadedVideo(serverTrack:)` (`.plexItem` / `.jellyfinItem` / `.embyItem` from `plexRatingKey` /
-`jellyfinId` / `embyId`; nil for any other track, which plays through `play(url:title:)`) and
-starts its server's reporter with `reportStart()`, which calls that reporter's
-`videoTrackDidStart` and takes episode-or-movie from `playHistoryContentType`. Only a Plex film
-passes `streamingHeaders`. **About Playing**
+`LoadedVideo.Source` case; the compiler then names every switch it must join. A server film is
+`.serverItem(Server, id:)`, and a new server is a new `LoadedVideo.Server` case, which owns its
+reporter. Every reporter event, start included, is on `VideoPlaybackReporting`. A server film
+carries only its id on the `Track`, so `play(track:)` builds it with `LoadedVideo(serverTrack:)`
+(the server from `plexRatingKey` / `jellyfinId` / `embyId`; nil for any other track, which plays
+through `play(url:title:)`). `reportStart()` calls the server's `videoTrackDidStart`, taking
+episode-or-movie from `playHistoryContentType`. Only a Plex film streams with
+`streamingHeaders`, which `startVideo` adds. **About Playing**
 on a Plex film fetches the movie or episode by its rating key for the info sheet. The three
 reporters share their rules: scrobble at 90% (audio uses 50%), only after 60 s of play, with a
 timeline update every 10 s. Each server's API details are in its own integration skill.

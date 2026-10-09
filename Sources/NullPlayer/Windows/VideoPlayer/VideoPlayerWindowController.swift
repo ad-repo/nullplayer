@@ -531,20 +531,23 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         reportVideoEnded(at: videoPlayerView.currentPlaybackTime)
     }
 
-    /// Load `video` from `url` and start it in the window. Only a Plex stream passes `plexHeaders`;
-    /// the view reads them only for a Plex URL.
-    private func startVideo(_ video: LoadedVideo, url: URL, plexHeaders: [String: String]? = nil) {
+    /// Load `video` from `url`, start it in the window and tell its server it started. Only a Plex
+    /// film streams with Plex's headers.
+    private func startVideo(_ video: LoadedVideo, url: URL) {
         loadedVideo = video
         window?.title = video.title
         revealVideoOutput()
+        let plexHeaders: [String: String]? =
+            if case .serverItem(.plex, _) = video.source { PlexManager.shared.streamingHeaders } else { nil }
         videoPlayerView.play(url: url, title: video.title, isPlexURL: plexHeaders != nil, plexHeaders: plexHeaders)
         isPlaying = true
         beginPlaybackAnalyticsSession()
         WindowManager.shared.videoPlaybackDidStart()
+        video.reportStart()
     }
 
-    /// Play a video from URL with optional title
-    /// If called from WindowManager.playVideoTrack, the onQueuedVideoEnded callback will be set
+    /// Play a film with no server behind it: a local file or a stream. A queued film with no
+    /// server id reaches this through `play(track:)`.
     func play(url: URL, title: String) {
         endPreviousVideo()
         startVideo(LoadedVideo(source: url.isFileURL ? .localFile(url) : .stream, title: title,
@@ -560,9 +563,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         endPreviousVideo()
-        let plexHeaders: [String: String]? = if case .plexItem = video.source { PlexManager.shared.streamingHeaders } else { nil }
-        startVideo(video, url: track.url, plexHeaders: plexHeaders)
-        video.reportStart()
+        startVideo(video, url: track.url)
     }
 
     /// Stop playback
