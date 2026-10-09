@@ -6,8 +6,9 @@ was closed on.
 
 ## Issuing a number
 
-**The next free number is A10.** A1–A9 were issued 2026-10-08, seeded from the phased plan; A1–A5
-closed the same day, A6–A8 on 2026-10-09; all are archived below. Check this file before reusing any number — the live
+**The next free number is A11.** A1–A9 were issued 2026-10-08, seeded from the phased plan; A1–A5
+closed the same day, A6–A8 on 2026-10-09; all closed rows are archived below. A10 was issued
+2026-10-09. Check this file before reusing any number — the live
 backlog is a list of *open* work and says nothing about which numbers are spent.
 
 ## Closed

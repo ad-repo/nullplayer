@@ -24,3 +24,4 @@ to the capture before it.
 | ID | Item | Reach | Notes |
 |---|---|---|---|
 | A9 | **Phase 7 — public exposure**: remove the DEBUG gate; `docs/audion-face/user-guide.md`; the FaceKit credit in `LICENSE`; a `CHANGELOG.md` entry under the current version; finalise the skill and `skin-screenshots` support | release | Only when the user asks. Never bump the version. |
+| A10 | **Phase 7 — the mode button (`music*.png`) toggles the Library Browser** instead of cycling shuffle/repeat: a four-state toggle no face can show sent the user to the Playback menu to learn what a press did (user decision, 2026-10-09). `AudionFaceAudioEngineHost.perform` `.mode` → `WindowManager.shared.toggleMediaLibrary()`; VoiceOver/tooltip "Library"; `AudionFacePhase4Tests` checks shuffle/repeat are untouched; decision record § *Button mapping*, `windows.md` § *Buttons* | UI | Live check by the user: the button opens and closes the Library Browser on any face. Plan § *Phase 7* has the detail. |
