@@ -1145,7 +1145,10 @@ class PlexBrowserView: NSView {
     private var serverScrollTimer: Timer?
     private var lastServerName: String = ""
     private var lastLibraryName: String = ""
-    /// Library field text and field widths, written by drawServerBar each draw.
+    /// Server and library text and field widths, written by drawServerBar each draw for the scroll
+    /// tick; zero while the bar shows no server.
+    private var serverNameTextWidth: CGFloat = 0
+    private var serverNameMaxWidth: CGFloat = 0
     private var libraryNameTextWidth: CGFloat = 0
     private var libraryNameMaxWidth: CGFloat = 0
 
@@ -1363,15 +1366,11 @@ class PlexBrowserView: NSView {
         return tabsWidth + sortWidth + insets
     }
 
-    /// A server-bar name with the item count appended: "FLAC_LIB (988 items)".
+    /// A source-bar name with the item count appended: "FLAC_LIB (988 items)".
     private func withItemCount(_ name: String) -> String {
-        "\(name) (\(serverBarCountText()))"
-    }
-
-    private func serverBarCountText() -> String {
+        let count: Int
         switch currentSource {
         case .local:
-            let count: Int
             if browseMode == .artists {
                 count = localArtistTotal > 0 ? localArtistTotal : displayItems.count
             } else if browseMode == .albums {
@@ -1379,32 +1378,71 @@ class PlexBrowserView: NSView {
             } else {
                 count = displayItems.count
             }
-            return "\(count) items"
         case .plex:
-            let manager = PlexManager.shared
-            let count: Int
-            if manager.currentLibrary?.type == "artist" {
-                count = cachedArtists.count
-            } else if manager.currentLibrary?.type == "album" {
-                count = cachedAlbums.count
-            } else if manager.currentLibrary?.type == "track" {
-                count = cachedTracks.count
-            } else if manager.currentLibrary?.type == "movie" {
-                count = cachedMovies.count
-            } else if manager.currentLibrary?.type == "show" {
-                count = cachedShows.count
-            } else {
-                count = displayItems.count
+            switch PlexManager.shared.currentLibrary?.type {
+            case "artist": count = cachedArtists.count
+            case "album":  count = cachedAlbums.count
+            case "track":  count = cachedTracks.count
+            case "movie":  count = cachedMovies.count
+            case "show":   count = cachedShows.count
+            default:       count = displayItems.count
             }
-            return "\(count) items"
         case .radio:
-            return "\(displayItems.count) stations"
+            return "\(name) (\(displayItems.count) stations)"
+        case .subsonic, .jellyfin, .emby, .youtube:
+            count = displayItems.count
+        }
+        return "\(name) (\(count) items)"
+    }
+
+    /// What the source bar shows after "Source:".
+    private enum ServerBarContent {
+        /// Local Files, Internet Radio or YouTube: the name with its count, then +ADD.
+        case builtIn(name: String)
+        /// A configured server: its name in a field `maxChars` wide, then its library.
+        case server(name: String, maxChars: Int, library: String)
+        /// A server source with nothing configured: a centred prompt, and no right-side buttons.
+        case unconfigured(prompt: String)
+    }
+
+    private var serverBarContent: ServerBarContent {
+        switch currentSource {
+        case .local:
+            return .builtIn(name: "Local Files")
+        case .radio:
+            return .builtIn(name: "Internet Radio")
         case .youtube:
-            return "\(displayItems.count) items"
-        case .subsonic, .jellyfin, .emby:
-            return "\(displayItems.count) items"
+            return .builtIn(name: "YouTube")
+        case .plex(let serverId):
+            let manager = PlexManager.shared
+            let server = manager.servers.first(where: { $0.id == serverId })
+            guard server != nil || manager.isLinked else {
+                return .unconfigured(prompt: "Click to link your Plex account")
+            }
+            return .server(name: server?.name ?? "Select Server", maxChars: 12,
+                           library: manager.currentLibrary?.title ?? "Select")
+        case .subsonic(let serverId):
+            let manager = SubsonicManager.shared
+            guard let server = manager.servers.first(where: { $0.id == serverId }) else {
+                return .unconfigured(prompt: "Click to add a Subsonic server")
+            }
+            return .server(name: server.name, maxChars: 20, library: manager.currentMusicFolder?.name ?? "All")
+        case .jellyfin(let serverId):
+            guard let server = JellyfinManager.shared.servers.first(where: { $0.id == serverId }) else {
+                return .unconfigured(prompt: "Click to add a Jellyfin server")
+            }
+            return .server(name: server.name, maxChars: 20, library: jellyfinCurrentLibraryName)
+        case .emby(let serverId):
+            guard let server = EmbyManager.shared.servers.first(where: { $0.id == serverId }) else {
+                return .unconfigured(prompt: "Click to add an Emby server")
+            }
+            return .server(name: server.name, maxChars: 20, library: embyCurrentLibraryName)
         }
     }
+
+    /// The library field's narrowest width, in characters; it grows into the free space before the
+    /// right-side buttons.
+    private static let minLibraryFieldChars: CGFloat = 10
 
     private func serverBarNaturalWidth(textScale: CGFloat) -> CGFloat {
         let charWidth = SkinElements.TextFont.charWidth * textScale
@@ -1414,73 +1452,24 @@ class PlexBrowserView: NSView {
             + cornerCloseInset
         let prefixWidth = textWidth("Source: ")
         let minimumGap: CGFloat = 12
-        let remoteLeftWidth: (_ maxServerCharacters: Int, _ serverName: String) -> CGFloat = {
-            maxServerCharacters, serverName in
-            let maxServerWidth = CGFloat(maxServerCharacters) * charWidth
-            return leadingInset + prefixWidth + maxServerWidth + 16 +
-                textWidth("Lib:") + 4 + 10 * charWidth
+
+        var rightWidth = trailingInset + textWidth("F5")
+        if artLens.hasItems {
+            rightWidth += 12 + viewModeButtonsWidth(textScale: textScale, chromeScale: 1)
         }
 
-        var centeredOverlayWidth: CGFloat = 0
-        var isConfigured = true
         let leftWidth: CGFloat
-        switch currentSource {
-        case .local:
-            leftWidth = leadingInset + prefixWidth + textWidth(withItemCount("Local Files")) + 28 + textWidth("+ADD")
-        case .radio:
-            leftWidth = leadingInset + prefixWidth + textWidth(withItemCount("Internet Radio")) + 28 + textWidth("+ADD")
-        case .youtube:
-            leftWidth = leadingInset + prefixWidth + textWidth(withItemCount("YouTube")) + 28 + textWidth("+ADD")
-        case .plex(let serverId):
-            let configuredServer = PlexManager.shared.servers.first(where: { $0.id == serverId })
-            isConfigured = configuredServer != nil || PlexManager.shared.isLinked
-            if isConfigured {
-                leftWidth = remoteLeftWidth(12, configuredServer?.name ?? "Select Server")
-            } else {
-                leftWidth = leadingInset + prefixWidth
-                centeredOverlayWidth = textWidth("Click to link your Plex account")
-            }
-        case .subsonic(let serverId):
-            let configuredServer = SubsonicManager.shared.servers.first(where: { $0.id == serverId })
-            isConfigured = configuredServer != nil
-            if isConfigured {
-                leftWidth = remoteLeftWidth(20, configuredServer?.name ?? "Select Server")
-            } else {
-                leftWidth = leadingInset + prefixWidth
-                centeredOverlayWidth = textWidth("Click to add a Subsonic server")
-            }
-        case .jellyfin(let serverId):
-            let configuredServer = JellyfinManager.shared.servers.first(where: { $0.id == serverId })
-            isConfigured = configuredServer != nil
-            if isConfigured {
-                leftWidth = remoteLeftWidth(20, configuredServer?.name ?? "Select Server")
-            } else {
-                leftWidth = leadingInset + prefixWidth
-                centeredOverlayWidth = textWidth("Click to add a Jellyfin server")
-            }
-        case .emby(let serverId):
-            let configuredServer = EmbyManager.shared.servers.first(where: { $0.id == serverId })
-            isConfigured = configuredServer != nil
-            if isConfigured {
-                leftWidth = remoteLeftWidth(20, configuredServer?.name ?? "Select Server")
-            } else {
-                leftWidth = leadingInset + prefixWidth
-                centeredOverlayWidth = textWidth("Click to add an Emby server")
-            }
+        switch serverBarContent {
+        case .builtIn(let name):
+            leftWidth = leadingInset + prefixWidth + textWidth(withItemCount(name)) + 28 + textWidth("+ADD")
+        case .server(_, let maxChars, _):
+            leftWidth = leadingInset + prefixWidth + CGFloat(maxChars) * charWidth + 16 +
+                textWidth("Lib:") + 4 + Self.minLibraryFieldChars * charWidth
+        case .unconfigured(let prompt):
+            leftWidth = leadingInset + prefixWidth
+            return max(leftWidth + minimumGap, textWidth(prompt) + 2 * leftWidth + 2 * minimumGap)
         }
-
-        var rightWidth: CGFloat = 0
-        if isConfigured {
-            rightWidth = trailingInset + textWidth("F5")
-            if artLens.hasItems {
-                rightWidth += 12 + viewModeButtonsWidth(textScale: textScale, chromeScale: 1)
-            }
-        }
-
-        let clusteredWidth = leftWidth + minimumGap + rightWidth
-        guard centeredOverlayWidth > 0 else { return clusteredWidth }
-        return max(clusteredWidth,
-                   centeredOverlayWidth + 2 * max(leftWidth, rightWidth) + 2 * minimumGap)
+        return leftWidth + minimumGap + rightWidth
     }
 
     private var topChromeScale: CGFloat {
@@ -2637,17 +2626,39 @@ class PlexBrowserView: NSView {
         sourceButtonRect = .zero
         libraryButtonRect = .zero
         addButtonRect = .zero
-        
-        switch currentSource {
-        case .local:
-            // LOCAL FILES mode
-            let sourceText = withItemCount("Local Files")
+        serverNameTextWidth = 0
+        serverNameMaxWidth = 0
+        libraryNameTextWidth = 0
+        libraryNameMaxWidth = 0
+
+        let content = serverBarContent
+        if case .unconfigured(let prompt) = content {
+            let promptWidth = CGFloat(prompt.count) * scaledCharWidth
+            drawScaledSkinText(prompt, at: NSPoint(x: barRect.midX - promptWidth / 2, y: textY), scale: textScale, renderer: renderer, in: context)
+            sourceButtonRect = barRect
+            return
+        }
+
+        // Right side: F5 refresh label, with the view-mode buttons before it
+        let refreshText = "F5"
+        let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
+        drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
+        refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
+                                   width: barRect.maxX - refreshX, height: barRect.height)
+        let accessoryX = drawViewModeButtons(
+            before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
+            context: context
+        )
+
+        switch content {
+        case .builtIn(let name):
+            let sourceText = withItemCount(name)
             drawScaledWhiteSkinText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
             let sourceTextWidth = CGFloat(sourceText.count) * scaledCharWidth
             sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
                                       width: sourceNameStartX + sourceTextWidth - barRect.minX,
                                       height: barRect.height)
-            
+
             // +ADD button after source name with balanced spacing (green text)
             let addText = "+ADD"
             let addX = sourceNameStartX + sourceTextWidth + 28 * chromeScale
@@ -2655,20 +2666,9 @@ class PlexBrowserView: NSView {
             addButtonRect = NSRect(x: addX, y: barRect.minY,
                                    width: CGFloat(addText.count) * scaledCharWidth + 8 * chromeScale,
                                    height: barRect.height)
-            
-            // Right side: F5 refresh label
-            let refreshText = "F5"
-            let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
-            drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
-            refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
-                                       width: barRect.maxX - refreshX, height: barRect.height)
-            _ = drawViewModeButtons(
-                before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
-                context: context
-            )
 
             // Scan animation: small spinner at center of bar while library is scanning
-            if isLibraryScanning {
+            if case .local = currentSource, isLibraryScanning {
                 let cx = barRect.midX
                 let cy = barRect.midY
                 let innerR: CGFloat = 3
@@ -2689,362 +2689,56 @@ class PlexBrowserView: NSView {
                 drawScaledSkinText(scanText, at: NSPoint(x: scanX, y: textY), scale: textScale, renderer: renderer, in: context)
             }
 
-        case .plex(let serverId):
-            let manager = PlexManager.shared
-            
-            // Check if we have a server configured (even if offline)
-            let configuredServer = manager.servers.first(where: { $0.id == serverId })
-            let hasConfiguredServer = configuredServer != nil || manager.isLinked
-            
-            if hasConfiguredServer {
-                // Max widths for server and library names (in characters)
-                let maxServerChars = 12
-                let maxServerWidth = CGFloat(maxServerChars) * scaledCharWidth
-
-                // Server name right after "Source:" - with clipping to prevent artifacts
-                let serverName = configuredServer?.name ?? "Select Server"
-                let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
-                
-                context.saveGState()
-                let serverClipRect = NSRect(x: sourceNameStartX, y: textY, width: maxServerWidth, height: scaledCharHeight)
-                context.clip(to: serverClipRect)
-                if serverTextWidth <= maxServerWidth {
-                    drawScaledWhiteSkinText(serverName, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
-                } else {
-                    drawScrollingText(serverName, startX: sourceNameStartX, textY: textY,
-                                     availableWidth: maxServerWidth, scale: textScale,
-                                     scrollOffset: serverNameScrollOffset,
-                                     renderer: renderer, in: context)
-                }
-                context.restoreGState()
-                
-                // Right side: F5 refresh label
-                let refreshText = "F5"
-                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
-                drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
-                refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
-                                           width: barRect.maxX - refreshX, height: barRect.height)
-                let accessoryX = drawViewModeButtons(
-                    before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
-                    context: context
-                )
-
-                // Library label and name after server name
-                let libLabel = "Lib:"
-                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * chromeScale
-                drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
-                
-                let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4 * chromeScale
-                let libraryText = withItemCount(manager.currentLibrary?.title ?? "Select")
-                let libraryTextWidth = CGFloat(libraryText.count) * scaledCharWidth
-                // The field grows into the free space before the right cluster; it scrolls when even that is short.
-                let maxLibraryWidth = max(10 * scaledCharWidth, accessoryX - 24 * chromeScale - libraryX)
-                libraryNameMaxWidth = maxLibraryWidth
-                libraryNameTextWidth = libraryTextWidth
-                if libraryTextWidth > maxLibraryWidth { startServerNameScroll() }
-                sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
-                                          width: libraryLabelX - barRect.minX,
-                                          height: barRect.height)
-                libraryButtonRect = NSRect(x: libraryLabelX, y: barRect.minY,
-                                           width: libraryX + maxLibraryWidth - libraryLabelX,
-                                           height: barRect.height)
-                
-                // Library name with clipping to prevent artifacts
-                context.saveGState()
-                let libraryClipRect = NSRect(x: libraryX, y: textY, width: maxLibraryWidth, height: scaledCharHeight)
-                context.clip(to: libraryClipRect)
-                if libraryTextWidth <= maxLibraryWidth {
-                    drawScaledWhiteSkinText(libraryText, at: NSPoint(x: libraryX, y: textY), scale: textScale, renderer: renderer, in: context)
-                } else {
-                    drawScrollingText(libraryText, startX: libraryX, textY: textY,
-                                     availableWidth: maxLibraryWidth, scale: textScale,
-                                     scrollOffset: libraryNameScrollOffset,
-                                     renderer: renderer, in: context)
-                }
-                context.restoreGState()
-            } else {
-                // Plex not linked and no servers - show link message
-                let linkText = "Click to link your Plex account"
-                let linkWidth = CGFloat(linkText.count) * scaledCharWidth
-                let linkX = barRect.midX - linkWidth / 2
-                drawScaledSkinText(linkText, at: NSPoint(x: linkX, y: textY), scale: textScale, renderer: renderer, in: context)
-                sourceButtonRect = barRect
+        case .server(let serverName, let maxChars, let library):
+            // A changed name scrolls from its start.
+            if serverName != lastServerName {
+                lastServerName = serverName
+                serverNameScrollOffset = 0
             }
-            
-        case .subsonic(let serverId):
-            let manager = SubsonicManager.shared
-            
-            // Check if we have a server configured (even if offline)
-            let configuredServer = manager.servers.first(where: { $0.id == serverId })
-            
-            if configuredServer != nil {
-                // Max width for server name (in characters)
-                let maxServerChars = 20
-                let maxServerWidth = CGFloat(maxServerChars) * scaledCharWidth
-
-                // Server name right after "Source:"
-                let serverName = configuredServer?.name ?? "Select Server"
-                let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
-                
-                if serverTextWidth <= maxServerWidth {
-                    drawScaledWhiteSkinText(serverName, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
-                } else {
-                    drawScrollingText(serverName, startX: sourceNameStartX, textY: textY,
-                                     availableWidth: maxServerWidth, scale: textScale,
-                                     scrollOffset: serverNameScrollOffset,
-                                     renderer: renderer, in: context)
-                }
-
-                // Right side: F5 refresh label
-                let refreshText = "F5"
-                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
-                drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
-                refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
-                                           width: barRect.maxX - refreshX, height: barRect.height)
-                let accessoryX = drawViewModeButtons(
-                    before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
-                    context: context
-                )
-
-                // Library label and selected folder after server name
-                let libLabel = "Lib:"
-                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * chromeScale
-                drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
-
-                let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4 * chromeScale
-                let folderText = withItemCount(manager.currentMusicFolder?.name ?? "All")
-                let folderTextWidth = CGFloat(folderText.count) * scaledCharWidth
-                // The field grows into the free space before the right cluster; it scrolls when even that is short.
-                let maxLibraryWidth = max(10 * scaledCharWidth, accessoryX - 24 * chromeScale - libraryX)
-                libraryNameMaxWidth = maxLibraryWidth
-                libraryNameTextWidth = folderTextWidth
-                if folderTextWidth > maxLibraryWidth { startServerNameScroll() }
-                sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
-                                          width: libraryLabelX - barRect.minX,
-                                          height: barRect.height)
-                libraryButtonRect = NSRect(x: libraryLabelX, y: barRect.minY,
-                                           width: libraryX + maxLibraryWidth - libraryLabelX,
-                                           height: barRect.height)
-
-                context.saveGState()
-                let libraryClipRect = NSRect(x: libraryX, y: textY, width: maxLibraryWidth, height: scaledCharHeight)
-                context.clip(to: libraryClipRect)
-                if folderTextWidth <= maxLibraryWidth {
-                    drawScaledWhiteSkinText(folderText, at: NSPoint(x: libraryX, y: textY), scale: textScale, renderer: renderer, in: context)
-                } else {
-                    drawScrollingText(folderText, startX: libraryX, textY: textY,
-                                      availableWidth: maxLibraryWidth, scale: textScale,
-                                      scrollOffset: libraryNameScrollOffset,
-                                      renderer: renderer, in: context)
-                }
-                context.restoreGState()
-            } else {
-                // No Subsonic server configured - show add server message
-                let linkText = "Click to add a Subsonic server"
-                let linkWidth = CGFloat(linkText.count) * scaledCharWidth
-                let linkX = barRect.midX - linkWidth / 2
-                drawScaledSkinText(linkText, at: NSPoint(x: linkX, y: textY), scale: textScale, renderer: renderer, in: context)
-                sourceButtonRect = barRect
-            }
-        
-        case .jellyfin(let serverId):
-            let jfManager = JellyfinManager.shared
-            let configuredServer = jfManager.servers.first(where: { $0.id == serverId })
-            
-            if configuredServer != nil {
-                let maxServerChars = 20
-                let maxServerWidth = CGFloat(maxServerChars) * scaledCharWidth
-                let serverName = configuredServer?.name ?? "Select Server"
-                let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
-                
-                if serverTextWidth <= maxServerWidth {
-                    drawScaledWhiteSkinText(serverName, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
-                } else {
-                    drawScrollingText(serverName, startX: sourceNameStartX, textY: textY,
-                                     availableWidth: maxServerWidth, scale: textScale,
-                                     scrollOffset: serverNameScrollOffset,
-                                     renderer: renderer, in: context)
-                }
-
-                let refreshText = "F5"
-                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
-                drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
-                refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
-                                           width: barRect.maxX - refreshX, height: barRect.height)
-                let accessoryX = drawViewModeButtons(
-                    before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
-                    context: context
-                )
-
-                // Library label and selected library after server name
-                let libLabel = "Lib:"
-                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * chromeScale
-                drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
-
-                let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4 * chromeScale
-                let libraryText = withItemCount(jellyfinCurrentLibraryName)
-                let libraryTextWidth = CGFloat(libraryText.count) * scaledCharWidth
-                // The field grows into the free space before the right cluster; it scrolls when even that is short.
-                let maxLibraryWidth = max(10 * scaledCharWidth, accessoryX - 24 * chromeScale - libraryX)
-                libraryNameMaxWidth = maxLibraryWidth
-                libraryNameTextWidth = libraryTextWidth
-                if libraryTextWidth > maxLibraryWidth { startServerNameScroll() }
-                sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
-                                          width: libraryLabelX - barRect.minX,
-                                          height: barRect.height)
-                libraryButtonRect = NSRect(x: libraryLabelX, y: barRect.minY,
-                                           width: libraryX + maxLibraryWidth - libraryLabelX,
-                                           height: barRect.height)
-
-                context.saveGState()
-                let libraryClipRect = NSRect(x: libraryX, y: textY, width: maxLibraryWidth, height: scaledCharHeight)
-                context.clip(to: libraryClipRect)
-                if libraryTextWidth <= maxLibraryWidth {
-                    drawScaledWhiteSkinText(libraryText, at: NSPoint(x: libraryX, y: textY), scale: textScale, renderer: renderer, in: context)
-                } else {
-                    drawScrollingText(libraryText, startX: libraryX, textY: textY,
-                                      availableWidth: maxLibraryWidth, scale: textScale,
-                                      scrollOffset: libraryNameScrollOffset,
-                                      renderer: renderer, in: context)
-                }
-                context.restoreGState()
-            } else {
-                let linkText = "Click to add a Jellyfin server"
-                let linkWidth = CGFloat(linkText.count) * scaledCharWidth
-                let linkX = barRect.midX - linkWidth / 2
-                drawScaledSkinText(linkText, at: NSPoint(x: linkX, y: textY), scale: textScale, renderer: renderer, in: context)
-                sourceButtonRect = barRect
+            if library != lastLibraryName {
+                lastLibraryName = library
+                libraryNameScrollOffset = 0
             }
 
-        case .emby(let serverId):
-            // EMBY mode
-            let embyManager = EmbyManager.shared
-            let configuredServer = embyManager.servers.first(where: { $0.id == serverId })
+            // Server name right after "Source:", in a fixed-width field
+            serverNameMaxWidth = CGFloat(maxChars) * scaledCharWidth
+            serverNameTextWidth = CGFloat(serverName.count) * scaledCharWidth
+            drawScrollingText(serverName, startX: sourceNameStartX, textY: textY,
+                              availableWidth: serverNameMaxWidth, scale: textScale,
+                              scrollOffset: serverNameScrollOffset,
+                              renderer: renderer, in: context)
 
-            if configuredServer != nil {
-                let maxServerChars = 20
-                let maxServerWidth = CGFloat(maxServerChars) * scaledCharWidth
-                let serverName = configuredServer?.name ?? "Select Server"
-                let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
+            // Library label and name after the server field
+            let libLabel = "Lib:"
+            let libraryLabelX = sourceNameStartX + serverNameMaxWidth + 16 * chromeScale
+            drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
 
-                if serverTextWidth <= maxServerWidth {
-                    drawScaledWhiteSkinText(serverName, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
-                } else {
-                    drawScrollingText(serverName, startX: sourceNameStartX, textY: textY,
-                                     availableWidth: maxServerWidth, scale: textScale,
-                                     scrollOffset: serverNameScrollOffset,
-                                     renderer: renderer, in: context)
-                }
+            let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4 * chromeScale
+            let libraryText = withItemCount(library)
+            // The field grows into the free space before the right cluster; it scrolls when even that is short.
+            libraryNameMaxWidth = max(Self.minLibraryFieldChars * scaledCharWidth, accessoryX - 24 * chromeScale - libraryX)
+            libraryNameTextWidth = CGFloat(libraryText.count) * scaledCharWidth
+            drawScrollingText(libraryText, startX: libraryX, textY: textY,
+                              availableWidth: libraryNameMaxWidth, scale: textScale,
+                              scrollOffset: libraryNameScrollOffset,
+                              renderer: renderer, in: context)
 
-                let refreshText = "F5"
-                let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
-                drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
-                refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
-                                           width: barRect.maxX - refreshX, height: barRect.height)
-                let accessoryX = drawViewModeButtons(
-                    before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
-                    context: context
-                )
-
-                // Library label and selected library after server name
-                let libLabel = "Lib:"
-                let libraryLabelX = sourceNameStartX + maxServerWidth + 16 * chromeScale
-                drawScaledSkinText(libLabel, at: NSPoint(x: libraryLabelX, y: textY), scale: textScale, renderer: renderer, in: context)
-
-                let libraryX = libraryLabelX + CGFloat(libLabel.count) * scaledCharWidth + 4 * chromeScale
-                let libraryText = withItemCount(embyCurrentLibraryName)
-                let libraryTextWidth = CGFloat(libraryText.count) * scaledCharWidth
-                // The field grows into the free space before the right cluster; it scrolls when even that is short.
-                let maxLibraryWidth = max(10 * scaledCharWidth, accessoryX - 24 * chromeScale - libraryX)
-                libraryNameMaxWidth = maxLibraryWidth
-                libraryNameTextWidth = libraryTextWidth
-                if libraryTextWidth > maxLibraryWidth { startServerNameScroll() }
-                sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
-                                          width: libraryLabelX - barRect.minX,
-                                          height: barRect.height)
-                libraryButtonRect = NSRect(x: libraryLabelX, y: barRect.minY,
-                                           width: libraryX + maxLibraryWidth - libraryLabelX,
-                                           height: barRect.height)
-
-                context.saveGState()
-                let libraryClipRect = NSRect(x: libraryX, y: textY, width: maxLibraryWidth, height: scaledCharHeight)
-                context.clip(to: libraryClipRect)
-                if libraryTextWidth <= maxLibraryWidth {
-                    drawScaledWhiteSkinText(libraryText, at: NSPoint(x: libraryX, y: textY), scale: textScale, renderer: renderer, in: context)
-                } else {
-                    drawScrollingText(libraryText, startX: libraryX, textY: textY,
-                                      availableWidth: maxLibraryWidth, scale: textScale,
-                                      scrollOffset: libraryNameScrollOffset,
-                                      renderer: renderer, in: context)
-                }
-                context.restoreGState()
-            } else {
-                let linkText = "Click to add an Emby server"
-                let linkWidth = CGFloat(linkText.count) * scaledCharWidth
-                let linkX = barRect.midX - linkWidth / 2
-                drawScaledSkinText(linkText, at: NSPoint(x: linkX, y: textY), scale: textScale, renderer: renderer, in: context)
-                sourceButtonRect = barRect
-            }
-
-        case .radio:
-            // INTERNET RADIO mode
-            let sourceText = withItemCount("Internet Radio")
-            drawScaledWhiteSkinText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
-            let sourceTextWidth = CGFloat(sourceText.count) * scaledCharWidth
             sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
-                                      width: sourceNameStartX + sourceTextWidth - barRect.minX,
+                                      width: libraryLabelX - barRect.minX,
                                       height: barRect.height)
-            
-            // +ADD button after source name (green text)
-            let addText = "+ADD"
-            let addX = sourceNameStartX + sourceTextWidth + 28 * chromeScale
-            drawScaledSkinText(addText, at: NSPoint(x: addX, y: textY), scale: textScale, renderer: renderer, in: context)
-            addButtonRect = NSRect(x: addX, y: barRect.minY,
-                                   width: CGFloat(addText.count) * scaledCharWidth + 8 * chromeScale,
-                                   height: barRect.height)
-            
-            // Right side: F5 refresh label
-            let refreshText = "F5"
-            let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
-            drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
-            refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
-                                       width: barRect.maxX - refreshX, height: barRect.height)
-            _ = drawViewModeButtons(
-                before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
-                context: context
-            )
+            libraryButtonRect = NSRect(x: libraryLabelX, y: barRect.minY,
+                                       width: libraryX + libraryNameMaxWidth - libraryLabelX,
+                                       height: barRect.height)
+            if serverNameTextWidth > serverNameMaxWidth || libraryNameTextWidth > libraryNameMaxWidth {
+                startServerNameScroll()
+            }
 
-        case .youtube:
-            // YOUTUBE mode (shares the radio tab UI)
-            let sourceText = withItemCount("YouTube")
-            drawScaledWhiteSkinText(sourceText, at: NSPoint(x: sourceNameStartX, y: textY), scale: textScale, renderer: renderer, in: context)
-            let sourceTextWidth = CGFloat(sourceText.count) * scaledCharWidth
-            sourceButtonRect = NSRect(x: barRect.minX, y: barRect.minY,
-                                      width: sourceNameStartX + sourceTextWidth - barRect.minX,
-                                      height: barRect.height)
-
-            // +ADD button after source name (green text)
-            let addText = "+ADD"
-            let addX = sourceNameStartX + sourceTextWidth + 28 * chromeScale
-            drawScaledSkinText(addText, at: NSPoint(x: addX, y: textY), scale: textScale, renderer: renderer, in: context)
-            addButtonRect = NSRect(x: addX, y: barRect.minY,
-                                   width: CGFloat(addText.count) * scaledCharWidth + 8 * chromeScale,
-                                   height: barRect.height)
-
-            // Right side: F5 refresh label
-            let refreshText = "F5"
-            let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
-            drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
-            refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
-                                       width: barRect.maxX - refreshX, height: barRect.height)
-            _ = drawViewModeButtons(
-                before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
-                context: context
-            )
+        case .unconfigured:
+            break  // Drawn above, without the right-side buttons.
         }
     }
 
-    /// Draw text with circular scrolling when it's too long
+    /// Draw text in a field `availableWidth` wide, circularly scrolling when it overflows.
     private func drawScrollingText(_ text: String, startX: CGFloat, textY: CGFloat,
                                    availableWidth: CGFloat, scale: CGFloat,
                                    scrollOffset: CGFloat,
@@ -3055,6 +2749,10 @@ class PlexBrowserView: NSView {
         let scaledCharHeight = charHeight * scale
         
         let textWidth = CGFloat(text.count) * scaledCharWidth
+        guard textWidth > availableWidth else {
+            drawScaledWhiteSkinText(text, at: NSPoint(x: startX, y: textY), scale: scale, renderer: renderer, in: context)
+            return
+        }
         let separator = "   "  // Separator for seamless wrap
         let separatorWidth = CGFloat(separator.count) * scaledCharWidth
         let totalCycleWidth = textWidth + separatorWidth
@@ -3916,141 +3614,33 @@ class PlexBrowserView: NSView {
     }
     
     private func updateServerNameScroll() {
-        let charWidth = SkinElements.TextFont.charWidth
-        let textScale = bitmapTextScale * topChromeScale
-        let scaledCharWidth = charWidth * textScale
-
-        let maxPlexServerWidth = CGFloat(12) * scaledCharWidth
-        let maxRemoteServerWidth = CGFloat(20) * scaledCharWidth
-
-        let serverName: String
-        let libraryName: String
-        let serverWidth: CGFloat
-
-        switch currentSource {
-        case .plex(let serverId):
-            let manager = PlexManager.shared
-            let configuredServer = manager.servers.first(where: { $0.id == serverId })
-            let hasConfiguredServer = configuredServer != nil || manager.isLinked
-            guard hasConfiguredServer else {
-                let hadOffset = serverNameScrollOffset != 0 || libraryNameScrollOffset != 0
-                stopServerNameScroll()
-                if hadOffset { needsDisplay = true }
-                return
-            }
-            serverName = configuredServer?.name ?? "Select Server"
-            libraryName = manager.currentLibrary?.title ?? "Select"
-            serverWidth = maxPlexServerWidth
-        case .subsonic(let serverId):
-            let manager = SubsonicManager.shared
-            let configuredServer = manager.servers.first(where: { $0.id == serverId })
-            guard configuredServer != nil else {
-                let hadOffset = serverNameScrollOffset != 0 || libraryNameScrollOffset != 0
-                stopServerNameScroll()
-                if hadOffset { needsDisplay = true }
-                return
-            }
-            serverName = configuredServer?.name ?? "Select Server"
-            libraryName = manager.currentMusicFolder?.name ?? "All"
-            serverWidth = maxRemoteServerWidth
-        case .jellyfin(let serverId):
-            let manager = JellyfinManager.shared
-            let configuredServer = manager.servers.first(where: { $0.id == serverId })
-            guard configuredServer != nil else {
-                let hadOffset = serverNameScrollOffset != 0 || libraryNameScrollOffset != 0
-                stopServerNameScroll()
-                if hadOffset { needsDisplay = true }
-                return
-            }
-            serverName = configuredServer?.name ?? "Select Server"
-            libraryName = jellyfinCurrentLibraryName
-            serverWidth = maxRemoteServerWidth
-        case .emby(let serverId):
-            let manager = EmbyManager.shared
-            let configuredServer = manager.servers.first(where: { $0.id == serverId })
-            guard configuredServer != nil else {
-                let hadOffset = serverNameScrollOffset != 0 || libraryNameScrollOffset != 0
-                stopServerNameScroll()
-                if hadOffset { needsDisplay = true }
-                return
-            }
-            serverName = configuredServer?.name ?? "Select Server"
-            libraryName = embyCurrentLibraryName
-            serverWidth = maxRemoteServerWidth
-        case .local, .radio, .youtube:
-            let hadOffset = serverNameScrollOffset != 0 || libraryNameScrollOffset != 0
-            stopServerNameScroll()
-            if hadOffset { needsDisplay = true }
-            return
-        }
-        
-        // Reset scroll if names changed
-        if serverName != lastServerName {
-            lastServerName = serverName
-            serverNameScrollOffset = 0
-        }
-        if libraryName != lastLibraryName {
-            lastLibraryName = libraryName
-            libraryNameScrollOffset = 0
-        }
-        
-        let serverTextWidth = CGFloat(serverName.count) * scaledCharWidth
-        
-        // Only scroll if text actually overflows - otherwise skip entirely
-        let serverNeedsScroll = serverTextWidth > serverWidth
+        let serverBarArea = NSRect(x: 0, y: bounds.height - Layout.titleBarHeight - Layout.serverBarHeight,
+                                   width: bounds.width, height: Layout.serverBarHeight)
+        // The widths are drawServerBar's: zero unless a server's fields are showing.
+        let serverNeedsScroll = serverNameTextWidth > serverNameMaxWidth
         let libraryNeedsScroll = libraryNameTextWidth > libraryNameMaxWidth
-        
-        // Early exit if nothing needs scrolling
         if !serverNeedsScroll && !libraryNeedsScroll {
             let hadOffset = serverNameScrollOffset != 0 || libraryNameScrollOffset != 0
             stopServerNameScroll()
-            if hadOffset {
-                let serverBarArea = NSRect(x: 0, y: bounds.height - Layout.titleBarHeight - Layout.serverBarHeight,
-                                           width: bounds.width, height: Layout.serverBarHeight)
-                setNeedsDisplay(serverBarArea)
-            }
+            if hadOffset { setNeedsDisplay(serverBarArea) }
             return
         }
 
-        var needsRedraw = false
-
-        // Handle server name scrolling
+        // A scrolling name cycles through itself and drawScrollingText's three-space separator.
+        let separatorWidth = 3 * SkinElements.TextFont.charWidth * bitmapTextScale * topChromeScale
         if serverNeedsScroll {
-            let separator = "   "
-            let separatorWidth = CGFloat(separator.count) * scaledCharWidth
-            let totalCycleWidth = serverTextWidth + separatorWidth
-
             serverNameScrollOffset += 1
-            if serverNameScrollOffset >= totalCycleWidth {
-                serverNameScrollOffset = 0
-            }
-            needsRedraw = true
-        } else if serverNameScrollOffset != 0 {
+            if serverNameScrollOffset >= serverNameTextWidth + separatorWidth { serverNameScrollOffset = 0 }
+        } else {
             serverNameScrollOffset = 0
-            needsRedraw = true
         }
-
-        // Handle library name scrolling
         if libraryNeedsScroll {
-            let separator = "   "
-            let separatorWidth = CGFloat(separator.count) * scaledCharWidth
-            let totalCycleWidth = libraryNameTextWidth + separatorWidth
-
             libraryNameScrollOffset += 1
-            if libraryNameScrollOffset >= totalCycleWidth {
-                libraryNameScrollOffset = 0
-            }
-            needsRedraw = true
-        } else if libraryNameScrollOffset != 0 {
+            if libraryNameScrollOffset >= libraryNameTextWidth + separatorWidth { libraryNameScrollOffset = 0 }
+        } else {
             libraryNameScrollOffset = 0
-            needsRedraw = true
         }
-
-        if needsRedraw {
-            let serverBarArea = NSRect(x: 0, y: bounds.height - Layout.titleBarHeight - Layout.serverBarHeight,
-                                       width: bounds.width, height: Layout.serverBarHeight)
-            setNeedsDisplay(serverBarArea)
-        }
+        setNeedsDisplay(serverBarArea)
     }
     
     // MARK: - Public Methods
