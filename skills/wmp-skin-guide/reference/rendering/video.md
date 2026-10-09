@@ -56,7 +56,7 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   produces no `videoend`, the surface detaches, and a genuine media end still produces exactly one.
 
 - **A video's natural end is not a manual Next press.** The playlist callback calls
-  `AudioEngine.videoTrackDidFinish`, which shares the audio engine's natural-end
+  `AudioEngine.videoTrackDidEnd(.finished)`, which shares the audio engine's natural-end
   repeat/shuffle/queue-exhaustion rules without running audio reporters or gapless promotion.
   Manual `next()` wraps unconditionally; using it at EOF looped a one-video playlist forever with
   repeat off. Every family takes this path now (`video-playback` § *Routing rules*). Verified live

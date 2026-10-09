@@ -206,6 +206,11 @@ struct TrackLoadFailure {
     let error: Error
 }
 
+/// A film VLC could not play, when the file is not simply missing — VLC reports no reason of its own.
+struct VideoOpenError: LocalizedError {
+    var errorDescription: String? { "The video could not be played" }
+}
+
 /// A user-requested play whose file failed, held until the queue shows whether it can skip on.
 struct UserPlayRequestFailure {
     let failure: TrackLoadFailure
@@ -4681,27 +4686,34 @@ class AudioEngine {
                 }
             } catch {
                 if let tmp = tempURL { try? FileManager.default.removeItem(at: tmp) }
-                // Decided here, on the IO queue, because it stats the folder — which may sit on
-                // the very volume that just failed.
-                let folderIsPresent = Self.containingFolderIsPresent(track.url)
                 let fileIsMissing = userInitiated
                     && !FileManager.default.fileExists(atPath: track.url.path)
-                DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    guard self.deferredLocalTrackLoadToken == token else { return }
-                    // Skipping on is not a failure to report — unless there is nothing to skip to.
-                    let userRequest = userInitiated && folderIsPresent
-                        ? UserPlayRequestFailure(failure: TrackLoadFailure(track: track, error: error),
-                                                 fileIsMissing: fileIsMissing)
-                        : nil
-                    self.handleLocalTrackLoadFailure(track: track, error: error,
-                                                     advanceToNextTrack: folderIsPresent,
-                                                     userRequest: userRequest)
-                    if userInitiated && !folderIsPresent {
-                        self.delegate?.audioEngineUserPlayRequestDidFail(track, error: error,
-                                                                         fileIsMissing: fileIsMissing)
-                    }
-                }
+                self.reportFailedLocalOpen(of: track, error: error, fileIsMissing: fileIsMissing,
+                                           token: token, userInitiated: userInitiated)
+            }
+        }
+    }
+
+    /// The asynchronous open's failure: reported, then skipped, or stopped on when the track's
+    /// folder is gone (`containingFolderIsPresent`). Runs on the IO queue, because it stats the
+    /// folder — which may sit on the very volume that just failed. `userInitiated` — a playlist
+    /// double-click — is reported to the delegate when the queue cannot skip on.
+    private func reportFailedLocalOpen(of track: Track, error: Error, fileIsMissing: Bool,
+                                       token: UInt64, userInitiated: Bool) {
+        let folderIsPresent = Self.containingFolderIsPresent(track.url)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.deferredLocalTrackLoadToken == token else { return }
+            // Skipping on is not a failure to report — unless there is nothing to skip to.
+            let userRequest = userInitiated && folderIsPresent
+                ? UserPlayRequestFailure(failure: TrackLoadFailure(track: track, error: error),
+                                         fileIsMissing: fileIsMissing)
+                : nil
+            self.handleLocalTrackLoadFailure(track: track, error: error,
+                                             advanceToNextTrack: folderIsPresent,
+                                             userRequest: userRequest)
+            if userInitiated && !folderIsPresent {
+                self.delegate?.audioEngineUserPlayRequestDidFail(track, error: error,
+                                                                 fileIsMissing: fileIsMissing)
             }
         }
     }
@@ -4999,8 +5011,9 @@ class AudioEngine {
     /// bad" from "the volume it lives on is not there". An unmounted NAS leaves either no folder or
     /// an empty mount point, and skipping through a queue of tracks that are all on it would only
     /// walk the whole playlist error by error; stopping, as before, is the offline behaviour.
-    /// Stats the filesystem, so never call it on the main thread.
+    /// Stats the filesystem, so never call it on the main thread. A server URL has no folder to lose.
     static func containingFolderIsPresent(_ url: URL) -> Bool {
+        guard url.isFileURL else { return true }
         let folder = url.deletingLastPathComponent()
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory),
@@ -5440,30 +5453,24 @@ class AudioEngine {
 
     /// A playlist video's natural end follows the same queue rules as an audio track's — never
     /// `next()`, which wraps and only resumes a `.playing` engine — without audio reporters or
-    /// gapless state.
-    func videoTrackDidFinish() {
-        guard currentTrack?.mediaType == .video else { return }
-        NSLog("AudioEngine: Video track finished, advancing playlist")
-        advanceAfterNaturalTrackEnd()
-    }
-
-    /// A playlist film that never played — missing, unreadable or unreachable — is a bad file, as
-    /// in `loadTrack`: reported, then skipped, or stopped on when its folder is gone. The window has
-    /// already closed, which stopped the engine the film paused.
-    func videoTrackDidFail() {
+    /// gapless state. A film that never played — missing, unreadable or unreachable — is a bad
+    /// file, as an audio open is: reported, then skipped, or stopped on when its folder is gone. The
+    /// window has already closed, which stopped the engine the film paused.
+    func videoTrackDidEnd(_ end: VideoPlayerWindowController.VideoEnd) {
         guard let track = currentTrack, track.mediaType == .video else { return }
-        let token = deferredLocalTrackLoadToken
-        // Off the main thread: both stats may hit the volume that just failed.
-        deferredIOQueue.async { [weak self] in
-            let isFile = track.url.isFileURL
-            let folderIsPresent = !isFile || Self.containingFolderIsPresent(track.url)
-            let error: Error = isFile && !FileManager.default.fileExists(atPath: track.url.path)
-                ? CocoaError(.fileReadNoSuchFile, userInfo: [NSURLErrorKey: track.url])
-                : NSError(domain: "NullPlayer.Video", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "The video could not be played"])
-            DispatchQueue.main.async {
-                guard let self, self.deferredLocalTrackLoadToken == token else { return }
-                self.handleLocalTrackLoadFailure(track: track, error: error, advanceToNextTrack: folderIsPresent)
+        switch end {
+        case .finished:
+            NSLog("AudioEngine: Video track finished, advancing playlist")
+            advanceAfterNaturalTrackEnd()
+        case .failed:
+            let token = deferredLocalTrackLoadToken
+            deferredIOQueue.async { [weak self] in
+                let fileIsMissing = track.url.isFileURL && !FileManager.default.fileExists(atPath: track.url.path)
+                let error: Error = fileIsMissing
+                    ? CocoaError(.fileReadNoSuchFile, userInfo: [NSURLErrorKey: track.url])
+                    : VideoOpenError()
+                self?.reportFailedLocalOpen(of: track, error: error, fileIsMissing: fileIsMissing,
+                                            token: token, userInitiated: false)
             }
         }
     }

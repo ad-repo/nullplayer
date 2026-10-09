@@ -145,6 +145,8 @@ final class MissingFilesTests: XCTestCase {
         XCTAssertFalse(AudioEngine.containingFolderIsPresent(empty.appendingPathComponent("bad.mp3")))
         XCTAssertFalse(AudioEngine.containingFolderIsPresent(
             tempDirectoryURL.appendingPathComponent("gone/bad.mp3")))
+        // A server film has no folder to lose, so its failure skips on.
+        XCTAssertTrue(AudioEngine.containingFolderIsPresent(URL(string: "https://example.com/library/parts/1/film.mp4")!))
     }
 
     // MARK: - Disconnected drive playback
@@ -308,7 +310,7 @@ final class MissingFilesTests: XCTestCase {
             (note.userInfo?["track"] as? Track)?.url == next
         }
 
-        engine.videoTrackDidFail()
+        engine.videoTrackDidEnd(.failed)
 
         wait(for: [filmFailed, nextFailed], timeout: 5, enforceOrder: true)
     }
@@ -322,7 +324,7 @@ final class MissingFilesTests: XCTestCase {
         engine.debugSelectTrackForShuffleTesting(0)
         let failed = expectation(forNotification: .audioTrackDidFailToLoad, object: engine)
 
-        engine.videoTrackDidFail()
+        engine.videoTrackDidEnd(.failed)
         wait(for: [failed], timeout: 5)
         RunLoop.main.run(until: Date().addingTimeInterval(1))
 
