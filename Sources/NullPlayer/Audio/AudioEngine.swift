@@ -4592,16 +4592,12 @@ class AudioEngine {
         if route == .video {
             NSLog("AudioEngine: Routing video track to video player: %@", track.title)
             videoPlayNow = nil
+            // A film replaces the outgoing track: stop it, while it is still current, so its
+            // reporters hear a stop at its real position and the engine hands over at 0:00,
+            // stopped. The film reports through the video window's reporter.
+            stopLocalOnly()
             currentTrack = track
             currentIndex = index
-            _currentTime = 0
-            lastReportedTime = 0
-            // A film reports through the video window's reporter and shows the window's clock;
-            // ticking on until the hand-over pauses the engine would report it to the audio
-            // reporters, opening a second "now playing" session for it.
-            stopTimeUpdates()
-            
-            haltAudioOutput()
             isStreamingPlayback = false  // Reset to neutral state for video playback
             
             // Route to video player via WindowManager

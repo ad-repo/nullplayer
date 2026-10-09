@@ -200,6 +200,9 @@
   in a field of its own, so a narrow window has room for the name. Plex reads "items" like the
   rest. In the Original and Metal browsers, **F5** is now a refresh button styled like the
   List / Flow / Tiles icons; F5 still refreshes.
+- **A playlist film starts its clock at 0:00** — a film played after a song or a radio station
+  carried that track's elapsed time as its own position (macOS Now Playing showed it); it now
+  starts from zero.
 
 ## 0.31.4
 
