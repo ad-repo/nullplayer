@@ -116,7 +116,7 @@ Two `WindowManager` entry points create the controller if needed and play.
 
 | Entry point | Called by | Notes |
 |---|---|---|
-| `playVideoTrack(_:)` | `AudioEngine.loadTrack` (any playlist video) | every film from a library row. First offers the film to `routeToVideoCastIfNeeded` (see *Casting* below); sets `onQueuedVideoEnded`, so its end advances the playlist. Picks `play(plexTrack:)` / `play(jellyfinTrack:)` / `play(embyTrack:)` from `plexRatingKey` / `jellyfinId` / `embyId`, else `play(url:title:)` |
+| `playVideoTrack(_:)` | `AudioEngine.loadTrack` (any playlist video) | every film from a library row. First offers the film to `routeToVideoCastIfNeeded` (see *Casting* below); sets `onQueuedVideoEnded`, so its end advances the playlist. Hands every film to `play(track:)`, which plays a server film by its id and anything else through `play(url:title:)` |
 | `showVideoPlayer(url:title:)` | Stream Ripper **Play Now** | opens the file just ripped in the local window, outside the queue, even while a video cast runs. Calls `TrackVerb.supersedePendingPlays()` first: a library **Play** still fetching (a show resolves season by season) would otherwise replace this film when its fetch lands |
 
 **A film row plays like a music row.** Double-click / Return on a movie or episode row of any
@@ -175,13 +175,18 @@ nothing. Its `playHistorySource` is the play event's source; `performCast` casts
 track. Every
 `play(…)` starts with `endPreviousVideo()` (drop a stale cast, then `reportVideoEnded`) and loads
 through `startVideo(…)`, which sets `loadedVideo` in one assignment, so a new item cannot inherit
-anything from the previous one. Every way a film ends goes through `reportVideoEnded(at:finished:)`
+anything from the previous one, and ends by reporting the start (`LoadedVideo.reportStart()`, a
+no-op for local playback). Every way a film ends goes through `reportVideoEnded(at:finished:)`
 (report the stop, record the play); the paths that also drop the film (stop, window close, cast
 handoff or loss) go through `unloadVideo(reportingStopAt:)`. A new source is a new
-`LoadedVideo.Source` case; the compiler then names every switch it must join. A server
-film carries only its id on the `Track`, so `play(plexTrack:)` / `play(jellyfinTrack:)` /
-`play(embyTrack:)` load `.plexItem` / `.jellyfinItem` / `.embyItem` and start the reporter with
-`videoTrackDidStart`, taking episode-or-movie from `playHistoryContentType`. **About Playing**
+`LoadedVideo.Source` case; the compiler then names every switch it must join. A server film is
+`.serverItem(Server, id:)`, and a new server is a new `LoadedVideo.Server` case, which owns its
+reporter. Every reporter event, start included, is on `VideoPlaybackReporting`. A server film
+carries only its id on the `Track`, so `play(track:)` builds it with `LoadedVideo(serverTrack:)`
+(the server from `plexRatingKey` / `jellyfinId` / `embyId`; nil for any other track, which plays
+through `play(url:title:)`). `reportStart()` calls the server's `videoTrackDidStart`, taking
+episode-or-movie from `playHistoryContentType`. Only a Plex film streams with
+`streamingHeaders`, which `startVideo` adds. **About Playing**
 on a Plex film fetches the movie or episode by its rating key for the info sheet. The three
 reporters share their rules: scrobble at 90% (audio uses 50%), only after 60 s of play, with a
 timeline update every 10 s. Each server's API details are in its own integration skill.

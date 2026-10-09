@@ -3444,7 +3444,7 @@ class MenuActions: NSObject {
     private func showVideoInfo(_ controller: VideoPlayerWindowController) {
         let title = controller.currentTitle ?? "Video"
         switch controller.loadedVideo?.source {
-        case .plexItem(let ratingKey):
+        case .serverItem(.plex, let ratingKey):
             // A Plex film carries only its rating key, so fetch the movie or episode it names
             let isEpisode = controller.loadedVideo?.contentType == "tv"
             Task { @MainActor in

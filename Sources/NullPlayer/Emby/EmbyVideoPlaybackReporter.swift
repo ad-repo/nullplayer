@@ -74,7 +74,7 @@ class EmbyVideoPlaybackReporter {
     // MARK: - Public API
 
     /// Called when a Emby film starts playing in the video window
-    func videoTrackDidStart(itemId: String, title: String, durationSeconds: TimeInterval, isEpisode: Bool, at position: TimeInterval = 0) {
+    func videoTrackDidStart(itemId: String, title: String, durationSeconds: TimeInterval, isEpisode: Bool) {
         let serverId = EmbyManager.shared.currentServer?.id ?? ""
         NSLog("EmbyVideoPlaybackReporter: Video track started - %@ (id: %@)", title, itemId)
 
@@ -84,7 +84,7 @@ class EmbyVideoPlaybackReporter {
             title: title,
             durationSeconds: durationSeconds,
             videoType: isEpisode ? .episode : .movie,
-            position: position
+            position: 0
         )
     }
 
