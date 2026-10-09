@@ -1449,7 +1449,6 @@ class PlexBrowserView: NSView {
         let textWidth: (String) -> CGFloat = { CGFloat($0.count) * charWidth }
         let leadingInset = 4 + toolbarItemHorizontalEdgePadding
         let trailingInset = 8 + toolbarItemHorizontalEdgePadding + rightEdgeItemPaddingBoost
-            + cornerCloseInset
         let prefixWidth = textWidth("Source: ")
         let minimumGap: CGFloat = 12
 
@@ -2104,15 +2103,11 @@ class PlexBrowserView: NSView {
         !isEmbeddedInSkin && WindowManager.shared.hideTitleBars
     }
 
-    /// True for a titleless WMP library with no borrowed frame: its close is a corner hit area
-    /// over the server bar, so the bar's right-edge items move out from under it.
+    /// True for a titleless WMP or Audion library with no borrowed frame: its close is a corner hit
+    /// area over the server bar. The bar's F5 keeps its usual place and its label carves itself out
+    /// of that area (`hitTestCloseButton`).
     private var closesFromCorner: Bool {
         !isEmbeddedInSkin && hostedFrame == nil && SkinnedSurfaceChrome.hidesPaletteTitleBar
-    }
-
-    /// How much further the server bar's right-edge items sit in, in unscaled toolbar points.
-    private var cornerCloseInset: CGFloat {
-        closesFromCorner ? max(0, SkinnedSurfaceFrameArtwork.closeHitWidth - Layout.rightBorder) : 0
     }
 
     private var originalWindowSize: NSSize {
@@ -2613,7 +2608,6 @@ class PlexBrowserView: NSView {
         let textY = backingScale < 1.5 ? round(rawTextY) : rawTextY
         let toolbarLeftInset = (4 + toolbarItemHorizontalEdgePadding) * chromeScale
         let toolbarRightInset = (8 + toolbarItemHorizontalEdgePadding + rightEdgeItemPaddingBoost) * chromeScale
-            + cornerCloseInset
         
         // Common prefix for all sources
         let prefix = "Source: "
@@ -2643,8 +2637,10 @@ class PlexBrowserView: NSView {
         let refreshText = "F5"
         let refreshX = barRect.maxX - (CGFloat(refreshText.count) * scaledCharWidth) - toolbarRightInset
         drawScaledSkinText(refreshText, at: NSPoint(x: refreshX, y: textY), scale: textScale, renderer: renderer, in: context)
-        refreshButtonRect = NSRect(x: refreshX, y: barRect.minY,
-                                   width: barRect.maxX - refreshX, height: barRect.height)
+        // Under a corner close the label alone is F5's, so the close keeps the corner beside it.
+        let refreshWidth = closesFromCorner
+            ? CGFloat(refreshText.count) * scaledCharWidth + 2 * chromeScale : barRect.maxX - refreshX
+        refreshButtonRect = NSRect(x: refreshX, y: barRect.minY, width: refreshWidth, height: barRect.height)
         let accessoryX = drawViewModeButtons(
             before: refreshX, textY: textY, textScale: textScale, chromeScale: chromeScale,
             context: context
@@ -4716,6 +4712,7 @@ class PlexBrowserView: NSView {
             ? NSRect(x: originalSize.width - 20, y: 0, width: 20, height: 14)
             : SkinnedSurfaceChrome.closeButtonRect(in: NSRect(origin: .zero, size: originalSize),
                                                    captionHeight: Layout.titleBarHeight, width: 20)
+        if closesFromCorner, refreshButtonRect.contains(skinPoint) { return false }
         return closeRect.contains(skinPoint)
     }
     
