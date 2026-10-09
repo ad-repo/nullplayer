@@ -102,10 +102,16 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   Under `.wmz`, `close()` would stop the film; in a `.wal` video tab, unparking (what the Video
   Player menu item does there, B23) leaves the tab black while the film plays on, and selecting
   the tab again does not refill it (measured 2026-10-08, `211786-Cpro_Winamp_Modern`). Esc is
-  consumed even then: **a fullscreen round trip leaves the parked window key** (the free window
-  took key for fullscreen, and `canBecomeKey` turning false later resigns nothing), so its own
-  monitor sees the keys, and an Esc it passed on reached `VideoPlayerView.cancelOperation`, which
-  stops and closes (measured on Cablemusic: F, Esc, Esc stopped the film). Measured 2026-10-08 on
+  consumed even then, in case the film window ever holds key while parked: an Esc it passed on
+  reaches `VideoPlayerView.cancelOperation`, which stops and closes (measured on Cablemusic: F,
+  Esc, Esc stopped the film). **Re-parking hands key back to the skin** (M33): the free window
+  takes key for fullscreen, and `canBecomeKey` turning false later resigns nothing, so
+  `hostOutputWindow` calls `parent.makeKey()` when the film window is key. Without it the film
+  kept focus after F, Esc in a `.wmz` box and a `.wal` tab, and a skin's own key handlers heard
+  nothing until it was clicked; a `.wal` skin's own video window was never affected (its re-host
+  re-keys it). Measured 2026-10-09 with `AXFocusedWindow` after F, Esc on Cablemusic,
+  `211786-Cpro_Winamp_Modern` and winampmodern566 (whose `alt+g` drawer handler then fired), A/B
+  against the line removed. Measured 2026-10-08 on
   Cablemusic, `211786-Cpro_Winamp_Modern`, winampmodern566 (own video window) and aquamp (Emby
   `Airplane!`): Space, ←/→, F and Esc act with no click after the play, and after an F / Esc
   round trip.
