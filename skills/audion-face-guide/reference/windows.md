@@ -10,7 +10,7 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
 | `AudionFaceMainWindowController.swift` | `AudionFaceWindow` (borderless, clear, key/main-capable) and the `MainWindowProviding` controller: loads the selected face off the main thread, swaps between the face and the unskinned view, sizes the window to `base` × UI scale keeping the top-left, holds `surfaceStyle` |
 | `AudionFaceMainView.swift` | Draws `AudionFaceRenderer.render(AudionFaceScene(...))` as layer contents at `ceil(uiScale × backing)`; the frame clock; hit-tests; drags; the two slider popups and the info menu; keys; right-click menu; accessibility |
 | `AudionFaceSliderWindow.swift` | FaceKit's `AudionSliderWindow`, ported (Panic's header): a borderless popup holding one `NSSlider`, closed when it resigns key |
-| `AudionFaceAudioEngineHost.swift` | `AudioEngine` → `AudionFaceHostState`, and an `AudionFaceCommand` (a button, a volume, a seek; also built from a key) → its NullPlayer action |
+| `AudionFaceAudioEngineHost.swift` | `AudioEngine` → `AudionFaceHostState`, and an `AudionFaceCommand` (a button, a volume, a seek) → its NullPlayer action |
 | `AudionFaceUnskinnedView.swift` | The app-authored fallback when no face is selected or the selected one fails |
 | `AudionFace/AudionFaceImporter.swift` | Installed faces, the `audionFaceName` selection, folder/zip install (validate the copy, then one move), remove |
 | `AudionFace/AudionFacePalette.swift` | The `SkinnedSurfaceStyle` NullPlayer's windows wear beside a face |
@@ -32,14 +32,17 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
 - **Buttons** (decision record § *Button mapping*): play, pause, stop, rw/ff (previous/next), eject
   (Open Files…), menu (toggle the playlist), close (quit, as every NullPlayer main window's close
   does), mode (shuffle and repeat as a two-bit counter: off → shuffle → repeat → both → off). Volume
-  and info are the view's own: volume opens the vertical slider (19 × 96, FaceKit's size) with its
+  and info are the view's own: volume opens the vertical slider (19 × 96, FaceKit's size) at the
+  engine's volume, read when it opens (no face draws volume, so it is not in the host state), with its
   top-left at the button's bottom-right, and the button stays disabled (`interaction.disabled`)
   until the slider closes; info pops a menu of **About Playing…** (`MenuActions.showAboutPlaying`,
   the app's track info) and **About This Face…** (an alert with `faceInfo` and `about.png`).
-- **Position slider:** 192 × 19 under the clicked time digit, range `0…duration`. A scrub pauses a
-  playing track, seeks on every move, and resumes on mouse-up (FaceKit `adjustTime`).
+- **Position slider:** 192 × 19 under the clicked time digit, range `0…duration`, only while
+  `AudionFaceHostState.isSeekable` (a live stream counts as a track but has no position). A scrub
+  pauses a playing track, seeks on every move, and resumes on mouse-up (FaceKit `adjustTime`) or,
+  for a change with no mouse-up (keyboard, VoiceOver), when the popup closes.
 - **Commands refresh the host:** the controller re-snapshots `AudionFaceHostState` after every
-  `AudionFaceCommand`, so the face and the slider's starting value follow at once.
+  `AudionFaceCommand`, so a seek while paused shows at once.
 - **Frame clock:** a 60 Hz `Timer` (common run-loop modes) advances the scene's `frame` only while
   `AudionFaceScene.isAnimated` (a multi-frame animation, or an album line that scrolls) and the
   window is visible (`windowDidChangeOcclusionState`). Every tick re-renders the whole face; dirty
@@ -49,13 +52,15 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
   lag (reconnecting) or streaming; the controller observes
   `RadioManager.connectionStateDidChangeNotification`. Any other non-file track reads as streaming:
   a server stream's buffering is private to `AudioEngine`.
-- **Keys** (`AudionFaceCommand(key:host:)`), the Modern main window's set: space play/pause, Return
-  stop, z x c v b transport, p playlist, ←/→ seek 5 s, ↑/↓ volume ±0.05. Menu key equivalents reach
+- **Keys** are the Modern main window's, through the one shared `MainWindowKeys.perform` (`App/`),
+  video routing included. Menu key equivalents reach
   the main menu as in any window. The view takes first responder when it joins the window.
 - **Accessibility** (FaceKit's elements): one button per visible face button (`audion.<sprite>`,
   labelled with FaceKit's tooltip or NullPlayer's action, enabled by `isEnabled`, pressable), the
   time digits as one button (`Time Digits`, label `mm:ss — Show Position Slider`, press opens the
-  slider), and the artist and album lines as static text with their string as value.
+  slider, disabled unless `isSeekable`), and the artist and album lines as static text with their
+  string as value. The elements are kept by identifier across calls, so VoiceOver's focus survives a
+  redraw; a new face drops them.
 - **Not done:** FaceKit's hover tooltips on the buttons and time digits.
 
 ## Shared-code seams
@@ -84,6 +89,7 @@ Every change outside the family's directories, each gated on the Audion family.
 | `ContextMenuBuilder+SkinFamilies` | `buildAudionFacesMenu`, `groupedAlphabetically` (A–Z past 40), `RemovableSkin.audion`, actions | |
 | `AppStateManager` | `audionFaceName`, saved only in Audion mode; frame restore keeps the top-left | |
 | `AppDelegate` | `-audionFacePath`; the acceptance loop's arm | |
+| `App/MainWindowKeys.swift` | the face's `keyDown` calls `MainWindowKeys.perform` | **not gated**: the Original (`ModernMainWindowView`) key switch moved there verbatim and both call it, so the face cannot drift from it again |
 
 ## NullPlayer's windows beside a face
 

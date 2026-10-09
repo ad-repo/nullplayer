@@ -5,7 +5,7 @@ import AppKit
 /// slider; a press anywhere else the face is opaque drags the window through `WindowManager`, so
 /// docking and snapping see it; a transparent pixel is not part of the window at all.
 final class AudionFaceMainView: NSView {
-    var face: AudionFace? { didSet { interaction = .init(); redraw() } }
+    var face: AudionFace? { didSet { interaction = .init(); accessibilityElements = [:]; redraw() } }
     var host = AudionFaceHostState() { didSet { if host != oldValue { redraw() } } }
     /// Window points per face pixel.
     var uiScale: CGFloat = 1 { didSet { if uiScale != oldValue { redraw() } } }
@@ -23,6 +23,9 @@ final class AudionFaceMainView: NSView {
     private let positionSlider = AudionFaceSliderWindow(size: NSSize(width: 192, height: 19), vertical: false,
                                                         label: "Position")
     private var playingBeforeScrub = false
+    /// Kept across `accessibilityChildren()` calls, by identifier, so VoiceOver's focus survives a
+    /// redraw; a new face drops them.
+    private var accessibilityElements: [String: AudionFaceAccessibilityElement] = [:]
 
     override var isFlipped: Bool { true }
     /// The face drags itself, through `WindowManager`; AppKit's background drag would bypass docking.
@@ -40,6 +43,7 @@ final class AudionFaceMainView: NSView {
         // FaceKit disables the volume button while its slider is up.
         volumeSlider.onClose = { [weak self] in self?.interaction.disabled.remove(.volume) }
         positionSlider.onChange = { [weak self] value, finished in self?.scrub(to: value, finished: finished) }
+        positionSlider.onClose = { [weak self] in self?.endScrub() }
     }
 
     required init?(coder: NSCoder) { nil }
@@ -115,7 +119,7 @@ final class AudionFaceMainView: NSView {
 
     /// The time digit under the event, while there is a duration to scrub (FaceKit `showTimeSlider`).
     private func timeDigit(at event: NSEvent) -> AudionFaceRect? {
-        guard let face, host.durationSeconds > 0, let point = facePoint(event) else { return nil }
+        guard let face, host.isSeekable, let point = facePoint(event) else { return nil }
         return AudionFaceScene.timeDigitRects(face).first { $0.contains(x: point.x, y: point.y) }
     }
 
@@ -149,7 +153,8 @@ final class AudionFaceMainView: NSView {
         case .volume:
             interaction.disabled.insert(.volume)
             let below = screenRect(rect)
-            volumeSlider.show(topLeft: NSPoint(x: below.maxX, y: below.minY), value: host.volume, range: 0...1)
+            volumeSlider.show(topLeft: NSPoint(x: below.maxX, y: below.minY),
+                              value: Double(WindowManager.shared.audioEngine.volume), range: 0...1)
         case .info:
             showInfoMenu(below: rect)
         default:
@@ -158,7 +163,7 @@ final class AudionFaceMainView: NSView {
     }
 
     private func showPositionSlider(below rect: AudionFaceRect) {
-        guard host.durationSeconds > 0 else { return }
+        guard host.isSeekable else { return }
         let below = screenRect(rect)
         positionSlider.show(topLeft: NSPoint(x: below.maxX, y: below.minY), value: Double(host.elapsedSeconds),
                             range: 0...Double(host.durationSeconds))
@@ -171,10 +176,15 @@ final class AudionFaceMainView: NSView {
             onCommand?(.button(.pause))
         }
         onCommand?(.seek(seconds))
-        if finished, playingBeforeScrub {
-            playingBeforeScrub = false
-            onCommand?(.button(.play))
-        }
+        if finished { endScrub() }
+    }
+
+    /// Resumes what the scrub paused: on mouse-up, or when the popup closes after a change that had
+    /// no mouse-up (the keyboard, VoiceOver).
+    private func endScrub() {
+        guard playingBeforeScrub else { return }
+        playingBeforeScrub = false
+        onCommand?(.button(.play))
     }
 
     private func showInfoMenu(below rect: AudionFaceRect) {
@@ -241,8 +251,7 @@ final class AudionFaceMainView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
-        guard let command = AudionFaceCommand(key: event, host: host) else { return super.keyDown(with: event) }
-        onCommand?(command)
+        if !MainWindowKeys.perform(event) { super.keyDown(with: event) }
     }
 
     // MARK: - Accessibility (FaceKit: a button per face button, the time digits, the two labels)
@@ -250,23 +259,21 @@ final class AudionFaceMainView: NSView {
     override func accessibilityChildren() -> [Any]? {
         guard let face else { return [] }
         var children = AudionFaceScene.visibleButtons(face, host).map { role, button in
-            let element = AudionFaceAccessibilityElement(role: .button, label: Self.title(for: role)) { [weak self] in
-                self?.press(role)
-            }
-            element.setAccessibilityIdentifier("audion.\(role.sprite)")
+            let element = accessibilityElement("audion.\(role.sprite)", role: .button) { [weak self] in self?.press(role) }
+            element.setAccessibilityLabel(Self.title(for: role))
             element.setAccessibilityEnabled(AudionFaceScene.isEnabled(role, host: host, interaction: interaction))
             element.setAccessibilityFrame(screenRect(button.rect))
             return element
         }
         let digits = AudionFaceScene.timeDigitRects(face)
         if let first = digits.first {
-            let union = digits.dropFirst().reduce(localRect(first)) { $0.union(localRect($1)) }
-            let time = String(format: "%02d:%02d", host.elapsedSeconds / 60, host.elapsedSeconds % 60)
-            let element = AudionFaceAccessibilityElement(role: .button, label: "\(time) — Show Position Slider") { [weak self] in
+            let element = accessibilityElement("Time Digits", role: .button) { [weak self] in
                 self?.showPositionSlider(below: first)
             }
-            element.setAccessibilityIdentifier("Time Digits")
-            element.setAccessibilityFrame(window?.convertToScreen(convert(union, to: nil)) ?? .zero)
+            let time = String(format: "%02d:%02d", host.elapsedSeconds / 60, host.elapsedSeconds % 60)
+            element.setAccessibilityLabel("\(time) — Show Position Slider")
+            element.setAccessibilityEnabled(host.isSeekable)
+            element.setAccessibilityFrame(digits.dropFirst().map(screenRect).reduce(screenRect(first)) { $0.union($1) })
             children.append(element)
         }
         let labels: [(String, AudionFace.TextLine?, String?)] = [
@@ -274,14 +281,23 @@ final class AudionFaceMainView: NSView {
         ]
         for (identifier, line, text) in labels {
             guard let line, let text else { continue }
-            let element = AudionFaceAccessibilityElement(role: .staticText, label: text, press: nil)
-            element.setAccessibilityIdentifier(identifier)
+            let element = accessibilityElement(identifier, role: .staticText, press: nil)
+            element.setAccessibilityLabel(text)
             element.setAccessibilityValue(text)
             element.setAccessibilityFrame(screenRect(line.rect))
             children.append(element)
         }
-        children.forEach { $0.setAccessibilityParent(self) }
         return children
+    }
+
+    private func accessibilityElement(_ identifier: String, role: NSAccessibility.Role,
+                                      press: (() -> Void)?) -> AudionFaceAccessibilityElement {
+        if let element = accessibilityElements[identifier] { return element }
+        let element = AudionFaceAccessibilityElement(role: role, press: press)
+        element.setAccessibilityIdentifier(identifier)
+        element.setAccessibilityParent(self)
+        accessibilityElements[identifier] = element
+        return element
     }
 
     /// FaceKit's tooltips, naming NullPlayer's action where the button maps to one of its own.
@@ -306,11 +322,10 @@ final class AudionFaceMainView: NSView {
 private final class AudionFaceAccessibilityElement: NSAccessibilityElement {
     private let press: (() -> Void)?
 
-    init(role: NSAccessibility.Role, label: String, press: (() -> Void)?) {
+    init(role: NSAccessibility.Role, press: (() -> Void)?) {
         self.press = press
         super.init()
         setAccessibilityRole(role)
-        setAccessibilityLabel(label)
         setAccessibilityElement(true)
     }
 

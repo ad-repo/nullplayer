@@ -7,24 +7,6 @@ enum AudionFaceCommand: Equatable {
     case volume(Double)
     /// Seconds into the track.
     case seek(Double)
-
-    /// The main window's keys (the Modern main window's set): space toggles play, Return stops,
-    /// z x c v b are the transport, p the playlist, the arrows seek 5 s and step the volume.
-    init?(key event: NSEvent, host: AudionFaceHostState) {
-        switch event.keyCode {
-        case 49: self = .button(host.isPlaying ? .pause : .play)
-        case 36: self = .button(.stop)
-        case 123: self = .seek(Double(max(0, host.elapsedSeconds - 5)))
-        case 124: self = .seek(Double(min(host.durationSeconds, host.elapsedSeconds + 5)))
-        case 125: self = .volume(max(0, host.volume - 0.05))
-        case 126: self = .volume(min(1, host.volume + 0.05))
-        default:
-            let keys: [String: AudionFace.ButtonRole] = ["z": .rewind, "x": .play, "c": .pause, "v": .stop,
-                                                         "b": .fastForward, "p": .playlist]
-            guard let role = event.charactersIgnoringModifiers.flatMap({ keys[$0.lowercased()] }) else { return nil }
-            self = .button(role)
-        }
-    }
 }
 
 /// `AudioEngine` to `AudionFaceHostState`, and an `AudionFaceCommand` back to a NullPlayer action
@@ -48,7 +30,6 @@ enum AudionFaceAudioEngineHost {
         state.album = track?.album
         state.format = track.map { $0.url.pathExtension.uppercased() }.flatMap { $0.isEmpty ? nil : $0 }
         state.streamPhase = streamPhase(of: track)
-        state.volume = Double(engine.volume)
         state.isWindowActive = isWindowActive
         state.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         return state
