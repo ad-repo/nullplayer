@@ -35,10 +35,9 @@ final class AudionFaceMainView: NSView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        wantsLayer = true
         // Drawn in `draw(_:)`, so a redraw updates only the rects marked: new layer contents would
         // be copied and colour-converted whole every tick.
-        layerContentsRedrawPolicy = .onSetNeedsDisplay
+        wantsLayer = true
         setAccessibilityIdentifier("AudionFaceMainView")
         setAccessibilityRole(.group)
         volumeSlider.onChange = { [weak self] value, _ in self?.onCommand?(.volume(value)) }
@@ -73,12 +72,6 @@ final class AudionFaceMainView: NSView {
         guard change.outlineChanged else { return }
         displayIfNeeded()
         window?.invalidateShadow()
-    }
-
-    /// A new UI size redraws the whole face: under `.onSetNeedsDisplay` a resize alone does not.
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -147,18 +140,7 @@ final class AudionFaceMainView: NSView {
               bounds.contains(local) else { return super.hitTest(point) }
         let x = Int(local.x * CGFloat(image.width) / bounds.width)
         let y = Int(local.y * CGFloat(image.height) / bounds.height)
-        return Self.alpha(of: image, x: x, y: y) > 0 ? self : nil
-    }
-
-    private static func alpha(of image: CGImage, x: Int, y: Int) -> UInt8 {
-        var pixel: UInt8 = 0
-        guard (0..<image.width).contains(x), (0..<image.height).contains(y),
-              let context = CGContext(data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 1,
-                                      space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue)
-        else { return 0 }
-        // Shift the image so (x, y) — top-left origin — lands on the one-pixel canvas.
-        context.draw(image, in: CGRect(x: -x, y: y - image.height + 1, width: image.width, height: image.height))
-        return pixel
+        return canvas.isOpaque(x: x, y: y) ? self : nil
     }
 
     // MARK: - Actions

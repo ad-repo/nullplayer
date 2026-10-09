@@ -36,7 +36,7 @@ enum AudionFaceText {
         if let image = cache[key] { return image }
         // ponytail: dropped whole when full; the window shows two lines, so 16 never thrashes.
         if cache.count >= 16 { cache.removeAll() }
-        let image = rasterize(key)
+        let image = rasterize(text, line: line, justify: justify, scale: scale, reduceMotion: reduceMotion)
         cache[key] = image
         return image
     }
@@ -52,8 +52,8 @@ enum AudionFaceText {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var cache: [Key: CGImage?] = [:]
 
-    private static func rasterize(_ key: Key) -> CGImage? {
-        let (text, line, justify, scale, reduceMotion) = (key.text, key.line, key.justify, key.scale, key.reduceMotion)
+    private static func rasterize(_ text: String, line: AudionFace.TextLine, justify: Bool, scale: Int,
+                                  reduceMotion: Bool) -> CGImage? {
         var font = line.font
         if scale > 1 {
             font = CTFontCreateCopyWithAttributes(font, CTFontGetSize(font) * CGFloat(scale), nil, nil)

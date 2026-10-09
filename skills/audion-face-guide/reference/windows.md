@@ -15,7 +15,8 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
 | `AudionFace/AudionFaceImporter.swift` | Installed faces, the `audionFaceName` selection, folder/zip install (validate the copy, then one move), remove |
 | `AudionFace/AudionFacePalette.swift` | The `SkinnedSurfaceStyle` NullPlayer's windows wear beside a face |
 
-- **Hit testing:** a pixel whose rendered alpha is 0 is not the window (`hitTest` returns nil);
+- **Hit testing:** a pixel whose rendered alpha is 0 is not the window (`hitTest` returns nil; it
+  reads `AudionFaceCanvas.isOpaque`, the alpha plane the canvas keeps for `outlineChanged`);
   then the topmost visible button by `AudionFaceScene.button(atX:y:face:host:)`, a hit only if
   `AudionFaceScene.isEnabled` (the rule `buttonOps` draws the disabled sprite by: stop needs a
   track, and `interaction.disabled`); then, with a track, a time digit (`AudionFaceScene.timeDigitRects`)
@@ -26,11 +27,11 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
   `windowDidFinishDragging` (`AudionFaceWindowDrag`, used by both the face and the unskinned
   view), and `windowDidMove` applies the snapped position, the Classic recipe — so snapping and
   docked groups work. AppKit's background drag is off for the window and both views.
-- **Drawing:** the view is layer-backed with `layerContentsRedrawPolicy = .onSetNeedsDisplay` and
-  paints the canvas image in `draw(_:)`, so AppKit updates only the rects marked with
-  `setNeedsDisplay(_:)`. Setting `layer.contents` instead made Core Animation copy and colour-convert
-  the whole image every tick (95% CPU at 300% on the largest face; `harness.md` § *Redraw cost*). A
-  size change marks the whole view.
+- **Drawing:** the view is layer-backed and paints the canvas image in `draw(_:)`, so AppKit updates
+  only the rects marked with `setNeedsDisplay(_:)`. Setting `layer.contents` instead made Core
+  Animation copy and colour-convert the whole image every tick (95% CPU at 300% on the largest face;
+  `harness.md` § *Redraw cost*). A size change redraws the whole view through AppKit's default
+  `layerContentsRedrawPolicy` (`.duringViewResize` for a view that overrides `draw(_:)`); don't set it.
 - **Shadow:** AppKit's own (`hasShadow`), not `SkinWindowShadow`; `hostsSkinShadowWindows` is
   false for Audion. `invalidateShadow` runs only when the canvas reports `outlineChanged` (an
   animation frame clears the base under it, a mask swaps, a new face), after `displayIfNeeded()` so

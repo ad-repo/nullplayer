@@ -202,8 +202,7 @@ private struct Reader {
             if on { style.insert(AudionFace.TextStyle(rawValue: 1 << bit)) }
         }
         return AudionFace.TextLine(
-            rect: rect, font: AudionFace.font(named: fontName,
-                                              size: int(role.fontSizeKey).flatMap { AudionFacePolicy.fontSizes.contains($0) ? $0 : nil }),
+            rect: rect, font: AudionFace.font(named: fontName, size: int(role.fontSizeKey)),
             color: color(role.txtrColorKey) ?? color(role.faceColorKey) ?? AudionFace.color(red: 0, green: 0, blue: 0),
             style: style, xor: mode & 2 != 0)
     }

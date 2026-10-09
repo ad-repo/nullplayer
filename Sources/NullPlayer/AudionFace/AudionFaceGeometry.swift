@@ -19,6 +19,11 @@ struct AudionFaceRect: Hashable {
         return right > left && bottom > top ? AudionFaceRect(x: left, y: top, width: right - left, height: bottom - top) : nil
     }
 
+    /// The same rect `scale` times larger, still top-left: face pixels to device pixels.
+    func scaled(by scale: Int) -> AudionFaceRect {
+        AudionFaceRect(x: x * scale, y: y * scale, width: width * scale, height: height * scale)
+    }
+
     /// The same rect in a bottom-left space `containerHeight` pixels tall, which is CoreGraphics'
     /// and AppKit's (FaceKit `flippedRect(from:height:)` before its scale). This is the family's
     /// one flip; never re-derive it at a call site.

@@ -10,11 +10,7 @@ enum AudionFaceRenderer {
     /// `AudionFaceCanvas` redraws the face window through regions.
     static func render(_ scene: AudionFaceScene, region: AudionFaceRect? = nil) -> CGImage? {
         let scale = scene.scale
-        func device(_ rect: AudionFaceRect) -> CGRect {
-            let flipped = rect.flipped(inHeight: scene.height)
-            return CGRect(x: flipped.minX * CGFloat(scale), y: flipped.minY * CGFloat(scale),
-                          width: flipped.width * CGFloat(scale), height: flipped.height * CGFloat(scale))
-        }
+        func device(_ rect: AudionFaceRect) -> CGRect { rect.scaled(by: scale).flipped(inHeight: scene.height * scale) }
         let bounds = device(region ?? AudionFaceRect(x: 0, y: 0, width: scene.width, height: scene.height))
         /// A buffer the size of `bounds`, drawn into in the whole face's device coordinates.
         func buffer() -> CGContext? {
