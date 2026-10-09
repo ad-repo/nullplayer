@@ -5168,7 +5168,10 @@ class AudioEngine {
         // local graph recovery. The local node calls below are safe on a graph awaiting
         // replacement: they only stop a node and remove a tap.
         
-        // Stop local playback and REMOVE spectrum tap (streaming player has its own)
+        // Stop local playback and REMOVE spectrum tap (streaming player has its own).
+        // The reset also stops a finished or in-progress Sweet Fade's player and timer,
+        // local or streaming, which would otherwise keep playing under the new stream.
+        resetLocalCrossfadeStateForDirectPlayback()
         playerNode.stop()
         mixerNode.removeTap(onBus: 0)  // Critical: remove local spectrum tap
         audioFile = nil
