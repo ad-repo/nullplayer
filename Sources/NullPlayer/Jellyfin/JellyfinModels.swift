@@ -68,6 +68,9 @@ struct JellyfinAlbum: Identifiable, Equatable, AlbumArtistCredited {
         }
         return String(format: "%d:%02d", minutes, duration % 60)
     }
+
+    /// The item whose Primary image is this album's cover — its own, when it has one.
+    var artworkItemId: String? { imageTag == nil ? nil : id }
 }
 
 /// A song (track) in a Jellyfin music library
