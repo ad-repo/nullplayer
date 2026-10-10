@@ -5127,22 +5127,29 @@ class WindowManager {
     /// performed while the classic UI is active).
     static let classicVisClassicProfileName = "Purple Neon"
 
-    /// Writes the classic-UI vis_classic defaults (mode + "Purple Neon" profile +
-    /// fit-to-width) for the given reset scope, WITHOUT posting refresh notifications.
+    /// Writes the classic-UI visualization defaults (Classic spectrum in the main window,
+    /// vis_classic in the Spectrum window, "Purple Neon" profile + fit-to-width) for the
+    /// given reset scope, WITHOUT posting refresh notifications.
     /// `VisualizationPreferences.reset` calls this when the classic UI is active so a
     /// reset restores classic's own defaults instead of the modern skin engine's
     /// current skin (which would wrongly apply e.g. NeonWave's "Lavender Pink Tips").
+    /// Classic skin loads pass `includesMainWindowMode: false`: every reader already treats a
+    /// missing mode as Spectrum, so a load has nothing to seed and must not override a mode
+    /// the user chose.
     /// The caller is responsible for posting the appropriate refresh notifications.
     func writeClassicVisualizationDefaultKeys(
         for scope: VisualizationPreferenceResetScope,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        includesMainWindowMode: Bool = true
     ) {
-        let visClassicMode = MainWindowVisMode.visClassicExact.rawValue
         let classicProfile = Self.classicVisClassicProfileName
 
         if scope == .mainWindow || scope == .all {
-            defaults.set(visClassicMode, forKey: "mainWindowVisMode")
-            defaults.set(visClassicMode, forKey: "modernMainWindowVisMode")
+            if includesMainWindowMode {
+                let spectrumMode = MainWindowVisMode.spectrum.rawValue
+                defaults.set(spectrumMode, forKey: "mainWindowVisMode")
+                defaults.set(spectrumMode, forKey: "modernMainWindowVisMode")
+            }
             defaults.set(classicProfile, forKey: "visClassicLastProfileName.mainWindow")
             defaults.set(true, forKey: "visClassicFitToWidth.mainWindow")
         }
@@ -5185,7 +5192,7 @@ class WindowManager {
         guard Self.appliesClassicVisualizationDefaults(family: runningControllerFamily) else { return }
 
         let classicProfile = Self.classicVisClassicProfileName
-        writeClassicVisualizationDefaultKeys(for: .all, defaults: .standard)
+        writeClassicVisualizationDefaultKeys(for: .all, defaults: .standard, includesMainWindowMode: false)
 
         guard notify else { return }
 

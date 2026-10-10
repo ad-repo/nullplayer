@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Classic skins default the main window to the Classic analyzer** — the main window's
+  visualizer now starts on Classic instead of vis_classic, and launching or picking a Classic
+  skin no longer resets a mode you chose. A visualization reset still restores Classic.
 - **Classic skins with 32-bit bitmaps no longer click through to the desktop** — skins such as
   Donkey Kong Handheld, whose images are saved as 32-bit BMPs, drew normally but let every click
   on the main window fall through to whatever was behind it. NullPlayer read the bitmap's unused
