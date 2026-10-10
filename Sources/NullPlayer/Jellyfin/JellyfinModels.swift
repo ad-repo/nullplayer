@@ -42,6 +42,9 @@ struct JellyfinArtist: Identifiable, Equatable, AlbumCountedArtist {
     let genre: String?
     let imageTag: String?    // For artwork URL construction
     let isFavorite: Bool
+
+    /// The item whose Primary image is this artist's picture — its own, when it has one.
+    var artworkItemId: String? { imageTag == nil ? nil : id }
 }
 
 /// An album in a Jellyfin music library
@@ -130,6 +133,9 @@ struct JellyfinPlaylist: Identifiable, Equatable {
         }
         return String(format: "%d:%02d", minutes, duration % 60)
     }
+
+    /// The item whose Primary image is this playlist's picture — its own, when it has one.
+    var artworkItemId: String? { imageTag == nil ? nil : id }
 }
 
 /// A music library in Jellyfin (Jellyfin can have multiple music libraries)
@@ -179,6 +185,9 @@ struct JellyfinShow: Identifiable, Equatable {
     let backdropTag: String?
     let childCount: Int         // number of seasons
     let isFavorite: Bool
+
+    /// The item whose Primary image is this show's picture — its own, when it has one.
+    var artworkItemId: String? { imageTag == nil ? nil : id }
 }
 
 /// A season of a TV show in Jellyfin
@@ -190,6 +199,9 @@ struct JellyfinSeason: Identifiable, Equatable {
     let seriesName: String?
     let imageTag: String?
     let childCount: Int         // number of episodes
+
+    /// The item whose Primary image is this season's picture — its own, when it has one.
+    var artworkItemId: String? { imageTag == nil ? nil : id }
 }
 
 /// An episode of a TV show in Jellyfin
