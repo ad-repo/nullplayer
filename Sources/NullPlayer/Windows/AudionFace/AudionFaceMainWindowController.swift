@@ -33,7 +33,8 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
                                       styleMask: [.borderless], backing: .buffered, defer: false)
         window.backgroundColor = .clear
         window.isOpaque = false
-        window.hasShadow = true
+        // NullPlayer's shadow either way: the face's own, or the unskinned player's in `present`.
+        window.hasShadow = false
         window.isMovableByWindowBackground = false
         window.title = "NullPlayer — Audion Faces"
         window.setAccessibilityIdentifier("AudionFaceMainWindow")
@@ -149,6 +150,9 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
         unskinnedView.show(message: message)
         let view: NSView = shown == nil ? unskinnedView : faceView
         if window.contentView !== view { window.contentView = view }
+        // A face casts its own (`AudionFaceMainView.windowShadow`); the unskinned player is cast
+        // from what it draws.
+        window.hasSkinShadow = shown == nil
         fitWindow()
         refreshHostState()
     }
@@ -166,15 +170,15 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
     }
 
     /// Sizes the window to what it shows at the current scale, holding its top-left corner. The
-    /// outline comes from the pixels, so the shadow is recomputed only after drawing at the new size:
-    /// the view's own recompute, on a new face or scale, ran at the old one.
+    /// unskinned player's shadow is pulled again after drawing at the new size: the resize's own
+    /// pull ran before it.
     private func fitWindow() {
         guard let window, let size = mainWindowSize(atScale: uiScale) else { return }
         let topLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
         window.setContentSize(size)
         window.setFrameTopLeftPoint(topLeft)
         window.displayIfNeeded()
-        window.invalidateShadow()
+        window.invalidateSkinShadowShape("fit")
     }
 
     // MARK: - Host state

@@ -399,16 +399,6 @@ class WindowManager {
 
     var isRunningWMPUI: Bool { runningControllerFamily == .wmp }
 
-    /// The families whose skinned windows carry a `SkinShadowWindow` child. Every shared path that
-    /// treats that child specially is gated on this, so Classic and Original run unchanged.
-    var hostsSkinShadowWindows: Bool {
-        switch runningControllerFamily {
-        case .wmp, .winampModern: return true
-        // A face's outline changes only when the face does, so AppKit's own shadow stays true.
-        case .classic, .nullPlayerModern, .audion: return false
-        }
-    }
-
     private var auxiliaryControllerStyle: AuxiliaryControllerStyle {
         switch uiMode.controllerFamily {
         // Phase 1 aux-window policy (§5): winampModern reuses the classic providers.
@@ -3226,6 +3216,8 @@ class WindowManager {
             // These windows are allowed to remain visible in Compact Mode (see orderOutRegularWindows).
             if window === videoPlayerWindowController?.window { continue }
             if window === debugWindowController?.window { continue }
+            // A drop shadow follows its own window in and out, the video player's included.
+            if window is SkinShadowWindow { continue }
             if isSystemOrTransientWindow(window) { continue }
             // Leave fullscreen windows on their own Space — hiding them would switch Spaces.
             if isInNativeFullScreen(window) { continue }
@@ -5217,6 +5209,7 @@ class WindowManager {
     }
     
     private func notifySkinChanged() {
+        NotificationCenter.default.post(name: SkinWindowShadow.skinDidChange, object: nil)
         // Notify all windows to redraw with new skin
         mainWindowController?.skinDidChange()
         playlistWindowController?.skinDidChange()
@@ -8313,12 +8306,11 @@ class WindowManager {
         refitDockedProjectMToVerticalStack()
         let docked = findDockedWindows(to: mainWindow)
 
-        // Remove children that are no longer docked — except a `.wmz`/`.wal` window's drop
-        // shadow, which is a child of it for as long as it is on screen and would otherwise be
-        // stripped on the first drag and left behind on the desktop.
-        let keepsShadowChildren = hostsSkinShadowWindows
+        // Remove children that are no longer docked — except the window's drop shadow, which is a
+        // child of it for as long as it is on screen and would otherwise be stripped on the first
+        // drag and left behind on the desktop.
         for child in mainWindow.childWindows ?? [] {
-            if keepsShadowChildren, child is SkinShadowWindow { continue }
+            if child is SkinShadowWindow { continue }
             if !docked.contains(child) {
                 mainWindow.removeChildWindow(child)
             }

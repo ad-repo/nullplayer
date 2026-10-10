@@ -24,7 +24,7 @@ final class ArtWindowController: NSWindowController, ModeDependentWindow {
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
-        window.hasShadow = true
+        window.hasSkinShadow = true
         window.title = "NullPlayer Art"
         window.isReleasedWhenClosed = false
         window.center()

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.32.1
+
+- **Audion faces no longer draw a hard outline around their shadow** — faces that paint their
+  own soft drop shadow, such as BBX • MERCURY™ m2 and Audion XP 1, showed a thin dark line
+  around the outer edge of that shadow, because macOS traced it as the window's outline. Faces
+  now cast NullPlayer's own shadow, taken from the face's pixels, with no outline.
+- **One drop shadow for every skin, under one switch** — Classic, Original, Audion faces and
+  every NullPlayer window beside them (playlist, equalizer, Library Browser, the visualizers,
+  video) now cast the same soft shadow `.wal` and `.wmz` skins already had, and **Window
+  Shadows** in the right-click menu turns it on or off in every skin family. Windows that dock
+  seamlessly in an Original skin still drop their shadow while docked.
+
 ## 0.32.0
 
 ### New features

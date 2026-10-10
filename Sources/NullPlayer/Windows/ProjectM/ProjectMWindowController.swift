@@ -36,7 +36,7 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
-        window.hasShadow = true
+        window.hasSkinShadow = true
         window.minSize = SkinElements.ProjectM.minSize
         window.title = "Visualizations"
         

@@ -46,7 +46,7 @@ class ModernAudioAnalysisWindowController: NSWindowController, AudioAnalysisWind
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
-        window.hasShadow = true
+        window.hasSkinShadow = true
         // Center-stack minimum; WindowManager.applyCenterStackSizingConstraints refines this on show.
         window.minSize = ModernSkinElements.spectrumMinSize
         window.title = "NullPlayer Audio Analyzer"

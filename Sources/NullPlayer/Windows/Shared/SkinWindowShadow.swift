@@ -41,8 +41,9 @@ final class SkinShadowWindow: NSWindow {
     }
 }
 
-/// **A macOS-style drop shadow for a shaped `.wmz` or `.wal` window, built from the window's own
-/// shape so it can never go stale.**
+/// **A macOS-style drop shadow for every skin window, built from the window's own shape so it can
+/// never go stale.** `.wmz`, `.wal` and Audion attach it to their engine's outline; every other
+/// skin window through `NSWindow.hasSkinShadow`.
 ///
 /// Those windows keep `hasShadow = false`. AppKit builds a borderless window's shadow from a cached
 /// copy of what it last drew, and these windows change shape — drawers slide, panes open, the view
@@ -60,9 +61,13 @@ final class SkinShadowWindow: NSWindow {
 /// invalidations cost one pull of the newest shape.
 @MainActor
 final class SkinWindowShadow {
-    /// One key for both families. Default on.
+    /// One key for every family. Default on.
     nonisolated static let isEnabledDefaultsKey = "skinWindowShadows"
     nonisolated static let enabledDidChange = Notification.Name("NullPlayer.skinWindowShadowsDidChange")
+    /// Posted when a Classic skin is applied (an Original one posts `ModernSkinEngine`'s own): their
+    /// windows' outlines come from what they draw (`NSWindow.hasSkinShadow`), and a new skin may
+    /// draw another shape at the same size.
+    nonisolated static let skinDidChange = Notification.Name("NullPlayer.skinWindowShadowsSkinDidChange")
 
     /// Close to an inactive macOS window's shadow, tuned on screen beside a Classic window.
     nonisolated static let blur: CGFloat = 12
@@ -134,11 +139,15 @@ final class SkinWindowShadow {
                                                   object: parent, queue: .main) {
             [weak self] _ in MainActor.assumeIsolated { self?.reassertAfterMove() }
         })
-        for event in [NSWindow.didResizeNotification, NSWindow.didBecomeKeyNotification] {
-            parentObservers.append(center.addObserver(forName: event, object: parent, queue: .main) {
-                [weak self] _ in MainActor.assumeIsolated { self?.reassert() }
-            })
-        }
+        // The shape is pulled at the window's size, so a new size needs a new pull.
+        parentObservers.append(center.addObserver(forName: NSWindow.didResizeNotification,
+                                                  object: parent, queue: .main) {
+            [weak self] _ in MainActor.assumeIsolated { self?.reassert(); self?.invalidateShape("resize") }
+        })
+        parentObservers.append(center.addObserver(forName: NSWindow.didBecomeKeyNotification,
+                                                  object: parent, queue: .main) {
+            [weak self] _ in MainActor.assumeIsolated { self?.reassert() }
+        })
         parentObservers.append(center.addObserver(
             forName: NSWindow.didChangeOcclusionStateNotification, object: parent, queue: .main) {
                 [weak self] _ in MainActor.assumeIsolated { self?.parentOcclusionDidChange() }

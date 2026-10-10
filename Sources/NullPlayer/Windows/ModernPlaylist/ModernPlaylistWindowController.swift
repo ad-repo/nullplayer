@@ -42,7 +42,7 @@ class ModernPlaylistWindowController: NSWindowController, PlaylistWindowProvidin
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
-        window.hasShadow = true
+        window.hasSkinShadow = true
         window.title = "Playlist"
         
         // Prevent window from being released when closed - we reuse the same controller

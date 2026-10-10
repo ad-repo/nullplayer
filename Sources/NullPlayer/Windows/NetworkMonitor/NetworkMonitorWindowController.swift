@@ -22,7 +22,7 @@ final class NetworkMonitorWindowController: NSWindowController, NetworkMonitorWi
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
-        window.hasShadow = true
+        window.hasSkinShadow = true
         window.minSize = SkinElements.SpectrumWindow.minSize
         window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         window.title = "flow"

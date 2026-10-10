@@ -126,11 +126,10 @@ of these was invisible to the harness and visible in the first minute of live QA
     `didMoveNotification`. AppKit carries the child only *after* that notification, so the frame is
     re-set on every drag step and lands right (measured headlessly 2026-10-02: no overshoot).
   - **Shared code keeps the child.** `WindowManager.updateDockedChildWindows` strips every non-docked
-    child of the player on each drag and dock; it exempts `SkinShadowWindow`, gated on
-    `hostsSkinShadowWindows` (`.wmz`/`.wal` only). NullPlayer's own Compact Mode — which records and
-    re-shows every visible window (`orderOutOrphanedAppWindows`) and would treat a shadow as a window
-    of its own — is not offered in `.wmz`/`.wal` (`ContextMenuBuilder` hides it), so it needs no
-    exemption; add one there if that ever changes. The trace is `NP_SKIN_SHADOW_TRACE`
+    child of the player on each drag and dock; it exempts `SkinShadowWindow` by type, in every
+    family, since every family's windows cast one (`ui-guide` § *Window Drop Shadows (Every
+    Family)*). Compact Mode's `orderOutOrphanedAppWindows`, which records and re-shows every visible
+    window, skips it the same way. The trace is `NP_SKIN_SHADOW_TRACE`
     (`harness/app-flags.md`).
 - **A script transaction repaints in full.** The dirty region cannot be derived from what a handler
   *wrote*: it writes `svEqualizer.top` and a whole subtree moves that it never mentioned, and a

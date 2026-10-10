@@ -290,7 +290,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         
         // Allow resizing from edges
         window.isOpaque = true
-        window.hasShadow = true
+        window.hasSkinShadow = true
         
         // Enable fullscreen support for borderless window
         window.collectionBehavior = [.fullScreenPrimary, .managed]
@@ -1081,7 +1081,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         // `setFrame` is clamped by `minSize` — without this the picture would sit in a window too
         // big for the hole it is filling.
         window.minSize = NSSize(width: 1, height: 1)
-        window.hasShadow = false
+        window.hasSkinShadow = false
         if window.parent !== parent {
             window.parent?.removeChildWindow(window)
             parent.addChildWindow(window, ordered: .above)
@@ -1118,7 +1118,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
         guard let window else { return }
         if isVideoOutputHosted {
             window.parent?.removeChildWindow(window)
-            window.hasShadow = true
+            window.hasSkinShadow = true
             if let minSizeBeforeHosting { window.minSize = minSizeBeforeHosting }
             if let frameBeforeHosting { window.setFrame(frameBeforeHosting, display: false) }
             frameBeforeHosting = nil

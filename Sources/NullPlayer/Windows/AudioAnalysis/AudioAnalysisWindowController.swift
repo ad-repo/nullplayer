@@ -17,7 +17,7 @@ final class AudioAnalysisWindowController: NSWindowController, AudioAnalysisWind
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
-        window.hasShadow = true
+        window.hasSkinShadow = true
         window.minSize = SkinElements.SpectrumWindow.minSize
         window.maxSize = NSSize(
             width: CGFloat.greatestFiniteMagnitude,

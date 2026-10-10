@@ -32,7 +32,7 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
-        window.hasShadow = true
+        window.hasSkinShadow = true
         window.title = "Playlist"
         
         // Match main window's width and position below it (or below EQ if visible)

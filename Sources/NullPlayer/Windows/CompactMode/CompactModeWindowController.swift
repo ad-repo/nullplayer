@@ -101,6 +101,9 @@ final class CompactModeWindowController: NSWindowController {
         window.hidesOnDeactivate = false
         window.isReleasedWhenClosed = false
         window.animationBehavior = .none
+        // AppKit's shadow, not the browser's skin one: this window fades by `alphaValue`, which
+        // AppKit's follows and a shadow window of its own would not.
+        window.hasSkinShadow = false
         window.hasShadow = true
         window.title = "Compact Mode"
         window.setAccessibilityIdentifier("CompactModeWindow")
