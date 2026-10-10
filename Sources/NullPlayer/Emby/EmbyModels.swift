@@ -42,6 +42,9 @@ struct EmbyArtist: Identifiable, Equatable, AlbumCountedArtist {
     let genre: String?
     let imageTag: String?    // For artwork URL construction
     let isFavorite: Bool
+
+    /// The item whose Primary image is this artist's picture — its own, when it has one.
+    var artworkItemId: String? { imageTag == nil ? nil : id }
 }
 
 /// An album in an Emby music library
@@ -54,6 +57,8 @@ struct EmbyAlbum: Identifiable, Equatable, AlbumArtistCredited {
     let year: Int?
     let genre: String?
     let imageTag: String?
+    /// The track whose picture Emby shows for an album with none of its own (`PrimaryImageItemId`).
+    let primaryImageItemId: String?
     let songCount: Int
     let duration: Int            // seconds (RunTimeTicks / 10_000_000)
     let created: Date?
@@ -68,6 +73,10 @@ struct EmbyAlbum: Identifiable, Equatable, AlbumArtistCredited {
         }
         return String(format: "%d:%02d", minutes, duration % 60)
     }
+
+    /// The item whose Primary image is this album's cover: its own when it has one, else the
+    /// track Emby names for it.
+    var artworkItemId: String? { imageTag == nil ? primaryImageItemId : id }
 }
 
 /// A song (track) in an Emby music library
@@ -127,6 +136,9 @@ struct EmbyPlaylist: Identifiable, Equatable {
         }
         return String(format: "%d:%02d", minutes, duration % 60)
     }
+
+    /// The item whose Primary image is this playlist's picture — its own, when it has one.
+    var artworkItemId: String? { imageTag == nil ? nil : id }
 }
 
 /// A music library in Emby (Emby can have multiple music libraries)
@@ -176,6 +188,9 @@ struct EmbyShow: Identifiable, Equatable {
     let backdropTag: String?
     let childCount: Int         // number of seasons
     let isFavorite: Bool
+
+    /// The item whose Primary image is this show's picture — its own, when it has one.
+    var artworkItemId: String? { imageTag == nil ? nil : id }
 }
 
 /// A season of a TV show in Emby
@@ -187,6 +202,9 @@ struct EmbySeason: Identifiable, Equatable {
     let seriesName: String?
     let imageTag: String?
     let childCount: Int         // number of episodes
+
+    /// The item whose Primary image is this season's picture — its own, when it has one.
+    var artworkItemId: String? { imageTag == nil ? nil : id }
 }
 
 /// An episode of a TV show in Emby
@@ -268,6 +286,7 @@ struct EmbyItemDTO: Decodable {
     let Container: String?
     let Path: String?
     let ImageTags: [String: String]?
+    let PrimaryImageItemId: String?  // An album's stand-in picture: a track's, when it has none of its own
     let BackdropImageTags: [String]?
     let ChildCount: Int?           // Album count for artists, song count for albums, season/episode count
     let SongCount: Int?
@@ -285,7 +304,7 @@ struct EmbyItemDTO: Decodable {
     enum CodingKeys: String, CodingKey {
         case Id, Name, AlbumArtist, AlbumArtists, Album, AlbumId, Artists, ArtistItems
         case IndexNumber, ParentIndexNumber, ProductionYear, Genres, RunTimeTicks, Size
-        case Container, Path, ImageTags, BackdropImageTags, ChildCount, SongCount, DateCreated, CollectionType
+        case Container, Path, ImageTags, PrimaryImageItemId, BackdropImageTags, ChildCount, SongCount, DateCreated, CollectionType
         case MediaSources, UserData, Overview, OfficialRating, SeriesId, SeriesName, SeasonId, SeasonName
         case ItemType = "Type"
     }
@@ -324,6 +343,7 @@ struct EmbyItemDTO: Decodable {
             year: ProductionYear,
             genre: Genres?.first,
             imageTag: ImageTags?["Primary"],
+            primaryImageItemId: PrimaryImageItemId,
             songCount: ChildCount ?? SongCount ?? 0,
             duration: durationSeconds,
             created: parseEmbyDate(DateCreated),

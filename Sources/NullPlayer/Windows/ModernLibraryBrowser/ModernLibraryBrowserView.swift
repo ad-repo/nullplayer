@@ -6262,9 +6262,9 @@ class ModernLibraryBrowserView: NSView {
             } else if let subsonicId = track.subsonicId {
                 image = await self.loadSubsonicArtwork(songId: subsonicId)
             } else if track.jellyfinId != nil {
-                if let itemId = track.artworkThumb { image = await self.loadJellyfinArtwork(itemId: itemId, imageTag: nil) }
+                if let itemId = track.artworkThumb { image = await self.loadJellyfinArtwork(itemId: itemId) }
             } else if track.embyId != nil {
-                if let itemId = track.artworkThumb { image = await self.loadEmbyArtwork(itemId: itemId, imageTag: nil) }
+                if let itemId = track.artworkThumb { image = await self.loadEmbyArtwork(itemId: itemId) }
             } else if track.url.isFileURL {
                 image = await self.loadLocalArtwork(url: track.url)
             } else if RadioManager.shared.isActive {
@@ -6313,10 +6313,10 @@ class ModernLibraryBrowserView: NSView {
         } catch { return nil }
     }
     
-    private func loadJellyfinArtwork(itemId: String, imageTag: String?) async -> NSImage? {
+    private func loadJellyfinArtwork(itemId: String) async -> NSImage? {
         let cacheKey = NSString(string: "jellyfin:\(itemId)")
         if let cached = Self.artworkCache.object(forKey: cacheKey) { return cached }
-        guard let url = JellyfinManager.shared.imageURL(itemId: itemId, imageTag: imageTag, size: 400) else { return nil }
+        guard let url = JellyfinManager.shared.imageURL(itemId: itemId, imageTag: nil, size: 400) else { return nil }
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200,
@@ -6325,10 +6325,10 @@ class ModernLibraryBrowserView: NSView {
         } catch { return nil }
     }
 
-    private func loadEmbyArtwork(itemId: String, imageTag: String?) async -> NSImage? {
+    private func loadEmbyArtwork(itemId: String) async -> NSImage? {
         let cacheKey = NSString(string: "emby:\(itemId)")
         if let cached = Self.artworkCache.object(forKey: cacheKey) { return cached }
-        guard let url = EmbyManager.shared.imageURL(itemId: itemId, imageTag: imageTag, size: 400) else { return nil }
+        guard let url = EmbyManager.shared.imageURL(itemId: itemId, imageTag: nil, size: 400) else { return nil }
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
             guard let http = response as? HTTPURLResponse, http.statusCode == 200,
@@ -6427,86 +6427,9 @@ class ModernLibraryBrowserView: NSView {
             var image: NSImage?
             
             switch item.type {
-            case .track(let track):
-                if let thumb = track.thumb {
-                    image = await self.loadPlexArtwork(ratingKey: track.id, thumbPath: thumb)
-                }
-            case .album(let album):
-                if let thumb = album.thumb {
-                    image = await self.loadPlexArtwork(ratingKey: album.id, thumbPath: thumb)
-                }
-            case .artist(let artist):
-                if let thumb = artist.thumb {
-                    image = await self.loadPlexArtwork(ratingKey: artist.id, thumbPath: thumb)
-                }
-            case .movie(let movie):
-                if let thumb = movie.thumb {
-                    image = await self.loadPlexArtwork(ratingKey: movie.id, thumbPath: thumb)
-                }
-            case .episode(let episode):
-                if let thumb = episode.thumb {
-                    image = await self.loadPlexArtwork(ratingKey: episode.id, thumbPath: thumb)
-                }
-            case .show(let show):
-                if let thumb = show.thumb {
-                    image = await self.loadPlexArtwork(ratingKey: show.id, thumbPath: thumb)
-                }
-            case .season(let season):
-                if let thumb = season.thumb {
-                    image = await self.loadPlexArtwork(ratingKey: season.id, thumbPath: thumb)
-                }
-            case .localTrack(let track):
-                image = await self.loadLocalArtwork(url: track.url)
-            case .localAlbum(let album):
-                let albumTrackForArt = album.tracks.first ?? MediaLibraryStore.shared.tracksForAlbum(album.id).first
-                if let track = albumTrackForArt {
-                    image = await self.loadLocalArtwork(url: track.url)
-                }
-            case .localArtist(let artist):
-                let artistTracks = MediaLibraryStore.shared.searchTracks(query: artist.name, limit: 1, offset: 0)
-                if let track = artistTracks.first {
-                    image = await self.loadLocalArtwork(url: track.url)
-                }
-            case .subsonicTrack(let song):
-                if let coverArt = song.coverArt {
-                    image = await self.loadSubsonicArtwork(songId: coverArt)
-                }
-            case .subsonicAlbum(let album):
-                if let coverArt = album.coverArt {
-                    image = await self.loadSubsonicArtwork(songId: coverArt)
-                }
-            case .subsonicArtist(let artist):
-                if let coverArt = artist.coverArt {
-                    image = await self.loadSubsonicArtwork(songId: coverArt)
-                }
-            case .jellyfinTrack(let song):
-                image = await self.loadJellyfinArtwork(itemId: song.albumId ?? song.id, imageTag: song.imageTag)
-            case .jellyfinAlbum(let album):
-                image = await self.loadJellyfinArtwork(itemId: album.id, imageTag: album.imageTag)
-            case .jellyfinArtist(let artist):
-                image = await self.loadJellyfinArtwork(itemId: artist.id, imageTag: artist.imageTag)
-            case .jellyfinMovie(let movie):
-                image = await self.loadJellyfinArtwork(itemId: movie.id, imageTag: movie.imageTag)
-            case .jellyfinShow(let show):
-                image = await self.loadJellyfinArtwork(itemId: show.id, imageTag: show.imageTag)
-            case .jellyfinSeason(let season):
-                image = await self.loadJellyfinArtwork(itemId: season.id, imageTag: season.imageTag)
-            case .jellyfinEpisode(let episode):
-                image = await self.loadJellyfinArtwork(itemId: episode.id, imageTag: episode.imageTag)
-            case .embyTrack(let song):
-                image = await self.loadEmbyArtwork(itemId: song.albumId ?? song.id, imageTag: song.imageTag)
-            case .embyAlbum(let album):
-                image = await self.loadEmbyArtwork(itemId: album.id, imageTag: album.imageTag)
-            case .embyArtist(let artist):
-                image = await self.loadEmbyArtwork(itemId: artist.id, imageTag: artist.imageTag)
-            case .embyMovie(let movie):
-                image = await self.loadEmbyArtwork(itemId: movie.id, imageTag: movie.imageTag)
-            case .embyShow(let show):
-                image = await self.loadEmbyArtwork(itemId: show.id, imageTag: show.imageTag)
-            case .embySeason(let season):
-                image = await self.loadEmbyArtwork(itemId: season.id, imageTag: season.imageTag)
-            case .embyEpisode(let episode):
-                image = await self.loadEmbyArtwork(itemId: episode.id, imageTag: episode.imageTag)
+            case .localMovie, .localShow, .localSeason, .localEpisode:
+                // Video artwork is loaded during playback via AVAssetImageGenerator
+                break
             case .radioStation(let station):
                 let radioTrack = station.toTrack()
                 image = await self.loadRadioArtwork(for: radioTrack, station: station)
@@ -6524,7 +6447,7 @@ class ModernLibraryBrowserView: NSView {
                     image = await self.loadRemoteArtwork(urlString: avatar.absoluteString, cacheNamespace: "youtube")?.squareCenterCropped()
                 }
             default:
-                break
+                image = await self.itemArtwork(for: item).load()
             }
 
             guard !Task.isCancelled else { return }
@@ -9251,9 +9174,9 @@ class ModernLibraryBrowserView: NSView {
             guard let coverArt = album.coverArt else { return (nil, { nil }) }
             return ("subsonic:\(coverArt)", { [weak self] in await self?.loadSubsonicArtwork(songId: coverArt) })
         case .jellyfinAlbum(let album):
-            return ("jellyfin:\(album.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: album.id, imageTag: album.imageTag) })
+            return jellyfinArtwork(album.artworkItemId)
         case .embyAlbum(let album):
-            return ("emby:\(album.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: album.id, imageTag: album.imageTag) })
+            return embyArtwork(album.artworkItemId)
         case .movie(let movie):
             return ("plex:\(movie.id)", { [weak self] in await self?.loadPlexArtwork(ratingKey: movie.id, thumbPath: movie.thumb) })
         case .show(let show):
@@ -9275,21 +9198,21 @@ class ModernLibraryBrowserView: NSView {
         case .localEpisode(let episode):
             return ("local:\(episode.url.path)", { [weak self] in await self?.loadLocalArtwork(url: episode.url) })
         case .jellyfinMovie(let movie):
-            return ("jellyfin:\(movie.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: movie.id, imageTag: movie.imageTag) })
+            return jellyfinArtwork(movie.artworkItemId)
         case .jellyfinShow(let show):
-            return ("jellyfin:\(show.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: show.id, imageTag: show.imageTag) })
+            return jellyfinArtwork(show.artworkItemId)
         case .jellyfinSeason(let season):
-            return ("jellyfin:\(season.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: season.id, imageTag: season.imageTag) })
+            return jellyfinArtwork(season.artworkItemId)
         case .jellyfinEpisode(let episode):
-            return ("jellyfin:\(episode.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: episode.id, imageTag: episode.imageTag) })
+            return jellyfinArtwork(episode.artworkItemId)
         case .embyMovie(let movie):
-            return ("emby:\(movie.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: movie.id, imageTag: movie.imageTag) })
+            return embyArtwork(movie.artworkItemId)
         case .embyShow(let show):
-            return ("emby:\(show.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: show.id, imageTag: show.imageTag) })
+            return embyArtwork(show.artworkItemId)
         case .embySeason(let season):
-            return ("emby:\(season.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: season.id, imageTag: season.imageTag) })
+            return embyArtwork(season.artworkItemId)
         case .embyEpisode(let episode):
-            return ("emby:\(episode.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: episode.id, imageTag: episode.imageTag) })
+            return embyArtwork(episode.artworkItemId)
         case .artist(let artist):
             guard let thumb = artist.thumb else { return ("plex:\(artist.id)", { nil }) }
             return ("plex:\(artist.id)", { [weak self] in await self?.loadPlexArtwork(ratingKey: artist.id, thumbPath: thumb) })
@@ -9305,9 +9228,9 @@ class ModernLibraryBrowserView: NSView {
             guard let coverArt = artist.coverArt else { return (nil, { nil }) }
             return ("subsonic:\(coverArt)", { [weak self] in await self?.loadSubsonicArtwork(songId: coverArt) })
         case .jellyfinArtist(let artist):
-            return ("jellyfin:\(artist.id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: artist.id, imageTag: artist.imageTag) })
+            return jellyfinArtwork(artist.artworkItemId)
         case .embyArtist(let artist):
-            return ("emby:\(artist.id)", { [weak self] in await self?.loadEmbyArtwork(itemId: artist.id, imageTag: artist.imageTag) })
+            return embyArtwork(artist.artworkItemId)
         case .track(let track):
             guard let thumb = track.thumb else { return ("plex:\(track.id)", { nil }) }
             return ("plex:\(track.id)", { [weak self] in await self?.loadPlexArtwork(ratingKey: track.id, thumbPath: thumb) })
@@ -9317,14 +9240,24 @@ class ModernLibraryBrowserView: NSView {
             guard let coverArt = song.coverArt else { return (nil, { nil }) }
             return ("subsonic:\(coverArt)", { [weak self] in await self?.loadSubsonicArtwork(songId: coverArt) })
         case .jellyfinTrack(let song):
-            let id = song.albumId ?? song.id
-            return ("jellyfin:\(id)", { [weak self] in await self?.loadJellyfinArtwork(itemId: id, imageTag: song.imageTag) })
+            return jellyfinArtwork(song.artworkItemId)
         case .embyTrack(let song):
-            let id = song.albumId ?? song.id
-            return ("emby:\(id)", { [weak self] in await self?.loadEmbyArtwork(itemId: id, imageTag: song.imageTag) })
+            return embyArtwork(song.artworkItemId)
         default:
             return (nil, { nil })
         }
+    }
+
+    /// A Jellyfin item's art, from its `artworkItemId` (nil when the item has no picture).
+    private func jellyfinArtwork(_ itemId: String?) -> (cacheKey: String?, load: () async -> NSImage?) {
+        guard let itemId else { return (nil, { nil }) }
+        return ("jellyfin:\(itemId)", { [weak self] in await self?.loadJellyfinArtwork(itemId: itemId) })
+    }
+
+    /// An Emby item's art, from its `artworkItemId` (nil when the item has no picture).
+    private func embyArtwork(_ itemId: String?) -> (cacheKey: String?, load: () async -> NSImage?) {
+        guard let itemId else { return (nil, { nil }) }
+        return ("emby:\(itemId)", { [weak self] in await self?.loadEmbyArtwork(itemId: itemId) })
     }
 
     /// The art for a row's round thumbnail, or nil for rows that never carry art. Cover Flow items

@@ -89,8 +89,12 @@ The key differences from Jellyfin:
 - **A song's cover is usually its album's.** A song with no `ImageTags.Primary` of its own
   (most Emby songs) answers 404/500 for its own image. A `Track`'s `artworkThumb` is therefore the *item id*
   whose image to fetch — `EmbySong.artworkItemId`: the song's own id when it has a picture, else
-  its `AlbumId` — and every track-art consumer fetches that id with no tag (`Track.serverArtworkURL(size:)` resolves a track's cover for every server). Films and episodes
-  store their own id (`artworkItemId` on the film and episode models).
+  its `AlbumId` — and every track-art consumer fetches that id with no tag (`Track.serverArtworkURL(size:)` resolves a track's cover for every server). Every other
+  model — album, artist, playlist, film, show, season, episode — has an `artworkItemId` too: its own id
+  when it has a picture, else nil (no request). Both Library Browsers fetch every item's art through
+  that id, untagged, in `itemArtwork(for:)`.
+- **An album with no picture of its own** carries `PrimaryImageItemId`, the track whose picture Emby
+  shows for it; `EmbyAlbum.artworkItemId` falls back to it.
 
 ## User Actions
 
