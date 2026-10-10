@@ -852,12 +852,13 @@ class ContextMenuBuilder {
             uiMenu.addItem(skinFamilyItem(.audion, menu: buildAudionFacesMenu()))
         }
         uiMenu.addItem(.separator())
-        for (title, action, key) in [("Next Skin", #selector(MenuActions.selectNextSkin), "]"),
-                                     ("Previous Skin", #selector(MenuActions.selectPreviousSkin), "[")] {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
-            item.target = MenuActions.shared
-            uiMenu.addItem(item)
-        }
+        let nextSkin = NSMenuItem(title: "Next Skin", action: #selector(MenuActions.selectNextSkin), keyEquivalent: "]")
+        nextSkin.target = MenuActions.shared
+        uiMenu.addItem(nextSkin)
+        let previousSkin = NSMenuItem(title: "Previous Skin", action: #selector(MenuActions.selectPreviousSkin),
+                                      keyEquivalent: "[")
+        previousSkin.target = MenuActions.shared
+        uiMenu.addItem(previousSkin)
         return uiMenu
     }
 
