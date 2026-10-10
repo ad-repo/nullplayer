@@ -99,6 +99,9 @@ final class SkinWindowShadow {
     /// Hidden while true, as if the preference were off, but still attached: a seamless Original
     /// skin hides a docked window's shadow so the stack reads as one piece.
     var isSuppressed = false { didSet { if isSuppressed != oldValue { applyPreference() } } }
+    /// The outline's rect relative to the parent's origin, when it reaches past the parent: one
+    /// window of a seamless Original stack casts the whole stack's shadow. Nil is the parent's own.
+    var outlineBounds: CGRect? { didSet { if outlineBounds != oldValue { reassertFrame() } } }
     /// The parent's `occlusionState`, cached from its notification for the same reason.
     private var isParentOnScreen = false
     private var lastFingerprint: Int?
@@ -210,10 +213,15 @@ final class SkinWindowShadow {
 
     private func reassertFrame() {
         guard let parent, isEnabled, parent.isVisible else { return }
-        let frame = parent.frame.insetBy(dx: -Self.pad, dy: -Self.pad)
+        let outline = outlineFrame(of: parent)
+        let frame = outline.insetBy(dx: -Self.pad, dy: -Self.pad)
         guard shadowWindow.frame != frame else { return }
         shadowWindow.setFrame(frame, display: false)
-        trace("reassert frame \(Int(parent.frame.width))x\(Int(parent.frame.height))")
+        trace("reassert frame \(Int(outline.width))x\(Int(outline.height))")
+    }
+
+    private func outlineFrame(of parent: NSWindow) -> NSRect {
+        outlineBounds.map { $0.offsetBy(dx: parent.frame.minX, dy: parent.frame.minY) } ?? parent.frame
     }
 
     /// A window that comes back on screen also takes the pull it was owed while hidden.
@@ -297,9 +305,10 @@ final class SkinWindowShadow {
         let label = Self.isTraceEnabled
             ? trigger + String(format: " pull=%.1fms", (CFAbsoluteTimeGetCurrent() - started) * 1_000)
             : trigger
+        let outline = outlineFrame(of: parent)
         startBuild(ShapeRequest(layers: layers,
-                                width: max(1, Int(parent.frame.width.rounded())),
-                                height: max(1, Int(parent.frame.height.rounded())),
+                                width: max(1, Int(outline.width.rounded())),
+                                height: max(1, Int(outline.height.rounded())),
                                 trigger: label))
     }
 

@@ -9,8 +9,10 @@
 - **One drop shadow for every skin, under one switch** — Classic, Original, Audion faces and
   every NullPlayer window beside them (playlist, equalizer, Library Browser, the visualizers,
   video) now cast the same soft shadow `.wal` and `.wmz` skins already had, and **Window
-  Shadows** in the right-click menu turns it on or off in every skin family. Windows that dock
-  seamlessly in an Original skin still drop their shadow while docked.
+  Shadows** in the right-click menu turns it on or off in every skin family.
+- **A seamless Original stack casts one shadow** — windows docked together in a seamless skin
+  such as NeonWave floated with no shadow at all. The stack now casts one shadow around its
+  combined outline, with nothing along the seams, and a window pulled off gets its own back.
 
 ## 0.32.0
 

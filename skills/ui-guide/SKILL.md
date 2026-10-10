@@ -771,12 +771,16 @@ geometry as an exact match.
   pixels, and `window.invalidateSkinShadowShape(_:)` when content moves the outline at the same
   size. The outline is fingerprinted, so a pull that finds it unchanged rebuilds nothing.
 - **Seamless docking (Original):** each view's `windowLayoutDidChange` calls
-  `window.applyDockingShadow(edges:cornersChanged:)` (`Windows/Shared/ModernDockingShadow.swift`)
-  after updating its corner mask: a seamless skin drops the shadow while docked, and a squared or
-  rounded corner pulls the outline again. Only the view that owns the window's shadow calls it —
-  `window.contentView === self`, or the Library browser (in a container) outside compact mode. The
-  same views are embedded in the Library backdrop and `.wal` hosted windows, whose shadow is not
-  theirs.
+  `window.applyDockingShadow(isDocked:cornersChanged:)` (`NSWindow+SkinShadow.swift`) after
+  updating its corner mask; a window casting no skin shadow (a `.wal` hosted window, Compact Mode)
+  ignores it. A seamless skin casts **one shadow per docked group** (`findDockedWindows`): the main
+  window when it is in the group, else the lowest window number, casts the union of every member's
+  outline through `SkinWindowShadow.outlineBounds` (a shape rect larger than its parent), and the
+  rest set `isSuppressed`. The caster pulls again when membership or a member's relative frame
+  changes, and a hidden member's corner change is forwarded to it. Mid group drag
+  (`WindowManager.isInGroupDrag`) nothing regroups — the dragged window lands a step after its
+  peers — so the shape holds until the drop. Stats and Sonos never call it: a group whose caster is
+  one of them, without the main window, stays shadowless.
 - **AppKit's shadow stays** on transient panels (skin-loading overlay, row thumbnail preview, Audion
   slider popups), on the app-authored `.wmz` fallback player, and on the Compact Mode window: it
   fades by `alphaValue`, which AppKit's shadow follows and a separate shadow window does not, so

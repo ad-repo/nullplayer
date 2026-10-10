@@ -34,14 +34,32 @@ extension NSWindow {
     }
 
     /// **An Original window's drop shadow, given what it is docked to.** A seamless-docking skin
-    /// hides it while the window touches another, so the stack reads as one piece. `cornersChanged`
-    /// pulls the outline again: docking squares or rounds a corner without resizing the window.
+    /// casts one shadow per docked group, so the stack reads as one piece: each window's own would
+    /// fall along every seam, across its neighbour. One member casts the union of every member's
+    /// outline — the main window when it is in the group, else the lowest window number, so every
+    /// member picks the same one — and the rest hide theirs. `cornersChanged` pulls the outline
+    /// again: docking squares or rounds a corner without resizing the window.
     /// Any view in the window may call it, since docking is the window's; a window that casts no
     /// skin shadow (a `.wal` hosted window, Compact Mode) ignores it.
     func applyDockingShadow(isDocked: Bool, cornersChanged: Bool) {
-        guard let shadow = contentShadow?.shadow, shadow.isAttached else { return }
-        shadow.isSuppressed = isDocked && (ModernSkinEngine.shared.currentSkin?.config.window.seamlessDocking ?? 0) > 0
-        if cornersChanged { shadow.invalidateShape("corners") }
+        guard let content = contentShadow, content.shadow.isAttached else { return }
+        let manager = WindowManager.shared
+        // Mid group drag the members move as one, so the group and its shape stand until the drop.
+        if !manager.isInGroupDrag(self) {
+            let seamless = isDocked && (ModernSkinEngine.shared.currentSkin?.config.window.seamlessDocking ?? 0) > 0
+            let members = seamless ? [self] + manager.findDockedWindows(to: self) : [self]
+            // ponytail: a group whose caster never calls this (Stats, Sonos) without the main window
+            // stays shadowless, as every seamless stack was before; mark participants if that matters.
+            let caster = members.first { $0 === manager.mainWindowController?.window }
+                ?? members.min { $0.windowNumber < $1.windowNumber } ?? self
+            content.cast(for: caster === self ? members : nil)
+        }
+        if cornersChanged {
+            // A hidden member's corners are part of its caster's outline.
+            let caster = content.shadow.isSuppressed
+                ? NSApp.windows.first { $0.contentShadow?.casts(for: self) == true } : self
+            caster?.contentShadow?.shadow.invalidateShape("corners")
+        }
     }
 
     private static var contentShadowKey: UInt8 = 0
@@ -74,11 +92,60 @@ private final class ContentWindowShadow {
         skinObservers.forEach(NotificationCenter.default.removeObserver)
     }
 
+    /// A docked window this one casts the group shadow for, at its frame relative to this one's origin.
+    private struct Member: Equatable {
+        weak var window: NSWindow?
+        let frame: CGRect
+
+        static func == (lhs: Member, rhs: Member) -> Bool { lhs.window === rhs.window && lhs.frame == rhs.frame }
+    }
+
+    /// Every window the shadow outlines, this one included; empty for this window's outline alone.
+    private var group: [Member] = []
+
     func attach() {
         guard let window else { return }
-        shadow.attach(to: window) { [weak window] in
-            window.flatMap(Self.outline).map { [$0] } ?? []
+        shadow.attach(to: window) { [weak self, weak window] in
+            guard let self, let window else { return [] }
+            return (self.group.isEmpty ? Self.outline(of: window) : self.groupOutline()).map { [$0] } ?? []
         }
+    }
+
+    /// Cast the shadow of the docked `members`, this window among them, or none while another
+    /// member casts it. A new group or a member moved within it pulls the outline again.
+    func cast(for members: [NSWindow]?) {
+        guard let window else { return }
+        // Hidden before the shape changes and shown after, so no pull outlines the wrong group.
+        if members == nil { shadow.isSuppressed = true }
+        let origin = window.frame.origin
+        let next = members.flatMap { $0.count > 1 ? $0 : nil }?
+            .map { Member(window: $0, frame: $0.frame.offsetBy(dx: -origin.x, dy: -origin.y)) } ?? []
+        if next != group {
+            group = next
+            shadow.outlineBounds = next.map(\.frame).reduce(nil) { $0?.union($1) ?? $1 }
+            shadow.invalidateShape("group")
+        }
+        shadow.isSuppressed = members == nil
+    }
+
+    func casts(for window: NSWindow) -> Bool {
+        group.contains { $0.window === window }
+    }
+
+    /// Every member's outline at its place in the group. The knockout clears the whole union, so
+    /// the order members overlap in on screen does not matter.
+    private func groupOutline() -> CGImage? {
+        guard let bounds = shadow.outlineBounds,
+              let context = CGContext(data: nil, width: max(1, Int(bounds.width.rounded())),
+                                      height: max(1, Int(bounds.height.rounded())), bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        for member in group {
+            guard let window = member.window, let outline = Self.outline(of: window) else { continue }
+            context.draw(outline, in: member.frame.offsetBy(dx: -bounds.minX, dy: -bounds.minY))
+        }
+        return context.makeImage()
     }
 
     /// The content view's layer tree drawn at one pixel per point: the alpha is all the shadow reads.

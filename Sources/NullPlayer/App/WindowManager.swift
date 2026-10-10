@@ -7231,7 +7231,14 @@ class WindowManager {
         
         return dockedWindows
     }
-    
+
+    /// Whether `window` is moving in a group drag. Until the drop, the group's windows keep their
+    /// places relative to each other, though their frames land at different times each step.
+    func isInGroupDrag(_ window: NSWindow) -> Bool {
+        guard let draggingWindow, dragMode == .group else { return false }
+        return draggingWindow === window || dockedWindowsToMove.contains { $0 === window }
+    }
+
     /// Check if two windows are docked (touching edges)
     private func areWindowsDocked(_ window1: NSWindow, _ window2: NSWindow) -> Bool {
         let frame1 = window1.frame
