@@ -3,7 +3,7 @@
 
 
 
-  <h2 align="center">NullPlayer. Your media. Your backend. Your home devices. Your UI.</h2>
+  <h1 align="center">NullPlayer. Your media. Your backend. Your home devices. Your UI.</h2>
 
 
 
