@@ -5,7 +5,7 @@
 ### New features
 
 **Audion faces**
-- Support for Panic Audion faces. **Skins › Audion Faces › Get More Faces...** downloads Panic's
+- Support for **Panic Audion** faces. Skins › Audion Faces › Get More Faces... downloads Panic's
   archive; **Load Face...** installs a face folder or `.zip`. Rendered by a port of Panic's
   FaceKit viewer, at any UI Size.
 - All face buttons are wired, including ones Panic's viewer left inert: menu → playlist, mode →
