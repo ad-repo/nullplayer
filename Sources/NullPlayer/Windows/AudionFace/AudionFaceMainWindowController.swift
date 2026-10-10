@@ -52,7 +52,8 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
             forName: RadioManager.connectionStateDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in MainActor.assumeIsolated { self?.refreshHostState() } }
         unskinnedView.onLoadFace = { [weak self] in self?.importFaceFromPanel() }
-        present(nil, message: nil)
+        // No placeholder while the selected face loads: it would flash at its own size first.
+        // `reloadSelectedFace` presents it when there is no face to show.
         reloadSelectedFace()
     }
 
@@ -150,7 +151,6 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
         if window.contentView !== view { window.contentView = view }
         fitWindow()
         refreshHostState()
-        window.invalidateShadow()
     }
 
     func applyUIScale(_ scale: CGFloat) {
@@ -165,12 +165,16 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
         return NSSize(width: CGFloat(face.base.width) * scale, height: CGFloat(face.base.height) * scale)
     }
 
-    /// Sizes the window to what it shows at the current scale, holding its top-left corner.
+    /// Sizes the window to what it shows at the current scale, holding its top-left corner. The
+    /// outline comes from the pixels, so the shadow is recomputed only after drawing at the new size:
+    /// the view's own recompute, on a new face or scale, ran at the old one.
     private func fitWindow() {
         guard let window, let size = mainWindowSize(atScale: uiScale) else { return }
         let topLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
         window.setContentSize(size)
         window.setFrameTopLeftPoint(topLeft)
+        window.displayIfNeeded()
+        window.invalidateShadow()
     }
 
     // MARK: - Host state

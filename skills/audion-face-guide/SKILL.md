@@ -92,7 +92,9 @@ What is specific to this engine:
    defect is in the scene or renderer.
 2. **Then compare the renderer's own image with a capture of the window.** Agreement puts the defect
    in the scene; disagreement puts it in the AppKit layer (mask, backing scale, compositing). The
-   harness and the screen share one draw path, so they must agree.
+   harness and the screen share one draw path, so they must agree. An outline or shadow defect
+   (see-through area, stale shadow) is the exception: the window server composites it, so
+   `screencapture` of the window reads complete while the screen does not. Judge it by eye.
 3. **Confirm the face before diagnosing.** A launch that failed to select the face shows the
    unskinned view, which looks like a face that does nothing.
 4. **A sweep proves the default state only.** Hover, press, a ticking marquee, an animation and
