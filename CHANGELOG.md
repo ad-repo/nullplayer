@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Classic skins default the main window to the Classic analyzer** — the main window's
+  visualizer now starts on Classic instead of vis_classic, and launching or picking a Classic
+  skin no longer resets a mode you chose. A visualization reset still restores Classic.
+
 ## 0.32.1
 
 - **Audion faces no longer draw a hard outline around their shadow** — faces that paint their
