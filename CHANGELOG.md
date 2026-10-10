@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.32.2
 
 - **Classic skins default the main window to the Classic analyzer** — the main window's
   visualizer now starts on Classic instead of vis_classic, and launching or picking a Classic
