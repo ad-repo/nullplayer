@@ -142,6 +142,10 @@
   including after a restored session. They now show the album's cover in Control Center, skins,
   playlists, casts and the CLI.
 
+**Skins**
+- Beside an Audion face or a WMP skin, the playlist could not be resized to the player's width: it
+  stepped in 25-pixel increments and stopped at the Classic minimum. It now resizes freely.
+
 ## 0.31.4
 
 - **Each library tab keeps its own sort** — choosing a sort in the Library Browser, from the Sort
