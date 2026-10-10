@@ -13,6 +13,9 @@
 - **A seamless Original stack casts one shadow** — windows docked together in a seamless skin
   such as NeonWave floated with no shadow at all. The stack now casts one shadow around its
   combined outline, with nothing along the seams, and a window pulled off gets its own back.
+- **About window links to nullplayer.fyi** — a new website button sits above GitHub, LinkedIn
+  and Reddit, which now carry their logos; the button text and the GitHub star line are no
+  longer dark-on-dark.
 
 ## 0.32.0
 
