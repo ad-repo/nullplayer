@@ -537,6 +537,38 @@ extension MenuActions {
     }
 }
 
+// MARK: - Next skin
+
+extension MenuActions {
+
+    @objc func selectNextSkin() { stepSkin(by: 1) }
+    @objc func selectPreviousSkin() { stepSkin(by: -1) }
+
+    /// Steps through the on-screen family's skin list, wrapping, by sending that row's own action —
+    /// so it switches exactly as picking the row from the Skins menu does.
+    private func stepSkin(by step: Int) {
+        let menu: NSMenu
+        switch WindowManager.shared.uiMode {
+        case .classic: menu = ContextMenuBuilder.buildClassicSkinsMenu()
+        case .modern: menu = ContextMenuBuilder.buildModernFamilySkinsMenu(.modern)
+        case .metal: menu = ContextMenuBuilder.buildModernFamilySkinsMenu(.metal)
+        case .winampModern: menu = ContextMenuBuilder.buildWinampModernSkinsMenu()
+        case .wmp: menu = ContextMenuBuilder.buildWMPSkinsMenu()
+        case .audion: menu = ContextMenuBuilder.buildAudionFacesMenu()
+        }
+        // The skins follow the menu's last divider; Audion's may be grouped into A–Z submenus.
+        func rows(_ items: [NSMenuItem]) -> [NSMenuItem] {
+            items.flatMap { $0.submenu.map { rows($0.items) } ?? [$0] }
+        }
+        let start = (menu.items.lastIndex(where: \.isSeparatorItem) ?? -1) + 1
+        let skins = rows(Array(menu.items[start...])).filter { $0.action != nil }
+        guard !skins.isEmpty else { return }
+        let current = skins.firstIndex { $0.state == .on } ?? (step > 0 ? -1 : skins.count)
+        let next = skins[(current + step + skins.count) % skins.count]
+        NSApp.sendAction(next.action!, to: next.target, from: next)
+    }
+}
+
 // MARK: - Removing a skin
 
 extension MenuActions {

@@ -509,6 +509,9 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - **Cmd+K**: Show/hide ProjectM
 - **Cmd+J**: Jump to current track in playlist
 
+### Skins
+- **Cmd+] / Cmd+[**: Next / Previous skin in the on-screen family's list, wrapping (Skins menu; never changes family)
+
 ### Playlist
 - **Enter**: Play selected track
 - **Delete**: Remove selected tracks

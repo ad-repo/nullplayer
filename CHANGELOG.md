@@ -12,6 +12,8 @@
 - **Classic skins no longer show placeholder paint beside the display** — skins such as Large
   Image showed bright green bars at the clutterbar and behind the cast indicator; the main
   window now draws the skin's clutterbar strip and the mono slot's background, as Winamp does.
+- **Next Skin and Previous Skin shortcuts** — Cmd+] and Cmd+[ step through the current skin
+  family's installed skins, wrapping at either end. Both are also in the Skins menu.
 
 ## 0.32.1
 
