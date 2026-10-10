@@ -581,21 +581,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let totalButtonWidth = buttonWidth * 3 + buttonSpacing * 2
         let buttonStartX = (windowWidth - totalButtonWidth) / 2
 
-        // Link buttons: gray, icon beside the title. Brand marks are simple-icons (CC0) PDFs,
-        // drawn as templates so contentTintColor recolours them like the SF Symbol.
-        func addLinkButton(_ title: String, icon: NSImage?, x: CGFloat, width: CGFloat, action: Selector) {
+        // Link buttons: icon beside the title, URL carried in the tooltip. Brand marks are
+        // simple-icons (CC0) PDFs, drawn as templates so the dark appearance tints them.
+        func addLinkButton(_ title: String, icon: NSImage?, url: String, x: CGFloat, width: CGFloat) {
             let button = NSButton(frame: NSRect(x: x, y: y - buttonHeight, width: width, height: buttonHeight))
             button.title = title
             button.image = icon
             button.imagePosition = .imageLeading
             button.imageHugsTitle = true
             button.bezelStyle = .rounded
-            button.contentTintColor = .white
-            button.wantsLayer = true
-            button.layer?.backgroundColor = NSColor(white: 0.3, alpha: 1.0).cgColor
-            button.layer?.cornerRadius = 5
+            button.toolTip = url
             button.target = self
-            button.action = action
+            button.action = #selector(openAboutLink(_:))
             contentView.addSubview(button)
         }
         func brandIcon(_ name: String) -> NSImage? {
@@ -607,14 +604,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         addLinkButton("nullplayer.fyi", icon: NSImage(systemSymbolName: "globe", accessibilityDescription: nil),
-                      x: buttonStartX, width: totalButtonWidth, action: #selector(openWebsite))
+                      url: "https://nullplayer.fyi/", x: buttonStartX, width: totalButtonWidth)
         y -= buttonHeight + 12
-        addLinkButton("GitHub", icon: brandIcon("github"),
-                      x: buttonStartX, width: buttonWidth, action: #selector(openGitHub))
-        addLinkButton("LinkedIn", icon: brandIcon("linkedin"),
-                      x: buttonStartX + buttonWidth + buttonSpacing, width: buttonWidth, action: #selector(openLinkedIn))
-        addLinkButton("Reddit", icon: brandIcon("reddit"),
-                      x: buttonStartX + (buttonWidth + buttonSpacing) * 2, width: buttonWidth, action: #selector(openReddit))
+        addLinkButton("GitHub", icon: brandIcon("github"), url: "https://github.com/ad-repo",
+                      x: buttonStartX, width: buttonWidth)
+        addLinkButton("LinkedIn", icon: brandIcon("linkedin"), url: "https://www.linkedin.com/in/andrew-d-9b83aa148/",
+                      x: buttonStartX + buttonWidth + buttonSpacing, width: buttonWidth)
+        addLinkButton("Reddit", icon: brandIcon("reddit"), url: "https://www.reddit.com/r/NullPlayer/",
+                      x: buttonStartX + (buttonWidth + buttonSpacing) * 2, width: buttonWidth)
         y -= buttonHeight + 12
         
         // Disclaimer
@@ -648,26 +645,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         aboutWindow = nil
     }
     
-    @objc private func openWebsite() {
-        if let url = URL(string: "https://nullplayer.fyi/") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
-    @objc private func openGitHub() {
-        if let url = URL(string: "https://github.com/ad-repo") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-    
-    @objc private func openLinkedIn() {
-        if let url = URL(string: "https://www.linkedin.com/in/andrew-d-9b83aa148/") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-    
-    @objc private func openReddit() {
-        if let url = URL(string: "https://www.reddit.com/r/NullPlayer/") {
+    @objc private func openAboutLink(_ sender: NSButton) {
+        if let link = sender.toolTip, let url = URL(string: link) {
             NSWorkspace.shared.open(url)
         }
     }
