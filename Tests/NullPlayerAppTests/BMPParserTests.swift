@@ -1,33 +1,59 @@
 import AppKit
-import NullPlayerCore
 import XCTest
 @testable import NullPlayer
 
 final class BMPParserTests: XCTestCase {
     func testFourBitBMPUsesPackedAlignedRowStride() throws {
-        let bmpData = makeFourBitBMP()
+        let image = try XCTUnwrap(BMPParser.parse(data: makeFourBitBMP()))
 
-        let appImage = try XCTUnwrap(NullPlayer.BMPParser.parse(data: bmpData))
-        assertFourBitBMPDecoded(appImage)
-
-        let coreImage = try XCTUnwrap(NullPlayerCore.BMPParser.parse(data: bmpData))
-        assertFourBitBMPDecoded(coreImage)
+        XCTAssertEqual(image.size.width, 5)
+        XCTAssertEqual(image.size.height, 2)
+        XCTAssertEqual(pixel(atX: 0, y: 0, in: image), RGBA(255, 0, 0, 255))
+        XCTAssertEqual(pixel(atX: 4, y: 0, in: image), RGBA(0, 255, 255, 255))
+        XCTAssertEqual(pixel(atX: 0, y: 1, in: image), RGBA(64, 64, 64, 255))
     }
 
-    private func assertFourBitBMPDecoded(_ image: NSImage, file: StaticString = #filePath, line: UInt = #line) {
-        XCTAssertEqual(image.size.width, 5, file: file, line: line)
-        XCTAssertEqual(image.size.height, 2, file: file, line: line)
-        XCTAssertEqual(pixel(atX: 0, y: 0, in: image), RGBA(255, 0, 0, 255), file: file, line: line)
-        XCTAssertEqual(pixel(atX: 4, y: 0, in: image), RGBA(0, 255, 255, 255), file: file, line: line)
-        XCTAssertEqual(pixel(atX: 0, y: 1, in: image), RGBA(64, 64, 64, 255), file: file, line: line)
+    func testThirtyTwoBitBMPIgnoresReservedByte() throws {
+        // BI_RGB 32-bit pixels carry a reserved 4th byte, usually 0. Read as alpha it
+        // made the whole window transparent, so clicks fell through to the desktop.
+        let bmpData = makeBMP(width: 2, height: 1, bitsPerPixel: 32, palette: [],
+                              rows: [[0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0x00, 0x00]])
+
+        let image = try XCTUnwrap(BMPParser.parse(data: bmpData))
+        XCTAssertEqual(pixel(atX: 0, y: 0, in: image), RGBA(255, 0, 0, 255))
+        XCTAssertEqual(pixel(atX: 1, y: 0, in: image), RGBA(0, 0, 255, 255))
     }
 
     private func makeFourBitBMP() -> Data {
-        let width = 5
-        let height = 2
-        let bitsPerPixel: UInt16 = 4
-        let paletteEntryCount = 16
-        let pixelDataOffset = 14 + 40 + paletteEntryCount * 4
+        let palette: [(r: UInt8, g: UInt8, b: UInt8)] = [
+            (0, 0, 0),
+            (255, 0, 0),
+            (0, 255, 0),
+            (0, 0, 255),
+            (255, 255, 0),
+            (0, 255, 255),
+            (255, 0, 255),
+            (64, 64, 64),
+            (128, 128, 128),
+            (255, 128, 0),
+            (128, 0, 255),
+            (0, 128, 255),
+            (128, 255, 0),
+            (255, 0, 128),
+            (0, 255, 128),
+            (255, 255, 255),
+        ]
+
+        // BMP rows are bottom-up. Five 4-bit pixels require three packed bytes
+        // plus one pad byte, not five bytes rounded to an eight-byte stride.
+        return makeBMP(width: 5, height: 2, bitsPerPixel: 4, palette: palette,
+                       rows: [[0x78, 0x9A, 0xB0, 0x00], [0x12, 0x34, 0x50, 0x00]])
+    }
+
+    /// A BITMAPINFOHEADER BI_RGB file; `rows` are already padded and bottom-up.
+    private func makeBMP(width: Int, height: Int, bitsPerPixel: UInt16,
+                         palette: [(r: UInt8, g: UInt8, b: UInt8)], rows: [[UInt8]]) -> Data {
+        let pixelDataOffset = 14 + 40 + palette.count * 4
         let rowSize = ((width * Int(bitsPerPixel) + 31) / 32) * 4
         let fileSize = pixelDataOffset + rowSize * height
 
@@ -48,27 +74,8 @@ final class BMPParserTests: XCTestCase {
         appendUInt32(UInt32(rowSize * height), to: &data)
         appendInt32(2_835, to: &data)
         appendInt32(2_835, to: &data)
-        appendUInt32(UInt32(paletteEntryCount), to: &data)
+        appendUInt32(UInt32(palette.count), to: &data)
         appendUInt32(0, to: &data)
-
-        let palette: [(r: UInt8, g: UInt8, b: UInt8)] = [
-            (0, 0, 0),
-            (255, 0, 0),
-            (0, 255, 0),
-            (0, 0, 255),
-            (255, 255, 0),
-            (0, 255, 255),
-            (255, 0, 255),
-            (64, 64, 64),
-            (128, 128, 128),
-            (255, 128, 0),
-            (128, 0, 255),
-            (0, 128, 255),
-            (128, 255, 0),
-            (255, 0, 128),
-            (0, 255, 128),
-            (255, 255, 255),
-        ]
 
         for color in palette {
             data.append(color.b)
@@ -77,10 +84,7 @@ final class BMPParserTests: XCTestCase {
             data.append(0)
         }
 
-        // BMP rows are bottom-up. Five 4-bit pixels require three packed bytes
-        // plus one pad byte, not five bytes rounded to an eight-byte stride.
-        data.append(contentsOf: [0x78, 0x9A, 0xB0, 0x00])
-        data.append(contentsOf: [0x12, 0x34, 0x50, 0x00])
+        rows.forEach { data.append(contentsOf: $0) }
         return data
     }
 

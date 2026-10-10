@@ -94,12 +94,10 @@ class BMPParser {
                 parse8Bit(data: data, offset: pixelOffset, width: width, height: height,
                           rowSize: rowSize, palette: palette, pixels: &pixels, topDown: topDown)
             }
-        case 24:
-            parse24Bit(data: data, offset: pixelOffset, width: width, height: height,
-                       rowSize: rowSize, pixels: &pixels, topDown: topDown)
-        case 32:
-            parse32Bit(data: data, offset: pixelOffset, width: width, height: height,
-                       rowSize: rowSize, pixels: &pixels, topDown: topDown)
+        case 24, 32:
+            parseDirectColor(data: data, offset: pixelOffset, width: width, height: height,
+                             rowSize: rowSize, bytesPerPixel: Int(bitsPerPixel) / 8,
+                             pixels: &pixels, topDown: topDown)
         default:
             print("Unsupported BMP bit depth: \(bitsPerPixel)")
             return nil
@@ -189,42 +187,23 @@ class BMPParser {
         }
     }
     
-    private static func parse24Bit(data: Data, offset: Int, width: Int, height: Int,
-                                    rowSize: Int, pixels: inout [UInt8], topDown: Bool) {
+    /// 24- and 32-bit BI_RGB pixels are opaque BGR. A 32-bit pixel's 4th byte is reserved
+    /// (usually 0), not alpha — Winamp ignores it too.
+    private static func parseDirectColor(data: Data, offset: Int, width: Int, height: Int,
+                                         rowSize: Int, bytesPerPixel: Int, pixels: inout [UInt8], topDown: Bool) {
         for y in 0..<height {
             let srcY = topDown ? y : (height - 1 - y)
             let rowOffset = offset + srcY * rowSize
-            
+
             for x in 0..<width {
-                let srcIndex = rowOffset + x * 3
+                let srcIndex = rowOffset + x * bytesPerPixel
                 guard srcIndex + 2 < data.count else { continue }
-                
+
                 let dstIndex = (y * width + x) * 4
-                // BMP stores as BGR, convert to RGBA
                 pixels[dstIndex] = data[srcIndex + 2]      // R
                 pixels[dstIndex + 1] = data[srcIndex + 1]  // G
                 pixels[dstIndex + 2] = data[srcIndex]      // B
                 pixels[dstIndex + 3] = 255                 // A
-            }
-        }
-    }
-    
-    private static func parse32Bit(data: Data, offset: Int, width: Int, height: Int,
-                                    rowSize: Int, pixels: inout [UInt8], topDown: Bool) {
-        for y in 0..<height {
-            let srcY = topDown ? y : (height - 1 - y)
-            let rowOffset = offset + srcY * rowSize
-            
-            for x in 0..<width {
-                let srcIndex = rowOffset + x * 4
-                guard srcIndex + 3 < data.count else { continue }
-                
-                let dstIndex = (y * width + x) * 4
-                // BMP stores as BGRA, convert to RGBA
-                pixels[dstIndex] = data[srcIndex + 2]      // R
-                pixels[dstIndex + 1] = data[srcIndex + 1]  // G
-                pixels[dstIndex + 2] = data[srcIndex]      // B
-                pixels[dstIndex + 3] = data[srcIndex + 3]  // A
             }
         }
     }
