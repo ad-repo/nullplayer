@@ -5,6 +5,10 @@
 - **Classic skins default the main window to the Classic analyzer** — the main window's
   visualizer now starts on Classic instead of vis_classic, and launching or picking a Classic
   skin no longer resets a mode you chose. A visualization reset still restores Classic.
+- **Classic skins with 32-bit bitmaps no longer click through to the desktop** — skins such as
+  Donkey Kong Handheld, whose images are saved as 32-bit BMPs, drew normally but let every click
+  on the main window fall through to whatever was behind it. NullPlayer read the bitmap's unused
+  fourth byte as transparency; it now ignores it, as Winamp does.
 - **Classic skins no longer show placeholder paint beside the display** — skins such as Large
   Image showed bright green bars at the clutterbar and behind the cast indicator; the main
   window now draws the skin's clutterbar strip and the mono slot's background, as Winamp does.
