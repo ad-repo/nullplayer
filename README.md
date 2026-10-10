@@ -11,6 +11,7 @@ https://github.com/user-attachments/assets/4f53dbd9-cfd2-4ca1-87d5-96d39e224a92
 
 
   <p align="center">
+      <img width="640" height="360" alt="audion_rain_10mb" src="https://github.com/user-attachments/assets/9926e024-6aba-4934-afa3-499bda3e9bc2" />
     <img width="500" alt="nullplayer-skins-all" src="https://github.com/user-attachments/assets/be764bfb-c284-4787-ada7-8b532253b4e9" />
   </p>
 
