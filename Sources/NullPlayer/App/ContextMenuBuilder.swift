@@ -851,6 +851,14 @@ class ContextMenuBuilder {
         if AppCapabilities.supports(.audionFaceMode) {
             uiMenu.addItem(skinFamilyItem(.audion, menu: buildAudionFacesMenu()))
         }
+        uiMenu.addItem(.separator())
+        let nextSkin = NSMenuItem(title: "Next Skin", action: #selector(MenuActions.selectNextSkin), keyEquivalent: "]")
+        nextSkin.target = MenuActions.shared
+        uiMenu.addItem(nextSkin)
+        let previousSkin = NSMenuItem(title: "Previous Skin", action: #selector(MenuActions.selectPreviousSkin),
+                                      keyEquivalent: "[")
+        previousSkin.target = MenuActions.shared
+        uiMenu.addItem(previousSkin)
         return uiMenu
     }
 

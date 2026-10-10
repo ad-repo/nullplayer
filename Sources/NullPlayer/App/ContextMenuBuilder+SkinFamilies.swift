@@ -51,6 +51,49 @@ extension ContextMenuBuilder {
         }
     }
 
+    /// `mode`'s skin list as menu rows, ungrouped, the current skin checked while the family is on
+    /// screen. Each row's action picks its skin, so Next/Previous Skin send them as they are.
+    static func skinRows(for mode: PlayerUIMode) -> [NSMenuItem] {
+        let wm = WindowManager.shared
+        let isActive = wm.uiMode == mode
+        func modernFamilyRows(_ family: ModernSkinFamily) -> [NSMenuItem] {
+            let current = ModernSkinEngine.shared.currentSkinName(for: family)
+            return ModernSkinEngine.shared.availableSkins(for: family).map {
+                skinMenuItem($0.name, #selector(MenuActions.selectModernFamilySkin(_:)),
+                             representedObject: MenuActions.ModernFamilySkinChoice(family: family, name: $0.name),
+                             isOn: isActive && $0.name == current)
+            }
+        }
+        switch mode {
+        case .classic:
+            return wm.availableSkins().map {
+                skinMenuItem($0.name, #selector(MenuActions.selectClassicSkin(_:)), representedObject: $0.url,
+                             isOn: isActive && wm.currentSkinPath == $0.url.path)
+            }
+        case .modern: return modernFamilyRows(.modern)
+        case .metal: return modernFamilyRows(.metal)
+        case .winampModern:
+            let importer = WinampModernSkinImporter.shared
+            let selected = importer.selectedSkin()?.archiveURL
+            return importer.installedSkins().map {
+                skinMenuItem($0.name, #selector(MenuActions.selectWinampModernSkin(_:)),
+                             representedObject: $0.archiveURL, isOn: $0.archiveURL == selected)
+            }
+        case .wmp:
+            let importer = WMPSkinImporter()
+            return importer.installedSkins().map {
+                skinMenuItem($0.name, #selector(MenuActions.selectWMPSkin(_:)), representedObject: $0.name,
+                             isOn: isActive && importer.selectedSkinName?.caseInsensitiveCompare($0.name) == .orderedSame)
+            }
+        case .audion:
+            let importer = AudionFaceImporter()
+            return importer.installedFaces().map {
+                skinMenuItem($0.name, #selector(MenuActions.selectAudionFace(_:)), representedObject: $0.name,
+                             isOn: isActive && importer.selectedFaceName == $0.name)
+            }
+        }
+    }
+
     /// The family submenu with its parent item, checked while that family is on screen.
     static func skinFamilyItem(_ mode: PlayerUIMode, menu: NSMenu) -> NSMenuItem {
         let item = NSMenuItem(title: mode.displayName, action: nil, keyEquivalent: "")
@@ -71,14 +114,9 @@ extension ContextMenuBuilder {
             skinMenuItem("Open Skins Folder...", #selector(MenuActions.openClassicSkinsFolder)),
             removeSkinItem(for: .classic),
         ].compactMap { $0 }
-        let isActive = wm.uiMode == .classic
-        let skins = wm.availableSkins().map {
-            skinMenuItem($0.name, #selector(MenuActions.selectClassicSkin(_:)), representedObject: $0.url,
-                         isOn: isActive && wm.currentSkinPath == $0.url.path)
-        }
         return buildSkinFamilyMenu(
             switchItem: switchItem(to: .classic, skinName: lastSkinName, action: #selector(MenuActions.setClassicMode)),
-            options: options, skins: skins)
+            options: options, skins: skinRows(for: .classic))
     }
 
     // MARK: - Original and Original-Metal
@@ -87,9 +125,7 @@ extension ContextMenuBuilder {
     /// share one action per job.
     static func buildModernFamilySkinsMenu(_ family: ModernSkinFamily) -> NSMenu {
         let mode = family.playerUIMode
-        let engine = ModernSkinEngine.shared
         let isActive = WindowManager.shared.uiMode == mode
-        let current = engine.currentSkinName(for: family)
         // Original-Metal names itself in its own entries; Original, the older family, does not.
         let qualifier = family == .metal ? "\(family.displayName) " : ""
         let options = [
@@ -100,15 +136,10 @@ extension ContextMenuBuilder {
                          representedObject: family),
             removeSkinItem(for: mode),
         ].compactMap { $0 }
-        let skins = engine.availableSkins(for: family).map {
-            skinMenuItem($0.name, #selector(MenuActions.selectModernFamilySkin(_:)),
-                         representedObject: MenuActions.ModernFamilySkinChoice(family: family, name: $0.name),
-                         isOn: isActive && $0.name == current)
-        }
         let switchItem = switchItem(to: mode, skinName: UserDefaults.standard.string(forKey: family.skinNameKey),
                                     action: #selector(MenuActions.setModernFamilyMode(_:)))
         switchItem?.representedObject = family
-        return buildSkinFamilyMenu(switchItem: switchItem, options: options, skins: skins)
+        return buildSkinFamilyMenu(switchItem: switchItem, options: options, skins: skinRows(for: mode))
     }
 
     // MARK: - Modern (.wal)
@@ -239,23 +270,15 @@ extension ContextMenuBuilder {
             options.append(status)
         }
 
-
-        let importer = WinampModernSkinImporter.shared
-        let selected = importer.selectedSkin()?.archiveURL
-        let skins = importer.installedSkins().map {
-            skinMenuItem($0.name, #selector(MenuActions.selectWinampModernSkin(_:)),
-                         representedObject: $0.archiveURL, isOn: $0.archiveURL == selected)
-        }
         return buildSkinFamilyMenu(
             switchItem: switchItem(to: .winampModern, action: #selector(MenuActions.setWinampModernMode)),
-            options: options, skins: skins)
+            options: options, skins: skinRows(for: .winampModern))
     }
 
     // MARK: - Media Player (.wmz)
 
     static func buildWMPSkinsMenu() -> NSMenu {
         let wm = WindowManager.shared
-        let importer = WMPSkinImporter()
         let isActive = wm.uiMode == .wmp
         var options = [
             skinMenuItem("Load Skin...", #selector(MenuActions.loadWMPSkinFromFile)),
@@ -276,13 +299,9 @@ extension ContextMenuBuilder {
             viewsItem.submenu = viewsMenu
             options.append(viewsItem)
         }
-        let skins = importer.installedSkins().map {
-            skinMenuItem($0.name, #selector(MenuActions.selectWMPSkin(_:)), representedObject: $0.name,
-                         isOn: isActive && importer.selectedSkinName?.caseInsensitiveCompare($0.name) == .orderedSame)
-        }
         return buildSkinFamilyMenu(
             switchItem: switchItem(to: .wmp, action: #selector(MenuActions.setWMPMode)),
-            options: options, skins: skins)
+            options: options, skins: skinRows(for: .wmp))
     }
 
     // MARK: - Audion Faces
@@ -291,21 +310,15 @@ extension ContextMenuBuilder {
     static let audionFacesFlatListLimit = 40
 
     static func buildAudionFacesMenu() -> NSMenu {
-        let importer = AudionFaceImporter()
-        let isActive = WindowManager.shared.uiMode == .audion
         let options = [
             skinMenuItem("Load Face...", #selector(MenuActions.loadAudionFaceFromFile)),
             skinMenuItem("Get More Faces...", #selector(MenuActions.getMoreAudionFaces)),
             skinMenuItem("Open Faces Folder...", #selector(MenuActions.openAudionFacesFolder)),
             removeSkinItem(for: .audion),
         ].compactMap { $0 }
-        let faces = importer.installedFaces().map {
-            skinMenuItem($0.name, #selector(MenuActions.selectAudionFace(_:)), representedObject: $0.name,
-                         isOn: isActive && importer.selectedFaceName == $0.name)
-        }
         return buildSkinFamilyMenu(
             switchItem: switchItem(to: .audion, action: #selector(MenuActions.setAudionMode)),
-            options: options, skins: groupedAlphabetically(faces, over: audionFacesFlatListLimit))
+            options: options, skins: groupedAlphabetically(skinRows(for: .audion), over: audionFacesFlatListLimit))
     }
 
     /// `items` as one submenu per initial letter (`#` for the rest) once there are more than `limit`.
@@ -534,6 +547,24 @@ extension MenuActions {
                 }
             }
         }
+    }
+}
+
+// MARK: - Next skin
+
+extension MenuActions {
+
+    @objc func selectNextSkin() { stepSkin(by: 1) }
+    @objc func selectPreviousSkin() { stepSkin(by: -1) }
+
+    /// Steps through the on-screen family's skin list, wrapping, by sending that row's own action —
+    /// so it switches exactly as picking the row from the Skins menu does.
+    private func stepSkin(by step: Int) {
+        let skins = ContextMenuBuilder.skinRows(for: WindowManager.shared.uiMode)
+        guard !skins.isEmpty else { return }
+        let current = skins.firstIndex { $0.state == .on } ?? (step > 0 ? -1 : skins.count)
+        let next = skins[(current + step + skins.count) % skins.count]
+        NSApp.sendAction(next.action!, to: next.target, from: next)
     }
 }
 
