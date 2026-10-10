@@ -211,7 +211,7 @@ class ModernAudioAnalysisView: NSView {
             needsDisplay = true
             needsLayout = true
         }
-        window.applyDockingShadow(isDocked: !newEdges.isEmpty, cornersChanged: cornersChanged)
+        if cornersChanged { window.invalidateSkinShadowShape("corners") }
     }
 
     @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {

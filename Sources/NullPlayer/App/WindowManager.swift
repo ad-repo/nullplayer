@@ -850,6 +850,8 @@ class WindowManager {
     
     /// Windows that should move together with the dragging window
     private var dockedWindowsToMove: [NSWindow] = []
+
+    private let seamlessStackShadow = SeamlessStackShadow()
     
     /// Store relative offsets of docked windows from the dragging window's origin
     /// This prevents drift during fast movement by maintaining exact relative positions
@@ -7231,7 +7233,30 @@ class WindowManager {
         
         return dockedWindows
     }
-    
+
+    /// Every connected group of two or more docked windows.
+    private func dockedGroups() -> [[NSWindow]] {
+        var grouped = Set<ObjectIdentifier>()
+        return groupMovableWindows().compactMap { window in
+            guard !grouped.contains(ObjectIdentifier(window)) else { return nil }
+            let docked = findDockedWindows(to: window)
+            guard !docked.isEmpty else { return nil }
+            let group = [window] + docked
+            grouped.formUnion(group.map(ObjectIdentifier.init))
+            return group
+        }
+    }
+
+    /// Regroup the seamless Original stack shadows. Runs after every view has taken the layout, its
+    /// corner masks included. Mid group drag the stack moves as one but the dragged window lands a
+    /// step after its peers, so the stacks stand until the drop.
+    private func updateSeamlessStackShadow() {
+        guard draggingWindow == nil || dragMode != .group else { return }
+        let seamless = isRunningModernUI
+            && (ModernSkinEngine.shared.currentSkin?.config.window.seamlessDocking ?? 0) > 0
+        seamlessStackShadow.cast(stacks: seamless ? dockedGroups() : [], main: mainWindowController?.window)
+    }
+
     /// Check if two windows are docked (touching edges)
     private func areWindowsDocked(_ window1: NSWindow, _ window2: NSWindow) -> Bool {
         let frame1 = window1.frame
@@ -7265,6 +7290,7 @@ class WindowManager {
         edgeOcclusionSegmentsCache.removeAll(keepingCapacity: true)
         sharpCornersCache.removeAll(keepingCapacity: true)
         NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
+        updateSeamlessStackShadow()
     }
 
     /// Post a connectedWindowHighlightDidChange notification.

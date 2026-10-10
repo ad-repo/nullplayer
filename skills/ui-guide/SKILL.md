@@ -770,13 +770,19 @@ geometry as an exact match.
   `ModernSkinEngine.skinDidChangeNotification` — pulled a turn late so it reads the new skin's
   pixels, and `window.invalidateSkinShadowShape(_:)` when content moves the outline at the same
   size. The outline is fingerprinted, so a pull that finds it unchanged rebuilds nothing.
-- **Seamless docking (Original):** each view's `windowLayoutDidChange` calls
-  `window.applyDockingShadow(edges:cornersChanged:)` (`Windows/Shared/ModernDockingShadow.swift`)
-  after updating its corner mask: a seamless skin drops the shadow while docked, and a squared or
-  rounded corner pulls the outline again. Only the view that owns the window's shadow calls it —
-  `window.contentView === self`, or the Library browser (in a container) outside compact mode. The
-  same views are embedded in the Library backdrop and `.wal` hosted windows, whose shadow is not
-  theirs.
+- **Seamless docking (Original):** a seamless skin casts **one shadow per docked group**.
+  `WindowManager.updateSeamlessStackShadow` runs once per layout change, right after
+  `windowLayoutDidChange` is posted, so every view has already updated its corner mask. It hands
+  the docked groups to `SeamlessStackShadow` (`Windows/Shared/`), which gives each skin-shadowed
+  member a `SkinShadowRole` through `window.castSkinShadow(_:)`. The main window when it is in the
+  group, else the lowest window number, casts the union of every member's outline through
+  `SkinWindowShadow.outlineBounds` (a shape rect larger than its parent), and the rest are hidden
+  (`isSuppressed`). Members need no part in it, so Stats, Sonos and video join too. The caster
+  pulls again when membership or a member's relative frame changes. A view whose corner squared or
+  rounded calls `window.invalidateSkinShadowShape("corners")`, and a hidden member hands that to
+  its caster. Mid group drag nothing regroups, because the dragged window lands a step after its
+  peers, so the shape holds until the drop. Outside Original mode, or in a skin that docks with
+  visible seams, the pass hands every former member its own shadow back and touches nothing else.
 - **AppKit's shadow stays** on transient panels (skin-loading overlay, row thumbnail preview, Audion
   slider popups), on the app-authored `.wmz` fallback player, and on the Compact Mode window: it
   fades by `alphaValue`, which AppKit's shadow follows and a separate shadow window does not, so

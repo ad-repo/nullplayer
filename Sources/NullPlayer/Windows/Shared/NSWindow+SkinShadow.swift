@@ -28,20 +28,18 @@ extension NSWindow {
         }
     }
 
-    /// The content's outline moved without the window resizing; pull it again.
+    /// The content's outline moved without the window resizing — a docked Original window squaring
+    /// a corner, say; pull it again. A window hidden in a seamless stack is part of its caster's
+    /// outline, so the caster pulls.
     func invalidateSkinShadowShape(_ trigger: String) {
-        contentShadow?.shadow.invalidateShape(trigger)
+        (contentShadow?.caster?.contentShadow ?? contentShadow)?.shadow.invalidateShape(trigger)
     }
 
-    /// **An Original window's drop shadow, given what it is docked to.** A seamless-docking skin
-    /// hides it while the window touches another, so the stack reads as one piece. `cornersChanged`
-    /// pulls the outline again: docking squares or rounds a corner without resizing the window.
-    /// Any view in the window may call it, since docking is the window's; a window that casts no
-    /// skin shadow (a `.wal` hosted window, Compact Mode) ignores it.
-    func applyDockingShadow(isDocked: Bool, cornersChanged: Bool) {
-        guard let shadow = contentShadow?.shadow, shadow.isAttached else { return }
-        shadow.isSuppressed = isDocked && (ModernSkinEngine.shared.currentSkin?.config.window.seamlessDocking ?? 0) > 0
-        if cornersChanged { shadow.invalidateShape("corners") }
+    /// This window's part in its docked stack's shadow (`SeamlessStackShadow`). A window that casts
+    /// no skin shadow (a `.wal` hosted window, Compact Mode) ignores it.
+    func castSkinShadow(_ role: SkinShadowRole) {
+        guard let content = contentShadow, content.shadow.isAttached else { return }
+        content.cast(role)
     }
 
     private static var contentShadowKey: UInt8 = 0
@@ -50,6 +48,16 @@ extension NSWindow {
         get { objc_getAssociatedObject(self, &Self.contentShadowKey) as? ContentWindowShadow }
         set { objc_setAssociatedObject(self, &Self.contentShadowKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
     }
+}
+
+/// A skin window's part in the shadow of the docked stack it belongs to.
+enum SkinShadowRole {
+    /// Its own outline: undocked, or in a skin that docks with visible seams.
+    case solo
+    /// The union of every window's outline in `stack`, this one among them.
+    case stack([NSWindow])
+    /// None of its own: the caster's stack shadow outlines it.
+    case hidden(by: NSWindow)
 }
 
 /// A `SkinWindowShadow` whose outline is the window's content view, rendered.
@@ -74,11 +82,62 @@ private final class ContentWindowShadow {
         skinObservers.forEach(NotificationCenter.default.removeObserver)
     }
 
+    /// A docked window this one casts the stack shadow for, at its frame relative to this one's origin.
+    private struct Member: Equatable {
+        weak var window: NSWindow?
+        let frame: CGRect
+
+        static func == (lhs: Member, rhs: Member) -> Bool { lhs.window === rhs.window && lhs.frame == rhs.frame }
+    }
+
+    /// Every window the shadow outlines, this one included; empty for this window's outline alone.
+    private var group: [Member] = []
+    /// The stack member whose shadow outlines this window while its own is hidden.
+    private(set) weak var caster: NSWindow?
+
     func attach() {
         guard let window else { return }
-        shadow.attach(to: window) { [weak window] in
-            window.flatMap(Self.outline).map { [$0] } ?? []
+        shadow.attach(to: window) { [weak self, weak window] in
+            guard let self, let window else { return [] }
+            return (self.group.isEmpty ? Self.outline(of: window) : self.groupOutline()).map { [$0] } ?? []
         }
+    }
+
+    /// A new stack, or a member moved within it, pulls the outline again.
+    func cast(_ role: SkinShadowRole) {
+        guard let window else { return }
+        var members: [NSWindow] = []
+        switch role {
+        case .solo: caster = nil
+        case .stack(let stack): caster = nil; members = stack
+        case .hidden(let by): caster = by
+        }
+        // Hidden before the shape changes and shown after, so no pull outlines the wrong stack.
+        if caster != nil { shadow.isSuppressed = true }
+        let origin = window.frame.origin
+        let next = members.map { Member(window: $0, frame: $0.frame.offsetBy(dx: -origin.x, dy: -origin.y)) }
+        if next != group {
+            group = next
+            shadow.outlineBounds = next.map(\.frame).reduce(nil) { $0?.union($1) ?? $1 }
+            shadow.invalidateShape("group")
+        }
+        shadow.isSuppressed = caster != nil
+    }
+
+    /// Every member's outline at its place in the group. The knockout clears the whole union, so
+    /// the order members overlap in on screen does not matter.
+    private func groupOutline() -> CGImage? {
+        guard let bounds = shadow.outlineBounds,
+              let context = CGContext(data: nil, width: max(1, Int(bounds.width.rounded())),
+                                      height: max(1, Int(bounds.height.rounded())), bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        for member in group {
+            guard let window = member.window, let outline = Self.outline(of: window) else { continue }
+            context.draw(outline, in: member.frame.offsetBy(dx: -bounds.minX, dy: -bounds.minY))
+        }
+        return context.makeImage()
     }
 
     /// The content view's layer tree drawn at one pixel per point: the alpha is all the shadow reads.
