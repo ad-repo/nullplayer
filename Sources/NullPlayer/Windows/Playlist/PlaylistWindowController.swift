@@ -43,8 +43,7 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
             let playlistWidth = snappedPlaylistWidth(WindowManager.shared.nativeWindowDefaultWidth)
             
             // Keep default width aligned to main, but allow horizontal stretching.
-            window.minSize = NSSize(width: Self.freeWidthMinimum ?? Skin.playlistMinSize.width, height: playlistHeight)
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            applySizeLimits(minimumHeight: playlistHeight)
             
             // Check if EQ window is visible and position below it
             var positionY = mainFrame.minY - playlistHeight
@@ -61,9 +60,7 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
             )
             window.setFrame(newFrame, display: true)
         } else {
-            window.minSize = NSSize(width: Self.freeWidthMinimum ?? Skin.playlistMinSize.width,
-                                    height: Skin.playlistMinSize.height)
-            window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            applySizeLimits(minimumHeight: Skin.playlistMinSize.height)
             window.center()
         }
         
@@ -96,8 +93,7 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
         let mainFrame = mainWindow.frame
         let playlistHeight = Skin.playlistMinSize.height * WindowManager.shared.classicScaleMultiplier
         let playlistWidth = snappedPlaylistWidth(WindowManager.shared.nativeWindowDefaultWidth)
-        window.minSize = NSSize(width: Self.freeWidthMinimum ?? Skin.playlistMinSize.width, height: playlistHeight)
-        window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        applySizeLimits(minimumHeight: playlistHeight)
         let newFrame = NSRect(
             x: mainFrame.minX,
             y: mainFrame.minY - playlistHeight,
@@ -107,20 +103,36 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
         window.setFrame(newFrame, display: false)
     }
     
-    /// Beside an Audion face or a `.wmz` player there are no PLEDIT tiles, so the playlist's width is
-    /// free: no 25-pixel step and no 275-pixel minimum, either of which keeps it off the player's own
-    /// width. The floor is the narrowest face in the corpus (24 pt). Nil where PLEDIT tiles are drawn.
-    static var freeWidthMinimum: CGFloat? {
-        switch WindowManager.shared.uiMode.controllerFamily {
-        case .audion, .wmp: return 24
-        case .classic, .nullPlayerModern, .winampModern: return nil
+    /// Beside an Audion face or a `.wmz` player the playlist wears the gloss frame
+    /// (`SkinnedSurfaceChrome.hidesPaletteTitleBar`), with no PLEDIT tiles to step its width by, so it
+    /// resizes freely: no 25-pixel step and no 275-pixel minimum, either of which keeps it off the
+    /// player's own width. `.wal` wears that frame too, but only once its palette loads, after these
+    /// limits are set, so it keeps the step until something re-applies them on that load.
+    private static var hasFreeWidth: Bool {
+        switch WindowManager.shared.runningControllerFamily {
+        case .audion, .wmp: return true
+        case .classic, .nullPlayerModern, .winampModern: return false
         }
+    }
+
+    /// The narrowest a free-width playlist goes. It must stay at or below the narrowest player it
+    /// sits beside: the narrowest Audion face is 24 pt.
+    private static let freeMinimumWidth: CGFloat = 24
+
+    /// The playlist's minimum width: `stepped`, the PLEDIT minimum, wherever PLEDIT tiles are drawn.
+    static func minimumWidth(stepped: CGFloat) -> CGFloat {
+        hasFreeWidth ? freeMinimumWidth : stepped
+    }
+
+    private func applySizeLimits(minimumHeight: CGFloat) {
+        window?.minSize = NSSize(width: Self.minimumWidth(stepped: Skin.playlistMinSize.width), height: minimumHeight)
+        window?.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     }
 
     /// Snap playlist width so PLEDIT title bar tiles align cleanly.
     /// In skin coordinates this enforces: width = (N * 25) + 50.
     private func snappedPlaylistWidth(_ width: CGFloat) -> CGFloat {
-        if Self.freeWidthMinimum != nil { return width }
+        if Self.hasFreeWidth { return width }
         let scale = max(0.0001, WindowManager.shared.playlistChromeScale)
         let minSkinWidth = SkinElements.Playlist.minSize.width
         let skinWidth = max(minSkinWidth, width / scale)
