@@ -897,34 +897,14 @@ class SkinRenderer {
         drawSprite(from: monosterImage, sourceRect: stereoRect,
                   to: NSRect(origin: stereoPos, size: stereoRect.size), in: context)
         
-        // Draw "CAST" indicator in place of mono, over the mono sprite's background
-        // (skins may leave placeholder paint there, as Winamp always covers it)
-        if let fill = castSlotFill(from: monosterImage) {
-            // No antialiasing: at fractional scales a soft edge lets the placeholder bleed through
-            context.saveGState()
-            context.setShouldAntialias(false)
-            context.setFillColor(fill.cgColor)
-            context.fill(NSRect(origin: SkinElements.MonoStereo.Positions.mono,
-                                size: SkinElements.MonoStereo.monoOff.size))
-            context.restoreGState()
-        }
+        // Draw "CAST" in place of mono, over the mono-off sprite's right column (clear of its
+        // divider and text) stretched across the slot: skins may leave placeholder paint there,
+        // as Winamp always covers it
+        let monoOff = SkinElements.MonoStereo.monoOff
+        drawSprite(from: monosterImage,
+                   sourceRect: NSRect(x: monoOff.maxX - 1, y: monoOff.minY, width: 1, height: monoOff.height),
+                   to: NSRect(origin: SkinElements.MonoStereo.Positions.mono, size: monoOff.size), in: context)
         drawCastIndicator(isActive: isCasting, in: context)
-    }
-
-    /// Mono-off sprite background colour, cached per monoster image (renderers are per-draw)
-    private static var castSlotFillCache: (image: ObjectIdentifier, color: NSColor?)?
-
-    private func castSlotFill(from monosterImage: NSImage) -> NSColor? {
-        let key = ObjectIdentifier(monosterImage)
-        if let cached = SkinRenderer.castSlotFillCache, cached.image == key {
-            return cached.color
-        }
-        // Bottom-right corner of the mono-off sprite, clear of its divider and text
-        let sprite = SkinElements.MonoStereo.monoOff
-        let color = samplePixelColor(in: monosterImage, at: NSPoint(x: sprite.maxX - 1, y: sprite.maxY - 1))
-            .flatMap { $0.alphaComponent > 0.2 ? $0 : nil }
-        SkinRenderer.castSlotFillCache = (key, color)
-        return color
     }
 
     /// Cached cast indicator sprite (generated once)
