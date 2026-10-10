@@ -141,6 +141,9 @@
 - Emby and Jellyfin songs showed no cover art when the art was on the album rather than the track,
   including after a restored session. They now show the album's cover in Control Center, skins,
   playlists, casts and the CLI.
+- An Emby album with no cover of its own showed none in the Library Browser. It now shows the
+  track picture Emby uses for it, and both Library Browsers resolve every server thumbnail the same
+  way as the rest of the app.
 
 ## 0.31.4
 
