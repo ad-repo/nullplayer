@@ -486,13 +486,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc func showAbout() {
         // Create custom About window.
-        // The layout below runs top-down from `y`, consuming a fixed 426pt: 30 top inset,
-        // 112 icon, 40 name, 28 version, 50 tagline, 20 separator, 42 credits, 40 buttons,
-        // 36 disclaimer, 28 OK. Size the window from that total rather than hardcoding a
-        // height, so the panel keeps an even bottom margin instead of a dead gap (it was
-        // 540pt tall, leaving 132pt of empty background under the OK button).
+        // The layout below runs top-down from `y`, consuming a fixed 466pt: 30 top inset,
+        // 112 icon, 40 name, 28 version, 50 tagline, 20 separator, 42 credits, 40 website,
+        // 40 buttons, 36 disclaimer, 28 OK. Size the window from that total rather than
+        // hardcoding a height, so the panel keeps an even bottom margin instead of a dead gap
+        // (it was 540pt tall, leaving 132pt of empty background under the OK button).
         let windowWidth: CGFloat = 340
-        let contentHeight: CGFloat = 426
+        let contentHeight: CGFloat = 466
         let bottomPadding: CGFloat = 24
         let windowHeight: CGFloat = contentHeight + bottomPadding
         
@@ -503,6 +503,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
         window.title = "About nullPlayer"
+        window.appearance = NSAppearance(named: .darkAqua)  // light text on the dark panel's buttons
         window.isMovableByWindowBackground = true
         window.center()
         
@@ -558,7 +559,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Credits
         let thanksLabel = NSTextField(labelWithString: "Please add a ⭐ star ⭐ on github")
         thanksLabel.font = NSFont.systemFont(ofSize: 15)
-        thanksLabel.textColor = NSColor(white: 0.5, alpha: 1.0)
+        thanksLabel.textColor = NSColor(white: 0.85, alpha: 1.0)
         thanksLabel.alignment = .center
         thanksLabel.frame = NSRect(x: 20, y: y - 18, width: windowWidth - 40, height: 18)
         contentView.addSubview(thanksLabel)
@@ -579,39 +580,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let buttonSpacing: CGFloat = 10
         let totalButtonWidth = buttonWidth * 3 + buttonSpacing * 2
         let buttonStartX = (windowWidth - totalButtonWidth) / 2
-        
-        let githubButton = NSButton(frame: NSRect(x: buttonStartX, y: y - buttonHeight, width: buttonWidth, height: buttonHeight))
-        githubButton.title = "GitHub"
-        githubButton.bezelStyle = .rounded
-        githubButton.contentTintColor = .white
-        githubButton.wantsLayer = true
-        githubButton.layer?.backgroundColor = NSColor(white: 0.3, alpha: 1.0).cgColor
-        githubButton.layer?.cornerRadius = 5
-        githubButton.target = self
-        githubButton.action = #selector(openGitHub)
-        contentView.addSubview(githubButton)
-        
-        let linkedinButton = NSButton(frame: NSRect(x: buttonStartX + buttonWidth + buttonSpacing, y: y - buttonHeight, width: buttonWidth, height: buttonHeight))
-        linkedinButton.title = "LinkedIn"
-        linkedinButton.bezelStyle = .rounded
-        linkedinButton.contentTintColor = .white
-        linkedinButton.wantsLayer = true
-        linkedinButton.layer?.backgroundColor = NSColor(white: 0.3, alpha: 1.0).cgColor
-        linkedinButton.layer?.cornerRadius = 5
-        linkedinButton.target = self
-        linkedinButton.action = #selector(openLinkedIn)
-        contentView.addSubview(linkedinButton)
-        
-        let redditButton = NSButton(frame: NSRect(x: buttonStartX + (buttonWidth + buttonSpacing) * 2, y: y - buttonHeight, width: buttonWidth, height: buttonHeight))
-        redditButton.title = "Reddit"
-        redditButton.bezelStyle = .rounded
-        redditButton.contentTintColor = .white
-        redditButton.wantsLayer = true
-        redditButton.layer?.backgroundColor = NSColor(white: 0.3, alpha: 1.0).cgColor
-        redditButton.layer?.cornerRadius = 5
-        redditButton.target = self
-        redditButton.action = #selector(openReddit)
-        contentView.addSubview(redditButton)
+
+        // Link buttons: icon beside the title, URL carried in the tooltip. Brand marks are
+        // simple-icons (CC0) PDFs, drawn as templates so the dark appearance tints them.
+        func addLinkButton(_ title: String, icon: NSImage?, url: String, x: CGFloat, width: CGFloat) {
+            let button = NSButton(frame: NSRect(x: x, y: y - buttonHeight, width: width, height: buttonHeight))
+            button.title = title
+            button.image = icon
+            button.imagePosition = .imageLeading
+            button.imageHugsTitle = true
+            button.bezelStyle = .rounded
+            button.toolTip = url
+            button.target = self
+            button.action = #selector(openAboutLink(_:))
+            contentView.addSubview(button)
+        }
+        func brandIcon(_ name: String) -> NSImage? {
+            guard let url = BundleHelper.url(forResource: name, withExtension: "pdf", subdirectory: "BrandIcons"),
+                  let image = NSImage(contentsOf: url) else { return nil }
+            image.size = NSSize(width: 14, height: 14)
+            image.isTemplate = true
+            return image
+        }
+
+        addLinkButton("nullplayer.fyi", icon: NSImage(systemSymbolName: "globe", accessibilityDescription: nil),
+                      url: "https://nullplayer.fyi/", x: buttonStartX, width: totalButtonWidth)
+        y -= buttonHeight + 12
+        addLinkButton("GitHub", icon: brandIcon("github"), url: "https://github.com/ad-repo",
+                      x: buttonStartX, width: buttonWidth)
+        addLinkButton("LinkedIn", icon: brandIcon("linkedin"), url: "https://www.linkedin.com/in/andrew-d-9b83aa148/",
+                      x: buttonStartX + buttonWidth + buttonSpacing, width: buttonWidth)
+        addLinkButton("Reddit", icon: brandIcon("reddit"), url: "https://www.reddit.com/r/NullPlayer/",
+                      x: buttonStartX + (buttonWidth + buttonSpacing) * 2, width: buttonWidth)
         y -= buttonHeight + 12
         
         // Disclaimer
@@ -645,20 +645,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         aboutWindow = nil
     }
     
-    @objc private func openGitHub() {
-        if let url = URL(string: "https://github.com/ad-repo") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-    
-    @objc private func openLinkedIn() {
-        if let url = URL(string: "https://www.linkedin.com/in/andrew-d-9b83aa148/") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-    
-    @objc private func openReddit() {
-        if let url = URL(string: "https://www.reddit.com/r/NullPlayer/") {
+    @objc private func openAboutLink(_ sender: NSButton) {
+        if let link = sender.toolTip, let url = URL(string: link) {
             NSWorkspace.shared.open(url)
         }
     }

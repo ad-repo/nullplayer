@@ -1,0 +1,20 @@
+Simple Icons brand marks
+========================
+
+NullPlayer's About window shows the GitHub, LinkedIn and Reddit logos on its
+link buttons (Resources/BrandIcons/*.pdf). The vector paths come from the
+Simple Icons project and are dedicated to the public domain.
+
+The logos themselves are trademarks of their respective owners (GitHub, Inc.;
+LinkedIn Corporation; Reddit, Inc.). Their use here only links to NullPlayer's
+pages on those services and implies no endorsement.
+
+Source: https://github.com/simple-icons/simple-icons
+
+License: Creative Commons CC0 1.0 Universal (Public Domain Dedication)
+
+  To the extent possible under law, the Simple Icons contributors have waived
+  all copyright and related or neighboring rights to the icon data.
+
+  The full text of the CC0 1.0 dedication is available at:
+  https://creativecommons.org/publicdomain/zero/1.0/legalcode
