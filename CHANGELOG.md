@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Classic skins with 32-bit bitmaps no longer click through to the desktop** — skins such as
+  Donkey Kong Handheld, whose images are saved as 32-bit BMPs, drew normally but let every click
+  on the main window fall through to whatever was behind it. NullPlayer read the bitmap's unused
+  fourth byte as transparency; it now ignores it, as Winamp does.
+
 ## 0.32.1
 
 - **Audion faces no longer draw a hard outline around their shadow** — faces that paint their

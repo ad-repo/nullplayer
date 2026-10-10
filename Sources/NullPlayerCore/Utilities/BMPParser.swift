@@ -219,11 +219,12 @@ public class BMPParser {
                 guard srcIndex + 3 < data.count else { continue }
                 
                 let dstIndex = (y * width + x) * 4
-                // BMP stores as BGRA, convert to RGBA
+                // BI_RGB: the 4th byte is reserved (usually 0), not alpha, as Winamp
+                // treats it. Reading it as alpha leaves the window click-through.
                 pixels[dstIndex] = data[srcIndex + 2]      // R
                 pixels[dstIndex + 1] = data[srcIndex + 1]  // G
                 pixels[dstIndex + 2] = data[srcIndex]      // B
-                pixels[dstIndex + 3] = data[srcIndex + 3]  // A
+                pixels[dstIndex + 3] = 255
             }
         }
     }
