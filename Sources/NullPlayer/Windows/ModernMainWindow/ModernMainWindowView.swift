@@ -1032,7 +1032,7 @@ class ModernMainWindowView: NSView {
             edgeOcclusionSegments = newSegments
             needsDisplay = true
         }
-        window.applyDockingShadow(isDocked: !newEdges.isEmpty, cornersChanged: cornersChanged)
+        if cornersChanged { window.invalidateSkinShadowShape("corners") }
     }
 
     private func loadArtwork(for track: Track?) {

@@ -5467,7 +5467,7 @@ class ModernLibraryBrowserView: NSView {
             edgeOcclusionSegments = newSegments
             needsDisplay = true
         }
-        window.applyDockingShadow(isDocked: !newEdges.isEmpty, cornersChanged: cornersChanged)
+        if cornersChanged { window.invalidateSkinShadowShape("corners") }
         updateEmbeddedSubviewFrames()
     }
 
