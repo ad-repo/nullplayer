@@ -144,6 +144,10 @@ reasoning.
   windows and title fonts are huge". It now falls back to the app's own scale in WMP mode, and
   `PlaylistView.scaleFactor` and the playlist's snapped default width route through that same
   property so the three cannot drift apart.
+- **NullPlayer's playlist width is free beside a `.wmz` player.** The classic playlist steps its
+  width in 25px PLEDIT tiles and stops at 275px; the gloss frame draws neither, and both kept the
+  playlist off the player's width (Classic.wmz is 285 pt). `PlaylistWindowController.freeWidthMinimum`
+  (24 pt, shared with Audion) turns off the step and replaces the minimum, including on a UI Size change.
 
 ### Ask what the skin provides before opening a window of your own
 

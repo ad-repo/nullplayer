@@ -5425,7 +5425,7 @@ class WindowManager {
                 : baseMinSize.height * scale
             let minWidth = runningModernMode
                 ? ModernSkinElements.playlistMinSize.width
-                : baseMinSize.width * scale
+                : PlaylistWindowController.freeWidthMinimum ?? baseMinSize.width * scale
             playlistWindow.minSize = NSSize(width: minWidth, height: minHeight)
             playlistWindow.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 

@@ -124,6 +124,9 @@ wear the titleless gloss rim. Corpus contrasts and the goldens: `harness.md` § 
   hosted style (`.wal`, `.wmz`, Audion) the white goes through `style.legibleText(_:on: background)`
   (resolved once per draw in `PlaylistView.draw`); on a light face it was white on white. Classic and Original
   have no hosted style and still get plain white.
+- **Playlist width is free:** no 25px PLEDIT step and no 275px minimum, so it can match any face's
+  width (AppleClassic is 368 pt). The floor, `PlaylistWindowController.freeWidthMinimum`, is the
+  narrowest face in the corpus, 24 pt; `.wmz` shares it.
 - **Route to a track:** the face's menu button toggles the playlist, its mode button the Library
   Browser, and eject is Open Files….
 - **Checked live** (A7, debug build, user confirmed): playlist, EQ, Library Browser and Spectrum
