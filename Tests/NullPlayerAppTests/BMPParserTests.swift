@@ -1,17 +1,16 @@
 import AppKit
-import NullPlayerCore
 import XCTest
 @testable import NullPlayer
 
 final class BMPParserTests: XCTestCase {
     func testFourBitBMPUsesPackedAlignedRowStride() throws {
-        let bmpData = makeFourBitBMP()
+        let image = try XCTUnwrap(BMPParser.parse(data: makeFourBitBMP()))
 
-        let appImage = try XCTUnwrap(NullPlayer.BMPParser.parse(data: bmpData))
-        assertFourBitBMPDecoded(appImage)
-
-        let coreImage = try XCTUnwrap(NullPlayerCore.BMPParser.parse(data: bmpData))
-        assertFourBitBMPDecoded(coreImage)
+        XCTAssertEqual(image.size.width, 5)
+        XCTAssertEqual(image.size.height, 2)
+        XCTAssertEqual(pixel(atX: 0, y: 0, in: image), RGBA(255, 0, 0, 255))
+        XCTAssertEqual(pixel(atX: 4, y: 0, in: image), RGBA(0, 255, 255, 255))
+        XCTAssertEqual(pixel(atX: 0, y: 1, in: image), RGBA(64, 64, 64, 255))
     }
 
     func testThirtyTwoBitBMPIgnoresReservedByte() throws {
@@ -20,19 +19,9 @@ final class BMPParserTests: XCTestCase {
         let bmpData = makeBMP(width: 2, height: 1, bitsPerPixel: 32, palette: [],
                               rows: [[0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0x00, 0x00]])
 
-        for image in [NullPlayer.BMPParser.parse(data: bmpData), NullPlayerCore.BMPParser.parse(data: bmpData)] {
-            let image = try XCTUnwrap(image)
-            XCTAssertEqual(pixel(atX: 0, y: 0, in: image), RGBA(255, 0, 0, 255))
-            XCTAssertEqual(pixel(atX: 1, y: 0, in: image), RGBA(0, 0, 255, 255))
-        }
-    }
-
-    private func assertFourBitBMPDecoded(_ image: NSImage, file: StaticString = #filePath, line: UInt = #line) {
-        XCTAssertEqual(image.size.width, 5, file: file, line: line)
-        XCTAssertEqual(image.size.height, 2, file: file, line: line)
-        XCTAssertEqual(pixel(atX: 0, y: 0, in: image), RGBA(255, 0, 0, 255), file: file, line: line)
-        XCTAssertEqual(pixel(atX: 4, y: 0, in: image), RGBA(0, 255, 255, 255), file: file, line: line)
-        XCTAssertEqual(pixel(atX: 0, y: 1, in: image), RGBA(64, 64, 64, 255), file: file, line: line)
+        let image = try XCTUnwrap(BMPParser.parse(data: bmpData))
+        XCTAssertEqual(pixel(atX: 0, y: 0, in: image), RGBA(255, 0, 0, 255))
+        XCTAssertEqual(pixel(atX: 1, y: 0, in: image), RGBA(0, 0, 255, 255))
     }
 
     private func makeFourBitBMP() -> Data {
