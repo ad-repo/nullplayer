@@ -352,11 +352,13 @@ final class CavaSettingsTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         defaults.set(MainWindowVisMode.fire.rawValue, forKey: "mainWindowVisMode")
+        defaults.set(MainWindowVisMode.cava.rawValue, forKey: "modernMainWindowVisMode")
         WindowManager.shared.writeClassicVisualizationDefaultKeys(
-            for: .all, defaults: defaults, preservingMainWindowMode: true
+            for: .all, defaults: defaults, includesMainWindowMode: false
         )
 
         XCTAssertEqual(defaults.string(forKey: "mainWindowVisMode"), MainWindowVisMode.fire.rawValue)
+        XCTAssertEqual(defaults.string(forKey: "modernMainWindowVisMode"), MainWindowVisMode.cava.rawValue)
     }
 
     func testClassicSkinRestorePreservesCavaAppearanceWhileExplicitLoadResetsIt() throws {
