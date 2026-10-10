@@ -240,13 +240,12 @@ class ContextMenuBuilder {
             matchWidth.target = MenuActions.shared
             matchWidth.state = wm.matchesMainWindowWidth ? .on : .off
             menu.addItem(matchWidth)
-            // The skin windows' own drop shadow (`SkinWindowShadow`). Classic and Original windows
-            // keep the native shadow they always had, so the switch exists only where it acts.
-            let shadows = NSMenuItem(title: "Window Shadows", action: #selector(MenuActions.toggleSkinWindowShadows), keyEquivalent: "")
-            shadows.target = MenuActions.shared
-            shadows.state = SkinWindowShadow.isEnabledPreference ? .on : .off
-            menu.addItem(shadows)
         }
+        // Every skin window's drop shadow (`SkinWindowShadow`), in every family.
+        let shadows = NSMenuItem(title: "Window Shadows", action: #selector(MenuActions.toggleSkinWindowShadows), keyEquivalent: "")
+        shadows.target = MenuActions.shared
+        shadows.state = SkinWindowShadow.isEnabledPreference ? .on : .off
+        menu.addItem(shadows)
 
         if wm.isModernUIEnabled {
             let hideTitleBars = NSMenuItem(title: "Hide Title Bars", action: #selector(MenuActions.toggleHideTitleBars), keyEquivalent: "")
@@ -5007,7 +5006,7 @@ class MenuActions: NSObject {
         WindowManager.shared.isAlwaysOnTop.toggle()
     }
 
-    /// The `.wmz` / `.wal` drop shadow. One preference for both families; each open skin window's
+    /// Every skin window's drop shadow. One preference for every family; each open skin window's
     /// `SkinWindowShadow` observes the change.
     @objc func toggleSkinWindowShadows() {
         SkinWindowShadow.isEnabledPreference.toggle()

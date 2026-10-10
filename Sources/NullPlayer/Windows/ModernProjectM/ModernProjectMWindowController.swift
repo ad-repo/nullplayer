@@ -47,7 +47,7 @@ class ModernProjectMWindowController: NSWindowController, ProjectMWindowProvidin
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
-        window.hasShadow = true
+        window.hasSkinShadow = true
         window.minSize = ModernSkinElements.projectMMinSize
         window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         window.title = "Visualizations"

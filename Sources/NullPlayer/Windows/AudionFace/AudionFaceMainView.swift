@@ -14,6 +14,9 @@ final class AudionFaceMainView: NSView {
     private var interaction = AudionFaceInteractionState() { didSet { if interaction != oldValue { redraw() } } }
     /// The face's pixels, redrawn only where a new scene differs from the last.
     private var canvas = AudionFaceCanvas()
+    /// The face's drop shadow, from its pixels. AppKit's own traced the faint shadow many faces
+    /// bake into their alpha and drew a hard rim along its outer edge (#527).
+    private let windowShadow = SkinWindowShadow()
     private var drag = AudionFaceWindowDrag()
     /// FaceKit's 60 Hz tick count. The clock runs only while `AudionFaceScene.isAnimated` and the
     /// window is on screen.
@@ -58,10 +61,12 @@ final class AudionFaceMainView: NSView {
         super.viewDidMoveToWindow()
         window?.makeFirstResponder(self)
         updateClock()
+        guard let window else { return windowShadow.detach() }
+        windowShadow.attach(to: window, name: "audion") { [weak self] in self?.canvas.image.map { [$0] } ?? [] }
     }
 
     /// Rendered at the device scale (rounded up to an integer), so text stays sharp on a 2x display.
-    /// Only what changed is redrawn, and the shadow is recomputed only when the outline moved.
+    /// Only what changed is redrawn, and the shadow is rebuilt only when the outline moved.
     private func redraw() {
         defer { updateClock() }
         guard let face else { canvas = AudionFaceCanvas(); needsDisplay = true; return }
@@ -69,9 +74,7 @@ final class AudionFaceMainView: NSView {
         let scale = max(1, Int((uiScale * backing).rounded(.up)))
         let change = canvas.draw(AudionFaceScene(face: face, host: host, interaction: interaction, frame: tick, scale: scale))
         for rect in change.rects { setNeedsDisplay(localRect(rect)) }
-        guard change.outlineChanged else { return }
-        displayIfNeeded()
-        window?.invalidateShadow()
+        if change.outlineChanged { windowShadow.invalidateShape("outline") }
     }
 
     override func draw(_ dirtyRect: NSRect) {

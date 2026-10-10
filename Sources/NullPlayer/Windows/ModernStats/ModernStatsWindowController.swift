@@ -24,7 +24,7 @@ class ModernStatsWindowController: NSWindowController {
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
-        window.hasShadow = true
+        window.hasSkinShadow = true
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 640 * scale, height: 440 * scale)
         window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)

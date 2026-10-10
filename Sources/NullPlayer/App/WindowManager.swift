@@ -7,6 +7,9 @@ extension Notification.Name {
     static let timeDisplayModeDidChange = Notification.Name("timeDisplayModeDidChange")
     static let timeDisplaySettingsDidChange = Notification.Name("timeDisplaySettingsDidChange")
     static let doubleSizeDidChange = Notification.Name("doubleSizeDidChange")
+    /// A Classic skin was applied and every window told to redraw with it (an Original skin posts
+    /// `ModernSkinEngine.skinDidChangeNotification`).
+    static let classicSkinDidChange = Notification.Name("classicSkinDidChange")
     static let windowLayoutDidChange = Notification.Name("windowLayoutDidChange")
     static let connectedWindowHighlightDidChange = Notification.Name("connectedWindowHighlightDidChange")
     static let windowDragDidBegin = Notification.Name("windowDragDidBegin")
@@ -398,16 +401,6 @@ class WindowManager {
     }
 
     var isRunningWMPUI: Bool { runningControllerFamily == .wmp }
-
-    /// The families whose skinned windows carry a `SkinShadowWindow` child. Every shared path that
-    /// treats that child specially is gated on this, so Classic and Original run unchanged.
-    var hostsSkinShadowWindows: Bool {
-        switch runningControllerFamily {
-        case .wmp, .winampModern: return true
-        // A face's outline changes only when the face does, so AppKit's own shadow stays true.
-        case .classic, .nullPlayerModern, .audion: return false
-        }
-    }
 
     private var auxiliaryControllerStyle: AuxiliaryControllerStyle {
         switch uiMode.controllerFamily {
@@ -3226,6 +3219,8 @@ class WindowManager {
             // These windows are allowed to remain visible in Compact Mode (see orderOutRegularWindows).
             if window === videoPlayerWindowController?.window { continue }
             if window === debugWindowController?.window { continue }
+            // A drop shadow follows its own window in and out, the video player's included.
+            if window is SkinShadowWindow { continue }
             if isSystemOrTransientWindow(window) { continue }
             // Leave fullscreen windows on their own Space — hiding them would switch Spaces.
             if isInNativeFullScreen(window) { continue }
@@ -5227,6 +5222,7 @@ class WindowManager {
             centerStackFeatureWindow(feature).controller?.skinDidChange()
         }
         compactWindowController?.skinDidChange()
+        NotificationCenter.default.post(name: .classicSkinDidChange, object: nil)
     }
 
     // MARK: - Skin Discovery
@@ -8313,12 +8309,11 @@ class WindowManager {
         refitDockedProjectMToVerticalStack()
         let docked = findDockedWindows(to: mainWindow)
 
-        // Remove children that are no longer docked — except a `.wmz`/`.wal` window's drop
-        // shadow, which is a child of it for as long as it is on screen and would otherwise be
-        // stripped on the first drag and left behind on the desktop.
-        let keepsShadowChildren = hostsSkinShadowWindows
+        // Remove children that are no longer docked — except the window's drop shadow, which is a
+        // child of it for as long as it is on screen and would otherwise be stripped on the first
+        // drag and left behind on the desktop.
         for child in mainWindow.childWindows ?? [] {
-            if keepsShadowChildren, child is SkinShadowWindow { continue }
+            if child is SkinShadowWindow { continue }
             if !docked.contains(child) {
                 mainWindow.removeChildWindow(child)
             }

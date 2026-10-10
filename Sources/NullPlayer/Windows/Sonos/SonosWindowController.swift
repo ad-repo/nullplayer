@@ -14,7 +14,7 @@ final class SonosWindowController: NSWindowController, ModeDependentWindow, NSWi
         window.isMovableByWindowBackground = false
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.hasShadow = true
+        window.hasSkinShadow = true
         window.minSize = NSSize(width: 250, height: 160)
         window.allowedResizeEdges = [.bottom, .left, .right]
         window.collectionBehavior = [.managed, .fullScreenPrimary]

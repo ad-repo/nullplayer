@@ -38,7 +38,7 @@ class ModernEQWindowController: NSWindowController, EQWindowProviding {
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
-        window.hasShadow = true
+        window.hasSkinShadow = true
         window.title = "Equalizer"
         
         // Prevent window from being released when closed - we reuse the same controller

@@ -63,7 +63,7 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
             window.backgroundColor = .clear
             window.isOpaque = false
         }
-        window.hasShadow = true
+        window.hasSkinShadow = true
         window.minSize = Self.minSize
         window.title = "Plex Browser"
         window.collectionBehavior = [.fullScreenPrimary, .managed]

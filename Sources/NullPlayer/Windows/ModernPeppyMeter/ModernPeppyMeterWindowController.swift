@@ -40,7 +40,7 @@ final class ModernPeppyMeterWindowController: NSWindowController, PeppyMeterWind
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
-        window.hasShadow = true
+        window.hasSkinShadow = true
         window.minSize = ModernSkinElements.peppyMeterMinSize
         window.title = "NullPlayer PeppyMeter"
         window.isReleasedWhenClosed = false

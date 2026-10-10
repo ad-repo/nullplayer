@@ -31,7 +31,7 @@ final class PeppyMeterWindowController: NSWindowController, PeppyMeterWindowProv
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
-        window.hasShadow = true
+        window.hasSkinShadow = true
         window.minSize = SkinElements.PeppyMeterWindow.minSize
         window.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         window.title = "NullPlayer PeppyMeter"

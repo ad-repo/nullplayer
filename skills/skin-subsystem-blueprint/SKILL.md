@@ -78,6 +78,11 @@ family needed (`git diff main...HEAD -- Sources/NullPlayer/App` on the WMP branc
 Adding the `PlayerUIControllerFamily` case **first** turns the rest into a compiler worklist. That is
 the intended workflow: let the build tell you the seams instead of grepping for them.
 
+One seam the compiler will not list: **the window drop shadow.** A family's windows never set
+`hasShadow`; they set `window.hasSkinShadow = true`, or attach `SkinWindowShadow` to the outline the
+engine already has, as `.wal`, `.wmz` and Audion do. Either way they join the one **Window Shadows**
+switch. `ui-guide` § *Window Drop Shadows (Every Family)*.
+
 ### The auxiliary-window policy is a decision, not a default
 
 Every family must answer what happens to NullPlayer's own windows (playlist, EQ, library, visualizer,

@@ -32,15 +32,15 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
   Animation copy and colour-convert the whole image every tick (95% CPU at 300% on the largest face;
   `harness.md` § *Redraw cost*). A size change redraws the whole view through AppKit's default
   `layerContentsRedrawPolicy` (`.duringViewResize` for a view that overrides `draw(_:)`); don't set it.
-- **Shadow:** AppKit's own (`hasShadow`), not `SkinWindowShadow`; `hostsSkinShadowWindows` is
-  false for Audion. `invalidateShadow` runs only when the canvas reports `outlineChanged` (an
-  animation frame clears the base under it, a mask swaps, a new face), after `displayIfNeeded()` so
-  the shadow is taken from the new pixels; a marquee tick or a clock digit never recomputes it.
-  The view recomputes the shadow when its pixels' alpha changes; the controller's `fitWindow`
-  recomputes it, in the same order, when the window's size changes (a new face, a UI scale). The
-  view's recompute for those runs before the resize, and the borderless clear window takes its
-  outline from the pixels, so without the second one the new area stays see-through until a focus
-  change.
+- **Shadow:** `SkinWindowShadow`, owned by `AudionFaceMainView` (`windowShadow`), attached when the
+  view joins a window and pulling the canvas image as the outline; the window's own `hasShadow` is
+  off while a face is up. AppKit's traced every non-zero alpha pixel, so a face that bakes in a soft
+  drop shadow (BBX • MERCURY™ m2, Audion XP 1) got a hard rim around that shadow's outer edge (#527).
+  The view invalidates only when the canvas reports `outlineChanged` (an animation frame clears the
+  base under it, a mask swaps, a new face); a marquee tick or a clock digit never does, and the
+  fingerprint skips a rebuild when the alpha did not move. `SkinWindowShadow` re-pulls on resize
+  itself (a new face, a UI scale). The app-authored unskinned player casts `window.hasSkinShadow`, from what it draws. The
+  shared mechanism is `ui-guide` § *Window Drop Shadows (Every Family)*.
 - **Launch:** the controller shows no placeholder while the selected face loads, so the window
   never appears at `unskinnedSize` first. `reloadSelectedFace` presents the
   unskinned view itself when there is no face, or the face fails to load.
@@ -95,7 +95,6 @@ Every change outside the family's directories, each gated on the Audion family.
 | `SkinnedSurfaceChrome.hidesPaletteTitleBar` | true: titleless gloss frame, as `.wmz` | |
 | frame-lending switches (`hostedSurfaceFrameArtwork`, `…BorderInsets`, `…Settled…`, `demand…`, `prewarm…`, `…LiveResize`) | lends nothing | a face has no frame to lend |
 | `hostedInteriorScope` | `"audion"` | |
-| `hostsSkinShadowWindows` | false (native shadow, above) | |
 | `managedWindowRecords` | main window is a snap target, not a centre-stack member | a face has no column |
 | `applyDoubleSize` | `SkinSizedMainWindow` (with `.wal`/`.wmz`): `applyUIScale`, size `base × scale` | |
 | `snapToDefaultPositions` | `snapHostedFamilyToDefaultPositions(playerWindow:skinWindows: [])`, the body shared with `.wmz`; it holds `isSnappingWindow` and posts the layout change itself | |

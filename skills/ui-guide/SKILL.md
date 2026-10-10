@@ -752,6 +752,43 @@ geometry as an exact match.
   NullPlayer caller. The namespaced legacy channel remains for downstream consumers and
   migration compatibility.
 
+## Window Drop Shadows (Every Family)
+
+- Every skin window casts `SkinWindowShadow` (`Windows/Shared/`): a click-through child window
+  ordered below it, holding a blur of the window's outline with the outline knocked back out.
+  AppKit's own (`hasShadow`) is not used on a skin window: it traces every non-zero alpha pixel,
+  and macOS draws a hard rim along that edge — around a face's baked-in soft shadow, for one (#527).
+- `.wal`, `.wmz` and Audion attach it to their engine's outline (their skills). Classic, Original
+  and every shared window — playlist, EQ, library, visualizers, video — set
+  `window.hasSkinShadow = true` (`Windows/Shared/NSWindow+SkinShadow.swift`): the outline is the
+  content view's layer tree rendered at one pixel per point, and an opaque window's is its frame.
+  `render(in:)` draws nothing for a GPU layer, so each visible opaque `CAMetalLayer` and every
+  `CAOpenGLLayer` (projectM) is filled solid; a Metal layer made translucent is left out.
+  A new window or a new family sets the same property, never `hasShadow`.
+- **Rebuilt on** attach, resize (`SkinWindowShadow` itself), a skin change — Classic's
+  `SkinWindowShadow.skinDidChange` from `WindowManager.notifySkinChanged`, Original's own
+  `ModernSkinEngine.skinDidChangeNotification` — pulled a turn late so it reads the new skin's
+  pixels, and `window.invalidateSkinShadowShape(_:)` when content moves the outline at the same
+  size. The outline is fingerprinted, so a pull that finds it unchanged rebuilds nothing.
+- **Seamless docking (Original):** each view's `windowLayoutDidChange` calls
+  `window.applyDockingShadow(edges:cornersChanged:)` (`Windows/Shared/ModernDockingShadow.swift`)
+  after updating its corner mask: a seamless skin drops the shadow while docked, and a squared or
+  rounded corner pulls the outline again. Only the view that owns the window's shadow calls it —
+  `window.contentView === self`, or the Library browser (in a container) outside compact mode. The
+  same views are embedded in the Library backdrop and `.wal` hosted windows, whose shadow is not
+  theirs.
+- **AppKit's shadow stays** on transient panels (skin-loading overlay, row thumbnail preview, Audion
+  slider popups), on the app-authored `.wmz` fallback player, and on the Compact Mode window: it
+  fades by `alphaValue`, which AppKit's shadow follows and a separate shadow window does not, so
+  `CompactModeWindowController.setupWindow` turns the borrowed browser's skin shadow off.
+- **Shared code that walks windows exempts `SkinShadowWindow` by type:**
+  `updateDockedChildWindows` keeps it as a child of the main window, and Compact Mode's
+  `orderOutOrphanedAppWindows` skips it (the video player's shadow stays visible with the player).
+- Toggle: **Window Shadows** (Windows menu and right-click menu), every family, `skinWindowShadows`,
+  default on. Trace: `NP_SKIN_SHADOW_TRACE=1`.
+- The shadow is its own window, so `winhelper capture` of a skin window never shows it: use
+  `capture-region`, or capture the `NullPlayer.SkinShadow` window by id.
+
 ## Compact Mode
 
 Compact Mode is a WindowManager state transition, not a second main window style.

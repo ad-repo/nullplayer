@@ -346,9 +346,9 @@ last drew, and these windows change shape — and `SkinWindowShadow` (`Windows/S
 `.wmz`) draws one instead: a click-through child window ordered `.below`, holding a blur of the
 window's outline with the outline knocked back out. `WinampModernMainView` owns it, so the player,
 every auxiliary container and every hosted window get one; the code is
-`WinampModernMainView+Shadow.swift`. Toggle: **Windows > Window Shadows**, shown only in `.wal` and
-`.wmz` modes (one preference for both, `skinWindowShadows`). Trace: `NP_SKIN_SHADOW_TRACE=1`
-(`reference/harness.md`).
+`WinampModernMainView+Shadow.swift`. Toggle: **Windows > Window Shadows**, one preference for every
+family (`skinWindowShadows`); every family's windows cast the same shadow (`ui-guide` § *Window Drop
+Shadows (Every Family)*). Trace: `NP_SKIN_SHADOW_TRACE=1` (`reference/harness.md`).
 
 - **The outline is rendered on purpose.** `.wal` has no frame image, so the view runs the same
   `renderer.draw` into a one-pixel-per-point buffer, then fills every visible hosted surface's frame

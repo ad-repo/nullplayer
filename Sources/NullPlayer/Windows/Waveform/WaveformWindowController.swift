@@ -18,7 +18,7 @@ class WaveformWindowController: NSWindowController, WaveformWindowProviding {
         window.isMovableByWindowBackground = false
         window.backgroundColor = .clear
         window.isOpaque = false
-        window.hasShadow = true
+        window.hasSkinShadow = true
         window.title = "NullPlayer Waveform"
         window.isReleasedWhenClosed = false
         if let mainWindow = WindowManager.shared.mainWindowController?.window {
