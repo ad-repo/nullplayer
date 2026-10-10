@@ -7,6 +7,9 @@ extension Notification.Name {
     static let timeDisplayModeDidChange = Notification.Name("timeDisplayModeDidChange")
     static let timeDisplaySettingsDidChange = Notification.Name("timeDisplaySettingsDidChange")
     static let doubleSizeDidChange = Notification.Name("doubleSizeDidChange")
+    /// A Classic skin was applied and every window told to redraw with it (an Original skin posts
+    /// `ModernSkinEngine.skinDidChangeNotification`).
+    static let classicSkinDidChange = Notification.Name("classicSkinDidChange")
     static let windowLayoutDidChange = Notification.Name("windowLayoutDidChange")
     static let connectedWindowHighlightDidChange = Notification.Name("connectedWindowHighlightDidChange")
     static let windowDragDidBegin = Notification.Name("windowDragDidBegin")
@@ -5209,7 +5212,6 @@ class WindowManager {
     }
     
     private func notifySkinChanged() {
-        NotificationCenter.default.post(name: SkinWindowShadow.skinDidChange, object: nil)
         // Notify all windows to redraw with new skin
         mainWindowController?.skinDidChange()
         playlistWindowController?.skinDidChange()
@@ -5220,6 +5222,7 @@ class WindowManager {
             centerStackFeatureWindow(feature).controller?.skinDidChange()
         }
         compactWindowController?.skinDidChange()
+        NotificationCenter.default.post(name: .classicSkinDidChange, object: nil)
     }
 
     // MARK: - Skin Discovery

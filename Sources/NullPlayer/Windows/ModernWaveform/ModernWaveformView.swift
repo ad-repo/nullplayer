@@ -154,7 +154,7 @@ class ModernWaveformView: BaseWaveformView {
             edgeOcclusionSegments = newSegments
             needsDisplay = true
         }
-        if window.contentView === self { window.applyDockingShadow(edges: newEdges, cornersChanged: cornersChanged) }
+        window.applyDockingShadow(isDocked: !newEdges.isEmpty, cornersChanged: cornersChanged)
     }
 
     @objc private func connectedWindowHighlightDidChange(_ notification: Notification) {

@@ -64,10 +64,6 @@ final class SkinWindowShadow {
     /// One key for every family. Default on.
     nonisolated static let isEnabledDefaultsKey = "skinWindowShadows"
     nonisolated static let enabledDidChange = Notification.Name("NullPlayer.skinWindowShadowsDidChange")
-    /// Posted when a Classic skin is applied (an Original one posts `ModernSkinEngine`'s own): their
-    /// windows' outlines come from what they draw (`NSWindow.hasSkinShadow`), and a new skin may
-    /// draw another shape at the same size.
-    nonisolated static let skinDidChange = Notification.Name("NullPlayer.skinWindowShadowsSkinDidChange")
 
     /// Close to an inactive macOS window's shadow, tuned on screen beside a Classic window.
     nonisolated static let blur: CGFloat = 12
@@ -91,12 +87,18 @@ final class SkinWindowShadow {
     /// purpose, on the main thread; a `.wmz` one is the frame the window already presented.
     private let minimumInterval: CFTimeInterval
     private weak var parent: NSWindow?
-    private var name = "?"
+    /// The trace's name for the window; nil reads the window's title when tracing, which an owner
+    /// may set after attaching.
+    private var name: String?
     private var shape: () -> [CGImage] = { [] }
     private var parentObservers: [NSObjectProtocol] = []
     private var preferenceObserver: NSObjectProtocol?
-    /// `isEnabledPreference`, cached from its notification: read on every drag step.
+    /// `isEnabledPreference`, cached from its notification: read on every drag step. False while
+    /// `isSuppressed` too.
     private var isEnabled = SkinWindowShadow.isEnabledPreference
+    /// Hidden while true, as if the preference were off, but still attached: a seamless Original
+    /// skin hides a docked window's shadow so the stack reads as one piece.
+    var isSuppressed = false { didSet { if isSuppressed != oldValue { applyPreference() } } }
     /// The parent's `occlusionState`, cached from its notification for the same reason.
     private var isParentOnScreen = false
     private var lastFingerprint: Int?
@@ -123,12 +125,13 @@ final class SkinWindowShadow {
 
     /// Whether there is a window to shadow and the preference wants one — the cheap check an owner
     /// makes before doing any work toward `invalidateShape`.
-    var isActive: Bool { parent != nil && isEnabled }
+    var isActive: Bool { isAttached && isEnabled }
+    var isAttached: Bool { parent != nil }
 
     /// Shadow `parent` from now on, pulling its outline from `shape`: layers drawn over each other
     /// at the window's size, whose combined alpha is the shape. `name` is only for the trace.
     /// Attaching again to the same window only takes the new `name` and `shape`.
-    func attach(to parent: NSWindow, name: String, shape: @escaping () -> [CGImage]) {
+    func attach(to parent: NSWindow, name: String? = nil, shape: @escaping () -> [CGImage]) {
         self.name = name
         self.shape = shape
         guard self.parent !== parent else { reassert(); return }
@@ -221,7 +224,7 @@ final class SkinWindowShadow {
     }
 
     private func applyPreference() {
-        isEnabled = Self.isEnabledPreference
+        isEnabled = Self.isEnabledPreference && !isSuppressed
         guard parent != nil else { return }
         if isEnabled {
             lastFingerprint = nil
@@ -350,7 +353,7 @@ final class SkinWindowShadow {
 
     private func trace(_ message: String) {
         guard Self.isTraceEnabled else { return }
-        NSLog("[shadow] %@ %@", name, message)
+        NSLog("[shadow] %@ %@", name ?? parent?.title ?? "?", message)
     }
 
     // MARK: Pure image work

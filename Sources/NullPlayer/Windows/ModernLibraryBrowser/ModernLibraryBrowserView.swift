@@ -5467,8 +5467,7 @@ class ModernLibraryBrowserView: NSView {
             edgeOcclusionSegments = newSegments
             needsDisplay = true
         }
-        // The Compact Mode window keeps AppKit's shadow (`CompactModeWindowController.setupWindow`).
-        if !compactMode { window.applyDockingShadow(edges: newEdges, cornersChanged: cornersChanged) }
+        window.applyDockingShadow(isDocked: !newEdges.isEmpty, cornersChanged: cornersChanged)
         updateEmbeddedSubviewFrames()
     }
 
