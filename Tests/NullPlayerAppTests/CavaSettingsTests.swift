@@ -329,7 +329,7 @@ final class CavaSettingsTests: XCTestCase {
         }
     }
 
-    func testClassicVisualizationDefaultRemainsVisClassic() throws {
+    func testClassicVisualizationDefaultIsSpectrumInMainWindow() throws {
         let suiteName = "CavaSettingsTests.classicVisualizationDefault.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -338,12 +338,25 @@ final class CavaSettingsTests: XCTestCase {
 
         XCTAssertEqual(
             defaults.string(forKey: "mainWindowVisMode"),
-            MainWindowVisMode.visClassicExact.rawValue
+            MainWindowVisMode.spectrum.rawValue
         )
         XCTAssertEqual(
             defaults.string(forKey: "spectrumQualityMode"),
             SpectrumQualityMode.visClassicExact.rawValue
         )
+    }
+
+    func testClassicSkinLoadPreservesSavedMainWindowMode() throws {
+        let suiteName = "CavaSettingsTests.classicSavedMainWindowMode.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set(MainWindowVisMode.fire.rawValue, forKey: "mainWindowVisMode")
+        WindowManager.shared.writeClassicVisualizationDefaultKeys(
+            for: .all, defaults: defaults, preservingMainWindowMode: true
+        )
+
+        XCTAssertEqual(defaults.string(forKey: "mainWindowVisMode"), MainWindowVisMode.fire.rawValue)
     }
 
     func testClassicSkinRestorePreservesCavaAppearanceWhileExplicitLoadResetsIt() throws {

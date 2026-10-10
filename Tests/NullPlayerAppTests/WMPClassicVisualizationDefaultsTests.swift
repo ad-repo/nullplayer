@@ -65,7 +65,7 @@ final class WMPClassicVisualizationDefaultsTests: XCTestCase {
 
         WindowManager.shared.writeClassicVisualizationDefaultKeys(for: .all, defaults: defaults)
 
-        XCTAssertEqual(defaults.string(forKey: "mainWindowVisMode"), MainWindowVisMode.visClassicExact.rawValue)
+        XCTAssertEqual(defaults.string(forKey: "mainWindowVisMode"), MainWindowVisMode.spectrum.rawValue)
         XCTAssertEqual(defaults.string(forKey: "modernMainWindowVisMode"), MainWindowVisMode.visClassicExact.rawValue)
         XCTAssertEqual(defaults.string(forKey: "spectrumQualityMode"), SpectrumQualityMode.visClassicExact.rawValue)
         XCTAssertEqual(

@@ -16,6 +16,9 @@
 - **About window links to nullplayer.fyi** — a new website button sits above GitHub, LinkedIn
   and Reddit, which now carry their logos; the button text and the GitHub star line are no
   longer dark-on-dark.
+- **Classic skins default the main window to the Classic analyzer** — the main window's
+  visualizer now starts on Classic instead of vis_classic, and launching or picking a Classic
+  skin no longer resets a mode you chose. A visualization reset still restores Classic.
 
 ## 0.32.0
 
