@@ -203,6 +203,14 @@ class SkinRenderer {
         
         // Draw title bar overlay (without text)
         drawTitleBar(in: context, bounds: bounds, isActive: isActive)
+
+        // Skins may leave placeholder paint under the clutterbar, as Winamp always covers it
+        if let titlebarImage = skin.titlebar,
+           titlebarImage.size.width >= SkinElements.Clutterbar.background.maxX {
+            let source = SkinElements.Clutterbar.background
+            drawSprite(from: titlebarImage, sourceRect: source,
+                       to: NSRect(origin: SkinElements.Clutterbar.position, size: source.size), in: context)
+        }
     }
     
     /// Draw title bar using original TITLEBAR.BMP from the skin
@@ -889,11 +897,16 @@ class SkinRenderer {
         drawSprite(from: monosterImage, sourceRect: stereoRect,
                   to: NSRect(origin: stereoPos, size: stereoRect.size), in: context)
         
-        // Draw "CAST" indicator in place of mono
-        // Using skin text font for consistent look
+        // Draw "CAST" in place of mono, over the mono-off sprite's right column (clear of its
+        // divider and text) stretched across the slot: skins may leave placeholder paint there,
+        // as Winamp always covers it
+        let monoOff = SkinElements.MonoStereo.monoOff
+        drawSprite(from: monosterImage,
+                   sourceRect: NSRect(x: monoOff.maxX - 1, y: monoOff.minY, width: 1, height: monoOff.height),
+                   to: NSRect(origin: SkinElements.MonoStereo.Positions.mono, size: monoOff.size), in: context)
         drawCastIndicator(isActive: isCasting, in: context)
     }
-    
+
     /// Cached cast indicator sprite (generated once)
     private static var castIndicatorSprite: NSImage?
     

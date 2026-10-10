@@ -436,17 +436,13 @@ struct SkinElements {
         }
     }
     
-    // MARK: - Clutterbar (main.bmp sections)
-    
+    // MARK: - Clutterbar (titlebar.bmp)
+
     struct Clutterbar {
-        /// The clutterbar on the left side of the main window
-        static let area = NSRect(x: 0, y: 72, width: 8, height: 43)
-        
-        // Individual button areas (within clutterbar)
-        static let optionA = NSRect(x: 0, y: 0, width: 8, height: 8)
-        static let optionD = NSRect(x: 0, y: 9, width: 8, height: 8)
-        static let optionUp = NSRect(x: 0, y: 18, width: 8, height: 8)
-        static let optionDown = NSRect(x: 0, y: 27, width: 8, height: 8)
+        /// Idle clutterbar strip in titlebar.bmp; Winamp always draws it over main.bmp
+        static let background = NSRect(x: 304, y: 0, width: 8, height: 43)
+        /// Position on main window
+        static let position = NSPoint(x: 10, y: 22)
     }
     
     // MARK: - Bitrate/Sample Rate Display

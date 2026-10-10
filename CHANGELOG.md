@@ -9,6 +9,9 @@
   Donkey Kong Handheld, whose images are saved as 32-bit BMPs, drew normally but let every click
   on the main window fall through to whatever was behind it. NullPlayer read the bitmap's unused
   fourth byte as transparency; it now ignores it, as Winamp does.
+- **Classic skins no longer show placeholder paint beside the display** — skins such as Large
+  Image showed bright green bars at the clutterbar and behind the cast indicator; the main
+  window now draws the skin's clutterbar strip and the mono slot's background, as Winamp does.
 
 ## 0.32.1
 
