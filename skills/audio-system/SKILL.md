@@ -356,17 +356,29 @@ is, labelled `OUTPUT`. Adding the curve to a stream would count it twice.
 
 ### Ownership
 
-`EQProfileController` (`Audio/EQProfileAudioUnit.swift`) follows `PitchTuningController`: a
-`private(set) var localNode` replaced by `replaceLocalNode()` in `replaceFailedAudioGraph` — not
-SRS's `let localNode` — and weak streaming nodes from `makeStreamingNode()`. Every node follows
-`currentTrack` (`trackDidChange` from the `currentTrack` didSet); a Sweet Fades overlap hears the
-incoming track's profile on both sides. `audition` (non-nil while the Studio is open) overrides
-resolution and the global toggle.
+`EQProfileController` (`Audio/EQProfileController.swift`) holds its nodes in an `AudioUnitFanout`
+(`Audio/AudioUnitFanout.swift`, shared with SRS's `WMPWOWController`): the local node, replaced by
+`replaceLocalNode()` in `replaceFailedAudioGraph` as `PitchTuningController` replaces its pitch node
+(SRS never replaces its own), and weak streaming nodes from `makeStreamingNode()`, each configured as
+it is made and again on `configureAll()`. Every node follows `currentTrack` (`trackDidChange` from the
+`currentTrack` didSet); a Sweet Fades overlap hears the incoming track's profile on both sides.
+`audition` (non-nil while the Studio is open) overrides resolution and the global toggle.
 
-`EQProfileStore` (`Audio/EQProfileStore.swift`) owns the profiles, the assignments
-(`~/Library/Application Support/NullPlayer/eq_profiles.json`, rewritten atomically on every change)
-and the global toggle (`eqProfilesEnabled`, default on). Every change posts `.eqProfilesDidChange`:
-the controller re-resolves and the queue views redraw their row marker. Main thread only.
+The local graph is `AudioEngine.localEffectChain`, in signal order; setup, rebuild, disconnect and
+replacement all walk it (`attachLocalGraph`, `connectLocalGraph`), so a new local stage is one entry
+there.
+
+`EQProfileStore` (`Audio/EQProfileStore.swift`, which also holds `EQCurve`) owns the profiles, the
+assignments (`~/Library/Application Support/NullPlayer/eq_profiles.json`, rewritten atomically on
+every change) and the global toggle (`eqProfilesEnabled`, default on, in the `UserDefaults` it is
+given). Every change posts `.eqProfilesDidChange`: the controller re-resolves, and
+`WindowManager` runs `reloadPlaylistViews()`, which repaints every queue's row marker — Classic,
+Modern, the `.wal` playlist and a `.wmz` `<PLAYLIST>`. Each row takes its marker from
+`rowPrefix(for:)`; `Track.playlistTitle` does not consult the store. Main thread only.
+
+`EQCurve` is the file format: per channel (`left`, `right`, `curve[channel]`) a `Channel` of 31
+`bands` and a `preamp`. `EQProfileDesign.sections` memoises recent designs by (faders, rate), so one
+edit is designed once per sample rate however many nodes and Studio views ask for it.
 
 Keys (`Track.eqProfileKeys`), most specific first, names lower-cased and trimmed, a level omitted
 when its names are empty: `track|<src>|<id>` (service id; file path plus `@cueStartOffset` for a
@@ -668,7 +680,7 @@ For detailed information, see:
 | Core | `Audio/AudioEngine.swift`, `Audio/AudioGraphRecoveryCoordinator.swift`, `Audio/StreamingAudioPlayer.swift` |
 | EQ | EQ node configuration in AudioEngine, StreamingAudioPlayer |
 | Spectrum | `Audio/AudioEngine.swift` (FFT processing) |
-| EQ Profiles | `Audio/EQProfileAudioUnit.swift`, `Audio/EQProfileStore.swift`, `App/EQProfileMenu.swift`, `Windows/EqualizerStudio/` |
+| EQ Profiles | `Audio/EQProfileAudioUnit.swift`, `Audio/EQProfileController.swift`, `Audio/EQProfileStore.swift`, `Audio/AudioUnitFanout.swift`, `App/EQProfileMenu.swift`, `Windows/EqualizerStudio/` |
 | BPM | `Audio/BPMDetector.swift` |
 | Output devices | `Audio/AudioOutputManager.swift` |
 | Track URL resolution | `Audio/StreamingTrackResolver.swift` |

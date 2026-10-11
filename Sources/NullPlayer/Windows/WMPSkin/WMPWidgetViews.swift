@@ -34,17 +34,6 @@ final class WMPPlaylistSurfaceView: NSView {
     private var scrollRemainder: CGFloat = 0
     private let rowHeight: CGFloat = 18
     private var style = WMPSurfacePalette(viewID: "").surfaceStyle
-    private var eqProfileObserver: NSObjectProtocol?
-
-    /// The queue marker reads the profile store, which `update` never sees change.
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard eqProfileObserver == nil else { return }
-        eqProfileObserver = NotificationCenter.default.addObserver(forName: .eqProfilesDidChange, object: nil,
-                                                                   queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.needsDisplay = true }
-        }
-    }
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -164,8 +153,7 @@ final class WMPPlaylistSurfaceView: NSView {
                 rect.fill()
             }
             let item = rows[index]
-            let marker = queue.indices.contains(index) && EQProfileStore.shared.appliesProfile(to: queue[index])
-                ? "\(Track.eqProfileRowMarker) " : ""
+            let marker = queue.indices.contains(index) ? EQProfileStore.shared.rowPrefix(for: queue[index]) : ""
             let prefix = (index == playing ? "▶ " : "") + marker
             let artist = item.artist.isEmpty ? "" : " — \(item.artist)"
             (prefix + item.title + artist).draw(in: rect.insetBy(dx: 4, dy: 1), withAttributes: [
@@ -203,13 +191,8 @@ final class WMPPlaylistSurfaceView: NSView {
             selectedRows = [index]; selectionAnchor = index; selectedIndex = index
             needsDisplay = true
         }
-        // A library preview's rows are not queue tracks; only the live queue assigns.
-        let playlist = WindowManager.shared.audioEngine.playlist
-        let selectedTracks = libraryRows == nil
-            ? selectedRows.sorted().filter(playlist.indices.contains).map { playlist[$0] } : []
         return PlaylistMenuBuilder.menu(target: self, state: .init(
-            selectionCount: selectedRows.count, hasTracks: !rows.isEmpty, canEdit: libraryRows == nil,
-            selectedTracks: selectedTracks),
+            selectedRows: selectedRows, hasTracks: !rows.isEmpty, canEdit: libraryRows == nil),
             autoenablesItems: false)
     }
 

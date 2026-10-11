@@ -5,6 +5,42 @@ extension Notification.Name {
     static let eqProfilesDidChange = Notification.Name("eqProfilesDidChange")
 }
 
+/// A profile's curve in dB, per channel: 31 band gains and a preamp. The DSP's input.
+struct EQCurve: Codable, Equatable {
+    struct Channel: Codable, Equatable {
+        static let flat = Channel(bands: Array(repeating: 0, count: EQProfileDesign.bandCount), preamp: 0)
+
+        var bands: [Float]
+        var preamp: Float
+
+        /// Every value inside ±12 dB and 31 bands long, whatever a file held.
+        func clamped() -> Channel {
+            Channel(bands: (0..<EQProfileDesign.bandCount).map { bands.indices.contains($0) ? EQCurve.clamp(bands[$0]) : 0 },
+                    preamp: EQCurve.clamp(preamp))
+        }
+    }
+
+    static let range: ClosedRange<Float> = -12...12
+    static let flat = EQCurve(left: .flat, right: .flat)
+
+    var left: Channel
+    var right: Channel
+
+    var isFlat: Bool { self == .flat }
+
+    /// Channel 0 is left, 1 right.
+    subscript(channel: Int) -> Channel {
+        get { channel == 0 ? left : right }
+        set { if channel == 0 { left = newValue } else { right = newValue } }
+    }
+
+    func clamped() -> EQCurve { EQCurve(left: left.clamped(), right: right.clamped()) }
+
+    static func clamp(_ value: Float) -> Float {
+        value.isFinite ? min(range.upperBound, max(range.lowerBound, value)) : 0
+    }
+}
+
 struct EQProfile: Codable, Equatable, Identifiable {
     let id: UUID
     var name: String
@@ -64,12 +100,15 @@ extension Track {
 final class EQProfileStore {
     static let shared = EQProfileStore()
     static let enabledKey = "eqProfilesEnabled"
+    /// The mark a queue row puts before a track an EQ profile runs on.
+    static let rowMarker = "∿"
 
     /// Playback Options ▸ EQ Profiles. Off: no assigned profile applies; assignments are kept.
     var isEnabled: Bool {
-        get { UserDefaults.standard.object(forKey: Self.enabledKey) as? Bool ?? true }
+        get { defaults.object(forKey: Self.enabledKey) as? Bool ?? true }
         set {
-            UserDefaults.standard.set(newValue, forKey: Self.enabledKey)
+            guard newValue != isEnabled else { return }
+            defaults.set(newValue, forKey: Self.enabledKey)
             didChange()
         }
     }
@@ -85,11 +124,18 @@ final class EQProfileStore {
 
     private var file: File
     private let url: URL?
+    private let defaults: UserDefaults
 
     var profiles: [EQProfile] { file.profiles }
 
-    init(url: URL? = EQProfileStore.defaultURL) {
+    /// By name, as every profile list shows them.
+    var sortedProfiles: [EQProfile] {
+        file.profiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    init(url: URL? = EQProfileStore.defaultURL, defaults: UserDefaults = .standard) {
         self.url = url
+        self.defaults = defaults
         if let url, let data = try? Data(contentsOf: url),
            let decoded = try? JSONDecoder().decode(File.self, from: data) {
             file = decoded
@@ -132,15 +178,22 @@ final class EQProfileStore {
         return applies
     }
 
+    /// What a queue row draws before its title: the marker and a space, or nothing.
+    func rowPrefix(for track: Track) -> String {
+        appliesProfile(to: track) ? "\(Self.rowMarker) " : ""
+    }
+
     /// What resolves for `track`: "Warm (album)" or "Off (track)"; nil when nothing is assigned.
     func setting(of track: Track) -> String? {
         resolve(track).map { "\($0.profile?.name ?? "Off") (\($0.level.rawValue))" }
     }
 
-    /// File Info's line: the setting, or "None" — and that profiles are off, when they are.
-    func describe(_ track: Track) -> String {
+    /// File Info's line: the setting, or "None" — and that profiles are off, when they are. nil for
+    /// video, which has no local graph to run a profile in.
+    func fileInfoLine(for track: Track) -> String? {
+        guard track.mediaType == .audio else { return nil }
         let setting = setting(of: track) ?? "None"
-        return isEnabled ? setting : "\(setting) — EQ Profiles are turned off"
+        return "EQ Profile: " + (isEnabled ? setting : "\(setting) — EQ Profiles are turned off")
     }
 
     /// nil is Inherit: the keys are removed and the next level down applies. Album level keys every

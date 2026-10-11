@@ -55,10 +55,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Set up audio engine delegate
         windowManager.audioEngine.delegate = self
-        // The queue's EQ profile markers follow assignments and the global toggle.
-        NotificationCenter.default.addObserver(forName: .eqProfilesDidChange, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.windowManager.reloadPlaylistViews() }
-        }
         // Main window always shows a mini spectrum overlay — register as permanent consumer
         windowManager.audioEngine.addSpectrumConsumer("mainWindowSpectrum")
 

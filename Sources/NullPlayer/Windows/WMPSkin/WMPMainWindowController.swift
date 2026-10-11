@@ -2257,6 +2257,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     }
     func updateTime(current: TimeInterval, duration: TimeInterval) { refreshHostState() }
     func updatePlaybackState() { refreshHostState() }
+    /// `WindowManager.reloadPlaylistViews`: repaint every open `<PLAYLIST>`.
+    func playlistContentDidChange() {
+        for presentation in materializer.openPresentations { presentation.mainView?.playlistContentDidChange() }
+    }
 
     /// The skin has already assigned a reserved pseudo-resource name by the time this completes.
     /// Rebuilding changes only that resource's pixels; it never exposes a track URL to JScript.

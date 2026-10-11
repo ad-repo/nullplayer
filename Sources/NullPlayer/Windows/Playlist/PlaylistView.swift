@@ -336,7 +336,7 @@ class PlaylistView: NSView {
         }
 
         let track = engine.playlist[currentIndex]
-        let titleText = "\(currentIndex + 1). \(track.playlistTitle)"
+        let titleText = "\(currentIndex + 1). \(EQProfileStore.shared.rowPrefix(for: track))\(track.playlistTitle)"
 
         // Check if we need system font fallback for non-Latin characters
         if cachedTextBitmapCGImage == nil || containsNonLatinCharacters(titleText) {
@@ -779,7 +779,7 @@ class PlaylistView: NSView {
         let durationStr = String(format: "%d:%02d", Int(duration) / 60, Int(duration) % 60)
         let titleX = rect.minX + 2
 
-        let titleText = "\(index + 1). \(track.playlistTitle)"
+        let titleText = "\(index + 1). \(EQProfileStore.shared.rowPrefix(for: track))\(track.playlistTitle)"
 
         let durationWidth = systemFontTextWidth(durationStr)
         let durationX = rect.maxX - durationWidth - 4
@@ -1809,19 +1809,7 @@ class PlaylistView: NSView {
     @objc private func showFileInfo(_ sender: Any?) {
         // Show info for selected track
         guard let index = selectedIndices.first else { return }
-        let tracks = WindowManager.shared.audioEngine.playlist
-        guard index < tracks.count else { return }
-
-        let track = tracks[index]
-        let alert = NSAlert()
-        alert.messageText = track.displayTitle
-        alert.informativeText = """
-        Artist: \(track.artist ?? "Unknown")
-        Album: \(track.album ?? "Unknown")
-        Duration: \(String(format: "%d:%02d", Int(track.duration ?? 0) / 60, Int(track.duration ?? 0) % 60))
-        Path: \(track.url.path)
-        """ + (track.mediaType == .audio ? "\nEQ Profile: \(EQProfileStore.shared.describe(track))" : "")
-        alert.runModal()
+        PlaylistMenuBuilder.showFileInfo(forTrackAt: index)
     }
 
     @objc private func showOptions(_ sender: Any?) {
@@ -2210,10 +2198,7 @@ class PlaylistView: NSView {
         infoItem.isEnabled = selectedIndices.count == 1
         menu.addItem(infoItem)
 
-        let selectedTracks = selectedIndices.sorted().filter(tracks.indices.contains).map { tracks[$0] }
-        if !selectedTracks.isEmpty {
-            EQProfileMenu.addAssignItem(to: menu, level: .track, tracks: selectedTracks)
-        }
+        EQProfileMenu.addAssignItem(to: menu, queueRows: selectedIndices)
 
         return menu
     }

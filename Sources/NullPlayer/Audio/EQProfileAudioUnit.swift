@@ -2,36 +2,6 @@ import Accelerate
 import AVFoundation
 import os
 
-/// A profile's two 31-band curves and preamps, in dB. The DSP's input; `EQProfileStore` keeps them.
-struct EQCurve: Codable, Equatable {
-    static let range: ClosedRange<Float> = -12...12
-    static let flat = EQCurve(left: Array(repeating: 0, count: EQProfileDesign.bandCount),
-                              right: Array(repeating: 0, count: EQProfileDesign.bandCount),
-                              preampL: 0, preampR: 0)
-
-    var left: [Float]
-    var right: [Float]
-    var preampL: Float
-    var preampR: Float
-
-    var isFlat: Bool { self == .flat }
-
-    func bands(_ channel: Int) -> [Float] { channel == 0 ? left : right }
-    func preamp(_ channel: Int) -> Float { channel == 0 ? preampL : preampR }
-
-    /// Every value inside ±12 dB and every curve 31 long, whatever a file held.
-    func clamped() -> EQCurve {
-        func fix(_ bands: [Float]) -> [Float] {
-            (0..<EQProfileDesign.bandCount).map { bands.indices.contains($0) ? Self.clamp(bands[$0]) : 0 }
-        }
-        return EQCurve(left: fix(left), right: fix(right), preampL: Self.clamp(preampL), preampR: Self.clamp(preampR))
-    }
-
-    static func clamp(_ value: Float) -> Float {
-        value.isFinite ? min(range.upperBound, max(range.lowerBound, value)) : 0
-    }
-}
-
 /// The profile stage's filter design: 31 matched peaking sections at the ISO ⅓-octave centres, with
 /// section gains solved so the cascade's response lands on every fader at every band centre.
 ///
@@ -152,10 +122,31 @@ enum EQProfileDesign {
         sections.reduce(0) { $0 + ($1 == .identity ? 0 : magnitudeDB($1, frequency: frequency, sampleRate: sampleRate)) }
     }
 
-    /// The sections that put the cascade on `faders` (dB) at every band centre. A refinement pass
-    /// measures the exact response at the centres and corrects with the same static inverse; the
-    /// passes stop once every centre is within 0.01 dB.
+    private struct DesignKey: Hashable {
+        let faders: [Float]
+        let sampleRate: Double
+    }
+
+    /// Recent designs. One edit is designed for the Studio's display and again for every node at
+    /// the same rate — the local graph, the primary and crossfade streams — and those are hits.
+    /// ponytail: emptied whole at 16 entries; an LRU if a workload ever thrashes it.
+    private static let designs = OSAllocatedUnfairLock(initialState: [DesignKey: [Biquad]]())
+
+    /// The sections that put the cascade on `faders` (dB) at every band centre.
     static func sections(for faders: [Float], sampleRate: Double) -> [Biquad] {
+        let key = DesignKey(faders: faders, sampleRate: sampleRate)
+        if let cached = designs.withLock({ $0[key] }) { return cached }
+        let result = solve(faders, sampleRate: sampleRate)
+        designs.withLock { cache in
+            if cache.count >= 16 { cache.removeAll() }
+            cache[key] = result
+        }
+        return result
+    }
+
+    /// A refinement pass measures the exact response at the centres and corrects with the same
+    /// static inverse; the passes stop once every centre is within 0.01 dB.
+    private static func solve(_ faders: [Float], sampleRate: Double) -> [Biquad] {
         let n = usableBandCount(sampleRate: sampleRate)
         var result = [Biquad](repeating: .identity, count: bandCount)
         let target = (0..<n).map { Double(faders[$0]) }
@@ -199,9 +190,9 @@ enum EQProfileCoefficients {
         var values = [Double](repeating: 0, count: count)
         for channel in 0..<2 {
             let base = channel * channelStride
-            values[base] = pow(10, Double(curve?.preamp(channel) ?? 0) / 20)
+            values[base] = pow(10, Double(curve?[channel].preamp ?? 0) / 20)
             guard let curve else { continue }
-            for (band, s) in EQProfileDesign.sections(for: curve.bands(channel), sampleRate: sampleRate).enumerated()
+            for (band, s) in EQProfileDesign.sections(for: curve[channel].bands, sampleRate: sampleRate).enumerated()
             where s != .identity {
                 let o = base + 1 + band * sectionStride
                 values[o] = 1
@@ -329,21 +320,8 @@ final class EQProfileKernel {
     /// Non-interleaved Float buffers; a mono buffer (no `right`) takes the left curve.
     func process(left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>?, frames: Int) {
         guard frames <= capacity else { return }
-        for channel in 0..<(right == nil ? 1 : 2) {
-            let samples = channel == 0 ? left : right!
-            vDSP_vspdp(samples, 1, scratchA, 1, vDSP_Length(frames))
-            if isFading { scratchB.update(from: scratchA, count: frames) }
-            active.process(channel: channel, scratchA, frames: frames)
-            if isFading {
-                incoming.process(channel: channel, scratchB, frames: frames)
-                let length = Double(fadeLength)
-                for i in 0..<frames {
-                    let w = min(1, Double(fadePosition + i) / length)
-                    scratchA[i] += (scratchB[i] - scratchA[i]) * w
-                }
-            }
-            vDSP_vdpsp(scratchA, 1, samples, 1, vDSP_Length(frames))
-        }
+        process(channel: 0, left, frames: frames)
+        if let right { process(channel: 1, right, frames: frames) }
         guard isFading else { return }
         fadePosition += frames
         if fadePosition >= fadeLength {
@@ -351,6 +329,21 @@ final class EQProfileKernel {
             isFading = false
             if active.isIdentity { active.reset() }
         }
+    }
+
+    private func process(channel: Int, _ samples: UnsafeMutablePointer<Float>, frames: Int) {
+        vDSP_vspdp(samples, 1, scratchA, 1, vDSP_Length(frames))
+        if isFading { scratchB.update(from: scratchA, count: frames) }
+        active.process(channel: channel, scratchA, frames: frames)
+        if isFading {
+            incoming.process(channel: channel, scratchB, frames: frames)
+            let length = Double(fadeLength)
+            for i in 0..<frames {
+                let w = min(1, Double(fadePosition + i) / length)
+                scratchA[i] += (scratchB[i] - scratchA[i]) * w
+            }
+        }
+        vDSP_vdpsp(scratchA, 1, samples, 1, vDSP_Length(frames))
     }
 }
 
@@ -479,90 +472,5 @@ final class EQProfileAudioUnit: AUAudioUnit, @unchecked Sendable {
             kernel.process(left: left, right: right, frames: Int(frames))
             return noErr
         }
-    }
-}
-
-/// Owns the profile nodes: the local graph's (replaced with the rest of a failed graph, as
-/// `PitchTuningController` replaces its pitch node) and one per AudioStreaming player, all driven
-/// from the current track's resolved profile, or the Studio's edit while it is open.
-///
-/// ponytail: every node follows `currentTrack`, so a Sweet Fades overlap hears the incoming track's
-/// profile on both sides; per-player curves if anyone notices.
-final class EQProfileController {
-    private(set) var localNode = EQProfileAudioUnit.makeNode()
-    private final class WeakNode {
-        weak var node: AVAudioUnitEffect?
-        init(_ node: AVAudioUnitEffect) { self.node = node }
-    }
-    private var streams: [WeakNode] = []
-    private var track: Track?
-    private var resolved: EQCurve?
-    private var observer: NSObjectProtocol?
-    private let store: EQProfileStore
-
-    /// Non-nil while the Studio is open: its edit, or flat under BYPASS. Wins over the track's
-    /// profile and over the global toggle — the Studio is the editor.
-    var audition: EQCurve? {
-        didSet {
-            guard audition != oldValue else { return }
-            if audition == nil { resolve() } else { apply() }
-        }
-    }
-
-    init(store: EQProfileStore = .shared) {
-        self.store = store
-        observer = NotificationCenter.default.addObserver(forName: .eqProfilesDidChange, object: store,
-                                                          queue: .main) { [weak self] _ in self?.resolve() }
-    }
-
-    deinit {
-        if let observer { NotificationCenter.default.removeObserver(observer) }
-    }
-
-    /// The curve the nodes run now.
-    var appliedCurve: EQCurve? { audition ?? resolved }
-
-    func trackDidChange(_ track: Track?) {
-        self.track = track
-        resolve()
-    }
-
-    func replaceLocalNode() {
-        localNode = EQProfileAudioUnit.makeNode()
-        configure(localNode)
-    }
-
-    func makeStreamingNode() -> AVAudioUnitEffect {
-        let node = EQProfileAudioUnit.makeNode()
-        streams.removeAll { $0.node == nil }
-        streams.append(WeakNode(node))
-        configure(node)
-        return node
-    }
-
-    private func resolve() {
-        guard let track else {
-            resolved = nil
-            apply()
-            return
-        }
-        let match = store.isEnabled ? store.resolve(track) : nil
-        resolved = match?.profile?.curve
-        // Logged only when a profile applies; a track with none, Off, or profiles disabled is silent.
-        if let match, let profile = match.profile {
-            NSLog("[eqprofile] %@ → %@ (%@)%@", track.title, profile.name, match.level.rawValue,
-                  audition != nil ? " — Studio open, auditioning its edit" : "")
-        }
-        apply()
-    }
-
-    private func apply() {
-        configure(localNode)
-        streams.removeAll { $0.node == nil }
-        for entry in streams { if let node = entry.node { configure(node) } }
-    }
-
-    private func configure(_ node: AVAudioUnitEffect) {
-        (node.auAudioUnit as? EQProfileAudioUnit)?.setCurve(appliedCurve)
     }
 }

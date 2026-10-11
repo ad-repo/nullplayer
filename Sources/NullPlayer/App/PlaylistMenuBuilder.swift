@@ -29,13 +29,12 @@ import AppKit
 @MainActor
 enum PlaylistMenuBuilder {
     struct State {
-        var selectionCount: Int
+        var selectedRows: Set<Int>
         var hasTracks: Bool
         /// False while the view shows something other than the live queue (a `.wmz` library
-        /// preview), so every row that edits the queue is disabled.
+        /// preview), so every row that edits the queue is disabled and nothing is assigned.
         var canEdit = true
-        /// The selected queue rows' tracks, for **Assign EQ Profile**; empty hides it.
-        var selectedTracks: [Track] = []
+        var selectionCount: Int { selectedRows.count }
         var hasSelection: Bool { selectionCount > 0 }
     }
 
@@ -99,10 +98,7 @@ enum PlaylistMenuBuilder {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("File Info...", #selector(PlaylistMenuTarget.showFileInfo(_:)),
                           enabled: state.selectionCount == 1 && canEdit))
-        let selectedTracks = state.selectedTracks
-        if !selectedTracks.isEmpty {
-            EQProfileMenu.addAssignItem(to: menu, level: .track, tracks: selectedTracks)
-        }
+        if canEdit { EQProfileMenu.addAssignItem(to: menu, queueRows: state.selectedRows) }
         return menu
     }
 
@@ -139,12 +135,13 @@ enum PlaylistMenuBuilder {
         let track = tracks[index]
         let alert = NSAlert()
         alert.messageText = track.displayTitle
-        alert.informativeText = """
-        Artist: \(track.artist ?? "Unknown")
-        Album: \(track.album ?? "Unknown")
-        Duration: \(String(format: "%d:%02d", Int(track.duration ?? 0) / 60, Int(track.duration ?? 0) % 60))
-        Path: \(track.url.path)
-        """ + (track.mediaType == .audio ? "\nEQ Profile: \(EQProfileStore.shared.describe(track))" : "")
+        alert.informativeText = [
+            "Artist: \(track.artist ?? "Unknown")",
+            "Album: \(track.album ?? "Unknown")",
+            "Duration: \(String(format: "%d:%02d", Int(track.duration ?? 0) / 60, Int(track.duration ?? 0) % 60))",
+            "Path: \(track.url.path)",
+            EQProfileStore.shared.fileInfoLine(for: track)
+        ].compactMap { $0 }.joined(separator: "\n")
         alert.runModal()
     }
 }

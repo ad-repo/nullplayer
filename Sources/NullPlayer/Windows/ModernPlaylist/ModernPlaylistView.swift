@@ -230,7 +230,7 @@ class ModernPlaylistView: NSView {
 
         // Check if text needs scrolling
         let numberText = "\(currentIndex + 1). "
-        let titleText = track.playlistTitle
+        let titleText = EQProfileStore.shared.rowPrefix(for: track) + track.playlistTitle
         let fullText = numberText + titleText
         let fullSize = NSAttributedString(string: fullText, attributes: titleAttrs).size()
 
@@ -489,7 +489,7 @@ class ModernPlaylistView: NSView {
             
             // Build track text components
             let numberText = "\(index + 1). "
-            let titleText = track.playlistTitle
+            let titleText = EQProfileStore.shared.rowPrefix(for: track) + track.playlistTitle
             let fullText = numberText + titleText
             let duration = track.duration ?? 0
             let durationStr = String(format: "%d:%02d", Int(duration) / 60, Int(duration) % 60)
@@ -1456,11 +1456,9 @@ class ModernPlaylistView: NSView {
     // MARK: - Context Menu
     
     override func menu(for event: NSEvent) -> NSMenu? {
-        let playlist = WindowManager.shared.audioEngine.playlist
-        return PlaylistMenuBuilder.menu(target: self, state: .init(
-            selectionCount: selectedIndices.count,
-            hasTracks: !playlist.isEmpty,
-            selectedTracks: selectedIndices.sorted().filter(playlist.indices.contains).map { playlist[$0] }))
+        PlaylistMenuBuilder.menu(target: self, state: .init(
+            selectedRows: selectedIndices,
+            hasTracks: !WindowManager.shared.audioEngine.playlist.isEmpty))
     }
     
     @objc func playSelected(_ sender: Any?) {

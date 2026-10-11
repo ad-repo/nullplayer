@@ -5,14 +5,19 @@ import XCTest
 final class EQProfileTests: XCTestCase {
     private var directory: URL!
     private var storeURL: URL { directory.appendingPathComponent("eq_profiles.json") }
+    private var defaultsSuite: String!
+    private var defaults: UserDefaults!
 
     override func setUpWithError() throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("EQProfileTests-\(UUID())")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defaultsSuite = "EQProfileTests-\(UUID())"
+        defaults = UserDefaults(suiteName: defaultsSuite)
     }
 
     override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: directory)
+        defaults.removePersistentDomain(forName: defaultsSuite)
     }
 
     private func local(_ path: String, artist: String? = "Artist", album: String? = "Album") -> Track {
@@ -21,8 +26,8 @@ final class EQProfileTests: XCTestCase {
 
     private func curve(_ gain: Float) -> EQCurve {
         var curve = EQCurve.flat
-        curve.left[10] = gain
-        curve.right[10] = gain
+        curve.left.bands[10] = gain
+        curve.right.bands[10] = gain
         return curve
     }
 
@@ -56,7 +61,7 @@ final class EQProfileTests: XCTestCase {
     // MARK: - Resolution
 
     func testTrackBeatsAlbumBeatsArtist() {
-        let store = EQProfileStore(url: storeURL)
+        let store = EQProfileStore(url: storeURL, defaults: defaults)
         let a = store.add(name: "A", curve: curve(3)), b = store.add(name: "B", curve: curve(6))
         let c = store.add(name: "C", curve: curve(9))
         let track = local("/music/1.flac"), sibling = local("/music/2.flac")
@@ -70,7 +75,7 @@ final class EQProfileTests: XCTestCase {
     }
 
     func testOffStopsResolutionAndInheritFallsThrough() {
-        let store = EQProfileStore(url: storeURL)
+        let store = EQProfileStore(url: storeURL, defaults: defaults)
         let a = store.add(name: "A", curve: curve(3))
         let track = local("/music/1.flac")
         store.assign(.profile(a.id), level: .album, tracks: [track])
@@ -84,7 +89,7 @@ final class EQProfileTests: XCTestCase {
     }
 
     func testSameAlbumTitleUnderTwoArtistsStaysSeparate() {
-        let store = EQProfileStore(url: storeURL)
+        let store = EQProfileStore(url: storeURL, defaults: defaults)
         let a = store.add(name: "A", curve: curve(3))
         let one = local("/1.flac", artist: "One", album: "Greatest Hits")
         let two = local("/2.flac", artist: "Two", album: "Greatest Hits")
@@ -94,7 +99,7 @@ final class EQProfileTests: XCTestCase {
     }
 
     func testCompilationAlbumAssignmentCoversEveryTrack() {
-        let store = EQProfileStore(url: storeURL)
+        let store = EQProfileStore(url: storeURL, defaults: defaults)
         let a = store.add(name: "A", curve: curve(3))
         let tracks = ["X", "Y", "Z"].map { (name: String) in local("/\(name).flac", artist: name, album: "Now 42") }
         store.assign(.profile(a.id), level: .album, tracks: tracks)
@@ -102,7 +107,7 @@ final class EQProfileTests: XCTestCase {
     }
 
     func testDeletingAProfileDropsItsAssignments() {
-        let store = EQProfileStore(url: storeURL)
+        let store = EQProfileStore(url: storeURL, defaults: defaults)
         let a = store.add(name: "A", curve: curve(3)), b = store.add(name: "B", curve: curve(6))
         let track = local("/1.flac")
         store.assign(.profile(b.id), level: .artist, tracks: [track])
@@ -113,26 +118,24 @@ final class EQProfileTests: XCTestCase {
     }
 
     func testProfilesAndAssignmentsSurviveAReload() {
-        let store = EQProfileStore(url: storeURL)
+        let store = EQProfileStore(url: storeURL, defaults: defaults)
         let a = store.add(name: "A", curve: curve(5))
         let track = local("/1.flac")
         store.assign(.profile(a.id), level: .track, tracks: [track])
         store.assign(.off, level: .artist, tracks: [track])
 
-        let reloaded = EQProfileStore(url: storeURL)
+        let reloaded = EQProfileStore(url: storeURL, defaults: defaults)
         XCTAssertEqual(reloaded.profiles, [a])
         XCTAssertEqual(reloaded.assignment(at: .track, of: track), .profile(a.id))
         XCTAssertEqual(reloaded.assignment(at: .artist, of: track), .off)
     }
 
     func testControllerAppliesTheResolvedCurveAndNothingWhenProfilesAreOff() {
-        let store = EQProfileStore(url: storeURL)
+        let store = EQProfileStore(url: storeURL, defaults: defaults)
         let a = store.add(name: "A", curve: curve(6))
         let track = local("/1.flac")
         store.assign(.profile(a.id), level: .artist, tracks: [track])
-        let wasEnabled = store.isEnabled
-        defer { store.isEnabled = wasEnabled }
-        store.isEnabled = true
+        XCTAssertTrue(store.isEnabled, "on by default")
 
         let controller = EQProfileController(store: store)
         let unit = { controller.localNode.auAudioUnit as? EQProfileAudioUnit }
@@ -160,7 +163,7 @@ final class EQProfileTests: XCTestCase {
         XCTAssertTrue(kernel(.flat, rate: 48000, frames: 16).isBypassed)
 
         var leftOnly = EQCurve.flat
-        leftOnly.left[12] = 6
+        leftOnly.left.bands[12] = 6
         let k = kernel(leftOnly, rate: 48000, frames: 1024)
         var left = (0..<1024).map { Float(sin(Double($0) * 0.05)) }, right = left
         let original = right
@@ -194,7 +197,7 @@ final class EQProfileTests: XCTestCase {
     func testImpulseThroughTheKernelMatchesTheFaders() {
         let rate = 48000.0, n = 1 << 16
         let faders = (0..<31).map { Float(($0 * 7) % 25) - 12 }
-        let k = kernel(EQCurve(left: faders, right: faders, preampL: 0, preampR: 0), rate: rate, frames: n)
+        let k = kernel(EQCurve(left: .init(bands: faders, preamp: 0), right: .init(bands: faders, preamp: 0)), rate: rate, frames: n)
         var impulse = [Float](repeating: 0, count: n)
         impulse[0] = 1
         impulse.withUnsafeMutableBufferPointer { k.process(left: $0.baseAddress!, right: nil, frames: n) }
@@ -213,7 +216,7 @@ final class EQProfileTests: XCTestCase {
         var lone20 = [Float](repeating: 0, count: 31)
         lone20[0] = 12
         let n = 1 << 20
-        let k = kernel(EQCurve(left: lone20, right: lone20, preampL: 0, preampR: 0), rate: 192000, frames: n)
+        let k = kernel(EQCurve(left: .init(bands: lone20, preamp: 0), right: .init(bands: lone20, preamp: 0)), rate: 192000, frames: n)
         var impulse = [Float](repeating: 0, count: n)
         impulse[0] = 1
         impulse.withUnsafeMutableBufferPointer { k.process(left: $0.baseAddress!, right: nil, frames: n) }
@@ -224,8 +227,8 @@ final class EQProfileTests: XCTestCase {
     func testCoefficientChangeShowsNoStep() {
         let rate = 48000.0, block = 512
         var cut = EQCurve.flat, boost = EQCurve.flat
-        cut.left[17] = -12
-        boost.left[17] = 12
+        cut.left.bands[17] = -12
+        boost.left.bands[17] = 12
         let k = kernel(cut, rate: rate, frames: block)
         let next = EQProfileCoefficients.design(boost, sampleRate: rate)
         var output: [Float] = []

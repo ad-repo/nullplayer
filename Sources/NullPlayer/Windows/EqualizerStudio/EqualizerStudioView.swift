@@ -1,7 +1,9 @@
 import AppKit
 
 /// One of the Studio's two looks. Fixed colours and type — only the rim around it takes the skin's
-/// colours. One layout and one drawing path read it; the looks differ only in these values.
+/// colours. One layout reads it, and the looks differ in these values, except for the three things
+/// drawn per `kind`: the analyser (bars or a filled curve), the fader caps, and the fader scale's
+/// engraving.
 struct StudioFaceplate {
     enum Kind: String { case console, boutique }
 
@@ -22,6 +24,18 @@ struct StudioFaceplate {
     let legendFont: NSFont
     let buttonFont: NSFont
     let titleFont: NSFont
+    /// The analyser's dB lines: their spacing, weight and colour (0 dB's own). Labelled every 12 dB.
+    let graticuleStep: Float
+    let graticuleWeight: CGFloat
+    let graticule: NSColor
+    let graticuleZero: NSColor
+    /// A hairline at every octave behind the analyser.
+    let octaveGrid: Bool
+    /// The fader scale's lines and the dB labels beside the preamp.
+    let faderTicks: [Float]
+    let faderTickLabels: [Float]
+    let slotWidth: CGFloat
+    let capWidth: CGFloat
 
     static let defaultsKey = "equalizerStudioFaceplate"
 
@@ -45,7 +59,11 @@ struct StudioFaceplate {
         meter: rgb(0x4fc36b), meterHot: rgb(0xe6c341), peak: rgb(0xff5a4a),
         legendFont: font("AvenirNextCondensed-DemiBold", 8, fallback: .semibold),
         buttonFont: font("AvenirNextCondensed-Bold", 10, fallback: .bold),
-        titleFont: font("AvenirNextCondensed-DemiBold", 14, fallback: .semibold))
+        titleFont: font("AvenirNextCondensed-DemiBold", 14, fallback: .semibold),
+        graticuleStep: 12, graticuleWeight: 1,
+        graticule: rgb(0xc9ced4, 0.15), graticuleZero: rgb(0xc9ced4, 0.35), octaveGrid: false,
+        faderTicks: [12, 6, 3, 0, -3, -6, -12], faderTickLabels: [12, 6, 0, -6, -12],
+        slotWidth: 3, capWidth: 14)
 
     /// Boutique DSP: Weiss / Dangerous / Bricasti — flat black glass, thin type, one subtle accent,
     /// slim line faders, the analyser as a filled curve on a fine grid.
@@ -56,7 +74,11 @@ struct StudioFaceplate {
         meter: rgb(0x7cc4e4, 0.28), meterHot: rgb(0x7cc4e4), peak: rgb(0xffffff, 0.7),
         legendFont: font("HelveticaNeue-Light", 8, fallback: .light),
         buttonFont: font("HelveticaNeue-Light", 9.5, fallback: .light),
-        titleFont: font("HelveticaNeue-Thin", 15, fallback: .thin))
+        titleFont: font("HelveticaNeue-Thin", 15, fallback: .thin),
+        graticuleStep: 6, graticuleWeight: 0.5,
+        graticule: rgb(0x23262b), graticuleZero: rgb(0x23262b), octaveGrid: true,
+        faderTicks: [0], faderTickLabels: [],
+        slotWidth: 1, capWidth: 10)
 
     static var stored: StudioFaceplate {
         UserDefaults.standard.string(forKey: defaultsKey) == Kind.boutique.rawValue ? .boutique : .console
@@ -131,8 +153,8 @@ final class EqualizerStudioView: NSView {
     /// Per channel: band-only response on `gridFrequencies` and its peak, dB.
     private var response: [[Double]] = [[], []]
     private var peakDB: [Double] = [0, 0]
-    private var levels = [[Float]](repeating: [Float](repeating: StudioRTA.floorDB, count: 31), count: 2)
-    private var peaks = [[Float]](repeating: [Float](repeating: StudioRTA.floorDB, count: 31), count: 2)
+    private var levels = [[Float]](repeating: [Float](repeating: StudioRTA.floorDB, count: EQProfileDesign.bandCount), count: 2)
+    private var peaks = [[Float]](repeating: [Float](repeating: StudioRTA.floorDB, count: EQProfileDesign.bandCount), count: 2)
 
     override var isFlipped: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -227,7 +249,7 @@ final class EqualizerStudioView: NSView {
 
     private func editDidChange() {
         for channel in 0..<2 {
-            let sections = EQProfileDesign.sections(for: edit.bands(channel), sampleRate: Self.displayRate)
+            let sections = EQProfileDesign.sections(for: edit[channel].bands, sampleRate: Self.displayRate)
             response[channel] = Self.gridFrequencies.map {
                 EQProfileDesign.responseDB(sections, frequency: $0, sampleRate: Self.displayRate)
             }
@@ -244,18 +266,12 @@ final class EqualizerStudioView: NSView {
     // MARK: - Editing
 
     private func value(_ fader: Fader) -> Float {
-        guard let band = fader.band else { return edit.preamp(fader.channel) }
-        return edit.bands(fader.channel)[band]
+        fader.band.map { edit[fader.channel].bands[$0] } ?? edit[fader.channel].preamp
     }
 
     private func set(_ fader: Fader, _ value: Float) {
         let value = EQCurve.clamp(value)
-        switch (fader.channel, fader.band) {
-        case (0, nil): edit.preampL = value
-        case (_, nil): edit.preampR = value
-        case (0, let band?): edit.left[band] = value
-        case (_, let band?): edit.right[band] = value
-        }
+        if let band = fader.band { edit[fader.channel].bands[band] = value } else { edit[fader.channel].preamp = value }
     }
 
     /// LINK lit moves the other channel's fader by the same amount, so channels that differ keep
@@ -278,14 +294,6 @@ final class EqualizerStudioView: NSView {
         editDidChange()
     }
 
-    private func flatten(channel: Int) {
-        if channel == 0 {
-            edit.left = EQCurve.flat.left; edit.preampL = 0
-        } else {
-            edit.right = EQCurve.flat.right; edit.preampR = 0
-        }
-    }
-
     private func perform(_ button: Button) {
         switch button {
         case .link:
@@ -293,14 +301,13 @@ final class EqualizerStudioView: NSView {
             UserDefaults.standard.set(linked, forKey: Self.linkedKey)
             needsDisplay = true
         case .flat:
-            if linked { flatten(channel: 0); flatten(channel: 1) } else { flatten(channel: focusChannel) }
+            for channel in linked ? [0, 1] : [focusChannel] { edit[channel] = .flat }
             editDidChange()
         case .bypass:
             bypass.toggle()
             pushAudition()
         case .headroom:
-            edit.preampL = EQCurve.clamp(Float(-peakDB[0]))
-            edit.preampR = EQCurve.clamp(Float(-peakDB[1]))
+            for channel in 0..<2 { edit[channel].preamp = EQCurve.clamp(Float(-peakDB[channel])) }
             editDidChange()
         case .save:
             if let profileID { store.update(profileID, curve: edit); needsDisplay = true } else { saveAs() }
@@ -361,7 +368,7 @@ final class EqualizerStudioView: NSView {
 
     private func showProfileMenu() {
         let menu = NSMenu()
-        for profile in store.profiles.sorted(by: { $0.name.localizedStandardCompare($1.name) == .orderedAscending }) {
+        for profile in store.sortedProfiles {
             let item = NSMenuItem(title: profile.name, action: #selector(chooseProfile(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = profile.id
@@ -435,36 +442,27 @@ final class EqualizerStudioView: NSView {
 
     // MARK: - Drawing
 
-    /// The rim's colours: the hosting skin's own surface style where it lends one, else one built
-    /// here from the Classic skin's playlist colours or the Original skin's palette. Built here rather
-    /// than as a Classic case in `hostedSurfaceStyle`, which would put Classic's Playlist and EQ
-    /// windows in the gloss frame too.
+    private static let neutralRim = SkinnedSurfaceStyle(roles: SkinnedSurfaceRoles(
+        background: NSColor(white: 0.22, alpha: 1), text: .white, currentText: .white,
+        selectionBackground: .gray, selectionText: .white, treeText: .white, treeSelection: .gray))
+
+    /// The rim's colours: the hosting skin's own surface style where it lends one, else the Classic
+    /// skin's or the Original skin's surface roles. Not a Classic case in `hostedSurfaceStyle`, which
+    /// would put Classic's Playlist and EQ windows in the gloss frame too.
     private var rimStyle: SkinnedSurfaceStyle {
         let wm = WindowManager.shared
         if let style = wm.hostedSurfaceStyle { return style }
-        let neutral = SkinnedSurfaceRoles(background: NSColor(white: 0.22, alpha: 1), text: .white, currentText: .white,
-                                          selectionBackground: .gray, selectionText: .white,
-                                          treeText: .white, treeSelection: .gray)
-        let roles: SkinnedSurfaceRoles
         switch wm.uiMode.controllerFamily {
         case .classic:
-            let c = wm.currentSkin?.playlistColors ?? .default
-            roles = SkinnedSurfaceRoles(background: c.normalBackground, text: c.normalText, currentText: c.currentText,
-                                        selectionBackground: c.selectedBackground, selectionText: c.selectedText,
-                                        treeText: c.normalText, treeSelection: c.selectedBackground)
+            return SkinnedSurfaceStyle(roles: SkinnedSurfaceRoles(classic: wm.currentSkin?.playlistColors ?? .default))
         case .nullPlayerModern:
-            roles = ModernSkinEngine.shared.currentSkin.map { skin in
-                let p = skin.config.palette
-                return SkinnedSurfaceRoles(background: p.resolvedSurface(), text: p.resolvedText(),
-                                           currentText: p.resolvedPrimary(), selectionBackground: p.resolvedAccent(),
-                                           selectionText: p.resolvedText(), treeText: p.resolvedTextDim(),
-                                           treeSelection: p.resolvedAccent())
-            } ?? neutral
+            return ModernSkinEngine.shared.currentSkin.map {
+                SkinnedSurfaceStyle(roles: SkinnedSurfaceRoles(modern: $0.config.palette))
+            } ?? Self.neutralRim
         case .winampModern, .wmp, .audion:
             // These lend a style once their skin is up; until then, the neutral rim.
-            roles = neutral
+            return Self.neutralRim
         }
-        return SkinnedSurfaceStyle(roles: roles)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -538,10 +536,10 @@ final class EqualizerStudioView: NSView {
         let labelColor = linked || channel == focusChannel ? f.accent : f.text
         drawText(channel == 0 ? "LEFT" : "RIGHT", font: f.titleFont, color: labelColor,
                  in: CGRect(x: panel.label.minX, y: panel.label.minY + 4, width: panel.label.width, height: 20))
-        let peak = peakDB[channel] + Double(edit.preamp(channel))
+        let peak = peakDB[channel] + Double(edit[channel].preamp)
         drawText(String(format: "PK %+.1f", peak), font: f.legendFont, color: peak > 0.05 ? f.peak : f.dimText,
                  in: CGRect(x: panel.label.minX, y: panel.label.minY + 30, width: panel.label.width, height: 12))
-        drawText(String(format: "PRE %+.1f", edit.preamp(channel)), font: f.legendFont, color: f.dimText,
+        drawText(String(format: "PRE %+.1f", edit[channel].preamp), font: f.legendFont, color: f.dimText,
                  in: CGRect(x: panel.label.minX, y: panel.label.minY + 44, width: panel.label.width, height: 12))
         // Separate channels: say which one FLAT acts on, rather than leave a lone lit label to decode.
         if !linked && channel == focusChannel {
@@ -610,20 +608,16 @@ final class EqualizerStudioView: NSView {
         f.well.setFill()
         NSBezierPath(roundedRect: rect, xRadius: 2, yRadius: 2).fill()
 
-        // Graticule: every 12 dB on Console, every 6 dB plus octaves on Boutique.
-        let step: Float = f.kind == .console ? 12 : 6
-        var db = Self.analyserRange.upperBound - 6
-        while db > Self.analyserRange.lowerBound {
+        for db in stride(from: Self.analyserRange.upperBound - 6, to: Self.analyserRange.lowerBound, by: -f.graticuleStep) {
             let y = analyserY(db, in: rect)
-            (f.kind == .console ? f.scale.withAlphaComponent(db == 0 ? 0.35 : 0.15) : f.scale).setFill()
-            NSRect(x: rect.minX, y: y, width: rect.width, height: f.kind == .console ? 1 : 0.5).fill()
-            if f.kind == .console || db.truncatingRemainder(dividingBy: 12) == 0 {
+            (db == 0 ? f.graticuleZero : f.graticule).setFill()
+            NSRect(x: rect.minX, y: y, width: rect.width, height: f.graticuleWeight).fill()
+            if db.truncatingRemainder(dividingBy: 12) == 0 {
                 drawText(String(format: "%.0f", db), font: f.legendFont, color: f.dimText.withAlphaComponent(0.7),
                          in: CGRect(x: rect.maxX - 22, y: y - 6, width: 20, height: 12), alignment: .right)
             }
-            db -= step
         }
-        if f.kind == .boutique {
+        if f.octaveGrid {
             f.scale.setFill()
             for band in stride(from: 0, to: EQProfileDesign.bandCount, by: 3) {
                 NSRect(x: panel.centreX(band), y: rect.minY, width: 0.5, height: rect.height).fill()
@@ -632,7 +626,7 @@ final class EqualizerStudioView: NSView {
 
         let streaming = WindowManager.shared.audioEngine.isStreamingPlayback
         let added: (Int) -> Float = { [edit, bypass] band in
-            streaming || bypass ? 0 : edit.bands(channel)[band] + edit.preamp(channel)
+            streaming || bypass ? 0 : edit[channel].bands[band] + edit[channel].preamp
         }
         drawText(streaming ? "OUTPUT" : bypass ? "SOURCE" : "SOURCE + PROFILE", font: f.legendFont,
                  color: f.dimText, in: CGRect(x: rect.minX + 4, y: rect.minY + 2, width: 120, height: 11))
@@ -680,35 +674,33 @@ final class EqualizerStudioView: NSView {
 
     private func drawFaders(_ panel: Panel, channel: Int, _ f: StudioFaceplate) {
         let rect = panel.faders
-        let bands = edit.bands(channel)
+        let bands = edit[channel].bands
 
-        // Scale: engraved ±12 / ±6 / ±3 / 0 ticks on Console, a fine 0 dB line on Boutique.
-        let ticks: [Float] = f.kind == .console ? [12, 6, 3, 0, -3, -6, -12] : [0]
-        for tick in ticks {
+        // Scale: engraved on Console, a fine line on Boutique.
+        for tick in f.faderTicks {
             let y = self.y(gain: tick, in: rect).rounded() + 0.5
-            if f.kind == .console {
+            switch f.kind {
+            case .console:
                 f.scale.withAlphaComponent(tick == 0 ? 0.55 : 0.28).setFill()
                 NSRect(x: rect.minX, y: y - 0.5, width: rect.width, height: 1).fill()
                 NSColor.black.withAlphaComponent(0.35).setFill()
                 NSRect(x: rect.minX, y: y + 0.5, width: rect.width, height: 1).fill()
-            } else {
+            case .boutique:
                 f.scale.setFill()
                 NSRect(x: rect.minX, y: y - 0.25, width: rect.width, height: 0.5).fill()
             }
         }
-        if f.kind == .console {
-            for tick: Float in [12, 6, 0, -6, -12] {
-                drawText(String(format: "%+.0f", tick).replacingOccurrences(of: "+0", with: "0"), font: f.legendFont,
-                         color: f.dimText, in: CGRect(x: panel.preamp.maxX + 2, y: y(gain: tick, in: rect) - 6, width: 18, height: 12))
-            }
+        for tick in f.faderTickLabels {
+            drawText(String(format: "%+.0f", tick).replacingOccurrences(of: "+0", with: "0"), font: f.legendFont,
+                     color: f.dimText, in: CGRect(x: panel.preamp.maxX + 2, y: y(gain: tick, in: rect) - 6, width: 18, height: 12))
         }
 
         func drawFader(x: CGFloat, value: Float, in rect: CGRect, cap: NSColor, width: CGFloat) {
-            let slotWidth: CGFloat = f.kind == .console ? 3 : 1
             f.slot.setFill()
-            NSRect(x: x - slotWidth / 2, y: rect.minY + 4, width: slotWidth, height: rect.height - 8).fill()
+            NSRect(x: x - f.slotWidth / 2, y: rect.minY + 4, width: f.slotWidth, height: rect.height - 8).fill()
             let y = self.y(gain: value, in: rect)
-            if f.kind == .console {
+            switch f.kind {
+            case .console:
                 let capRect = CGRect(x: x - width / 2, y: y - 4.5, width: width, height: 9)
                 NSColor.black.withAlphaComponent(0.4).setFill()
                 capRect.offsetBy(dx: 0, dy: 1).fill()
@@ -718,7 +710,7 @@ final class EqualizerStudioView: NSView {
                 NSRect(x: capRect.minX + 1, y: capRect.minY + 1, width: capRect.width - 2, height: 1).fill()
                 NSColor.black.withAlphaComponent(0.55).setFill()
                 NSRect(x: capRect.minX + 1, y: capRect.midY - 0.5, width: capRect.width - 2, height: 1).fill()
-            } else {
+            case .boutique:
                 let zero = self.y(gain: 0, in: rect)
                 cap.withAlphaComponent(0.35).setFill()
                 NSRect(x: x - 0.5, y: min(y, zero), width: 1, height: abs(y - zero)).fill()
@@ -729,9 +721,9 @@ final class EqualizerStudioView: NSView {
 
         for band in 0..<EQProfileDesign.bandCount {
             drawFader(x: panel.centreX(band), value: bands[band], in: rect, cap: f.capColor(band: band),
-                      width: min(panel.bandWidth - 4, f.kind == .console ? 14 : 10))
+                      width: min(panel.bandWidth - 4, f.capWidth))
         }
-        drawFader(x: panel.preamp.midX, value: edit.preamp(channel), in: panel.preamp, cap: f.text, width: 18)
+        drawFader(x: panel.preamp.midX, value: edit[channel].preamp, in: panel.preamp, cap: f.text, width: 18)
 
         // The response actually applied (band sections, 48 kHz): what the faders produce between centres.
         guard response[channel].count == Self.gridFrequencies.count else { return }

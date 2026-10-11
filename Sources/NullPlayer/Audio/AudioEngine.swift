@@ -1308,37 +1308,45 @@ class AudioEngine {
 
     // MARK: - Setup
     
-    private func setupAudioEngine() {
-        // Attach nodes
-        engine.attach(playerNode)
-        engine.attach(crossfadePlayerNode)  // For Sweet Fades crossfade
-        engine.attach(eqNode)
-        engine.attach(mixerNode)  // Class property for graph rebuilding
-        engine.attach(eqProfileController.localNode)
-        engine.attach(tuningController.localPitchNode)
-        engine.attach(wmpWOWController.localNode)
+    /// The local chain from the players' mixer on, in signal order; each node feeds the next and the
+    /// last feeds `mainMixerNode`. Setup, rebuild and replacement all walk this, so a new stage is
+    /// one entry here.
+    ///
+    ///     playerNode ─┐
+    ///                 ├─► mixerNode ─► EQ profile ─► pitch ─► EQ ─► WMP enhancements ─► main mixer
+    ///     crossfade ──┘
+    ///
+    /// Pitch sits AFTER the mixer so a single instance handles both player + crossfade, and the
+    /// spectrum tap on mixerNode keeps capturing pre-profile, pre-pitch (source) frequencies.
+    private var localEffectChain: [AVAudioNode] {
+        [mixerNode, eqProfileController.localNode, tuningController.localPitchNode, eqNode, wmpWOWController.localNode]
+    }
 
+    private var localGraphNodes: [AVAudioNode] { [playerNode, crossfadePlayerNode] + localEffectChain }
+
+    /// Attach whatever of the local graph is not attached: everything on a new engine, a replaced
+    /// node, or one a failed rebuild detached.
+    private func attachLocalGraph() {
+        for node in localGraphNodes where !engine.attachedNodes.contains(node) {
+            engine.attach(node)
+        }
+    }
+
+    private func connectLocalGraph(format: AVAudioFormat) {
+        engine.connect(playerNode, to: mixerNode, format: format)
+        engine.connect(crossfadePlayerNode, to: mixerNode, format: format)
+        let chain = localEffectChain
+        for (node, next) in zip(chain, chain.dropFirst() + [engine.mainMixerNode as AVAudioNode]) {
+            engine.connect(node, to: next, format: format)
+        }
+    }
+
+    private func setupAudioEngine() {
+        attachLocalGraph()
         // Get the standard format from the mixer
         let mixerFormat = engine.mainMixerNode.outputFormat(forBus: 0)
+        connectLocalGraph(format: mixerFormat)
 
-        // Signal flow: playerNode ─┐
-        //                          ├─► mixerNode ─► profileNode ─► localPitchNode ─► eqNode ─► output
-        //  crossfadePlayerNode ────┘
-        //
-        // Pitch node sits AFTER the mixer so a single instance handles both player + crossfade,
-        // and the spectrum tap on mixerNode keeps capturing pre-pitch (source) frequencies.
-
-        // Connect both players to the mixer
-        engine.connect(playerNode, to: mixerNode, format: mixerFormat)
-        engine.connect(crossfadePlayerNode, to: mixerNode, format: mixerFormat)
-
-        // Connect mixer → EQ profile → pitch → EQ → WMP enhancements (dry outside WMP) → output
-        engine.connect(mixerNode, to: eqProfileController.localNode, format: mixerFormat)
-        engine.connect(eqProfileController.localNode, to: tuningController.localPitchNode, format: mixerFormat)
-        engine.connect(tuningController.localPitchNode, to: eqNode, format: mixerFormat)
-        engine.connect(eqNode, to: wmpWOWController.localNode, format: mixerFormat)
-        engine.connect(wmpWOWController.localNode, to: engine.mainMixerNode, format: mixerFormat)
-        
         // Player nodes stay at unity gain (1.0) - volume applied at mainMixerNode
         // This ensures the spectrum tap captures volume-independent audio
         playerNode.volume = 1.0
@@ -1545,24 +1553,8 @@ class AudioEngine {
             #if DEBUG
             self.audioGraphRecovery.injectFaultForTesting(at: "connect")
             #endif
-            // Re-attach the pitch node if a previous rebuild detached it
-            // (AVAudioEngine.attach is idempotent for already-attached nodes — checked via engine.attachedNodes).
-            if !self.engine.attachedNodes.contains(self.tuningController.localPitchNode) {
-                self.engine.attach(self.tuningController.localPitchNode)
-            }
-            self.engine.connect(self.playerNode, to: self.mixerNode, format: mixerFormat)
-            self.engine.connect(self.crossfadePlayerNode, to: self.mixerNode, format: mixerFormat)
-            if !self.engine.attachedNodes.contains(self.eqProfileController.localNode) {
-                self.engine.attach(self.eqProfileController.localNode)
-            }
-            self.engine.connect(self.mixerNode, to: self.eqProfileController.localNode, format: mixerFormat)
-            self.engine.connect(self.eqProfileController.localNode, to: self.tuningController.localPitchNode, format: mixerFormat)
-            self.engine.connect(self.tuningController.localPitchNode, to: self.eqNode, format: mixerFormat)
-            if !self.engine.attachedNodes.contains(self.wmpWOWController.localNode) {
-                self.engine.attach(self.wmpWOWController.localNode)
-            }
-            self.engine.connect(self.eqNode, to: self.wmpWOWController.localNode, format: mixerFormat)
-            self.engine.connect(self.wmpWOWController.localNode, to: self.engine.mainMixerNode, format: mixerFormat)
+            self.attachLocalGraph()
+            self.connectLocalGraph(format: mixerFormat)
         }, &exceptionError)
 
         guard connected else {
@@ -1583,17 +1575,10 @@ class AudioEngine {
             #if DEBUG
             self.audioGraphRecovery.injectFaultForTesting(at: "disconnect")
             #endif
-            self.engine.disconnectNodeOutput(self.playerNode)
-            self.engine.disconnectNodeOutput(self.crossfadePlayerNode)
-            self.engine.disconnectNodeOutput(self.mixerNode)
-            if self.engine.attachedNodes.contains(self.eqProfileController.localNode) {
-                self.engine.disconnectNodeOutput(self.eqProfileController.localNode)
+            let attached = self.engine.attachedNodes
+            for node in self.localGraphNodes where attached.contains(node) {
+                self.engine.disconnectNodeOutput(node)
             }
-            if self.engine.attachedNodes.contains(self.tuningController.localPitchNode) {
-                self.engine.disconnectNodeOutput(self.tuningController.localPitchNode)
-            }
-            self.engine.disconnectNodeOutput(self.eqNode)
-            self.engine.disconnectNodeOutput(self.wmpWOWController.localNode)
         }, &exceptionError)
 
         guard disconnected else {
@@ -1649,12 +1634,7 @@ class AudioEngine {
         }
         var exceptionError: NSError?
         let attached = NPObjCExceptionCatch({
-            self.engine.attach(self.playerNode)
-            self.engine.attach(self.crossfadePlayerNode)
-            self.engine.attach(self.mixerNode)
-            self.engine.attach(self.eqNode)
-            self.engine.attach(self.tuningController.localPitchNode)
-            self.engine.attach(self.eqProfileController.localNode)
+            self.attachLocalGraph()
         }, &exceptionError)
         guard attached else { return false }
         playerNode.volume = 1

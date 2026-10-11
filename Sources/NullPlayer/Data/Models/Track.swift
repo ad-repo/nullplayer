@@ -364,14 +364,9 @@ struct Track: Identifiable, Equatable {
                      .replacingOccurrences(of: "\t", with: " ")
     }
 
-    /// The mark a queue row puts before a track an EQ profile runs on.
-    static let eqProfileRowMarker = "∿"
-
-    /// The title a playlist row draws: a video is marked with its glyph, a track an EQ profile runs
-    /// on with `eqProfileRowMarker`. Main thread: the profile store is.
+    /// The title a playlist row draws: a video is marked with its glyph, audio is not.
     var playlistTitle: String {
-        if mediaType == .video { return "\(mediaType.rowMarker) \(displayTitle)" }
-        return EQProfileStore.shared.appliesProfile(to: self) ? "\(Self.eqProfileRowMarker) \(displayTitle)" : displayTitle
+        mediaType == .video ? "\(mediaType.rowMarker) \(displayTitle)" : displayTitle
     }
     
     /// Formatted duration string (MM:SS)

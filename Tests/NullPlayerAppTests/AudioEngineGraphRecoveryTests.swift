@@ -38,7 +38,7 @@ final class AudioEngineGraphRecoveryTests: XCTestCase {
         let recovery = AudioGraphRecoveryCoordinator()
         let engine = AudioEngine(audioGraphRecovery: recovery)
         var curve = EQCurve.flat
-        curve.left[5] = 6
+        curve.left.bands[5] = 6
         engine.eqProfileController.audition = curve
         let oldNode = engine.eqProfileController.localNode
         var injected = false
