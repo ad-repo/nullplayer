@@ -41,12 +41,12 @@ enum EQProfileMenu {
 
     private static func build(into menu: NSMenu, level: EQProfileLevel, current: [Track]?,
                               resolve: @escaping @MainActor () async throws -> [Track]) {
-        let store = EQProfileStore.shared
+        let resolver = EQProfileResolver.shared
         let submenu = NSMenu()
         submenu.autoenablesItems = false
-        let settings = current?.map { store.assignment(at: level, of: $0) } ?? []
+        let settings = current?.map { resolver.assignment(at: level, of: $0) } ?? []
         if let current, !current.isEmpty, settings.allSatisfy({ $0 == nil }) {
-            let inherited = Set(current.map { store.setting(of: $0) })
+            let inherited = Set(current.map { resolver.setting(of: $0) })
             if inherited.count == 1, let setting = inherited.first.flatMap({ $0 }) {
                 let item = NSMenuItem(title: "Inherited: \(setting)", action: nil, keyEquivalent: "")
                 item.isEnabled = false
@@ -64,7 +64,7 @@ enum EQProfileMenu {
         }
         add("Inherit", nil)
         add("Off", .off)
-        let profiles = store.sortedProfiles
+        let profiles = resolver.store.sortedProfiles
         if !profiles.isEmpty {
             submenu.addItem(.separator())
             for profile in profiles { add(profile.name, .profile(profile.id)) }
@@ -94,7 +94,7 @@ enum EQProfileMenu {
             Task { @MainActor in
                 do {
                     let tracks = try await request.resolve()
-                    EQProfileStore.shared.assign(request.assignment, level: request.level, tracks: tracks)
+                    EQProfileResolver.shared.assign(request.assignment, level: request.level, tracks: tracks)
                 } catch is CancellationError {
                 } catch {
                     NSLog("[eqprofile] assign failed: %@", error.localizedDescription.redactingSensitiveURLQueryItems)

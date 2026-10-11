@@ -142,8 +142,6 @@ final class WMPPlaylistSurfaceView: NSView {
         style.background.setFill(); bounds.fill()
         let visibleRows = max(1, Int(bounds.height / rowHeight))
         let rows = rows, playing = playingRow
-        // The live queue's rows are the engine's tracks; a library preview's are not, and get no marker.
-        let queue = libraryRows == nil ? WindowManager.shared.audioEngine.playlist : []
         for index in firstVisibleIndex..<min(rows.count, firstVisibleIndex + visibleRows) {
             let rect = NSRect(x: 0, y: CGFloat(index - firstVisibleIndex) * rowHeight,
                               width: bounds.width, height: rowHeight)
@@ -153,10 +151,9 @@ final class WMPPlaylistSurfaceView: NSView {
                 rect.fill()
             }
             let item = rows[index]
-            let marker = queue.indices.contains(index) ? EQProfileStore.shared.rowPrefix(for: queue[index]) : ""
-            let prefix = (index == playing ? "▶ " : "") + marker
+            let prefix = index == playing ? "▶ " : ""
             let artist = item.artist.isEmpty ? "" : " — \(item.artist)"
-            (prefix + item.title + artist).draw(in: rect.insetBy(dx: 4, dy: 1), withAttributes: [
+            (prefix + EQProfileResolver.queueTitle(item.title, marked: item.hasEQProfile) + artist).draw(in: rect.insetBy(dx: 4, dy: 1), withAttributes: [
                 .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: selected ? style.selectionText :
                     (index == playing ? style.currentText : style.text)])

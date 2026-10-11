@@ -60,7 +60,7 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
                 album: track.album ?? "",
                 filePath: track.url.isFileURL ? track.url.path : track.url.absoluteString
             )
-            row.hasEQProfile = EQProfileStore.shared.appliesProfile(to: track)
+            row.hasEQProfile = EQProfileResolver.shared.appliesProfile(to: track)
             return row
         }
         return WinampModernPlaylistSnapshot(rows: rows,

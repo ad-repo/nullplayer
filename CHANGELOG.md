@@ -22,6 +22,8 @@
   off. Profiles run before the Equalizer window, which never changes them. The Studio has a Console
   and a Boutique faceplate, a spectrum analyser per channel, LINK to move both channels together, and
   you hear edits as you make them. Queue rows with a profile show **∿**, and File Info names it.
+  A local file's assignment is dropped at launch once the file is gone; a drive that is not plugged
+  in keeps its files' assignments.
 
 ## 0.32.1
 

@@ -42,6 +42,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.global(qos: .utility).async {
             StreamRipper.reapOrphanedTempItems()
         }
+        EQProfileResolver.shared.pruneMissingLocalTracks()
 
         // Initialize Plex manager early to start preloading library data
         // Accessing .shared triggers the singleton init which loads saved account and starts preload

@@ -171,7 +171,8 @@ final class WMPAudioEngineHost: WMPHost {
         let playlistItems = engine.playlist.prefix(4_096).map {
             WMPPlaylistItemSnapshot(title: $0.title, artist: $0.artist ?? "",
                                     duration: Self.finite($0.duration ?? 0),
-                                    sourceURL: Self.sourceURLSpelling($0.url))
+                                    sourceURL: Self.sourceURLSpelling($0.url),
+                                    hasEQProfile: EQProfileResolver.shared.appliesProfile(to: $0))
         }
         let sourceLayout = engine.eqConfiguration
         let sourceGains = (0..<sourceLayout.bandCount).map { engine.getEQBand($0) }

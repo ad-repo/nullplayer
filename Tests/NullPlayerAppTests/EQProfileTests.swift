@@ -63,72 +63,79 @@ final class EQProfileTests: XCTestCase {
 
     // MARK: - Resolution
 
+    /// In memory; the reload and unreadable-file tests open a file themselves.
+    private func makeResolver() -> EQProfileResolver {
+        EQProfileResolver(store: EQProfileStore(path: nil, defaults: defaults))
+    }
+
     func testTrackBeatsAlbumBeatsArtist() {
-        let store = EQProfileStore(path: storePath, defaults: defaults)
+        let profiles = makeResolver(), store = profiles.store
         let a = store.add(name: "A", curve: curve(3)), b = store.add(name: "B", curve: curve(6))
         let c = store.add(name: "C", curve: curve(9))
         let track = local("/music/1.flac"), sibling = local("/music/2.flac")
-        store.assign(.profile(a.id), level: .artist, tracks: [track])
-        XCTAssertEqual(store.resolve(track)?.profile?.name, "A")
-        store.assign(.profile(b.id), level: .album, tracks: [track])
-        XCTAssertEqual(store.resolve(track)?.level, .album)
-        store.assign(.profile(c.id), level: .track, tracks: [track])
-        XCTAssertEqual(store.resolve(track)?.profile?.name, "C")
-        XCTAssertEqual(store.resolve(sibling)?.profile?.name, "B")
+        profiles.assign(.profile(a.id), level: .artist, tracks: [track])
+        XCTAssertEqual(profiles.resolve(track)?.profile?.name, "A")
+        profiles.assign(.profile(b.id), level: .album, tracks: [track])
+        XCTAssertEqual(profiles.resolve(track)?.level, .album)
+        profiles.assign(.profile(c.id), level: .track, tracks: [track])
+        XCTAssertEqual(profiles.resolve(track)?.profile?.name, "C")
+        XCTAssertEqual(profiles.resolve(sibling)?.profile?.name, "B")
     }
 
     func testOffStopsResolutionAndInheritFallsThrough() {
-        let store = EQProfileStore(path: storePath, defaults: defaults)
-        let a = store.add(name: "A", curve: curve(3))
+        let profiles = makeResolver()
+        let a = profiles.store.add(name: "A", curve: curve(3))
         let track = local("/music/1.flac")
-        store.assign(.profile(a.id), level: .album, tracks: [track])
-        store.assign(.off, level: .track, tracks: [track])
-        XCTAssertNil(store.resolve(track)?.profile)
-        XCTAssertEqual(store.resolve(track)?.level, .track)
-        XCTAssertFalse(store.appliesProfile(to: track))
-        store.assign(nil, level: .track, tracks: [track])
-        XCTAssertEqual(store.resolve(track)?.profile?.name, "A")
-        XCTAssertTrue(store.appliesProfile(to: track))
+        profiles.assign(.profile(a.id), level: .album, tracks: [track])
+        profiles.assign(.off, level: .track, tracks: [track])
+        XCTAssertNil(profiles.resolve(track)?.profile)
+        XCTAssertEqual(profiles.resolve(track)?.level, .track)
+        XCTAssertFalse(profiles.appliesProfile(to: track))
+        XCTAssertEqual(profiles.queueTitle(for: track), track.playlistTitle)
+        profiles.assign(nil, level: .track, tracks: [track])
+        XCTAssertEqual(profiles.resolve(track)?.profile?.name, "A")
+        XCTAssertTrue(profiles.appliesProfile(to: track), "a change invalidates the cached marker")
+        XCTAssertEqual(profiles.queueTitle(for: track), "∿ \(track.playlistTitle)")
     }
 
     func testSameAlbumTitleUnderTwoArtistsStaysSeparate() {
-        let store = EQProfileStore(path: storePath, defaults: defaults)
-        let a = store.add(name: "A", curve: curve(3))
+        let profiles = makeResolver()
+        let a = profiles.store.add(name: "A", curve: curve(3))
         let one = local("/1.flac", artist: "One", album: "Greatest Hits")
         let two = local("/2.flac", artist: "Two", album: "Greatest Hits")
-        store.assign(.profile(a.id), level: .album, tracks: [one])
-        XCTAssertNotNil(store.resolve(one))
-        XCTAssertNil(store.resolve(two))
+        profiles.assign(.profile(a.id), level: .album, tracks: [one])
+        XCTAssertNotNil(profiles.resolve(one))
+        XCTAssertNil(profiles.resolve(two))
     }
 
     func testCompilationAlbumAssignmentCoversEveryTrack() {
-        let store = EQProfileStore(path: storePath, defaults: defaults)
-        let a = store.add(name: "A", curve: curve(3))
+        let profiles = makeResolver()
+        let a = profiles.store.add(name: "A", curve: curve(3))
         let tracks = ["X", "Y", "Z"].map { (name: String) in local("/\(name).flac", artist: name, album: "Now 42") }
-        store.assign(.profile(a.id), level: .album, tracks: tracks)
-        XCTAssertTrue(tracks.allSatisfy { store.resolve($0)?.profile?.name == "A" })
+        profiles.assign(.profile(a.id), level: .album, tracks: tracks)
+        XCTAssertTrue(tracks.allSatisfy { profiles.resolve($0)?.profile?.name == "A" })
     }
 
     func testDeletingAProfileDropsItsAssignments() {
-        let store = EQProfileStore(path: storePath, defaults: defaults)
+        let profiles = makeResolver(), store = profiles.store
         let a = store.add(name: "A", curve: curve(3)), b = store.add(name: "B", curve: curve(6))
         let track = local("/1.flac")
-        store.assign(.profile(b.id), level: .artist, tracks: [track])
-        store.assign(.profile(a.id), level: .track, tracks: [track])
+        profiles.assign(.profile(b.id), level: .artist, tracks: [track])
+        profiles.assign(.profile(a.id), level: .track, tracks: [track])
         store.delete(a.id)
-        XCTAssertNil(store.assignment(at: .track, of: track))
-        XCTAssertEqual(store.resolve(track)?.profile?.name, "B")
+        XCTAssertNil(profiles.assignment(at: .track, of: track))
+        XCTAssertEqual(profiles.resolve(track)?.profile?.name, "B")
     }
 
     func testProfilesAndAssignmentsSurviveAReload() {
-        let store = EQProfileStore(path: storePath, defaults: defaults)
-        let a = store.add(name: "A", curve: curve(5))
+        let profiles = EQProfileResolver(store: EQProfileStore(path: storePath, defaults: defaults))
+        let a = profiles.store.add(name: "A", curve: curve(5))
         let track = local("/1.flac")
-        store.assign(.profile(a.id), level: .track, tracks: [track])
-        store.assign(.off, level: .artist, tracks: [track])
+        profiles.assign(.profile(a.id), level: .track, tracks: [track])
+        profiles.assign(.off, level: .artist, tracks: [track])
 
-        let reloaded = EQProfileStore(path: storePath, defaults: defaults)
-        XCTAssertEqual(reloaded.profiles, [a])
+        let reloaded = EQProfileResolver(store: EQProfileStore(path: storePath, defaults: defaults))
+        XCTAssertEqual(reloaded.store.profiles, [a])
         XCTAssertEqual(reloaded.assignment(at: .track, of: track), .profile(a.id))
         XCTAssertEqual(reloaded.assignment(at: .artist, of: track), .off)
     }
@@ -136,27 +143,60 @@ final class EQProfileTests: XCTestCase {
     func testAnUnreadableDatabaseIsNeverOverwritten() throws {
         let junk = Data("not a database".utf8)
         try junk.write(to: URL(fileURLWithPath: storePath))
-        let store = EQProfileStore(path: storePath, defaults: defaults)
-        let a = store.add(name: "A", curve: curve(3))
-        store.assign(.profile(a.id), level: .track, tracks: [local("/1.flac")])
-        XCTAssertTrue(store.profiles.isEmpty)
+        let profiles = EQProfileResolver(store: EQProfileStore(path: storePath, defaults: defaults))
+        let a = profiles.store.add(name: "A", curve: curve(3))
+        profiles.assign(.profile(a.id), level: .track, tracks: [local("/1.flac")])
+        XCTAssertTrue(profiles.store.profiles.isEmpty)
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: storePath)), junk)
     }
 
+    func testPruneDropsOnlyLocalTrackAssignmentsWhoseFileIsGone() throws {
+        let profiles = makeResolver()
+        let a = profiles.store.add(name: "A", curve: curve(3))
+        let kept = directory.appendingPathComponent("kept.flac").path
+        let gone = directory.appendingPathComponent("gone.flac").path
+        try Data().write(to: URL(fileURLWithPath: kept))
+        let tracks = [
+            local(kept), local(gone),
+            Track(url: URL(fileURLWithPath: kept), title: "cue", artist: "A", album: "B",
+                  cueStartOffset: 60, cueSourceURL: URL(fileURLWithPath: kept)),
+            local("/Volumes/NotMounted-\(UUID())/a.flac"),
+            Track(url: URL(string: "http://server/a")!, title: "a", plexRatingKey: "42", plexServerId: "srv1"),
+            Track(url: URL(fileURLWithPath: gone), title: "v", isYouTubeOrigin: true),
+            RadioStation(name: "Station", url: URL(string: "http://radio.example/stream")!, genre: "Jazz").toTrack(),
+        ]
+        profiles.assign(.profile(a.id), level: .track, tracks: tracks)
+        profiles.assign(.profile(a.id), level: .artist, tracks: [local(gone)])
+
+        let pruned = expectation(description: "pruned")
+        profiles.pruneMissingLocalTracks { pruned.fulfill() }
+        wait(for: [pruned], timeout: 5)
+        XCTAssertEqual(tracks.map { profiles.assignment(at: .track, of: $0) != nil },
+                       [true, false, true, true, true, true, true])
+        XCTAssertNotNil(profiles.assignment(at: .artist, of: local(gone)), "only track level is pruned")
+    }
+
+    func testAWMPRowsMarkerIsNotAQueueChange() {
+        let plain = WMPPlaylistItemSnapshot(title: "t", artist: "a", duration: 1)
+        var marked = plain
+        marked.hasEQProfile = true
+        XCTAssertEqual(plain, marked, "a marker change must not bump WMPObjectModel.queueGeneration")
+    }
+
     func testControllerAppliesTheResolvedCurveAndNothingWhenProfilesAreOff() {
-        let store = EQProfileStore(path: storePath, defaults: defaults)
+        let profiles = makeResolver(), store = profiles.store
         let a = store.add(name: "A", curve: curve(6))
         let track = local("/1.flac")
-        store.assign(.profile(a.id), level: .artist, tracks: [track])
+        profiles.assign(.profile(a.id), level: .artist, tracks: [track])
         XCTAssertTrue(store.isEnabled, "on by default")
 
-        let controller = EQProfileController(store: store)
+        let controller = EQProfileController(resolver: profiles)
         let unit = { controller.localNode.auAudioUnit as? EQProfileAudioUnit }
         controller.trackDidChange(track)
         XCTAssertEqual(unit()?.curve, curve(6))
         store.isEnabled = false
         XCTAssertNil(unit()?.curve)
-        XCTAssertFalse(store.appliesProfile(to: track))
+        XCTAssertFalse(profiles.appliesProfile(to: track))
         controller.audition = curve(9)
         XCTAssertEqual(unit()?.curve, curve(9), "the Studio's edit is heard whatever the toggle")
         controller.audition = nil

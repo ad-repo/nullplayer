@@ -368,14 +368,30 @@ The local graph is `AudioEngine.localEffectChain`, in signal order; setup, rebui
 replacement all walk it (`attachLocalGraph`, `connectLocalGraph`), so a new local stage is one entry
 there.
 
-`EQProfileStore` (`Audio/EQProfileStore.swift`, which also holds `EQCurve`) owns the profiles and
-their assignments, in SQLite (`~/Library/Application Support/NullPlayer/eq_profiles.db`, set up like
-`RadioStationRatingsStore`), and the global toggle (`eqProfilesEnabled`, default on, in the
-`UserDefaults` it is given). Reads go to the database; each change writes only its rows. Every
-change posts `.eqProfilesDidChange`: the controller re-resolves, and `WindowManager` runs
-`reloadPlaylistViews()`, which repaints every queue's row marker — Classic, Modern, the `.wal`
-playlist and a `.wmz` `<PLAYLIST>`. Each row takes its marker from `rowPrefix(for:)`;
-`Track.playlistTitle` does not consult the store. Main thread only.
+`EQProfileStore` (`Audio/EQProfileStore.swift`, which also holds `EQCurve` and the scope types) is
+storage only: the profiles and their assignments, in SQLite
+(`~/Library/Application Support/NullPlayer/eq_profiles.db`, set up like `RadioStationRatingsStore`),
+and the global toggle (`eqProfilesEnabled`, default on, in the `UserDefaults` it is given). Reads go
+to the database; each change writes only its rows, bumps `revision` and posts `.eqProfilesDidChange`:
+the controller re-resolves, and `WindowManager` runs `reloadPlaylistViews()`, which repaints every
+queue's row marker — Classic, Modern, the `.wal` playlist and a `.wmz` `<PLAYLIST>` (its host
+snapshot is refreshed first, since the marker rides on it). Main thread only.
+
+`EQProfileResolver` (`Audio/EQProfileResolver.swift`, `.shared` over `EQProfileStore.shared`) is
+everything above storage: the `Track` scope keys, `resolve`, `assign(level:tracks:)`, the queue
+marker (`appliesProfile(to:)`, cached per track id until the store's `revision` moves) and the
+strings — `setting`, `fileInfoLine`, and `queueTitle`, the one place the `∿` marker is put before a
+queue row's title. Classic and Modern call `queueTitle(for:)`; the `.wal` and `.wmz` rows carry
+`hasEQProfile` (`WinampModernPlaylistRow`, `WMPPlaylistItemSnapshot`) and call
+`queueTitle(_:marked:)`. `WMPPlaylistItemSnapshot` leaves `hasEQProfile` out of equality, hashing and
+coding: a marker change is not a queue change (`WMPObjectModel.queueGeneration`) and no script reads it.
+`Track.playlistTitle` does not consult profiles.
+
+At launch `pruneMissingLocalTracks()` drops `local` track-level assignments whose file is gone (a
+cue key's `@<offset>` stripped), checking files off the main thread; a path under an unmounted
+`/Volumes/<name>` is kept, and server, radio and YouTube rows are never touched. Local tracks stay
+keyed by path rather than library id: a queue track opened from Finder has no library id, so a
+moved file loses its profile.
 
 | Table | Columns | Notes |
 |---|---|---|
@@ -390,7 +406,7 @@ so the file on disk is never replaced. `init(path: nil)` is an in-memory databas
 `bands` and a `preamp`. `EQProfileDesign.sections` memoises recent designs by (faders, rate), so one
 edit is designed once per sample rate however many nodes and Studio views ask for it.
 
-Scopes (`Track.eqProfileScopes`, an `EQProfileScope` per level), most specific first, names
+Scopes (`Track.eqProfileScopes`, in the resolver's file; an `EQProfileScope` per level), most specific first, names
 lower-cased and trimmed, a level omitted when its names are empty. `source` is `plex:<serverId>`
 etc., `local`, `youtube` or `radio`. `key` is: at track level the service id (file path plus
 `@cueStartOffset` for a cue track; the stream URL for radio, which has only this scope); at album
@@ -691,7 +707,7 @@ For detailed information, see:
 | Core | `Audio/AudioEngine.swift`, `Audio/AudioGraphRecoveryCoordinator.swift`, `Audio/StreamingAudioPlayer.swift` |
 | EQ | EQ node configuration in AudioEngine, StreamingAudioPlayer |
 | Spectrum | `Audio/AudioEngine.swift` (FFT processing) |
-| EQ Profiles | `Audio/EQProfileAudioUnit.swift`, `Audio/EQProfileController.swift`, `Audio/EQProfileStore.swift`, `Audio/AudioUnitFanout.swift`, `App/EQProfileMenu.swift`, `Windows/EqualizerStudio/` |
+| EQ Profiles | `Audio/EQProfileAudioUnit.swift`, `Audio/EQProfileController.swift`, `Audio/EQProfileStore.swift`, `Audio/EQProfileResolver.swift`, `Audio/AudioUnitFanout.swift`, `App/EQProfileMenu.swift`, `Windows/EqualizerStudio/` |
 | BPM | `Audio/BPMDetector.swift` |
 | Output devices | `Audio/AudioOutputManager.swift` |
 | Track URL resolution | `Audio/StreamingTrackResolver.swift` |
@@ -716,7 +732,8 @@ EQ profiles: `[eqprofile] <title> → <profile> (track|album|artist)` is logged 
 applied to the playing track (track change, assignment change, toggle) — nothing is logged for a
 track with none, `Off`, or profiles disabled, so a missing line *is* the answer. Whether the node is
 processing: open the Studio, raise a preamp to +12, and the snapshot's `mainMixerPeak` should rise
-×3.98; BYPASS returns it exactly.
+×3.98; BYPASS returns it exactly. `[eqprofile] pruned <n> assignment(s) for missing files` is the
+launch prune; silent when nothing was gone.
 
 ## Credential-safe logging
 

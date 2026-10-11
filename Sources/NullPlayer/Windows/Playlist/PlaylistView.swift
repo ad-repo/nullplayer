@@ -336,7 +336,7 @@ class PlaylistView: NSView {
         }
 
         let track = engine.playlist[currentIndex]
-        let titleText = "\(currentIndex + 1). \(EQProfileStore.shared.rowPrefix(for: track))\(track.playlistTitle)"
+        let titleText = "\(currentIndex + 1). \(EQProfileResolver.shared.queueTitle(for: track))"
 
         // Check if we need system font fallback for non-Latin characters
         if cachedTextBitmapCGImage == nil || containsNonLatinCharacters(titleText) {
@@ -779,7 +779,7 @@ class PlaylistView: NSView {
         let durationStr = String(format: "%d:%02d", Int(duration) / 60, Int(duration) % 60)
         let titleX = rect.minX + 2
 
-        let titleText = "\(index + 1). \(EQProfileStore.shared.rowPrefix(for: track))\(track.playlistTitle)"
+        let titleText = "\(index + 1). \(EQProfileResolver.shared.queueTitle(for: track))"
 
         let durationWidth = systemFontTextWidth(durationStr)
         let durationX = rect.maxX - durationWidth - 4

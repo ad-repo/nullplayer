@@ -2259,6 +2259,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     func updatePlaybackState() { refreshHostState() }
     /// `WindowManager.reloadPlaylistViews`: repaint every open `<PLAYLIST>`.
     func playlistContentDidChange() {
+        // The rows carry their EQ marker, but a marker change is not a row change the surfaces
+        // redraw for: refresh their snapshot, then repaint.
+        refreshHostState()
         for presentation in materializer.openPresentations { presentation.mainView?.playlistContentDidChange() }
     }
 

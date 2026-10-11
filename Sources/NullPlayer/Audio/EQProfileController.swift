@@ -14,7 +14,7 @@ final class EQProfileController {
     /// Kept current by track changes and store changes, whether or not the Studio is open.
     private var resolved: EQCurve?
     private var observer: NSObjectProtocol?
-    private let store: EQProfileStore
+    private let resolver: EQProfileResolver
 
     /// Non-nil while the Studio is open: its edit, or flat under BYPASS. Wins over the track's
     /// profile and over the global toggle — the Studio is the editor.
@@ -22,9 +22,9 @@ final class EQProfileController {
         didSet { if audition != oldValue { nodes.configureAll() } }
     }
 
-    init(store: EQProfileStore = .shared) {
-        self.store = store
-        observer = NotificationCenter.default.addObserver(forName: .eqProfilesDidChange, object: store,
+    init(resolver: EQProfileResolver = .shared) {
+        self.resolver = resolver
+        observer = NotificationCenter.default.addObserver(forName: .eqProfilesDidChange, object: resolver.store,
                                                           queue: .main) { [weak self] _ in self?.resolve() }
     }
 
@@ -47,7 +47,7 @@ final class EQProfileController {
     func makeStreamingNode() -> AVAudioUnitEffect { nodes.makeStreamingNode() }
 
     private func resolve() {
-        let match = track.flatMap { store.isEnabled ? store.resolve($0) : nil }
+        let match = track.flatMap { resolver.store.isEnabled ? resolver.resolve($0) : nil }
         resolved = match?.profile?.curve
         // Logged only when a profile applies; a track with none, Off, or profiles disabled is silent.
         if let track, let match, let profile = match.profile {

@@ -67,6 +67,20 @@ struct WMPPlaylistItemSnapshot: Hashable, Codable {
     /// `digitaldj`'s query filter drops any item whose URL contains `://`, so a title stood in for
     /// a URL in both.
     var sourceURL = ""
+    /// An EQ profile runs on this queue row's track: `<PLAYLIST>` draws NullPlayer's marker. Not
+    /// part of anything a script reads, nor of the item's identity — an assignment is not a queue
+    /// change (`WMPObjectModel.queueGeneration`) — so equality, hashing and coding leave it out.
+    var hasEQProfile = false
+
+    private enum CodingKeys: String, CodingKey { case title, artist, duration, sourceURL }
+
+    static func == (a: Self, b: Self) -> Bool {
+        (a.title, a.artist, a.duration, a.sourceURL) == (b.title, b.artist, b.duration, b.sourceURL)
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(title); hasher.combine(artist); hasher.combine(duration); hasher.combine(sourceURL)
+    }
 }
 
 /// What the skin's `<EFFECTS>` rect is drawing, and the four members the corpus reads off it.

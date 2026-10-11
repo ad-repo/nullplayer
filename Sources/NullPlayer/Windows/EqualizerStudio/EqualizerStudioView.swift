@@ -210,7 +210,7 @@ final class EqualizerStudioView: NSView {
         linked = UserDefaults.standard.object(forKey: Self.linkedKey) as? Bool ?? true
         faceplate = .stored
         bypass = false
-        if let track = WindowManager.shared.audioEngine.currentTrack, let profile = store.resolve(track)?.profile {
+        if let track = WindowManager.shared.audioEngine.currentTrack, let profile = EQProfileResolver.shared.resolve(track)?.profile {
             load(profile)
         } else {
             loadNew()

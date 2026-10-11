@@ -73,50 +73,13 @@ struct EQProfileScope: Hashable {
     let key: String
 }
 
-extension Track {
-    /// The source an assignment is scoped to: each media server by its id, then local, YouTube, radio.
-    var eqProfileSource: String {
-        switch playHistorySource {
-        case .plex: return "plex:\(plexServerId ?? "")"
-        case .subsonic: return "subsonic:\(subsonicServerId ?? "")"
-        case .jellyfin: return "jellyfin:\(jellyfinServerId ?? "")"
-        case .emby: return "emby:\(embyServerId ?? "")"
-        case .local, .youtube, .radio: return playHistorySource.rawValue
-        }
-    }
-
-    /// Where this track's assignments apply, most specific first. A level is omitted when its names
-    /// are empty; radio has only a track scope. `Track` has no album artist or album id, so the album
-    /// key carries the artist — otherwise every "Greatest Hits" in a source would share one assignment.
-    var eqProfileScopes: [EQProfileScope] {
-        func norm(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
-        let source = eqProfileSource
-        let id: String
-        switch playHistorySource {
-        case .plex: id = plexRatingKey ?? ""
-        case .subsonic: id = subsonicId ?? ""
-        case .jellyfin: id = jellyfinId ?? ""
-        case .emby: id = embyId ?? ""
-        case .radio: id = url.absoluteString
-        case .local, .youtube:
-            id = (cueSourceURL ?? url).path + (cueStartOffset.map { "@\($0)" } ?? "")
-        }
-        var scopes = [EQProfileScope(level: .track, source: source, key: id)]
-        guard playHistorySource != .radio else { return scopes }
-        let artist = norm(artist), album = norm(album)
-        if !album.isEmpty { scopes.append(EQProfileScope(level: .album, source: source, key: "\(artist)|\(album)")) }
-        if !artist.isEmpty { scopes.append(EQProfileScope(level: .artist, source: source, key: artist)) }
-        return scopes
-    }
-}
-
-/// Profiles and their standing assignments, in `eq_profiles.db`. A database that cannot be opened
-/// leaves the store empty and writes nothing, so it never replaces what is on disk. Main thread only.
+/// Profiles and their standing assignments, in `eq_profiles.db`, and the global toggle: storage
+/// only — `EQProfileResolver` keys tracks, resolves them and words the result. A database that
+/// cannot be opened leaves the store empty and writes nothing, so it never replaces what is on disk.
+/// Main thread only.
 final class EQProfileStore {
     static let shared = EQProfileStore()
     static let enabledKey = "eqProfilesEnabled"
-    /// The mark a queue row puts before a track an EQ profile runs on.
-    static let rowMarker = "∿"
 
     /// Playback Options ▸ EQ Profiles. Off: no assigned profile applies; assignments are kept.
     var isEnabled: Bool {
@@ -128,9 +91,8 @@ final class EQProfileStore {
         }
     }
 
-    /// `appliesProfile(to:)` per track id; emptied on every change. Queue views ask for every row
-    /// they build, and a `.wal` playlist snapshot builds them all.
-    private var appliesCache: [UUID: Bool] = [:]
+    /// Bumped by every change, so a cache of what resolves can tell it is stale.
+    private(set) var revision = 0
 
     private let db: Connection?
     private let defaults: UserDefaults
@@ -200,55 +162,8 @@ final class EQProfileStore {
 
     func profile(_ id: UUID) -> EQProfile? { fetchProfiles(profilesTable.filter(colID == id.uuidString)).first }
 
-    /// The first level with an assignment: its profile, or nil for an explicit `Off`.
-    func resolve(_ track: Track) -> (profile: EQProfile?, level: EQProfileLevel)? {
-        for scope in track.eqProfileScopes {
-            switch assignment(scope) {
-            case .profile(let id): if let profile = profile(id) { return (profile, scope.level) }
-            case .off: return (nil, scope.level)
-            case nil: continue
-            }
-        }
-        return nil
-    }
-
-    /// What is set at `level` itself for `track`: nil is Inherit.
-    func assignment(at level: EQProfileLevel, of track: Track) -> EQProfileAssignment? {
-        track.eqProfileScopes.first { $0.level == level }.flatMap(assignment)
-    }
-
-    /// Whether a profile is running on `track` when it plays: audio (video has no local graph),
-    /// profiles on, and a profile — not `Off` — resolved. The queue's row marker.
-    func appliesProfile(to track: Track) -> Bool {
-        if let cached = appliesCache[track.id] { return cached }
-        let applies = track.mediaType == .audio && isEnabled && resolve(track)?.profile != nil
-        appliesCache[track.id] = applies
-        return applies
-    }
-
-    /// What a queue row draws before its title: the marker and a space, or nothing.
-    func rowPrefix(for track: Track) -> String {
-        appliesProfile(to: track) ? "\(Self.rowMarker) " : ""
-    }
-
-    /// What resolves for `track`: "Warm (album)" or "Off (track)"; nil when nothing is assigned.
-    func setting(of track: Track) -> String? {
-        resolve(track).map { "\($0.profile?.name ?? "Off") (\($0.level.rawValue))" }
-    }
-
-    /// File Info's line: the setting, or "None" — and that profiles are off, when they are. nil for
-    /// video, which has no local graph to run a profile in.
-    func fileInfoLine(for track: Track) -> String? {
-        guard track.mediaType == .audio else { return nil }
-        let setting = setting(of: track) ?? "None"
-        return "EQ Profile: " + (isEnabled ? setting : "\(setting) — EQ Profiles are turned off")
-    }
-
-    /// nil is Inherit: the rows are removed and the next level down applies. Album level keys every
-    /// distinct (artist, album) pair among `tracks`, so a compilation is covered whole; artist level
-    /// every distinct artist.
-    func assign(_ assignment: EQProfileAssignment?, level: EQProfileLevel, tracks: [Track]) {
-        let scopes = Set(tracks.compactMap { track in track.eqProfileScopes.first { $0.level == level } })
+    /// nil is Inherit: the rows are removed and the next level down applies.
+    func assign(_ assignment: EQProfileAssignment?, scopes: Set<EQProfileScope>) {
         guard !scopes.isEmpty else { return }
         write { db in
             try db.transaction {
@@ -264,6 +179,32 @@ final class EQProfileStore {
                     }
                 }
             }
+        }
+    }
+
+    /// What is set at `scope`: nil is Inherit.
+    func assignment(_ scope: EQProfileScope) -> EQProfileAssignment? {
+        guard let db else { return nil }
+        do {
+            guard let row = try db.pluck(rows(scope).select(colProfileID)) else { return nil }
+            guard let id = row[colProfileID] else { return .off }
+            return UUID(uuidString: id).map { .profile($0) }
+        } catch {
+            NSLog("[eqprofile] read failed: %@", String(describing: error))
+            return nil
+        }
+    }
+
+    /// Every scope with an assignment at `level` in `source`.
+    func assignedScopes(level: EQProfileLevel, source: String) -> [EQProfileScope] {
+        guard let db else { return [] }
+        do {
+            return try db.prepare(assignmentsTable.select(colScopeKey)
+                .filter(colLevel == level.rawValue && colSource == source))
+                .map { EQProfileScope(level: level, source: source, key: $0[colScopeKey]) }
+        } catch {
+            NSLog("[eqprofile] read failed: %@", String(describing: error))
+            return []
         }
     }
 
@@ -294,18 +235,6 @@ final class EQProfileStore {
 
     private func rows(_ scope: EQProfileScope) -> Table {
         assignmentsTable.filter(colLevel == scope.level.rawValue && colSource == scope.source && colScopeKey == scope.key)
-    }
-
-    private func assignment(_ scope: EQProfileScope) -> EQProfileAssignment? {
-        guard let db else { return nil }
-        do {
-            guard let row = try db.pluck(rows(scope).select(colProfileID)) else { return nil }
-            guard let id = row[colProfileID] else { return .off }
-            return UUID(uuidString: id).map { .profile($0) }
-        } catch {
-            NSLog("[eqprofile] read failed: %@", String(describing: error))
-            return nil
-        }
     }
 
     private func fetchProfiles(_ query: Table) -> [EQProfile] {
@@ -341,7 +270,7 @@ final class EQProfileStore {
     }
 
     private func didChange() {
-        appliesCache.removeAll()
+        revision += 1
         NotificationCenter.default.post(name: .eqProfilesDidChange, object: self)
     }
 }

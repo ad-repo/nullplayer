@@ -766,7 +766,7 @@ extension WinampModernMainView {
             "Album: \(track.album ?? "Unknown")",
             "Duration: \(track.formattedDuration)",
             track.url.isFileURL ? "Path: \(track.url.path)" : "URL: \(track.url.absoluteString)",
-            EQProfileStore.shared.fileInfoLine(for: track)
+            EQProfileResolver.shared.fileInfoLine(for: track)
         ].compactMap { $0 }.joined(separator: "\n")
         alert.beginSheetModal(for: window)
     }

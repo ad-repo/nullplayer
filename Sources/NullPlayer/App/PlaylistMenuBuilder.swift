@@ -140,7 +140,7 @@ enum PlaylistMenuBuilder {
             "Album: \(track.album ?? "Unknown")",
             "Duration: \(String(format: "%d:%02d", Int(track.duration ?? 0) / 60, Int(track.duration ?? 0) % 60))",
             "Path: \(track.url.path)",
-            EQProfileStore.shared.fileInfoLine(for: track)
+            EQProfileResolver.shared.fileInfoLine(for: track)
         ].compactMap { $0 }.joined(separator: "\n")
         alert.runModal()
     }
