@@ -318,17 +318,17 @@ Equalizer window never changes a profile, and a profile never changes it.
   faders, a preamp and its own spectrum analyser. Edits are heard live while the Studio is open and
   are discarded unless saved. Opening it loads the playing track's profile, or a new flat one.
   - **LINK** (on by default, remembered): moving a fader on one channel moves the same fader on the
-    other by the same amount, so channels that already differ keep their difference. A line with a
-    chain joins the two channel names while linked; click the chain to unlink. Unlinked, **FLAT**
-    and double-click act on one channel — the one marked *FLAT ACTS HERE*; click a channel's name
-    to pick it.
-  - **FLAT**, **BYPASS** (compares against no profile at all, for this session), **HEADROOM** (sets
-    each preamp so the channel's peak response is 0 dB — `PK` beside each preamp shows that peak),
-    **SAVE**, **SAVE AS**, **RENAME**, **DELETE**, **REVERT**, and **CONSOLE / BOUTIQUE** to switch
-    the faceplate. Click the name display for the list of profiles and New. Double-click a fader to
-    reset it.
-  - The analyser shows the source plus the profile for local files (BYPASS shows the source alone);
-    for streams it shows the final output and is labelled `OUTPUT`.
+    other by the same amount, so channels that already differ keep their difference. Both channel
+    names are lit while linked. Unlinked, **FLAT** and double-click act on one channel only.
+  - Under each channel's name: **FLAT** (both channels while linked) and **BYPASS** (that channel
+    heard with no profile, for this session; LINK does not affect it; the header names the bypassed
+    side).
+  - Header: **HEADROOM** (sets each preamp so the channel's peak response is 0 dB — `PK` under each
+    channel name shows that peak), **SAVE**, **SAVE AS**, **RENAME**, **DELETE**, **REVERT**, and
+    **CONSOLE / BOUTIQUE** to switch the faceplate. Click the name display for the list of profiles
+    and New. Double-click a fader to reset it.
+  - The analyser shows the source plus the profile for local files (a bypassed channel shows the
+    source alone); for streams it shows the final output and is labelled `OUTPUT`.
 - **Assigning — right-click ▸ Assign EQ Profile (Track / Album / Artist) ▸** on library rows (tracks,
   albums, artists, playlists and folders), queue rows, radio stations, and YouTube videos with a
   downloaded audio file (greyed with *Download the audio first* otherwise). Choices: **Inherit**

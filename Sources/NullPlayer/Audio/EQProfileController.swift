@@ -16,7 +16,7 @@ final class EQProfileController {
     private var observer: NSObjectProtocol?
     private let resolver: EQProfileResolver
 
-    /// Non-nil while the Studio is open: its edit, or flat under BYPASS. Wins over the track's
+    /// Non-nil while the Studio is open: its edit, with a channel under BYPASS flat. Wins over the track's
     /// profile and over the global toggle — the Studio is the editor.
     var audition: EQCurve? {
         didSet { if audition != oldValue { nodes.configureAll() } }

@@ -86,17 +86,15 @@ struct StudioFaceplate {
 }
 
 /// The Studio's single view: header, buttons and two channel panels (L above R), each a per-channel
-/// analyser over 31 band faders plus a preamp. Edits are heard live (the profile controller's
+/// analyser over 31 band faders plus a preamp, with its own FLAT and BYPASS under the channel name. Edits are heard live (the profile controller's
 /// `audition`) and discarded unless saved.
 final class EqualizerStudioView: NSView {
     private enum Button: CaseIterable {
-        case link, flat, bypass, headroom, save, saveAs, rename, delete, revert, faceplate
+        case link, headroom, save, saveAs, rename, delete, revert, faceplate
 
         var title: String {
             switch self {
             case .link: return "LINK"
-            case .flat: return "FLAT"
-            case .bypass: return "BYPASS"
             case .headroom: return "HEADROOM"
             case .save: return "SAVE"
             case .saveAs: return "SAVE AS"
@@ -121,6 +119,8 @@ final class EqualizerStudioView: NSView {
         let faders: CGRect
         let legend: CGRect
         let preamp: CGRect
+        let flat: CGRect
+        let bypass: CGRect
         let bandX0: CGFloat
         let bandWidth: CGFloat
 
@@ -145,7 +145,8 @@ final class EqualizerStudioView: NSView {
     private var edit = EQCurve.flat
     private var profileID: UUID?
     private var name = "New"
-    private var bypass = false
+    /// Per channel: heard flat, for this session. A monitoring switch, not an edit, so LINK leaves it alone.
+    private var bypass = [false, false]
     private var linked = true
     private var faceplate = StudioFaceplate.console
     private var focusChannel = 0
@@ -190,6 +191,8 @@ final class EqualizerStudioView: NSView {
                          analyser: analyser, faders: faders,
                          legend: CGRect(x: bandX0, y: faders.maxY + 3, width: analyser.width, height: 11),
                          preamp: CGRect(x: inner.minX + 14, y: faders.minY, width: 24, height: faders.height),
+                         flat: CGRect(x: inner.minX, y: inner.minY + 44, width: column, height: 14),
+                         bypass: CGRect(x: inner.minX, y: inner.minY + 60, width: column, height: 14),
                          // The analyser's dB labels sit in a gutter right of the 20 kHz band.
                          bandX0: bandX0, bandWidth: (analyser.width - 24) / CGFloat(EQProfileDesign.bandCount))
         }
@@ -209,7 +212,7 @@ final class EqualizerStudioView: NSView {
     func studioDidOpen() {
         linked = UserDefaults.standard.object(forKey: Self.linkedKey) as? Bool ?? true
         faceplate = .stored
-        bypass = false
+        bypass = [false, false]
         if let track = WindowManager.shared.audioEngine.currentTrack, let profile = EQProfileResolver.shared.resolve(track)?.profile {
             load(profile)
         } else {
@@ -226,7 +229,7 @@ final class EqualizerStudioView: NSView {
     func studioDidClose() {
         rta.stop()
         rta.onUpdate = nil
-        bypass = false
+        bypass = [false, false]
         controller.audition = nil
     }
 
@@ -259,7 +262,9 @@ final class EqualizerStudioView: NSView {
     }
 
     private func pushAudition() {
-        controller.audition = bypass ? .flat : edit
+        var heard = edit
+        for channel in 0..<2 where bypass[channel] { heard[channel] = .flat }
+        controller.audition = heard
         needsDisplay = true
     }
 
@@ -300,12 +305,6 @@ final class EqualizerStudioView: NSView {
             linked.toggle()
             UserDefaults.standard.set(linked, forKey: Self.linkedKey)
             needsDisplay = true
-        case .flat:
-            for channel in linked ? [0, 1] : [focusChannel] { edit[channel] = .flat }
-            editDidChange()
-        case .bypass:
-            bypass.toggle()
-            pushAudition()
         case .headroom:
             for channel in 0..<2 { edit[channel].preamp = EQCurve.clamp(Float(-peakDB[channel])) }
             editDidChange()
@@ -336,6 +335,12 @@ final class EqualizerStudioView: NSView {
             UserDefaults.standard.set(faceplate.kind.rawValue, forKey: StudioFaceplate.defaultsKey)
             needsDisplay = true
         }
+    }
+
+    /// FLAT is an edit, so LINK lit flattens both channels, as double-clicking a fader resets both.
+    private func flatten(_ channel: Int) {
+        for channel in linked ? [0, 1] : [channel] { edit[channel] = .flat }
+        editDidChange()
     }
 
     private func isEnabled(_ button: Button) -> Bool {
@@ -408,14 +413,17 @@ final class EqualizerStudioView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if linked, linkBadge.contains(point) {
-            perform(.link)
-        } else if closeRect.insetBy(dx: -4, dy: -4).contains(point) {
+        if closeRect.insetBy(dx: -4, dy: -4).contains(point) {
             window?.close()
         } else if nameRect.contains(point) {
             showProfileMenu()
         } else if let (button, _) = buttonRects.first(where: { $0.1.contains(point) }) {
             if isEnabled(button) { perform(button) }
+        } else if let channel = panels.firstIndex(where: { $0.flat.contains(point) }) {
+            flatten(channel)
+        } else if let channel = panels.firstIndex(where: { $0.bypass.contains(point) }) {
+            bypass[channel].toggle()
+            pushAudition()
         } else if let channel = panels.firstIndex(where: { $0.label.contains(point) }) {
             focusChannel = channel
             needsDisplay = true
@@ -475,7 +483,6 @@ final class EqualizerStudioView: NSView {
 
         drawHeader(f)
         for (channel, panel) in panels.enumerated() { drawPanel(panel, channel: channel, f) }
-        drawLink(f)
     }
 
     private func drawText(_ string: String, font: NSFont, color: NSColor, in rect: CGRect,
@@ -500,8 +507,9 @@ final class EqualizerStudioView: NSView {
         drawText("▾", font: f.buttonFont, color: f.dimText, in: CGRect(x: nameRect.maxX - 22, y: nameRect.minY, width: 14, height: nameRect.height))
 
         let title = CGRect(x: nameRect.maxX + 16, y: nameRect.minY, width: closeRect.minX - nameRect.maxX - 28, height: nameRect.height)
-        drawText(bypass ? "EQUALIZER STUDIO — BYPASS" : "EQUALIZER STUDIO", font: f.buttonFont,
-                 color: bypass ? f.accent : f.dimText, in: title, alignment: .right)
+        let bypassed = bypass == [true, true] ? " — BYPASS" : bypass[0] ? " — BYPASS L" : bypass[1] ? " — BYPASS R" : ""
+        drawText("EQUALIZER STUDIO" + bypassed, font: f.buttonFont,
+                 color: bypassed.isEmpty ? f.dimText : f.accent, in: title, alignment: .right)
 
         // Close: a drawn ×.
         let x = closeRect.insetBy(dx: 5, dy: 5)
@@ -513,16 +521,18 @@ final class EqualizerStudioView: NSView {
         cross.stroke()
 
         for (button, rect) in buttonRects {
-            let lit = (button == .link && linked) || (button == .bypass && bypass)
-            let enabled = isEnabled(button)
-            (lit ? f.accent : f.well).setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
-            f.edge.setStroke()
-            NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 3, yRadius: 3).stroke()
-            let color = lit ? f.panel : enabled ? f.text : f.dimText.withAlphaComponent(0.5)
-            drawText(button == .faceplate ? f.kind.rawValue.uppercased() : button.title,
-                     font: f.buttonFont, color: color, in: rect, alignment: .center)
+            drawButton(button == .faceplate ? f.kind.rawValue.uppercased() : button.title, in: rect,
+                       lit: button == .link && linked, enabled: isEnabled(button), f)
         }
+    }
+
+    private func drawButton(_ title: String, in rect: CGRect, lit: Bool, enabled: Bool = true, _ f: StudioFaceplate) {
+        (lit ? f.accent : f.well).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
+        f.edge.setStroke()
+        NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 3, yRadius: 3).stroke()
+        let color = lit ? f.panel : enabled ? f.text : f.dimText.withAlphaComponent(0.5)
+        drawText(title, font: f.buttonFont, color: color, in: rect, alignment: .center)
     }
 
     private func drawPanel(_ panel: Panel, channel: Int, _ f: StudioFaceplate) {
@@ -531,21 +541,18 @@ final class EqualizerStudioView: NSView {
         f.panel.setFill()
         NSBezierPath(roundedRect: panel.frame.insetBy(dx: 1, dy: 1), xRadius: 3, yRadius: 3).fill()
 
-        // Channel label, focus, and the peak response readout beside the preamp.
-        // Linked, both labels take the rail's colour; separate, only the channel being edited.
+        // Channel label, focus, the peak response readout, and the channel's FLAT and BYPASS.
+        // Linked, both labels take the accent; separate, only the channel being edited.
         let labelColor = linked || channel == focusChannel ? f.accent : f.text
         drawText(channel == 0 ? "LEFT" : "RIGHT", font: f.titleFont, color: labelColor,
-                 in: CGRect(x: panel.label.minX, y: panel.label.minY + 4, width: panel.label.width, height: 20))
+                 in: CGRect(x: panel.label.minX, y: panel.label.minY, width: panel.label.width, height: 18))
         let peak = peakDB[channel] + Double(edit[channel].preamp)
         drawText(String(format: "PK %+.1f", peak), font: f.legendFont, color: peak > 0.05 ? f.peak : f.dimText,
-                 in: CGRect(x: panel.label.minX, y: panel.label.minY + 30, width: panel.label.width, height: 12))
+                 in: CGRect(x: panel.label.minX, y: panel.label.minY + 19, width: panel.label.width, height: 11))
         drawText(String(format: "PRE %+.1f", edit[channel].preamp), font: f.legendFont, color: f.dimText,
-                 in: CGRect(x: panel.label.minX, y: panel.label.minY + 44, width: panel.label.width, height: 12))
-        // Separate channels: say which one FLAT acts on, rather than leave a lone lit label to decode.
-        if !linked && channel == focusChannel {
-            drawText("FLAT ACTS HERE", font: f.legendFont, color: f.accent,
-                     in: CGRect(x: panel.label.minX, y: panel.label.minY + 58, width: panel.label.width + 8, height: 12))
-        }
+                 in: CGRect(x: panel.label.minX, y: panel.label.minY + 30, width: panel.label.width, height: 11))
+        drawButton("FLAT", in: panel.flat, lit: false, f)
+        drawButton("BYPASS", in: panel.bypass, lit: bypass[channel], f)
 
         drawAnalyser(panel, channel: channel, f)
         drawFaders(panel, channel: channel, f)
@@ -558,40 +565,6 @@ final class EqualizerStudioView: NSView {
         drawText("PRE", font: f.legendFont, color: f.dimText,
                  in: CGRect(x: panel.preamp.minX - 8, y: panel.legend.minY, width: panel.preamp.width + 16,
                             height: panel.legend.height), alignment: .center)
-    }
-
-    /// The chain on the rail, at the seam between the panels; clicking it unlinks.
-    private var linkBadge: CGRect {
-        let panels = panels
-        let seam = (panels[0].frame.maxY + panels[1].frame.minY) / 2
-        return CGRect(x: panels[0].frame.minX + 4 - 9, y: seam - 9, width: 18, height: 18)
-    }
-
-    /// LINK lit: a rail brackets the LEFT and RIGHT labels, with a chain where it crosses the seam.
-    /// Separate: nothing.
-    private func drawLink(_ f: StudioFaceplate) {
-        guard linked else { return }
-        let panels = panels, badge = linkBadge
-        let x = badge.midX
-        let top = panels[0].label.minY + 14, bottom = panels[1].label.minY + 14
-        let rail = NSBezierPath()
-        rail.move(to: CGPoint(x: panels[0].label.minX - 1, y: top))
-        rail.line(to: CGPoint(x: x, y: top))
-        rail.line(to: CGPoint(x: x, y: bottom))
-        rail.line(to: CGPoint(x: panels[1].label.minX - 1, y: bottom))
-        rail.lineWidth = 2
-        rail.lineJoinStyle = .round
-        rail.lineCapStyle = .round
-        f.accent.setStroke()
-        rail.stroke()
-        f.accent.setFill()
-        NSBezierPath(ovalIn: badge).fill()
-        if let link = NSImage(systemSymbolName: "link", accessibilityDescription: "Linked")?
-            .withSymbolConfiguration(.init(pointSize: 9, weight: .bold).applying(.init(paletteColors: [f.panel]))) {
-            let size = link.size
-            link.draw(in: CGRect(x: badge.midX - size.width / 2, y: badge.midY - size.height / 2,
-                                 width: size.width, height: size.height))
-        }
     }
 
     private func analyserY(_ db: Float, in rect: CGRect) -> CGFloat {
@@ -625,10 +598,11 @@ final class EqualizerStudioView: NSView {
         }
 
         let streaming = WindowManager.shared.audioEngine.isStreamingPlayback
-        let added: (Int) -> Float = { [edit, bypass] band in
-            streaming || bypass ? 0 : edit[channel].bands[band] + edit[channel].preamp
+        let bypassed = bypass[channel]
+        let added: (Int) -> Float = { [edit] band in
+            streaming || bypassed ? 0 : edit[channel].bands[band] + edit[channel].preamp
         }
-        drawText(streaming ? "OUTPUT" : bypass ? "SOURCE" : "SOURCE + PROFILE", font: f.legendFont,
+        drawText(streaming ? "OUTPUT" : bypassed ? "SOURCE" : "SOURCE + PROFILE", font: f.legendFont,
                  color: f.dimText, in: CGRect(x: rect.minX + 4, y: rect.minY + 2, width: 120, height: 11))
 
         let levels = self.levels[channel], peaks = self.peaks[channel]
@@ -734,7 +708,7 @@ final class EqualizerStudioView: NSView {
             index == 0 ? path.move(to: point) : path.line(to: point)
         }
         path.lineWidth = 1.2
-        f.accent.withAlphaComponent(bypass ? 0.25 : 0.85).setStroke()
+        f.accent.withAlphaComponent(bypass[channel] ? 0.25 : 0.85).setStroke()
         path.stroke()
     }
 }
