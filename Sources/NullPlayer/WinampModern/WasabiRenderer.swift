@@ -4231,7 +4231,7 @@ final class WasabiSceneRenderer {
                 drawSurfaceText(Self.playlistTimeText(row.duration), in: textRect, color: color,
                                 alignment: .right, pointSize: pointSize, context: context)
             }
-            let label = "\(index + 1). \(row.title)"
+            let label = "\(index + 1). \(row.hasEQProfile ? "\(Track.eqProfileRowMarker) " : "")\(row.title)"
             drawSurfaceText(label, in: columns.label, color: color,
                             alignment: .left, pointSize: pointSize, context: context)
         }

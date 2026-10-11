@@ -48,6 +48,21 @@ enum LibraryPlayable {
     case embySeason(EmbySeason)
     case embyShow(EmbyShow)
 
+    /// The level **Assign EQ Profile** keys this row's tracks at; nil for video, which has no local graph.
+    var eqProfileLevel: EQProfileLevel? {
+        switch self {
+        case .localAlbum, .plexAlbum, .subsonicAlbum, .jellyfinAlbum, .embyAlbum: return .album
+        case .localArtist, .plexArtistGroup, .subsonicArtist, .jellyfinArtist, .embyArtist: return .artist
+        case .tracks, .localTrack, .localFolder, .localPlaylist, .plexTrack, .plexPlaylist,
+             .subsonicSong, .subsonicPlaylist, .jellyfinSong, .jellyfinPlaylist, .embySong, .embyPlaylist:
+            return .track
+        case .localMovie, .localEpisodes, .plexMovie, .plexEpisode, .plexSeason, .plexShow,
+             .jellyfinMovie, .jellyfinEpisode, .jellyfinSeason, .jellyfinShow,
+             .embyMovie, .embyEpisode, .embySeason, .embyShow:
+            return nil
+        }
+    }
+
     /// An artist plays album by album, oldest first; a show season by season.
     @MainActor
     func tracks() async throws -> [Track] {

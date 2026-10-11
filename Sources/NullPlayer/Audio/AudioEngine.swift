@@ -312,6 +312,8 @@ class AudioEngine {
     /// local AVAudioEngine graph and the AudioStreaming graph.
     let tuningController = PitchTuningController()
     let wmpWOWController = WMPWOWController(defaults: .standard)
+    /// EQ profiles: the current track's assigned curve (or the Studio's edit), before pitch and EQ.
+    let eqProfileController = EQProfileController()
 
     /// Current audio file (for local files)
     private var audioFile: AVAudioFile?
@@ -319,7 +321,7 @@ class AudioEngine {
     /// Streaming audio player (for HTTP URLs like Plex) - uses AudioStreaming library
     /// This routes audio through AVAudioEngine so EQ affects streaming audio
     private var streamingPlayer: StreamingAudioPlayer?
-    private var isStreamingPlayback: Bool = false
+    private(set) var isStreamingPlayback: Bool = false
     private var streamingPlaybackConfirmed: Bool = false
     private var isLoadingNewStreamingTrack: Bool = false
     
@@ -393,6 +395,7 @@ class AudioEngine {
     private(set) var currentTrack: Track? {
         didSet {
             delegate?.audioEngineDidChangeTrack(currentTrack)
+            eqProfileController.trackDidChange(currentTrack)
             // Reset BPM detector for new track
             bpmDetector.reset()
             // Post notification for views that need to observe track changes
@@ -1311,6 +1314,7 @@ class AudioEngine {
         engine.attach(crossfadePlayerNode)  // For Sweet Fades crossfade
         engine.attach(eqNode)
         engine.attach(mixerNode)  // Class property for graph rebuilding
+        engine.attach(eqProfileController.localNode)
         engine.attach(tuningController.localPitchNode)
         engine.attach(wmpWOWController.localNode)
 
@@ -1318,7 +1322,7 @@ class AudioEngine {
         let mixerFormat = engine.mainMixerNode.outputFormat(forBus: 0)
 
         // Signal flow: playerNode ─┐
-        //                          ├─► mixerNode ─► localPitchNode ─► eqNode ─► output
+        //                          ├─► mixerNode ─► profileNode ─► localPitchNode ─► eqNode ─► output
         //  crossfadePlayerNode ────┘
         //
         // Pitch node sits AFTER the mixer so a single instance handles both player + crossfade,
@@ -1328,8 +1332,9 @@ class AudioEngine {
         engine.connect(playerNode, to: mixerNode, format: mixerFormat)
         engine.connect(crossfadePlayerNode, to: mixerNode, format: mixerFormat)
 
-        // Connect mixer → pitch → EQ → WMP enhancements (dry outside WMP) → output
-        engine.connect(mixerNode, to: tuningController.localPitchNode, format: mixerFormat)
+        // Connect mixer → EQ profile → pitch → EQ → WMP enhancements (dry outside WMP) → output
+        engine.connect(mixerNode, to: eqProfileController.localNode, format: mixerFormat)
+        engine.connect(eqProfileController.localNode, to: tuningController.localPitchNode, format: mixerFormat)
         engine.connect(tuningController.localPitchNode, to: eqNode, format: mixerFormat)
         engine.connect(eqNode, to: wmpWOWController.localNode, format: mixerFormat)
         engine.connect(wmpWOWController.localNode, to: engine.mainMixerNode, format: mixerFormat)
@@ -1547,7 +1552,11 @@ class AudioEngine {
             }
             self.engine.connect(self.playerNode, to: self.mixerNode, format: mixerFormat)
             self.engine.connect(self.crossfadePlayerNode, to: self.mixerNode, format: mixerFormat)
-            self.engine.connect(self.mixerNode, to: self.tuningController.localPitchNode, format: mixerFormat)
+            if !self.engine.attachedNodes.contains(self.eqProfileController.localNode) {
+                self.engine.attach(self.eqProfileController.localNode)
+            }
+            self.engine.connect(self.mixerNode, to: self.eqProfileController.localNode, format: mixerFormat)
+            self.engine.connect(self.eqProfileController.localNode, to: self.tuningController.localPitchNode, format: mixerFormat)
             self.engine.connect(self.tuningController.localPitchNode, to: self.eqNode, format: mixerFormat)
             if !self.engine.attachedNodes.contains(self.wmpWOWController.localNode) {
                 self.engine.attach(self.wmpWOWController.localNode)
@@ -1577,6 +1586,9 @@ class AudioEngine {
             self.engine.disconnectNodeOutput(self.playerNode)
             self.engine.disconnectNodeOutput(self.crossfadePlayerNode)
             self.engine.disconnectNodeOutput(self.mixerNode)
+            if self.engine.attachedNodes.contains(self.eqProfileController.localNode) {
+                self.engine.disconnectNodeOutput(self.eqProfileController.localNode)
+            }
             if self.engine.attachedNodes.contains(self.tuningController.localPitchNode) {
                 self.engine.disconnectNodeOutput(self.tuningController.localPitchNode)
             }
@@ -1626,6 +1638,7 @@ class AudioEngine {
         mixerNode = AVAudioMixerNode()
         eqNode = AVAudioUnitEQ(numberOfBands: EQBandProgram.physicalBandCount)
         tuningController.replaceLocalPitchNode()
+        eqProfileController.replaceLocalNode()
         programEQNode(for: activeEQConfiguration)
         eqNode.bypass = bypass
         eqNode.globalGain = preamp
@@ -1641,6 +1654,7 @@ class AudioEngine {
             self.engine.attach(self.mixerNode)
             self.engine.attach(self.eqNode)
             self.engine.attach(self.tuningController.localPitchNode)
+            self.engine.attach(self.eqProfileController.localNode)
         }, &exceptionError)
         guard attached else { return false }
         playerNode.volume = 1
@@ -5192,6 +5206,7 @@ class AudioEngine {
         if streamingPlayer == nil {
             streamingPlayer = StreamingAudioPlayer(
                 eqConfiguration: activeEQConfiguration,
+                profileNode: eqProfileController.makeStreamingNode(),
                 pitchNode: tuningController.makeStreamingPitchNode(),
                 wowNode: wmpWOWController.makeStreamingNode()
             )
@@ -5850,6 +5865,7 @@ class AudioEngine {
         crossfadeStreamingPlayer?.stop()
         crossfadeStreamingPlayer = StreamingAudioPlayer(
             eqConfiguration: activeEQConfiguration,
+            profileNode: eqProfileController.makeStreamingNode(),
             pitchNode: tuningController.makeStreamingPitchNode(),
             wowNode: wmpWOWController.makeStreamingNode()
         )

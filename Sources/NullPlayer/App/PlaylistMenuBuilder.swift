@@ -34,6 +34,8 @@ enum PlaylistMenuBuilder {
         /// False while the view shows something other than the live queue (a `.wmz` library
         /// preview), so every row that edits the queue is disabled.
         var canEdit = true
+        /// The selected queue rows' tracks, for **Assign EQ Profile**; empty hides it.
+        var selectedTracks: [Track] = []
         var hasSelection: Bool { selectionCount > 0 }
     }
 
@@ -97,6 +99,10 @@ enum PlaylistMenuBuilder {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("File Info...", #selector(PlaylistMenuTarget.showFileInfo(_:)),
                           enabled: state.selectionCount == 1 && canEdit))
+        let selectedTracks = state.selectedTracks
+        if !selectedTracks.isEmpty {
+            EQProfileMenu.addAssignItem(to: menu, level: .track, tracks: selectedTracks)
+        }
         return menu
     }
 
@@ -138,7 +144,7 @@ enum PlaylistMenuBuilder {
         Album: \(track.album ?? "Unknown")
         Duration: \(String(format: "%d:%02d", Int(track.duration ?? 0) / 60, Int(track.duration ?? 0) % 60))
         Path: \(track.url.path)
-        """
+        """ + (track.mediaType == .audio ? "\nEQ Profile: \(EQProfileStore.shared.describe(track))" : "")
         alert.runModal()
     }
 }

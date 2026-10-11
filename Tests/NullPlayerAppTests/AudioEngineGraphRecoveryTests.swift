@@ -34,6 +34,28 @@ final class AudioEngineGraphRecoveryTests: XCTestCase {
         }
     }
 
+    func testReplacementGivesANewProfileNodeCarryingTheCurve() {
+        let recovery = AudioGraphRecoveryCoordinator()
+        let engine = AudioEngine(audioGraphRecovery: recovery)
+        var curve = EQCurve.flat
+        curve.left[5] = 6
+        engine.eqProfileController.audition = curve
+        let oldNode = engine.eqProfileController.localNode
+        var injected = false
+        recovery.setFaultInjectorForTesting { stage in
+            if stage == "connect" && !injected {
+                injected = true
+                NSException(name: .internalInconsistencyException, reason: "error -10868", userInfo: nil).raise()
+            }
+        }
+
+        engine.rebuildAudioGraphForTesting()
+
+        XCTAssertTrue(injected)
+        XCTAssertFalse(oldNode === engine.eqProfileController.localNode)
+        XCTAssertEqual((engine.eqProfileController.localNode.auAudioUnit as? EQProfileAudioUnit)?.curve, curve)
+    }
+
     func testReplacementReschedulesPlayingAndPausedFilesAtSavedPosition() throws {
         let url = try TestAudioFile.temporaryWAV(seconds: 10)
         defer { try? FileManager.default.removeItem(at: url) }

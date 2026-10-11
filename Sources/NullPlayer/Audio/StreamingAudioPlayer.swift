@@ -214,6 +214,7 @@ class StreamingAudioPlayer {
         eqConfiguration: EQConfiguration = .forModernUI(
             PlayerUIMode.stored().usesModernEQLayout
         ),
+        profileNode: AVAudioUnitEffect? = nil,
         pitchNode: AVAudioUnitTimePitch? = nil,
         wowNode: AVAudioUnitEffect? = nil
     ) {
@@ -236,8 +237,8 @@ class StreamingAudioPlayer {
 
         balanceNode.outputVolume = 1.0
 
-        // Attach balance and EQ to the player's audio graph.
-        player.attach(nodes: [balanceNode, eqNode])
+        // Attach balance, the EQ profile stage and EQ to the player's audio graph.
+        player.attach(nodes: [balanceNode] + (profileNode.map { [$0] } ?? []) + [eqNode])
 
         // Attach the Reference Tuning pitch node (after EQ, before output) when provided.
         // AudioStreaming's own private `rateNode` (AVAudioUnitTimePitch) is bypassed while

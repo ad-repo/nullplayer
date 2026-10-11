@@ -51,7 +51,7 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
 
     func playlistSnapshot() -> WinampModernPlaylistSnapshot {
         let rows = engine.playlist.enumerated().map { index, track in
-            WinampModernPlaylistRow(
+            var row = WinampModernPlaylistRow(
                 title: track.title,
                 secondary: [track.artist, track.album].compactMap { $0 }.joined(separator: " — "),
                 duration: track.duration ?? 0,
@@ -60,6 +60,8 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
                 album: track.album ?? "",
                 filePath: track.url.isFileURL ? track.url.path : track.url.absoluteString
             )
+            row.hasEQProfile = EQProfileStore.shared.appliesProfile(to: track)
+            return row
         }
         return WinampModernPlaylistSnapshot(rows: rows,
                                             currentIndex: engine.currentIndex,

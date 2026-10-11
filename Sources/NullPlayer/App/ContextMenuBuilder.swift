@@ -176,6 +176,7 @@ class ContextMenuBuilder {
 
         menu.addItem(buildWindowItem("Main Window", visible: wm.mainWindowController?.window?.isVisible ?? false, action: #selector(MenuActions.toggleMainWindow)))
         menu.addItem(buildSkinOwnableWindowItem("Equalizer", surface: .equalizer, visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Equalizer Studio", visible: wm.isEqualizerStudioVisible, action: #selector(MenuActions.toggleEqualizerStudio)))
         menu.addItem(buildSkinOwnableWindowItem("Playlist Editor", surface: .playlist, visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Spectrum Analyzer", visible: wm.isSpectrumVisible, action: #selector(MenuActions.toggleSpectrum), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Audio Analyzer", visible: wm.isAudioAnalysisVisible, action: #selector(MenuActions.toggleAudioAnalysis), enabled: supportsSkinnedAuxiliaryWindows))
@@ -1243,6 +1244,16 @@ class ContextMenuBuilder {
             srsRoot.toolTip = "Not available while casting"
         }
         optionsMenu.addItem(srsRoot)
+
+        // EQ Profiles: assigned profiles on or off; assignments are kept either way
+        let profilesItem = NSMenuItem(title: "EQ Profiles", action: #selector(MenuActions.toggleEQProfiles), keyEquivalent: "")
+        profilesItem.target = MenuActions.shared
+        profilesItem.state = EQProfileStore.shared.isEnabled ? .on : .off
+        if engine.isAnyCastingActive {
+            profilesItem.isEnabled = false
+            profilesItem.toolTip = "Not available while casting"
+        }
+        optionsMenu.addItem(profilesItem)
 
         optionsMenu.addItem(NSMenuItem.separator())
 
@@ -3324,6 +3335,8 @@ class MenuActions: NSObject {
     @objc func showSonos() { WindowManager.shared.showSonos() }
     @objc func toggleSonos() { WindowManager.shared.toggleSonos() }
 
+    @objc func toggleEqualizerStudio() { WindowManager.shared.toggleEqualizerStudio() }
+
     @objc func toggleWaveform() {
         WindowManager.shared.toggleWaveform()
     }
@@ -4442,6 +4455,10 @@ class MenuActions: NSObject {
         WindowManager.shared.audioEngine.balance = value
     }
     
+    @objc func toggleEQProfiles() {
+        EQProfileStore.shared.isEnabled.toggle()
+    }
+
     @objc func toggleSweetFade() {
         WindowManager.shared.audioEngine.sweetFadeEnabled.toggle()
     }

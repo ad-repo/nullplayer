@@ -1820,7 +1820,7 @@ class PlaylistView: NSView {
         Album: \(track.album ?? "Unknown")
         Duration: \(String(format: "%d:%02d", Int(track.duration ?? 0) / 60, Int(track.duration ?? 0) % 60))
         Path: \(track.url.path)
-        """
+        """ + (track.mediaType == .audio ? "\nEQ Profile: \(EQProfileStore.shared.describe(track))" : "")
         alert.runModal()
     }
 
@@ -2209,6 +2209,11 @@ class PlaylistView: NSView {
         infoItem.target = self
         infoItem.isEnabled = selectedIndices.count == 1
         menu.addItem(infoItem)
+
+        let selectedTracks = selectedIndices.sorted().filter(tracks.indices.contains).map { tracks[$0] }
+        if !selectedTracks.isEmpty {
+            EQProfileMenu.addAssignItem(to: menu, level: .track, tracks: selectedTracks)
+        }
 
         return menu
     }

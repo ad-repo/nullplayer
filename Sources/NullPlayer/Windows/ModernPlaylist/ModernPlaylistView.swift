@@ -1456,9 +1456,11 @@ class ModernPlaylistView: NSView {
     // MARK: - Context Menu
     
     override func menu(for event: NSEvent) -> NSMenu? {
-        PlaylistMenuBuilder.menu(target: self, state: .init(
+        let playlist = WindowManager.shared.audioEngine.playlist
+        return PlaylistMenuBuilder.menu(target: self, state: .init(
             selectionCount: selectedIndices.count,
-            hasTracks: !WindowManager.shared.audioEngine.playlist.isEmpty))
+            hasTracks: !playlist.isEmpty,
+            selectedTracks: selectedIndices.sorted().filter(playlist.indices.contains).map { playlist[$0] }))
     }
     
     @objc func playSelected(_ sender: Any?) {

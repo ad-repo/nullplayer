@@ -42,6 +42,7 @@ See `skills/audion-face-guide/reference/user-guide.md`.
 | **Main Window** | Primary player with transport controls | Always visible |
 | **Playlist Editor** | Track list and playlist management | PL button or context menu |
 | **Equalizer** | Classic 10-band EQ or modern 21-band EQ with presets | EQ button or context menu |
+| **Equalizer Studio** | Makes and edits EQ profiles (see *EQ Profiles* below). The same window in every skin family: a gloss rim in the skin's colours around a Console or Boutique DSP faceplate | Windows menu, or **Assign EQ Profile ▸ Equalizer Studio…** |
 | **Spectrum Analyzer** | Large spectrum visualization | Context menu or Window menu |
 | **Audio Analyzer** | Friture-style multi-pane analyzer (Scope, Levels, Spectrogram, Octave, Pitch, Delay) | Context menu or Window menu |
 | **PeppyMeter** | Skinnable analog VU meter — needle/bar meters that track left/right levels; right-click to pick a meter or enable Random | Context menu or Window menu |
@@ -308,6 +309,43 @@ Import discovery is now unified across classic + modern entry points (main windo
 - **Original/Original-Metal UI**: all 21 frequency labels are visible in-window, using compact labels like `1K`, `1.4K`, `2K`, `11.2K`
 - **Classic UI**: PRESETS dropdown with all presets including "I'm Old" / "I'm Young"
 
+### EQ Profiles
+Named 31-band equalizer curves (ISO ⅓-octave, 20 Hz–20 kHz) with separate left and right curves and
+preamps, applied per track, album or artist. A profile runs before the Equalizer window's EQ; the
+Equalizer window never changes a profile, and a profile never changes it.
+
+- **Making profiles — Windows ▸ Equalizer Studio.** Two channels, LEFT above RIGHT, each with 31
+  faders, a preamp and its own spectrum analyser. Edits are heard live while the Studio is open and
+  are discarded unless saved. Opening it loads the playing track's profile, or a new flat one.
+  - **LINK** (on by default, remembered): moving a fader on one channel moves the same fader on the
+    other by the same amount, so channels that already differ keep their difference. A line with a
+    chain joins the two channel names while linked; click the chain to unlink. Unlinked, **FLAT**
+    and double-click act on one channel — the one marked *FLAT ACTS HERE*; click a channel's name
+    to pick it.
+  - **FLAT**, **BYPASS** (compares against no profile at all, for this session), **HEADROOM** (sets
+    each preamp so the channel's peak response is 0 dB — `PK` beside each preamp shows that peak),
+    **SAVE**, **SAVE AS**, **RENAME**, **DELETE**, **REVERT**, and **CONSOLE / BOUTIQUE** to switch
+    the faceplate. Click the name display for the list of profiles and New. Double-click a fader to
+    reset it.
+  - The analyser shows the source plus the profile for local files (BYPASS shows the source alone);
+    for streams it shows the final output and is labelled `OUTPUT`.
+- **Assigning — right-click ▸ Assign EQ Profile (Track / Album / Artist) ▸** on library rows (tracks,
+  albums, artists, playlists and folders), queue rows, radio stations, and YouTube videos with a
+  downloaded audio file (greyed with *Download the audio first* otherwise). Choices: **Inherit**
+  (remove this level's setting), **Off** (no profile here, even if the album or artist has one), or a
+  profile. For queue rows and radio stations the current setting is ticked (a dash when the selected
+  rows differ), and a setting inherited from the album or artist is shown at the top.
+- **Which applies:** track over album over artist. Assignments are per source (Local, each media
+  server, YouTube, Radio) and are kept until changed. A playlist or folder assigns to the tracks it
+  holds at the time — tracks added later get none. An assignment follows the path, name or server
+  id it was made against: moving or renaming a file, retagging an album or artist, or re-adding a
+  server under a new id stops it matching, and that content falls through to the next level.
+- **Seeing it:** a queue row whose track has a profile running shows **∿** before its title, and
+  **File Info** ends with an *EQ Profile:* line (e.g. `Warm (album)`, `Off (track)`, `None`).
+- **Turning it off — Playback ▸ EQ Profiles** (on by default): off, no assigned profile is applied;
+  assignments are kept. The Studio still plays its edit while open.
+- Profiles do not apply while casting, or to video.
+
 ### Playback Options
 - **Gapless Playback**: Seamless track transitions (local files)
 - **Sweet Fades**: Crossfade between tracks (1-10s duration)
@@ -315,6 +353,7 @@ Import discovery is now unified across classic + modern entry points (main windo
 - **Reference Tuning**: Pitch-shift playback to a different reference frequency. Presets for Off, 432 Hz, 440 Hz, and a Custom… dialog (source/target Hz, ±2400 cents). Applies to local files and HTTP streams; unavailable while casting because remote renderers have no local audio graph to insert the pitch shifter into. Persists across launches; the CLI also accepts `--tuning`, `--tuning-source`, and `--tuning-offset-cents` as session-only overrides.
 - **Playback Speed**: Tempo-preserving speed control from `0.25×` to `4.0×`, with presets plus Custom…. Applies to local files and HTTP streams; unavailable while casting. Persists across launches.
 - **SRS**: **WOW Effect** (stereo widening) and **TruBass** (bass enhancement), each Off / 25% / 50% / 75% / 100%, plus a **Headphones** toggle that tunes TruBass for headphones (off = normal speakers). App-wide in every skin, shared with a `.wmz`'s SRS controls, persisted across launches, unavailable while casting. DSP: `../wmp-skin-guide/reference/audio-enhancements.md`.
+- **EQ Profiles**: on/off for assigned EQ profiles; see *EQ Profiles* above. Unavailable while casting.
 - **Balance**: Stereo pan submenu (slider plus Left / Center / Right presets), backed by `engine.balance` and mirrored by the classic Balance Slider sprite. Gives Original and Original-Metal UI and menu-only/Compact workflows access to balance without a face slider. Persists across launches.
 - **Remember State on Quit**: Restores window layout, audio/EQ state, and playlist contents, but not the selected track, seek position, or playing state. See `../app-state/SKILL.md` for the complete persistence and reset policy.
 

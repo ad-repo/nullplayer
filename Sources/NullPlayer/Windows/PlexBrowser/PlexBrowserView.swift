@@ -6479,6 +6479,9 @@ class PlexBrowserView: NSView {
         let menu = NSMenu()
         if let playable = playable(for: item) {
             TrackVerb.addMenuItems(to: menu, resolve: resolver(for: playable))
+            if let level = playable.eqProfileLevel {
+                EQProfileMenu.addAssignItem(to: menu, level: level, resolve: resolver(for: playable))
+            }
         }
         
         NSLog("showContextMenu: item.type = %@, title = %@", String(describing: item.type), item.title)
@@ -6778,6 +6781,7 @@ class PlexBrowserView: NSView {
             playItem.target = self
             playItem.representedObject = station
             menu.addItem(playItem)
+            EQProfileMenu.addAssignItem(to: menu, level: .track, tracks: [station.toTrack()])
             
             menu.addItem(NSMenuItem.separator())
             
