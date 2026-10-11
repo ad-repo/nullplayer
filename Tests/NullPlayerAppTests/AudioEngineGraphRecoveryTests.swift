@@ -34,6 +34,61 @@ final class AudioEngineGraphRecoveryTests: XCTestCase {
         }
     }
 
+    func testReplacementGivesANewProfileNodeCarryingTheCurve() {
+        let recovery = AudioGraphRecoveryCoordinator()
+        let engine = AudioEngine(audioGraphRecovery: recovery)
+        var curve = EQCurve.flat
+        curve.left.bands[5] = 6
+        engine.eqProfileController.audition = curve
+        let oldNode = engine.eqProfileController.localNode
+        var injected = false
+        recovery.setFaultInjectorForTesting { stage in
+            if stage == "connect" && !injected {
+                injected = true
+                NSException(name: .internalInconsistencyException, reason: "error -10868", userInfo: nil).raise()
+            }
+        }
+
+        engine.rebuildAudioGraphForTesting()
+
+        XCTAssertTrue(injected)
+        XCTAssertFalse(oldNode === engine.eqProfileController.localNode)
+        XCTAssertEqual((engine.eqProfileController.localNode.auAudioUnit as? EQProfileAudioUnit)?.curve, curve)
+    }
+
+    /// SRS keeps one `let localNode` for the engine's life, so a replacement graph re-attaches the
+    /// failed graph's unit rather than a new one. It must land in the new engine, wired, with its
+    /// settings.
+    func testReplacementCarriesTheSRSNodeIntoTheNewGraph() {
+        for failedStage in ["disconnect", "connect"] {
+            let recovery = AudioGraphRecoveryCoordinator()
+            let engine = AudioEngine(audioGraphRecovery: recovery)
+            engine.wmpWOWController.setMenuLevel(75, wow: true)
+            let wow = engine.wmpWOWController.localNode
+            var injected = false
+            recovery.setFaultInjectorForTesting { stage in
+                if stage == failedStage && !injected {
+                    injected = true
+                    NSException(name: .internalInconsistencyException, reason: "error -10868", userInfo: nil).raise()
+                }
+            }
+
+            engine.rebuildAudioGraphForTesting()
+
+            XCTAssertTrue(injected)
+            XCTAssertFalse(recovery.isDeferred, failedStage)
+            XCTAssertFalse(recovery.hasScheduledWork, failedStage)
+            let graph = engine.eqProfileController.localNode.engine
+            XCTAssertNotNil(graph)
+            XCTAssertTrue(wow.engine === graph, "SRS node is attached to the new graph")
+            XCTAssertNotNil(graph?.inputConnectionPoint(for: wow, inputBus: 0), "fed by the EQ")
+            XCTAssertTrue(graph?.outputConnectionPoints(for: wow, outputBus: 0)
+                .contains { $0.node === graph?.mainMixerNode } ?? false, "feeds the main mixer")
+            XCTAssertTrue(engine.wmpWOWController.enabled)
+            XCTAssertEqual(engine.wmpWOWController.level, 75)
+        }
+    }
+
     func testReplacementReschedulesPlayingAndPausedFilesAtSavedPosition() throws {
         let url = try TestAudioFile.temporaryWAV(seconds: 10)
         defer { try? FileManager.default.removeItem(at: url) }

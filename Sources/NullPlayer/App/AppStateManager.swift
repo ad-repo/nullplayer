@@ -224,6 +224,7 @@ class AppStateManager {
         var isCavaVisible: Bool = false
         var isSonosVisible: Bool = false
         var isWaveformVisible: Bool = false
+        var isEqualizerStudioVisible: Bool = false
 
         // Window frames (as strings for NSRect compatibility)
         var mainWindowFrame: String?
@@ -264,6 +265,7 @@ class AppStateManager {
         var cavaWindowFrame: String?
         var sonosWindowFrame: String?
         var waveformWindowFrame: String?
+        var equalizerStudioWindowFrame: String?
         var isProjectMFullscreen: Bool = false
         
         // Audio settings
@@ -341,8 +343,8 @@ class AppStateManager {
         // MARK: - Custom Decoding for Backward Compatibility
         
         enum CodingKeys: String, CodingKey {
-            case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isProjectMVisible, isSpectrumVisible, isAudioAnalysisVisible, isPeppyMeterVisible, isArtVisible, isNetworkMonitorVisible, isCavaVisible, isSonosVisible, isWaveformVisible
-            case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, projectMWindowFrame, spectrumWindowFrame, audioAnalysisWindowFrame, peppyMeterWindowFrame, artWindowFrame, networkMonitorWindowFrame, cavaWindowFrame, sonosWindowFrame, waveformWindowFrame, isProjectMFullscreen
+            case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isProjectMVisible, isSpectrumVisible, isAudioAnalysisVisible, isPeppyMeterVisible, isArtVisible, isNetworkMonitorVisible, isCavaVisible, isSonosVisible, isWaveformVisible, isEqualizerStudioVisible
+            case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, projectMWindowFrame, spectrumWindowFrame, audioAnalysisWindowFrame, peppyMeterWindowFrame, artWindowFrame, networkMonitorWindowFrame, cavaWindowFrame, sonosWindowFrame, waveformWindowFrame, equalizerStudioWindowFrame, isProjectMFullscreen
             case volume, balance, shuffleEnabled, repeatEnabled, gaplessPlaybackEnabled, volumeNormalizationEnabled
             case sweetFadeEnabled, sweetFadeDuration
             case eqEnabled, eqAutoEnabled, eqPreamp, eqBands, eqBandsByLayout
@@ -381,6 +383,7 @@ class AppStateManager {
             isCavaVisible = try container.decodeIfPresent(Bool.self, forKey: .isCavaVisible) ?? false
             isSonosVisible = try container.decodeIfPresent(Bool.self, forKey: .isSonosVisible) ?? false
             isWaveformVisible = try container.decodeIfPresent(Bool.self, forKey: .isWaveformVisible) ?? false
+            isEqualizerStudioVisible = try container.decodeIfPresent(Bool.self, forKey: .isEqualizerStudioVisible) ?? false
             
             // Window frames
             mainWindowFrame = try container.decodeIfPresent(String.self, forKey: .mainWindowFrame)
@@ -401,6 +404,7 @@ class AppStateManager {
             cavaWindowFrame = try container.decodeIfPresent(String.self, forKey: .cavaWindowFrame)
             sonosWindowFrame = try container.decodeIfPresent(String.self, forKey: .sonosWindowFrame)
             waveformWindowFrame = try container.decodeIfPresent(String.self, forKey: .waveformWindowFrame)
+            equalizerStudioWindowFrame = try container.decodeIfPresent(String.self, forKey: .equalizerStudioWindowFrame)
             isProjectMFullscreen = try container.decodeIfPresent(Bool.self, forKey: .isProjectMFullscreen) ?? false
             
             // Audio settings
@@ -734,6 +738,8 @@ class AppStateManager {
                 wm.visibilityForStateSaving(feature, current: wm.isCenterStackWindowVisible(feature))
             state[keyPath: feature.savedFrame] = wm.centerStackWindow(feature).map { NSStringFromRect($0.frame) }
         }
+        state.isEqualizerStudioVisible = wm.isEqualizerStudioVisible
+        state.equalizerStudioWindowFrame = wm.equalizerStudioWindowFrame.map { NSStringFromRect($0) }
 
         saveQueue.async { [self, state] in
             var state = state
@@ -975,7 +981,8 @@ class AppStateManager {
                 ("playlist", state.playlistWindowFrame),
                 ("equalizer", state.equalizerWindowFrame),
                 ("browser", state.plexBrowserWindowFrame),
-                ("projectM", state.projectMWindowFrame)
+                ("projectM", state.projectMWindowFrame),
+                ("equalizerStudio", state.equalizerStudioWindowFrame)
             ] + WindowManager.CenterStackFeature.allCases.map {
                 ($0.stateKey, state[keyPath: $0.savedFrame])
             }
@@ -1062,6 +1069,9 @@ class AppStateManager {
                 // Library was closed at quit: seed the remembered frame so the next open
                 // reuses the saved position instead of the default right-of-stack layout.
                 wm.seedPlexBrowserFrame(browserFrame)
+            }
+            if state.isEqualizerStudioVisible {
+                wm.showEqualizerStudio(at: restoredFrames["equalizerStudio"])
             }
             if state.isProjectMVisible {
                 wm.showProjectM(at: projectMFrame)

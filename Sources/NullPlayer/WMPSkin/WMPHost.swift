@@ -67,6 +67,23 @@ struct WMPPlaylistItemSnapshot: Hashable, Codable {
     /// `digitaldj`'s query filter drops any item whose URL contains `://`, so a title stood in for
     /// a URL in both.
     var sourceURL = ""
+    /// An EQ profile runs on this queue row's track: `<PLAYLIST>` draws NullPlayer's marker. Not
+    /// part of anything a script reads, so coding and `isSameItem` leave it out.
+    var hasEQProfile = false
+
+    private enum CodingKeys: String, CodingKey { case title, artist, duration, sourceURL }
+
+    /// What a script can see of the item. An EQ assignment is not a queue change.
+    func isSameItem(as other: Self) -> Bool {
+        (title, artist, duration, sourceURL) == (other.title, other.artist, other.duration, other.sourceURL)
+    }
+}
+
+extension Array where Element == WMPPlaylistItemSnapshot {
+    /// The queue as a script sees it: `currentplaylist_onchange` and `WMPObjectModel.queueGeneration`.
+    func isSameQueue(as other: Self) -> Bool {
+        elementsEqual(other) { $0.isSameItem(as: $1) }
+    }
 }
 
 /// What the skin's `<EFFECTS>` rect is drawing, and the four members the corpus reads off it.

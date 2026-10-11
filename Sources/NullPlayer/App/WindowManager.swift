@@ -959,6 +959,17 @@ class WindowManager {
             name: .hostedSurfaceStyleDidChange,
             object: nil
         )
+        // Every queue's EQ profile row marker follows assignments and the global toggle.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleEQProfilesDidChange(_:)),
+            name: .eqProfilesDidChange,
+            object: nil
+        )
+    }
+
+    @objc private func handleEQProfilesDidChange(_ notification: Notification) {
+        reloadPlaylistViews()
     }
 
     @objc private func handleHostedSurfaceStyleDidChange(_ notification: Notification) {
@@ -3510,6 +3521,9 @@ class WindowManager {
         compactWindowController?.reloadPlaylist()
         // A `.wal` skin draws its own playlist; it has no controller to reload, only a repaint.
         winampModernSurfaces?.surfaceContentDidChange()
+        // A `.wmz` `<PLAYLIST>` takes its rows from host refreshes; this repaints what they cannot
+        // see change, the EQ profile row marker.
+        (mainWindowController as? WMPMainWindowController)?.playlistContentDidChange()
     }
 
     // MARK: - Library History

@@ -185,6 +185,9 @@ struct WinampModernPlaylistRow: Equatable {
     /// folder its album art lives in — the same exposure `getPlayItemMetaDataString("filename")`
     /// already carries, and read-only: nothing in the seam opens a path a script hands back.
     let filePath: String
+    /// An EQ profile runs on this row's track: the row is drawn with NullPlayer's queue marker. Not
+    /// part of anything a script reads.
+    var hasEQProfile = false
 
     init(title: String, secondary: String, duration: TimeInterval, isCurrent: Bool,
          artist: String = "", album: String = "", filePath: String = "") {

@@ -287,7 +287,7 @@ Playback Speed is also owned by `PitchTuningController`, but it is a tempo/time-
 
 ### Graph placement
 
-Local graph: `playerNode + crossfadePlayerNode → mixerNode → localPitchNode → eqNode → mainMixerNode`. Placing the pitch node **after** the mixer means a single node handles both the primary and crossfade players, and the spectrum tap on `mixerNode` keeps capturing pre-pitch (source) frequencies — the analyzer shows the source content's spectrum, not the shifted output. This is a deliberate trade-off; moving the tap onto `localPitchNode` would invert it.
+Local graph: `playerNode + crossfadePlayerNode → mixerNode → profileNode → localPitchNode → eqNode → WOW → mainMixerNode` (the profile node is EQ Profiles', below). Placing the pitch node **after** the mixer means a single node handles both the primary and crossfade players, and the spectrum tap on `mixerNode` keeps capturing pre-pitch (source) frequencies — the analyzer shows the source content's spectrum, not the shifted output. This is a deliberate trade-off; moving the tap onto `localPitchNode` would invert it.
 
 Streaming graph: each `StreamingAudioPlayer` receives its own node from `PitchTuningController.makeStreamingPitchNode()` and attaches it via `AudioStreaming.AudioPlayer.attach(node:)` after the EQ node. These streaming pitch nodes only carry Reference Tuning cents: they always keep `node.rate = 1.0`. Streaming tempo is applied through AudioStreaming's own private `rateNode` via `StreamingAudioPlayer.rate` / `AudioPlayer.rate`. This avoids double-applying rate when Reference Tuning and Playback Speed are used together.
 
@@ -335,6 +335,102 @@ enhancement stage after EQ/tuning in both audio pipelines. Read [the design and 
 before changing `WMPWOWAudioUnit`, `WMPTruBassDSP`, or their graph integration. The controller follows
 Reference Tuning’s per-player node ownership. It is app-wide in every skin family and persists in
 UserDefaults (`srsEnabled`, `srsWOWLevel`, `srsTruBassLevel`, `srsSpeakerSize`).
+
+## EQ Profiles
+
+Per-content 31-band stereo curves made in the Equalizer Studio (`Windows/EqualizerStudio/`) and
+assigned per track, album or artist (user-facing behaviour: `user-guide` § *EQ Profiles*).
+
+### Graph placement
+
+- Local: `mixerNode → profileNode → localPitchNode → eqNode → WOW → mainMixerNode`. The spectrum and
+  full-stereo taps on `mixerNode` are therefore **pre-profile**.
+- Streaming: `player.attach(nodes: [balanceNode, profileNode, eqNode])`, the node handed in like
+  `pitchNode`/`wowNode`. AudioStreaming's `frameFiltering` reads `engine.mainMixerNode`, so the
+  streaming feeds are **post-profile, post-EQ, post-SRS**.
+- Casting and video have no local graph, so no profile.
+
+The Studio's analyser (`StudioRTA`, on `.audioStereoPCMFullDataUpdated`) follows from that: for a
+local file it adds the auditioned curve to the pre-profile feed; for a stream it shows the feed as
+is, labelled `OUTPUT`. Adding the curve to a stream would count it twice.
+
+### Ownership
+
+`EQProfileController` (`Audio/EQProfileController.swift`) holds its nodes in an `AudioUnitFanout`
+(`Audio/AudioUnitFanout.swift`, shared with SRS's `WMPWOWController`): the local node, replaced by
+`replaceLocalNode()` in `replaceFailedAudioGraph` as `PitchTuningController` replaces its pitch node
+(SRS never replaces its own), and weak streaming nodes from `makeStreamingNode()`, each configured as
+it is made and again on `configureAll()`. Every node follows `currentTrack` (`trackDidChange` from the
+`currentTrack` didSet); a Sweet Fades overlap hears the incoming track's profile on both sides.
+`audition` (non-nil while the Studio is open) overrides resolution and the global toggle.
+
+The local graph is `AudioEngine.localEffectChain`, in signal order; setup, rebuild, disconnect and
+replacement all walk it (`attachLocalGraph`, `connectLocalGraph`), so a new local stage is one entry
+there.
+
+`EQProfileStore` (`Audio/EQProfileStore.swift`, which also holds `EQCurve` and the scope types) is
+storage only: the profiles and their assignments, in SQLite
+(`~/Library/Application Support/NullPlayer/eq_profiles.db`, set up like `RadioStationRatingsStore`),
+and the global toggle (`eqProfilesEnabled`, default on, in the `UserDefaults` it is given). Reads go
+to the database; each change writes only its rows, bumps `revision` and posts `.eqProfilesDidChange`:
+the controller re-resolves, and `WindowManager` runs `reloadPlaylistViews()`, which repaints every
+queue's row marker — Classic, Modern, the `.wal` playlist and a `.wmz` `<PLAYLIST>` (its host
+snapshot is refreshed first, since the marker rides on it). Main thread only.
+
+`EQProfileResolver` (`Audio/EQProfileResolver.swift`, `.shared` over `EQProfileStore.shared`) is
+everything above storage: the `Track` scope keys, `resolve`, `assign(level:tracks:)`, the queue
+marker (`appliesProfile(to:)`, cached per track id until the store's `revision` moves) and the
+strings — `setting`, `fileInfoLine`, and `queueTitle`, the one place the `∿` marker is put before a
+queue row's title. Classic and Modern call `queueTitle(for:)`; the `.wal` and `.wmz` rows carry
+`hasEQProfile` (`WinampModernPlaylistRow`, `WMPPlaylistItemSnapshot`) and call
+`queueTitle(_:marked:)`. `WMPPlaylistItemSnapshot` leaves `hasEQProfile` out of equality, hashing and
+coding: a marker change is not a queue change (`WMPObjectModel.queueGeneration`) and no script reads it.
+`Track.playlistTitle` does not consult profiles.
+
+At launch `pruneMissingLocalTracks()` drops `local` track-level assignments whose file is gone (a
+cue key's `@<offset>` stripped), checking files off the main thread; a path under an unmounted
+`/Volumes/<name>` is kept, and server, radio and YouTube rows are never touched. Local tracks stay
+keyed by path rather than library id: a queue track opened from Finder has no library id, so a
+moved file loses its profile.
+
+| Table | Columns | Notes |
+|---|---|---|
+| `eq_profiles` | `id` (UUID text, key), `name`, `curve` | `curve` is `EQCurve` as JSON, clamped on read; an undecodable one reads flat and is logged |
+| `eq_profile_assignments` | `level`, `source`, `scope_key` (together the key), `profile_id` | NULL `profile_id` is **Off**; `ON DELETE CASCADE` from `eq_profiles` (the connection sets `PRAGMA foreign_keys = ON`), so deleting a profile drops its assignments |
+
+A database that cannot be opened (an unreadable file, no Application Support) is logged as
+`[eqprofile] database unavailable: …` and leaves the store empty: nothing is written or announced,
+so the file on disk is never replaced. `init(path: nil)` is an in-memory database.
+
+`EQCurve` is the stored curve: per channel (`left`, `right`, `curve[channel]`) a `Channel` of 31
+`bands` and a `preamp`. `EQProfileDesign.sections` memoises recent designs by (faders, rate), so one
+edit is designed once per sample rate however many nodes and Studio views ask for it.
+
+Scopes (`Track.eqProfileScopes`, in the resolver's file; an `EQProfileScope` per level), most specific first, names
+lower-cased and trimmed, a level omitted when its names are empty. `source` is `plex:<serverId>`
+etc., `local`, `youtube` or `radio`. `key` is: at track level the service id (file path plus
+`@cueStartOffset` for a cue track; the stream URL for radio, which has only this scope); at album
+level `<artist>|<album>` (the artist is in it because `Track` has no album artist or album id); at
+artist level the artist. Album level assigns every distinct (artist, album) pair among the row's
+tracks, so a compilation is covered whole.
+
+### DSP
+
+`EQProfileDesign` + `EQProfileKernel`, built to these rules — `EQProfileTests` pins each:
+
+- **Accurate cascade** (Välimäki & Liski 2017): the 31×31 band-interaction matrix is inverted once
+  per sample rate; fader dB → section dB through it, then refinement passes against the exact
+  cascade response with the same inverse until every centre is within 0.01 dB. Target ±0.5 dB.
+- **Matched peaking sections** (Vicanek 2016), so 16 and 20 kHz keep their shape at 44.1 kHz. Bands
+  above 0.45 fs are not designed (low-rate streams).
+- **Bandwidth 0.4 octave, section gains limited to ±24 dB.** ½ octave (the octave design's 1.5×)
+  interacts too much: alternating ±12 dB missed by 3–4 dB. ⅓ octave dips 1.5 dB more between
+  centres on a flat +12.
+- Double precision, Direct Form I; sections within 0.001 dB of 0 are skipped.
+- A new coefficient set crossfades over 10 ms against the running one (state carried for every
+  section the old set ran); a set arriving mid-fade waits, only the latest kept. Render takes the
+  lock only with `withLockIfAvailable`.
+- No profile, flat, profiles off, or BYPASS: the render returns without touching the samples.
 
 ## Spectrum Analyzer
 
@@ -611,6 +707,7 @@ For detailed information, see:
 | Core | `Audio/AudioEngine.swift`, `Audio/AudioGraphRecoveryCoordinator.swift`, `Audio/StreamingAudioPlayer.swift` |
 | EQ | EQ node configuration in AudioEngine, StreamingAudioPlayer |
 | Spectrum | `Audio/AudioEngine.swift` (FFT processing) |
+| EQ Profiles | `Audio/EQProfileAudioUnit.swift`, `Audio/EQProfileController.swift`, `Audio/EQProfileStore.swift`, `Audio/EQProfileResolver.swift`, `Audio/AudioUnitFanout.swift`, `App/EQProfileMenu.swift`, `Windows/EqualizerStudio/` |
 | BPM | `Audio/BPMDetector.swift` |
 | Output devices | `Audio/AudioOutputManager.swift` |
 | Track URL resolution | `Audio/StreamingTrackResolver.swift` |
@@ -630,6 +727,13 @@ pending intent, and the device the output unit is really bound to. The level is 
 volume control: with `engine volume` above 0 and audible source material, `player.playing=true`
 with an advancing `player.sampleTime` and `mainMixerPeak=0` is an empty schedule, not a routing
 fault.
+
+EQ profiles: `[eqprofile] <title> → <profile> (track|album|artist)` is logged each time a profile is
+applied to the playing track (track change, assignment change, toggle) — nothing is logged for a
+track with none, `Off`, or profiles disabled, so a missing line *is* the answer. Whether the node is
+processing: open the Studio, raise a preamp to +12, and the snapshot's `mainMixerPeak` should rise
+×3.98; BYPASS returns it exactly. `[eqprofile] pruned <n> assignment(s) for missing files` is the
+launch prune; silent when nothing was gone.
 
 ## Credential-safe logging
 

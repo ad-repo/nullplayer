@@ -207,7 +207,7 @@ final class WMPPlaylistMenuTests: XCTestCase {
     @MainActor
     func testTheBuilderKeepsAutoenablingByDefault() {
         let (view, _) = surface()
-        let menu = PlaylistMenuBuilder.menu(target: view, state: .init(selectionCount: 0, hasTracks: true))
+        let menu = PlaylistMenuBuilder.menu(target: view, state: .init(selectedRows: [], hasTracks: true))
         XCTAssertTrue(menu.autoenablesItems)
         XCTAssertTrue(menu.items.compactMap(\.submenu).allSatisfy(\.autoenablesItems))
     }

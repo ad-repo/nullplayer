@@ -260,10 +260,10 @@ final class WMPObjectModel {
         libraryDemands.removeAll()
         libraryPlayWithheld = false
         listSelectionWrites.removeAll()
-        if lastSeenQueue != snapshot.playlistItems {
+        if lastSeenQueue?.isSameQueue(as: snapshot.playlistItems) != true {
             if lastSeenQueue != nil { queueGeneration += 1 }
-            lastSeenQueue = snapshot.playlistItems
         }
+        lastSeenQueue = snapshot.playlistItems
         self.preferences = preferences
         currentViewID = viewID
         self.screen = screen

@@ -49,6 +49,13 @@ final class YouTubeVideoActions: NSObject {
         }
 
         let files = YouTubeManager.shared.downloadedFiles(for: video.videoId)
+        // The audio download only: video has no local graph to run a profile in, and assigning
+        // never starts a download.
+        if let audioFile = files[.audio] {
+            EQProfileMenu.addAssignItem(to: menu, level: .track, tracks: [Track(url: audioFile, isYouTubeOrigin: true)])
+        } else {
+            EQProfileMenu.addUnavailableItem(to: menu, level: .track, reason: "Download the audio first")
+        }
         guard !files.isEmpty else { return }
         menu.addItem(.separator())
         let finderItem = NSMenuItem(title: "Show in Finder", action: #selector(showInFinder(_:)), keyEquivalent: "")

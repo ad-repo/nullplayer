@@ -148,6 +148,15 @@ struct PlaylistColors {
     }
 }
 
+extension SkinnedSurfaceRoles {
+    /// A Classic skin's surface colours, for a NullPlayer-drawn surface that follows the skin.
+    init(classic colors: PlaylistColors) {
+        self.init(background: colors.normalBackground, text: colors.normalText, currentText: colors.currentText,
+                  selectionBackground: colors.selectedBackground, selectionText: colors.selectedText,
+                  treeText: colors.normalText, treeSelection: colors.selectedBackground)
+    }
+}
+
 // MARK: - Window Regions
 
 struct WindowRegions {

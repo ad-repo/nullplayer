@@ -4480,6 +4480,9 @@ class ModernLibraryBrowserView: NSView {
         let menu = NSMenu()
         if let playable = playable(for: item) {
             TrackVerb.addMenuItems(to: menu, for: playable)
+            if let level = playable.eqProfileLevel {
+                EQProfileMenu.addAssignItem(to: menu, level: level) { try await playable.tracks() }
+            }
         }
         switch item.type {
         case .track(let track):
@@ -4574,6 +4577,7 @@ class ModernLibraryBrowserView: NSView {
         case .radioStation(let station):
             let playItem = NSMenuItem(title: "Play Station", action: #selector(contextMenuPlayRadioStation(_:)), keyEquivalent: "")
             playItem.target = self; playItem.representedObject = station; menu.addItem(playItem)
+            EQProfileMenu.addAssignItem(to: menu, level: .track, tracks: [station.toTrack()])
             menu.addItem(NSMenuItem.separator())
             let foldersItem = NSMenuItem(title: "Folders", action: nil, keyEquivalent: "")
             foldersItem.submenu = buildRadioStationFoldersSubmenu(for: station)

@@ -14,6 +14,16 @@
   window now draws the skin's clutterbar strip and the mono slot's background, as Winamp does.
 - **Next Skin and Previous Skin shortcuts** — Cmd+] and Cmd+[ step through the current skin
   family's installed skins, wrapping at either end. Both are also in the Skins menu.
+- **EQ profiles and the Equalizer Studio** — named 31-band equalizer curves with separate left and
+  right channels, made in the new **Windows ▸ Equalizer Studio** and assigned from **Assign EQ
+  Profile ▸** on tracks, albums, artists, playlists, folders, queue rows, radio stations and
+  downloaded YouTube audio. A track's own setting wins over its album's, which wins over its
+  artist's; **Off** turns a profile off for that item and **Playback ▸ EQ Profiles** turns them all
+  off. Profiles run before the Equalizer window, which never changes them. The Studio has a Console
+  and a Boutique faceplate, a spectrum analyser per channel, LINK to move both channels together, a
+  BYPASS per channel to hear one side without its curve, and you hear edits as you make them. Queue rows with a profile show **∿**, and File Info names it.
+  A local file's assignment is dropped at launch once the file is gone; a drive that is not plugged
+  in keeps its files' assignments.
 
 ## 0.32.1
 

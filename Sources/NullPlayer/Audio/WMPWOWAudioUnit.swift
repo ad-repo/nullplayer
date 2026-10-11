@@ -177,12 +177,13 @@ final class WMPWOWController {
         static let bassLevel = "srsTruBassLevel", speakerSize = "srsSpeakerSize"
     }
 
-    let localNode = WMPWOWAudioUnit.makeNode()
-    private class WeakNode {
-        weak var node: AVAudioUnitEffect?
-        init(_ node: AVAudioUnitEffect) { self.node = node }
+    private lazy var nodes = AudioUnitFanout<WMPWOWAudioUnit>(makeNode: WMPWOWAudioUnit.makeNode) {
+        [unowned self] unit in
+        unit.setAmount(enabled ? Float(level / 100 * Double(Self.maximumWidening)) : 0,
+                       bass: enabled ? Float(bassLevel / 100) : 0, speaker: speakerSize)
     }
-    private var streams: [WeakNode] = []
+    /// One for the engine's life: a replacement graph re-attaches it.
+    var localNode: AVAudioUnitEffect { nodes.localNode }
     private let defaults: UserDefaults?
     private(set) var enabled = false
     private(set) var level: Double = 50
@@ -231,20 +232,9 @@ final class WMPWOWController {
         enabled = level > 0 || bassLevel > 0
         apply()
     }
-    func makeStreamingNode() -> AVAudioUnitEffect {
-        let node = WMPWOWAudioUnit.makeNode()
-        streams.append(WeakNode(node)); configure(node)
-        return node
-    }
-    private func configure(_ node: AVAudioUnitEffect) {
-        (node.auAudioUnit as? WMPWOWAudioUnit)?.setAmount(
-            enabled ? Float(level / 100 * Double(WMPWOWController.maximumWidening)) : 0,
-            bass: enabled ? Float(bassLevel / 100) : 0, speaker: speakerSize)
-    }
+    func makeStreamingNode() -> AVAudioUnitEffect { nodes.makeStreamingNode() }
     private func apply() {
-        configure(localNode)
-        streams.removeAll { $0.node == nil }
-        for entry in streams { if let node = entry.node { configure(node) } }
+        nodes.configureAll()
         defaults?.set(enabled, forKey: Key.enabled)
         defaults?.set(level, forKey: Key.level)
         defaults?.set(bassLevel, forKey: Key.bassLevel)

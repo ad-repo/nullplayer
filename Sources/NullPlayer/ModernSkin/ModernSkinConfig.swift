@@ -149,6 +149,16 @@ struct ColorPalette: Codable {
     func resolvedEqHigh() -> NSColor { NSColor.from(hex: eqHigh ?? "#d92600") }
 }
 
+extension SkinnedSurfaceRoles {
+    /// A modern skin's surface colours, for a NullPlayer-drawn surface that follows the skin.
+    init(modern palette: ColorPalette) {
+        self.init(background: palette.resolvedSurface(), text: palette.resolvedText(),
+                  currentText: palette.resolvedPrimary(), selectionBackground: palette.resolvedAccent(),
+                  selectionText: palette.resolvedText(), treeText: palette.resolvedTextDim(),
+                  treeSelection: palette.resolvedAccent())
+    }
+}
+
 struct FontConfig: Codable {
     /// Primary font name (e.g., "DepartureMono-Regular")
     let primaryName: String

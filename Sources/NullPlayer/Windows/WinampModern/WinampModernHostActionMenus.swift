@@ -595,6 +595,7 @@ extension WinampModernMainView {
         info.target = self
         info.isEnabled = selectedPlaylistTrack() != nil
         menu.addItem(info)
+        EQProfileMenu.addAssignItem(to: menu, queueRows: componentHost?.playlistSnapshot().selectedRows ?? [])
         popUpMenu(menu, from: object)
     }
 
@@ -764,8 +765,9 @@ extension WinampModernMainView {
             "Artist: \(track.artist ?? "Unknown")",
             "Album: \(track.album ?? "Unknown")",
             "Duration: \(track.formattedDuration)",
-            track.url.isFileURL ? "Path: \(track.url.path)" : "URL: \(track.url.absoluteString)"
-        ].joined(separator: "\n")
+            track.url.isFileURL ? "Path: \(track.url.path)" : "URL: \(track.url.absoluteString)",
+            EQProfileResolver.shared.fileInfoLine(for: track)
+        ].compactMap { $0 }.joined(separator: "\n")
         alert.beginSheetModal(for: window)
     }
 

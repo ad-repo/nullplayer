@@ -153,7 +153,7 @@ final class WMPPlaylistSurfaceView: NSView {
             let item = rows[index]
             let prefix = index == playing ? "▶ " : ""
             let artist = item.artist.isEmpty ? "" : " — \(item.artist)"
-            (prefix + item.title + artist).draw(in: rect.insetBy(dx: 4, dy: 1), withAttributes: [
+            (prefix + EQProfileResolver.queueTitle(item.title, marked: item.hasEQProfile) + artist).draw(in: rect.insetBy(dx: 4, dy: 1), withAttributes: [
                 .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: selected ? style.selectionText :
                     (index == playing ? style.currentText : style.text)])
@@ -189,7 +189,7 @@ final class WMPPlaylistSurfaceView: NSView {
             needsDisplay = true
         }
         return PlaylistMenuBuilder.menu(target: self, state: .init(
-            selectionCount: selectedRows.count, hasTracks: !rows.isEmpty, canEdit: libraryRows == nil),
+            selectedRows: selectedRows, hasTracks: !rows.isEmpty, canEdit: libraryRows == nil),
             autoenablesItems: false)
     }
 
