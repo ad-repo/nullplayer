@@ -54,11 +54,19 @@ The existing Reference Tuning controller is the ownership model: one local node 
 node for every primary or Sweet Fades streaming player. The controller keeps weak streaming references.
 New streaming nodes inherit all current settings immediately.
 
-- Local: player nodes → mixer → reference tuning → graphic EQ → WOW/TruBass → main mixer.
-- Streaming: existing balance → graphic EQ → reference tuning → WOW/TruBass, attached through
-  AudioStreaming's `attach(node:)`. Streaming tempo remains owned by AudioStreaming's rate node.
+- Local: player nodes → mixer → EQ profile → reference tuning → graphic EQ → WOW/TruBass → main mixer.
+- Streaming: existing balance → EQ profile → graphic EQ → reference tuning → WOW/TruBass, attached
+  through AudioStreaming's `attach(node:)`. Streaming tempo remains owned by AudioStreaming's rate node.
 - Local graph reconnect and disconnect include the enhancement node, so device changes and sleep
   rebuilds cannot strand the effect outside the graph.
+- **Failed-graph replacement reuses this node; every other local node is new.** `localNode` is a
+  `let`, so `replaceFailedAudioGraph` does not replace it, and `reconnectAudioGraph` re-attaches it
+  to the new `AVAudioEngine`. That works only because the failed engine has been released by then,
+  which detaches its nodes: `testReplacementCarriesTheSRSNodeIntoTheNewGraph` passes for both
+  failure stages. Hold any strong reference to the old engine (a test that kept `localNode.engine`
+  did) and the attach throws on every retry — recovery stays deferred and the graph never comes
+  back. Not seen in the app (checked 2026-10-10). If it ever is, make it `private(set) var` with a
+  `replaceLocalNode()`, as `PitchTuningController` and `EQProfileController` do.
 
 **Crossfade is not part of this, and the contrast is the rule.** A `.wmz`'s crossfade button reaches
 `eq.crossFade` / `eq.crossFadeWindow`, which bind straight to `AudioEngine.sweetFadeEnabled` and
