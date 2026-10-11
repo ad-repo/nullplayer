@@ -35,6 +35,10 @@ extension Track {
         if !artist.isEmpty { scopes.append(EQProfileScope(level: .artist, source: source, key: artist)) }
         return scopes
     }
+
+    func eqProfileScope(at level: EQProfileLevel) -> EQProfileScope? {
+        eqProfileScopes.first { $0.level == level }
+    }
 }
 
 /// What the store's assignments mean for a track — which profile resolves, whether a queue row is
@@ -65,26 +69,32 @@ final class EQProfileResolver {
         return nil
     }
 
+    /// What runs on `track`: nil when profiles are off, nothing is assigned, or `Off` resolved.
+    func activeProfile(for track: Track) -> (profile: EQProfile, level: EQProfileLevel)? {
+        guard store.isEnabled, let match = resolve(track), let profile = match.profile else { return nil }
+        return (profile, match.level)
+    }
+
     /// What is set at `level` itself for `track`: nil is Inherit.
     func assignment(at level: EQProfileLevel, of track: Track) -> EQProfileAssignment? {
-        track.eqProfileScopes.first { $0.level == level }.flatMap(store.assignment)
+        track.eqProfileScope(at: level).flatMap(store.assignment)
     }
 
     /// nil is Inherit. Album level keys every distinct (artist, album) pair among `tracks`, so a
     /// compilation is covered whole; artist level every distinct artist.
     func assign(_ assignment: EQProfileAssignment?, level: EQProfileLevel, tracks: [Track]) {
-        store.assign(assignment, scopes: Set(tracks.compactMap { track in track.eqProfileScopes.first { $0.level == level } }))
+        store.assign(assignment, scopes: Set(tracks.compactMap { $0.eqProfileScope(at: level) }))
     }
 
-    /// Whether a profile is running on `track` when it plays: audio (video has no local graph),
-    /// profiles on, and a profile — not `Off` — resolved. The queue's row marker.
+    /// Whether a profile is running on `track` when it plays: audio (video has no local graph) and
+    /// an active profile. The queue's row marker.
     func appliesProfile(to track: Track) -> Bool {
         if cacheRevision != store.revision {
             appliesCache.removeAll()
             cacheRevision = store.revision
         }
         if let cached = appliesCache[track.id] { return cached }
-        let applies = track.mediaType == .audio && store.isEnabled && resolve(track)?.profile != nil
+        let applies = track.mediaType == .audio && activeProfile(for: track) != nil
         appliesCache[track.id] = applies
         return applies
     }

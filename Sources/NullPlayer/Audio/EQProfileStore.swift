@@ -208,22 +208,22 @@ final class EQProfileStore {
         }
     }
 
-    @discardableResult
-    func add(name: String, curve: EQCurve) -> EQProfile {
+    /// nil when it could not be saved.
+    func add(name: String, curve: EQCurve) -> EQProfile? {
         let profile = EQProfile(id: UUID(), name: name, curve: curve.clamped())
-        write { db in
+        let saved = write { db in
             try db.run(profilesTable.insert(colID <- profile.id.uuidString, colName <- profile.name,
                                             colCurve <- Self.encode(profile.curve)))
         }
-        return profile
+        return saved ? profile : nil
     }
 
     func update(_ id: UUID, name: String? = nil, curve: EQCurve? = nil) {
+        guard name != nil || curve != nil else { return }
         write { db in
             var setters: [Setter] = []
             if let name { setters.append(colName <- name) }
             if let curve { setters.append(try colCurve <- Self.encode(curve.clamped())) }
-            guard !setters.isEmpty else { return }
             try db.run(profilesTable.filter(colID == id.uuidString).update(setters))
         }
     }
@@ -258,15 +258,18 @@ final class EQProfileStore {
         String(decoding: try JSONEncoder().encode(curve), as: UTF8.self)
     }
 
-    /// Runs a change and announces it. Without a database nothing is written or announced.
-    private func write(_ change: (Connection) throws -> Void) {
-        guard let db else { return }
+    /// Runs a change and announces it; false, and nothing announced, when it could not be written.
+    @discardableResult
+    private func write(_ change: (Connection) throws -> Void) -> Bool {
+        guard let db else { return false }
         do {
             try change(db)
         } catch {
             NSLog("[eqprofile] save failed: %@", String(describing: error))
+            return false
         }
         didChange()
+        return true
     }
 
     private func didChange() {

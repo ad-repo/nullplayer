@@ -68,18 +68,21 @@ struct WMPPlaylistItemSnapshot: Hashable, Codable {
     /// a URL in both.
     var sourceURL = ""
     /// An EQ profile runs on this queue row's track: `<PLAYLIST>` draws NullPlayer's marker. Not
-    /// part of anything a script reads, nor of the item's identity — an assignment is not a queue
-    /// change (`WMPObjectModel.queueGeneration`) — so equality, hashing and coding leave it out.
+    /// part of anything a script reads, so coding and `isSameItem` leave it out.
     var hasEQProfile = false
 
     private enum CodingKeys: String, CodingKey { case title, artist, duration, sourceURL }
 
-    static func == (a: Self, b: Self) -> Bool {
-        (a.title, a.artist, a.duration, a.sourceURL) == (b.title, b.artist, b.duration, b.sourceURL)
+    /// What a script can see of the item. An EQ assignment is not a queue change.
+    func isSameItem(as other: Self) -> Bool {
+        (title, artist, duration, sourceURL) == (other.title, other.artist, other.duration, other.sourceURL)
     }
+}
 
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(title); hasher.combine(artist); hasher.combine(duration); hasher.combine(sourceURL)
+extension Array where Element == WMPPlaylistItemSnapshot {
+    /// The queue as a script sees it: `currentplaylist_onchange` and `WMPObjectModel.queueGeneration`.
+    func isSameQueue(as other: Self) -> Bool {
+        elementsEqual(other) { $0.isSameItem(as: $1) }
     }
 }
 

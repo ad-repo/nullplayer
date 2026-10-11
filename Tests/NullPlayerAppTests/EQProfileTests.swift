@@ -70,8 +70,8 @@ final class EQProfileTests: XCTestCase {
 
     func testTrackBeatsAlbumBeatsArtist() {
         let profiles = makeResolver(), store = profiles.store
-        let a = store.add(name: "A", curve: curve(3)), b = store.add(name: "B", curve: curve(6))
-        let c = store.add(name: "C", curve: curve(9))
+        let a = store.add(name: "A", curve: curve(3))!, b = store.add(name: "B", curve: curve(6))!
+        let c = store.add(name: "C", curve: curve(9))!
         let track = local("/music/1.flac"), sibling = local("/music/2.flac")
         profiles.assign(.profile(a.id), level: .artist, tracks: [track])
         XCTAssertEqual(profiles.resolve(track)?.profile?.name, "A")
@@ -84,7 +84,7 @@ final class EQProfileTests: XCTestCase {
 
     func testOffStopsResolutionAndInheritFallsThrough() {
         let profiles = makeResolver()
-        let a = profiles.store.add(name: "A", curve: curve(3))
+        let a = profiles.store.add(name: "A", curve: curve(3))!
         let track = local("/music/1.flac")
         profiles.assign(.profile(a.id), level: .album, tracks: [track])
         profiles.assign(.off, level: .track, tracks: [track])
@@ -100,7 +100,7 @@ final class EQProfileTests: XCTestCase {
 
     func testSameAlbumTitleUnderTwoArtistsStaysSeparate() {
         let profiles = makeResolver()
-        let a = profiles.store.add(name: "A", curve: curve(3))
+        let a = profiles.store.add(name: "A", curve: curve(3))!
         let one = local("/1.flac", artist: "One", album: "Greatest Hits")
         let two = local("/2.flac", artist: "Two", album: "Greatest Hits")
         profiles.assign(.profile(a.id), level: .album, tracks: [one])
@@ -110,7 +110,7 @@ final class EQProfileTests: XCTestCase {
 
     func testCompilationAlbumAssignmentCoversEveryTrack() {
         let profiles = makeResolver()
-        let a = profiles.store.add(name: "A", curve: curve(3))
+        let a = profiles.store.add(name: "A", curve: curve(3))!
         let tracks = ["X", "Y", "Z"].map { (name: String) in local("/\(name).flac", artist: name, album: "Now 42") }
         profiles.assign(.profile(a.id), level: .album, tracks: tracks)
         XCTAssertTrue(tracks.allSatisfy { profiles.resolve($0)?.profile?.name == "A" })
@@ -118,7 +118,7 @@ final class EQProfileTests: XCTestCase {
 
     func testDeletingAProfileDropsItsAssignments() {
         let profiles = makeResolver(), store = profiles.store
-        let a = store.add(name: "A", curve: curve(3)), b = store.add(name: "B", curve: curve(6))
+        let a = store.add(name: "A", curve: curve(3))!, b = store.add(name: "B", curve: curve(6))!
         let track = local("/1.flac")
         profiles.assign(.profile(b.id), level: .artist, tracks: [track])
         profiles.assign(.profile(a.id), level: .track, tracks: [track])
@@ -129,7 +129,7 @@ final class EQProfileTests: XCTestCase {
 
     func testProfilesAndAssignmentsSurviveAReload() {
         let profiles = EQProfileResolver(store: EQProfileStore(path: storePath, defaults: defaults))
-        let a = profiles.store.add(name: "A", curve: curve(5))
+        let a = profiles.store.add(name: "A", curve: curve(5))!
         let track = local("/1.flac")
         profiles.assign(.profile(a.id), level: .track, tracks: [track])
         profiles.assign(.off, level: .artist, tracks: [track])
@@ -144,15 +144,15 @@ final class EQProfileTests: XCTestCase {
         let junk = Data("not a database".utf8)
         try junk.write(to: URL(fileURLWithPath: storePath))
         let profiles = EQProfileResolver(store: EQProfileStore(path: storePath, defaults: defaults))
-        let a = profiles.store.add(name: "A", curve: curve(3))
-        profiles.assign(.profile(a.id), level: .track, tracks: [local("/1.flac")])
+        XCTAssertNil(profiles.store.add(name: "A", curve: curve(3)), "an unsaved profile is not handed back")
+        profiles.assign(.off, level: .track, tracks: [local("/1.flac")])
         XCTAssertTrue(profiles.store.profiles.isEmpty)
         XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: storePath)), junk)
     }
 
     func testPruneDropsOnlyLocalTrackAssignmentsWhoseFileIsGone() throws {
         let profiles = makeResolver()
-        let a = profiles.store.add(name: "A", curve: curve(3))
+        let a = profiles.store.add(name: "A", curve: curve(3))!
         let kept = directory.appendingPathComponent("kept.flac").path
         let gone = directory.appendingPathComponent("gone.flac").path
         try Data().write(to: URL(fileURLWithPath: kept))
@@ -180,12 +180,14 @@ final class EQProfileTests: XCTestCase {
         let plain = WMPPlaylistItemSnapshot(title: "t", artist: "a", duration: 1)
         var marked = plain
         marked.hasEQProfile = true
-        XCTAssertEqual(plain, marked, "a marker change must not bump WMPObjectModel.queueGeneration")
+        XCTAssertNotEqual(plain, marked, "the surface redraws for a marker change")
+        XCTAssertTrue([plain].isSameQueue(as: [marked]), "a marker change must not bump WMPObjectModel.queueGeneration")
+        XCTAssertFalse([plain].isSameQueue(as: [plain, plain]))
     }
 
     func testControllerAppliesTheResolvedCurveAndNothingWhenProfilesAreOff() {
         let profiles = makeResolver(), store = profiles.store
-        let a = store.add(name: "A", curve: curve(6))
+        let a = store.add(name: "A", curve: curve(6))!
         let track = local("/1.flac")
         profiles.assign(.profile(a.id), level: .artist, tracks: [track])
         XCTAssertTrue(store.isEnabled, "on by default")

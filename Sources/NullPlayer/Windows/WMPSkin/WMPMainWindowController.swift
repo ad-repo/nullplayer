@@ -2259,8 +2259,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     func updatePlaybackState() { refreshHostState() }
     /// `WindowManager.reloadPlaylistViews`: repaint every open `<PLAYLIST>`.
     func playlistContentDidChange() {
-        // The rows carry their EQ marker, but a marker change is not a row change the surfaces
-        // redraw for: refresh their snapshot, then repaint.
+        // The rows carry their EQ marker, which a paused player's snapshot would not pick up.
         refreshHostState()
         for presentation in materializer.openPresentations { presentation.mainView?.playlistContentDidChange() }
     }
@@ -2465,7 +2464,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             events.append("currentposition_onchange")
         }
         if previous?.metadata != snapshot.metadata { events.append("currentmedia_onchange") }
-        if previous?.playlistItems != snapshot.playlistItems { events.append("currentplaylist_onchange") }
+        if previous?.playlistItems.isSameQueue(as: snapshot.playlistItems) != true { events.append("currentplaylist_onchange") }
         if previous?.effects.type != snapshot.effects.type { events.append("currenteffecttype_onchange") }
         // `currentPreset_onchange` is the same element, the same idiom and the same write-back: all
         // 40 corpus uses are `mediacenter.effectPreset=currentPreset`. It is safe because

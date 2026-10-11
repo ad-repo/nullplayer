@@ -114,13 +114,16 @@ final class EqualizerStudioView: NSView {
 
     private struct Panel {
         let frame: CGRect
-        let label: CGRect
+        /// The left column, top to bottom.
+        let name: CGRect
+        let peakReadout: CGRect
+        let preampReadout: CGRect
+        let flat: CGRect
+        let bypass: CGRect
         let analyser: CGRect
         let faders: CGRect
         let legend: CGRect
         let preamp: CGRect
-        let flat: CGRect
-        let bypass: CGRect
         let bandX0: CGFloat
         let bandWidth: CGFloat
 
@@ -149,7 +152,6 @@ final class EqualizerStudioView: NSView {
     private var bypass = [false, false]
     private var linked = true
     private var faceplate = StudioFaceplate.console
-    private var focusChannel = 0
     private var dragging: Fader?
     /// Per channel: band-only response on `gridFrequencies` and its peak, dB.
     private var response: [[Double]] = [[], []]
@@ -186,13 +188,15 @@ final class EqualizerStudioView: NSView {
             let bandX0 = inner.minX + column + 8
             let analyser = CGRect(x: bandX0, y: inner.minY, width: inner.maxX - bandX0, height: 74)
             let faders = CGRect(x: bandX0, y: analyser.maxY + 8, width: analyser.width, height: 112)
+            func row(_ y: CGFloat, _ height: CGFloat) -> CGRect {
+                CGRect(x: inner.minX, y: inner.minY + y, width: column, height: height)
+            }
             return Panel(frame: frame,
-                         label: CGRect(x: inner.minX, y: inner.minY, width: column, height: analyser.height),
+                         name: row(0, 18), peakReadout: row(19, 11), preampReadout: row(30, 11),
+                         flat: row(44, 14), bypass: row(60, 14),
                          analyser: analyser, faders: faders,
                          legend: CGRect(x: bandX0, y: faders.maxY + 3, width: analyser.width, height: 11),
                          preamp: CGRect(x: inner.minX + 14, y: faders.minY, width: 24, height: faders.height),
-                         flat: CGRect(x: inner.minX, y: inner.minY + 44, width: column, height: 14),
-                         bypass: CGRect(x: inner.minX, y: inner.minY + 60, width: column, height: 14),
                          // The analyser's dB labels sit in a gutter right of the 20 kHz band.
                          bandX0: bandX0, bandWidth: (analyser.width - 24) / CGFloat(EQProfileDesign.bandCount))
         }
@@ -353,8 +357,9 @@ final class EqualizerStudioView: NSView {
     }
 
     private func saveAs() {
-        guard let newName = promptName("Save Profile As", initial: profileID == nil ? "" : name) else { return }
-        load(store.add(name: newName, curve: edit))
+        guard let newName = promptName("Save Profile As", initial: profileID == nil ? "" : name),
+              let profile = store.add(name: newName, curve: edit) else { return }
+        load(profile)
     }
 
     private func promptName(_ message: String, initial: String) -> String? {
@@ -424,11 +429,7 @@ final class EqualizerStudioView: NSView {
         } else if let channel = panels.firstIndex(where: { $0.bypass.contains(point) }) {
             bypass[channel].toggle()
             pushAudition()
-        } else if let channel = panels.firstIndex(where: { $0.label.contains(point) }) {
-            focusChannel = channel
-            needsDisplay = true
         } else if let fader = fader(at: point) {
-            focusChannel = fader.channel
             if event.clickCount == 2 {
                 reset(fader)
             } else {
@@ -541,16 +542,14 @@ final class EqualizerStudioView: NSView {
         f.panel.setFill()
         NSBezierPath(roundedRect: panel.frame.insetBy(dx: 1, dy: 1), xRadius: 3, yRadius: 3).fill()
 
-        // Channel label, focus, the peak response readout, and the channel's FLAT and BYPASS.
-        // Linked, both labels take the accent; separate, only the channel being edited.
-        let labelColor = linked || channel == focusChannel ? f.accent : f.text
-        drawText(channel == 0 ? "LEFT" : "RIGHT", font: f.titleFont, color: labelColor,
-                 in: CGRect(x: panel.label.minX, y: panel.label.minY, width: panel.label.width, height: 18))
+        // Channel name (in the accent while LINK is lit), the peak response readout, and the
+        // channel's FLAT and BYPASS.
+        drawText(channel == 0 ? "LEFT" : "RIGHT", font: f.titleFont, color: linked ? f.accent : f.text, in: panel.name)
         let peak = peakDB[channel] + Double(edit[channel].preamp)
         drawText(String(format: "PK %+.1f", peak), font: f.legendFont, color: peak > 0.05 ? f.peak : f.dimText,
-                 in: CGRect(x: panel.label.minX, y: panel.label.minY + 19, width: panel.label.width, height: 11))
+                 in: panel.peakReadout)
         drawText(String(format: "PRE %+.1f", edit[channel].preamp), font: f.legendFont, color: f.dimText,
-                 in: CGRect(x: panel.label.minX, y: panel.label.minY + 30, width: panel.label.width, height: 11))
+                 in: panel.preampReadout)
         drawButton("FLAT", in: panel.flat, lit: false, f)
         drawButton("BYPASS", in: panel.bypass, lit: bypass[channel], f)
 

@@ -47,11 +47,11 @@ final class EQProfileController {
     func makeStreamingNode() -> AVAudioUnitEffect { nodes.makeStreamingNode() }
 
     private func resolve() {
-        let match = track.flatMap { resolver.store.isEnabled ? resolver.resolve($0) : nil }
-        resolved = match?.profile?.curve
+        let active = track.flatMap(resolver.activeProfile)
+        resolved = active?.profile.curve
         // Logged only when a profile applies; a track with none, Off, or profiles disabled is silent.
-        if let track, let match, let profile = match.profile {
-            NSLog("[eqprofile] %@ → %@ (%@)%@", track.title, profile.name, match.level.rawValue,
+        if let track, let active {
+            NSLog("[eqprofile] %@ → %@ (%@)%@", track.title, active.profile.name, active.level.rawValue,
                   audition != nil ? " — Studio open, auditioning its edit" : "")
         }
         nodes.configureAll()
