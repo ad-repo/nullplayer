@@ -1,4 +1,5 @@
 import Foundation
+import SQLite
 
 extension Notification.Name {
     /// Profiles or assignments changed; the profile controller re-resolves the playing track.
@@ -51,11 +52,25 @@ enum EQProfileAssignment: Codable, Equatable {
     case profile(UUID)
     /// Explicitly no profile at this level; resolution stops here.
     case off
+
+    var profileID: UUID? {
+        if case .profile(let id) = self { return id }
+        return nil
+    }
 }
 
 /// Track beats album beats artist.
 enum EQProfileLevel: String, CaseIterable {
     case track, album, artist
+}
+
+/// What one assignment row is keyed on.
+struct EQProfileScope: Hashable {
+    let level: EQProfileLevel
+    /// `plex:<serverId>` etc., `local`, `youtube` or `radio`.
+    let source: String
+    /// The track's id, `<artist>|<album>`, or the artist; names lower-cased and trimmed.
+    let key: String
 }
 
 extension Track {
@@ -70,10 +85,10 @@ extension Track {
         }
     }
 
-    /// This track's assignment keys, most specific first. A level is omitted when its names are
-    /// empty; radio has only a track key. `Track` has no album artist or album id, so the album key
-    /// carries the artist — otherwise every "Greatest Hits" in a source would share one assignment.
-    var eqProfileKeys: [(level: EQProfileLevel, key: String)] {
+    /// Where this track's assignments apply, most specific first. A level is omitted when its names
+    /// are empty; radio has only a track scope. `Track` has no album artist or album id, so the album
+    /// key carries the artist — otherwise every "Greatest Hits" in a source would share one assignment.
+    var eqProfileScopes: [EQProfileScope] {
         func norm(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
         let source = eqProfileSource
         let id: String
@@ -86,17 +101,17 @@ extension Track {
         case .local, .youtube:
             id = (cueSourceURL ?? url).path + (cueStartOffset.map { "@\($0)" } ?? "")
         }
-        var keys: [(level: EQProfileLevel, key: String)] = [(.track, "track|\(source)|\(id)")]
-        guard playHistorySource != .radio else { return keys }
+        var scopes = [EQProfileScope(level: .track, source: source, key: id)]
+        guard playHistorySource != .radio else { return scopes }
         let artist = norm(artist), album = norm(album)
-        if !album.isEmpty { keys.append((.album, "album|\(source)|\(artist)|\(album)")) }
-        if !artist.isEmpty { keys.append((.artist, "artist|\(source)|\(artist)")) }
-        return keys
+        if !album.isEmpty { scopes.append(EQProfileScope(level: .album, source: source, key: "\(artist)|\(album)")) }
+        if !artist.isEmpty { scopes.append(EQProfileScope(level: .artist, source: source, key: artist)) }
+        return scopes
     }
 }
 
-/// Profiles and their standing assignments, in `eq_profiles.json`, written on every change.
-/// Main thread only.
+/// Profiles and their standing assignments, in `eq_profiles.db`. A database that cannot be opened
+/// leaves the store empty and writes nothing, so it never replaces what is on disk. Main thread only.
 final class EQProfileStore {
     static let shared = EQProfileStore()
     static let enabledKey = "eqProfilesEnabled"
@@ -117,47 +132,80 @@ final class EQProfileStore {
     /// they build, and a `.wal` playlist snapshot builds them all.
     private var appliesCache: [UUID: Bool] = [:]
 
-    private struct File: Codable {
-        var profiles: [EQProfile] = []
-        var assignments: [String: EQProfileAssignment] = [:]
-    }
-
-    private var file: File
-    private let url: URL?
+    private let db: Connection?
     private let defaults: UserDefaults
 
-    var profiles: [EQProfile] { file.profiles }
+    private let profilesTable = Table("eq_profiles")
+    private let colID = SQLite.Expression<String>("id")
+    private let colName = SQLite.Expression<String>("name")
+    private let colCurve = SQLite.Expression<String>("curve")
 
-    /// By name, as every profile list shows them.
-    var sortedProfiles: [EQProfile] {
-        file.profiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    /// A NULL `profile_id` is an explicit `Off`; deleting a profile cascades to its rows.
+    private let assignmentsTable = Table("eq_profile_assignments")
+    private let colLevel = SQLite.Expression<String>("level")
+    private let colSource = SQLite.Expression<String>("source")
+    private let colScopeKey = SQLite.Expression<String>("scope_key")
+    private let colProfileID = SQLite.Expression<String?>("profile_id")
+
+    /// `path` nil is an in-memory database.
+    init(path: String? = EQProfileStore.defaultPath, defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        db = Self.open(path)
     }
 
-    init(url: URL? = EQProfileStore.defaultURL, defaults: UserDefaults = .standard) {
-        self.url = url
-        self.defaults = defaults
-        if let url, let data = try? Data(contentsOf: url),
-           let decoded = try? JSONDecoder().decode(File.self, from: data) {
-            file = decoded
-            for index in file.profiles.indices { file.profiles[index].curve = file.profiles[index].curve.clamped() }
-        } else {
-            file = File()
+    static var defaultPath: String? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("NullPlayer/eq_profiles.db").path
+    }
+
+    private static func open(_ path: String?) -> Connection? {
+        do {
+            let db: Connection
+            if let path {
+                try FileManager.default.createDirectory(at: URL(fileURLWithPath: path).deletingLastPathComponent(),
+                                                        withIntermediateDirectories: true,
+                                                        attributes: [.posixPermissions: 0o700])
+                db = try Connection(path)
+            } else {
+                db = try Connection(.inMemory)
+            }
+            try db.execute("""
+                PRAGMA foreign_keys = ON;
+                CREATE TABLE IF NOT EXISTS eq_profiles (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    curve TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS eq_profile_assignments (
+                    level TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    scope_key TEXT NOT NULL,
+                    profile_id TEXT REFERENCES eq_profiles(id) ON DELETE CASCADE,
+                    PRIMARY KEY (level, source, scope_key)
+                );
+                """)
+            return db
+        } catch {
+            NSLog("[eqprofile] database unavailable: %@", String(describing: error))
+            return nil
         }
     }
 
-    static var defaultURL: URL? {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("NullPlayer/eq_profiles.json")
+    var profiles: [EQProfile] { fetchProfiles(profilesTable) }
+
+    /// By name, as every profile list shows them.
+    var sortedProfiles: [EQProfile] {
+        profiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
-    func profile(_ id: UUID) -> EQProfile? { file.profiles.first { $0.id == id } }
+    func profile(_ id: UUID) -> EQProfile? { fetchProfiles(profilesTable.filter(colID == id.uuidString)).first }
 
     /// The first level with an assignment: its profile, or nil for an explicit `Off`.
     func resolve(_ track: Track) -> (profile: EQProfile?, level: EQProfileLevel)? {
-        for (level, key) in track.eqProfileKeys {
-            switch file.assignments[key] {
-            case .profile(let id): if let profile = profile(id) { return (profile, level) }
-            case .off: return (nil, level)
+        for scope in track.eqProfileScopes {
+            switch assignment(scope) {
+            case .profile(let id): if let profile = profile(id) { return (profile, scope.level) }
+            case .off: return (nil, scope.level)
             case nil: continue
             }
         }
@@ -166,7 +214,7 @@ final class EQProfileStore {
 
     /// What is set at `level` itself for `track`: nil is Inherit.
     func assignment(at level: EQProfileLevel, of track: Track) -> EQProfileAssignment? {
-        track.eqProfileKeys.first { $0.level == level }.flatMap { file.assignments[$0.key] }
+        track.eqProfileScopes.first { $0.level == level }.flatMap(assignment)
     }
 
     /// Whether a profile is running on `track` when it plays: audio (video has no local graph),
@@ -196,48 +244,98 @@ final class EQProfileStore {
         return "EQ Profile: " + (isEnabled ? setting : "\(setting) — EQ Profiles are turned off")
     }
 
-    /// nil is Inherit: the keys are removed and the next level down applies. Album level keys every
+    /// nil is Inherit: the rows are removed and the next level down applies. Album level keys every
     /// distinct (artist, album) pair among `tracks`, so a compilation is covered whole; artist level
     /// every distinct artist.
     func assign(_ assignment: EQProfileAssignment?, level: EQProfileLevel, tracks: [Track]) {
-        let keys = Set(tracks.compactMap { track in track.eqProfileKeys.first { $0.level == level }?.key })
-        guard !keys.isEmpty else { return }
-        for key in keys { file.assignments[key] = assignment }
-        commit()
+        let scopes = Set(tracks.compactMap { track in track.eqProfileScopes.first { $0.level == level } })
+        guard !scopes.isEmpty else { return }
+        write { db in
+            try db.transaction {
+                for scope in scopes {
+                    if let assignment {
+                        try db.run(assignmentsTable.insert(or: .replace,
+                                                           colLevel <- scope.level.rawValue,
+                                                           colSource <- scope.source,
+                                                           colScopeKey <- scope.key,
+                                                           colProfileID <- assignment.profileID?.uuidString))
+                    } else {
+                        try db.run(rows(scope).delete())
+                    }
+                }
+            }
+        }
     }
 
     @discardableResult
     func add(name: String, curve: EQCurve) -> EQProfile {
         let profile = EQProfile(id: UUID(), name: name, curve: curve.clamped())
-        file.profiles.append(profile)
-        commit()
+        write { db in
+            try db.run(profilesTable.insert(colID <- profile.id.uuidString, colName <- profile.name,
+                                            colCurve <- Self.encode(profile.curve)))
+        }
         return profile
     }
 
     func update(_ id: UUID, name: String? = nil, curve: EQCurve? = nil) {
-        guard let index = file.profiles.firstIndex(where: { $0.id == id }) else { return }
-        if let name { file.profiles[index].name = name }
-        if let curve { file.profiles[index].curve = curve.clamped() }
-        commit()
+        write { db in
+            var setters: [Setter] = []
+            if let name { setters.append(colName <- name) }
+            if let curve { setters.append(try colCurve <- Self.encode(curve.clamped())) }
+            guard !setters.isEmpty else { return }
+            try db.run(profilesTable.filter(colID == id.uuidString).update(setters))
+        }
     }
 
-    /// Its assignments go with it, so what used them falls through to the next level.
+    /// Its assignments go with it (the foreign key), so what used them falls through to the next level.
     func delete(_ id: UUID) {
-        file.profiles.removeAll { $0.id == id }
-        file.assignments = file.assignments.filter { $0.value != .profile(id) }
-        commit()
+        write { db in try db.run(profilesTable.filter(colID == id.uuidString).delete()) }
     }
 
-    private func commit() {
-        if let url {
-            do {
-                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                let encoder = JSONEncoder()
-                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-                try encoder.encode(file).write(to: url, options: .atomic)
-            } catch {
-                NSLog("[eqprofile] save failed: %@", error.localizedDescription)
+    private func rows(_ scope: EQProfileScope) -> Table {
+        assignmentsTable.filter(colLevel == scope.level.rawValue && colSource == scope.source && colScopeKey == scope.key)
+    }
+
+    private func assignment(_ scope: EQProfileScope) -> EQProfileAssignment? {
+        guard let db else { return nil }
+        do {
+            guard let row = try db.pluck(rows(scope).select(colProfileID)) else { return nil }
+            guard let id = row[colProfileID] else { return .off }
+            return UUID(uuidString: id).map { .profile($0) }
+        } catch {
+            NSLog("[eqprofile] read failed: %@", String(describing: error))
+            return nil
+        }
+    }
+
+    private func fetchProfiles(_ query: Table) -> [EQProfile] {
+        guard let db else { return [] }
+        do {
+            return try db.prepare(query).compactMap { row in
+                guard let id = UUID(uuidString: row[colID]) else { return nil }
+                guard let curve = try? JSONDecoder().decode(EQCurve.self, from: Data(row[colCurve].utf8)) else {
+                    NSLog("[eqprofile] unreadable curve for %@; showing it flat", row[colName])
+                    return EQProfile(id: id, name: row[colName], curve: .flat)
+                }
+                return EQProfile(id: id, name: row[colName], curve: curve.clamped())
             }
+        } catch {
+            NSLog("[eqprofile] read failed: %@", String(describing: error))
+            return []
+        }
+    }
+
+    private static func encode(_ curve: EQCurve) throws -> String {
+        String(decoding: try JSONEncoder().encode(curve), as: UTF8.self)
+    }
+
+    /// Runs a change and announces it. Without a database nothing is written or announced.
+    private func write(_ change: (Connection) throws -> Void) {
+        guard let db else { return }
+        do {
+            try change(db)
+        } catch {
+            NSLog("[eqprofile] save failed: %@", String(describing: error))
         }
         didChange()
     }

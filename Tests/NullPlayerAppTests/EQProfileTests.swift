@@ -4,7 +4,7 @@ import XCTest
 
 final class EQProfileTests: XCTestCase {
     private var directory: URL!
-    private var storeURL: URL { directory.appendingPathComponent("eq_profiles.json") }
+    private var storePath: String { directory.appendingPathComponent("eq_profiles.db").path }
     private var defaultsSuite: String!
     private var defaults: UserDefaults!
 
@@ -35,33 +35,36 @@ final class EQProfileTests: XCTestCase {
 
     func testKeysAreScopedBySourceAndCarryTheArtistOnTheAlbumKey() {
         let track = local("/music/a.flac", artist: " The Band ", album: "Greatest Hits")
-        XCTAssertEqual(track.eqProfileKeys.map(\.key), [
-            "track|local|/music/a.flac",
-            "album|local|the band|greatest hits",
-            "artist|local|the band",
+        XCTAssertEqual(track.eqProfileScopes, [
+            EQProfileScope(level: .track, source: "local", key: "/music/a.flac"),
+            EQProfileScope(level: .album, source: "local", key: "the band|greatest hits"),
+            EQProfileScope(level: .artist, source: "local", key: "the band"),
         ])
 
         let plex = Track(url: URL(string: "http://server/a")!, title: "a", artist: "X", album: "Y",
                          plexRatingKey: "42", plexServerId: "srv1")
-        XCTAssertEqual(plex.eqProfileKeys.first?.key, "track|plex:srv1|42")
-        XCTAssertEqual(plex.eqProfileKeys.last?.key, "artist|plex:srv1|x")
+        XCTAssertEqual(plex.eqProfileScopes.first, EQProfileScope(level: .track, source: "plex:srv1", key: "42"))
+        XCTAssertEqual(plex.eqProfileScopes.last, EQProfileScope(level: .artist, source: "plex:srv1", key: "x"))
 
         let cue = Track(url: URL(fileURLWithPath: "/music/live.flac"), title: "t", artist: "A", album: "B",
                         cueStartOffset: 120.5, cueSourceURL: URL(fileURLWithPath: "/music/live.flac"))
-        XCTAssertEqual(cue.eqProfileKeys.first?.key, "track|local|/music/live.flac@120.5")
+        XCTAssertEqual(cue.eqProfileScopes.first?.key, "/music/live.flac@120.5")
 
         let radio = RadioStation(name: "Station", url: URL(string: "http://radio.example/stream")!, genre: "Jazz").toTrack()
-        XCTAssertEqual(radio.eqProfileKeys.map(\.key), ["track|radio|http://radio.example/stream"])
+        XCTAssertEqual(radio.eqProfileScopes, [EQProfileScope(level: .track, source: "radio", key: "http://radio.example/stream")])
 
         let youtube = Track(url: URL(fileURLWithPath: "/tmp/video.m4a"), title: "v", artist: "Channel",
                             isYouTubeOrigin: true)
-        XCTAssertEqual(youtube.eqProfileKeys.map(\.key), ["track|youtube|/tmp/video.m4a", "artist|youtube|channel"])
+        XCTAssertEqual(youtube.eqProfileScopes, [
+            EQProfileScope(level: .track, source: "youtube", key: "/tmp/video.m4a"),
+            EQProfileScope(level: .artist, source: "youtube", key: "channel"),
+        ])
     }
 
     // MARK: - Resolution
 
     func testTrackBeatsAlbumBeatsArtist() {
-        let store = EQProfileStore(url: storeURL, defaults: defaults)
+        let store = EQProfileStore(path: storePath, defaults: defaults)
         let a = store.add(name: "A", curve: curve(3)), b = store.add(name: "B", curve: curve(6))
         let c = store.add(name: "C", curve: curve(9))
         let track = local("/music/1.flac"), sibling = local("/music/2.flac")
@@ -75,7 +78,7 @@ final class EQProfileTests: XCTestCase {
     }
 
     func testOffStopsResolutionAndInheritFallsThrough() {
-        let store = EQProfileStore(url: storeURL, defaults: defaults)
+        let store = EQProfileStore(path: storePath, defaults: defaults)
         let a = store.add(name: "A", curve: curve(3))
         let track = local("/music/1.flac")
         store.assign(.profile(a.id), level: .album, tracks: [track])
@@ -89,7 +92,7 @@ final class EQProfileTests: XCTestCase {
     }
 
     func testSameAlbumTitleUnderTwoArtistsStaysSeparate() {
-        let store = EQProfileStore(url: storeURL, defaults: defaults)
+        let store = EQProfileStore(path: storePath, defaults: defaults)
         let a = store.add(name: "A", curve: curve(3))
         let one = local("/1.flac", artist: "One", album: "Greatest Hits")
         let two = local("/2.flac", artist: "Two", album: "Greatest Hits")
@@ -99,7 +102,7 @@ final class EQProfileTests: XCTestCase {
     }
 
     func testCompilationAlbumAssignmentCoversEveryTrack() {
-        let store = EQProfileStore(url: storeURL, defaults: defaults)
+        let store = EQProfileStore(path: storePath, defaults: defaults)
         let a = store.add(name: "A", curve: curve(3))
         let tracks = ["X", "Y", "Z"].map { (name: String) in local("/\(name).flac", artist: name, album: "Now 42") }
         store.assign(.profile(a.id), level: .album, tracks: tracks)
@@ -107,7 +110,7 @@ final class EQProfileTests: XCTestCase {
     }
 
     func testDeletingAProfileDropsItsAssignments() {
-        let store = EQProfileStore(url: storeURL, defaults: defaults)
+        let store = EQProfileStore(path: storePath, defaults: defaults)
         let a = store.add(name: "A", curve: curve(3)), b = store.add(name: "B", curve: curve(6))
         let track = local("/1.flac")
         store.assign(.profile(b.id), level: .artist, tracks: [track])
@@ -118,20 +121,30 @@ final class EQProfileTests: XCTestCase {
     }
 
     func testProfilesAndAssignmentsSurviveAReload() {
-        let store = EQProfileStore(url: storeURL, defaults: defaults)
+        let store = EQProfileStore(path: storePath, defaults: defaults)
         let a = store.add(name: "A", curve: curve(5))
         let track = local("/1.flac")
         store.assign(.profile(a.id), level: .track, tracks: [track])
         store.assign(.off, level: .artist, tracks: [track])
 
-        let reloaded = EQProfileStore(url: storeURL, defaults: defaults)
+        let reloaded = EQProfileStore(path: storePath, defaults: defaults)
         XCTAssertEqual(reloaded.profiles, [a])
         XCTAssertEqual(reloaded.assignment(at: .track, of: track), .profile(a.id))
         XCTAssertEqual(reloaded.assignment(at: .artist, of: track), .off)
     }
 
+    func testAnUnreadableDatabaseIsNeverOverwritten() throws {
+        let junk = Data("not a database".utf8)
+        try junk.write(to: URL(fileURLWithPath: storePath))
+        let store = EQProfileStore(path: storePath, defaults: defaults)
+        let a = store.add(name: "A", curve: curve(3))
+        store.assign(.profile(a.id), level: .track, tracks: [local("/1.flac")])
+        XCTAssertTrue(store.profiles.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: storePath)), junk)
+    }
+
     func testControllerAppliesTheResolvedCurveAndNothingWhenProfilesAreOff() {
-        let store = EQProfileStore(url: storeURL, defaults: defaults)
+        let store = EQProfileStore(path: storePath, defaults: defaults)
         let a = store.add(name: "A", curve: curve(6))
         let track = local("/1.flac")
         store.assign(.profile(a.id), level: .artist, tracks: [track])

@@ -368,24 +368,35 @@ The local graph is `AudioEngine.localEffectChain`, in signal order; setup, rebui
 replacement all walk it (`attachLocalGraph`, `connectLocalGraph`), so a new local stage is one entry
 there.
 
-`EQProfileStore` (`Audio/EQProfileStore.swift`, which also holds `EQCurve`) owns the profiles, the
-assignments (`~/Library/Application Support/NullPlayer/eq_profiles.json`, rewritten atomically on
-every change) and the global toggle (`eqProfilesEnabled`, default on, in the `UserDefaults` it is
-given). Every change posts `.eqProfilesDidChange`: the controller re-resolves, and
-`WindowManager` runs `reloadPlaylistViews()`, which repaints every queue's row marker — Classic,
-Modern, the `.wal` playlist and a `.wmz` `<PLAYLIST>`. Each row takes its marker from
-`rowPrefix(for:)`; `Track.playlistTitle` does not consult the store. Main thread only.
+`EQProfileStore` (`Audio/EQProfileStore.swift`, which also holds `EQCurve`) owns the profiles and
+their assignments, in SQLite (`~/Library/Application Support/NullPlayer/eq_profiles.db`, set up like
+`RadioStationRatingsStore`), and the global toggle (`eqProfilesEnabled`, default on, in the
+`UserDefaults` it is given). Reads go to the database; each change writes only its rows. Every
+change posts `.eqProfilesDidChange`: the controller re-resolves, and `WindowManager` runs
+`reloadPlaylistViews()`, which repaints every queue's row marker — Classic, Modern, the `.wal`
+playlist and a `.wmz` `<PLAYLIST>`. Each row takes its marker from `rowPrefix(for:)`;
+`Track.playlistTitle` does not consult the store. Main thread only.
 
-`EQCurve` is the file format: per channel (`left`, `right`, `curve[channel]`) a `Channel` of 31
+| Table | Columns | Notes |
+|---|---|---|
+| `eq_profiles` | `id` (UUID text, key), `name`, `curve` | `curve` is `EQCurve` as JSON, clamped on read; an undecodable one reads flat and is logged |
+| `eq_profile_assignments` | `level`, `source`, `scope_key` (together the key), `profile_id` | NULL `profile_id` is **Off**; `ON DELETE CASCADE` from `eq_profiles` (the connection sets `PRAGMA foreign_keys = ON`), so deleting a profile drops its assignments |
+
+A database that cannot be opened (an unreadable file, no Application Support) is logged as
+`[eqprofile] database unavailable: …` and leaves the store empty: nothing is written or announced,
+so the file on disk is never replaced. `init(path: nil)` is an in-memory database.
+
+`EQCurve` is the stored curve: per channel (`left`, `right`, `curve[channel]`) a `Channel` of 31
 `bands` and a `preamp`. `EQProfileDesign.sections` memoises recent designs by (faders, rate), so one
 edit is designed once per sample rate however many nodes and Studio views ask for it.
 
-Keys (`Track.eqProfileKeys`), most specific first, names lower-cased and trimmed, a level omitted
-when its names are empty: `track|<src>|<id>` (service id; file path plus `@cueStartOffset` for a
-cue track; the stream URL for radio, which has only this key), `album|<src>|<artist>|<album>` (the
-artist is in it because `Track` has no album artist or album id), `artist|<src>|<artist>`. `<src>`
-is `plex:<serverId>` etc., `local`, `youtube` or `radio`. Album level assigns every distinct
-(artist, album) pair among the row's tracks, so a compilation is covered whole.
+Scopes (`Track.eqProfileScopes`, an `EQProfileScope` per level), most specific first, names
+lower-cased and trimmed, a level omitted when its names are empty. `source` is `plex:<serverId>`
+etc., `local`, `youtube` or `radio`. `key` is: at track level the service id (file path plus
+`@cueStartOffset` for a cue track; the stream URL for radio, which has only this scope); at album
+level `<artist>|<album>` (the artist is in it because `Track` has no album artist or album id); at
+artist level the artist. Album level assigns every distinct (artist, album) pair among the row's
+tracks, so a compilation is covered whole.
 
 ### DSP
 

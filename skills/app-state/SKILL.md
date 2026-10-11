@@ -48,9 +48,9 @@ When adding state:
 - Do not move every `UserDefaults` key into `AppState`.
 - Expose a reset path for any durable preference that can trap users in a hard-to-recover state.
 
-EQ profiles are not session state. Profiles and their assignments live in their own file,
-`~/Library/Application Support/NullPlayer/eq_profiles.json` (`EQProfileStore`), written on every
-change and read at launch whatever Remember State says — an assignment is a standing default. Their
+EQ profiles are not session state. Profiles and their assignments live in their own SQLite
+database, `~/Library/Application Support/NullPlayer/eq_profiles.db` (`EQProfileStore`; schema in
+`audio-system` § *EQ Profiles*), read whatever Remember State says — an assignment is a standing default. Their
 preferences are UserDefaults: `eqProfilesEnabled` (default on), `equalizerStudioFaceplate`,
 `equalizerStudioLinked` (default on). Only the Equalizer Studio window is in `AppState`
 (`isEqualizerStudioVisible`, `equalizerStudioWindowFrame`, `decodeIfPresent`); it is not a
