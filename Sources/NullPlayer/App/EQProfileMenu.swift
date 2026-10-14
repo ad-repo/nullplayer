@@ -4,18 +4,19 @@ import AppKit
 /// assigns (library rows, queue rows, radio stations, YouTube videos) builds it here.
 @MainActor
 enum EQProfileMenu {
-    /// A row whose tracks must be fetched (library albums, artists, playlists): they are resolved
-    /// only when an item is chosen, so nothing is ticked.
-    static func addAssignItem(to menu: NSMenu, level: EQProfileLevel,
+    /// A library row: its tracks are resolved only when an item is chosen, so what is ticked comes
+    /// from `scopes` — one scope chain per target, from `level` up (`LibraryPlayable.eqProfileScopes`);
+    /// nil for a row with no single level, which is left unticked.
+    static func addAssignItem(to menu: NSMenu, level: EQProfileLevel, scopes: [[EQProfileScope]]?,
                               resolve: @escaping @MainActor () async throws -> [Track]) {
-        build(into: menu, level: level, current: nil, resolve: resolve)
+        build(into: menu, level: level, current: scopes, resolve: resolve)
     }
 
     /// Tracks already in hand (a radio station, a downloaded video): what is set at `level` is
     /// ticked — a dash on each setting a mixed selection holds — and a setting inherited from below
     /// is shown on top.
     static func addAssignItem(to menu: NSMenu, level: EQProfileLevel, tracks: [Track]) {
-        build(into: menu, level: level, current: tracks) { tracks }
+        build(into: menu, level: level, current: tracks.map(\.eqProfileScopes)) { tracks }
     }
 
     /// The play queue's selected rows, at track level, in queue order; nothing when none is selected.
@@ -39,7 +40,7 @@ enum EQProfileMenu {
         "Assign EQ Profile (\(level.rawValue.capitalized))"
     }
 
-    private static func build(into menu: NSMenu, level: EQProfileLevel, current: [Track]?,
+    private static func build(into menu: NSMenu, level: EQProfileLevel, current: [[EQProfileScope]]?,
                               resolve: @escaping @MainActor () async throws -> [Track]) {
         let resolver = EQProfileResolver.shared
         let submenu = NSMenu()

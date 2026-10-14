@@ -107,6 +107,9 @@
   rendered still cast the original; it no longer does, and a render waiting on an older curve no
   longer starts after the stop. With repeat on (and shuffle off), EQ Cast no longer pre-renders
   tracks that will not play next.
+- **Library rows show their EQ profile** — right-clicking a track, album or artist in the Library
+  now ticks the profile set at that level under **Assign EQ Profile ▸**, or shows the one it
+  inherits, as queue rows and radio stations already did.
 
 ## 0.32.2
 

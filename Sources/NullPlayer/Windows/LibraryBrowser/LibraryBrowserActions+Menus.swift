@@ -13,7 +13,8 @@ extension LibraryBrowserActions {
         if let playable = playable(for: item) {
             TrackVerb.addMenuItems(to: menu, resolve: resolver(for: playable))
             if let level = playable.eqProfileLevel {
-                EQProfileMenu.addAssignItem(to: menu, level: level, resolve: resolver(for: playable))
+                EQProfileMenu.addAssignItem(to: menu, level: level, scopes: playable.eqProfileScopes,
+                                            resolve: resolver(for: playable))
             }
         }
 

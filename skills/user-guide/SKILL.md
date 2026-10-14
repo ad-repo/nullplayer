@@ -348,8 +348,10 @@ Equalizer window never changes a profile, and a profile never changes it.
   albums, artists, playlists and folders), queue rows, radio stations, and YouTube videos with a
   downloaded audio file (greyed with *Download the audio first* otherwise). Choices: **Inherit**
   (remove this level's setting), **Off** (no profile here, even if the album or artist has one), or a
-  profile. For queue rows and radio stations the current setting is ticked (a dash when the selected
-  rows differ), and a setting inherited from the album or artist is shown at the top.
+  profile. The current setting is ticked (a dash when the selected rows, or a cue file's tracks,
+  differ), and a setting inherited from the album or artist is shown at the top; playlist and folder
+  rows show nothing ticked. A compilation album row shows its album setting unticked, since that is
+  kept per track artist — choosing an item still applies it.
 - **Which applies:** track over album over artist. Assignments are per source (Local, each media
   server, YouTube, Radio) and are kept until changed. A playlist or folder assigns to the tracks it
   holds at the time — tracks added later get none. An assignment follows the path, name or server

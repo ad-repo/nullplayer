@@ -63,6 +63,43 @@ enum LibraryPlayable {
         }
     }
 
+    /// What **Assign EQ Profile** reads this row's setting from without fetching its tracks: one scope
+    /// chain per target, from `eqProfileLevel` up. nil for a playlist or folder, which has no single
+    /// level, and for video.
+    // ponytail: an album row keys on the album's artist, as a track keys on its own, so a compilation
+    // assigned from its row (one key per track artist) shows unticked; fetch its tracks if that matters.
+    @MainActor
+    var eqProfileScopes: [[EQProfileScope]]? {
+        func chain(_ origin: PlayHistorySource, _ serverID: String?, artist: String?, album: String? = nil) -> [[EQProfileScope]] {
+            [EQProfileScope.albumAndArtist(source: EQProfileScope.source(origin, serverID: serverID), artist: artist, album: album)]
+        }
+        switch self {
+        case .tracks(let tracks): return tracks.map(\.eqProfileScopes)
+        case .localTrack(let track):
+            let cue = AudioEngine.tracksForCueOrSibling(url: track.url) ?? []
+            return (cue.isEmpty ? [track.toTrack()] : cue).map(\.eqProfileScopes)
+        case .plexTrack(let track): return PlexManager.shared.convertToTrack(track).map { [$0.eqProfileScopes] }
+        case .subsonicSong(let song): return SubsonicManager.shared.convertToTrack(song).map { [$0.eqProfileScopes] }
+        case .jellyfinSong(let song): return JellyfinManager.shared.convertToTrack(song).map { [$0.eqProfileScopes] }
+        case .embySong(let song): return EmbyManager.shared.convertToTrack(song).map { [$0.eqProfileScopes] }
+        case .localAlbum(let a): return chain(.local, nil, artist: a.artist, album: a.name)
+        case .plexAlbum(let a): return chain(.plex, PlexManager.shared.currentServer?.id, artist: a.parentTitle, album: a.title)
+        case .subsonicAlbum(let a): return chain(.subsonic, SubsonicManager.shared.currentServer?.id, artist: a.artist, album: a.name)
+        case .jellyfinAlbum(let a): return chain(.jellyfin, JellyfinManager.shared.currentServer?.id, artist: a.artist, album: a.name)
+        case .embyAlbum(let a): return chain(.emby, EmbyManager.shared.currentServer?.id, artist: a.artist, album: a.name)
+        case .localArtist(let a): return chain(.local, nil, artist: a.name)
+        case .plexArtistGroup(let members, _): return chain(.plex, PlexManager.shared.currentServer?.id, artist: members.first?.title)
+        case .subsonicArtist(let a): return chain(.subsonic, SubsonicManager.shared.currentServer?.id, artist: a.name)
+        case .jellyfinArtist(let a): return chain(.jellyfin, JellyfinManager.shared.currentServer?.id, artist: a.name)
+        case .embyArtist(let a): return chain(.emby, EmbyManager.shared.currentServer?.id, artist: a.name)
+        case .localFolder, .localPlaylist, .plexPlaylist, .subsonicPlaylist, .jellyfinPlaylist, .embyPlaylist,
+             .localMovie, .localEpisodes, .plexMovie, .plexEpisode, .plexSeason, .plexShow,
+             .jellyfinMovie, .jellyfinEpisode, .jellyfinSeason, .jellyfinShow,
+             .embyMovie, .embyEpisode, .embySeason, .embyShow:
+            return nil
+        }
+    }
+
     /// An artist plays album by album, oldest first; a show season by season.
     @MainActor
     func tracks() async throws -> [Track] {
