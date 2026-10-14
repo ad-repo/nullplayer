@@ -75,9 +75,11 @@ enum LibraryPlayable {
         }
         switch self {
         case .tracks(let tracks): return tracks.map(\.eqProfileScopes)
+        // ponytail: no cue lookup while the menu opens (it reads files on main). A .cue row stays
+        // unticked; an audio file with a sibling .cue reads its own key, which assigning never writes
+        // (it writes the cue tracks'), so it shows only what it inherits. Resolve off main if that matters.
         case .localTrack(let track):
-            let cue = AudioEngine.tracksForCueOrSibling(url: track.url) ?? []
-            return (cue.isEmpty ? [track.toTrack()] : cue).map(\.eqProfileScopes)
+            return track.url.pathExtension.lowercased() == "cue" ? nil : [track.toTrack().eqProfileScopes]
         case .plexTrack(let track): return PlexManager.shared.convertToTrack(track).map { [$0.eqProfileScopes] }
         case .subsonicSong(let song): return SubsonicManager.shared.convertToTrack(song).map { [$0.eqProfileScopes] }
         case .jellyfinSong(let song): return JellyfinManager.shared.convertToTrack(song).map { [$0.eqProfileScopes] }

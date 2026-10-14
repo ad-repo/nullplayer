@@ -395,9 +395,10 @@ coding: a marker change is not a queue change (`WMPObjectModel.queueGeneration`)
 **Assign EQ Profile ▸** (`App/EQProfileMenu.swift`) ticks from scope chains, not tracks: `resolve`,
 `setting` and `assignment(at:of:)` take `[EQProfileScope]`, most specific first. A library row's
 tracks are fetched only when an item is chosen, so `LibraryPlayable.eqProfileScopes` builds its chain
-from the row — a track row from its track (each cue track for a cue file), an album or artist row
-from `EQProfileScope.source` + `albumAndArtist`, the same builders `Track.eqProfileScopes` uses; nil
-for playlists and folders. An album row keys on the album's artist, so a compilation (keyed per
+from the row — a track row from its track, an album or artist row from `EQProfileScope.source` +
+`albumAndArtist`, the same builders `Track.eqProfileScopes` uses; nil for playlists, folders and
+`.cue` rows. No cue sheet is read while the menu opens, so an audio file with a sibling `.cue` reads
+its own key, which assigning never writes (it writes the cue tracks'): it shows only what it inherits. An album row keys on the album's artist, so a compilation (keyed per
 track artist) reads unticked.
 
 At launch `pruneMissingLocalTracks()` drops `local` track-level assignments whose file is gone (a
