@@ -74,12 +74,12 @@ final class EQProfileTests: XCTestCase {
         let c = store.add(name: "C", curve: curve(9))!
         let track = local("/music/1.flac"), sibling = local("/music/2.flac")
         profiles.assign(.profile(a.id), level: .artist, tracks: [track])
-        XCTAssertEqual(profiles.resolve(track)?.profile?.name, "A")
+        XCTAssertEqual(profiles.resolve(track.eqProfileScopes)?.profile?.name, "A")
         profiles.assign(.profile(b.id), level: .album, tracks: [track])
-        XCTAssertEqual(profiles.resolve(track)?.level, .album)
+        XCTAssertEqual(profiles.resolve(track.eqProfileScopes)?.level, .album)
         profiles.assign(.profile(c.id), level: .track, tracks: [track])
-        XCTAssertEqual(profiles.resolve(track)?.profile?.name, "C")
-        XCTAssertEqual(profiles.resolve(sibling)?.profile?.name, "B")
+        XCTAssertEqual(profiles.resolve(track.eqProfileScopes)?.profile?.name, "C")
+        XCTAssertEqual(profiles.resolve(sibling.eqProfileScopes)?.profile?.name, "B")
     }
 
     func testOffStopsResolutionAndInheritFallsThrough() {
@@ -88,12 +88,12 @@ final class EQProfileTests: XCTestCase {
         let track = local("/music/1.flac")
         profiles.assign(.profile(a.id), level: .album, tracks: [track])
         profiles.assign(.off, level: .track, tracks: [track])
-        XCTAssertNil(profiles.resolve(track)?.profile)
-        XCTAssertEqual(profiles.resolve(track)?.level, .track)
+        XCTAssertNil(profiles.resolve(track.eqProfileScopes)?.profile)
+        XCTAssertEqual(profiles.resolve(track.eqProfileScopes)?.level, .track)
         XCTAssertFalse(profiles.appliesProfile(to: track))
         XCTAssertEqual(profiles.queueTitle(for: track), track.playlistTitle)
         profiles.assign(nil, level: .track, tracks: [track])
-        XCTAssertEqual(profiles.resolve(track)?.profile?.name, "A")
+        XCTAssertEqual(profiles.resolve(track.eqProfileScopes)?.profile?.name, "A")
         XCTAssertTrue(profiles.appliesProfile(to: track), "a change invalidates the cached marker")
         XCTAssertEqual(profiles.queueTitle(for: track), "∿ \(track.playlistTitle)")
     }
@@ -104,8 +104,8 @@ final class EQProfileTests: XCTestCase {
         let one = local("/1.flac", artist: "One", album: "Greatest Hits")
         let two = local("/2.flac", artist: "Two", album: "Greatest Hits")
         profiles.assign(.profile(a.id), level: .album, tracks: [one])
-        XCTAssertNotNil(profiles.resolve(one))
-        XCTAssertNil(profiles.resolve(two))
+        XCTAssertNotNil(profiles.resolve(one.eqProfileScopes))
+        XCTAssertNil(profiles.resolve(two.eqProfileScopes))
     }
 
     func testCompilationAlbumAssignmentCoversEveryTrack() {
@@ -113,7 +113,28 @@ final class EQProfileTests: XCTestCase {
         let a = profiles.store.add(name: "A", curve: curve(3))!
         let tracks = ["X", "Y", "Z"].map { (name: String) in local("/\(name).flac", artist: name, album: "Now 42") }
         profiles.assign(.profile(a.id), level: .album, tracks: tracks)
-        XCTAssertTrue(tracks.allSatisfy { profiles.resolve($0)?.profile?.name == "A" })
+        XCTAssertTrue(tracks.allSatisfy { profiles.resolve($0.eqProfileScopes)?.profile?.name == "A" })
+    }
+
+    /// A library album or artist row reads its setting from the row, without its tracks: the chain
+    /// must hit the keys that assigning through those tracks wrote.
+    @MainActor
+    func testLibraryRowScopesReadWhatTheirTracksWereAssigned() {
+        let profiles = makeResolver()
+        let a = profiles.store.add(name: "A", curve: curve(3))!, b = profiles.store.add(name: "B", curve: curve(6))!
+        let track = local("/1.flac", artist: " The Band ", album: "Live")
+        let album = LibraryPlayable.localAlbum(Album(id: "the band|live", name: "Live", artist: "The Band",
+                                                     year: nil, tracks: [])).eqProfileScopes
+        let artist = LibraryPlayable.localArtist(Artist(id: "The Band", name: "The Band", albums: [])).eqProfileScopes
+
+        profiles.assign(.profile(a.id), level: .artist, tracks: [track])
+        XCTAssertNil(profiles.assignment(at: .album, of: album[0]))
+        XCTAssertEqual(profiles.setting(of: album[0]), "A (artist)", "the album row shows what it inherits")
+        XCTAssertEqual(profiles.assignment(at: .artist, of: artist[0]), .profile(a.id))
+
+        profiles.assign(.profile(b.id), level: .album, tracks: [track])
+        XCTAssertEqual(profiles.assignment(at: .album, of: album[0]), .profile(b.id))
+        XCTAssertTrue(LibraryPlayable.localFolder(URL(fileURLWithPath: "/music")).eqProfileScopes.isEmpty, "no single level")
     }
 
     func testDeletingAProfileDropsItsAssignments() {
@@ -123,8 +144,8 @@ final class EQProfileTests: XCTestCase {
         profiles.assign(.profile(b.id), level: .artist, tracks: [track])
         profiles.assign(.profile(a.id), level: .track, tracks: [track])
         store.delete(a.id)
-        XCTAssertNil(profiles.assignment(at: .track, of: track))
-        XCTAssertEqual(profiles.resolve(track)?.profile?.name, "B")
+        XCTAssertNil(profiles.assignment(at: .track, of: track.eqProfileScopes))
+        XCTAssertEqual(profiles.resolve(track.eqProfileScopes)?.profile?.name, "B")
     }
 
     func testProfilesAndAssignmentsSurviveAReload() {
@@ -136,8 +157,8 @@ final class EQProfileTests: XCTestCase {
 
         let reloaded = EQProfileResolver(store: EQProfileStore(path: storePath, defaults: defaults))
         XCTAssertEqual(reloaded.store.profiles, [a])
-        XCTAssertEqual(reloaded.assignment(at: .track, of: track), .profile(a.id))
-        XCTAssertEqual(reloaded.assignment(at: .artist, of: track), .off)
+        XCTAssertEqual(reloaded.assignment(at: .track, of: track.eqProfileScopes), .profile(a.id))
+        XCTAssertEqual(reloaded.assignment(at: .artist, of: track.eqProfileScopes), .off)
     }
 
     func testAnUnreadableDatabaseIsNeverOverwritten() throws {
@@ -171,9 +192,9 @@ final class EQProfileTests: XCTestCase {
         let pruned = expectation(description: "pruned")
         profiles.pruneMissingLocalTracks { pruned.fulfill() }
         wait(for: [pruned], timeout: 5)
-        XCTAssertEqual(tracks.map { profiles.assignment(at: .track, of: $0) != nil },
+        XCTAssertEqual(tracks.map { profiles.assignment(at: .track, of: $0.eqProfileScopes) != nil },
                        [true, false, true, true, true, true, true])
-        XCTAssertNotNil(profiles.assignment(at: .artist, of: local(gone)), "only track level is pruned")
+        XCTAssertNotNil(profiles.assignment(at: .artist, of: local(gone).eqProfileScopes), "only track level is pruned")
     }
 
     func testAWMPRowsMarkerIsNotAQueueChange() {
