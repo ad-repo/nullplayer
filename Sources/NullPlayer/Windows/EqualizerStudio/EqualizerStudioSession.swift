@@ -91,7 +91,7 @@ final class EqualizerStudioSession {
         mode = UserDefaults.standard.string(forKey: Self.modeKey).flatMap(Mode.init) ?? .graphic
         faceplateKind = StudioFaceplate.storedKind
         bypass = [false, false]
-        if let track = WindowManager.shared.audioEngine.currentTrack, let profile = EQProfileResolver.shared.resolve(track)?.profile {
+        if let track = WindowManager.shared.audioEngine.currentTrack, let profile = EQProfileResolver.shared.resolve(track.eqProfileScopes)?.profile {
             load(profile)
         } else {
             loadNew()

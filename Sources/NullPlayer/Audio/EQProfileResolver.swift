@@ -34,9 +34,6 @@ extension Track {
         return scopes + EQProfileScope.albumAndArtist(source: source, artist: artist, album: album)
     }
 
-    func eqProfileScope(at level: EQProfileLevel) -> EQProfileScope? {
-        eqProfileScopes.first { $0.level == level }
-    }
 }
 
 extension EQProfileScope {
@@ -76,12 +73,8 @@ final class EQProfileResolver {
         self.store = store
     }
 
-    /// The first level with an assignment: its profile, or nil for an explicit `Off`.
-    func resolve(_ track: Track) -> (profile: EQProfile?, level: EQProfileLevel)? {
-        resolve(track.eqProfileScopes)
-    }
-
-    /// The first of `scopes`, most specific first, with an assignment.
+    /// The first of `scopes`, most specific first, with an assignment: its profile, or nil for an
+    /// explicit `Off`.
     func resolve(_ scopes: [EQProfileScope]) -> (profile: EQProfile?, level: EQProfileLevel)? {
         for scope in scopes {
             switch store.assignment(scope) {
@@ -95,7 +88,7 @@ final class EQProfileResolver {
 
     /// What runs on `track`: nil when profiles are off, nothing is assigned, or `Off` resolved.
     func activeProfile(for track: Track) -> (profile: EQProfile, level: EQProfileLevel)? {
-        guard store.isEnabled, let match = resolve(track), let profile = match.profile else { return nil }
+        guard store.isEnabled, let match = resolve(track.eqProfileScopes), let profile = match.profile else { return nil }
         return (profile, match.level)
     }
 
@@ -107,7 +100,7 @@ final class EQProfileResolver {
     /// nil is Inherit. Album level keys every distinct (artist, album) pair among `tracks`, so a
     /// compilation is covered whole; artist level every distinct artist.
     func assign(_ assignment: EQProfileAssignment?, level: EQProfileLevel, tracks: [Track]) {
-        store.assign(assignment, scopes: Set(tracks.compactMap { $0.eqProfileScope(at: level) }))
+        store.assign(assignment, scopes: Set(tracks.compactMap { track in track.eqProfileScopes.first { $0.level == level } }))
     }
 
     /// Whether a profile is running on `track` when it plays: audio (video has no local graph) and
@@ -132,11 +125,7 @@ final class EQProfileResolver {
         Self.queueTitle(track.playlistTitle, marked: appliesProfile(to: track))
     }
 
-    /// What resolves for `track`: "Warm (album)" or "Off (track)"; nil when nothing is assigned.
-    func setting(of track: Track) -> String? {
-        setting(of: track.eqProfileScopes)
-    }
-
+    /// What resolves for a scope chain: "Warm (album)" or "Off (track)"; nil when nothing is assigned.
     func setting(of scopes: [EQProfileScope]) -> String? {
         resolve(scopes).map { "\($0.profile?.name ?? "Off") (\($0.level.rawValue))" }
     }
@@ -145,7 +134,7 @@ final class EQProfileResolver {
     /// video, which has no local graph to run a profile in.
     func fileInfoLine(for track: Track) -> String? {
         guard track.mediaType == .audio else { return nil }
-        let setting = setting(of: track) ?? "None"
+        let setting = setting(of: track.eqProfileScopes) ?? "None"
         return "EQ Profile: " + (store.isEnabled ? setting : "\(setting) — EQ Profiles are turned off")
     }
 

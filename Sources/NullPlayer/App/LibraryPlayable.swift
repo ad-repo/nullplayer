@@ -64,26 +64,22 @@ enum LibraryPlayable {
     }
 
     /// What **Assign EQ Profile** reads this row's setting from without fetching its tracks: one scope
-    /// chain per target, from `eqProfileLevel` up. nil for a playlist or folder, which has no single
-    /// level, and for video.
-    // ponytail: an album row keys on the album's artist, as a track keys on its own, so a compilation
-    // assigned from its row (one key per track artist) shows unticked; fetch its tracks if that matters.
+    /// chain per target, from `eqProfileLevel` up. None for a playlist, folder, `.cue` or video row.
+    // ponytail: compilation album rows and sibling-.cue files read unticked or inherited; see
+    // `audio-system` § EQ Profiles. Resolve their tracks off main if that matters.
     @MainActor
-    var eqProfileScopes: [[EQProfileScope]]? {
+    var eqProfileScopes: [[EQProfileScope]] {
         func chain(_ origin: PlayHistorySource, _ serverID: String?, artist: String?, album: String? = nil) -> [[EQProfileScope]] {
             [EQProfileScope.albumAndArtist(source: EQProfileScope.source(origin, serverID: serverID), artist: artist, album: album)]
         }
         switch self {
         case .tracks(let tracks): return tracks.map(\.eqProfileScopes)
-        // ponytail: no cue lookup while the menu opens (it reads files on main). A .cue row stays
-        // unticked; an audio file with a sibling .cue reads its own key, which assigning never writes
-        // (it writes the cue tracks'), so it shows only what it inherits. Resolve off main if that matters.
         case .localTrack(let track):
-            return track.url.pathExtension.lowercased() == "cue" ? nil : [track.toTrack().eqProfileScopes]
-        case .plexTrack(let track): return PlexManager.shared.convertToTrack(track).map { [$0.eqProfileScopes] }
-        case .subsonicSong(let song): return SubsonicManager.shared.convertToTrack(song).map { [$0.eqProfileScopes] }
-        case .jellyfinSong(let song): return JellyfinManager.shared.convertToTrack(song).map { [$0.eqProfileScopes] }
-        case .embySong(let song): return EmbyManager.shared.convertToTrack(song).map { [$0.eqProfileScopes] }
+            return track.url.pathExtension.lowercased() == "cue" ? [] : [track.toTrack().eqProfileScopes]
+        case .plexTrack(let track): return PlexManager.shared.convertToTrack(track).map { [$0.eqProfileScopes] } ?? []
+        case .subsonicSong(let song): return SubsonicManager.shared.convertToTrack(song).map { [$0.eqProfileScopes] } ?? []
+        case .jellyfinSong(let song): return JellyfinManager.shared.convertToTrack(song).map { [$0.eqProfileScopes] } ?? []
+        case .embySong(let song): return EmbyManager.shared.convertToTrack(song).map { [$0.eqProfileScopes] } ?? []
         case .localAlbum(let a): return chain(.local, nil, artist: a.artist, album: a.name)
         case .plexAlbum(let a): return chain(.plex, PlexManager.shared.currentServer?.id, artist: a.parentTitle, album: a.title)
         case .subsonicAlbum(let a): return chain(.subsonic, SubsonicManager.shared.currentServer?.id, artist: a.artist, album: a.name)
@@ -98,7 +94,7 @@ enum LibraryPlayable {
              .localMovie, .localEpisodes, .plexMovie, .plexEpisode, .plexSeason, .plexShow,
              .jellyfinMovie, .jellyfinEpisode, .jellyfinSeason, .jellyfinShow,
              .embyMovie, .embyEpisode, .embySeason, .embyShow:
-            return nil
+            return []
         }
     }
 

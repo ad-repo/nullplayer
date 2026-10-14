@@ -4,19 +4,9 @@ import AppKit
 /// assigns (library rows, queue rows, radio stations, YouTube videos) builds it here.
 @MainActor
 enum EQProfileMenu {
-    /// A library row: its tracks are resolved only when an item is chosen, so what is ticked comes
-    /// from `scopes` — one scope chain per target, from `level` up (`LibraryPlayable.eqProfileScopes`);
-    /// nil for a row with no single level, which is left unticked.
-    static func addAssignItem(to menu: NSMenu, level: EQProfileLevel, scopes: [[EQProfileScope]]?,
-                              resolve: @escaping @MainActor () async throws -> [Track]) {
-        build(into: menu, level: level, current: scopes, resolve: resolve)
-    }
-
-    /// Tracks already in hand (a radio station, a downloaded video): what is set at `level` is
-    /// ticked — a dash on each setting a mixed selection holds — and a setting inherited from below
-    /// is shown on top.
+    /// Tracks already in hand (a radio station, a downloaded video).
     static func addAssignItem(to menu: NSMenu, level: EQProfileLevel, tracks: [Track]) {
-        build(into: menu, level: level, current: tracks.map(\.eqProfileScopes)) { tracks }
+        addAssignItem(to: menu, level: level, scopes: tracks.map(\.eqProfileScopes)) { tracks }
     }
 
     /// The play queue's selected rows, at track level, in queue order; nothing when none is selected.
@@ -40,14 +30,18 @@ enum EQProfileMenu {
         "Assign EQ Profile (\(level.rawValue.capitalized))"
     }
 
-    private static func build(into menu: NSMenu, level: EQProfileLevel, current: [[EQProfileScope]]?,
+    /// What is ticked comes from `scopes`, one scope chain per target from `level` up, so a library
+    /// row's tracks are fetched only when an item is chosen (`LibraryPlayable.eqProfileScopes`). A
+    /// dash marks each setting a mixed selection holds, and a setting inherited from below is shown
+    /// on top. No chains (a playlist or folder row) ticks nothing.
+    static func addAssignItem(to menu: NSMenu, level: EQProfileLevel, scopes: [[EQProfileScope]],
                               resolve: @escaping @MainActor () async throws -> [Track]) {
         let resolver = EQProfileResolver.shared
         let submenu = NSMenu()
         submenu.autoenablesItems = false
-        let settings = current?.map { resolver.assignment(at: level, of: $0) } ?? []
-        if let current, !current.isEmpty, settings.allSatisfy({ $0 == nil }) {
-            let inherited = Set(current.map { resolver.setting(of: $0) })
+        let settings = scopes.map { resolver.assignment(at: level, of: $0) }
+        if !scopes.isEmpty, settings.allSatisfy({ $0 == nil }) {
+            let inherited = Set(scopes.map { resolver.setting(of: $0) })
             if inherited.count == 1, let setting = inherited.first.flatMap({ $0 }) {
                 let item = NSMenuItem(title: "Inherited: \(setting)", action: nil, keyEquivalent: "")
                 item.isEnabled = false
