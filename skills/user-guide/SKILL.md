@@ -97,25 +97,25 @@ Windows automatically snap together when dragged near each other:
 
 ### Compact Mode
 
-**Compact Mode** collapses NullPlayer to a single menu-bar app. Toggle it from the main window's right-click context menu (**Compact Mode**) or the `Windows` top menu — available in **every UI family**. When enabled:
+**Compact Mode** collapses NullPlayer to a single menu-bar app. Toggle it from the main window's right-click context menu (**Compact Mode**) or the `Windows` top menu — available in the **Original and Original-Metal UI** only (switching to another UI leaves it first). When enabled:
 
 - The Dock icon is hidden (the app switches to an accessory/menu-bar app) and a **NullPlayer status-bar item** appears in the menu bar. Clicking it reveals the single compact window; its menu also has **Exit Compact Mode**.
 - Left-clicking the status-bar item toggles the compact window shown/hidden. Right-clicking opens the Compact Mode menu.
-- The compact window opens at the top-right of the screen, aligned directly below the menu bar with no extra gap.
-- The sole window is the **Library Browser** with a stripped-down player bar embedded across the top (transport, seek + time, a scrolling title marquee, and volume), built from the active UI's own components (classic skin sprites in classic, modern controls in modern).
-- Tabs along the bottom (**Library | Playlist | EQ | Vis**) switch what fills the space below the player bar: the library browser, the play queue, the equalizer, or the visualizer. The choice is shared by both UI families and remembered across launches (`compactContentMode`; `CompactContentMode` in `Windows/CompactMode/`). Classic fits the EQ to its fixed aspect over the skin background; modern fills the region. The visualizer stops when you leave its tab.
+- The compact window opens at the top-right of the screen, aligned directly below the menu bar with no extra gap. Relaunching into Compact Mode shows it straight away.
+- The sole window is the **Library Browser** with a stripped-down player bar embedded across the top (transport, seek + time, a scrolling title marquee, and volume), built from the Original UI's controls.
+- Icon tabs along the bottom switch what fills the space below the player bar, one per Original sub-window in the Windows menu's order: Library, Playlist, Equalizer, Visualizations, Spectrum Analyzer, Waveform, Art, PeppyMeter, Audio Analyzer and Sonos Rooms. Hovering a tab names its window. The choice is remembered across launches (`compactContentMode`; `CompactContentMode` in `Windows/CompactMode/`, whose raw values are persisted). A tab's view is built when you pick it and dropped when you leave, so its rendering stops.
 - All other windows (Main, EQ, Playlist, Spectrum, etc.) are hidden; their prior visibility is remembered and restored when you exit. **Exceptions:** the video player and debug console windows are allowed in Compact Mode — a playing video stays visible on entry, videos opened while compact (e.g. a downloaded YouTube video) appear normally, and an open debug console remains visible.
 - Exiting restores the Dock icon, the macOS menu bar, and the previously open windows.
 
 ### Compact Window
 
-**Compact Window** opens the same compact Library Browser mini-player as a normal free-floating window. Toggle it from the main window's right-click context menu (**Compact Window**) or the `Windows` top menu. It is mutually exclusive with menu-bar Compact Mode.
+**Compact Window** opens the same compact Library Browser mini-player as a normal free-floating window. Toggle it from the main window's right-click context menu (**Compact Window**) or the `Windows` top menu, in the Original UI only. It is mutually exclusive with menu-bar Compact Mode.
 
 - NullPlayer stays a regular app: Dock icon and menu bar remain visible.
 - Only the main window is hidden. Playlist, EQ, Spectrum, Library, Visualizations, video, and other windows stay where they are.
 - The compact window uses normal window level so it can sit behind other apps; enabling **Always on Top** raises it like the other app windows.
 - Drag it from the compact player bar or the browser area. Playback controls, seek, volume, close, and minimize keep their normal click behavior.
-- The window remembers its last frame and can restore across launches. Returning to NullPlayer from another desktop or fullscreen app focuses Compact Window instead of reopening the hidden main window.
+- The window remembers its last position and size (never smaller than the menu-bar compact window) and can restore across launches. Returning to NullPlayer from another desktop or fullscreen app focuses Compact Window instead of reopening the hidden main window.
 
 ### Main Window Elements
 

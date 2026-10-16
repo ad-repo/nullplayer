@@ -1,31 +1,8 @@
 import AppKit
 
-private protocol CompactModeBrowserSurface: AnyObject {
-    var window: NSWindow? { get }
-    var minimumCompactContentWidth: CGFloat { get }
-
-    func setCompactMode(_ enabled: Bool)
-    func updateCompactBarTime(current: TimeInterval, duration: TimeInterval)
-    func updateCompactBarTrack(_ track: Track?)
-    func updateCompactBarPlaybackState()
-    func reloadCompactPlaylist()
-    var compactBackdropPresenter: CavaPresenter? { get }
-    func refreshCompactBackdrop()
-    func skinDidChange()
-    func prepareForUITeardown()
-}
-
-private extension CompactModeBrowserSurface {
-    var compactBackdropPresenter: CavaPresenter? { nil }
-    func refreshCompactBackdrop() {}
-}
-
-extension ClassicLibraryBrowserWindowController: CompactModeBrowserSurface {}
-extension ModernLibraryBrowserWindowController: CompactModeBrowserSurface {}
-
 final class CompactModeWindowController: NSWindowController {
 
-    private let browserController: CompactModeBrowserSurface
+    private let browserController = ModernLibraryBrowserWindowController()
     private var needsInitialSizing = true
     private var isFloatingMode = false
     private var hasAppliedFloatingFrame = false
@@ -59,12 +36,7 @@ final class CompactModeWindowController: NSWindowController {
 
     private static let floatingFrameKey = "compactWindowFrame"
 
-    init(modernUI: Bool) {
-        if modernUI {
-            browserController = ModernLibraryBrowserWindowController()
-        } else {
-            browserController = ClassicLibraryBrowserWindowController()
-        }
+    init() {
         super.init(window: browserController.window)
         setupWindow()
         browserController.setCompactMode(true)
@@ -72,12 +44,6 @@ final class CompactModeWindowController: NSWindowController {
     }
 
     required init?(coder: NSCoder) {
-        let modernUI = WindowManager.shared.isRunningModernUI
-        if modernUI {
-            browserController = ModernLibraryBrowserWindowController()
-        } else {
-            browserController = ClassicLibraryBrowserWindowController()
-        }
         super.init(coder: coder)
         window = browserController.window
         setupWindow()
@@ -261,11 +227,12 @@ final class CompactModeWindowController: NSWindowController {
             let savedFrame = Self.savedFloatingFrame()
             var shouldCenter = savedFrame == nil
             var frame = savedFrame ?? window.frame
-            if savedFrame == nil {
-                frame.size.width = compactBaseWidth
-            }
-            frame.size.width = max(frame.width, compactBaseWidth)
-            frame.size.height = max(frame.height, window.minSize.height)
+            // The saved size, floored at the menu-bar window's; first use starts at that size.
+            let top = frame.maxY
+            frame.size = savedFrame.map {
+                NSSize(width: max($0.width, compactBaseWidth), height: max($0.height, window.minSize.height))
+            } ?? NSSize(width: compactBaseWidth, height: window.minSize.height)
+            frame.origin.y = top - frame.height
             if savedFrame != nil {
                 if let visibleFrame = Self.visibleFloatingFrame(for: frame) {
                     frame = visibleFrame

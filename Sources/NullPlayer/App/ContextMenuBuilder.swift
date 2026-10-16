@@ -56,11 +56,8 @@ class ContextMenuBuilder {
             menu.addItem(NSMenuItem.separator())
         }
 
-        // Compact Mode works in the classic and modern UI. Set apart on its own, above the display
-        // toggles. A `.wal` skin supplies its own compact/shade layouts, so showing NullPlayer's
-        // alternatives there creates a second, unrelated compact-window model; the menu-bar
-        // Windows menu suppresses them the same way. WMP skins own their views the same way.
-        if !wm.uiMode.controllerFamily.hostsForeignSkin {
+        // Compact Mode is the Original UI's; set apart on its own, above the display toggles.
+        if wm.uiMode.controllerFamily.supportsCompactSurfaces {
             let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
             compactMode.target = MenuActions.shared
             compactMode.state = wm.compactModeEnabled ? .on : .off
@@ -215,10 +212,8 @@ class ContextMenuBuilder {
 
         menu.addItem(NSMenuItem.separator())
 
-        // Compact controls belong to the classic and NullPlayer-owned UI families. A `.wal` or
-        // `.wmz` skin supplies its own compact/shade layouts, so showing NullPlayer's alternatives
-        // here creates a second, unrelated compact-window model.
-        if !wm.uiMode.controllerFamily.hostsForeignSkin {
+        // Compact controls belong to the Original UI alone.
+        if wm.uiMode.controllerFamily.supportsCompactSurfaces {
             let compactMode = NSMenuItem(title: "Compact Mode", action: #selector(MenuActions.toggleCompactMode), keyEquivalent: "")
             compactMode.target = MenuActions.shared
             compactMode.state = wm.compactModeEnabled ? .on : .off

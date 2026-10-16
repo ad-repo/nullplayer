@@ -348,6 +348,7 @@ class ModernLibraryBrowserView: NSView {
         compactContentView?.frame = NSRect(x: Layout.borderWidth, y: contentRegionBottomY,
                                            width: bounds.width - Layout.borderWidth * 2,
                                            height: max(0, topChromeBottomY - contentRegionBottomY))
+        updateCompactFooterToolTips()
         backdrop.updateFrame()
     }
 
@@ -406,11 +407,6 @@ class ModernLibraryBrowserView: NSView {
         compactContentView = content
     }
 
-    /// See `ModernCompactContentView.resumeVisualizer()`.
-    func resumeCompactVisualizer() {
-        compactContentView?.resumeVisualizer()
-    }
-
     /// Refresh the private playlist presentation after the shared audio-engine queue mutates.
     func reloadCompactPlaylist() {
         compactContentView?.queue.reloadData()
@@ -428,10 +424,12 @@ class ModernLibraryBrowserView: NSView {
 
     func compactBarUpdateTime(current: TimeInterval, duration: TimeInterval) {
         compactPlayerBar?.updateTime(current: current, duration: duration)
+        compactContentView?.updateTime(current: current, duration: duration)
     }
 
     func compactBarUpdateTrack(_ track: Track?) {
         compactPlayerBar?.updateTrackInfo(track)
+        compactContentView?.updateTrack(track)
     }
 
     func compactBarUpdatePlaybackState() {
@@ -754,18 +752,40 @@ class ModernLibraryBrowserView: NSView {
         contentFill(isMetalRenderStyle ? metalControlBandFill : skin.surfaceColor.withAlphaComponent(0.4)).setFill()
         context.fill(compactFooterRect)
 
-        let chromeScale = topChromeScale(for: skin)
-        let font = ModernLibraryTab.font(skin: skin, compact: compactMode, scale: chromeScale)
         let m = ModernSkinElements.sizeMultiplier
-        // Same box insets the tab bar uses (drawTabBar), so the toggle boxes match the tabs.
-        let insetX = 2 * m * chromeScale
+        // The tab bar's vertical inset (drawTabBar); a hairline between boxes, as many as there are.
+        let insetX = m
         let insetY = 2 * m
+        let pointSize = 11 * m
+        for tab in compactFooterTabs {
+            let box = tab.rect.insetBy(dx: insetX, dy: insetY)
+            let color = ModernLibraryTab.drawBox(isActive: compactContentMode == tab.mode, rect: box,
+                                                 skin: skin, context: context)
+            let config = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
+                .applying(.init(paletteColors: [skin.applyTextOpacity(to: color)]))
+            guard let glyph = NSImage(systemSymbolName: tab.mode.glyph, accessibilityDescription: tab.mode.label)?
+                .withSymbolConfiguration(config) else { continue }
+            let size = glyph.size
+            glyph.draw(in: NSRect(x: (box.midX - size.width / 2).rounded(), y: (box.midY - size.height / 2).rounded(),
+                                  width: size.width, height: size.height))
+        }
+    }
+
+    /// Each footer tab's rect in view coordinates.
+    fileprivate var compactFooterTabs: [(mode: CompactContentMode, rect: NSRect)] {
         let strip = compactFooterRect
-        for tab in CompactContentMode.tabs(width: strip.width) {
-            let rect = NSRect(x: strip.minX + tab.minX, y: strip.minY, width: tab.width, height: strip.height)
-            ModernLibraryTab.draw(tab.mode.label, isActive: compactContentMode == tab.mode,
-                          rect: rect.insetBy(dx: insetX, dy: insetY),
-                          font: font, skin: skin, context: context)
+        return CompactContentMode.tabs(width: strip.width).map {
+            ($0.mode, NSRect(x: strip.minX + $0.minX, y: strip.minY, width: $0.width, height: strip.height))
+        }
+    }
+
+    /// The glyphs carry no words, so each tab names its window on hover. AppKit holds a tooltip's
+    /// owner unretained, so the owner is this view (see `view(_:stringForToolTip:point:userData:)`).
+    private func updateCompactFooterToolTips() {
+        removeAllToolTips()
+        guard compactMode else { return }
+        for tab in compactFooterTabs {
+            addToolTip(tab.rect, owner: self, userData: nil)
         }
     }
 
@@ -1382,4 +1402,12 @@ class ModernLibraryBrowserView: NSView {
         return NSRect(x: 0, y: barY, width: bounds.width, height: Layout.serverBarHeight)
     }
 
+}
+
+extension ModernLibraryBrowserView: NSViewToolTipOwner {
+    /// The compact footer tab under `point` names its window.
+    func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint,
+              userData data: UnsafeMutableRawPointer?) -> String {
+        compactFooterTabs.first { $0.rect.contains(point) }?.mode.label ?? ""
+    }
 }

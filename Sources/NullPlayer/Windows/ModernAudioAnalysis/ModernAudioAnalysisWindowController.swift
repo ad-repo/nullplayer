@@ -73,6 +73,10 @@ class ModernAudioAnalysisWindowController: NSWindowController, AudioAnalysisWind
 
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
+        startRenderingForShow()
+    }
+
+    func startRenderingForShow() {
         analysisView.needsDisplay = true
         analysisView.setRenderingPaused(false)
         setVisiblePane(analysisView.selectedPane)

@@ -2936,9 +2936,9 @@ class WindowManager {
 
     // MARK: - Compact Mode
 
-    /// Toggle the menu-bar Compact Mode (works in both classic and modern UI). Live — no restart.
+    /// Toggle the menu-bar Compact Mode (Original UI only). Live — no restart.
     func toggleCompactMode() {
-        guard !uiMode.controllerFamily.bringsOwnRuntime else { return }
+        guard uiMode.controllerFamily.supportsCompactSurfaces else { return }
         if compactModeEnabled {
             exitCompactMode()
         } else {
@@ -2949,7 +2949,7 @@ class WindowManager {
     /// Toggle the free-floating Compact Window. This reuses the compact mini-player surface
     /// without changing activation policy or hiding any secondary windows.
     func toggleCompactWindow() {
-        guard !uiMode.controllerFamily.bringsOwnRuntime else { return }
+        guard uiMode.controllerFamily.supportsCompactSurfaces else { return }
         if compactWindowEnabled {
             exitCompactWindow()
         } else {
@@ -2962,7 +2962,7 @@ class WindowManager {
     /// - Parameter treatMainAsVisible: Used at launch restore when the main window was created
     ///   hidden only to avoid flash. Exiting Compact Window should still bring it back.
     func enterCompactWindow(treatMainAsVisible: Bool = false) {
-        guard !uiMode.controllerFamily.bringsOwnRuntime else { return }
+        guard uiMode.controllerFamily.supportsCompactSurfaces else { return }
         if compactModeState != .regular {
             exitCompactMode { [weak self] in
                 self?.enterCompactWindow(treatMainAsVisible: treatMainAsVisible)
@@ -3014,17 +3014,13 @@ class WindowManager {
         mainWindowController?.window?.makeKeyAndOrderFront(nil)
     }
 
-    /// - Parameter revealWindow: When `true` (live toggle from the menu) the compact window is
-    ///   shown and positioned under the status item. When `false` (restore on launch) the window
-    ///   is left hidden behind the status item so the *first* click reveals it — otherwise the
-    ///   status item starts in a "visible" state and the first click would just hide it.
     /// - Parameter treatMainAsVisible: When `true` (launch-into-compact path), the captured
     ///   snapshot records the main window as visible even though it was never revealed, so
     ///   exiting Compact Mode later restores it onscreen. The main window is always part of the
     ///   regular layout, so this matches the live-toggle behavior. Defaults to `false` so the
     ///   live menu toggle keeps recording the main window's actual visibility.
-    func enterCompactMode(revealWindow: Bool = true, treatMainAsVisible: Bool = false) {
-        guard !uiMode.controllerFamily.bringsOwnRuntime else { return }
+    func enterCompactMode(treatMainAsVisible: Bool = false) {
+        guard uiMode.controllerFamily.supportsCompactSurfaces else { return }
         let compactWindowMainWasVisible = compactWindowEnabled && mainWasVisibleBeforeCompactWindow
         if compactWindowEnabled {
             exitCompactWindow(restoreMainWindow: false)
@@ -3059,15 +3055,10 @@ class WindowManager {
 
         DispatchQueue.main.async { [weak self] in
             guard let self, self.compactModeState == .entering else { return }
-            if revealWindow {
-                // showCompactWindow() self-defers its reveal until the status-item anchor is
-                // ready, so a single call is enough — no second show needed.
-                self.showCompactWindow()
-                self.compactModeState = .compactVisible
-            } else {
-                self.hideCompactWindow()
-                self.compactModeState = .compactHidden
-            }
+            // showCompactWindow() self-defers its reveal until the status-item anchor is
+            // ready, so a single call is enough — no second show needed.
+            self.showCompactWindow()
+            self.compactModeState = .compactVisible
         }
         postLayoutChangeNotification()
     }
@@ -3501,7 +3492,7 @@ class WindowManager {
 
     private func createCompactWindowControllerIfNeeded() {
         if compactWindowController == nil {
-            compactWindowController = CompactModeWindowController(modernUI: isRunningModernUI)
+            compactWindowController = CompactModeWindowController()
         }
         compactWindowController?.seedFromAudioEngine()
     }
@@ -7977,6 +7968,15 @@ class WindowManager {
             return
         }
         NSLog("WindowManager: reloadUI — switching to %@ UI", targetMode.displayName)
+
+        // The compact surfaces are Original's alone: leave them, then switch from the regular layout.
+        if !targetMode.controllerFamily.supportsCompactSurfaces {
+            if compactModeEnabled {
+                exitCompactMode { [weak self] in self?.reloadUI(to: targetMode, completion: completion) }
+                return
+            }
+            exitCompactWindow()
+        }
 
         let restoreCompactWindow = compactWindowEnabled
         let compactWindowMainWasVisible = restoreCompactWindow && mainWasVisibleBeforeCompactWindow

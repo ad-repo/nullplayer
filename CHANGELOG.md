@@ -40,10 +40,11 @@
   than any track whose title contains their name, and a selected album falls back to a web cover
   as tracks and artists do. Art added through Edit Tags shows without a relaunch.
 - **Support on Ko-fi** — the About window has a Ko-fi button (not in the App Store build).
-- **EQ and visualizer tabs in the compact window** — the compact window's footer is now
-  **Library | Playlist | EQ | Vis**, so the equalizer and the visualizer open in place below the
-  player bar without leaving the compact window. The choice is remembered across launches and
-  across skin families.
+- **Every Original sub-window as a tab in the compact window** — the compact window's footer is
+  now a row of icon tabs: Library, Playlist, Equalizer, Visualizations, Spectrum Analyzer,
+  Waveform, Art, PeppyMeter, Audio Analyzer and Sonos Rooms. Each opens in place below the player
+  bar without leaving the compact window, names its window on hover, and the choice is remembered
+  across launches.
 
 ### Changes
 
@@ -81,6 +82,9 @@
   "Save State on Quit" ([#554](https://github.com/ad-repo/nullplayer/issues/554)).
 - **Windows menu reordered and grouped** — Main Window, Library Browser and Playlist Editor come
   first, then the equalizers, the visualizers, and the remaining windows, each group separated.
+- **Compact Mode and Compact Window are Original-only** — they are no longer offered in the
+  Classic or Winamp Modern UI; switching to either leaves them first. Relaunching into Compact
+  Mode now shows the compact window straight away instead of waiting for a status-item click.
 
 ### Fixes
 

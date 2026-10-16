@@ -92,7 +92,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Restore settings state (skin, volume, EQ, windows). Compact Mode must be
         // entered only after the asynchronous window restoration has completed, so it
         // can capture and hide the actual restored window set.
-        let supportsCompactSurfaces = !windowManager.uiMode.controllerFamily.bringsOwnRuntime
+        let supportsCompactSurfaces = windowManager.uiMode.controllerFamily.supportsCompactSurfaces
         let shouldRestoreCompactMode = supportsCompactSurfaces
             && UserDefaults.standard.bool(forKey: "compactModeEnabled")
         let shouldRestoreCompactWindow = !shouldRestoreCompactMode
@@ -131,7 +131,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if shouldRestoreCompactMode {
                 // The main window was created but never revealed, so force its snapshot to
                 // "visible" — exiting Compact Mode must restore it onscreen.
-                self?.windowManager.enterCompactMode(revealWindow: false, treatMainAsVisible: true)
+                self?.windowManager.enterCompactMode(treatMainAsVisible: true)
             } else if shouldRestoreCompactWindow {
                 self?.windowManager.enterCompactWindow(treatMainAsVisible: true)
                 NSApp.activate(ignoringOtherApps: true)

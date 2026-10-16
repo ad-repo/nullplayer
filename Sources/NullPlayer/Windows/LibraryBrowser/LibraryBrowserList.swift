@@ -98,7 +98,7 @@ final class LibraryBrowserList {
         let backdropMenu: () -> NSMenuItem?
         /// Whether something else fills the list's area (the modern compact window's other tabs),
         /// so the Flow / Tiles view must hide too.
-        var isCovered: () -> Bool = { false }
+        let isCovered: () -> Bool
     }
 
     static let alphabetLetters = ["#"] + (65...90).map { String(UnicodeScalar($0)) }

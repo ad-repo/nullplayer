@@ -190,7 +190,6 @@ extension ModernLibraryBrowserWindowController: NSWindowDelegate {
 
     func windowDidBecomeKey(_ notification: Notification) {
         browserView.needsDisplay = true
-        browserView.resumeCompactVisualizer()
         WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
     }
     
@@ -200,6 +199,9 @@ extension ModernLibraryBrowserWindowController: NSWindowDelegate {
     
     func windowWillClose(_ notification: Notification) {
         browserView.stopBackdrop()
+        // A compact tab's own Close calls `close()`, which skips `windowShouldClose`; it hides the
+        // compact window the same way.
+        if isCompactMode { WindowManager.shared.compactSurfaceDidHide() }
         WindowManager.shared.rememberPlexBrowserFrameBeforeClose()
         WindowManager.shared.notifyMainWindowVisibilityChanged()
     }

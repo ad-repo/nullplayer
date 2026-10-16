@@ -120,11 +120,12 @@ class ClassicLibraryBrowserView: NSView {
                     placeholderTextColor: colors.normalText.withAlphaComponent(0.6)
                 )
             },
-            // Neither an embedded `.wal` browser nor Compact Mode has a library backdrop to offer.
+            // An embedded `.wal` browser has no library backdrop to offer.
             backdropMenu: { [unowned self] in
-                controller?.isCompactMode == false
+                controller != nil
                     ? ContextMenuBuilder.browserBackdropMenuItem(compact: false, presenter: backdropPresenter) : nil
-            }
+            },
+            isCovered: { false }
         ))
 
     /// Button being pressed (for visual feedback)
@@ -158,9 +159,9 @@ class ClassicLibraryBrowserView: NSView {
     private static let backdropScrimAlpha: CGFloat = 0.72
 
     /// Cava shows in a library window of its own: never embedded in a `.wal` holder (which has no
-    /// controller) or in Compact Mode.
+    /// controller).
     private var showsCavaBackdrop: Bool {
-        controller?.isCompactMode == false && WindowManager.shared.libraryBackdropMode.showsCava
+        controller != nil && WindowManager.shared.libraryBackdropMode.showsCava
     }
 
     /// The list's background: translucent over a Cava backdrop, so the bars show through.
@@ -363,12 +364,6 @@ class ClassicLibraryBrowserView: NSView {
         let availableWidth = max(0, bounds.width - Layout.leftBorder - Layout.rightBorder)
         guard referenceWidth > 0 else { return 1 }
         return min(1, max(0.66, availableWidth / referenceWidth))
-    }
-
-    /// Smallest content width that keeps every full-size compact tab label inside its slot.
-    var minimumCompactContentWidth: CGFloat {
-        ceil(tabRowNaturalWidth(textScale: bitmapTextScale) +
-             Layout.leftBorder + Layout.rightBorder)
     }
 
     // MARK: - Initialization

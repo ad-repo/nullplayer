@@ -32,15 +32,18 @@ enum PlayerUIControllerFamily {
     }
 
     /// Brings its own player runtime, app-authored fallback included (`.wmz`, Audion). Nothing built
-    /// on the Classic/Original skin engines runs beside it: no default skin load, no Compact Mode or
-    /// Compact Window, no Classic stack size floor, no classic-zoom reading of the main window's
-    /// width. `.wal` hosts a Classic skin beneath its own, so it is not one.
+    /// on the Classic/Original skin engines runs beside it: no default skin load, no Classic stack
+    /// size floor, no classic-zoom reading of the main window's width. `.wal` hosts a Classic skin
+    /// beneath its own, so it is not one.
     var bringsOwnRuntime: Bool {
         switch self {
         case .wmp, .audion: return true
         case .classic, .nullPlayerModern, .winampModern: return false
         }
     }
+
+    /// Offers Compact Mode and Compact Window, whose footer tabs host the Original sub-windows.
+    var supportsCompactSurfaces: Bool { self == .nullPlayerModern }
 }
 
 enum PlayerUIMode: String, CaseIterable {
