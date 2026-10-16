@@ -103,6 +103,7 @@ Windows automatically snap together when dragged near each other:
 - Left-clicking the status-bar item toggles the compact window shown/hidden. Right-clicking opens the Compact Mode menu.
 - The compact window opens at the top-right of the screen, aligned directly below the menu bar with no extra gap.
 - The sole window is the **Library Browser** with a stripped-down player bar embedded across the top (transport, seek + time, a scrolling title marquee, and volume), built from the active UI's own components (classic skin sprites in classic, modern controls in modern).
+- Tabs along the bottom (**Library | Playlist | EQ | Vis**) switch what fills the space below the player bar: the library browser, the play queue, the equalizer, or the visualizer. The choice is shared by both UI families and remembered across launches (`compactContentMode`; `CompactContentMode` in `Windows/CompactMode/`). Classic fits the EQ to its fixed aspect over the skin background; modern fills the region. The visualizer stops when you leave its tab.
 - All other windows (Main, EQ, Playlist, Spectrum, etc.) are hidden; their prior visibility is remembered and restored when you exit. **Exceptions:** the video player and debug console windows are allowed in Compact Mode — a playing video stays visible on entry, videos opened while compact (e.g. a downloaded YouTube video) appear normally, and an open debug console remains visible.
 - Exiting restores the Dock icon, the macOS menu bar, and the previously open windows.
 

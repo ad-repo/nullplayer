@@ -96,6 +96,9 @@ final class LibraryBrowserList {
         let artStyle: () -> LibraryArtStyle
         /// The window's Background submenu, offered atop every menu the list pops up.
         let backdropMenu: () -> NSMenuItem?
+        /// Whether something else fills the list's area (the modern compact window's other tabs),
+        /// so the Flow / Tiles view must hide too.
+        var isCovered: () -> Bool = { false }
     }
 
     static let alphabetLetters = ["#"] + (65...90).map { String(UnicodeScalar($0)) }
@@ -118,7 +121,7 @@ final class LibraryBrowserList {
             rows: { [unowned self] in model.displayItems },
             isSearch: { [unowned self] in model.browseMode == .search },
             selectedIndex: { [unowned self] in model.selectedIndices.min() },
-            isBlocked: { [unowned self] in model.listState != .rows },
+            isBlocked: { [unowned self] in model.listState != .rows || host.isCovered() },
             style: host.artStyle,
             item: { [unowned self] in art.artItem(for: $0) },
             isExpanded: { [unowned self] in model.isExpanded($0) },

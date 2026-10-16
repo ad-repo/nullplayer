@@ -30,14 +30,6 @@ class ClassicLibraryBrowserWindowController: NSWindowController, LibraryBrowserW
     private var compactFooter: ClassicCompactFooterView?
     private var compactPlaylist: PlaylistView?
 
-    /// Persisted content choice for the compact window's Library|Playlist toggle. Shares the
-    /// `compactContentMode` key with the modern library window so the choice is consistent
-    /// across UI families (0 = library, 1 = playlist).
-    private var compactShowsPlaylist: Bool {
-        get { UserDefaults.standard.integer(forKey: "compactContentMode") == 1 }
-        set { UserDefaults.standard.set(newValue ? 1 : 0, forKey: "compactContentMode") }
-    }
-
     // MARK: - Initialization
     
     convenience init() {
@@ -132,6 +124,8 @@ class ClassicLibraryBrowserWindowController: NSWindowController, LibraryBrowserW
         compactBar?.skinDidChange()
         compactFooter?.skinDidChange()
         compactPlaylist?.needsDisplay = true
+        compactContainer?.panel?.view.needsDisplay = true
+        compactContainer?.needsDisplay = true
     }
 
     /// Mode-dependent teardown: forward to the view so it cancels its in-flight tasks/timers
@@ -181,11 +175,11 @@ class ClassicLibraryBrowserWindowController: NSWindowController, LibraryBrowserW
             playlist.autoresizingMask = []
             container.playlistTitleInset = playlist.embeddedTopInset
 
-            // Library | Playlist toggle footer across the bottom.
+            // Content-mode tabs across the bottom.
             let footer = ClassicCompactFooterView(frame: .zero)
             footer.autoresizingMask = []
-            footer.onSelect = { [weak self] showPlaylist in
-                self?.setCompactShowsPlaylist(showPlaylist)
+            footer.onSelect = { [weak self] mode in
+                self?.setCompactContentMode(mode)
             }
 
             container.addSubview(browserView)
@@ -226,26 +220,36 @@ class ClassicLibraryBrowserWindowController: NSWindowController, LibraryBrowserW
         browserView.needsDisplay = true
     }
 
-    /// Flip the compact window between the library browser and the embedded play queue,
-    /// persisting the choice, then apply the new visibility.
-    private func setCompactShowsPlaylist(_ showPlaylist: Bool) {
-        guard compactShowsPlaylist != showPlaylist else { return }
-        compactShowsPlaylist = showPlaylist
+    /// Switch the compact window's content, persisting the choice, then apply it.
+    private func setCompactContentMode(_ mode: CompactContentMode) {
+        guard CompactContentMode.persisted != mode else { return }
+        CompactContentMode.persisted = mode
         applyCompactContentMode()
     }
 
-    /// Show the browser XOR the embedded playlist to match the persisted mode, and hand
-    /// keyboard focus to whichever view is now visible.
+    /// Show only the view for the persisted mode, and hand keyboard focus to it.
     private func applyCompactContentMode() {
-        let showPlaylist = compactShowsPlaylist
-        compactFooter?.showingPlaylist = showPlaylist
-        browserView.isHidden = showPlaylist
-        compactPlaylist?.isHidden = !showPlaylist
+        guard let container = compactContainer else { return }
+        let mode = CompactContentMode.persisted
+        compactFooter?.selection = mode
+        browserView.isHidden = mode != .library
+        compactPlaylist?.isHidden = mode != .queue
         compactPlaylist?.needsDisplay = true
         browserView.needsDisplay = true
-        if let target: NSView = showPlaylist ? compactPlaylist : browserView {
-            window?.makeFirstResponder(target)
+
+        // The visualizer starts and stops itself as it joins and leaves the window.
+        container.panel = switch mode {
+        case .equalizer: .equalizer(EQView(frame: .zero))
+        case .visualizations: .visualizer(ProjectMView(frame: .zero))
+        case .library, .queue: nil
         }
+
+        let target: NSView? = switch mode {
+        case .library: browserView
+        case .queue: compactPlaylist
+        case .equalizer, .visualizations: container.panel?.view
+        }
+        if let target { window?.makeFirstResponder(target) }
     }
 
     /// Seed the bar with the engine's current state so it isn't blank until the next tick.
@@ -304,6 +308,8 @@ extension ClassicLibraryBrowserWindowController: NSWindowDelegate {
     
     func windowDidBecomeKey(_ notification: Notification) {
         browserView.needsDisplay = true
+        // The visualizer tab may have been built while the compact window was still hidden.
+        if case .visualizer(let vis) = compactContainer?.panel { vis.startRendering() }
         // Bring all app windows to front when this window gets focus
         WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
     }

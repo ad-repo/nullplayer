@@ -1,8 +1,8 @@
 import AppKit
 
 /// A classic-skin footer pinned across the bottom of the library browser in Compact Mode
-/// (classic UI). Renders a two-segment "Library | Playlist" toggle that switches the compact
-/// window's content region between the library browser and the embedded play queue.
+/// (classic UI). Renders a "Library | Playlist | EQ | Vis" toggle that switches the compact
+/// window's content region between the library browser, the play queue, the EQ and the visualizer.
 ///
 /// This is the classic-UI analogue of the modern library window's compact footer toggle. It
 /// draws with authentic classic skin colors and the classic bitmap font (via `SkinRenderer`),
@@ -16,17 +16,17 @@ final class ClassicCompactFooterView: NSView {
 
     /// Native design height — matches the classic browser tab-bar row.
     private let designHeight: CGFloat = SkinElements.PlexBrowser.Layout.tabBarHeight
-    /// Small margin from the window edge; the two segments fill the rest edge-to-edge so they
+    /// Small margin from the window edge; the segments fill the rest edge-to-edge so they
     /// take up the whole footer width (matching the modern library window's toggle).
     private let sideInset: CGFloat = 2
 
-    /// Whether the Playlist segment is the active one (else Library).
-    var showingPlaylist = false {
-        didSet { if showingPlaylist != oldValue { needsDisplay = true } }
+    /// The active segment.
+    var selection: CompactContentMode = .library {
+        didSet { if selection != oldValue { needsDisplay = true } }
     }
 
-    /// Invoked when the user picks a segment; `true` = Playlist, `false` = Library.
-    var onSelect: ((_ showPlaylist: Bool) -> Void)?
+    /// Invoked when the user picks a segment.
+    var onSelect: ((CompactContentMode) -> Void)?
 
     /// Suggested on-screen footer height. Matches the compact player bar's scale convention so
     /// the bitmap chrome is not resampled at a footer-only scale.
@@ -64,17 +64,8 @@ final class ClassicCompactFooterView: NSView {
         WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
     }
 
-    /// The two segment rects in native units (top-left origin) — (.library, .playlist).
-    private func segmentRects() -> (library: NSRect, playlist: NSRect) {
-        let barRect = NSRect(x: sideInset, y: 0,
-                             width: max(0, designWidth - sideInset * 2),
-                             height: designHeight)
-        let half = (barRect.width / 2).rounded()
-        let library = NSRect(x: barRect.minX, y: 0, width: half, height: designHeight)
-        let playlist = NSRect(x: barRect.minX + half, y: 0,
-                              width: barRect.width - half, height: designHeight)
-        return (library, playlist)
-    }
+    /// Width of the tab strip in native units, inside the side margins.
+    private var tabStripWidth: CGFloat { max(0, designWidth - sideInset * 2) }
 
     // MARK: - Drawing
 
@@ -95,11 +86,11 @@ final class ClassicCompactFooterView: NSView {
         colors.normalBackground.setFill()
         context.fill(NSRect(x: 0, y: 0, width: designWidth, height: designHeight))
 
-        let segments = segmentRects()
-        drawSegment("Library", rect: segments.library, isActive: !showingPlaylist,
-                    colors: colors, renderer: renderer, context: context)
-        drawSegment("Playlist", rect: segments.playlist, isActive: showingPlaylist,
-                    colors: colors, renderer: renderer, context: context)
+        for tab in CompactContentMode.tabs(width: tabStripWidth) {
+            let rect = NSRect(x: sideInset + tab.minX, y: 0, width: tab.width, height: designHeight)
+            drawSegment(tab.mode.label, rect: rect, isActive: tab.mode == selection,
+                        colors: colors, renderer: renderer, context: context)
+        }
 
         context.restoreGState()
     }
@@ -140,8 +131,6 @@ final class ClassicCompactFooterView: NSView {
         guard scale > 0 else { return }
         // View point (bottom-left origin) → native units (top-left origin).
         let nativeX = point.x / scale
-        let segments = segmentRects()
-        // Split at the divider so the entire footer width is clickable (incl. the thin margins).
-        onSelect?(nativeX >= segments.playlist.minX)
+        onSelect?(CompactContentMode.tab(atX: nativeX - sideInset, width: tabStripWidth))
     }
 }

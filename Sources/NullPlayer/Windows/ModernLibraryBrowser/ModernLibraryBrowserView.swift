@@ -19,6 +19,7 @@ class ModernLibraryBrowserView: NSView {
     var compactMode: Bool = false {
         didSet {
             guard compactMode != oldValue else { return }
+            updateCompactContentView()
             refreshBackdrop()
             needsLayout = true
             needsDisplay = true
@@ -59,30 +60,28 @@ class ModernLibraryBrowserView: NSView {
     private var itemHeight: CGFloat { 18 * ModernSkinElements.sizeMultiplier }
     private var columnHeaderHeight: CGFloat { 18 * ModernSkinElements.sizeMultiplier }
 
-    /// Content shown below the compact player bar: the library browser or the play queue.
-    /// Only consulted when `compactMode == true`; the full library window is unaffected.
-    enum CompactContentMode: Int { case library = 0, queue = 1 }
-
+    /// Content shown below the compact player bar. Only consulted when `compactMode == true`;
+    /// the full library window is unaffected.
     private var compactContentMode: CompactContentMode {
-        get { CompactContentMode(rawValue: UserDefaults.standard.integer(forKey: "compactContentMode")) ?? .library }
+        get { CompactContentMode.persisted }
         set {
-            UserDefaults.standard.set(newValue.rawValue, forKey: "compactContentMode")
-            updateCompactPlaylistFrame()   // show/hide + size the embedded queue
+            CompactContentMode.persisted = newValue
+            compactContentView?.mode = newValue
             // Hand keyboard focus to whichever view is now visible.
-            window?.makeFirstResponder(newValue == .queue ? (compactPlaylistView ?? self) : self)
+            window?.makeFirstResponder(compactContentView?.focusTarget ?? self)
             needsLayout = true
             needsDisplay = true
         }
     }
 
-    /// Height of the Library|Playlist toggle footer at the bottom of the compact window
+    /// Height of the content-mode tabs footer at the bottom of the compact window
     /// (0 outside compact mode).
     private var compactFooterHeight: CGFloat {
         compactMode ? 24 * ModernSkinElements.sizeMultiplier : 0
     }
 
-    /// Embedded compact-sized play queue, shown in place of the library chrome in queue mode.
-    private var compactPlaylistView: ModernPlaylistView?
+    /// The queue / EQ / visualizer covering the content region on the other tabs (compact only).
+    private var compactContentView: ModernCompactContentView?
 
     /// What the rows do and the menus that offer it.
     private lazy var actions: LibraryBrowserActions = LibraryBrowserActions(model: model, host: .init(
@@ -130,7 +129,8 @@ class ModernLibraryBrowserView: NSView {
         },
         backdropMenu: { [unowned self] in
             ContextMenuBuilder.browserBackdropMenuItem(compact: compactMode, presenter: backdropPresenter)
-        }
+        },
+        isCovered: { [unowned self] in isShowingCompactNonLibrary }
     ))
 
     /// Row art and the art drawn behind the list.
@@ -323,11 +323,11 @@ class ModernLibraryBrowserView: NSView {
         if model.browseMode.isHistoryMode {
             ensureHistoryHostingView()
         }
-        // The embedded queue covers the content region in Playlist mode, so the SwiftUI
-        // history subview must stay hidden there regardless of browseMode.
-        let inQueueMode = compactMode && compactContentMode == .queue
-        let isVisible = model.browseMode.isHistoryMode && !inQueueMode
+        // The other compact tabs cover the content region, so the SwiftUI history subview and
+        // the Flow / Tiles view must stay hidden there regardless of browseMode.
+        let isVisible = model.browseMode.isHistoryMode && !isShowingCompactNonLibrary
         historyHostingView?.isHidden = !isVisible
+        list.lens.updateVisibility()
         updateEmbeddedSubviewFrames()
     }
 
@@ -345,7 +345,9 @@ class ModernLibraryBrowserView: NSView {
         // Flow / Tiles leave the alphabet index beside them.
         list.lens.frame = listLayout().area.divided(atDistance: Layout.alphabetWidth, from: .maxXEdge).remainder
         updateCompactPlayerBarFrame()
-        updateCompactPlaylistFrame()
+        compactContentView?.frame = NSRect(x: Layout.borderWidth, y: contentRegionBottomY,
+                                           width: bounds.width - Layout.borderWidth * 2,
+                                           height: max(0, topChromeBottomY - contentRegionBottomY))
         backdrop.updateFrame()
     }
 
@@ -388,45 +390,30 @@ class ModernLibraryBrowserView: NSView {
                            height: compactPlayerBarHeight)
     }
 
-    /// Create/position/remove the embedded compact play queue to match the current mode.
-    /// It fills the content region below the toggle strip and covers the library chrome
-    /// (server bar / tabs / alphabet index) when shown, so queue mode hides library chrome.
-    private func updateCompactPlaylistFrame() {
-        guard compactMode else {
-            compactPlaylistView?.removeFromSuperview()
-            compactPlaylistView = nil
-            return
-        }
-        let queue: ModernPlaylistView
-        let didCreateQueue: Bool
-        if let existing = compactPlaylistView {
-            queue = existing
-            didCreateQueue = false
-        } else {
-            queue = ModernPlaylistView(frame: .zero)
-            queue.isEmbedded = true
-            // Render above the library chrome and the Cava/art backdrop.
-            addSubview(queue)
-            compactPlaylistView = queue
-            didCreateQueue = true
-        }
-        let border = Layout.borderWidth
-        queue.frame = NSRect(x: border, y: contentRegionBottomY,
-                             width: bounds.width - border * 2,
-                             height: max(0, topChromeBottomY - contentRegionBottomY))
-        queue.isHidden = (compactContentMode != .queue)
-        if didCreateQueue {
-            // `reloadData()` needs the final frame so it can scroll the current track into view.
-            queue.reloadData()
-            if compactContentMode == .queue {
-                window?.makeFirstResponder(queue)
-            }
-        }
+    /// Whether a compact tab other than Library covers the content region.
+    private var isShowingCompactNonLibrary: Bool {
+        compactMode && compactContentMode != .library
+    }
+
+    /// Create or remove the compact content region to match `compactMode`; `layout` sizes it.
+    /// Added last so it renders above the library chrome and the Cava/art backdrop.
+    private func updateCompactContentView() {
+        compactContentView?.removeFromSuperview()
+        compactContentView = nil
+        guard compactMode else { return }
+        let content = ModernCompactContentView(mode: compactContentMode)
+        addSubview(content)
+        compactContentView = content
+    }
+
+    /// See `ModernCompactContentView.resumeVisualizer()`.
+    func resumeCompactVisualizer() {
+        compactContentView?.resumeVisualizer()
     }
 
     /// Refresh the private playlist presentation after the shared audio-engine queue mutates.
     func reloadCompactPlaylist() {
-        compactPlaylistView?.reloadData()
+        compactContentView?.queue.reloadData()
     }
 
     /// Seed the bar with the engine's current state so it isn't blank until the next update tick.
@@ -499,14 +486,13 @@ class ModernLibraryBrowserView: NSView {
         let backgroundOpacity = backdropActive
             ? mainOpacity.background * backdropScrimAlpha
             : mainOpacity.background
-        let isShowingCompactPlaylist = compactMode && compactContentMode == .queue
 
         // Fast path: scroll timer marks only server bar dirty — skip full window redraw.
         // Always fill the full background first (copy blend mode) so the layer is never
         // left partially transparent from accumulated alpha on repeated scroll-tick draws.
         let serverBarY = topChromeBottomY - Layout.serverBarHeight
         let sbRect = NSRect(x: 0, y: serverBarY, width: bounds.width, height: Layout.serverBarHeight)
-        if !isShowingCompactPlaylist, sbRect.contains(dirtyRect) {
+        if !isShowingCompactNonLibrary, sbRect.contains(dirtyRect) {
             // Build the renderer from the current skin (not the cached instance) so the
             // background can't lag a skin swap and render the wrong surface under the bands.
             let renderer = ModernSkinRenderer(skin: skin)
@@ -568,11 +554,11 @@ class ModernLibraryBrowserView: NSView {
         
         updateHistoryHostingVisibility()
 
-        // In the compact window's Playlist mode the embedded queue subview fills the content
-        // region, so skip drawing the library chrome (server bar / tabs / search / list /
-        // alphabet) behind it — the shared Cava/art backdrop then shows through the queue,
-        // matching how it shows behind the library list.
-        let showLibraryContent = !isShowingCompactPlaylist
+        // In the compact window's other tabs an embedded subview fills the content region, so
+        // skip drawing the library chrome (server bar / tabs / search / list / alphabet) behind
+        // it — the shared Cava/art backdrop then shows through the queue, matching how it shows
+        // behind the library list.
+        let showLibraryContent = !isShowingCompactNonLibrary
 
         if showLibraryContent {
             // Server bar (below title bar in screen coords)
@@ -621,7 +607,7 @@ class ModernLibraryBrowserView: NSView {
             }
         }
 
-        // Library | Playlist toggle footer at the bottom (compact window only).
+        // Content-mode tabs footer at the bottom (compact window only).
         if compactMode {
             drawCompactFooter(in: context, skin: skin)
         }
@@ -753,23 +739,12 @@ class ModernLibraryBrowserView: NSView {
                               font: font, skin: skin, context: context)
     }
     
-    /// Full band of the Library|Playlist toggle footer at the bottom (compact window only),
+    /// Full band of the content-mode tabs footer at the bottom (compact window only),
     /// sitting just above the thin status-bar margin.
     private var compactFooterRect: NSRect {
         NSRect(x: Layout.borderWidth, y: Layout.statusBarHeight,
                width: bounds.width - Layout.borderWidth * 2,
                height: compactFooterHeight)
-    }
-
-    /// The two full-width halves of the footer band — (.library, .queue) — used for both
-    /// hit-testing and (after insetting to the tab-box size) drawing, mirroring the tab bar.
-    private func compactToggleSegmentRects() -> (library: NSRect, queue: NSRect) {
-        let strip = compactFooterRect
-        let halfWidth = (strip.width / 2).rounded()
-        let library = NSRect(x: strip.minX, y: strip.minY, width: halfWidth, height: strip.height)
-        let queue = NSRect(x: strip.minX + halfWidth, y: strip.minY,
-                           width: strip.width - halfWidth, height: strip.height)
-        return (library, queue)
     }
 
     private func drawCompactFooter(in context: CGContext, skin: ModernSkin) {
@@ -785,13 +760,13 @@ class ModernLibraryBrowserView: NSView {
         // Same box insets the tab bar uses (drawTabBar), so the toggle boxes match the tabs.
         let insetX = 2 * m * chromeScale
         let insetY = 2 * m
-        let segments = compactToggleSegmentRects()
-        ModernLibraryTab.draw("Library", isActive: compactContentMode == .library,
-                      rect: segments.library.insetBy(dx: insetX, dy: insetY),
-                      font: font, skin: skin, context: context)
-        ModernLibraryTab.draw("Playlist", isActive: compactContentMode == .queue,
-                      rect: segments.queue.insetBy(dx: insetX, dy: insetY),
-                      font: font, skin: skin, context: context)
+        let strip = compactFooterRect
+        for tab in CompactContentMode.tabs(width: strip.width) {
+            let rect = NSRect(x: strip.minX + tab.minX, y: strip.minY, width: tab.width, height: strip.height)
+            ModernLibraryTab.draw(tab.mode.label, isActive: compactContentMode == tab.mode,
+                          rect: rect.insetBy(dx: insetX, dy: insetY),
+                          font: font, skin: skin, context: context)
+        }
     }
 
     /// The List / Flow / Tiles buttons: three squares the server bar's height, 2 pt apart.
@@ -1246,19 +1221,14 @@ class ModernLibraryBrowserView: NSView {
             if hitTestCloseButton(at: point) { isClosePressed = true; needsDisplay = true; return }
         }
 
-        // Library | Playlist toggle footer (compact window only). The footer band sits below
+        // Content-mode tabs footer (compact window only). The footer band sits below
         // the content region, outside the embedded queue subview's frame, so its clicks
         // always reach the parent regardless of z-order.
-        if compactMode, compactFooterHeight > 0 {
-            let segments = compactToggleSegmentRects()
-            if segments.library.contains(point) {
-                if compactContentMode != .library { compactContentMode = .library }
-                return
-            }
-            if segments.queue.contains(point) {
-                if compactContentMode != .queue { compactContentMode = .queue }
-                return
-            }
+        if compactMode, compactFooterHeight > 0, compactFooterRect.contains(point) {
+            let strip = compactFooterRect
+            let mode = CompactContentMode.tab(atX: point.x - strip.minX, width: strip.width)
+            if compactContentMode != mode { compactContentMode = mode }
+            return
         }
 
         // The server bar, tabs, Sort and search; then the column header, alphabet index and rows

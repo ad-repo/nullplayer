@@ -190,6 +190,7 @@ extension ModernLibraryBrowserWindowController: NSWindowDelegate {
 
     func windowDidBecomeKey(_ notification: Notification) {
         browserView.needsDisplay = true
+        browserView.resumeCompactVisualizer()
         WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
     }
     
