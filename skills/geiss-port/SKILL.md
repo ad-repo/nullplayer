@@ -86,6 +86,7 @@ Geiss has no internal FFT — upstream consumes spectrum from the Winamp host. T
 - Render thread (CVDisplayLink) → `renderFrame`: takes `coreLock`. Framebuffer is never reallocated mid-stream and never accessed from any other thread.
 - Main actor → `setViewportSize`: takes `coreLock`, calls `GeissCore_resize` (which is permitted to reallocate the framebuffer via `FX_Fini` + `FX_Init`), then resizes the GL index texture.
 - Engine swap (`switchEngine` in `VisualizationGLView`): take `engineLock`, make the view's GL context current, `cleanup()` the old engine (`GeissCore_destroy` + GL teardown), then defer construction of the new engine to the next render. No frame is rendered between the two.
+- Shared GL state: the three engines share one context and none restores what it changes (Tripex leaves blend `GL_ZERO, GL_ONE` and a `GL_EQUAL` depth test, Geiss leaves `GL_TEXTURE1` active). `initializeEngineOnRenderThread` calls `resetSharedGLState()` before constructing every engine; a new engine may assume that baseline, and an engine that needs other state sets it per draw.
 
 The C core is **not** thread-safe; `coreLock` is the only barrier.
 

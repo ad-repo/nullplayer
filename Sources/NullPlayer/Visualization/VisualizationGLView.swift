@@ -285,11 +285,25 @@ class VisualizationGLView: NSOpenGLView {
         // Enable vsync
         var swapInterval: GLint = 1
         context.setValues(&swapInterval, for: .swapInterval)
-        
-        // Set up basic OpenGL state
-        glClearColor(0.0, 0.0, 0.0, 1.0)
+    }
+
+    /// Engines share this context, and none restores what it leaves behind: Tripex exits
+    /// with blend `GL_ZERO, GL_ONE` and an `GL_EQUAL` depth test, so the next engine's draws
+    /// write nothing and the window stays black. Every new engine starts from this baseline.
+    /// Caller holds the CGL lock with the context current.
+    private func resetSharedGLState() {
+        glBindFramebuffer(GLenum(GL_FRAMEBUFFER), 0)
+        glUseProgram(0)
+        glBindVertexArray(0)
+        glActiveTexture(GLenum(GL_TEXTURE0))
+        glDisable(GLenum(GL_DEPTH_TEST))
+        glDepthMask(GLboolean(GL_TRUE))
+        glDisable(GLenum(GL_CULL_FACE))
+        glDisable(GLenum(GL_SCISSOR_TEST))
+        glColorMask(GLboolean(GL_TRUE), GLboolean(GL_TRUE), GLboolean(GL_TRUE), GLboolean(GL_TRUE))
         glEnable(GLenum(GL_BLEND))
         glBlendFunc(GLenum(GL_SRC_ALPHA), GLenum(GL_ONE_MINUS_SRC_ALPHA))
+        glClearColor(0.0, 0.0, 0.0, 1.0)
     }
 
     private func setupGeissFFT() {
@@ -417,6 +431,8 @@ class VisualizationGLView: NSOpenGLView {
         let height = Int(backingBounds.height)
 
         NSLog("VisualizationGLView: Setting up %@ with viewport %dx%d on render thread", currentEngineType.displayName, width, height)
+
+        resetSharedGLState()
 
         // Create engine using factory
         engine = createEngine(type: currentEngineType, width: width, height: height)

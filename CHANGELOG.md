@@ -157,6 +157,9 @@
 - **`build_dmg.sh` signs and notarizes** — it signs with a Developer ID and the hardened runtime
   when `DEVELOPER_ID` is set, and notarizes and staples the DMG when `NOTARY_PROFILE` names a
   `notarytool` keychain profile. Without them it still builds the ad-hoc signed DMG.
+- **ProjectM and Geiss no longer go black after Tripex** — switching the Visualizations window's
+  engine away from Tripex left OpenGL state behind that made the next engine draw nothing; each
+  new engine now starts from a clean context.
 
 ## 0.32.2
 

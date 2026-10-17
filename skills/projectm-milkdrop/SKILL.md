@@ -133,6 +133,8 @@ libprojectM can SIGSEGV/SIGBUS on a buggy preset (bad shader compile, the null-t
 
 **Choppy animation**: close other GPU-intensive apps; try a different preset.
 
+**Black window after switching engines** (presets still logging `Preset loaded`): GL state left on the shared context by the previous engine. Fixed by `resetSharedGLState()` in `VisualizationGLView`; see the shared-GL-state note in [geiss-port](../geiss-port/SKILL.md).
+
 **Crashes during preset switching**: fixed by disabling soft cuts (blended transitions); check Console.app for `projectM` errors.
 
 **Null texture pointer crash**: fixed by removing direct OpenGL calls from `reshape()` — the render thread now handles all viewport updates safely.
