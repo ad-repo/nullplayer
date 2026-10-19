@@ -126,7 +126,7 @@ def build_steps(names):
 
 def run(pid, load_dir):
     for fam in FAMILIES:  # every skin named here must really be in its submenu
-        items = [x.strip() for x in menu(pid, "list", fam).split(",")]
+        items = [x.strip() for x in menu(pid, "list", fam).splitlines()]
         missing = [s for s in FAMILIES[fam] if s not in items]
         if missing:
             print(f"SETUP FAIL: {missing} not in the {fam} submenu")

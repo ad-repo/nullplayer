@@ -2,7 +2,7 @@ import Foundation
 import AppKit
 
 /// Singleton managing Emby server connections and state
-class EmbyManager {
+final class EmbyManager {
 
     // MARK: - Singleton
 

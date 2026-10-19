@@ -8,7 +8,7 @@ import AppKit
 /// walks the scene is deferred, because a skin's scripts write the graph hundreds of times while they
 /// load, and the shadow gate's fingerprint walk after every write was a third of a skin switch. The
 /// animation clock's check walks the same scene for as long as nothing in it animates, so it waits
-/// too. Neither loses anything: the shadow pulls at most every `shadowShapeInterval`, and a clock
+/// too. Neither loses anything: the shadow pull a deferred check owes lands a turn late, and a clock
 /// started one turn late is invisible at 30 Hz.
 struct WinampModernGraphSettle: OptionSet {
     let rawValue: UInt8

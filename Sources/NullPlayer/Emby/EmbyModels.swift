@@ -103,7 +103,7 @@ struct EmbySong: Identifiable, Equatable {
     let created: Date?           // DateCreated
     let isFavorite: Bool
     let playCount: Int?
-    let userRating: Int?         // 0-100 scale, nil if unrated
+    var userRating: Int?         // 0-100 scale, nil if unrated
 
     var formattedDuration: String {
         let minutes = duration / 60

@@ -83,7 +83,7 @@ final class WMPHostedRingSpanTests: XCTestCase {
                        WMPTestArchiveEntry("bar.png", data: try sheet(4, 24))]
         let loaded = try await WMPSkinLoader().load(from: try WMPSkinTestSupport.makeArchive(entries))
         let template = try XCTUnwrap(WMPHostedFrameTemplate.derive(from: loaded, playerViewID: nil))
-        XCTAssertEqual(template.spannedAcrossNodeIDs.count, 1)
+        XCTAssertEqual(template.scriptSpans.filter { $0.axis == .across }.count, 1)
         let store = WMPImageStore(provider: loaded.archive)
         let drawn = try await template.artwork(
             builder: WMPSceneBuilder(loadedSkin: loaded, imageStore: store),
@@ -92,5 +92,63 @@ final class WMPHostedRingSpanTests: XCTestCase {
         let image = try XCTUnwrap(drawn).image
         let alpha = NSBitmapImageRep(cgImage: image).colorAt(x: 200, y: 4)?.alphaComponent ?? 0
         XCTAssertGreaterThan(alpha, 0.9, "the top edge is bare between the strip and the corner")
+    }
+
+    /// **A rail hung off a side ornament reaches its bottom corner, and never the opposite rail
+    /// (`ALXMorph`).** `plLeftTile` and `plRightTile` are tiled with no authored size, sized only by
+    /// `onPlResize()`; `plRightTile` is declared before the real top-right corner, so it holds that
+    /// slot. Spanned across to it, the left rail tiled a second copy of itself into the middle of the
+    /// window; left one bitmap tall, the rail behind it showed as a band down both sides.
+    func testAHangingRailReachesItsBottomCornerAndNotTheOppositeRail() async throws {
+        func sheet(_ width: Int, _ height: Int, _ rgba: [UInt8]) throws -> Data {
+            try WMPSkinTestSupport.encodedImage(width: width, height: height, rgba: [UInt8](
+                (0..<(width * height)).flatMap { _ in rgba }))
+        }
+        let markup = """
+            <THEME><VIEW id="plView" width="200" height="200" minWidth="200" minHeight="200">
+              <SUBVIEW id="client" left="30" top="30" width="140" height="140"
+                       horizontalAlignment="stretch" verticalAlignment="stretch">
+                <PLAYLIST id="list" left="0" top="0" width="140" height="140"/>
+              </SUBVIEW>
+              <SUBVIEW backgroundImage="corner.png"/>
+              <SUBVIEW top="24" verticalAlignment="stretch" backgroundImage="rail.png"
+                       backgroundTiled="true"/>
+              <SUBVIEW left="176" top="24" horizontalAlignment="right" verticalAlignment="stretch"
+                       backgroundImage="rail.png" backgroundTiled="true"/>
+              <SUBVIEW id="hangL" top="60" backgroundImage="hang.png" backgroundTiled="true"/>
+              <SUBVIEW id="hangR" left="176" top="60" horizontalAlignment="right"
+                       backgroundImage="hang.png" backgroundTiled="true"/>
+              <SUBVIEW left="176" horizontalAlignment="right" backgroundImage="corner.png"/>
+              <SUBVIEW top="176" verticalAlignment="bottom" backgroundImage="corner.png"/>
+              <SUBVIEW left="176" top="176" horizontalAlignment="right" verticalAlignment="bottom"
+                       backgroundImage="corner.png"/>
+              <SUBVIEW left="24" horizontalAlignment="stretch" backgroundImage="bar.png"
+                       backgroundTiled="true"/>
+              <SUBVIEW left="24" top="176" verticalAlignment="bottom" horizontalAlignment="stretch"
+                       backgroundImage="bar.png" backgroundTiled="true"/>
+            </VIEW></THEME>
+            """
+        let red: [UInt8] = [255, 0, 0, 255], blue: [UInt8] = [0, 0, 255, 255]
+        let entries = [WMPTestArchiveEntry("skin.wms", data: Data(markup.utf8)),
+                       WMPTestArchiveEntry("corner.png", data: try sheet(24, 24, red)),
+                       WMPTestArchiveEntry("rail.png", data: try sheet(24, 4, red)),
+                       WMPTestArchiveEntry("bar.png", data: try sheet(4, 24, red)),
+                       WMPTestArchiveEntry("hang.png", data: try sheet(24, 40, blue))]
+        let loaded = try await WMPSkinLoader().load(from: try WMPSkinTestSupport.makeArchive(entries))
+        let template = try XCTUnwrap(WMPHostedFrameTemplate.derive(from: loaded, playerViewID: nil))
+        XCTAssertFalse(template.scriptSpans.contains { $0.axis == .across }, "a rail was taken for a corner")
+        XCTAssertEqual(template.scriptSpans.filter { $0.axis == .down }.count, 2)
+        let store = WMPImageStore(provider: loaded.archive)
+        let drawn = try await template.artwork(
+            builder: WMPSceneBuilder(loadedSkin: loaded, imageStore: store),
+            renderer: WMPRenderer(imageStore: store),
+            size: CGSize(width: 200, height: 200), backingScale: 1)
+        let bitmap = NSBitmapImageRep(cgImage: try XCTUnwrap(drawn).image)
+        XCTAssertLessThan(bitmap.colorAt(x: 100, y: 80)?.alphaComponent ?? 1, 0.1,
+                          "the left rail was tiled into the window's interior")
+        for x in [4, 196] {
+            let below = try XCTUnwrap(bitmap.colorAt(x: x, y: 150))
+            XCTAssertGreaterThan(below.blueComponent, 0.9, "the rail at x=\(x) stops one bitmap down")
+        }
     }
 }

@@ -169,7 +169,7 @@ final class WasabiTextMetrics {
         guard let identifier else { return resolvedFont(identifier: nil, size: size, traits: traits) }
         let key = FontKey(identifier: identifier, size: size, traits: traits.rawValue)
         if let cached = resolvedFonts[key] { return cached }
-        let resolved = resolvedFont(identifier: identifier, size: size, traits: traits)
+        let resolved = resolvedFont(identifier: identifier, size: size, traits: traits).map(Self.gdiSized)
         if resolvedFonts.count >= Self.maximumResolvedFonts { resolvedFonts.removeAll(keepingCapacity: true) }
         resolvedFonts[key] = resolved
         return resolved
@@ -244,6 +244,40 @@ final class WasabiTextMetrics {
                          + "as a font")
         return substituteFont(size: size, traits: traits)
     }
+
+    /// `font` rescaled so its em is the one GDI draws for the same `fontsize`.
+    ///
+    /// GDI fits a face's whole cell — its OS/2 `usWinAscent + usWinDescent` — into the height it is
+    /// handed, so a face with a tall cell draws a smaller em. `pixelHeightToPointSize` was measured
+    /// on Arial (a 1.117 em cell); every other face is scaled by its cell against Arial's. Impact's
+    /// cell is 1.22 em, and TOX Milla's `fontsize="24"` timer draws 14px digits in its own
+    /// screenshot — a 17.6 em, not 19.2 — where the unscaled face overflowed its 15px box.
+    static func gdiSized(_ font: NSFont) -> NSFont {
+        // Windows has no Helvetica — GDI's FontSubstitutes draws Arial for it, and here it is MS Sans
+        // Serif's stand-in — so its cell is Arial's, not its own.
+        guard font.familyName != "Helvetica" else { return font }
+        let unitsPerEm = CGFloat(CTFontGetUnitsPerEm(font))
+        let cell: CGFloat
+        if let table = CTFontCopyTable(font, CTFontTableTag(kCTFontTableOS2), []) as Data?,
+           table.count >= 78, unitsPerEm > 0 {
+            func uint16(_ offset: Int) -> CGFloat {
+                CGFloat(UInt16(table[table.startIndex + offset]) << 8
+                        | UInt16(table[table.startIndex + offset + 1]))
+            }
+            cell = (uint16(74) + uint16(76)) / unitsPerEm
+        } else {
+            cell = (font.ascender - font.descender) / font.pointSize
+        }
+        guard cell > 0.5, cell < 3, abs(cell - arialCellPerEm) > 0.01 else { return font }
+        // Bridged through `NSFont?` for the same reason as `resolvedFont`'s constructor: a CoreText
+        // constructor imported as non-optional can still hand back null.
+        let sized: NSFont? = CTFontCreateCopyWithAttributes(
+            font, font.pointSize * arialCellPerEm / cell, nil, nil) as NSFont
+        return sized ?? font
+    }
+
+    /// Arial's GDI cell per em, `(1854 + 434) / 2048` — the face `pixelHeightToPointSize` was measured on.
+    static let arialCellPerEm: CGFloat = 2288.0 / 2048.0
 
     /// What a name this system cannot produce draws in.
     ///

@@ -262,7 +262,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private var scriptRuntime: WMPScriptRuntime?
     /// What the skin's `mediaCollection`/`playlistCollection` read, and the tracks behind it (W136).
     private let librarySource = WMPLibrarySource()
-    private var libraryBuiltFor: ModernBrowserSource = .local
+    private var libraryBuiltFor: LibraryBrowserSource = .local
     /// The latest library play request; see `fetchLibraryDemands`.
     private var libraryPlayTicket = 0
     private var libraryObservers: [NSObjectProtocol] = []
@@ -411,12 +411,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         ) { [weak self] _ in MainActor.assumeIsolated { self?.refreshHostState() } }
         // The catalog is a copy of the browser's selected source (W136), so it is rebuilt when that
         // source changes, when a local rescan lands, and when a server finishes loading its
-        // lists. `BrowserSource` has no notification of its own: the browser writes it to
+        // lists. `LibraryBrowserSource` has no notification of its own: the browser writes it to
         // defaults, and a defaults change is compared against the source last built.
         // Each notification rebuilds only when it is about the selected source: every server
         // announces its own preload, and rebuilding the Plex catalog because Emby finished
         // loading re-listed playlists and refreshed every window for nothing.
-        let sources: [(Notification.Name, (ModernBrowserSource) -> Bool)] = [
+        let sources: [(Notification.Name, (LibraryBrowserSource) -> Bool)] = [
             (MediaLibrary.libraryDidChangeNotification, { if case .local = $0 { true } else { false } }),
             (PlexManager.libraryContentDidPreloadNotification, { if case .plex = $0 { true } else { false } }),
             (SubsonicManager.libraryContentDidPreloadNotification, { if case .subsonic = $0 { true } else { false } }),
@@ -429,7 +429,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self, let runtime = self.scriptRuntime,
-                          concerns(ModernBrowserSource.load() ?? .local) else { return }
+                          concerns(LibraryBrowserSource.load() ?? .local) else { return }
                     Task { await self.refreshLibrary(runtime) }
                 }
             })
@@ -439,7 +439,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, let runtime = self.scriptRuntime,
-                      (ModernBrowserSource.load() ?? .local) != self.libraryBuiltFor else { return }
+                      (LibraryBrowserSource.load() ?? .local) != self.libraryBuiltFor else { return }
                 Task { await self.refreshLibrary(runtime) }
             }
         })
@@ -502,7 +502,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// Hand the script runtime the library the browser's selected source holds (W136). `initial`
     /// is the skin's first load, which has no windows to refresh yet: its `onLoad` is still to run.
     private func refreshLibrary(_ runtime: WMPScriptRuntime, initial: Bool = false) async {
-        libraryBuiltFor = ModernBrowserSource.load() ?? .local
+        libraryBuiltFor = LibraryBrowserSource.load() ?? .local
         let playlistsChanged = await librarySource.rebuild()
         await runtime.setLibrary(librarySource.catalog)
         guard !initial else { return }
@@ -1393,24 +1393,21 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         host.setSpectrumConsumerActive(!spectrumConsumers.isEmpty)
     }
 
-    /// Whether the skin owns this surface, and — when asked to switch — showing it the way the skin
-    /// itself would.
+    /// Whether the skin owns this surface, and if so showing it the way the skin itself would.
     ///
     /// Returns `true` when the skin provides the surface at all, which is the signal to NullPlayer
     /// not to open a window of its own: 171 of the 180 corpus skins declare a playlist and 164 an
     /// equaliser, so a second copy is the common case, not the exception.
     ///
-    /// - Parameter switchingViews: when the surface lives in a view that is *not* on screen, open
-    ///   that view — the same thing the skin's own button does through `theme.openView`. False for
-    ///   the restore path, which must never move the user to a different view at launch, and true
-    ///   for an explicit toggle from a menu.
+    /// A surface in a view that is *not* on screen has that view opened — the same thing the skin's
+    /// own button does through `theme.openView`, which puts the panel beside the player rather than
+    /// moving the user off their view, so the launch restore and a mode-switch rebuild take it too.
     /// - Parameter activate: give the window showing the surface key focus — now if it is open, and
     ///   once it exists if it has to be opened, which is a `Task` away. A play call passes true so
     ///   keys stop going to the Library Browser that started the film, where Return replays the
     ///   selected row (M5); `.wal`'s `setAuxiliaryWindow(activate:)` is the counterpart.
     @discardableResult
-    func revealSkinSurface(_ surface: WMPSkinSurface, switchingViews: Bool,
-                           activate: Bool = false) -> Bool {
+    func revealSkinSurface(_ surface: WMPSkinSurface, activate: Bool = false) -> Bool {
         guard skinSurfaces.provides(surface) else { return false }
         // Already on screen in one of this skin's windows: nothing to open, and nothing of ours to
         // add. With real windows this is a question about the whole session rather than about the
@@ -1419,9 +1416,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             if activate { window.makeKeyAndOrderFront(nil) }
             return true
         }
-        if switchingViews, let target = skinSurfaces.viewIDs(for: surface).first,
+        if let target = skinSurfaces.viewIDs(for: surface).first,
            let player = materializer.playerPresentation {
-            // The same call the skin's own button makes. Routing a menu toggle through `openView`
+            // The same call the skin's own button makes. Routing a surface through `openView`
             // rather than a view *switch* is what keeps the player up beside the panel — and it is
             // the panel's own `view.close()` that takes it away again.
             openView(target, from: player, offset: nil, activate: activate)
@@ -2276,9 +2273,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     func updatePlaybackState() { refreshHostState() }
     /// `WindowManager.reloadPlaylistViews`: repaint every open `<PLAYLIST>`.
     func playlistContentDidChange() {
-        // The rows carry their EQ marker, which a paused player's snapshot would not pick up.
         refreshHostState()
         for presentation in materializer.openPresentations { presentation.mainView?.playlistContentDidChange() }
+    }
+
+    func playlistMarkersDidChange() {
+        // The rows carry their EQ marker, which a paused player's snapshot would not pick up.
+        refreshHostState()
+        for presentation in materializer.openPresentations { presentation.mainView?.playlistMarkersDidChange() }
     }
 
     /// The skin has already assigned a reserved pseudo-resource name by the time this completes.

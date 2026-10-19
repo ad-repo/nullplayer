@@ -301,18 +301,19 @@ struct WinampModernHostedFrameDescriptor {
     /// Set when the skin lays its own windows out around this frame rather than letting the frame's
     /// script build them — see `WasabiSurfaceSynthesizer.FrameExemplar`.
     let exemplar: WasabiSurfaceSynthesizer.FrameExemplar?
-    /// Where the frame's own script would put its client, for the ordinary `content=` case. The
-    /// border is just as real there as an exemplar's, and the window has to carry it too.
-    let scriptClient: CGRect?
+    /// The border we place our client inside, for the ordinary `content=` case — see
+    /// `WasabiSurfaceSynthesizer.Frame.clientInsets`. The border is just as real there as an
+    /// exemplar's, and the window has to carry it too.
+    let clientInsets: WasabiSurfaceSynthesizer.ClientInsets?
 
     init(groupIdentifier: String, xuiTag: String, hasArtwork: Bool,
          exemplar: WasabiSurfaceSynthesizer.FrameExemplar? = nil,
-         scriptClient: CGRect? = nil) {
+         clientInsets: WasabiSurfaceSynthesizer.ClientInsets? = nil) {
         self.groupIdentifier = groupIdentifier
         self.xuiTag = xuiTag
         self.hasArtwork = hasArtwork
         self.exemplar = exemplar
-        self.scriptClient = scriptClient
+        self.clientInsets = clientInsets
     }
 }
 
@@ -363,7 +364,7 @@ struct WinampModernHostedWindowInstantiation {
                                        xuiTag: frame.xuiTag,
                                        hasArtwork: frame.hasArtwork,
                                        exemplar: frame.exemplar,
-                                       scriptClient: frame.scriptClient).floor(under: size)
+                                       clientInsets: frame.clientInsets).floor(under: size)
     }
 }
 

@@ -1,5 +1,4 @@
 import AppKit
-import AVFoundation
 
 /// Round images for library list rows — album/artist/track/video art, radio station icons,
 /// YouTube video thumbnails and channel avatars — shared by both library browsers.
@@ -58,16 +57,10 @@ final class LibraryRowThumbnails {
             return remote(url)
         }
 
-        /// A file's embedded art; a stream URL keeps the placeholder.
+        /// A file's art (`LocalArtwork`); a stream URL keeps the placeholder.
         static func localFile(_ url: URL) -> Source {
             guard url.isFileURL else { return Source(key: "stream:\(url.absoluteString)", load: { nil }) }
-            return Source(key: "local:\(url.path)", load: {
-                guard let metadata = try? await AVURLAsset(url: url).load(.metadata) else { return nil }
-                for item in metadata where item.commonKey == .commonKeyArtwork {
-                    if let data = try? await item.load(.dataValue), let image = NSImage(data: data) { return image }
-                }
-                return nil
-            })
+            return Source(key: "local:\(url.path)", load: { await LocalArtwork.image(for: url) })
         }
 
         private static func remote(_ url: URL) -> Source {

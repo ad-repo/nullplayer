@@ -13,7 +13,7 @@ NullPlayer implements Google Cast Protocol v2 for casting audio and video to Chr
 |------|---------|
 | `Casting/CastProtocol.swift` | Protocol implementation, message encoding/decoding, session controller |
 | `Casting/ChromecastManager.swift` | Device discovery (mDNS), connection management, public API |
-| `Casting/CastManager.swift` | High-level casting coordinator for all device types |
+| `Casting/CastManager.swift` | High-level casting coordinator for all device types; EQ Cast's seam (`eq-profiles` § *EQ Cast*) |
 | `scripts/test_chromecast.swift` | Standalone test script for debugging |
 
 ## Discovery

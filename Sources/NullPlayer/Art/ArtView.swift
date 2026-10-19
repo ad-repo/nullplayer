@@ -167,28 +167,10 @@ final class ArtView: NSView {
         if !embeddedArtwork.isEmpty { embeddedArtwork = [] }
         guard let track = currentTrack, track.url.isFileURL else { return }
         embeddedArtworkTask = Task { @MainActor [weak self] in
-            let images = await Self.embeddedArtwork(of: track.url)
+            let images = await LocalArtwork.embeddedImages(in: track.url)
             guard let self, !Task.isCancelled, self.currentTrack?.id == track.id, images.count > 1 else { return }
             self.embeddedArtwork = images
         }
-    }
-
-    /// Every picture embedded in a local file, de-duplicated across the metadata formats that repeat
-    /// them.
-    private static func embeddedArtwork(of url: URL) async -> [NSImage] {
-        let asset = AVURLAsset(url: url)
-        var items = (try? await asset.load(.metadata)) ?? []
-        for format in [AVMetadataFormat.id3Metadata, .iTunesMetadata] {
-            items += (try? await asset.loadMetadata(for: format)) ?? []
-        }
-        var seen = Set<Data>()
-        var images: [NSImage] = []
-        for item in items where item.commonKey == .commonKeyArtwork {
-            guard let data = try? await item.load(.dataValue), seen.insert(data).inserted,
-                  let image = NSImage(data: data) else { continue }
-            images.append(image)
-        }
-        return images
     }
 
     // MARK: - VIS lifecycle

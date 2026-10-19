@@ -264,6 +264,20 @@ the corpus opens its composition with a full-bleed positive anyway (`wasabi.stan
 `Wasabi:MainFrame:*` all carry `sysregion="1"` on the group that fills the window), so the seeded
 rect gives the same answer wherever a skin does say.
 
+**A wrapper group reaches only as far as what it holds** (2026-10-17). That full-bleed positive is
+an artwork-less group, and such a group counts as its box only when nothing inside it declares a
+region. When its descendants do, it reaches as far as its visible leaves plus any group inside it
+that paints a `background` — not merely as far as their region, because a standard frame's client
+content declares none and is still window. The seeded rect is cleared to that inside the wrapper's
+box before the ordered pass, and the wrapper fills the same boxes when the pass reaches it.
+XENERGY is the case: its `Wasabi:MainFrame:NoStatus` fills a 601x280 layout whose player and closed
+config drawer end at y=146 (the rest is room for the drawer to slide into), and a 252x1 `<vis>` at
+y=215, declared beside the frame, drew a flickering line on the desktop below the player. Outside a
+wrapper's box the seeded rect still stands. Two broader versions were measured and rejected: bounding
+the whole window by its positive declarations moved 87 corpus images, and counting leaves only
+(not `background` groups) still erased Formamp's and Ebonite's client areas. The shipped rule moved
+none.
+
 The shape reaches the **window** without any `NSWindow` work: all three `.wal` window paths — the
 player, auxiliary containers, and the hosted-window materializer — already set `isOpaque = false`,
 a clear `backgroundColor` and `hasShadow = false`, so an erased corner is genuinely transparent. It

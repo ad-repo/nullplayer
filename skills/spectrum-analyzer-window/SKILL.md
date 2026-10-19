@@ -30,13 +30,17 @@ Dedicated Metal-based spectrum analyzer providing larger, more detailed view tha
 Participates in the docking system with Main, EQ, and Playlist:
 - Docks and moves with the window group
 - Opens below the current vertical stack
-- State saved with "Remember State on Quit"
+- State saved with "Save State on Quit"
 
 ## Quality Modes
 
+Classic's defaults are written by a reset and a switch into Classic; a Classic launch writes only
+keys never saved before (a fresh install), and a Classic skin pick writes none, so a mode or profile
+picked in Classic survives both (`WindowManager.seedClassicVisualizationDefaults`).
+
 | Mode | Description |
 |------|-------------|
-| **Classic** | Low-fi stepped bars from the skin palette with chunky peak caps, hard LED bands, and the shared cropped analyzer sub curve (default) |
+| **Classic** | Low-fi stepped bars from the skin palette with chunky peak caps, hard LED bands, and the shared cropped analyzer sub curve (fallback when no mode is saved) |
 | **Enhanced** | Compact professional LED analyzer with cropped logarithmic frequency mapping, controlled low-bass shaping, clean peak caps, short release trails |
 | **Ultra** | Dense professional analyzer with cropped logarithmic frequency mapping, controlled low-bass shaping, fast decay, clean peak caps |
 | **Fire** | GPU fire simulation with audio-reactive flame tongues (4 color styles) |
@@ -45,7 +49,7 @@ Participates in the docking system with Main, EQ, and Playlist:
 | **Matrix** | Falling digital rain with procedural glyphs (5 color schemes, 2 intensity presets) |
 | **Snow** | Layered procedural snowfall with spectrum-shaped density, gusting drift, soft atmospheric haze |
 | **EKG** | Oscilloscope-style ECG monitor with phosphor trace, medical grid, scan glow; pure peak detector — each audio onset fires one QRS, height = peak prominence |
-| **vis_classic** | Exact-port vis_classic analyzer core with profile-compatible INI behavior |
+| **vis_classic** | Exact-port vis_classic analyzer core with profile-compatible INI behavior (Classic UI default, profile "Purple Neon") |
 
 ## Switching Modes
 

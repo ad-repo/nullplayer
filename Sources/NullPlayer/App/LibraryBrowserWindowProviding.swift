@@ -1,7 +1,7 @@
 import AppKit
 
 /// Protocol abstracting the library browser window.
-/// Both the classic `PlexBrowserWindowController` and modern `ModernLibraryBrowserWindowController`
+/// Both `ClassicLibraryBrowserWindowController` and `ModernLibraryBrowserWindowController`
 /// conform to this protocol. `WindowManager` holds a reference to whichever is active,
 /// allowing the rest of the app to be agnostic about which UI system is in use.
 ///

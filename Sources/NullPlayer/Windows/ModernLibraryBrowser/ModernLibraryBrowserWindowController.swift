@@ -2,7 +2,7 @@ import AppKit
 
 /// Controller for the library browser window (modern skin).
 /// Conforms to `LibraryBrowserWindowProviding` so WindowManager can use it interchangeably
-/// with the classic `PlexBrowserWindowController`.
+/// with `ClassicLibraryBrowserWindowController`.
 ///
 /// This controller has ZERO dependencies on the classic skin system.
 class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWindowProviding {
@@ -95,13 +95,13 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
     }
     
     func reloadData() {
-        browserView.reloadData()
+        browserView.model.reloadData()
     }
     
     /// Current browse mode raw value for state save/restore
     var browseModeRawValue: Int {
-        get { browserView.browseModeRawValue }
-        set { browserView.browseModeRawValue = newValue }
+        get { browserView.model.browseMode.rawValue }
+        set { browserView.model.restoreBrowseMode(rawValue: newValue) }
     }
     
     func showLinkSheet() {
@@ -110,7 +110,7 @@ class ModernLibraryBrowserWindowController: NSWindowController, LibraryBrowserWi
         let linkSheet = PlexLinkSheet()
         linkSheet.showAsSheet(from: window) { [weak self] success in
             if success {
-                self?.browserView.reloadData()
+                self?.browserView.model.reloadData()
             }
         }
     }

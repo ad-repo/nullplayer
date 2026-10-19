@@ -287,7 +287,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             view.componentWindowToggleRequested = { [weak self] kind in
                 self?.toggleAuxiliaryWindow(for: kind) ?? false
             }
-            installWindowCommands()
+            installMainWindowCommands()
             applyLayoutConstraints()
             // Container-scoped callbacks must exist *before* the scripts run: a skin that resizes or
             // switches a layout from `onScriptLoaded` does it during `start()`.
@@ -573,6 +573,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         auxWindow.setAccessibilityLabel(info.object.attributes["name"] ?? info.id)
         auxWindow.delegate = self
         auxWindow.orderOut(nil)
+        installWindowCommands(on: view, id: info.id)
         // A script resizing *this* container resizes this window, not the player's.
         view.didClickInWindow = { [weak self] id in self?.dismissTransientContainers(except: id) }
         view.canvasSizeDidChange = { [weak self, weak auxWindow] size in
@@ -666,6 +667,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     var currentPalette: WasabiPalette? { skinView?.renderer.palette }
     /// The loaded `.wal` archive — the skin's identity for once-per-skin defaults.
     var loadedSkinURL: URL? { loadedSkin?.archive.sourceURL }
+    /// The loaded skin's filename stem — the name the importer selects by and the skin scopes its own
+    /// settings by. Nil while the placeholder is showing.
+    var loadedSkinName: String? { loadedSkinURL?.deletingPathExtension().lastPathComponent }
 
     // MARK: - Text Size (B50)
 
@@ -1881,26 +1885,38 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         WinampModernSkinState.setWindowIsVisible(visible, container: id, in: configuration)
     }
 
-    /// Close / Minimize as Winamp means them, wired to every window this skin owns.
+    /// Close / Minimize as Winamp means them, for the player window; `installWindowCommands(on:id:)`
+    /// wires each auxiliary window as it is built.
     ///
     /// Not left to the view: `performClose(_:)` simulates a click on a close *button*, which a
     /// `.borderless` window does not have — it beeps and returns, which is why no skin's close button
     /// worked. And the commands are about the player, not one window: closing the player quits (the
     /// classic skin's close button does the same), closing an auxiliary window hides just it, and
     /// minimize takes the whole set down together instead of leaving the rest of the skin on screen.
-    private func installWindowCommands() {
+    private func installMainWindowCommands() {
         skinView?.closeRequested = { NSApplication.shared.terminate(nil) }
         skinView?.minimizeRequested = { [weak self] in self?.minimizeAllWindows() }
-        for container in auxiliaryContainers {
+    }
+
+    /// The same commands for one auxiliary window. Wired as each is built, so a dynamic copy a script
+    /// asks for after load closes like the declared windows do.
+    private func installWindowCommands(on view: WinampModernMainView, id: String) {
+        view.closeRequested = { [weak self, weak view] in
+            guard let self else { return }
+            // A frame a script keeps glued over another window is that window's chrome: closing it
+            // closes the window it frames, and the skin takes the frame down with it. Itemskin's frame
+            // around the Equalizer Studio has no close of its own, only the fallback corner.
+            if let view, let closeFramed = viewFramed(by: view.containerID)?.closeRequested {
+                closeFramed()
+                return
+            }
             // Through `setAuxiliaryWindow`, not `orderOut` directly: closing a window is a scene
             // becoming invisible, and the skin is listening. Ujola Cat's console buttons light up
             // from their window's layout `onSetVisible`, so a close that bypassed the scene left the
             // button lit with nothing on screen.
-            container.view.closeRequested = { [weak self, id = container.containerID] in
-                self?.setAuxiliaryWindow(id: id, visible: false, record: true)
-            }
-            container.view.minimizeRequested = { [weak self] in self?.minimizeAllWindows() }
+            setAuxiliaryWindow(id: id, visible: false, record: true)
         }
+        view.minimizeRequested = { [weak self] in self?.minimizeAllWindows() }
     }
 
     private func minimizeAllWindows() {
@@ -2000,6 +2016,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         gluedWindowPairs.first { $0.leader === window }?.follower
     }
 
+    /// The view of the window a script keeps `container`'s frame glued over, if it is such a frame.
+    private func viewFramed(by container: WasabiObjectID) -> WinampModernMainView? {
+        guard let leader = skinView?.scripts.windowsGluedOver.first(where: { $0.value == container })?.key,
+              leader != container else { return nil }
+        return viewsByContainer[leader]
+    }
+
     /// Every pair a script has glued (`windowsGluedOver`) whose two windows exist and differ.
     private var gluedWindowPairs: [(leader: NSWindow, follower: NSWindow)] {
         guard let scripts = skinView?.scripts else { return [] }
@@ -2077,7 +2100,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     private func moveContainerWindow(_ container: WasabiObjectID, to point: CGPoint,
                                      pinned: Bool = false) {
         let target: NSWindow?
-        if let auxiliary = auxiliaryContainers.first(where: { $0.view.containerID == container }) {
+        let auxiliary = auxiliaryContainers.first(where: { $0.view.containerID == container })
+        if let auxiliary {
             target = auxiliary.window
         } else if skinView?.containerID == container {
             target = window
@@ -2111,6 +2135,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             origin.x = min(max(origin.x, visible.minX), max(visible.minX, visible.maxX - size.width))
             origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
         }
+        // A pin places the window relative to another one, so `place` must not tile it afresh when it
+        // first opens: ONYX V2 pins its visualization over the player's art box and then shows it.
+        if pinned, let auxiliary { placedAuxiliaryWindows.insert(auxiliary.containerID) }
         guard origin != target.frame.origin else { return }
         if ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1" {
             // A script parking its own window overrides whatever `place` decided, and legitimately
@@ -2587,6 +2614,15 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         followCurrentTrackInPlaylist()
         refreshBoundText()
         if let track { showNotifier(for: track) }
+    }
+
+    func playlistContentDidChange() {
+        componentBridge?.playlistQueueDidChange()
+        surfaceCoordinator?.surfaceContentDidChange()
+    }
+
+    func playlistMarkersDidChange() {
+        surfaceCoordinator?.surfaceContentDidChange()
     }
 
     /// The drawn playlist's selection bar follows playback across a track change, and scrolls the new

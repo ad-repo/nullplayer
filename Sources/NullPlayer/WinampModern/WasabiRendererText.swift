@@ -117,8 +117,12 @@ extension WasabiSceneRenderer {
         // ascender and short digits: Century Gothic reports 23.5 for a 24px cell and puts 19.3 of it
         // above the baseline, which drops cPro2 Styler's elapsed clock a pixel low and pushed the
         // bottom of every round digit through its group's clip.
-        let lineCell = max(font.ascender - font.descender,
-                           CGFloat(WasabiTextMetrics.pixelHeight(of: object)))
+        //
+        // Once `WasabiTextMetrics.gdiSized` has fitted the face's cell to GDI's, that cell *is*
+        // the face's own line, and DT_VCENTER centres it: TOX Milla's Impact 24 timer in a 15px box
+        // lands on the rows its screenshot shows only this way, and loses its top to the box
+        // centred on the full `fontsize`.
+        let lineCell = font.ascender - font.descender
         let cell: CGFloat
         if wraps {
             let bounds = (text as NSString).boundingRect(
@@ -246,10 +250,12 @@ extension WasabiSceneRenderer {
             // The cell rect used to be a scissor as well as a box — `.byClipping` was set for that
             // reason — and a `CTLine` has none. The per-cell clip below restores it. It is not
             // hypothetical: a `timecolonwidth` narrower than the colon glyph is exactly the case, and
-            // Big Bento Modern declares one.
+            // Big Bento Modern declares one. Vertically the cell is the **object's own box**, like the
+            // scissor above: `drawFrame` is shifted by the centring, so a font taller than its box
+            // (TOX Milla's Impact 24 in a 15px timer) lost the bottom of every digit to it.
             for cell in clock.cells {
-                let cellFrame = CGRect(x: origin, y: drawFrame.minY,
-                                       width: cell.width, height: drawFrame.height)
+                let cellFrame = CGRect(x: origin, y: frame.minY,
+                                       width: cell.width, height: frame.height)
                 let glyphWidth = resources.textWidth(of: cell.text, font: font)
                 let x = cell.centred ? cellFrame.minX + (cellFrame.width - glyphWidth) / 2
                                      : cellFrame.minX

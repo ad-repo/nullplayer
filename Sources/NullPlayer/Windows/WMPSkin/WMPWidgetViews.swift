@@ -97,13 +97,27 @@ final class WMPPlaylistSurfaceView: NSView {
         guard libraryRows != self.libraryRows else { return }
         // A different list under the same control starts at its top, unselected.
         self.libraryRows = libraryRows
+        firstVisibleIndex = 0
+        restartSelection()
+        needsDisplay = true
+    }
+
+    /// The queue changed under the selection, which indexes rows of the queue as it was: start it
+    /// again on the playing row, as the Classic and Modern playlists' `reloadData` do, so Assign EQ
+    /// Profile never writes to rows the user picked in a queue that is gone (M48). A library
+    /// playlist on screen is not the queue, and keeps its selection.
+    func queueDidChange() {
+        if libraryRows == nil { restartSelection() }
+        needsDisplay = true
+    }
+
+    /// Drop the selection; the next `update` seeds it on the playing row.
+    private func restartSelection() {
         selectedIndex = -1
         selectedRows = []
         selectionAnchor = nil
-        firstVisibleIndex = 0
         lastPlayingIndex = -1
         update(snapshot)
-        needsDisplay = true
     }
 
     func apply(style: SkinnedSurfaceStyle) {
@@ -179,16 +193,12 @@ final class WMPPlaylistSurfaceView: NSView {
     }
 
     /// **NullPlayer's own playlist menu, since the skin authors none (W272).** WMP supplied these
-    /// rows from its own menus, so no skin draws them. A right-click on an unselected row selects
-    /// it first, the way a list does. A library preview is read-only: its editing rows are disabled.
+    /// rows from its own menus, so no skin draws them. A library preview is read-only: its editing
+    /// rows are disabled.
     override func menu(for event: NSEvent) -> NSMenu? {
         let point = convert(event.locationInWindow, from: nil)
         let index = firstVisibleIndex + Int(point.y / rowHeight)
-        if rows.indices.contains(index), !selectedRows.contains(index) {
-            selectedRows = [index]; selectionAnchor = index; selectedIndex = index
-            needsDisplay = true
-        }
-        return PlaylistMenuBuilder.menu(target: self, state: .init(
+        return PlaylistMenuBuilder.menu(target: self, clickedRow: rows.indices.contains(index) ? index : nil, state: .init(
             selectedRows: selectedRows, hasTracks: !rows.isEmpty, canEdit: libraryRows == nil),
             autoenablesItems: false)
     }
@@ -265,6 +275,8 @@ extension WMPPlaylistSurfaceView: PlaylistMenuTarget {
         if let first = rows.min() { selectedIndex = first }
         needsDisplay = true
     }
+
+    @objc func selectForMenu(_ row: Int) { selectOnly([row]) }
 
     @objc func playSelected(_ sender: Any?) {
         guard let index = selectedRows.min() else { return }

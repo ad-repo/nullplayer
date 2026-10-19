@@ -1135,7 +1135,17 @@ class CastManager {
         let needsJellyfinProxy = track.jellyfinId != nil && device.type == .sonos
         let needsEmbyProxy = track.embyId != nil && device.type == .sonos
 
-        if track.url.scheme == "http" || track.url.scheme == "https" {
+        // A stop during the render cancels it; without this check the original would be cast anyway.
+        let generation = await MainActor.run { castTrackGeneration }
+        let eqFile = await EQCast.castableFile(for: track, device: device.type,
+                                               generation: { generation == self.castTrackGeneration })
+        guard await MainActor.run(body: { generation == castTrackGeneration }) else {
+            NSLog("CastManager: castTrack '%@' abandoned - superseded during EQ Cast render", track.title)
+            return
+        }
+        if eqFile != nil { effectiveContentType = "audio/flac" }
+
+        if eqFile == nil, track.url.scheme == "http" || track.url.scheme == "https" {
             if needsSubsonicProxy || needsJellyfinProxy || needsEmbyProxy {
                 // Subsonic/Jellyfin/Emby to Sonos: Use proxy with HEAD-based content type detection
                 let result = try await prepareProxyURL(for: track, device: device)
@@ -1161,7 +1171,7 @@ class CastManager {
                 }
             }
             
-            guard let serverURL = LocalMediaServer.shared.registerFile(track.url) else {
+            guard let serverURL = LocalMediaServer.shared.registerFile(eqFile ?? track.url) else {
                 throw CastError.localServerError("Could not register file with local media server")
             }
             castURL = serverURL
@@ -1186,6 +1196,7 @@ class CastManager {
         NSLog("CastManager: castTrack URL: %@, contentType: %@", finalCastURL.redacted, contentType)
         
         try await cast(to: device, url: finalCastURL, metadata: metadata, startPosition: startPosition)
+        await EQCast.didCast(eqFile, from: resolvedAudioEngine, device: device.type)
     }
     
     /// Cast a new track to the already connected device (for next/previous)
@@ -1340,7 +1351,10 @@ class CastManager {
         // Get castable URL and effective content type
         let castURL: URL
         var effectiveContentType: String? = trackToCast.contentType
-        if trackToCast.url.scheme == "http" || trackToCast.url.scheme == "https" {
+        let eqFile = await EQCast.castableFile(for: trackToCast, device: session.device.type,
+                                               generation: { myGeneration == self.castTrackGeneration })
+        if eqFile != nil { effectiveContentType = "audio/flac" }
+        if eqFile == nil, trackToCast.url.scheme == "http" || trackToCast.url.scheme == "https" {
             if needsSubsonicProxy || needsJellyfinProxy || needsEmbyProxy {
                 // Subsonic/Jellyfin/Emby to Sonos: Use proxy with HEAD-based content type detection
                 do {
@@ -1369,7 +1383,7 @@ class CastManager {
                 }
             }
             
-            guard let serverURL = LocalMediaServer.shared.registerFile(trackToCast.url) else {
+            guard let serverURL = LocalMediaServer.shared.registerFile(eqFile ?? trackToCast.url) else {
                 clearLoadingState()
                 throw CastError.localServerError("Could not register file with local media server")
             }
@@ -1493,6 +1507,7 @@ class CastManager {
                 // Sonos/DLNA don't provide status updates - start timer immediately
                 resolvedAudioEngine.startCastPlayback(from: 0)
             }
+            EQCast.didCast(eqFile, from: resolvedAudioEngine, device: session.device.type)
             NotificationCenter.default.post(name: Self.playbackStateDidChangeNotification, object: nil)
 
             // Close the video player if it was showing a video cast that this audio cast supersedes.
@@ -1897,6 +1912,7 @@ class CastManager {
     func stopCasting() async {
         await MainActor.run {
             castTrackGeneration += 1
+            EQCast.stop()
         }
         let task = await enqueueInflight { [self] in
             await self._stopCastingCore()
@@ -2037,6 +2053,7 @@ class CastManager {
     /// This avoids deadlock when called from applicationWillTerminate on the main thread
     func stopCastingSync() {
         NSLog("CastManager: Stopping casting (sync for termination)")
+        MainActor.assumeIsolated { EQCast.stop() }
         
         // Stop Sonos polling and topology refresh
         stopSonosPolling()

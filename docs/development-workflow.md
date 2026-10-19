@@ -141,7 +141,7 @@ To update the cask by hand (e.g. after `--skip-tap`, or if the automatic update 
    brew livecheck --cask ad-repo/nullplayer/nullplayer
    ```
 
-The cask runs `xattr -cr` in `postflight` to clear the quarantine bit, because the DMG is ad-hoc signed only (there is no paid Apple Developer ID / notarization, and none is planned). Direct-DMG users have to run `xattr -cr /Applications/NullPlayer.app` themselves — that is why the install docs treat it as a required step, not optional troubleshooting.
+Release DMGs are signed with a Developer ID and notarized: build with `DEVELOPER_ID` set to the signing identity and `NOTARY_PROFILE` set to a `notarytool` keychain profile. Without them `build_dmg.sh` produces an ad-hoc signed DMG that Gatekeeper blocks, so never publish one.
 
 ## Versioning
 

@@ -162,17 +162,4 @@ enum PlayerUIMode: String, CaseIterable {
     ) -> Bool {
         forcedMode == nil || forcedMode == requestedMode
     }
-
-    /// Diagnostic GUI launch override supplied by `-uiMode <mode>` in NSArgumentDomain.
-    /// This remains available in release builds so packaged WMP failures can be reproduced.
-    static var argumentOverride: PlayerUIMode? {
-        return argumentOverride(
-            from: UserDefaults.standard.volatileDomain(forName: "NSArgumentDomain"))
-    }
-
-    static func argumentOverride(from arguments: [String: Any]) -> PlayerUIMode? {
-        guard let rawValue = arguments[userDefaultsKey] as? String,
-              let mode = PlayerUIMode(rawValue: rawValue), mode.isAvailable else { return nil }
-        return mode
-    }
 }

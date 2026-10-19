@@ -2,7 +2,7 @@ import AppKit
 import NullPlayerCore
 
 /// Manages saving and restoring the complete application state.
-/// When "Remember State On Quit" is enabled (context menu toggle), saves app state
+/// When "Save State on Quit" is enabled (context menu toggle), saves app state
 /// on quit and restores on launch.
 ///
 /// ## Saved State (AppState struct, v2)
@@ -331,7 +331,7 @@ class AppStateManager {
         var selectedOutputDeviceUID: String?
         
         // Library browser state
-        var browserBrowseMode: Int?  // Raw value of PlexBrowseMode / ModernBrowseMode
+        var browserBrowseMode: Int?  // Raw value of LibraryBrowseMode
         
         // UI mode the state was saved in (used to skip frame restoration on mode mismatch)
         var uiMode: String?
@@ -728,10 +728,10 @@ class AppStateManager {
             uiMode: wm.uiMode.rawValue,
             savedInModernMode: wm.uiMode.usesModernControllers,
             // Which skin `mainWindowFrame` above belongs to. Recorded only in `winampModern` mode,
-            // where the window's size is the skin's rather than the app's.
-            winampModernSkinName: wm.uiMode == .winampModern
-                ? UserDefaults.standard.string(forKey: WinampModernSkinImporter.selectedSkinNameKey)
-                : nil
+            // where the window's size is the skin's rather than the app's. The skin on screen, not the
+            // stored selection: a stale key loads the bundled default, and a debug launch can load
+            // another skin entirely.
+            winampModernSkinName: (wm.mainWindowController as? WinampModernMainWindowController)?.loadedSkinName
         )
         for feature in WindowManager.CenterStackFeature.allCases {
             state[keyPath: feature.savedVisibility] =
@@ -851,49 +851,14 @@ class AppStateManager {
     /// Apply settings state (skin, volume, EQ, windows) - no playlist
     private func applySettingsState(_ state: AppState, completion: (() -> Void)? = nil) {
         let wm = WindowManager.shared
-        // A diagnostic command-line mode selection is an explicit launch override. Session restoration
-        // may restore state within that mode, but must not replace the requested controller family.
-        let restoredMode = PlayerUIMode.argumentOverride ?? state.restoredUIMode
-
-        if restoredMode == .wmp, state.restoredUIMode == .wmp {
-            let importer = WMPSkinImporter()
-            if let name = state.wmpSkinName {
-                importer.selection.select(name)
-                if let viewID = state.wmpViewID {
-                    importer.defaults.set(viewID, forKey: WMPSkinImporter.selectedViewIDKey)
-                } else {
-                    importer.defaults.removeObject(forKey: WMPSkinImporter.selectedViewIDKey)
-                }
-            } else {
-                importer.resetSelection()
-            }
-        }
-
-        if restoredMode == .audion, state.restoredUIMode == .audion {
-            let importer = AudionFaceImporter()
-            if let name = state.audionFaceName { importer.selection.select(name) } else { importer.selection.reset() }
-        }
-
-        // reloadUI(to:) can defer the actual mode swap until Compact Mode teardown completes.
-        // The rest of the restore reads wm.uiMode / wm.isRunningModernFamilyUI and rebuilds
-        // skin/window state, so it must run only once the target-mode controllers exist.
-        if wm.uiMode != restoredMode {
-            wm.reloadUI(to: restoredMode) { [weak self] in
-                self?.applySettingsStateAfterReload(state, completion: completion)
-            }
-        } else {
-            applySettingsStateAfterReload(state, completion: completion)
-        }
-    }
-
-    /// Apply the non-mode-switching portion of settings restore. Runs after any
-    /// `reloadUI(to:)` swap has completed so it observes the final controller set.
-    private func applySettingsStateAfterReload(_ state: AppState, completion: (() -> Void)? = nil) {
-        let wm = WindowManager.shared
+        // The session never switches the UI mode or a family's skin selection. Those preferences
+        // (or a `-uiMode` launch argument) already chose them, and each is written on every change;
+        // the session's copy can be older — a run under `-rememberStateEnabled NO`, or a crash
+        // inside the autosave interval, changes them without saving the session — and restoring it
+        // would undo the change. The session still records them for older builds.
+        let runningMode = wm.uiMode
         let engine = wm.audioEngine
 
-        let runningMode = wm.uiMode
-        
         NSLog("AppStateManager: Restoring settings state - volume: %.2f", state.volume)
         
         // Restore audio settings
@@ -931,22 +896,12 @@ class AppStateManager {
             }
         }
         
-        // Restore modern-family skin names independently.
-        if let modernSkin = state.modernSkinName {
-            UserDefaults.standard.set(modernSkin, forKey: ModernSkinFamily.modern.skinNameKey)
-        }
-        if let metalSkin = state.metalSkinName {
-            UserDefaults.standard.set(metalSkin, forKey: ModernSkinFamily.metal.skinNameKey)
-        }
         if let family = runningMode.modernSkinFamily {
             ModernSkinEngine.shared.loadPreferredSkin(for: family)
         }
         if runningMode == .wmp {
-            // Selection preferences are restored before the mode swap. Reload here as well for
-            // the no-swap case, where the existing WMP controller may still hold the old archive.
             (wm.mainWindowController as? WMPMainWindowController)?.reloadSelectedSkin()
         }
-        // As for `.wmp`: the no-swap case may still hold the previous face or skin.
         (wm.mainWindowController as? any SingleCanvasMainWindow)?.reloadSelectedSkin()
         
         // Restore audio output device
@@ -1393,15 +1348,15 @@ class AppStateManager {
             // it differs only in position, and only when the session came back stranded.
             let stored = correctedMainFrame ?? NSRectFromString(frameString)
             if stored != .zero {
-                let loadedSkin = UserDefaults.standard
-                    .string(forKey: WinampModernSkinImporter.selectedSkinNameKey)
+                let isWinampModern = wm.uiMode == .winampModern
+                let loadedSkin = (controller as? WinampModernMainWindowController)?.loadedSkinName
                 // The skin has already sized this window to its own layout by now, so its current
                 // size is the one to keep when the saved frame belongs to a different skin.
                 let saved = Self.mainFrameForRestore(saved: stored,
                                                      ownSize: window.frame.size,
                                                      savedUnderSkin: state.winampModernSkinName,
                                                      loadedSkin: loadedSkin,
-                                                     isWinampModern: wm.uiMode == .winampModern)
+                                                     isWinampModern: isWinampModern)
                 if saved != stored {
                     NSLog("AppStateManager: main frame %@ was saved under skin %@ — keeping %@'s own %@",
                           NSStringFromRect(stored), state.winampModernSkinName ?? "(unknown)",
@@ -1428,7 +1383,7 @@ class AppStateManager {
                 // proves the saved one could not have come from this skin. Winamp Modern only: the
                 // Classic and Original windows are not sized by a skin's own layout, so the signal
                 // does not exist there and their behaviour is untouched.
-                if wm.uiMode == .winampModern, frame.size != saved.size {
+                if isWinampModern, frame.size != saved.size {
                     NSLog("AppStateManager: saved main size %@ is not one %@ can render — keeping its own %@",
                           NSStringFromSize(saved.size), loadedSkin ?? "(none)",
                           NSStringFromSize(window.frame.size))
@@ -1461,10 +1416,16 @@ class AppStateManager {
     /// ones. Repairs near-docked gaps and snaps repaired windows flush below the current anchor in
     /// `CenterStackWindowKind.columnOrder`. Width is preserved for windows that support horizontal
     /// stretching — every one but the equalizer.
+    ///
+    /// `floorsMainHeight` grows a main window shorter than Classic's 145pt strip to it. A hosted
+    /// skin's player size is the skin's — iTunes Miniplayer's is 58pt — so those modes pass `false`: the
+    /// skin snapped the window straight back, but its shadow was rebuilt at 145pt and drew a box
+    /// under the player on every mouse-up, and docked windows were anchored 87pt too low.
     static func repairClassicCenterStackFrames(
         mainFrame: NSRect,
         frames: [WindowManager.CenterStackWindowKind: NSRect],
-        scale: CGFloat
+        scale: CGFloat,
+        floorsMainHeight: Bool = true
     ) -> ClassicCenterStackRepairResult {
         let widthEpsilon: CGFloat = 0.5
         let minMainHeight = Skin.mainWindowSize.height * scale
@@ -1472,7 +1433,7 @@ class AppStateManager {
 
         var repaired = false
         var adjustedMain = mainFrame
-        if adjustedMain.height + widthEpsilon < minMainHeight {
+        if floorsMainHeight, adjustedMain.height + widthEpsilon < minMainHeight {
             let topY = adjustedMain.maxY
             adjustedMain.size.height = minMainHeight
             adjustedMain.origin.y = topY - minMainHeight
@@ -1554,7 +1515,8 @@ class AppStateManager {
         let repairedFrames = Self.repairClassicCenterStackFrames(
             mainFrame: mainWindow.frame,
             frames: windows.mapValues(\.frame),
-            scale: wm.classicScaleMultiplier
+            scale: wm.classicScaleMultiplier,
+            floorsMainHeight: !wm.runningControllerFamily.hostsForeignSkin
         )
 
         if repairedFrames.mainFrame != mainWindow.frame {

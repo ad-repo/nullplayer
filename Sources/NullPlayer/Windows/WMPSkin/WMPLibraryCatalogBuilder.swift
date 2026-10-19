@@ -19,7 +19,7 @@ final class WMPLibrarySource {
     /// — and finding each fetched track by scanning `playables` was quadratic, on the main actor:
     /// it beachballed the app.
     private var indexByURL: [URL: Int] = [:]
-    private var source: ModernBrowserSource = .local
+    private var source: LibraryBrowserSource = .local
     private var provider: WMPLibraryProvider?
     /// Fetches under way, by demand. A second request for the same playlist — a fast second
     /// click — waits for the first fetch rather than being turned away as a duplicate, which lost
@@ -29,7 +29,7 @@ final class WMPLibrarySource {
     /// Rebuild for the browser's current source. Returns true when the playlist list the skin
     /// fills its chooser from changed — the caller loads those views again.
     func rebuild() async -> Bool {
-        let selected = ModernBrowserSource.load() ?? .local
+        let selected = LibraryBrowserSource.load() ?? .local
         let previousNames = catalog.playlists.map(\.name)
         let previousSource = catalog.sourceID
         source = selected
@@ -145,7 +145,7 @@ final class WMPLibrarySource {
               duration: track.duration ?? 0, isVideo: track.mediaType == .video)
     }
 
-    private static func sourceID(_ source: ModernBrowserSource) -> String {
+    private static func sourceID(_ source: LibraryBrowserSource) -> String {
         switch source {
         case .local: return "local"
         case .plex(let id): return "plex:\(id)"
@@ -241,7 +241,7 @@ struct WMPLibraryProvider {
         return result.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
-    static func make(for source: ModernBrowserSource) -> WMPLibraryProvider? {
+    static func make(for source: LibraryBrowserSource) -> WMPLibraryProvider? {
         switch source {
         case .plex:
             let manager = PlexManager.shared

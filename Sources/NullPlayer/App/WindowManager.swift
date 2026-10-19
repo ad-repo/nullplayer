@@ -171,23 +171,31 @@ enum BrowserBackdropMode: Int, CaseIterable {
     static let defaultMode: BrowserBackdropMode = .cavaAndArt
     static let compactPreferenceKey = "compactBackdropMode"
     static let libraryPreferenceKey = "libraryBackdropMode"
+    /// The classic view's library window (Classic, and the `.wal`, `.wmz` and Audion windows),
+    /// kept apart from Original/Metal's. Art by default, as the classic browser always was.
+    static let classicLibraryPreferenceKey = "ClassicLibraryBackdropMode"
+    static let classicDefaultMode: BrowserBackdropMode = .art
     static let legacyArtworkPreferenceKey = "showBrowserArtworkBackground"
-    static let preferenceKeys = [compactPreferenceKey, libraryPreferenceKey]
+    static let preferenceKeys = [compactPreferenceKey, libraryPreferenceKey, classicLibraryPreferenceKey]
 
-    /// Preserve the legacy modern-browser artwork choice while adopting Cava as the new default.
-    /// Existing window-specific selections always win, and an installation with no legacy choice
-    /// continues to resolve through the registered Cava + Art default.
+    /// Carry the legacy artwork toggle into each window's own choice: Original/Metal adopt Cava and
+    /// keep the art choice; the classic view keeps exactly the art choice. Existing window-specific
+    /// selections always win, and an installation with no legacy choice resolves through the
+    /// registered defaults.
     static func migrateLegacyArtworkPreference(
         in defaults: UserDefaults,
         persistentDomainName: String
     ) {
         let persistedPreferences = defaults.persistentDomain(forName: persistentDomainName) ?? [:]
         guard persistedPreferences[legacyArtworkPreferenceKey] != nil else { return }
-        let migratedMode: BrowserBackdropMode = defaults.bool(forKey: legacyArtworkPreferenceKey)
-            ? .cavaAndArt
-            : .cava
-        for preferenceKey in preferenceKeys where persistedPreferences[preferenceKey] == nil {
-            defaults.set(migratedMode.rawValue, forKey: preferenceKey)
+        let showsArt = defaults.bool(forKey: legacyArtworkPreferenceKey)
+        let migratedModes: [String: BrowserBackdropMode] = [
+            compactPreferenceKey: showsArt ? .cavaAndArt : .cava,
+            libraryPreferenceKey: showsArt ? .cavaAndArt : .cava,
+            classicLibraryPreferenceKey: showsArt ? .art : .off,
+        ]
+        for (preferenceKey, mode) in migratedModes where persistedPreferences[preferenceKey] == nil {
+            defaults.set(mode.rawValue, forKey: preferenceKey)
         }
     }
 
@@ -471,21 +479,22 @@ class WindowManager {
         compactWindowController?.refreshCompactBackdrop()
     }
 
+    /// Where the library window's backdrop is saved: Original/Metal's key, or the classic view's own.
+    private var libraryBackdropPreferenceKey: String {
+        isRunningModernUI ? BrowserBackdropMode.libraryPreferenceKey : BrowserBackdropMode.classicLibraryPreferenceKey
+    }
+
     var libraryBackdropMode: BrowserBackdropMode {
-        guard isRunningModernUI else { return .off }
-        return BrowserBackdropMode(
-            rawValue: UserDefaults.standard.integer(forKey: BrowserBackdropMode.libraryPreferenceKey)
-        ) ?? .defaultMode
+        BrowserBackdropMode(rawValue: UserDefaults.standard.integer(forKey: libraryBackdropPreferenceKey))
+            ?? (isRunningModernUI ? .defaultMode : .classicDefaultMode)
     }
 
     var libraryBackdropPresenter: CavaPresenter? {
-        guard isRunningModernUI else { return nil }
-        return plexBrowserWindowController?.libraryBackdropPresenter
+        plexBrowserWindowController?.libraryBackdropPresenter
     }
 
     func setLibraryBackdropMode(_ mode: BrowserBackdropMode) {
-        guard isRunningModernUI else { return }
-        UserDefaults.standard.set(mode.rawValue, forKey: BrowserBackdropMode.libraryPreferenceKey)
+        UserDefaults.standard.set(mode.rawValue, forKey: libraryBackdropPreferenceKey)
         plexBrowserWindowController?.refreshLibraryBackdrop()
     }
 
@@ -854,7 +863,7 @@ class WindowManager {
     /// Windows that should move together with the dragging window
     private var dockedWindowsToMove: [NSWindow] = []
 
-    private let seamlessStackShadow = SeamlessStackShadow()
+    private lazy var seamlessStackShadow = SeamlessStackShadow { [unowned self] in self.seamlessStackLayout() }
     
     /// Store relative offsets of docked windows from the dragging window's origin
     /// This prevents drift during fast movement by maintaining exact relative positions
@@ -962,7 +971,7 @@ class WindowManager {
             name: .hostedSurfaceStyleDidChange,
             object: nil
         )
-        // Every queue's EQ profile row marker follows assignments and the global toggle.
+        // Every queue's and the library's EQ profile row marker follows assignments and the global toggle.
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleEQProfilesDidChange(_:)),
@@ -972,7 +981,8 @@ class WindowManager {
     }
 
     @objc private func handleEQProfilesDidChange(_ notification: Notification) {
-        reloadPlaylistViews()
+        redrawPlaylistViews()
+        plexBrowserWindowController?.window?.contentView?.markSubtreeForDisplayAndLayout()
     }
 
     @objc private func handleHostedSurfaceStyleDidChange(_ notification: Notification) {
@@ -1041,7 +1051,8 @@ class WindowManager {
             "compactModeEnabled": false,
             "compactWindowEnabled": false,
             BrowserBackdropMode.compactPreferenceKey: BrowserBackdropMode.defaultMode.rawValue,
-            BrowserBackdropMode.libraryPreferenceKey: BrowserBackdropMode.defaultMode.rawValue
+            BrowserBackdropMode.libraryPreferenceKey: BrowserBackdropMode.defaultMode.rawValue,
+            BrowserBackdropMode.classicLibraryPreferenceKey: BrowserBackdropMode.classicDefaultMode.rawValue
         ])
     }
     
@@ -1478,7 +1489,7 @@ class WindowManager {
         case projectMWindowController?.window:
             return SkinElements.ProjectM.defaultSize
         case plexBrowserWindowController?.window:
-            return PlexBrowserWindowController.defaultSize
+            return ClassicLibraryBrowserWindowController.defaultSize
         case sonosWindowController?.window:
             return CGSize(width: width, height: 270 * scale)
         default:
@@ -1702,14 +1713,14 @@ class WindowManager {
     /// so opening ours unconditionally would put a second, differently-styled playlist over nearly
     /// every skin. Ours is the fallback for the handful that declare none.
     ///
-    /// - Parameter switchingViews: true for an explicit toggle, which may open the skin's own
-    ///   playlist *view* the way its own button does; false on the restore path, which must not move
-    ///   the user to another view at launch.
+    /// A surface in a view of its own is opened beside the player, the way the skin's own button
+    /// does — for a toggle, the launch restore and a mode-switch rebuild alike, since each means
+    /// "make this open".
     @discardableResult
-    private func routeWMPSkinSurface(_ surface: WMPSkinSurface, switchingViews: Bool) -> Bool {
+    private func routeWMPSkinSurface(_ surface: WMPSkinSurface) -> Bool {
         guard uiMode.controllerFamily == .wmp,
               let controller = mainWindowController as? WMPMainWindowController else { return false }
-        guard controller.revealSkinSurface(surface, switchingViews: switchingViews) else {
+        guard controller.revealSkinSurface(surface) else {
             return false
         }
         notifyMainWindowVisibilityChanged()
@@ -1938,7 +1949,8 @@ class WindowManager {
     /// equalizer on the hosted-window route, which `rehomeWinampModernHostedWindows` already carries.
     ///
     /// Empty unless a `.wal` skin is already up — a mode switch into `.wal` and the launch load are
-    /// not skin switches, and the previous mode's windows are the mode-switch snapshot's business.
+    /// not skin switches. A mode switch passes its own snapshot to `restoreWinampModernSurfaceVisibility`
+    /// from `recreateModeDependentLayout` instead.
     func winampModernSurfaceVisibility() -> [WinampModernComponentKind: Bool] {
         guard uiMode.controllerFamily == .winampModern, let coordinator = winampModernSurfaces else { return [:] }
         var states: [WinampModernComponentKind: Bool] = [:]
@@ -1955,8 +1967,11 @@ class WindowManager {
     }
 
     /// Put the routed surfaces back the way `winampModernSurfaceVisibility` found them, now that
-    /// the incoming skin is up and has opened whatever *it* opens at load. Called only from the
-    /// `.wal` controller, after `rehomeWinampModernHostedWindows`.
+    /// the incoming skin is up and has opened whatever *it* opens at load. Called from the `.wal`
+    /// controller after `rehomeWinampModernHostedWindows`, and from a mode-switch rebuild.
+    ///
+    /// Takes any of the three kinds: an embedded surface or a hosted-window equalizer is never
+    /// closed here, so a caller need not filter them out the way the skin-switch capture does.
     func restoreWinampModernSurfaceVisibility(_ states: [WinampModernComponentKind: Bool]) {
         guard uiMode.controllerFamily == .winampModern, !states.isEmpty,
               let coordinator = winampModernSurfaces else { return }
@@ -2061,7 +2076,7 @@ class WindowManager {
     func hostVideoOutputInSkin() -> Bool {
         if uiMode.controllerFamily == .wmp {
             return (mainWindowController as? WMPMainWindowController)?
-                .revealSkinSurface(.video, switchingViews: true, activate: true) ?? false
+                .revealSkinSurface(.video, activate: true) ?? false
         }
         return hostVideoOutputInWinampModernSkin()
     }
@@ -2125,7 +2140,7 @@ class WindowManager {
 
     func showPlaylist(at restoredFrame: NSRect? = nil) {
         if routeWinampModernSurface(.playlist, toggle: false, restoredFrame: restoredFrame) { return }
-        if routeWMPSkinSurface(.playlist, switchingViews: false) { return }
+        if routeWMPSkinSurface(.playlist) { return }
         if deferWMPFallbackUntilSkinLoads({ [weak self] in self?.showPlaylist(at: restoredFrame) }) { return }
         let isNewWindow = playlistWindowController == nil
         if isNewWindow {
@@ -2178,7 +2193,7 @@ class WindowManager {
 
     func togglePlaylist() {
         if routeWinampModernSurface(.playlist, toggle: true) { return }
-        if routeWMPSkinSurface(.playlist, switchingViews: true) { return }
+        if routeWMPSkinSurface(.playlist) { return }
         classicTogglePlaylist()
     }
 
@@ -2201,7 +2216,7 @@ class WindowManager {
     func showEqualizer(at restoredFrame: NSRect? = nil) {
         if routeSkinDrawnEqualizer(toggle: false) { return }
         if routeWinampModernSurface(.equalizer, toggle: false, restoredFrame: restoredFrame) { return }
-        if routeWMPSkinSurface(.equalizer, switchingViews: false) { return }
+        if routeWMPSkinSurface(.equalizer) { return }
         if deferWMPFallbackUntilSkinLoads({ [weak self] in self?.showEqualizer(at: restoredFrame) }) { return }
         // The skin owns no equalizer, so NullPlayer's goes inside the skin's own frame when one
         // qualifies (B55) and into the standalone window below when none does.
@@ -2262,7 +2277,7 @@ class WindowManager {
     func toggleEqualizer() {
         if routeSkinDrawnEqualizer(toggle: true) { return }
         if routeWinampModernSurface(.equalizer, toggle: true) { return }
-        if routeWMPSkinSurface(.equalizer, switchingViews: true) { return }
+        if routeWMPSkinSurface(.equalizer) { return }
         if routeWinampModernHostedWindow(.equalizer, toggle: true) { return }
         classicToggleEqualizer()
     }
@@ -2683,6 +2698,7 @@ class WindowManager {
     /// Call from windowWillClose on classic center-stack windows (EQ, Playlist, Spectrum, Waveform)
     /// when closed via the X button. Slides up windows below and tightens the stack.
     func handleCenterStackWindowWillClose(_ window: NSWindow) {
+        // Modern UI: `handleModernManagedWindowWillClose`, from the willClose observer.
         guard !isRunningModernUI else { return }
         // No stack in WMP or `.wal`: closing one window must not move the others.
         if !uiMode.controllerFamily.hostsForeignSkin {
@@ -2691,6 +2707,16 @@ class WindowManager {
         _ = tightenClassicCenterStackIfNeeded()
         postLayoutChangeNotification()
         updateDockedChildWindows()
+    }
+
+    /// Modern UI's half of the above, for every managed window rather than only those whose
+    /// controller calls in. A window its own view closes (its close button, the fallback close
+    /// corner) leaves the docked layout without the layout change the Windows-menu path posts, so
+    /// the seamless stack shadow and the neighbours' shared edges went on outlining it. Posted once
+    /// it is off screen.
+    private func handleModernManagedWindowWillClose(_ window: NSWindow) {
+        guard isRunningModernUI, managedWindowRecords.contains(where: { $0.window === window }) else { return }
+        DispatchQueue.main.async { [weak self] in self?.postLayoutChangeNotification() }
     }
 
     /// Show local media library (redirects to unified browser in local mode)
@@ -2763,7 +2789,7 @@ class WindowManager {
         case .nullPlayerModern:
             plexBrowserWindowController = ModernLibraryBrowserWindowController()
         case .classic, .wmp:
-            plexBrowserWindowController = PlexBrowserWindowController()
+            plexBrowserWindowController = ClassicLibraryBrowserWindowController()
         }
         markModeDependentWindow(plexBrowserWindowController?.window)
     }
@@ -2806,7 +2832,7 @@ class WindowManager {
 
     var isLibraryHistoryVisible: Bool {
         guard isPlexBrowserVisible else { return false }
-        return plexBrowserBrowseMode == ModernBrowseMode.history.rawValue
+        return plexBrowserBrowseMode == LibraryBrowseMode.history.rawValue
     }
     
     /// Get the ProjectM window frame (for state saving)
@@ -3497,18 +3523,23 @@ class WindowManager {
     func reloadPlaylistViews() {
         playlistWindowController?.reloadPlaylist()
         compactWindowController?.reloadPlaylist()
-        // A `.wal` skin draws its own playlist; it has no controller to reload, only a repaint.
-        winampModernSurfaces?.surfaceContentDidChange()
-        // A `.wmz` `<PLAYLIST>` takes its rows from host refreshes; this repaints what they cannot
-        // see change, the EQ profile row marker.
-        (mainWindowController as? WMPMainWindowController)?.playlistContentDidChange()
+        // A `.wal` or `.wmz` skin draws its own queue, with no controller to reload.
+        mainWindowController?.playlistContentDidChange()
+    }
+
+    /// Repaint every queue without reloading it: an EQ profile change moves the ∿ row markers, not
+    /// the queue, and a reload would drop the selection the user just assigned a profile to.
+    private func redrawPlaylistViews() {
+        playlistWindowController?.window?.contentView?.markSubtreeForDisplayAndLayout()
+        compactWindowController?.window?.contentView?.markSubtreeForDisplayAndLayout()
+        mainWindowController?.playlistMarkersDidChange()
     }
 
     // MARK: - Library History
 
     func showLibraryHistory() {
         showPlexBrowser()
-        plexBrowserBrowseMode = ModernBrowseMode.history.rawValue
+        plexBrowserBrowseMode = LibraryBrowseMode.history.rawValue
         plexBrowserWindowController?.window?.makeKeyAndOrderFront(nil)
         applyAlwaysOnTopToWindow(plexBrowserWindowController?.window)
         postLayoutChangeNotification()
@@ -3771,7 +3802,7 @@ class WindowManager {
     }
     
     func toggleVideoPlayer() {
-        if routeWMPSkinSurface(.video, switchingViews: true) { return }
+        if routeWMPSkinSurface(.video) { return }
         guard let controller = videoPlayerWindowController else { return }
         // A hosted picture lives in the skin's own video window, so that is the window this shows and
         // hides — ordering out this controller's own would do nothing visible at all (B20).
@@ -4938,21 +4969,6 @@ class WindowManager {
         }
     }
     
-    /// When true, shows album art as transparent background in browser window (default: true)
-    var showBrowserArtworkBackground: Bool {
-        get {
-            // Default to true (enabled) if not set
-            if UserDefaults.standard.object(forKey: "showBrowserArtworkBackground") == nil {
-                return true
-            }
-            return UserDefaults.standard.bool(forKey: "showBrowserArtworkBackground")
-        }
-        set {
-            UserDefaults.standard.set(newValue, forKey: "showBrowserArtworkBackground")
-            // Trigger browser redraw
-            plexBrowserWindowController?.window?.contentView?.needsDisplay = true
-        }
-    }
     
     @discardableResult
     func loadSkin(from url: URL, userDefaults: UserDefaults = .standard) -> Bool {
@@ -4980,7 +4996,6 @@ class WindowManager {
             if resetCavaAppearance {
                 CavaSettings.resetAppearanceForSkinChange()
             }
-            applyClassicVisualizationDefaults(notify: true)
             notifySkinChanged()
             return true
         } catch {
@@ -5003,7 +5018,7 @@ class WindowManager {
             do {
                 currentSkin = try SkinLoader.shared.load(from: URL(fileURLWithPath: lastPath))
                 currentSkinPath = lastPath
-                applyClassicVisualizationDefaults(notify: false)
+                seedClassicVisualizationDefaults()
                 return
             } catch {
                 NSLog("Failed to restore last skin: \(error)")
@@ -5014,7 +5029,7 @@ class WindowManager {
         if let bundledURL = findBundledClassicSkin("NullPlayer-Silver") {
             do {
                 currentSkin = try SkinLoader.shared.load(from: bundledURL)
-                applyClassicVisualizationDefaults(notify: false)
+                seedClassicVisualizationDefaults()
                 return
             } catch {
                 NSLog("Failed to load bundled skin: \(error)")
@@ -5023,7 +5038,7 @@ class WindowManager {
         
         // 3. Fallback: unskinned native macOS rendering
         currentSkin = SkinLoader.shared.loadDefault()
-        applyClassicVisualizationDefaults(notify: false)
+        seedClassicVisualizationDefaults()
     }
     
     private func findBundledClassicSkin(_ name: String) -> URL? {
@@ -5076,7 +5091,6 @@ class WindowManager {
                 currentSkinPath = nil
                 UserDefaults.standard.removeObject(forKey: WindowManager.lastClassicSkinPathKey)
                 CavaSettings.resetAppearanceForSkinChange()
-                applyClassicVisualizationDefaults(notify: true)
                 notifySkinChanged()
                 return
             } catch {
@@ -5088,7 +5102,6 @@ class WindowManager {
         currentSkinPath = nil
         UserDefaults.standard.removeObject(forKey: WindowManager.lastClassicSkinPathKey)
         CavaSettings.resetAppearanceForSkinChange()
-        applyClassicVisualizationDefaults(notify: true)
         notifySkinChanged()
     }
 
@@ -5119,41 +5132,42 @@ class WindowManager {
     /// performed while the classic UI is active).
     static let classicVisClassicProfileName = "Purple Neon"
 
-    /// Writes the classic-UI visualization defaults (Classic spectrum in the main window,
-    /// vis_classic in the Spectrum window, "Purple Neon" profile + fit-to-width) for the
-    /// given reset scope, WITHOUT posting refresh notifications.
+    /// Writes the classic-UI visualization defaults (vis_classic in the Spectrum window,
+    /// "Purple Neon" profile + fit-to-width) for the given reset scope, WITHOUT posting refresh
+    /// notifications. It leaves the main-window mode alone: entering Classic keeps the mode Classic
+    /// last chose (M39), and only a reset writes Spectrum, in `VisualizationPreferences`.
     /// `VisualizationPreferences.reset` calls this when the classic UI is active so a
     /// reset restores classic's own defaults instead of the modern skin engine's
     /// current skin (which would wrongly apply e.g. NeonWave's "Lavender Pink Tips").
-    /// Classic skin loads pass `includesMainWindowMode: false`: every reader already treats a
-    /// missing mode as Spectrum, so a load has nothing to seed and must not override a mode
-    /// the user chose.
+    /// The Classic launch passes `onlyIfUnset: true`: it seeds a fresh install, whose fallbacks
+    /// (Classic mode in the Spectrum window, the first profile alphabetically) are not Classic's
+    /// defaults, and never overrides a choice the user already saved.
     /// The caller is responsible for posting the appropriate refresh notifications.
     func writeClassicVisualizationDefaultKeys(
         for scope: VisualizationPreferenceResetScope,
         defaults: UserDefaults = .standard,
-        includesMainWindowMode: Bool = true
+        onlyIfUnset: Bool = false
     ) {
+        func put(_ value: Any, _ key: String) {
+            if !onlyIfUnset || defaults.object(forKey: key) == nil {
+                defaults.set(value, forKey: key)
+            }
+        }
         let classicProfile = Self.classicVisClassicProfileName
 
         if scope == .mainWindow || scope == .all {
-            if includesMainWindowMode {
-                let spectrumMode = MainWindowVisMode.spectrum.rawValue
-                defaults.set(spectrumMode, forKey: "mainWindowVisMode")
-                defaults.set(spectrumMode, forKey: "modernMainWindowVisMode")
-            }
-            defaults.set(classicProfile, forKey: "visClassicLastProfileName.mainWindow")
-            defaults.set(true, forKey: "visClassicFitToWidth.mainWindow")
+            put(classicProfile, "visClassicLastProfileName.mainWindow")
+            put(true, "visClassicFitToWidth.mainWindow")
         }
         if scope == .spectrumWindow || scope == .all {
-            defaults.set(SpectrumQualityMode.visClassicExact.rawValue, forKey: "spectrumQualityMode")
-            defaults.set(classicProfile, forKey: "visClassicLastProfileName.spectrumWindow")
-            defaults.set(true, forKey: "visClassicFitToWidth.spectrumWindow")
+            put(SpectrumQualityMode.visClassicExact.rawValue, "spectrumQualityMode")
+            put(classicProfile, "visClassicLastProfileName.spectrumWindow")
+            put(true, "visClassicFitToWidth.spectrumWindow")
         }
 
         // Legacy fallback keys are still read by VisClassicBridge.
-        defaults.set(classicProfile, forKey: "visClassicLastProfileName")
-        defaults.set(true, forKey: "visClassicFitToWidth")
+        put(classicProfile, "visClassicLastProfileName")
+        put(true, "visClassicFitToWidth")
     }
 
     /// Which families may have Classic's visualization defaults written over their session.
@@ -5167,7 +5181,11 @@ class WindowManager {
         family == .classic
     }
 
-    private func applyClassicVisualizationDefaults(notify: Bool) {
+    /// Seeds Classic's visualization defaults at launch, writing only keys never written before.
+    /// A Classic skin carries no visualization settings, so a skin load — at launch or a pick —
+    /// must not override what the user chose (M38); a reset or a switch into Classic still writes
+    /// all of them.
+    private func seedClassicVisualizationDefaults() {
         // Classic and modern skins are independent. WindowManager still loads the
         // remembered classic skin at startup so it is ready if the user switches UI
         // modes, but its visualization defaults must not overwrite modern scoped
@@ -5182,34 +5200,7 @@ class WindowManager {
         // skin loads at every launch in every mode, every `.wal` launch reset the Spectrum window to
         // "Purple Neon". `.wal` and `.wmz` now match a profile to the skin instead.
         guard Self.appliesClassicVisualizationDefaults(family: runningControllerFamily) else { return }
-
-        let classicProfile = Self.classicVisClassicProfileName
-        writeClassicVisualizationDefaultKeys(for: .all, defaults: .standard, includesMainWindowMode: false)
-
-        guard notify else { return }
-
-        NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
-        NotificationCenter.default.post(name: NSNotification.Name("SpectrumSettingsChanged"), object: nil)
-        NotificationCenter.default.post(
-            name: .visClassicProfileCommand,
-            object: nil,
-            userInfo: ["command": "load", "profileName": classicProfile, "target": "mainWindow"]
-        )
-        NotificationCenter.default.post(
-            name: .visClassicProfileCommand,
-            object: nil,
-            userInfo: ["command": "load", "profileName": classicProfile, "target": "spectrumWindow"]
-        )
-        NotificationCenter.default.post(
-            name: .visClassicProfileCommand,
-            object: nil,
-            userInfo: ["command": "fitToWidth", "enabled": true, "target": "mainWindow"]
-        )
-        NotificationCenter.default.post(
-            name: .visClassicProfileCommand,
-            object: nil,
-            userInfo: ["command": "fitToWidth", "enabled": true, "target": "spectrumWindow"]
-        )
+        writeClassicVisualizationDefaultKeys(for: .all, defaults: .standard, onlyIfUnset: true)
     }
     
     private func notifySkinChanged() {
@@ -6131,7 +6122,8 @@ class WindowManager {
         let repaired = AppStateManager.repairClassicCenterStackFrames(
             mainFrame: mainWindow.frame,
             frames: windows.mapValues(\.frame),
-            scale: scale
+            scale: scale,
+            floorsMainHeight: !runningControllerFamily.hostsForeignSkin
         )
 
         guard repaired.repaired else { return false }
@@ -6678,9 +6670,9 @@ class WindowManager {
     }
     
     @objc private func handleWindowWillClose(_ notification: Notification) {
-        guard let closingWindow = notification.object as? NSWindow,
-              closingWindow === draggingWindow else { return }
-        windowDidFinishDragging(closingWindow)
+        guard let closingWindow = notification.object as? NSWindow else { return }
+        if closingWindow === draggingWindow { windowDidFinishDragging(closingWindow) }
+        handleModernManagedWindowWillClose(closingWindow)
     }
 
     @objc private func handleWindowWillMiniaturize(_ notification: Notification) {
@@ -6787,6 +6779,8 @@ class WindowManager {
         if window === compactWindowController?.window {
             return newOrigin
         }
+        // Ahead of the guards below: a snap or a carried child reshapes a stack as surely as a drag.
+        if isSeamlessDocking { seamlessStackShadow.setNeedsCast() }
 
         // Programmatic frame changes should never re-enter snap logic.
         if isSnappingWindow {
@@ -7209,7 +7203,10 @@ class WindowManager {
     /// Find all windows that are docked (touching) the given window
     /// Any connected group of 2+ eligible windows moves together, regardless of main-window membership.
     func findDockedWindows(to window: NSWindow) -> [NSWindow] {
-        let candidateWindows = groupMovableWindows()
+        findDockedWindows(to: window, among: groupMovableWindows())
+    }
+
+    private func findDockedWindows(to window: NSWindow, among candidateWindows: [NSWindow]) -> [NSWindow] {
         guard candidateWindows.contains(where: { $0 === window }) else { return [] }
         
         var dockedWindows: [NSWindow] = []
@@ -7236,11 +7233,13 @@ class WindowManager {
     }
 
     /// Every connected group of two or more docked windows.
-    private func dockedGroups() -> [[NSWindow]] {
+    /// `excluded` takes no part, so a window it bridged leaves its neighbours in separate groups.
+    private func dockedGroups(excluding excluded: NSWindow?) -> [[NSWindow]] {
+        let candidates = groupMovableWindows().filter { $0 !== excluded }
         var grouped = Set<ObjectIdentifier>()
-        return groupMovableWindows().compactMap { window in
+        return candidates.compactMap { window in
             guard !grouped.contains(ObjectIdentifier(window)) else { return nil }
-            let docked = findDockedWindows(to: window)
+            let docked = findDockedWindows(to: window, among: candidates)
             guard !docked.isEmpty else { return nil }
             let group = [window] + docked
             grouped.formUnion(group.map(ObjectIdentifier.init))
@@ -7248,15 +7247,22 @@ class WindowManager {
         }
     }
 
-    /// Regroup the seamless Original stack shadows. Runs after every view has taken the layout, its
-    /// corner masks included. A stack the drag carries whole — a group drag, or the player's docked
-    /// children — cannot change shape, and regrouping it mid-move reads its members a step apart,
-    /// so it stands until the drop. A window dragged out alone regroups as it goes.
-    private func updateSeamlessStackShadow() {
-        guard draggingWindow == nil || dockedWindowsToMove.isEmpty else { return }
-        let seamless = isRunningModernUI
-            && (ModernSkinEngine.shared.currentSkin?.config.window.seamlessDocking ?? 0) > 0
-        seamlessStackShadow.cast(stacks: seamless ? dockedGroups() : [], main: mainWindowController?.window)
+    /// The stacks the seamless Original shadows regroup to, read after every view has taken the
+    /// layout, its corner masks included. A stack the drag carries whole — a group drag, or the player's docked
+    /// children — cannot change shape, and regrouping it mid-move reads its members a step apart
+    /// and pulls the stack apart, so it stands until the drop.
+    ///
+    /// **A window dragged alone casts its own shadow until the drop.** Joined to a stack it would
+    /// cast — or carry, as the player does — the stack's shadow, and the shadow is its child: every
+    /// step along a neighbour's side, and the pull away, dragged the neighbour's outline with it.
+    private func seamlessStackLayout() -> SeamlessStackShadow.Layout? {
+        guard draggingWindow == nil || dockedWindowsToMove.isEmpty else { return nil }
+        return .init(stacks: isSeamlessDocking ? dockedGroups(excluding: draggingWindow) : [],
+                     main: mainWindowController?.window)
+    }
+
+    private var isSeamlessDocking: Bool {
+        isRunningModernUI && (ModernSkinEngine.shared.currentSkin?.config.window.seamlessDocking ?? 0) > 0
     }
 
     /// Check if two windows are docked (touching edges)
@@ -7292,7 +7298,7 @@ class WindowManager {
         edgeOcclusionSegmentsCache.removeAll(keepingCapacity: true)
         sharpCornersCache.removeAll(keepingCapacity: true)
         NotificationCenter.default.post(name: .windowLayoutDidChange, object: nil)
-        updateSeamlessStackShadow()
+        seamlessStackShadow.cast()
     }
 
     /// Post a connectedWindowHighlightDidChange notification.
@@ -7567,19 +7573,20 @@ class WindowManager {
         }
         removeDragMouseUpMonitor()
 
+        // Detach docked child-window relationships first: AppKit retains children through the
+        // parent, and ordering the main window out orders its children out with it — which put
+        // away a docked window the rebuild does not recreate (the standalone Equalizer Studio).
+        if let mainWindow = mainWindowController?.window {
+            for child in mainWindow.childWindows ?? [] {
+                mainWindow.removeChildWindow(child)
+            }
+        }
+
         // 1 + 2: order out, then let each controller/root view release its own resources
         // (cancel tasks/timers, stop render loops, unregister observers + audio consumers).
         for controller in modeDependentWindowControllers {
             controller.window?.orderOut(nil)
             controller.prepareForUITeardown()
-        }
-
-        // Detach docked child-window relationships before closing so AppKit does not retain
-        // soon-to-be-dead windows through the parent.
-        if let mainWindow = mainWindowController?.window {
-            for child in mainWindow.childWindows ?? [] {
-                mainWindow.removeChildWindow(child)
-            }
         }
 
         // 3: close() then nil the mode-dependent controllers. Preserve the video player.
@@ -7670,30 +7677,28 @@ class WindowManager {
         var family: PlayerUIControllerFamily?
     }
 
+    /// Visibility comes from the canonical getters — the ones the session save uses — because a
+    /// `.wal` or `.wmz` skin usually draws the playlist, equalizer and library itself, with no
+    /// NullPlayer window to ask. The frame comes from whichever native window exists, `.zero` when
+    /// the skin owns the surface (every `show*(at:)` ignores `.zero`).
     private func captureModeDependentLayout() -> ModeDependentLayoutSnapshot {
-        func snap(_ controller: ModeDependentWindow?, normalFrame: NSRect? = nil) -> UIWindowSnapshot? {
-            guard let window = controller?.window else { return nil }
-            return UIWindowSnapshot(
-                visible: window.isVisible,
-                frame: window.frame,
-                normalFrame: normalFrame
-            )
+        func snap(_ visible: Bool, _ window: NSWindow?, normalFrame: NSRect? = nil) -> UIWindowSnapshot? {
+            guard visible || window != nil else { return nil }
+            return UIWindowSnapshot(visible: visible, frame: window?.frame ?? .zero, normalFrame: normalFrame)
         }
-        func snapWindow(_ window: NSWindow?) -> UIWindowSnapshot? {
-            guard let window else { return nil }
-            return UIWindowSnapshot(visible: window.isVisible, frame: window.frame)
-        }
+        func snap(_ window: NSWindow?) -> UIWindowSnapshot? { snap(window?.isVisible == true, window) }
         return ModeDependentLayoutSnapshot(
-            main: snap(mainWindowController),
-            playlist: snap(playlistWindowController),
-            equalizer: snap(equalizerWindowController),
+            main: snap(mainWindowController?.window),
+            playlist: snap(isPlaylistVisible, playlistWindowController?.window),
+            equalizer: snap(isEqualizerVisible, equalizerWindow),
             // Library stores its position frame for restoration after the rebuild.
-            library: snap(plexBrowserWindowController, normalFrame: plexBrowserWindowController?.frameForPositionMemory),
-            projectM: snap(projectMWindowController)
-                ?? snapWindow(winampModernHostedController?.hostedWindow(ifMaterialized: .projectM)),
-            equalizerStudio: snapWindow(shownEqualizerStudioWindow),
+            library: snap(isPlexBrowserVisible, plexBrowserWindowController?.window,
+                          normalFrame: plexBrowserWindowController?.frameForPositionMemory),
+            projectM: snap(isProjectMVisible, projectMWindowController?.window
+                ?? winampModernHostedController?.hostedWindow(ifMaterialized: .projectM)),
+            equalizerStudio: snap(shownEqualizerStudioWindow),
             centerStack: CenterStackFeature.allCases.reduce(into: [:]) { snapshots, feature in
-                snapshots[feature] = snapWindow(centerStackWindow(feature))
+                snapshots[feature] = snap(isCenterStackWindowVisible(feature), centerStackWindow(feature))
             },
             projectMPresetIndex: restorableProjectMPresetIndex(),
             family: uiMode.controllerFamily
@@ -7787,6 +7792,13 @@ class WindowManager {
            snapshot.family == .winampModern || uiMode.controllerFamily == .winampModern {
             showEqualizerStudio(at: carried(studio.frame))
         }
+        // An incoming `.wal` skin has opened its own containers at load (`default_visible`, or its
+        // last state); close the ones the user had closed. A no-op outside `.wal`.
+        restoreWinampModernSurfaceVisibility([
+            .playlist: snapshot.playlist?.visible == true,
+            .library: snapshot.library?.visible == true,
+            .equalizer: snapshot.equalizer?.visible == true,
+        ])
 
         pushCurrentPresentationStateToRecreatedWindows()
 
@@ -8232,12 +8244,10 @@ class WindowManager {
             // at the wrong scale. reloadUI collapses uiScaleLevel to 1x before switching, so
             // this is normally 1.0 here; UI Size is re-applied via applyDoubleSize afterward.
             ModernSkinElements.applySizeMultiplier(uiScaleLevel.scaleFactor)
-            // A live UI-family switch is a skin change: apply the incoming skin's own
-            // visualization defaults instead of preserving the outgoing family's shared,
-            // window-scoped vis_classic profile keys (which would leak e.g. classic's
-            // "Purple Neon" into a modern skin). Launch/session-restore paths keep the
-            // default preserve=true.
-            ModernSkinEngine.shared.loadPreferredSkin(for: family, preservePersistedProfiles: false)
+            // `.familyEntry`: the incoming skin replaces the shared vis_classic profile keys (which
+            // would otherwise leak e.g. Classic's "Purple Neon" into a modern skin), and keeps the
+            // family's own main-window mode. See `ModernSkinLoadReason`.
+            ModernSkinEngine.shared.loadPreferredSkin(for: family, reason: .familyEntry)
         } else if targetMode.controllerFamily == .classic {
             if currentSkin == nil { loadDefaultSkin() }
             UserDefaults.standard.set(false, forKey: VisClassicBridge.PreferenceScope.spectrumWindow.transparentBgKey)

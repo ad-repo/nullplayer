@@ -324,7 +324,7 @@ This is why two profiles can feel like different analyzers even with similar pal
 `applySkinDefault(for:skinIdentity:…)` writes the match to `scope.lastProfileNameKey` only when the
 skin identity (the archive path, `WindowManager.hostedSkinIdentity`) differs from
 `scope.skinDefaultAppliedForKey`, so a user's pick survives a same-skin relaunch and a new skin
-re-picks — Original's `preservePersistedProfiles`, keyed on identity. A `.wal` colour-theme switch
+re-picks — Original's `ModernSkinLoadReason.keepsSavedProfiles`, keyed on identity. A `.wal` colour-theme switch
 keeps the identity and does not re-pick. Hooks, and how each reaches a live bridge:
 - `.spectrumWindow`: `WindowManager.applyHostedVisClassicSkinDefault` on
   `.hostedSurfaceStyleDidChange`; reloads `sharedVisClassicBridge` and posts
@@ -365,18 +365,22 @@ Three rules follow, and all had leak bugs before 0.29.2:
 `WindowManager.prepareUIRuntime(for:)` runs on every live UI switch. It must **not** preserve
 the outgoing family's shared profile keys:
 
-- Entering modern/metal: `ModernSkinEngine.loadPreferredSkin(for:, preservePersistedProfiles: false)`.
-  (Launch / session-restore keeps the default `true` so a user's last-session choices survive;
-  a *live* family switch passes `false`.)
+- Entering modern/metal: `ModernSkinEngine.loadPreferredSkin(for:, reason: .familyEntry)`.
+  (Launch / session-restore keeps the default `.launch` so a user's last-session choices survive;
+  a *live* family switch replaces the profile keys but keeps Original's own main-window mode,
+  and a skin pick or reset, `.skinChange`, replaces both.)
 - Entering classic: `writeClassicVisualizationDefaultKeys(for: .all)`.
 - Entering `.wal` / `.wmz`: `VisClassicProfileMatcher.forgetAppliedSkin(for: [.spectrumWindow])`, so
   the shared Spectrum key (still holding Classic's or Original's profile) is re-matched once the
   skin's style resolves.
 
-`applyClassicVisualizationDefaults` — which runs at every launch in every mode, because the classic
-skin is loaded regardless — is gated by `appliesClassicVisualizationDefaults(family:)`, true for
-`.classic` only. It used to admit `.wal` (which answers false to `isRunningModernUI` and
-`isRunningWMPUI` alike), so every `.wal` launch reset the Spectrum window to vis_classic / "Purple Neon".
+`seedClassicVisualizationDefaults` runs at every launch in every mode, because the classic skin is
+loaded regardless, and is gated by `appliesClassicVisualizationDefaults(family:)`, true for `.classic`
+only. It used to admit `.wal` (which answers false to `isRunningModernUI` and `isRunningWMPUI` alike),
+so every `.wal` launch reset the Spectrum window to vis_classic / "Purple Neon". It writes only keys
+never saved before (`onlyIfUnset: true`) — a fresh install's fallbacks are Classic mode and the first
+profile alphabetically — and a Classic skin pick writes nothing: Classic skins carry no visualization
+settings, so rewriting them on a load only discarded the user's choice.
 
 Preserving instead (the old `loadPreferredSkin(for:)` default of `true`) carried classic's
 `vis_classic` mode and `"Purple Neon"` profile into a modern skin instead of applying Cava and
@@ -401,10 +405,10 @@ give it a self-resync on show, or rely on this central resync — never assume t
 notification was delivered.
 
 Skin configs are intentionally sparse. On a live skin/UI-family change
-(`preservePersistedProfiles: false`), omitted vis_classic appearance fields resolve to
+(`reason` `.familyEntry` or `.skinChange`), omitted vis_classic appearance fields resolve to
 canonical opaque defaults (`transparentBackground = false`, `opacity = 1.0`) so a
 glass/metal skin cannot leak transparency into an opaque skin such as NeonWave. On launch
-(`preservePersistedProfiles: true`), omitted fields remain untouched so the user's saved
+(`.launch`), omitted fields remain untouched so the user's saved
 choices survive.
 
 ### 8.3 Reset must resolve defaults from the active UI

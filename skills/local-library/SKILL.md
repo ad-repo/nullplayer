@@ -114,7 +114,7 @@ PK: `(track_url, artist_name, role)`. Indexes: `idx_track_artists_name`, `idx_tr
 | `content_type` | TEXT? | Added v6. Values: `'music'`, `'movie'`, `'tv'`, `'radio'`, `'video'`. NULL treated as `'music'` in queries. Derived from `Track.playHistoryContentType`; video playback records from `VideoPlayerWindowController` set this explicitly via `beginPlaybackAnalyticsSession(contentType:)`. |
 | `output_device` | TEXT? | Added v7. Name of active audio output device (CoreAudio) or cast target device. NULL for legacy rows. |
 Indexes: `idx_play_events_played_at`, `idx_play_events_track_id`, `idx_play_events_source_time`.
-Queried by `PlayHistoryStore` (in `Windows/ModernStats/`) to power the Data tab in both the modern Library Browser and the classic `PlexBrowserView`.
+Queried by `PlayHistoryStore` (in `Windows/ModernStats/`) to power the Library Browser's Data tab (`LibraryBrowserModel.history`).
 
 **`insertPlayEvent` signature** (in `MediaLibraryStore`): takes `contentType: String = "music"` and `outputDevice: String? = nil` as trailing parameters — both default so all existing callers work unchanged. Pass `track.playHistoryContentType` and `CastManager.currentPlaybackDeviceName` at call sites. Internet radio sessions pass `outputDevice` from `CastManager.currentPlaybackDeviceName` at the time the event is recorded.
 
@@ -154,7 +154,7 @@ Queried by `PlayHistoryStore` (in `Windows/ModernStats/`) to power the Data tab 
 Emitted when delta >= 0.02 or >= 0.20s elapsed, plus forced boundary emits.
 
 ### UI Reload Debouncing
-Both `ModernLibraryBrowserView` and `PlexBrowserView` debounce `MediaLibraryDidChange` reloads (0.30s work-item debounce) and use mode-aware `loadLocalData()` to load only required datasets.
+`LibraryBrowserModel+Notifications` debounces `MediaLibraryDidChange` reloads (0.30s work-item debounce) for every browser instance, and `LibraryBrowserModel+Local.loadLocalData()` is mode-aware, loading only the datasets the current tab needs.
 
 ## Missing Files: Relocation and Cleanup
 
@@ -245,7 +245,7 @@ of the library, the main thread included, for the whole pass on a slow network v
 `URL(string:)`, and requires a non-nil `scheme` from the latter. On current Foundation
 `URL(string:)` accepts a bare path and returns a **schemeless, non-file** URL instead of nil, which
 silently disabled the legacy plain-path repair branch. The same defect hit every playlist loader —
-see `Playlist.resolveEntry`, and L5 in `docs/local-library/backlog.md`.
+see `Playlist.resolveEntry`.
 
 ## LocalFileDiscovery Utility
 
@@ -257,19 +257,43 @@ see `Playlist.resolveEntry`, and L5 in `docs/local-library/backlog.md`.
 - Deduplication by normalized path; one-pass `isRegularFile`, `fileSize`, `contentModificationDate` resource-key reads.
 - `includePlaylists: Bool = false` (on both `discoverMedia` and `discoverMediaStreaming`) — when true, `.m3u`/`.pls`/`.m3u8` files are collected into `LocalFileDiscoveryResult.playlistFiles`. Only the library scan (`importMedia`) passes `true`. Playlists are a **third** classification: the early `guard isAudio || isVideo || isPlaylist` includes them, but they do **not** flow through the audio batch flush (`onAudioBatch`) and are **not** in the `allURLs` computed property (callers treat `allURLs` as importable audio/video — a `.m3u` must never be imported as a track).
 
+## Local Artwork
+
+`Utilities/LocalArtwork.swift` is the one resolver for a local file's cover, the local
+counterpart of `Track.serverArtworkURL`. Every view that draws local art calls it — the library
+browser rows and background, playlist row thumbnails, the Original playlist and main window, Now
+Playing (and so the Art window and `.wal` `<AlbumArt>`), WMP and the CLI. Never read
+`commonKeyArtwork` anywhere else: the nine copies it replaced disagreed on which metadata formats
+they read.
+
+- `image(for: url)` — the file's embedded art (common, ID3 and iTunes metadata), else its album's,
+  else a `cover` / `folder` / `front` / `album` `.jpg`/`.jpeg`/`.png` in its folder.
+- `image(forAlbum: albumId)` — the first of `tracksForAlbum` with embedded art, else a folder image
+  beside any of them. `image(forArtist:)` walks `albumsForArtist` — never a text search, which
+  matched "Yes" to "Yesterday".
+- `embeddedImage(in:)` / `embeddedImages(in:)` — the file's own pictures only, for the tag editor
+  (which must not show a sibling's art as the file's), the Art window's double-click cycling and
+  YouTube downloads.
+- A file's album comes from `MediaLibraryStore.albumId(containing:)`, which owns the
+  `"albumArtist|album"` key; a file the library has not scanned skips straight to its folder.
+- Results, misses included, are cached per file and per album and dropped on every
+  `MediaLibrary.libraryDidChangeNotification`, so art added through Edit Tags or found by a scan
+  shows without a relaunch. A `cover.jpg` dropped in from Finder shows after the next scan.
+- The browser keeps its own copy in `LibraryArtwork.cache` (`LibraryArtwork.cached`) under
+  `local:` / `local-album:` / `local-artist:` keys, which Flow / Tiles read synchronously.
+
 ## Video import
 
 Dropping a video on the main window or playlist plays it (`video-playback` § *Entry points*), as
 does `Track`'s media-type detection (`video-playback` § *Key files*). Importing one into the library
-has its own handlers in each browser:
+goes through the Library Browser:
 
-- `ModernLibraryBrowserView.performDragOperation` **and** `PlexBrowserView.performDragOperation` —
-  Modern and Classic have separate Library drop handlers. Both route audio to
-  `MediaLibrary.addTracks(...)` and video to `MediaLibrary.addVideoFiles(...)`; both
-  `draggingEntered` implementations must allow video (`includeVideo: true`).
-- After `MediaLibrary.addVideoFiles`, from a drop or from `addVideoFiles()` (the `+ADD` menu, in
-  both browsers), call `revealLocalVideoCategory()` to switch to local → Movies and reload, or the
-  import succeeds but stays hidden on whatever tab is showing. The `NSOpenPanel` allowed types are
+- `LibraryBrowserActions.addDroppedItems` handles a drop on either browser view. It routes audio to
+  `MediaLibrary.addTracks(...)` and video to `MediaLibrary.addVideoFiles(...)`. Each view still
+  overrides `draggingEntered`, and both must allow video (`includeVideo: true`).
+- After `MediaLibrary.addVideoFiles`, from a drop or from `addVideoFiles()` (the `+ADD` menu),
+  call `model.showLocalMovies()` to switch to local → Movies and reload, or the import succeeds
+  but stays hidden on whatever tab is showing. The `NSOpenPanel` allowed types are
   built from `AudioFileValidator.supportedVideoExtensions` so `.mkv`/`.avi`/`.webm`/`.ts` aren't
   greyed out.
 
@@ -306,7 +330,7 @@ For non-local file volumes, direct local playback (`loadLocalTrackForImmediatePl
 Reference pattern: `watchFolderSummaries()`, `removalCountsForWatchFolder()`, `removeWatchFolder()`, `orphanedEntryCounts()`, `removeOrphanedEntries()` in `MediaLibrary.swift` — all compare `url.path` against pre-normalized folder paths, never `normalizedPath(for: entry.url)`.
 
 ### Never call `dataQueue.sync` library methods from the main thread
-`MediaLibrary` serializes all mutable state on a private `dataQueue`, and an import scan holds that queue for *many seconds* (it does `dataQueue.sync` per 500-file batch). Any main-thread call into a `dataQueue.sync` method therefore blocks the UI with a beachball whenever a scan is running — and scans run exactly when the user has just added/rescanned a folder. The expensive offenders: `watchFolderSummaries()` (four full-array snapshots), `removalCountsForWatchFolder()`, `removeWatchFolder()`, and the bare `tracksSnapshot`/`moviesSnapshot`/`episodesSnapshot` copies. Dispatch these to `DispatchQueue.global(qos: .userInitiated)` (or compute them inside an existing `Task.detached`) and hop back to main only for UI updates. Reference: `WatchFolderManagerWindow.removeSelected()` / `.reload()` and `buildLocalFolderItems()` in `ModernLibraryBrowserView`. **Still on the main thread (lower-frequency paths, not yet hardened — tracked in #271):** `loadLocalData()` in both browsers and `confirmAndRestoreLibrary()` in `ContextMenuBuilder`.
+`MediaLibrary` serializes all mutable state on a private `dataQueue`, and an import scan holds that queue for *many seconds* (it does `dataQueue.sync` per 500-file batch). Any main-thread call into a `dataQueue.sync` method therefore blocks the UI with a beachball whenever a scan is running — and scans run exactly when the user has just added/rescanned a folder. The expensive offenders: `watchFolderSummaries()` (four full-array snapshots), `removalCountsForWatchFolder()`, `removeWatchFolder()`, and the bare `tracksSnapshot`/`moviesSnapshot`/`episodesSnapshot` copies. Dispatch these to `DispatchQueue.global(qos: .userInitiated)` (or compute them inside an existing `Task.detached`) and hop back to main only for UI updates. Reference: `WatchFolderManagerWindow.removeSelected()` / `.reload()` and `LibraryBrowserModel.buildLocalFolderItems()`. **Still on the main thread (lower-frequency paths, not yet hardened — tracked in #271):** `LibraryBrowserModel.loadLocalData()` and `confirmAndRestoreLibrary()` in `ContextMenuBuilder`.
 
 ### Confirmation dialogs in the Watch Folder manager must be sheets, not free-floating `NSAlert.runModal()`
 `WatchFolderManagerWindow` sits at `.modalPanel` level (above always-on-top windows, issue #254). A plain `NSAlert.runModal()` opens at the *normal* window level — **below** the manager window and below floating windows — so it's invisible and can never be confirmed (the removal silently no-ops). Present confirmations with `alert.beginSheetModal(for: window)`: the sheet inherits the parent's level (visible) and is window-modal (blocks the table beneath, so you can't select another row mid-confirm). The completion-handler style also composes cleanly with the off-main count → confirm → off-main delete flow. Reference: `confirmRemoval(...)` in `WatchFolderManagerDialog.swift`.
@@ -318,10 +342,10 @@ The browser reads from the SQLite store (`MediaLibraryStore`), not `MediaLibrary
 `albumsForArtist(_:)` does one SQL query per artist. In `buildLocalArtistItems()` on a 200-artist page this means 200 queries, each a full table scan without the expression index (before v2 schema). Always use `albumsForArtistsBatch(_:)`.
 
 ### Search-result artist navigation must resolve against the final destination list
-Both browser implementations (`ModernLibraryBrowserView` and classic `PlexBrowserView`) can navigate from Search results to the Artists tab. Do not preserve the clicked search result's row index, and do not rely solely on a server search-result artist ID: Plex search artist IDs can differ from the normal Artists-tab rows. Store the selected artist display name, switch to Artists, rebuild/load the destination list, apply any active column sort, then select the final visible artist row by title (falling back to id only after title match). Local-library search also needs to set `localArtistPageOffset` from `MediaLibraryStore.artistOffset(named:sort:)` before loading Artists so paged local artist results land on the page containing the target. Sort is per tab (`currentSort` is read from `LibraryBrowserTabSortStore` by `browseMode`), so assign `browseMode = .artists` **before** computing that offset — otherwise it is computed under the Search tab's sort.
+Every browser view navigates from Search results to the Artists tab through `LibraryBrowserModel.navigateToArtistFromSearch`, on a double-click (`LibraryBrowserActions.activate`); a single click only selects the artist row. Do not preserve the clicked search result's row index, and do not rely solely on a server search-result artist ID: Plex search artist IDs can differ from the normal Artists-tab rows. Store the selected artist display name, switch to Artists, rebuild/load the destination list, apply any active column sort, then select the final visible artist row by title (falling back to id only after title match). Local-library search also needs to set `localArtistPageOffset` from `MediaLibraryStore.artistOffset(named:sort:)` before loading Artists so paged local artist results land on the page containing the target. Sort is per tab (`currentSort` is read from `LibraryBrowserTabSortStore` by `browseMode`), so assign `browseMode = .artists` **before** computing that offset — otherwise it is computed under the Search tab's sort.
 
 ### Library browser sort is per tab
-`Windows/Shared/LibraryBrowserTabSort.swift` owns the Sort-menu enum (`LibraryBrowserSortOption`, also used by `MediaLibraryStore`'s paged queries) and `LibraryBrowserTabSortStore.shared`, the one in-memory copy of every tab's menu sort and column-header sort that all browser instances (classic, modern, embedded `.wal`) read. It saves on every change under `BrowserTabSort` (JSON `[modeRaw: LibraryBrowserTabSort]`); a test pins the two browse-mode enums to the same raw values. A tab with no entry uses the `default` entry, seeded from the pre-per-tab global keys (`BrowserSortOption`, `BrowserColumnSortId`, `BrowserColumnSortAscending`) while `BrowserTabSort` is unset; those keys are never written. In each browser `currentSort` and `columnSortId` are read-only, computed from the store by `browseMode`, so a tab switch needs no restore step. Change the sort only through the store: `setMenuSort(_:for:)` from the Sort menu (the handler then resets local paging offsets and rebuilds), `clickColumn(_:for:)` from a header click (then `applyColumnSort(collapseExpanded: true)`), `dropColumn(_:)` when a column is hidden. Hiding the sorted column does not re-sort the visible rows; the next rebuild uses the menu sort. Paging offsets need no reset on a tab switch because each tab's offsets are only built on that tab, under its own sort.
+`Windows/LibraryBrowser/LibraryBrowserTabSort.swift` owns the Sort-menu enum (`LibraryBrowserSortOption`, also used by `MediaLibraryStore`'s paged queries) and `LibraryBrowserTabSortStore.shared`, the one in-memory copy of every tab's menu sort and column-header sort that all browser instances (classic, modern, embedded `.wal`) read. It saves on every change under `BrowserTabSort` (JSON `[modeRaw: LibraryBrowserTabSort]`); the model keys it by `LibraryBrowseMode`. A tab with no entry uses the `default` entry, seeded from the pre-per-tab global keys (`BrowserSortOption`, `BrowserColumnSortId`, `BrowserColumnSortAscending`) while `BrowserTabSort` is unset; those keys are never written. In `LibraryBrowserModel`, `currentSort` and `columnSortId` are read-only, computed from the store by `browseMode`, so a tab switch needs no restore step. Change the sort only through the store: `setMenuSort(_:for:)` from the Sort menu (the handler then resets local paging offsets and rebuilds), `clickColumn(_:for:)` from a header click (then `applyColumnSort(collapseExpanded: true)`), `dropColumn(_:)` when a column is hidden. Hiding the sorted column does not re-sort the visible rows; the next rebuild uses the menu sort. Paging offsets need no reset on a tab switch because each tab's offsets are only built on that tab, under its own sort.
 
 ### Expression index is load-bearing
 `idx_tracks_artist_expr` uses `coalesce(album_artist, artist, 'Unknown Artist')` — the same expression used in `artistNames` GROUP BY and WHERE clauses. If the expression in a query doesn't exactly match the index expression, SQLite won't use the index. Keep query expressions consistent with the index definition.
@@ -330,21 +354,34 @@ Both browser implementations (`ModernLibraryBrowserView` and classic `PlexBrowse
 `makeFastTrack` does **not** persist a scan signature. The signature (`scan_file_size`, `scan_mod_date`) is written only after metadata enrichment completes. This is intentional: if enrichment is interrupted, the file will be re-enriched on next scan.
 
 ### Plists tab (local playlists) — browser wiring pitfalls
-Wired identically in `ModernLibraryBrowserView` and `PlexBrowserView`, mirroring the server-playlist pattern (`buildSubsonicPlaylistItems`). Watch for:
-- **Two clear-sites per browser** must both build the list: `loadLocalData()` **and** `rebuildCurrentModeItems()`. Updating only one makes playlists appear on first load then vanish after any expand/collapse (which re-runs `rebuildCurrentModeItems`). In modern, `rebuildCurrentModeItems` had `.plists` grouped with `.radio`/`.history` — split it out, don't string-replace the combined case.
-- **Key the expand set / track cache by `p.url.path`** (the stable identity), never `id.uuidString`; read key must equal write key in `toggleExpand`.
-- Lazy parse on expand uses `Task.detached { @MainActor … }` (NOT plain `Task {}` — cancellation inheritance gotcha). `parsePlaylistTracks(at:)` picks `Playlist.fromM3U`/`fromPLS` by extension (sync file I/O, hence off-main), resolves each entry via `MediaLibrary.shared.findTrack(byURL:)` (matched ⇒ `toTrack()`, unmatched ⇒ `Track(lightweightURL:)`).
-- `ItemType` gains `localPlaylist(LocalPlaylist)` / `localPlaylistTrack(Track)`; every `switch` over `ItemType` (icons, context menu, double-click, expansion) must handle both. Double-clicking a playlist row plays all its tracks; the disclosure triangle still expands.
+Built once in `LibraryBrowserModel+Local` (`buildLocalPlaylistItems`), mirroring the server-playlist pattern (`serverPlaylistRows`). Watch for:
+- **Two build sites** must both build the list: `loadLocalData()` **and** `rebuildLocalItems()` (reached from `rebuildCurrentModeItems()`). Updating only one makes playlists appear on first load then vanish after any expand/collapse (which re-runs `rebuildCurrentModeItems`).
+- **Key the expansion and track cache by `p.url.path`** (the stable identity), never `id.uuidString`; the `.localPlaylist` expansion key and `localPlaylistTracks` must use the same key.
+- Lazy parse on expand (`LibraryBrowserModel+Expand`) uses `Task.detached` (NOT plain `Task {}` — cancellation inheritance gotcha) and hops back with `MainActor.run`. `LibraryPlayable.tracks(inPlaylistFile:)` does the sync file I/O off-main and resolves each entry against the library (matched ⇒ the library track, unmatched ⇒ `Track(lightweightURL:)`).
+- `LibraryBrowserItem.ItemType` has `localPlaylist(LocalPlaylist)` / `localPlaylistTrack(Track)`; every `switch` over `ItemType` (icons, context menu, double-click, expansion) must handle both. Double-clicking a playlist row plays all its tracks; the disclosure triangle still expands.
+
+### Folders tab — one walk
+`Windows/LibraryBrowser/LocalFolderTree.rows(expanded:)` is the Folders tab's tree, built by
+`LibraryBrowserModel.buildLocalFolderItems()`. Its `Row` decides each row's id, title and indent, and
+the model only copies it into a `LibraryBrowserItem` (`init(_ row: LocalFolderTree.Row)`, beside the
+`YouTubeRow` one), with its own generation guard and cancel. Change the tree or a row's title there,
+never in a view: the two copies it replaced drifted (#542, one titled tracks "Artist - Title"). It
+runs off the main actor and reads the watch folders itself (`availableRoots()`, which blocks behind a
+running scan). Names sort in Finder's order through `LibraryTextSorter` with article stripping off
+(#543), and a symlinked folder is skipped by asking the item itself (`isSymbolicLinkKey`) — comparing
+resolved paths dropped every folder under a symlinked root such as `/tmp`.
+
+Column rows lay out their cells through `LibraryColumnVisibility.cellFrames`, in the list painter both
+browsers share (`LibraryBrowserListPainter.drawCells`): a title indents from the leading pad as a plain row does, and only by what the cells
+before it leave short of its depth; an artist or album row under track columns spans the empty `#` cell.
 
 ## Data Tab (Play History Analytics)
 
-Both `ModernLibraryBrowserView` and `PlexBrowserView` (classic) embed a Data tab backed by `PlayHistoryAgent` + `StatsContentView`.
-
-In `PlexBrowserView`, the tab is the `.history` case (displayed as "Data"). It is implemented via an `NSHostingView<StatsContentView>` created in `makeHistoryHostingView()` and reused across tab switches. The agent is a private `let historyAgent = PlayHistoryAgent()` instance on the view. Skin text color is forwarded on tab selection and on skin reload.
+The Library Browser's Data tab is the `.history` case (displayed as "Data"), backed by `PlayHistoryAgent` + `StatsContentView`. The agent is `LibraryBrowserModel.history`, one per browser instance. Each view hosts it in an `NSHostingView<StatsContentView>` created in its own `makeHistoryHostingView()` and reused across tab switches, coloured from its own skin; skin text colour is forwarded on tab selection and on skin reload.
 
 **Charts in the Data tab overview:**
 - Listening heatmap (`ContributionHeatmapView`, GitHub-style, trailing year) — coloured from the skin
-  in every mode through `ContributionHeatmapTheme`: `PlexBrowserView` builds it from
+  in every mode through `ContributionHeatmapTheme`: `ClassicLibraryBrowserView` builds it from
   `currentPlaylistColors()` (the classic skin's playlist colours, or the `.wal`/`.wmz` surface style,
   hot end = `currentText`), the Modern library and stats window from `init(modernSkin:)` (hot end =
   the spectrum top, so metal finishes stay bright). An accent under 1.8:1 against the background

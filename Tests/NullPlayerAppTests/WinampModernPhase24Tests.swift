@@ -755,6 +755,43 @@ final class WinampModernPhase24Tests: XCTestCase {
         XCTAssertEqual(commands, ["close", "minimize"])
     }
 
+    /// The base window rule: a scene with no visible `CLOSE` of its own — Itemskin's standard frame
+    /// around the Equalizer Studio — closes from the `FallbackCloseArea` corner, and that corner
+    /// outranks whatever sits under it. A scene that draws its own close keeps only that one.
+    func testAWindowWithNoCloseOfItsOwnClosesFromItsCorner() throws {
+        // A 40-point canvas puts the corner at view x/y 20...34; (27, 27) is inside it.
+        let corner = NSPoint(x: 27, y: 27)
+        for (body, closes) in [
+            (#"<button id="Min" action="MINIMIZE" x="0" y="0" w="10" h="10"/>"#, true),
+            (#"<button id="Close" action="CLOSE" visible="0" x="0" y="0" w="10" h="10"/>"#, true),
+            (#"<button id="Close" action="CLOSE" x="0" y="0" w="10" h="10"/>"#, false),
+        ] {
+            let loaded = try load(xml: skin(size: 40, body: body))
+            let host = Host()
+            let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host, clock: { 0 })
+            addTeardownBlock { renderer.teardown() }
+            let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
+            addTeardownBlock { scripts.teardown() }
+            let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host)
+            addTeardownBlock { view.teardown() }
+            let window = NSWindow(contentRect: NSRect(origin: .zero, size: renderer.canvasSize),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = view
+            view.setFrameSize(renderer.canvasSize)
+            var closed = 0
+            view.closeRequested = { closed += 1 }
+
+            XCTAssertEqual(view.needsFallbackClose, closes, body)
+            click(view, in: window, at: corner)
+            XCTAssertEqual(closed, closes ? 1 : 0, body)
+            if closes {
+                XCTAssertTrue(view.hitTest(corner) === view, "the corner outranks the content under it")
+                click(view, in: window, at: NSPoint(x: 15, y: 15))
+                XCTAssertEqual(closed, 1, "only the corner closes")
+            }
+        }
+    }
+
     /// A `TOGGLE` parameter first keeps the established component route, then falls through to a
     /// skin container id. An unknown id is offered to that bounded lookup and changes nothing.
     func testToggleRoutesComponentsThenFallsBackToAContainerID() throws {

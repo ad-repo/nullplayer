@@ -30,20 +30,15 @@ final class SkinLoadingOverlay {
         guard depth == 1 else { return }
 
         let size = NSSize(width: 88, height: 88)
-        let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
-                            styleMask: [.borderless, .nonactivatingPanel],
-                            backing: .buffered,
-                            defer: false)
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = true
-        panel.level = .floating
+        let (panel, backdrop) = HUDPanel.make(size: size, cornerRadius: 16)
         panel.ignoresMouseEvents = true
-        panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle]
-
-        panel.contentView = makeContentView(size: size)
-        panel.setFrameOrigin(originCenteringPanel(ofSize: size))
+        let bars = NSView(frame: backdrop.bounds)
+        bars.wantsLayer = true
+        bars.layer.map { addBars(to: $0, in: bars.bounds) }
+        backdrop.addSubview(bars)
+        let bounds = HUDPanel.anchorFrame
+        panel.setFrameOrigin(NSPoint(x: bounds.midX - size.width / 2,
+                                     y: bounds.midY - size.height / 2))
         panel.orderFrontRegardless()
         panel.invalidateShadow()
         self.panel = panel
@@ -67,23 +62,6 @@ final class SkinLoadingOverlay {
     }
 
     // MARK: - Content
-
-    private func makeContentView(size: NSSize) -> NSView {
-        let container = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
-        container.material = .hudWindow
-        container.blendingMode = .behindWindow
-        container.state = .active
-        // A `.behindWindow` backdrop is composited by the window server, which honours the view's
-        // mask but not `layer.cornerRadius` — with a layer corner radius the blurred square (and
-        // the window shadow traced from it) still show at the corners over light backgrounds.
-        container.maskImage = Self.roundedMask(cornerRadius: 16)
-
-        let bars = NSView(frame: NSRect(origin: .zero, size: size))
-        bars.wantsLayer = true
-        bars.layer.map { addBars(to: $0, in: CGRect(origin: .zero, size: size)) }
-        container.addSubview(bars)
-        return container
-    }
 
     /// A row of spectrum-analyzer bars bouncing out of phase. Pure Core Animation: no timer, no
     /// drawing callback, so it keeps running while the main thread is busy loading the skin.
@@ -138,29 +116,5 @@ final class SkinLoadingOverlay {
             bar.add(fade, forKey: "fade")
             layer.addSublayer(bar)
         }
-    }
-
-    /// A resizable rounded-rect mask; `NSVisualEffectView` stretches it from the cap insets, so the
-    /// corners stay circular at any panel size.
-    private static func roundedMask(cornerRadius radius: CGFloat) -> NSImage {
-        let edge = radius * 2 + 1
-        let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
-            NSColor.black.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
-            return true
-        }
-        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
-        image.resizingMode = .stretch
-        return image
-    }
-
-    private func originCenteringPanel(ofSize size: NSSize) -> NSPoint {
-        let anchor = WindowManager.shared.mainWindowController?.window
-            ?? NSApp.keyWindow
-        let bounds = anchor?.screen?.visibleFrame
-            ?? NSScreen.main?.visibleFrame
-            ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        return NSPoint(x: bounds.midX - size.width / 2,
-                       y: bounds.midY - size.height / 2)
     }
 }

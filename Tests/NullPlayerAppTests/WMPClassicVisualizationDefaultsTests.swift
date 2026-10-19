@@ -48,10 +48,11 @@ final class WMPClassicVisualizationDefaultsTests: XCTestCase {
 
     // MARK: - What the rule writes when it does run
 
-    /// The six keys the `.wmz` session was losing, pinned so a change to Classic's defaults cannot
-    /// quietly widen what a reset or a Classic entry overwrites. A skin load writes the same keys
-    /// minus the two main-window modes (`includesMainWindowMode: false`).
-    func testClassicDefaultsWriteTheSixScopedVisualizationKeys() throws {
+    /// The keys the `.wmz` session was losing, pinned so a change to Classic's defaults cannot
+    /// quietly widen what a Classic entry overwrites. A skin load writes the same keys only where a
+    /// key was never written (`onlyIfUnset: true`). A Classic reset also writes Classic's
+    /// main-window mode, in `VisualizationPreferences`; this function never touches either mode.
+    func testClassicDefaultsWriteTheScopedVisualizationKeys() throws {
         let suiteName = "WMPClassicVisualizationDefaultsTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -66,8 +67,9 @@ final class WMPClassicVisualizationDefaultsTests: XCTestCase {
 
         WindowManager.shared.writeClassicVisualizationDefaultKeys(for: .all, defaults: defaults)
 
-        XCTAssertEqual(defaults.string(forKey: "mainWindowVisMode"), MainWindowVisMode.spectrum.rawValue)
-        XCTAssertEqual(defaults.string(forKey: "modernMainWindowVisMode"), MainWindowVisMode.spectrum.rawValue)
+        // Each family's main-window mode is its own (M39): Classic's defaults leave both alone.
+        XCTAssertEqual(defaults.string(forKey: "mainWindowVisMode"), "Matrix")
+        XCTAssertEqual(defaults.string(forKey: "modernMainWindowVisMode"), "Matrix")
         XCTAssertEqual(defaults.string(forKey: "spectrumQualityMode"), SpectrumQualityMode.visClassicExact.rawValue)
         XCTAssertEqual(
             defaults.string(forKey: "visClassicLastProfileName.mainWindow"),

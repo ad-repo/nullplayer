@@ -286,4 +286,23 @@ final class GeissEngineSmokeTests: XCTestCase {
             XCTFail("Mode did not auto-switch within 500 frames; auto-switch feature may require upstream port edits. Current mode: \(diag.active_mode)")
         }
     }
+
+    /// The core lives in the port's globals, so a second owner must be refused rather than handed
+    /// the same core: two hosts resizing it under each other corrupted the heap.
+    func testGeissCoreRefusesASecondOwnerUntilDestroyed() {
+        guard let core = GeissCore_create(128, 96) else {
+            XCTFail("GeissCore_create failed")
+            return
+        }
+        XCTAssertEqual(GeissCore_inUse(), 1)
+        XCTAssertNil(GeissCore_create(64, 48), "A second create must not share the held core.")
+
+        GeissCore_destroy(core)
+        XCTAssertEqual(GeissCore_inUse(), 0)
+        guard let next = GeissCore_create(64, 48) else {
+            XCTFail("GeissCore_create failed after the owner destroyed the core")
+            return
+        }
+        GeissCore_destroy(next)
+    }
 }

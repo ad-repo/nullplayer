@@ -79,6 +79,14 @@ Use the measured-demand signal rather than porting reference stubs blindly — s
 > survived every phase — assume any *arithmetic* result is untested until a skin has been watched
 > doing the arithmetic.
 
+> **Gotcha: an integer constant is the same two halves, low half first.** It read only `initial1`
+> until 2026-10-17, so any constant above 65535 lost its high half: ONYX V2's one-hour test
+> `getPlayItemLength() < 3600000` compared against **61056**, every track over a minute took the
+> skin's long-time branch, and that branch called the then-missing `integerToLongTime` and aborted the
+> seek handler. A corpus scan of every integer constant with a non-zero high half found only real
+> values (600000, 3600000, 36000000, 43200000, 99999, 1000000), so the high half is never junk.
+> Pinned by `WinampModernOnyxV2Tests`.
+
 MAKI's casts are System methods (`System.Integer(v)`, `Float`, `String`, `Boolean`), and a script
 reaches for them wherever it mixes a float with an int-typed API — which is exactly where the volume
 path runs.
@@ -909,11 +917,34 @@ chrome.resize(content.getLeft(), content.getTop(), content.getWidth(), content.g
 
 Both receivers are layouts, so both read 0, and the write above was suppressed as "unmoved" — the
 frame stayed wherever the tiler had parked it while the content window sat somewhere else on screen.
-Recognised on the write, the same way: `borrowedWindowOrigin` remembers the origin the last window
-object *reported* along with the desktop origin it actually sits at, and when that exact pair is
-handed to `resize()` on a **different** window object, the point is re-expressed in the reader's
-space. The record is spent by the write that uses it, so a stale read cannot pin a later write that
-only happens to name the same coordinates, and a value the script did not read is still a plain move.
+Recognised on the write, the same way. `WinampModernBorrowedOrigin` (its own file; the runtime keeps
+only `scriptReadsOrigin`, `borrowedWindowOrigin` and the glue record) remembers the origin the last
+window object *reported* along with the desktop origin it actually sits at, and when a write on a
+**different** window object names coordinates derived from it, the point is re-expressed in the
+reader's space. A value the script did not read is still a plain move.
+
+**One rule for both ways a script writes a position** (ONYX V2, 2026-10-17). `resize(x, y, w, h)`
+names both axes at once; `setXmlParam("x", …)` and `setXmlParam("y", …)` name one each. ONYX parks
+its visualization window over the player's art box the second way, with an offset:
+
+```
+vis.setXmlParam("x", player.getLeft() + 52)   // the layout reads 0, so this is "player + 52"
+```
+
+Matched only within a pixel (the B110 jiggle), that was a plain move to desktop 52 and the window
+floated loose. So a write matches when it is within a pixel of the read **or** the read was a layout's
+canvas origin (0) — arithmetic on a layout's 0 can only mean "relative to that window". A container
+reads its real desktop origin, so for a container read only the ±1 case matches. Each axis of a read
+is **spent by the write that uses it**, and the read is **forgotten when the outermost event unwinds**
+(`dispatch`'s `isOutermost` block), so a stale read can never pin a later write that only happens to
+name the same coordinates. A pinned move also marks an auxiliary window placed
+(`placedAuxiliaryWindows`), or `place` re-tiles it the first time the script shows it.
+
+**A layout a script sizes to 0×0 stays off screen** until a script gives it a size again
+(`scriptCollapsedLayouts`, kept in `applyContainerGeometry`'s `applySize`). ONYX gives its
+visualization window no size in the mini player; Winamp draws that 0×0, and kept at its declared 67×72
+it floated as a black square. Any positive size from any writer brings it back. Pinned by
+`WinampModernOnyxV2Tests`.
 
 Such a move is **pinned**, and a pin is not clamped to the visible frame — `containerMoveRequested`
 carries the flag. Clamping it is what pulled Itemskin's library frame 82px off its content window: the

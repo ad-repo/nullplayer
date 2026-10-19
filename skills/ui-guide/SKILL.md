@@ -580,7 +580,7 @@ A standalone Metal-based spectrum analyzer visualization window that provides a 
 The Spectrum Analyzer participates in the docking system alongside Main, EQ, and Playlist:
 - Docks and moves with the window group when dragged
 - Opens below the current vertical stack (Main → EQ → Playlist → Spectrum)
-- State (visibility and position) saved with "Remember State on Quit"
+- State (visibility and position) saved with "Save State on Quit"
 - **Center stack collapse**: hiding a stack window (EQ, Playlist, Spectrum) slides windows below it up by the closed window's height. Implemented via `slideUpWindowsBelow(closingFrame:)` in `WindowManager`. The closing frame must be captured BEFORE `orderOut`.
 
 ### Key Files
@@ -659,6 +659,36 @@ Key implementation details:
 - Each view's `titleBarHeight` computed property returns `borderWidth` (not 0) when hidden, preserving the top border line
 - Library Browser uses lazy drag: `mouseDown` records `windowDragStartPoint`; `mouseDragged` starts the drag on first movement when HT is on
 
+## Every window closes
+
+The base window rule: **every window closes from its top-right corner.** A skin that draws its own
+close keeps it. Where a window has none, `FallbackCloseArea` (`Windows/Shared/`) stands in: a 14pt
+square, 6pt in from the top and right edges, not drawn, outranking whatever content sits under it.
+The inset keeps it off a rounded corner's transparent pixels (the window server sends those presses to
+the window behind) and off AppKit's resize band. The hosted families' drawn closes (a `.wmz` palette
+window, `.wal` glass chrome) are a different target, `SkinnedSurfaceChrome.closeButtonRect`, flush in
+the corner where their art paints the ×.
+
+Two seams own it, one per family; no content view knows about it:
+
+- **Original/Metal** — `BorderlessWindow.sendEvent` takes the press itself whenever
+  `effectiveHideTitleBars(for:)` is true (HT on, or a docked sub-window), ahead of the resize edges and
+  any subview, and closes on a release still inside the corner. What closing means is the window's:
+  `performCloseAction()` runs the controller-set `closeAction` (the main window quits, Sonos goes
+  through `toggleSonos()`) or `close()`, and a drawn close button whose action is more than `close()`
+  calls the same method, so the two cannot drift. Classic never reaches the corner —
+  `effectiveHideTitleBars` is false outside Modern UI.
+- **`.wal`** — `WinampModernMainView.hostChromeHit` answers `.close` for the corner when the scene has
+  no close of its own (`needsFallbackClose`: no glass chrome, no visible `action="CLOSE"`); `hitTest`
+  and `mouseDown` each test it once, and every close goes through `requestClose()`. It closes on the
+  press, as the glass chrome's close always has. See
+  `winamp-modern-skin-guide/reference/components.md` § *The window layer these views sit in*.
+
+Any managed window closing in Modern UI posts the layout change from
+`handleModernManagedWindowWillClose` (the willClose observer), the Modern half of
+`handleCenterStackWindowWillClose`, so the seamless stack shadow and the neighbours' shared edges stop
+outlining it.
+
 ## UI Size Mode (Both UI Modes)
 
 UI label is **UI Size** with mutually-exclusive percentage rows: **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, **175%**, **200%**, **250%**, and **300%**.
@@ -669,7 +699,7 @@ UI label is **UI Size** with mutually-exclusive percentage rows: **50%**, **90%*
 - **Source of truth**: `WindowManager.uiScaleLevel`; the legacy `isDoubleSize` API remains a compatibility shim (`true` writes 150%, reads are true for any non-100% value).
 - **Modern UI**: live toggle — `ModernSkinElements.scaleFactor` is computed (`baseScaleFactor * sizeMultiplier`). Do NOT cache `scaleFactor` in a `let` property. Views should refresh renderers on `.doubleSizeDidChange`.
 - **Classic UI**: also live (no restart). `MenuActions.setUIScaleLevel(_:)` assigns `WindowManager.uiScaleLevel`; `applyDoubleSize(previousScale:)` resizes every window in place using the exact `newScale / oldScale` transition ratio. Classic views self-scale their skin rendering from their own `bounds`, so resizing is enough -- **but** they're layer-backed with `.onSetNeedsDisplay`, so a bare resize leaves a stale, stretched "ghost" of the old size (visible until the window is recomposited, e.g. by switching Spaces). `applyDoubleSize()` ends by walking every visible window's view tree (`forceRedrawTree`) setting `needsDisplay = true` + `displayIfNeeded()` to force the repaint.
-- **Classic Library content**: the Library window remains freely stretchable, so its fonts must not derive from window bounds. `PlexBrowserView.contentScale` uses `WindowManager.classicScaleMultiplier` to scale bitmap text, system fonts, row height, column-header height, and matching text hit-test measurements. Manual Library resizing therefore adds space without changing text size, while changing **UI Size** scales the text and row metrics.
+- **Classic Library content**: the Library window remains freely stretchable, so its fonts must not derive from window bounds. `ClassicLibraryBrowserView.contentScale` uses `WindowManager.classicScaleMultiplier` to scale bitmap text, system fonts, row height, column-header height, and matching text hit-test measurements. Manual Library resizing therefore adds space without changing text size, while changing **UI Size** scales the text and row metrics.
 - **Fast switching guard**: `WindowManager` tracks the last applied level separately from the requested level. If another UI Size change arrives during a resize pass, it records the pending value and applies only the final requested level after the current pass finishes, using the last actually-applied scale as the ratio base.
 - **Startup restoration**: `uiScaleLevel` is restored in `AppStateManager.restoreSettingsState()` before sub-windows are shown, so saved enlarged geometry is not double-applied during restore. Scale and window frames restore only when the saved and running `PlayerUIMode` values match exactly; Modern and Metal share controller families but have incompatible geometry and therefore count as a mismatch. A mismatch starts at 100% and uses default frames while mode-independent audio/EQ/playlist state still restores. Saved states without `uiScaleLevel` fall back from legacy `isDoubleSize=true` to 150% only for an exact-mode restore.
 - **App-state policy**: See `../app-state/SKILL.md` for session restore scope, preference ownership, edition scoping, and reset rules.
@@ -758,7 +788,7 @@ geometry as an exact match.
   ordered below it, holding a blur of the window's outline with the outline knocked back out.
   AppKit's own (`hasShadow`) is not used on a skin window: it traces every non-zero alpha pixel,
   and macOS draws a hard rim along that edge — around a face's baked-in soft shadow, for one (#527).
-- `.wal`, `.wmz` and Audion attach it to their engine's outline (their skills). Classic, Original
+- `.wal`, `.wmz`, Audion and Sonique attach it to their engine's outline (their skills). Classic, Original
   and every shared window — playlist, EQ, library, visualizers, video — set
   `window.hasSkinShadow = true` (`Windows/Shared/NSWindow+SkinShadow.swift`): the outline is the
   content view's layer tree rendered at one pixel per point, and an opaque window's is its frame.
@@ -771,9 +801,11 @@ geometry as an exact match.
   pixels, and `window.invalidateSkinShadowShape(_:)` when content moves the outline at the same
   size. The outline is fingerprinted, so a pull that finds it unchanged rebuilds nothing.
 - **Seamless docking (Original):** a seamless skin casts **one shadow per docked group**.
-  `WindowManager.updateSeamlessStackShadow` runs once per layout change, right after
-  `windowLayoutDidChange` is posted, so every view has already updated its corner mask. It hands
-  the docked groups to `SeamlessStackShadow` (`Windows/Shared/`), which gives each skin-shadowed
+  `SeamlessStackShadow` (`Windows/Shared/`) casts once per layout change, right after
+  `windowLayoutDidChange` is posted, so every view has already updated its corner mask, and a turn
+  after every window move (`setNeedsCast()`, coalesced), since a snap or a carried child posts no
+  layout change. It pulls the docked groups from `WindowManager.seamlessStackLayout` — a window
+  dragged alone is left out of them — and gives each skin-shadowed
   member a `SkinShadowRole` through `window.castSkinShadow(_:)`. The main window when it is in the
   group, else the lowest window number, casts the union of every member's outline through
   `SkinWindowShadow.outlineBounds` (a shape rect larger than its parent), and the rest are hidden
@@ -791,6 +823,19 @@ geometry as an exact match.
   the stack regroups. Trace: `stale <size>`. A member's
   outline is its content view's layer, so a skin-shadowed window's content view must be
   layer-backed (`wantsLayer`) or it casts nothing and leaves a hole in its group's shadow.
+- **An app unhide re-links every shadow.** After the app is hidden and shown again, AppKit keeps the
+  shadow a child of its window (`parent` still names it) but carries it the wrong distance on every
+  drag — up to twice as far, measured on an Original main window with no code of ours touching the
+  shadow during the hide — so it slid off the skin as a window-sized outline until something
+  re-linked it. `SkinWindowShadow.relink()` removes and re-adds the child on
+  `NSApplication.didUnhideNotification`. Trace: `relink after unhide`; a `reassert frame` line names
+  the shadow's frame before (`was=`) and after (`want=`), so a shadow not following its window shows
+  as one such line per drag step.
+- **The shadow wears its window's alpha.** `SkinWindowShadow` observes the parent's `alphaValue`
+  and copies it to the shadow window, so any code that hides a skin window by alpha hides its shadow
+  too. A `.wmz` hosted window restored at launch is held at alpha 0 while its frame renders
+  (`HostedWindowBorderLayout.hold`, up to ~2 s on Combat_Flight_Simulator_3's Library) and cast an
+  empty shadow box for the whole hold before this. Only the final alpha is followed, not a fade.
 - **AppKit's shadow stays** on transient panels (skin-loading overlay, row thumbnail preview, Audion
   slider popups), on the app-authored `.wmz` fallback player, and on the Compact Mode window: it
   fades by `alphaValue`, which AppKit's shadow follows and a separate shadow window does not, so
@@ -809,7 +854,7 @@ Compact Mode is a WindowManager state transition, not a second main window style
 
 Key implementation details:
 - `WindowManager.enterCompactMode(revealWindow:)` snapshots regular windows, establishes the compact window's presence on the current Space, detaches docked child windows, orders regular windows out, switches the app to `.accessory`, **re-activates NullPlayer** (`NSApp.activate`) so the `.accessory` transition doesn't hand the Space to a fullscreen app, creates the status item, and owns the Compact Mode state (`regular`, `compactVisible`, `compactHidden`). See the Spaces gotchas below.
-- `Windows/CompactMode/CompactModeWindowController.swift` owns a private browser controller (`PlexBrowserWindowController` or `ModernLibraryBrowserWindowController`) and calls `setCompactMode(true)`. Do not replace this with a custom compact-only view; Compact Mode must keep the same browser compact surface and embedded compact player bar behavior as the old implementation.
+- `Windows/CompactMode/CompactModeWindowController.swift` owns a private browser controller (`ClassicLibraryBrowserWindowController` or `ModernLibraryBrowserWindowController`) and calls `setCompactMode(true)`. Do not replace this with a custom compact-only view; Compact Mode must keep the same browser compact surface and embedded compact player bar behavior as the old implementation.
 - Compact updates are forwarded through the compact controller (`updateCompactBarTime`, `updateCompactBarTrack`, `updateCompactBarPlaybackState`) so playback state stays live while the regular windows are hidden.
 - The status item left-click toggles compact visibility. Right-click opens the compact menu. Hidden compact mode remains in `.accessory` until explicitly exited.
 - Exiting Compact Mode removes the status item, switches back to `.regular`, rebuilds the main menu asynchronously, restores the regular window snapshot, then reattaches/restores docked windows. It then **bounces the activation policy** (`.accessory` → `.regular` back-to-back) to force the menu bar to re-own, and calls `reassertRegularActivation()` (activate + make the main window key + re-apply the Dock icon) on the next runloop turn. See the `.accessory → .regular` menu-bar gotcha below.
@@ -881,23 +926,35 @@ Implementation rules:
 - Live UI switching should exit Compact Window, rebuild the mode-dependent window layer, then
   re-enter Compact Window so the embedded classic/modern compact surface matches the new mode.
 
-### Library and Compact Window visual backdrops (Modern/Metal)
+### Library and Compact Window visual backdrops
 
 The regular Library and Compact surfaces each support a durable visual mode: **Off**, **Cava**,
 **Art**, or **Cava + Art**. They persist independently as `libraryBackdropMode` and
 `compactBackdropMode`. Controls live under **Visuals > Library Window** or
-**Visuals > Compact Window** and in the corresponding surface's context menus. Classic resolves
-both modes to Off. Modern and Metal default both windows to **Cava + Art** on first use; persisted
+**Visuals > Compact Window** and in the corresponding surface's context menus.
+
+The classic browser (Classic, and the `.wal` fallback, `.wmz`, Audion and Sonique library windows) has its
+own Library Window choice, `ClassicLibraryBackdropMode` (registered default Art,
+`BrowserBackdropMode.classicDefaultMode`); `migrateLegacyArtworkPreference` seeds it once from the
+legacy `showBrowserArtworkBackground` toggle (on → Art, off → Off), so Classic keeps its look until
+Cava is picked. Its Cava covers the list area only (`BrowserBackdrop`'s
+`region`), so a hosted frame's keyed-out corners stay clear. It never shows in classic Compact Mode
+or in the `.wal` embedded library holder, which has no controller. Classic resolves the Compact mode
+to Off.
+
+Modern and Metal default both windows to **Cava + Art** on first use; persisted
 window-specific selections still win. When those keys are absent on upgrade, the legacy
 `showBrowserArtworkBackground` value seeds both: enabled maps to Cava + Art and disabled maps to
 Cava. Reset All Visualization Preferences clears both new mode keys and restores Cava + Art.
 
 Implementation rules:
-- `ModernLibraryBrowserWindowController` installs a clear container as the window content view.
-  `CompactBackdropView` and `ModernLibraryBrowserView` are siblings in both regular and Compact
-  presentations, with the backdrop positioned below the browser. Do not make the backdrop a child
+- Both browser window controllers install a clear container as the window content view.
+  `BrowserBackdropView` (`Windows/LibraryBrowser/BrowserBackdropView.swift`, placed by
+  `BrowserBackdrop`) and the browser view are siblings in it (Modern: in both regular and Compact
+  presentations), with the backdrop positioned below the browser. Do not make the backdrop a child
   of the browser; the browser's layer clipping and redraw behavior would clip or erase it.
-- Size the backdrop from the content container's `bounds` on creation and every layout pass. Do not
+- Size the backdrop from the content container's `bounds` (the classic view: its list `region`) on
+  creation and every layout pass. Do not
   copy the browser's `frame`: an offset or partially sized browser frame can restrict Cava to one
   side of the compact window. Keep the backdrop autoresizing in width and height. Propagate the
   browser's `sharpCorners` into the backdrop layer mask whenever docking changes so both siblings
@@ -908,7 +965,8 @@ Implementation rules:
   browser can leave a horizontal cached region covering the backdrop until relaunch.
 - The browser remains above the backdrop and uses translucent background/panel fills while a
   backdrop is active. Text, controls, borders, and hit testing remain browser-owned and fully
-  interactive. `CompactBackdropView.hitTest` returns `nil`.
+  interactive. `BrowserBackdropView.hitTest` returns `nil`. Each view supplies its own
+  `BrowserBackdropLook` (background, default bar colours, corner radius).
 - Art and Cava + Art must use the existing legacy browser artwork renderer and its list-area
   geometry. Never add a full-window/aspect-fill artwork sibling: it duplicates the legacy image and
   changes its established size. Art creates no backdrop sibling; Cava + Art draws the one legacy
@@ -939,31 +997,68 @@ drawn from `LibraryBarIcon.refresh` in the modern browser), switch how the brows
 are visual lenses over the browser's current `displayItems`, not separate queries. The mode is
 `LibraryViewMode`, persisted under the `LibraryBrowserViewMode` default, shared by both browsers and
 kept across tab switches and relaunches. The buttons show only while the list has art rows at its
-root (`artLens.hasItems`); over a list without any (Radio, playlists) the browser draws its list
+root (`list.lens.hasItems`); over a list without any (Radio, playlists) the browser draws its list
 whatever the mode, and the art view hides.
 
 The shared art views live in `Windows/LibraryArt/`, beside neither browser: both use them equally.
 
 The source bar has no separate item-count field: `withItemCount(_:)` appends the count to the
 library name (server sources) or the source name (Local, Radio, YouTube) — "Music (1110 items)".
-Each browser's `serverBarContent` (`ServerBarContent`: built-in source, configured server, or
+`LibraryBrowserModel.sourceBarContent` (`SourceBarContent`: built-in source, configured server, or
 unconfigured prompt) is the one switch over the source; the draw and the natural-width measure both
 read it. A server's library field grows from its minimum (`minLibraryFieldWidth` 80 pt modern,
 `minLibraryFieldChars` 10 classic) to the free space before the right-side buttons, and scrolls when
-even that is short. The draw owns the scroll state: it writes the server and library field widths
-(zero when no server shows), resets an offset when its name changes, and starts the tick on
-overflow; the tick only advances offsets from those widths and stops when nothing overflows.
+even that is short. The scroll lives in `LibraryBrowserCoordinator` (`serverName` / `libraryName`,
+each a `Marquee`): the draw calls `showNames` (a changed name scrolls from its start), draws each
+name at its `offset`, and reports how far each travels before it wraps through `namesDrawn` (0 when
+it fits), which starts the tick on overflow; the tick only advances offsets and stops when nothing
+overflows.
 
-**`LibraryArtLens`** (`Windows/LibraryArt/LibraryArtLens.swift`) owns everything the two
-browsers share: the mode, the art view standing in for the list, and the tree navigation. Each
-browser holds one `artLens` and keeps only what is its own, passed as `LibraryArtLens.Host`
-closures: its rows, search state, selection, blocked state (loading, error, Plex not linked), style,
-the `LibraryArtItem` for a row (`artItem(for:)`), expand, play (`handleDoubleClick`), the row's
-context menu (select it, then `showContextMenu` — every art view's right-click goes there), album
-info (`playable(for:)` → `LibraryAlbumInfo`) and next page.
+**`LibraryBrowserCoordinator`** (`Windows/LibraryBrowser/LibraryBrowserCoordinator.swift`) is the
+non-drawing half both views share. It takes the model's `onChange` and passes each change to
+`LibraryBrowserList` and the view (`Host.redraw`, `updateHistory`, `visibilityChanged`); follows
+minimize, occlusion, the docked-group highlight (`isHighlighted`), the library scan and row
+thumbnail loads; routes clicks on the server bar's buttons, the tabs, Sort and the search bar
+(`mouseDown`, before `list.mouseDown`) and file drops; steps the loading, row and scan spinners
+(`spinnerStep`, which the painter draws at); and tears the model, actions and list down. Each view draws the
+controls and records where in `coordinator.rects`. **Each band resets its own rects as it draws**
+(`beginServerBar`, the tab bar's `rects.tabs.removeAll`), never the whole set at the top of `draw`:
+both views have a fast path that redraws the server bar alone on every marquee tick, and a full
+reset there wipes the tab and Sort rects. What the list area shows comes from
+`LibraryBrowserModel.listState` (not linked, loading, error, rows), and an empty list's text from
+`emptyMessage(enterKey:)`.
+
+**Model changes.** `loadState` (`idle`, `loading`, `failed`) is one value, set whole — never an
+"is loading" and an error set one after the other; a load that ends without its own error calls
+`endLoading()`, which leaves a failure reported meanwhile in place. It emits `.listState` only when it
+changes, and the Plex link state emits `.listState` too. A `browseMode` change clears the selection
+and the list scrolls to the top on `.browseMode`; `rowsReplaced()` is only for a new list on the same
+tab (re-clicking a tab, a refresh, a library pick, a search starting). `.rebuilt` fires after a
+rebuild.
+
+**Server sources.** Subsonic, Jellyfin and Emby load, list, search, expand and offer radio through
+one implementation, `LibraryBrowserModel+Servers.swift` (expand: `fetchServer…` in
+`LibraryBrowserModel+Expand`), written over the protocols in `LibraryBrowserServer.swift`:
+`MusicServerBrowsing` (the three managers) and `VideoServerBrowsing` (Jellyfin and Emby, adding
+Movies and TV), with `Browsable…` protocols on each model type naming the row it becomes
+(`itemType`) and its expansion kind. `currentServerManager` maps the source to its manager; the model
+dispatches through it rather than switching per server. A server's differences are protocol
+members, not branches: Subsonic's index-letter name sort (`sortIndexLetter`) and playlist dates
+(`addedDate`), Jellyfin's background album fetch after Artists (`warmsAlbumsAfterArtists`). A new
+server-specific behaviour joins as such a member. Picking a server library or music folder only
+calls the manager; the model reloads on the manager's notification.
+
+**`LibraryArtLens`** (`Windows/LibraryArt/LibraryArtLens.swift`) owns the mode, the art view
+standing in for the list, and the tree navigation. `LibraryBrowserList` makes the one lens per
+browser (`list.lens`) and fills its `LibraryArtLens.Host` from the model, actions and art: the rows,
+search state, selection, blocked state (loading, error, Plex not linked), the `LibraryArtItem` for a
+row (`LibraryBrowserArt.artItem(for:)`), expand, play (`actions.activate`), the row's context menu
+(select it, then `actions.contextMenu(for:)` — every art view's right-click goes there), album info
+(`actions.playable(for:)` → `LibraryAlbumInfo`) and next page. Only the style comes from the view
+(`LibraryBrowserList.Host.artStyle`).
 Rows conform to `LibraryArtRow` (`isArtItem`, `isAlbumItem`, `isVideoContainer` from the item type).
-Browser touch points: `rowsDidChange()` from `displayItems.didSet`, `resetNavigation()` on a tab or
-source change, `updateVisibility()` when loading/error/Plex link state changes, `restyle()` wherever the browser
+`LibraryBrowserList.modelDidChange` calls `rowsDidChange()` on a row change, `resetNavigation()` on a
+tab or source change, and `updateVisibility()` when loading state changes. The view's own touch points: `restyle()` wherever the browser
 recolours its other embedded views (skin change, and in the classic browser a pushed or re-resolved
 `.wal`/`.wmz` palette — the art view takes its colours only when made, so a family switch left
 tiles in the old skin's colours), `frame` from the
@@ -975,9 +1070,9 @@ old view is removed, since removing the first responder hands focus to the windo
 
 The **alphabet index stays beside Flow and Tiles**: the art view's `frame` is the list area less the
 alphabet strip (mode-independent, since the lens reuses `frame` on every mode change), the art
-branch of the draw path still draws the index, and the modern `listLayout()` drops the column
-header while `isPresenting`, so the index runs full height. A letter goes to
-`artLens.jump(to:)` — the first row of the level shown with that sort letter — before
+branch of the draw path still draws the index, and `LibraryBrowserList.headerColumns()` drops the
+column header while `isPresenting`, so the index runs full height. A letter goes to
+`lens.jump(to:)` — the first row of the level shown with that sort letter — before
 `scrollToLetter`'s list path; only at the root does an unmatched letter fall through to a local
 library's letter-offset paging (inside a container that would rebuild the rows out from under the focus).
 
@@ -997,7 +1092,7 @@ library's letter-offset paging (inside a container that would rebuild the rows o
 - Root eligibility matches what the view can show: normal modes use art rows at level 0, Search
   uses level-1 rows beneath its synthetic category headers. Local Artists/Albums are paginated: the
   view's `onApproachingEnd` reaches `Host.loadNextPage` only at the root level.
-- Art comes from the browser's per-source loaders, `itemArtwork(for:)`; Plex, Jellyfin and Emby
+- Art comes from the per-source loaders, `LibraryBrowserArt.itemArtwork(for:)`; Plex, Jellyfin and Emby
   video items use their native posters, local video items embedded art from the file (shows and
   seasons use their first episode). Local track/album resolution (`MediaLibraryStore` lookups)
   happens **inside** the async loader via `Task.detached`, never in the item-mapping pass.
@@ -1049,7 +1144,8 @@ length; Jellyfin and Emby genre and length, with the description fetched on open
 and asking for it there would pull every description during preload).
 
 **`ArtTileGridView`** (Tiles, `Windows/LibraryArt/ArtTileGridView.swift`):
-- Tiles at least 120 pt wide, grown to share a row's spare width, with title and subtitle under
+- Tiles at most 120 pt wide (columns round up against `maxTileSide`, so a narrower window never
+  gets wider tiles), sharing a row's width evenly, with title and subtitle under
   each. Square, or 2:3 posters when every item on the level is one (`LibraryArtItem.artAspect`, set
   from each browser's `ItemType.isPoster`: movies, shows and seasons; episodes carry a landscape
   still and stay square). A mixed level (search results) stays square. Layer-backed and virtualised: only on-screen rows have `TileLayer`s; the view scrolls itself
@@ -1064,26 +1160,42 @@ and asking for it there would pull every description during preload).
 
 ## Library browser list layout (both browsers)
 
-`ModernLibraryBrowserView` and `PlexBrowserView` each work out the list's geometry in one place,
-`listLayout()`, returning `area` (below the tab and search bars, full inner width; the loading,
-and error views fill it), `header` (the column-header rect and its columns, `nil` when the list
-has no columns), `rows` (under the header, left of the scrollbar and alphabet index),
-`alphabet`, and in the modern browser `banner` (the offline-volume banner under `area`, `nil` when
-no watch folder is offline). Drawing, every hit test, every column-width calculation and every
+`ModernLibraryBrowserView` and `ClassicLibraryBrowserView` each work out the list's geometry in one place,
+`listLayout()`, returning a `LibraryBrowserListLayout` (`Windows/LibraryBrowser/LibraryBrowserList.swift`):
+`area` (below the tab and search bars, full inner width; the loading, error and art views fill it),
+`header` (the column-header rect and its columns, `nil` when the list has no columns), `rows`
+(under the header, left of the scrollbar and alphabet index), `alphabet`, and `banner` (the
+offline-volume banner under `area`, `nil` when no watch folder is offline). Both views build it with
+`LibraryBrowserListLayout(content:bannerHeight:…)`, which splits everything under the tab and search
+bars the same way for both; a view passes only its metrics and coordinate flip. `LibraryBrowserList`
+reads it for scrolling, clicks, the header and the menus, in the layout's own coordinates
+(`isFlipped`). Drawing, every hit test, every column-width calculation and every
 scroll range read it; a site that needs the columns or the group their widths are keyed by takes
 `header.columns` / `header.group`, never a second `currentColumnGroup()` call.
 Never rebuild "tab bar, then search bar, then header" at a call site: PR #480 was a header reserved
 on one condition when drawn and another when hit-tested, so every click landed one row up.
 
-- **Coordinates:** classic is skin space (top-left origin, `originalWindowSize`); modern is view
+- **Coordinates:** classic is skin space (top-left origin, `bounds.size`); modern is view
   space (bottom-left). `listTopY` is the bottom of the tab bar, or of the search bar in search mode.
   A classic dirty rect goes through `convertFromSkinCoordinates`, which knows about Hide Title Bars.
-- **Scroll ranges use `rows.height`.** The header, and in the modern browser the offline-volume
-  banner, are not visible list height; counting them hid the last row (M8).
-- **Header hit tests differ on purpose:** the modern browser matches the header band at any x, so
-  a right-click above the alphabet index opens the column menu; the classic one is bounded by the
-  header rect.
-- The modern alphabet index stops under the header; the classic one spans `area`'s full height.
+- **Scroll ranges use `rows.height`.** The header and the offline-volume banner are not visible
+  list height; counting them hid the last row (M8).
+- **The header band matches at any x** (`isInHeaderBand`), so a right-click above the alphabet
+  index opens the column menu, in both browsers.
+- The modern alphabet index stops under the header; the classic one spans `area`'s full height
+  (`alphabetBesideHeader`). Where it stops short, `headerGap` is filled as header.
+
+**One painter draws the list for both views.** `LibraryBrowserListPainter`
+(`Windows/LibraryBrowser/LibraryBrowserListPainter.swift`) draws the header, rows (column cells and
+plain title lines, spinners, thumbnails, star ratings) and alphabet index; a view makes one per draw
+with a `Style` of its skin's fonts and colours and calls `drawList()` (or `drawAlphabet()` behind Flow
+/ Tiles). What goes where — insets, centred radio columns, the ★/☆ colouring, the disclosure
+triangle — is decided there once; never add a row-drawing rule to one view. In a flipped layout
+(classic) the painter draws text, thumbnails and spinners inside `upright(about:)`, a counter-flip
+about the band's own centre, so every y in it reads as if y ran up. Classic's non-Retina fills and
+point-snapping are `Style` fields (`rowFill`, `listFill`, `snapsRowsToPoints`), and the modern
+skins' full-alpha text is `textIgnoresContentAlpha`. The tab bars share
+`LibraryBrowseMode.fitTabWidths` and `slotLabels`, and the active tab is `model.activeTabSlot`.
 
 **One header, every row under it (M19).** The list has one column header, Finder-style:
 - `currentColumnGroup()` → `LibraryColumnVisibility.headerGroup`: the most detailed music group
@@ -1095,36 +1207,36 @@ on one condition when drawn and another when hit-tested, so every click landed o
   headings shows its genre under Genre and nothing under Year. Never draw a row's own group's
   columns under another group's header: that put an artist's album count under "Genre".
   Radio and YouTube video rows keep their own fixed columns (`rowColumns`' other two arms).
-- A child row indents **inside its Title cell only** (`drawColumnRow`'s `inset`); every other cell
+- A child row indents **inside its Title cell only** (the painter's `drawCells`); every other cell
   sits at the header's x. Shifting the whole row by the indent misaligned every cell once the
   columns overflowed into horizontal scroll. A hit test over a row's cells (the radio rating)
   uses the same unindented positions.
-- The column menu lists only the header's group, so every box ticked is on screen. YouTube's
-  columns are fixed: the Original browser's YouTube section has no checkboxes, only
-  "Reset YouTube Columns" (it resets the Time column's width); the Classic browser offers no
-  YouTube section.
+- The column menu (`LibraryBrowserActions.columnMenu`) lists only the header's group, so every box
+  ticked is on screen. YouTube's and radio's columns are fixed: their header has no column menu
+  (`configurableColumnGroup` is nil).
 
 ## Library row thumbnails (Library browser, all skin families)
 
 Every library list row that can carry art draws it as a small circle before its title; hovering
 the circle shows the art large, in its own shape, beside the row. Shared code lives in
-`Utilities/`; each browser (`ModernLibraryBrowserView`, `PlexBrowserView`) owns only what is
-genuinely its own.
+`Utilities/` and `Windows/LibraryBrowser/`; each browser view (`ModernLibraryBrowserView`,
+`ClassicLibraryBrowserView`) only draws.
 
-**Per browser** — three touch points, mirrored in both:
-- `rowThumbnailSource(for:)` maps a display item to a `LibraryRowThumbnails.Source` (a cache key
+**Per browser** — the touch points, mirrored in both views:
+- `LibraryBrowserArt.rowThumbnailSource(for:)` (shared) maps a display item to a `LibraryRowThumbnails.Source` (a cache key
   plus an async loader), or nil for rows that never carry art (folders, headers, playlists).
   It reuses `itemArtwork(for:)` — the Flow / Tiles loaders above — for artists, albums, tracks
   and video items, and adds YouTube channels and videos, radio station icons and local playlist
   tracks. Local albums and artists have no cache key there, so they key on `item:<id>`.
-- A `LibraryRowThumbnailTracker` (`rowThumbnails`): `beginPass(placeholder:)` at the top of
-  `drawListArea`, `draw(...)` at each thumbnail, `hover(at:toScreen:)` from `mouseMoved` (only
+- A `LibraryRowThumbnailTracker` (`rowThumbnails`), handed to the painter: `beginPass(placeholder:)`
+  at the top of `drawList`, `draw(...)` at each thumbnail, `hover(at:toScreen:)` from `mouseMoved` (only
   while the mouse is over the list). A row's art goes in its **Art**
   column when it has one (YouTube videos), otherwise before the title. Every circle gets the
-  placeholder until its art loads or when there is none, so titles never shift. The classic
-  browser draws inside its text counter-flip; a rect centred on the row is the same in its skin
+  placeholder until its art loads or when there is none, so titles never shift. In the classic
+  browser the painter draws inside its counter-flip; a rect centred on the row is the same in its skin
   coordinates, and `convertFromSkinCoordinates` maps it back for the preview's screen anchor.
-- After the row loop, `LibraryRowThumbnails.shared.preload(around:count:source:)`.
+- After the row loop, `rowThumbnails.endPass(visible:count:source:)` loads the rows just drawn, then
+  the rows around them.
 
 **`LibraryRowThumbnails`** (the shared cache):
 - One load makes both `Renditions`: a 64 px square thumbnail and a preview of at most 400 px in the
@@ -1230,7 +1342,7 @@ that offset could not save (a cluster larger than the display).
 `postLayoutChangeNotification()`, and skips miniaturized windows and full-screen ProjectM. Call
 sites:
 
-- end of the `+0.1s` block in `AppStateManager.applySettingsStateAfterReload` (after `completion?()`,
+- end of the `+0.1s` block in `AppStateManager.applySettingsState` (after `completion?()`,
   so the `.wal` arrangement has already run)
 - `NSApplication.didChangeScreenParametersNotification`, **debounced** onto the next runloop pass —
   macOS posts it repeatedly while a display reconfigures and the frames are not settled until it stops
@@ -1271,7 +1383,7 @@ optional with `decodeIfPresent`, so old states decode unchanged and answer `fals
 the same as changed.
 
 `correctedRestoredFrames` sees the main frame and every sub-frame **together** (they were decoded up
-front at the `applySettingsStateAfterReload` seam for exactly this reason) so one offset can bring the
+front at the `applySettingsState` seam for exactly this reason) so one offset can bring the
 whole docked session back.
 
 The correction is gated `appliesPlacementRecovery` at the call site, so the function itself stays
@@ -1304,6 +1416,23 @@ want of a free slot — it returns the last slot rescued onto the region, becaus
 component window. Pinned moves bypass the clamp by design, so tiler changes can separate the pair —
 test Itemskin explicitly. The sweep carries each recorded frame with its window (B156); test Ebonite
 too, whose script also carries its frames itself.
+
+## Activity notifications
+
+Background-work progress (a rip, an EQ Cast render or cache delete) shows in `App/ActivityCenter.swift`:
+one borderless, non-activating floating panel at the top-right of the visible frame of the screen
+holding the main window, 16pt inset — the same for every skin family, because `.wal`, `.wmz`,
+Audion and Sonique players are arbitrary shapes a bar inside the player cannot fit. Native look
+(`NSVisualEffectView` `.hudWindow`, built by `App/HUDPanel.swift` (shared with the skin loader) and rounded by its mask, never
+`layer.cornerRadius`), a faded app icon on the left, a "NullPlayer" header, and one spinner row per job.
+
+- `ActivityCenter.shared.show(id:message:)` adds a row, or updates that id's label in place;
+  `hide(id:)` removes it, and the panel orders out when the last row goes. Headless is a no-op here.
+- Ids: `rip-<uuid>` (one per rip), `eqcast-render`, `eqcast-delete`.
+- The header chevron collapses the rows to "NullPlayer — N running"; the state persists in
+  `activityCenterCollapsed`. The panel takes clicks for that, but never activates the app.
+
+NSAlerts (rip complete/failed) are not routed here.
 
 ## Related Documentation
 

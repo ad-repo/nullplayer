@@ -46,6 +46,50 @@ final class WinampModernRenderPixelTests: XCTestCase {
         assertColor(pixels, x: 8, y: 14, equals: Band.green, "sprite must not be vertically mirrored")
     }
 
+    /// An animated layer whose box is larger than its whole image shows that image once, at its own
+    /// size, from the box's top left. ONYX V2's shade volume fill is an 89x12 image in an 89x24 box:
+    /// cut at the box's height it ran off the bitmap and drew nothing; stretched it spills out of its
+    /// track. Here the red/green half of the atlas sits in a 16x16 box.
+    func testAnAnimatedLayerSmallerThanItsBoxDrawsAtItsOwnSize() throws {
+        let xml = """
+        <WasabiXML>
+          <elements>
+            <bitmap id="strip" file="sheet.png" x="0" y="0" w="16" h="8"/>
+          </elements>
+          <container id="Main">
+            <layout id="normal" w="16" h="16">
+              <animatedlayer id="fill" image="strip" x="0" y="0" w="16" h="16" autoplay="0"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """
+        let pixels = try render(xml: xml, size: CGSize(width: 16, height: 16))
+        assertColor(pixels, x: 8, y: 1, equals: Band.red, "the image is drawn, from the top")
+        assertColor(pixels, x: 8, y: 6, equals: Band.green, "at its own height, not stretched")
+        assertColor(pixels, x: 8, y: 12, equals: [0, 0, 0], "and nothing below it")
+    }
+
+    /// A frame smaller than its box by `frameheight` is still stretched to the box — Nullsoft 2000 SP4
+    /// Lite's playlist editor declares `frameheight="1" h="5"`. Only a box larger than the *whole*
+    /// image draws at the image's size.
+    func testAnAnimatedFrameSmallerThanItsBoxIsStillStretched() throws {
+        let xml = """
+        <WasabiXML>
+          <elements>
+            <bitmap id="sheet" file="sheet.png"/>
+          </elements>
+          <container id="Main">
+            <layout id="normal" w="16" h="16">
+              <animatedlayer id="vu" image="sheet" x="0" y="0" w="16" h="8" frameheight="4" autoplay="0"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """
+        let pixels = try render(xml: xml, size: CGSize(width: 16, height: 16))
+        assertColor(pixels, x: 8, y: 1, equals: Band.red, "frame 0 is the red band")
+        assertColor(pixels, x: 8, y: 6, equals: Band.red, "stretched over the whole 8px box")
+    }
+
     /// `tile="1"` repeats the bitmap across the layer. Without it the frame painted one tile and left
     /// the rest of the window bare — the empty middle in the first live run.
     func testTiledLayerFillsItsFrame() throws {

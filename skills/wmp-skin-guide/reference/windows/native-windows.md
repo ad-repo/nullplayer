@@ -119,7 +119,7 @@ reasoning.
   `PlaylistMenuBuilder`'s menu (`App/PlaylistMenuBuilder.swift`), the one the Modern playlist shows —
   lifted into `App/` because this engine may not reach into `ModernPlaylistView`, and the Modern
   view now builds its menu there too. Queue edits go straight to `WindowManager.shared.audioEngine`,
-  as the Modern playlist's do; the next host refresh redraws the rows. Four rules hold it:
+  as the Modern playlist's do; the next host refresh redraws the rows. Five rules hold it:
   - **The selection is a set.** `selectedRows` takes Shift-click (a range from `selectionAnchor`),
     Cmd-click (toggle) and Shift+↑/↓, so Remove, Crop and Invert act on more than one row; Delete
     removes every selected row, highest index first. `selectedIndex` stays the cursor.
@@ -128,6 +128,10 @@ reasoning.
     survives it — otherwise the next track change would shrink it to one before the menu acted.
     An empty selection (Select None) is not re-seeded by a refresh either: only a cursor of `-1`
     (first load, a new library list) seeds from the playing row.
+  - **A queue change restarts the selection (M48).** `WMPMainWindowController.playlistContentDidChange()`
+    runs on every queue edit and calls `queueDidChange()` on each pane, which drops the selection so
+    the next `update` seeds it on the playing row — even a selection of several, since its indices
+    named rows of the old queue. A library preview is not the queue and keeps its selection.
   - **A library preview is read-only (W136).** While the pane shows a library playlist every row that
     edits the queue is disabled; Play and the selection rows still apply to what the pane shows.
   - **The pane's menu sets `autoenablesItems = false`; the Modern playlist's keeps the default.**
@@ -135,8 +139,10 @@ reasoning.
     is enabled and `isEnabled` is ignored — which is how the Modern playlist has always behaved, and
     the builder keeps it. The pane needs its disabled rows to hold, so it opts out.
   A right-click on an unselected row selects that row alone first; on a selected row it keeps the
-  selection. Verified live 2026-09-24; `WMPPlaylistMenuTests`. **A contextual menu cannot be driven
-  synthetically** (`app-control` Route D), so verify a change here with the user driving.
+  selection. That rule is the builder's (`menu(target:clickedRow:state:)`, through
+  `PlaylistMenuTarget.selectForMenu`), shared with the Classic and Modern playlists. Verified live
+  2026-09-24; `WMPPlaylistMenuTests`. Drive a change here with `winhelper rclick` plus Accessibility
+  (`app-control` Route C).
 - **A `.wmz` main window's width is not a zoom.** `playlistChromeScale` is
   `mainWindow.width / Skin.baseMainSize.width` — true of a *classic* player, whose 275px grid means
   its width is the size the user chose. A `.wmz` main window is the skin's own canvas: Corona's is
@@ -147,7 +153,7 @@ reasoning.
 - **NullPlayer's playlist width is free beside a `.wmz` player.** The classic playlist steps its
   width in 25px PLEDIT tiles and stops at 275px; the gloss frame draws neither, and both kept the
   playlist off the player's width (Classic.wmz is 285 pt). `PlaylistWindowController.hasFreeWidth`
-  (shared with Audion) turns off the step, and `minimumWidth(stepped:)` replaces the minimum,
+  (shared with Audion and Sonique) turns off the step, and `minimumWidth(stepped:)` replaces the minimum,
   including on a UI Size change. `.wal` keeps the step: its gloss frame arrives with its palette,
   after the limits are set.
 
@@ -200,5 +206,6 @@ model does not model yet — Corona's drawer is one — so a kind-only test repo
 no playlist and opens ours on top of it. What decides this routing is what the skin *declares*, not
 how much of it this engine hosts today.
 
-The restore path passes `switchingViews: false`: a saved session must never move the user to a
-different view at launch.
+The launch restore and a mode-switch rebuild take the same route as a toggle: `theme.openView` puts
+the panel *beside* the player rather than switching the user off their view, so there is nothing for
+a restore to avoid. (An earlier `switchingViews:` flag kept restore off this route; it is gone.)

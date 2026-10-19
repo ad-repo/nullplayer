@@ -205,6 +205,10 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     }
 
     func playlistContentDidChange() {
+        widgetViews.values.compactMap { $0 as? WMPPlaylistSurfaceView }.forEach { $0.queueDidChange() }
+    }
+
+    func playlistMarkersDidChange() {
         widgetViews.values.compactMap { $0 as? WMPPlaylistSurfaceView }.forEach { $0.needsDisplay = true }
     }
     /// Resolves a widget's container shape to a mask image. The image store lives on the
@@ -607,7 +611,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         // off a 2560x1440 decoder put its close, zoom and resize art past the screen edge with
         // nothing left to recover the window with. Reported on `Combat_Flight_Simulator_3`
         // 2026-09-19 as "a massive window with no right click context controls" — the size half is
-        // `WMPSize.fitted(within:)` and this is the floor under it. `Snap To Default` and `Exit`
+        // `WMPSize.fitted(within:)` and this is the floor under it. `Snap To Default` and `Quit`
         // are the two rows that matter here, and it is the same menu Classic's own main window
         // shows: `buildMenu` already suppresses the compact-mode rows for `.wmp`, whose skins own
         // their views. The skin still wins wherever it has something of its own to show.

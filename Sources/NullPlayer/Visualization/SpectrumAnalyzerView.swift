@@ -715,8 +715,18 @@ class SpectrumAnalyzerView: NSView {
     private var isRendering = false
     
     // Frame pacing semaphore - limits in-flight command buffers to prevent memory buildup
-    // Use triple buffering (3) for all modes - simpler and avoids crashes when switching modes
+    // Use triple buffering (3) for all modes - simpler and avoids crashes when switching modes.
+    // Every frame returns its slot through `commit(_:presenting:)`, whose completion handler
+    // captures the semaphore, not `self`: after deinit a weak `self` is nil, the slot is never
+    // returned, and libdispatch traps disposing a semaphore below its initial value.
     private let inFlightSemaphore = DispatchSemaphore(value: 3)
+
+    /// Ends every render path: returns the frame's semaphore slot once the GPU is done with it.
+    private func commit(_ commandBuffer: MTLCommandBuffer, presenting drawable: CAMetalDrawable) {
+        commandBuffer.addCompletedHandler { [inFlightSemaphore] _ in inFlightSemaphore.signal() }
+        commandBuffer.present(drawable)
+        commandBuffer.commit()
+    }
     
     // MARK: - Thread-Safe Spectrum Data
     // Note: These properties are accessed from both the main thread and the CVDisplayLink callback thread.
@@ -1796,10 +1806,6 @@ class SpectrumAnalyzerView: NSView {
             contextRef.release()
             displayLinkContextRef = nil
         }
-        
-        // Note: In-flight command buffers will complete asynchronously and signal
-        // the semaphore via their completion handlers. The weak reference to self
-        // in the handler ensures no retain cycle during deallocation.
     }
     
     // MARK: - Rendering
@@ -2088,14 +2094,7 @@ class SpectrumAnalyzerView: NSView {
         }
         
         encoder.endEncoding()
-        
-        // Signal semaphore when GPU is done with this frame
-        commandBuffer.addCompletedHandler { [weak self] _ in
-            self?.inFlightSemaphore.signal()
-        }
-        
-        commandBuffer.present(drawable)
-        commandBuffer.commit()
+        commit(commandBuffer, presenting: drawable)
     }
     
     /// Render flame mode: single compute pass + render pass with ping-pong textures
@@ -2197,8 +2196,7 @@ class SpectrumAnalyzerView: NSView {
             enc.setFragmentBuffer(flameParamsBuffer, offset: 0, index: 0)
             enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6); enc.endEncoding()
         }
-        cb.addCompletedHandler { [weak self] _ in self?.inFlightSemaphore.signal() }
-        cb.present(drawable); cb.commit()
+        commit(cb, presenting: drawable)
     }
     
     /// Render cosmic mode: procedural nebula flythrough driven by music intensity
@@ -2318,8 +2316,7 @@ class SpectrumAnalyzerView: NSView {
             enc.endEncoding()
         }
         
-        cb.addCompletedHandler { [weak self] _ in self?.inFlightSemaphore.signal() }
-        cb.present(drawable); cb.commit()
+        commit(cb, presenting: drawable)
     }
     
     /// Render electricity mode: procedural lightning storm driven by spectrum peaks
@@ -2450,8 +2447,7 @@ class SpectrumAnalyzerView: NSView {
             enc.endEncoding()
         }
         
-        cb.addCompletedHandler { [weak self] _ in self?.inFlightSemaphore.signal() }
-        cb.present(drawable); cb.commit()
+        commit(cb, presenting: drawable)
     }
     
     /// Render matrix mode: falling digital rain driven by spectrum
@@ -2570,8 +2566,7 @@ class SpectrumAnalyzerView: NSView {
             enc.endEncoding()
         }
         
-        cb.addCompletedHandler { [weak self] _ in self?.inFlightSemaphore.signal() }
-        cb.present(drawable); cb.commit()
+        commit(cb, presenting: drawable)
     }
     
     /// Render snow mode: procedural layered snowfall with spectrum-driven density and gusts
@@ -2733,9 +2728,7 @@ class SpectrumAnalyzerView: NSView {
             enc.endEncoding()
         }
         
-        cb.addCompletedHandler { [weak self] _ in self?.inFlightSemaphore.signal() }
-        cb.present(drawable)
-        cb.commit()
+        commit(cb, presenting: drawable)
     }
 
     /// Render EKG mode: peak-driven ECG trace with no frequency-energy input
@@ -2877,9 +2870,7 @@ class SpectrumAnalyzerView: NSView {
         }
 
         ekgTraceSourceIsA.toggle()
-        cb.addCompletedHandler { [weak self] _ in self?.inFlightSemaphore.signal() }
-        cb.present(drawable)
-        cb.commit()
+        commit(cb, presenting: drawable)
     }
 
     private func ensureEKGTraceTextures(width: Int, height: Int) -> (MTLTexture, MTLTexture)? {
@@ -2995,11 +2986,7 @@ class SpectrumAnalyzerView: NSView {
         )
         blit.endEncoding()
 
-        commandBuffer.addCompletedHandler { [weak self] _ in
-            self?.inFlightSemaphore.signal()
-        }
-        commandBuffer.present(drawable)
-        commandBuffer.commit()
+        commit(commandBuffer, presenting: drawable)
     }
     
     /// Update display spectrum with decay and return whether there's visible data

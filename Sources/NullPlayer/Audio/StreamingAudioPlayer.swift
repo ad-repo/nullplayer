@@ -237,17 +237,12 @@ class StreamingAudioPlayer {
 
         balanceNode.outputVolume = 1.0
 
-        // Attach balance, the EQ profile stage and EQ to the player's audio graph.
-        player.attach(nodes: [balanceNode] + (profileNode.map { [$0] } ?? []) + [eqNode])
-
-        // Attach the Reference Tuning pitch node (after EQ, before output) when provided.
-        // AudioStreaming's own private `rateNode` (AVAudioUnitTimePitch) is bypassed while
-        // player.rate == 1.0, so this does not stack two active time-pitch units in normal playback.
-        if let pitchNode {
-            player.attach(node: pitchNode)
-        }
-        
-        if let wowNode { player.attach(node: wowNode) }
+        // AudioStreaming chains custom nodes in attach order, so this array IS the signal path:
+        // balance → EQ profile → pitch → EQ → WMP enhancements, matching the local chain
+        // (`AudioEngine.localEffectChain`). AudioStreaming's own private `rateNode`
+        // (AVAudioUnitTimePitch) is bypassed while player.rate == 1.0, so the Reference Tuning
+        // pitch node does not stack two active time-pitch units in normal playback.
+        player.attach(nodes: [balanceNode, profileNode, pitchNode, eqNode, wowNode].compactMap { $0 })
 
         // Set up spectrum analysis
         setupSpectrumAnalyzer()

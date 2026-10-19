@@ -251,7 +251,7 @@ public struct PlexTrack: Identifiable, Equatable {
     public let genre: String?          // Primary genre tag
     public let parentYear: Int?        // Album release year
     public let ratingCount: Int?       // Last.fm scrobble count (global popularity)
-    public let userRating: Double?     // User's star rating (0-10 scale, 10 = 5 stars)
+    public var userRating: Double?     // User's star rating (0-10 scale, 10 = 5 stars)
 
     public init(
         id: String,

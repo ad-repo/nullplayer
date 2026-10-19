@@ -75,7 +75,7 @@ extension ContextMenuBuilder {
         case .winampModern:
             let importer = WinampModernSkinImporter.shared
             let selected = importer.selectedSkin()?.archiveURL
-            return importer.installedSkins().map {
+            return importer.availableSkins().map {
                 skinMenuItem($0.name, #selector(MenuActions.selectWinampModernSkin(_:)),
                              representedObject: $0.archiveURL, isOn: $0.archiveURL == selected)
             }

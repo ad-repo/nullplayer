@@ -59,9 +59,8 @@ enum VisualizationPreferences {
         "visClassicFitToWidth"
     ]
 
+    /// The main-window mode keys are not here: each family's reset writes only its own (M39).
     private static let mainWindowKeys = [
-        "mainWindowVisMode",
-        "modernMainWindowVisMode",
         "mainWindowNormalizationMode",
         "mainWindowDecayMode",
         "mainWindowFlameStyle",
@@ -156,6 +155,9 @@ enum VisualizationPreferences {
         switch WindowManager.shared.runningControllerFamily {
         case .classic:
             WindowManager.shared.writeClassicVisualizationDefaultKeys(for: scope, defaults: defaults)
+            if scope == .mainWindow || scope == .all {
+                defaults.set(MainWindowVisMode.spectrum.rawValue, forKey: MainWindowVisMode.classicDefaultsKey)
+            }
             return
         case .winampModern, .wmp, .audion, .sonique:
             WindowManager.shared.writeClassicVisualizationDefaultKeys(for: scope, defaults: defaults)
@@ -193,14 +195,12 @@ enum VisualizationPreferences {
         if let raw = config?.mainWindowMode,
            let mode = MainWindowVisMode(rawValue: raw),
            mode.spectrumQualityMode.map(SpectrumAnalyzerView.isShaderAvailable(for:)) ?? true {
-            defaults.set(mode.rawValue, forKey: "mainWindowVisMode")
-            defaults.set(mode.rawValue, forKey: "modernMainWindowVisMode")
+            defaults.set(mode.rawValue, forKey: MainWindowVisMode.originalDefaultsKey)
             appliedMode = true
         }
 
         if !appliedMode {
-            defaults.set(MainWindowVisMode.spectrum.rawValue, forKey: "mainWindowVisMode")
-            defaults.set(MainWindowVisMode.spectrum.rawValue, forKey: "modernMainWindowVisMode")
+            defaults.set(MainWindowVisMode.spectrum.rawValue, forKey: MainWindowVisMode.originalDefaultsKey)
         }
 
         if let visClassic = config?.visClassic {

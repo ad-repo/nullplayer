@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <new>
 
 #if defined(__APPLE__)
@@ -161,7 +162,8 @@ struct GeissCore {
 
 static GeissCore gSingletonCore{};
 static GeissCore *gActiveCore = nullptr;
-static int gActiveCoreRefCount = 0;
+/// Hosts create and destroy from different threads (a window's display link, the main thread).
+static std::mutex gActiveCoreLock;
 
 static bool geiss_core_is_valid(const GeissCore *core) {
     return core != nullptr && core == gActiveCore && core->isValid;
@@ -221,10 +223,8 @@ extern "C" {
 GeissCore *GeissCore_create(int width, int height) {
     if (width <= 0 || height <= 0) return nullptr;
 
-    if (geiss_core_is_valid(gActiveCore)) {
-        ++gActiveCoreRefCount;
-        return gActiveCore;
-    }
+    std::lock_guard<std::mutex> lock(gActiveCoreLock);
+    if (gActiveCore != nullptr) return nullptr;
 
     GeissCore *core = &gSingletonCore;
     memset(core, 0, sizeof(*core));
@@ -252,20 +252,20 @@ GeissCore *GeissCore_create(int width, int height) {
     geiss_seed_palette();
     core->isValid = true;
     gActiveCore = core;
-    gActiveCoreRefCount = 1;
     return core;
 }
 
 void GeissCore_destroy(GeissCore *core) {
-    if (!geiss_core_is_valid(core)) return;
-    if (gActiveCoreRefCount > 1) {
-        --gActiveCoreRefCount;
-        return;
-    }
-    FX_Fini();
+    std::lock_guard<std::mutex> lock(gActiveCoreLock);
+    if (core == nullptr || core != gActiveCore) return;
+    if (core->isValid) FX_Fini();
     core->isValid = false;
     gActiveCore = nullptr;
-    gActiveCoreRefCount = 0;
+}
+
+int GeissCore_inUse(void) {
+    std::lock_guard<std::mutex> lock(gActiveCoreLock);
+    return gActiveCore != nullptr;
 }
 
 void GeissCore_resize(GeissCore *core, int width, int height) {
@@ -278,8 +278,6 @@ void GeissCore_resize(GeissCore *core, int width, int height) {
     geiss_set_geometry(width, height);
     if (!FX_Init()) {
         core->isValid = false;
-        gActiveCore = nullptr;
-        gActiveCoreRefCount = 0;
         return;
     }
     geiss_seed_palette();

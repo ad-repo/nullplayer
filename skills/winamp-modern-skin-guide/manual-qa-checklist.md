@@ -340,7 +340,7 @@ synthesized library, CornerAmp declares playlist + EQ, Winamp Modern declares pl
 - [ ] Swap between installed `.wal` skins with the **Media Library**, the playlist and the
       equalizer already open — each repaints in the incoming skin's palette without being
       closed and reopened (B98)
-- [ ] Quit with Remember State on; relaunch returns to Winamp Modern with the same skin
+- [ ] Quit with Save State on Quit enabled; relaunch returns to Winamp Modern with the same skin
 - [ ] Enter and exit Compact Mode
 - [ ] Change UI Size
 - [ ] Window docking/snapping behaves (Winamp Modern routes through the classic geometry path)

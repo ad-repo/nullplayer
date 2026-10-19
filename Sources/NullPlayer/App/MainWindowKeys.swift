@@ -12,13 +12,7 @@ enum MainWindowKeys {
 
         switch event.keyCode {
         case 49: // Space - play/pause
-            if WindowManager.shared.isVideoActivePlayback {
-                WindowManager.shared.toggleVideoPlayPause()
-            } else if audioEngine.state == .playing {
-                audioEngine.pause()
-            } else {
-                audioEngine.play()
-            }
+            togglePlayPause()
 
         case 123: // Left arrow - seek backward 5s
             if WindowManager.shared.isVideoActivePlayback {
@@ -63,5 +57,17 @@ enum MainWindowKeys {
             }
         }
         return true
+    }
+
+    /// Space: the playing video's player, else the audio engine, plays or pauses.
+    static func togglePlayPause() {
+        let audioEngine = WindowManager.shared.audioEngine
+        if WindowManager.shared.isVideoActivePlayback {
+            WindowManager.shared.toggleVideoPlayPause()
+        } else if audioEngine.state == .playing {
+            audioEngine.pause()
+        } else {
+            audioEngine.play()
+        }
     }
 }

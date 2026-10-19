@@ -1,6 +1,6 @@
 ---
 name: skin-screenshots
-description: Capture one centred main-window screenshot per skin across every skin system (Classic, Original, Original-Metal, Modern/.wal, Media Player/.wmz, Audion Faces) and assemble them into a fixed-duration slideshow GIF. Use when producing marketing imagery, a skin gallery, or any before/after visual comparison across the skin corpus.
+description: Capture one centred main-window screenshot per skin across every skin system but Sonique (Classic, Original, Original-Metal, Modern/.wal, Media Player/.wmz, Audion Faces) and assemble them into a fixed-duration slideshow GIF. Use when producing marketing imagery, a skin gallery, or any before/after visual comparison across the skin corpus.
 ---
 
 # Skin screenshot sweep
@@ -8,7 +8,7 @@ description: Capture one centred main-window screenshot per skin across every sk
 > **Scope.** This skill produces a **gallery GIF** and nothing else. It sweeps six skin
 > families — Classic, Original, Original-Metal, Modern, Media Player (`.wmz`) and Audion Faces:
 > `enumerate_skins.sh` emits every skin in those six Skins submenus, and `capture.sh` photographs
-> each entry it emits. To launch, configure, drive,
+> each entry it emits. Sonique (`.sgf`) is not swept yet: neither script has a case for it. To launch, configure, drive,
 > screenshot or test the running app — for any reason other than assembling that GIF — see
 > **`app-control`**. It owns `winhelper` and `menu.applescript`, which this sweep only borrows.
 
@@ -118,12 +118,33 @@ the sweep log position names the culprit — restore the volume, then re-run fro
 
 ## Frames that will not fit
 
-At `--frame 800` seven Modern skins exceed the frame even after trimming: the four Big Bento variants
-(1800×1169 / 1536×878), cPro Venus Alpha (1007×645), Diablo IV Skills V2 (1051×234) and
-jvc.tape.v0.5 (1284×340). They are recorded as `skipped-too-big` in the manifest. Raise `--frame`
-to include them — the frame is the GIF's canvas, so raising it shrinks every other skin within it.
+Artwork larger than `--frame` is shot anyway: `reframe.sh` grows the canvas to hold it and scales it
+down with every other skin, so nothing is `skipped-too-big` any more. The full-size shot is always
+kept in `<out>/raw/<label>.png`; use that, not the framed PNG, as a site source.
 
-`../exclude.txt` holds skins to skip outright; it is currently empty.
+`../exclude.txt` holds skins to skip outright, one fixed string per line (no comments). It lists
+`211786-Cpro_Winamp_Modern`: that `.wal` pegs the app's main thread at ~100% CPU, so every menu call
+the sweep makes times out and it restores on the next launch too (2026-10-11).
+
+## Main-window guard
+
+`capture.sh` matches the main window by its **exact** title for the family (`main_title`), never by
+prefix: `NullPlayer Analyzer`, `NullPlayer Art` and the WMP view windows all start with `NullPlayer`.
+Per row it records `no-main`, `ambiguous` (two windows with the title) or `extra-windows` (anything
+else still on screen after `closeaux`) and does not shoot; the manifest carries the title and window
+id of every row. "Loaded" is the Skins menu naming the skin as checked, plus the log's
+`WinampModern surfaces [...]` line for `.wal` (`--log`, default `$NULLPLAYER_LOG` or `/tmp/np.log`).
+`capture.sh` reads `skinWindowShadows` before every shot, records it in the manifest, and **stops the run**
+with `shadows-off` rather than shoot without a shadow. (`closeaux` used to click Window Shadows off
+because it is a checked item in the Windows menu; it now closes window toggles only.)
+Settle after that is per family (0.5 s; WMP 15 s; Winamp Modern 15 s), `--settle` overrides it and
+`settle.tsv` (skin, seconds) overrides both for long-intro skins.
+
+**Skins with an accessory window.** A few skins leave a second window on screen by design (2026-10-11:
+`wmp_Jewel` → `remoteView`, `wmp_livin_it_skate` → `displayView`, `modern_Shield_Amp` → a 20x20
+untitled window). `capture.sh` refuses them as `extra-windows`; `--allow-extra REGEX` shoots the main
+window alone (framing gains `+extra-ignored`), and `scripts/groupshot.py <pid> <submenu> <item> <label>
+<settle> <outdir>` shoots the main window plus every accessory, composited at their true positions.
 
 ## GIF timing
 

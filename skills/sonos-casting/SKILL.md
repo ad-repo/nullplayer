@@ -182,6 +182,10 @@ The app will:
 
 **Internet Radio Note:** Radio streams are live and don't support seeking. When you cast a radio station, time resets to 0:00.
 
+**EQ Cast:** with **Output ▸ EQ Cast** on, a track with an EQ profile is cast as a rendered 16-bit
+FLAC (S1 decodes only 16-bit FLAC) at the source's rate. A track that fails `isSonosCompatible` is
+skipped as before and never rendered. Mechanism: `eq-profiles` § *EQ Cast*.
+
 ### Managing Rooms While Casting
 
 While casting is active:

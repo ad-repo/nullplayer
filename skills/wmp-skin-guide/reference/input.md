@@ -306,7 +306,7 @@ explain (W149)*.
   the only route a `.wmz` with no toggle of its own has. The enable state is global and persisted, so
   a `.wmz` turning it on carries into the other skin modes exactly as the equalizer window does.
   **"Once per skin load" includes every launch, so the user's *off* does not survive a relaunch**
-  under a skin that declares `true` (`corona` does): Remember State restores the EQ off, then the
+  under a skin that declares `true` (`corona` does): Save State on Quit restores the EQ off, then the
   skin load turns it back on, and the next save records *on*. Known and left as is (2026-10-07);
   the fix, if wanted, is to apply the declaration only when the skin is picked, not on every load.
   **Before ranking a "the control moves and nothing happens" defect, ask whether the markup declared

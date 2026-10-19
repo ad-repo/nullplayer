@@ -125,6 +125,9 @@ of these was invisible to the harness and visible in the first minute of live QA
     `BlueCrush_MP7` as a second outline. `reassert()` puts the frame back from the parent's
     `didMoveNotification`. AppKit carries the child only *after* that notification, so the frame is
     re-set on every drag step and lands right (measured headlessly 2026-10-02: no overshoot).
+  - **A held window's shadow is held too.** A hosted window restored at launch waits at alpha 0
+    for its frame (W250's hold); the shadow copies its parent's `alphaValue`, or it showed as an
+    empty box for the whole wait (`ui-guide` § *Window Drop Shadows (Every Family)*).
   - **Shared code keeps the child.** `WindowManager.updateDockedChildWindows` strips every non-docked
     child of the player on each drag and dock; it exempts `SkinShadowWindow` by type, in every
     family, since every family's windows cast one (`ui-guide` § *Window Drop Shadows (Every

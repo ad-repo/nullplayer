@@ -20,7 +20,7 @@ private extension CompactModeBrowserSurface {
     func refreshCompactBackdrop() {}
 }
 
-extension PlexBrowserWindowController: CompactModeBrowserSurface {}
+extension ClassicLibraryBrowserWindowController: CompactModeBrowserSurface {}
 extension ModernLibraryBrowserWindowController: CompactModeBrowserSurface {}
 
 final class CompactModeWindowController: NSWindowController {
@@ -63,7 +63,7 @@ final class CompactModeWindowController: NSWindowController {
         if modernUI {
             browserController = ModernLibraryBrowserWindowController()
         } else {
-            browserController = PlexBrowserWindowController()
+            browserController = ClassicLibraryBrowserWindowController()
         }
         super.init(window: browserController.window)
         setupWindow()
@@ -76,7 +76,7 @@ final class CompactModeWindowController: NSWindowController {
         if modernUI {
             browserController = ModernLibraryBrowserWindowController()
         } else {
-            browserController = PlexBrowserWindowController()
+            browserController = ClassicLibraryBrowserWindowController()
         }
         super.init(coder: coder)
         window = browserController.window

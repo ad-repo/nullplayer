@@ -550,7 +550,11 @@ struct MakiBytecodeParser {
                     let value: MakiValue
                     switch kind {
                     case .integer:
-                        value = .integer(Int32(initial1))
+                        // A 32-bit value split across both halves, low half first. Reading only
+                        // `initial1` turned ONYX V2's one-hour test (3600000 ms) into 61056, so every
+                        // track over a minute took the skin's long-time branch. Across the corpus the
+                        // high half only ever holds such constants (600000, 3600000, 43200000, …).
+                        value = .integer(Int32(bitPattern: UInt32(initial2) << 16 | UInt32(initial1)))
                     case .boolean:
                         value = .boolean(initial1 != 0)
                     case .float, .double:

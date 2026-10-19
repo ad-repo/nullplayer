@@ -180,7 +180,7 @@ The status bar "Lib:" zone is **browse-mode-aware**:
 
 ## Artist Expansion Performance
 
-When expanding a Jellyfin artist in the library browser (both modern `ModernLibraryBrowserView` and classic `PlexBrowserView`), albums are resolved from the preloaded cache (`cachedJellyfinAlbums`) by filtering on `artistId`, making expansion instant. Network fallback only occurs if the cache has no matching albums.
+When expanding a Jellyfin artist in the library browser (`LibraryBrowserModel+Expand`, shared by every browser view), albums are resolved from the preloaded cache (`jellyfin.albums`) by filtering on `artistId`, making expansion instant. Network fallback only occurs if the cache has no matching albums.
 
 **Important**: Expand tasks must use `Task.detached` (not `Task { }`) to avoid inheriting cancellation state from the calling context. Inherited cancellation can surface as Jellyfin request failures like `NSURLErrorDomain Code=-999 "cancelled"` during artist expansion.
 
@@ -247,7 +247,7 @@ Jellyfin can be slower than Emby/Plex/Subsonic on very large libraries when hand
 
 ### Library Selector Is Browse-Mode-Aware
 
-The "Lib:" click zone in both `ModernLibraryBrowserView` and classic `PlexBrowserView` shows a music library picker in music tabs (Artists/Albums/Tracks/Plists) and a video library picker in Movies/Shows tabs. `JellyfinManager` has separate `currentMusicLibrary`, `currentMovieLibrary`, and `currentShowLibrary` — each posts its own notification (`musicLibraryDidChangeNotification`, `videoLibraryDidChangeNotification`). `fetchMusicLibraries()` and `fetchVideoLibraries()` both return ALL views without `CollectionType` filtering. `selectMovieLibrary(_:)` and `selectShowLibrary(_:)` accept `nil` to show all.
+The "Lib:" click zone in every browser view (`LibraryBrowserActions.libraryMenu()`) shows a music library picker in music tabs (Artists/Albums/Tracks/Plists) and a video library picker in Movies/Shows tabs. `JellyfinManager` has separate `currentMusicLibrary`, `currentMovieLibrary`, and `currentShowLibrary` — each posts its own notification (`musicLibraryDidChangeNotification`, `videoLibraryDidChangeNotification`). `fetchMusicLibraries()` and `fetchVideoLibraries()` both return ALL views without `CollectionType` filtering. `selectMovieLibrary(_:)` and `selectShowLibrary(_:)` accept `nil` to show all.
 
 ### Streaming URL Content Type (Sonos)
 

@@ -95,6 +95,24 @@ final class WinampModernPhase88Tests: XCTestCase {
         XCTAssertEqual(alpha(pixels, x: 12, y: 12), 255, "the rest of the window must be untouched")
     }
 
+    /// XENERGY's case: a full-bleed, artwork-less `sysregion="1"` group whose descendants declare a
+    /// region reaches as far as what it holds, not as far as its box. Its `Wasabi:MainFrame:NoStatus`
+    /// fills a 601x280 layout whose content ends at y=146, and a 1px `<vis>` declared beside it at
+    /// y=215 drew across the desktop below the player.
+    func testAWrapperGroupReachesOnlyAsFarAsItsContent() throws {
+        let pixels = try render(layout: """
+            <group id="frame" x="0" y="0" w="16" h="16" sysregion="1">
+              <layer id="art" image="art.opaque" x="0" y="0" w="16" h="8"/>
+              <layer id="trim" image="art.opaque" x="0" y="0" w="2" h="2" sysregion="-2"/>
+            </group>
+            <layer id="vis" image="art.opaque" x="0" y="12" w="16" h="1"/>
+            """)
+
+        XCTAssertEqual(alpha(pixels, x: 0, y: 0), 0, "the corner cut must still apply")
+        XCTAssertEqual(alpha(pixels, x: 8, y: 4), 255, "the wrapper's content must stay window")
+        XCTAssertEqual(alpha(pixels, x: 8, y: 12), 0, "nothing past the content may draw")
+    }
+
     /// Ebonite's case. `art.soft` is alpha 179 — as coverage it would leave 76 here.
     func testAPartiallyTransparentSilhouetteCutsCompletely() throws {
         let pixels = try render(layout: """

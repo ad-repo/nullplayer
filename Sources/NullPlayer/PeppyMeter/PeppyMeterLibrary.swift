@@ -183,7 +183,7 @@ final class PeppyMeterLibrary {
 }
 
 /// User-facing PeppyMeter preferences, persisted to `UserDefaults`
-/// (independent of "Remember State on Quit", matching the spectrum settings pattern).
+/// (independent of "Save State on Quit", matching the spectrum settings pattern).
 enum PeppyMeterSettings {
     private static let defaults = UserDefaults.standard
 

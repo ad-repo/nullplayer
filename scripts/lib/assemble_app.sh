@@ -287,3 +287,19 @@ assemble_app() {
         install_name_tool -change "$ref" "@executable_path/../Frameworks/$ref_name" "$MACOS_DIR/NullPlayer" 2>/dev/null || true
     done
 }
+
+# Sign an assembled bundle inside-out (frameworks and dylibs, then the bundle) and verify it.
+# Usage: sign_app_bundle <app> <codesign args...> [-- <args for the bundle only>]
+sign_app_bundle() {
+    local app="$1"; shift
+    local args=()
+    while [[ $# -gt 0 && "$1" != "--" ]]; do args+=("$1"); shift; done
+    [[ $# -gt 0 ]] && shift
+    local code
+    for code in "$app/Contents/Frameworks/"*.framework "$app/Contents/Frameworks/"*.dylib; do
+        [[ -e "$code" && ! -L "$code" ]] || continue
+        codesign --force "${args[@]}" "$code"
+    done
+    codesign --force "${args[@]}" "$@" "$app"
+    codesign --verify --deep --strict "$app"
+}

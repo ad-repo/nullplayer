@@ -90,6 +90,11 @@ extension WinampModernScriptRuntime {
         case "integertotime":
             let seconds = max(0, Int(arguments[0].integerValue)) / 1000
             return .string(String(format: "%d:%02d", seconds / 60, seconds % 60))
+        // Same milliseconds, `h:mm:ss`. ONYX V2's seek popup formats tracks over an hour with it, and
+        // while it was missing that handler aborted before `seekTo`, so the seek arc never seeked.
+        case "integertolongtime":
+            let seconds = max(0, Int(arguments[0].integerValue)) / 1000
+            return .string(String(format: "%d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60))
         case "floattostring":
             let digits = max(0, min(12, Int(arguments[1].integerValue)))
             return .string(String(format: "%.*f", digits, arguments[0].doubleValue))
@@ -287,7 +292,12 @@ extension WinampModernScriptRuntime {
             return .string(themes.indices.contains(index) ? themes[index] : "")
         case "gettimeofday": return .integer(Int32(truncatingIfNeeded: Int64(Date().timeIntervalSince1970 * 1000)))
         case "getplayitemdisplaytitle": return .string(host.trackDisplayTitle)
-        case "getplayitemstring": return .string(host.trackDisplayTitle)
+        // Winamp's play item string is the entry's filename or URL, not its title: 61 corpus call
+        // sites hand it straight to `getExtension`, and ONYX V2's File Type readout printed the
+        // title's tail ("sh - NullPlayer 20-minute sweep") while this answered the display title.
+        // The title stays as the fallback for an item with no path, so `!= ""` still means playing.
+        case "getplayitemstring":
+            return .string(host.trackPath.isEmpty ? host.trackDisplayTitle : host.trackPath)
         // The whole key table lives on the host (`playItemMetadata(forKey:)`) rather than here: a
         // file-info panel asks for eighteen different fields and hides the line for every key that
         // comes back empty, and the harness has to answer them the same way the live host does.

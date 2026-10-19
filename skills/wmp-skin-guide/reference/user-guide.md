@@ -62,7 +62,7 @@ plug-ins. Right-click Cava and vis_classic to use their normal tuning and profil
 choices are kept separate from their standalone windows. Video playing inside a skin carries NullPlayer's usual
 overlay — play/pause, subtitles, audio tracks and casting — and the skin's video window opens wide
 enough to hold it; right-click the picture as well for track settings, and right-click anywhere else on
-a skin window for NullPlayer's own menu — Snap To Default, Always On Top, Minimize All and Exit —
+a skin window for NullPlayer's own menu — Snap To Default, Always On Top, Minimize All and Quit —
 which is the way back from a skin whose own controls have ended up somewhere awkward. Closing the
 skin's player window quits NullPlayer, as the Classic and Original close buttons do. A skin's video
 window keeps its own size whatever the film's pixel dimensions are — the picture is scaled to fit

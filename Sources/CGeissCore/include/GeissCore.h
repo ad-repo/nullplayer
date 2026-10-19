@@ -10,8 +10,12 @@ extern "C" {
 
 typedef struct GeissCore GeissCore;
 
+// The upstream port keeps its frame buffers and state in globals, so there is one core per
+// process. create returns NULL while it is in use: two hosts sharing it resized and freed its
+// buffers under each other. GeissCore_inUse lets a refused host wait for the owner to destroy it.
 GeissCore *GeissCore_create(int width, int height);
 void       GeissCore_destroy(GeissCore *core);
+int        GeissCore_inUse(void);
 void       GeissCore_resize(GeissCore *core, int width, int height);
 
 void       GeissCore_addPCM(GeissCore *core, const float *samples, int count);

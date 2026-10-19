@@ -132,7 +132,10 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   valued from the sibling `<slider>` that carries the `action` (the one over the grid's rect when
   there are several). Skins pair the two and make the thumb
   invisible (a 1×1 pixel), so the grid is the only position indicator they draw
-- `<text>` metrics: `fontsize` is a **pixel height** (em ≈ 0.8 ×), `font=` resolves a declared
+- `<text>` metrics: `fontsize` is a **pixel height** (em ≈ 0.8 × for Arial; any other face is scaled
+  by its GDI cell — OS/2 `usWinAscent + usWinDescent` — against Arial's, `WasabiTextMetrics.gdiSized`,
+  so Impact and Tahoma draw a smaller em, as TOX Milla's and Nullsoft 2000 SP4 Lite's screenshots
+  show; Helvetica stands in for a GDI face and is left alone), `font=` resolves a declared
   `<truetypefont>`, an archive path, **or** an installed family name, `bold`/`italic` are honoured, the
   string is centred in its box unless `valign` says otherwise (`top`/`center`/`bottom`; a spelling
   Wasabi does not know reads as `top`, and only an absent attribute centres), `forcefixed` gives

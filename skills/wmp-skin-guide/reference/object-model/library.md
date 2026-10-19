@@ -7,7 +7,7 @@ Moved verbatim from `reference/object-model.md` on 2026-09-25; that file is the 
 **Decided 2026-09-24: a skin sees the source the library browser has selected, read-only.** In
 NullPlayer "the library" is contextual — Local Files, a Plex, Navidrome/Subsonic, Jellyfin or Emby
 server — so `player.playlistCollection` and `player.mediaCollection` answer from whichever one the
-browser's source picker is on (`ModernBrowserSource`, persisted as `BrowserSource`). Writes that would
+browser's source picker is on (`LibraryBrowserSource`, persisted as `BrowserSource`). Writes that would
 change the library (`newPlaylist` into the collection, `add`, `remove`, `importPlaylist`) stay
 unrecognised. This closed W66 (the empty `plListBox1/2`) and W136 (`deleteAll` and the list-box fill).
 

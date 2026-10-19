@@ -2,7 +2,7 @@ import Foundation
 import AppKit
 
 /// Singleton managing Subsonic/Navidrome server connections and state
-class SubsonicManager {
+final class SubsonicManager {
     
     // MARK: - Singleton
     

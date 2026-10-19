@@ -28,7 +28,11 @@ The main window's built-in visualization area (76×16 pixels in Winamp coordinat
 
 - **Double-click** the visualization area to cycle through modes
 - **Visuals → Main Window → Mode** selects a specific mode, including **Off**
-- Persisted as `mainWindowVisMode` (UserDefaults)
+- Persisted per family: Classic in `mainWindowVisMode`, Original in `modernMainWindowVisMode`, so
+  each keeps its mode across a trip through the other. `MainWindowVisMode.defaultsKey(for:)` owns
+  the routing; the menu edits the running family's key and is hidden where it returns nil.
+- Original's mode is kept on launch and family entry and replaced by a skin pick or reset
+  (`ModernSkinLoadReason.keepsSavedMainWindowMode`); Classic's is written only by a reset.
 
 ## Settings
 

@@ -3,6 +3,17 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B164 — Anaheim's library text was the saved Text Size, not a defect — closed 2026-10-15
+
+| B164 | **The library window's text draws too large on Anaheim.** Reported 2026-10-13, not yet reproduced or measured. The library rows are host-drawn (`drawSurfaceText`), so the skin declares neither their face nor their size: the face is the undeclared-font Arial default, and the size comes from `WinampModernTextScale`'s cell height through `playlistCellToPointSize` (0.9), per `reference/rendering/text.md` § *Host-drawn text is not skin-declared text (B130)*. **Unmeasured, take first**: the point size the library rows draw at on Anaheim beside a small skin, and what cell height `auto` chose for it. Do not retune `pixelHeightToPointSize` (0.8) to fix it; that constant governs every skin-declared `<text>`. **Done when** Anaheim's library rows draw at the same size as its playlist rows, and a corpus sweep shows no other skin's host lists changed size unintentionally. | 1 skin reported | S–M | Live |
+
+**Closed 2026-10-15, not a defect.** Anaheim had Text Size saved at 150%
+(`winampModern.config.Anaheim_Player_01._nullplayer_text.size = 150`, written only by the Text Size
+menu). Every Anaheim layout is 120–260px tall, so `auto` would sit at the 11px cell. Measured from
+2x captures of the debug build: playlist rows 36px (16.5 × 1.1 = 18.15pt), playlist capitals 22px,
+library capitals 21px (10pt × 1.5). The library and playlist already draw at one size; the library
+only stood out because its artwork rows are 27pt tall in a 180pt window. No code change.
+
 ## B160 — a window the user stretched did not tell its own scene — closed 2026-09-30
 
 - [x] **B160. A `.wal` window resize reaches the scene in the same turn.** **Closed 2026-09-30.**

@@ -94,13 +94,4 @@ final class LibraryBrowserTabSortTests: XCTestCase {
         XCTAssertEqual(reloaded.sort(for: 1).columnSortId, "year")
         XCTAssertNil(reloaded.sort(for: 3).columnSortId)
     }
-
-    /// The store is keyed by browse-mode raw value and shared by both browsers, so the two
-    /// browse-mode enums must agree.
-    func testClassicAndModernBrowseModesShareRawValues() {
-        XCTAssertEqual(
-            Dictionary(uniqueKeysWithValues: PlexBrowseMode.allCases.map { ($0.rawValue, $0.title) }),
-            Dictionary(uniqueKeysWithValues: ModernBrowseMode.allCases.map { ($0.rawValue, $0.title) })
-        )
-    }
 }

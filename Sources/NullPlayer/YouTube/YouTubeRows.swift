@@ -15,6 +15,8 @@ struct YouTubeRow {
     /// Drawn ahead of `title` only: the downloaded-form markers, or `✓` on a subscribed result.
     var titlePrefix: String? = nil
     var info: String? = nil
+    /// A video's audio download, checked on disk with its markers: its EQ profile keys on it.
+    var audioFile: URL? = nil
     let indentLevel: Int
     let kind: Kind
 
@@ -90,7 +92,8 @@ struct YouTubeRowBuilder {
         let onDisk = manager.downloadedFiles(for: video.videoId)
         let markers = MediaType.allCases.filter { onDisk[$0] != nil }.map(\.rowMarker)
         return YouTubeRow(id: id, title: video.title, titlePrefix: markers.isEmpty ? nil : markers.joined(separator: " "),
-                          info: video.formattedDuration, indentLevel: indentLevel, kind: .video(video))
+                          info: video.formattedDuration, audioFile: onDisk[.audio], indentLevel: indentLevel,
+                          kind: .video(video))
     }
 
     private func expandedUploads(of channel: YouTubeChannel) -> [YouTubeVideo] {

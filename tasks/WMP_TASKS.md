@@ -4,10 +4,8 @@ The only live backlog for the WMP skin subsystem, and a list of open rows — no
 `skills/wmp-skin-guide/SKILL.md` before picking anything up.
 
 - `.wal` work goes in [`WINAMP5_TASKS.md`](WINAMP5_TASKS.md); the shared video path goes in
-  [`MISC_TASKS.md`](MISC_TASKS.md) (read M5 before any `.wmz` video work);
-  the local library and the playlist-playback path go in
-  [`docs/local-library/backlog.md`](../docs/local-library/backlog.md) (**read L1 before any report that a
-  skin "won't play" something** — an unreadable track halts the playlist and says nothing in WMP mode).
+  [`MISC_TASKS.md`](MISC_TASKS.md) (read M5 before any `.wmz` video work), as do the local library
+  and the playlist-playback path.
 - Closed rows move to [`docs/wmp-skin/wmp-backlog-archive.md`](../docs/wmp-skin/wmp-backlog-archive.md)
   in the change that closes them. That file's § *Issuing a number* holds the next free number.
 - A row with a defect in the row itself goes to [`LOW_QUALITY_TASKS.md`](LOW_QUALITY_TASKS.md);
@@ -42,6 +40,7 @@ nothing behind them*.
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
+| W317 | The borrowed frame has two answers to "is this edge tile sized by script?" | **Unmeasured.** Found in the PR #577 code review, not on screen: no skin is known to be drawn wrong by it | `WMPHostedFrameTemplate.note` (the repair-pass `stretchedDown`/`stretchedAcrossNodeIDs`) treats a tiled side piece as script-sized when `number(node, "height"/"width") == nil`, i.e. when the dimension is missing **or** is not a plain number. `isScriptSpannedTile` (`scriptSpans`) also requires `statedAttribute(named:) == nil`, so a dimension given as an expression (`height="jscript:…"`) counts there as authored. One of them is wrong for an expression-sized tile: `note` stretches it to the canvas over a length the build would resolve on its own, or `scriptSpans` leaves one alone that it should span. **First step:** list every tiled ring piece in the corpus whose relevant dimension is stated but not numeric. If there are none, make `note` call `isScriptSpannedTile` (a pure cleanup) and confirm every `HOSTED-FRAME` line is identical. If there are some, dump those frames under both rules and keep whichever matches what the skin draws. |
 
 ## Harness and tooling
 

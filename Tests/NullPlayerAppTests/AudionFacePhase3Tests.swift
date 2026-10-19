@@ -24,7 +24,6 @@ final class AudionFacePhase3Tests: XCTestCase {
         XCTAssertFalse(PlayerUIMode.audion.usesModernEQLayout)
         XCTAssertNil(PlayerUIMode.audion.modernSkinFamily)
         XCTAssertTrue(AppCapabilities.supports(.audionFaceMode))
-        XCTAssertEqual(PlayerUIMode.argumentOverride(from: ["uiMode": "audion"]), .audion)
         let item = ContextMenuBuilder.buildMenuBarUIMenu().items.first { $0.title == "Audion Faces" }
         let titles = item?.submenu?.items.map(\.title) ?? []
         for option in ["Load Face...", "Get More Faces...", "Open Faces Folder..."] {

@@ -96,7 +96,7 @@ final class WinampModernPhase68Tests: XCTestCase {
     }
 
     func testCompositedFlattensAHalfAlphaFillOntoWhatIsBehindIt() {
-        // `PlexBrowserView`'s focused search field draws over a half-alpha highlight; judging the
+        // `ClassicLibraryBrowserView`'s focused search field draws over a half-alpha highlight; judging the
         // written colour instead of the composited one leaves that state unreadable while the opaque
         // selection row is fixed.
         let flattened = WinampModernSurfaceStyle.composited(NSColor(deviceRed: 1, green: 1, blue: 1,

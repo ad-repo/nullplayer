@@ -67,8 +67,9 @@ enum WasabiChromeButtons {
     /// The role this object is a chrome button for, or `nil` if it is not one.
     ///
     /// `resolvedBitmapID` has already answered which of `image=` / `downImage=` / `activeImage=` is in
-    /// force, so the caller passes that; a button whose id resolved to a real resource never gets here.
-    static func role(of object: WasabiObject, bitmapID: String?) -> Role? {
+    /// force, so the caller passes that; a button whose id resolved to a real resource never gets here
+    /// (`WasabiSceneRenderer.chromeButtonRole` is the one caller, and checks it).
+    static func role(of object: WasabiObject, bitmapID: String?, resolves: (String) -> Bool) -> Role? {
         let type = object.typeName.lowercased()
         guard type == "button" || type == "togglebutton" || type == "wasabi:button" else { return nil }
         if let bitmapID, let role = role(forBitmapID: bitmapID) { return role }
@@ -77,7 +78,21 @@ enum WasabiChromeButtons {
         for attribute in ["image", "downImage", "activeImage"] {
             if let value = object.attributes[attribute], let role = role(forBitmapID: value) { return role }
         }
-        return nil
+        // A skin that names artwork of its own and forgot to declare it: Motorhead's shade layout
+        // ships `shade/Shade.png` but no `<bitmap id="player.shade.Shade">`, so its minimize,
+        // windowshade and close sized to 0x0 and the player was stuck in shade for good. Only a
+        // button that names an unresolved `image=` and states no size qualifies: one with `w`/`h`
+        // (Big Bento's `image="none"` slam, Pure Inspired's) or `fitparent` is a deliberate hotspot
+        // over the skin's own background art, and drawing a glyph there doubles the art.
+        guard object.attributes["w"] == nil, object.attributes["h"] == nil,
+              !WasabiGeometrySpec.flag(object.attributes["fitparent"]),
+              let image = object.attributes["image"], !image.isEmpty, !resolves(image) else { return nil }
+        switch object.attributes["action"]?.uppercased() {
+        case "CLOSE": return .close
+        case "MINIMIZE": return .minimize
+        case "SWITCH": return .winshade
+        default: return nil
+        }
     }
 
     /// The glyph, as a unit-square path the renderer scales into the button.

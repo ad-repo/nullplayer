@@ -153,31 +153,68 @@ extension WasabiSceneRenderer {
         context.restoreGState()
     }
 
-    /// The single image a bitmap layer paints right now: an animated layer's current frame, or the
-    /// whole bitmap for a plain one. Shared with the Layer FX path, which warps exactly that image.
-    func layerImage(_ bitmap: WasabiBitmap, object: WasabiObject, type: String) -> CGImage? {
-        guard type == "animatedlayer" else { return bitmap.image }
-        return animatedFrameImage(bitmap, object: object)
+    /// The single image a bitmap layer paints right now, and where in `frame` it goes: an animated
+    /// layer's current frame, or the whole bitmap over the whole frame for a plain one. Shared with the
+    /// Layer FX path, which warps exactly that image into exactly that rect.
+    func layerImage(_ bitmap: WasabiBitmap, object: WasabiObject, type: String,
+                    in frame: CGRect) -> (image: CGImage, rect: CGRect)? {
+        guard type == "animatedlayer" else { return (bitmap.image, frame) }
+        return animatedFrame(bitmap, object: object, in: frame)
+    }
+
+    private func animatedFrame(_ bitmap: WasabiBitmap, object: WasabiObject,
+                               in frame: CGRect) -> (image: CGImage, rect: CGRect)? {
+        let grid = animationGrid(bitmap, object: object)
+        guard let image = animatedFrameImage(bitmap, object: object, grid: grid) else { return nil }
+        return (image, grid.drawRect(in: frame))
     }
 
     /// How an animated layer's sheet is cut into frames: one frame's size, how many there are, and how
     /// many sit side by side. Shared by the frame the layer draws and the region it can be clicked on.
-    private func animationGrid(_ bitmap: WasabiBitmap,
-                               object: WasabiObject) -> (width: Int, height: Int, count: Int, columns: Int) {
-        let frameWidth = max(1, Int(Double(object.attributes["framewidth"] ?? object.attributes["w"] ?? "") ?? Double(bitmap.width)))
-        let frameHeight = max(1, Int(Double(object.attributes["frameheight"] ?? object.attributes["h"] ?? "") ?? Double(bitmap.height)))
+    struct AnimationGrid {
+        let width: Int
+        let height: Int
+        let count: Int
+        let columns: Int
+        /// The box is larger than the whole sheet, so the sheet is the one frame, shown at its own
+        /// size from the box's top left. ONYX V2's shade volume fill is an 89x12 image in an 89x24
+        /// box: cut at the box's height it ran off the bitmap and nothing drew, and stretched it would
+        /// spill out of its 13px track. Only this case: a sheet *larger* than its box (Lobe's 59x2006
+        /// strips in 110x113 boxes) is still cut by the box, and a frame smaller than its box by
+        /// `framewidth`/`frameheight` is still stretched (Nullsoft 2000 SP4 Lite's `frameheight="1"
+        /// h="5"`).
+        let isWholeSheet: Bool
+
+        /// Where the current frame is drawn, and where it is hit-tested, inside the layer's `frame`.
+        func drawRect(in frame: CGRect) -> CGRect {
+            guard isWholeSheet else { return frame }
+            return CGRect(x: frame.minX, y: frame.minY,
+                          width: min(frame.width, CGFloat(width)), height: min(frame.height, CGFloat(height)))
+        }
+    }
+
+    private func animationGrid(_ bitmap: WasabiBitmap, object: WasabiObject) -> AnimationGrid {
+        let boxWidth = max(1, Int(Double(object.attributes["framewidth"] ?? object.attributes["w"] ?? "") ?? Double(bitmap.width)))
+        let boxHeight = max(1, Int(Double(object.attributes["frameheight"] ?? object.attributes["h"] ?? "") ?? Double(bitmap.height)))
+        let isWholeSheet = bitmap.width <= boxWidth && bitmap.height <= boxHeight
+            && (bitmap.width < boxWidth || bitmap.height < boxHeight)
+        let frameWidth = isWholeSheet ? bitmap.width : boxWidth
+        let frameHeight = isWholeSheet ? bitmap.height : boxHeight
         let columns = max(1, bitmap.width / frameWidth)
         let rows = max(1, bitmap.height / frameHeight)
         let count = max(1, Int(Double(object.attributes["frames"] ?? "") ?? Double(columns * rows)))
-        return (frameWidth, frameHeight, count, columns)
+        return AnimationGrid(width: frameWidth, height: frameHeight, count: count, columns: columns,
+                             isWholeSheet: isWholeSheet)
     }
 
     /// The most opaque any frame is at `point` — the layer's region, see the call site in `object(at:)`.
     func animationUnionAlpha(_ bitmap: WasabiBitmap, object: WasabiObject,
                                      node: WasabiSceneNode, point: CGPoint) -> Int {
         let grid = animationGrid(bitmap, object: object)
-        let x = (point.x - node.frame.minX) / max(1, node.frame.width) * CGFloat(grid.width)
-        let y = (point.y - node.frame.minY) / max(1, node.frame.height) * CGFloat(grid.height)
+        let drawn = grid.drawRect(in: node.frame)
+        guard drawn.contains(point) else { return 0 }
+        let x = (point.x - drawn.minX) / max(1, drawn.width) * CGFloat(grid.width)
+        let y = (point.y - drawn.minY) / max(1, drawn.height) * CGFloat(grid.height)
         var strongest = 0
         for index in 0..<grid.count {
             let origin = CGPoint(x: CGFloat((index % grid.columns) * grid.width),
@@ -226,23 +263,22 @@ extension WasabiSceneRenderer {
         }
     }
 
-    private func animatedFrameImage(_ bitmap: WasabiBitmap, object: WasabiObject) -> CGImage? {
-        if drawsAnimationCores { return animationCoreImage(bitmap, object: object) }
-        let (frameWidth, frameHeight, count, columns) = animationGrid(bitmap, object: object)
-        let frameIndex = max(0, min(count - 1, WasabiAnimation.state(of: object, frameCount: count,
-                                                                     clock: clock()).frame))
-        let column = frameIndex % columns
-        let row = frameIndex / columns
-        let crop = CGRect(x: column * frameWidth, y: row * frameHeight,
-                          width: frameWidth, height: frameHeight)
+    private func animatedFrameImage(_ bitmap: WasabiBitmap, object: WasabiObject,
+                                    grid: AnimationGrid) -> CGImage? {
+        if drawsAnimationCores { return animationCoreImage(bitmap, grid: grid) }
+        let frameIndex = max(0, min(grid.count - 1, WasabiAnimation.state(of: object, frameCount: grid.count,
+                                                                          clock: clock()).frame))
+        let column = frameIndex % grid.columns
+        let row = frameIndex / grid.columns
+        let crop = CGRect(x: column * grid.width, y: row * grid.height,
+                          width: grid.width, height: grid.height)
         guard crop.maxY <= CGFloat(bitmap.height), crop.maxX <= CGFloat(bitmap.width) else { return nil }
         return cropped(bitmap.image, to: crop)
     }
 
     /// Black at the lowest alpha each pixel has across every frame of the layer's sheet — see
     /// `drawsAnimationCores`. Outline pass only.
-    private func animationCoreImage(_ bitmap: WasabiBitmap, object: WasabiObject) -> CGImage? {
-        let grid = animationGrid(bitmap, object: object)
+    private func animationCoreImage(_ bitmap: WasabiBitmap, grid: AnimationGrid) -> CGImage? {
         let key = AnimationCoreKey(sheet: ObjectIdentifier(bitmap.image), frameWidth: grid.width,
                                    frameHeight: grid.height, count: grid.count, columns: grid.columns)
         if let cached = animationCoreCache[key] { return cached.core }
@@ -308,8 +344,8 @@ extension WasabiSceneRenderer {
 
     func drawAnimated(_ bitmap: WasabiBitmap, object: WasabiObject,
                               frame: CGRect, context: CGContext) {
-        guard let image = animatedFrameImage(bitmap, object: object) else { return }
-        drawImage(image, in: frame, context: context)
+        guard let layer = animatedFrame(bitmap, object: object, in: frame) else { return }
+        drawImage(layer.image, in: layer.rect, context: context)
     }
 
     /// `<ProgressGrid>` — the *filled* part of a bar, drawn as `left` cap + stretched `middle` +

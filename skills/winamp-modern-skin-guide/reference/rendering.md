@@ -357,7 +357,11 @@ Shadows (Every Family)*). Trace: `NP_SKIN_SHADOW_TRACE=1` (`reference/harness.md
 - **The shadow pulls; the view only invalidates.** `SkinWindowShadow` is attached with the outline
   render as its `shape`, watches the window's move, resize, key and occlusion notifications itself,
   and pulls at most once per `shadowShapeInterval` (250 ms), leading edge first with a trailing pull
-  for the end of an animation, and never while the window is hidden.
+  for the end of an animation, and never while the window is hidden. **Only a pull that rebuilt the
+  shadow spends the interval**: one click on PionNer_AMP2's EQ tab swaps the tab's image, then 14 ms
+  later moves the drawer, and the swap's unchanged-outline pull held the drawer's for 250 ms with the
+  open drawer's shadow still drawn — a ghost outline of the closed drawer. Cost of the change,
+  20 s of playback: cPro2 Dark Aluminum 8 unchanged pulls, Big Bento Modern 14.
 - **What invalidates it is an event that can move the outline, never invalidation.** Layer FX
   invalidates the window 30 times a second and a playing skin writes readouts every tick, so neither
   `repaintRequested` nor `needsDisplay` is a trigger. The triggers are a layout switch, a canvas
@@ -588,6 +592,16 @@ Its **region** is the union of its frames: a point is clickable if *any* frame p
 only the frame on screen is wrong for the commonest use of the type — a fill animation is transparent
 ahead of the playhead, which is precisely where a seek click lands. Phase 33.
 
+**A box larger than the whole image shows that image once, at its own size, from the top left**
+(`AnimationGrid.isWholeSheet`). ONYX V2's shade volume fill is an 89×12 image in an 89×24 box: cut at
+the box's height its only frame ran off the bitmap and nothing drew, and stretched it spills out of
+its 13px track. Only that case — it is exactly where the old cut drew nothing, so no layer that drew
+before moved. A sheet *larger* than its box is still cut by the box (Lobe's 59×2006 strips in 110×113
+boxes stay undrawn, unmeasured), and a frame smaller than its box by `framewidth`/`frameheight` is
+still stretched (Nullsoft 2000 SP4 Lite's `frameheight="1" h="5"`, which a first version of this rule
+shrank to 1px). Drawing and the region both go through `AnimationGrid.drawRect(in:)`. Pinned by
+`WinampModernRenderPixelTests`.
+
 ##### Artwork-less `<Wasabi:Button text="…">`
 
 A deliberate exception to the identifier-only rule for the seeded Wasabi standard-library shells. Three
@@ -626,6 +640,12 @@ pressed id as the resting `image=` on one of a button's two alpha-gated copies.
 - **Contained by construction.** A skin that ships the artwork resolves a bitmap and never reaches
   here. Formamp declares 20 of the `wasabi.button.*` ids and corneramp_redux most of the rest, and
   both keep every piece they ship.
+- **A skin's own forgotten id falls back on the action** (2026-10-17). Motorhead's shade layout
+  names `player.shade.Minimize`/`Shade`/`Close`, ships the PNGs and declares no `<bitmap>`, so the
+  player was stuck in shade. A button that names an unresolved `image=`, states **no `w`/`h`**, and
+  carries `CLOSE`/`MINIMIZE`/`SWITCH` draws that glyph. The size gate is load-bearing: Big Bento's
+  `image="none"` close slam and Pure Inspired's min/close are sized hotspots over their own art, and
+  without it each grew a second glyph. Corpus reach: Motorhead, PaddPreview, jvc.tape's playlist.
 
 ##### A standard frame whose artwork stayed in Winamp (B121, 2026-09-04)
 

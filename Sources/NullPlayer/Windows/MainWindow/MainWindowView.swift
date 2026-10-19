@@ -61,6 +61,21 @@ enum MainWindowVisMode: String, CaseIterable {
         case .ekg: return .ekg
         }
     }
+
+    /// Classic and Original each persist their own main-window mode, so a trip through one leaves
+    /// the other's choice alone (M39).
+    static let classicDefaultsKey = "mainWindowVisMode"
+    static let originalDefaultsKey = "modernMainWindowVisMode"
+
+    /// The running family's mode key; nil where the main window isn't a NullPlayer visualizer
+    /// (`.wal`, `.wmz`, Audion and Sonique draw their own, and hide the Main Window vis menu).
+    static func defaultsKey(for family: PlayerUIControllerFamily) -> String? {
+        switch family {
+        case .classic: return classicDefaultsKey
+        case .nullPlayerModern: return originalDefaultsKey
+        case .winampModern, .wmp, .audion, .sonique: return nil
+        }
+    }
 }
 
 /// Main window view - renders the skin main player interface using skin sprites
@@ -97,7 +112,7 @@ class MainWindowView: NSView {
     /// Main window visualization mode (spectrum bars vs GPU-rendered modes)
     private var mainVisMode: MainWindowVisMode = .spectrum {
         didSet {
-            UserDefaults.standard.set(mainVisMode.rawValue, forKey: "mainWindowVisMode")
+            UserDefaults.standard.set(mainVisMode.rawValue, forKey: MainWindowVisMode.classicDefaultsKey)
             updateMetalOverlayVisibility()
         }
     }
@@ -197,7 +212,7 @@ class MainWindowView: NSView {
         registerForDraggedTypes([.fileURL])
         
         // Restore saved visualization mode
-        if let savedMode = UserDefaults.standard.string(forKey: "mainWindowVisMode"),
+        if let savedMode = UserDefaults.standard.string(forKey: MainWindowVisMode.classicDefaultsKey),
            let mode = MainWindowVisMode(rawValue: savedMode) {
             // Validate shader availability before restoring a GPU mode — if the shader file
             // is missing (e.g., not included in DMG), fall back to Spectrum to prevent crashes
@@ -561,7 +576,7 @@ class MainWindowView: NSView {
     
     @objc private func mainVisSettingsChanged() {
         // Reload vis mode from UserDefaults
-        if let savedMode = UserDefaults.standard.string(forKey: "mainWindowVisMode"),
+        if let savedMode = UserDefaults.standard.string(forKey: MainWindowVisMode.classicDefaultsKey),
            let mode = MainWindowVisMode(rawValue: savedMode) {
             // Validate shader availability before applying a GPU mode
             if let qualityMode = mode.spectrumQualityMode,

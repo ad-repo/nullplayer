@@ -154,6 +154,10 @@ CornerAmp ships playlist + EQ, Winamp Modern ships playlist + library. The engin
   `PE_REM`'s Crop work on (`playlistSetSelection` / `playlistRemoveRows`). A click collapses both to
   one row. Both new calls have protocol defaults over the single-row ones, so a host without a
   selection model of its own — every test fake — still conforms.
+- **A queue change re-bases the selection (M48).** `WindowManager.reloadPlaylistViews` reaches the
+  controller's `playlistContentDidChange()`, which calls the bridge's `playlistQueueDidChange()`:
+  the selection becomes the playing row, or empty. That callback fires *inside* every engine queue
+  edit, so a bridge mutator reads the selection before calling the engine and writes it after.
 - **The selection bar follows playback.** On every track change the controller's `updateTrackInfo`
   calls `playlistFollowCurrentTrack()` and then `revealPlaylistRow` on every container view (the
   playlist holder usually lives in an auxiliary `pledit` window, not the player), matching what the
@@ -275,11 +279,25 @@ Every `.wal` window is `.borderless`, which changes what AppKit will do for you:
   hides an auxiliary one. `MINIMIZE` likewise takes the whole set of the skin's windows down together,
   and their style masks carry `.miniaturizable` — no chrome is drawn for it, but AppKit will not
   miniaturize a window whose mask forbids it. Both go through `closeRequested`/`minimizeRequested` on
-  the view; nothing in the view calls AppKit's window commands directly. Phase 24
+  the view (every close through `requestClose()`); the view calls AppKit's window commands only as
+  the fallback for a view with no controller over it (tests). Phase 24
+- **A window with no close of its own closes from its corner.** When the container wears no glass
+  chrome and nothing visible in the scene carries `action="CLOSE"` (`needsFallbackClose`,
+  `WinampModernHostChrome.swift`), `hostChromeHit` answers `.close` for the `FallbackCloseArea`
+  corner, so the view takes it ahead of its subviews and calls `requestClose()` — the base rule in
+  `ui-guide` § *Every window closes*. A frame a script glues over another window
+  (`windowsGluedOver`) is that window's chrome, so its close forwards to the framed window's
+  `closeRequested` and the skin takes the frame down with it. Itemskin's standard frame around the
+  Equalizer Studio is the case: it has no close, so the Studio could only be closed from the Windows
+  menu. Auxiliary windows get their commands as each is built, so a dynamic copy a script creates
+  after load closes too. Phase 24
 - **A window created with `NSRect(origin: .zero, …)` opens at the bottom-left corner of the screen**,
   which is where every auxiliary container window used to appear. They are placed on **first show**
   — stacked under the main window, clamped to the screen — and never repositioned again, so a window
-  the user has moved stays where they put it (`placedAuxiliaryWindows`). Phase 24
+  the user has moved stays where they put it (`placedAuxiliaryWindows`). Phase 24. A window a
+  script has **pinned** to another window's position counts as placed too, or the first show would
+  re-tile it off the spot the script chose (ONYX V2's visualization over its art box; see
+  `scripting.md` → *Writing back the position a window just read is not a move*).
 
 #### Where a skin's windows go — the tiling (B56)
 
@@ -902,8 +920,8 @@ offset within the frame"*: a 343x145 meter drew in 303x75.
 markup around it: `<script file="scripts/standardframe.maki" param="25,28,-40,-70,0,0,1,1"/>` is
 `x,y,w,h,relatx,relaty,relatw,relath`, applied by `standardframe.maki` to the group named by
 `content=`. **51 of the 67 corpus archives write one** (`grep -rhio 'standardframe[^>]*param="[^"]*"'`),
-so this is the majority shape, not HeadAMP's quirk. `WasabiSurfaceSynthesizer.scriptClientRect` reads
-it, walking `inherit_group` the way `hasContentScript` does — a skin that states none keeps exactly
+so this is the majority shape, not HeadAMP's quirk. `WasabiSurfaceSynthesizer.clientInsets(of:definitions:)` reads
+it, walking `inherit_group` through `inheritanceChain` — a skin that states none keeps exactly
 the behaviour it had.
 
 Three rules follow, and the skin itself is never edited: what changes is which frame *we* instantiate
@@ -915,17 +933,24 @@ and where *our* group sits inside it.
   costs 70 rows against its no-status frame's 50, around a 145-row window. Flavours are now ordered by
   what their client rect leaves, and the old order only breaks ties — including the tie every skin
   that states no rect is in.
-- **The client is centred on the *larger* of each opposing inset, and we place it ourselves.** An
-  author's padding is asymmetric wherever it is padding for contents we do not supply: HeadAMP's
-  `25,28,-40,-50` is 25 left against 15 right and 28 top against 22 bottom, and a meter placed there
-  reads as pushed right and sunk — which is exactly what the reporter said next. So the frame is
-  handed **no `content=`** (the same emission the exemplar branch uses) and our group sits beside it
-  at 25/25 and 28/28. **Larger, not smaller**: the smaller inset would centre it too, and would draw
-  our surface over artwork the author kept clear on the thicker side — Big Bento's 44px title band
-  against a 24px bottom. The cost of the larger is a little more of the skin's own background texture
-  on the thin side, which reads as an even mat.
-- **The window is grown by twice that border**, through `Frame.floor(under:)`, the same rule the
-  exemplar branch already followed.
+- **We place the client ourselves, and centre its sides only over a painted background.** The frame
+  is handed **no `content=`** (the same emission the exemplar branch uses) and our group sits beside
+  it. An author's *side* padding is asymmetric wherever it is padding for contents we do not supply:
+  HeadAMP's `25,28,-40,-50` is 25 left against 15 right, and a meter placed there reads as pushed
+  right — which is exactly what the reporter said next. So where the frame's groupdef (or one it
+  inherits) carries `background=`, both sides move out to the **larger** inset; the smaller would
+  draw over artwork the author kept clear, and the cost of the larger is a little of the skin's base texture on the thin side. **Without a
+  `background=`, the thin side's padding is desktop**, so the skin's own sides are kept: PionNer_AMP2's
+  23 against 19 showed a 4px see-through column (#556).
+- **Top and bottom are always the skin's own (#556).** The first version of this rule centred them
+  too, and a frame's top is its title band while its bottom is a thin bezel: mirroring one onto the
+  other left a band under the client that the frame never paints — 30px of desktop on PionNer_AMP2
+  (43 against 13), a 13px strip of base texture on XENERGY1 (23 against 10), and the same on Darjah 1,
+  Formamp, both Love is War Mikus, the Hatsune Miku skin and PaddPreview. Keeping the skin's own
+  bottom also makes a status flavour pay for its empty strip, so PionNer_AMP2 now takes its no-status
+  frame.
+- **The window is grown by that border**, through `Frame.floor(under:)`, the same rule the exemplar
+  branch already followed.
 
 **A hosted window's geometry is decided in two places, and they are different objects.** Sizing reads
 `WinampModernHostedFrameDescriptor`; placement is emitted by
@@ -1066,7 +1091,7 @@ Two things follow for any new hosted surface:
 `hostedContext`, so it primes the same helper with the window named outright —
 `prime(_:window:)`:
 
-- **The embedded library** (`PlexBrowserView` with `isEmbeddedInSkin`) primes on whatever press
+- **The embedded library** (`ClassicLibraryBrowserView` with `isEmbeddedInSkin`) primes on whatever press
   falls through every one of its own hit tests — the blank area below the last row, an empty
   Search page — against its own `window`, which is the skin's. Rows, tabs, the scrollbar and the
   alphabet index all claim their presses first.
@@ -1305,7 +1330,7 @@ through the renderer's *own* resolver so gamma matches.
 
 **The surfaces we draw are palette-themed, never classic-skinned.** `WinampModernSurfaceStyle` widens
 a `WasabiPalette` into a whole chrome for the AppKit views NullPlayer supplies — the embedded library
-(`PlexBrowserView` in embedded mode) and the playlist / EQ / library **fallback windows**. Before
+(`ClassicLibraryBrowserView` in embedded mode) and the playlist / EQ / library **fallback windows**. Before
 Phase 16 all of those painted with `SkinRenderer` sprites, the 5×6 bitmap font, and
 `skin.playlistColors` from whatever `.wsz` was selected: a foreign UI coloured by a skin the user is
 not looking at.
@@ -1321,11 +1346,16 @@ not looking at.
 - Chrome roles (`barBackground`, `border`, `divider`, `dimText`, `pressedFill`) are **blends of the
   roles the skin declared**, never fixed greys — real skins declare three of the seven, and the blend
   is what makes the chrome move the right way on a light skin as well as a dark one.
-- `font(scale:)` solves for a monospaced point size whose advance is exactly
-  `SkinElements.TextFont.charWidth * scale`, and `attributes` adds a `.kern` correction for the
-  remainder. **This is load-bearing**: the views lay themselves out as
-  `text.count * charWidth * scale` in ~77 places in the browser alone, so a font that measured
-  differently would leave every one of those boxes wrong. `drawText` counter-flips about the cell.
+- `font(scale:)` is the **proportional** system font at the classic glyph's cap height
+  (`classicCapHeight`, 5px of the 6px cell, times `scale`). `text.count * charWidth * scale`
+  (`measuredWidth`) is now a *reservation*, like a Wasabi `forcefixed`: `drawText` draws inside it
+  and shrinks the run only if it would overrun. Anything placed by a label's width — a centred tab
+  or title, a right-aligned `F5`, the next label in a chain (`Source:` → name → `+ADD`), a cursor —
+  measures the drawn run through `ClassicLibraryTab.textWidth` / `SkinnedSurfaceStyle.drawnWidth`,
+  which answer the classic `count * charWidth * scale` when there is no style, so Classic is
+  untouched. It used to be a monospaced face solved to fill the 5px advance exactly, which drew
+  every hosted label a third taller than the bitmap glyph and about twice the skin's own text
+  (2026-10-12). `drawText` counter-flips about the cell.
 - Embedded surfaces redraw their chrome at the **same metrics** as the classic version — same
   title-bar height, same 12px borders, same button boxes the hit tests already own — so only pixels
   change, never geometry. Standalone fallback windows keep those metrics only until the palette
@@ -1344,7 +1374,7 @@ not looking at.
   keep painting a skin that is gone. Until B98 it was posted by `themeDidChange` and nothing else, so
   switching skins reskinned everything the renderer draws and nothing NullPlayer draws; the Media
   Library, the playlist and the equalizer kept the outgoing skin's chrome until the user closed and
-  reopened them, which rebuilt the view. **`PlexBrowserView` also caches its resolved style** (it
+  reopened them, which rebuilt the view. **`ClassicLibraryBrowserView` also caches its resolved style** (it
   asks for one per string, ~77 times a frame) and drops that cache on this notification only, so for
   the library it is a cache invalidation and not merely a repaint. Tests: `WinampModernB98Tests`.
 

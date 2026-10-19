@@ -1,5 +1,4 @@
 import AppKit
-import AVFoundation
 
 /// Loads artwork for a track from the appropriate source, returning an NSImage.
 /// Reuses the same artwork resolution patterns as NowPlayingManager.
@@ -12,44 +11,9 @@ enum CLIArtwork {
               track.subsonicId ?? "nil",
               track.artworkThumb?.redactingSensitiveURLQueryItems ?? "nil")
         if track.url.isFileURL {
-            return await loadLocalArtwork(url: track.url)
+            return await LocalArtwork.image(for: track.url)
         }
         return await loadRemoteImage(url: track.serverArtworkURL(size: 300))
-    }
-
-    private static func loadLocalArtwork(url: URL) async -> NSImage? {
-        NSLog("[CLIArt] loadLocalArtwork: %@", url.lastPathComponent)
-        let asset = AVURLAsset(url: url)
-        do {
-            for format in [AVMetadataFormat.id3Metadata, .iTunesMetadata] {
-                let metadata = try await asset.loadMetadata(for: format)
-                NSLog("[CLIArt] format %@ — %d metadata items", format.rawValue, metadata.count)
-                for item in metadata {
-                    NSLog("[CLIArt]   item commonKey=%@ identifier=%@", item.commonKey?.rawValue ?? "nil", item.identifier?.rawValue ?? "nil")
-                    if item.commonKey == .commonKeyArtwork,
-                       let data = try await item.load(.dataValue),
-                       let image = NSImage(data: data) {
-                        NSLog("[CLIArt] found artwork via format %@, data=%d bytes", format.rawValue, data.count)
-                        return image
-                    }
-                }
-            }
-            // Fallback: common metadata
-            let metadata = try await asset.load(.metadata)
-            NSLog("[CLIArt] .metadata fallback — %d items", metadata.count)
-            for item in metadata {
-                if item.commonKey == .commonKeyArtwork,
-                   let data = try await item.load(.dataValue),
-                   let image = NSImage(data: data) {
-                    NSLog("[CLIArt] found artwork via .metadata fallback, data=%d bytes", data.count)
-                    return image
-                }
-            }
-            NSLog("[CLIArt] no artwork found in any metadata")
-        } catch {
-            NSLog("[CLIArt] loadLocalArtwork error: %@", error.localizedDescription)
-        }
-        return nil
     }
 
     private static func loadRemoteImage(url: URL?) async -> NSImage? {

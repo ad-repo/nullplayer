@@ -335,7 +335,7 @@ struct SkinnedSurfaceChrome {
                             width: bounds.width, height: min(1, bottomHeight)))
 
         let scale = max(controlScale, 0.01)
-        let titleWidth = SkinnedSurfaceStyle.measuredWidth(title, scale: scale)
+        let titleWidth = SkinnedSurfaceStyle.drawnWidth(title, scale: scale)
         let closeRegionWidth = min(25, bounds.width)
         let labelLimit = max(bounds.minX, bounds.maxX - closeRegionWidth)
         let labelX = max(bounds.minX + leftWidth,
@@ -393,7 +393,7 @@ struct SkinnedSurfaceChrome {
         // these windows draw their content *first* and this chrome over it, so an uncut ring paints
         // a still picture over a running visualiser. Only the hole is protected; corners, edges and
         // the caption band are untouched, and a window with no borrowed ring never reaches here.
-        // `PlexBrowserView` has cut the same hole for the library since the rings arrived.
+        // `ClassicLibraryBrowserView` has cut the same hole for the library since the rings arrived.
         // **A frame whose interior fill has been erased is painted whole (W209).** The cut below is
         // a rectangle and these bezels are not rectangular — `Back to the Future Trilogy`'s bottom
         // bar rises into a tab at its centre — so cutting the client rect punched a notch through

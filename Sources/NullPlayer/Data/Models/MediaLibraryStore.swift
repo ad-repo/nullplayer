@@ -1162,6 +1162,11 @@ final class MediaLibraryStore {
         }
     }
 
+    /// The `tracksForAlbum` key of the album `url` belongs to; nil for a file not in the library.
+    func albumId(containing url: URL) -> String? {
+        track(forURL: url).map { "\($0.albumArtist ?? "")|\($0.album ?? "Unknown Album")" }
+    }
+
     func trackCount() -> Int {
         guard let db = db else { return 0 }
         do {
@@ -2024,7 +2029,7 @@ final class MediaLibraryStore {
         // more: on current Foundation `URL(string: "/Music/My Track.mp3")` succeeds and returns a
         // **schemeless, non-file** URL rather than nil, so the repair branch had become dead code
         // and every legacy plain-path row came back as something `isFileURL` rejects. Same defect
-        // as the playlist loaders (L5 in docs/local-library/backlog.md), one layer down.
+        // as the playlist loaders (`Playlist.resolveEntry`), one layer down.
         if urlString.hasPrefix("/") {
             return URL(fileURLWithPath: urlString)
         }

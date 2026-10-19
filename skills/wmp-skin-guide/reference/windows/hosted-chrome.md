@@ -46,7 +46,7 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   is drawn whole over our content. A donor whose interior is a *picture* has no such colour
   (`Scooby Doo`'s wallpaper) and keeps the cut; so does one where more than **10%** of the hole
   survives the erase. `SkinnedSurfaceFrameArtwork.paintsOverContent` carries the flag,
-  `SkinnedSurfaceChrome.drawSkinFrame` and `PlexBrowserView.drawWinampModernChrome` honour it.
+  `SkinnedSurfaceChrome.drawSkinFrame` and `ClassicLibraryBrowserView.drawWinampModernChrome` honour it.
 - **An animation tick that repaints content must repaint the chrome (W209).** `NetworkMonitorView`,
   `CavaView` and `PeppyMeterView` each had a content-only fast path for 60 Hz redraws that returned
   before the chrome overlay. Correct while chrome is a border *around* content; wrong the moment any
@@ -199,13 +199,20 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   the top-left and bottom-left slots as *extras*, which `note` never spans — widened only by
   `checkPlViewSize()` (`width = view.width / 2`). The strip kept its 4px bitmap width and a column
   opened that grows by half of every point past the donor's 373: 31pt at 430, under the 40pt the
-  repair above needs. `spannedAcrossNodeIDs` gives such a tile its width on **every** pass, first
+  repair above needs. `scriptSpans` (axis `.across`) gives such a tile its width on **every** pass, first
   included, read off one extra build: **to its row's right corner, not the canvas edge** — the
   154-tall `f_top_s_2.png` spanning the canvas hung 6pt of black shadow across the 148-tall
   corner's rail — and **only if it shares at least half its height with that corner**, because
   `Alienware Invader`'s second left-rail tile is the same markup shape further down the side and
   was laid across the window. `WMP_FRAME_SPAN_TILES=0` is the A/B. Corpus at 430x306 and 550x464:
   those two skins move and nothing else.
+- **The same span, down (2026-10-16).** A tiled piece in a top side slot with no authored height is
+  a rail its script hangs (`ALXMorph`'s `plLeftTile`/`plRightTile`, sized by `onPlResize()`); it is
+  spanned to the top of its column's bottom corner, under the same switch and the same
+  half-overlap test transposed. A slot held by a script-sized tile is never a span target on
+  either axis — `plRightTile` holds top-right ahead of `f_top_right`, and spanning `plLeftTile`
+  across to it tiled the left rail into the middle of the window. Reaches `ALXMorph`, `AlienMorph`
+  and `Alienware Invader` only; see `skins/alienmorph.md`.
 - **A frame piece the donor's `onLoad` shows or hides follows it (2026-09-29).** W145 kept only
   `alphaBlend` and `backgroundImage` from the off-screen `onLoad`. `WALL-E` stacks two frame sets in
   `mainView` — `sub1_*` shown, `sub2_*` authored `visible="false"` — and its white theme is

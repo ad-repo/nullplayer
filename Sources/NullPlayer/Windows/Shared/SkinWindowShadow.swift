@@ -57,8 +57,8 @@ final class SkinShadowWindow: NSWindow {
 /// from then on it watches the window's move, key, resize and occlusion notifications and the
 /// preference, and repairs its own link, order and frame. The owner's one job is
 /// `invalidateShape` when its content may have moved the outline. A pull waits for the window to be
-/// on screen, for the previous build to land and for `minimumInterval`, so any number of
-/// invalidations cost one pull of the newest shape.
+/// on screen, for the previous build to land and for `minimumInterval` after the last rebuild, so
+/// any number of invalidations cost one pull of the newest shape.
 @MainActor
 final class SkinWindowShadow {
     /// One key for every family. Default on.
@@ -83,8 +83,9 @@ final class SkinWindowShadow {
     nonisolated static let isTraceEnabled = ProcessInfo.processInfo.environment["NP_SKIN_SHADOW_TRACE"] == "1"
 
     let shadowWindow = SkinShadowWindow()
-    /// The fewest seconds between two pulls of `shape`. A `.wal` outline is a render made for the
-    /// purpose, on the main thread; a `.wmz` one is the frame the window already presented.
+    /// The fewest seconds after a rebuild of the shadow before the next pull of `shape`. A
+    /// `.wal` outline is a render made for the purpose, on the main thread; a `.wmz` one is the
+    /// frame the window already presented.
     private let minimumInterval: CFTimeInterval
     private weak var parent: NSWindow?
     /// The trace's name for the window; nil reads the window's title when tracing, which an owner
@@ -92,6 +93,7 @@ final class SkinWindowShadow {
     private var name: String?
     private var shape: () -> [CGImage] = { [] }
     private var parentObservers: [NSObjectProtocol] = []
+    private var parentAlphaObservation: NSKeyValueObservation?
     private var preferenceObserver: NSObjectProtocol?
     /// `isEnabledPreference`, cached from its notification: read on every drag step. False while
     /// `isSuppressed` too.
@@ -107,8 +109,6 @@ final class SkinWindowShadow {
     /// The parent's `occlusionState`, cached from its notification for the same reason.
     private var isParentOnScreen = false
     private var lastFingerprint: Int?
-    /// Counts the shadow's size changes, so a build that lands after one is known to be stale.
-    private var sizeGeneration = 0
 
     init(minimumInterval: CFTimeInterval = 0) {
         self.minimumInterval = minimumInterval
@@ -158,10 +158,23 @@ final class SkinWindowShadow {
                                                   object: parent, queue: .main) {
             [weak self] _ in MainActor.assumeIsolated { self?.reassert() }
         })
+        parentObservers.append(center.addObserver(forName: NSApplication.didUnhideNotification,
+                                                  object: nil, queue: .main) {
+            [weak self] _ in MainActor.assumeIsolated { self?.relink() }
+        })
         parentObservers.append(center.addObserver(
             forName: NSWindow.didChangeOcclusionStateNotification, object: parent, queue: .main) {
                 [weak self] _ in MainActor.assumeIsolated { self?.parentOcclusionDidChange() }
             })
+        // **The shadow wears its window's alpha.** It is a window of its own, so a window held
+        // invisible — a `.wmz` hosted window waits up to 2 s at launch for its frame
+        // (`HostedWindowBorderLayout.hold`) — cast an empty shadow box until it was revealed.
+        parentAlphaObservation = parent.observe(\.alphaValue, options: [.initial]) { [weak self] _, _ in
+            MainActor.assumeIsolated {
+                guard let self, let parent = self.parent else { return }
+                self.shadowWindow.alphaValue = parent.alphaValue
+            }
+        }
         isParentOnScreen = parent.occlusionState.contains(.visible)
         reassert()
         invalidateShape("attach")
@@ -170,6 +183,7 @@ final class SkinWindowShadow {
     func detach() {
         parentObservers.forEach(NotificationCenter.default.removeObserver)
         parentObservers.removeAll()
+        parentAlphaObservation = nil
         shadowWindow.parent?.removeChildWindow(shadowWindow)
         shadowWindow.orderOut(nil)
         parent = nil
@@ -191,6 +205,18 @@ final class SkinWindowShadow {
             shadowWindow.order(.below, relativeTo: parent.windowNumber)
             trace("reassert order")
         }
+    }
+
+    /// **An unhide leaves the child linked but carried wrong.** After the app is hidden and shown
+    /// again AppKit moves this child twice as far as its parent on every drag, so the shadow runs
+    /// ahead of the skin as a window-sized outline. Measured on an Original main window: no code of
+    /// ours touched the shadow during the hide. Breaking the link lets `reassert` add it again, which
+    /// resets it — and only for a window that is visible, with the shadow enabled.
+    private func relink() {
+        guard let parent, shadowWindow.parent === parent else { return }
+        trace("relink after unhide")
+        parent.removeChildWindow(shadowWindow)
+        reassert()
     }
 
     private var isMoveCheckScheduled = false
@@ -224,18 +250,24 @@ final class SkinWindowShadow {
         // frame with `.resize`, read as a stray box: a stack's outline on every dock and undock, a
         // `.wal` layout change held for the whole `minimumInterval`. The fingerprint goes too, or a
         // size that changes and changes back would pull `.same` and leave nothing shown. A build
-        // already under way is for the old size, and `finishBuild` drops it by `sizeGeneration`.
+        // already under way is for the old size, and `finishBuild` drops it.
         if shadowWindow.frame.size != frame.size {
             shadowWindow.contentView?.layer?.contents = nil
             lastFingerprint = nil
-            sizeGeneration += 1
         }
+        let was = shadowWindow.frame
         shadowWindow.setFrame(frame, display: false)
-        trace("reassert frame \(Int(outline.width))x\(Int(outline.height))")
+        trace("reassert frame \(Int(outline.width))x\(Int(outline.height)) was=\(was) want=\(frame)")
     }
 
     private func outlineFrame(of parent: NSWindow) -> NSRect {
         outlineBounds.map { $0.offsetBy(dx: parent.frame.minX, dy: parent.frame.minY) } ?? parent.frame
+    }
+
+    /// The outline's size in whole points, which is what a shape is built at.
+    private func outlineSize(of parent: NSWindow) -> (width: Int, height: Int) {
+        let outline = outlineFrame(of: parent)
+        return (max(1, Int(outline.width.rounded())), max(1, Int(outline.height.rounded())))
     }
 
     /// A window that comes back on screen also takes the pull it was owed while hidden.
@@ -268,7 +300,11 @@ final class SkinWindowShadow {
                                                          qos: .userInitiated)
     /// Why the shape was last invalidated, while a pull is owed. Only the newest matters.
     private var pendingTrigger: String?
-    private var lastPull: CFAbsoluteTime = 0
+    /// **Only a rebuild starts `minimumInterval`.** One click on `PionNer_AMP2`'s EQ tab swaps the
+    /// tab's image and, 14 ms later, moves the drawer. When the swap's unchanged-outline pull started
+    /// the interval, it held the drawer's pull for 250 ms with the open drawer's shadow still drawn:
+    /// a ghost outline of the drawer. A stale or failed pull starts nothing either.
+    private var lastRebuild: CFAbsoluteTime = 0
     private var isPullScheduled = false
     private var isBuilding = false
 
@@ -276,8 +312,9 @@ final class SkinWindowShadow {
         let layers: [CGImage]
         let width: Int
         let height: Int
+        /// The fingerprint shown when the pull was taken; a build is compared against it.
+        let known: Int?
         let trigger: String
-        let sizeGeneration: Int
     }
 
     private enum ShapeResult {
@@ -287,7 +324,7 @@ final class SkinWindowShadow {
     }
 
     /// The window's outline may have moved. The shape is pulled once the window is on screen, the
-    /// previous build has landed and `minimumInterval` has passed since the last pull; the alpha
+    /// previous build has landed and `minimumInterval` has passed since the last rebuild; the alpha
     /// is compared off the main thread, and the shadow is rebuilt only when it moved.
     func invalidateShape(_ trigger: String) {
         guard isActive else { return }
@@ -298,7 +335,7 @@ final class SkinWindowShadow {
     private func pullShapeWhenDue() {
         guard let trigger = pendingTrigger, let parent, isEnabled, isParentOnScreen,
               !isBuilding, !isPullScheduled else { return }
-        let wait = lastPull + minimumInterval - CFAbsoluteTimeGetCurrent()
+        let wait = lastRebuild + minimumInterval - CFAbsoluteTimeGetCurrent()
         if wait > 0 {
             // Leading edge at once, the rest coalesced into one trailing pull that catches the
             // end of an animation.
@@ -313,27 +350,22 @@ final class SkinWindowShadow {
         }
         pendingTrigger = nil
         let started = CFAbsoluteTimeGetCurrent()
-        lastPull = started
         let layers = shape()
         guard !layers.isEmpty else { return }
         // Pulling a `.wal` outline is main-thread work the build's own (off-main) timing cannot see.
         let label = Self.isTraceEnabled
             ? trigger + String(format: " pull=%.1fms", (CFAbsoluteTimeGetCurrent() - started) * 1_000)
             : trigger
-        let outline = outlineFrame(of: parent)
-        startBuild(ShapeRequest(layers: layers,
-                                width: max(1, Int(outline.width.rounded())),
-                                height: max(1, Int(outline.height.rounded())),
-                                trigger: label,
-                                sizeGeneration: sizeGeneration))
+        let size = outlineSize(of: parent)
+        startBuild(ShapeRequest(layers: layers, width: size.width, height: size.height,
+                                known: lastFingerprint, trigger: label))
     }
 
     private func startBuild(_ request: ShapeRequest) {
         isBuilding = true
-        let known = lastFingerprint
         Self.worker.async { [weak self] in
             let started = CFAbsoluteTimeGetCurrent()
-            let result = Self.shape(request, known: known)
+            let result = Self.shape(request)
             let milliseconds = (CFAbsoluteTimeGetCurrent() - started) * 1_000
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
@@ -349,9 +381,14 @@ final class SkinWindowShadow {
         guard isActive else { return }
         let detail = "\(request.width)x\(request.height) "
             + String(format: "%.1fms", milliseconds) + " trigger=\(request.trigger)"
-        // A build pulled before the shadow changed size lands after `reassertFrame` cleared it —
-        // every dock pulls once for its corners just before the stack regroups. Pull again instead.
-        guard request.sizeGeneration == sizeGeneration else {
+        // A build for a size the window no longer has is stale — every dock pulls once for its
+        // corners just before the stack regroups, and a resize that is undone in the same turn
+        // (`reassertFrame` runs a turn late, so it never sees one) pulled at the in-between size.
+        // Compare sizes, not a count of the shadow's own resizes. A size that changed and changed
+        // back passes that, but `reassertFrame` cleared the fingerprint on the way, so a `.same`
+        // against the old one would leave nothing shown. Pull again instead.
+        guard let parent, outlineSize(of: parent) == (request.width, request.height),
+              request.known == lastFingerprint else {
             pendingTrigger = pendingTrigger ?? "stale"
             trace("stale \(detail)")
             return
@@ -362,6 +399,7 @@ final class SkinWindowShadow {
         case .same:
             trace("same \(detail)")
         case .rebuilt(let fingerprint, let image):
+            lastRebuild = CFAbsoluteTimeGetCurrent()
             lastFingerprint = fingerprint
             shadowWindow.contentView?.layer?.contents = image
             trace("rebuild \(detail)")
@@ -369,7 +407,7 @@ final class SkinWindowShadow {
     }
 
     /// Off the main thread: fingerprint the outline, and build a shadow only for a new one.
-    nonisolated private static func shape(_ request: ShapeRequest, known: Int?) -> ShapeResult {
+    nonisolated private static func shape(_ request: ShapeRequest) -> ShapeResult {
         guard let plane = AlphaPlane(layers: request.layers, width: request.width,
                                      height: request.height) else { return .failed }
         var hasher = Hasher()
@@ -377,7 +415,7 @@ final class SkinWindowShadow {
         hasher.combine(request.height)
         plane.bytes.withUnsafeBytes { hasher.combine(bytes: $0) }
         let fingerprint = hasher.finalize()
-        if fingerprint == known { return .same }
+        if fingerprint == request.known { return .same }
         return .rebuilt(fingerprint: fingerprint,
                         image: makeShadowImage(plane: plane, blur: blur, offset: offset,
                                                opacity: opacity, pad: pad))

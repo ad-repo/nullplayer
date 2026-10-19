@@ -1,5 +1,4 @@
 import AppKit
-import AVFoundation
 
 // =============================================================================
 // MODERN PLAYLIST VIEW - Playlist editor with modern skin chrome
@@ -677,7 +676,7 @@ class ModernPlaylistView: NSView {
                 image = await self.loadServerArtwork(for: track)
             } else if track.url.isFileURL {
                 // Local file - extract embedded artwork
-                image = await self.loadLocalArtwork(url: track.url)
+                image = await LocalArtwork.image(for: track.url)
             }
             
             guard !Task.isCancelled else { return }
@@ -748,57 +747,6 @@ class ModernPlaylistView: NSView {
         } catch {
             return nil
         }
-    }
-    
-    /// Load embedded artwork from a local audio file
-    private func loadLocalArtwork(url: URL) async -> NSImage? {
-        let cacheKey = NSString(string: "playlist_local:\(url.path)")
-        if let cached = Self.artworkCache.object(forKey: cacheKey) {
-            return cached
-        }
-        
-        let asset = AVURLAsset(url: url)
-        
-        do {
-            let metadata = try await asset.load(.metadata)
-            for item in metadata {
-                if item.commonKey == .commonKeyArtwork {
-                    if let data = try await item.load(.dataValue),
-                       let image = NSImage(data: data) {
-                        Self.artworkCache.setObject(image, forKey: cacheKey)
-                        return image
-                    }
-                }
-            }
-            
-            // Check ID3 metadata (MP3 files)
-            let id3Metadata = try await asset.loadMetadata(for: .id3Metadata)
-            for item in id3Metadata {
-                if item.commonKey == .commonKeyArtwork {
-                    if let data = try await item.load(.dataValue),
-                       let image = NSImage(data: data) {
-                        Self.artworkCache.setObject(image, forKey: cacheKey)
-                        return image
-                    }
-                }
-            }
-            
-            // Check iTunes metadata (M4A/AAC files)
-            let itunesMetadata = try await asset.loadMetadata(for: .iTunesMetadata)
-            for item in itunesMetadata {
-                if item.commonKey == .commonKeyArtwork {
-                    if let data = try await item.load(.dataValue),
-                       let image = NSImage(data: data) {
-                        Self.artworkCache.setObject(image, forKey: cacheKey)
-                        return image
-                    }
-                }
-            }
-        } catch {
-            NSLog("ModernPlaylistView: Failed to load local artwork: %@", error.localizedDescription)
-        }
-        
-        return nil
     }
     
     // MARK: - Skin Change
@@ -1459,11 +1407,18 @@ class ModernPlaylistView: NSView {
     // MARK: - Context Menu
     
     override func menu(for event: NSEvent) -> NSMenu? {
-        PlaylistMenuBuilder.menu(target: self, state: .init(
-            selectedRows: selectedIndices,
-            hasTracks: !WindowManager.shared.audioEngine.playlist.isEmpty))
+        PlaylistMenuBuilder.menu(
+            target: self, clickedRow: hitTestTrackList(at: convert(event.locationInWindow, from: nil)),
+            state: .init(selectedRows: selectedIndices,
+                         hasTracks: !WindowManager.shared.audioEngine.playlist.isEmpty))
     }
-    
+
+    @objc func selectForMenu(_ row: Int) {
+        selectedIndices = [row]
+        selectionAnchor = row
+        needsDisplay = true
+    }
+
     @objc func playSelected(_ sender: Any?) {
         guard let index = selectedIndices.first else { return }
         WindowManager.shared.audioEngine.playTrack(at: index)

@@ -245,6 +245,12 @@ class ModernAudioAnalysisView: NSView {
         return hitRect.contains(point)
     }
 
+    /// Under Hide Title Bars the hosted panes reach the top edge, so the drag strip is claimed here.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if hitTestTitleBar(at: convert(point, from: superview)) { return self }
+        return super.hitTest(point)
+    }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return true
     }

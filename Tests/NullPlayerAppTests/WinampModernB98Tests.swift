@@ -8,7 +8,7 @@ import ZIPFoundation
 /// The Media Library, the playlist, the equalizer and the visualization windows are painted from
 /// `WinampModernSurfaceStyle`, derived from the loaded skin's palette. None of them has a handle on
 /// the skin controller, so they learn that the palette moved from `.hostedSurfaceStyleDidChange` —
-/// and `PlexBrowserView`, the Media Library in this mode, caches its resolved style and drops that
+/// and `ClassicLibraryBrowserView`, the Media Library in this mode, caches its resolved style and drops that
 /// cache only on that notification. Until B98 the notification was posted by a colour-theme switch
 /// and by nothing else, so loading a *different skin* changed every surface the renderer draws and
 /// none of the surfaces we draw ourselves. Closing and reopening the window was the only cure,

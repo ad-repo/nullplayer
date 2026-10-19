@@ -163,7 +163,7 @@ player close without taking the test runner down with it.
 **And `WMPMainView.menu(for:)` now answers the host's own menu everywhere the skin has nothing of
 its own to show**, instead of `nil`. The old rule — a skin draws its own controls and its own menus
 — holds right up until those controls are off the screen edge, and a borderless window with no
-titlebar then has no route back at all; `Snap To Default` and `Exit` are the two rows that matter.
+titlebar then has no route back at all; `Snap To Default` and `Quit` are the two rows that matter.
 The video rect and the visualization rect still answer first, so nothing the skin owns changed.
 
 **A refused decoder resize gives the window back its authored size on any axis it is short of.**

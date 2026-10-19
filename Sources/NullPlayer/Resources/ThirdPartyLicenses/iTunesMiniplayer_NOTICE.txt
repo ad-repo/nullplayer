@@ -1,0 +1,13 @@
+iTunes Miniplayer (Winamp Modern skin)
+
+The default Winamp Modern skin, "iTunes Miniplayer.wal", is an unofficial,
+fan-made skin by spacecowgoesmoo, inspired by the classic iTunes Miniplayer.
+It is redistributed with NullPlayer with its author's permission:
+https://github.com/ad-repo/nullplayer/issues/540
+
+Source: https://github.com/spacecowgoesmoo/Old-iTunes-Miniplayer
+
+The skin bundles the DejaVu Sans Regular and Bold fonts; see DejaVu_LICENSE.txt.
+
+iTunes is a trademark of Apple Inc. The skin and NullPlayer are not affiliated
+with or endorsed by Apple.

@@ -1,6 +1,6 @@
 ---
 name: skin-subsystem-blueprint
-description: How to add or extend a skin family (Classic, Original, Winamp Modern .wal, Windows Media Player .wmz, and the VLC family next) — the shared-code seams a new family must touch, the isolation rules, the harness and corpus pattern, and the skill/backlog layout every family is expected to produce. Use when starting a new skin engine, reviewing a change that touches PlayerUIMode or WindowManager routing, or deciding where a new subsystem's documentation goes.
+description: How to add or extend a skin family (Classic, Original, Winamp Modern .wal, Windows Media Player .wmz, Audion faces, Sonique .sgf, and the VLC family next) — the shared-code seams a new family must touch, the isolation rules, the harness and corpus pattern, and the skill/backlog layout every family is expected to produce. Use when starting a new skin engine, reviewing a change that touches PlayerUIMode or WindowManager routing, or deciding where a new subsystem's documentation goes.
 ---
 
 # Adding a skin family
@@ -100,7 +100,7 @@ loader, `loadedSkinURL` and `present(_:error:)`, and gets `reloadSelectedSkin`, 
 
 One seam the compiler will not list: **the window drop shadow.** A family's windows never set
 `hasShadow`; they set `window.hasSkinShadow = true`, or attach `SkinWindowShadow` to the outline the
-engine already has, as `.wal`, `.wmz` and Audion do. Either way they join the one **Window Shadows**
+engine already has, as `.wal`, `.wmz`, Audion and Sonique do. Either way they join the one **Window Shadows**
 switch. `ui-guide` § *Window Drop Shadows (Every Family)*.
 
 ### The auxiliary-window policy is a decision, not a default

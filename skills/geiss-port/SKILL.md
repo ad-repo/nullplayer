@@ -86,8 +86,11 @@ Geiss has no internal FFT — upstream consumes spectrum from the Winamp host. T
 - Render thread (CVDisplayLink) → `renderFrame`: takes `coreLock`. Framebuffer is never reallocated mid-stream and never accessed from any other thread.
 - Main actor → `setViewportSize`: takes `coreLock`, calls `GeissCore_resize` (which is permitted to reallocate the framebuffer via `FX_Fini` + `FX_Init`), then resizes the GL index texture.
 - Engine swap (`switchEngine` in `VisualizationGLView`): take `engineLock`, make the view's GL context current, `cleanup()` the old engine (`GeissCore_destroy` + GL teardown), then defer construction of the new engine to the next render. No frame is rendered between the two.
+- Shared GL state: the three engines share one context and none restores what it changes (Tripex leaves blend `GL_ZERO, GL_ONE` and a `GL_EQUAL` depth test, Geiss leaves `GL_TEXTURE1` active). `initializeEngineOnRenderThread` calls `resetSharedGLState()` before constructing every engine; a new engine may assume that baseline, and an engine that needs other state sets it per draw.
 
 The C core is **not** thread-safe; `coreLock` is the only barrier.
+
+**One core per process, one owner.** The port keeps its frame buffers (`VS1`/`VS2`), geometry (`FXW`/`FXH`) and mode state in globals, so `GeissCore_create` returns NULL while a core exists (`GeissCore_inUse`), under one mutex with `destroy`. It used to refcount and hand every host the same core: the Visualizations window (display-link thread, 1076x1136) and a `.wmz` effects panel (main thread, 432x316) then resized and freed it under each other, and the heap corruption crashed wherever it landed — `flushBuffer`, `glViewport`, `_object_remove_associations`, `WMPOutlineFeather`. Hosts follow it in `VisualizationGLView`: a refused view stays pending and draws black, retrying each frame (`geissCoreHeldElsewhere`, checked before and after the create), and `stopRendering` releases the engine so a hidden window gives Geiss back. Pinned by `testGeissCoreRefusesASecondOwnerUntilDestroyed`.
 
 ## Effect catalog
 
@@ -235,3 +238,12 @@ Both `ProjectMView` (classic) and `ModernProjectMView` (modern) conform to `Geis
 - Per-mode effect probability/limit tables (`modeprefs`)
 - Palette frequency controls (`solar_pal_freq`, `coarse_pal_freq`)
 - Per-shape waveform selection (requires gating `geiss_port.cpp:1605` mode-change path)
+
+## Debugging a live defect
+
+Read [`live-ui-testing`](../live-ui-testing/SKILL.md) and `winamp-modern-skin-guide/reference/harness.md` § *Debugging a live defect* first. Specific to Geiss:
+
+- **Count the hosts.** Geiss can run in the Visualizations window, a `.wmz` effects panel, a `.wal` AVS window. Grep `/tmp/np.log` for `Setting up Geiss with viewport` — the viewport tells you which host (the `.wmz` panel is small, e.g. `432x316`, and logs from the main thread).
+- **Crashes that move around are memory corruption.** Check whether two hosts were running Geiss at once before chasing a stack; a kill-switch style A/B (put the Visualizations window on ProjectM) separates it in one launch.
+- **Repro of the two-host crash** (2026-10-17): `app-control/scripts/launch.sh Headspace`, Visuals → Visualizations → Show Visualizations Window, set its engine to Geiss, then alternate Original-Metal *Brushed Steel* ↔ Headspace through `menu.applescript skin` and press the down arrow in the WMP window to cycle its effects. Before the single-owner core it crashed in the first round every time.
+- **Measure the screen, and wait.** A freshly started Geiss is sparse and dark for several seconds; capture a few times over ~12 s before calling it black.

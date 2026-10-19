@@ -851,6 +851,11 @@ final class WinampModernMainView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
+        // A window's close corner outranks whatever sits under it, subviews included.
+        if hostChromeHit(at: point) == .close {
+            traceHitTest(point, verdict: "self (close corner)")
+            return self
+        }
         // Live host subviews (e.g. the embedded library) handle their own region.
         for sub in subviews.reversed() {
             if let hit = sub.hitTest(point) {
@@ -1682,9 +1687,9 @@ final class WinampModernMainView: NSView {
             beginWindowDrag(window, from: event)
             return
         }
-        if drawsHostChrome, let hit = hostChromeHit(at: point) {
+        if let hit = hostChromeHit(at: convert(event.locationInWindow, from: nil)) {
             switch hit {
-            case .close: if let closeRequested { closeRequested() } else { window?.close() }
+            case .close: requestClose()
             case .drag: if let window { beginWindowDrag(window, from: event) }
             }
             return
@@ -2519,7 +2524,7 @@ final class WinampModernMainView: NSView {
         isTornDown = true
     }
 
-    private func skinPoint(_ point: NSPoint) -> CGPoint {
+    func skinPoint(_ point: NSPoint) -> CGPoint {
         CGPoint(x: point.x / skinScale, y: (bounds.height - point.y) / skinScale)
     }
 
@@ -2947,12 +2952,12 @@ final class WinampModernMainView: NSView {
             // window, so it outlives the session; a script's own `switchToLayout` does not (B44a).
             if let parameter, activateLayout(id: parameter) { renderer.persistActiveLayout() }
         // The window commands every skin puts on its titlebar. T800 draws all three (minimize,
-        // shade-switch, close) as 4×5px buttons on the machine's chest. The fallbacks are for a view
-        // with no controller over it (tests): never `performClose`, which a borderless window ignores.
+        // shade-switch, close) as 4×5px buttons on the machine's chest. The minimize fallback is for
+        // a view with no controller over it (tests), as `requestClose`'s is.
         case "MINIMIZE":
             if let minimizeRequested { minimizeRequested() } else { window?.miniaturize(nil) }
         case "CLOSE":
-            if let closeRequested { closeRequested() } else { window?.close() }
+            requestClose()
         case "TOGGLE":
             // `TOGGLE`'s parameter is a component (`Eq`, a GUID) **or one of the skin's own container
             // ids** — Winamp toggles whichever window that names. Resolving only components left

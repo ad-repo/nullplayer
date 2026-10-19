@@ -280,7 +280,7 @@ When a hosted defect reproduces on several windows at once, suspect the call sit
 [architecture analysis](../../../../docs/wmp-skin/hosted-window-architecture-analysis.md) first proposed a
 `WMPHostedSurfaceContainer` owning composition, placement and hit testing for all eight windows, with
 a content protocol, adapters, a presentation state machine, a second border coordinator and a
-migration of `PlexBrowserView`. **It is withdrawn, and re-proposing it needs new evidence.** It was
+migration of `ClassicLibraryBrowserView`. **It is withdrawn, and re-proposing it needs new evidence.** It was
 priced against a defect population nobody had measured, its state/identity work landed in
 `App/Skinning/` — shared with Winamp Modern and with playlist/EQ, which it did not migrate — and it
 would have made the failures uniform rather than fewer. What the document now carries is WMP-local

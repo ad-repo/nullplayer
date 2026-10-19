@@ -85,7 +85,7 @@ Every change outside the family's directories, each gated on the Audion family.
 | Seam | Audion answer | Why not local |
 |---|---|---|
 | `PlayerUIMode.audion` / `PlayerUIControllerFamily.audion` | display name "Audion Faces"; no modern EQ, no modern skin family | the mode enum is the routing seam |
-| `AppFeature.audionFaceMode`, `AppCapabilities.supports` | true in every build since Phase 7 (an edition may still refuse it); `PlayerUIMode.isAvailable` reads it, and `reloadUI`, `argumentOverride` and the init-time stored-mode check refuse an unavailable mode | the one capability seam |
+| `AppFeature.audionFaceMode`, `AppCapabilities.supports` | true in every build since Phase 7 (an edition may still refuse it); `PlayerUIMode.isAvailable` reads it, and `reloadUI` and the init-time stored-mode check refuse an unavailable mode | the one capability seam |
 | `PlayerUIControllerFamily.hostsForeignSkin` | true, as `.wal`/`.wmz`: NullPlayer's windows float free — `appliesPlacementRecovery`, `reopensWhereLeft`, `positionSubWindow`'s tiling, no slide-up on close, no library refit, library reopen keeps its height, `prepareUIRuntime` forgets the Spectrum profile's skin, no compact or main-window vis menu items | one exhaustive switch, so a sixth family is a compile error, not a silent Classic answer |
 | `PlayerUIControllerFamily.bringsOwnRuntime` | true, as `.wmz`: no default Classic skin load at init, `prepareUIRuntime` returns early, Compact Mode/Window unavailable (4 `WindowManager` guards, `AppDelegate`), `playlistChromeScale` is the app scale, `tightenClassicCenterStackIfNeeded` skipped, restored centre-stack frames kept | as above |
 | `WindowManager.makeMainWindowController` / `runningControllerFamily` | `AudionFaceMainWindowController` | factory |

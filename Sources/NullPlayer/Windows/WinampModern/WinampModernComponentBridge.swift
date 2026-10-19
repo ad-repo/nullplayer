@@ -48,6 +48,9 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
     }
 
     // MARK: - Playlist
+    //
+    // The engine's playlist callback runs `playlistQueueDidChange()` *inside* every queue edit, so a
+    // mutator here reads the selection before calling the engine and writes it after.
 
     func playlistSnapshot() -> WinampModernPlaylistSnapshot {
         let rows = engine.playlist.enumerated().map { index, track in
@@ -89,6 +92,15 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
         return index
     }
 
+    /// The queue changed under the selection, which indexes rows of the queue as it was: start it
+    /// again on the playing row, or empty without one. A selection that survived Add to Queue or a
+    /// replaced queue had Misc ▸ Assign EQ Profile write to rows the user never picked (M48).
+    func playlistQueueDidChange() {
+        selectedRow = -1
+        selectedRows = []
+        playlistFollowCurrentTrack()
+    }
+
     func playlistSetSelection(_ rows: Set<Int>) {
         let valid = rows.filter { $0 >= 0 && $0 < engine.playlist.count }
         selectedRows = valid
@@ -118,10 +130,11 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
     func playlistMove(row: Int, to destination: Int) {
         let count = engine.playlist.count
         guard row >= 0, row < count, destination >= 0, destination < count, row != destination else { return }
+        let wasSelected = selectedRow == row
         engine.moveTrack(from: row, to: destination)
         // The anchor follows the row it was on, so a script that moves a selection and then reads it
         // back is not left pointing at whatever slid into the vacated slot.
-        if selectedRow == row {
+        if wasSelected {
             selectedRow = destination
             selectedRows = [destination]
         }
@@ -185,8 +198,9 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
 
     func playlistRemove(row: Int) {
         guard row >= 0, row < engine.playlist.count else { return }
+        let anchor = selectedRow
         engine.removeTrack(at: row)
-        if selectedRow >= engine.playlist.count { selectedRow = engine.playlist.count - 1 }
+        selectedRow = min(anchor, engine.playlist.count - 1)
         selectedRows = selectedRow >= 0 ? [selectedRow] : []
     }
 

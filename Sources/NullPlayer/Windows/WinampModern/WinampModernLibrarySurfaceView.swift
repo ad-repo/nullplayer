@@ -2,13 +2,13 @@ import AppKit
 
 /// The real library browser, embedded in a `.wal` skin's holder.
 ///
-/// This is a thin lifecycle wrapper, not a second browser: it hosts the same `PlexBrowserView` the
+/// This is a thin lifecycle wrapper, not a second browser: it hosts the same `ClassicLibraryBrowserView` the
 /// classic window does, in its embedded mode (no window chrome, injected scale and link sheet), so
 /// servers, tabs, search, CoverFlow, and history behave identically. What the wrapper adds is the
 /// typed handle the skin engine needs — palette, scale, reload, link, and a teardown that actually
 /// reaches the browser before its view is removed.
 final class WinampModernLibrarySurfaceView: WinampModernLibrarySurface {
-    private let browser: PlexBrowserView
+    private let browser: ClassicLibraryBrowserView
     private var isTornDown = false
 
     var view: NSView { browser }
@@ -20,17 +20,17 @@ final class WinampModernLibrarySurfaceView: WinampModernLibrarySurface {
     ///
     /// A box, not a plain property, because the browser is handed a closure reading it *while this
     /// object is still being initialized* — the fallback has to answer from the browser's very first
-    /// layout, which happens inside `PlexBrowserView.init`.
+    /// layout, which happens inside `ClassicLibraryBrowserView.init`.
     private final class ContentScaleBox { var value: CGFloat? }
     private let pushedContentScale = ContentScaleBox()
 
-    /// `presentLinkSheet` is supplied by the host because there is no `PlexBrowserWindowController`
+    /// `presentLinkSheet` is supplied by the host because there is no `ClassicLibraryBrowserWindowController`
     /// here; `contentScaleFallback` is read live so a UI Size change needs no re-creation, and only
     /// answers until the view layer's first `applyContentScale(_:)`.
     init(frame: NSRect, contentScaleFallback: @escaping () -> CGFloat,
          presentLinkSheet: @escaping () -> Void) {
         let scale = pushedContentScale
-        browser = PlexBrowserView(embeddedFrame: frame,
+        browser = ClassicLibraryBrowserView(embeddedFrame: frame,
                                   skinScale: { scale.value ?? contentScaleFallback() },
                                   presentLinkSheet: presentLinkSheet)
         browser.autoresizingMask = [.width, .height]
@@ -39,8 +39,9 @@ final class WinampModernLibrarySurfaceView: WinampModernLibrarySurface {
     }
 
     var browseModeRawValue: Int {
-        get { browser.browseModeRawValue }
-        set { browser.browseModeRawValue = newValue }
+        // Session save and restore run on the main thread.
+        get { MainActor.assumeIsolated { browser.model.browseMode.rawValue } }
+        set { MainActor.assumeIsolated { browser.model.restoreBrowseMode(rawValue: newValue) } }
     }
 
     func reloadData() {

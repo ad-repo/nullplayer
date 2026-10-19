@@ -878,7 +878,7 @@ final class WasabiSkinInitializer {
                                                   xuiTag: request.frame.xuiTag,
                                                   hasArtwork: request.frame.hasArtwork,
                                                   exemplar: request.frame.exemplar,
-                                                  scriptClient: request.frame.scriptClient),
+                                                  clientInsets: request.frame.clientInsets),
             frameID: "\(id.contentGroupIdentifier).frame",
             contentGroupID: id.contentGroupIdentifier,
             componentName: request.definition.title,

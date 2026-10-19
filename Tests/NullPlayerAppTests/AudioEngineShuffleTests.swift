@@ -114,6 +114,22 @@ final class AudioEngineShuffleTests: XCTestCase {
         }
     }
 
+    /// Reverse, Sort and Randomize keep the current index on the entry that was playing when every
+    /// entry shares one URL, as a cue sheet's tracks do. Matched by URL, it jumped to the first row.
+    func testReorderingKeepsTheCurrentEntryWhenTracksShareAURL() {
+        let engine = AudioEngine()
+        engine.setPlaylistTracks(makePlaceholderTracks(count: 4))
+        engine.debugStartShuffleCycleForTesting(at: 1)
+        let playing = engine.playlist[1].id
+
+        engine.reversePlaylist()
+        XCTAssertEqual(engine.currentIndex, 2)
+        engine.sortPlaylist(by: .title, ascending: false)
+        XCTAssertEqual(engine.playlist[engine.currentIndex].id, playing)
+        engine.shufflePlaylist()
+        XCTAssertEqual(engine.playlist[engine.currentIndex].id, playing)
+    }
+
     private func makePlaceholderTracks(count: Int) -> [Track] {
         let placeholderURL = URL(string: "about:blank")!
         return (0..<count).map { index in

@@ -835,8 +835,9 @@ final class StreamRipper {
         // or local destination paths into the system log.
         NSLog("StreamRipper: ripping from %@ (%@)", sourceURL.host ?? "?", mode.fileExtension)
 
-        // Show a spinner + message on the main window for the duration of the rip.
-        WindowManager.shared.mainWindowController?.showActivity("Ripping… \(sourceURL.host ?? "downloading")")
+        // Show a spinner + message for the duration of the rip; each rip gets its own row.
+        let activityID = "rip-\(UUID().uuidString)"
+        ActivityCenter.shared.show(id: activityID, message: "Ripping… \(sourceURL.host ?? "downloading")")
 
         let errPipe = Pipe()
 
@@ -874,7 +875,7 @@ final class StreamRipper {
                 try? FileManager.default.removeItem(atPath: pathFile)
                 let message = error.localizedDescription + "\n\n" + recovery.message
                 DispatchQueue.main.async {
-                    self.endActivity()
+                    ActivityCenter.shared.hide(id: activityID)
                     self.presentFailure(message: message)
                 }
                 return
@@ -961,7 +962,7 @@ final class StreamRipper {
             }
 
             DispatchQueue.main.async {
-                self.endActivity()
+                ActivityCenter.shared.hide(id: activityID)
                 if status == 0 {
                     self.presentSuccess(outputPath: outputPath, folder: folder, mode: mode, cueTrackCount: cueTrackCount)
                 } else {
@@ -1223,10 +1224,6 @@ final class StreamRipper {
             return "scale=-2:trunc(min(\(maxHeight)\\,ih)/2)*2"
         }
         return "scale=trunc(iw/2)*2:trunc(ih/2)*2"
-    }
-
-    private func endActivity() {
-        WindowManager.shared.mainWindowController?.hideActivity()
     }
 
     // MARK: - Alerts

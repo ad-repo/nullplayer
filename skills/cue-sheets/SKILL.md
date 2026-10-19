@@ -23,7 +23,7 @@ The two paths share only the parser. Part A is unaffected by the Part B toggle.
 | Part B splitter | `Utilities/CueAlbumSplitter.swift` |
 | Part B scan pre-pass + exclusion + pref threading | `Data/Models/MediaLibrary.swift` |
 | Part B toggle UI | `App/ContextMenuBuilder.swift` (`cueSplitOnImportEnabled`) |
-| Entry points (Part A) | `App/AppDelegate.swift`, `Windows/MainWindow/MainWindowView.swift`, `Windows/ModernMainWindow/ModernMainWindowView.swift`, `Windows/Playlist/PlaylistView.swift`, `Windows/ModernPlaylist/ModernPlaylistView.swift`, `Windows/ModernLibraryBrowser/ModernLibraryBrowserView.swift`, `Windows/PlexBrowser/PlexBrowserView.swift` |
+| Entry points (Part A) | `App/AppDelegate.swift`, `Windows/MainWindow/MainWindowView.swift`, `Windows/ModernMainWindow/ModernMainWindowView.swift`, `Windows/Playlist/PlaylistView.swift`, `Windows/ModernPlaylist/ModernPlaylistView.swift` |
 | Tests | `Tests/NullPlayerAppTests/CueSheetTests.swift`, `AudioEngineCueBoundaryDetectorTests.swift`, `CueAlbumSplitterTests.swift` |
 
 ## Shared parser — `CueSheet.swift`

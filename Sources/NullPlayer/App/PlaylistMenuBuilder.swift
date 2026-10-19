@@ -20,6 +20,8 @@ import AppKit
     func reverse(_ sender: Any?)
     func randomize(_ sender: Any?)
     func showFileInfo(_ sender: Any?)
+    /// Make `row` the whole selection, before a menu opened on it.
+    func selectForMenu(_ row: Int)
 }
 
 /// **NullPlayer's playlist context menu, shared by every view that shows the play queue.** The
@@ -41,7 +43,16 @@ enum PlaylistMenuBuilder {
     /// `autoenablesItems` stays AppKit's default for the Modern playlist, which never validated
     /// these rows — so its `isEnabled` values have always been overridden to enabled, and are kept
     /// exactly as they were. A caller whose disabled rows must hold passes `false`.
-    static func menu(target: PlaylistMenuTarget, state: State, autoenablesItems: Bool = true) -> NSMenu {
+    ///
+    /// A right-click on `clickedRow` outside the selection selects that row first, so the menu acts
+    /// on the row clicked; inside the selection it acts on the whole selection.
+    static func menu(target: PlaylistMenuTarget, clickedRow: Int? = nil, state: State,
+                     autoenablesItems: Bool = true) -> NSMenu {
+        var state = state
+        if let row = clickedRow, !state.selectedRows.contains(row) {
+            target.selectForMenu(row)
+            state.selectedRows = [row]
+        }
         let menu = NSMenu()
         menu.autoenablesItems = autoenablesItems
         let hasSelection = state.hasSelection, hasTracks = state.hasTracks, canEdit = state.canEdit

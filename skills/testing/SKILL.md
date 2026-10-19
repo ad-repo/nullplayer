@@ -257,7 +257,7 @@ And set in source views:
 - `Sources/NullPlayer/Windows/MainWindow/MainWindowView.swift`
 - `Sources/NullPlayer/Windows/Playlist/PlaylistView.swift`
 - `Sources/NullPlayer/Windows/Equalizer/EQView.swift`
-- `Sources/NullPlayer/Windows/PlexBrowser/PlexBrowserView.swift`
+- `Sources/NullPlayer/Windows/ClassicLibraryBrowser/ClassicLibraryBrowserView.swift`
 - `Sources/NullPlayer/Windows/ProjectM/ProjectMView.swift`
 
 **Custom Drawn UI:**

@@ -2,32 +2,8 @@
 
 ## Unreleased
 
-- **EQ profiles and the Equalizer Studio** — named 31-band equalizer curves with separate left and
-  right channels, made in the new **Windows ▸ Equalizer Studio** and assigned from **Assign EQ
-  Profile ▸** on tracks, albums, artists, playlists, folders, queue rows, radio stations and
-  downloaded YouTube audio. A track's own setting wins over its album's, which wins over its
-  artist's; **Off** turns a profile off for that item and **Playback ▸ EQ Profiles** turns them all
-  off. Profiles run before the Equalizer window, which never changes them. The Studio has a Console
-  and a Boutique faceplate, a spectrum analyser per channel, LINK to move both channels together, a
-  BYPASS per channel to hear one side without its curve, and you hear edits as you make them. Queue rows with a profile show **∿**, and File Info names it.
-  A local file's assignment is dropped at launch once the file is gone; a drive that is not plugged
-  in keeps its files' assignments.
-- **A 4-band parametric EQ in the Equalizer Studio** — **GRAPHIC / PARAMETRIC** switches the
-  Studio between the 31 faders and a console-style strip: a high-pass filter and LF, LMF, HMF and HF
-  bands with frequency, gain and Q dials, LF and HF switchable to shelves. Both are part of one
-  curve, saved in one profile and always heard together, so switching never loses anything; the
-  faders sit on that curve. The Boutique faceplate is now Nixie orange, and its analyser glows
-  hotter as levels rise, with glowing peak holds.
-- **The Equalizer Studio is a normal NullPlayer window** — it wears each skin family's own frame
-  and title bar, snaps and docks with the other windows, rises with them when you click the main
-  window, can be resized (wider faders and taller analysers, never below its default size), and
-  stays open across a skin-family switch. Both faceplates take the skin's colours, with every label
-  kept readable against what it sits on; on an Original-Metal skin the Studio sits on the main
-  window's own brushed surface. Its buttons are the Library's tabs; LINK lights the channel names
-  the same way, and while linked BYPASS acts on both channels as FLAT does. Boutique's analyser,
-  fader caps and response graph glow on a dark skin. Faders carry dB notches, the preamp has dB
-  guides, HEADROOM, SAVE and RENAME are greyed when they would do nothing, and **View** switches
-  the faceplate.
+### New features
+
 - **Sonique skins** — support for Sonique 1.x `.sgf` skins in the new **Skins ▸ Sonique** menu.
   **Get More Skins...** opens the Internet Archive's Sonique collection; **Load Skin...** installs
   an `.sgf` and switches to it. All three of Sonique's modes are drawn from the skin — the
@@ -37,22 +13,196 @@
   the drawer is the equalizer (the Equalizer menu item opens it). Mid mode's rings show song and
   playlist progress; small mode's drawer slides out on hover. A skin missing any part borrows it
   from NullPlayer's own built-in Sonique skin, which is also what shows until you install one.
-- **Docking no longer flashes a large outline in Original skins** — docking or undocking a window
-  briefly showed the group's old drop shadow stretched to its new size.
-- **An active tab in Original-Metal lights up as the green display** — in the Library and the
-  Equalizer Studio a selected tab was hard to tell from the rest.
-- **Sonos Rooms has its close button again in `.wmz` and `.wal` skins** — the corner close of a
-  window with no title bar did nothing.
+
+### Fixes
+
+- **Geiss no longer goes black after Tripex** — switching the Visualizations window's engine away
+  from Tripex left OpenGL state behind that could make Geiss draw nothing; each new engine now
+  starts from a clean context.
+- **Geiss in a Windows Media Player skin and the Visualizations window no longer crashes** — the
+  two shared Geiss's single engine core from two threads at different sizes, corrupting memory
+  (crashes when switching skins or effects). Geiss now runs in one place at a time: whichever
+  started it first keeps it, the other shows black, and it moves over as soon as the first one
+  switches away, is hidden or closes.
+- **Modern skins whose window buttons have missing artwork no longer get stuck in shade mode** —
+  the Motorhead skin's compact bar had invisible minimize, shade and close buttons, so there was no
+  way back to the full player. They now draw as simple glyphs and work.
+- **Modern skins: seeking, time readouts and the file-type readout work in skins like ONYX V2** —
+  large numbers in a skin's scripts (such as one hour in milliseconds) were cut short, which sent
+  every track down the skin's "longer than an hour" path and broke its seek control. The file-type
+  readout now shows the file's real extension, and for server streams it never shows the server
+  login that was part of the stream address.
+- **Modern skins: the ONYX V2 mini player shows its volume level, and its visualization sits in the
+  player** — the volume bar's fill was never drawn, and the visualization opened as a separate
+  window away from the player (and as a black square in the mini player). It now opens over the
+  player's art box, follows the player when moved, and stays hidden in the mini player.
+- **Modern skins: text in fonts other than Arial is no longer oversized** — fonts with tall line
+  spacing such as Impact and Tahoma were drawn larger than Winamp draws them, so TOX Milla's timer
+  lost the tops of its digits. They now match each skin's own screenshot.
+- **Modern skins: no more flickering line below the XENERGY player** — the skin's visualization
+  sits in the space its config drawer slides into, and it drew on the desktop even with the drawer
+  closed. That space is now outside the window, as in Winamp.
+- **Library Browser Tiles mode keeps tiles small in a narrow window** — narrowing the window made
+  the tiles bigger, down to a single column of two large tiles. Tiles are now never wider than
+  120 pt: a narrower window fits more, smaller tiles.
+
+## 0.33.0
+
+### New features
+
+- **NullPlayer is signed and notarized** — the app is signed with an Apple Developer ID and
+  notarized by Apple, so macOS opens the downloaded DMG without a Gatekeeper warning. The
+  `xattr -cr` step is no longer needed.
+- **EQ profiles and the Equalizer Studio** — named 31-band equalizer curves with separate left and
+  right channels, made in the new **Windows ▸ Equalizer Studio** and assigned from **Assign EQ
+  Profile ▸** on tracks, albums, artists, playlists, folders, queue rows, radio stations and
+  downloaded YouTube audio. A track's own setting wins over its album's, which wins over its
+  artist's; **Off** turns a profile off for that item and **Playback ▸ EQ Profiles** turns them all
+  off. Profiles run before the Equalizer window, which never changes them. **GRAPHIC /
+  PARAMETRIC** switches between the 31 faders and a console-style 4-band parametric strip — a
+  high-pass filter and LF, LMF, HMF and HF bands with frequency, gain and Q dials, LF and HF
+  switchable to shelves — both editing one curve saved in one profile. The Studio has a Console and
+  a Nixie-orange Boutique faceplate, a spectrum analyser per channel, LINK to move both channels
+  together, a BYPASS per channel to hear one side without its curve, and you hear edits as you make
+  them. It is a normal NullPlayer window: it wears each skin family's frame and colours, snaps and
+  docks with the other windows, resizes, and stays open across a skin-family switch. Assign EQ
+  Profile ticks what a queue or Library row sets and shows what it inherits, queue and
+  Library rows with a profile show **∿**, and File Info names it. A local file's assignment is
+  dropped at launch once the file is gone; a drive that is not plugged in keeps its files'
+  assignments.
+- **EQ Cast: cast with your EQ profiles** — **Output ▸ EQ Cast** renders a track with its EQ
+  profile into a file in a folder you choose and casts that to Sonos or Chromecast, so the
+  profile is no longer lost when casting. Covers local files and Plex, Jellyfin, Navidrome/Subsonic
+  and Emby tracks. The first track waits for its render under a progress row in the NullPlayer
+  notification panel; the next three tracks are rendered in the background while you cast. A render is reused
+  until its profile's curve changes. The menu shows the cache's size, opens the folder and deletes
+  the cache (keeping the track being cast). Only the profile is rendered, not the Equalizer
+  window's EQ.
+- **Local files without embedded art borrow their album's** — a local track with no art of its own
+  now shows the first embedded art among its album's tracks, else a `cover`, `folder`, `front` or
+  `album` image in its folder, everywhere art is drawn: the Library, the playlist, the Original
+  main window, the Art window, Now Playing, Windows Media Player skins and the CLI. An album whose
+  first track has no art shows another track's, an artist's art comes from their own albums rather
+  than any track whose title contains their name, and a selected album falls back to a web cover
+  as tracks and artists do. Art added through Edit Tags shows without a relaunch.
+- **Support on Ko-fi** — the About window has a Ko-fi button.
+
+### Changes
+
+- **iTunes Miniplayer is the default `.wal` skin** — Winamp Modern mode now ships with it and
+  loads it until you import a skin of your own, replacing the plain NullPlayer-Black placeholder.
+  It stays in the skin menu beside imported skins, so you can switch back to it.
+  Skin by [spacecowgoesmoo](https://github.com/spacecowgoesmoo/Old-iTunes-Miniplayer) (#540).
+- **Library Browser refresh icon in WMP, Winamp Modern and Audion skins** — the source bar's "F5"
+  label is now a refresh arrow, and the List / Cover Flow / Tiles buttons get a little more room.
+  Classic skins are unchanged.
+- **Context menus use macOS naming** — "Exit" is now "Quit", and both state menu items read
+  "Save State on Quit" ([#554](https://github.com/ad-repo/nullplayer/issues/554)).
+- **Windows menu reordered and grouped** — Main Window, Library Browser and Playlist Editor come
+  first, then the equalizers, the visualizers, and the remaining windows, each group separated.
+
+### Fixes
+
+**Windows and shadows**
+- **Drop shadows stay with their windows** — in every skin family a window's shadow no longer
+  lags, stretches or lingers as an empty outline: when docking or undocking, resizing, dragging
+  after the app was hidden and shown, closing a `.wal` drawer such as PionNer_AMP2's EQ, restoring
+  a Windows Media Player window at launch, or moving a seamless Original stack.
 - **A quick drag of the player keeps its docked windows with it** — in a seamless Original skin,
   quickly dragging the player around left the windows docked to it drifting a little further
   behind on every move.
-- **PeppyMeter and the Equalizer Studio keep their rounded corners in Original skins** — their
-  square content covered the window border's rounded corners.
-- **A window's drop shadow no longer shows as a box when the window changes size** — in `.wal`
-  skins such as iTunes MiniPlayer, and on docking in Original skins, the old shadow could appear
-  stretched to the new size.
+- **PeppyMeter keeps its rounded corners in Original skins** — its square content covered the
+  window border's rounded corners.
+- **Original Art and Audio Analysis windows drag with Hide Title Bars on** — their top edge drags
+  the window again instead of opening the star rating or clicking into a pane.
+- **Sonos Rooms has its close button again in `.wmz` and `.wal` skins** — the corner close of a
+  window with no title bar did nothing.
+- **Every window closes from its top-right corner** — with Hide Title Bars on, or docked without
+  its title bar, an Original skin window could only be closed from the Windows menu; clicking its
+  top-right corner now closes it (the main window quits). A `.wal` window with no close button of
+  its own closes the same way, and closing a docked window no longer leaves its outline on the
+  windows around it (#546).
+
+**Skins and modes**
+- **Winamp Modern skins frame NullPlayer's windows without a gap at the bottom** — on skins with a
+  tall title bar, such as PionNer_AMP2 and XENERGY1, the Spectrum Analyzer and other NullPlayer
+  windows left a see-through or solid-colour band below their contents. They now fill the skin's
+  frame ([#556](https://github.com/ad-repo/nullplayer/issues/556)).
+- **Text in NullPlayer's own windows is no longer oversized in Modern, Windows Media Player and
+  Audion skins** — the Library's source bar and tabs and other labels drew in a large monospaced
+  font, about twice the size of the skin's own text; they now use the regular system font at the
+  size the Classic look uses.
+- **An active tab in Original-Metal lights up as the green display** — in the Library a selected
+  tab was hard to tell from the rest.
+- **Switching UI modes keeps your windows open or closed** — a playlist, equalizer or library drawn
+  by a Winamp Modern or Windows Media Player skin was not carried across a mode switch, so it came
+  back closed. Entering a Winamp Modern skin also no longer reopens panels you had closed.
+- **Windows Media Player skins reopen their own panels** — a playlist or equalizer in a separate
+  view of the skin now comes back at launch and after a mode switch, as the skin's own button
+  opens it, instead of staying closed.
+- **Classic keeps your visualization choices** — a Spectrum window mode or vis_classic profile
+  picked in Classic now survives a relaunch and a Classic skin pick instead of going back to
+  vis_classic / "Purple Neon". A reset and a switch into Classic still restore Classic's defaults.
+- **Closing a visualizer mid-frame no longer crashes** — a spectrum or main-window analyzer torn
+  down while the GPU was still drawing a frame could crash the app.
+- **Classic and Original remember their own main-window visualizer** — the mode you pick in a
+  Classic skin and the one you pick in an Original skin are now kept apart. Before, they shared one
+  setting, so switching to Original changed Classic's mode, and entering Classic reset it to
+  Spectrum. Reset Skin to Default still applies the skin's own mode, or Spectrum when it has none.
+
+**Library**
 - **An album opened from Tiles or Flow no longer scrolls over the Library's tabs** — scrolling a
   long album's tracks slid its cover and title up over the source bar and tabs.
+- **Expanding an artist no longer pushes the whole Library list to the right** — once tracks were
+  showing, every artist and album name moved over past the empty `#` column; they now stay put,
+  and tracks no longer sit far to the right of their album or folder (#542).
+- **Folders inside a watch folder reached through a symlink show up in the Folders tab** — a
+  watch folder under a symlinked path such as `/tmp` listed none of its subfolders.
+- **The Library behaves the same in every skin** — Classic's search field now says to press Enter,
+  star ratings colour their empty stars alike in every skin, the scan spinner keeps turning while a
+  row is loading, and picking a Subsonic folder or a Jellyfin or Emby library loads it once instead
+  of two or three times. A Jellyfin show or season that reports no count no longer reads "0
+  seasons", as in Emby.
+- **The Library's Folders tab shows track titles without the artist** — in Classic, Modern and
+  Windows Media Player skins each track read "Artist - Title", repeating the Artist column (#542).
+- **Local search results show track titles without the artist** — the Tracks section of a Library
+  search read "Artist - Title" beside the Artist column, in every skin.
+- **Folders and files in the Folders tab sort numbers by value** — as Finder does, so `2` comes
+  before `10` instead of `1, 10, 100, 11, 2` (#543).
+
+**Playback and queue**
+- **Reference Tuning and the Equalizer shape streamed audio as they do local files** — on a
+  server or radio stream the pitch shift now comes before the Equalizer, as it already did for
+  local files, so the same EQ curve lands on the same notes whichever source is playing.
+- **A queue change no longer keeps an old selection** — in Windows Media Player and Winamp Modern
+  skins, adding to, sorting or replacing the queue now moves the selection to the playing track, as
+  Classic and Original skins already did. Before, rows selected in the old queue stayed selected.
+- **Sorting a cue sheet's tracks keeps the playing track** — Reverse, Sort and Randomize on a queue
+  holding several tracks of one cue sheet marked the first of them as playing, though the track you
+  were hearing played on.
+- **Rip and EQ Cast progress shows in a NullPlayer notification panel** — it moved off the main
+  window, where it was drawn over skin art or onto empty space in Winamp Modern, Windows Media
+  Player and Audion skins, into a small panel at the top-right of the screen. A rip and an EQ Cast
+  render running together each get their own row instead of overwriting one another, and the
+  panel's chevron collapses it to one line.
+- **Clicking empty source-bar space in the Library no longer picks a library** — the `Lib:` name's
+  click target ran on past the name to the buttons at the right; it now ends where the name does.
+- **Relaunching keeps the skin family and skin you were in** — a launch could switch back to the
+  family or skin the saved session was last written in, so quitting in Original-Metal could reopen
+  in Original when the session had not been saved since the switch (a force quit or crash inside
+  the autosave interval, or a run with Save State on Quit off).
+- **A queue right-click acts on the row you clicked** — in Classic and Original skins, right-clicking
+  a row outside the selection now selects it first, as Windows Media Player skins already did.
+  Before, the menu acted on whatever was selected.
+- **Alienware-family WMP skins frame NullPlayer's own windows cleanly** — under `ALXMorph` and
+  `AlienMorph`, windows such as Sonos Rooms no longer show a stray line and bar in the middle or
+  lighter bands down both sides, and `Alienware Invader`'s left border no longer breaks partway down.
+
+### Build and internals
+
+- **`build_dmg.sh` signs and notarizes** — it signs with a Developer ID and the hardened runtime
+  when `DEVELOPER_ID` is set, and notarizes and staples the DMG when `NOTARY_PROFILE` names a
+  `notarytool` keychain profile. Without them it still builds the ad-hoc signed DMG.
 
 ## 0.32.2
 

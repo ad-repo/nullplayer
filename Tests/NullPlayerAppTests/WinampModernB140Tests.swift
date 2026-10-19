@@ -18,10 +18,11 @@ import ZIPFoundation
 /// 2. **We took the richest frame flavour, not the thinnest.** A status frame reserves rows for a
 ///    strip whose text Winamp's own components supply and ours never do — 20 rows here, around a
 ///    145-row window.
-/// 3. **The skin's script placed our client, off-centre.** The author's padding is asymmetric where
-///    it is padding for contents we do not supply (25 left against 15 right, 28 top against 42
-///    bottom), so the meter sat visibly right and low. Ours is centred instead, on the *larger* of
-///    each opposing pair, which clears everything the author kept clear on either side.
+/// 3. **The skin's script placed our client, off-centre.** The author's side padding is asymmetric
+///    where it is padding for contents we do not supply (25 left against 15 right), so the meter sat
+///    visibly right. Ours is centred on the *larger* side, which clears everything the author kept
+///    clear on either side. Top and bottom keep the skin's own numbers: mirroring the title band onto
+///    the bottom left a band the frame never paints (#556).
 ///
 /// The trap the third fix set is pinned here too, because it is the one that reached the reporter:
 /// `WasabiSkinInitializer.instantiateHostedWindowAtRuntime` **rebuilds** the `Frame` from the
@@ -60,11 +61,11 @@ final class WinampModernB140Tests: XCTestCase {
         }
         let definition = try XCTUnwrap(WinampModernHostedWindowRegistry.entry(id: .cava))
         let request = WinampModernHostedWindowInstantiation(definition: definition, frame: frame)
-        // 25 left against 15 right and 28 top against 22 bottom: the symmetric border is 25 and 28,
-        // so the client's own size plus 50x56.
+        // 25 left against 15 right and 28 top against 22 bottom: the sides are centred on 25, the
+        // top and bottom keep the skin's own 28 and 22, so the client's own size plus 50x50.
         XCTAssertEqual(request.defaultSize,
                        CGSize(width: definition.defaultSize.width + 50,
-                              height: definition.defaultSize.height + 56))
+                              height: definition.defaultSize.height + 50))
     }
 
     /// A frame that states no rect is left exactly where it was: the frame's own script places the
@@ -82,7 +83,7 @@ final class WinampModernB140Tests: XCTestCase {
             frame: WasabiSurfaceSynthesizer.Frame(groupIdentifier: frame.groupIdentifier,
                                                   xuiTag: frame.xuiTag, hasArtwork: frame.hasArtwork,
                                                   exemplar: frame.exemplar,
-                                                  scriptClient: frame.scriptClient),
+                                                  clientInsets: frame.clientInsets),
             frameID: "f", contentGroupID: "c", componentName: "Cava",
             location: WalSourceLocation(path: "test"))
         XCTAssertEqual(nodes.count, 1)
@@ -102,7 +103,7 @@ final class WinampModernB140Tests: XCTestCase {
             frame: WasabiSurfaceSynthesizer.Frame(groupIdentifier: frame.groupIdentifier,
                                                   xuiTag: frame.xuiTag, hasArtwork: frame.hasArtwork,
                                                   exemplar: frame.exemplar,
-                                                  scriptClient: frame.scriptClient),
+                                                  clientInsets: frame.clientInsets),
             frameID: "f", contentGroupID: "c", componentName: "Cava",
             location: WalSourceLocation(path: "test"))
         XCTAssertEqual(nodes.count, 2)
@@ -113,9 +114,34 @@ final class WinampModernB140Tests: XCTestCase {
         XCTAssertEqual(group.attribute("x"), "25")
         XCTAssertEqual(group.attribute("y"), "28")
         XCTAssertEqual(group.attribute("w"), "-50")
-        XCTAssertEqual(group.attribute("h"), "-56")
+        XCTAssertEqual(group.attribute("h"), "-50")
         XCTAssertEqual(group.attribute("relatw"), "1")
         XCTAssertEqual(group.attribute("relath"), "1")
+    }
+
+    /// #556 — a frame that paints no background keeps the skin's own sides: padding the thin one out
+    /// to match the thick one shows desktop there (PionNer_AMP2's 23 left against 19 right). Its top
+    /// and bottom are the skin's own too, as on every frame.
+    func testAFrameWithNoBackgroundKeepsTheSkinsOwnSides() throws {
+        let loaded = try makeSkin(statusParam: "19,43,-38,-77", noStatusParam: "23,43,-42,-56",
+                                  background: false)
+        guard case .skinFrame(let frame) = loaded.surfaceSynthesis.hostedWindows[.cava] else {
+            return XCTFail("expected a skin-frame route")
+        }
+        XCTAssertEqual(frame.groupIdentifier, "wasabi.standardframe.nostatusbar",
+                       "the status frame's empty strip costs it the window")
+        let nodes = WasabiSurfaceSynthesizer.frameNodes(
+            frame: WasabiSurfaceSynthesizer.Frame(groupIdentifier: frame.groupIdentifier,
+                                                  xuiTag: frame.xuiTag, hasArtwork: frame.hasArtwork,
+                                                  exemplar: frame.exemplar,
+                                                  clientInsets: frame.clientInsets),
+            frameID: "f", contentGroupID: "c", componentName: "Cava",
+            location: WalSourceLocation(path: "test"))
+        let group = try XCTUnwrap(nodes.last)
+        XCTAssertEqual(group.attribute("x"), "23")
+        XCTAssertEqual(group.attribute("y"), "43")
+        XCTAssertEqual(group.attribute("w"), "-42")
+        XCTAssertEqual(group.attribute("h"), "-56")
     }
 
     /// The reporter's second screenshot, in one assertion: the runtime materializer builds its own
@@ -141,26 +167,28 @@ final class WinampModernB140Tests: XCTestCase {
         XCTAssertEqual(group.attributes["x"], "25")
         XCTAssertEqual(group.attributes["y"], "28")
         XCTAssertEqual(group.attributes["w"], "-50")
-        XCTAssertEqual(group.attributes["h"], "-56")
+        XCTAssertEqual(group.attributes["h"], "-50")
     }
 
     // MARK: - Fixture
 
     /// Two frame flavours, each with a script that builds a client area, differing only in what its
-    /// `param` leaves of the window — HeadAMP's shape.
-    private func makeSkin(statusParam: String?, noStatusParam: String?) throws
-        -> WinampModernLoadedSkin {
+    /// `param` leaves of the window — HeadAMP's shape, including the `background=` it paints under
+    /// the client.
+    private func makeSkin(statusParam: String?, noStatusParam: String?,
+                          background: Bool = true) throws -> WinampModernLoadedSkin {
+        let backgroundAttribute = background ? #" background="frame.base""# : ""
         func script(_ param: String?) -> String {
             let attribute = param.map { #" param="\#($0)""# } ?? ""
             return #"<script file="scripts/standardframe.maki"\#(attribute)/>"#
         }
         let xml = """
         <WasabiXML>
-          <groupdef id="wasabi.standardframe.statusbar" xuitag="Wasabi:StandardFrame:Status">
+          <groupdef id="wasabi.standardframe.statusbar"\(backgroundAttribute) xuitag="Wasabi:StandardFrame:Status">
             <layer id="frame.art" x="0" y="0" w="0" h="8" relatw="1"/>
             \(script(statusParam))
           </groupdef>
-          <groupdef id="wasabi.standardframe.nostatusbar" xuitag="Wasabi:StandardFrame:NoStatus">
+          <groupdef id="wasabi.standardframe.nostatusbar"\(backgroundAttribute) xuitag="Wasabi:StandardFrame:NoStatus">
             <layer id="frame.art.ns" x="0" y="0" w="0" h="8" relatw="1"/>
             \(script(noStatusParam))
           </groupdef>

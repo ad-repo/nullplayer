@@ -62,14 +62,14 @@ Type values:
 
 Plex can expose multiple artist records with the same display name but different `ratingKey` values. In the Library Browser, normal Plex artist browsing shows one visible row per normalized artist name while keeping every underlying Plex artist record reachable.
 
-Current behavior in both classic `PlexBrowserView` and modern `ModernLibraryBrowserView`:
+Current behavior, built once in `LibraryBrowserModel+Plex` for every browser view:
 
 - Normalize artist names with trimmed whitespace, case-insensitive + diacritic-insensitive folding, and lowercasing (so e.g. "Motörhead" groups with "Motorhead"), then use `plex-artist-{normalizedName}` as the grouped display key.
 - Pick the visible representative from the same-name group by highest `albumCount`.
 - When expanding, playing, or queueing a grouped row, fan out across every artist record in the group and then deduplicate albums/tracks by stable metadata keys.
 - Search mode intentionally treats the selected Plex artist as a single record instead of expanding all same-name records.
 
-Performance requirement: build group indexes once when artist/album counts are rebuilt. `buildArtistAlbumCounts()` should populate `plexArtistGroupsByName`, `plexAlbumsByArtistGroupKey`, and `plexAlbumCountsByArtistGroupKey` from `cachedArtists` and `cachedAlbums`. Expanding a grouped artist row should first use `plexAlbumsByArtistGroupKey[groupKey]` and avoid rescanning the full album cache on the main actor, because large same-name groups can otherwise beachball the UI.
+Performance requirement: build group indexes once when artist/album counts are rebuilt. `buildArtistAlbumCounts()` should populate `plex.artistGroupsByName`, `plex.albumsByArtistGroupKey`, and `plex.albumCountsByArtistGroupKey` from `plex.artists` and `plex.albums` (`PlexBrowserCache`). Expanding a grouped artist row should first use `plex.albumsByArtistGroupKey[groupKey]` and avoid rescanning the full album cache on the main actor, because large same-name groups can otherwise beachball the UI.
 
 ### Browser lists load the whole library
 

@@ -28,6 +28,9 @@ final class GeissEngine: VisualizationEngine {
     private(set) var isAvailable: Bool = false
     let displayName: String = "Geiss"
 
+    /// The core is one per process; while another engine holds it, a new one cannot start.
+    static var isCoreInUse: Bool { GeissCore_inUse() != 0 }
+
     // MARK: - State
 
     /// Serializes access to the C core. The core is not thread-safe; audio

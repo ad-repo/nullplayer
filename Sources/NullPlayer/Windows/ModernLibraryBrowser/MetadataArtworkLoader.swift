@@ -1,11 +1,10 @@
 import AppKit
-import AVFoundation
 
 enum MetadataArtworkLoader {
     private static let cache = NSCache<NSString, NSImage>()
 
     static func loadArtwork(for track: LibraryTrack) async -> NSImage? {
-        if let embedded = await loadLocalArtwork(url: track.url) {
+        if let embedded = await LocalArtwork.embeddedImage(in: track.url) {
             return embedded
         }
         if let artworkURL = track.artworkURL,
@@ -21,24 +20,6 @@ enum MetadataArtworkLoader {
                 return image
             }
         }
-        return nil
-    }
-
-    private static func loadLocalArtwork(url: URL) async -> NSImage? {
-        let cacheKey = NSString(string: "local:\(url.path)")
-        if let cached = cache.object(forKey: cacheKey) { return cached }
-
-        let asset = AVURLAsset(url: url)
-        do {
-            let metadata = try await asset.load(.metadata)
-            for item in metadata where item.commonKey == .commonKeyArtwork {
-                if let data = try await item.load(.dataValue), let image = NSImage(data: data) {
-                    cache.setObject(image, forKey: cacheKey)
-                    return image
-                }
-            }
-        } catch { }
-
         return nil
     }
 

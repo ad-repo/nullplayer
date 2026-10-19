@@ -183,6 +183,27 @@ final class WMPPlaylistMenuTests: XCTestCase {
         XCTAssertEqual(view.selectedRows, Set(2...9))
     }
 
+    /// A queue change starts the selection again on the playing row, even a selection of several,
+    /// so a queue menu never acts on rows picked in a queue that is gone (M48).
+    @MainActor
+    func testAQueueChangeRestartsTheSelectionOnThePlayingRow() throws {
+        let (view, _) = surface(count: 20, playing: 5)
+        try click(2, view); try click(8, view, .shift)
+        view.queueDidChange()
+        XCTAssertEqual(view.selectedRows, [5])
+    }
+
+    /// A library playlist on the pane is not the queue, so a queue change leaves its selection.
+    @MainActor
+    func testAQueueChangeLeavesALibraryPreviewSelection() throws {
+        let (view, _) = surface()
+        let items = (0..<6).map { WMPPlaylistItemSnapshot(title: "Library \($0)", artist: "", duration: 6) }
+        view.update(libraryRows: .init(reference: "playlistCollection:0", items: items, tracks: Array(0..<6)))
+        try click(1, view); try click(3, view, .shift)
+        view.queueDidChange()
+        XCTAssertEqual(view.selectedRows, Set(1...3))
+    }
+
     /// Delete removes every selected row, highest index first so the lower indices stay valid.
     @MainActor
     func testDeleteRemovesEverySelectedRowFromTheBottomUp() throws {

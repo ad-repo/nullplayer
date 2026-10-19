@@ -291,6 +291,17 @@ By area:
   four `stream*` fields from `RadioManager.currentStation`; `streamtitle` is the ICY now-playing line
   and is read **live**, never cached with the row, because it changes within one track.
 
+  **`System.getPlayItemString()` is the item's location, not its title** — Winamp's filename or URL,
+  which 61 corpus call sites hand straight to `getExtension`. It answered the display title until
+  2026-10-17, and ONYX V2's File Type readout printed the title's tail. It is the host's `trackPath`
+  (the same string as the `filename` key), falling back to the title for an item with no location so
+  that `getPlayItemString() != ""` still means "playing". **A stream's location is credential-free**
+  (`WinampModernAudioEngineHost.playItemLocation`): no query, fragment or user info, which is where
+  Plex's `X-Plex-Token` and Subsonic's `u`/`t`/`s` travel — taken whole, ONYX drew
+  `flac?X-Plex-Token=…` on screen. A path with no extension of its own (Subsonic's `/rest/stream`)
+  takes the format the server reported in `contentType`, and `decoder` reads the same extension so
+  the two readouts cannot disagree. A radio URL with neither has no format to show.
+
   **`publisher`, `vbr` and `streamtype` are listed as explicit empty cases rather than left to the
   default**, so that "empty" stays visibly a decision. Nothing in NullPlayer stores a publisher tag,
   and the engine never learns whether a file is VBR or what flavour of shoutcast a stream is.
@@ -564,7 +575,8 @@ see `dispatchableEventArity` — because the stack cannot be unwound without one
 **system** events too (`System.onEqFreqChanged(freqmode)` in ClassicPro's `eq.m`).
 
 **Time is milliseconds**, throughout: `System.getPosition()`, `System.getPlayItemLength()`,
-`System.seekTo()`, `System.onSeek`'s argument, `System.integerToTime()`'s argument, and the `length`
+`System.seekTo()`, `System.onSeek`'s argument, `System.integerToTime()`'s argument (`m:ss`),
+`System.integerToLongTime()`'s argument (`h:mm:ss`, added for ONYX V2's seek popup), and the `length`
 key of `getPlayItemMetaDataString` / `PE_Info.getMetaData`. They move as one family — a skin reads two
 of them into the same expression, so splitting the unit makes a skin disagree with itself.
 

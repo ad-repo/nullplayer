@@ -150,6 +150,12 @@ final class ModernArtWindowView: NSView, ArtWindowChrome {
         return renderer.scaledRect(ModernSkinElements.spectrumBtnClose.defaultRect).insetBy(dx: -4, dy: -4).contains(point)
     }
 
+    /// Under Hide Title Bars `artView` reaches the top edge, so the drag strip is claimed here.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if !isFullscreen, hitTestTitleBar(at: convert(point, from: superview)) { return self }
+        return super.hitTest(point)
+    }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {

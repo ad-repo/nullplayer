@@ -92,7 +92,7 @@ enum WinampModernComponentRegistry {
     /// The narrowest holder NullPlayer will host a component's own view in, in skin pixels — `nil` for
     /// a component that draws into whatever room the skin gives it.
     ///
-    /// The library is the one that cannot: the browser in its holder is the Classic `PlexBrowserView`,
+    /// The library is the one that cannot: the browser in its holder is `ClassicLibraryBrowserView`,
     /// laid out for its own window, not a Winamp skin's. Measured on Anaheim Player 01 at the default
     /// Text Size: at 344 (the Classic library window's floor) the tab labels overlap, because the
     /// `.wal` style's font is wider than the bitmap glyphs the tab row is sized from; at 440 the row

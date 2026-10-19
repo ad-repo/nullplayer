@@ -22,7 +22,7 @@ enum ClassicLibraryTab {
         }
         boxPath.stroke()
 
-        let textWidth = CGFloat(label.count) * SkinElements.TextFont.charWidth * textScale
+        let textWidth = Self.textWidth(label, scale: textScale, style: style)
         let textHeight = SkinElements.TextFont.charHeight * textScale
         var origin = NSPoint(x: rect.midX - textWidth / 2, y: rect.minY + (rect.height - textHeight) / 2)
         // Round on non-Retina to prevent shimmering.
@@ -36,6 +36,13 @@ enum ClassicLibraryTab {
     static func labelColor(isSelected: Bool, renderer: SkinRenderer, style: SkinnedSurfaceStyle?) -> NSColor {
         if let style { return isSelected ? style.currentText : style.text }
         return isSelected ? .white : renderer.skinTextColor()
+    }
+
+    /// How wide `drawSkinText` draws `text`: `count` bitmap cells, or a surface style's drawn run, which
+    /// is narrower. What a centred or right-aligned label is placed by.
+    static func textWidth(_ text: String, scale: CGFloat, style: SkinnedSurfaceStyle?) -> CGFloat {
+        style == nil ? CGFloat(text.count) * SkinElements.TextFont.charWidth * scale
+            : SkinnedSurfaceStyle.drawnWidth(text, scale: scale)
     }
 
     /// The skin's text at `scale`, top-left at `position`. `white` is the classic sheet's emphasis;

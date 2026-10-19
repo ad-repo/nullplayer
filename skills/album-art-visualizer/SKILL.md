@@ -63,8 +63,10 @@ Pixel: Pixelate, Scanlines, Datamosh, Blocky.
 - **The cover is `NowPlayingManager`'s** (`currentArtwork` + `artworkDidLoadNotification`) — the one
   fetch the app runs per track, the same image Control Center and a `.wal` `<AlbumArt>` show. A
   stream with an http `artworkThumb` (a radio station's logo) is fetched there too. The previous
-  cover stays up until the next arrives. A local file with more than one embedded picture also
-  loads them all (`ArtView.embeddedArtwork(of:)`) for double-click cycling.
+  cover stays up until the next arrives. A local file's cover is `LocalArtwork.image(for:)` (its
+  own, else its album's, else a folder image; see `local-library` § Local Artwork). A local file
+  with more than one embedded picture also loads them all (`LocalArtwork.embeddedImages(in:)`) for
+  double-click cycling.
 - **Rating** goes through `TrackRatingService` (`isRateable`, `rating(for:)`, `setRating`), which
   all dispatch on one private `Source`, so `isRateable` is exactly "a write would land": a stream or
   a file outside the library is not rateable, and a click on it drags the window. Stars, keys and

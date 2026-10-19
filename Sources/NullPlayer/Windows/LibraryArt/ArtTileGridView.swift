@@ -16,8 +16,9 @@ final class ArtTileGridView: NSView, LibraryArtView {
     /// The selected tile.
     private(set) var centerIndex = 0
 
-    /// Smallest tile width; tiles grow to share a row's spare width evenly.
-    private let minTileSide: CGFloat = 120
+    /// Largest tile width; a row holds as many tiles as keeps them under it, sharing the width
+    /// evenly, so narrowing the window shrinks tiles instead of dropping to fewer, wider ones.
+    private let maxTileSide: CGFloat = 120
     /// Every tile's art width over height: posters when the whole level is posters, else square.
     private var artAspect: CGFloat = 1
     private let gap: CGFloat = 12
@@ -73,7 +74,7 @@ final class ArtTileGridView: NSView, LibraryArtView {
 
     // MARK: Geometry
 
-    private var columns: Int { max(1, Int((bounds.width - gap) / (minTileSide + gap))) }
+    private var columns: Int { max(1, Int(((bounds.width - gap) / (maxTileSide + gap)).rounded(.up))) }
     private var tileSide: CGFloat { (bounds.width - gap * CGFloat(columns + 1)) / CGFloat(columns) }
     private var artHeight: CGFloat { tileSide / artAspect }
     private var rowHeight: CGFloat { artHeight + labelHeight + gap }

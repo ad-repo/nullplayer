@@ -16,7 +16,7 @@ See `docs/development-workflow.md` for build details, log monitoring, and versio
 
 Technical documentation lives in `skills/`. Read the owning skill before changing a subsystem.
 
-- `ui-guide`: UI geometry/rendering; `audio-system`: playback/EQ; `app-state`: restoration and persistence; `user-guide`: features and menus
+- `ui-guide`: UI geometry/rendering; `audio-system`: playback/EQ; `eq-profiles`: EQ Profiles, the Equalizer Studio and EQ Cast; `app-state`: restoration and persistence; `user-guide`: features and menus
 - `skin-subsystem-blueprint`: adding/extending a skin family — shared seams, isolation, harness, docs layout.
   `.wal` and `.wmz` are clean-room reverse engineering: a sweep diff there is unclassified, not a
   regression — it may be newly unlocked behaviour (Classic/Original diffs are always regressions)
@@ -33,7 +33,7 @@ Technical documentation lives in `skills/`. Read the owning skill before changin
 - `geiss-port`, `tripex-port`, `vis-classic-guide`: visualization ports and compatibility
 - `app-control`: launching, configuring, driving and measuring the running app; test-data targets
 - Backlogs live in `tasks/`: `WMP_TASKS.md` (`.wmz`), `WINAMP5_TASKS.md` (`.wal`), `AUDION_TASKS.md`
-  (Audion faces), `SONIQUE_TASKS.md` (`.sgf`), plus `docs/local-library/backlog.md` (library scanning and playlist playback)
+  (Audion faces), `SONIQUE_TASKS.md` (`.sgf`), plus `MISC_TASKS.md` (everything else, including the local library)
 - `live-ui-testing`: process skill for screen-only defects — instrument first, drive the app yourself, measure what is drawn
 - `testing`: UI test workflows; `non-retina-fixes`: 1x display fixes; `local-library`: SQLite and scanning; `cli`: headless mode
 - `skin-screenshots`: per-skin main-window captures across all skin systems, and slideshow GIFs

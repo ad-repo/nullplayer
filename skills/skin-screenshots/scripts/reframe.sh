@@ -26,10 +26,11 @@ if [ -n "$g" ]; then
 fi
 if [ -n "$g" ]; then cw=${g%%x*}; r=${g#*x}; ch=${r%%+*}; else cw=$px; ch=$py; fi
 aw=$(( cw / sc )); ah=$(( ch / sc ))
-if [ "$aw" -gt "$FRAME" ] || [ "$ah" -gt "$FRAME" ]; then
-  echo "skipped-too-big ${aw}x${ah}pt $framing -"; exit 0
-fi
+# Artwork larger than the frame is shot anyway: the canvas grows to hold it and the resize
+# below scales it down with every other skin. Only the raw shot keeps full size.
 cv=$(( FRAME * sc ))
+[ "$cw" -gt "$cv" ] && cv=$cw
+[ "$ch" -gt "$cv" ] && cv=$ch
 dest="$OUT/${label}_$(date +"%Y-%m-%d_%H%M%S").png"
 crop=""; [ -n "$g" ] && crop="-crop $g +repage"
 magick "$raw" $crop -background white -gravity center -extent ${cv}x${cv} \

@@ -117,15 +117,14 @@ final class WinampModernSkinImporter {
         return imported
     }
 
-    /// The placeholder skin that ships inside the app bundle — Modern's answer to Classic's bundled
-    /// `NullPlayer-Silver`. Like Silver it has no menu entry: it is what the mode loads before any
-    /// skin is imported and what it falls back to when the selected skin is removed.
+    /// The default skin that ships inside the app bundle — Modern's answer to Classic's bundled
+    /// `NullPlayer-Silver`: what the mode loads before any skin is imported and what it falls back
+    /// to when the selected skin is removed. Unlike Silver it is listed in the menu, so it can be
+    /// picked again after importing others; it is never removable.
     ///
-    /// NullPlayer bundles no Winamp skins, so Modern mode had nothing at all to load until the user
-    /// imported one — a first run came up on the "Import a .wal skin" placeholder. This is a plain
-    /// skin of our own (`scripts/generate_default_wal_skin.swift`) that gives the mode a working
-    /// window out of the box; it is a starting point, not a skin anyone is meant to keep.
-    static let bundledDefaultSkinName = "NullPlayer-Black"
+    /// The archive name carries no version: the skin scopes its saved settings by filename, so an
+    /// update shipped under the same name keeps the user's font and size choices.
+    static let bundledDefaultSkinName = "iTunes Miniplayer"
 
     /// Where the bundled `.wal` sits. The same three-path search `findBundledClassicSkin` does,
     /// because SwiftPM's resource bundle lands in a different place than a plain copy does.
@@ -142,14 +141,9 @@ final class WinampModernSkinImporter {
         return WinampModernImportedSkin(name: name, archiveURL: url)
     }
 
-    /// Every skin that can be *loaded*: what the user imported, plus the bundled placeholder.
-    ///
-    /// This is the resolution list — what `selectedSkin()` matches a stored name against — and not
-    /// the menu's list, which shows only `installedSkins()`; the bundled skin has no entry. Separate
-    /// from `installedSkins()`, which stays the user's library and nothing else: the import/storage
-    /// seam is about files we own in Application Support, and the bundled skin is neither imported
-    /// nor removable. A skin they imported under the same name wins, so replacing the placeholder
-    /// with their own copy behaves the way importing anything else does.
+    /// Every skin that can be picked: what the user imported, plus the bundled default. This is the
+    /// menu's list and what `selectedSkin()` resolves against; `installedSkins()` stays the user's
+    /// library, which is what can be removed. A skin they imported under the default's name wins.
     func availableSkins() -> [WinampModernImportedSkin] {
         let installed = installedSkins()
         guard let bundled = bundledDefaultSkin(),
@@ -170,35 +164,33 @@ final class WinampModernSkinImporter {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    /// The stored skin, or the bundled default when nothing is stored or the stored name matches
+    /// nothing — a removed skin, or the retired `NullPlayer-Black` an upgrade carries over — rather
+    /// than whichever installed skin happens to sort first. Only a build missing its bundled skin
+    /// falls back to the first installed one.
     func selectedSkin() -> WinampModernImportedSkin? {
         let available = availableSkins()
-        guard !available.isEmpty else { return nil }
-        guard let selected = UserDefaults.standard.string(forKey: Self.selectedSkinNameKey) else {
-            return available.first
+        func named(_ name: String) -> WinampModernImportedSkin? {
+            available.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
         }
-        return available.first { $0.name.caseInsensitiveCompare(selected) == .orderedSame }
-            ?? available.first
+        return UserDefaults.standard.string(forKey: Self.selectedSkinNameKey).flatMap(named)
+            ?? named(Self.bundledDefaultSkinName) ?? available.first
     }
 
     func selectSkin(_ skin: WinampModernImportedSkin) {
         UserDefaults.standard.set(skin.name, forKey: Self.selectedSkinNameKey)
     }
 
-    /// The selected skin when the user installed it — the bundled placeholder has nothing to remove.
+    /// The selected skin when the user installed it — the bundled default has nothing to remove.
     func removableSelectedSkin() -> WinampModernImportedSkin? {
         guard let selected = selectedSkin() else { return nil }
         return installedSkins().first { $0.archiveURL == selected.archiveURL }
     }
 
-    /// Moves an installed skin to the Trash and selects the bundled placeholder, rather than
-    /// whichever installed skin sorts first. The caller reloads the player when the mode is on
-    /// screen.
+    /// Moves an installed skin to the Trash and clears the selection, which `selectedSkin()`
+    /// resolves to the bundled default. The caller reloads the player when the mode is on screen.
     func trashSkin(_ skin: WinampModernImportedSkin) throws {
         try fileManager.trashItem(at: skin.archiveURL, resultingItemURL: nil)
-        if let bundled = bundledDefaultSkin() {
-            selectSkin(bundled)
-        } else {
-            UserDefaults.standard.removeObject(forKey: Self.selectedSkinNameKey)
-        }
+        UserDefaults.standard.removeObject(forKey: Self.selectedSkinNameKey)
     }
 }

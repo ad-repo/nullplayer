@@ -1,6 +1,5 @@
 import AppKit
 import MediaPlayer
-import AVFoundation
 
 /// Manages macOS Now Playing integration for Discord Music Presence and system media controls
 /// Reports track metadata to MPNowPlayingInfoCenter and handles remote commands
@@ -317,7 +316,7 @@ class NowPlayingManager {
             // Load based on track source
             if track.url.isFileURL {
                 // Local file - extract embedded artwork
-                image = await self.loadLocalArtwork(url: track.url)
+                image = await LocalArtwork.image(for: track.url)
             } else if track.plexRatingKey != nil {
                 // Plex track - load from server
                 if let thumb = track.artworkThumb {
@@ -386,50 +385,6 @@ class NowPlayingManager {
     }
 
     // MARK: - Artwork Loading Helpers
-    
-    /// Load embedded artwork from local audio file
-    private func loadLocalArtwork(url: URL) async -> NSImage? {
-        let asset = AVURLAsset(url: url)
-        
-        do {
-            let metadata = try await asset.load(.metadata)
-            
-            for item in metadata {
-                if item.commonKey == .commonKeyArtwork {
-                    if let data = try await item.load(.dataValue),
-                       let image = NSImage(data: data) {
-                        return image
-                    }
-                }
-            }
-            
-            // Check ID3 metadata
-            let id3Metadata = try await asset.loadMetadata(for: .id3Metadata)
-            for item in id3Metadata {
-                if item.commonKey == .commonKeyArtwork {
-                    if let data = try await item.load(.dataValue),
-                       let image = NSImage(data: data) {
-                        return image
-                    }
-                }
-            }
-            
-            // Check iTunes metadata
-            let itunesMetadata = try await asset.loadMetadata(for: .iTunesMetadata)
-            for item in itunesMetadata {
-                if item.commonKey == .commonKeyArtwork {
-                    if let data = try await item.load(.dataValue),
-                       let image = NSImage(data: data) {
-                        return image
-                    }
-                }
-            }
-        } catch {
-            NSLog("NowPlayingManager: Failed to load local artwork: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-        }
-        
-        return nil
-    }
     
     /// Load artwork from Plex server
     private func loadPlexArtwork(thumb: String) async -> NSImage? {

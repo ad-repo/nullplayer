@@ -13,7 +13,7 @@ import AppKit
 ///
 /// **Once per skin, so a user pick survives.** `applySkinDefault` records the skin it matched for in
 /// `PreferenceScope.skinDefaultAppliedForKey`; a relaunch on the same skin leaves the stored profile
-/// alone, and only a different skin re-picks. That is Original's `preservePersistedProfiles`
+/// alone, and only a different skin re-picks. That is Original's `ModernSkinLoadReason.keepsSavedProfiles`
 /// behaviour, keyed on identity so no launch-vs-explicit-load path has to be told apart.
 enum VisClassicProfileMatcher {
     struct Lab: Equatable {

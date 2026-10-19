@@ -1,5 +1,22 @@
 import AppKit
 
+/// Why a skin is being loaded, which decides whose visualization preferences win.
+///
+/// - `launch`: launch / session restore. The user's saved choices survive; the skin's own
+///   defaults only seed keys never written.
+/// - `familyEntry`: a live switch into this family. The vis_classic profile keys are window-scoped
+///   and *shared* across Classic/Original/Metal (see vis-classic-guide), so the incoming skin's
+///   defaults replace them — but the main-window mode is this family's own (M39) and survives.
+/// - `skinChange`: a skin pick or a reset. The skin's defaults replace everything.
+enum ModernSkinLoadReason {
+    case launch, familyEntry, skinChange
+
+    /// Saved vis_classic profiles and per-mode settings survive only a launch.
+    var keepsSavedProfiles: Bool { self == .launch }
+    /// A saved main-window mode survives everything but a skin change.
+    var keepsSavedMainWindowMode: Bool { self != .skinChange }
+}
+
 /// Central coordinator for the modern skin system.
 /// Manages skin lifecycle: loading, selection, caching, and providing the active skin.
 ///
@@ -55,20 +72,11 @@ class ModernSkinEngine {
     }
 
     /// Load the preferred skin for a family (from UserDefaults) or the default.
-    ///
-    /// `preservePersistedProfiles` controls whether the loaded skin re-applies its own
-    /// visualization defaults. At app launch / session restore it is `true` so the user's
-    /// last-session visualization choices survive. On a live UI-family switch it must be
-    /// `false`: the vis_classic profile keys are window-scoped and *shared* across the
-    /// classic/modern/metal UIs (see vis-classic-guide), so preserving them would carry the
-    /// outgoing family's profile (e.g. classic's "Purple Neon") into the incoming skin
-    /// instead of applying that skin's own default. A family switch is a skin change and
-    /// must resolve to the incoming skin's defaults.
-    func loadPreferredSkin(for family: ModernSkinFamily, preservePersistedProfiles: Bool = true) {
+    func loadPreferredSkin(for family: ModernSkinFamily, reason: ModernSkinLoadReason = .launch) {
         if let name = UserDefaults.standard.string(forKey: family.skinNameKey) {
-            if loadSkin(named: name, family: family, preservePersistedProfiles: preservePersistedProfiles) { return }
+            if loadSkin(named: name, family: family, reason: reason) { return }
         }
-        loadDefaultSkin(for: family, preservePersistedProfiles: preservePersistedProfiles)
+        loadDefaultSkin(for: family, reason: reason)
     }
     
     /// Full reset of the active modern/metal skin: clear every persisted
@@ -77,23 +85,17 @@ class ModernSkinEngine {
     /// dedicated spectrum windows), reload the skin re-applying its shipped defaults,
     /// then push the live windows back to the default analyzer immediately.
     func resetCurrentSkinToDefault() {
-        VisualizationPreferences.reset(.mainWindow, applySkinDefaults: false, postNotifications: false)
+        // The main-window reset writes the skin's mode, or Spectrum when it ships none, so the live
+        // window leaves any black vis_classic box.
+        VisualizationPreferences.reset(.mainWindow, applySkinDefaults: true, postNotifications: false)
         VisualizationPreferences.reset(.spectrumWindow, applySkinDefaults: false, postNotifications: false)
 
         // Reload the active skin, re-applying its shipped visualization defaults.
         let family = currentFamily
         if let name = currentSkinName {
-            _ = loadSkin(named: name, family: family, preservePersistedProfiles: false)
+            _ = loadSkin(named: name, family: family, reason: .skinChange)
         } else {
-            loadDefaultSkin(for: family, preservePersistedProfiles: false)
-        }
-
-        // If the skin didn't re-seed a main-window analyzer mode, fall back to the
-        // app default (Spectrum) so the live window leaves any black vis_classic box.
-        let defaults = UserDefaults.standard
-        if defaults.string(forKey: "mainWindowVisMode") == nil {
-            defaults.set(MainWindowVisMode.spectrum.rawValue, forKey: "mainWindowVisMode")
-            defaults.set(MainWindowVisMode.spectrum.rawValue, forKey: "modernMainWindowVisMode")
+            loadDefaultSkin(for: family, reason: .skinChange)
         }
 
         // Push the live windows to re-read the (reset) analyzer mode/settings now.
@@ -107,15 +109,15 @@ class ModernSkinEngine {
     }
 
     func loadDefaultSkin(for family: ModernSkinFamily) {
-        loadDefaultSkin(for: family, preservePersistedProfiles: false)
+        loadDefaultSkin(for: family, reason: .skinChange)
     }
 
-    private func loadDefaultSkin(for family: ModernSkinFamily, preservePersistedProfiles: Bool) {
+    private func loadDefaultSkin(for family: ModernSkinFamily, reason: ModernSkinLoadReason) {
         currentSkin = loader.loadDefault(for: family)
         currentSkinName = currentSkin?.config.meta.name ?? family.defaultSkinName
         currentFamily = family
         UserDefaults.standard.set(currentSkinName, forKey: family.skinNameKey)
-        configureSkinDependencies(preservePersistedProfiles: preservePersistedProfiles)
+        configureSkinDependencies(reason: reason)
         notifySkinChanged()
         NSLog("ModernSkinEngine: Loaded default %@ skin '%@'", String(describing: family), currentSkinName ?? family.defaultSkinName)
     }
@@ -128,11 +130,11 @@ class ModernSkinEngine {
 
     @discardableResult
     func loadSkin(named name: String, family: ModernSkinFamily) -> Bool {
-        loadSkin(named: name, family: family, preservePersistedProfiles: false)
+        loadSkin(named: name, family: family, reason: .skinChange)
     }
 
     @discardableResult
-    private func loadSkin(named name: String, family: ModernSkinFamily, preservePersistedProfiles: Bool) -> Bool {
+    private func loadSkin(named name: String, family: ModernSkinFamily, reason: ModernSkinLoadReason) -> Bool {
         let available = availableSkins(for: family)
         let resolvedName = resolvedSkinName(for: name)
 
@@ -150,12 +152,12 @@ class ModernSkinEngine {
                 currentSkinName = currentSkin?.config.meta.name ?? skinInfo.name
                 currentFamily = family
                 UserDefaults.standard.set(currentSkinName, forKey: family.skinNameKey)
-                configureSkinDependencies(preservePersistedProfiles: preservePersistedProfiles)
+                configureSkinDependencies(reason: reason)
                 notifySkinChanged()
                 NSLog("ModernSkinEngine: Loaded built-in metal skin '%@'", currentSkinName ?? skinInfo.name)
                 return true
             }
-            loadDefaultSkin(for: family, preservePersistedProfiles: preservePersistedProfiles)
+            loadDefaultSkin(for: family, reason: reason)
             return true
         }
 
@@ -169,7 +171,7 @@ class ModernSkinEngine {
             currentSkinName = skinInfo.name
             currentFamily = family
             UserDefaults.standard.set(skinInfo.name, forKey: family.skinNameKey)
-            configureSkinDependencies(preservePersistedProfiles: preservePersistedProfiles)
+            configureSkinDependencies(reason: reason)
             notifySkinChanged()
             NSLog("ModernSkinEngine: Loaded %@ skin '%@'", String(describing: family), skinInfo.name)
             return true
@@ -190,7 +192,7 @@ class ModernSkinEngine {
             currentSkinName = currentSkin?.config.meta.name ?? url.lastPathComponent
             currentFamily = family
             UserDefaults.standard.set(currentSkinName, forKey: family.skinNameKey)
-            configureSkinDependencies(preservePersistedProfiles: false)
+            configureSkinDependencies(reason: .skinChange)
             notifySkinChanged()
             return true
         } catch {
@@ -329,8 +331,9 @@ class ModernSkinEngine {
     
     // MARK: - Private
     
-    private func configureSkinDependencies(preservePersistedProfiles: Bool = false) {
+    private func configureSkinDependencies(reason: ModernSkinLoadReason) {
         guard let skin = currentSkin else { return }
+        let preservePersistedProfiles = reason.keepsSavedProfiles
 
         // Stamp the render style onto the skin instance so renderers and windows derive
         // "is this metal?" from the skin they're drawing, not the global currentRenderStyle
@@ -359,7 +362,7 @@ class ModernSkinEngine {
         // are preserved across launches.
         applyVisualizationDefaults(from: skin.config.visualization,
                                    windowSpectrumTransparentBackground: skin.config.window.spectrumTransparentBackground,
-                                   preservePersistedProfiles: preservePersistedProfiles,
+                                   reason: reason,
                                    forceProfileDefaults: currentFamily == .metal)
         
         // Configure bloom processor
@@ -376,8 +379,9 @@ class ModernSkinEngine {
 
     private func applyVisualizationDefaults(from config: VisualizationConfig?,
                                              windowSpectrumTransparentBackground: Bool? = nil,
-                                             preservePersistedProfiles: Bool = false,
+                                             reason: ModernSkinLoadReason,
                                              forceProfileDefaults: Bool = false) {
+        let preservePersistedProfiles = reason.keepsSavedProfiles
         guard config != nil || windowSpectrumTransparentBackground != nil || !preservePersistedProfiles else { return }
 
         let defaults = UserDefaults.standard
@@ -406,30 +410,12 @@ class ModernSkinEngine {
                    !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
                     NSLog("ModernSkinEngine: Ignoring unsupported mainWindowMode '%@' (shader unavailable)", modeRaw)
                 } else {
-                    let shouldApplyMain = Self.shouldApplyDefault(
-                        forKey: "mainWindowVisMode",
-                        preservePersistedPreferences: preservePersistedProfiles,
+                    if Self.shouldApplyDefault(
+                        forKey: MainWindowVisMode.originalDefaultsKey,
+                        preservePersistedPreferences: reason.keepsSavedMainWindowMode,
                         defaults: defaults
-                    )
-                    let shouldApplyModern = Self.shouldApplyDefault(
-                        forKey: "modernMainWindowVisMode",
-                        preservePersistedPreferences: preservePersistedProfiles,
-                        defaults: defaults
-                    )
-
-                    if shouldApplyMain {
-                        let raw = preservePersistedProfiles && !shouldApplyModern
-                            ? Self.validMainWindowModeRaw(forKey: "modernMainWindowVisMode", defaults: defaults) ?? mode.rawValue
-                            : mode.rawValue
-                        defaults.set(raw, forKey: "mainWindowVisMode")
-                        mainVisChanged = true
-                    }
-
-                    if shouldApplyModern {
-                        let raw = preservePersistedProfiles && !shouldApplyMain
-                            ? Self.validMainWindowModeRaw(forKey: "mainWindowVisMode", defaults: defaults) ?? mode.rawValue
-                            : mode.rawValue
-                        defaults.set(raw, forKey: "modernMainWindowVisMode")
+                    ) {
+                        defaults.set(mode.rawValue, forKey: MainWindowVisMode.originalDefaultsKey)
                         mainVisChanged = true
                     }
                 }
@@ -816,16 +802,6 @@ class ModernSkinEngine {
         )
     }
 
-    private static func validMainWindowModeRaw(forKey key: String, defaults: UserDefaults) -> String? {
-        guard let raw = defaults.string(forKey: key),
-              let mode = MainWindowVisMode(rawValue: raw) else { return nil }
-        if let qualityMode = mode.spectrumQualityMode,
-           !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
-            return nil
-        }
-        return mode.rawValue
-    }
-    
     private func notifySkinChanged() {
         NotificationCenter.default.post(name: Self.skinDidChangeNotification, object: self)
     }

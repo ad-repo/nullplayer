@@ -1407,8 +1407,8 @@ final class WinampModernPhase13Tests: XCTestCase {
 
     /// Embedded mode removes this view's own window chrome and the hit regions that go with it.
     func testEmbeddedBrowserDropsItsClassicChromeAndTitleBarRegions() {
-        let classic = PlexBrowserView.LayoutMetrics.classic
-        let embedded = PlexBrowserView.LayoutMetrics.embedded
+        let classic = ClassicLibraryBrowserView.LayoutMetrics.classic
+        let embedded = ClassicLibraryBrowserView.LayoutMetrics.embedded
         XCTAssertGreaterThan(classic.titleBarHeight, 0)
         XCTAssertEqual(embedded.titleBarHeight, 0, "the `.wal` frame already drew the title bar")
         XCTAssertEqual(embedded.leftBorder, 0)

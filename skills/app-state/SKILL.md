@@ -5,11 +5,11 @@ description: NullPlayer session-state restoration, AppStateManager, AppPersisten
 
 # App State
 
-## Remember State On Quit
+## Save State on Quit
 
 `AppStateManager` saves and restores session state (v2) for window visibility and layout, audio and EQ state, and playlist contents. It intentionally does not save or restore the selected or current track, seek position, or playing state, so launch starts paused with no track loaded solely because state was restored.
 
-Remember State is **on by default** (`register(defaults:)`; an explicit menu choice wins). Saving is not
+Save State on Quit is **on by default** (`register(defaults:)`; an explicit menu choice wins). Saving is not
 only on quit: power loss, a crash or a force quit never reach `applicationWillTerminate`, so the
 launch calls `startAutosave` from the `restoreSettingsState` completion in `AppDelegate`, once both
 restores have applied — every 10 s, plus before system sleep and power-off. Never start it earlier: it
@@ -37,6 +37,14 @@ dictionary) is still written because older builds decode it as required; a state
 
 Restore state in two phases: settings first with `restoreSettingsState`, then the playlist with `restorePlaylistState`. Load streaming tracks as placeholder `Track` objects, then replace them asynchronously through `engine.replaceTrack(at:with:)`.
 
+Restore never overrides a preference that is written on every change: the UI mode (`uiMode`, or a
+`-uiMode` launch argument) and each family's skin selection (`modernSkinName`, `metalSkinName`,
+`wmpSkinName`/`wmpSkinViewID`, `audionFaceName`; Sonique's `soniqueSkinName` is never in the
+session at all). Those are always at least as new as the session's
+copy, which goes stale after a force quit, a crash inside the autosave interval, or a run under
+`-rememberStateEnabled NO`. The session still writes them because older builds restore from them; a
+session saved in another mode is applied to the running mode.
+
 Restore UI scale and window frames only when the saved and running `PlayerUIMode` values match exactly. Modern and Metal do not match. On a mismatch, use 100% scale and default frames while still restoring non-geometry state.
 
 `AppPersistence.key(_:)` scopes only `rememberStateEnabled`, `savedAppState`, and legacy `*WindowFrame` keys for custom editions. Other content preferences remain shared.
@@ -50,9 +58,11 @@ When adding state:
 
 EQ profiles are not session state. Profiles and their assignments live in their own SQLite
 database, `~/Library/Application Support/NullPlayer/eq_profiles.db` (`EQProfileStore`; schema in
-`audio-system` § *EQ Profiles*), read whatever Remember State says — an assignment is a standing default. Their
+`eq-profiles`), read whatever Save State on Quit says — an assignment is a standing default. Their
 preferences are UserDefaults: `eqProfilesEnabled` (default on), `equalizerStudioFaceplate`,
-`equalizerStudioLinked` (default on), `equalizerStudioMode` (`graphic` by default). Only the Equalizer Studio window is in `AppState`
+`equalizerStudioLinked` (default on), `equalizerStudioMode` (`graphic` by default), and EQ Cast's
+`eqCastEnabled` (default off) and `eqCastFolder` (a path; the rendered files and their `eqcast.json`
+live there, not in Application Support). Only the Equalizer Studio window is in `AppState`
 (`isEqualizerStudioVisible`, `equalizerStudioWindowFrame`, `decodeIfPresent`); it is not a
 centre-stack window. Its full saved frame is restored (`setFrame`, then grown to the running
 family's minimum), but only when the saved UI mode matches, as for every window; otherwise it opens

@@ -53,7 +53,11 @@ enum BundleHelper {
     static var fullVersion: String {
         "\(appVersion).\(buildNumber)"
     }
-    
+
+    /// `build_mas.sh` stamps this key into the Mac App Store bundle. App Review rejects external
+    /// payment links there, so donation links are hidden in it.
+    static let isAppStoreBuild = Bundle.main.object(forInfoDictionaryKey: "NullPlayerAppStoreBuild") as? Bool == true
+
     // MARK: - Resources
     
     /// Cached SPM resource bundle for release builds running from build directory

@@ -296,11 +296,33 @@ final class WinampModernB95Tests: XCTestCase {
                        "and drawn from the skin's own artwork, with no glyph over it")
     }
 
+    /// Motorhead's shade layout names `player.shade.Shade` and never declares it: the action says
+    /// which control it is. One that states its size is a hotspot over the skin's own art (Big
+    /// Bento's `image="none"` close) and stays invisible.
+    func testAnUndeclaredSkinImageDrawsTheGlyphItsActionNames() throws {
+        let scene = try makeScene(markup: """
+        <button id="Shade" action="SWITCH" param="normal" x="0" y="0" image="player.shade.Shade"/>
+        """)
+        let frame = try XCTUnwrap(scene.frame(ofXMLID: "Shade"))
+        XCTAssertEqual(frame.width, WasabiChromeButtons.Role.winshade.defaultSize.width)
+        XCTAssertFalse(scene.inkColours().isEmpty, "the windowshade glyph is on the canvas")
+
+        let hotspot = try makeScene(markup: """
+        <button id="Close" action="CLOSE" x="0" y="0" w="30" h="20" image="none"/>
+        """)
+        XCTAssertTrue(hotspot.inkColours().isEmpty, "a sized hotspot draws nothing")
+
+        let fitted = try makeScene(markup: """
+        <button id="Close" action="CLOSE" x="0" y="0" fitparent="1" image="none"/>
+        """)
+        XCTAssertTrue(fitted.inkColours().isEmpty, "a parent-sized hotspot draws nothing")
+    }
+
     /// An unresolved id under the prefix that is not a control we know is left alone. This draws a
     /// known button, not a box around every id that failed to resolve.
     func testAnUnknownWasabiButtonIdIsLeftAlone() throws {
         let scene = try makeScene(markup: """
-        <button id="Odd" action="CLOSE" x="0" y="0" image="wasabi.button.notachromecontrol"/>
+        <button id="Odd" action="PLAY" x="0" y="0" image="wasabi.button.notachromecontrol"/>
         """)
         XCTAssertNil(WasabiChromeButtons.role(forBitmapID: "wasabi.button.notachromecontrol"))
         XCTAssertTrue(scene.inkColours().isEmpty, "nothing was drawn for it")

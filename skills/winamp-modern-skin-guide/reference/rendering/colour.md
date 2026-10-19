@@ -80,12 +80,12 @@ than inventing, and which is **nil in classic mode** — so classic cannot be re
   background, so a naive guard fails it almost everywhere and would snap every inactive title to full
   strength — erasing the active/inactive distinction corpus-wide to fix five skins. It backs the
   blend off in stages (40% → 25% → 12% → full) instead.
-- `composited(_:over:)` flattens a translucent fill first. `PlexBrowserView`'s focused search field
+- `composited(_:over:)` flattens a translucent fill first. `ClassicLibraryBrowserView`'s focused search field
   draws over a **half-alpha** highlight; judging the written colour rather than the composited one
   leaves that one state unreadable while the opaque row beside it is fixed.
 
 **Two draw paths need it, and missing the second is the easy mistake.** NullPlayer's AppKit surfaces
-go through the style (`PlexBrowserView`'s four selection sites and its title, `WinampModernChrome`,
+go through the style (`ClassicLibraryBrowserView`'s four selection sites and its title, `WinampModernChrome`,
 `PlaylistView`, `EQView`). But the skin's **own** playlist panel and `<ColorThemes:List>` are drawn by
 `WasabiRenderer` straight from `WasabiPalette`, never touching a style — that is
 `WasabiRenderer.legibleRowColor`, and it was the half that live QA caught after the first pass looked

@@ -7,7 +7,8 @@
 --                                 e.g. Audion Faces: `familyItems`)
 --   family <pid>                  the checked Skins submenu, i.e. the family on screen
 --   load <pid> <submenu> <path>   press that submenu's Load ... Skin... and open <path> in its panel
---   closeaux <pid>                toggle off every checked window except Main Window
+--   closeaux <pid>                toggle off every checked window except Main Window (window toggles only:
+--                                 never Window Shadows, Compact Mode or Always On Top)
 --   windowitems <pid>             one line per window-toggle item: index|name|enabled|checked
 --   toggle <pid> <index> <name>   click Windows item <index>, refusing if its name is not <name>
 --
@@ -101,10 +102,21 @@ on drive(argv, targetPid)
           set nms to name of every menu item of mm
           set mks to value of attribute "AXMenuItemMarkChar" of every menu item of mm
           set hit to 0
-          repeat with i from 1 to count of nms
+          -- Only the window toggles: block 1, then a `.wal` skin's own block when one follows
+          -- (`windowitems` reads the same blocks). Everything after is a setting, not a window --
+          -- Window Shadows, Compact Mode, Always On Top -- and clicking it changes the app under
+          -- test; closeaux turned Window Shadows off mid-sweep that way (2026-10-11).
+          set blockNo to 1
+          set n to count of nms
+          repeat with i from 1 to n
             set nm to item i of nms
             set mk to item i of mks
-            if nm is not missing value and nm is not "Main Window" then
+            if nm is missing value or nm is "" then
+              if blockNo is 2 or i = n then exit repeat
+              set nx to item (i + 1) of nms
+              if nx is "Compact Mode" or nx is "Always On Top" then exit repeat
+              set blockNo to 2
+            else if nm is not "Main Window" then
               if mk is not missing value and mk is not "" then
                 set hit to i
                 exit repeat

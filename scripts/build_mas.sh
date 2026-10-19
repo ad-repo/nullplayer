@@ -154,34 +154,17 @@ assemble_app "$APP_BUNDLE"
 
 # Copy provisioning profile to the bundle (BEFORE signing)
 log_info "Embedding provisioning profile..."
-FRAMEWORKS_DIR="$APP_BUNDLE/Contents/Frameworks"
 cp "$MAS_PROVISION_PROFILE" "$APP_BUNDLE/Contents/embedded.provisionprofile"
 log_success "Provisioning profile embedded"
 
-# Sign frameworks and dylibs (inside-out order)
-log_info "Code signing frameworks and dylibs..."
-for framework in "$FRAMEWORKS_DIR"/*.framework; do
-    if [[ -d "$framework" ]]; then
-        log_info "  Signing framework: $(basename "$framework")"
-        codesign --force --sign "$MAS_APP_IDENTITY" --timestamp "$framework"
-    fi
-done
+# Mark the bundle as the App Store build (BundleHelper.isAppStoreBuild hides donation links)
+/usr/libexec/PlistBuddy -c "Add :NullPlayerAppStoreBuild bool true" "$APP_BUNDLE/Contents/Info.plist"
 
-for dylib in "$FRAMEWORKS_DIR"/*.dylib; do
-    if [[ -f "$dylib" && ! -L "$dylib" ]]; then
-        log_info "  Signing dylib: $(basename "$dylib")"
-        codesign --force --sign "$MAS_APP_IDENTITY" --timestamp "$dylib"
-    fi
-done
-
-# Sign app bundle WITH entitlements
+# Sign inside-out; only the app bundle carries the entitlements
 log_info "Code signing app bundle with entitlements..."
-codesign --force --sign "$MAS_APP_IDENTITY" --timestamp --entitlements "$REPO_ROOT/Sources/NullPlayer/Resources/NullPlayer.entitlements" "$APP_BUNDLE"
+sign_app_bundle "$APP_BUNDLE" --sign "$MAS_APP_IDENTITY" --timestamp \
+    -- --entitlements "$REPO_ROOT/Sources/NullPlayer/Resources/NullPlayer.entitlements"
 log_success "Code signing complete"
-
-log_info "Verifying code signature..."
-codesign --verify --deep --strict "$APP_BUNDLE"
-log_success "Code signature verified"
 
 # Create the installer package
 log_info "Creating installer package..."

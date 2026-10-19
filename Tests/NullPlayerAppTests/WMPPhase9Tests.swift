@@ -190,7 +190,7 @@ final class WMPPhase9Tests: XCTestCase {
         try await waitUntil { controller.selectedViewID == "main" }
 
         // A menu-selected surface takes the same `openView` route the skin's own button takes.
-        XCTAssertTrue(controller.revealSkinSurface(.playlist, switchingViews: true))
+        XCTAssertTrue(controller.revealSkinSurface(.playlist))
         try await waitUntil { controller.openViewIDs == ["main", "playlist"] }
         let panel = try XCTUnwrap(controller.materializedAuxiliaryWindows.first?.contentView
                                     as? WMPMainView)
@@ -251,7 +251,7 @@ final class WMPPhase9Tests: XCTestCase {
         """, filename: "Phase9WindowClose.wmz")
         defer { cleanup() }
         try await waitUntil { controller.selectedViewID == "main" }
-        XCTAssertTrue(controller.revealSkinSurface(.playlist, switchingViews: true))
+        XCTAssertTrue(controller.revealSkinSurface(.playlist))
         try await waitUntil { controller.openViewIDs == ["main", "playlist"] }
         let panel = try XCTUnwrap(controller.materializedAuxiliaryWindows.first)
 

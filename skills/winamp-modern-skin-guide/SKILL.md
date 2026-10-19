@@ -96,7 +96,7 @@ top to bottom. Rows are grouped by area; within a group, follow the most specifi
 | Several windows in the menu share one name | [reference/components.md](reference/components.md) → *default_visible*, and `WinampModernContainerTopology.menuLabels` |
 | A window the skin closes at startup is missing from every probe | [reference/components.md](reference/components.md) → *`visible` on a container answers two questions* |
 | Window restores at the wrong size or one skin inherits another's frame | [reference/rendering.md](reference/rendering.md) → *A .wal window's size is still the skin's* |
-| Container/layout writes do not move or size their window | [reference/rendering.md](reference/rendering.md) → *A container's x/y/w/h are its window's* |
+| Container/layout writes do not move or size their window, or a window placed relative to another lands loose | [reference/scripting.md](reference/scripting.md) → *Writing back the position a window just read is not a move* |
 | A bare outline rectangle opens beside the player (drop shadow, snap preview) | [reference/components.md](reference/components.md) → *A window that only fakes a Windows desktop effect* |
 | NullPlayer's own drop shadow is missing, stale, a white band, or a ghost of an older frame | [reference/rendering.md](reference/rendering.md) → *The window's drop shadow* |
 
@@ -270,6 +270,7 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Style for NullPlayer-drawn surfaces | `WinampModernSurfaceStyle.swift` |
 | EQ action decoding | `WinampModernEQActions.swift` |
 | `cfgattrib` values that are host state | `WinampModernConfigBridge.swift` |
+| A window placed at another window's position (`getLeft()` read, `resize`/`setXmlParam` write) | `WinampModernBorrowedOrigin.swift` |
 | Balance (`PAN`) unit conversion | `WinampModernPanAction.swift` |
 | Diagnostics | `WalDiagnostics.swift` |
 | Compatibility report | `WinampModernCompatibilityReport.swift` |

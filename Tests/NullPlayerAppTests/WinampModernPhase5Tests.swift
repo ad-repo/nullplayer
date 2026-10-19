@@ -204,6 +204,26 @@ final class WinampModernPhase5Tests: XCTestCase {
         XCTAssertFalse(snapshot.isSelected(1))
     }
 
+    /// A queue change re-bases the selection onto the playing row, or empties it with nothing
+    /// playing, so Misc ▸ Assign EQ Profile never acts on rows of a queue that is gone (M48).
+    func testPlaylistSelectionRebasesWhenTheQueueChanges() throws {
+        let engine = AudioEngine()
+        let placeholder = URL(string: "about:blank")!
+        engine.setPlaylistTracks((0..<4).map { Track(url: placeholder, title: "Song \($0)") })
+        let bridge = WinampModernComponentBridge(engine: engine)
+
+        bridge.playlistSetSelection([0, 1, 2])
+        bridge.playlistQueueDidChange()
+        XCTAssertEqual(bridge.playlistSnapshot().selectedRows, [])
+        XCTAssertEqual(bridge.playlistSnapshot().selectedIndex, -1)
+
+        engine.playTrack(at: 3)
+        bridge.playlistSetSelection([0, 1, 2])
+        bridge.playlistQueueDidChange()
+        XCTAssertEqual(bridge.playlistSnapshot().selectedRows, [3])
+        XCTAssertEqual(bridge.playlistSnapshot().selectedIndex, 3)
+    }
+
     // MARK: - Phase 26 album artwork host
 
     func testAlbumArtworkIsNilWithoutACurrentTrack() {

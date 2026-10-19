@@ -152,7 +152,13 @@ extension WinampModernScriptRuntime {
                 // same four attributes written one at a time did not, which is how Big Bento's search
                 // results came out at the container's declared 275×116 in the corner of the screen
                 // instead of under the search box it measured itself against (BB31).
-                writeGeometry([(key, value)], on: object)
+                let borrowed: WinampModernBorrowedOrigin.Request?
+                switch (key.lowercased(), Double(value)) {
+                case ("x", let x?): borrowed = borrowedWindowOrigin(x: x, y: nil, writtenOn: object)
+                case ("y", let y?): borrowed = borrowedWindowOrigin(x: nil, y: y, writtenOn: object)
+                default: borrowed = nil
+                }
+                writeGeometry([(key, value)], on: object, borrowed: borrowed)
             } else {
                 _ = object.setAttribute(key, value: value)
                 // A layout that computes its own resize floor has said what the protective minimum
@@ -230,10 +236,8 @@ extension WinampModernScriptRuntime {
         case "getguid":
             return .string(object.attributes["guid"] ?? "")
         case "resize":
-            let borrowed = borrowedWindowOrigin(
-                matching: CGPoint(x: Double(arguments[0].integerValue),
-                                  y: Double(arguments[1].integerValue)),
-                writtenOn: object)
+            let borrowed = borrowedWindowOrigin(x: Double(arguments[0].integerValue),
+                                                y: Double(arguments[1].integerValue), writtenOn: object)
             writeGeometry(Array(zip(["x", "y", "w", "h"], arguments.map { String($0.integerValue) })),
                           on: object, borrowed: borrowed)
             return .null

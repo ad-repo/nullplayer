@@ -22,9 +22,11 @@ class ModernMainWindowController: NSWindowController, MainWindowProviding {
             backing: .buffered,
             defer: false
         )
-        
+        // Closing the player quits.
+        window.closeAction = { [weak window] in window?.close(); NSApp.terminate(nil) }
+
         self.init(window: window)
-        
+
         setupWindow()
         setupView()
     }

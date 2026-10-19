@@ -489,18 +489,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc func showAbout() {
         // Create custom About window.
-        // The layout below runs top-down from `y`, consuming a fixed 466pt: 30 top inset,
-        // 112 icon, 40 name, 28 version, 50 tagline, 20 separator, 42 credits, 40 website,
-        // 40 buttons, 36 disclaimer, 28 OK. Size the window from that total rather than
-        // hardcoding a height, so the panel keeps an even bottom margin instead of a dead gap
-        // (it was 540pt tall, leaving 132pt of empty background under the OK button).
+        // The layout below runs top-down from `y` = 0; the window is then sized to what it
+        // consumed, so the panel keeps an even bottom margin whichever rows are shown.
         let windowWidth: CGFloat = 340
-        let contentHeight: CGFloat = 466
         let bottomPadding: CGFloat = 24
-        let windowHeight: CGFloat = contentHeight + bottomPadding
-        
+
         let window = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight),
+            contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: 0),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -508,15 +503,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "About nullPlayer"
         window.appearance = NSAppearance(named: .darkAqua)  // light text on the dark panel's buttons
         window.isMovableByWindowBackground = true
-        window.center()
         
         // Dark background
-        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight))
+        let contentView = NSView(frame: NSRect(x: 0, y: 0, width: windowWidth, height: 0))
         contentView.wantsLayer = true
         contentView.layer?.backgroundColor = NSColor(white: 0.12, alpha: 1.0).cgColor
         window.contentView = contentView
         
-        var y: CGFloat = windowHeight - 30
+        var y: CGFloat = -30
         
         // App icon
         let iconSize: CGFloat = 96
@@ -616,7 +610,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         addLinkButton("Reddit", icon: brandIcon("reddit"), url: "https://www.reddit.com/r/NullPlayer/",
                       x: buttonStartX + (buttonWidth + buttonSpacing) * 2, width: buttonWidth)
         y -= buttonHeight + 12
-        
+        if !BundleHelper.isAppStoreBuild {
+            addLinkButton("Support on Ko-fi", icon: brandIcon("kofi"), url: "https://ko-fi.com/nullplayer",
+                          x: buttonStartX, width: totalButtonWidth)
+            y -= buttonHeight + 12
+        }
+
         // Disclaimer
         let disclaimerLabel = NSTextField(wrappingLabelWithString: "This is a clean room project")
         disclaimerLabel.font = NSFont.systemFont(ofSize: 12)
@@ -634,7 +633,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         okButton.target = self
         okButton.action = #selector(closeAboutWindow)
         contentView.addSubview(okButton)
-        
+        y -= buttonHeight
+
+        // Size the window to the consumed height and lift the rows into it
+        let windowHeight = bottomPadding - y
+        window.setContentSize(NSSize(width: windowWidth, height: windowHeight))
+        for subview in contentView.subviews { subview.frame.origin.y += windowHeight }
+        window.center()
+
         // Store window reference and show
         aboutWindow = window
         window.level = .modalPanel  // Ensure dialog appears above floating windows

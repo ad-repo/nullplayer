@@ -1,11 +1,14 @@
 import AppKit
 
 /// Controller for the Plex browser window (classic skin mode)
-class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProviding {
+class ClassicLibraryBrowserWindowController: NSWindowController, LibraryBrowserWindowProviding {
     
     // MARK: - Properties
     
-    private var browserView: PlexBrowserView!
+    private var browserView: ClassicLibraryBrowserView!
+    /// The window's content outside Compact Mode: the browser over its Cava backdrop, as siblings
+    /// so Cava repaints independently beneath the browser's translucent list.
+    private var contentContainer: NSView!
     
     /// Minimum window size. Width floors at the center-stack width so the window can be sized to
     /// align cleanly when docked top/bottom in a center stack (Compact Mode keeps a tab-label
@@ -52,7 +55,7 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
     private func setupWindow() {
         guard let window = window else { return }
         
-        window.isMovableByWindowBackground = false  // Custom drag handling in PlexBrowserView
+        window.isMovableByWindowBackground = false  // Custom drag handling in ClassicLibraryBrowserView
         
         // On non-Retina displays, use opaque window to prevent compositing artifacts
         let backingScale = NSScreen.main?.backingScaleFactor ?? 2.0
@@ -79,10 +82,14 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
     }
     
     private func setupView() {
-        browserView = PlexBrowserView(frame: NSRect(origin: .zero, size: Self.defaultSize))
+        browserView = ClassicLibraryBrowserView(frame: NSRect(origin: .zero, size: Self.defaultSize))
         browserView.controller = self
         browserView.autoresizingMask = [.width, .height]
-        window?.contentView = browserView
+        contentContainer = NSView(frame: browserView.frame)
+        contentContainer.wantsLayer = true
+        contentContainer.layer?.backgroundColor = NSColor.clear.cgColor
+        contentContainer.addSubview(browserView)
+        window?.contentView = contentContainer
     }
     
     /// Normal-mode frame for position memory.
@@ -103,17 +110,17 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
         let plexManager = PlexManager.shared
         if plexManager.isLinked && plexManager.servers.isEmpty {
             if case .connecting = plexManager.connectionState {
-                NSLog("PlexBrowserWindowController: Already connecting, skipping refresh")
+                NSLog("ClassicLibraryBrowserWindowController: Already connecting, skipping refresh")
             } else {
                 Task {
                     do {
-                        NSLog("PlexBrowserWindowController: No servers cached, refreshing...")
+                        NSLog("ClassicLibraryBrowserWindowController: No servers cached, refreshing...")
                         try await plexManager.refreshServers()
                         await MainActor.run {
-                            self.browserView.reloadData()
+                            self.browserView.model.reloadData()
                         }
                     } catch {
-                        NSLog("PlexBrowserWindowController: Failed to refresh servers: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
+                        NSLog("ClassicLibraryBrowserWindowController: Failed to refresh servers: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                     }
                 }
             }
@@ -131,6 +138,14 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
     /// before this controller is closed and niled for a UI reload.
     func prepareForUITeardown() {
         browserView?.prepareForUITeardown()
+    }
+
+    var libraryBackdropPresenter: CavaPresenter? {
+        browserView.backdropPresenter
+    }
+
+    func refreshLibraryBackdrop() {
+        browserView.refreshBackdrop()
     }
 
     // MARK: - Compact Mode
@@ -202,9 +217,11 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
             compactPlaylist = nil
             compactContainer = nil
             browserView.isHidden = false
-            browserView.frame = NSRect(origin: .zero, size: size)
+            contentContainer.frame = NSRect(origin: .zero, size: size)
+            browserView.frame = contentContainer.bounds
             browserView.autoresizingMask = [.width, .height]
-            window.contentView = browserView
+            window.contentView = contentContainer
+            contentContainer.addSubview(browserView)
         }
         browserView.needsDisplay = true
     }
@@ -256,13 +273,13 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
     }
     
     func reloadData() {
-        browserView.reloadData()
+        browserView.model.reloadData()
     }
     
     /// Current browse mode raw value for state save/restore
     var browseModeRawValue: Int {
-        get { browserView.browseModeRawValue }
-        set { browserView.browseModeRawValue = newValue }
+        get { browserView.model.browseMode.rawValue }
+        set { browserView.model.restoreBrowseMode(rawValue: newValue) }
     }
     
     /// Show the Plex link sheet
@@ -272,7 +289,7 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
         let linkSheet = PlexLinkSheet()
         linkSheet.showAsSheet(from: window) { [weak self] success in
             if success {
-                self?.browserView.reloadData()
+                self?.browserView.model.reloadData()
             }
         }
     }
@@ -280,7 +297,7 @@ class PlexBrowserWindowController: NSWindowController, LibraryBrowserWindowProvi
 
 // MARK: - NSWindowDelegate
 
-extension PlexBrowserWindowController: NSWindowDelegate {
+extension ClassicLibraryBrowserWindowController: NSWindowDelegate {
     func windowDidResize(_ notification: Notification) {
         browserView.needsDisplay = true
     }
@@ -296,6 +313,7 @@ extension PlexBrowserWindowController: NSWindowDelegate {
     }
     
     func windowWillClose(_ notification: Notification) {
+        browserView.stopBackdrop()
         WindowManager.shared.rememberPlexBrowserFrameBeforeClose()
         WindowManager.shared.notifyMainWindowVisibilityChanged()
     }

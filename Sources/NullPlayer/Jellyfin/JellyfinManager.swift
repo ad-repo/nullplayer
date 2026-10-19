@@ -2,7 +2,7 @@ import Foundation
 import AppKit
 
 /// Singleton managing Jellyfin server connections and state
-class JellyfinManager {
+final class JellyfinManager {
     
     // MARK: - Singleton
     

@@ -1,12 +1,11 @@
 import AppKit
-import AVFoundation
 
 /// Resolves the current track's artwork for WMP's two built-in album-art images. It is deliberately
 /// WMP-owned: a skin sees pixels under two fixed names, never a file path, server token, or track.
 enum WMPArtworkLoader {
     static func loadArtwork(for track: Track) async -> CGImage? {
         if track.url.isFileURL {
-            return await localArtwork(at: track.url)
+            return await LocalArtwork.image(for: track.url).flatMap(cgImage)
         }
         let remoteURL: URL?
         if let serverURL = track.serverArtworkURL(size: 300) {
@@ -22,26 +21,6 @@ enum WMPArtworkLoader {
               (response as? HTTPURLResponse)?.statusCode == 200,
               let image = NSImage(data: data) else { return nil }
         return cgImage(from: image)
-    }
-
-    private static func localArtwork(at url: URL) async -> CGImage? {
-        let asset = AVURLAsset(url: url)
-        do {
-            for format in [AVMetadataFormat.id3Metadata, .iTunesMetadata] {
-                for item in try await asset.loadMetadata(for: format)
-                where item.commonKey == .commonKeyArtwork {
-                    if let data = try await item.load(.dataValue), let image = NSImage(data: data) {
-                        return cgImage(from: image)
-                    }
-                }
-            }
-            for item in try await asset.load(.metadata) where item.commonKey == .commonKeyArtwork {
-                if let data = try await item.load(.dataValue), let image = NSImage(data: data) {
-                    return cgImage(from: image)
-                }
-            }
-        } catch { }
-        return nil
     }
 
     private static func cgImage(from image: NSImage) -> CGImage? {

@@ -11,12 +11,6 @@ final class YouTubeChannelSearch {
     private var submittedQuery: String?
     private var task: Task<Void, Never>?
 
-    /// Whether `query` is typed but not yet searched, so Enter should submit it rather than
-    /// act on the selected row.
-    func isUnsubmitted(_ query: String) -> Bool {
-        !query.isEmpty && Self.normalized(query) != submittedQuery
-    }
-
     /// Search for `query` unless its results are already showing (`force` re-runs it).
     /// Returns false when nothing was started — the current results stand, cleared for an
     /// empty query. Otherwise `completion` runs when the search lands: nil on success, or

@@ -61,12 +61,13 @@ struct StudioFaceplate {
     /// switches are its tabs (`tab`), the buttons SF Symbols, and the profile name is in the main
     /// window's display face.
     ///
-    /// An Original-Metal skin (`metalSkin`) has no palette ground: the panel is left clear, so the
-    /// chrome's brushed surface — the main window's own — shows through. Its wells and lines are the
-    /// material's, as the Original EQ draws them, its levels the material's spectrum colours, and
-    /// its text the skin's own text colours, which the palette's — chosen against a dark ground
-    /// that is not drawn — are not.
-    init(_ kind: Kind, style: SkinnedSurfaceStyle, meter: [NSColor], tab: StudioTab, metalSkin: ModernSkin?) {
+    /// An Original skin (`originalSkin`) leaves the panel clear, so the chrome's window background —
+    /// the main window's own, background image or brushed surface — shows through. An
+    /// Original-Metal skin has no palette ground: its wells and lines are the material's, as the
+    /// Original EQ draws them, its levels the material's spectrum colours, and its text the skin's
+    /// own text colours, which the palette's — chosen against a dark ground that is not drawn — are not.
+    init(_ kind: Kind, style: SkinnedSurfaceStyle, meter: [NSColor], tab: StudioTab, originalSkin: ModernSkin?) {
+        let metalSkin = originalSkin?.renderStyle == .metal ? originalSkin : nil
         let metal = metalSkin?.metalMaterial
         let blend = SkinnedSurfaceStyle.blend
         let (low, mid, high) = metal.map { ($0.spectrumLow, blend($0.spectrumLow, $0.spectrumHigh, 0.5), $0.spectrumHigh) }
@@ -74,9 +75,10 @@ struct StudioFaceplate {
         self.tab = tab
         legendFont = .systemFont(ofSize: 8)
         buttonFont = .systemFont(ofSize: 10)
-        let well = metal?.eqPanelFill ?? blend(style.background, .black, 0.4)
+        // An Original skin's wells are its main-window display panels' surface fill.
+        let well = metal?.eqPanelFill ?? originalSkin?.surfaceColor ?? blend(style.background, .black, 0.4)
         self.kind = kind
-        panel = metal == nil ? style.background : .clear
+        panel = originalSkin == nil ? style.background : .clear
         self.well = well
         edge = metal?.eqStroke ?? style.border
 
@@ -107,7 +109,7 @@ struct StudioFaceplate {
         } ?? blend(ground, text, 0.55)
         peak = metal?.spectrumHigh ?? WaveformView.playheadColor(for: style)
         // The bloom composites over an opaque ground, which a clear panel is not.
-        glows = kind == .boutique && style.prefersDarkAppearance && metal == nil
+        glows = kind == .boutique && style.prefersDarkAppearance && originalSkin == nil
         switch kind {
         case .console:
             caps = [low, mid, high]

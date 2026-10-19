@@ -258,16 +258,18 @@ func captureSettled(id: Int, pid: Int?, to path: String) -> Bool {
 /// `clickState` is not optional decoration: an event posted without it arrives as
 /// `clickCount == 0`, and any handler that gates on `clickCount == 1` ignores it while the
 /// window still highlights — a click that looks like it landed and did nothing.
-func click(_ x: Double, _ y: Double, clickState: Int64 = 1) {
+func click(_ x: Double, _ y: Double, clickState: Int64 = 1, button: CGMouseButton = .left) {
     let p = CGPoint(x: x, y: y)
-    let move = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)
+    let (downType, upType): (CGEventType, CGEventType) =
+        button == .right ? (.rightMouseDown, .rightMouseUp) : (.leftMouseDown, .leftMouseUp)
+    let move = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: button)
     move?.post(tap: .cghidEventTap)
     usleep(120_000)
-    let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: p, mouseButton: .left)
+    let down = CGEvent(mouseEventSource: nil, mouseType: downType, mouseCursorPosition: p, mouseButton: button)
     down?.setIntegerValueField(.mouseEventClickState, value: clickState)
     down?.post(tap: .cghidEventTap)
     usleep(80_000)
-    let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: p, mouseButton: .left)
+    let up = CGEvent(mouseEventSource: nil, mouseType: upType, mouseCursorPosition: p, mouseButton: button)
     up?.setIntegerValueField(.mouseEventClickState, value: clickState)
     up?.post(tap: .cghidEventTap)
 }
@@ -452,6 +454,13 @@ case "dblclick":
     }
     requireNullPlayer(at: CGPoint(x: x, y: y), verb: "dblclick")
     dblclick(x, y)
+case "rclick":
+    guard args.count == 4, let x = Double(args[2]), let y = Double(args[3]) else {
+        FileHandle.standardError.write("usage: winhelper rclick <x> <y>\n".data(using: .utf8)!); exit(1)
+    }
+    requireNullPlayer(at: CGPoint(x: x, y: y), verb: "rclick")
+    // Opens the view's contextual menu, which stays up for Accessibility (app-control § Route C).
+    click(x, y, button: .right)
 case "scroll":
     guard args.count >= 6, let x = Double(args[2]), let y = Double(args[3]),
           let count = Int(args[4]), let delta = Int32(args[5]) else {

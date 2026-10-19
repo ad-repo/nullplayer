@@ -93,8 +93,8 @@ class ContextMenuBuilder {
         menu.addItem(minimizeAll)
         menu.addItem(NSMenuItem.separator())
 
-        // Exit
-        let exit = NSMenuItem(title: "Exit", action: #selector(MenuActions.exit), keyEquivalent: "")
+        // Quit
+        let exit = NSMenuItem(title: "Quit", action: #selector(MenuActions.exit), keyEquivalent: "")
         exit.target = MenuActions.shared
         menu.addItem(exit)
 
@@ -127,7 +127,7 @@ class ContextMenuBuilder {
     }
 
     /// Winamp's File menu is its "get something to play" entry point, which here is the two openers
-    /// `MenuActions` already owns plus the URL ripper, and Exit at the foot where Winamp puts it.
+    /// `MenuActions` already owns plus the URL ripper, and Quit at the foot where Winamp puts it.
     private static func buildWinampModernFileMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -139,7 +139,7 @@ class ContextMenuBuilder {
             menu.addItem(item)
         }
         menu.addItem(.separator())
-        let exit = NSMenuItem(title: "Exit", action: #selector(MenuActions.exit), keyEquivalent: "")
+        let exit = NSMenuItem(title: "Quit", action: #selector(MenuActions.exit), keyEquivalent: "")
         exit.target = MenuActions.shared
         menu.addItem(exit)
         return menu
@@ -175,25 +175,28 @@ class ContextMenuBuilder {
         let supportsSkinnedAuxiliaryWindows = supportsSkinnedAuxiliaryWindows(for: wm.uiMode)
 
         menu.addItem(buildWindowItem("Main Window", visible: wm.mainWindowController?.window?.isVisible ?? false, action: #selector(MenuActions.toggleMainWindow)))
+        menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildSkinOwnableWindowItem("Playlist Editor", surface: .playlist, visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(buildSkinOwnableWindowItem("Equalizer", surface: .equalizer, visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Equalizer Studio", visible: wm.isEqualizerStudioVisible, action: #selector(MenuActions.toggleEqualizerStudio)))
-        menu.addItem(buildSkinOwnableWindowItem("Playlist Editor", surface: .playlist, visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(buildWindowItem("Visualizations", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Spectrum Analyzer", visible: wm.isSpectrumVisible, action: #selector(MenuActions.toggleSpectrum), enabled: supportsSkinnedAuxiliaryWindows))
-        menu.addItem(buildWindowItem("Audio Analyzer", visible: wm.isAudioAnalysisVisible, action: #selector(MenuActions.toggleAudioAnalysis), enabled: supportsSkinnedAuxiliaryWindows))
-        menu.addItem(buildWindowItem("PeppyMeter", visible: wm.isPeppyMeterVisible, action: #selector(MenuActions.togglePeppyMeter), enabled: supportsSkinnedAuxiliaryWindows))
-        menu.addItem(buildWindowItem("Art", visible: wm.isArtVisible, action: #selector(MenuActions.toggleArt), enabled: supportsSkinnedAuxiliaryWindows))
-        menu.addItem(buildWindowItem("Flow", visible: wm.isNetworkMonitorVisible, action: #selector(MenuActions.toggleNetworkMonitor), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Cava", visible: wm.isCavaVisible, action: #selector(MenuActions.toggleCava), enabled: supportsSkinnedAuxiliaryWindows))
-        menu.addItem(buildWindowItem("Sonos Rooms", visible: wm.isSonosVisible, action: #selector(MenuActions.toggleSonos), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Waveform", visible: wm.isWaveformVisible, action: #selector(MenuActions.toggleWaveform), enabled: supportsSkinnedAuxiliaryWindows))
-        menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Art", visible: wm.isArtVisible, action: #selector(MenuActions.toggleArt), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("PeppyMeter", visible: wm.isPeppyMeterVisible, action: #selector(MenuActions.togglePeppyMeter), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Audio Analyzer", visible: wm.isAudioAnalysisVisible, action: #selector(MenuActions.toggleAudioAnalysis), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(buildWindowItem("Play History", visible: wm.isLibraryHistoryVisible,
                                      action: #selector(MenuActions.toggleLibraryHistory), enabled: supportsSkinnedAuxiliaryWindows))
-        menu.addItem(buildWindowItem("Visualizations", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildSkinOwnableWindowItem("Video Player", surface: .video,
                                                 visible: wm.isVideoPlayerVisible,
                                                 action: #selector(MenuActions.toggleVideoPlayer),
                                                 enabled: wm.currentVideoPlayerController != nil))
+        menu.addItem(buildWindowItem("Sonos Rooms", visible: wm.isSonosVisible, action: #selector(MenuActions.toggleSonos), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildWindowItem("Flow", visible: wm.isNetworkMonitorVisible, action: #selector(MenuActions.toggleNetworkMonitor), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
 
         #if DEBUG
@@ -272,7 +275,7 @@ class ContextMenuBuilder {
 
         menu.addItem(NSMenuItem.separator())
 
-        let rememberState = NSMenuItem(title: "Save State on Exit", action: #selector(MenuActions.toggleRememberState), keyEquivalent: "")
+        let rememberState = NSMenuItem(title: "Save State on Quit", action: #selector(MenuActions.toggleRememberState), keyEquivalent: "")
         rememberState.target = MenuActions.shared
         rememberState.state = AppStateManager.shared.isEnabled ? .on : .off
         menu.addItem(rememberState)
@@ -339,7 +342,7 @@ class ContextMenuBuilder {
 
         menu.addItem(NSMenuItem.separator())
 
-        let rememberState = NSMenuItem(title: "Remember State On Quit", action: #selector(MenuActions.toggleRememberState), keyEquivalent: "")
+        let rememberState = NSMenuItem(title: "Save State on Quit", action: #selector(MenuActions.toggleRememberState), keyEquivalent: "")
         rememberState.target = MenuActions.shared
         rememberState.state = AppStateManager.shared.isEnabled ? .on : .off
         menu.addItem(rememberState)
@@ -603,10 +606,10 @@ class ContextMenuBuilder {
         // Winamp Modern (.wal) drives its in-skin visualizer from the main window's own menu,
         // so the menu-bar entry is suppressed there. A `.wmz` skin draws its own player and hosts
         // this player's visuals in its authored effects rect, so WMP suppresses it too.
-        // Classic and NullPlayer modern keep it.
-        if !wm.uiMode.controllerFamily.hostsForeignSkin {
+        // Classic and NullPlayer modern keep it, each editing its own mode key.
+        if let modeKey = MainWindowVisMode.defaultsKey(for: wm.runningControllerFamily) {
             let mainWindowItem = NSMenuItem(title: "Main Window", action: nil, keyEquivalent: "")
-            mainWindowItem.submenu = buildMainVisualizationSubmenu()
+            mainWindowItem.submenu = buildMainVisualizationSubmenu(modeKey: modeKey)
             menu.addItem(mainWindowItem)
         }
 
@@ -615,11 +618,9 @@ class ContextMenuBuilder {
         menu.addItem(spectrumWindowItem)
 
         menu.addItem(buildVisualizationsMenuItem())
-        if wm.isRunningModernUI {
-            let libraryWindowItem = NSMenuItem(title: "Library Window", action: nil, keyEquivalent: "")
-            libraryWindowItem.submenu = buildLibraryBackdropMenu()
-            menu.addItem(libraryWindowItem)
-        }
+        let libraryWindowItem = NSMenuItem(title: "Library Window", action: nil, keyEquivalent: "")
+        libraryWindowItem.submenu = buildLibraryBackdropMenu()
+        menu.addItem(libraryWindowItem)
         if wm.isRunningModernUI,
            AppCapabilities.supports(.compactWindowVisualsMenu) {
             let compactWindowItem = NSMenuItem(title: "Compact Window", action: nil, keyEquivalent: "")
@@ -655,6 +656,17 @@ class ContextMenuBuilder {
                 ?? libraryBackdropFallbackPresenter,
             action: #selector(MenuActions.setLibraryBackdropMode(_:))
         )
+    }
+
+    /// The Library (or Compact) Background submenu a browser offers atop its row, column and
+    /// empty-space menus; nil for a compact window without a Visuals menu.
+    static func browserBackdropMenuItem(compact: Bool, presenter: CavaPresenter?) -> NSMenuItem? {
+        guard !compact || AppCapabilities.supports(.compactWindowVisualsMenu) else { return nil }
+        let item = NSMenuItem(title: compact ? "Compact Background" : "Library Background", action: nil, keyEquivalent: "")
+        item.submenu = compact
+            ? buildCompactBackdropMenu(presenter: presenter)
+            : buildLibraryBackdropMenu(presenter: presenter)
+        return item
     }
 
     private static func buildBrowserBackdropMenu(
@@ -1248,15 +1260,7 @@ class ContextMenuBuilder {
         }
         optionsMenu.addItem(srsRoot)
 
-        // EQ Profiles: assigned profiles on or off; assignments are kept either way
-        let profilesItem = NSMenuItem(title: "EQ Profiles", action: #selector(MenuActions.toggleEQProfiles), keyEquivalent: "")
-        profilesItem.target = MenuActions.shared
-        profilesItem.state = EQProfileStore.shared.isEnabled ? .on : .off
-        if engine.isAnyCastingActive {
-            profilesItem.isEnabled = false
-            profilesItem.toolTip = "Not available while casting"
-        }
-        optionsMenu.addItem(profilesItem)
+        MainActor.assumeIsolated { optionsMenu.addItem(EQProfileMenu.playbackOptionsItem(castingActive: engine.isAnyCastingActive)) }
 
         optionsMenu.addItem(NSMenuItem.separator())
 
@@ -1288,16 +1292,8 @@ class ContextMenuBuilder {
             optionsMenu.addItem(durationItem)
         }
         
+        // The library window's art and Cava backdrop live in Visuals > Library Window.
         optionsMenu.addItem(NSMenuItem.separator())
-        
-        // Modern/Metal expose window-specific Art and Cava + Art choices in Visuals.
-        // Keep the legacy global toggle only for the classic browser.
-        if !wm.isRunningModernUI {
-            let artworkBgItem = NSMenuItem(title: "Browser Album Art Background", action: #selector(MenuActions.toggleBrowserArtworkBackground), keyEquivalent: "")
-            artworkBgItem.target = MenuActions.shared
-            artworkBgItem.state = wm.showBrowserArtworkBackground ? .on : .off
-            optionsMenu.addItem(artworkBgItem)
-        }
 
         return optionsMenu
     }
@@ -1361,11 +1357,11 @@ class ContextMenuBuilder {
     // MARK: - Main Window Visualization Submenu
     
     /// Returns the submenu content for Main Window visualization settings
-    private static func buildMainVisualizationSubmenu() -> NSMenu {
+    private static func buildMainVisualizationSubmenu(modeKey: String) -> NSMenu {
         let visMenu = NSMenu()
         visMenu.autoenablesItems = false
         
-        let currentMode = UserDefaults.standard.string(forKey: "mainWindowVisMode")
+        let currentMode = UserDefaults.standard.string(forKey: modeKey)
             .flatMap { MainWindowVisMode(rawValue: $0) } ?? .spectrum
         
         // Mode submenu
@@ -2932,6 +2928,9 @@ class ContextMenuBuilder {
             outputMenu.addItem(refreshCastItem)
         }
 
+        outputMenu.addItem(NSMenuItem.separator())
+        MainActor.assumeIsolated { outputMenu.addItem(EQCastMenu.item()) }
+
         return outputMenu
     }
     
@@ -3174,7 +3173,10 @@ class ContextMenuBuilder {
                 outputMenu.addItem(deviceItem)
             }
         }
-        
+
+        outputMenu.addItem(NSMenuItem.separator())
+        MainActor.assumeIsolated { outputMenu.addItem(EQCastMenu.item()) }
+
         outputItem.submenu = outputMenu
         return outputItem
     }
@@ -4458,10 +4460,6 @@ class MenuActions: NSObject {
         WindowManager.shared.audioEngine.balance = value
     }
     
-    @objc func toggleEQProfiles() {
-        EQProfileStore.shared.isEnabled.toggle()
-    }
-
     @objc func toggleSweetFade() {
         WindowManager.shared.audioEngine.sweetFadeEnabled.toggle()
     }
@@ -4481,10 +4479,6 @@ class MenuActions: NSObject {
         RadioPlaybackOptions.playlistLength = playlistLength
     }
     
-    @objc func toggleBrowserArtworkBackground() {
-        WindowManager.shared.showBrowserArtworkBackground.toggle()
-    }
-
     // MARK: - Sleep Timer
 
     @objc func startSleepTimerMinutes(_ sender: NSMenuItem) {
@@ -4690,8 +4684,9 @@ class MenuActions: NSObject {
     // MARK: - Main Window Visualization Options
 
     @objc func setMainVisMode(_ sender: NSMenuItem) {
-        guard let mode = sender.representedObject as? MainWindowVisMode else { return }
-        UserDefaults.standard.set(mode.rawValue, forKey: "mainWindowVisMode")
+        guard let mode = sender.representedObject as? MainWindowVisMode,
+              let key = MainWindowVisMode.defaultsKey(for: WindowManager.shared.runningControllerFamily) else { return }
+        UserDefaults.standard.set(mode.rawValue, forKey: key)
         // Notify main window to update visualization mode
         NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
     }
@@ -4967,7 +4962,7 @@ class MenuActions: NSObject {
     @objc func resetSavedState() {
         let alert = NSAlert()
         alert.messageText = "Reset Saved State?"
-        alert.informativeText = "This clears only the Remember State on Quit snapshot used to restore windows and playlist contents on launch. Preferences such as skins, visualization settings, library columns, server accounts, and compact mode are not changed."
+        alert.informativeText = "This clears only the Save State on Quit snapshot used to restore windows and playlist contents on launch. Preferences such as skins, visualization settings, library columns, server accounts, and compact mode are not changed."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Reset")
         alert.addButton(withTitle: "Cancel")
@@ -5262,7 +5257,7 @@ class MenuActions: NSObject {
         // Set the browser source to Subsonic
         NotificationCenter.default.post(
             name: NSNotification.Name("SetBrowserSource"),
-            object: BrowserSource.subsonic(serverId: serverId)
+            object: LibraryBrowserSource.subsonic(serverId: serverId)
         )
     }
     
@@ -5307,7 +5302,7 @@ class MenuActions: NSObject {
         // Set the browser source to Jellyfin
         NotificationCenter.default.post(
             name: NSNotification.Name("SetBrowserSource"),
-            object: BrowserSource.jellyfin(serverId: serverId)
+            object: LibraryBrowserSource.jellyfin(serverId: serverId)
         )
     }
     
@@ -5367,7 +5362,7 @@ class MenuActions: NSObject {
 
         NotificationCenter.default.post(
             name: NSNotification.Name("SetBrowserSource"),
-            object: BrowserSource.emby(serverId: serverId)
+            object: LibraryBrowserSource.emby(serverId: serverId)
         )
     }
 

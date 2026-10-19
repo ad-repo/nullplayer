@@ -16,11 +16,14 @@ import AppKit
 ///    roles is common in `.wal`, and 84 of the 180 `.wmz` corpus archives declare no colour at all —
 ///    so bars, borders, dividers, and pressed states are *derived* by blending the roles a skin does
 ///    declare, rather than invented.
-/// 2. **Replaces the bitmap font.** `font(scale:)` returns a monospaced system font whose advance is
-///    pinned to the classic cell width. That is the load-bearing choice in this whole change: the
-///    views measure their own layout as `text.count * SkinElements.TextFont.charWidth * scale`, in
-///    77 places in the browser alone, so matching the advance exactly keeps every one of those
-///    computations valid without touching a single layout line.
+/// 2. **Replaces the bitmap font.** `font(scale:)` returns the proportional system font at the
+///    classic glyph's cap height. The views still lay themselves out as
+///    `text.count * SkinElements.TextFont.charWidth * scale`, so that width is a *reservation*, as a
+///    Wasabi `forcefixed` is: the string is drawn inside it, shrunk only if it would not fit, and a
+///    caller that centres or right-aligns a label measures the drawn run (`drawnWidth`). A
+///    monospaced face pinned to the 5px advance used to fill the reservation exactly, at the price
+///    of drawing every label a third taller than the bitmap glyph and twice the size of the skin's
+///    own text beside it.
 ///
 /// **It is family-neutral by construction**: it is built from `SkinnedSurfaceRoles`, seven colours and
 /// nothing else. `WinampModernSurfaceStyle` (a typealias) derives those from a `WasabiPalette`;
@@ -293,28 +296,20 @@ struct SkinnedSurfaceStyle: Equatable {
     static let classicCharWidth = SkinElements.TextFont.charWidth
     static let classicCharHeight = SkinElements.TextFont.charHeight
 
-    /// A monospaced font whose advance is exactly `classicCharWidth * scale`.
-    ///
-    /// The point size is *solved for*, not guessed: the system's monospaced face is measured once and
-    /// the size scaled by the ratio, then a `.kern` correction absorbs whatever rounding is left. So
-    /// `attributes(...)`-drawn text is the same width the caller already computed for it, and a label
-    /// that used to fit its box still fits it.
+    /// The bitmap sheet's capitals are 5px of its 6px cell.
+    static let classicCapHeight: CGFloat = 5
+
+    /// The proportional system font whose capitals are the classic glyph's height at `scale`.
     static func font(scale: CGFloat) -> NSFont {
-        // Memoized: a browser frame draws ~77 separate strings, and solving for the size measures a
-        // glyph each time. Keyed on the rounded scale, of which a frame uses two or three.
+        // Memoized: a browser frame draws dozens of strings. Keyed on the rounded scale, of which a
+        // frame uses two or three.
         let key = (max(scale, 0.01) * 1000).rounded()
         if let cached = fontCache[key] { return cached }
-        let target = classicCharWidth * max(scale, 0.01)
         let probeSize: CGFloat = 100
-        let probe = NSFont.monospacedSystemFont(ofSize: probeSize, weight: .regular)
-        let advance = Self.advance(of: probe)
-        let font: NSFont
-        if advance > 0 {
-            font = NSFont.monospacedSystemFont(ofSize: min(max(probeSize * target / advance, 1), 256),
-                                               weight: .regular)
-        } else {
-            font = NSFont.monospacedSystemFont(ofSize: target * 1.6, weight: .regular)
-        }
+        let capHeight = NSFont.systemFont(ofSize: probeSize).capHeight
+        let target = classicCapHeight * max(scale, 0.01)
+        let size = capHeight > 0 ? probeSize * target / capHeight : target * 1.4
+        let font = NSFont.systemFont(ofSize: min(max(size, 1), 256))
         fontCache[key] = font
         return font
     }
@@ -322,44 +317,51 @@ struct SkinnedSurfaceStyle: Equatable {
     /// Main-thread only, like every other drawing path here.
     private static var fontCache: [CGFloat: NSFont] = [:]
 
-    /// Drawing attributes for text that must occupy `count * classicCharWidth * scale` points.
-    static func attributes(scale: CGFloat, color: NSColor) -> [NSAttributedString.Key: Any] {
-        let font = Self.font(scale: scale)
-        let target = classicCharWidth * max(scale, 0.01)
-        return [.font: font,
-                .foregroundColor: color,
-                .kern: target - Self.advance(of: font)]
-    }
-
-    /// Width of one character cell — the same number the callers compute, exposed so a test can
-    /// assert the two agree.
+    /// The width a caller reserves for `text`: `count` classic cells.
     static func measuredWidth(_ text: String, scale: CGFloat) -> CGFloat {
         CGFloat(text.count) * classicCharWidth * max(scale, 0.01)
     }
 
-    private static func advance(of font: NSFont) -> CGFloat {
-        // Monospaced, so any character answers; "0" is present in every face.
-        ("0" as NSString).size(withAttributes: [.font: font]).width
+    /// The font `text` is actually drawn in: `font(scale:)`, shrunk only as far as it must be to
+    /// stay inside its reservation.
+    private static func fittedFont(_ text: String, scale: CGFloat) -> NSFont {
+        var font = Self.font(scale: scale)
+        let reserved = measuredWidth(text, scale: scale)
+        // The system face's tracking changes with its optical size, so width is not linear in point
+        // size and one proportional step can land a percent or two wide. Aiming 0.5% under the box
+        // makes the next pass exit; a few converge.
+        for _ in 0..<4 {
+            let width = (text as NSString).size(withAttributes: [.font: font]).width
+            guard width > reserved, width > 0 else { break }
+            font = font.withSize(font.pointSize * reserved / width * 0.995)
+        }
+        return font
+    }
+
+    /// The width of the run `drawText` draws — never more than `measuredWidth`. A caller that centres
+    /// or right-aligns a label lays it out by this.
+    static func drawnWidth(_ text: String, scale: CGFloat) -> CGFloat {
+        guard !text.isEmpty else { return 0 }
+        return (text as NSString).size(withAttributes: [.font: fittedFont(text, scale: scale)]).width
     }
 
     /// Draw a run of text inside a **flipped** (top-left origin) context, the way the classic bitmap
     /// font did.
     ///
     /// `position` is the top-left of the text cell, matching `SkinRenderer.drawSkinText`, and the run
-    /// is counter-flipped about its own box so it does not come out mirrored. Returns the advance the
-    /// caller should use, which is `measuredWidth`.
-    @discardableResult
+    /// is counter-flipped about its own box so it does not come out mirrored. It is drawn inside its
+    /// `measuredWidth` reservation; a caller placing anything after it measures `drawnWidth`.
     static func drawText(_ text: String, at position: NSPoint, scale: CGFloat, color: NSColor,
-                         in context: CGContext) -> CGFloat {
-        let width = measuredWidth(text, scale: scale)
-        guard !text.isEmpty else { return width }
+                         in context: CGContext) {
+        guard !text.isEmpty else { return }
         let cellHeight = classicCharHeight * max(scale, 0.01)
-        let attributes = Self.attributes(scale: scale, color: color)
+        let attributes: [NSAttributedString.Key: Any] = [.font: fittedFont(text, scale: scale),
+                                                         .foregroundColor: color]
         let drawn = (text as NSString).size(withAttributes: attributes)
 
         context.saveGState()
         // Counter-flip about the cell's vertical centre, then centre the glyphs' own line height in
-        // the cell — the system face is taller than the 6px bitmap it replaces.
+        // the cell — the system face's line is taller than the 6px bitmap cell it replaces.
         let centerY = position.y + cellHeight / 2
         context.translateBy(x: 0, y: centerY)
         context.scaleBy(x: 1, y: -1)
@@ -367,7 +369,6 @@ struct SkinnedSurfaceStyle: Equatable {
         (text as NSString).draw(at: NSPoint(x: position.x, y: centerY - drawn.height / 2),
                                 withAttributes: attributes)
         context.restoreGState()
-        return width
     }
 }
 

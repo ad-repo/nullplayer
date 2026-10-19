@@ -266,7 +266,7 @@ Switch the Library Browser source to "Local" to manage a persistent media librar
 
 **Sorting is per tab:** each tab keeps its own Sort-menu choice and column-header sort, remembered across launches. Setting Albums to "Recently Added" leaves Artists as it was. A tab's sort is the same whichever source is selected, and Folders and Plists sort separately even though they share a slot. Both browsers (classic and modern) share the saved sort. Hiding a column drops it as the header sort on every tab. YouTube channels keep their session-only sort (see `youtube-source`).
 
-The **Data tab** is present in both the modern Library Browser and the classic library browser (`PlexBrowserView`). It shows play-history analytics for all sources (see the Data tab description at the top of this section).
+The **Data tab** is present in the Library Browser in every skin family. It shows play-history analytics for all sources (see the Data tab description at the top of this section).
 
 ### Drag/Drop + Folder Import Behavior (Local/NAS)
 
@@ -284,6 +284,7 @@ Import discovery is now unified across classic + modern entry points (main windo
 - Group management while casting
 - Local file streaming via embedded server
 - Network stream proxying for Subsonic/Jellyfin
+- EQ profiles via **Output ▸ EQ Cast** (see *EQ Cast*)
 
 ### Chromecast
 - Audio and video casting
@@ -361,18 +362,52 @@ Equalizer window never changes a profile, and a profile never changes it.
   albums, artists, playlists and folders), queue rows, radio stations, and YouTube videos with a
   downloaded audio file (greyed with *Download the audio first* otherwise). Choices: **Inherit**
   (remove this level's setting), **Off** (no profile here, even if the album or artist has one), or a
-  profile. For queue rows and radio stations the current setting is ticked (a dash when the selected
-  rows differ), and a setting inherited from the album or artist is shown at the top.
+  profile. The current setting at that level is ticked (a dash when the selected rows differ), and
+  a setting inherited from a lower level is shown at the top as *Inherited: Warm (artist)*; **Inherit**
+  stays ticked then, since nothing is set at this level itself. Every row shows it except library
+  playlists and folders, which have no single level. A server album row reads its album artist, so a
+  compilation whose tracks were assigned under their own artists shows nothing ticked. In the
+  Classic, Original and WMP queues, a right-click on a row outside the selection selects that row
+  first, so the menu acts on the row clicked; inside the selection it acts on the whole selection.
 - **Which applies:** track over album over artist. Assignments are per source (Local, each media
   server, YouTube, Radio) and are kept until changed. A playlist or folder assigns to the tracks it
   holds at the time — tracks added later get none. An assignment follows the path, name or server
   id it was made against: moving or renaming a file, retagging an album or artist, or re-adding a
   server under a new id stops it matching, and that content falls through to the next level.
-- **Seeing it:** a queue row whose track has a profile running shows **∿** before its title, and
+- **Seeing it:** a queue row whose track has a profile running shows **∿** before its title — as
+  does a Library row (track, album, artist, station or downloaded video) whose every track runs one — and
   **File Info** ends with an *EQ Profile:* line (e.g. `Warm (album)`, `Off (track)`, `None`).
-- **Turning it off — Playback ▸ EQ Profiles** (on by default): off, no assigned profile is applied;
-  assignments are kept. The Studio still plays its edit while open.
-- Profiles do not apply while casting, or to video.
+- **Turning it off — Playback ▸ EQ Profiles ▸ Enabled** (on by default): off, no assigned profile
+  is applied; assignments are kept. The Studio still plays its edit while open.
+- **Clearing assignments — Playback ▸ EQ Profiles:** **Unassign Profile ▸** lists each assigned
+  profile with what it is set on (`Warm — 1 artist, 2 albums, 5 tracks`; an album counts once, Off
+  is not listed) and, after a confirm, removes it everywhere. **Remove All Assignments…** clears
+  every assignment, Off included. Both keep the profiles, cannot be undone, and stay available
+  while casting.
+- Profiles do not apply while casting unless EQ Cast is on (below), and never to video.
+
+### EQ Cast
+Casts a track with its EQ profile. Sonos and Chromecast play the original file, so without
+this the profile is lost when casting. Only the profile is rendered: the Equalizer window's EQ and
+other local effects are not.
+
+- **Output ▸ EQ Cast ▸ Enabled** (off by default). Turning it on with no folder chosen asks for one
+  first. Turning it off casts originals again and keeps the rendered files.
+- A track with a profile is rendered into a FLAC in the cache folder, then cast. Local files and
+  Plex, Jellyfin, Navidrome/Subsonic and Emby tracks are covered (server tracks are downloaded
+  first). Radio, `.cue` tracks, video and sources with more than two channels are cast as before.
+- The first track waits for its render; the bar at the top of the main window shows *EQ Cast:
+  preparing … — first track takes a moment…* (or *downloading …*) with a percentage. The next
+  three tracks, in shuffle order when shuffle is on, are rendered in the background while you
+  cast, so later tracks usually start at once.
+- A render is reused until the profile's curve changes; editing a profile re-renders what is coming
+  up. Setting a track to **Off** or turning off **EQ Profiles** casts the original; its render stays.
+- To Sonos, files Sonos can't play (ALAC, AIFF, above 48 kHz) are skipped as before and never
+  rendered. Renders are 16-bit, so hot boosts can clip; lower the preamp (**Headroom**) if you hear it.
+- **Cache Size** shows the folder's size. **Choose Cache Folder…** moves future renders (the old
+  files stay put; a folder the library scans is warned about, since renders would be imported as
+  duplicates). **Show in Finder** opens it. **Delete Cache…** removes every render except the one
+  being cast.
 
 ### Playback Options
 - **Gapless Playback**: Seamless track transitions (local files)
@@ -381,9 +416,9 @@ Equalizer window never changes a profile, and a profile never changes it.
 - **Reference Tuning**: Pitch-shift playback to a different reference frequency. Presets for Off, 432 Hz, 440 Hz, and a Custom… dialog (source/target Hz, ±2400 cents). Applies to local files and HTTP streams; unavailable while casting because remote renderers have no local audio graph to insert the pitch shifter into. Persists across launches; the CLI also accepts `--tuning`, `--tuning-source`, and `--tuning-offset-cents` as session-only overrides.
 - **Playback Speed**: Tempo-preserving speed control from `0.25×` to `4.0×`, with presets plus Custom…. Applies to local files and HTTP streams; unavailable while casting. Persists across launches.
 - **SRS**: **WOW Effect** (stereo widening) and **TruBass** (bass enhancement), each Off / 25% / 50% / 75% / 100%, plus a **Headphones** toggle that tunes TruBass for headphones (off = normal speakers). App-wide in every skin, shared with a `.wmz`'s SRS controls, persisted across launches, unavailable while casting. DSP: `../wmp-skin-guide/reference/audio-enhancements.md`.
-- **EQ Profiles**: on/off for assigned EQ profiles; see *EQ Profiles* above. Unavailable while casting.
+- **EQ Profiles ▸**: **Enabled** (on/off for assigned EQ profiles; unavailable while casting), **Unassign Profile ▸**, **Remove All Assignments…** and **Equalizer Studio…**; see *EQ Profiles* above.
 - **Balance**: Stereo pan submenu (slider plus Left / Center / Right presets), backed by `engine.balance` and mirrored by the classic Balance Slider sprite. Gives Original and Original-Metal UI and menu-only/Compact workflows access to balance without a face slider. Persists across launches.
-- **Remember State on Quit**: Restores window layout, audio/EQ state, and playlist contents, but not the selected track, seek position, or playing state. See `../app-state/SKILL.md` for the complete persistence and reset policy.
+- **Save State on Quit**: Restores window layout, audio/EQ state, and playlist contents, but not the selected track, seek position, or playing state. See `../app-state/SKILL.md` for the complete persistence and reset policy.
 
 ### Sleep Timer
 Accessible via **Playback > Sleep Timer** (or the right-click context menu).
@@ -483,13 +518,14 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - **Skins > Modern** lists installed Winamp 5.x `.wal` skins, imported with **Load Skin...**; **Get More Skins...** opens WinampHeritage.
 - **Windows > Window Shadows** (on by default) gives every skin window a soft drop shadow that
   follows the skin's own outline. It is the same switch in every skin family — Classic, Original,
-  Modern, Windows Media Player and Audion faces — and covers NullPlayer's own windows beside the
+  Modern, Windows Media Player, Audion faces and Sonique — and covers NullPlayer's own windows beside the
   skin too.
-- **Default Skin (Black)** is the plain placeholder skin that ships with the app — what Modern mode
-  loads on a first run, before any skin is imported, and after the selected skin is removed. It has
-  no menu entry. NullPlayer bundles no Winamp
-  skins; this one is our own. It gives the mode a working player window (transport, seek, volume,
-  PL and ML buttons) and is meant to be replaced by a skin the user imports.
+- **iTunes Miniplayer** is the default skin that ships with the app — what Modern mode loads on a
+  first run, before any skin is imported, and after the selected skin is removed. It is listed in
+  the skin menu beside imported skins, so it can be picked again, but it cannot be removed. It is
+  the one third-party skin NullPlayer bundles, by
+  [spacecowgoesmoo](https://github.com/spacecowgoesmoo/Old-iTunes-Miniplayer), shipped with the
+  author's permission.
 - Many of these skins draw their own **About page** — the artwork the skin author wrote about the
   skin. Where the skin has one, it opens in the skin's own window: from whatever control the skin
   binds to it (often a logo or corner bolt), or from **Help > About This Skin** in the skin's own
@@ -539,6 +575,7 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - **HT Off (default)**: EQ/Playlist/Spectrum hide titlebars when docked — this is always active, even with HT off
 - **HT On**: All 6 windows (main, EQ, playlist, spectrum, ProjectM, library browser) hide titlebars; the main window keeps the same outer size while its internal layout expands to fill the reclaimed space
 - Preserves the border line (titlebar area collapses to border width, not 0)
+- A window without its title bar closes by clicking its top-right corner (nothing is drawn there); closing the main window this way quits. Winamp Modern windows that have no close button of their own close the same way
 
 ## Keyboard Shortcuts
 

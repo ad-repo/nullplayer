@@ -1257,7 +1257,18 @@ class AudioEngine {
         guard repeatEnabled else { return nil }
         return preparedRepeatShuffleOrder().first
     }
-    
+
+    /// The tracks still to play, in play order: the rest of the shuffle order (or of the list).
+    /// Repeat without shuffle is repeat-one, so only the current track. Shuffle with repeat stops at
+    /// the end: the wrap draws a new order (`preparedRepeatShuffleOrder`). Reads only — nothing is realigned.
+    var upcomingIndices: [Int] {
+        if repeatEnabled && !shuffleEnabled { return playlist.indices.contains(currentIndex) ? [currentIndex] : [] }
+        let shuffled = shuffleEnabled && shufflePlaybackOrder.count == playlist.count
+        let order = shuffled ? shufflePlaybackOrder : Array(playlist.indices)
+        let position = min(max(shuffled ? shufflePlaybackPosition : currentIndex, -1), order.count - 1)
+        return Array(order[(position + 1)...])
+    }
+
     @objc private func handleSpectrumSettingsChanged() {
         if let saved = UserDefaults.standard.string(forKey: "spectrumNormalizationMode"),
            let mode = SpectrumNormalizationMode(rawValue: saved) {
@@ -6731,77 +6742,56 @@ class AudioEngine {
     
     /// Sort the playlist by the specified criteria
     func sortPlaylist(by criteria: SortCriteria, ascending: Bool = true) {
-        // Remember current track
-        let currentTrackURL = currentIndex >= 0 && currentIndex < playlist.count ? playlist[currentIndex].url : nil
-        
-        // Sort the playlist
-        playlist.sort { track1, track2 in
-            let comparison: ComparisonResult
+        reorderPlaylist { tracks in
+            tracks.sort { track1, track2 in
+                let comparison: ComparisonResult
             
-            switch criteria {
-            case .title:
-                comparison = track1.displayTitle.localizedCaseInsensitiveCompare(track2.displayTitle)
-            case .filename:
-                comparison = track1.url.lastPathComponent.localizedCaseInsensitiveCompare(track2.url.lastPathComponent)
-            case .path:
-                comparison = track1.url.path.localizedCaseInsensitiveCompare(track2.url.path)
-            case .duration:
-                let d1 = track1.duration ?? 0
-                let d2 = track2.duration ?? 0
-                comparison = d1 < d2 ? .orderedAscending : (d1 > d2 ? .orderedDescending : .orderedSame)
-            case .artist:
-                let a1 = track1.artist ?? ""
-                let a2 = track2.artist ?? ""
-                comparison = a1.localizedCaseInsensitiveCompare(a2)
-            case .album:
-                let a1 = track1.album ?? ""
-                let a2 = track2.album ?? ""
-                comparison = a1.localizedCaseInsensitiveCompare(a2)
+                switch criteria {
+                case .title:
+                    comparison = track1.displayTitle.localizedCaseInsensitiveCompare(track2.displayTitle)
+                case .filename:
+                    comparison = track1.url.lastPathComponent.localizedCaseInsensitiveCompare(track2.url.lastPathComponent)
+                case .path:
+                    comparison = track1.url.path.localizedCaseInsensitiveCompare(track2.url.path)
+                case .duration:
+                    let d1 = track1.duration ?? 0
+                    let d2 = track2.duration ?? 0
+                    comparison = d1 < d2 ? .orderedAscending : (d1 > d2 ? .orderedDescending : .orderedSame)
+                case .artist:
+                    let a1 = track1.artist ?? ""
+                    let a2 = track2.artist ?? ""
+                    comparison = a1.localizedCaseInsensitiveCompare(a2)
+                case .album:
+                    let a1 = track1.album ?? ""
+                    let a2 = track2.album ?? ""
+                    comparison = a1.localizedCaseInsensitiveCompare(a2)
+                }
+            
+                return ascending ? comparison == .orderedAscending : comparison == .orderedDescending
             }
-            
-            return ascending ? comparison == .orderedAscending : comparison == .orderedDescending
         }
-        
-        // Restore current index
-        if let url = currentTrackURL {
-            currentIndex = playlist.firstIndex(where: { $0.url == url }) ?? -1
-        }
-        invalidateShufflePlaybackStateAfterPlaylistMutation()
-        
-        delegate?.audioEngineDidChangePlaylist()
     }
     
     /// Shuffle the playlist (randomize order)
     func shufflePlaylist() {
-        // Remember current track
-        let currentTrackURL = currentIndex >= 0 && currentIndex < playlist.count ? playlist[currentIndex].url : nil
-        
-        // Shuffle
-        playlist.shuffle()
-        
-        // Restore current index
-        if let url = currentTrackURL {
-            currentIndex = playlist.firstIndex(where: { $0.url == url }) ?? -1
-        }
-        invalidateShufflePlaybackStateAfterPlaylistMutation()
-        
-        delegate?.audioEngineDidChangePlaylist()
+        reorderPlaylist { $0.shuffle() }
     }
     
     /// Reverse the playlist order
     func reversePlaylist() {
-        // Remember current track
-        let currentTrackURL = currentIndex >= 0 && currentIndex < playlist.count ? playlist[currentIndex].url : nil
-        
-        // Reverse
-        playlist.reverse()
-        
-        // Restore current index
-        if let url = currentTrackURL {
-            currentIndex = playlist.firstIndex(where: { $0.url == url }) ?? -1
+        reorderPlaylist { $0.reverse() }
+    }
+
+    /// Reorder the queue, keeping `currentIndex` on the entry that was playing. Matched by
+    /// `Track.id`, never by URL: every track of a cue sheet shares its file's URL, so a URL match put
+    /// the current index on the sheet's first row after a Reverse while the same track played on.
+    private func reorderPlaylist(_ reorder: (inout [Track]) -> Void) {
+        let currentID = playlist.indices.contains(currentIndex) ? playlist[currentIndex].id : nil
+        reorder(&playlist)
+        if let currentID {
+            currentIndex = playlist.firstIndex { $0.id == currentID } ?? -1
         }
         invalidateShufflePlaybackStateAfterPlaylistMutation()
-        
         delegate?.audioEngineDidChangePlaylist()
     }
 

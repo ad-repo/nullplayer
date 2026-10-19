@@ -172,10 +172,15 @@ extension WasabiSceneRenderer {
         let bitmapID: String?
         /// A positive `sysregion` adds this object to the window; a negative one takes it away.
         let additive: Bool
+        /// For a positive, artwork-less group whose descendants declare their own region: the boxes
+        /// of what it holds — its visible leaves, and any group inside that paints a `background`.
+        /// Such a group reaches that far, not as far as its own box. Nil for anything else.
+        let contentBoxes: [CGRect]?
 
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.object === rhs.object && lhs.frame == rhs.frame && lhs.clip == rhs.clip
                 && lhs.bitmapID == rhs.bitmapID && lhs.additive == rhs.additive
+                && lhs.contentBoxes == rhs.contentBoxes
         }
     }
 
@@ -194,12 +199,12 @@ extension WasabiSceneRenderer {
     /// winampmodern566's and S7Reflex's config drawer — and the non-numeric forms a skin writes
     /// (`"AND"`, which Anexa uses 15 times) shape nothing, as they have never painted.
     private func regionCuts() -> [WasabiRegionCut] {
-        let all: [WasabiRegionCut] = sceneNodes().compactMap { node in
+        let nodes = sceneNodes()
+        let declared: [(node: WasabiSceneNode, additive: Bool)] = nodes.compactMap { node in
             guard let raw = node.object.attributes["sysregion"],
                   let value = Int(raw.trimmingCharacters(in: .whitespaces)), value != 0
             else { return nil }
-            return WasabiRegionCut(object: node.object, frame: node.frame, clip: node.clip,
-                                   bitmapID: node.bitmapID, additive: value > 0)
+            return (node, value > 0)
         }
         // **A group's own cut-out is not undone from inside it.** A restore that crosses groups is a
         // real idiom — S7Reflex's player is laid over the config drawer's silhouettes and puts back
@@ -215,13 +220,56 @@ extension WasabiSceneRenderer {
         // `inner`, whose box overhangs that opening by 13px into the title bar and 7px into the
         // bottom bar. Restoring it printed an opaque black bar across the frame's own glossy
         // titlebar, stopping 19px short of the right edge where the backdrop's own box ends.
-        let cutParents = Set(all.lazy.filter { !$0.additive }
-            .compactMap { $0.object.parent.map(ObjectIdentifier.init) })
-        guard !cutParents.isEmpty else { return all }
-        return all.filter { cut in
-            guard cut.additive, let parent = cut.object.parent else { return true }
-            return !cutParents.contains(ObjectIdentifier(parent))
+        let cutParents = Set(declared.lazy.filter { !$0.additive }
+            .compactMap { $0.node.object.parent.map(ObjectIdentifier.init) })
+        // A layout that cuts nothing keeps its rectangle (see `buildWindowRegion`), and this runs on
+        // every frame as the cache key, so the content walk below is only paid for one that cuts.
+        let cuts = declared.contains { !$0.additive }
+        let contentBoxes = cuts ? wrapperContentBoxes(nodes: nodes, declared: declared) : [:]
+        return declared.compactMap { entry in
+            let object = entry.node.object
+            if entry.additive, let parent = object.parent, cutParents.contains(ObjectIdentifier(parent)) {
+                return nil
+            }
+            return WasabiRegionCut(object: object, frame: entry.node.frame, clip: entry.node.clip,
+                                   bitmapID: entry.node.bitmapID, additive: entry.additive,
+                                   contentBoxes: contentBoxes[ObjectIdentifier(object)])
         }
+    }
+
+    /// `WasabiRegionCut.contentBoxes` for every positive, artwork-less group with a region object
+    /// beneath it, keyed by that group.
+    private func wrapperContentBoxes(nodes: [WasabiSceneNode],
+                                     declared: [(node: WasabiSceneNode, additive: Bool)])
+        -> [ObjectIdentifier: [CGRect]] {
+        func ancestors(of object: WasabiObject) -> [ObjectIdentifier] {
+            var result: [ObjectIdentifier] = []
+            var ancestor = object.parent
+            while let next = ancestor {
+                result.append(ObjectIdentifier(next))
+                ancestor = next.parent
+            }
+            return result
+        }
+        let regionAncestors = Set(declared.flatMap { ancestors(of: $0.node.object) })
+        let wrappers = Set(declared.lazy.filter {
+            $0.additive && $0.node.bitmapID == nil && $0.node.object.attributes["background"] == nil
+                && regionAncestors.contains(ObjectIdentifier($0.node.object))
+        }.map { ObjectIdentifier($0.node.object) })
+        guard !wrappers.isEmpty else { return [:] }
+        var boxes: [ObjectIdentifier: [CGRect]] = Dictionary(uniqueKeysWithValues: wrappers.map { ($0, []) })
+        let parents = Set(nodes.compactMap { $0.object.parent.map(ObjectIdentifier.init) })
+        // A group counts when it paints a `background`; otherwise its box is only the room its
+        // children are laid out in.
+        for node in nodes where !parents.contains(ObjectIdentifier(node.object))
+            || node.object.attributes["background"] != nil {
+            let box = node.frame.intersection(node.clip)
+            guard !box.isNull, !box.isEmpty else { continue }
+            for ancestor in ancestors(of: node.object) where wrappers.contains(ancestor) {
+                boxes[ancestor]?.append(box)
+            }
+        }
+        return boxes
     }
 
     /// The boxes a `Wasabi:StandardFrame:*` with `sysregion="1"` and no artwork of its own puts
@@ -304,6 +352,22 @@ extension WasabiSceneRenderer {
             context.fill(CGRect(x: 0, y: 0, width: width, height: height))
             context.translateBy(x: 0, y: CGFloat(height))
             context.scaleBy(x: 1, y: -1)
+            // **Except inside a full-bleed group that only wraps the window's real content.** Such a
+            // group reaches as far as what it holds, not as far as its box — and not merely as far
+            // as its descendants' region, because a standard frame's client content declares none
+            // and is still window. XENERGY's `Wasabi:MainFrame:NoStatus` fills a 601x280 layout
+            // whose player and closed config drawer end at y=146 — the rest is room for the drawer
+            // to slide into — and a 252x1 `<vis>` at y=215 drew a flickering line across the
+            // desktop below. Outside such a box the rect stands, so a window whose positive layers
+            // merely decorate it is not trimmed to them.
+            for cut in cuts {
+                guard let contentBoxes = cut.contentBoxes else { continue }
+                context.saveGState()
+                context.clip(to: cut.clip)
+                context.clear(cut.frame)
+                context.fill(contentBoxes)
+                context.restoreGState()
+            }
             for cut in cuts {
                 context.saveGState()
                 context.clip(to: cut.clip)
@@ -316,12 +380,13 @@ extension WasabiSceneRenderer {
                           let bitmap = resources.bitmap(identifier: background) {
                     draw(bitmap, object: cut.object, frame: cut.frame, context: context)
                 } else if cut.additive {
-                    // A group with no artwork of its own is its box: that is what a `<groupdef …
-                    // sysregion="1">` wrapping a whole window contributes. Only additive, because a
-                    // *negative* object with no bitmap has no silhouette to cut with, and taking its
-                    // whole rect would remove everything it happens to span.
+                    // A group with no artwork of its own is its box — or, wrapping region objects,
+                    // what it holds: that is what a `<groupdef … sysregion="1">` wrapping a whole
+                    // window contributes. Only additive, because a *negative* object with no bitmap
+                    // has no silhouette to cut with, and taking its whole rect would remove
+                    // everything it happens to span.
                     context.setFillColor(gray: 1, alpha: 1)
-                    context.fill(cut.frame)
+                    context.fill(cut.contentBoxes ?? [cut.frame])
                 }
                 context.restoreGState()
             }

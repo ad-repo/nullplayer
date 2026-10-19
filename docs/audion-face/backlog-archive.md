@@ -6,7 +6,7 @@ was closed on.
 
 ## Issuing a number
 
-**The next free number is A11.** A1–A9 were issued 2026-10-08, seeded from the phased plan; A1–A5
+**The next free number is A12.** A11 was issued 2026-10-13 (the Library Browser opening off-screen). A1–A9 were issued 2026-10-08, seeded from the phased plan; A1–A5
 closed the same day, A6–A8 on 2026-10-09; all closed rows are archived below. A9 and A10 closed
 2026-10-09 (Phase 7). Check this file before reusing any number — the live
 backlog is a list of *open* work and says nothing about which numbers are spent.

@@ -100,7 +100,7 @@ struct SubsonicSong: Identifiable, Equatable {
     let created: Date?
     let starred: Date?           // Date when starred
     let playCount: Int?
-    let userRating: Int?         // User rating [1-5], nil if unrated
+    var userRating: Int?         // User rating [1-5], nil if unrated
     
     var formattedDuration: String {
         let minutes = duration / 60

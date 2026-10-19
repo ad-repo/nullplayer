@@ -490,14 +490,23 @@ than trusting, because the negative is the whole finding:
 ```bash
 for f in ~/Downloads/*.wal; do
   unzip -p "$f" '*.xml' 2>/dev/null |
-    grep -oiE '<(bitmapfont|truetypefont)[^>]*id="(pledit|wasabi\.list|studio\.list)\.font"'
+    grep -oiE '<(bitmapfont|truetypefont|elementalias|alias)[^>]*id="(pledit|wasabi\.list|studio\.list)\.font"'
 done
 ```
 
 That is not a corpus of small skins ducking the question: it includes Winamp's own
-`winampmodern566.wal`, Big Bento, the whole cPro family, Anaheim — and NullPlayer's bundled
-`NullPlayer-Black.wal`. They all declare the matching **colours** (`wasabi.list.text`,
-`wasabi.list.background`, `studio.list.text`) and no font whatsoever. Two consequences:
+`winampmodern566.wal`, Big Bento, the whole cPro family, Anaheim. They all declare the matching
+**colours** (`wasabi.list.text`, `wasabi.list.background`, `studio.list.text`) and no font
+whatsoever.
+
+**The bundled iTunes Miniplayer is the one skin that tries, and it does not count.** It writes
+`<alias id="pledit.font" target="Lucida Grande"/>` (and the same for the other two ids), but `<alias>`
+is not a Wasabi element — every other skin in the corpus aliases with `<elementalias>`, the only tag
+`WasabiSkinInitializer` registers — so the three lines register nothing and its lists take the Arial
+default below. No other skin in the corpus uses `<alias>`, so honouring it would be inventing a tag to rescue one skin; the fix belongs upstream, as
+`<elementalias>`. As `<elementalias>` they would resolve through the skin's file-less
+`<truetypefont id="Lucida Grande"/>` to the installed face (traced through `resolved` and
+`resolvedFont`, not rendered). Two consequences:
 
 - **An absent declaration is not a failed one.** The `nil` identifier fell through to the same
   monospaced fallback `resolvedFont` keeps for a name that resolved to nothing, so every host surface

@@ -2254,8 +2254,7 @@ final class WasabiSceneRenderer {
         // A window-chrome button whose artwork Winamp supplied and the skin does not. It has no
         // bitmap to size to, so it resolved to 0x0 and never appeared at all — `Winamp 3.0 Default`'s
         // titlebar is four such buttons and had no menu, minimize, windowshade or close (B95).
-        if intrinsic == .zero, resources.bitmap(identifier: bitmapID) == nil,
-           let role = WasabiChromeButtons.role(of: object, bitmapID: bitmapID) {
+        if intrinsic == .zero, let role = chromeButtonRole(of: object, bitmapID: bitmapID) {
             if object.attributes["w"] == nil { intrinsic.width = Double(role.defaultSize.width) }
             if object.attributes["h"] == nil { intrinsic.height = Double(role.defaultSize.height) }
         }
@@ -2586,15 +2585,15 @@ final class WasabiSceneRenderer {
             // layer's current frame exactly as it does to a plain one (Defix's cassette reels are
             // rotated single images; its needles are too).
             if let mesh = layerFXProvider?(object),
-               let image = layerImage(bitmap, object: object, type: type),
-               drawWarped(image, in: node.frame, mesh: mesh, context: context) {
+               let layer = layerImage(bitmap, object: object, type: type, in: node.frame),
+               drawWarped(layer.image, in: layer.rect, mesh: mesh, context: context) {
                 // drawn
             } else if type == "animatedlayer" {
                 drawAnimated(bitmap, object: object, frame: node.frame, context: context)
             } else {
                 draw(bitmap, object: object, frame: node.frame, context: context)
             }
-        } else if let role = WasabiChromeButtons.role(
+        } else if let role = chromeButtonRole(
                     of: object,
                     bitmapID: resolvedBitmapID(for: object,
                                                pressed: pressed == object.stableID,
@@ -3818,6 +3817,14 @@ final class WasabiSceneRenderer {
         context.restoreGState()
     }
 
+    /// The chrome control an object stands in for when `bitmapID` resolves to no artwork, or nil. The
+    /// one question the sizing, drawing and hit-testing paths all ask (see `WasabiChromeButtons`).
+    private func chromeButtonRole(of object: WasabiObject, bitmapID: String?) -> WasabiChromeButtons.Role? {
+        guard resources.bitmap(identifier: bitmapID) == nil else { return nil }
+        return WasabiChromeButtons.role(of: object, bitmapID: bitmapID,
+                                        resolves: { self.resources.bitmap(identifier: $0) != nil })
+    }
+
     /// A window-chrome button — menu, minimize, windowshade, close — whose artwork is Winamp's.
     ///
     /// The same deliberate exception as `drawTextButton` above, and reached the same way: only after
@@ -4657,8 +4664,7 @@ final class WasabiSceneRenderer {
         // A chrome button draws its own glyph in place of the artwork Winamp would have supplied
         // (see `drawChromeButton`), so it has a region and has to be clickable. Its `action=` already
         // makes it interactive; this is what stops the hit test rejecting it for owning no bitmap.
-        if resources.bitmap(identifier: bitmapID) == nil,
-           WasabiChromeButtons.role(of: object, bitmapID: bitmapID) != nil { return true }
+        if chromeButtonRole(of: object, bitmapID: bitmapID) != nil { return true }
         // A substituted Wasabi form widget paints a surface of its own — a check box's box, a
         // drop-down's frame, an edit's field — so it is opaque to hit testing without a bitmap. Its
         // primitive type already makes it interactive (`togglebutton`, `button`, `slider`).

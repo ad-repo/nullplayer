@@ -90,8 +90,46 @@ class BorderlessWindow: NSWindow {
     }
     
     // MARK: - Event Handling
-    
+
+    /// What closing this window means, where that is more than `close()`: the main window quits,
+    /// Sonos closes through its toggle. Set by the controller; run through `performCloseAction()`.
+    var closeAction: (() -> Void)?
+
+    /// Closes the window the way its drawn close button and the fallback close corner both do.
+    func performCloseAction() {
+        if let closeAction { closeAction() } else { close() }
+    }
+    /// A press in the fallback close corner (`FallbackCloseArea`), held until its release.
+    private var pressedFallbackClose = false
+
+    private func isInFallbackClose(_ event: NSEvent) -> Bool {
+        guard let contentView else { return false }
+        return FallbackCloseArea.contains(contentView.convert(event.locationInWindow, from: nil), in: contentView)
+    }
+
+    /// Under Hide Title Bars the window has no title bar to close from, so it closes from its corner.
+    /// The window answers that press itself, ahead of the resize edges and of whatever subview (a
+    /// visualizer, a SwiftUI pane) the content puts there.
+    private func handleFallbackClose(_ event: NSEvent) -> Bool {
+        switch event.type {
+        case .leftMouseDown:
+            guard WindowManager.shared.effectiveHideTitleBars(for: self), isInFallbackClose(event) else { return false }
+            pressedFallbackClose = true
+            return true
+        case .leftMouseDragged:
+            return pressedFallbackClose
+        case .leftMouseUp:
+            guard pressedFallbackClose else { return false }
+            pressedFallbackClose = false
+            if isInFallbackClose(event) { performCloseAction() }
+            return true
+        default:
+            return false
+        }
+    }
+
     override func sendEvent(_ event: NSEvent) {
+        if handleFallbackClose(event) { return }
         // Only intercept if we have allowed edges
         guard !allowedResizeEdges.isEmpty else {
             super.sendEvent(event)

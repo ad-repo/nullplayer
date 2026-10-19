@@ -149,6 +149,13 @@ if [[ ! -f "$VERSIONED_DMG" || ! -f "$STABLE_DMG" ]]; then
     exit 1
 fi
 
+# The download docs promise a Developer ID signed, notarized DMG; refuse to ship anything else.
+if ! xcrun stapler validate -q "$VERSIONED_DMG" \
+    || ! spctl --assess --type open --context context:primary-signature "$VERSIONED_DMG"; then
+    log_error "DMG is not Developer ID signed and notarized; build with DEVELOPER_ID and NOTARY_PROFILE set"
+    exit 1
+fi
+
 awk -v version="$VERSION" '
     $0 == "## " version { found = 1; next }
     found && /^## / { exit }

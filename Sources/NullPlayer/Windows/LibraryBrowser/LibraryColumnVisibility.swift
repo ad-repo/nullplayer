@@ -60,6 +60,27 @@ enum LibraryColumnVisibility {
         return [LibraryColumnVisibilityGroup.track, .album, .artist].first { groups.contains($0) }
     }
 
+    /// Each cell of a column row, unscrolled, from the row's edge: the cells sit side by side after
+    /// `leadingPad`, and a child row indents inside its Title cell only, so every other cell stays
+    /// under its heading. `indent` is the row's tree depth, measured from the pad as a plain row's is.
+    ///
+    /// A row of a coarser group than the header (an artist or album under track columns) has nothing
+    /// for the cells before Title, so its title spans them and starts where it did before the deeper
+    /// rows changed the header. Every title then indents only by what the cells before it leave short
+    /// of its depth: a track's `#` cell already sets it right of its album (#542).
+    static func cellFrames(
+        widths: [CGFloat], titleIndex: Int?, indent: CGFloat, spansLeadingCells: Bool, leadingPad: CGFloat = 4
+    ) -> [(start: CGFloat, width: CGFloat)] {
+        var offset = leadingPad
+        return widths.enumerated().map { index, width in
+            defer { offset += width }
+            let start = index == titleIndex
+                ? max(spansLeadingCells ? leadingPad : offset, leadingPad + indent)
+                : offset
+            return (start, offset + width - start)
+        }
+    }
+
     static func channelSortValue(_ label: String) -> Double {
         switch label {
         case "Mono": return 1

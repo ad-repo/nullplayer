@@ -11,7 +11,7 @@
 #
 # The family (and so -uiMode) comes from the extension: .wsz/.whsz classic, .wal winampModern,
 # .wmz wmp. Nothing needs restoring afterwards: restoration is disabled with a *launch argument*
-# (NSArgumentDomain), never a `defaults write`, so the user's saved Remember State is untouched.
+# (NSArgumentDomain), never a `defaults write`, so the user's saved Save State on Quit choice is untouched.
 # NULLPLAYER_PLAY set by the caller replaces the default audio-long track.
 # --restore leaves session restoration to the saved setting — only for testing restoration itself,
 # and restoration may then put the saved skin back, which the confirm below will catch.

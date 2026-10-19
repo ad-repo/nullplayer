@@ -113,7 +113,7 @@ chrome:
 ## Selection, random, persistence
 
 `PeppyMeterPresenter` (mode-neutral) owns the level model, the random-switch timer, the current
-template, and the right-click menu. Settings persist to `UserDefaults` (independent of Remember State),
+template, and the right-click menu. Settings persist to `UserDefaults` (independent of Save State on Quit),
 via `PeppyMeterSettings`:
 
 - `peppyMeterCurrentMeter` — selected meter name

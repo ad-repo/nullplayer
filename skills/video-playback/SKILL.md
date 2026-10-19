@@ -87,7 +87,7 @@ video casting (`--movie`, `--episode`, `--file` with a video) is in `cli`.
   first play, and `WindowManager.toggleVideoPlayer` returns early while it is nil.
 - **A play call moves key focus to the picture** (`revealVideoOutput`): the free window takes it
   itself (`VideoPlayerWindow`, see *Debugging a live defect*), a `.wal` skin's video window takes it in `setAuxiliaryWindow`, and a `.wmz` skin window
-  takes it through `revealSkinSurface(_:switchingViews:activate:)`; a `.wal` video *tab* in the
+  takes it through `revealSkinSurface(_:activate:)`; a `.wal` video *tab* in the
   player window (`hostVideoOutputInPlayer`) makes the skin view first responder, since the window
   is already key with an embedded Library Browser holding the keys. Both skin paths go through
   `WindowManager.hostVideoOutputInSkin`. A `.wmz` video view that is not open yet is built in a

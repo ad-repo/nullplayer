@@ -88,7 +88,7 @@ struct EQProfileScope: Hashable {
 /// Profiles and their standing assignments, in `eq_profiles.db`, and the global toggle: storage
 /// only — `EQProfileResolver` keys tracks, resolves them and words the result. A database that
 /// cannot be opened leaves the store empty and writes nothing, so it never replaces what is on disk.
-/// Main thread only.
+/// One connection per thread: `shared` is the main thread's.
 final class EQProfileStore {
     static let shared = EQProfileStore()
     static let enabledKey = "eqProfilesEnabled"
@@ -121,10 +121,12 @@ final class EQProfileStore {
     private let colScopeKey = SQLite.Expression<String>("scope_key")
     private let colProfileID = SQLite.Expression<String?>("profile_id")
 
-    /// `path` nil is an in-memory database.
-    init(path: String? = EQProfileStore.defaultPath, defaults: UserDefaults = .standard) {
+    /// `path` nil is an in-memory database. A store read off the main thread sets `busyTimeout`
+    /// (seconds): without it a read during a main-thread write fails, and a failed read is Inherit.
+    init(path: String? = EQProfileStore.defaultPath, defaults: UserDefaults = .standard, busyTimeout: Double = 0) {
         self.defaults = defaults
         db = Self.open(path)
+        db?.busyTimeout = busyTimeout
     }
 
     static var defaultPath: String? {
@@ -192,6 +194,36 @@ final class EQProfileStore {
                 }
             }
         }
+    }
+
+    /// Removes the profile from every scope at every level and source, as Inherit would; the profile is kept.
+    func unassign(_ id: UUID) {
+        write { db in try db.run(assignmentsTable.filter(colProfileID == id.uuidString).delete()) }
+    }
+
+    /// Every assignment row, explicit Off included, so a leftover Off cannot block a later assignment
+    /// below it. The profiles are kept.
+    func removeAllAssignments() {
+        write { db in try db.run(assignmentsTable.delete()) }
+    }
+
+    /// Assignment rows per profile and level; Off rows are not counted. A row is a scope, not a
+    /// track: one album row covers all of its tracks.
+    func assignmentCounts() -> [UUID: [EQProfileLevel: Int]] {
+        guard let db else { return [:] }
+        let count = colLevel.count
+        var counts: [UUID: [EQProfileLevel: Int]] = [:]
+        do {
+            for row in try db.prepare(assignmentsTable.select(colProfileID, colLevel, count)
+                .filter(colProfileID != nil).group(colProfileID, colLevel)) {
+                guard let id = row[colProfileID].flatMap(UUID.init(uuidString:)),
+                      let level = EQProfileLevel(rawValue: row[colLevel]) else { continue }
+                counts[id, default: [:]][level] = row[count]
+            }
+        } catch {
+            NSLog("[eqprofile] read failed: %@", String(describing: error))
+        }
+        return counts
     }
 
     /// What is set at `scope`: nil is Inherit.

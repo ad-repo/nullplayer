@@ -64,7 +64,29 @@ final class SkinFamilyMenuTests: XCTestCase {
 
         try importer.trashSkin(removable)
         XCTAssertFalse(FileManager.default.fileExists(atPath: archive.path))
-        // What is selected now is the bundled placeholder, or nothing: neither is removable.
+        // What is selected now is the bundled default, or nothing: neither is removable.
         XCTAssertNil(importer.removableSelectedSkin())
+    }
+
+    /// An upgrade carries the retired `NullPlayer-Black` over as the stored name. It matches nothing,
+    /// so the default skin answers — not whichever installed skin sorts first (`Big Bento`).
+    func testAStaleSelectionResolvesToTheDefaultSkinNotTheFirstInstalledOne() throws {
+        let key = WinampModernSkinImporter.selectedSkinNameKey
+        let saved = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(saved, forKey: key) }
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SkinFamilyMenuTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        // The default is installed under its own name, so the test does not depend on finding the
+        // app bundle; an installed copy is also what wins over the bundled one.
+        for name in ["Big Bento", WinampModernSkinImporter.bundledDefaultSkinName] {
+            try Data().write(to: directory.appendingPathComponent("\(name).wal"))
+        }
+
+        let importer = WinampModernSkinImporter(destinationDirectory: directory)
+        UserDefaults.standard.set("NullPlayer-Black", forKey: key)
+        XCTAssertEqual(importer.selectedSkin()?.name, WinampModernSkinImporter.bundledDefaultSkinName)
     }
 }

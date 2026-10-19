@@ -399,16 +399,15 @@ final class EqualizerStudioView: NSView {
         return .classic(renderer: tabRenderer!.renderer, style: style, colors: style?.playlistColors ?? skin.playlistColors)
     }
 
-    /// The running Original-Metal skin; nil in every other family and render style.
-    private var metalSkin: ModernSkin? {
-        guard WindowManager.shared.uiMode.controllerFamily == .nullPlayerModern,
-              let skin = ModernSkinEngine.shared.currentSkin, skin.renderStyle == .metal else { return nil }
-        return skin
+    /// The running Original or Original-Metal skin; nil in every other family.
+    private var originalSkin: ModernSkin? {
+        guard WindowManager.shared.uiMode.controllerFamily == .nullPlayerModern else { return nil }
+        return ModernSkinEngine.shared.currentSkin
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let f = StudioFaceplate(session.faceplateKind, style: surfaceStyle, meter: meterColors, tab: tab, metalSkin: metalSkin)
-        // Over, not copied: Metal's clear panel must leave the chrome's surface behind it.
+        let f = StudioFaceplate(session.faceplateKind, style: surfaceStyle, meter: meterColors, tab: tab, originalSkin: originalSkin)
+        // Over, not copied: Original's clear panel must leave the chrome's surface behind it.
         f.panel.setFill()
         bounds.fill(using: .sourceOver)
 

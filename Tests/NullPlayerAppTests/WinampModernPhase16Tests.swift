@@ -11,9 +11,9 @@ import AppKit
 ///
 /// Two invariants carry the whole change and are what these tests pin:
 ///
-/// 1. **The advance is unchanged.** The views lay themselves out as
-///    `text.count * SkinElements.TextFont.charWidth * scale`, in ~77 places in the browser alone. If
-///    the replacement font measured differently, every one of those boxes would be wrong.
+/// 1. **The text stays inside the box the layout reserved.** Most views still lay themselves out as
+///    `text.count * SkinElements.TextFont.charWidth * scale`; the proportional face is drawn inside
+///    that, at the classic glyph's cap height, and shrinks rather than overrun it.
 /// 2. **A partial palette still produces a usable surface.** Real skins declare three roles, not
 ///    seven, so the chrome roles are blends of what the skin *did* declare — never a fixed grey,
 ///    which would be invisible on a skin of that shade.
@@ -21,16 +21,23 @@ final class WinampModernPhase16Tests: XCTestCase {
 
     // MARK: - Text metrics
 
-    func testReplacementFontAdvanceMatchesTheClassicCharacterCell() {
-        for scale in [CGFloat(0.8), 1, 1.4, 2, 3] {
-            let font = WinampModernSurfaceStyle.font(scale: scale)
-            let attributes = WinampModernSurfaceStyle.attributes(scale: scale, color: .white)
-            let sample = "LIBRARY 0123"
-            let measured = (sample as NSString).size(withAttributes: attributes).width
-            let expected = WinampModernSurfaceStyle.measuredWidth(sample, scale: scale)
-            XCTAssertEqual(measured, expected, accuracy: 0.5,
-                           "scale \(scale): a layout computed from charWidth would not fit its own text")
-            XCTAssertTrue(font.pointSize > 0)
+    func testReplacementFontHasTheClassicCapHeight() {
+        for scale in [CGFloat(0.8), 1, 1.5, 2, 3] {
+            XCTAssertEqual(WinampModernSurfaceStyle.font(scale: scale).capHeight,
+                           WinampModernSurfaceStyle.classicCapHeight * scale, accuracy: 0.05,
+                           "scale \(scale)")
+        }
+    }
+
+    func testDrawnRunNeverExceedsItsReservation() {
+        for scale in [CGFloat(0.8), 1, 1.5, 2, 3] {
+            for sample in ["LIBRARY 0123", "WWWMMM", "Source: Local Files (18 items)", "il"] {
+                let reserved = WinampModernSurfaceStyle.measuredWidth(sample, scale: scale)
+                let drawn = WinampModernSurfaceStyle.drawnWidth(sample, scale: scale)
+                XCTAssertGreaterThan(drawn, 0)
+                XCTAssertLessThanOrEqual(drawn, reserved + 0.01,
+                                         "scale \(scale) '\(sample)': the run overruns the box laid out for it")
+            }
         }
     }
 
@@ -40,17 +47,25 @@ final class WinampModernPhase16Tests: XCTestCase {
         XCTAssertEqual(WinampModernSurfaceStyle.measuredWidth("", scale: 1), 0, accuracy: 0.0001)
     }
 
-    func testDrawingTextIsBoundedAndReportsItsOwnAdvance() throws {
+    func testDrawnTextInksOnlyItsReservation() throws {
         let context = try XCTUnwrap(CGContext(data: nil, width: 200, height: 40, bitsPerComponent: 8,
                                               bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
                                               bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
         defer { NSGraphicsContext.restoreGraphicsState() }
-        let advance = WinampModernSurfaceStyle.drawText("PLAYLIST", at: NSPoint(x: 4, y: 4), scale: 1,
-                                                        color: .white, in: context)
-        XCTAssertEqual(advance, WinampModernSurfaceStyle.measuredWidth("PLAYLIST", scale: 1),
-                       accuracy: 0.0001)
+        let text = "WWWMMM", originX: CGFloat = 4
+        WinampModernSurfaceStyle.drawText(text, at: NSPoint(x: originX, y: 4), scale: 2,
+                                          color: .white, in: context)
+        let pixels = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+        let inked = (0..<context.width).filter { x in
+            (0..<context.height).contains { y in pixels[y * context.bytesPerRow + x * 4 + 3] > 0 }
+        }
+        let reserved = WinampModernSurfaceStyle.measuredWidth(text, scale: 2)
+        XCTAssertFalse(inked.isEmpty, "nothing was drawn")
+        XCTAssertGreaterThanOrEqual(CGFloat(try XCTUnwrap(inked.first)), originX - 1)
+        XCTAssertLessThanOrEqual(CGFloat(try XCTUnwrap(inked.last)), originX + reserved + 1,
+                                 "the text overran the box laid out for it")
     }
 
     // MARK: - Derivation from a partial palette

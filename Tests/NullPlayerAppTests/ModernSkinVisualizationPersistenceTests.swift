@@ -201,6 +201,42 @@ final class ModernSkinVisualizationPersistenceTests: XCTestCase {
         XCTAssertEqual(applied.spectrumOpacity, 0.6)
     }
 
+    // MARK: - M39: each family keeps its own main-window mode
+
+    func testEachFamilyOwnsItsMainWindowModeKey() {
+        XCTAssertEqual(MainWindowVisMode.defaultsKey(for: .classic), MainWindowVisMode.classicDefaultsKey)
+        XCTAssertEqual(MainWindowVisMode.defaultsKey(for: .nullPlayerModern), MainWindowVisMode.originalDefaultsKey)
+        XCTAssertNotEqual(MainWindowVisMode.classicDefaultsKey, MainWindowVisMode.originalDefaultsKey)
+        for family: PlayerUIControllerFamily in [.winampModern, .wmp, .audion] {
+            XCTAssertNil(MainWindowVisMode.defaultsKey(for: family), "\(family) has no NullPlayer main-window visualizer")
+        }
+    }
+
+    func testOriginalModeSurvivesFamilyEntryAndYieldsToASkinChange() {
+        let key = MainWindowVisMode.originalDefaultsKey
+        defaults.set(MainWindowVisMode.fire.rawValue, forKey: key)
+
+        func skinModeApplies(on reason: ModernSkinLoadReason) -> Bool {
+            ModernSkinEngine.shouldApplyDefault(
+                forKey: key,
+                preservePersistedPreferences: reason.keepsSavedMainWindowMode,
+                defaults: defaults
+            )
+        }
+        XCTAssertFalse(skinModeApplies(on: .launch))
+        XCTAssertFalse(skinModeApplies(on: .familyEntry), "Classic → Original keeps Original's mode")
+        XCTAssertTrue(skinModeApplies(on: .skinChange))
+
+        defaults.removeObject(forKey: key)
+        XCTAssertTrue(skinModeApplies(on: .familyEntry), "a first entry takes the skin's mode")
+    }
+
+    func testOnlyALaunchKeepsSavedProfiles() {
+        XCTAssertTrue(ModernSkinLoadReason.launch.keepsSavedProfiles)
+        XCTAssertFalse(ModernSkinLoadReason.familyEntry.keepsSavedProfiles)
+        XCTAssertFalse(ModernSkinLoadReason.skinChange.keepsSavedProfiles)
+    }
+
     private func emptyVisClassicConfig() -> VisClassicVisualizationConfig {
         VisClassicVisualizationConfig(
             mainWindowProfile: nil,

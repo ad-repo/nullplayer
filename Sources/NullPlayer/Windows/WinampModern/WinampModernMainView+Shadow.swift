@@ -13,8 +13,9 @@ import AppKit
 /// skin writes its readouts through `graphDidMutate` every tick; neither may cost a render. So a
 /// graph change invalidates only past `WinampModernShadowOutlineGate`, and a layout switch, a
 /// canvas change and a resize invalidate outright. The shadow pulls at most once per
-/// `shadowShapeInterval`, with a trailing pull that catches the end of an animation. A render whose
-/// outline did not change costs that render and an off-main byte compare.
+/// `shadowShapeInterval` after a rebuild, with a trailing pull that catches the end of an animation.
+/// A render whose outline did not change costs that render and an off-main byte compare, and does
+/// not hold the next pull.
 extension WinampModernMainView {
     static let shadowShapeInterval: CFTimeInterval = 0.25
 

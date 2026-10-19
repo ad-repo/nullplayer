@@ -164,6 +164,6 @@ Run `./scripts/bootstrap.sh` first to download required frameworks.
 
 ## See Also
 
-- `scripts/build_dmg.sh` — Direct download DMG (ad-hoc signed, no sandboxing)
+- `scripts/build_dmg.sh` — Direct download DMG (no sandboxing; ad-hoc signed unless `DEVELOPER_ID` is set, notarized when `NOTARY_PROFILE` is also set)
 - `docs/development-workflow.md` — Local build & test
 - [App Store Connect](https://appstoreconnect.apple.com/) — Submission status, reviews, analytics
