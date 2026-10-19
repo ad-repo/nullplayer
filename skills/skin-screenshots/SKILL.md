@@ -137,7 +137,7 @@ id of every row. "Loaded" is the Skins menu naming the skin as checked, plus the
 `capture.sh` reads `skinWindowShadows` before every shot, records it in the manifest, and **stops the run**
 with `shadows-off` rather than shoot without a shadow. (`closeaux` used to click Window Shadows off
 because it is a checked item in the Windows menu; it now closes window toggles only.)
-Settle after that is per family (0.5 s; WMP 15 s; Winamp Modern 15 s), `--settle` overrides it and
+Settle after that is per family (0.5 s; Sonique 0 — it does not animate; WMP 15 s; Winamp Modern 15 s), `--settle` overrides it and
 `settle.tsv` (skin, seconds) overrides both for long-intro skins.
 
 **Skins with an accessory window.** A few skins leave a second window on screen by design (2026-10-11:

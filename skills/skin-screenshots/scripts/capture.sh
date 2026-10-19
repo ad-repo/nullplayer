@@ -49,7 +49,7 @@ main_title() { case "$1" in
   modern) echo "NullPlayer — Winamp Modern";; wmp) echo "NullPlayer — Windows Media Player";;
   audion) echo "NullPlayer — Audion Faces";; sonique) echo "NullPlayer — Sonique";; *) echo "NullPlayer";; esac; }
 # Time for animations after the skin is confirmed loaded.
-family_settle() { case "$1" in modern) echo 15;; wmp) echo 15;; *) echo 0.5;; esac; }
+family_settle() { case "$1" in modern) echo 15;; wmp) echo 15;; sonique) echo 0;; *) echo 0.5;; esac; }
 settle_for() { # $1 system $2 item
   local o; o=$(awk -F'\t' -v k="$2" '$1==k{print $2; exit}' "$SETTLE_TSV" 2>/dev/null)
   if [ -n "$o" ]; then echo "$o"; elif [ -n "$SETTLE" ]; then echo "$SETTLE"; else family_settle "$1"; fi; }
@@ -87,8 +87,10 @@ while IFS=$'\t' read -r sys sub item label; do
   # change it, and a heavy .wal leaves the old window up unchanged while it loads.
   # A skin that pegs the app's main thread makes every menu call hang (211786-Cpro, 2026-10-11),
   # so each call is bounded and the whole wait is capped at 60 s.
+  # Sonique's log line names the .sgf it loaded, so it replaces the ~2.5 s menu read below.
   loaded=""; t0=$SECONDS
-  while [ $((SECONDS - t0)) -lt 60 ]; do
+  [ "$sys" = sonique ] && [ -r "$LOG" ] && loaded=1
+  while [ -z "$loaded" ] && [ $((SECONDS - t0)) -lt 60 ]; do
     [ "$(timeout 30 osascript "$MENU" current "$PID" "$sub" 2>/dev/null)" = "$item" ] && { loaded=1; break; }
     sleep 0.25
   done
@@ -98,7 +100,7 @@ while IFS=$'\t' read -r sys sub item label; do
     for i in $(seq 1 120); do [ "$(load_count "$sys")" -gt "$loadsbefore" ] && break; sleep 0.25; done
   fi
   # A .sgf that fails to load leaves the default skin on screen: never shoot it under this name.
-  if [ "$sys" = sonique ] && [ -r "$LOG" ] && ! grep 'SoniqueSkin: ' "$LOG" | tail -1 | grep -q 'SoniqueSkin: loaded'; then
+  if [ "$sys" = sonique ] && [ -r "$LOG" ] && ! grep 'SoniqueSkin: ' "$LOG" | tail -1 | grep -qiF "SoniqueSkin: loaded '$item.sgf'"; then
     echo "LOAD-FAILED"; rec "$label" "$sys" "$item" load-failed "" "" "" "" "$want"; continue
   fi
   sleep "$(settle_for "$sys" "$item")"
