@@ -23,9 +23,10 @@ enum SoniqueSkinDefaults {
             "StatusBarBgColor": "0xFF000000", "StatusBarFgColor": "0xFF005050", "StatusBarTextColor": "0xFF00FFFF",
             "ProgressBkColor": "0xFF606060", "OpenFileColor": "0xFFFF8000",
             "AmpKnobColor": "0xFF00FF00", "BalKnobColor": "0xFF6060FF", "PitchKnobColor": "0xFFFF3030",
-            // `misc.txt` says SystemColor_2; the oracle draws SystemColor_1 (k2, and the default skin's
-            // cyan balls), decision record Amendment 3.
-            "LogoColor": "SystemColor_1", "LogoRingColor": "SystemColor_3", "BlueBallsColor": "SystemColor_1",
+            // `misc.txt` swaps these two: the oracle draws the balls in SystemColor_1 (k2, and the default
+            // skin's cyan balls) and the logo in SystemColor_2 (the sonique skin's yellow logo, which sets
+            // no colours), decision record Amendments 3 and 6.
+            "LogoColor": "SystemColor_2", "LogoRingColor": "SystemColor_3", "BlueBallsColor": "SystemColor_1",
             "InternalVisLeftColor": "0xFF0000FF", "InternalVisRightColor": "0xFFFF0000",
             "InternalVisBlendColor": "0xFF00FF00",
             "LogoStartColor": "0x00FF2200", "LogoRingStartColor": "0x000022FF",

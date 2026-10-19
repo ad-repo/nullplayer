@@ -24,9 +24,12 @@ enum SoniqueSkinMenu {
 
     /// The right column's headings, where Sonique's read *quick links* and *my sonique*.
     /// "my nullplayer" is three letters longer than Sonique's "my sonique": spaced as "windows" it
-    /// runs past the display's edge, so it is spaced a quarter pixel.
-    static let headings = [SoniqueSkinText(string: "windows", x: 214, baseline: 38, size: 11, colour: .systemColor2, spacing: 1),
-                           SoniqueSkinText(string: "my nullplayer", x: 214, baseline: 110, size: 11, colour: .systemColor2,
+    /// runs past the display's edge, so it is spaced a quarter pixel, and the column sits 8 px left of
+    /// Sonique's x 214 (it still ran to 302, past 365 of 516 skins' displays at its height; at 294,
+    /// 20 are left, displays too narrow for any shift that clears the left column).
+    static let columnX = 206
+    static let headings = [SoniqueSkinText(string: "windows", x: columnX, baseline: 38, size: 11, colour: .systemColor2, spacing: 1),
+                           SoniqueSkinText(string: "my nullplayer", x: columnX, baseline: 110, size: 11, colour: .systemColor2,
                                 spacing: 0.25)]
 
     static let entries: [Entry] = {
@@ -46,8 +49,8 @@ enum SoniqueSkinMenu {
             items.enumerated().map { i, link in
                 let y = baseline + i * 11
                 return Entry(item: link.0, icon: nil,
-                             lines: [SoniqueSkinText(string: link.1, x: 218, baseline: y, size: 9, colour: .systemColor3, spacing: 1)],
-                             hit: .init(left: 214, top: y - 9, right: 300, bottom: y + 2))
+                             lines: [SoniqueSkinText(string: link.1, x: columnX + 4, baseline: y, size: 9, colour: .systemColor3, spacing: 1)],
+                             hit: .init(left: columnX, top: y - 9, right: 300, bottom: y + 2))
             }
         }
         return [large(.visualMode, "visual mode", "visuals & spectrum", top: 74),
@@ -59,15 +62,32 @@ enum SoniqueSkinMenu {
             + links([(.skins, "skins"), (.history, "play history"), (.about, "about")], first: 124)
     }()
 
-    /// NullPlayer's wordmark where Sonique's *LYCOS sonique* sits (x 28–181, y 24–51 on k2): a small
-    /// label where *LYCOS* is, a large word outlined in `LogoColor` over a ring in `LogoRingColor`.
-    /// The ring is Sonique's swoosh, measured on its menu capture: a crescent between two ellipses,
-    /// a hairline across the top that swells to 5 px underneath the word.
+    /// NullPlayer's wordmark where Sonique's *LYCOS sonique* sits (x 27–190, y 22–63 on k2): a small
+    /// label where *LYCOS* is, a heavy word outlined in `LogoColor`, widened and leaning as Sonique's
+    /// is (its x-height, 17 px on baseline 48, and its letters' 23 px pitch), over its swoosh in
+    /// `LogoRingColor`.
     enum Logo {
-        static let label = SoniqueSkinText(string: "null", x: 28, baseline: 31, size: 9, colour: .logoColor, spacing: 1)
-        static let word = SoniqueSkinText(string: "player", x: 28, baseline: 51, size: 28, colour: .logoColor)
-        static let ring = SoniqueSkinRegion.Rect(left: 45, top: 22, right: 157, bottom: 57)
-        static let ringHole = SoniqueSkinRegion.Rect(left: 46, top: 23, right: 156, bottom: 52)
+        /// Raised clear of the word's *l*, which *LYCOS* never had to be: *sonique* starts low.
+        static let label = SoniqueSkinText(string: "null", x: 27, baseline: 25, size: 12, colour: .logoColor)
+        static let word = SoniqueSkinText(string: "player", x: 27, baseline: 48, size: 31, colour: .logoColor,
+                                          font: "Arial-Black", matrix: CGAffineTransform(a: 1.35, b: 0, c: 0.21, d: 1, tx: 0, ty: 0))
+        /// Sonique's swoosh, fitted to k2's menu capture (2026-10-19): `swoosh` less `swooshHole`, both
+        /// leaning 13° clockwise, the hole raised so the ring is a line across the top that swells to
+        /// 4 px under the word. The hole stays 1.2 px inside at the top and 2 px at the ends: Sonique's
+        /// thinner ends broke up when drawn.
+        static let swoosh = Ellipse(cx: 104.9, cy: 42.5, rx: 52.9, ry: 17.6, degrees: 13.3)
+        static let swooshHole = Ellipse(cx: 105.1, cy: 41.1, rx: 50.8, ry: 14.9, degrees: 13.3)
+
+        /// An ellipse about (`cx`, `cy`), turned `degrees` clockwise (skin pixels run top-down).
+        struct Ellipse {
+            let cx, cy, rx, ry, degrees: CGFloat
+
+            func path(dx: Int, dy: Int) -> CGPath {
+                var turn = CGAffineTransform(translationX: cx + CGFloat(dx), y: cy + CGFloat(dy))
+                    .rotated(by: degrees * .pi / 180)
+                return CGPath(ellipseIn: CGRect(x: -rx, y: -ry, width: 2 * rx, height: 2 * ry), transform: &turn)
+            }
+        }
     }
 
     /// NullPlayer's version where Sonique's own sits, bottom centre above the status line.

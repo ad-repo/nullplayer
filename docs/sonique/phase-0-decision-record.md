@@ -216,6 +216,15 @@ OnePlayer's `verde`.
   mechanism (`AppFeature.isDebugOnly`) had no other user and is removed. The census, render probe
   and oracle sweep stay DEBUG/test harness.
 
+### Amendment 6 (2026-10-19)
+
+- **`LogoColor` defaults to `SystemColor_2`, not `misc.txt`'s `SystemColor_1`.** The sonique skin's
+  `skin.ini` has a `[skin]` section and no colours, so everything the oracle draws for it is
+  Sonique's own default; its menu screen's logo is yellow, `SystemColor_2`'s default and the colour
+  of the quick links heading beside it, where `SystemColor_1`'s would be cyan. With Amendment 3
+  this is `misc.txt` swapping `LogoColor` and `BlueBallsColor`. Of 517 corpus skins, 502 write a
+  `LogoColor` of their own.
+
 ## Control mapping
 
 | Skin control | NullPlayer action |

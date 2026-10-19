@@ -105,7 +105,7 @@ app-authored default: `SoniqueSkin.image(_:)` and `region(_:)` fall back to `Son
 
 Only values that differ from the default are written, so every key needs its default from
 `misc.txt`; `SoniqueSkinDefaults` holds them, and `SoniqueSkinSettings` resolves every key Sonique
-reads at load. Some defaults are names (`NAV_PREV_y = PREV_y`, `LogoColor = SystemColor_1`), so they
+reads at load. Some defaults are names (`NAV_PREV_y = PREV_y`, `LogoColor = SystemColor_2`), so they
 follow the skin's value of that name. How a value reads (leading integer, `NAME ± n`, empty) is the
 decision record's § *INI rules*.
 
@@ -164,13 +164,17 @@ colours:
 
 The logo, the icons and the quick links are Lycos's and are not copied (decision record
 § *Decisions*). NullPlayer draws the layout with its own items (`SoniqueSkinMenu`, measured on k2), and its own
-wordmark in the logo's place and colours: a small *null* where *LYCOS* is (x 28, baseline 31), a
-28 pt *player* filled black and edged in `LogoColor` on baseline 51, over a ring in `LogoRingColor`
-(x 45–175, y 26–62). Nothing is extracted from `Sonique.exe`. The rest:
+wordmark in the logo's place and colours: a 12 pt *null* where *LYCOS* is (x 27, baseline 25, raised clear of the word's *l*), and
+*player* filled black and edged thinly in `LogoColor` from x 27 on baseline 48, in Arial Black widened
+1.35× and leaning 0.21 so it has Sonique's 17 px x-height and 23 px letter pitch, over Sonique's
+swoosh in `LogoRingColor`: a crescent between two ellipses leaning 13° clockwise, a line across the
+top that swells to 4 px under the word, y 21–63 and x 52–158, fitted to k2's capture (2026-10-19;
+`SoniqueSkinMenu.Logo`). The hole is held 1.2 px inside at the top and 2 px at the ends: Sonique's
+own ends are thinner, and fitted that thin they broke up on screen. Nothing is extracted from `Sonique.exe`. The rest:
 icon boxes 21 px at x 45, y 74/104/134 with titles (14 pt) at x 75 on icon top + 11 and subtitles
 (8 pt) on + 20; the small pair's 19 px icons at x 21 and 117, y 169, two 11 pt lines on 177 and 186;
-headings (11 pt, letter-spaced) at x 214 on 38 and 110; links (9 pt, letter-spaced) at x 218, 11 px
-apart from 51 and 124; the version at x 191 on 209. Off the menu screen a back ball sits 12 px left
+headings (11 pt, letter-spaced) at x 206 on 38 and 110, 8 px left of Sonique's 214 so *my nullplayer*
+fits 496 of 516 skins' displays; links (9 pt, letter-spaced) at x 210, 11 px apart from 51 and 124; the version at x 191 on 209. Off the menu screen a back ball sits 12 px left
 of the other five and returns to it (Sonique's playlist, visual mode, audio controls and search
 screens show it).
 

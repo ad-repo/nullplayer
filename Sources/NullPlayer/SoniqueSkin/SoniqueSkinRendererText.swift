@@ -4,11 +4,12 @@ import Foundation
 
 /// One line of Sonique's lettering: its left at `x`, on `baseline`, `spacing` extra points between
 /// letters (the menu's right column is letter-spaced), in `font` (Verdana Bold unless a screen
-/// measured otherwise).
+/// measured otherwise), shaped by `matrix` (NullPlayer's wordmark leans and widens).
 struct SoniqueSkinText: Equatable {
     var string: String, x: Int, baseline: Int, size: CGFloat, colour: SoniqueColour
     var spacing: CGFloat = 0
     var font = "Verdana-Bold"
+    var matrix = CGAffineTransform.identity
 
     var width: Double {
         CTLineGetTypographicBounds(CTLineCreateWithAttributedString(attributed(ink: SoniqueSkinRenderer.cgColor(0))),
@@ -30,20 +31,22 @@ struct SoniqueSkinText: Equatable {
     }
 
     func attributed(ink: CGColor, outline: CGColor? = nil) -> NSAttributedString {
-        Self.lettering(string, size: size, spacing: spacing, font: font, ink: ink, outline: outline)
+        Self.lettering(string, size: size, spacing: spacing, font: font, matrix: matrix, ink: ink, outline: outline)
     }
 
     static func lettering(_ string: String, size: CGFloat, spacing: CGFloat = 0, font: String = "Verdana-Bold",
-                          ink: CGColor, outline: CGColor? = nil) -> NSAttributedString {
+                          matrix: CGAffineTransform = .identity, ink: CGColor,
+                          outline: CGColor? = nil) -> NSAttributedString {
+        var matrix = matrix
         var attributes: [NSAttributedString.Key: Any] = [
-            NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName(font as CFString, size, nil),
+            NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName(font as CFString, size, &matrix),
             NSAttributedString.Key(kCTForegroundColorAttributeName as String): ink,
             NSAttributedString.Key(kCTKernAttributeName as String): spacing,
         ]
         if let outline {
             attributes[NSAttributedString.Key(kCTStrokeColorAttributeName as String)] = outline
-            // Negative: fill and stroke, the stroke 6 % of the size.
-            attributes[NSAttributedString.Key(kCTStrokeWidthAttributeName as String)] = -6
+            // Negative: fill and stroke, the stroke 4 % of the size (about Sonique's 1 px on its logo).
+            attributes[NSAttributedString.Key(kCTStrokeWidthAttributeName as String)] = -4
         }
         return NSAttributedString(string: string, attributes: attributes)
     }

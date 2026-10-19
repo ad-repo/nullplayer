@@ -16,7 +16,7 @@ final class SoniqueSkinSettingsTests: XCTestCase {
 
     /// A default written as a name follows the skin's value of that name.
     func testADefaultNamingAKeyFollowsTheSkin() {
-        let s = settings("[misc locations]\nPREV_y=7\nBIGUP_y=10\n[sonique colors]\nSystemColor_1=0x123456\n")
+        let s = settings("[misc locations]\nPREV_y=7\nBIGUP_y=10\n[sonique colors]\nSystemColor_2=0x123456\n")
         XCTAssertEqual(s.int("misc locations", "NAV_PREV_y"), 7)
         XCTAssertEqual(s.int("misc locations", "BIGON_DOWN_y"), 45)
         XCTAssertEqual(s.colour(.logoColor), 0x123456)

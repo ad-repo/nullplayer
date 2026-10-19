@@ -108,11 +108,11 @@ extension SoniqueSkinPainter {
         context.restoreGState()
     }
 
-    /// NullPlayer's wordmark in the logo's place (`SoniqueSkinMenu.Logo`): the ring, then the word
-    /// filled black and edged in `LogoColor` over it, as Sonique's letters cross its ring.
+    /// NullPlayer's wordmark in the logo's place (`SoniqueSkinMenu.Logo`): the swoosh, then the word
+    /// filled black and edged in `LogoColor` over it, as Sonique's letters cross its swoosh.
     private func logo(at dx: Int, _ dy: Int) {
-        context.addEllipse(in: SoniqueSkinMenu.Logo.ring.offset(dx, dy).cgRect)
-        context.addEllipse(in: SoniqueSkinMenu.Logo.ringHole.offset(dx, dy).cgRect)
+        context.addPath(SoniqueSkinMenu.Logo.swoosh.path(dx: dx, dy: dy))
+        context.addPath(SoniqueSkinMenu.Logo.swooshHole.path(dx: dx, dy: dy))
         context.setFillColor(colour(.logoRingColor))
         context.fillPath(using: .evenOdd)
         let word = SoniqueSkinMenu.Logo.word.offset(dx, dy)
