@@ -1,18 +1,18 @@
 ---
 name: skin-screenshots
-description: Capture one centred main-window screenshot per skin across every skin system but Sonique (Classic, Original, Original-Metal, Modern/.wal, Media Player/.wmz, Audion Faces) and assemble them into a fixed-duration slideshow GIF. Use when producing marketing imagery, a skin gallery, or any before/after visual comparison across the skin corpus.
+description: Capture one centred main-window screenshot per skin across every skin system (Classic, Original, Original-Metal, Modern/.wal, Media Player/.wmz, Audion Faces, Sonique/.sgf) and assemble them into a fixed-duration slideshow GIF. Use when producing marketing imagery, a skin gallery, or any before/after visual comparison across the skin corpus.
 ---
 
 # Skin screenshot sweep
 
-> **Scope.** This skill produces a **gallery GIF** and nothing else. It sweeps six skin
-> families — Classic, Original, Original-Metal, Modern, Media Player (`.wmz`) and Audion Faces:
-> `enumerate_skins.sh` emits every skin in those six Skins submenus, and `capture.sh` photographs
-> each entry it emits. Sonique (`.sgf`) is not swept yet: neither script has a case for it. To launch, configure, drive,
+> **Scope.** This skill produces a **gallery GIF** and nothing else. It sweeps seven skin
+> families — Classic, Original, Original-Metal, Modern, Media Player (`.wmz`), Audion Faces and
+> Sonique (`.sgf`): `enumerate_skins.sh` emits every skin in those seven Skins submenus, and
+> `capture.sh` photographs each entry it emits. To launch, configure, drive,
 > screenshot or test the running app — for any reason other than assembling that GIF — see
 > **`app-control`**. It owns `winhelper` and `menu.applescript`, which this sweep only borrows.
 
-Photographs the **main window only**, one frame per skin, across all six skin systems, centres each
+Photographs the **main window only**, one frame per skin, across all seven skin systems, centres each
 on an identical white frame, and builds a slideshow GIF whose cycle is exactly the length you ask for.
 
 Everything is in `scripts/`. Run them in this order:
@@ -133,7 +133,7 @@ prefix: `NullPlayer Analyzer`, `NullPlayer Art` and the WMP view windows all sta
 Per row it records `no-main`, `ambiguous` (two windows with the title) or `extra-windows` (anything
 else still on screen after `closeaux`) and does not shoot; the manifest carries the title and window
 id of every row. "Loaded" is the Skins menu naming the skin as checked, plus the log's
-`WinampModern surfaces [...]` line for `.wal` (`--log`, default `$NULLPLAYER_LOG` or `/tmp/np.log`).
+`WinampModern surfaces [...]` line for `.wal` and `SoniqueSkin: loaded` for `.sgf` (`--log`, default `$NULLPLAYER_LOG` or `/tmp/np.log`).
 `capture.sh` reads `skinWindowShadows` before every shot, records it in the manifest, and **stops the run**
 with `shadows-off` rather than shoot without a shadow. (`closeaux` used to click Window Shadows off
 because it is a checked item in the Windows menu; it now closes window toggles only.)
@@ -151,7 +151,7 @@ window alone (framing gains `+extra-ignored`), and `scripts/groupshot.py <pid> <
 `makegif.sh` computes an integer centisecond delay per frame and spreads the remainder over the
 leading frames, so 114 frames over 30s is exact rather than drifting. It verifies the assembled
 duration and prints it. `--order random` interleaves the systems; `--order system` groups them
-Classic → Original → Original-Metal → Modern → Media Player → Audion Faces.
+Classic → Original → Original-Metal → Modern → Media Player → Audion Faces → Sonique.
 
 ## Audion faces
 
@@ -160,3 +160,14 @@ with `--only` or `../exclude.txt`. Past 40 faces the menu is grouped into A–Z 
 `menu.applescript` `list`, `current` and `skin` read in place. Face names can start or end with a
 space (five do), so `list` prints one name per line and `enumerate_skins.sh` never trims: trimming
 made those rows `MENU-FAIL`.
+
+## Sonique skins
+
+Each skin is shot in the mode the window is in — navigator, mid or small — so pick it before the
+sweep with **Skins ▸ Sonique ▸ Mode**, or launch with `launch.sh sonique:<skin> -- -soniqueSkinMode
+mid|small`; navigator is the default. `enumerate_skins.sh` drops the `Mode` submenu, and the corpus's
+524 skins sit in A–Z submenus that `menu.applescript` reads in place, as for Audion. The menu ticks
+before an `.sgf` has loaded, so `capture.sh` waits for the log's next `SoniqueSkin:` line. A skin
+that fails logs its error there and the default skin stands in, so any line but `loaded` is
+recorded as `load-failed` and not shot under that skin's name. A whole-corpus sweep is about an
+hour; pick a set with `--only`.
