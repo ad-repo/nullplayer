@@ -50,11 +50,8 @@ enum WinampModernComponentRegistry {
     /// for their playlist/video/library *content* (mmd3 `xml/pledit-normal.xml`, CornerAmp
     /// `xml/pledit.xml`, Winamp Modern `xml/ml-normal.xml`); `windowholder`/`componentbucket` are the
     /// SUI forms cPro's engine uses.
-    static func isHolderElement(_ typeName: String) -> Bool {
-        switch typeName.lowercased() {
-        case "windowholder", "componentbucket", "component": return true
-        default: return false
-        }
+    static func isHolderElement(_ tag: WasabiTag) -> Bool {
+        tag.is(anyOf: [.windowHolder, .componentBucket, .component])
     }
 
     /// Resolve the kind a `windowholder hold="…"` / `componentbucket` / `component param="…"` value
@@ -423,6 +420,8 @@ struct WinampModernBrowserRequest: Equatable {
 protocol WinampModernBrowserSurface: AnyObject {
     var view: NSView { get }
     func navigate(_ request: WinampModernBrowserRequest)
+    /// `Browser.back()` / `forward()`; nothing happens at either end of the history.
+    func stepHistory(forward: Bool)
     func setVisible(_ visible: Bool)
     /// Whether the surface draws its own address/navigation bar. Off for a skin that authored one of
     /// its own over the same box — see `WinampModernMainView.suppressesHostLocationBar`.

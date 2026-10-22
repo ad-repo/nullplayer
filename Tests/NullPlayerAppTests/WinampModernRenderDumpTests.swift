@@ -22,15 +22,11 @@ final class WinampModernRenderDumpTests: XCTestCase {
         // engine-wide change needs — was a shell loop paying one test-binary startup per skin, and
         // the startups were nearly all of its ~25 minutes. Worse, a sweep is a build: an edit to
         // `Sources/` or `Tests/` mid-loop silently wrote *empty* captures that then diffed as
-        // "everything changed". One invocation cannot be invalidated halfway.
-        let walRoot = URL(fileURLWithPath: walPath)
-        var isDirectory: ObjCBool = false
-        FileManager.default.fileExists(atPath: walPath, isDirectory: &isDirectory)
-        let wals: [URL] = isDirectory.boolValue
-            ? ((try? FileManager.default.contentsOfDirectory(at: walRoot, includingPropertiesForKeys: nil)) ?? [])
-                .filter { $0.pathExtension.lowercased() == "wal" }
-                .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-            : [walRoot]
+        // "everything changed". One invocation cannot be invalidated halfway. B167: a `:` list of
+        // tier directories is walked as one corpus.
+        let isSweep = WinampModernCorpusPaths.isSweep(walPath)
+        let wals = WinampModernCorpusPaths.archives(in: walPath)
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
         guard !wals.isEmpty else { throw XCTSkip("No .wal archives under \(walPath).") }
 
         // A probe-only run needs no PNGs. `WINAMP_MODERN_RENDER_THEMES` is asked of all sixteen
@@ -60,26 +56,55 @@ final class WinampModernRenderDumpTests: XCTestCase {
         }
 
         for wal in wals {
-            // The sweep's own frame. Every other line the harness prints is keyed by
-            // `<container>/<layout>`, which is not unique across skins, so without this a directory
-            // run is an unattributable wall of text. Printed for a single archive too, so one skin's
-            // capture and its row in a sweep stay byte-identical and diff cleanly.
-            print("SKIN \(wal.lastPathComponent)")
             // Each skin gets its own subdirectory in a sweep, so 36 skins' PNGs cannot collide on a
             // shared container name. A single archive keeps writing straight into the directory it
             // was given — every existing invocation and every documented path stays as it was.
-            let skinDump = wals.count > 1
+            // Keyed on `isSweep`, not the count: a one-skin shard of a sharded sweep (B170) shares
+            // the dump directory with the other shards.
+            let skinDump = isSweep
                 ? dumpDirectory.appendingPathComponent(wal.deletingPathExtension().lastPathComponent,
                                                        isDirectory: true)
                 : dumpDirectory
             try FileManager.default.createDirectory(at: skinDump, withIntermediateDirectories: true)
-            do {
-                try render(wal: wal, dumpDirectory: skinDump, store: store, env: env)
-            } catch {
-                // One unloadable skin must not abandon the other 35 — the sweep's whole value is
-                // that it is comparable end to end. The failure is printed where the diff will see it.
-                print("SKIN \(wal.lastPathComponent) FAILED \(error)")
+            let log = isSweep
+                ? dumpDirectory.appendingPathComponent(wal.deletingPathExtension().lastPathComponent + ".log")
+                : nil
+            Self.writingStdout(to: log) {
+                // The sweep's own frame. Every other line the harness prints is keyed by
+                // `<container>/<layout>`, which is not unique across skins, so without this a
+                // directory run is an unattributable wall of text. Printed for a single archive too,
+                // so one skin's capture and its row in a sweep stay byte-identical and diff cleanly.
+                print("SKIN \(wal.lastPathComponent)")
+                do {
+                    try render(wal: wal, dumpDirectory: skinDump, store: store, env: env)
+                } catch {
+                    // One unloadable skin must not abandon the other 35 — the sweep's whole value is
+                    // that it is comparable end to end. The failure is printed where the diff will see it.
+                    print("SKIN \(wal.lastPathComponent) FAILED \(error)")
+                }
             }
+        }
+    }
+
+    /// B166: in a directory run, every line one skin prints goes to its own `<dumpdir>/<skin>.log`.
+    /// On the shared stdout, XCTest's own writes and the stdio buffer landed inside one another in
+    /// about half of all corpus passes and lost whole blocks of a skin's lines (`harness.md`). A
+    /// file only this skin writes to cannot interleave. The log is echoed to stdout afterwards so a
+    /// person running a directory probe by hand still reads it there; the scripts read the files.
+    private static func writingStdout(to log: URL?, _ body: () -> Void) {
+        guard let log else { return body() }
+        fflush(stdout)
+        let file = open(log.path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+        guard file >= 0 else { return body() }
+        let saved = dup(STDOUT_FILENO)
+        dup2(file, STDOUT_FILENO)
+        close(file)
+        body()
+        fflush(stdout)
+        dup2(saved, STDOUT_FILENO)
+        close(saved)
+        if let data = FileManager.default.contents(atPath: log.path) {
+            FileHandle.standardOutput.write(data)
         }
     }
 
@@ -150,7 +175,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
             playlistHost = host
             runtime.componentHost = host
             WasabiTextMetrics.componentTextProvider = { [weak host] in host?.playlistSnapshot() }
-            runtime.playlistRevealRowRequested = { print("PLAYLIST reveal row=\($0)") }
+            runtime.hooks.playlistRevealRowRequested = { print("PLAYLIST reveal row=\($0)") }
             print("PLAYLIST before: \(host.describe())")
         }
 
@@ -159,7 +184,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
         // before `start()` because the five scripts that carry it call it from `onScriptLoaded`, and
         // it names the level the app would snap to so a button that asks for 250% is not confused
         // with one that asks for 200%.
-        runtime.uiScaleRequested = { factor in
+        runtime.hooks.uiScaleRequested = { factor in
             print(String(format: "SCALE request %.3f -> %@%%", Double(factor),
                          UIScaleLevel.nearest(toScaleFactor: factor).rawValue))
         }
@@ -192,7 +217,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
                   + "active=\(loaded.themeCoordinator.catalog.activeTheme)")
         }
         let allRenderers = Array(renderersByContainer.values)
-        runtime.resolvedGeometryRequested = { object in
+        runtime.hooks.resolvedGeometryRequested = { object in
             for renderer in allRenderers {
                 if let geometry = renderer.resolvedGeometry(of: object) { return geometry }
             }
@@ -243,7 +268,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
             if visible { openContainers.insert(id.lowercased()) }
             else { openContainers.remove(id.lowercased()) }
         }
-        runtime.containerVisibilityRequested = { noteContainerVisibility($0, $1) }
+        runtime.hooks.containerVisibilityRequested = { noteContainerVisibility($0, $1) }
 
         try runtime.start()
 
@@ -293,13 +318,13 @@ final class WinampModernRenderDumpTests: XCTestCase {
         if let spec = env["WINAMP_MODERN_RENDER_EQ"] {
             var bands = Array(repeating: 0, count: WinampModernEQAction.bandCount)
             var preamp = 0
-            runtime.equalizerBandRequested = { bands.indices.contains($0) ? bands[$0] : 0 }
-            runtime.equalizerBandSetterRequested = { band, value in
+            runtime.hooks.equalizerBandRequested = { bands.indices.contains($0) ? bands[$0] : 0 }
+            runtime.hooks.equalizerBandSetterRequested = { band, value in
                 guard bands.indices.contains(band) else { return }
                 bands[band] = value
             }
-            runtime.equalizerPreampRequested = { preamp }
-            runtime.equalizerPreampSetterRequested = { preamp = $0 }
+            runtime.hooks.equalizerPreampRequested = { preamp }
+            runtime.hooks.equalizerPreampSetterRequested = { preamp = $0 }
             // Seed silently: the opening state is announced once, and what this probe is asking about
             // is the *change* the skin is told about afterwards.
             runtime.refreshEqualizerState()
@@ -457,6 +482,8 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 let start = Date()
                 while Date().timeIntervalSince(start) < seconds {
                     RunLoop.current.run(until: Date().addingTimeInterval(1.0 / 60))
+                    // The window's frame clock: a realtime layer's `fx_onFrame` (wTunes' needle).
+                    runtime.refreshLayerFXMeshes()
                     let now = Date().timeIntervalSince(start)
                     for object in objects {
                         let id = object.xmlID ?? "-"
@@ -1068,7 +1095,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
                         // `onLeftButtonUp` gets "no" and takes its drag-cancelled path — so the probe
                         // would report a dead control that works perfectly under a real mouse. The
                         // pointer is placed where the click is, which is where it is in the app.
-                        runtime.mousePositionInObjectSpaceRequested = { _ in point }
+                        runtime.hooks.mousePositionInObjectSpaceRequested = { _ in point }
                         print("CLICK at \(point) hits "
                               + "\(target?.typeName ?? "-")#\(target?.xmlID ?? "-") "
                               + "bindings=\(target.map { runtime.hasBinding(for: $0) } ?? false)"
@@ -1083,22 +1110,22 @@ final class WinampModernRenderDumpTests: XCTestCase {
                         // resulting action — so with nothing wired here the probe reported "nothing
                         // changed" for a button that works, and could not tell that apart from one
                         // that asks for an action the view does not implement.
-                        runtime.actionRequested = { action, parameter in
+                        runtime.hooks.actionRequested = { action, parameter in
                             print("CLICK action: \(action.isEmpty ? "-" : action) param=\(parameter ?? "-")")
                         }
-                        defer { runtime.actionRequested = nil }
+                        defer { runtime.hooks.actionRequested = nil }
                         // The other half of "what did this click ask the host for": a skin that opens
                         // one of its own windows does it with `getContainer(id).show()`, which is a
                         // window request, not an action. There are no windows in the harness, so this
                         // is the only place it can be seen.
-                        runtime.containerVisibilityRequested = { id, visible in
+                        runtime.hooks.containerVisibilityRequested = { id, visible in
                             print("CLICK window: \(id) visible=\(visible)")
                             noteContainerVisibility(id, visible)
                         }
                         // Back to the model, not to `nil`: a click that opens a window is the reason
                         // the *next* `isVisible()` in the run answers differently.
                         defer {
-                            runtime.containerVisibilityRequested = { noteContainerVisibility($0, $1) }
+                            runtime.hooks.containerVisibilityRequested = { noteContainerVisibility($0, $1) }
                         }
                         var chain: [String] = []
                         runtime.dispatchObserver = { event, program, failure in
@@ -1146,12 +1173,12 @@ final class WinampModernRenderDumpTests: XCTestCase {
                                 // The button events carry the click's x/y, exactly as the view sends
                                 // them: a handler that pops two arguments off an empty stack fails
                                 // with an underflow that belongs to the harness, not the skin.
-                                // Parent-relative, exactly as the view sends them (see
-                                // `WinampModernMainView.dispatch`): a knob script subtracts its own
-                                // `getLeft()` from this, and a canvas point put Lobe's dial off the
-                                // end of its map.
-                                let parent = renderer.resolvedGeometry(of: target)?.parent ?? .zero
-                                let local = CGPoint(x: point.x - parent.minX, y: point.y - parent.minY)
+                                // In the listening script's space, exactly as the view sends them
+                                // (`WinampModernScriptRuntime.pointInEventSpace`): a knob script
+                                // subtracts its own `getLeft()` from this, and a canvas point put
+                                // Lobe's dial off the end of its map.
+                                let local = runtime.pointInEventSpace(of: target, event: event,
+                                                                      canvasPoint: point, renderer: renderer)
                                 let arguments: [MakiValue] = (["onleftclick", "onrightclick"] + hoverEvents).contains(event) ? []
                                     : [.integer(Int32(local.x)), .integer(Int32(local.y))]
                                 // No view here to show a menu, so record what the skin built.
@@ -1165,15 +1192,16 @@ final class WinampModernRenderDumpTests: XCTestCase {
                                     runtime.popupPresenter = { items, point in
                                         let where_ = point.map { " at \(Int($0.x)),\(Int($0.y))" } ?? ""
                                         print("CLICK menu\(where_): " + Self.describe(items))
-                                        // A menu the user *dismisses* answers 0, and for a skin whose
-                                        // command only takes effect on a later click that is the same
-                                        // as never opening it. ClassicPro's multi-button is the case:
-                                        // the right-click menu only records which command the **left**
+                                        // A menu the user *dismisses* answers `popupDismissed` (0 is
+                                        // a skin's first command), and for a skin whose command only
+                                        // takes effect on a later click that is the same as never
+                                        // opening it. ClassicPro's multi-button is the case: the
+                                        // right-click menu only records which command the **left**
                                         // click will run, so every one of its six choices was
                                         // unmeasurable without a pick.
                                         let picked = env["WINAMP_MODERN_RENDER_CLICK_PICK"]
-                                            .flatMap { Int32($0) } ?? 0
-                                        if picked != 0 { print("CLICK menu pick: \(picked)") }
+                                            .flatMap { Int32($0) } ?? WinampModernScriptRuntime.popupDismissed
+                                        if picked != WinampModernScriptRuntime.popupDismissed { print("CLICK menu pick: \(picked)") }
                                         return picked
                                     }
                                 }
@@ -1781,7 +1809,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
                                                in container: WasabiObject) -> [WasabiObject] {
         var found: [WasabiObject] = []
         func visit(_ object: WasabiObject) {
-            if WinampModernComponentRegistry.isHolderElement(object.typeName),
+            if WinampModernComponentRegistry.isHolderElement(object.tag),
                WasabiSceneRenderer.componentKind(of: object) == kind {
                 found.append(object)
             }
@@ -1806,7 +1834,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
         return drawn ? data : nil
     }
 
-    private static func describe(_ items: [WinampModernPopupMenuItem]) -> String {
+    static func describe(_ items: [WinampModernPopupMenuItem]) -> String {
         items.map { item in
             if item.isSeparator { return "--" }
             let flags = (item.checked ? "*" : "") + (item.disabled ? "!" : "")
@@ -1816,7 +1844,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
     }
 
     /// The attributes a click is likely to move: geometry, visibility, and which art is showing.
-    private static func state(of object: WasabiObject) -> String {
+    static func state(of object: WasabiObject) -> String {
         // `alpha` is here because a whole class of skin behaviour is *only* alpha: ClassicPro's
         // hover glows are a layer already in place at `alpha="0"` that a script fades in, so a probe
         // blind to it reported "the click changed nothing" for a control that lights up (B129).

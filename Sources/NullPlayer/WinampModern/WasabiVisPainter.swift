@@ -162,7 +162,7 @@ struct WasabiVisStyle {
     /// The ramp is laid over the **box**, not over the bar, so a short bar shows the bottom of the
     /// gradient rather than a squashed copy of the whole thing — which is what keeps the scanlines
     /// lined up across bars of different heights.
-    func fillRamped(bar: CGRect, boxBottom: CGFloat, boxHeight: CGFloat, in context: CGContext) {
+    func fillRamped(bar: CGRect, boxBottom: CGFloat, boxHeight: CGFloat, in context: WasabiDrawList) {
         guard !bandColors.isEmpty, bar.height > 0, boxHeight > 0 else { return }
         let slice = boxHeight / CGFloat(bandColors.count)
         for step in bandColors.indices {
@@ -256,7 +256,7 @@ protocol WasabiVisRenderer: AnyObject {
     /// host's own spectrum tap has to run (B73). Answered from the mode alone, for `needsWaveform`'s
     /// reason: it is recomputed whenever the graph changes.
     func needsAnalyzerBands(forMode mode: WasabiVisualizationMode) -> Bool
-    func draw(_ input: WasabiVisInput, in frame: CGRect, context: CGContext)
+    func draw(_ input: WasabiVisInput, in frame: CGRect, context: WasabiDrawList)
     /// Whether any box still has a bar or a cap above the floor — what tells the window it can stop
     /// repainting after the audio went quiet.
     var hasDecayingState: Bool { get }
@@ -307,7 +307,7 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
 
     func discardState() { boxes.removeAll() }
 
-    func draw(_ input: WasabiVisInput, in frame: CGRect, context: CGContext) {
+    func draw(_ input: WasabiVisInput, in frame: CGRect, context: WasabiDrawList) {
         switch input.style.mode {
         case .off:
             return
@@ -320,7 +320,7 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
 
     // MARK: - The analyzer
 
-    private func drawAnalyzer(_ input: WasabiVisInput, in frame: CGRect, context: CGContext) {
+    private func drawAnalyzer(_ input: WasabiVisInput, in frame: CGRect, context: WasabiDrawList) {
         let style = input.style
         // `bandwidth` picks the band **count**, and the tap is asked for exactly that many: the
         // analysis is log-spaced across 20 Hz–20 kHz for whatever count it is given, so there is no
@@ -439,7 +439,7 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
 
     /// **Left channel only** — Winamp's scope reads channel 0, and the mirrored second box is the
     /// skin's job (Big Bento's `main.vis` is `fliph="1"`), not ours.
-    private func drawOscilloscope(_ input: WasabiVisInput, in frame: CGRect, context: CGContext) {
+    private func drawOscilloscope(_ input: WasabiVisInput, in frame: CGRect, context: WasabiDrawList) {
         let samples = input.waveform.left
         guard !samples.isEmpty else { return }
         let style = input.style

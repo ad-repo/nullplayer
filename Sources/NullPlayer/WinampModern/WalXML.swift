@@ -139,6 +139,8 @@ struct WalLenientXMLParser {
         var line = 1
         var column = 1
         var nodeCount = 0
+        // What the parser forgave rather than rejected: Winamp loaded these published skins (B176).
+        var diagnostics: [WalDiagnostic] = []
 
         func advanced(_ range: Range<Int>) -> (Int, Int) {
             var nextLine = line
@@ -176,7 +178,10 @@ struct WalLenientXMLParser {
             let tagColumn = column
             if match(index, "<!--") {
                 guard let end = endOf("-->", after: index + 4) else {
-                    throw WalFailure(WalDiagnostic(.malformedXML, "Unterminated XML comment.", location: WalSourceLocation(path: path, line: tagLine, column: tagColumn)))
+                    // Assmosis, PioNner3, RayPlayer and SleekyXtra end a file inside a comment.
+                    diagnostics.append(WalDiagnostic(.malformedXML, "Unterminated XML comment; the rest of the file was read as a comment.",
+                                                     severity: .warning, location: WalSourceLocation(path: path, line: tagLine, column: tagColumn)))
+                    break
                 }
                 (line, column) = advanced(index..<end)
                 index = end
@@ -206,11 +211,23 @@ struct WalLenientXMLParser {
             }
 
             if isClosing {
-                guard let end = endOf(">", after: cursor), let open = stack.last,
-                      open.name.caseInsensitiveCompare(name) == .orderedSame else {
+                guard let end = endOf(">", after: cursor) else {
                     throw WalFailure(WalDiagnostic(.malformedXML, "Unexpected closing tag </\(name)>.", location: WalSourceLocation(path: path, line: tagLine, column: tagColumn)))
                 }
-                stack.removeLast()
+                let location = WalSourceLocation(path: path, line: tagLine, column: tagColumn)
+                if let match = stack.lastIndex(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+                    // `<elements><color …>` written without its `/` (cPro_Relax): the close tag
+                    // ends the tags left open inside it too.
+                    if match < stack.count - 1 {
+                        diagnostics.append(WalDiagnostic(.malformedXML, "</\(name)> closes \(stack.count - 1 - match) tag(s) left open inside it.",
+                                                         severity: .warning, location: location))
+                    }
+                    stack.removeSubrange(match...)
+                } else {
+                    // A stray `</groupdef>`, `</elements>` or `</WinampAbstractionLayer>` closes nothing.
+                    diagnostics.append(WalDiagnostic(.malformedXML, "Unexpected closing tag </\(name)> was ignored.",
+                                                     severity: .warning, location: location))
+                }
                 (line, column) = advanced(index..<end)
                 index = end
                 continue
@@ -297,7 +314,6 @@ struct WalLenientXMLParser {
         // every sibling after it. `maximumDepth` still bounds how much can be left open, so warning
         // here changes nothing about the sandbox. `Shield_Amp`'s `opensource_notifier/notifier.xml`
         // is the measured case: two `<container>`s opened, one closed, file ends on a `<script/>`.
-        var diagnostics: [WalDiagnostic] = []
         if let open = stack.last {
             let extra = stack.count > 1 ? " (\(stack.count) tags left open)" : ""
             diagnostics.append(WalDiagnostic(
@@ -385,12 +401,12 @@ final class WalXMLDocumentLoader {
                     // node instead: one unfound include three files down discarded everything the
                     // outer file contained, silently and under the outer file's name, which is how
                     // Shield_Amp's playlist layout vanished (B45). It also laundered the one failure
-                    // `isInsideSkin` exists to keep fatal — a ClassicPro engine include — into a
+                    // `namesMountedTree` exists to keep fatal — a ClassicPro engine include — into a
                     // warning, because the *outer* path was inside the skin.
                     targets = try vfs.expand(file, relativeTo: sourcePath, location: node.location)
                 } catch let failure as WalFailure
                     where failure.diagnostics.allSatisfy({ $0.code == .resourceMissing })
-                        && isInsideSkin(file, relativeTo: sourcePath) {
+                        && namesMountedTree(file, relativeTo: sourcePath) {
                     // Real skins ship `<include>`s naming files the archive does not contain —
                     // `Itemskin` asks for `xml/eq.xml`, `Overdrive_2` for `xml/pledit-elements.xml`.
                     // Winamp warns and carries on; failing the include failed the *whole skin*, so
@@ -422,15 +438,17 @@ final class WalXMLDocumentLoader {
         return result
     }
 
-    /// A missing include is only tolerated when it names a file *inside the skin*. One that climbs
-    /// into another mount — `@COLORTHEMESPATH@\..\..\Plugins\classicPro\engine\load.xml` — is a
-    /// ClassicPro skin whose engine is not installed, and that stays a hard, nameable failure rather
-    /// than a skin that loads and draws almost nothing.
-    private func isInsideSkin(_ rawPath: String, relativeTo sourcePath: String) -> Bool {
+    /// A missing include is only tolerated when it names a file inside a tree that is mounted: the
+    /// skin, or an installed engine that lacks one file. One that climbs into a mount that is absent —
+    /// `@COLORTHEMESPATH@\..\..\Plugins\classicPro\engine\load.xml` with no engine installed — stays
+    /// a hard, nameable failure rather than a skin that loads and draws almost nothing. cPro_SC,
+    /// Cpro_Tokio and CPro_Winamp3000 include the engine's `miniexes.xml`, which the engine we
+    /// import does not have (B179); they load without it.
+    private func namesMountedTree(_ rawPath: String, relativeTo sourcePath: String) -> Bool {
         guard let canonical = try? vfs.resolve(rawPath, relativeTo: sourcePath, mustExist: false)
         else { return false }
+        if vfs.isMounted(canonical.logicalPath) { return true }
         let folded = Self.fold(canonical.logicalPath)
-        if let skinRoot = vfs.skinRoot, folded.hasPrefix(Self.fold(skinRoot + "/")) { return true }
         // `@DEFAULTSKINPATH@` names Winamp's stock Modern skin, which NullPlayer does not ship, so
         // nothing is mounted there. canum includes three of its files — `xml/eq.xml`,
         // `xml/thinger.xml`, `xml/pledit.xml` — for surfaces it does not skin itself; skipping them

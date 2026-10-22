@@ -64,7 +64,7 @@ final class WinampModernSnapToDefaultTests: XCTestCase {
         let region = NSRect(x: 0, y: 0, width: 1920, height: 1080)
         let player = WindowManager.recenteredPlayerFrame(size: NSSize(width: 197, height: 297),
                                                          in: region)
-        var tiler = WindowManager.WinampModernTiler(playerFrame: player, region: region)
+        var tiler = WinampModernTiler(playerFrame: player, region: region)
         let sizes = [NSSize(width: 344, height: 250),   // Pledit
                      NSSize(width: 147, height: 106),   // equalizer
                      NSSize(width: 640, height: 400),   // nullplayer.library
@@ -92,7 +92,7 @@ final class WinampModernSnapToDefaultTests: XCTestCase {
     func testOnePressLeavesEveryWindowReachable() {
         let player = WindowManager.recenteredPlayerFrame(size: NSSize(width: 1000, height: 878),
                                                          in: region)
-        var tiler = WindowManager.WinampModernTiler(playerFrame: player, region: region)
+        var tiler = WinampModernTiler(playerFrame: player, region: region)
         let sizes = [NSSize(width: 700, height: 500), NSSize(width: 700, height: 500),
                      NSSize(width: 900, height: 400), NSSize(width: 426, height: 122)]
         for size in sizes {
@@ -111,7 +111,7 @@ final class WinampModernSnapToDefaultTests: XCTestCase {
         XCTAssertEqual(first, second)
 
         func arrangement(from player: NSRect) -> [NSRect] {
-            var tiler = WindowManager.WinampModernTiler(playerFrame: player, region: region)
+            var tiler = WinampModernTiler(playerFrame: player, region: region)
             return [NSSize(width: 700, height: 500), NSSize(width: 900, height: 400)]
                 .map { tiler.nextSlot(for: $0) }
         }

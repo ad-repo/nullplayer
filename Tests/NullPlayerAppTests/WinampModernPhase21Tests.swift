@@ -160,8 +160,8 @@ final class WinampModernPhase21Tests: XCTestCase {
         let runtime = try WinampModernScriptRuntime(loadedSkin: loaded, host: TestHost())
         addTeardownBlock { runtime.teardown() }
         var preamp = 40
-        runtime.equalizerPreampRequested = { preamp }
-        runtime.equalizerPreampSetterRequested = { preamp = $0 }
+        runtime.hooks.equalizerPreampRequested = { preamp }
+        runtime.hooks.equalizerPreampSetterRequested = { preamp = $0 }
         let program = MakiProgram(version: 0x0403, classes: [], methods: [], variables: [], bindings: [],
                                   instructions: [], source: WalSourceLocation(path: "/Skins/Synthetic/t.maki"),
                                   ownerID: nil, parameter: nil)

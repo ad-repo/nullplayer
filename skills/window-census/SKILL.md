@@ -22,7 +22,10 @@ Turn the request into the script's arguments:
 | "with screenshots" | add `--shots` (a PNG per opened window, plus `shots.zip`) |
 
 Run `window-census.sh --list <families>` to get the count; it launches nothing. On 2026-09-27 the
-corpus was 307 skins: 26 classic, 14 Original, 7 Metal, 80 `.wal`, 180 `.wmz`. **Budget about a
+corpus was 307 skins: 26 classic, 14 Original, 7 Metal, 80 `.wal`, 180 `.wmz`. The `.wal` family is
+the test corpus's gold+silver tiers, `WinampModernCorpus/{gold,silver}/` (114 archives on
+2026-10-19), not the app's `WinampModernSkins/` install folder; the other families are the installed
+skins. **Budget about a
 minute per skin**, so the full corpus takes 5–6 hours.
 
 ## 2. Confirm before starting (anything over a handful of skins)

@@ -2,8 +2,9 @@ import Foundation
 import ImageIO
 
 struct WasabiResourceLimits: Equatable {
-    var maximumImageWidth = 8_192
-    var maximumImageHeight = 8_192
+    /// The bound on a decoded image's memory. There is no per-side cap: images are drawn by
+    /// CoreGraphics on the CPU, which has no texture limit, and a long animation strip
+    /// (`vu-meter_smooth.png` 98×17018) is exactly the shape a side cap refused (B175).
     var maximumImagePixels = 32_000_000
     var maximumFontPointSize = 512.0
     var maximumScriptSize = 4 * 1_024 * 1_024
@@ -183,7 +184,7 @@ struct WasabiGroupDefinition {
     let xuiTag: String?
     let inheritedGroup: String?
     let embeddedXUITag: String?
-    let defaultAttributes: [String: String]
+    var defaultAttributes: [String: String]
     let templateChildren: [WalXMLNode]
     let source: WalSourceLocation
     /// Where this `<groupdef>` sits in the expanded document, in pre-order. Winamp's parser is
@@ -197,7 +198,7 @@ struct WasabiGroupDefinition {
 struct WasabiResolvedGroupDefinition {
     let identifier: String
     let embeddedXUITag: String?
-    let defaultAttributes: [String: String]
+    var defaultAttributes: [String: String]
     let templateChildren: [WalXMLNode]
 }
 
@@ -217,6 +218,16 @@ final class WasabiTypeRegistry {
 
     func register(_ definition: WasabiGroupDefinition) {
         let key = Self.fold(definition.identifier)
+        // A redefinition that states no size keeps the one the id already had. NEO_CLASSIC declares
+        // `albumart.content.group` 259x259 for its player and again, sizeless, for its album-art
+        // window; the player's layout comes after both, and its 259px pane — the skin's dividers are
+        // spaced for it — drew as nothing.
+        var definition = definition
+        if let previous = byIdentifier[key] {
+            for axis in ["w", "h"] where definition.defaultAttributes[axis] == nil {
+                definition.defaultAttributes[axis] = previous.defaultAttributes[axis]
+            }
+        }
         // Same rule as the resource registry: a re-include of an identical `<groupdef>` is not a
         // redefinition, and warning about it says nothing about the skin (B29).
         if let previous = byIdentifier[key], !Self.isSameDefinition(previous, definition) {
@@ -339,8 +350,9 @@ final class WasabiTypeRegistry {
         guard stack.count < maximumInheritanceDepth else {
             throw WalFailure(WalDiagnostic(.groupInheritanceDepthExceeded, "Group inheritance exceeds \(maximumInheritanceDepth) levels.", location: definition.source))
         }
-        guard !stack.contains(key) else {
-            let chain = (stack + [key]).joined(separator: " -> ")
+        // Keyed by version, not id: a definition may extend the one it replaces (below).
+        guard !stack.contains(cacheKey) else {
+            let chain = (stack + [cacheKey]).joined(separator: " -> ")
             throw WalFailure(WalDiagnostic(.groupInheritanceCycle, "Group inheritance cycle detected: \(chain).", location: definition.source))
         }
 
@@ -350,11 +362,16 @@ final class WasabiTypeRegistry {
         if let parentReference = definition.inheritedGroup {
             let parentID = identifierByXUITag[Self.fold(parentReference)] ?? parentReference
             do {
-                guard let base = self.definition(identifier: parentID, documentOrder: definition.documentOrder) else {
+                // `<groupdef id="wasabi.titlebox" inherit_group="wasabi.titlebox">` overrides a system
+                // group by extending the definition it replaces (Official_Coldplay, B178).
+                let base = Self.fold(parentID) == key
+                    ? versionsByIdentifier[key]?.last { $0.documentOrder < definition.documentOrder }
+                    : self.definition(identifier: parentID, documentOrder: definition.documentOrder)
+                guard let base else {
                     throw WalFailure(WalDiagnostic(.missingGroupDefinition,
                                                    "Group definition '\(parentID)' does not exist."))
                 }
-                let parent = try resolve(definition: base, stack: stack + [key])
+                let parent = try resolve(definition: base, stack: stack + [cacheKey])
                 attributes.merge(parent.defaultAttributes) { _, new in new }
                 children = parent.templateChildren
             } catch let failure as WalFailure
@@ -495,6 +512,9 @@ final class WasabiSkinRuntime {
     /// Set by `WasabiSkinInitializer`, which owns the expansion machinery (type registry, object
     /// limits, script path resolution).
     var instantiateGroup: ((_ identifier: String, _ parent: WasabiObject) throws -> WasabiObject)?
+    /// One bare element (`text`, `layer`, `button`…) beneath `parent`, for a script's
+    /// `new Text; t.init(parent)`. Same budget and machinery as `instantiateGroup`.
+    var instantiateElement: ((_ name: String, _ attributes: [String: String], _ parent: WasabiObject) throws -> WasabiObject)?
 
     /// Trusted, host-only request-time window growth. Unlike `instantiateGroup`, this closure is not
     /// reachable from MAKI and accepts only the typed NullPlayer hosted-window description.
@@ -520,7 +540,7 @@ final class WasabiSkinRuntime {
     func isTrustedHostedHolder(_ object: WasabiObject) -> Bool {
         var node: WasabiObject? = object
         while let current = node {
-            if current.typeName.caseInsensitiveCompare("container") == .orderedSame {
+            if current.tag.is(.container) {
                 return trustedHostedContainerIDs.contains(current.stableID)
             }
             node = current.parent
@@ -664,6 +684,9 @@ final class WasabiSkinInitializer {
                           definitionStack: [], createdCount: &createdCount,
                           documentOrder: documentOrder, enclosingOrder: nil)
         applyMetaCommands(pendingMetaCommands)
+        try addPlaylistCommandBars(beneath: graph.roots, graph: graph, types: types,
+                                   pendingScripts: &pendingScripts,
+                                   pendingMetaCommands: &pendingMetaCommands, createdCount: &createdCount)
         // Buckets are filled *before* scripts are bound, so a `<groupdef>` a bucket brings in has its
         // own `<script>` collected into the same `pendingScripts` batch as the rest of the skin and
         // comes up at load, not later. Anything else would leave a widget's script unbound.
@@ -674,7 +697,6 @@ final class WasabiSkinInitializer {
         passes.append(.objectCreation)
 
         let bindings = try bindScripts(pendingScripts)
-        for (pending, binding) in zip(pendingScripts, bindings) { pending.owner?.addScriptBinding(binding) }
         passes.append(.scriptBinding)
 
         // A resting `alpha` the markup should have declared and did not, written onto the object
@@ -706,6 +728,21 @@ final class WasabiSkinInitializer {
             try instantiateGroupAtRuntime(identifier: identifier, parent: parent,
                                           graph: graph, types: types, createdCount: &createdCount)
         }
+        runtime.instantiateElement = { [self] name, attributes, parent in
+            let node = WalXMLNode(name: name, attributes: attributes, location: parent.source)
+            let existingChildren = parent.children.count
+            var pendingScripts: [PendingScript] = []
+            var pendingMetaCommands: [PendingMetaCommand] = []
+            try createObjects(from: [node], parent: parent, graph: graph, types: types,
+                              pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
+                              definitionStack: [], createdCount: &createdCount,
+                              documentOrder: [:], enclosingOrder: nil)
+            guard parent.children.count > existingChildren else {
+                throw WalFailure(WalDiagnostic(.missingGroupDefinition, "Element '\(name)' was not created.",
+                                               location: parent.source))
+            }
+            return parent.children[existingChildren]
+        }
         runtime.instantiateHostedWindow = { [self] request in
             let root = try instantiateHostedWindowAtRuntime(request, graph: graph, types: types,
                                                             createdCount: &createdCount)
@@ -722,6 +759,23 @@ final class WasabiSkinInitializer {
         return runtime
     }
 
+    /// Build the host's playlist command bar into each slot that wants one; see
+    /// `WasabiStandardFrames.playlistCommandBarSlots(beneath:)`.
+    private func addPlaylistCommandBars(beneath roots: [WasabiObject], graph: WasabiObjectGraph,
+                                        types: WasabiTypeRegistry,
+                                        pendingScripts: inout [PendingScript],
+                                        pendingMetaCommands: inout [PendingMetaCommand],
+                                        createdCount: inout Int) throws {
+        for slot in WasabiStandardFrames.playlistCommandBarSlots(beneath: roots) {
+            try createObjects(from: WasabiStandardFrames.playlistCommandBar(location: slot.source),
+                              parent: slot, graph: graph, types: types,
+                              pendingScripts: &pendingScripts,
+                              pendingMetaCommands: &pendingMetaCommands,
+                              definitionStack: [], createdCount: &createdCount,
+                              documentOrder: [:], enclosingOrder: nil)
+        }
+    }
+
     /// Instantiate each `<componentbucket wndtype="X">`'s members: every groupdef declaring
     /// `windowtype="X"`. See `WasabiTypeRegistry.identifiers(windowType:)` for what the tag means.
     ///
@@ -736,7 +790,7 @@ final class WasabiSkinInitializer {
                                           documentOrder: [ObjectIdentifier: Int]) throws {
         var buckets: [WasabiObject] = []
         func collect(_ object: WasabiObject) {
-            if object.typeName.caseInsensitiveCompare("componentbucket") == .orderedSame,
+            if object.tag.is(.componentBucket),
                let type = object.attributes["wndtype"], !type.isEmpty {
                 buckets.append(object)
             }
@@ -789,7 +843,7 @@ final class WasabiSkinInitializer {
                                                createdCount: inout Int,
                                                documentOrder: [ObjectIdentifier: Int]) throws -> WasabiObject {
         let existing = graph.roots.filter {
-            $0.typeName.caseInsensitiveCompare("container") == .orderedSame &&
+            $0.tag.is(.container) &&
             ($0.xmlID?.caseInsensitiveCompare(declaredID) == .orderedSame ||
              $0.attributes[WasabiSkinRuntime.dynamicInstanceAttribute]?
                 .caseInsensitiveCompare(declaredID) == .orderedSame)
@@ -818,10 +872,6 @@ final class WasabiSkinInitializer {
                               definitionStack: [], createdCount: &createdCount,
                               documentOrder: documentOrder, enclosingOrder: nil)
             applyMetaCommands(pendingMetaCommands)
-            let bindings = try bindScripts(pendingScripts)
-            for (pending, binding) in zip(pendingScripts, bindings) {
-                pending.owner?.addScriptBinding(binding)
-            }
             guard let root = graph.roots.first(where: {
                 !rootsBefore.contains($0.stableID) && $0.xmlID == attributes["id"]
             }) else {
@@ -829,6 +879,10 @@ final class WasabiSkinInitializer {
                                                "Dynamic container '\(declaredID)' created no container.",
                                                location: node.location))
             }
+            try addPlaylistCommandBars(beneath: [root], graph: graph, types: types,
+                                       pendingScripts: &pendingScripts,
+                                       pendingMetaCommands: &pendingMetaCommands, createdCount: &createdCount)
+            try bindScripts(pendingScripts)
             return root
         } catch {
             for root in graph.roots where !rootsBefore.contains(root.stableID) {
@@ -874,11 +928,7 @@ final class WasabiSkinInitializer {
             if maximum.height.isFinite { layoutAttributes["maximum_h"] = String(Int(maximum.height)) }
         }
         let frameNodes = WasabiSurfaceSynthesizer.frameNodes(
-            frame: WasabiSurfaceSynthesizer.Frame(groupIdentifier: request.frame.groupIdentifier,
-                                                  xuiTag: request.frame.xuiTag,
-                                                  hasArtwork: request.frame.hasArtwork,
-                                                  exemplar: request.frame.exemplar,
-                                                  clientInsets: request.frame.clientInsets),
+            frame: request.frame,
             frameID: "\(id.contentGroupIdentifier).frame",
             contentGroupID: id.contentGroupIdentifier,
             componentName: request.definition.title,
@@ -902,10 +952,7 @@ final class WasabiSkinInitializer {
                               definitionStack: [], createdCount: &createdCount,
                               documentOrder: [:], enclosingOrder: nil)
             applyMetaCommands(pendingMetaCommands)
-            let bindings = try bindScripts(pendingScripts)
-            for (pending, binding) in zip(pendingScripts, bindings) {
-                pending.owner?.addScriptBinding(binding)
-            }
+            try bindScripts(pendingScripts)
             guard let root = graph.roots.first(where: {
                 !rootsBefore.contains($0.stableID) && $0.xmlID == id.containerIdentifier
             }) else {
@@ -941,8 +988,7 @@ final class WasabiSkinInitializer {
                           definitionStack: [], createdCount: &createdCount,
                           documentOrder: [:], enclosingOrder: nil)
         applyMetaCommands(pendingMetaCommands)
-        let bindings = try bindScripts(pendingScripts)
-        for (pending, binding) in zip(pendingScripts, bindings) { pending.owner?.addScriptBinding(binding) }
+        try bindScripts(pendingScripts)
         guard parent.children.count > existingChildren else {
             throw WalFailure(WalDiagnostic(.missingGroupDefinition,
                                            "Group '\(identifier)' expanded to no objects.",
@@ -1003,6 +1049,12 @@ final class WasabiSkinInitializer {
                                 || kind == "truetypefont")
                             && failure.diagnostics.allSatisfy({
                                 $0.code == .resourceMissing
+                                    // Braun CC 50's nibbles easter egg draws from `../Big Bento/`,
+                                    // a skin we cannot ship (B181).
+                                    || $0.code == .missingRequiredMount
+                                    // VANDREAD and VISION point bitmaps at the author's `c:/…`
+                                    // (B180); the path is refused, the bitmap draws nothing.
+                                    || $0.code == .hostPath
                                     // A file that exists but is not a decodable image is a content
                                     // problem, not a security one, and the renderer already answers
                                     // `nil` for it safely. The Big Bento Modern Windows 10 edition
@@ -1136,13 +1188,10 @@ final class WasabiSkinInitializer {
             throw Self.undecodableImage(path, source)
         }
         let (pixels, overflow) = width.multipliedReportingOverflow(by: height)
-        guard !overflow,
-              width <= resourceLimits.maximumImageWidth,
-              height <= resourceLimits.maximumImageHeight,
-              pixels <= resourceLimits.maximumImagePixels else {
+        guard !overflow, pixels <= resourceLimits.maximumImagePixels else {
             throw WalFailure(WalDiagnostic(
                 .imageDimensionsExceeded,
-                "Image resource '\(path)' is \(width)×\(height); limits are \(resourceLimits.maximumImageWidth)×\(resourceLimits.maximumImageHeight) and \(resourceLimits.maximumImagePixels) pixels.",
+                "Image resource '\(path)' is \(width)×\(height); the limit is \(resourceLimits.maximumImagePixels) pixels.",
                 location: source
             ))
         }
@@ -1417,6 +1466,7 @@ final class WasabiSkinInitializer {
             /// own artwork-less shells. A widget whose body a skin supplies is that skin's, and this
             /// is what keeps a hosted `<Wasabi:TabSheet>` from being drawn over a replacement.
             var claimedBySkin = false
+            var replacesHostedWidget = false
             /// The skin's own `wasabi.standardframe.*` body, when this node expanded to one. Both
             /// spellings land here: the `<Wasabi:StandardFrame:*>` XUI tag (TRON Legacy) and a plain
             /// `<group id="wasabi.standardframe.statusbar">` (Sony Walkman) resolve to the same
@@ -1449,6 +1499,9 @@ final class WasabiSkinInitializer {
                 embeddedXUITag = resolved.embeddedXUITag
                 nextDefinitionStack.append(key)
                 claimedBySkin = definition.source.path != Self.wasabiStandardLibrarySource.path
+                // `<groupdef id="wasabi.tabsheet">` restyles Winamp's own tab sheet, which still
+                // builds its pages (Mac OS X Panther); only a skin's own `xuitag` replaces it.
+                replacesHostedWidget = claimedBySkin && key != WasabiTabSheet.groupIdentifier
                 if claimedBySkin,
                    WasabiStandardFrames.isStandardFrameIdentifier(definition.identifier) {
                     claimedStandardFrame = resolved
@@ -1484,7 +1537,7 @@ final class WasabiSkinInitializer {
             // pair is otherwise unreachable: opening "VU Meters Small" resolved the id back to the
             // large meter. Winamp's own by-id lookups keep answering with the first declaration,
             // which is what a renamed *second* preserves.
-            if parent == nil, typeName.caseInsensitiveCompare("container") == .orderedSame,
+            if parent == nil, WasabiTag(typeName).is(.container),
                let declaredID = attributes["id"], !declaredID.isEmpty {
                 switch resolveContainerRootIdentity(declaredID: declaredID, location: node.location) {
                 case .keep:
@@ -1518,15 +1571,19 @@ final class WasabiSkinInitializer {
             guard createdCount <= maximumObjectCount else {
                 throw WalFailure(WalDiagnostic(.expandedNodeLimitExceeded, "Retained graph exceeds \(maximumObjectCount) objects.", location: node.location))
             }
-            let object = graph.makeObject(typeName: typeName, attributes: attributes, source: node.location)
+            let object = graph.makeObject(typeName: typeName, attributes: attributes, source: node.location,
+                                          attributeOrder: node.attributeOrder)
             if let parent { try parent.appendChild(object) } else { graph.appendRoot(object) }
+            if replacesHostedWidget, WasabiTabSheet.isTabSheet(object) {
+                _ = object.setAttribute(Self.skinTabSheetAttribute, value: "1")
+            }
             // A top-level container's *declared* visibility, snapshotted before anything can write
             // over it. `visible` is one attribute serving two questions — "is this an SUI-collapsed
             // stub the skin never means to show" (markup) and "is this window open right now"
             // (`setVisible`) — and a script hiding its own window at startup is the ordinary case, so
             // the second answer buries the first. Defix hides `VISCON` from `CORE_SCRIPT.maki` and
             // every later reader then classified the window as a stub that does not exist (B16).
-            if parent == nil, typeName.caseInsensitiveCompare("container") == .orderedSame {
+            if parent == nil, object.tag.is(.container) {
                 _ = object.setAttribute(WinampModernContainerTopology.declaredVisibleAttribute,
                                         value: object.attributes["visible"] ?? "1")
             }
@@ -1536,58 +1593,13 @@ final class WasabiSkinInitializer {
                               createdCount: &createdCount,
                               documentOrder: documentOrder, enclosingOrder: nodeOrder)
             let embeddedParent = embeddedXUITag.flatMap { findObject(xmlID: $0, beneath: object) } ?? object
-            // `embed_xui` does not only say where the instance's children go — it says which object
-            // *is* the XUI, so the group answers for the embedded control's mouse events. Defix's
-            // `bento.tabbutton` embeds its `mousetrap` button and the core script hooks `onLeftClick`
-            // on the **group** (`switch.ml`); with nothing carrying the click across, the tab lit up
-            // under the pointer and the SUI body never changed. Recorded on the group so the runtime
-            // can find it from the child at dispatch time; `id` is not unique, but the pair
-            // (this group, that id) is what the lookup above already resolved.
-            if embeddedParent !== object, let tag = embeddedXUITag {
-                _ = object.setAttribute("nullplayer.embedxui", value: tag.lowercased())
-                // The wrapper *is* the control, so the range it declares is the **embedded** object's
-                // range — a `<SC:VScrollBar low="0" high="100">` wrapping a bare `<slider>` means that
-                // slider counts 0…100, not Winamp's default 0…255.
-                //
-                // Measured, from a live trace of Big Bento Modern's settings scrollbar: its up button
-                // does `slider.setPosition(slider.getPosition() + 5)` on the **inner** slider, and the
-                // page computes `scrollToPercent(99 - position)`. On the 0…255 default the positions
-                // ran 113 → 118 → 123 → 128, so the percentage was *negative every time* and the page
-                // clamped back to the top on every press: the bar moved, and nothing scrolled (BB19).
-                // Only the range is carried across; geometry, identity and appearance belong to the
-                // wrapper, and forwarding those would move the control inside its own group.
-                for key in ["low", "high"] where embeddedParent.attributes[key] == nil {
-                    if let value = attributes[key] { _ = embeddedParent.setAttribute(key, value: value) }
-                }
-                // The **commands** the instance declares, for the same reason and by the same rule:
-                // the wrapper is a `<group>`, which has no click behaviour of its own, and the object
-                // the pointer actually lands on is the embedded one. Enkera's whole transport is
-                // `<button:glow … action="play">` over a bare `<button id="but" fitparent="1"/>`, and
-                // Defix's two button bars are `<Defix:Bottom.bar.button action="PE_Add">` over a
-                // `mousetrap`: in both the artwork drew, the press animated, and the command reached
-                // nothing, because it stayed on a group that cannot run it. Commands only — geometry,
-                // identity and appearance stay on the wrapper, which is what draws.
-                for key in ["action", "param", "dblclickaction", "dbclickaction", "rightclickaction",
-                            "tooltip"] where embeddedParent.attributes[key] == nil {
-                    if let value = attributes[key] { _ = embeddedParent.setAttribute(key, value: value) }
-                }
-                // A **vertical** slider starts at the top of its travel, which is `high` — not at the
-                // zero a missing value would otherwise read as. Only one that drives nothing itself
-                // (no `action`, so no host value to take) and states a range is seeded; a seek or
-                // volume slider is told its position by the host and must not be pre-empted.
-                //
-                // Measured: each of Big Bento Modern's settings pages opens by reading its
-                // scrollbar's position and calling `scrollToPercent(99 - position)`. Read as 0 that
-                // is *99% — the bottom*, and seven of the skin's nine pages launched scrolled to the
-                // end of themselves. Seeding the attribute rather than special-casing the getter
-                // keeps the thumb, the hit test and the script's arithmetic on one number.
-                if embeddedParent.typeName.caseInsensitiveCompare("slider") == .orderedSame,
-                   WasabiSceneRenderer.isVerticalOrientation(embeddedParent),
-                   embeddedParent.attributes["action"] == nil,
-                   embeddedParent.attributes["value"] == nil,
-                   let high = embeddedParent.attributes["high"] {
-                    _ = embeddedParent.setAttribute("value", value: high)
-                }
+            if embeddedParent !== object, let tag = embeddedXUITag,
+               WasabiEmbeddedXUI.forward(attributes, from: object, tag: tag, onto: embeddedParent) {
+                try buildHostedWidgetBody(of: embeddedParent, location: node.location, graph: graph, types: types,
+                                          pendingScripts: &pendingScripts,
+                                          pendingMetaCommands: &pendingMetaCommands,
+                                          definitionStack: definitionStack, createdCount: &createdCount,
+                                          documentOrder: documentOrder, enclosingOrder: nodeOrder)
             }
             try createObjects(from: instanceChildren, parent: embeddedParent, graph: graph, types: types,
                               pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
@@ -1597,13 +1609,16 @@ final class WasabiSkinInitializer {
             // A `<Wasabi:Frame>` declares its two panes by group id rather than nesting them, so the
             // splitter is what brings them into the graph. cPro-Bento's entire body (library tree,
             // playlist, tabs) hangs off one, and without this the SUI expands to an empty frame.
-            if WasabiFrame.isFrame(object) {
+            // Panes, tab pages and a title box's body are groups named by id, not this widget's own
+            // body, so they recurse on their own key rather than the widget's: a tab page holding a
+            // second tab sheet is nesting, not recursion (Graviton, _Mercury; B178).
+            if WasabiFrame.isFrame(object.tag) {
                 let panes = WasabiFrame.paneIdentifiers(of: object).map {
                     WalXMLNode(name: "group", attributes: ["id": $0], location: node.location)
                 }
                 try createObjects(from: panes, parent: object, graph: graph, types: types,
                                   pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
-                                  definitionStack: nextDefinitionStack,
+                                  definitionStack: definitionStack,
                                   createdCount: &createdCount,
                                   documentOrder: documentOrder, enclosingOrder: nodeOrder)
                 WasabiFrame.applyLayout(to: object)
@@ -1671,36 +1686,11 @@ final class WasabiSkinInitializer {
                                   createdCount: &createdCount,
                                   documentOrder: documentOrder, enclosingOrder: nodeOrder)
             }
-            // A `<Wasabi:TitleBox>` names its body by group id the way a standard frame does, and
-            // the object that would instantiate it lives in Winamp rather than in the skin. Without
-            // this the body never enters the graph at all: Bio-Nid's `dtabox.content` — the one
-            // control its only settings window exists to show — was simply absent.
-            if WasabiTitleBox.isTitleBox(object),
-               let content = WasabiTitleBox.contentGroupNode(for: object, location: node.location) {
-                try createObjects(from: [content], parent: object, graph: graph, types: types,
-                                  pendingScripts: &pendingScripts,
-                                  pendingMetaCommands: &pendingMetaCommands,
-                                  definitionStack: nextDefinitionStack,
-                                  createdCount: &createdCount,
-                                  documentOrder: documentOrder, enclosingOrder: nodeOrder)
-            }
-            // A `<Wasabi:TabSheet>` names its pages by group id the same way, and the object that
-            // shows one of them at a time lives in Winamp rather than in the skin. Without this not
-            // one page enters the graph: Shield_Amp's Configuration is a single tab sheet over three
-            // groups whose form widgets are all implemented, and it drew as an empty slab (B14).
-            if WasabiTabSheet.isTabSheet(object), !claimedBySkin {
-                let pages = WasabiTabSheet.pageNodes(for: object, location: node.location)
-                if !pages.isEmpty {
-                    _ = object.setAttribute(WasabiTabSheet.hostedAttribute, value: "1")
-                    try createObjects(from: pages, parent: object, graph: graph, types: types,
+            try buildHostedWidgetBody(of: object, location: node.location, graph: graph, types: types,
                                       pendingScripts: &pendingScripts,
                                       pendingMetaCommands: &pendingMetaCommands,
-                                      definitionStack: nextDefinitionStack,
-                                      createdCount: &createdCount,
+                                      definitionStack: definitionStack, createdCount: &createdCount,
                                       documentOrder: documentOrder, enclosingOrder: nodeOrder)
-                    WasabiTabSheet.select(index: WasabiTabSheet.selectedIndex(of: object), on: object)
-                }
-            }
             // Winamp's drop-down carries a label object inside itself, and a skin's script reaches
             // for it by name: Styx's and Shield_Amp's `customdropdownlist.maki` are the same script,
             // and both do `findObject("dropdownlist.text")` then persist the pick from that object's
@@ -1719,6 +1709,63 @@ final class WasabiSkinInitializer {
             }
         }
     }
+
+    /// A `<Wasabi:TitleBox>` names its body by group id the way a standard frame does, and
+    /// the object that would instantiate it lives in Winamp rather than in the skin. Without
+    /// this the body never enters the graph at all: Bio-Nid's `dtabox.content` — the one
+    /// control its only settings window exists to show — was simply absent.
+    /// A `<Wasabi:TabSheet>` names its pages by group id the same way, and the object that
+    /// shows one of them at a time lives in Winamp rather than in the skin. Without this not
+    /// one page enters the graph: Shield_Amp's Configuration is a single tab sheet over three
+    /// groups whose form widgets are all implemented, and it drew as an empty slab (B14).
+    private func buildHostedWidgetBody(of widget: WasabiObject, location: WalSourceLocation,
+                                       graph: WasabiObjectGraph, types: WasabiTypeRegistry,
+                                       pendingScripts: inout [PendingScript],
+                                       pendingMetaCommands: inout [PendingMetaCommand],
+                                       definitionStack: [String], createdCount: inout Int,
+                                       documentOrder: [ObjectIdentifier: Int], enclosingOrder: Int?) throws {
+        if WasabiTitleBox.isTitleBox(widget),
+           let content = WasabiTitleBox.contentGroupNode(for: widget, location: location) {
+            try createObjects(from: [content], parent: widget, graph: graph, types: types,
+                              pendingScripts: &pendingScripts,
+                              pendingMetaCommands: &pendingMetaCommands,
+                              definitionStack: definitionStack,
+                              createdCount: &createdCount,
+                              documentOrder: documentOrder, enclosingOrder: enclosingOrder)
+        }
+        if WasabiTabSheet.isTabSheet(widget), widget.attributes[Self.skinTabSheetAttribute] == nil {
+            let pages = WasabiTabSheet.pageNodes(for: widget, location: location)
+            if !pages.isEmpty {
+                _ = widget.setAttribute(WasabiTabSheet.hostedAttribute, value: "1")
+                // A skin's `wasabi.tabsheet` restyle is the **content** background: Winamp
+                // draws its buttons in the strip above it. Laid over the whole sheet, Mac OS
+                // X Panther's grid painted out the strip and its tabs.
+                let restyle = widget.children
+                if !restyle.isEmpty {
+                    let background = graph.makeObject(
+                        typeName: "group",
+                        attributes: ["x": "0", "y": String(Int(WasabiTabSheet.stripHeight)),
+                                     "w": "0", "h": String(-Int(WasabiTabSheet.stripHeight)),
+                                     "relatw": "1", "relath": "1"],
+                        source: location)
+                    for child in restyle { try background.appendChild(child) }
+                    try widget.insertChild(background, at: 0)
+                }
+                try createObjects(from: pages, parent: widget, graph: graph, types: types,
+                                  pendingScripts: &pendingScripts,
+                                  pendingMetaCommands: &pendingMetaCommands,
+                                  definitionStack: definitionStack,
+                                  createdCount: &createdCount,
+                                  documentOrder: documentOrder, enclosingOrder: enclosingOrder)
+                WasabiTabSheet.select(index: WasabiTabSheet.selectedIndex(of: widget), on: widget)
+            }
+        }
+    }
+
+    /// Set on a tab sheet whose tag resolved to a definition the skin wrote, which therefore builds
+    /// its own pages: `buildHostedWidgetBody` leaves them to the skin. Host-private, so no script
+    /// hears it as an XUI param.
+    static let skinTabSheetAttribute = "nullplayer.skintabsheet"
 
     private func applyMetaCommands(_ commands: [PendingMetaCommand]) {
         for command in commands {
@@ -1750,16 +1797,35 @@ final class WasabiSkinInitializer {
         return nil
     }
 
+    /// Binds each script to its owner and returns what was bound; a missing file is skipped.
+    @discardableResult
     private func bindScripts(_ pendingScripts: [PendingScript]) throws -> [WasabiScriptBinding] {
-        try pendingScripts.map { pending in
-            let path = try resolveSkinResource(pending.rawPath, source: pending.source).logicalPath
-            let data = try vfs.data(at: path, location: pending.source)
+        var bindings: [WasabiScriptBinding] = []
+        for pending in pendingScripts {
+            let path: String
+            let data: Data
+            do {
+                path = try resolveSkinResource(pending.rawPath, source: pending.source).logicalPath
+                data = try vfs.data(at: path, location: pending.source)
+            } catch let failure as WalFailure
+                where failure.diagnostics.allSatisfy({ $0.code == .resourceMissing || $0.code == .missingRequiredMount }) {
+                // Winamp runs a skin whose script file is absent without it. Nokia 5800 binds
+                // `../Big Bento/scripts/mute.maki` from a skin we cannot ship (B181); only its mute
+                // button is lost. An XML include from an absent skin still fails the load.
+                resourceRegistry?.warn(WalDiagnostic(failure.diagnostics[0].code,
+                    "Script '\(pending.rawPath)' is missing; it will not run. \(failure.diagnostics[0].message)",
+                    severity: .warning, location: pending.source))
+                continue
+            }
             guard data.count <= resourceLimits.maximumScriptSize else {
                 throw WalFailure(WalDiagnostic(.entryTooLarge, "Script '\(path)' is \(data.count) bytes; the limit is \(resourceLimits.maximumScriptSize).", location: pending.source))
             }
-            return WasabiScriptBinding(ownerID: pending.owner?.stableID, logicalPath: path,
-                                       parameter: pending.parameter, source: pending.source)
+            let binding = WasabiScriptBinding(ownerID: pending.owner?.stableID, logicalPath: path,
+                                              parameter: pending.parameter, source: pending.source)
+            pending.owner?.addScriptBinding(binding)
+            bindings.append(binding)
         }
+        return bindings
     }
 
     /// Wasabi includes are XML-file-relative, but bitmap/font/script declarations in real
@@ -1768,6 +1834,8 @@ final class WasabiSkinInitializer {
     /// `@SKINPATH@` VFS mount. Only a genuine missing-resource diagnostic may fall back;
     /// traversal, variables, and other security failures remain hard errors.
     private func resolveSkinResource(_ rawPath: String, source: WalSourceLocation) throws -> WalResolvedResource {
+        // Winamp trimmed file attributes: Slim names `scripts/TimeDisplay.maki ` (B180).
+        let rawPath = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
             return try vfs.resolve(rawPath, relativeTo: source.path, location: source)
         } catch let failure as WalFailure

@@ -65,7 +65,7 @@ final class WMPSnapToDefaultTests: XCTestCase {
     func testOneSharedTilerKeepsTheWholeSessionOnScreen() {
         let playerFrame = WindowManager.recenteredPlayerFrame(size: player, in: region)
         XCTAssertTrue(region.contains(playerFrame))
-        var tiler = WindowManager.WinampModernTiler(playerFrame: playerFrame, region: region)
+        var tiler = WinampModernTiler(playerFrame: playerFrame, region: region)
         for size in session {
             let slot = tiler.nextSlot(for: size)
             XCTAssertTrue(WindowPlacement.isReachable(slot, screens: [region]),
@@ -81,7 +81,7 @@ final class WMPSnapToDefaultTests: XCTestCase {
     func testASecondPressIsANoOp() {
         func arrangement() -> [NSRect] {
             let playerFrame = WindowManager.recenteredPlayerFrame(size: player, in: region)
-            var tiler = WindowManager.WinampModernTiler(playerFrame: playerFrame, region: region)
+            var tiler = WinampModernTiler(playerFrame: playerFrame, region: region)
             return session.map { tiler.nextSlot(for: $0) }
         }
         XCTAssertEqual(arrangement(), arrangement())
@@ -94,7 +94,7 @@ final class WMPSnapToDefaultTests: XCTestCase {
     /// windows pile onto each other. A shared cursor is what makes the result an arrangement.
     func testASharedCursorIsWhatSeparatesTheSlots() {
         let playerFrame = WindowManager.recenteredPlayerFrame(size: player, in: region)
-        var tiler = WindowManager.WinampModernTiler(playerFrame: playerFrame, region: region)
+        var tiler = WinampModernTiler(playerFrame: playerFrame, region: region)
         var placed: [NSRect] = []
         for size in session {
             let slot = tiler.nextSlot(for: size)

@@ -66,19 +66,30 @@ final class WinampModernPhase63Tests: XCTestCase {
 
     // MARK: - What stays a hard failure
 
-    /// A `</foo>` matching nothing on the stack is a different defect from a truncated file — the
-    /// tree it would leave is genuinely ambiguous, and no skin in the corpus does it. It still throws.
-    func testUnexpectedClosingTagStillThrows() {
-        XCTAssertThrowsError(try WalLenientXMLParser().parse("<a></b></a>", path: "/t.xml")) { error in
-            XCTAssertEqual((error as? WalFailure)?.diagnostics.first?.code, .malformedXML)
-        }
+    /// B176: a stray `</foo>` is dropped and a close tag for a deeper open tag ends the ones left
+    /// open inside it, each with a warning; Winamp loaded the thirteen published skins that do this.
+    func testStrayAndOverreachingClosingTagsRecoverWithAWarning() throws {
+        let stray = try WalLenientXMLParser().parse("<a></b><c/></a>", path: "/t.xml")
+        XCTAssertEqual(stray.roots.map(\.name), ["a"])
+        XCTAssertEqual(stray.roots[0].children.map(\.name), ["c"])
+        XCTAssertEqual(stray.diagnostics.map(\.severity), [.warning])
+
+        let overreach = try WalLenientXMLParser()
+            .parse("<elements><color id=\"x\"><color id=\"y\"></elements><after/>", path: "/t.xml")
+        XCTAssertEqual(overreach.roots.map(\.name), ["elements", "after"])
+        XCTAssertEqual(overreach.diagnostics.map(\.severity), [.warning])
+    }
+
+    func testUnterminatedCommentAtEndOfFileWarns() throws {
+        let parsed = try WalLenientXMLParser().parse("<a/><!-- forever <b/>", path: "/t.xml")
+        XCTAssertEqual(parsed.roots.map(\.name), ["a"])
+        XCTAssertEqual(parsed.diagnostics.map(\.severity), [.warning])
     }
 
     /// A tag whose own `>` never arrives is truncation *mid-tag*, where the attributes are only half
-    /// read. Unchanged, along with unterminated comments, declarations and attribute values.
+    /// read. Unchanged, along with unterminated declarations and attribute values.
     func testUnterminatedTagStillThrows() {
         XCTAssertThrowsError(try WalLenientXMLParser().parse("<container id=\"a\"", path: "/t.xml"))
-        XCTAssertThrowsError(try WalLenientXMLParser().parse("<!-- forever", path: "/t.xml"))
         XCTAssertThrowsError(try WalLenientXMLParser().parse("<a b=\"unclosed>", path: "/t.xml"))
     }
 

@@ -27,9 +27,9 @@ final class WinampModernStubHost: WinampModernHost {
 }
 
 extension XCTestCase {
-    /// A synthetic `.wal` holding `xml` as its `skin.xml`, loaded through the same loader the app
-    /// uses. The archive and the loaded skin are torn down with the test.
-    func makeWinampModernSkin(xml: String) throws -> WinampModernLoadedSkin {
+    /// A synthetic `.wal` holding `xml` as its `skin.xml`, plus `files` by archive path, loaded
+    /// through the same loader the app uses. The archive and the loaded skin are torn down with the test.
+    func makeWinampModernSkin(xml: String, files: [String: Data] = [:]) throws -> WinampModernLoadedSkin {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(type(of: self))-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -37,12 +37,13 @@ extension XCTestCase {
         // A name of its own: what the host remembers about a skin is keyed on it.
         let url = directory.appendingPathComponent("\(type(of: self))-\(UUID().uuidString).wal")
         let archive = try Archive(url: url, accessMode: .create)
-        let payload = Data(xml.utf8)
-        try archive.addEntry(with: "skin.xml", type: .file, uncompressedSize: Int64(payload.count),
-                             compressionMethod: .none) { position, size in
-            let start = Int(position)
-            guard start < payload.count else { return Data() }
-            return payload.subdata(in: start..<min(payload.count, start + size))
+        for (path, payload) in [("skin.xml", Data(xml.utf8))] + files.sorted(by: { $0.key < $1.key }) {
+            try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(payload.count),
+                                 compressionMethod: .none) { position, size in
+                let start = Int(position)
+                guard start < payload.count else { return Data() }
+                return payload.subdata(in: start..<min(payload.count, start + size))
+            }
         }
         let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: url)
         addTeardownBlock { loaded.teardown() }

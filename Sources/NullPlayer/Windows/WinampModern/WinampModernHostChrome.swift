@@ -15,15 +15,24 @@ extension WinampModernMainView {
     }
 
     /// The rim, drawn under the scene in skin pixels. `context` is already scaled to skin pixels.
-    func drawHostChrome(in context: CGContext) {
+    func drawHostChrome(in context: WasabiDrawList) {
         let canvas = CGRect(origin: .zero, size: renderer.canvasSize)
+        let style = renderer.surfaceStyle
+        let isActive = window?.isKeyWindow ?? true
         context.saveGState()
         // The gloss frame is drawn top-left, lit from the top edge; this view is not flipped.
         context.translateBy(x: 0, y: canvas.height)
         context.scaleBy(x: 1, y: -1)
-        SkinnedSurfaceChrome.drawGlossFrame(in: context, bounds: canvas, style: renderer.surfaceStyle,
-                                            isActive: window?.isKeyWindow ?? true, fillGround: true)
+        context.record { context in
+            SkinnedSurfaceChrome.drawGlossFrame(in: context, bounds: canvas, style: style,
+                                                isActive: isActive, fillGround: true)
+        }
         context.restoreGState()
+    }
+
+    /// `drawHostChrome` for the canvas builders, or nil when this window has no host chrome.
+    var hostChrome: ((WasabiDrawList) -> Void)? {
+        drawsHostChrome ? { [unowned self] in drawHostChrome(in: $0) } : nil
     }
 
     /// What a press at `viewPoint` (this view's own coordinates) means to the host's chrome, or nil

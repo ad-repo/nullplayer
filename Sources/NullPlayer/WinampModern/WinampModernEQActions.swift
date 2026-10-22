@@ -52,3 +52,22 @@ enum WinampModernEQAction: Equatable {
         }
     }
 }
+
+/// An `EQ_TOGGLE` / `EQ_AUTO` control, decoded once. It shows the engine's switch, not a state of
+/// its own, so the renderer that lights it and the script that reads `getActivated` agree.
+enum WinampModernEQSwitch {
+    case enabled
+    case auto
+
+    static func decode(action: String?) -> WinampModernEQSwitch? {
+        switch action?.uppercased() {
+        case "EQ_TOGGLE": return .enabled
+        case "EQ_AUTO": return .auto
+        default: return nil
+        }
+    }
+
+    func isOn(in snapshot: WinampModernEQSnapshot) -> Bool {
+        self == .enabled ? snapshot.enabled : snapshot.auto
+    }
+}

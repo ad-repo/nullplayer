@@ -362,7 +362,7 @@ enum WasabiSurfaceSynthesizer {
         let clientInsets: ClientInsets?
 
         init(groupIdentifier: String, xuiTag: String, hasArtwork: Bool,
-             exemplar: FrameExemplar?, clientInsets: ClientInsets? = nil) {
+             exemplar: FrameExemplar? = nil, clientInsets: ClientInsets? = nil) {
             self.groupIdentifier = groupIdentifier
             self.xuiTag = xuiTag
             self.hasArtwork = hasArtwork
@@ -449,13 +449,7 @@ enum WasabiSurfaceSynthesizer {
         let route: WinampModernHostedWindowRoute
         switch frame {
         case .success(let frame):
-            route = .skinFrame(WinampModernHostedFrameDescriptor(
-                groupIdentifier: frame.groupIdentifier,
-                xuiTag: frame.xuiTag,
-                hasArtwork: frame.hasArtwork,
-                exemplar: frame.exemplar,
-                clientInsets: frame.clientInsets
-            ))
+            route = .skinFrame(frame)
         case .failure(let reason):
             route = .classicFallback(reason: reason)
         }
@@ -495,7 +489,7 @@ enum WasabiSurfaceSynthesizer {
             // A frame builds its client area from `content=` in its own script. Without that script
             // the window would be chrome around an empty hole — exactly what the artwork-less Wasabi
             // shells produce.
-            guard hasContentScript(definition, definitions: definitions, depth: 0,
+            guard hasContentScript(definition, definitions: definitions,
                                    scriptReader: scriptReader) else {
                 reasons.append("\(flavour.rawValue): '\(flavour.groupIdentifier)' has no frame script "
                                + "that instantiates its content")
@@ -508,7 +502,7 @@ enum WasabiSurfaceSynthesizer {
             }
             let frame = Frame(groupIdentifier: flavour.groupIdentifier,
                               xuiTag: flavour.xuiTag,
-                              hasArtwork: hasArtwork(definition, definitions: definitions, depth: 0),
+                              hasArtwork: hasArtwork(definition, definitions: definitions),
                               exemplar: nil,
                               clientInsets: clientInsets(of: definition, definitions: definitions))
             declared.append((border: frame.chromeInset.width + frame.chromeInset.height,
@@ -530,7 +524,7 @@ enum WasabiSurfaceSynthesizer {
             return (Int(borderWeight(exemplar)), exemplar.rank, index,
                     Frame(groupIdentifier: candidate.groupIdentifier,
                           xuiTag: candidate.xuiTag,
-                          hasArtwork: hasArtwork(definition, definitions: definitions, depth: 0),
+                          hasArtwork: hasArtwork(definition, definitions: definitions),
                           exemplar: FrameExemplar(frame: exemplar.frame, content: exemplar.content,
                                                   minimumSize: exemplar.minimumSize)))
         }.sorted { ($0.0, $0.1, $0.2) < ($1.0, $1.1, $1.2) }
@@ -847,22 +841,18 @@ enum WasabiSurfaceSynthesizer {
     /// A script whose body cannot be read or parsed keeps the old, weaker answer, so a resolution
     /// difference here can only ever leave a skin where it already was.
     private static func hasContentScript(_ definition: WalXMLNode,
-                                         definitions: [String: WalXMLNode], depth: Int,
+                                         definitions: [String: WalXMLNode],
                                          scriptReader: ScriptReader?) -> Bool {
-        guard depth <= maximumInheritanceDepth else { return false }
-        for script in scriptNodes(in: definition) {
+        inheritanceChain(of: definition, definitions: definitions).lazy.flatMap(scriptNodes(in:)).contains { script in
+            // A script we cannot read or parse is given the benefit of the doubt.
             guard let scriptReader,
                   let rawPath = script.attribute("file"), !rawPath.isEmpty,
                   let data = scriptReader(rawPath, script.location),
                   let program = try? MakiBytecodeParser().parse(data, source: script.location) else {
                 return true
             }
-            if program.methods.contains(where: { $0.name == contentInstantiationMethod }) { return true }
+            return program.methods.contains { $0.name == contentInstantiationMethod }
         }
-        guard let parent = definition.attribute("inherit_group"),
-              let inherited = definitions[fold(parent)] else { return false }
-        return hasContentScript(inherited, definitions: definitions, depth: depth + 1,
-                                scriptReader: scriptReader)
     }
 
     /// The MAKI method a standard frame calls to build its client area out of `content=`. Method
@@ -930,16 +920,11 @@ enum WasabiSurfaceSynthesizer {
         return found
     }
 
-    private static func hasArtwork(_ definition: WalXMLNode,
-                                   definitions: [String: WalXMLNode], depth: Int) -> Bool {
-        guard depth <= maximumInheritanceDepth else { return false }
-        if definition.attribute("background") != nil { return true }
-        if contains(definition, where: {
-            $0.attribute("image") != nil || $0.attribute("background") != nil
-        }) { return true }
-        guard let parent = definition.attribute("inherit_group"),
-              let inherited = definitions[fold(parent)] else { return false }
-        return hasArtwork(inherited, definitions: definitions, depth: depth + 1)
+    private static func hasArtwork(_ definition: WalXMLNode, definitions: [String: WalXMLNode]) -> Bool {
+        inheritanceChain(of: definition, definitions: definitions).contains { node in
+            node.attribute("background") != nil
+                || contains(node, where: { $0.attribute("image") != nil || $0.attribute("background") != nil })
+        }
     }
 
     /// A frame whose every bitmap is `wasabi.tooltip.*` is not the skin's window chrome: tooltip art

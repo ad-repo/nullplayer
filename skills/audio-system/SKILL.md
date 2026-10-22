@@ -197,9 +197,16 @@ under the error message.
   lets it skip a bad file only within the inserted range — past it is the queue the user already
   had, and starting that plays something they did not ask for — and on a failure removes the
   range and restores `currentIndex`; left in, every retried double-click queued another dead copy.
-  The returned failure, not `currentTrack == nil`, is the test: placeholder tracks and a deferred
-  audio graph also return with no track and are not failures. A skip chain that fails further on
-  still reports the track that was asked for.
+  The returned failure, not `currentTrack == nil`, is the test: a deferred audio graph also returns
+  with no track and is not a failure. A skip chain that fails further on still reports the track
+  that was asked for.
+- **A restored placeholder becomes current; `play()` resolves it.** A restored server track is an
+  `about:blank` placeholder until `AppStateManager`'s sequential pass replaces it, which takes
+  minutes for a large playlist. `loadTrack(at:)` stops the outgoing track and makes the placeholder
+  current, so the caller's `play()` resolves just that one and starts it — `playTrack(at:)` uses
+  the same branch. Skipping it instead left the outgoing track current, and Next resumed it while
+  the highlight moved on (#583). The streaming-error advance calls `play()` after `next()`, since
+  the error left `.stopped` and only a resolved stream starts on load.
 
 **Telling the user.** `.audioTrackDidFailToLoad` feeds each skin family's readout — the Classic and
 Original marquees, the `.wal` songticker, and WMP's `player.status` plus `currentMedia.name`. Each host

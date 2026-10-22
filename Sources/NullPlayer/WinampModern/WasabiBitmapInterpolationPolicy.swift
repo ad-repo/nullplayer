@@ -7,11 +7,10 @@ enum WasabiBitmapInterpolationPolicy {
     private static let integerTolerance: CGFloat = 0.001
 
     static func quality(sourcePixelSize: CGSize, destination: CGRect,
-                        in context: CGContext) -> CGInterpolationQuality {
+                        ctm transform: CGAffineTransform) -> CGInterpolationQuality {
         guard sourcePixelSize.width > 0, sourcePixelSize.height > 0,
               destination.width > 0, destination.height > 0 else { return .high }
 
-        let transform = context.ctm
         let deviceRect = destination.applying(transform).standardized
         // Downscaling is about the bitmap's actual output size, not the surrounding UI scale.
         guard deviceRect.width >= sourcePixelSize.width - integerTolerance,
@@ -39,7 +38,8 @@ enum WasabiBitmapInterpolationPolicy {
         return .none
     }
 
-    private static func isInteger(_ value: CGFloat) -> Bool {
+    /// Whether `scale` is a whole multiple, which is the one scale artwork is drawn at unsmoothed.
+    static func isInteger(_ value: CGFloat) -> Bool {
         abs(value - value.rounded()) <= integerTolerance
     }
 }

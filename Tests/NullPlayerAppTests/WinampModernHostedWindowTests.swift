@@ -393,6 +393,7 @@ final class WinampModernHostedWindowTests: XCTestCase {
         var suspends = 0
         var unmounts = 0
         var terminalTeardowns = 0
+        func configureForHostedSurface(context: WinampModernHostedSurfaceContext) {}
         func applyPalette(_ style: WinampModernSurfaceStyle) { paletteApplications += 1 }
         func applySkinScale(_ scale: CGFloat) { scaleApplications += 1 }
         func resume() { resumes += 1 }

@@ -54,7 +54,7 @@ the class — everything else becomes a generic dynamic object, which is what a 
 > `execute` silently returns at its `guard let dispatcher` without running an instruction — the test
 > then passes for the wrong reason. Bind the dispatcher to a local first.
 
-Extending the API: add to `signature(for:)` **and** the matching system/GUI/object dispatch path
+Extending the API: add to `signature(for:)` (`WinampModernScriptSignatures`) **and** the matching system/GUI/object dispatch path
 together, so argument counts and return kinds stay explicit. Add a regression test with each method.
 Use the measured-demand signal rather than porting reference stubs blindly — see
 [Debugging](#debugging-a-skin) below.
@@ -160,6 +160,12 @@ Three ordering rules make or break this:
   it is geometry only: `font`, `align` and `color` reach the wrapper on purpose, because a `<group>`
   has no use for them and forwarding them to the text inside is the whole point of the tag. The same
   filter applies to a param a *script* writes (`deliverRuntimeXUIParam`), for the same reason.
+  **`id` is claimed too** (2026-10-21), and so are our own `nullplayer.*` markers. cPro2 minimal's
+  `<SC:OneDirectionText>` embeds a `<OneDirectionText id="sc.main.text">` whose script copies every
+  param onto its `my.text.main`; handed the `id`, it renamed that text to a second `sc.main.text`,
+  the `embed_xui` link lost it, and `sc_text.maki`'s `setText` landed on the empty wrapper — no artist
+  or title. The SC objects themselves are the evidence for the claimed set: they take `mymove` and
+  `ttip` precisely because `move` and `tooltip` never reach a script.
 - **`notify="key,value"`** on a group instance delivers `onSetXuiParam("key", "value")` even when the
   instance tag is `<group>`, not the XUI tag name. Lobe's Pledit uses
   `<group id="wasabi.standardframe.statusbar" notify="content,pledit.normal.content.group">` — the
@@ -176,7 +182,7 @@ container attribute instead of a script.
 `WasabiSkinRuntime.instantiateGroup` performs the expansion (set by `WasabiSkinInitializer`, so
 runtime growth shares the load-time VFS, limits, and object budget). Scripts declared inside the new
 subtree are parsed and started via `startScripts(addedBeneath:)`, bounded by `maximumRuntimePrograms`
-and by `maximumRuntimeScriptStartDepth` (a new subtree's `onScriptLoaded` may instantiate more groups;
+and by `WinampModernScriptStarts.maximumDepth` (a new subtree's `onScriptLoaded` may instantiate more groups;
 ClassicPro nests two levels — the SUI builds the tab strip, which builds each tab).
 
 **`newGroup` is only half of it.** Wasabi instantiates in two steps, and a skin that uses both needs
@@ -304,7 +310,20 @@ subtraction is written at all. Sending the canvas point made LOBE's seek dial sa
 48×35 map — zero everywhere — so its dial seeked to 0 and its volume strip set 0 (B30, 2026-08-21;
 Styx's volume knob was the same). mmd3's own knob group is at (0, 0), which is why the two
 conventions agreed there and this survived 50 phases. Converted once, in
-`WinampModernMainView.dispatch`, so every mouse event (and the `RENDER_CLICK` probe) uses it.
+`WinampModernScriptRuntime.pointInEventSpace`, which the view, the `RENDER_CLICK` probe and the
+interaction sweep all call — until 2026-10-21 each harness kept its own copy, so neither could see a
+change to the rule.
+
+**An XUI widget is not a space of its own to a script outside it.** When the receiver's parent is a
+`<groupdef xuitag=…>` instance whose own script is not the listener, the space climbs past it to the
+first plain group or listening script's group (`mouseEventSpace`). Alpha Media Player X5's slider
+channels are a `main.c` layer inside an `amp:channel.v`, and its player script clamps `y` to the
+channel's top **in the player group** (`128…546` for volume); told the widget-relative point, bass and
+treble pinned at their top and volume landed 128px off the press. The first fix went further, to the
+listening script's group whatever lay between, and the interaction sweep caught it on JRS: its
+layout-level knob script reaches its knobs through a plain nested group and subtracts `getTop()` inside
+it, so the layout point put every press 113px off the knob's map. A **plain** group stays the space
+whoever listens; a widget's own script still hears the widget's space.
 
 **`System.getMousePos*` is the window's canvas, not the desktop — and stays so.** Winamp answers in
 screen space, but so do its `clientToScreen*`, viewport and layout `getLeft()`, and here all of those
@@ -570,9 +589,8 @@ broken on its own, and each fix looked like it had done nothing until the next o
 - **The commands declared on the wrapper are the embedded control's commands** (B70). A `<groupdef
   xuitag="…" embed_xui="…">` wrapper is a `<group>`, which has no click behaviour of its own, and the
   object the pointer lands on is the embedded one — so `action`, `param`, `dblclickaction`,
-  `rightclickaction` and `tooltip` are forwarded to it at creation, and only those. Geometry, identity
-  and appearance stay on the wrapper, which is what draws: our renderer honours an `image=` on the
-  group, and copying it down would paint the artwork twice.
+  `rightclickaction` and `tooltip` are forwarded to it at creation. Geometry and identity stay on the
+  wrapper; for a button's artwork see the next rule.
   Enkera's **whole transport** is `<button:glow … action="play">` over a bare `<button id="but"
   fitparent="1"/>`; Defix's playlist and visualization bars are `<Defix:Bottom.bar.button
   action="PE_Add">` over a `mousetrap`. In every one the artwork drew, the press animated and the
@@ -581,6 +599,27 @@ broken on its own, and each fix looked like it had done nothing until the next o
   (`play`/`pause`/`stop`/`prev`/`next`/`eject`), Defix 17 (`PE_*` ×5, `VIS_*` ×8, `TOGGLE` ×4).
   The probe line that names it is `CLICK markup action:` — absent entirely when the hit object carries
   no command, which reads exactly like a button with no behaviour to declare.
+
+- **A bare button's artwork and state are the embedded button's.** `image`, `hoverimage`,
+  `downimage`, `activeimage`, `nstates`, `cfgattrib` and `cfgvals` cross onto an embedded
+  `button`/`togglebutton`/`nstatesbutton` that states no `image` of its own, and the wrapper
+  (`WasabiEmbeddedXUI.wrapsButton`) then neither draws that artwork nor takes the press. It keeps
+  its box, because its other children are laid out and clipped in it. Official Tristania is the
+  case: its `Deimos:GlowButton` script shows Play or Pause by hiding the *inner* `glowbutton.button`,
+  so a disc drawn on the wrapper covered Pause's ‖ glyph and still took the click. Its
+  `Deimos:NStatesGlowButton` repeat/shuffle/crossfade lamps drew nothing at all, because
+  `image="player.button.repeat"` is a state prefix that only means something on the
+  `NStatesButton`. **All or nothing:** an embedded button that states its own `image` keeps its
+  artwork whole, and its wrapper draws as before. Big Bento's tab mousetrap is `image="wtf"` under
+  a wrapper that draws the tab icon. Corpus effect: Ebonite's and iNTELLI_design's window-mode
+  buttons now draw at their bitmap's own size, clipped by the wrapper, instead of squashed into it.
+- **A button's label is drawn once, by the embedded button** (B217). The wrapper's `text=` crosses
+  onto an embedded `button`/`togglebutton` that declares none, bare or `Wasabi:` (B237), so an
+  embedded `Wasabi:Button` takes it too — krazyPlayer's and Vortex's `SC:HyperLinkButton` link labels
+  are that case, and vanish without it. The wrapper then draws no label of its own: before B217 an
+  artwork-less `Wasabi:Button` wrapper drew its fallback label *and* the embedded button drew the
+  real one. Five cPro skins showed a doubled, bold-looking `Search`, and only Azenis²'s grid hid the
+  wrapper's copy. The rule is `WasabiSceneRenderer.ownLabel(of:)`, which the plain-button label in `draw` and the label in `drawTextButton`'s border both use.
 
 Two related rules that fell out of the same investigation:
 
@@ -1346,6 +1385,15 @@ The fix: `targetAlpha` uses `object.attributes["targeta"].flatMap(Double.init) ?
 the current alpha (defaulting to 255). The speed=0 snap path already handled this correctly with
 `?? object.attributes["alpha"] ?? "255"`.
 
+**A target animation moves the object, not its XML.** `getXmlParam("x"/"y"/"w"/"h")` still answers
+the declared value after `gotoTarget` has moved it; the first animated write
+(`WasabiObject.moveForTarget`) keeps the original in the object's `declaredXMLParams` — off
+`attributes`, so nothing draws, dumps or forwards it — `getXmlParam` reads it through `xmlParam(_:)`,
+and `setXmlParam` — which *is* the XML — drops it. Alpha Media Player X5's EQ and Mute levers depend on it: on is
+`setTargetY(getXmlParam("y") - 17)`, off is `setTargetY(getXmlParam("y"))`. Answered with the moved
+position, off went nowhere and a second on put the lever 17px above its switch, out of sight
+(2026-10-21).
+
 **Alpha inheritance cascades to children.** `WasabiSceneNode.inheritedAlpha` propagates through the
 scene tree during `append()`. The main `draw` method sets `context.setAlpha(alphaFraction *
 inheritedAlpha)` once; per-drawer methods must NOT override it with their own `setAlpha` call or the
@@ -1413,6 +1461,22 @@ ClassicPro's `mainmenu.maki` anticipates a skin that never cut its menu artwork 
 menu bar for it. Reading (0, 0) of `buttons.png` gave it a transport button, the test never fired,
 and four cPro skins drew five magenta boxes across the titlebar that Winamp never shows. The channel
 index is BGRA (`getARGBValue(x, y, 0..3)` = B, G, R, A), pinned separately by `player.maki`.
+
+### A `Map` that loads nothing is 64x64; `new PlEdit` is the playlist editor (2026-10-20)
+
+Both turned up behind Ebonite's blank Album Art window, and neither is about covers.
+
+- **Winamp's missing bitmap is 64x64**, and a `Map` over one reports that size. The corpus says so
+  itself: 18 script tests compare a map against 64, nearly all of them "not found" checks
+  (`getWidth() != 64`, `getWidth()==64 && getHeight()==64`). `SC:Cover` relies on it the other way —
+  it sizes its `<AlbumArt>` holders by `ArtW/ArtH` from a map of a file name that is still `""`, and
+  answered 0x0 that ratio was `0/0`, the holders came out 0x0 and the window stayed blank; Winamp's
+  64/64 filled the frame. Only the size: its pixels still read 0 (`getValue`), so the `Map`-probe
+  cover scripts' `getValue(0,0) > 0` still means "not found". ClassicPro's `installed.png` probe tests
+  `!= 1` and is unaffected. `WinampModernScriptRuntime.missingMapSide`.
+- **`new PlEdit` answers the singleton**, exactly as `new ColorMgr` does (`makeObject`). `SC:Cover`
+  does `PeListener = new PlEdit` and reads the playing row through it; as a `.dynamic` shell
+  `getCurrentIndex()` was `UNSUPPORTED` and its whole `onTitleChange` aborted.
 
 ### A script may call its own `onSetXuiParam` as a method
 

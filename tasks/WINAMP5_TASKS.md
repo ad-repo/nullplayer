@@ -1,16 +1,19 @@
-# Winamp 5.x Modern Skins (`.wal`) — ranked open backlog
+# Winamp 5.x Modern Skins (`.wal`) — open backlog
 
 This is the only live backlog for the Winamp Modern subsystem. A skin is a test case, not a
-milestone: take measured capability work from the top down. Closed entries move to
+milestone. Closed entries move to
 [`docs/winamp-modern/backlog-archive.md`](../docs/winamp-modern/backlog-archive.md) in the same change
 that closes them. A row that is stale, a question rather than work, or self-described as not worth
 doing moves to [`LOW_QUALITY_TASKS.md`](LOW_QUALITY_TASKS.md). This file holds tasks; how the engine
 works belongs in `skills/winamp-modern-skin-guide/`.
 
-## Ranking
+**The work is the *Corpus plan queue* below, top down**, by the loop in
+[`docs/winamp-modern/corpus-runner-plan.md`](../docs/winamp-modern/corpus-runner-plan.md):
+implement, re-measure, close into the archive. No new instruments.
 
-Measured items are ordered by reach, with effort as an advisory tiebreaker. Reach is corpus demand,
-not severity. Live-reported draw defects are kept in their own tier because a screenshot or runtime
+## Columns
+
+Reach is corpus demand, not severity. Live-reported draw defects are kept in their own tier because a screenshot or runtime
 observation is not comparable to a static declaration count.
 
 Effort bands: **S** = one attribute/method/local draw fix; **M** = behavior spanning multiple files
@@ -20,54 +23,50 @@ without a seam change; **L** = a host seam, protocol change, or new fixture harn
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B161 | **A press in the outer few points of a resizable `.wal` window is AppKit's, and it moves one edge even at a corner.** The skin's auxiliary windows are `[.borderless, .resizable]`, so AppKit's own edge band takes the press before `WinampModernMainView.mouseDown` and the skin's `resize="bottomright"` layer never sees it. Measured 2026-09-30 with `WINAMP_MODERN_RESIZE_TRACE=1` on Itemskin: a press 8pt in from the playlist frame's bottom-right corner, dragged +60,+30, logged `live=true handle=false` and changed the width only; 13pt in on the PeppyMeter frame, dragged +30,+60, changed the height only. 20pt in, the same drags logged `handle=clear.bottom.right` and moved both axes. Decide whether the band should defer to a skin handle under the pointer, or the windows should drop `.resizable` where the layout declares handles. Found during B160; not changed by it | every resizable auxiliary window | S | 2 |
+| B213 | **No tooltip ever shows in Winamp Modern mode.** The view sets no `toolTip` and the host never builds the skin's tooltip window, so a control's `tooltip=` is never shown and the stock `tooltips.m` (`tipText.onTextChanged`, which places the tip with `getViewport*FromPoint`, B195) never runs. Found running B195's in-app check on Shield_Amp: hovering the play button for 2 s shows nothing. Winamp shows the skin's `wasabi.tooltip.group` (or its own default) at the pointer after a hover delay and sets its `tooltip.text`. Done when hovering Shield_Amp's play button shows its tip, drawn by the skin's group, on the pointer's display | `xml-attr '@tooltip$'`: gold 47/56, silver 47/54, bronze 740/827, quarantine 48/54 (manifest 9e68ffe0); the stock tooltip script, `maki-call '[.]getviewportleftfrompoint$'`: gold 13/56, silver 3/54, bronze 9/827, quarantine 4/54 | L | 2 |
+| B215 | **A skin's own playlist-editor group is never built; the host's list fills the playlist component instead.** The Bio-Nid lineage defines `pledit.main.group` (the editor, the `pledit.poppler` splitter, the sidecar tab sheet, `scripts/playlisteditor.maki`), and the layout's content is the playlist component `guid:{45F3F7C1-A6F3-4ee6-A15E-125E92FC3F8D}`. In NullPlayer the component is the host's list, so the group, its script and the poppler never exist (venom: no `pledit.poppler` call in the trace with the playlist open). Bio-Nid itself pulls the group from `@DEFAULTSKINPATH@`, which no archive ships. Found running B182's and B198's in-app checks, which this blocks. First establish what Winamp's playlist component does with a skin-defined `pledit.main.group`, then decide whether the host instantiates it around its list | skins shipping `playlisteditor.maki` (zip listing): gold 3/56, silver 2/58, bronze 20/827 | L | 2 |
+| B238 | **A skin's `setScale` raises UI Size for every skin loaded after it.** `layout.setScale(f)` is answered by the global UI Size (Phase 46), and that level persists, so a skin that scales itself on load leaves the next skin drawn at its size. Found promoting the B169 intake: Alpha_Media_Player_X5 raises UI Size to 135% on load (capped to fit), and switching to Nitrous_Audio_CTI_2_Glass afterwards opens it at 135%. Decide whether a skin-requested level is restored on skin change (Winamp's scale is per layout, so it dies with the skin), then do that. Done when loading Alpha then Nitrous opens Nitrous at the UI Size it had before Alpha, and a UI Size the user picked survives a skin switch | `maki-call '[.]setscale$'`: gold 11/81, silver 0/29, bronze 34/827, quarantine 3/54 (manifest 9e68ffe0+dirty) | S | 2 |
+| B239 | **`onScale` is never dispatched.** The layout event Wasabi raises when a scale changes is not sent on a UI Size change (`maki-surface.md`, *Window scaling*). Skins that size themselves from `viewport / getScale()` (Nitrous monitor mode, 1010 party mode, ClassicPro maximize) only re-read it on their own next resize, so changing UI Size while one is filling the screen leaves it at the old size; Ebonite uses the event to keep two layouts in step. Done when a UI Size change sends `onScale(newScale)` to each showing layout and Nitrous in monitor mode still fills the screen after UI Size goes 100% → 135% | `maki-event '[.]onscale$'`: gold 25/81, silver 5/29, bronze 100/827, quarantine 7/54 (manifest 9e68ffe0+dirty) | S | 2 |
+| B241 | **`getXmlParam` after `resize()` answers the moved geometry; after a target animation it answers the declared one.** A target animation keeps the XML value in `WasabiObject.declaredXMLParams` (Alpha Media Player X5's levers, `scripting.md`, *A target animation moves the object, not its XML*), but `resize()` writes through `writeGeometry` and overwrites it, so what `getXmlParam("x"/"y"/"w"/"h")` answers depends on how the object moved. Establish from Wasabi's `GuiObject::resize` whether it writes the XML params, then make `resize()` agree (route it through `moveForTarget`'s bookkeeping, or document why it differs). Done when a test pins `getXmlParam("y")` after `resize()` to Wasabi's answer and Alpha's EQ and Mute levers still toggle | `maki-call '[.]resize$'`: gold 52/81, silver 18/29, bronze 294/827, quarantine 22/54; `maki-call '[.]getxmlparam$'`: gold 55/81, silver 20/29, bronze 264/827, quarantine 29/54 (manifest 23ad4485) | S | 2 |
 
-### Code health
+### Corpus plan queue — work in progress
+
+Order is the plan's S4 severity ladder, then its `skins × severity × visibility ÷ cost` within a
+class. First, skin-dead: the quarantine's loader gaps (B173), most skins first. Then the MAKI demand
+queue (B174), by priority, whose scoring is in B174's archive entry. Each severity rests on one or two
+call sites, so re-check it when a row is taken.
 
 | Id | Item | Reach | Effort | Tier |
 |---|---|---:|:---:|---|
-| B162 | **Move the script-glue code out of `WinampModernMainWindowController.swift`.** The file is ~2,900 lines, and the glued-window code sits in two places ~800 lines apart. One part is `moveCarryingGluedWindow`, `gluedPartner(of:)`, `gluedWindow(over:)` and `gluedWindowPairs`. The other is `restackGluedWindows`, `attachGluedWindowsForDrag`/`detachGluedWindowsAfterDrag`, their `dragObservers` and `dragAttachedGluedWindows`, and the `tracesGlue`/`carriesGluedWindowsInDrag` switches. An extension file cannot carry the stored state and cannot reach the controller's private `skinView`/`viewsByContainer`. So give the glue its own small type that owns the drag observers and linked pairs and gets the pairs from the controller, leaving one property on the controller. No behaviour change. Done when `swift test` passes and a drag of Pure Inspired's docked playlist under `WINAMP_MODERN_GLUE_TRACE=1` still prints `drag carries` and `restacked` lines. Deferred from PR #468 to keep that diff a behaviour fix | none on screen; the glue-pair skins (Ebonite, Itemskin, Pure Inspired, K-jr, MoonLight) exercise it | M | 3 |
-| B163 | **Make the hosted-window registry exhaustive.** `WinampModernHostedWindowRegistry.all` is an array searched by `entry(id:)`, which returns an Optional, and every definition's `makeSurface` is Optional too, although every `WinampModernHostedWindowID` has an entry and every entry builds a surface. Three production callers (`WindowManager`, `WinampModernComponentBridge.makeHostedWindowSurface`, `WinampModernHostedWindowMaterializer`) guard a nil that cannot happen, about fifteen test lines `XCTUnwrap` it, and `WinampModernHostedProviderTests` asserts the two promises the types do not make. Give `WinampModernHostedWindowID` a `definition` built by an exhaustive `switch`, make `makeSurface` non-optional, and keep `all` as `allCases.map(\.definition)` for the synthesizer. A new hosted id then fails to compile without an entry rather than falling back at run time. No behaviour change. Done when `swift test` passes with the nil guards and the registration assertions gone | none on screen; every hosted window routes through it | S | 3 |
-| B165 | **Let the hosted-frame descriptor carry a `WasabiSurfaceSynthesizer.Frame` instead of mirroring it.** `WinampModernHostedFrameDescriptor` has exactly `Frame`'s fields (`groupIdentifier`, `xuiTag`, `hasArtwork`, `exemplar`, `clientInsets`), and a `Frame` is rebuilt from it field by field in `WinampModernHostedWindowInstantiation.raised`, `WasabiSkinInitializer.instantiateHostedWindowAtRuntime` and three places in `WinampModernB140Tests`. A rebuild that dropped the client rect is what B140's second screenshot was, and every new frame field has to be threaded through all of them. Store the `Frame` in the descriptor (or replace the descriptor with it) so the rebuilds go away. While there, move `hasContentScript` and `hasArtwork` onto `inheritanceChain(of:definitions:)`, which `clientInsets(of:definitions:)` already uses, so no frame helper walks `inherit_group` by hand. No behaviour change. Done when `swift test` passes and no code builds a `Frame` from a descriptor's fields. Deferred from PR #559's review | none on screen; every hosted window wearing a skin frame routes through it | S | 3 |
-
-### Awaiting manual QA
-
-| Id | Item | Remaining check |
-|---|---|---|
-| B41 | `getMonitorWidth` / `getMonitorHeight` | Needs a second display. Load Big Bento Modern, move the player to it, open the right-side playlist and toggle **Enlarge Playlist**; the column must size against the player's display, with no 2x oversizing on Retina. Repeat back on the primary display |
-| B85 | The Widgets Manager's three place buttons | On a cPro skin: drawer menu -> *Widgets Manager*, then **show in main / drawer / side** on a row. Uninstall and support are expected to stay inert |
-| B66 | The Wasabi drop-down's persistence | On Styx's Config, pick a `Position` drop-down entry, reopen the window, confirm the pick survived |
-| B110 | Ebonite's frame overlay windows ([record](../docs/winamp-modern/backlog-archive.md#b110--a-skins-window-frame-can-be-a-second-window--implementation-record)) | Reporter's confirmation that Ebonite's frames draw, stay glued and stack correctly |
+| B212 | **Run B41's in-app check, which needs a second display.** Load Big Bento Modern, move the player to the second display, open the right-side playlist and toggle **Enlarge Playlist**; the column must size against the player's display, with no 2x oversizing on Retina. Repeat back on the primary display. `winhelper screens` shows one display, so this waits on the hardware. The other twenty checks were run 2026-10-20 (archive, *B212*). Done when B41 has a pass, or a filed row for what it found | B41 | S | 2 |
+| B216 | **The `.wal` tiler's last-resort placement now moves `.wmz` windows too, and nobody has looked.** `WindowManager.tiledOrigin(for:avoiding:)` is also WMP's placement (`WMPViewWindowMaterializer`, and the `hostsForeignSkin` branch of the sub-window opener), and the tiler behind it now weighs the region's corners and picks the least-covered candidate, with the player counted 4×, instead of rescuing the last slot. Run the window census over the `.wmz` corpus before and after that change (`window-census`), and file any window that moved onto the player or off its old spot for the worse. Done when the census diff is read and every moved window is either accepted or filed. **Deferred 2026-10-20**: the census is a multi-hour machine-takeover run, so it waits for the user's go-ahead. The cleanup that followed it is done: `WinampModernTiler` is a top-level struct in `App/WinampModernTiler.swift`, `leastCovered` weighs a named `player` rect and takes a non-empty candidate list | code health; no corpus demand | S | 3 |
+| B243 | **A MAKI method's arity and its implementation are two tables keyed by the same string.** `WinampModernScriptSignatures` holds every arity, and each `invoke…` switch (`…System`, `…Object`, `…Widgets`, `…Dynamic` and the rest) holds the body. Adding a method means editing both, and when they drift the interpreter unwinds the stack by the wrong count, the one error it cannot recover from. Declare each method once, with its arity and its handler side by side in its concern's own table, and derive `signature(for:classGUID:)` from those tables. Done when no method name appears in both a signature table and an `invoke` switch, the arity-coverage tests pass unchanged, and the interaction sweep matches its baseline | code health; no corpus demand | L | 3 |
 
 ## Agent-verifiable without user input
 
 Triaged 2026-09-27 against the `app-control` tools: `launch.sh`, `winhelper`
 (`click`/`dblclick`/`drag`/`move`/`scroll`/`clickdiff`/`capture`/`screens`), `menu.applescript`,
-the window census and the render-dump harness. The ranking above still sets the order.
+the window census and the render-dump harness.
 
-**Verifiable.** B162: `swift test` plus a `winhelper drag` of Pure Inspired's player with the
-playlist docked, reading the glue trace. B163: `swift test`.
+**Hardware.** B212 (B41's check) needs a second display (`winhelper screens` shows one). Every
+other in-app check is agent work: a contextual menu is `winhelper rclick` plus Accessibility, and a
+script-built menu Accessibility does not expose is read with `capture-region` and clicked by position.
 
-**Partly verifiable.** B66 and B85: the drop-down and the drawer menu may be contextual menus; if
-a synthetic press does not open them, they are Route D.
+## Reach
 
-**Needs the user.** B41 needs a second display (`winhelper screens` shows one). B110 waits on the
-reporter's confirmation.
+A measured row's Reach is one query over the static feature index, pasted as printed:
 
-## Reproducible reach commands
+```bash
+scripts/wal_reach.sh <kind> <feature-regex>   # -> gold a/A, silver n/N, bronze m/M, quarantine q/Q (manifest <rev>)
+```
 
-All commands use the directories extracted with `7zz` from
-`~/Library/Application Support/NullPlayer/WinampModernSkins/` (excluding `ClassicProEngine`). Set
-`corpus=/path/to/the/extracted/root`.
-
-**The corpus is 80 `.wal` archives as of 2026-09-27**, so an `[M##]` measured against an earlier
-count is not comparable to a new one. **Four are byte-identical re-adds** of installed skins —
-`pure_inspired_for_winamp_by_marisa85_d35ix2r` = `Pure Inspired`,
-`k_jr_winamp_skin_by_marisa85_d329ymw` = `K-jr`, and the two `dewytears_v2_5_by_dewytear_d2yn025_*`
-= `DewyTears_{Pink,Black}GlassV2.5` — so exclude them from any per-skin count.
-
-A command lives here only while an open item cites it; closing the item moves the command into its
-archive entry.
+The manifest rev is the denominator's identity: figures under different revs are not comparable. A
+skin is its content, so the four silver re-adds of gold skins count once, as gold. The index is
+`WinampModernCorpus/index/features.tsv`; rebuild it over every tier after an intake
+(`harness.md` → *The static feature index*), and the script fails on an index the manifest has
+outgrown. Code-health and corpus-scale rows have no corpus demand and say so instead. A row whose
+Reach needs more than the query (a grep over an extract, a runtime count) keeps that command in its
+cell, and the command moves into its archive entry when the row closes.
 
 ## Backlog hygiene check
 

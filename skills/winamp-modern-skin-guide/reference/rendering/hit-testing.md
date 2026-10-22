@@ -77,6 +77,21 @@ Two rules about *which* objects may claim a point:
   behind it. `ghost="1"` still outranks the attribute — `object(at:)` drops a ghost before
   `isInteractive` is consulted at all, which is what keeps multipass's `ghost="1"` playlist ticker
   (which carries `dblclickaction` anyway) from swallowing clicks meant for the list.
+- **A press on no control goes to the layout when its script takes presses** (B183). The stock
+  notifier is nothing but `ghost="1"` artwork over a layout whose script raises the player from
+  `notifier_layout.onLeftButtonDown`. So for such a layout the view's `hitTest` counts ghost artwork
+  as painted (`containsVisiblePixel(at:includingGhosts:)`), and `pressTarget(at:)` hands the press
+  to the layout when `object(at:)` finds nothing.
+- **Ghost artwork is window, in every layout** (2026-10-20). The rule above used to stop there and
+  leave any other window click-through where only ghosts paint. Dronev11's compact player is
+  `ghost="1"` from edge to edge — frame, display, overlays — so every press fell through to the
+  desktop and the player could not be dragged at all (`WINAMP_MODERN_DRAG_TRACE`: `hitTest … -> nil
+  (no visible pixel)` over solid bezel). A ghost passes its press *on*, to the layout; it does not
+  make its pixels desktop. `hitTest` now counts ghost pixels for every layout and `pressTarget`
+  gives such a press to the layout, which `shouldDragWindow` drags. A ghost still never *takes* a
+  press, so which control wins is unchanged; only fully transparent pixels click through.
+  `WINAMP_MODERN_DRAG_PROBE` does not see this — it samples `object(at:)` through the drag policy,
+  not the view's `hitTest`, and measures only each container's first layout.
 
 #### The three action attributes (Phase 36)
 
@@ -85,6 +100,12 @@ do: multipass's song title has the last two and not the first. The view performs
 gesture — `action` on the click, the other two after `onleftbuttondblclk` / `onrightclick`, both gated
 on press and release agreeing on the target. Only `action` flips a togglebutton or falls through to a
 `cfgattrib` binding; the other two are plain commands.
+
+When the released object's script also handles `onLeftButtonDblClk`, the host main menu that click
+asks for waits out the double-click interval, and a second press cancels it (`menuWaitsForDoubleClick`,
+read from the event in flight because the request can come from the script by way of `actionRequested`).
+The menu's tracking loop would otherwise take the second press: cPro2 minimal opens the menu on one
+click and quits on two (B187). Script `popAtMouse` menus are not held; they return their pick.
 
 The parameter has two spellings, decoded once in `WasabiClickAction` so the view and the probe cannot
 disagree:
@@ -188,6 +209,11 @@ sitting at its minimum then walks across the desktop while the pointer keeps pus
 
 Before this the only affordance was AppKit's own borderless edge band, about a pixel of it, which is
 what a live report on Shield_Amp's playlist window described as impossible to grab.
+
+That band is still there on a window whose layout has a range and **no** handle, the only
+affordance such a window has. A layout that declares a handle drops `.resizable`
+(`declaresResizeHandles`, matched on attach and on every layout switch): AppKit's band takes the press
+before the view does and moves one edge only, even at a corner the skin's grip covers (B161).
 
 #### `sysregion` is signed, and it shapes the window (Phase 34, B76)
 

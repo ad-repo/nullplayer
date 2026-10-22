@@ -27,6 +27,8 @@ struct WinampModernSurfaceInventory {
         let isVisibleWindow: Bool
         /// Surfaces reachable *inside* this container's layouts.
         let reachableKinds: Set<WinampModernComponentKind>
+        /// The subset reachable from the container's first layout, the one it opens on.
+        let defaultLayoutKinds: Set<WinampModernComponentKind>
         /// True when this container's layouts reach skin-drawn equalizer controls (`EQ_BAND`,
         /// `EQ_PREAMP`, `<eqvis>`) rather than an EQ component GUID — which is the only way any
         /// measured skin expresses an equalizer, since Winamp has no EQ component GUID.
@@ -200,7 +202,7 @@ struct WinampModernSurfaceInventory {
                 // group references inherit that instance's position instead of their definition's.
                 let nodeOrder = enclosingOrder ?? documentOrder[ObjectIdentifier(node)]
 
-                if WinampModernComponentRegistry.isHolderElement(node.name) {
+                if WinampModernComponentRegistry.isHolderElement(WasabiTag(node.name)) {
                     if let kind = holderKind(of: node) { found.insert(kind) }
                 }
                 if isEqualizerControl(node) { equalizerControls = true }
@@ -232,9 +234,11 @@ struct WinampModernSurfaceInventory {
                 visit(definition.node, depth: depth, enclosingOrder: instanceOrder)
             }
 
+            var defaultLayoutKinds: Set<WinampModernComponentKind>?
             for layout in container.children
             where layout.name.caseInsensitiveCompare("layout") == .orderedSame {
                 visit(layout, depth: 0)
+                if defaultLayoutKinds == nil { defaultLayoutKinds = found }
             }
 
             let declaredKind = containerKind(of: container)
@@ -244,6 +248,7 @@ struct WinampModernSurfaceInventory {
                 isMainPlayer: id.caseInsensitiveCompare("main") == .orderedSame,
                 isVisibleWindow: isVisibleWindow(container),
                 reachableKinds: found,
+                defaultLayoutKinds: defaultLayoutKinds ?? [],
                 hasEqualizerControls: equalizerControls
             ))
         }
@@ -257,8 +262,14 @@ struct WinampModernSurfaceInventory {
         for container in containers where !container.isMainPlayer && container.isVisibleWindow {
             // The container's declared kind first; failing that, a container that reaches exactly one
             // managed surface *is* that surface's window (mmd3's `Pledit` would qualify either way).
-            let kind = container.kind
-                ?? container.reachableKinds.intersection(Set(managedKinds)).singleElement
+            // What the window **holds** outranks a `component=` it contradicts: Symplicipod's
+            // `MediaLib` says `component="guid:pl"` and hosts `param="guid:ml"`. Taken at its word,
+            // the library was mounted there *and* in a synthesized library window, which a surface
+            // that exists once left empty white, while the playlist had no window at all.
+            let reached = container.reachableKinds.intersection(Set(managedKinds))
+            let declaredKind = container.kind.flatMap { reached.isEmpty || reached.contains($0) ? $0 : nil }
+            let kind = declaredKind
+                ?? reached.singleElement
                 ?? (container.hasEqualizerControls ? .equalizer : nil)
             guard let kind, declared[kind] == nil else { continue }
             declared[kind] = container.id
@@ -295,6 +306,11 @@ struct WinampModernSurfaceInventory {
         // window could not be opened at all. Measured over the 36 installed skins: 14 declare an
         // equalizer container and 4 embed, and impulse is the only skin in both sets, so this moves
         // that one skin and nothing else.
+        // **A holder only an alternate layout reaches** does not take the surface from a window the
+        // skin declares for it. Anunaki embeds its playlist and library in its Party! layout alone and
+        // ships real `Pledit`/`MLibrary` windows; embedded, its PL and ML buttons revealed holders in a
+        // layout that was not on screen and opened nothing, and it measured as a single-window SUI.
+        embedded = embedded.filter { main?.defaultLayoutKinds.contains($0) == true || declared[$0] == nil }
         if main?.hasEqualizerControls == true, declared[.equalizer] == nil { embedded.insert(.equalizer) }
         if mainReaches.contains(.video), declared[.video] == nil { embedded.insert(.video) }
 
@@ -332,7 +348,7 @@ struct WinampModernSurfaceInventory {
         if let content = node.attribute("content"), !content.isEmpty { identifiers.append(content) }
 
         // `<Wasabi:Frame left="…" right="…">` instantiates the two groups it names.
-        if WasabiFrame.isFrame(typeName: node.name) {
+        if WasabiFrame.isFrame(WasabiTag(node.name)) {
             for direction in ["left", "right", "top", "bottom"] {
                 if let pane = node.attribute(direction), !pane.isEmpty { identifiers.append(pane) }
             }

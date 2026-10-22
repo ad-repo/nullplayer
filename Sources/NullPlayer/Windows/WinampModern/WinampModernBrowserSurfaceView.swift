@@ -142,6 +142,7 @@ final class WinampModernBrowserSurfaceView: NSView, WinampModernBrowserSurface,
     }
 
     @objc func goBack() { if webView.canGoBack { webView.goBack() } }
+    func stepHistory(forward: Bool) { if forward { goForward() } else { goBack() } }
     @objc func goForward() { if webView.canGoForward { webView.goForward() } }
     @objc func reloadPage() { webView.reload() }
     @objc func stopLoadingPage() { webView.stopLoading() }

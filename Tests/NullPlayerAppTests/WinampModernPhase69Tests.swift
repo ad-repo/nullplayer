@@ -63,6 +63,15 @@ final class WinampModernPhase69Tests: XCTestCase {
         XCTAssertEqual(ceil(46 * 1.4), 65, "the height the removed host patch used, for the record")
     }
 
+    /// A `<SongTicker>` is a Wasabi text too. CopperdeckII's states no `h`, and its song title was a
+    /// zero-height box clipped to nothing.
+    func testAHeightlessSongTickerSizesToItsFont() throws {
+        let renderer = try makeRenderer(layout: """
+          <SongTicker id="ticker" x="0" y="0" w="157" fontsize="10"/>
+        """)
+        XCTAssertEqual(try frame(of: "ticker", in: renderer).height, 10)
+    }
+
     /// Only `<text>` auto-sizes. A layer or a group with no `h` keeps taking its height from its
     /// artwork or from nothing, which is what every other object in the corpus is laid out against.
     func testOnlyTextTakesAFontsHeight() throws {
@@ -94,8 +103,8 @@ final class WinampModernPhase69Tests: XCTestCase {
         let (runtime, program) = try makeRuntime()
         var size: CGSize?
         var origin: CGPoint?
-        runtime.layoutResizeRequested = { _, requested in size = requested }
-        runtime.containerMoveRequested = { _, point, _ in origin = point }
+        runtime.hooks.layoutResizeRequested = { _, requested in size = requested }
+        runtime.hooks.containerMoveRequested = { _, point, _ in origin = point }
 
         let container = try XCTUnwrap(object(runtime, type: "container", id: "main"))
         _ = try runtime.invoke(method: "resize", on: MakiObjectReference(.gui(container.stableID)),
@@ -114,8 +123,8 @@ final class WinampModernPhase69Tests: XCTestCase {
         let (runtime, program) = try makeRuntime()
         var size: CGSize?
         var origin: CGPoint?
-        runtime.layoutResizeRequested = { _, requested in size = requested }
-        runtime.containerMoveRequested = { _, point, _ in origin = point }
+        runtime.hooks.layoutResizeRequested = { _, requested in size = requested }
+        runtime.hooks.containerMoveRequested = { _, point, _ in origin = point }
 
         let container = try XCTUnwrap(object(runtime, type: "container", id: "main"))
         let target = MakiObjectReference(.gui(container.stableID))
@@ -137,7 +146,7 @@ final class WinampModernPhase69Tests: XCTestCase {
     func testAnObjectInsideALayoutIsNotAWindow() throws {
         let (runtime, program) = try makeRuntime()
         var moved = false
-        runtime.containerMoveRequested = { _, _, _ in moved = true }
+        runtime.hooks.containerMoveRequested = { _, _, _ in moved = true }
         let text = try XCTUnwrap(object(runtime, type: "text", id: "title"))
         _ = try runtime.invoke(method: "resize", on: MakiObjectReference(.gui(text.stableID)),
                                arguments: [.integer(0), .integer(0), .integer(10), .integer(10)],
@@ -155,7 +164,7 @@ final class WinampModernPhase69Tests: XCTestCase {
         for (declared, expected) in [(128, 350), (350, 350), (540, 540)] {
             let runtime = try makeNotifierRuntime(layoutWidth: declared)
             var size: CGSize?
-            runtime.layoutResizeRequested = { _, requested in size = requested }
+            runtime.hooks.layoutResizeRequested = { _, requested in size = requested }
             runtime.setNotifierText(title: "Song", artist: "Artist", album: "Album")
             XCTAssertEqual(size?.width, CGFloat(expected),
                            "a notifier declaring \(declared) must end up \(expected) wide")

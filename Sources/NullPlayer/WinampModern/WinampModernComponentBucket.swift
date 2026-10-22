@@ -41,7 +41,7 @@ enum WinampModernComponentBucketCatalog {
     /// not the skin), so the alternative to drawing them is the empty strip this replaces. Stroke
     /// weight follows the box so a 12px thinger and a 32px one both read.
     static func draw(_ icon: WinampModernBucketIcon, in rect: CGRect, color: NSColor,
-                     context: CGContext) {
+                     context: WasabiDrawList) {
         guard rect.width > 3, rect.height > 3 else { return }
         let box = rect.insetBy(dx: rect.width * 0.12, dy: rect.height * 0.12)
         let line = max(1, (min(box.width, box.height) / 12).rounded())
@@ -64,7 +64,7 @@ enum WinampModernComponentBucketCatalog {
     }
 
     /// A framed list: the playlist editor.
-    private static func drawPlaylist(in box: CGRect, line: CGFloat, context: CGContext) {
+    private static func drawPlaylist(in box: CGRect, line: CGFloat, context: WasabiDrawList) {
         context.stroke(box.insetBy(dx: line / 2, dy: line / 2))
         let inner = box.insetBy(dx: box.width * 0.22, dy: box.height * 0.25)
         for step in 0..<3 {
@@ -74,7 +74,7 @@ enum WinampModernComponentBucketCatalog {
     }
 
     /// Three sliders at different settings: the equalizer.
-    private static func drawEqualizer(in box: CGRect, line: CGFloat, context: CGContext) {
+    private static func drawEqualizer(in box: CGRect, line: CGFloat, context: WasabiDrawList) {
         let positions: [CGFloat] = [0.65, 0.3, 0.5]
         for (index, position) in positions.enumerated() {
             let x = box.minX + box.width * (CGFloat(index) * 0.35 + 0.15)
@@ -86,7 +86,7 @@ enum WinampModernComponentBucketCatalog {
     }
 
     /// A stack of spines: the media library.
-    private static func drawLibrary(in box: CGRect, line: CGFloat, context: CGContext) {
+    private static func drawLibrary(in box: CGRect, line: CGFloat, context: WasabiDrawList) {
         context.stroke(box.insetBy(dx: line / 2, dy: line / 2))
         for step in 1..<3 {
             let x = box.minX + box.width * CGFloat(step) / 3
@@ -95,7 +95,7 @@ enum WinampModernComponentBucketCatalog {
     }
 
     /// Analyzer bars: the visualization plugin.
-    private static func drawVisualization(in box: CGRect, context: CGContext) {
+    private static func drawVisualization(in box: CGRect, context: WasabiDrawList) {
         let heights: [CGFloat] = [0.45, 0.85, 0.6, 1.0]
         let step = box.width / CGFloat(heights.count)
         for (index, height) in heights.enumerated() {
@@ -107,7 +107,7 @@ enum WinampModernComponentBucketCatalog {
     }
 
     /// A screen with a play triangle: the video window.
-    private static func drawVideo(in box: CGRect, line: CGFloat, context: CGContext) {
+    private static func drawVideo(in box: CGRect, line: CGFloat, context: WasabiDrawList) {
         let screen = CGRect(x: box.minX, y: box.minY + box.height * 0.12,
                             width: box.width, height: box.height * 0.76)
         context.stroke(screen.insetBy(dx: line / 2, dy: line / 2))

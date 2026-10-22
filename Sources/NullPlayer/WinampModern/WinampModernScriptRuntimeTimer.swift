@@ -23,8 +23,9 @@ extension WinampModernScriptRuntime {
         let startW: Double
         let startH: Double
         let startAlpha: Double
-        let speed: Double
-        var lastTick: Double
+        /// Seconds to reach the target — what Winamp's `setTargetSpeed(float insecond)` takes.
+        let duration: Double
+        let startTime: Double
         let hasTargetX: Bool
         let hasTargetY: Bool
         let hasTargetW: Bool
@@ -38,8 +39,14 @@ extension WinampModernScriptRuntime {
         return .null
     }
 
-    private func targetTimerID(for objectID: WasabiObjectID) -> UInt64 {
-        objectID.rawValue | 0x8000_0000_0000_0000
+    /// The timer service's ids are one space shared by every owner. A MAKI `Timer` uses its own
+    /// dynamic-object id; the timers the runtime runs on a GUI object's behalf set a high bit over
+    /// that object's id, one bit per job, so no two owners can collide.
+    enum TimerNamespace: UInt64 {
+        case frameEvents = 0x4000_0000_0000_0000
+        case targetAnimation = 0x8000_0000_0000_0000
+
+        func id(for objectID: WasabiObjectID) -> UInt64 { objectID.rawValue | rawValue }
     }
 
     private func targetAttr(_ object: WasabiObject, _ key: String, fallback: String) -> Double {
@@ -55,7 +62,8 @@ extension WinampModernScriptRuntime {
     /// skin switch's script start-up.
     func writeGeometry(_ attributes: [(key: String, value: String)], on object: WasabiObject,
                        borrowed: WinampModernBorrowedOrigin.Request? = nil) {
-        let reportedBeforeWrite = Self.isWindowObject(object) ? reportedOrigin(of: object) : nil
+        let moves = attributes.contains { $0.key == "x" || $0.key == "y" }
+        let reportedBeforeWrite = takeOriginRead(of: object, moves: moves) ? reportedOrigin(of: object) : nil
         for (key, value) in attributes { _ = object.setAttribute(key, value: value) }
         applyContainerGeometry(object, reportedOrigin: reportedBeforeWrite, borrowed: borrowed)
         noteGeometryChange()
@@ -92,21 +100,27 @@ extension WinampModernScriptRuntime {
         // results (BB31); `resize()` on a layout already routed its size here, and `setXmlParam` of
         // the same four attributes now does too, position included.
         guard let target = Self.windowTarget(of: object) else { return }
+        // **A layout that is not showing is not the window.** Each Wasabi layout is a window of its
+        // own, so a write to one the container is not on lands on that hidden window and waits for
+        // the switch. Vortex parks its Dashboard layout at the screen edge from `onScriptLoaded` —
+        // `x`/`y`/`h` on `layout#dashboard` — and taking that as the player's window squeezed the
+        // 505-wide normal player into a 180×1169 strip.
+        if object !== target, activeLayoutByContainer[target.stableID] != object.stableID { return }
         func applySize() {
             guard let width = Double(object.attributes["w"] ?? ""),
                   let height = Double(object.attributes["h"] ?? "") else { return }
             noteScriptSize(of: object, collapsed: width <= 0 && height <= 0)
             guard width > 0, height > 0 else { return }
-            layoutResizeRequested?(target.stableID, CGSize(width: width, height: height))
+            hooks.layoutResizeRequested?(target.stableID, CGSize(width: width, height: height))
         }
         switch borrowed {
         case .desktop(let pin):
             if Self.deliversResizeAsWasabiDoes {
-                containerMoveRequested?(target.stableID, pin, true)
+                hooks.containerMoveRequested?(target.stableID, pin, true)
                 applySize()
             } else {
                 applySize()
-                containerMoveRequested?(target.stableID, pin, true)
+                hooks.containerMoveRequested?(target.stableID, pin, true)
             }
         case .offScreen:
             applySize()
@@ -127,15 +141,15 @@ extension WinampModernScriptRuntime {
             let unmoved = reportedOrigin.map {
                 Int(x.rounded()) == Int($0.x.rounded()) && Int(y.rounded()) == Int($0.y.rounded())
             } ?? false
-            if !unmoved { containerMoveRequested?(target.stableID, CGPoint(x: x, y: y), false) }
+            if !unmoved { hooks.containerMoveRequested?(target.stableID, CGPoint(x: x, y: y), false) }
         }
     }
 
     /// The container whose window a show, hide or geometry write on `object` acts on: a container is
     /// its own, a layout is its container's (BB31), and anything else is not a window.
     static func windowTarget(of object: WasabiObject) -> WasabiObject? {
-        if object.typeName.caseInsensitiveCompare("container") == .orderedSame { return object }
-        if object.typeName.caseInsensitiveCompare("layout") == .orderedSame {
+        if object.tag.is(.container) { return object }
+        if object.tag.is(.layout) {
             return enclosingContainer(of: object)
         }
         return nil
@@ -148,7 +162,7 @@ extension WinampModernScriptRuntime {
     /// already open at its old size goes too, and a real size lets the next `show()` through. The size
     /// write itself neither hides nor shows anything.
     func noteScriptSize(of layout: WasabiObject, collapsed: Bool) {
-        guard layout.typeName.caseInsensitiveCompare("layout") == .orderedSame else { return }
+        guard layout.tag.is(.layout) else { return }
         if collapsed { scriptCollapsedLayouts.insert(layout.stableID) }
         else { scriptCollapsedLayouts.remove(layout.stableID) }
     }
@@ -172,10 +186,10 @@ extension WinampModernScriptRuntime {
 
         let rawSpeed = Double(object.attributes["targetspeed"] ?? "0.5") ?? 0.5
         if rawSpeed <= 0 {
-            if hasX { _ = object.setAttribute("x", value: object.attributes["targetx"]!) }
-            if hasY { _ = object.setAttribute("y", value: object.attributes["targety"]!) }
-            if hasW { _ = object.setAttribute("w", value: object.attributes["targetw"]!) }
-            if hasH { _ = object.setAttribute("h", value: object.attributes["targeth"]!) }
+            if hasX { _ = object.moveForTarget("x", to: object.attributes["targetx"]!) }
+            if hasY { _ = object.moveForTarget("y", to: object.attributes["targety"]!) }
+            if hasW { _ = object.moveForTarget("w", to: object.attributes["targetw"]!) }
+            if hasH { _ = object.moveForTarget("h", to: object.attributes["targeth"]!) }
             if hasA { _ = object.setAttribute("alpha", value: object.attributes["targeta"]!) }
             _ = object.setAttribute("goingtotarget", value: "0")
             applyContainerGeometry(object)
@@ -183,7 +197,10 @@ extension WinampModernScriptRuntime {
             _ = try? dispatch(object: object, event: "ontargetreached")
             return
         }
-        let speed = min(1.0, rawSpeed)
+        // `setTargetSpeed` is a **duration**: "the number of seconds in which to reach the target"
+        // (`std.mi`). It was read as a per-tick ease fraction capped at 1, so every value of 1 or
+        // more snapped in a few ticks: Anunaki's notifier fades out over its 5 s setting and was
+        // gone in a fraction of a second.
         let cx = Double(object.attributes["x"] ?? "0") ?? 0
         let cy = Double(object.attributes["y"] ?? "0") ?? 0
         let cw = Double(object.attributes["w"] ?? "0") ?? 0
@@ -197,8 +214,8 @@ extension WinampModernScriptRuntime {
             targetH: hasH ? (Double(object.attributes["targeth"]!) ?? ch) : ch,
             targetAlpha: hasA ? (Double(object.attributes["targeta"]!) ?? ca) : ca,
             startX: cx, startY: cy, startW: cw, startH: ch, startAlpha: ca,
-            speed: speed,
-            lastTick: ProcessInfo.processInfo.systemUptime,
+            duration: rawSpeed,
+            startTime: ProcessInfo.processInfo.systemUptime,
             hasTargetX: hasX, hasTargetY: hasY, hasTargetW: hasW, hasTargetH: hasH, hasTargetA: hasA
         )
 
@@ -212,7 +229,7 @@ extension WinampModernScriptRuntime {
         _ = object.setAttribute("goingtotarget", value: "1")
         activeTargetAnimations[id] = state
 
-        let timerID = targetTimerID(for: id)
+        let timerID = TimerNamespace.targetAnimation.id(for: id)
         _ = try? timers.schedule(id: timerID, period: 1.0 / 60.0) { [weak self] in
             self?.tickTargetAnimation(objectID: id)
         }
@@ -225,22 +242,20 @@ extension WinampModernScriptRuntime {
             return
         }
 
-        let now = ProcessInfo.processInfo.systemUptime
-        let dt = max(0.001, now - state.lastTick)
-        state.lastTick = now
-        let factor = 1 - pow(1 - state.speed, dt / Self.wasabiTargetTickPeriod)
+        // Linear from where the move started, over the stated duration, as Wasabi steps it.
+        let progress = min(1, (ProcessInfo.processInfo.systemUptime - state.startTime) / state.duration)
 
-        func lerp(_ current: Double, _ target: Double) -> Double {
-            current + (target - current) * factor
+        func lerp(_ start: Double, _ target: Double) -> Double {
+            start + (target - start) * progress
         }
 
-        state.currentX = lerp(state.currentX, state.targetX)
-        state.currentY = lerp(state.currentY, state.targetY)
-        state.currentW = lerp(state.currentW, state.targetW)
-        state.currentH = lerp(state.currentH, state.targetH)
-        state.currentAlpha = lerp(state.currentAlpha, state.targetAlpha)
+        state.currentX = lerp(state.startX, state.targetX)
+        state.currentY = lerp(state.startY, state.targetY)
+        state.currentW = lerp(state.startW, state.targetW)
+        state.currentH = lerp(state.startH, state.targetH)
+        state.currentAlpha = lerp(state.startAlpha, state.targetAlpha)
 
-        // What this tick actually *changed*, kept apart by kind. A 60 Hz ease writes an integer
+        // What this tick actually *changed*, kept apart by kind. A 60 Hz step writes an integer
         // attribute, so most ticks of a slow fade write the value the object already has —
         // `setAttribute` answers false and there is nothing on screen to repaint. And a tick that
         // moves only `alpha` moves no geometry: it needs the object's own rect repainted, not a
@@ -249,20 +264,20 @@ extension WinampModernScriptRuntime {
         // second, for a text row fading in.
         var movedGeometry = false
         var movedAlpha = false
-        if state.hasTargetX { movedGeometry = object.setAttribute("x", value: String(Int(state.currentX.rounded()))) || movedGeometry }
-        if state.hasTargetY { movedGeometry = object.setAttribute("y", value: String(Int(state.currentY.rounded()))) || movedGeometry }
-        if state.hasTargetW { movedGeometry = object.setAttribute("w", value: String(Int(state.currentW.rounded()))) || movedGeometry }
-        if state.hasTargetH { movedGeometry = object.setAttribute("h", value: String(Int(state.currentH.rounded()))) || movedGeometry }
+        if state.hasTargetX { movedGeometry = object.moveForTarget("x", to: String(Int(state.currentX.rounded()))) || movedGeometry }
+        if state.hasTargetY { movedGeometry = object.moveForTarget("y", to: String(Int(state.currentY.rounded()))) || movedGeometry }
+        if state.hasTargetW { movedGeometry = object.moveForTarget("w", to: String(Int(state.currentW.rounded()))) || movedGeometry }
+        if state.hasTargetH { movedGeometry = object.moveForTarget("h", to: String(Int(state.currentH.rounded()))) || movedGeometry }
         if state.hasTargetA { movedAlpha = object.setAttribute("alpha", value: String(Int(state.currentAlpha.rounded()))) }
 
         if animationReached(state) {
-            if state.hasTargetX { _ = object.setAttribute("x", value: String(Int(state.targetX))) }
-            if state.hasTargetY { _ = object.setAttribute("y", value: String(Int(state.targetY))) }
-            if state.hasTargetW { _ = object.setAttribute("w", value: String(Int(state.targetW))) }
-            if state.hasTargetH { _ = object.setAttribute("h", value: String(Int(state.targetH))) }
+            if state.hasTargetX { _ = object.moveForTarget("x", to: String(Int(state.targetX))) }
+            if state.hasTargetY { _ = object.moveForTarget("y", to: String(Int(state.targetY))) }
+            if state.hasTargetW { _ = object.moveForTarget("w", to: String(Int(state.targetW))) }
+            if state.hasTargetH { _ = object.moveForTarget("h", to: String(Int(state.targetH))) }
             if state.hasTargetA { _ = object.setAttribute("alpha", value: String(Int(state.targetAlpha))) }
             activeTargetAnimations.removeValue(forKey: objectID)
-            timers.cancel(id: targetTimerID(for: objectID))
+            timers.cancel(id: TimerNamespace.targetAnimation.id(for: objectID))
             _ = object.setAttribute("goingtotarget", value: "0")
             applyContainerGeometry(object)
             notifyGraphDidMutate()
@@ -286,9 +301,36 @@ extension WinampModernScriptRuntime {
         abs(state.currentAlpha - state.targetAlpha) < 0.5
     }
 
+    /// `AnimatedLayer.onFrame(frame)` for every frame a script-started play head moves to, and
+    /// `onStop()` once a range play reaches its end frame. The play head is a function of the clock
+    /// (`WasabiAnimation`), so nothing stepped it and neither event was ever raised. mmd3's knobs
+    /// set the EQ from `onFrame` alone, so its bass knob turned without touching the EQ (B194).
+    func startFrameEvents(for object: WasabiObject) {
+        guard hasBinding(for: object, event: "onframe") || hasBinding(for: object, event: "onstop") else { return }
+        let id = object.stableID
+        var last = animationFrame(of: object)
+        _ = try? timers.schedule(id: TimerNamespace.frameEvents.id(for: id), period: 1.0 / 60.0) { [weak self] in
+            guard let self, let object = loadedSkin.runtime.graph.object(withID: id) else { return }
+            let state = WasabiAnimation.state(of: object, frameCount: animationFrameCount(of: object))
+            if state.frame != last {
+                last = state.frame
+                _ = try? dispatch(object: object, event: "onframe", arguments: [.integer(Int32(state.frame))])
+            }
+            if !state.isPlaying { stopFrameEvents(for: object) }
+        }
+    }
+
+    /// Ends `startFrameEvents` with the layer's `onStop()`, if it was running.
+    func stopFrameEvents(for object: WasabiObject) {
+        let timerID = TimerNamespace.frameEvents.id(for: object.stableID)
+        guard timers.contains(id: timerID) else { return }
+        timers.cancel(id: timerID)
+        _ = try? dispatch(object: object, event: "onstop")
+    }
+
     func cancelTargetAnimation(objectID: WasabiObjectID) {
         activeTargetAnimations.removeValue(forKey: objectID)
-        timers.cancel(id: targetTimerID(for: objectID))
+        timers.cancel(id: TimerNamespace.targetAnimation.id(for: objectID))
     }
 
     func reverseTargetAnimation(object: WasabiObject) {

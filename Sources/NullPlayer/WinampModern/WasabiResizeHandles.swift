@@ -56,4 +56,13 @@ extension WasabiSceneRenderer {
         guard layoutIsUserResizable, let object = object(at: point) else { return nil }
         return WasabiResizeEdges(attribute: object.attributes["resize"])
     }
+
+    /// Whether the active layout resizes by its own handles. Such a window must not also carry
+    /// AppKit's edge band, which takes the press before the view sees it and moves one edge even at a
+    /// corner the skin's grip covers (B161).
+    var declaresResizeHandles: Bool {
+        layoutIsUserResizable && sceneNodes().contains {
+            WasabiResizeEdges(attribute: $0.object.attributes["resize"]) != nil
+        }
+    }
 }

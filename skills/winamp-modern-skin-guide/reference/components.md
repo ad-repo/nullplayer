@@ -68,10 +68,26 @@ Shield_Amp, S7Reflex and Defix enter this same path rather than being parsed as 
   playback is not the user deciding, and recording it was what wrote the stale `Video = 1` this fix
   now ignores.
 
+  **The exemption reads the container's own `hold=`/`component=` as well as the catalog**
+  (2026-10-20). `applyDefaultContainerVisibility` runs *before* `makeSurfaceCoordinator`, so the
+  catalog is still nil there and `routedSurfaceKind` answers nil for every container. machina's
+  `<container id="Video" hold="guid:{F0816D7B-…}" default_visible="1">` therefore opened empty at
+  every launch — and the Windows menu could not close it, because a routed surface is listed under
+  NullPlayer's Video Player item, which stays disabled until a film has played.
+
   **A persisted per-skin decision is part of the state a "clean" launch reproduces.** This defect is
   invisible to the render dump — the harness installs no windows, so nothing is ever restored — and
   invisible to a fresh profile. `defaults read NullPlayer | grep '_nullplayer_windows'` is the state
   to read before believing a window opened itself.
+
+#### A container `name` can carry its accelerator after `%09` (2026-10-21)
+
+`name="About%09Alt+A"` is the window's name, an escaped tab, then the shortcut Winamp right-aligns in
+its Windows menu. `WinampModernContainerTopology.displayName` keeps only the part before it, and every
+menu and accessibility label reads that. The corpus: wTunes (About, both vuMeters, Equalizer),
+CopperdeckII, Studiosus and Winamp_Single_GUI. The shortcut itself is not bound; the skin's own
+`onKeyDown` handles it where it declares one. Duplicate names are qualified with the container id by
+`menuLabels` (Bio-Nid's eight `Equalizer` copies).
 
 #### A window that only fakes a Windows desktop effect never opens (B101, 2026-09-04)
 
@@ -221,6 +237,21 @@ has no frame script that instantiates its content')`) even though the initialize
 frame. Unpicked deliberately: it changes the hosted-window catalog for three skins and wants its own
 live QA.
 
+#### A playlist frame's `<LayoutStatus>` is the playlist's command bar (2026-10-20)
+
+Winamp draws a component's command bar into the standard frame's `<LayoutStatus>` slot (the one
+that `exclude="{system}"`s; an `includeonly="{system}"` slot holds only the system menu). For the
+playlist that is Add / Rem / Sel / Misc / List, and a skin that hosts it `noshowcmdbar="1"` draws
+none of its own: JRS's playlist could not be edited at all. `WasabiStandardFrames.playlistCommandBar`
+creates five labelled `<Wasabi:Button>`s sending the `PE_*` actions, and the initializer builds them,
+once the graph exists, into each `LayoutStatus` that `playlistCommandBarSlots(beneath:)` names: one
+whose container declares the playlist GUID, in a layout with no skin `PE_Add` of its own. 89 corpus
+skins draw their own buttons and most also inherit a status frame. The check runs before the bar
+exists, because the bar's own `Wasabi:Button` forwards its `PE_Add` onto the `<button>` it embeds:
+the old build-then-hide pass found that copy and hid Mac OS X Panther's only buttons (B222). ~220 skins gain the bar, NullPlayer's own playlist window among them where it borrows
+the skin's frame. Only the playlist: the video and library components fill their own slots
+differently and none of those is wired.
+
 #### The component bucket — Winamp's thinger (B34, 2026-08-25)
 
 `<componentbucket>` is Winamp's scrolling strip of *installed component* icons: click one to open that
@@ -303,7 +334,7 @@ Every `.wal` window is `.borderless`, which changes what AppKit will do for you:
 
 **There is no center stack in Winamp Modern.** A `.wal` skin's windows are whatever shape and size the
 author chose, so the arrangement is a **tiling generated in one deterministic sweep**
-(`WindowManager.WinampModernTiler`), not a placement negotiated per window as each one opens. Columns
+(`WinampModernTiler`, `App/WinampModernTiler.swift`), not a placement negotiated per window as each one opens. Columns
 run down from the player, each window flush under the last; one that will not fit starts the next
 column to the right. Fixed order, no scoring, no iteration. The player is the anchor and never moves —
 its frame is restored user state.
@@ -1255,6 +1286,9 @@ is the host's, exactly as the playlist panel is.
   wrote. `deleteAllItems` / `addItem` / `getNumItems` / `getItemLabel(item, column)` /
   `getFirstItemSelected` / `getNextItemSelected(after)` / `scrollToItem`, plus wheel scrolling, click
   to select and `onDoubleClick(item)` — one argument, the row.
+- **`<tree>`**: the runtime keeps the `TreeItem` model and writes its visible rows, indented, onto the
+  object, so the same list renderer paints it and a click selects or folds a row (`clickTreeRow`).
+  `getByLabel(item, label)` searches depth-first under `item`, or the whole tree from null.
 **The accessor set is complete against the corpus (re-measured 2026-08-29).** Every list accessor any
 installed skin calls is implemented: `getItemLabel` (7 program symbols) and `setSubItem` (2) across
 Big Bento Modern, its Windows 10 edition and Defix Hi-END 200 — which is the whole of [M12]'s "9

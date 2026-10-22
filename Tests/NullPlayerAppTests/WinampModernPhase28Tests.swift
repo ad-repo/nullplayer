@@ -231,8 +231,11 @@ final class WinampModernPhase28Tests: XCTestCase {
                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
                 context.translateBy(x: 0, y: CGFloat(size))
                 context.scaleBy(x: 1, y: -1)
+                let list = WasabiDrawList(ctm: context.ctm,
+                                          clip: CGRect(x: 0, y: 0, width: size, height: size))
                 XCTAssertTrue(renderer.drawWarped(image, in: CGRect(x: 0, y: 0, width: size, height: size),
-                                                  mesh: mesh, context: context))
+                                                  mesh: mesh, context: list))
+                list.replay(into: context)
             }
             // The two sample differently along the quadrant's edges; everywhere else they agree.
             var disagreeing = 0

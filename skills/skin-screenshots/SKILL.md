@@ -56,7 +56,7 @@ that skin decided.
 | Script | Role |
 |---|---|
 | `preflight.sh` | Blocks a sweep in a known-bad state; prints the four checks only a human can make |
-| `enumerate_skins.sh` | Reads the live Skins menu → `system / submenu / item / label` TSV, minus `../exclude.txt` |
+| `enumerate_skins.sh` | Reads the live Skins menu → `system / submenu / item / label` TSV, minus `../exclude.txt`. So its `.wal` set is the user's installs in `WinampModernSkins/`, not the `.wal` test corpus (`WinampModernCorpus/`, see `winamp-modern-skin-guide/reference/harness.md`) |
 | `capture.sh` | The sweep: mode switch, skin select, settle, capture, reframe, manifest |
 | `reframe.sh` | Centres the visible artwork on the white frame; owns the two framing rules |
 | `makegif.sh` | Assembles the GIF at an exact cycle length |

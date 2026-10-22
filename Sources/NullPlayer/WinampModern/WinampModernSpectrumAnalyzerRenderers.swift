@@ -30,7 +30,7 @@ protocol WasabiSpectrumAnalyzerRenderer: WasabiVisRenderer {
 /// because skin coordinates are top-left origin). Both engines below were written for AppKit's
 /// y-up world — Cava grows its bars from `rect.minY`, and a `CGImage` drawn into a flipped context
 /// lands upside down — so each of them draws inside this, which flips back about the box.
-private func drawingFlipped(in frame: CGRect, context: CGContext, body: () -> Void) {
+private func drawingFlipped(in frame: CGRect, context: WasabiDrawList, body: () -> Void) {
     context.saveGState()
     context.translateBy(x: 0, y: frame.minY + frame.maxY)
     context.scaleBy(x: 1, y: -1)
@@ -44,7 +44,7 @@ private func drawingFlipped(in frame: CGRect, context: CGContext, body: () -> Vo
 /// Size × the backing scale), so an engine that rasterises at box size and lets CoreGraphics stretch
 /// the result would draw a blurry analyzer on every Retina display. `WasabiRenderer.prescaled` reads
 /// the CTM for the same reason.
-private func deviceScale(of context: CGContext) -> CGFloat {
+private func deviceScale(of context: WasabiDrawList) -> CGFloat {
     let transform = context.ctm
     let scale = (abs(transform.a) + abs(transform.d)) / 2
     return max(1, min(4, scale.isFinite ? scale : 1))
@@ -93,7 +93,7 @@ final class CavaVisRenderer: WasabiSpectrumAnalyzerRenderer {
         presenter.stop()
     }
 
-    func draw(_ input: WasabiVisInput, in frame: CGRect, context: CGContext) {
+    func draw(_ input: WasabiVisInput, in frame: CGRect, context: WasabiDrawList) {
         // `mode="0"` is the skin saying "nothing here" — MMD3 ships it over its own animated
         // display — and that is not a statement about *which* engine, so it is honoured whatever is
         // selected.
@@ -116,18 +116,17 @@ final class CavaVisRenderer: WasabiSpectrumAnalyzerRenderer {
             lastBars = bars
             lastMotion = CACurrentMediaTime()
         }
+        // Read here, on the main thread: the draw itself may be replayed on the canvas's queue.
+        let lowColor = CavaSettings.effectiveLowColor(for: Self.scope)
+        let highColor = CavaSettings.effectiveHighColor(for: Self.scope)
+        let mode = presenter.mode
         drawingFlipped(in: frame, context: context) {
-            let graphics = NSGraphicsContext(cgContext: context, flipped: false)
-            NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current = graphics
             // `CavaDrawing` paints with `NSColor`/`NSBezierPath`, which draw into the *current*
-            // graphics context rather than into one handed to them — so the scene's `CGContext` has
-            // to be published as that current context for the length of the call.
-            CavaDrawing.draw(in: frame, barArrays: bars,
-                             lowColor: CavaSettings.effectiveLowColor(for: Self.scope),
-                             highColor: CavaSettings.effectiveHighColor(for: Self.scope),
-                             mode: presenter.mode)
-            NSGraphicsContext.restoreGraphicsState()
+            // graphics context rather than into one handed to them.
+            context.drawWithAppKit {
+                CavaDrawing.draw(in: frame, barArrays: bars, lowColor: lowColor,
+                                 highColor: highColor, mode: mode)
+            }
         }
     }
 
@@ -201,7 +200,7 @@ final class VisClassicVisRenderer: NSObject, WasabiSpectrumAnalyzerRenderer {
         lastActiveDraw = 0
     }
 
-    func draw(_ input: WasabiVisInput, in frame: CGRect, context: CGContext) {
+    func draw(_ input: WasabiVisInput, in frame: CGRect, context: WasabiDrawList) {
         guard input.style.mode != .off, frame.width > 0, frame.height > 0 else { return }
         // Rasterised at device resolution, not at skin resolution: the core draws whole pixels and
         // stretching a 100px frame across a Retina box would blur every bar edge.

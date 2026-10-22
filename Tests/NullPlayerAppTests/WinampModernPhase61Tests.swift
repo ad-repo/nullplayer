@@ -124,8 +124,7 @@ final class WinampModernPhase61Tests: XCTestCase {
         XCTAssertNotNil(transform(["fliph": "-1"], frame: frame))
         XCTAssertNotNil(transform(["fliph": "true"], frame: frame))
         XCTAssertNotNil(transform(["fliph": "yes"], frame: frame))
-        // `atoi` answers 0 for a non-numeric string, which is the reading corneramp_redux and
-        // Shield_Amp depend on for their literal `relatw="%"`.
+        // `atoi` answers 0 for a non-numeric string. (`"%"` is percent mode only for `relat*`.)
         XCTAssertNil(transform(["fliph": "%"], frame: frame))
         XCTAssertNil(transform(["fliph": ""], frame: frame))
     }

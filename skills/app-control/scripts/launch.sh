@@ -47,6 +47,9 @@ case "$SKIN" in
       case "$SKIN" in *.wsz|*.whsz|*.wal|*.wmz|*.WSZ|*.WAL|*.WMZ) PAT="$SKIN" ;; *) PAT="$SKIN.*" ;; esac
       MATCHES=$(find "$SUPPORT/Skins" "$SUPPORT/WinampModernSkins" "$SUPPORT/WMPSkins" \
                   -maxdepth 1 -type f -iname "$PAT" 2>/dev/null)
+      # Not installed: the .wal test corpus (gold+silver), which the app's skin menu does not list.
+      [ -n "$MATCHES" ] || MATCHES=$(find "$SUPPORT/WinampModernCorpus/gold" "$SUPPORT/WinampModernCorpus/silver" \
+                  -maxdepth 1 -type f -iname "$PAT" 2>/dev/null)
       if [ "$(printf '%s' "$MATCHES" | grep -c .)" -gt 1 ]; then
         echo "LAUNCH FAIL: '$SKIN' is ambiguous — add the extension or pass the path:"
         printf '  %s\n' "$MATCHES"; exit 1

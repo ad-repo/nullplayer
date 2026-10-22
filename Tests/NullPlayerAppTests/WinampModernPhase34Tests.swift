@@ -50,7 +50,7 @@ final class WinampModernPhase34Tests: XCTestCase {
         let (runtime, program) = try makeRuntime()
         let container = try XCTUnwrap(runtime.loadedSkin.runtime.graph.objects(xmlID: "themes").first)
         var requests: [(String, Bool)] = []
-        runtime.containerVisibilityRequested = { requests.append(($0, $1)) }
+        runtime.hooks.containerVisibilityRequested = { requests.append(($0, $1)) }
         runtime.containerVisibilityQuery = { _ in false }
 
         _ = try runtime.invoke(method: "toggle", on: MakiObjectReference(.gui(container.stableID)),
@@ -71,7 +71,7 @@ final class WinampModernPhase34Tests: XCTestCase {
         // The state after "the script opened it, then the user closed the window itself".
         _ = container.setAttribute("visible", value: "1")
         var requests: [(String, Bool)] = []
-        runtime.containerVisibilityRequested = { requests.append(($0, $1)) }
+        runtime.hooks.containerVisibilityRequested = { requests.append(($0, $1)) }
         runtime.containerVisibilityQuery = { _ in false }
 
         _ = try runtime.invoke(method: "toggle", on: MakiObjectReference(.gui(container.stableID)),

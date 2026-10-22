@@ -45,11 +45,17 @@ enum WinampModernVisualizationHolder {
 
     /// The one holder the engine mounts in, or `nil` when every live holder is a letterbox strip.
     ///
+    /// A skin's own AVS window skips the letterbox rule: the whole window is the visualization, so
+    /// its box is whatever the user dragged it to. Measuring it made krazyPlayer's window swap
+    /// between the analyzer and the engine as it was resized across 3:1.
+    ///
     /// Ties keep the earliest holder in scene order rather than resolving arbitrarily: a layout pass
     /// that reported the same two boxes in a different order must not move the picture.
-    static func engineHolder(among holders: [WinampModernComponentHolder]) -> WasabiObjectID? {
+    static func engineHolder(among holders: [WinampModernComponentHolder],
+                             inVisualizationWindow: Bool = false) -> WasabiObjectID? {
         var best: WinampModernComponentHolder?
-        for holder in holders where holder.kind == .visualization && !prefersAnalyzer(holder: holder) {
+        for holder in holders where holder.kind == .visualization
+            && (inVisualizationWindow || !prefersAnalyzer(holder: holder)) {
             guard let current = best else { best = holder; continue }
             let area = holder.frame.width * holder.frame.height
             if area > current.frame.width * current.frame.height { best = holder }

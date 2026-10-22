@@ -209,6 +209,21 @@ final class WinampModernPhase86Tests: XCTestCase {
         XCTAssertNil(renderer.objectOverridingDivider(at: CGPoint(x: 200, y: 25)))
     }
 
+    /// B207: a `text` a script hooks a press on is under the pointer (Ebonite's timer), and a ghost
+    /// one still passes the click through.
+    func testATextAScriptHooksAPressOnTakesTheClick() throws {
+        let renderer = try makeRenderer(layout: """
+        <layout id="normal" w="100" h="40" default_w="100" default_h="40">
+          <text id="timer" x="10" y="10" w="40" h="12" text="0:00"/>
+          <text id="ticker" x="50" y="10" w="40" h="12" text="title" ghost="1"/>
+        </layout>
+        """)
+        XCTAssertNil(renderer.object(at: CGPoint(x: 20, y: 15)), "unbound text stays out of the way")
+        renderer.pressBindingProvider = { _ in true }
+        XCTAssertEqual(renderer.object(at: CGPoint(x: 20, y: 15))?.xmlID, "timer")
+        XCTAssertNotEqual(renderer.object(at: CGPoint(x: 60, y: 15))?.xmlID, "ticker")
+    }
+
     // MARK: - `AnimatedLayer.isStopped()`
 
     /// The pair that looked complete. `isPlaying` was implemented for animated layers, and

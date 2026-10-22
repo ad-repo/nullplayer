@@ -10,7 +10,7 @@ final class WinampModernPhase77Tests: XCTestCase {
         XCTAssertEqual(WasabiBitmapInterpolationPolicy.quality(
             sourcePixelSize: CGSize(width: 79, height: 15),
             destination: CGRect(x: 96, y: 12, width: 79, height: 15),
-            in: context), .none)
+            ctm: context.ctm), .none)
     }
 
     func testIntegerUIScaleWinsEvenWhenTheSkinStretchesTheBitmap() throws {
@@ -18,7 +18,7 @@ final class WinampModernPhase77Tests: XCTestCase {
         XCTAssertEqual(WasabiBitmapInterpolationPolicy.quality(
             sourcePixelSize: CGSize(width: 79, height: 15),
             destination: CGRect(x: 96, y: 12, width: 83, height: 17),
-            in: context), .none)
+            ctm: context.ctm), .none)
     }
 
     func testFractionalDeviceScaleStaysSmooth() throws {
@@ -26,7 +26,7 @@ final class WinampModernPhase77Tests: XCTestCase {
         XCTAssertEqual(WasabiBitmapInterpolationPolicy.quality(
             sourcePixelSize: CGSize(width: 79, height: 15),
             destination: CGRect(x: 96, y: 12, width: 79, height: 15),
-            in: context), .high)
+            ctm: context.ctm), .high)
     }
 
     func testActualDownscaleStaysSmoothAtAnIntegerUIScale() throws {
@@ -34,7 +34,7 @@ final class WinampModernPhase77Tests: XCTestCase {
         XCTAssertEqual(WasabiBitmapInterpolationPolicy.quality(
             sourcePixelSize: CGSize(width: 100, height: 100),
             destination: CGRect(x: 0, y: 0, width: 40, height: 40),
-            in: context), .high)
+            ctm: context.ctm), .high)
     }
 
     func testFlippedSkinContextKeepsTheSameIntegerScale() throws {
@@ -44,7 +44,7 @@ final class WinampModernPhase77Tests: XCTestCase {
         XCTAssertEqual(WasabiBitmapInterpolationPolicy.quality(
             sourcePixelSize: CGSize(width: 20, height: 10),
             destination: CGRect(x: 4, y: 5, width: 20, height: 10),
-            in: context), .none)
+            ctm: context.ctm), .none)
     }
 
     func testPrescaleUsesTheSameIntegerAndFractionalRule() {

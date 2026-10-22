@@ -49,6 +49,33 @@ enum MakiClassGUID {
     /// "feature requires WA 5.51+" entry, so a **null** here is a supported state and not a defect.
     static let playlistManager = "61a7abad41f67d7980e1d0b1f4a40386"
 
+    /// Winamp 5's `Application` — `{B8E867B0-2715-4da7-A5BA-53DBA1FCFEAC}`. A system-flagged global
+    /// that keeps the System object, so its `shutdown()` reaches `invokeSystem`.
+    static let application = "b8e867b04da72715db53baa5acfefca1"
+
+    /// Classes that declare an event under another class's name with a different arity (B182).
+    static let system = "d6f50f6449b793fa66baf193983eaeef"
+    static let vis = "ce4f97be4e1977b098d45699276cc933"
+    static let wac = "00c074a049a0fea2bbfa8dbe401616db"
+    static let dropDownList = "36d59b714af803fd020595977a26dbb7"
+    /// `Layout`, whose `getContainer()` takes no argument where the global form takes a name.
+    static let layout = "60906d4e482e537e94cc04b072568861"
+    /// `PopupMenu` (`MakiProgram.popupMenuClassGUID`, canonicalized).
+    static let popupMenu = "f4787af44ef7b2bb4be7fb9c8da8bea9"
+
+    /// GUI classes a script may `new` and then `init(parent)` into the graph, and the element each
+    /// becomes. Nitrous Audio's playlist builds every row as `new Text` (`playlistPlus.m`).
+    static let scriptCreatableElements: [String: String] = [
+        "efaa867241fa310ea985dcb74bcb5b52": "text",
+        "5ab9fa1545579a7d5765c8aba97cc6a6": "layer",
+        "6b64cd274c4b5a26a7e6598c3a49f60c": "animatedlayer",
+        "698eddcd4fec8f1e44f9129b45ff09f9": "button",
+        "b4dccfff4bcc81fe0f721b96ff0fbed5": "togglebutton",
+        "62b65e3f408d375e8176ea8d771bb94a": "slider",
+        "45be95e5419120725fbb5c93fd17f1f9": "group",
+    ]
+    static let guiTree = "d59514f745e8ed364e3f0f98d92c52a0"
+
     /// Host singletons the **runtime** binds by class, and which the parser must therefore leave
     /// alone. Deliberately a carve-out rather than an allow-list of one: a system-flagged global of
     /// any other class keeps the System object it has always been given, so nothing that worked
@@ -368,6 +395,27 @@ struct MakiBytecodeParser {
         case none, variable, method, type, instruction, valueKind
     }
 
+    /// The three shapes `mc.exe` wrote under the same version word (0x0403), so a file's shape cannot
+    /// be told from its header — only by trying each, in this order.
+    ///
+    /// * `v5` — the class GUID table, and a variable record ending in the `global`/`system` pair.
+    /// * `shortGlobal` — the class table **and** a short variable record whose one trailing byte is
+    ///   `global` (the record's own `object` byte stands, and `System` is variable 0). Its header word
+    ///   after the version is `0x16` where `v5` says `0x17` (Apill's `volume.maki`/`seek.maki`,
+    ///   Lounge, HARMONIA, The Duk Side: ten bronze skins whose scripts all failed to parse).
+    /// * `pre50` — a pre-5.0 compiler's. `Overdrive_2`'s `scripts/seek.maki` (2001) is the measured
+    ///   case, and it sits beside four siblings in the `v5` form, which is why this is a retry and not
+    ///   a branch. No class GUID table at all: the class code in a method record indexes a table the
+    ///   runtime supplied, so a call dispatches on its *name* alone (which is what the interpreter
+    ///   already does for an out-of-range class index). And a **13-byte** variable record: the
+    ///   trailing pair is one byte holding `object` instead; `System` is the first variable a MAKI
+    ///   program declares, so index 0 is the system object.
+    private enum Dialect: CaseIterable {
+        case v5, shortGlobal, pre50
+
+        var hasClassTable: Bool { self != .pre50 }
+    }
+
     private struct Reader {
         let data: Data
         var offset = 0
@@ -409,10 +457,11 @@ struct MakiBytecodeParser {
         mutating func readString() throws -> String {
             let length = Int(try readUInt16())
             let bytes = try readData(count: length)
-            guard let value = String(data: bytes, encoding: .utf8) else {
-                throw ParseError("MAKI string is not valid UTF-8.")
-            }
-            return value
+            // `mc.exe` wrote the compiler's ANSI code page, so a string that is not UTF-8 is read as
+            // Windows-1252 (a `©` or an accented label in five bronze skins failed the whole script).
+            return String(data: bytes, encoding: .utf8)
+                ?? String(data: bytes, encoding: .windowsCP1252)
+                ?? String(data: bytes, encoding: .isoLatin1) ?? ""
         }
 
         func peekUInt32() throws -> UInt32 {
@@ -440,33 +489,20 @@ struct MakiBytecodeParser {
 
     func parse(_ data: Data, source: WalSourceLocation, ownerID: WasabiObjectID? = nil,
                parameter: String? = nil) throws -> MakiProgram {
-        do {
+        // Failing every reading, the last one's error is the one reported.
+        var failure = ParseError("MAKI file matches no known dialect.")
+        for dialect in Dialect.allCases {
             do {
-                return try parse(data, source: source, ownerID: ownerID, parameter: parameter,
-                                 classTablePresent: true)
-            } catch is ParseError {
-                // A pre-5.0 `mc.exe` wrote a different shape under the *same* version word (0x0403),
-                // so the variant cannot be told apart by the header — only by trying it.
-                // `Overdrive_2`'s `scripts/seek.maki` (2001) is the measured case, and it sits beside
-                // four siblings in the ordinary form, which is why this is a retry and not a branch.
-                // Two differences, both decoded from that file:
-                //   * no class GUID table at all — the class code in a method record indexes a table
-                //     the runtime supplied, so a call here dispatches on its *name* alone (which is
-                //     what the interpreter already does for an out-of-range class index), and
-                //   * a **13-byte** variable record: the trailing `global`/`system` pair is one byte
-                //     holding `object` instead. `System` is the first variable a MAKI program
-                //     declares, so index 0 is the system object.
-                // Failing this reading too, its own error is the one reported.
-                return try parse(data, source: source, ownerID: ownerID, parameter: parameter,
-                                 classTablePresent: false)
+                return try parse(data, source: source, ownerID: ownerID, parameter: parameter, dialect: dialect)
+            } catch let error as ParseError {
+                failure = error
             }
-        } catch let error as ParseError {
-            throw WalFailure(WalDiagnostic(.invalidScript, error.message, location: source))
         }
+        throw WalFailure(WalDiagnostic(.invalidScript, failure.message, location: source))
     }
 
     private func parse(_ data: Data, source: WalSourceLocation, ownerID: WasabiObjectID?,
-                       parameter: String?, classTablePresent: Bool) throws -> MakiProgram {
+                       parameter: String?, dialect: Dialect) throws -> MakiProgram {
         do {
             var reader = Reader(data: data)
             guard try reader.readData(count: 2) == Data([0x46, 0x47]) else {
@@ -476,7 +512,7 @@ struct MakiBytecodeParser {
             _ = try reader.readUInt32()
 
             var classes: [String] = []
-            if classTablePresent {
+            if dialect.hasClassTable {
                 let classCount = try boundedCount(try reader.readUInt32(), section: "class")
                 classes.reserveCapacity(classCount)
                 for _ in 0..<classCount {
@@ -511,13 +547,17 @@ struct MakiBytecodeParser {
                 _ = try reader.readUInt16()
                 var global = false
                 var system = false
-                if classTablePresent {
+                switch dialect {
+                case .v5:
                     global = try reader.readUInt8() != 0
                     system = try reader.readUInt8() != 0
-                } else {
+                case .pre50:
                     object = try reader.readUInt8() != 0
                     system = object && index == 0
                     global = system
+                case .shortGlobal:
+                    global = try reader.readUInt8() != 0
+                    system = object && index == 0
                 }
 
                 if subclass {
@@ -546,9 +586,14 @@ struct MakiBytecodeParser {
                     variables.append(MakiVariable(declaredKind: .object, classGUID: guid,
                                                   isGlobal: global, isSystem: system, value: initial))
                 } else {
-                    let kind = MakiValueKind(rawValue: UInt8(typeOffset))
+                    // Type 8 is MAKI's untyped `Any` (`List.findItem(Any)`): it holds whatever is stored
+                    // in it, so it is declared `.null`, which no assignment coerces. Moon Groove's and
+                    // BeatSugar's notifier declares one, and refusing it failed the whole script.
+                    let kind = typeOffset == 8 ? .null : MakiValueKind(rawValue: UInt8(typeOffset))
                     let value: MakiValue
                     switch kind {
+                    case .null:
+                        value = .null
                     case .integer:
                         // A 32-bit value split across both halves, low half first. Reading only
                         // `initial1` turned ONYX V2's one-hour test (3600000 ms) into 61056, so every

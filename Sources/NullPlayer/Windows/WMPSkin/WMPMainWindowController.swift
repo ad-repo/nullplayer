@@ -179,7 +179,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// stop's refresh has nothing to show; this one repaints `player.status` with it. The host
     /// is created first, so its own observer has run by the time this one does.
     private var trackLoadFailureObserver: NSObjectProtocol?
-    private var isCapturingVisualizationSettings = false
     /// The skin a captured change belongs to. It is the skin that was showing when the change was
     /// made, not `importer.selection.name` at the moment the notification is delivered: the
     /// defaults notification arrives on the main queue asynchronously, so a change made just before
@@ -403,9 +402,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 self?.captureVisualizationSettings()
             }
         }
+        // Defaults are written off main too (`AppStateManager`'s save queue, script preferences), and
+        // a `queue: .main` observer makes that writer wait for main — a deadlock when main is the one
+        // waiting on the writer, as quitting does. Both defaults observers hop to main without waiting.
         visualizationSettingsObserver = NotificationCenter.default.addObserver(
-            forName: UserDefaults.didChangeNotification, object: importer.defaults, queue: .main
-        ) { [weak self] _ in MainActor.assumeIsolated { self?.captureVisualizationSettings() } }
+            forName: UserDefaults.didChangeNotification, object: importer.defaults, queue: nil
+        ) { [weak self] _ in DispatchQueue.main.async { self?.captureVisualizationSettings() } }
         trackLoadFailureObserver = NotificationCenter.default.addObserver(
             forName: .audioTrackDidFailToLoad, object: nil, queue: .main
         ) { [weak self] _ in MainActor.assumeIsolated { self?.refreshHostState() } }
@@ -435,9 +437,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             })
         }
         libraryObservers.append(NotificationCenter.default.addObserver(
-            forName: UserDefaults.didChangeNotification, object: nil, queue: .main
+            forName: UserDefaults.didChangeNotification, object: nil, queue: nil
         ) { [weak self] _ in
-            MainActor.assumeIsolated {
+            DispatchQueue.main.async {
                 guard let self, let runtime = self.scriptRuntime,
                       (LibraryBrowserSource.load() ?? .local) != self.libraryBuiltFor else { return }
                 Task { await self.refreshLibrary(runtime) }
@@ -633,9 +635,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// on every defaults change: it reads ~12 keys and writes only when the record actually moved,
     /// which is also what stops the write from re-triggering this through `didChangeNotification`.
     private func captureVisualizationSettings() {
-        guard let skin = visualizationSettingsSkin, !isCapturingVisualizationSettings else { return }
-        isCapturingVisualizationSettings = true
-        defer { isCapturingVisualizationSettings = false }
+        guard let skin = visualizationSettingsSkin else { return }
         visualizationSettings.capture(skin: skin,
                                       effect: SkinEffectSelection.wmp.current.id,
                                       preset: SkinEffectSelection.wmp.preset)
@@ -644,14 +644,13 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// Puts the incoming skin's effect, preset and WMP-scoped Cava / vis_classic preferences in
     /// place before its scene — and therefore its `<EFFECTS>` surface — is built. The outgoing
     /// skin's pending change is flushed first, because the defaults notification that would have
-    /// captured it may not have been delivered yet.
+    /// captured it may not have been delivered yet. The restore's own writes need no guard: their
+    /// notifications reach the capture observer only after this returns, against a finished restore.
     private func restoreVisualizationSettings() {
         captureVisualizationSettings()
         let skin = importer.selection.name ?? ""
         visualizationSettingsSkin = skin
-        isCapturingVisualizationSettings = true
         let selection = visualizationSettings.restore(skin: skin)
-        isCapturingVisualizationSettings = false
         SkinEffectSelection.wmp.restore(effect: selection.effect, preset: selection.preset)
     }
 

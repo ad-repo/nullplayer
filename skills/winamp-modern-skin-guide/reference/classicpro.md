@@ -176,6 +176,12 @@ that `windowtype`, so **zero user widgets in the drawer is correct** and *"No wi
 view!"* is the right menu item. The widgets live in `centro.widgets.main`, whose bucket is in
 `xui/CentroSUI/_v{1,2}/CproTabs/CproTabs.xml`.
 
+**The drawer toggle (`tog.drawer`, the `^` at the end of the SUI tab row) refuses to open a short
+SUI**, and that is the engine, not us: `CentroSUI2.m`'s `setDrawer` forces the drawer shut whenever
+the SUI is shorter than the drawer plus 90px (119 + 90 = 209). cPro2 minimal's default 305×305
+player leaves a 163px SUI, so its `^` does nothing until the window is taller — reported 2026-10-21
+as "the up arrow does not work". At 450px tall it opens and closes. Check the height before you debug the click.
+
 ## The `(255,0,128)` menu-bar filler is the engine's own decision
 
 Four of the installed cPro skins ship uncut template filler where the titlebar menu artwork should be

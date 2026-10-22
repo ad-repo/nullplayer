@@ -10,7 +10,7 @@ extension WasabiSceneRenderer {
     /// `CGContext.draw` always puts the image's *bottom* row at `rect.minY`, which under that flip is
     /// the visual top — so every bitmap has to be re-flipped about its own rect or it renders
     /// vertically mirrored in place. Text uses the same trick (`drawFlippedText`).
-    func drawImage(_ image: CGImage, in rect: CGRect, context: CGContext) {
+    func drawImage(_ image: CGImage, in rect: CGRect, context: WasabiDrawList) {
         let rect = snappedToPixelGrid(rect, in: context)
         context.saveGState()
         context.translateBy(x: 0, y: rect.midY)
@@ -19,7 +19,7 @@ extension WasabiSceneRenderer {
         let quality = WasabiBitmapInterpolationPolicy.quality(
             sourcePixelSize: CGSize(width: image.width, height: image.height),
             destination: rect,
-            in: context)
+            ctm: context.ctm)
         context.interpolationQuality = quality
         context.draw(prescaled(image, for: rect, in: context, quality: quality), in: rect)
         context.restoreGState()
@@ -35,9 +35,9 @@ extension WasabiSceneRenderer {
     /// against the body at x=6 among them. An integral scale moves nothing, since every
     /// whole-skin-pixel edge is already on the grid. A rotated or skewed context (Layer FX) is left
     /// alone.
-    func snappedToPixelGrid(_ rect: CGRect, in context: CGContext) -> CGRect {
+    func snappedToPixelGrid(_ rect: CGRect, in context: WasabiDrawList) -> CGRect {
         guard Self.snapsToPixelGrid else { return rect }
-        return Self.snapped(rect, ctm: context.ctm, devicePixelsPerUnit: devicePixelsPerContextUnit)
+        return Self.snapped(rect, ctm: context.ctm, devicePixelsPerUnit: context.devicePixelsPerUnit)
     }
 
     static func snapped(_ rect: CGRect, ctm: CGAffineTransform, devicePixelsPerUnit unit: CGFloat) -> CGRect {
@@ -67,7 +67,7 @@ extension WasabiSceneRenderer {
     ///
     /// Only a genuine rescale is cached: art already at its device size is drawn straight through,
     /// so a skin at 1× on a non-Retina display pays nothing for this at all.
-    private func prescaled(_ image: CGImage, for rect: CGRect, in context: CGContext,
+    private func prescaled(_ image: CGImage, for rect: CGRect, in context: WasabiDrawList,
                            quality: CGInterpolationQuality) -> CGImage {
         let ctm = context.ctm
         let width = Int((rect.width * abs(ctm.a)).rounded())
@@ -102,7 +102,7 @@ extension WasabiSceneRenderer {
     }
 
     func draw(_ bitmap: WasabiBitmap, object: WasabiObject,
-                      frame: CGRect, context: CGContext) {
+                      frame: CGRect, context: WasabiDrawList) {
         let tileX = object.attributes["tile"] == "1" || object.attributes["tilex"] == "1"
         let tileY = object.attributes["tile"] == "1" || object.attributes["tiley"] == "1"
         if tileX || tileY {
@@ -120,7 +120,7 @@ extension WasabiSceneRenderer {
     /// resizable strip in a Bento-style frame (top/bottom/left/right/center) is a tiled layer, so
     /// without this the frame paints one tile and leaves the rest of the window empty.
     func drawTiled(_ bitmap: WasabiBitmap, in frame: CGRect, tileX: Bool, tileY: Bool,
-                           context: CGContext) {
+                           context: WasabiDrawList) {
         let tileWidth = CGFloat(bitmap.width)
         let tileHeight = CGFloat(bitmap.height)
         guard tileWidth >= 1, tileHeight >= 1, frame.width > 0, frame.height > 0 else { return }
@@ -156,9 +156,9 @@ extension WasabiSceneRenderer {
     /// The single image a bitmap layer paints right now, and where in `frame` it goes: an animated
     /// layer's current frame, or the whole bitmap over the whole frame for a plain one. Shared with the
     /// Layer FX path, which warps exactly that image into exactly that rect.
-    func layerImage(_ bitmap: WasabiBitmap, object: WasabiObject, type: String,
+    func layerImage(_ bitmap: WasabiBitmap, object: WasabiObject,
                     in frame: CGRect) -> (image: CGImage, rect: CGRect)? {
-        guard type == "animatedlayer" else { return (bitmap.image, frame) }
+        guard object.tag.is(.animatedLayer) else { return (bitmap.image, frame) }
         return animatedFrame(bitmap, object: object, in: frame)
     }
 
@@ -265,7 +265,6 @@ extension WasabiSceneRenderer {
 
     private func animatedFrameImage(_ bitmap: WasabiBitmap, object: WasabiObject,
                                     grid: AnimationGrid) -> CGImage? {
-        if drawsAnimationCores { return animationCoreImage(bitmap, grid: grid) }
         let frameIndex = max(0, min(grid.count - 1, WasabiAnimation.state(of: object, frameCount: grid.count,
                                                                           clock: clock()).frame))
         let column = frameIndex % grid.columns
@@ -274,47 +273,6 @@ extension WasabiSceneRenderer {
                           width: grid.width, height: grid.height)
         guard crop.maxY <= CGFloat(bitmap.height), crop.maxX <= CGFloat(bitmap.width) else { return nil }
         return cropped(bitmap.image, to: crop)
-    }
-
-    /// Black at the lowest alpha each pixel has across every frame of the layer's sheet — see
-    /// `drawsAnimationCores`. Outline pass only.
-    private func animationCoreImage(_ bitmap: WasabiBitmap, grid: AnimationGrid) -> CGImage? {
-        let key = AnimationCoreKey(sheet: ObjectIdentifier(bitmap.image), frameWidth: grid.width,
-                                   frameHeight: grid.height, count: grid.count, columns: grid.columns)
-        if let cached = animationCoreCache[key] { return cached.core }
-        guard let image = Self.animationCore(of: bitmap.image, frameWidth: grid.width,
-                                             frameHeight: grid.height, count: grid.count,
-                                             columns: grid.columns) else { return nil }
-        if animationCoreCache.count > Self.maximumCachedCrops { animationCoreCache.removeAll() }
-        animationCoreCache[key] = (bitmap.image, image)
-        return image
-    }
-
-    /// The pure half of `animationCoreImage`: black at each pixel's lowest alpha across the
-    /// `count` frames of `sheet`, laid out `columns` to a row. `nil` when no frame lies inside the
-    /// sheet.
-    static func animationCore(of sheet: CGImage, frameWidth width: Int, frameHeight height: Int,
-                              count: Int, columns: Int) -> CGImage? {
-        guard count > 0, columns > 0 else { return nil }
-        var core: AlphaPlane?
-        for index in 0..<count {
-            let crop = CGRect(x: (index % columns) * width, y: (index / columns) * height,
-                              width: width, height: height)
-            guard crop.maxY <= CGFloat(sheet.height), crop.maxX <= CGFloat(sheet.width),
-                  let frame = sheet.cropping(to: crop),
-                  let plane = AlphaPlane(layers: [frame], width: width, height: height) else { continue }
-            if core == nil { core = plane } else { core?.formMinimum(plane) }
-        }
-        return core?.blackImage()
-    }
-
-    /// Which core `animationCoreCache` holds: one per sheet and frame grid.
-    struct AnimationCoreKey: Hashable {
-        let sheet: ObjectIdentifier
-        let frameWidth: Int
-        let frameHeight: Int
-        let count: Int
-        let columns: Int
     }
 
     /// One sub-rectangle of a sheet, **stably**. `CGImage.cropping(to:)` allocates a fresh image on
@@ -343,7 +301,7 @@ extension WasabiSceneRenderer {
     }
 
     func drawAnimated(_ bitmap: WasabiBitmap, object: WasabiObject,
-                              frame: CGRect, context: CGContext) {
+                              frame: CGRect, context: WasabiDrawList) {
         guard let layer = animatedFrame(bitmap, object: object, in: frame) else { return }
         drawImage(layer.image, in: layer.rect, context: context)
     }
@@ -358,7 +316,7 @@ extension WasabiSceneRenderer {
     ///
     /// The grid carries no `action` of its own there, so the value comes from the sibling that does:
     /// pairing them by rect is the whole idiom.
-    func drawProgressGrid(_ object: WasabiObject, frame: CGRect, context: CGContext) {
+    func drawProgressGrid(_ object: WasabiObject, frame: CGRect, context: WasabiDrawList) {
         guard frame.width > 0, frame.height > 0 else { return }
         let source = object.attributes["action"] != nil ? object : (valueSibling(of: object, frame: frame) ?? object)
         let clamped = normalizedValue(of: source)
@@ -419,7 +377,7 @@ extension WasabiSceneRenderer {
     /// A grid with only the three `top*` parts is a horizontal three-slice (the tab pills, and the
     /// engine's `left`/`middle`/`right` seek track is the same thing rotated); its absent rows take no
     /// height, rather than a missing `middle` being stretched over everything.
-    func drawGrid(_ object: WasabiObject, frame: CGRect, context: CGContext) {
+    func drawGrid(_ object: WasabiObject, frame: CGRect, context: WasabiDrawList) {
         guard frame.width > 0, frame.height > 0 else { return }
         func part(_ key: String) -> WasabiBitmap? { resources.bitmap(identifier: object.attributes[key]) }
         let topLeft = part("topleft"), top = part("top"), topRight = part("topright")
@@ -436,7 +394,7 @@ extension WasabiSceneRenderer {
     /// `wasabi.tabsheet.button.*` and is a three-slice with no bottom row, which is a case this
     /// already handles.
     func drawNineSlice(_ parts: [WasabiBitmap?], in frame: CGRect, tile: Bool,
-                               context: CGContext) {
+                               context: WasabiDrawList) {
         guard frame.width > 0, frame.height > 0 else { return }
         guard parts.contains(where: { $0 != nil }) else { return }
         let topLeft = parts[0], top = parts[1], topRight = parts[2]

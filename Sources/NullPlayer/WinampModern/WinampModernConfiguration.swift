@@ -7,10 +7,20 @@ final class WinampModernConfiguration {
     let namespace: String
     private let defaults: UserDefaults
 
-    init(namespace: String, defaults: UserDefaults = .standard) {
+    init(namespace: String, defaults: UserDefaults = WinampModernConfiguration.processDefaults) {
         self.namespace = Self.safeComponent(namespace)
         self.defaults = defaults
+        foldStoredKeys()
     }
+
+    /// Where a skin's settings live: the app's own domain, except in an `xctest` process — the corpus
+    /// harnesses and the unit tests — which keeps them in memory. They all used to share the test
+    /// tool's one domain, so what a skin's scripts stored in one run (the opensource notifier saves
+    /// its checkboxes at `onScriptUnloading`) was the next run's starting state, and two sweeps of one
+    /// tree differed (B211). In memory rather than cleared at start, because a sweep's shards run side
+    /// by side, and rather than a suite per process, which leaves a plist behind every run.
+    static let processDefaults: UserDefaults = Bundle.main.bundleIdentifier == "com.apple.dt.xctest.tool"
+        ? VolatileDefaults(suiteName: nil) ?? .standard : .standard
 
     func integer(section: String, key: String, default defaultValue: Int32 = 0) -> Int32 {
         let name = storageKey(section: section, key: key)
@@ -50,12 +60,41 @@ final class WinampModernConfiguration {
         }
     }
 
+    static let keyPrefix = "winampModern.config."
+
+    private var namespacePrefix: String { "\(Self.keyPrefix)\(namespace)." }
+
     private func sectionPrefix(_ section: String) -> String {
-        "winampModern.config.\(namespace).\(Self.safeComponent(section))."
+        namespacePrefix + Self.safeComponent(section).lowercased() + "."
     }
 
     private func storageKey(section: String, key: String) -> String {
-        sectionPrefix(section) + Self.safeComponent(key)
+        sectionPrefix(section) + Self.safeComponent(key).lowercased()
+    }
+
+    /// Wasabi names an attribute case-insensitively, and so does the old MAKI compiler, which folds
+    /// strings differing only in case into one: Anunaki's `main.maki` registers "Normal" as `normal`
+    /// (sharing its layout id's string) while `inits.maki` and the Config Panel spell it `Normal`.
+    /// Stored under the exact spelling those were two settings — Party! cleared one, the player-mode
+    /// script read the other and switched straight back to normal. So section and key are stored
+    /// lowercased, and a store written before that is folded once here: where two spellings were
+    /// both stored, the one that sorts first keeps its value, and the collision is logged.
+    private func foldStoredKeys() {
+        let prefix = namespacePrefix
+        var spellings: [String: [String]] = [:]
+        for name in defaults.dictionaryRepresentation().keys where name.hasPrefix(prefix) {
+            let folded = prefix + name.dropFirst(prefix.count).lowercased()
+            if folded != name { spellings[folded, default: []].append(name) }
+        }
+        for (folded, names) in spellings {
+            let all = Set(names + (defaults.object(forKey: folded) != nil ? [folded] : [])).sorted()
+            guard let winner = all.first, let value = defaults.object(forKey: winner) else { continue }
+            if all.count > 1 {
+                NSLog("WinampModern config: %@ stored as %@; keeping %@", folded, all.joined(separator: ", "), winner)
+            }
+            for name in all where name != folded { defaults.removeObject(forKey: name) }
+            defaults.set(value, forKey: folded)
+        }
     }
 
     /// `static`, for the reason `WinampModernComponentRegistry.normalize` is written over bytes:
@@ -78,4 +117,31 @@ final class WinampModernConfiguration {
         }
         return result
     }
+}
+
+/// A `UserDefaults` that keeps its values in memory, for `WinampModernConfiguration.processDefaults`.
+/// It answers the calls the configuration and the harnesses make, and nothing reaches disk.
+private final class VolatileDefaults: UserDefaults {
+    private var values: [String: Any] = [:]
+    private let lock = NSLock()
+
+    override func object(forKey key: String) -> Any? { lock.withLock { values[key] } }
+    override func set(_ value: Any?, forKey key: String) { lock.withLock { values[key] = value } }
+    override func set(_ value: Int, forKey key: String) { set(value as Any?, forKey: key) }
+    override func set(_ value: Bool, forKey key: String) { set(value as Any?, forKey: key) }
+    override func set(_ value: Double, forKey key: String) { set(value as Any?, forKey: key) }
+    override func removeObject(forKey key: String) { lock.withLock { values[key] = nil } }
+    // Both convert between strings and numbers the way `UserDefaults` does: a setting written as
+    // "1" reads back as 1, and one written as 1 reads back as "1".
+    override func string(forKey key: String) -> String? {
+        let value = object(forKey: key)
+        return value as? String ?? (value as? NSNumber)?.stringValue
+    }
+    override func integer(forKey key: String) -> Int {
+        let value = object(forKey: key)
+        if let number = value as? NSNumber { return number.intValue }
+        guard let text = value as? String else { return 0 }
+        return Int(text) ?? Int(Double(text) ?? 0)
+    }
+    override func dictionaryRepresentation() -> [String: Any] { lock.withLock { values } }
 }

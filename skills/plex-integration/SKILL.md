@@ -436,3 +436,7 @@ Use the shared URL and error-string helpers described in
 [audio-system — Credential-safe logging](../audio-system/SKILL.md#credential-safe-logging).
 Do not log raw authenticated URLs or credentials; pass response bodies
 through the helper rather than omitting them.
+
+Startup logs only "Connected to server" and "Library content preload complete", plus failures.
+Don't log per request, per page or per step: the preload pages the whole library, so a per-page
+line repeats dozens of times on every launch.

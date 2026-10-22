@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 struct WasabiSize: Equatable, Codable {
@@ -71,7 +72,9 @@ struct WasabiGeometrySpec: Equatable {
         func number(_ key: String) -> Double? {
             guard let raw = attributes[key.lowercased()]?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !raw.isEmpty else { return nil }
-            return Double(raw)
+            // Winamp reads these with `atoi`, so trailing junk ends the number rather than voiding it:
+            // MoonLight's clock is `w="29,5"` (a decimal comma), 29 wide there and 0 wide as nil.
+            return Double(raw) ?? Self.leadingNumber(raw, fraction: true)
         }
         func flag(_ key: String) -> Bool { Self.flag(attributes[key.lowercased()]) }
         x = number("x") ?? 0
@@ -123,8 +126,8 @@ struct WasabiGeometrySpec: Equatable {
     /// of those fell back to absolute geometry, which is how an oversized backdrop came out as a
     /// small crisp second copy of the cover.
     ///
-    /// A non-numeric value still reads false, which is also `atoi`'s answer and the one two skins
-    /// depend on: corneramp_redux and Shield_Amp ship a literal `relatw="%"`.
+    /// A non-numeric value still reads false, which is also `atoi`'s answer. (A literal `relat*="%"`
+    /// is the percentage mode, which `percentFlag` answers and `resolve` checks first.)
     ///
     /// Shared with the renderer's `fliph`/`flipv`, which are the same kind of flag on the same
     /// attribute table and must not grow a second, subtly different reading of "1".
@@ -139,25 +142,31 @@ struct WasabiGeometrySpec: Equatable {
     /// `Int(_:)`, which answers nil for anything with a trailing character and would send a value
     /// like `"1px"` down the false branch that `atoi` sends down the true one.
     private static func leadingInteger(_ raw: String) -> Int {
-        var digits = ""
-        var index = raw.startIndex
-        if index < raw.endIndex, raw[index] == "-" || raw[index] == "+" {
-            digits.append(raw[index])
-            index = raw.index(after: index)
-        }
-        while index < raw.endIndex, raw[index].isASCII, raw[index].isNumber {
-            digits.append(raw[index])
-            index = raw.index(after: index)
-        }
-        return Int(digits) ?? 0
+        leadingNumber(raw, fraction: false).flatMap { Int(exactly: $0) } ?? 0
     }
 
-    /// `atoi == 2` — the percentage mode. Every other non-zero value stays additive, including the
-    /// `5` two of The_Nokia_5220's bars carry: nothing measured suggests a third meaning, and the
-    /// corpus holds no other value than 0, 1, 2, 5 and a non-numeric `%`.
+    /// The leading signed number `atoi` reads — `atof` with `fraction`, which admits one decimal
+    /// point — or nil when there is no digit to read.
+    private static func leadingNumber(_ raw: String, fraction: Bool) -> Double? {
+        var end = raw.startIndex
+        if end < raw.endIndex, raw[end] == "-" || raw[end] == "+" { end = raw.index(after: end) }
+        var pointAllowed = fraction
+        while end < raw.endIndex, raw[end].isASCII, raw[end].isNumber || (pointAllowed && raw[end] == ".") {
+            if raw[end] == "." { pointAllowed = false }
+            end = raw.index(after: end)
+        }
+        return Double(raw[..<end])
+    }
+
+    /// `atoi == 2`, or a literal `%` — the percentage mode. Every other non-zero value stays
+    /// additive, including the `5` two of The_Nokia_5220's bars carry: nothing measured suggests a
+    /// third meaning. The literal `%` is only ever written on percentage-shaped rows: corneramp_redux
+    /// and Shield_Amp split their theme buttons `x=0 w=50`, `x=50 w=25`, `x=75 w=25` (read as
+    /// pixels, "Previous" drew as "Pr…" in a 25px button), and 1010_Fullscreen lays its ten EQ bands
+    /// out as `x=0,10,…,90 w=10` in a `h="100" relath="%"` group.
     static func percentFlag(_ value: String?) -> Bool {
         guard let raw = value?.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
-        return leadingInteger(raw) == 2
+        return raw == "%" || leadingInteger(raw) == 2
     }
 
     /// The eight attributes that place and size an object — the ones a Wasabi `GuiObject` answers
@@ -208,5 +217,38 @@ struct WasabiGeometrySpec: Equatable {
             width: resolved(rawWidth, percent: percentWidth, relative: relativeWidth, span: parent.width),
             height: resolved(rawHeight, percent: percentHeight, relative: relativeHeight, span: parent.height)
         )
+    }
+}
+
+/// The axes on which an object cuts its children to its own box (`WasabiSceneRenderer.clipAxes`).
+struct WasabiClipAxes: OptionSet {
+    let rawValue: Int
+    static let x = WasabiClipAxes(rawValue: 1)
+    static let y = WasabiClipAxes(rawValue: 2)
+    static let both: WasabiClipAxes = [.x, .y]
+
+    /// What children of `box` are drawn inside: `parent` narrowed to `box` on these axes. A box
+    /// that is empty on a clipped axis clips to nothing — a zero rect pinned inside `parent`, so
+    /// `intersects` and `CGContext.clip(to:)` both behave (the reveal-window idiom).
+    func clip(_ parent: CGRect, to box: CGRect) -> CGRect {
+        guard !isEmpty else { return parent }
+        let cut = CGRect(x: contains(.x) ? box.minX : parent.minX,
+                         y: contains(.y) ? box.minY : parent.minY,
+                         width: contains(.x) ? box.width : parent.width,
+                         height: contains(.y) ? box.height : parent.height)
+        guard cut.isEmpty else { return parent.intersection(cut) }
+        return CGRect(x: min(max(cut.minX, parent.minX), parent.maxX),
+                      y: min(max(cut.minY, parent.minY), parent.maxY),
+                      width: 0, height: 0)
+    }
+
+    /// `rect` with every clipped axis opened to infinity: on those axes nothing a child does can
+    /// reach the screen, so nothing there counts as overflow.
+    func unbounding(_ rect: CGRect) -> CGRect {
+        let open = CGRect.infinite
+        return CGRect(x: contains(.x) ? open.minX : rect.minX,
+                      y: contains(.y) ? open.minY : rect.minY,
+                      width: contains(.x) ? open.width : rect.width,
+                      height: contains(.y) ? open.height : rect.height)
     }
 }

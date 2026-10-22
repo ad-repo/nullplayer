@@ -211,7 +211,8 @@ struct WasabiPalette: Equatable {
         }
         let listText = first(.listText, default: listTextFallback)
         let selectionBackground = first(.selectionBackground, default: selectionBackgroundFallback)
-        let contentBackground = first(.contentBackground, default: contentBackgroundFallback)
+        let contentBackground = overrides[.contentBackground]
+            ?? listPlate(for: listText, resolve: resolve)
         return WasabiPalette(
             listText: listText,
             currentText: first(.currentText, default: listText),
@@ -222,6 +223,26 @@ struct WasabiPalette: Equatable {
             treeText: first(.treeText, default: listText),
             treeSelection: first(.treeSelection, default: selectionBackground),
             overriddenRoles: Set(overrides.keys))
+    }
+
+    /// The list plate: the skin's own `wasabi.list.background` when it declares one, else the first
+    /// **borrowed** link its list text can be read on.
+    ///
+    /// The links after the first are other widgets' colours standing in for a list colour the skin
+    /// never named. Symplicipod names none, so the chain took its text-field white
+    /// (`wasabi.edit.background`) and drew its 230-grey rows on it at 1.25:1; its column grey (108)
+    /// is the next link and reads at 4.2:1. A borrowed link nothing can be read on is passed over,
+    /// then Winamp's black, then — when the text is too dark even for that — the chain's first answer
+    /// as before. Corpus-wide this moves two skins, Symplicipod and JRS (1.14:1 → 3.4:1).
+    private static func listPlate(for listText: NSColor, resolve: (String) -> NSColor?) -> NSColor {
+        let links = Role.contentBackground.identifiers
+        if let declared = resolve(links[0]) { return declared }
+        let borrowed = links.dropFirst().compactMap(resolve)
+        let readable = { (plate: NSColor) in
+            WinampModernSurfaceStyle.contrastRatio(plate, listText) >= WinampModernSurfaceStyle.minimumContrast
+        }
+        return (borrowed + [contentBackgroundFallback]).first(where: readable)
+            ?? borrowed.first ?? contentBackgroundFallback
     }
 
     /// Whether the user set this role by hand — what the legibility guards check before deciding they

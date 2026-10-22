@@ -20,6 +20,8 @@ struct WinampModernHostedSurfaceContext {
 /// scene mounts or unmounts the adapter's view as holders come and go.
 protocol WinampModernHostedSurface: AnyObject {
     var view: NSView { get }
+    /// Called once on a freshly built surface, before any skin mounts it.
+    func configureForHostedSurface(context: WinampModernHostedSurfaceContext)
     func applyPalette(_ style: WinampModernSurfaceStyle)
     func applySkinScale(_ scale: CGFloat)
     func resume()

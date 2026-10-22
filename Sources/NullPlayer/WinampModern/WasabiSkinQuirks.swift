@@ -107,7 +107,7 @@ enum WasabiSkinQuirks {
     /// left exactly as the skin wrote it.
     private static func bentoSidePlaylistHeight(for object: WasabiObject, resolved: CGRect) -> CGRect? {
         guard object.xmlID?.caseInsensitiveCompare(sidePlaylistFrameID) == .orderedSame,
-              WasabiFrame.isFrame(object), object.attributes["relath"] == "1",
+              WasabiFrame.isFrame(object.tag), object.attributes["relath"] == "1",
               let declared = Double(object.attributes["h"] ?? ""), declared > 0,
               CGFloat(declared) < resolved.height else { return nil }
         return CGRect(x: resolved.minX, y: resolved.minY,

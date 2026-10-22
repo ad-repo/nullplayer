@@ -7,7 +7,7 @@ final class WinampModernPhase78Tests: XCTestCase {
 
     func testMonitorMethodsUseTheWindowSuppliedLogicalScreenSize() throws {
         let (runtime, program) = try makeRuntime()
-        runtime.monitorSizeRequested = { CGSize(width: 2_560, height: 1_440) }
+        runtime.hooks.monitorSizeRequested = { CGSize(width: 2_560, height: 1_440) }
 
         XCTAssertEqual(try invoke("getMonitorWidth", runtime, program).integerValue, 2_560)
         XCTAssertEqual(try invoke("getMonitorHeight", runtime, program).integerValue, 1_440)
@@ -16,7 +16,7 @@ final class WinampModernPhase78Tests: XCTestCase {
 
     func testMonitorDimensionsFloorFractionalLogicalPoints() throws {
         let (runtime, program) = try makeRuntime()
-        runtime.monitorSizeRequested = { CGSize(width: 1_727.75, height: 1_116.5) }
+        runtime.hooks.monitorSizeRequested = { CGSize(width: 1_727.75, height: 1_116.5) }
 
         XCTAssertEqual(try invoke("getMonitorWidth", runtime, program).integerValue, 1_727)
         XCTAssertEqual(try invoke("getMonitorHeight", runtime, program).integerValue, 1_116)
@@ -25,11 +25,11 @@ final class WinampModernPhase78Tests: XCTestCase {
     func testInvalidAndOversizedMonitorDimensionsDegradeSafely() throws {
         let (runtime, program) = try makeRuntime()
 
-        runtime.monitorSizeRequested = { CGSize(width: CGFloat.nan, height: -1) }
+        runtime.hooks.monitorSizeRequested = { CGSize(width: CGFloat.nan, height: -1) }
         XCTAssertEqual(try invoke("getMonitorWidth", runtime, program).integerValue, 0)
         XCTAssertEqual(try invoke("getMonitorHeight", runtime, program).integerValue, 0)
 
-        runtime.monitorSizeRequested = {
+        runtime.hooks.monitorSizeRequested = {
             CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat(Int32.max))
         }
         XCTAssertEqual(try invoke("getMonitorWidth", runtime, program).integerValue, Int32.max)
@@ -38,11 +38,11 @@ final class WinampModernPhase78Tests: XCTestCase {
 
     func testTeardownReleasesTheWindowQuery() throws {
         let (runtime, _) = try makeRuntime()
-        runtime.monitorSizeRequested = { CGSize(width: 2_560, height: 1_440) }
+        runtime.hooks.monitorSizeRequested = { CGSize(width: 2_560, height: 1_440) }
 
         runtime.teardown()
 
-        XCTAssertNil(runtime.monitorSizeRequested)
+        XCTAssertNil(runtime.hooks.monitorSizeRequested)
     }
 
     private func invoke(_ method: String, _ runtime: WinampModernScriptRuntime,

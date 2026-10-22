@@ -70,8 +70,7 @@ enum WasabiChromeButtons {
     /// force, so the caller passes that; a button whose id resolved to a real resource never gets here
     /// (`WasabiSceneRenderer.chromeButtonRole` is the one caller, and checks it).
     static func role(of object: WasabiObject, bitmapID: String?, resolves: (String) -> Bool) -> Role? {
-        let type = object.typeName.lowercased()
-        guard type == "button" || type == "togglebutton" || type == "wasabi:button" else { return nil }
+        guard object.tag.is(anyOf: [.button, .toggleButton]) || object.tag.is(.button, in: .wasabi) else { return nil }
         if let bitmapID, let role = role(forBitmapID: bitmapID) { return role }
         // A button whose *current* state has no id at all (an `activeImage` the skin omits) still
         // draws its role, taken from the one it always states.

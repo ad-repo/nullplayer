@@ -89,11 +89,13 @@ final class WinampModernPhase54Tests: XCTestCase {
         XCTAssertEqual(child.attributes["h"], "223")
     }
 
-    func testAnUnknownGroupDefinitionFailsRatherThanAddingAnEmptyEntry() throws {
+    /// An unknown groupdef answers null, as Winamp's does, and adds no empty entry.
+    func testAnUnknownGroupDefinitionAnswersNullRatherThanAddingAnEmptyEntry() throws {
         let (runtime, list) = try makeListRuntime()
-        XCTAssertThrowsError(try runtime.invoke(method: "instantiate", on: reference(list),
-                                                arguments: [.string("page.nosuch"), .integer(1)],
-                                                program: emptyProgram()))
+        let result = try runtime.invoke(method: "instantiate", on: reference(list),
+                                        arguments: [.string("page.nosuch"), .integer(1)],
+                                        program: emptyProgram())
+        guard case .null = result else { return XCTFail("expected null, got \(result)") }
         XCTAssertTrue(list.children.isEmpty)
     }
 

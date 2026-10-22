@@ -1,3 +1,5 @@
+import ImageIO
+import UniformTypeIdentifiers
 import XCTest
 import ZIPFoundation
 @testable import NullPlayer
@@ -327,12 +329,27 @@ final class WinampModernPhase7Tests: XCTestCase {
         // The dimension limit is a *bound*, not a content problem, so it stays fatal.
         let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")!
         var limits = WasabiResourceLimits.production
-        limits.maximumImageWidth = 0
+        limits.maximumImagePixels = 0
         XCTAssertThrowsError(try initialize(
             xml: "<WasabiXML><bitmap id=\"bg\" file=\"big.png\"/></WasabiXML>",
             resources: ["big.png": png], resourceLimits: limits)) { error in
             XCTAssertEqual((error as? WalFailure)?.diagnostics.first?.code, .imageDimensionsExceeded)
         }
+    }
+
+    /// B175: a long animation strip is past 8,192 px on one side and far under the pixel budget.
+    func testALongAnimationStripLoads() throws {
+        let context = try XCTUnwrap(CGContext(data: nil, width: 2, height: 9_000, bitsPerComponent: 8,
+                                              bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let png = NSMutableData()
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(png, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, try XCTUnwrap(context.makeImage()), nil)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+
+        let runtime = try initialize(xml: "<WasabiXML><bitmap id=\"strip\" file=\"strip.png\"/></WasabiXML>",
+                                     resources: ["strip.png": png as Data])
+        XCTAssertNotNil(runtime.resources.definition(identifier: "strip")?.logicalFile)
     }
 
     func testManyGroupdefsExpandWithinBounds() throws {

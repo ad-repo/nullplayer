@@ -8,9 +8,9 @@ import Foundation
 /// `skills/winamp-modern-skin-guide/reference/compatibility/maki-surface.md`.
 extension WinampModernScriptRuntime {
     func setNotifierText(title: String, artist: String, album: String) {
-        guard let container = findRoot(type: "container", xmlID: "notifier") else { return }
+        guard let container = findRoot(type: .container, xmlID: "notifier") else { return }
         let layouts = container.children.filter {
-            $0.typeName.caseInsensitiveCompare("layout") == .orderedSame
+            $0.tag.is(.layout)
         }
         // The 350 is a *floor*, not a size. Stock Winamp Modern declares its notifier layout
         // `w="128"` and hangs a `w="-95" relatw="1"` text group inside it — 33px, too narrow for a
@@ -31,14 +31,14 @@ extension WinampModernScriptRuntime {
             _ = layout.setAttribute("w", value: String(Int(target)))
         }
         let height = CGFloat(Int32(layouts.first?.attributes["h"] ?? "80") ?? 80)
-        layoutResizeRequested?(container.stableID, CGSize(width: width, height: height))
+        hooks.layoutResizeRequested?(container.stableID, CGSize(width: width, height: height))
         noteGeometryChange()
         notifyGraphDidMutate()
     }
 
     private func setTextInSubtree(_ root: WasabiObject, id: String, text: String) {
         if let xmlID = root.xmlID,
-           root.typeName.caseInsensitiveCompare("text") == .orderedSame,
+           root.tag.is(.text),
            (xmlID.caseInsensitiveCompare(id) == .orderedSame ||
             xmlID.lowercased().hasPrefix(id.lowercased() + ".")) {
             _ = root.setAttribute("text", value: text)

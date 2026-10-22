@@ -222,8 +222,8 @@ final class WinampModernChromeTests: XCTestCase {
     }
 
     func testPeppyMeterRetainsItsLargerRegisteredGeometry() throws {
-        let peppy = try XCTUnwrap(WinampModernHostedWindowRegistry.entry(id: .peppyMeter))
-        let spectrum = try XCTUnwrap(WinampModernHostedWindowRegistry.entry(id: .spectrum))
+        let peppy = WinampModernHostedWindowID.peppyMeter.definition
+        let spectrum = WinampModernHostedWindowID.spectrum.definition
 
         XCTAssertEqual(peppy.defaultSize, SkinElements.PeppyMeterWindow.windowSize)
         XCTAssertEqual(peppy.minimumSize, SkinElements.PeppyMeterWindow.minSize)

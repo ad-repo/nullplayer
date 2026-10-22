@@ -37,6 +37,8 @@ enum WasabiStandardFrames {
             case .static: return "Wasabi:StandardFrame:Static"
             }
         }
+
+        static let tags = Set(allCases.map { WasabiTag($0.xuiTag) })
     }
 
     /// The measured conventional pairs. `modal` is included because skins declare it in the same
@@ -63,12 +65,8 @@ extension WasabiStandardFrames {
     /// client area starts where the strip ends.
     static var titleHeight: Double { contentInset.y }
 
-    static func flavour(forTypeName typeName: String) -> Flavour? {
-        Flavour.allCases.first { $0.xuiTag.caseInsensitiveCompare(typeName) == .orderedSame }
-    }
-
     static func isStandardFrame(_ object: WasabiObject) -> Bool {
-        flavour(forTypeName: object.typeName) != nil
+        Flavour.tags.contains(object.tag)
     }
 
     /// Set on a `<Wasabi:StandardFrame:*>` instance whose groupdef the skin never supplied, so the
@@ -267,6 +265,72 @@ extension WasabiStandardFrames {
                         group: group, bitmapSize: bitmapSize, depth: depth + 1,
                         visited: nested.visited)
             }
+        }
+    }
+}
+
+extension WasabiStandardFrames {
+
+    /// Whether this `<LayoutStatus>` is a playlist window's, the one slot Winamp fills with the
+    /// playlist's command bar when the component is hosted `noshowcmdbar="1"`.
+    private static func hostsPlaylistCommandBar(_ object: WasabiObject) -> Bool {
+        // `includeonly="{system}"` is the other kind of slot — Zygote's 14x9 title-bar box that
+        // holds the system menu and nothing else; the command bar goes in the one that excludes it.
+        guard object.tag.is(.layoutStatus),
+              object.attributes["includeonly"] == nil else { return false }
+        var ancestor = object.parent
+        while let current = ancestor {
+            if current.tag.is(.container) {
+                let declared = current.attributes["component"] ?? current.attributes["hold"]
+                return declared.flatMap(WinampModernComponentRegistry.kind(for:)) == .playlist
+            }
+            ancestor = current.parent
+        }
+        return false
+    }
+
+    /// The playlist `<LayoutStatus>` slots beneath `roots` that get the host's command bar. A
+    /// layout that already carries the skin's own `PE_Add` button gets none: 89 corpus skins draw
+    /// their playlist buttons themselves, and most also inherit a status frame, so the bar would be
+    /// a second Add/Rem/Sel/Misc row under their own. Asked once the graph is built, because the
+    /// skin's buttons can come after the frame in document order.
+    static func playlistCommandBarSlots(beneath roots: [WasabiObject]) -> [WasabiObject] {
+        func walk(_ object: WasabiObject, visit: (WasabiObject) -> Void) {
+            visit(object)
+            object.children.forEach { walk($0, visit: visit) }
+        }
+        func addsOwnEntries(_ layout: WasabiObject) -> Bool {
+            layout.subtreeContains { $0.attributes["action"]?.caseInsensitiveCompare("PE_Add") == .orderedSame }
+        }
+        var slots: [WasabiObject] = []
+        for root in roots {
+            walk(root) { object in
+                guard hostsPlaylistCommandBar(object) else { return }
+                var ancestor = object.parent
+                while let current = ancestor {
+                    if current.tag.is(.layout),
+                       addsOwnEntries(current) { return }
+                    ancestor = current.parent
+                }
+                slots.append(object)
+            }
+        }
+        return slots
+    }
+
+    /// The playlist's command bar, drawn **into the frame's `<LayoutStatus>`**. JRS's playlist
+    /// frame is that slot and nothing else — no Add/Remove/Select/Misc/List of its own — so with
+    /// the slot empty its playlist could not be edited at all. 773 corpus skins declare a
+    /// `LayoutStatus`; only one inside a playlist container gets these. They send the `PE_*`
+    /// actions a skin's own playlist buttons send.
+    static func playlistCommandBar(location: WalSourceLocation) -> [WalXMLNode] {
+        let buttons = [("Add", "PE_Add"), ("Rem", "PE_Rem"), ("Sel", "PE_Sel"),
+                       ("Misc", "PE_Misc"), ("List", "PE_List")]
+        return buttons.enumerated().map { index, button in
+            WalXMLNode(name: "Wasabi:Button", attributes: [
+                "text": button.0, "action": button.1, "x": String(index * 34), "y": "0",
+                "w": "32", "h": "0", "relath": "1",
+            ], location: location)
         }
     }
 }

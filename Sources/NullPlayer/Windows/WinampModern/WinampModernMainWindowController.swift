@@ -17,10 +17,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// Tells the skin when shuffle, repeat or crossfade moved from outside it.
     private var playbackOptionsObserver: NSObjectProtocol?
     private var trackLoadFailureObserver: NSObjectProtocol?
-    /// Carries each script-glued frame with its window for the length of a host drag.
-    private var dragObservers: [NSObjectProtocol] = []
-    /// The (leader, follower) pairs `attachGluedWindowsForDrag` linked, undone when the drag ends.
-    private var dragAttachedGluedWindows: [(leader: NSWindow, follower: NSWindow)] = []
+    /// The skin's script-glued window pairs: moved, stacked and dragged as one (B162).
+    /// Not lazy: `tearDownSkin` runs from `deinit`, where creating it would form a weak reference to
+    /// an object being deallocated. Its sources are wired in `init`.
+    let glue = WinampModernGluedWindows()
     private var loadedSkin: WinampModernLoadedSkin?
     private var skinView: WinampModernMainView?
     private var host: WinampModernAudioEngineHost?
@@ -83,6 +83,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         let window = WinampModernSkinWindow(contentRect: NSRect(origin: .zero, size: defaultSize),
                                             styleMask: [.borderless], backing: .buffered, defer: false)
         self.init(window: window)
+        glue.pairIDs = { [weak self] in
+            self?.skinView?.scripts.windowsGluedOver.map { (leader: $0.key, follower: $0.value) } ?? []
+        }
+        glue.window = { [weak self] id in self?.viewsByContainer[id]?.window }
         setupWindow()
         // A transparent layer-backed window can lose its cached backing store while the display is
         // asleep. AppKit normally reports the window becoming unoccluded afterwards, but a display
@@ -101,6 +105,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         artworkObserver = NotificationCenter.default.addObserver(
             forName: NowPlayingManager.artworkDidLoadNotification,
             object: nil, queue: .main) { [weak self] _ in
+                // A turn later: the host drops its per-track artwork cache from its own observer of
+                // this same notification, and observers run in no promised order — asked first, the
+                // cache still says "no cover" and the cover-seeking scripts are never asked again.
+                DispatchQueue.main.async { self?.skinView?.scripts.redeliverTitleToCoverSeekers() }
                 self?.skinView?.needsDisplay = true
                 self?.auxiliaryContainers.forEach { $0.view.needsDisplay = true }
             }
@@ -123,16 +131,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 self?.refreshBoundText()
                 self?.auxiliaryContainers.forEach { $0.view.needsDisplay = true }
             }
-        dragObservers = [
-            NotificationCenter.default.addObserver(forName: .windowDragDidBegin, object: nil,
-                                                   queue: .main) { [weak self] notification in
-                self?.attachGluedWindowsForDrag(dragged: notification.object as? NSWindow)
-            },
-            NotificationCenter.default.addObserver(forName: .windowDragDidEnd, object: nil,
-                                                   queue: .main) { [weak self] _ in
-                self?.detachGluedWindowsAfterDrag()
-            },
-        ]
         #if DEBUG
         if let localPath = UserDefaults.standard.string(forKey: "winampModernSkinPath"),
            !localPath.isEmpty {
@@ -242,14 +240,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 _ = try? scripts?.dispatchSystem(event: "oncurrenttrackrated",
                                                  arguments: [.integer(Int32(clamping: stars))])
             }
-            // Every renderer asks the one runtime for a `cfgattrib` control's state, so a switch in
-            // the settings window and the control it mirrors in another window always agree.
-            renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
-            renderer.configValueProvider = { [weak scripts] in scripts?.configInteger(of: $0) }
-            renderer.settingStateProvider = { [weak scripts] section, key in
-                scripts?.configAttributeValue(section: section, key: key).map { $0 != "0" }
-            }
-            renderer.layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }
+            renderer.attach(scripts: scripts)
             let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
                                             componentHost: componentBridge)
 
@@ -551,12 +542,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         renderer.componentHost = componentBridge
         renderer.textScale = WinampModernSkinState.textScale(in: loaded.configuration)
-        renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
-        renderer.configValueProvider = { [weak scripts] in scripts?.configInteger(of: $0) }
-        renderer.settingStateProvider = { [weak scripts] section, key in
-            scripts?.configAttributeValue(section: section, key: key).map { $0 != "0" }
-        }
-        renderer.layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }
+        renderer.attach(scripts: scripts)
         let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
                                         componentHost: componentBridge, drivesScripts: false)
         view.skinScale = skinScale
@@ -570,7 +556,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         auxWindow.hasShadow = false
         auxWindow.contentView = view
         auxWindow.setAccessibilityIdentifier("WinampModernContainer_\(info.id)")
-        auxWindow.setAccessibilityLabel(info.object.attributes["name"] ?? info.id)
+        auxWindow.setAccessibilityLabel(WinampModernContainerTopology.displayName(of: info))
         auxWindow.delegate = self
         auxWindow.orderOut(nil)
         installWindowCommands(on: view, id: info.id)
@@ -878,7 +864,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // inline hears nothing and does nothing.
             windowDidSettle: { [weak self] instance in
                 instance.view.dispatchWindowMoved()
-                self?.restackGluedWindows()
+                self?.glue.restack()
             }
         )
     }
@@ -1073,7 +1059,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // than from markup. Defix's four round buttons reach their targets only this way, and the
         // request is idempotent on purpose: the skin also calls `show()` from timers, and acting on
         // one that asks for the state the window is already in would re-front it 30 times a second.
-        scripts.containerVisibilityRequested = { [weak self] id, visible in
+        scripts.hooks.containerVisibilityRequested = { [weak self] id, visible in
             guard let self else { return }
             if let hostedID = Self.matchingHostedWindowID(id),
                hostedWindowMaterializer?.nativeWindow(ifMaterialized: hostedID) != nil {
@@ -1138,7 +1124,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         // The other half of `getCurAppWidth`/`getCurAppHeight`. The origin above needs a coordinate
         // flip and the size does not, which is why the two are separate queries rather than one frame.
-        scripts.playerWindowSizeRequested = { [weak self] in self?.skinView?.window?.frame.size }
+        scripts.hooks.playerWindowSizeRequested = { [weak self] in self?.skinView?.window?.frame.size }
     }
 
     /// The window backing a container id, resolved the way `containerActiveQuery` resolves it: the
@@ -1225,7 +1211,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 container.view.dispatchWindowMoved()
             }
             // After the moves, so the pairs the announcements just established are ordered.
-            restackGluedWindows()
+            glue.restack()
         }
     }
 
@@ -1483,16 +1469,16 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // groups back open on the next reveal — the visualization drawn over the details and cover.
         // An object that merely *starts* `visible="0"` and was never touched is still fair game;
         // that is what the fallback is for.
-        let scriptClosed = skinView?.scripts.scriptClosedObjects ?? []
+        let scriptClosed = skinView?.scripts.visibility.scriptClosedObjects ?? []
         func visit(_ object: WasabiObject) {
-            if WinampModernComponentRegistry.isHolderElement(object.typeName),
+            if WinampModernComponentRegistry.isHolderElement(object.tag),
                WasabiSceneRenderer.componentKind(of: object) == kind, isAutoOpen(object) {
                 var chain: [WasabiObject] = []
                 var node: WasabiObject? = object
                 var depth = 0
                 var blocked = false
                 while let current = node, depth < 64 {
-                    if current.typeName.caseInsensitiveCompare("layout") == .orderedSame { break }
+                    if current.tag.is(.layout) { break }
                     if scriptClosed.contains(current.stableID) { blocked = true; break }
                     chain.append(current)
                     node = current.parent
@@ -1728,8 +1714,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // Clamped to the screen as well as to the layout's own range. A 1x on a 1080p film is a
         // ~1940px window and a 2x is nearly 3900 — Winamp's own 1x/2x are exactly that literal, but a
         // window wider than the display is one the user cannot get hold of again.
-        let visible = (container.window.screen ?? NSScreen.main)?.visibleFrame.size
-            ?? CGSize(width: 1_440, height: 900)
+        let visibleFrame = (container.window.screen ?? NSScreen.main)?.visibleFrame
+        let visible = visibleFrame?.size ?? CGSize(width: 1_440, height: 900)
         let limits = renderer.userResizeLimits
         let ceilingW = min(limits.maximum.width, visible.width / skinScale)
         let ceilingH = min(limits.maximum.height, visible.height / skinScale)
@@ -1738,6 +1724,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             height: min(max(proposed.height, limits.minimum.height), ceilingH)))
         let size = container.view.scaledCanvasSize
         resize(window: container.window, to: size)
+        // …and kept on it. The resize holds the top-left corner, so Anunaki's video window, opened
+        // low on the screen, grew off the bottom edge with its 1X/2X buttons — the only way back.
+        if let visibleFrame {
+            container.window.setFrameOrigin(
+                WindowPlacement.rescued(container.window.frame, into: visibleFrame).origin)
+        }
         container.view.setFrameSize(size)
         container.view.needsLayout = true
         container.view.needsDisplay = true
@@ -1807,7 +1799,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         container.view.setSceneVisible(visible)
         // A window that just opened is above (or below) whatever it is glued to; put the pair back in
         // order. See `restackGluedWindows`.
-        restackGluedWindows()
+        glue.restack()
         if record { rememberContainerVisibility(id: id, visible: visible) }
         refreshToggleLamps()
     }
@@ -1834,9 +1826,15 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     private func applyDefaultContainerVisibility() {
         var opened = false
         for container in auxiliaryContainers where !container.window.isVisible {
+            // The container's own `hold=` GUID as well as the catalog: this runs before
+            // `makeSurfaceCoordinator`, so the catalog is still nil here and machina's
+            // `<container id="Video" hold="guid:{F0816D7B-…}" default_visible="1">` opened empty at
+            // every launch, with nothing in the Windows menu to close it from.
+            let hostsVideo = container.kind == .video
+                || routedSurfaceKind(ofContainer: container.containerID) == .video
             guard Self.opensAtLoad(opensByDefault: container.opensByDefault,
                                    remembered: rememberedContainerVisibility(id: container.containerID),
-                                   hostsVideo: routedSurfaceKind(ofContainer: container.containerID) == .video)
+                                   hostsVideo: hostsVideo)
             else { continue }
             setAuxiliaryWindow(id: container.containerID, visible: true, activate: false)
             opened = true
@@ -1931,7 +1929,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// This is the arrangement; `place` below is only what holds a window until this runs. It is
     /// called once launch has settled, which is the first moment the inputs exist — during skin load
     /// the player is not yet at its restored frame and no window is yet at its final size, so nothing
-    /// decided then can be right. See `WindowManager.WinampModernTiler`.
+    /// decided then can be right. See `WinampModernTiler`.
     ///
     /// Only the skin's own windows and the hosted windows are laid out, then `trailing` — windows
     /// this controller does not own (a classic-fallback playlist or library) that a full re-layout
@@ -1950,7 +1948,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 NSLog("[place/tile] %@ %@ -> %@", container.containerID,
                       NSStringFromRect(container.window.frame), NSStringFromRect(slot))
             }
-            moveCarryingGluedWindow(container.window, to: slot.origin, trace: trace)
+            glue.move(container.window, to: slot.origin, trace: trace)
             placedAuxiliaryWindows.insert(container.containerID)
             manager.releaseClosedWindowSlots(under: container.window)
         }
@@ -1960,7 +1958,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 NSLog("[place/tile] hosted %@ -> %@",
                       NSStringFromRect(window.frame), NSStringFromRect(slot))
             }
-            moveCarryingGluedWindow(window, to: slot.origin, trace: trace)
+            glue.move(window, to: slot.origin, trace: trace)
             manager.releaseClosedWindowSlots(under: window)
         }
         for window in trailing where window.isVisible {
@@ -1974,64 +1972,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
     }
 
-    /// Move a window the tiler has placed, and the window a script keeps glued over it with it (B156).
-    ///
-    /// Itemskin's frame is a second window its script parks on the content window from a 10 ms
-    /// timer, and the same script pulls the content back onto the frame from the frame's own
-    /// `onResize`/`onMove`. A UI Size change rescales every window and tiles them in one pass, and the
-    /// frame's `onResize` can be dispatched before its timer has carried it after the content. It then
-    /// read the frame where the content *used* to be and dragged the content back there, off its
-    /// slot and sometimes below the screen. Moved together, there is no stale frame to read.
-    private func moveCarryingGluedWindow(_ window: NSWindow, to origin: NSPoint, trace: Bool) {
-        let follower = gluedWindow(over: window)
-        // The offset is taken before the move and re-applied after it, rather than the move's delta
-        // added on: a skin whose script follows the move synchronously has already carried its frame
-        // by the time `setFrameOrigin` returns (Ebonite's `onMove` does), and a second delta threw it
-        // off by the whole distance.
-        let offset = follower.map {
-            NSPoint(x: $0.frame.minX - window.frame.minX, y: $0.frame.minY - window.frame.minY)
-        }
-        window.setFrameOrigin(origin)
-        guard let follower, let offset, follower.isVisible else { return }
-        let carried = NSPoint(x: origin.x + offset.x, y: origin.y + offset.y)
-        guard follower.frame.origin != carried else { return }
-        if trace {
-            NSLog("[place/tile] glued %@ -> %@", NSStringFromRect(follower.frame),
-                  NSStringFromPoint(carried))
-        }
-        follower.setFrameOrigin(carried)
-    }
-
-    /// The window a script keeps glued to `window`, over it or under it. Snapping skips it.
-    func gluedPartner(of window: NSWindow) -> NSWindow? {
-        for (leader, follower) in gluedWindowPairs {
-            if leader === window { return follower }
-            if follower === window { return leader }
-        }
-        return nil
-    }
-
-    /// The window a script keeps glued over `window`, if it has recorded one.
-    private func gluedWindow(over window: NSWindow) -> NSWindow? {
-        gluedWindowPairs.first { $0.leader === window }?.follower
-    }
-
     /// The view of the window a script keeps `container`'s frame glued over, if it is such a frame.
     private func viewFramed(by container: WasabiObjectID) -> WinampModernMainView? {
         guard let leader = skinView?.scripts.windowsGluedOver.first(where: { $0.value == container })?.key,
               leader != container else { return nil }
         return viewsByContainer[leader]
-    }
-
-    /// Every pair a script has glued (`windowsGluedOver`) whose two windows exist and differ.
-    private var gluedWindowPairs: [(leader: NSWindow, follower: NSWindow)] {
-        guard let scripts = skinView?.scripts else { return [] }
-        return scripts.windowsGluedOver.compactMap { leaderID, followerID in
-            guard let leader = viewsByContainer[leaderID]?.window,
-                  let follower = viewsByContainer[followerID]?.window,
-                  leader !== follower else { return nil }
-            return (leader, follower)
-        }
     }
 
     /// A closed window whose remembered frame lies under `frame` is placed afresh on its next open:
@@ -2133,7 +2078,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         if !pinned {
             let visible = screen.visibleFrame
             origin.x = min(max(origin.x, visible.minX), max(visible.minX, visible.maxX - size.width))
-            origin.y = min(max(origin.y, visible.minY), max(visible.minY, visible.maxY - size.height))
+            // A window taller than the work area keeps its *top* on screen: that is where a skin's
+            // title bar and close button are.
+            origin.y = size.height > visible.height
+                ? visible.maxY - size.height
+                : min(max(origin.y, visible.minY), visible.maxY - size.height)
         }
         // A pin places the window relative to another one, so `place` must not tile it afresh when it
         // first opens: ONYX V2 pins its visualization over the player's art box and then shows it.
@@ -2185,7 +2134,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // stayed off screen for the rest of the session. Restricted to instances so a skin calling
         // `show()` from `onScriptLoaded` on one of its *own* windows is still ignored at load, exactly
         // as it is today.
-        scripts.containerVisibilityRequested = { [weak self] id, visible in
+        scripts.hooks.containerVisibilityRequested = { [weak self] id, visible in
             guard let self,
                   let container = auxiliaryContainers.first(where: { $0.containerID == id }),
                   isDynamicWindow(container), container.window.isVisible != visible else { return }
@@ -2196,17 +2145,17 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         scripts.componentHost = componentBridge
         // `showTrack` reaches whichever container actually embeds the playlist: a skin that puts it
         // in its own `pledit` window is the common case, and the main view holds no holder for it.
-        scripts.playlistRevealRowRequested = { [weak self] row in
+        scripts.hooks.playlistRevealRowRequested = { [weak self] row in
             self?.viewsByContainer.values.forEach { $0.revealPlaylistRow(row) }
         }
-        scripts.layoutSwitchRequested = { [weak self] container, layoutID in
+        scripts.hooks.layoutSwitchRequested = { [weak self] container, layoutID in
             guard let view = self?.viewsByContainer[container] else { return false }
             let switched = view.activateLayout(id: layoutID)
             // A different layout is a different set of component holders.
             if switched { view.needsLayout = true }
             return switched
         }
-        scripts.layoutResizeRequested = { [weak self] container, size in
+        scripts.hooks.layoutResizeRequested = { [weak self] container, size in
             self?.viewsByContainer[container]?.applyCanvasResize(size)
         }
         scripts.hostedChromeLiftApplied = { [weak self] container, lift in
@@ -2217,10 +2166,16 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             let canvas = view.renderer.canvasSize
             view.applyCanvasResize(CGSize(width: canvas.width, height: canvas.height - lift))
         }
-        scripts.containerMoveRequested = { [weak self] container, point, pinned in
+        scripts.hooks.containerMoveRequested = { [weak self] container, point, pinned in
             self?.moveContainerWindow(container, to: point, pinned: pinned)
         }
-        scripts.browserNavigationRequested = { [weak self] objectID, address in
+        scripts.hooks.browserHistoryRequested = { [weak self] objectID, forward in
+            guard let self else { return }
+            for view in viewsByContainer.values where view.stepBrowserHistory(objectID: objectID, forward: forward) {
+                return
+            }
+        }
+        scripts.hooks.browserNavigationRequested = { [weak self] objectID, address in
             guard let self else { return }
             for view in viewsByContainer.values where view.navigateBrowser(objectID: objectID,
                                                                             address: address) {
@@ -2231,7 +2186,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // browser) and `System.navigateUrlBrowser` (the skin's own). The same route answers the
         // `browser_search` / `browser_navigate` actions a skin's reader is driven with, so the
         // internal and external halves of a skin's web feature set cannot resolve differently.
-        scripts.globalNavigationRequested = { [weak self] target, address in
+        scripts.hooks.globalNavigationRequested = { [weak self] target, address in
             self?.routeWebNavigation(target, address: address)
         }
         let webNavigation: (WinampModernWebNavigationTarget, String) -> Void = { [weak self] target, address in
@@ -2244,15 +2199,20 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // that would be a rival for the same pixels. Defix's seven configurator buttons store a
         // percentage and then call this on each window's layout with the same factor, so the request
         // arrives repeatedly with one value — setting the level it is already at is a no-op.
-        scripts.uiScaleRequested = { [weak self] factor in
+        scripts.hooks.uiScaleRequested = { [weak self] factor in
             self?.applyUIScaleRequest(factor)
         }
+        scripts.hooks.uiScaleQuery = { [weak self] in self?.skinScale ?? 1 }
         // `System.getMonitorWidth/Height()` describe the display the skin is actually occupying,
         // including during startup before its borderless window becomes the application's main
         // window. `NSScreen.frame` is already in logical screen points; never multiply it by the
         // Retina backing scale or MAKI would mix physical pixels with its desktop coordinates.
-        scripts.monitorSizeRequested = { [weak self] in
-            (self?.window?.screen ?? NSScreen.main)?.frame.size
+        // The menu bar is not part of it: no window can draw there, so a skin that covers its monitor
+        // (Nitrous Audio's monitor mode) lost its title bar under it, and its transport off the bottom.
+        scripts.hooks.monitorSizeRequested = { [weak self] in
+            (self?.window?.screen ?? NSScreen.main).map {
+                CGSize(width: $0.frame.width, height: $0.visibleFrame.maxY - $0.frame.minY)
+            }
         }
         // A script moved something. Every container diffs its own scene and notifies what moved; a
         // container nothing happened in dispatches nothing.
@@ -2261,7 +2221,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         // Only a scene knows where an object landed, and an object belongs to exactly one container —
         // so ask each container's renderer in turn and take the first that can place it.
-        scripts.resolvedGeometryRequested = { [weak self] object in
+        scripts.hooks.resolvedGeometryRequested = { [weak self] object in
             guard let self else { return nil }
             for view in viewsByContainer.values where !view.isTornDown {
                 if let geometry = view.renderer.resolvedGeometry(of: object) { return geometry }
@@ -2278,7 +2238,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         // Same ownership question, answered for the cursor: the window that can place the object is
         // the window whose pixel space its rect is in, so that is the one asked where the mouse is.
-        scripts.mousePositionInObjectSpaceRequested = { [weak self] object in
+        scripts.hooks.mousePositionInObjectSpaceRequested = { [weak self] object in
             guard let self else { return nil }
             for view in viewsByContainer.values where !view.isTornDown {
                 guard view.renderer.resolvedGeometry(of: object) != nil else { continue }
@@ -2494,7 +2454,15 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             pendingUIScaleRequest = factor
             return
         }
-        let level = UIScaleLevel.nearest(toScaleFactor: factor)
+        // **A skin may scale itself up only as far as the screen.** Alpha Media Player X5 fills the
+        // display by picking a standard resolution from the viewport and scaling to it; an 1800-wide
+        // work area lands in its 1920×1200 bucket, and the 1.5625 it asks for put the player past
+        // both edges. Capped at the largest level that still fits, and never below 100%.
+        var level = UIScaleLevel.nearest(toScaleFactor: factor)
+        if let canvas = skinView?.renderer.canvasSize,
+           let area = (window?.screen ?? NSScreen.main)?.visibleFrame.size {
+            level = level.capped(fitting: canvas, into: area)
+        }
         guard WindowManager.shared.uiScaleLevel != level else { return }
         WindowManager.shared.uiScaleLevel = level
     }
@@ -2505,6 +2473,21 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         guard let view = skinView else { return nil }
         return NSSize(width: (view.renderer.canvasSize.width * scale).rounded(),
                       height: (view.renderer.canvasSize.height * scale).rounded())
+    }
+
+    /// The player's frame with its layout's `snapadjust*` margins taken off: the edges Wasabi docks
+    /// other windows against. CopperdeckII's player is 289px of artwork in a 645px layout with
+    /// `snapadjustleft="178" snapadjustright="178"`, and tiled against the raw frame every window
+    /// it opened hung 178px left of the player.
+    var playerSnapFrame: NSRect? {
+        guard let frame = window?.frame, let layout = skinView?.renderer.layout else { return nil }
+        func margin(_ edge: String) -> CGFloat {
+            max(0, CGFloat(WinampModernScriptRuntime.snapAdjust(edge, of: layout))) * skinScale
+        }
+        let inset = NSRect(x: frame.minX + margin("left"), y: frame.minY + margin("bottom"),
+                           width: frame.width - margin("left") - margin("right"),
+                           height: frame.height - margin("top") - margin("bottom"))
+        return inset.width > 0 && inset.height > 0 ? inset : frame
     }
 
     /// The main layout's own resize limits at the current UI Size. Each `.wal` container has its own
@@ -2763,7 +2746,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     func windowDidMove(_ notification: Notification) {
         guard let moved = notification.object as? NSWindow,
               let view = moved.contentView as? WinampModernMainView else { return }
-        if Self.tracesGlue {
+        if WinampModernGluedWindows.traces {
             NSLog("GLUE-TRACE moved %@ -> %@", moved.accessibilityIdentifier() ?? "-",
                   NSStringFromRect(moved.frame))
         }
@@ -2808,7 +2791,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             if let keyWindow, keyWindow.isKeyWindow {
                 WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: keyWindow)
             } else {
-                restackGluedWindows()
+                glue.restack()
             }
         }
     }
@@ -2819,97 +2802,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         auxiliaryContainers.map(\.window) + (hostedWindowMaterializer?.materializedWindows.map(\.window) ?? [])
     }
 
-    /// Put every script-glued frame back on top of the window it is drawn on.
-    ///
-    /// Idempotent and cheap — a skin has a handful of these — so it is run from every moment that can
-    /// disturb the order rather than from a guessed subset: a window opening, a window taking the
-    /// keyboard, and once after launch has settled. Keying it to `windowDidBecomeKey` alone was not
-    /// enough and produced the exact half-and-half window the reporter saw: at launch the frame is
-    /// created and shown first and the client is shown *after* it, so the client sat on top with only
-    /// the frame's right edge and bottom-right grip showing past the client's own box — one half of
-    /// the window in the skin's grey chrome, the other a bare black client.
-    ///
-    /// One runloop turn late on purpose: a `windowDidBecomeKey` notification is delivered *during* the
-    /// ordering that raised the window, and an `order(.above:)` issued inside it is undone by the rest
-    /// of that pass. `WindowManager.bringAllWindowsToFront` calls it after every `.wal` raise.
-    func restackGluedWindows() {
-        guard let scripts = skinView?.scripts, !scripts.windowsGluedOver.isEmpty else {
-            if Self.tracesGlue { NSLog("GLUE-TRACE restack: no pairs recorded") }
-            return
-        }
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            if Self.tracesGlue {
-                for (leaderID, followerID) in scripts.windowsGluedOver {
-                    let leaderWindow = viewsByContainer[leaderID]?.window
-                    let followerWindow = viewsByContainer[followerID]?.window
-                    let leaderName: String = leaderWindow?.accessibilityIdentifier() ?? "none"
-                    let followerName: String = followerWindow?.accessibilityIdentifier() ?? "none"
-                    NSLog("GLUE-TRACE pair leader=%@(%@) follower=%@(%@)",
-                          leaderName, leaderWindow?.isVisible == true ? "visible" : "hidden",
-                          followerName, followerWindow?.isVisible == true ? "visible" : "hidden")
-                }
-            }
-            for (leader, follower) in gluedWindowPairs where leader.isVisible && follower.isVisible {
-                // Whichever of the pair the user is in stays where it is and the other joins it, so
-                // clicking the frame's title bar does not leave its client stranded behind something.
-                if follower.isKeyWindow {
-                    leader.order(.below, relativeTo: follower.windowNumber)
-                } else {
-                    follower.order(.above, relativeTo: leader.windowNumber)
-                }
-                if Self.tracesGlue {
-                    let followerName: String = follower.accessibilityIdentifier() ?? "-"
-                    let leaderName: String = leader.accessibilityIdentifier() ?? "-"
-                    NSLog("GLUE-TRACE restacked %@ over %@ (levels %ld/%ld)",
-                          followerName, leaderName, follower.level.rawValue, leader.level.rawValue)
-                }
-            }
-        }
-    }
-
-    /// A drag carries every script-glued frame with its window in the window server's own move.
-    ///
-    /// Pure Inspired, Itemskin, K-jr and MoonLight draw each component window's frame in a second
-    /// window that their script parks on the content from a 10 ms timer. A host drag moves the
-    /// content — directly, as a docked peer, or as the player's child — but never the frame, which
-    /// is not a snap target. So the frame trailed its content by one timer tick on every drag step.
-    /// That was measured on Pure Inspired's docked playlist at 5-15 ms and ~16 pt per step, and on
-    /// screen the border and interior pulled apart.
-    /// As a child window the frame moves in the same window-server operation as its content.
-    ///
-    /// A follower that is the dragged window itself is left alone: it moves itself, and its own
-    /// `onMove` pulls the content after it, as it always has. Linked only for the drag, because a
-    /// script-driven move or resize of the content must not carry the frame. The script moves the
-    /// frame onto the content itself, and a second carry would move the frame twice.
-    /// `WINAMP_MODERN_DRAG_GLUE=0` turns it off.
-    private func attachGluedWindowsForDrag(dragged: NSWindow?) {
-        guard Self.carriesGluedWindowsInDrag else { return }
-        detachGluedWindowsAfterDrag()
-        for (leader, follower) in gluedWindowPairs
-        where follower !== dragged && leader.isVisible && follower.isVisible && follower.parent == nil {
-            leader.addChildWindow(follower, ordered: .above)
-            dragAttachedGluedWindows.append((leader, follower))
-            if Self.tracesGlue {
-                NSLog("GLUE-TRACE drag carries %@ with %@", follower.accessibilityIdentifier(),
-                      leader.accessibilityIdentifier())
-            }
-        }
-    }
-
-    private func detachGluedWindowsAfterDrag() {
-        for (leader, follower) in dragAttachedGluedWindows where follower.parent === leader {
-            leader.removeChildWindow(follower)
-        }
-        dragAttachedGluedWindows.removeAll()
-    }
-
-    static let carriesGluedWindowsInDrag =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_DRAG_GLUE"] != "0"
-
-    /// `WINAMP_MODERN_GLUE_TRACE=1` — the script-glued window pairs and every restack, live. See
-    /// `restackGluedWindows`.
-    static let tracesGlue = ProcessInfo.processInfo.environment["WINAMP_MODERN_GLUE_TRACE"] != nil
 
     func windowDidDeminiaturize(_ notification: Notification) {
         guard let restored = notification.object as? NSWindow else { return }
@@ -2928,7 +2820,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     private func tearDownSkin() {
         // A scale the outgoing skin asked for is not owed to the incoming one.
         pendingUIScaleRequest = nil
-        detachGluedWindowsAfterDrag()
+        glue.detachAfterDrag()
         hostedWindowMaterializer?.teardown()
         hostedWindowMaterializer = nil
         // Auxiliary views share the main view's script runtime + host, so tear them down first
@@ -2979,8 +2871,19 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         if let artworkObserver { NotificationCenter.default.removeObserver(artworkObserver) }
         if let playbackOptionsObserver { NotificationCenter.default.removeObserver(playbackOptionsObserver) }
         if let trackLoadFailureObserver { NotificationCenter.default.removeObserver(trackLoadFailureObserver) }
-        dragObservers.forEach(NotificationCenter.default.removeObserver)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         tearDownSkin()
+    }
+}
+
+private extension UIScaleLevel {
+    /// This level, or the largest one at or above 100% below it that fits `size` (unscaled) into
+    /// `area` — 100% when none does.
+    func capped(fitting size: CGSize, into area: CGSize) -> UIScaleLevel {
+        let fits = { (level: UIScaleLevel) in
+            size.width * level.scaleFactor <= area.width && size.height * level.scaleFactor <= area.height
+        }
+        guard !fits(self) else { return self }
+        return Self.allCases.last { $0.scaleFactor >= 1 && $0.scaleFactor <= scaleFactor && fits($0) } ?? .p100
     }
 }

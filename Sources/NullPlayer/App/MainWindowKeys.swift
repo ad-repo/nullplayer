@@ -28,11 +28,8 @@ enum MainWindowKeys {
                 audioEngine.seek(to: min(audioEngine.duration, audioEngine.currentTime + 5))
             }
 
-        case 125: // Down arrow - volume down
-            audioEngine.volume = max(0, audioEngine.volume - 0.05)
-
-        case 126: // Up arrow - volume up
-            audioEngine.volume = min(1, audioEngine.volume + 0.05)
+        case 125, 126:
+            _ = performVolumeStep(event)
 
         case 36: // Return - stop
             if WindowManager.shared.isVideoActivePlayback {
@@ -55,6 +52,17 @@ enum MainWindowKeys {
             case "p": WindowManager.shared.togglePlaylist()
             default: return false
             }
+        }
+        return true
+    }
+
+    /// The arrows' volume half: ↓ and ↑ step it 5%. Answers false for any other key.
+    static func performVolumeStep(_ event: NSEvent) -> Bool {
+        let audioEngine = WindowManager.shared.audioEngine
+        switch event.keyCode {
+        case 125: audioEngine.volume = max(0, audioEngine.volume - 0.05) // Down arrow
+        case 126: audioEngine.volume = min(1, audioEngine.volume + 0.05) // Up arrow
+        default: return false
         }
         return true
     }

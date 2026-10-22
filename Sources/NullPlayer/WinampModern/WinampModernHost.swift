@@ -60,6 +60,9 @@ protocol WinampModernHost: AnyObject {
     /// 0 is "unrated", because that is what a star widget draws as an empty row — Winamp has no
     /// separate unrated value. Writing is a no-op for a source with nowhere to store it.
     var currentTrackRating: Int { get set }
+    /// `PlEdit.getRating(item)` / `setRating(item, stars)`: one queue entry's rating in stars, 0–5.
+    func rating(ofPlaylistRow row: Int) -> Int
+    func setRating(_ stars: Int, ofPlaylistRow row: Int)
     /// What a song ticker shows — Winamp's playlist display title, i.e. "Artist - Title".
     var trackDisplayTitle: String { get }
     /// Stream properties the skin's `songinfo` script parses out of `getSongInfoText()`.
@@ -191,6 +194,8 @@ extension WinampModernHost {
         get { 0 }
         set {}
     }
+    func rating(ofPlaylistRow row: Int) -> Int { 0 }
+    func setRating(_ stars: Int, ofPlaylistRow row: Int) {}
     var trackDisplayTitle: String { trackTitle }
     var bitrateKbps: Int { 0 }
     var sampleRateHz: Int { 0 }
@@ -658,6 +663,25 @@ final class WinampModernAudioEngineHost: WinampModernHost {
             Task { try? await TrackRatingService.shared.setRating(stars > 0 ? rating : nil, for: track) }
             currentTrackRatingChanged?(stars)
         }
+    }
+
+    /// The playing entry goes through `currentTrackRating`, so its cache and `onCurrentTrackRated`
+    /// stay the one route; any other entry answers its local rating (0 for a server track, which
+    /// would need a request per row).
+    func rating(ofPlaylistRow row: Int) -> Int {
+        guard engine.playlist.indices.contains(row) else { return 0 }
+        let track = engine.playlist[row]
+        if track.id == engine.currentTrack?.id { return currentTrackRating }
+        return TrackRatingService.shared.localRating(for: track).map(TrackRatingService.stars(fromRating:)) ?? 0
+    }
+
+    func setRating(_ stars: Int, ofPlaylistRow row: Int) {
+        guard engine.playlist.indices.contains(row) else { return }
+        let track = engine.playlist[row]
+        if track.id == engine.currentTrack?.id { currentTrackRating = stars; return }
+        let clamped = max(0, min(5, stars))
+        Task { try? await TrackRatingService.shared.setRating(clamped > 0 ? TrackRatingService.rating(fromStars: clamped) : nil,
+                                                              for: track) }
     }
 
     private func fetchRatingIfNeeded(for track: Track) {

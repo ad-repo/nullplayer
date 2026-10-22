@@ -66,6 +66,21 @@ final class WinampModernPhase89Tests: XCTestCase {
         defer { renderer.teardown() }
 
         XCTAssertNil(renderer.resizeEdges(at: CGPoint(x: 2, y: 16)))
+        XCTAssertFalse(renderer.declaresResizeHandles)
+    }
+
+    /// B161: a layout with handles resizes by them alone, so its window drops AppKit's edge band;
+    /// one with a range but no handle keeps the band, the only affordance it has.
+    func testOnlyALayoutWithAHandleDeclaresHandles() throws {
+        let handled = try makeRenderer(resizable: true, layout: """
+            <layer id="edge.left" image="art" x="0" y="0" w="6" h="32" resize="left"/>
+            """)
+        defer { handled.teardown() }
+        XCTAssertTrue(handled.declaresResizeHandles)
+
+        let bare = try makeRenderer(resizable: true, layout: #"<layer id="bg" image="art" w="32" h="32"/>"#)
+        defer { bare.teardown() }
+        XCTAssertFalse(bare.declaresResizeHandles)
     }
 
     /// `window.resize.disabler`: a bare layer laid over the interior after the border layers, which is

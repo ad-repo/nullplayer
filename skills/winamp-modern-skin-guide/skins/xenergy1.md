@@ -41,10 +41,9 @@ what it holds — see `reference/rendering/hit-testing.md` → *A wrapper group 
 what it holds*. The headless dump cannot show it (a 1px spectrum rounds to nothing); measure the
 live window's lowest opaque row instead.
 
-**Census trap.** Run alone (`wal_skin_census.sh --corpus <dir with only this archive>`) its log comes
-back `damaged` every time: its last `FINDING` line is written without a newline before XCTest's own
-`Test Case … passed` line. The capture is complete; splitting that one line and re-running
-`--parse-only` gives the row above.
+**Census trap (closed by B166).** On the shared stdout its log came back `damaged` every time: XCTest's
+`Test Case … passed` banner landed on its last `FINDING` line. The per-skin log keeps the banner out,
+so the census row is populated directly.
 
 ### Not measured
 

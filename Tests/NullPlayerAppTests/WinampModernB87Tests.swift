@@ -19,9 +19,11 @@ import ZIPFoundation
 /// nothing at all, which is what makes this worth pinning.
 final class WinampModernB87Tests: XCTestCase {
 
-    /// The B87 shape itself: a box one pixel narrower than the string, inside a group with room.
-    /// The ink has to reach past the box's right edge and stop at the group's.
-    func testAStringWiderThanItsBoxIsBoundedByItsGroup() throws {
+    /// The skin's own words are released to their group **however far over** — here 2.5x the box.
+    /// The author fitted the string to its box against Winamp's face, so the overrun is ours: a
+    /// substituted font (JRS's `Playlist Editor`, 15px over 45) or a box the skin squeezed (cPro's
+    /// `alignByResize`). The ink has to reach past the box's right edge and stop at the group's.
+    func testTheSkinsOwnWordsAreBoundedByTheirGroup() throws {
         let scene = try makeScene(markup: """
               <group id="holder" x="0" y="0" w="120" h="40">
                 <text id="label" x="0" y="0" w="\(narrowBox)" h="40" fontsize="20"
@@ -46,6 +48,42 @@ final class WinampModernB87Tests: XCTestCase {
         let ink = try XCTUnwrap(scene.inkColumns())
         XCTAssertLessThanOrEqual(ink.upperBound, CGFloat(narrowBox),
                                  "a group with no room to give still cuts the string at its edge")
+    }
+
+    /// A text placed straight on a layout has no group to hand its overflow to — the window bounds
+    /// nothing — so it is cut at its own box. JRS's remote: a 54px ticker with scrolling switched off
+    /// ran the whole title across the remote and off both sides of the window.
+    func testAStringOnTheLayoutIsCutAtItsBox() throws {
+        let scene = try makeScene(markup: """
+                <text id="label" x="0" y="0" w="\(narrowBox)" h="40" fontsize="20"
+                      color="255,255,255" text="\(word)"/>
+        """)
+        let ink = try XCTUnwrap(scene.inkColumns())
+        XCTAssertLessThanOrEqual(ink.upperBound, CGFloat(narrowBox),
+                                 "a layout-level string stops at the box the skin declared")
+    }
+
+    /// The track's data has no length a skin could size its box for, and Winamp cuts it there.
+    /// Anunaki's "Classic No Scroll" songticker is the measured case: released to its LCD group, a
+    /// long title ran across the player's chrome.
+    func testTrackDataIsCutAtItsBox() throws {
+        let scene = try makeScene(trackTitle: word, markup: tickerMarkup(box: narrowBox))
+        let ink = try XCTUnwrap(scene.inkColumns())
+        XCTAssertLessThanOrEqual(ink.upperBound, CGFloat(narrowBox),
+                                 "a title well past its box stops at the box")
+    }
+
+    /// …except for B87's own shape: a box a pixel or two short of the measurement, which the margin
+    /// `getTextWidth()` reports bounds. That is this renderer measuring differently, not a long title.
+    func testTrackDataWithinTheMarginIsBoundedByItsGroup() throws {
+        let probe = try makeScene(trackTitle: word, markup: tickerMarkup(box: 120))
+        let ticker = try XCTUnwrap(probe.renderer.loadedSkin.runtime.graph.objects(xmlID: "ticker").first)
+        let font = try XCTUnwrap(probe.renderer.resources.font(
+            identifier: nil, size: WasabiTextMetrics.pointSize(of: ticker)))
+        let box = Int(probe.renderer.resources.textWidth(of: word, font: font).rounded(.down)) - 2
+        let scene = try makeScene(trackTitle: word, markup: tickerMarkup(box: box))
+        let ink = try XCTUnwrap(scene.inkColumns())
+        XCTAssertGreaterThan(ink.upperBound, CGFloat(box), "the last glyph is not cut through")
     }
 
     /// A **scrolling** ticker keeps its own box on both axes: the motion is defined against that box,
@@ -106,6 +144,16 @@ final class WinampModernB87Tests: XCTestCase {
     private let narrowBox = 40
     private let word = "MMMMMM"
 
+    /// A songticker with scrolling off — the track's data, not the skin's — in a group with room.
+    private func tickerMarkup(box: Int) -> String {
+        """
+              <group id="holder" x="0" y="0" w="120" h="40">
+                <songticker id="ticker" x="0" y="0" w="\(box)" h="40" fontsize="20" ticker="0"
+                            color="255,255,255"/>
+              </group>
+        """
+    }
+
     private struct Scene {
         let renderer: WasabiSceneRenderer
 
@@ -154,7 +202,7 @@ final class WinampModernB87Tests: XCTestCase {
         }
     }
 
-    private func makeScene(canvas: CGSize = CGSize(width: 120, height: 40),
+    private func makeScene(canvas: CGSize = CGSize(width: 120, height: 40), trackTitle: String = "",
                            markup: String) throws -> Scene {
         let xml = """
         <WasabiXML>
@@ -167,7 +215,9 @@ final class WinampModernB87Tests: XCTestCase {
         """
         let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: try makeArchive(xml: xml))
         addTeardownBlock { loaded.teardown() }
-        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: Host(), clock: { 0 })
+        let host = Host()
+        host.trackTitle = trackTitle
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host, clock: { 0 })
         addTeardownBlock { renderer.teardown() }
         return Scene(renderer: renderer)
     }

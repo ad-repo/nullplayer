@@ -426,7 +426,7 @@ final class WinampModernPhase24Tests: XCTestCase {
     func testOnlyAWindowsGeometryWriteReadsItsOriginFirst() throws {
         let (runtime, _) = try makeRuntimeWithObject()
         var resolves = 0
-        runtime.resolvedGeometryRequested = { _ in resolves += 1; return nil }
+        runtime.hooks.resolvedGeometryRequested = { _ in resolves += 1; return nil }
         let holder = try XCTUnwrap(runtime.loadedSkin.runtime.graph.objects(xmlID: "holder").first)
         // Declares no `x`/`y`, so its origin is only known by resolving the layout.
         let layout = try XCTUnwrap(runtime.loadedSkin.runtime.graph.objects(xmlID: "normal").first)
@@ -444,7 +444,16 @@ final class WinampModernPhase24Tests: XCTestCase {
         XCTAssertEqual(layout.attributes["tooltip"], "Player", "the writes themselves still land")
         XCTAssertEqual(holder.attributes["w"], "30")
 
-        // The counter is live: a window's geometry write does read its origin first.
+        // A window's geometry write with no read of its origin behind it is no round trip, and
+        // reads nothing either (Nitrous Audio's monitor mode writes `x=0`/`y=0` blind).
+        _ = try runtime.invoke(method: "setxmlparam", on: reference(layout),
+                               arguments: [.string("w"), .string("45")], program: emptyProgram())
+        XCTAssertEqual(resolves, 0)
+
+        // The counter is live: once a script has read the window's origin, its geometry write reads
+        // it again to recognise the round trip.
+        _ = try runtime.invoke(method: "getleft", on: reference(layout), arguments: [], program: emptyProgram())
+        resolves = 0
         _ = try runtime.invoke(method: "setxmlparam", on: reference(layout),
                                arguments: [.string("w"), .string("50")], program: emptyProgram())
         XCTAssertGreaterThan(resolves, 0)
@@ -532,17 +541,14 @@ final class WinampModernPhase24Tests: XCTestCase {
         addTeardownBlock { scripts.teardown() }
         let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host)
         addTeardownBlock { view.teardown() }
-        // A window, so AppKit actually tracks the dirty state.
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: renderer.canvasSize),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = view
-        view.displayIfNeeded()
-        let layer = try XCTUnwrap(view.layer, "a `.wal` view is layer-backed")
-        // `needsDisplay` on a layer-backed view forwards to its layer and reads back false, so the
-        // layer is where the invalidation is observable.
-        XCTAssertFalse(layer.needsDisplay(), "clean to begin with")
+        // Never ordered in, so hidden: a request shows up as a whole frame owed on reveal.
+        view.frames.isOnScreen = false
+        view.frames.owesWholeFrame = false
         view.updateSpectrum((0..<64).map { Float($0) / 64 })
-        XCTAssertTrue(layer.needsDisplay(), "levels arriving must invalidate the view")
+        XCTAssertTrue(view.frames.owesWholeFrame, "levels arriving must ask for a frame")
         XCTAssertFalse(host.spectrumLevels.isEmpty)
     }
 
@@ -634,7 +640,7 @@ final class WinampModernPhase24Tests: XCTestCase {
         let graph = renderer.loadedSkin.runtime.graph
         let runtime = try WinampModernScriptRuntime(loadedSkin: renderer.loadedSkin, host: Host())
         addTeardownBlock { runtime.teardown() }
-        runtime.resolvedGeometryRequested = { [weak renderer] in renderer?.resolvedGeometry(of: $0) }
+        runtime.hooks.resolvedGeometryRequested = { [weak renderer] in renderer?.resolvedGeometry(of: $0) }
         let child = try XCTUnwrap(graph.objects(xmlID: "child").first)
         let holder = try XCTUnwrap(graph.objects(xmlID: "holder").first)
         func call(_ method: String, on target: WasabiObject, _ value: Int32) throws -> Int32 {

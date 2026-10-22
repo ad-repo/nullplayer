@@ -34,6 +34,9 @@ enum WalDiagnosticCode: String, Codable {
     case invalidRoot
     case resourceMissing
     case resourceEscapesVFS
+    /// A drive-qualified or home path (`c:/vandread/pic1.jpg`): always refused before any file
+    /// access, but a bitmap naming one degrades like a missing file rather than failing the skin.
+    case hostPath
     case unresolvedPathVariable
     /// The skin reaches into `@SKINSPATH@\<Other Skin>\…` — it is an overlay written against another
     /// skin — and that skin is not installed. Deliberately *not* `.resourceMissing`, so it bypasses

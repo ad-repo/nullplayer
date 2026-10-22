@@ -331,10 +331,8 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
 
     func makeHostedWindowSurface(id: WinampModernHostedWindowID) -> WinampModernHostedSurface? {
         if let surface = hostedWindowSurfaces[id] { return surface }
-        guard let definition = WinampModernHostedWindowRegistry.entry(id: id),
-              let makeSurface = definition.makeSurface,
-              let context = hostedWindowSurfaceContextProvider?(id) else { return nil }
-        let surface = makeSurface(context)
+        guard let context = hostedWindowSurfaceContextProvider?(id) else { return nil }
+        let surface = id.definition.makeSurface(context)
         hostedWindowSurfaces[id] = surface
         return surface
     }

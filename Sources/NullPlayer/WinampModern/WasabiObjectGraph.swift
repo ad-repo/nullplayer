@@ -27,6 +27,8 @@ struct WasabiScriptBinding: Hashable {
 final class WasabiObject {
     let stableID: WasabiObjectID
     let typeName: String
+    /// `typeName` parsed: what kind of object this is, in which namespace.
+    let tag: WasabiTag
     let source: WalSourceLocation
     private(set) var attributes: [String: String]
     private(set) weak var parent: WasabiObject?
@@ -34,6 +36,9 @@ final class WasabiObject {
     private(set) var scriptBindings: [WasabiScriptBinding] = []
     private(set) var dirtyFlags: WasabiDirtyFlags = .all
     private(set) var isTornDown = false
+    /// The attribute names in the order the instance's tag wrote them (lowercased). Empty for an
+    /// object built in code. See `orderedAttributeNames`.
+    let declaredAttributeOrder: [String]
 
     /// Memo for `WasabiSceneRenderer.surfaceID(of:)`, which is a pure function of this object's
     /// attributes and its enclosing container — see there for why it is worth keeping.
@@ -49,15 +54,25 @@ final class WasabiObject {
     private weak var graph: WasabiObjectGraph?
 
     init(stableID: WasabiObjectID, typeName: String, attributes: [String: String],
-         source: WalSourceLocation, graph: WasabiObjectGraph) {
+         source: WalSourceLocation, graph: WasabiObjectGraph, attributeOrder: [String] = []) {
         self.stableID = stableID
         self.typeName = typeName
+        self.tag = WasabiTag(typeName)
+        self.declaredAttributeOrder = attributeOrder
         self.attributes = Dictionary(uniqueKeysWithValues: attributes.map { ($0.key.lowercased(), $0.value) })
         self.source = source
         self.graph = graph
     }
 
     var xmlID: String? { attributes["id"] }
+
+    /// The current attribute names in the order the tag wrote them, for the events Wasabi delivers
+    /// in document order — `onSetXuiParam` above all. Names the tag did not write (a groupdef's
+    /// defaults, anything set since) follow, sorted, as `WalXMLNode.orderedAttributes` does.
+    var orderedAttributeNames: [String] {
+        let declared = declaredAttributeOrder.filter { attributes[$0] != nil }
+        return declared + attributes.keys.filter { !declared.contains($0) }.sorted()
+    }
 
     /// `minimum_w` / `minimum_h` a **script** wrote on this layout, as lowercased keys.
     ///
@@ -71,12 +86,44 @@ final class WasabiObject {
         scriptAuthoredMinimumAxes.insert(key.lowercased())
     }
 
+    /// The **XML** value of each geometry param a target animation has moved the object off.
+    /// Wasabi's `gotoTarget` moves the object and leaves its XML params alone, so `getXmlParam("y")`
+    /// still answers the declared value. Alpha Media Player X5's EQ and Mute levers are written
+    /// against that: on is `setTargetY(getXmlParam("y") - 17)`, off is `setTargetY(getXmlParam("y"))`.
+    /// Read back as the moved position, off stayed put and a second on sent the lever 17px above its
+    /// switch, out of sight. Kept off `attributes`, which are drawn, dumped and forwarded to XUI
+    /// scripts; `setXmlParam` drops an entry, because that does write the XML value.
+    private var declaredXMLParams: [String: String] = [:]
+
+    /// What `getXmlParam(key)` answers.
+    func xmlParam(_ key: String) -> String? {
+        let key = key.lowercased()
+        return declaredXMLParams[key] ?? attributes[key]
+    }
+
+    /// `setAttribute` for a target animation step, keeping the value the XML declared on the first move.
+    @discardableResult
+    func moveForTarget(_ key: String, to value: String) -> Bool {
+        if declaredXMLParams[key] == nil { declaredXMLParams[key] = attributes[key] }
+        return setAttribute(key, value: value)
+    }
+
+    func forgetDeclaredXMLParam(_ key: String) {
+        declaredXMLParams.removeValue(forKey: key.lowercased())
+    }
+
     /// The graph's structure counter, for callers memoizing something that depends on this object's
     /// position in the tree rather than only on the object itself.
     var graphStructureGeneration: UInt64 { graph?.structureGeneration ?? 0 }
-    /// See `WasabiObjectGraph.shapeGeneration`.
-    var graphShapeGeneration: UInt64 { graph?.shapeGeneration ?? 0 }
-    var geometry: WasabiGeometrySpec { WasabiGeometrySpec(attributes: attributes) }
+    /// Parsed once per attribute change: the scene walk reads it several times per object per frame,
+    /// and parsing it was 39% of that walk on cPro Bento (release, playing).
+    var geometry: WasabiGeometrySpec {
+        if let geometryMemo { return geometryMemo }
+        let spec = WasabiGeometrySpec(attributes: attributes)
+        geometryMemo = spec
+        return spec
+    }
+    private var geometryMemo: WasabiGeometrySpec?
 
     @discardableResult
     func setAttribute(_ name: String, value: String?) -> Bool {
@@ -85,6 +132,7 @@ final class WasabiObject {
         let oldValue = attributes[key]
         guard oldValue != value else { return false }
         if let value { attributes[key] = value } else { attributes.removeValue(forKey: key) }
+        geometryMemo = nil
         // A script renaming an object invalidates the graph's id index. Rare, and cheap to be right
         // about: the alternative is a lookup that silently answers with the old name.
         if key == "id" { graph?.invalidateXMLIDIndex() }
@@ -120,6 +168,11 @@ final class WasabiObject {
         child.parent = nil
         graph?.promoteToRoot(child)
         markDirty(.structure)
+    }
+
+    /// Whether this object or anything beneath it matches, stopping at the first that does.
+    func subtreeContains(where predicate: (WasabiObject) -> Bool) -> Bool {
+        predicate(self) || children.contains { $0.subtreeContains(where: predicate) }
     }
 
     func addScriptBinding(_ binding: WasabiScriptBinding) {
@@ -249,12 +302,6 @@ enum WasabiMutationTrace {
 final class WasabiObjectGraph {
     private(set) var roots: [WasabiObject] = []
     private(set) var mutationGeneration: UInt64 = 0
-    /// Bumped only by a mutation that can move a window's outline — geometry, structure,
-    /// visibility, alpha, or an image. The window drop shadow (`SkinWindowShadow`) re-renders the
-    /// outline when this moves and not on the text, colour and value writes a playing skin makes
-    /// every tick.
-    private(set) var shapeGeneration: UInt64 = 0
-
     /// Bumped by every mutation **except** the ones the scene walk does not read.
     ///
     /// Today that is `alpha` and `frame`, and it earns its own counter because these are the
@@ -301,31 +348,19 @@ final class WasabiObjectGraph {
         attribute == "alpha" || attribute == "frame"
     }
 
-    /// The attributes besides geometry and structure that can change where a window has pixels at
-    /// all — what moves `shapeGeneration`. Text, colour, font, a slider's value and an animation's
-    /// frame cannot in practice, and they are what a playing skin writes every tick. Not the
-    /// complement of `isSceneNeutral`: `alpha` leaves the scene alone and still moves the outline.
-    private static let outlineAttributes: Set<String> = [
-        "visible", "alpha", "image", "file", "downimage", "hoverimage", "activeimage",
-    ]
-
-    private static func mayMoveOutline(flags: WasabiDirtyFlags, attribute: String?) -> Bool {
-        if !flags.isDisjoint(with: [.geometry, .structure]) { return true }
-        guard let attribute else { return flags.contains(.appearance) }
-        return outlineAttributes.contains(attribute)
-    }
-
     private var nextRawID: UInt64 = 1
     private var objectsByID: [WasabiObjectID: WasabiObject] = [:]
     private var invalidated: [WasabiObjectID: WasabiDirtyFlags] = [:]
 
     var objectCount: Int { objectsByID.count }
 
-    func makeObject(typeName: String, attributes: [String: String], source: WalSourceLocation) -> WasabiObject {
+    func makeObject(typeName: String, attributes: [String: String], source: WalSourceLocation,
+                    attributeOrder: [String] = []) -> WasabiObject {
         precondition(!isTornDown, "Cannot add objects to a torn-down Wasabi graph")
         let id = WasabiObjectID(rawValue: nextRawID)
         nextRawID += 1
-        let object = WasabiObject(stableID: id, typeName: typeName, attributes: attributes, source: source, graph: self)
+        let object = WasabiObject(stableID: id, typeName: typeName, attributes: attributes, source: source,
+                                  graph: self, attributeOrder: attributeOrder)
         objectsByID[id] = object
         invalidated[id] = .all
         xmlIDIndex = nil
@@ -401,7 +436,6 @@ final class WasabiObjectGraph {
         mutationGeneration &+= 1
         if flags.contains(.structure) { structureGeneration &+= 1 }
         if !(attribute.map { Self.isSceneNeutral(attribute: $0) } ?? false) { sceneGeneration &+= 1 }
-        if Self.mayMoveOutline(flags: flags, attribute: attribute) { shapeGeneration &+= 1 }
     }
 
     func snapshot() -> String {

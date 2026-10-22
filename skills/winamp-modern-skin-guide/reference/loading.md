@@ -329,6 +329,15 @@ Group semantics worth knowing:
   pointer events it receives are forwarded to the embedding group. Defix's `bento.tabbutton` embeds a
   `mousetrap` button while the core script hooks `onLeftClick` on the group (`switch.ml`) — without
   the forwarding every tab lit up under the pointer and switched nothing.
+  The instance's `content=`, `title=` and `children=` pass to the embedded object too, which then
+  builds the body they name (`buildHostedWidgetBody`). 1010 Fullscreen's `Deimos:ConfigPage` wraps a
+  `Wasabi:TitleBox` and its `Deimos:ConfigSheet` a `Wasabi:TabSheet`; the widget was already built
+  from the template when these reached it, so every Preferences page was an empty box (B214).
+- A skin's `<groupdef id="wasabi.tabsheet">` **restyles** Winamp's tab sheet, which still builds the
+  pages it is given (Mac OS X Panther, Anunaki). Only a skin's own `xuitag="Wasabi:TabSheet"`
+  groupdef under another id replaces the widget and leaves its pages to the skin.
+  The restyle is the **content** background: it sits in a group below the tab strip, where Winamp
+  draws its buttons; laid over the whole sheet, Panther's grid painted the tabs out.
 - `xuitag` registers a custom XML tag name for group instantiation.
 - A duplicate definition does **not** replace the earlier one wholesale: every version is kept, and a
   `<group>` expands the version in force *where that group is written*. Winamp's parser is streaming,
@@ -516,11 +525,18 @@ Two traps in the same attribute:
   where 0% collapses the group but the plain relative reading gives the ordinary fill-the-parent
   idiom, and on `relatw="5"`, which is not a percentage at all. Enumerate the whole corpus before
   believing a mechanism derived from two skins.
-- **A non-numeric value must stay absolute**, because that is also `atoi`'s answer and two skins
-  depend on it: corneramp_redux and Shield_Amp ship a literal `relatw="%"`.
+- **A non-numeric value stays absolute** (`atoi`'s answer) — **except a literal `"%"`, which is
+  percent mode** like `2` (`WasabiGeometry.percentFlag`). corneramp_redux and Shield_Amp's theme
+  buttons are `w="50"`/`"25"` with `relatw="%"`: read as absolute, "Previous" drew as "Pr…" in a 50px
+  box. 1010 Fullscreen's ten EQ bands are laid out the same way.
 
 Use `atoi` semantics (leading integer), not `Int(_:)`, which refuses a trailing character and would
 send `"1px"` down the opposite branch from the one Winamp takes.
+
+`x`/`y`/`w`/`h` follow the same rule: trailing junk ends the number rather than voiding it.
+MoonLight and Pure Inspired write decimal commas (`w="29,5"`, `h="2,2"`), which Winamp reads as 29
+and 2; read as `Double(_:)` they were absent, so MoonLight's title and clock had 0-wide boxes and
+Pure Inspired's seek line never drew. A value with no leading number (`w="auto"`) is still absent.
 
 > **Gotcha:** the Y flip to AppKit's bottom-left happens exactly **once**, at the Core Graphics
 > drawing boundary in `WasabiSceneRenderer` (and once at the event boundary in `WinampModernMainView`).
@@ -656,6 +672,10 @@ every other one.
 2. the `background` bitmap's size (ZDL's Reel-To-Reel declares every layout that way);
 3. **the laid-out content's extent** — this rule;
 4. the 275×116 classic default.
+
+Every number in that chain is read trimmed, as an object's geometry is (`WasabiGeometrySpec`).
+wTunes' player is `<layout id="normal" w=" 300" h="100">`; untrimmed, `" 300"` did not parse and
+the width fell through to the classic 275, cutting the right 25px off a 300×100 background.
 
 Before this, a layout with neither a box nor a background fell through to its **`minimum_w`** — the
 floor it is *allowed to shrink to*, which is not a size anybody drew. ClassicPro's Widgets Manager is

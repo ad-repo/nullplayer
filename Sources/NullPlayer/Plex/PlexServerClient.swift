@@ -150,16 +150,6 @@ class PlexServerClient {
                 throw PlexServerError.httpError(statusCode: httpResponse.statusCode)
             }
             
-            // Debug: Log response for troubleshooting
-            #if DEBUG
-            let endpoint = request.url?.path ?? "unknown"
-            if let jsonString = String(data: data, encoding: .utf8) {
-                NSLog("PlexServerClient: Response for %@: %@",
-                      endpoint,
-                      String(jsonString.prefix(1000)).redactingSensitiveURLQueryItems)
-            }
-            #endif
-            
             // First try direct decoding
             do {
                 return try JSONDecoder().decode(T.self, from: data)
@@ -478,8 +468,6 @@ class PlexServerClient {
                 let seasonCount = item.childCount ?? 0
                 let episodeCount = item.leafCount ?? 0
                 if seasonCount <= 1 && episodeCount <= 2 {
-                    NSLog("PlexServerClient: Filtering out likely bonus content show: '%@' (%d seasons, %d episodes)", 
-                          item.title, seasonCount, episodeCount)
                     return false
                 }
                 

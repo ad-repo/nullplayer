@@ -89,7 +89,7 @@ final class WinampModernPhase33Tests: XCTestCase {
     func testCreatedObjectKeepsAGroupTypeAndResizeDoesNotResizeTheWindow() throws {
         let (runtime, program) = try makeRuntime()
         var resizes: [(WasabiObjectID, CGSize)] = []
-        runtime.layoutResizeRequested = { resizes.append(($0, $1)) }
+        runtime.hooks.layoutResizeRequested = { resizes.append(($0, $1)) }
 
         let created = try unwrapObject(runtime.invoke(method: "newGroupAsLayout",
                                                       on: MakiObjectReference(.system),
@@ -218,7 +218,7 @@ final class WinampModernPhase33Tests: XCTestCase {
     func testContainerCloseHidesThatWindowAndAnythingElseStopsInTheGraph() throws {
         let (runtime, program) = try makeRuntime()
         var requests: [(String, Bool)] = []
-        runtime.containerVisibilityRequested = { requests.append(($0, $1)) }
+        runtime.hooks.containerVisibilityRequested = { requests.append(($0, $1)) }
 
         let container = try XCTUnwrap(runtime.loadedSkin.runtime.graph.roots.first {
             $0.xmlID == "notifier"

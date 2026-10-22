@@ -232,7 +232,7 @@ final class WinampModernPhase66Tests: XCTestCase {
     func testNavigateUrlAsksForTheUsersBrowserAndNavigateUrlBrowserForOurs() throws {
         let (_, runtime) = try makeSkin()
         var requests: [(WinampModernWebNavigationTarget, String)] = []
-        runtime.globalNavigationRequested = { requests.append(($0, $1)) }
+        runtime.hooks.globalNavigationRequested = { requests.append(($0, $1)) }
 
         let system = MakiObjectReference(.system)
         _ = try runtime.invoke(method: "navigateurl", on: system,
@@ -265,7 +265,7 @@ final class WinampModernPhase66Tests: XCTestCase {
         let (loaded, runtime) = try makeSkin()
         let target = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "sui.content").first)
         var actions: [(String, String?)] = []
-        runtime.actionRequested = { actions.append(($0, $1)) }
+        runtime.hooks.actionRequested = { actions.append(($0, $1)) }
 
         _ = try runtime.invoke(method: "sendaction", on: MakiObjectReference(.gui(target.stableID)),
                                arguments: [.string("browser_search"), .string("radiohead creep lyrics"),

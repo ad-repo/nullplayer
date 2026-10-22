@@ -8,7 +8,7 @@ Part of [compatibility.md](../compatibility.md). Implemented and unimplemented s
 unconditional branches; host/global method calls; local call/return; move; pre/post
 increment/decrement; arithmetic and modulo; bitwise and logical operations; allocation; delete.
 
-**Supported API** — the authoritative list is `signature(for:)` in `WinampModernScriptRuntime.swift`.
+**Supported API** — the authoritative list is `WinampModernScriptSignatures` in `WinampModernScriptRuntimeSignatures.swift`, which the runtime's `signature(for:)` asks.
 By area:
 
 - **Playback host**: playback state, current time, duration, volume, shuffle/repeat, title/info,
@@ -81,9 +81,10 @@ By area:
 - **Window scaling**: `<layout>.setScale(f)` is answered by **NullPlayer's own UI Size** — the level
   nearest the requested factor — and by nothing else. A `.wal` scene is always laid out on the skin's
   pixel grid, with UI Size applied at the view's drawing and input boundaries, so a second
-  layout-local scale would be a rival for the same pixels. `getScale()` therefore still answers **1**
-  whatever size the windows are drawn at: the layout's own scale really is 1, and ClassicPro's resize
-  arithmetic (which multiplies by it) is in skin pixels. On a receiver that is not a layout the call
+  layout-local scale would be a rival for the same pixels. `getScale()` answers **that UI Size**
+  (`hooks.uiScaleQuery`; 1 in the harness): skins that fill the screen size the layout to
+  `viewport / getScale()` — Nitrous Audio's monitor mode, 1010 Fullscreen's party mode, ClassicPro's
+  maximize — and answered 1 at 135% they opened 1.35× the screen. On a receiver that is not a layout the call
   is accepted and inert. Measured demand: Defix's seven configurator buttons (100, 125, 150, 175,
   200, 250, 300 — the ladder gained 175/250/300 for them), Ebonite's `standardframe.m` and boom's
   `prefs.m`; all three call it on a layout. **Not** dispatched: `onScale`, the layout event Wasabi
@@ -391,6 +392,12 @@ By area:
   `fx_setBgFx(1)` (warping the backdrop rather than the layer's own image), and `fx_setSpeed` as a
   host-driven animation clock — the skins in the corpus drive their own timers and call `fx_update()`.
 
+  **`fx_onFrame` is the realtime clock's event**, dispatched to every `fx_setRealtime(1)` layer by
+  `refreshLayerFXMeshes` before its mesh is re-evaluated (the window's 30 Hz animation tick, not
+  `fx_setSpeed`). wTunes' needle reads `getLeftVuMeter()` only there and its `fx_onGetPixelR` answers
+  the stored angle, so without the event both needles sat still forever. BLAKK's needles are the same
+  shape. `WINAMP_MODERN_RENDER_FX_SPIN` drives the same tick headlessly.
+
   A warp is a CPU resample on the paint path, so it is bounded: vertices per layer and warped surface
   size both have ceilings, and the mesh is cached until `fx_update()` unless `fx_setRealtime(1)`. The
   warped raster is cached with the mesh that produced it, so a repaint the skin did not ask for (a
@@ -459,7 +466,7 @@ By area:
   Defix: mean 4, max 39 out of 255, its 25-frame cone on frame 0 for 96.5% of a track), so the
   magnitude is mapped through `20·log10` over a 60 dB window. Same material after: mean 139, max 232
 - **`System.getLeftVUMeter()` / `getRightVUMeter()`** — program level per channel as a vis byte
-  (0…255), measured by `WinampModernLevelMeter` as **linear peak amplitude, unsmoothed**, off the
+  (0…255), measured by `WinampModernLevelMeter` as **linear peak amplitude** with a VU falloff, off the
   main thread. **Not the spectrum**, and not a perceptual value: the skin owns the curve and the
   ballistics. Defix maps the byte through `73.813 · x^¼ − 100`, clamps at 0, and applies its own
   attack and decay before it turns a needle, so the host's only job is to hand over the same
@@ -494,6 +501,15 @@ By area:
   the skin receives — the difference between the last two entries above is visible as `peak` (one
   number for the buffer) against `blockRange` (the spread across it).
 
+  - **Raw blocks twitch a needle that has no ballistics** (2026-10-21). On real music consecutive
+    ~13 ms peaks swing by two-thirds of a sweep, and about half the VU skins (wTunes, BLAKK,
+    WMP11-BlueVU, Zygote) draw the byte as is. The read (`levels`) therefore applies **instant attack
+    and a 300 ms exponential release** (`WinampModernLevelMeter.falloff`). The 90th-percentile needle
+    step on wTunes fell from 0.40 to 0.08 rad. Skins with their own ballistics (Defix, mmd3) keep their
+    attack and decay a little slower, which the user checked on Defix. Silence detection reads the raw
+    block, so a pause still drops the needle at once. Measure needle motion with **real music**, never
+    `audio-long`: it is a frequency sweep, a steady level that cannot show twitching.
+
   The tap is the shared stereo PCM notification, received with `queue: nil` and measured on the
   posting thread; the main thread only reads the played-out block. Registering with `queue: .main`
   delivers *synchronously* and blocks the real-time audio tap — see `PeppyMeterLevelModel`.
@@ -523,7 +539,7 @@ By area:
 | `onLeftButtonDblClk` | yes (Phase 24) | `mouseDown` with `clickCount == 2` |
 | `onMouseWheelUp` / `onMouseWheelDown` | yes | **two** arguments, dispatched at the **layout** — see `reference/scripting.md` → *The mouse wheel is a layout event*. NullPlayer's own colour-theme list and playlist holder take the wheel first |
 | mouse down/up/click/move, `onEnterArea`/`onLeaveArea`, `onRightButtonUp` | yes | with the click's x/y |
-| `onVolumeChanged` | yes | `setVolume`, and any change made outside the skin |
+| `onVolumeChanged` | yes | `setVolume`, and any change made outside the skin — **once each**. The window's poll compares against `announcedVolume`, which `setVolume` writes too, so a skin's own change is never announced a second time (Alpha Media Player X5, 2026-10-21; see *A write that changes nothing is not an event*) |
 | `onPostedPosition`, `onSetPosition`, `onTargetReached`, `onAction`, `onEqFreqChanged`, `onGetCancelComponent` | yes | — |
 | `onToggle` | yes | from `setActivated` **when the activation actually changes** (B111) **and, since Phase 33, from a user click**: a togglebutton flips its own `activated` and then notifies, as in Wasabi. Until then the only sender was a script talking to itself, so a togglebutton a person clicked was inert however completely the skin implemented it — multipass's bottom drawer opens from this event and from nothing else. `setActivatedNoCallback` is the deliberate silent write **for a state that moved**; an unchanged `setActivated` sends nothing at all, and that is what lets a skin call it from inside the very event its own handler answers. Dispatching it unconditionally is how Itemskin came up silent — see *A write that changes nothing is not an event* below. A `cfgattrib`-bound control is excluded: the stored preference *is* its state, and it has `onDataChanged` as its route |
 | `onActivate(activated)` | yes (B32) | the **indicator's** event, not `onToggle`'s twin: raised whenever a button's activation changes, whoever changed it — and **only** when it changes (B111). Sent from `toggleActivation`, `setActivated` (never `setActivatedNoCallback`), a `cfgattrib` write — and, unlike `onToggle`, a bound control is **not** excluded, because for it the stored preference *is* the activation. A `cfgattrib` write reaches every object bound to that attribute, since a skin declares the same switch once per layout. It had no sender at all before, so no skin could show a toggle's state: mmd3 gives Crossfade/Shuffle/Repeat identical `image` and `activeImage` and does the whole indication with six `ghost="1"` layers at `activated * 255`. 8 of the 30 skins installed when this was measured declare a handler. A change made **outside** the skin (NullPlayer's Playback menu, a restored session) arrives through `refreshBridgedConfigState()` on `.audioPlaybackOptionsChanged` — an indicator is written once and never polled |
@@ -569,6 +585,15 @@ Two things generalise from it:
   `WINAMP_MODERN_CALL_TRACE=1` named it in one line (`setvolume(0)` with nobody asking) where the
   markup and the disassembly both read as innocent.
 
+**The converse: a change that happened is announced exactly once.** Alpha Media Player X5 (2026-10-21)
+counts on it. Its mute sets a guard, calls `setVolume(0)`, and its `onVolumeChanged` consumes the
+guard on the echo; any `onVolumeChanged` arriving unguarded while muted is read as the user moving the
+volume, and the skin un-mutes. The window's playback poll kept its own last-posted volume, which
+`setVolume` never updated, so the poll announced the skin's change a second time on its next tick and
+the mute undid itself within a second. The last announced level is now `announcedVolume` on the
+runtime, one per skin: `setVolume` records it (`noteVolumeAnnounced`) and the poll goes through
+`announceVolumeIfChanged`.
+
 **Script events callable as methods.** A script may invoke one of its own handlers directly to reuse
 it (`slidercb.onSetPosition(slidercb.getPosition())`). Only events with a known arity are callable —
 see `dispatchableEventArity` — because the stack cannot be unwound without one. This works for
@@ -611,7 +636,8 @@ a whole script):
   message in a skin was silently dropped. Phase 24
 - `setPosition` fires `onSetPosition` **only on a change**. Skins pair two sliders that write each
   other's position from that handler. A **user drag** goes through the same rule (Phase 37): the view
-  writes the dragged slider's 0…255 `value=` and dispatches `onSetPosition` with it, so a skin whose
+  writes the dragged slider's `value=` in its own `low…high` unit (0…255 by default, −127…127 for an
+  EQ slider) and dispatches `onSetPosition` with it, so a skin whose
   only feedback is that handler — multipass prints "Balance: Left +40%" on its song ticker from it —
   works under the mouse and not only under a script.
 - `getPosition()` on a **host-bound** slider answers the host, not the object's `value=` (B129). The

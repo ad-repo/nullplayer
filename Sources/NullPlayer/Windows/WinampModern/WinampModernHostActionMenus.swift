@@ -835,7 +835,15 @@ extension WinampModernMainView {
     /// pickers), popped under the skin's button. Its items target the video view, so they work from
     /// here exactly as they do in that window.
     private func showVideoMenu(from object: WasabiObject?) {
-        guard let menu = WindowManager.shared.currentVideoPlayerController?.contextMenu else { return }
+        guard let controller = WindowManager.shared.currentVideoPlayerController,
+              let menu = controller.contextMenu else { return }
+        // The untargeted items reach the video view through the responder chain, which from here runs
+        // through *this* window — so Play/Pause, the skips, Fullscreen and Close all validated as
+        // disabled on Anunaki's OPTIONS. Pointed at the view for this popup only, and put back, so the
+        // video window's own right-click menu is left exactly as it was.
+        let untargeted = menu.items.filter { $0.target == nil && $0.action != nil }
+        untargeted.forEach { $0.target = controller.contextMenuTarget }
+        defer { untargeted.forEach { $0.target = nil } }
         popUpMenu(menu, from: object)
     }
 }

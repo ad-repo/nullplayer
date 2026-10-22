@@ -86,18 +86,39 @@ final class WinampModernPhase2Tests: XCTestCase {
         XCTAssertEqual(errorCode { try WalArchive(url: compressed, limits: ratio) }, .compressionRatioExceeded)
     }
 
-    func testArchiveRejectsMissingDeepAndSplitRoots() throws {
+    // B177: Winamp's root is the shallowest skin.xml; a nested second one, a stray file beside the
+    // wrapper, and a skin several folders deep all load, bounded to that root.
+    func testArchiveTakesTheShallowestSkinXMLAsRoot() throws {
+        let nested = try WalArchive(url: makeArchive([
+            TestEntry("skin.xml", data: Data("<root/>".utf8)),
+            TestEntry("player/skin.xml", data: Data("<old/>".utf8))
+        ]))
+        XCTAssertNil(nested.rootPrefix)
+        XCTAssertEqual(nested.skinXMLPath, "skin.xml")
+        XCTAssertEqual(nested.diagnostics, [])
+
+        let deep = try WalArchive(url: makeArchive([
+            TestEntry("one/two/Skin/skin.xml", data: Data("<x/>".utf8)),
+            TestEntry("one/two/Skin/img.png", data: Data([1])),
+            TestEntry("one/stray.avs", data: Data([2])),
+            TestEntry("outside.txt", data: Data())
+        ]))
+        XCTAssertEqual(deep.rootPrefix, "one/two/Skin")
+        XCTAssertEqual(deep.resourcePaths, ["img.png", "skin.xml"])
+        XCTAssertNil(deep.canonicalPath(for: "../stray.avs"))
+        XCTAssertEqual(deep.diagnostics.map(\.severity), [.warning])
+        XCTAssertEqual(deep.diagnostics.map(\.code), [.invalidRoot])
+    }
+
+    func testArchiveRejectsMissingAndAmbiguousRoots() throws {
         let missing = try makeArchive([TestEntry("other.xml", data: Data("<x/>".utf8))])
         XCTAssertEqual(errorCode { try WalArchive(url: missing) }, .invalidRoot)
 
-        let deep = try makeArchive([TestEntry("one/two/skin.xml", data: Data("<x/>".utf8))])
-        XCTAssertEqual(errorCode { try WalArchive(url: deep) }, .invalidRoot)
-
-        let split = try makeArchive([
-            TestEntry("wrapper/skin.xml", data: Data("<x/>".utf8)),
-            TestEntry("outside.txt", data: Data())
+        let tie = try makeArchive([
+            TestEntry("a/skin.xml", data: Data("<x/>".utf8)),
+            TestEntry("b/skin.xml", data: Data("<x/>".utf8))
         ])
-        XCTAssertEqual(errorCode { try WalArchive(url: split) }, .invalidRoot)
+        XCTAssertEqual(errorCode { try WalArchive(url: tie) }, .invalidRoot)
 
         let corrupt = temporaryDirectory().appendingPathComponent("corrupt.wal")
         try Data("not a zip".utf8).write(to: corrupt)
@@ -458,7 +479,7 @@ final class WinampModernPhase2Tests: XCTestCase {
         let document = try WalXMLDocumentLoader(vfs: vfs).load(entryPath: "/Skins/Limits/skin.xml")
 
         var imageLimits = WasabiResourceLimits.production
-        imageLimits.maximumImageWidth = 0
+        imageLimits.maximumImagePixels = 0
         XCTAssertEqual(errorCode {
             try WasabiSkinInitializer(vfs: vfs, resourceLimits: imageLimits).initialize(document: document)
         }, .imageDimensionsExceeded)

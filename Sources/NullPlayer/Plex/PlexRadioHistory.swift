@@ -82,7 +82,6 @@ class PlexRadioHistory {
             let connection = try Connection(dbPath)
             db = connection
             try createTableIfNeeded(connection)
-            NSLog("PlexRadioHistory: Database ready at %@", dbPath)
         } catch {
             NSLog("PlexRadioHistory: Failed to open database: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
         }

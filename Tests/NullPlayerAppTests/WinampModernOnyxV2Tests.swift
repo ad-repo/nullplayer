@@ -127,7 +127,7 @@ final class WinampModernOnyxV2Tests: XCTestCase {
         let runtime = try WinampModernScriptRuntime(loadedSkin: loaded, host: WinampModernStubHost())
         addTeardownBlock { runtime.teardown() }
         var shown: [Bool] = []
-        runtime.containerVisibilityRequested = { id, visible in
+        runtime.hooks.containerVisibilityRequested = { id, visible in
             if id == "viscontainer" { shown.append(visible) }
         }
         let layout = try XCTUnwrap(object(runtime, type: "layout", id: "shade"))

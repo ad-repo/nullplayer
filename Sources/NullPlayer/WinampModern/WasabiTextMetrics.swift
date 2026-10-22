@@ -201,7 +201,8 @@ final class WasabiTextMetrics {
                                  : "is neither a declared font resource nor a font installed on this "
                                    + "system")
             }
-            return substituteFont(size: size, traits: traits)
+            return substituteFont(size: size * Self.substituteScale(forMissing: identifier ?? ""),
+                                  traits: traits)
         }
         let key = path.lowercased()
         let cgFont: CGFont?
@@ -244,40 +245,6 @@ final class WasabiTextMetrics {
                          + "as a font")
         return substituteFont(size: size, traits: traits)
     }
-
-    /// `font` rescaled so its em is the one GDI draws for the same `fontsize`.
-    ///
-    /// GDI fits a face's whole cell — its OS/2 `usWinAscent + usWinDescent` — into the height it is
-    /// handed, so a face with a tall cell draws a smaller em. `pixelHeightToPointSize` was measured
-    /// on Arial (a 1.117 em cell); every other face is scaled by its cell against Arial's. Impact's
-    /// cell is 1.22 em, and TOX Milla's `fontsize="24"` timer draws 14px digits in its own
-    /// screenshot — a 17.6 em, not 19.2 — where the unscaled face overflowed its 15px box.
-    static func gdiSized(_ font: NSFont) -> NSFont {
-        // Windows has no Helvetica — GDI's FontSubstitutes draws Arial for it, and here it is MS Sans
-        // Serif's stand-in — so its cell is Arial's, not its own.
-        guard font.familyName != "Helvetica" else { return font }
-        let unitsPerEm = CGFloat(CTFontGetUnitsPerEm(font))
-        let cell: CGFloat
-        if let table = CTFontCopyTable(font, CTFontTableTag(kCTFontTableOS2), []) as Data?,
-           table.count >= 78, unitsPerEm > 0 {
-            func uint16(_ offset: Int) -> CGFloat {
-                CGFloat(UInt16(table[table.startIndex + offset]) << 8
-                        | UInt16(table[table.startIndex + offset + 1]))
-            }
-            cell = (uint16(74) + uint16(76)) / unitsPerEm
-        } else {
-            cell = (font.ascender - font.descender) / font.pointSize
-        }
-        guard cell > 0.5, cell < 3, abs(cell - arialCellPerEm) > 0.01 else { return font }
-        // Bridged through `NSFont?` for the same reason as `resolvedFont`'s constructor: a CoreText
-        // constructor imported as non-optional can still hand back null.
-        let sized: NSFont? = CTFontCreateCopyWithAttributes(
-            font, font.pointSize * arialCellPerEm / cell, nil, nil) as NSFont
-        return sized ?? font
-    }
-
-    /// Arial's GDI cell per em, `(1854 + 434) / 2048` — the face `pixelHeightToPointSize` was measured on.
-    static let arialCellPerEm: CGFloat = 2288.0 / 2048.0
 
     /// What a name this system cannot produce draws in.
     ///
@@ -348,7 +315,7 @@ final class WasabiTextMetrics {
         return installedFont(named: family, size: size, traits: traits)
     }
 
-    private static func windowsFontFileStem(of name: String) -> String {
+    static func windowsFontFileStem(of name: String) -> String {
         let extensions = ["ttf", "ttc", "otf", "fon"]
         guard let dot = name.lastIndex(of: "."),
               extensions.contains(name[name.index(after: dot)...].lowercased()) else { return name }
@@ -358,7 +325,7 @@ final class WasabiTextMetrics {
     /// Windows font filenames to the families they hold. Bold/italic variants map to the same family
     /// because `bold="1"`/`italic="1"` are their own attributes here — the file the skin happened to
     /// name does not get to set a trait the object did not ask for.
-    private static let windowsFontFileFamilies: [String: String] = [
+    static let windowsFontFileFamilies: [String: String] = [
         "arial": "Arial", "arialbd": "Arial", "ariali": "Arial", "arialbi": "Arial",
         "ariblk": "Arial Black",
         "calibri": "Calibri", "calibrib": "Calibri", "calibrii": "Calibri", "calibriz": "Calibri",
@@ -514,6 +481,48 @@ final class WasabiTextMetrics {
         return CGFloat(declared)
     }
 
+    /// The geometry of a string set in a **bitmap font**: the sheet's cells, how far each glyph
+    /// advances, and how wide the run is. One answer for drawing it, for sizing a host box around it,
+    /// and for a script's `getTextWidth()` — a skin lays out everything beside a readout from the
+    /// measurement, so the three must never disagree.
+    struct BitmapRun {
+        let charWidth: Int
+        let charHeight: Int
+        private let advance: CGFloat
+        // `timecolonwidth` is the colon's own **cell**, and on a fixed-pitch atlas the colon is the
+        // only glyph that gets one. A sheet inks its colon into the left few columns of a full-width
+        // cell, so advancing the whole cell leaves the rest of it as a gap before the seconds:
+        // ClassicPro's `numfont.png` is 15px per glyph with a 6px colon and its engine declares
+        // `timecolonwidth="6"` for exactly that reason — without it every cPro clock reads `1:03: 16`
+        // (B-cPro colon gap). The colon's whole atlas cell is still drawn — only its advance narrows
+        // — and the next glyph is drawn over the rest of it. Cropping the colon to the narrowed cell
+        // assumed it is inked at the cell's left edge, true of ClassicPro's sheet but not of
+        // 1010_Fullscreen's, which inks it mid-cell of a 60px cell with `timecolonwidth="29"`, so a
+        // left crop held nothing and every colon drew as a gap.
+        private let colonAdvance: CGFloat?
+
+        init(definition: WalResourceDefinition, colonWidth: CGFloat?) {
+            let cell = max(1, Int(Double(definition.attributes["charwidth"] ?? "1") ?? 1))
+            let spacing = Int(Double(definition.attributes["hspacing"] ?? "0") ?? 0)
+            charWidth = cell
+            charHeight = max(1, Int(Double(definition.attributes["charheight"] ?? "1") ?? 1))
+            advance = CGFloat(max(1, cell + spacing))
+            colonAdvance = colonWidth.map { max(1, $0.rounded()) }
+        }
+
+        func advanceWidth(of character: Character) -> CGFloat {
+            character == ":" ? (colonAdvance ?? advance) : advance
+        }
+
+        /// The run ends where its last cell does, not one advance past its start: under a negative
+        /// `hspacing` the cells overlap, and Cell's ticker font (13px cells advancing 6) measured 7px
+        /// short, so a centred "VOLUME: 50%" sat 3.5px right of its box (#581).
+        func width(of text: String) -> CGFloat {
+            text.reduce(0) { $0 + advanceWidth(of: $1) }
+                + (text.last.map { max(0, CGFloat(charWidth) - advanceWidth(of: $0)) } ?? 0)
+        }
+    }
+
     /// The cell a digit needs: the widest of them, so any digit fits any column.
     private static func digitCell(_ font: NSFont) -> CGFloat {
         "0123456789".map {
@@ -632,8 +641,24 @@ final class WasabiTextMetrics {
     /// script touching them, so only these are worth polling for `onTextChanged`.
     static func isHostBoundText(_ object: WasabiObject) -> Bool {
         if isPlaylistStatusLine(object) { return true }
-        if object.typeName.caseInsensitiveCompare("songticker") == .orderedSame { return true }
+        if object.tag.is(.songticker) { return true }
         return !(object.attributes["display"] ?? "").isEmpty
+    }
+
+    /// Whether `text` is the playing track's rather than words the skin wrote: a host binding no
+    /// script has overridden, or any string carrying the track's title, artist or album — JRS's and
+    /// Defix's tickers are a script's `setText` of the metadata, and are the same data. A skin sizes a
+    /// box for its own words; it cannot size one for a title.
+    static func showsTrackData(_ object: WasabiObject, text: String, host: WinampModernHost) -> Bool {
+        let scripted = [scriptAlternateTextKey, scriptTextKey].contains {
+            !(object.attributes[$0] ?? "").isEmpty
+        }
+        if !scripted, isHostBoundText(object) { return true }
+        // ponytail: substring match, so a one-letter artist marks any caption holding that letter as
+        // track data — which only cuts it at its box, as Winamp does. Match whole fields if it bites.
+        return [host.trackTitle, host.trackArtist, host.trackAlbum].contains {
+            !$0.isEmpty && text.localizedCaseInsensitiveContains($0)
+        }
     }
 
     /// Whether this object is the skin's playlist status line, by **either** of the two forms skins
@@ -648,6 +673,16 @@ final class WasabiTextMetrics {
     /// What a text object currently shows. `display=` binds it to a playback value; a `songticker`
     /// carries no text of its own and always shows the current track.
     static func content(of object: WasabiObject, host: WinampModernHost) -> String {
+        let text = uncasedContent(of: object, host: host)
+        // `forceuppercase` / `forcelowercase` (and Wasabi's short spellings) restyle whatever the
+        // object shows. 97 corpus skins use them, BOOM on every window title.
+        let flag = { (keys: [String]) in keys.contains { object.attributes[$0] == "1" } }
+        if flag(["forceuppercase", "forceupcase"]) { return text.uppercased() }
+        if flag(["forcelowercase", "forcelocase"]) { return text.lowercased() }
+        return text
+    }
+
+    private static func uncasedContent(of object: WasabiObject, host: WinampModernHost) -> String {
         // The status line is claimed **either** by `id="PE_Info"` (mmd3) **or** by
         // `display="PE_Info"` (Defix, whose `<text id="info.input" display="PE_Info" w="0" h="0"
         // visible="0"/>` is a hidden feed its script parses into the playlist box's track count and
@@ -715,7 +750,7 @@ final class WasabiTextMetrics {
         // The thinger's caption — the component its strip is pointing at.
         case "componentbucket": return componentBucketTextProvider?() ?? ""
         default:
-            if object.typeName.caseInsensitiveCompare("songticker") == .orderedSame {
+            if object.tag.is(.songticker) {
                 return host.trackDisplayTitle
             }
             let literal = object.attributes["text"] ?? object.attributes["default"] ?? ""
@@ -754,17 +789,31 @@ final class WasabiTextMetrics {
     /// `<text default=":componentname"/>` — the colon marks a value the frame supplies, not a string
     /// to draw. Left unresolved, a window's title bar reads ":componentname" *and* the script's
     /// `getAutoWidth()` sizes the title to that literal, so the box does not fit the real name.
+    /// Skins spell it `@COMPONENTNAME@` too, the path-variable form (krazyPlayer, on every frame),
+    /// and embed it in a longer title (Symplicipod: `symplicipod | :componentname`).
     private static func resolvePlaceholder(_ value: String, on object: WasabiObject) -> String {
-        guard value.hasPrefix(":") else { return value }
-        let key = String(value.dropFirst()).lowercased()
+        let key: String
+        if value.hasPrefix(":") {
+            key = String(value.dropFirst()).lowercased()
+        } else if value.count > 2, value.hasPrefix("@"), value.hasSuffix("@") {
+            key = String(value.dropFirst().dropLast()).lowercased()
+        } else if let token = value.range(of: ":componentname", options: .caseInsensitive) {
+            return value.replacingCharacters(in: token, with: componentName(for: object))
+        } else {
+            return value
+        }
         guard key == "componentname" || key == "name" else { return value }
+        return componentName(for: object)
+    }
+
+    private static func componentName(for object: WasabiObject) -> String {
         // Nearest wins: the XUI frame instance that declares `componentname=`, else the container's
         // own `name=`.
         var current: WasabiObject? = object
         var depth = 0
         while let node = current, depth < 64 {
             if let name = node.attributes["componentname"], !name.isEmpty { return name }
-            if node.typeName.caseInsensitiveCompare("container") == .orderedSame,
+            if node.tag.is(.container),
                let name = node.attributes["name"], !name.isEmpty {
                 return name
             }
@@ -838,15 +887,8 @@ final class WasabiTextMetrics {
         if let fontID = object.attributes["font"],
            let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: fontID),
            definition.kind == "bitmapfont" {
-            let charWidth = max(1, Int(Double(definition.attributes["charwidth"] ?? "1") ?? 1))
-            let spacing = Int(Double(definition.attributes["hspacing"] ?? "0") ?? 0)
-            let advance = CGFloat(max(1, charWidth + spacing))
-            // The colon's cell, on the one atlas glyph that has one — the same rule the bitmap draw
-            // path applies, because a skin lays out everything beside a clock from this measurement.
-            guard let colon = Self.bitmapColonWidth(of: object) else {
-                return CGFloat(text.count) * advance + padding
-            }
-            return text.reduce(padding) { $0 + ($1 == ":" ? max(1, colon.rounded()) : advance) }
+            return BitmapRun(definition: definition, colonWidth: Self.bitmapColonWidth(of: object))
+                .width(of: text) + padding
         }
         let size = Self.pointSize(of: object)
         let font = font(identifier: object.attributes["font"], size: size,

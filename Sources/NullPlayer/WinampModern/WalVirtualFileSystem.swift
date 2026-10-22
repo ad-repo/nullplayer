@@ -147,7 +147,7 @@ final class WalVirtualFileSystem {
     ) throws -> WalResolvedResource {
         let substituted = try substituteVariables(in: rawPath, location: location)
         guard !Self.looksLikeHostPath(substituted) else {
-            throw WalFailure(WalDiagnostic(.resourceEscapesVFS, "Host path '\(rawPath)' is not allowed.", location: location))
+            throw WalFailure(WalDiagnostic(.hostPath, "Host path '\(rawPath)' is not allowed.", location: location))
         }
         let canonical = try Self.canonicalize(substituted, relativeToDirectory: Self.directory(of: sourcePath),
                                               location: location)
@@ -322,6 +322,9 @@ final class WalVirtualFileSystem {
         }
         return mount.root + "/" + providerPath
     }
+
+    /// Whether some provider — the skin, an installed engine, a sibling skin — owns `logicalPath`.
+    func isMounted(_ logicalPath: String) -> Bool { mountedResource(for: logicalPath) != nil }
 
     private func mountedResource(for canonical: String) -> (Mount, String)? {
         let folded = Self.fold(canonical)

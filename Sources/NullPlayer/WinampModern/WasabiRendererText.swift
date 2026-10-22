@@ -8,7 +8,7 @@ import Foundation
 /// out of `WasabiRenderer.swift`; see
 /// `skills/winamp-modern-skin-guide/reference/rendering/text.md`.
 extension WasabiSceneRenderer {
-    func drawText(_ object: WasabiObject, frame: CGRect, context: CGContext) {
+    func drawText(_ object: WasabiObject, frame: CGRect, context: WasabiDrawList) {
         // Content resolution (`display=`, a songticker's implicit track title, `setAlternateText`)
         // is shared with the measurement a script's `getAutoWidth()` gets — see `WasabiTextMetrics`.
         drawText(WasabiTextMetrics.content(of: object, host: host),
@@ -22,7 +22,7 @@ extension WasabiSceneRenderer {
     /// *"lists/trees item foreground (also edit text)"*). Left as white, a search box typed into a
     /// Light skin wrote white on white.
     func drawText(_ text: String, object: WasabiObject, frame rawFrame: CGRect,
-                          context: CGContext, undeclaredColor: NSColor = .white) {
+                          context: WasabiDrawList, undeclaredColor: NSColor = .white) {
         // `leftpadding`/`rightpadding` inset the text inside its own rect. They are part of the width
         // a script measures with `getAutoWidth()`, so honouring them here is what makes a box sized
         // from that measurement fit the string it was sized for (ClassicPro's menu bar and SUI tabs).
@@ -87,58 +87,8 @@ extension WasabiSceneRenderer {
                                         lineBreakMode: .byClipping)
         }
 
-        // Wasabi centres a string in its box unless `valign=` says otherwise; `NSString.draw(in:)`
-        // starts at the box's top edge, which is `valign="top"` and nothing else. The difference is a
-        // whole line's leading on a tall box (Love is War Miku's 30px time readout) and enough on a
-        // tight one to push the song ticker's descenders onto the seek bar below it. Under the local
-        // mirror below, a rect's *top* edge is its `maxY`, so lowering the text by `inset` means
-        // moving the rect down the same amount.
-        //
-        // **A line taller than its own box is still centred in it**, which is what the negative inset
-        // below is for. Clamping it at zero made that case `valign="top"` instead, and a face whose
-        // ascender sits far above its cap height then hangs its glyphs off the bottom: Century Gothic
-        // reaches 19.3 of a 23.5px cell above the baseline where its digits are only 14 tall, so
-        // cPro2 Styler's 24px elapsed clock in a 22px box lost its last row through the 20px-tall
-        // `two.info.text.time` group and every round digit came back with a flat bottom. Centred, the
-        // same string sits where the author's own Winamp screenshots put it. Winamp's `DT_VCENTER`
-        // centres the line rect on the box whether or not it fits, and overflow at the top is what a
-        // skin that declares a font taller than its box is asking for; the vertical scissor further
-        // down is what keeps it from reaching the row above.
-        //
-        // A paragraph's "cell" is the height of the whole broken block, not of one line: aligning a
-        // nine-line block by a single line's leading would centre its *first* line in the box and
-        // run the other eight out of the bottom.
-        // The cell a line is centred in is the one the **skin** declared — `fontsize` — not the one
-        // the face reports. Winamp hands that number to GDI as the font's height and lays the string
-        // out inside it, which is why `WasabiTextMetrics.lineHeight(of:)` (what `getAutoHeight()`
-        // answers, and what Big Bento Modern's tab strip is built from) is exactly `fontsize` too.
-        // The renderer was centring on `ascender - descender` instead, so the two disagreed by
-        // whatever the face's own metrics happened to be, and the gap is worst on a face with a tall
-        // ascender and short digits: Century Gothic reports 23.5 for a 24px cell and puts 19.3 of it
-        // above the baseline, which drops cPro2 Styler's elapsed clock a pixel low and pushed the
-        // bottom of every round digit through its group's clip.
-        //
-        // Once `WasabiTextMetrics.gdiSized` has fitted the face's cell to GDI's, that cell *is*
-        // the face's own line, and DT_VCENTER centres it: TOX Milla's Impact 24 timer in a 15px box
-        // lands on the rows its screenshot shows only this way, and loses its top to the box
-        // centred on the full `fontsize`.
-        let lineCell = font.ascender - font.descender
-        let cell: CGFloat
-        if wraps {
-            let bounds = (text as NSString).boundingRect(
-                with: CGSize(width: frame.width, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes)
-            cell = max(lineCell, ceil(bounds.height))
-        } else {
-            cell = lineCell
-        }
-        // Centring is the one alignment that moves, and only when the line does not fit. `top` and
-        // `bottom` keep the clamp Phase 38 measured: a skin that names an edge is asking for the
-        // string to sit against it, and lifting an oversized `valign="bottom"` readout clear of its
-        // own box is not what it meant.
-        let alignedVertically = WasabiTextMetrics.verticalAlignment(of: object)
-        let offset = alignedVertically.offset(cell: cell, in: frame.height)
-        let inset = alignedVertically == .center ? offset : max(0, offset)
+        let inset = verticalInset(of: text, font: font, attributes: attributes, object: object,
+                                  frame: frame, wraps: wraps)
         // `offsetx`/`offsety` shift the *string* inside its own box without moving the box — so the
         // object still measures and hit-tests where it was declared, and its parent still clips it
         // where it was. Big Bento Modern's SUI tab labels are the measured case: `offsetx="35"` puts
@@ -161,35 +111,9 @@ extension WasabiSceneRenderer {
             if !visible.isNull, drawFrame.minX >= visible.maxX - 1 { return }
         }
 
+        let clip = horizontalClip(of: object, text: text, measured: measured, frame: frame,
+                                  scrolls: scroll != nil, wraps: wraps, context: context)
         context.saveGState()
-        // A `<text>`'s box is a **layout anchor, not a scissor**, horizontally (B87). A skin sizes its
-        // own boxes from the very measurement this renderer draws with and then routinely declares one
-        // a pixel or two narrower than the string it just measured: ClassicPro's SUI tab is
-        // `label.getAutoWidth() + 14` around a `<text w="-15" relatw="1">`, so the label's box is
-        // always `measurement - 1`, and its v2 engine is `getTextWidth() + 23` around `w="-26"`, three
-        // short. Scissored at its own rect the last glyph is cut through its middle and the strip
-        // reads `LIE PLE VII` for `LIB PLE VID` — the shape of B87. The group is what actually bounds
-        // the string (the tab is 32 wide and hands its label only 17 of them), so clip horizontally to
-        // the ambient clip and keep the object's own rect for the vertical bound — BB27's auto-height
-        // still decides whether a line is drawn at all, and a string still cannot bleed onto the row
-        // above or below it.
-        //
-        // A **scrolling** ticker keeps its own box on both axes: the motion is defined by that box, and
-        // a marquee let loose in its parent would smear across the whole panel.
-        //
-        // A **wrapping** object keeps its box on both axes too, and for the same reason as a ticker:
-        // the width is not an approximation the skin measured a string against, it is the width the
-        // paragraph was broken to. Anything still overrunning it is one unbreakable word, and Winamp
-        // cuts it there.
-        let clip: CGRect
-        if scroll == nil, !wraps {
-            let ambient = context.boundingBoxOfClipPath
-            let minX = min(frame.minX, ambient.minX)
-            let maxX = max(frame.maxX, ambient.maxX)
-            clip = CGRect(x: minX, y: frame.minY, width: maxX - minX, height: frame.height)
-        } else {
-            clip = frame
-        }
         context.clip(to: clip)
         context.translateBy(x: 0, y: frame.midY)
         context.scaleBy(x: 1, y: -1)
@@ -231,16 +155,18 @@ extension WasabiSceneRenderer {
                 drawCachedLine(text, font: font, color: color, x: x, baseline: baseline, context: context)
             }
         } else if let clock {
-            // The run keeps a pixel or two of clearance from the edge it is aligned against — a skin
-            // that puts a separator beside a readout counts on it, and centring needs none because
-            // both edges are already free.
-            // Aligned by the room the clock holds, then drawn from that room's left edge — so the
-            // digits stay in their columns rather than shuffling when the value gains one.
-            let room = clock.layoutWidth
+            // An edge-aligned run keeps a pixel or two of clearance from its edge — a skin that puts a
+            // separator beside a readout counts on it — and is placed by the room the clock holds,
+            // then drawn from that room's left edge, so the digits stay in their columns rather than
+            // shuffling when the value gains one.
+            //
+            // A centred run is centred on what it draws. The room's spare digit is all on one side,
+            // so centring by it pushed Cell's `1:13` half a field off its brackets (#581).
             var origin: CGFloat
             switch alignment {
-            case .right: origin = drawFrame.maxX - WasabiTextMetrics.ClockRun.edgeInset - room
-            case .center: origin = drawFrame.minX + (drawFrame.width - room) / 2
+            case .right:
+                origin = drawFrame.maxX - WasabiTextMetrics.ClockRun.edgeInset - clock.layoutWidth
+            case .center: origin = drawFrame.minX + (drawFrame.width - clock.width) / 2
             default: origin = drawFrame.minX + WasabiTextMetrics.ClockRun.edgeInset
             }
             // Each cell places its own field, so the object's alignment must not apply a second time
@@ -271,7 +197,7 @@ extension WasabiSceneRenderer {
             // `measured` above is already the fixed-pitch width, so the box a skin sizes from
             // `getTextWidth()` stays put as the digits change — which is the jitter `forcefixed`
             // exists to stop — while the string itself is drawn with the font's own advances, from
-            // that reserved room's aligned edge.
+            // that reserved room's left or right edge, or centred on its own drawn width.
             //
             // Drawing each glyph centred in a widest-digit cell was the earlier reading, and cPro2
             // Dark Aluminum rules it out. `info-text.m` places the total time at
@@ -296,7 +222,9 @@ extension WasabiSceneRenderer {
                 // `boundingRect` on the same attributes decided the block's height above. Replacing
                 // it means re-implementing line breaking to keep the draw and the measure agreeing,
                 // for a case that is rare and never in a per-row loop.
-                (text as NSString).draw(in: drawFrame, withAttributes: attributes)
+                context.drawWithAppKit {
+                    (text as NSString).draw(in: drawFrame, withAttributes: attributes)
+                }
             } else {
                 // The object's own alignment, applied to the origin rather than inside a rect —
                 // which is what it already was, so cPro2's 4px tuck and Big Bento's clock columns
@@ -304,7 +232,9 @@ extension WasabiSceneRenderer {
                 let x: CGFloat
                 switch alignment {
                 case .right: x = drawFrame.maxX - measured
-                case .center: x = drawFrame.midX - measured / 2
+                // Centred on the drawn width, not a `forcefixed` reservation: a sentence drawn
+                // proportionally from a reservation's left edge sat left of centre (wTunes' About).
+                case .center: x = drawFrame.midX - resources.textWidth(of: text, font: font) / 2
                 default: x = drawFrame.minX
                 }
                 drawCachedLine(text, font: font, color: color, x: x, baseline: baseline,
@@ -321,11 +251,10 @@ extension WasabiSceneRenderer {
     /// makes it y-up rather than something to undo. The colour goes on the context because the line
     /// is cached colourless; see `WasabiTextMetrics.line(for:font:)`.
     private func drawCachedLine(_ text: String, font: NSFont, color: NSColor, x: CGFloat,
-                                baseline: CGFloat, context: CGContext) {
+                                baseline: CGFloat, context: WasabiDrawList) {
         guard !text.isEmpty, let line = resources.line(for: text, font: font) else { return }
         context.setFillColor(color.cgColor)
-        context.textPosition = CGPoint(x: x, y: baseline)
-        CTLineDraw(line, context)
+        context.draw(line: line, at: CGPoint(x: x, y: baseline))
     }
 
     /// The attribute dictionary a string draws with — memoized, because it is a pure function of
@@ -360,6 +289,123 @@ extension WasabiSceneRenderer {
         let lineBreakMode: NSLineBreakMode
     }
 
+    /// How far below the top of `frame` the line or paragraph `text` is placed, `valign` and GDI's
+    /// line cell applied.
+    private func verticalInset(of text: String, font: NSFont, attributes: [NSAttributedString.Key: Any],
+                               object: WasabiObject, frame: CGRect, wraps: Bool) -> CGFloat {
+        // Wasabi centres a string in its box unless `valign=` says otherwise; `NSString.draw(in:)`
+        // starts at the box's top edge, which is `valign="top"` and nothing else. The difference is a
+        // whole line's leading on a tall box (Love is War Miku's 30px time readout) and enough on a
+        // tight one to push the song ticker's descenders onto the seek bar below it. Under the local
+        // mirror below, a rect's *top* edge is its `maxY`, so lowering the text by `inset` means
+        // moving the rect down the same amount.
+        //
+        // **A line taller than its own box is still centred in it**, which is what the negative inset
+        // below is for. Clamping it at zero made that case `valign="top"` instead, and a face whose
+        // ascender sits far above its cap height then hangs its glyphs off the bottom: Century Gothic
+        // reaches 19.3 of a 23.5px cell above the baseline where its digits are only 14 tall, so
+        // cPro2 Styler's 24px elapsed clock in a 22px box lost its last row through the 20px-tall
+        // `two.info.text.time` group and every round digit came back with a flat bottom. Centred, the
+        // same string sits where the author's own Winamp screenshots put it. Winamp's `DT_VCENTER`
+        // centres the line rect on the box whether or not it fits, and overflow at the top is what a
+        // skin that declares a font taller than its box is asking for; the vertical scissor further
+        // down is what keeps it from reaching the row above.
+        //
+        // A paragraph's "cell" is the height of the whole broken block, not of one line: aligning a
+        // nine-line block by a single line's leading would centre its *first* line in the box and
+        // run the other eight out of the bottom.
+        // The cell a line is centred in is the one the **skin** declared — `fontsize` — not the one
+        // the face reports. Winamp hands that number to GDI as the font's height and lays the string
+        // out inside it, which is why `WasabiTextMetrics.lineHeight(of:)` (what `getAutoHeight()`
+        // answers, and what Big Bento Modern's tab strip is built from) is exactly `fontsize` too.
+        // The renderer was centring on `ascender - descender` instead, so the two disagreed by
+        // whatever the face's own metrics happened to be, and the gap is worst on a face with a tall
+        // ascender and short digits: Century Gothic reports 23.5 for a 24px cell and puts 19.3 of it
+        // above the baseline, which drops cPro2 Styler's elapsed clock a pixel low and pushed the
+        // bottom of every round digit through its group's clip.
+        //
+        // Once `WasabiTextMetrics.gdiSized` has fitted the face's cell to GDI's, that cell *is*
+        // the face's own line, and DT_VCENTER centres it: TOX Milla's Impact 24 timer in a 15px box
+        // lands on the rows its screenshot shows only this way, and loses its top to the box
+        // centred on the full `fontsize`.
+        //
+        // …and it is GDI's cell, OS/2's win metrics, not CoreText's hhea one (`gdiLine`).
+        let lineCell = font.ascender - font.descender
+        let cell: CGFloat
+        var baselineDrop: CGFloat = 0
+        if wraps {
+            let bounds = (text as NSString).boundingRect(
+                with: CGSize(width: frame.width, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes)
+            cell = max(lineCell, ceil(bounds.height))
+        } else {
+            (cell, baselineDrop) = WasabiTextMetrics.gdiLine(of: font)
+        }
+        // A **line** taller than its box is centred in it whatever edge `valign` names; the edge only
+        // places a line that fits. Anunaki's digital clock is the measured case: its 60px digits in a
+        // 40px `valign="top"` box lost their bottoms pinned to the top edge, and the 25px `AM` beside
+        // them (which fits, so it does sit on the edge) only lines up with the digits' tops once they
+        // are centred. Its mekanik timer lands where the author's own preview puts it the same way.
+        // A paragraph keeps its edge: centring a nine-line block would cut its first line.
+        let alignedVertically = WasabiTextMetrics.verticalAlignment(of: object)
+        let placedBy = !wraps && cell > frame.height ? .center : alignedVertically
+        let offset = placedBy.offset(cell: cell, in: frame.height)
+        return (placedBy == .center ? offset : max(0, offset)) + baselineDrop
+    }
+
+    /// What a string is scissored to: its own box, or released horizontally to the ambient clip.
+    private func horizontalClip(of object: WasabiObject, text: String, measured: CGFloat,
+                                frame: CGRect, scrolls: Bool, wraps: Bool,
+                                context: WasabiDrawList) -> CGRect {
+        // A `<text>`'s box is a **layout anchor, not a scissor**, horizontally (B87). A skin sizes its
+        // own boxes from the very measurement this renderer draws with and then routinely declares one
+        // a pixel or two narrower than the string it just measured: ClassicPro's SUI tab is
+        // `label.getAutoWidth() + 14` around a `<text w="-15" relatw="1">`, so the label's box is
+        // always `measurement - 1`, and its v2 engine is `getTextWidth() + 23` around `w="-26"`, three
+        // short. Scissored at its own rect the last glyph is cut through its middle and the strip
+        // reads `LIE PLE VII` for `LIB PLE VID` — the shape of B87. The group is what actually bounds
+        // the string (the tab is 32 wide and hands its label only 17 of them), so clip horizontally to
+        // the ambient clip and keep the object's own rect for the vertical bound — BB27's auto-height
+        // still decides whether a line is drawn at all, and a string still cannot bleed onto the row
+        // above or below it.
+        //
+        // A **scrolling** ticker keeps its own box on both axes: the motion is defined by that box, and
+        // a marquee let loose in its parent would smear across the whole panel.
+        //
+        // A **wrapping** object keeps its box on both axes too, and for the same reason as a ticker:
+        // the width is not an approximation the skin measured a string against, it is the width the
+        // paragraph was broken to. Anything still overrunning it is one unbreakable word, and Winamp
+        // cuts it there.
+        //
+        // The release needs a **group** to hand it to. A text placed straight on a layout has only the
+        // window around it, which bounds nothing, so it keeps its own box like Winamp's `DrawText`:
+        // JRS's remote turns its 54px song ticker's scrolling off from a script (`ticker="0"` when
+        // "Scroll Basic Songticker" is unchecked), and with the layout as the bound the title ran
+        // across the remote and off both sides of the window.
+        //
+        // How far the release reaches depends on **whose string it is**, because the two reasons a
+        // string overruns its box are different. The skin's own words — a literal, a frame's component
+        // name, a message a script writes (Big Bento's `CROSSFADE OFF`) — were fitted to their box by
+        // the author against Winamp's face, so whatever is left over is ours: a substituted or
+        // differently-sized font (JRS's `Playlist Editor`, 15px over its 45px box) or a box the skin
+        // squeezed (cPro's `alignByResize` shrinks every tab to fit a narrow strip). Those are released
+        // to their group, however far over. The **track's** data — a binding, a songticker, or a
+        // script's copy of the metadata — has no length the author could size for, and Winamp cuts it
+        // at its box. It gets only B87's measurement disagreement, which is bounded by the margin
+        // `getTextWidth()` already reports: Anunaki's "Classic No Scroll" songticker turns `ticker` off
+        // on a 180px box inside an LCD as wide as the whole player, and a long title released to that
+        // group ran across the window's chrome.
+        guard !scrolls, !wraps, object.parent?.tag.is(.layout) != true else { return frame }
+        if measured - frame.width <= WasabiTextMetrics.boxMargin
+            || !WasabiTextMetrics.showsTrackData(object, text: text, host: host) {
+            let ambient = context.boundingBoxOfClipPath
+            let minX = min(frame.minX, ambient.minX)
+            let maxX = max(frame.maxX, ambient.maxX)
+            return CGRect(x: minX, y: frame.minY, width: maxX - minX, height: frame.height)
+        }
+        return frame
+    }
+
     /// How far to shift an over-long string this frame, and whether the motion wraps.
     ///
     /// `ticker="bounce"` slides to the end and back; any other enabled value scrolls continuously.
@@ -367,7 +413,7 @@ extension WasabiSceneRenderer {
     /// `text` only scrolls when it opts in, so static labels stay put.
     private func tickerMotion(for object: WasabiObject, overflow: CGFloat,
                               textWidth: CGFloat) -> (offset: CGFloat, wraps: Bool)? {
-        let isSongticker = object.typeName.caseInsensitiveCompare("songticker") == .orderedSame
+        let isSongticker = object.tag.is(.songticker)
         let mode = (object.attributes["ticker"] ?? (isSongticker ? "1" : "0")).lowercased()
         guard !["0", "off", "false", "no"].contains(mode) else { return nil }
         if mode == "bounce" {
@@ -385,7 +431,7 @@ extension WasabiSceneRenderer {
     }
 
     private func drawBitmapText(_ text: String, definition: WalResourceDefinition,
-                                object: WasabiObject, frame: CGRect, context: CGContext) {
+                                object: WasabiObject, frame: CGRect, context: WasabiDrawList) {
         let alignment: NSTextAlignment
         switch object.attributes["align"]?.lowercased() {
         case "center": alignment = .center
@@ -404,31 +450,13 @@ extension WasabiSceneRenderer {
                                 alignment: NSTextAlignment,
                                 verticalAlignment: WasabiTextMetrics.VerticalAlignment = .center,
                                 colonWidth: CGFloat? = nil,
-                                ticker: WasabiObject?, context: CGContext) {
+                                ticker: WasabiObject?, context: WasabiDrawList) {
         guard let sheet = resources.fontSheet(for: definition) else { return }
-        let charWidth = max(1, Int(Double(definition.attributes["charwidth"] ?? "1") ?? 1))
-        let charHeight = max(1, Int(Double(definition.attributes["charheight"] ?? "1") ?? 1))
-        let spacing = Int(Double(definition.attributes["hspacing"] ?? "0") ?? 0)
-        let advance = max(1, charWidth + spacing)
+        let run = WasabiTextMetrics.BitmapRun(definition: definition, colonWidth: colonWidth)
+        let charWidth = run.charWidth
+        let charHeight = run.charHeight
         let positions = Self.bitmapGlyphPositions
-        // `timecolonwidth` is the colon's own **cell**, and on a fixed-pitch atlas the colon is the
-        // only glyph that gets one. A sheet inks its colon into the left few columns of a
-        // full-width cell, so advancing the whole cell leaves the rest of it as a gap before the
-        // seconds: ClassicPro's `numfont.png` is 15px per glyph with a 6px colon and its engine
-        // declares `timecolonwidth="6"` for exactly that reason — without it every cPro clock reads
-        // `1:03: 16` (B-cPro colon gap). Enkera, TRON Legacy and impulse are the corpus's other
-        // bitmap-font clocks and all of them declare a cell *narrower* than the atlas advance, so
-        // the glyph is cropped to its cell rather than centred in it — which is also what the Core
-        // Text path's per-cell clip does with a `timecolonwidth` narrower than the glyph.
-        let colonAdvance = colonWidth.map { max(1, $0.rounded()) }
-        let colonCrop = colonAdvance.map { min(CGFloat(charWidth), $0) }
-        func cellWidth(of character: Character) -> CGFloat {
-            character == ":" ? (colonCrop ?? CGFloat(charWidth)) : CGFloat(charWidth)
-        }
-        func advanceWidth(of character: Character) -> CGFloat {
-            character == ":" ? (colonAdvance ?? CGFloat(advance)) : CGFloat(advance)
-        }
-        let width = text.reduce(CGFloat(0)) { $0 + advanceWidth(of: $1) }
+        let width = run.width(of: text)
         var startX: CGFloat
         switch alignment {
         case .center: startX = frame.midX - width / 2
@@ -460,18 +488,17 @@ extension WasabiSceneRenderer {
             var x = startX + origin
             for character in text.lowercased() {
                 let (column, row) = positions[character] ?? positions[" "] ?? (0, 0)
-                let cell = cellWidth(of: character)
                 // Top-left origin: `cropping(to:)` indexes pixel rows directly (see `bitmap(identifier:)`).
                 let cropRect = CGRect(x: CGFloat(column * charWidth), y: CGFloat(row * charHeight),
-                                      width: cell, height: CGFloat(charHeight))
-                if x + advanceWidth(of: character) >= frame.minX, x <= frame.maxX,
+                                      width: CGFloat(charWidth), height: CGFloat(charHeight))
+                if x + run.advanceWidth(of: character) >= frame.minX, x <= frame.maxX,
                    cropRect.maxY <= CGFloat(sheet.height), cropRect.maxX <= CGFloat(sheet.width),
                    let glyph = cropped(sheet.image, to: cropRect) {
                     drawImage(glyph, in: CGRect(x: x, y: top,
-                                                width: cell, height: CGFloat(charHeight)),
+                                                width: CGFloat(charWidth), height: CGFloat(charHeight)),
                               context: context)
                 }
-                x += advanceWidth(of: character)
+                x += run.advanceWidth(of: character)
             }
         }
         context.restoreGState()
@@ -481,7 +508,7 @@ extension WasabiSceneRenderer {
     /// font when it has one, and a system font when it does not.
     func drawSurfaceText(_ text: String, in rect: CGRect, color: NSColor,
                                  alignment: NSTextAlignment, pointSize: CGFloat,
-                                 context: CGContext) {
+                                 context: WasabiDrawList) {
         if let definition = surfaceFont, definition.kind == "bitmapfont" {
             drawBitmapText(text, definition: definition, frame: rect, alignment: alignment,
                            ticker: nil, context: context)
@@ -496,9 +523,7 @@ extension WasabiSceneRenderer {
     /// one font and drawn in another is a tab whose label runs past its own edge.
     func surfaceTextWidth(_ text: String, pointSize: CGFloat) -> CGFloat {
         if let definition = surfaceFont, definition.kind == "bitmapfont" {
-            let charWidth = max(1, Int(Double(definition.attributes["charwidth"] ?? "1") ?? 1))
-            let spacing = Int(Double(definition.attributes["hspacing"] ?? "0") ?? 0)
-            return CGFloat(text.count * max(1, charWidth + spacing))
+            return WasabiTextMetrics.BitmapRun(definition: definition, colonWidth: nil).width(of: text)
         }
         let font = surfaceTextFont(pointSize: pointSize)
         return resources.textWidth(of: text, font: font)
@@ -534,7 +559,7 @@ extension WasabiSceneRenderer {
     }
 
     private func drawFlippedText(_ text: String, in frame: CGRect, font: NSFont, color: NSColor,
-                                 alignment: NSTextAlignment, context: CGContext) {
+                                 alignment: NSTextAlignment, context: WasabiDrawList) {
         context.saveGState()
         context.translateBy(x: 0, y: frame.midY)
         context.scaleBy(x: 1, y: -1)
@@ -550,7 +575,9 @@ extension WasabiSceneRenderer {
             // worth the exactness: this is the branch a *widened* playlist column leaves behind.
             let attributes = textAttributes(font: font, color: color, alignment: alignment,
                                             lineBreakMode: .byTruncatingTail)
-            (text as NSString).draw(in: frame, withAttributes: attributes)
+            context.drawWithAppKit {
+                (text as NSString).draw(in: frame, withAttributes: attributes)
+            }
         } else {
             // The common case, and the per-row playlist path: one cached line, drawn from the
             // alignment's own origin. `NSString.draw` scissored at the rect, so the rect becomes the

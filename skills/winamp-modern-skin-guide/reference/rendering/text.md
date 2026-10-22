@@ -85,6 +85,26 @@ at all, and a skin that stacks readouts one box apart and shows one at a time by
 its own box on both axes, because the motion is defined against that box and a marquee let loose in
 its parent would smear across the whole panel.
 
+The release needs a **group** to hand the overflow to. A text placed straight on a `<layout>` has only
+the window around it, so it keeps its own box like Winamp's `DrawText`. JRS's remote is the case: its
+script sets the 54px song ticker to `ticker="0"` when "Scroll Basic Songticker" is unchecked, and
+bounded by the layout the title ran across the remote and off both sides. The same rule cleaned up
+Enkera's, NEO_CLASSIC's and Symplicipod's shade titles in the sweep and left every cPro tab strip
+byte-identical.
+
+**How far the release reaches depends on whose string it is (B242).** The skin's own words — a
+literal, a resolved `:componentname`, a message a script writes (Big Bento's `CROSSFADE OFF`) — were
+fitted to their box against Winamp's face, so any overrun is ours (a substituted font: JRS's
+`Playlist Editor` is 15px over its 45px box; or a box the skin squeezed: cPro's `alignByResize`
+shrinks every tab when the strip is narrow) and they are released to the group however far over.
+**Track data** — `WasabiTextMetrics.showsTrackData`: an un-overridden binding or songticker, or any
+string carrying the playing track's title, artist or album — has no length an author could size for,
+and Winamp cuts it at its box; it gets only `boxMargin` of slack, B87's measurement disagreement.
+Anunaki's "Classic No Scroll" songticker is why: released to an LCD group as wide as the player, a
+long title ran across the chrome. Neither a ratio nor a pixel count separates the two over the corpus
+(wTunes' About line is 63px over and wants releasing, JRS's artist ticker 55px and wants cutting), and
+neither does content origin alone: JRS's and Defix's tickers are a script's `setText` of the metadata.
+
 > **Gotcha, now historical: there were two scissors, and moving one alone did nothing.**
 > `NSString.draw(in:)` lays the string out *inside* the rect it is given and cuts it there, so
 > widening the context clip and leaving `drawFrame` alone produced a byte-identical render. The draw
@@ -216,7 +236,26 @@ pixel went through the group's clip and took the bottom off every `0`, `3` and `
 and the reporter was right about which of the two it was: an earlier attempt at the same screenshot
 shrank the glyphs instead and was rejected.
 
-The **vertical scissor moved to the object's own box** in the same change. It used to follow the
+**The cell and the baseline are GDI's: OS/2 `usWinAscent`/`usWinDescent`, not hhea**
+(`WasabiTextMetrics.gdiLine`, 2026-10-21). CoreText lays a line out by the hhea ascender; GDI by the
+win ascent. Most faces make the two agree and nothing moves. A skin-shipped face that does not is drawn
+high: CPro Winamp for Mac's `Helvetica_n.ttf` (Helvetica Neue LT Com) has an hhea ascender of 0.714 em
+— its cap height, with a 0.2 line gap — against a win ascent of 0.952, so its `fontsize="44"` clock in
+a 28px box rose 4px and lost the top of every digit to the box's clip. Reported live as *"the time
+display is clipped on top"*. The correction is applied as a delta (`win ascent − ascender`) on top of
+the TextKit baseline, so every face whose cells agree — Arial, Impact (TOX Milla's calibration),
+Tahoma, Trebuchet — draws byte-identically. Helvetica is exempt, as in `gdiSized`: Windows draws it as
+Arial. Sweep: 83 of 970 renders across 20 skins moved, nearly all 1–2px; Winamp 2000's clock moved
+toward its own `screenshot.png`; nothing newly clipped. Wrapping text keeps its measured block.
+
+**A missing face stands in at the size GDI would draw *it* at** (`substituteScale(forMissing:)`,
+2026-10-21). `gdiSized` reads a face's cell from its OS/2 table, and a face that is not installed has
+none to read, so the Arial stand-in took Arial's em. A table carries the cells of missing Windows faces
+that a skin's own screenshot has confirmed — Segoe UI's 1.33 em, the only entry. cPro2 minimal's
+`font="Segoe UI" fontsize="40"` clock drew 3px too tall and low and sat on the track length below it.
+Sweep: Formamp's Segoe UI title shrank. Nothing else moved.
+
+The **vertical scissor moved to the object's own box** in B144's change. It used to follow the
 *shifted* rect, which is the same rect while the line fits and is dragged out of the box the moment a
 negative offset exists — carrying the cut above the box with it, where BB27 and B87 both say the box
 bounds the string.
@@ -318,10 +357,11 @@ Reported live 2026-09-03 across the cPro family — *"there is a space between t
 and the readout drew `1:03: 16`, nine pixels of empty cell per colon.
 
 - **The colon advances by its declared cell; every other glyph keeps `charwidth + hspacing`.** The
-  glyph is **cropped** to that cell rather than centred in it, because a sheet's ink is at the cell's
-  left edge — which is also what the Core Text path's per-cell clip does with a `timecolonwidth`
-  narrower than the glyph. Every corpus case declares a cell narrower than the atlas advance, so the
-  two paths never disagree in practice.
+  colon's **whole atlas cell is drawn** and only the advance narrows — the next glyph draws over
+  the rest. Cropping it to the declared width worked for cPro, whose colon is inked at the cell's
+  left edge, and erased 1010 Fullscreen's, which is inked mid-cell in a 60px atlas against
+  `timecolonwidth="29"` (every colon drew as a gap). An alpha-scan for the ink is not an option:
+  cPro's cells are opaque, so the scan reads the whole cell as ink and the colons vanish.
 - **Only a clock reads it** (`WasabiTextMetrics.bitmapColonWidth`, gated on the same
   `display=` set as `clockRun`), so a label carrying a stray `timecolonwidth` is still one
   fixed-pitch run.
@@ -396,7 +436,8 @@ The height it takes now is `WasabiTextMetrics.lineHeight(of:)`, which is the sam
 > so the title ran down through the artist. A per-surface height guess anywhere else in the engine is
 > the same bug waiting to happen — auto-sizing belongs here, in the intrinsic-size rules.
 
-Only `<text>` auto-sizes vertically. Everything else with no `h` keeps taking its height from its
+Only `<text>` and `<SongTicker>` (a Wasabi text subclass) auto-sizes vertically — CopperdeckII's
+song title is a heightless `<SongTicker>` and drew nothing until it was included. Everything else with no `h` keeps taking its height from its
 artwork or from nothing, which is what the corpus is laid out against.
 
 #### A container's `x`/`y`/`w`/`h` are its window's (BB27, 2026-08-25)
@@ -449,6 +490,13 @@ The reservation is the point: it stops a readout's box jittering as the digits c
 itself is drawn with the font's own advances, from the reserved room's aligned edge —
 `WasabiTextMetrics.fixedPitch` still supplies the *measurement*, so `getTextWidth()` and any box a
 skin sizes from it are unchanged.
+
+**Centred text is the exception: it centres on the width actually drawn**, not on the reservation
+(2026-10-21). wTunes' About sentence is a `forcefixed` `align="center"` text, and a 47-character
+reservation centred in the box with the proportional string drawn from its left edge put the line
+well left of centre and clipped. Left and right alignment still anchor at the reservation's edge, so
+cPro2's 4px tuck is unchanged. Corpus sweep: Vortex's and 1010 Fullscreen's `POSITION` labels and
+Shield_Amp's window titles moved to their true centres, and nothing else changed.
 
 Drawing each glyph centred in a widest-digit cell was the earlier reading, and cPro2 Dark Aluminum
 rules it out on evidence rather than taste. `info-text.m` places the total time at

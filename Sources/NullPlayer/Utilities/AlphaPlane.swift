@@ -4,8 +4,7 @@ import CoreGraphics
 /// One byte of alpha per pixel, top row first, `width` bytes a row — a window's or a sprite's
 /// outline with the colour thrown away.
 ///
-/// Shared by the skin-window drop shadow (`SkinWindowShadow`) and the `.wal` renderer's animation
-/// core (`WasabiSceneRenderer.animationCore`). `WMPAlphaPlane` is the `.wmz` engine's own, with
+/// The skin-window drop shadow's (`SkinWindowShadow`). `WMPAlphaPlane` is the `.wmz` engine's own, with
 /// that engine's size limit and keep-mask reading, and answers hit tests rather than building
 /// images.
 struct AlphaPlane: Equatable {
@@ -37,14 +36,6 @@ struct AlphaPlane: Equatable {
         }
         guard drawn else { return nil }
         self.init(width: width, height: height, bytes: bytes)
-    }
-
-    /// Keep each pixel's lower alpha of this plane and `other`, which is the same size.
-    mutating func formMinimum(_ other: AlphaPlane) {
-        precondition(other.width == width && other.height == height, "planes differ in size")
-        for index in bytes.indices where other.bytes[index] < bytes[index] {
-            bytes[index] = other.bytes[index]
-        }
     }
 
     /// Premultiplied black at this alpha — or at `table[alpha]` when a 256-entry lookup is given.

@@ -167,7 +167,7 @@ final class WinampModernPhase25RegressionTests: XCTestCase {
         let (runtime, program) = try makeRuntimeAndProgram()
         let browser = try object(named: "testBrowser", in: runtime)
         var routed: (WasabiObjectID, String)?
-        runtime.browserNavigationRequested = { routed = ($0, $1) }
+        runtime.hooks.browserNavigationRequested = { routed = ($0, $1) }
 
         let system = try runtime.invoke(method: "navigateUrl", on: MakiObjectReference(.system),
                                         arguments: [.string("https://example.com")], program: program)

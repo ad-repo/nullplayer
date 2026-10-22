@@ -20,13 +20,13 @@ final class WinampModernB86B88Tests: XCTestCase {
     /// matcher was originally written to, and the one thing the B86 fix had to leave alone.
     func testAbsoluteSameDepthStillMatchesOnlyWhatItDid() {
         let pattern = "WasabiXML/BrowserPro/*"
-        XCTAssertTrue(WinampModernScriptRuntime.parserPath(
+        XCTAssertTrue(WinampModernXmlDocReader.parserPath(
             pattern, matches: ["WasabiXML", "BrowserPro", "sourceitem"]))
         // `*` is one component, not a subtree: the parent itself is not a match.
-        XCTAssertFalse(WinampModernScriptRuntime.parserPath(
+        XCTAssertFalse(WinampModernXmlDocReader.parserPath(
             pattern, matches: ["WasabiXML", "BrowserPro"]))
         // And a different branch at the same depth is still rejected.
-        XCTAssertFalse(WinampModernScriptRuntime.parserPath(
+        XCTAssertFalse(WinampModernXmlDocReader.parserPath(
             pattern, matches: ["WasabiXML", "Something", "sourceitem"]))
     }
 
@@ -35,40 +35,40 @@ final class WinampModernB86B88Tests: XCTestCase {
     /// old equal-count rule rejected outright.
     func testTrailingStarMatchesTheSubtree() {
         let pattern = "ClassicPro/Visualization/BeatVis*"
-        XCTAssertTrue(WinampModernScriptRuntime.parserPath(pattern, matches: customVis))
-        XCTAssertTrue(WinampModernScriptRuntime.parserPath(
+        XCTAssertTrue(WinampModernXmlDocReader.parserPath(pattern, matches: customVis))
+        XCTAssertTrue(WinampModernXmlDocReader.parserPath(
             pattern, matches: ["ClassicPro", "Visualization", "BeatVis"]))
-        XCTAssertFalse(WinampModernScriptRuntime.parserPath(
+        XCTAssertFalse(WinampModernXmlDocReader.parserPath(
             pattern, matches: ["ClassicPro", "Visualization"]))
     }
 
     /// `ClassicPro/TextSettings*` and `ClassicPro/About:Skin*` — the same shape, and the two whose
     /// failure nobody had noticed: the songticker's antialias setting and the About box's skin info.
     func testTheOtherTwoTrailingStarPatterns() {
-        XCTAssertTrue(WinampModernScriptRuntime.parserPath(
+        XCTAssertTrue(WinampModernXmlDocReader.parserPath(
             "ClassicPro/TextSettings*", matches: ["ClassicPro", "TextSettings", "Style"]))
-        XCTAssertTrue(WinampModernScriptRuntime.parserPath(
+        XCTAssertTrue(WinampModernXmlDocReader.parserPath(
             "ClassicPro/About:Skin*", matches: ["ClassicPro", "About:Skin", "entry"]))
     }
 
     /// `BeatVis/*` — relative, aligned with the **end** of the path. `beat.maki` registers this
     /// alongside the absolute spelling for the same nodes, which is how we know both are meant to fire.
     func testRelativePatternAlignsWithTheEndOfThePath() {
-        XCTAssertTrue(WinampModernScriptRuntime.parserPath("BeatVis/*", matches: customVis))
+        XCTAssertTrue(WinampModernXmlDocReader.parserPath("BeatVis/*", matches: customVis))
         // Anchored at the end, so it must be the *last* components that line up.
-        XCTAssertFalse(WinampModernScriptRuntime.parserPath(
+        XCTAssertFalse(WinampModernXmlDocReader.parserPath(
             "BeatVis/*", matches: ["ClassicPro", "BeatVis", "customvis", "deeper"]))
     }
 
     /// A one-component pattern must stay absolute. Suffix matching a bare name would fire callbacks
     /// for an element of that name at any depth — something no script registered for.
     func testSingleComponentPatternDoesNotMatchAtDepth() {
-        XCTAssertTrue(WinampModernScriptRuntime.parserPath("ClassicPro", matches: ["ClassicPro"]))
-        XCTAssertFalse(WinampModernScriptRuntime.parserPath("ClassicPro", matches: customVis))
+        XCTAssertTrue(WinampModernXmlDocReader.parserPath("ClassicPro", matches: ["ClassicPro"]))
+        XCTAssertFalse(WinampModernXmlDocReader.parserPath("ClassicPro", matches: customVis))
     }
 
     func testMatchingIsCaseInsensitive() {
-        XCTAssertTrue(WinampModernScriptRuntime.parserPath(
+        XCTAssertTrue(WinampModernXmlDocReader.parserPath(
             "classicpro/visualization/beatvis*", matches: customVis))
     }
 

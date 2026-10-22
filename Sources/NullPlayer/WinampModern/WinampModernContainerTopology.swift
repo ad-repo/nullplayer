@@ -78,7 +78,7 @@ enum WinampModernContainerTopology {
 
     static func analyze(graph: WasabiObjectGraph) -> [WinampModernContainerInfo] {
         graph.roots
-            .filter { $0.typeName.caseInsensitiveCompare("container") == .orderedSame }
+            .filter { $0.tag.is(.container) }
             .map { container in
                 let id = container.xmlID ?? ""
                 let isMain = id.caseInsensitiveCompare("main") == .orderedSame
@@ -170,8 +170,7 @@ enum WinampModernContainerTopology {
     static func hostsAlbumArt(_ info: WinampModernContainerInfo) -> Bool {
         guard !isNotifier(id: info.id) else { return false }
         func visit(_ object: WasabiObject) -> Bool {
-            let type = object.typeName.lowercased()
-            if type == "albumart" || type == "wasabi:albumart" { return true }
+            if object.tag.isStandard(.albumArt) { return true }
             return object.children.contains(where: visit)
         }
         return visit(info.object)
@@ -226,8 +225,13 @@ enum WinampModernContainerTopology {
     }
 
     /// The container's own display name, which is what the menu shows.
+    ///
+    /// A `%09` (an escaped tab) ends the name: what follows is the accelerator Winamp right-aligns
+    /// in its Windows menu — wTunes' `name="About%09Alt+A"`, CopperdeckII's `Album Art%09Alt+A`.
     static func displayName(of info: WinampModernContainerInfo) -> String {
-        info.object.attributes["name"] ?? info.id
+        guard let name = info.object.attributes["name"] else { return info.id }
+        let label = name.components(separatedBy: "%09")[0].components(separatedBy: "\t")[0]
+        return label.isEmpty ? info.id : label
     }
 
     /// Menu labels for the skin-owned windows, qualified only where the skin left them ambiguous.
@@ -255,7 +259,7 @@ enum WinampModernContainerTopology {
     /// `MLibrary`, and `eq` only look like their kinds by convention, and reading them as such would
     /// also make `colorthemes` a surface. The one id fallback is an exact short token (`eq`), which is
     /// how CornerAmp names the equalizer window it declares no GUID for.
-    private static func kind(of container: WasabiObject) -> WinampModernComponentKind? {
+    static func kind(of container: WasabiObject) -> WinampModernComponentKind? {
         if let declared = container.attributes["component"],
            let kind = WinampModernComponentRegistry.kind(for: declared) {
             return kind
@@ -271,7 +275,7 @@ enum WinampModernContainerTopology {
     }
 
     private static func normalLayout(of container: WasabiObject) -> WasabiObject? {
-        let layouts = container.children.filter { $0.typeName.caseInsensitiveCompare("layout") == .orderedSame }
+        let layouts = container.children.filter { $0.tag.is(.layout) }
         return layouts.first { $0.xmlID?.caseInsensitiveCompare("normal") == .orderedSame } ?? layouts.first
     }
 

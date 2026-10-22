@@ -7,14 +7,14 @@ import Foundation
 /// Split out of `WasabiRenderer.swift`; see
 /// `skills/winamp-modern-skin-guide/reference/rendering/hit-testing.md`.
 extension WasabiSceneRenderer {
-    func object(at point: CGPoint, interactiveOnly: Bool = true,
+    func object(at point: CGPoint, interactiveOnly: Bool = true, includingGhosts: Bool = false,
                 ignoring shouldIgnore: ((WasabiObject) -> Bool)? = nil) -> WasabiObject? {
         // Outside the window's own shape there is nothing to hit: a corner the skin trimmed away is
         // gone for the pointer as well as for the eye (B76).
         guard containsRegionPixel(at: point) else { return nil }
         for node in sceneNodes().reversed() where node.clip.contains(point) && node.frame.contains(point) {
             let object = node.object
-            guard isVisible(object), object.attributes["ghost"] != "1" else { continue }
+            guard isVisible(object), includingGhosts || object.attributes["ghost"] != "1" else { continue }
             if shouldIgnore?(object) == true { continue }
             if interactiveOnly && !isInteractive(object) { continue }
             if !interactiveOnly && !isRenderable(object, bitmapID: node.bitmapID) { continue }
@@ -35,7 +35,7 @@ extension WasabiSceneRenderer {
                 // what a fill animation needs: multipass's seek bar is empty ahead of the playhead, so
                 // testing the current frame alone would make the whole point of a seek bar — clicking
                 // *forward* — unreachable.
-                if object.typeName.caseInsensitiveCompare("animatedlayer") == .orderedSame {
+                if object.tag.is(.animatedLayer) {
                     guard animationUnionAlpha(bitmap, object: object, node: node, point: point)
                             > Self.regionAlphaFloor
                     else { continue }
@@ -65,8 +65,12 @@ extension WasabiSceneRenderer {
                                         y: Int((point.y - frame.minY).rounded(.down)) - region.offsetY)
     }
 
-    func containsVisiblePixel(at point: CGPoint) -> Bool {
-        object(at: point, interactiveOnly: false) != nil
+    /// `includingGhosts` counts `ghost="1"` artwork too: it takes no press itself, but the window it
+    /// paints still does, and the press goes to the layout (the stock notifier is all ghosts, B183).
+    func containsVisiblePixel(at point: CGPoint, includingGhosts: Bool = false) -> Bool {
+        object(at: point, interactiveOnly: false, includingGhosts: includingGhosts) != nil
+            // The black a `sysregion` box is backed with is the window too (Prakrit's whole body).
+            || backedRegionBoxes().contains { $0.contains(point) }
     }
 
     /// Every draggable `<Wasabi:Frame>` divider in the active scene, with its grab strip in skin
@@ -74,7 +78,7 @@ extension WasabiSceneRenderer {
     /// (cPro-Bento's playlist frame lives inside its main frame).
     func frameDividers() -> [(object: WasabiObject, rect: CGRect, isVertical: Bool)] {
         sceneNodes().compactMap { node in
-            guard WasabiFrame.isFrame(node.object), isVisible(node.object),
+            guard WasabiFrame.isFrame(node.object.tag), isVisible(node.object),
                   let rect = WasabiFrame.dividerRect(of: node.object, in: node.frame) else { return nil }
             return (node.object, rect, rect.height >= rect.width)
         }
@@ -107,11 +111,11 @@ extension WasabiSceneRenderer {
 
     /// Whether an object carries a command of its own, independent of being draggable — the test that
     /// separates a skin's window-drag surface from a control that also moves the window.
+    ///
+    /// The **bare** kinds only, unlike `isInteractive`: a `Wasabi:Button` with no command of its own
+    /// is still a drag surface — Styx's title strip is a `<Wasabi:button move="1">`.
     private static func hasOwnCommand(_ object: WasabiObject) -> Bool {
-        let type = object.typeName.lowercased()
-        if type == "button" || type == "togglebutton" || type == "nstatesbutton" || type == "slider" {
-            return true
-        }
+        if object.tag.is(anyOf: WasabiKind.commands) { return true }
         return object.attributes["action"] != nil
             || object.attributes[WasabiClickGesture.double.actionAttribute] != nil
             || object.attributes[WasabiClickGesture.right.actionAttribute] != nil
@@ -127,7 +131,7 @@ extension WasabiSceneRenderer {
     /// object's rect: a region is a set of *map pixels*, and `Region.offset` moves it in those same
     /// units. An unresolvable map leaves the object unclipped — a skin whose map is missing should
     /// look the way it did before regions existed, not lose the control altogether.
-    func applyRegionClip(of object: WasabiObject, frame: CGRect, context: CGContext) {
+    func applyRegionClip(of object: WasabiObject, frame: CGRect, context: WasabiDrawList) {
         guard let region = WasabiRegionClip(object: object),
               let mask = resources.regionMask(region) else { return }
         let rect = CGRect(x: frame.minX + CGFloat(region.offsetX),
@@ -149,17 +153,37 @@ extension WasabiSceneRenderer {
     /// slab across the full width at the top and white slabs along the bottom, on top of the real
     /// title strips: "layered full backgrounds in different colours" and "multiple top menubars".
     ///
-    /// Only the sign matters. `0`, a positive value (Ujola's own console art is `sysregion="1"` on
-    /// real bitmaps) and the non-numeric forms a skin writes (`"AND"`, which Anexa uses 15 times)
-    /// all paint exactly as before. `sysregion="-2"` appears in 11 of the 18 installed skins.
-    static func isRegionOnly(_ object: WasabiObject, type: String) -> Bool {
-        guard type == "layer" || type == "animatedlayer",
-              let raw = object.attributes["sysregion"], let value = Int(raw.trimmingCharacters(in: .whitespaces))
+    /// Only the sign of `windowRegionValue` matters. `0`, a positive value (Ujola's own console art is
+    /// `sysregion="1"` on real bitmaps) and the non-numeric forms a skin writes (`"AND"`, which Anexa
+    /// uses 15 times) all paint exactly as before. `sysregion="-2"` appears in 11 of the 18 installed
+    /// skins.
+    static func isRegionOnly(_ object: WasabiObject) -> Bool {
+        guard object.tag.is(anyOf: [.layer, .animatedLayer]), let value = windowRegionValue(of: object)
         else { return false }
         return value < 0
     }
 
-    /// One `sysregion` object's contribution to the window shape, and the key the cache turns on.
+    /// This object's signed contribution to the **window region**: its `sysregion`, or else a
+    /// negative `regionop`. Nil when it declares neither, or a form that is not a number.
+    ///
+    /// `regionop` combines an object into its *group's* region rather than the window's, but every
+    /// negative one in the corpus (37 skins) is the same idiom: four corner silhouettes cut out of a
+    /// standard frame whose group is the whole window, so the group's region is the window's.
+    /// Alpine9243's `frame-cut.png` is opaque magenta exactly where the corner goes; drawn as a
+    /// layer it put a pink triangle in every framed window's corner (#582). A positive `regionop`
+    /// adds to a region the rect already covers, so it is left out rather than read as `sysregion`.
+    static func windowRegionValue(of object: WasabiObject) -> Int? {
+        if let raw = object.attributes["sysregion"] {
+            return Int(raw.trimmingCharacters(in: .whitespaces))
+        }
+        guard let raw = object.attributes["regionop"],
+              let value = Int(raw.trimmingCharacters(in: .whitespaces)), value < 0
+        else { return nil }
+        return value
+    }
+
+    /// One region object's contribution to the window shape (`windowRegionValue`), and the key the
+    /// cache turns on.
     ///
     /// Rebuilding the shape is a canvas-sized allocation and a pass over every pixel, and the graph's
     /// mutation counter moves for anything a script writes — so keying on that alone would rebuild a
@@ -170,7 +194,7 @@ extension WasabiSceneRenderer {
         let frame: CGRect
         let clip: CGRect
         let bitmapID: String?
-        /// A positive `sysregion` adds this object to the window; a negative one takes it away.
+        /// A positive value adds this object to the window; a negative one takes it away.
         let additive: Bool
         /// For a positive, artwork-less group whose descendants declare their own region: the boxes
         /// of what it holds — its visible leaves, and any group inside that paints a `background`.
@@ -194,16 +218,16 @@ extension WasabiSceneRenderer {
     /// model that merely subtracted every negative layer cut away the left third of the window
     /// (measured: 31,289 px, 16.6% of `main/normal`).
     ///
-    /// Only the sign is read, as everywhere `sysregion` is consulted: both negative magnitudes in
-    /// the corpus are cut-aways — `-2` on the corner and edge silhouettes of 28 skins, `-1` on
-    /// winampmodern566's and S7Reflex's config drawer — and the non-numeric forms a skin writes
-    /// (`"AND"`, which Anexa uses 15 times) shape nothing, as they have never painted.
+    /// Only the sign of `windowRegionValue` is read: every negative magnitude in the corpus is a
+    /// cut-away — `sysregion="-2"` on the corner and edge silhouettes of 28 skins, `-1` on
+    /// winampmodern566's and S7Reflex's config drawer, `regionop="-2"` on the frame corners of 37 —
+    /// and the non-numeric forms a skin writes (`"AND"`, which Anexa uses 15 times) shape nothing,
+    /// as they have never painted. A negative `regionop` is a cut for the same-group rule below too,
+    /// so a positive `sysregion` beside one in its group is not restored; no corpus skin has both.
     private func regionCuts() -> [WasabiRegionCut] {
         let nodes = sceneNodes()
         let declared: [(node: WasabiSceneNode, additive: Bool)] = nodes.compactMap { node in
-            guard let raw = node.object.attributes["sysregion"],
-                  let value = Int(raw.trimmingCharacters(in: .whitespaces)), value != 0
-            else { return nil }
+            guard let value = Self.windowRegionValue(of: node.object), value != 0 else { return nil }
             return (node, value > 0)
         }
         // **A group's own cut-out is not undone from inside it.** A restore that crosses groups is a
@@ -272,6 +296,19 @@ extension WasabiSceneRenderer {
         return boxes
     }
 
+    /// Whether a `sysregion="1"` box is backed black: every layout that has not opted in to
+    /// per-pixel alpha with `desktopalpha="1"` (B151). See `regionBoxes()`.
+    private var layoutBacksRegionBoxes: Bool {
+        guard let raw = layout.attributes["desktopalpha"] else { return true }
+        return Int(raw.trimmingCharacters(in: .whitespaces)) != 1
+    }
+
+    /// The `sysregion` boxes this layout paints black — what `drawScene` fills, and so part of the
+    /// window for the pointer too.
+    func backedRegionBoxes() -> [CGRect] {
+        layoutBacksRegionBoxes ? regionBoxes() : []
+    }
+
     /// The boxes a `Wasabi:StandardFrame:*` with `sysregion="1"` and no artwork of its own puts
     /// **inside** the window, in the scene's top-left space and clipped as drawn (B151).
     ///
@@ -285,22 +322,25 @@ extension WasabiSceneRenderer {
     /// laid black slabs across S7Reflex and Lobe. **Not when the skin cut a real region**: then it
     /// has drawn the window's shape itself — Ebonite cuts its client window down to the opening in a
     /// separate frame window, and a backing grew black strips under that frame's edges.
+    ///
+    /// A `<rect>` is a box by construction, so one with `sysregion="1"` is backed the same way.
+    /// Prakrit's whole player body is `<rect id="bckg" sysregion="1" w="200" h="250"/>`, and
+    /// without a backing its panels were desktop.
     func regionBoxes() -> [CGRect] {
         guard windowRegion() == nil else { return [] }
         return regionCuts().compactMap { cut in
             guard cut.additive, cut.bitmapID == nil,
-                  cut.object.typeName.lowercased().hasPrefix("wasabi:standardframe:"),
-                  cut.object.attributes["background"].map({ resources.bitmap(identifier: $0) == nil }) ?? true
+                  cut.object.tag.is(.rect) || (cut.object.tag.namespace == .wasabiStandardFrame
+                      && cut.object.attributes["background"].map({ resources.bitmap(identifier: $0) == nil }) ?? true)
             else { return nil }
             let box = cut.frame.intersection(cut.clip)
             return box.isNull || box.isEmpty ? nil : box
         }
     }
 
-    /// The window's shape, as the bite the skin's `sysregion` objects take out of it: an image whose
-    /// alpha is the *cut* coverage — transparent where the window stays, opaque where it goes.
-    ///
-    /// Nil when the layout cuts nothing, which is the common case and costs nothing.
+    /// Take the window's shape out of the finished scene: the bite the skin's `sysregion` objects take
+    /// out of it, an image whose alpha is the *cut* coverage — transparent where the window stays,
+    /// opaque where it goes. Nothing at all when the layout cuts nothing, the common case.
     ///
     /// **Why a composite and not a clip.** A `CGContext` clip mask is consulted by *every* drawing
     /// operation, so a fractional mask value is applied once per overlapping draw and accumulates:
@@ -311,7 +351,33 @@ extension WasabiSceneRenderer {
     ///
     /// The image is built through the same y-flip the scene draw uses, so it is composited in the
     /// *unflipped* space `draw` starts and ends in.
-    func windowRegionCutImage() -> CGImage? { windowRegion()?.cut }
+    ///
+    /// **At a fractional scale the cut reaches half a skin pixel further.** The artwork is smoothed
+    /// there (`WasabiBitmapInterpolationPolicy`), so a cut pixel's art bleeds up to half a skin pixel
+    /// into its uncut neighbour, and the opaque promotion turns that bleed solid: CopperdeckII at UI
+    /// Size 135% on Retina (2.7) kept alpha 63 of `player/back.png`'s cut edge in a column beside it,
+    /// a dark line floating outside the rounded corners. Four draws nudged just under half a skin
+    /// pixel each way reach every pixel the bleed can, four full-canvas composites per whole frame.
+    /// Their own edges fall inside the canvas, so they are drawn aliased: an antialiased edge cuts
+    /// its pixels only partly, and the promotion turns them solid again.
+    func drawWindowRegionCut(in context: WasabiDrawList) {
+        guard let cut = windowRegion()?.cut else { return }
+        let canvas = CGRect(origin: .zero, size: canvasSize)
+        context.saveGState()
+        context.setBlendMode(.destinationOut)
+        context.interpolationQuality = .none
+        if WasabiBitmapInterpolationPolicy.isInteger(context.deviceScale) {
+            context.draw(cut, in: canvas)
+        } else {
+            context.setShouldAntialias(false)
+            for dx: CGFloat in [-0.49, 0.49] {
+                for dy: CGFloat in [-0.49, 0.49] {
+                    context.draw(cut, in: canvas.offsetBy(dx: dx, dy: dy))
+                }
+            }
+        }
+        context.restoreGState()
+    }
 
     private func windowRegion() -> (cut: CGImage, alpha: [UInt8], width: Int, height: Int)? {
         let cuts = regionCuts()
@@ -337,10 +403,10 @@ extension WasabiSceneRenderer {
         guard width >= 1, height >= 1 else { return nil }
         var rgba = [UInt8](repeating: 0, count: width * height * 4)
         rgba.withUnsafeMutableBytes { bytes in
-            guard let context = CGContext(data: bytes.baseAddress, width: width, height: height,
-                                          bitsPerComponent: 8, bytesPerRow: width * 4,
-                                          space: CGColorSpaceCreateDeviceRGB(),
-                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            guard let target = CGContext(data: bytes.baseAddress, width: width, height: height,
+                                         bitsPerComponent: 8, bytesPerRow: width * 4,
+                                         space: CGColorSpaceCreateDeviceRGB(),
+                                         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
             else { return }
             // The window starts as its own rect. Winamp builds the region up from nothing instead,
             // but every framed window in the corpus opens that composition with a full-bleed
@@ -348,10 +414,15 @@ extension WasabiSceneRenderer {
             // `sysregion="1"` on the group that fills the window), so seeding the rect gives the same
             // answer where a skin does say — and leaves the window whole where one does not, rather
             // than erasing it.
-            context.setFillColor(gray: 1, alpha: 1)
-            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-            context.translateBy(x: 0, y: CGFloat(height))
-            context.scaleBy(x: 1, y: -1)
+            target.setFillColor(gray: 1, alpha: 1)
+            target.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            target.translateBy(x: 0, y: CGFloat(height))
+            target.scaleBy(x: 1, y: -1)
+            // Drawn through the scene's own sprite path, which records; replayed straight back.
+            let context = WasabiDrawList(ctm: target.ctm,
+                                         clip: CGRect(x: 0, y: 0, width: width, height: height),
+                                         interpolationQuality: target.interpolationQuality)
+            defer { context.replay(into: target) }
             // **Except inside a full-bleed group that only wraps the window's real content.** Such a
             // group reaches as far as what it holds, not as far as its box — and not merely as far
             // as its descendants' region, because a standard frame's client content declares none
@@ -440,22 +511,16 @@ extension WasabiSceneRenderer {
     }
 
     private func isInteractive(_ object: WasabiObject) -> Bool {
-        let type = object.typeName.lowercased()
-        if type == "button" || type == "togglebutton" || type == "nstatesbutton" || type == "slider" {
-            return true
-        }
-        // `<Wasabi:Button>` is a button — the standard library's, but a button, and Wasabi hit-tests
-        // it as one. It reached here only through `isTextButton` (a *label* it has to draw) or an
-        // `action=`, so a button whose whole behaviour is a script binding was never under the mouse
-        // at all: T800's five `Mem1…Mem5` song slots are `rectrgn="1"` 4x3 boxes driven entirely from
-        // `quicksongpick.maki`, and every click fell past them onto the layout. Big Bento's
-        // `query.pathurl` dialog has the same shape from the other direction — its `Ok` is
-        // artwork-backed with `text=""`, so the label test rejected it too.
-        //
-        // Contained by what a `<Wasabi:Button>` *is*: all 32 in the corpus are either an explicit
-        // click target (`rectrgn="1"`), artwork-backed, or labelled, so none of them becomes an
-        // invisible box that swallows a click meant for something behind it.
-        if type == "wasabi:button" { return true }
+        // The button it wraps takes the press, and that button's events reach the wrapper's script.
+        if WasabiEmbeddedXUI.wrapsButton(object) { return false }
+        // The standard library's `<Wasabi:Button>` and `<Wasabi:ToggleButton>` are buttons too, and
+        // Wasabi hit-tests them as such. Left to `isTextButton` or `action=`, a button whose whole
+        // behaviour is a script binding was never under the mouse: T800's five `Mem1…Mem5` song
+        // slots are `rectrgn="1"` 4x3 boxes driven entirely from `quicksongpick.maki`, and Big
+        // Bento's `query.pathurl` `Ok` is artwork-backed with `text=""`. Prakrit's Rep/Shu/Xfd
+        // switches are alpha-0 `Wasabi:ToggleButton`s carrying only a `cfgattrib`, so every press
+        // fell to the XUI wrapper and toggled nothing.
+        if object.tag.isStandard(anyOf: WasabiKind.commands) { return true }
         // A `<Menu>` is a hit region and nothing else — it draws no artwork and carries no `action`,
         // so without naming it here the pointer never reached a single entry of a skin's own menu
         // bar. Its box is explicit (`w="0" relatw="1" h="21"`) and `object(at:)` skips the alpha test
@@ -487,12 +552,20 @@ extension WasabiSceneRenderer {
         // one of its own children, which is what killed the drawer tabs and the colour-theme strip
         // declared before it. A group that paints a background does have a region and keeps one.
         // (Window dragging is unaffected: `shouldDragWindow` only ever accepts a `layer`.)
-        if type == "group" || type == "layout" { return object.attributes["background"] != nil }
+        // A `<CustomObject>` is the same kind of holder: Anunaki's `main.lcd.layouts` says `move="1"`
+        // and is sized to its 482x281 group, so it sat over the whole EQ drawer and took every press
+        // meant for the EQ sliders, presets and buttons.
+        if object.tag.is(anyOf: [.group, .layout, .customObject]) {
+            return object.attributes["background"] != nil
+        }
         if object.attributes["move"] == "1" { return true }
+        // ponytail: asks the runtime's bindings per candidate under the pointer; cache per object if
+        // hover profiling shows it.
+        if pressBindingProvider?(object) == true { return true }
         // An `animatedlayer` is a layer that moves. MMD3's rotary volume/bass/treble knobs are
         // animated layers with their own `onLeftButtonDown` handlers, and leaving the type out here
         // meant a click never reached them.
-        return (type == "layer" || type == "animatedlayer") && object.attributes["ghost"] != "1"
+        return object.tag.is(anyOf: [.layer, .animatedLayer]) && object.attributes["ghost"] != "1"
     }
 
     /// The coverage at which a pixel is still part of the window.

@@ -545,14 +545,74 @@ All three costs were repeated work, and debug showed them as clearly as release:
   no caller can take it for the wrong object. Pinned by
   `testOnlyAWindowsGeometryWriteReadsItsOriginFirst`.
 - **A scene fingerprint per graph write.** `graphMayHaveMovedShadowOutline` walked the whole scene
-  after every write to decide whether the drop shadow's outline moved. It now runs once at the end
-  of the runloop turn, from `scheduleGraphSettle` (`WinampModernMainView+GraphSettle`), together with
-  the animation clock's check, which walks the same scene while nothing in it animates. A write's
-  cheap half (rect caches, `needsLayout`/`needsDisplay`) stays synchronous. The shadow pulls at most
-  every `shadowShapeInterval` anyway.
+  after every write to decide whether the drop shadow's outline moved. It was moved to the end of the
+  runloop turn (`scheduleGraphSettle`, `WinampModernMainView+GraphSettle`), and on 2026-10-21 it went
+  altogether: the shadow now reads the drawn frame's alpha (`rendering.md` § *The window's drop
+  shadow*). The animation clock's check still settles there, because it walks the same scene while
+  nothing in it animates. A write's cheap half (rect caches, `needsLayout`/`needsDisplay`) stays
+  synchronous.
 
 **What is left is legitimate.** In Big Bento Modern's remaining 1.5 s, half is the skin's own
 start-up scripts, and two thirds of that is `layoutNodes()` rebuilt between a script's geometry
 write and its next read (`getLeft`, `getWidth`) or the `onResize` settle after each event. Each one
 answers a question about a layout that really changed. Going further means resolving the layout
 incrementally rather than per scene, which is a change to the layout engine, not a cache.
+
+#### A frame is recorded on the main thread and rasterized off it (2026-10-21)
+
+The scene walk reads the live object graph, the host and the renderer's caches, and scripts mutate
+all of them on the main thread, so the walk stays there. The pixels do not. The renderer draws into
+a **`WasabiDrawList`** (`WinampModern/WasabiDrawList.swift`), which has `CGContext`'s method names
+and records each call as a closure over the values it was handed (`CGImage`, `CGColor`, `CTLine`,
+rects, copied paths). It tracks the CTM, the clip's device bounds and the interpolation quality
+itself, so the renderer's reads (pixel snapping, prescale sizes, text clipping) answer as the replay
+context would. Two escape hatches cover code that needs a real context: `drawWithAppKit` for
+`NSString.draw` and Cava's `NSBezierPath`, which bind `NSGraphicsContext.current` on the replaying
+thread, and `record` for a whole draw function (the host chrome's gloss frame). **A recorded closure
+captures values, never the renderer or a `WasabiObject`**, or it races the next script tick.
+
+`WinampModernCanvas` (`WinampModern/`) replays the list into the window's own bitmap on a per-view
+serial queue. `WinampModernFrames` (`Windows/WinampModern/WinampModernMainView+Frames.swift`) owns
+the scheduling, and the view hands it two closures: `record` (the scene walk) and `present`:
+
+- **Device resolution.** The canvas is `bounds × backingScaleFactor`, with the UI Size in `bounds`.
+  The old opaque buffer ran at the display-list context's CTM 1.0 (B80), so every opaque layout was
+  drawn at point resolution and stretched 2x; Anunaki's player buffer was 708x349 at 100% on a 2x
+  panel. Pixel art looks the same; text and fractional-scale edges are sharper.
+- **Every invalidation is a frame request.** `setNeedsDisplay(_:)` hands the rect to
+  `WinampModernFrames.request`, which schedules one pump per runloop turn. One frame is in flight at
+  a time; dirt that arrives meanwhile is recorded fresh when it lands. A hidden window keeps no dirt
+  (`isOnScreen`) and redraws whole on reveal (`owesWholeFrame`).
+- **A new canvas is one event, drawn whole.** The frames' `target` is `idle`, `canvas(Geometry)` or
+  `direct` (too large for a canvas). `setFrameSize`, `viewDidChangeBackingProperties` and the move to
+  a window set it, and nothing else does. A geometry the canvas was not last drawn whole at renders
+  synchronously from `layout()` (`pumpNewCanvas`), so it lands in the transaction that resizes the
+  layer. Any change of target drops the frame still in flight, so frames are presented strictly in
+  order with one counter.
+- **The picture is the layer's `contents`**, assigned by `present` as each frame lands, not a blit
+  in `draw(_:)`; `updateLayer` does nothing. Blitting it colour-matched and re-formatted the whole
+  image on the main thread every frame: 15.7% of cPro Bento's main thread with the canvas in Device
+  RGB. With the canvas in the window's own colour space it was still 8.8%; as `contents` it is about
+  1.5% (`CA::Transaction::commit`). The bitmaps are colour-matched once each as they are drawn, on
+  the queue. `draw(_:)` survives only for a window too large for a canvas (`drawDirectly`).
+- **The canvas keeps an alpha mirror** for the drop shadow, compared over each frame's rects with
+  `vImageExtractChannel` and `memcmp`. An alpha-only `CGImage` cannot be made with `CGImage`'s own
+  initializer (it answers nil); `outlineImage` makes it through an alpha-only `CGContext`.
+- **Overlapping dirt is coalesced** before it is drawn (`coalesced`): one meter box invalidated by
+  every script write in a turn is one rect. Without it the paint-rate probe read `rects=105%`.
+
+Debug build, playing, `sample` against a build of the commit before (`HEAD` worktree):
+
+| skin | main-thread busy before | after | footprint before | after |
+|---|---:|---:|---:|---:|
+| cPro Bento | 74.5% | **40.4%** | 420 MB | 378 MB |
+| Big Bento Modern | 38.3% | **23.5%** | 693 MB | 473 MB |
+| WMP11-BlueVU | 97.7% | 99.7% | 411 MB | 316 MB |
+
+WMP11-BlueVU stays saturated by its MAKI Layer FX mesh evaluation, which is script work, not drawing.
+ThreadSanitizer over six skins found no race in the new code. Translucent layouts changed for the
+better: the old display-list path composited their soft edges twice (meridian's alpha 57 came out
+as 95), and they now match the headless render exactly. `WINAMP_MODERN_SYNC_FRAMES=1` renders every
+frame on the main thread as the A/B switch, and is byte-identical on static skins.
+
+Not yet measured: a release-build profile.

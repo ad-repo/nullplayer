@@ -68,7 +68,7 @@ final class WinampModernPhase55Tests: XCTestCase {
     func testApplyingAGammaSetSwitchesTheTheme() throws {
         let runtime = try makeRuntime()
         var switched: [String] = []
-        runtime.themeSwitchRequested = { switched.append($0); return true }
+        runtime.hooks.themeSwitchRequested = { switched.append($0); return true }
         let set = try runtime.invoke(method: "getgammaset",
                                      on: MakiObjectReference(.colorManager),
                                      arguments: [.string("Midnight")], program: emptyProgram())
@@ -82,7 +82,7 @@ final class WinampModernPhase55Tests: XCTestCase {
     func testEachGammaSetCarriesItsOwnName() throws {
         let runtime = try makeRuntime()
         var switched: [String] = []
-        runtime.themeSwitchRequested = { switched.append($0); return true }
+        runtime.hooks.themeSwitchRequested = { switched.append($0); return true }
         for name in ["Midnight", "Orange", "Midnight"] {
             let set = try runtime.invoke(method: "getgammaset",
                                          on: MakiObjectReference(.colorManager),
@@ -97,7 +97,7 @@ final class WinampModernPhase55Tests: XCTestCase {
     /// inert. Refusing at `getGammaSet` would abort the caller's whole handler over one bad name.
     func testAnUnknownThemeIsInertRatherThanFatal() throws {
         let runtime = try makeRuntime()
-        runtime.themeSwitchRequested = { _ in false }
+        runtime.hooks.themeSwitchRequested = { _ in false }
         let set = try runtime.invoke(method: "getgammaset",
                                      on: MakiObjectReference(.colorManager),
                                      arguments: [.string("No Such Theme")], program: emptyProgram())
@@ -111,7 +111,7 @@ final class WinampModernPhase55Tests: XCTestCase {
     func testApplyOnAnObjectThatIsNotAGammaSetDoesNothing() throws {
         let runtime = try makeRuntime()
         var switched: [String] = []
-        runtime.themeSwitchRequested = { switched.append($0); return true }
+        runtime.hooks.themeSwitchRequested = { switched.append($0); return true }
         let other = try runtime.makeObject(classGUID: "0123456789abcdef0123456789abcdef",
                                            program: emptyProgram())
         _ = try runtime.invoke(method: "apply", on: other, arguments: [], program: emptyProgram())
@@ -130,10 +130,10 @@ final class WinampModernPhase55Tests: XCTestCase {
     /// since been removed from the corpus, so this test is the detector now.
     func testTheColorManagerStillAnswersEverythingSystemAnswered() throws {
         let runtime = try makeRuntime()
-        runtime.themeNamesRequested = { ["Midnight", "Orange"] }
-        runtime.activeThemeRequested = { "Midnight" }
+        runtime.hooks.themeNamesRequested = { ["Midnight", "Orange"] }
+        runtime.hooks.activeThemeRequested = { "Midnight" }
         var switched: [String] = []
-        runtime.themeSwitchRequested = { switched.append($0); return true }
+        runtime.hooks.themeSwitchRequested = { switched.append($0); return true }
         let colorManager = MakiObjectReference(.colorManager)
 
         XCTAssertEqual(try runtime.invoke(method: "getcolortheme", on: colorManager,

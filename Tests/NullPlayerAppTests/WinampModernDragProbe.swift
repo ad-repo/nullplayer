@@ -4,7 +4,7 @@ import AppKit
 
 /// Throwaway probe: how much of a skin's player window answers a press with a window drag.
 ///
-///     WINAMP_MODERN_DRAG_PROBE="$HOME/Library/Application Support/NullPlayer/WinampModernSkins" \
+///     WINAMP_MODERN_DRAG_PROBE="$HOME/Library/Application Support/NullPlayer/WinampModernCorpus/gold" \
 ///       swift test --filter WinampModernDragProbe
 final class WinampModernDragProbe: XCTestCase {
 
@@ -12,15 +12,7 @@ final class WinampModernDragProbe: XCTestCase {
     func testDragCoverageAcrossTheCorpus() throws {
         let env = ProcessInfo.processInfo.environment
         guard let root = env["WINAMP_MODERN_DRAG_PROBE"] else { throw XCTSkip("set WINAMP_MODERN_DRAG_PROBE") }
-        var wals: [URL] = []
-        let rootURL = URL(fileURLWithPath: root)
-        if rootURL.pathExtension.lowercased() == "wal" {
-            wals = [rootURL]
-        } else {
-            wals = ((try? FileManager.default.contentsOfDirectory(at: rootURL, includingPropertiesForKeys: nil)) ?? [])
-                .filter { $0.pathExtension.lowercased() == "wal" }
-                .sorted { $0.lastPathComponent < $1.lastPathComponent }
-        }
+        let wals = WinampModernCorpusPaths.archives(in: root).sorted { $0.lastPathComponent < $1.lastPathComponent }
         for wal in wals {
             do { try probe(wal) } catch { print("SKIN \(wal.lastPathComponent) FAILED \(error)") }
         }
@@ -40,7 +32,7 @@ final class WinampModernDragProbe: XCTestCase {
             renderersByContainer[info.id] = renderer
         }
         let all = Array(renderersByContainer.values)
-        runtime.resolvedGeometryRequested = { object in
+        runtime.hooks.resolvedGeometryRequested = { object in
             for renderer in all { if let g = renderer.resolvedGeometry(of: object) { return g } }
             return nil
         }
@@ -114,13 +106,7 @@ final class WinampModernDragProbe: XCTestCase {
     func testHostedWindowDragCoverage() throws {
         let env = ProcessInfo.processInfo.environment
         guard let root = env["WINAMP_MODERN_DRAG_HOSTED"] else { throw XCTSkip("set WINAMP_MODERN_DRAG_HOSTED") }
-        let rootURL = URL(fileURLWithPath: root)
-        var wals: [URL] = []
-        if rootURL.pathExtension.lowercased() == "wal" { wals = [rootURL] } else {
-            wals = ((try? FileManager.default.contentsOfDirectory(at: rootURL, includingPropertiesForKeys: nil)) ?? [])
-                .filter { $0.pathExtension.lowercased() == "wal" }
-                .sorted { $0.lastPathComponent < $1.lastPathComponent }
-        }
+        let wals = WinampModernCorpusPaths.archives(in: root).sorted { $0.lastPathComponent < $1.lastPathComponent }
         for wal in wals {
             do { try probeHosted(wal) } catch { print("HOSTED \(wal.lastPathComponent) FAILED \(error)") }
         }

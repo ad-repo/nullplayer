@@ -44,6 +44,19 @@ struct WinampModernBorrowedOrigin {
     private var read: Read?
     private var unspentX = false
     private var unspentY = false
+    /// Window objects whose origin a script has read since their last move: the only ones a write of
+    /// that same origin can be a round trip on (B61). A layout reports (0, 0), so without this every
+    /// script that parks its window at the desktop's corner — Nitrous Audio's monitor mode writes
+    /// `x=0`/`y=0` on its layout and never asks where it is — was taken as one.
+    private var readSinceMove: Set<WasabiObjectID> = []
+
+    mutating func noteRead(of window: WasabiObjectID) { readSinceMove.insert(window) }
+
+    /// Whether a write on `window` can be a round trip of its own origin. A write that `moves` it
+    /// spends the read.
+    mutating func takeRead(of window: WasabiObjectID, moves: Bool) -> Bool {
+        moves ? readSinceMove.remove(window) != nil : readSinceMove.contains(window)
+    }
 
     mutating func record(_ read: Read) {
         self.read = read

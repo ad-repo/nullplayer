@@ -71,7 +71,7 @@ enum WinampModernAvailableComponents {
         guard let guid = WinampModernComponentRegistry.canonicalGUID(for: kind) else { return 0 }
         var released = 0
         for object in graph.allObjectsUnordered
-        where WinampModernComponentRegistry.isHolderElement(object.typeName)
+        where WinampModernComponentRegistry.isHolderElement(object.tag)
             && object.attributes["hold"] == guid {
             object.setAttribute("hold", value: "none")
             released += 1
@@ -93,7 +93,7 @@ enum WinampModernAvailableComponents {
         let guid = WinampModernComponentRegistry.canonicalGUID(for: kind)
         return graph.allObjectsUnordered.contains { object in
             if claimableKind(for: object) == kind { return true }
-            return WinampModernComponentRegistry.isHolderElement(object.typeName)
+            return WinampModernComponentRegistry.isHolderElement(object.tag)
                 && object.attributes["hold"] == guid
         }
     }
@@ -105,7 +105,7 @@ enum WinampModernAvailableComponents {
     /// holder names no component by definition. That is the same fuzzy rule `centro.windowholder.
     /// library` goes through, and it stays scoped to holder ids for the same reason.
     static func offerableKind(for object: WasabiObject) -> WinampModernComponentKind? {
-        guard WinampModernComponentRegistry.isHolderElement(object.typeName) else { return nil }
+        guard WinampModernComponentRegistry.isHolderElement(object.tag) else { return nil }
         guard isAvailable(object), holdsNothing(object) else { return nil }
         guard let id = object.xmlID,
               let kind = WinampModernComponentRegistry.kindFromHolderIdentifier(id),

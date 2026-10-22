@@ -109,7 +109,7 @@ struct WinampModernCompatibilityReport: Codable, Equatable {
              .totalSizeExceeded, .compressionRatioExceeded, .unsafePath, .symbolicLink,
              .caseCollision, .invalidRoot:
             return .archive
-        case .resourceMissing, .resourceEscapesVFS, .invalidImageResource,
+        case .resourceMissing, .resourceEscapesVFS, .hostPath, .invalidImageResource,
              .imageDimensionsExceeded, .fontSizeExceeded, .missingRequiredMount,
              .unresolvedFont:
             return .resources

@@ -100,6 +100,17 @@ the app itself offers (`WinampModernConfigBridge.crossfadeSecondsRange`) rather 
 given — and because the control reads its position back from the host, the readout shows the clamped
 value instead of lying about a duration the engine never took.
 
+**A bound slider is never flipped.** Releasing a drag over the slider is still a click on it, and
+`toggleConfigAttribute` used to treat its number like a lamp. Official Tristania's crossfade slider
+went 10 s → 0 → clamped to 1 s at the end of every drag. That method now refuses a slider.
+
+**An `EQ_BAND`/`EQ_PREAMP` slider counts −127…127**, the `onEqBandChanged` scale, unless it declares
+its own `low`/`high` (`WinampModernScriptRuntime.sliderRange(of:)`). Every other slider keeps
+Winamp's 0…255 default. Official Tristania's band fill runs both the slider's position and the event
+value through one routine that cuts its map at `position + 128`. On 0…255 the first drag pushed that
+past 255 and filled the whole track. multipass declares its EQ fillbars `range="-128,128"` against
+the same slider positions.
+
 ##### `onActivate` — how a skin shows that a toggle is on
 
 Wasabi raises `onActivate(int activated)` whenever a button's activation changes, whoever changed
@@ -153,6 +164,55 @@ read inside `draw` and converting an `NSImage` there re-rasterises the art every
 cache is dropped on a track change, or the previous track's cover stays on screen over the new one's
 title. Art arrives asynchronously, so the window controller repaints on
 `NowPlayingManager.artworkDidLoadNotification` — with playback paused nothing else would.
+
+#### A cover a script looks for beside the playing file (2026-10-20)
+
+Skins older than `<AlbumArt>` find the cover themselves, by building a file path from the play item
+and asking Winamp to load it. A skin may never read the host filesystem here, so
+`WinampModernTrackFolderImage` answers every such request **without opening anything**: a value that
+names an image in the playing track's folder, or the playing file itself, *is* a request for the
+cover, and the cover is `albumArtwork` — local file and server stream alike. The corpus has three
+script families, and each asks a different question:
+
+| Family | How it asks | What answers it |
+|---|---|---|
+| Deimos `cover.maki` (Mac OS X Panther, Vortex, 1010 Fullscreen…) | `getPath` minus 7 chars + `cover.jpg`…, as an `AnimatedLayer`'s `image=`, then `getLength() > 0` | `animationFrameCount`: 1 with art (or art loading), 0 without |
+| `Map` probe (Drone, CNY, Styx, Core-X5, MIPOD, Ebonite's notifier, Winamp-2006…) | `Map.loadMap(path)`, then `getValue(0,0) > 0` or `getWidth()`; the hit goes on a layer's `image=` | `mapImage` is the artwork; `getValue` on it reads at least 1; `bitmapSize` gives `getAutoWidth`/`Height` |
+| Skin Consortium `SC:Cover` (Ebonite, MusicshowB) | `<AlbumArt>` objects, sized by `Map.loadMap(PlEdit.getFileName(i))` | the media file names its own cover; the `<AlbumArt>` draws the host's art |
+
+Rules that make it hold for every source and every timing:
+
+- **One recogniser, string-only.** Scripts cut the folder from the left (seven characters, `file://`,
+  everything up to `//`), so the request's folder is a *tail* of the track's. Separators, case,
+  `//` runs, a `file:` prefix and percent-encoding are normalised on both sides, and a playlist
+  row's `?query` (a server token) is ignored. Foundation's path helpers are not used: they turn
+  `https://` into `https:/`. Pinned for Plex and Subsonic URLs in `WinampModernB114Tests`.
+- **Never cached.** `mapImage` and `bitmapSize` cache by id; a cover changes with the track, so it
+  is answered before either cache.
+- **Loading is "found".** While the fetch is in flight the answer is a square white stand-in
+  (`loadingStandIn`) — square so a script sizing its panel from `getWidth()`/`getHeight()` lays out
+  the shape the art will have, white so `getValue(0,0) > 0` passes. The renderer never draws it.
+- **A late cover is offered again.** Scripts look once, on `onTitleChange`, and the art often lands
+  after — a stream's always does, and a local file's can lose the race (Core-X5 probed all four names
+  before `NowPlayingManager` had even started). When the art arrives, the programs that asked
+  (`coverSeekers`, recorded at `loadMap`, `setXmlParam(image)` and `getLength`) hear
+  `onTitleChange` once more — only them, because a skin-wide replay resets `beat.m`'s VU maximum —
+  and once per track. The controller defers it a turn: the host drops its per-track artwork cache
+  from its own observer of the same notification, and asked first it still says "no cover".
+- `setXmlParam` lets that one unregistered image value through; any other is still refused, which
+  Defix needs.
+
+`SC:Cover` also needed two engine fixes that are not about covers — `new PlEdit` answers the
+singleton, and a `Map` that loads nothing is 64x64 — both in
+[scripting.md](scripting.md) → *`Map`*.
+
+Verified live 2026-10-20: Panther's Cover Art on a local file and on a Plex album (the cover changed
+with the track), Ebonite's Album Art on a local file (photograph the screen — `winhelper capture` of
+its `desktopalpha` glued frame shows the see-through middle as white), and Core-X5's full probe
+sequence through a clean quit (`getValue` 0 four times, then after the art landed `cover.jpg`
+found, `getWidth()` 600). **Not covered:** Dronev11's own `behaviors.m` only searches when the play
+item starts with `file://`, which NullPlayer's never does; its Cover Art window still says "No cover
+art".
 
 #### `alpha` belongs to the object, not to one kind of drawing
 
@@ -265,8 +325,12 @@ changed pixels were *partially* transparent and only 2 were empty.
 `WasabiSceneRenderer` renders the scene into a readable buffer and promotes its alpha — non-zero to
 255, zero left alone. In a premultiplied buffer the colours are *already* the composite over black,
 so that one channel is the whole fix; the window context cannot be read back, which is why there is a
-buffer. It is held across frames and sized to the caller's clip, so a targeted repaint pays for its
-own rect.
+buffer. In the app that buffer is the window's canvas (`WinampModernCanvas`), which promotes each
+frame's dirty rects after replaying the scene into them; the harness's `draw(in:)` renders one
+canvas job sized to the caller's clip, so the sweep checks the window's pipeline (B231). Both build
+that job with `WasabiSceneRenderer.canvasJob` and fall back to its `drawDirectly` past the pixel
+limit (`WinampModernCanvas.swift`), so the sweep records the scene as the window does (B235); only
+the window passes a UI Size and host chrome.
 
 Three traps in that buffer, all measured on `main/normal` at 2x against a 2.81 ms/frame baseline, and
 all of them things to copy rather than rediscover:
@@ -282,11 +346,38 @@ all of them things to copy rather than rediscover:
   `WinampModernSurfaceStyle` draws its labels with `NSString.draw`, which takes its destination from
   that global. Left pointing at the caller's context, impulse's Configuration window lost its slider
   labels and its "Hold Time" caption: 841 pixels of text drawn into the wrong buffer and then buried
-  by the blit.
+  by the blit. Every such draw is now recorded with `WasabiDrawList.drawWithAppKit`, which binds the
+  global to the replay context on the replaying thread.
 
 Cost after all three: **3.63 ms/frame** against 2.81, debug. Corpus sweep, 590 renders: **2 changed**
 — WMP11-BlueVU's display area, and 7 pixels at maxdelta 2 on EPS's left speaker where the
 silhouette's anti-aliased fringe goes opaque.
+
+#### A region cut reaches as far as the smoothing (2026-10-21)
+
+The `sysregion` cut (`drawWindowRegionCut`, `WasabiRendererHitTesting.swift`) is a binary image at
+skin resolution, composited `.destinationOut` over the finished scene with nearest sampling, so each
+device pixel is cut or kept by the skin pixel its **centre** falls in. At a fractional device scale
+the artwork is smoothed (`WasabiBitmapInterpolationPolicy`) and a cut pixel's art bleeds up to half
+a skin pixel into its uncut neighbour. The device pixel holding that bleed can centre on the uncut
+pixel, and the promotion above turns it solid. Reported on CopperdeckII at UI Size 135% on Retina
+(2.7): `player/back.png`'s left edge at skin x=178 lands at device x=480.6, the upscale leaves
+alpha 63 in column 480, the cut takes the art's own column and keeps 480, and a dark 1px line
+floated beside the rounded corners and along the skin's sides. The headless harness reproduces it
+at `WINAMP_MODERN_RENDER_SCALE=2.7`, and so does any layout with a cut at any fractional scale. The
+old live path drew at point resolution (1.35), where that geometry happened to put the bleed inside
+the cut.
+
+At a fractional scale the cut is drawn four times, nudged ±0.49 skin pixel on each axis, which
+reaches every pixel the bleed can. The nudged draws are aliased: their own edges fall inside the
+canvas, an antialiased edge cuts its pixels only partly, and the promotion made those solid again,
+adding pixels along the window border. At an integral scale nothing is smoothed, and the cut is the
+one draw it always was.
+
+Corpus sweep: 1x and 2x unchanged. At 2.5x, 308 images changed, all on layouts with a cut, and every
+change removes pixels, none adds. Up to one device pixel of art along a cut edge goes with the
+bleed, which is the half-blended fringe of the art that was cut; corners sit very slightly tighter
+and read the same at zoom.
 
 #### A standard frame's box is window (B151, 2026-09-28)
 
@@ -303,9 +394,14 @@ Look for this shape before assuming the geometry is off.
 layout that has not opted in with `desktopalpha="1"`. It has two bounds, and the sweep caught a
 regression without each one:
 
-- **Standard frames only.** Backing every artwork-less `sysregion="1"` object moved 98 images.
+- **Standard frames and `<rect>`s only.** Backing every artwork-less `sysregion="1"` object moved 98 images.
   S7Reflex's player and Lobe's pods grew black slabs across the desktop, because a plain positive
-  group there is a drawer or a silhouette's wrapper, not a window body.
+  group there is a drawer or a silhouette's wrapper, not a window body. A `<rect>` is a box by
+  construction, so it is the other exception (2026-10-20): Prakrit's whole player body is
+  `<rect id="bckg" sysregion="1" w="200" h="250"/>`, colourless and unfilled, and without the
+  backing every panel was desktop. Of the 12 corpus skins with `rect@sysregion`
+  (`scripts/wal_reach.sh xml-attr '^rect@sysregion$'`), 107 renders before and after: only
+  Prakrit's player changed (Vortex's dashboard differs run to run).
 - **Not when the layout has a real region cut.** In that case the skin has drawn the shape itself.
   Ebonite cuts its client window down to the opening in a separate frame window (B110), and a
   backing laid black strips under that frame's edges.
@@ -350,33 +446,31 @@ every auxiliary container and every hosted window get one; the code is
 family (`skinWindowShadows`); every family's windows cast the same shadow (`ui-guide` § *Window Drop
 Shadows (Every Family)*). Trace: `NP_SKIN_SHADOW_TRACE=1` (`reference/harness.md`).
 
-- **The outline is rendered on purpose.** `.wal` has no frame image, so the view runs the same
-  `renderer.draw` into a one-pixel-per-point buffer, then fills every visible hosted surface's frame
-  — the renderer draws only the chrome around a library, browser, video or vis surface, and its area
-  would otherwise read as a hole. The fingerprint and the rebuild run off the main thread.
-- **The shadow pulls; the view only invalidates.** `SkinWindowShadow` is attached with the outline
-  render as its `shape`, watches the window's move, resize, key and occlusion notifications itself,
-  and pulls at most once per `shadowShapeInterval` (250 ms), leading edge first with a trailing pull
-  for the end of an animation, and never while the window is hidden. **Only a pull that rebuilt the
-  shadow spends the interval**: one click on PionNer_AMP2's EQ tab swaps the tab's image, then 14 ms
-  later moves the drawer, and the swap's unchanged-outline pull held the drawer's for 250 ms with the
-  open drawer's shadow still drawn — a ghost outline of the closed drawer. Cost of the change,
-  20 s of playback: cPro2 Dark Aluminum 8 unchanged pulls, Big Bento Modern 14.
-- **What invalidates it is an event that can move the outline, never invalidation.** Layer FX
-  invalidates the window 30 times a second and a playing skin writes readouts every tick, so neither
-  `repaintRequested` nor `needsDisplay` is a trigger. The triggers are a layout switch, a canvas
-  change, a resize (`setFrameSize`), and a graph write — and a graph write only past
-  `WinampModernShadowOutlineGate`: **`WasabiObjectGraph.shapeGeneration`** moved (geometry,
-  structure, `visible`, `alpha`, an image; never `text`, colour or `frame` — the graph decides it
-  beside `isSceneNeutral`) *and* this window's own scene fingerprint changed. The counter alone is
-  graph-wide: cPro2 Dark Aluminum writes its shade layout and About window every second, which cost
-  the player 34 renders in 20 s before the scene check.
-- **An animated layer contributes its core, not its current frame.** The outline pass is
-  `WasabiSceneRenderer.drawOutline(in:)`, which makes an `<animatedlayer>` paint the pixels opaque
-  in *every* frame (`drawsAnimationCores`, the minimum of each frame's `AlphaPlane`). Anaheim's mini player is a frame-stepped ball whose ears `vis_mini.maki` flaps to
-  the music; a frame step is not (and must not be) a trigger, so a shadow cut from whichever frame it
-  last sampled kept the old ears as a white ghost behind the ball. With the core, the ball casts the
-  shadow, the ears cast none, and the shadow costs nothing while the skin plays.
+- **The outline is the frame the window drew (2026-10-21).** The canvas (`WinampModernCanvas`,
+  `performance.md` § *A frame is recorded on the main thread and rasterized off it*) keeps a mirror
+  of its own alpha and compares each frame's dirty rects against it, row by row. A frame that changed
+  the alpha hands back an alpha-only image of the mirror, and only then does the view call
+  `invalidateShape("draw")`. So the shadow follows whatever is on screen frame by frame: Anunaki's
+  EQ drawer rebuilds once per drawn frame of its slide (33 over the slide, `pull=0.0ms`), and
+  Anaheim's flapping ears are simply part of the outline. A readout tick or a meter inside the outline
+  costs a row compare and no pull: cPro2 Dark Aluminum's player rebuilt once in 20 s of playback.
+  The shape is `[outline, hostedSurfaceMask()]`. The renderer draws only the chrome around a library,
+  browser, video or vis surface, so each visible one's frame is filled solid, built per pull because
+  a subview's `isHidden` or `alphaValue` changes without a layout pass.
+- **What this replaced, and why it is gone.** The outline used to be a second render made for the
+  shadow, on the main thread, throttled to one pull every 250 ms, and gated by a graph-wide shape
+  counter plus a per-window scene fingerprint (`WinampModernShadowOutlineGate`). Animated layers
+  contributed only their *core* (the pixels opaque in every frame), because a frame step could not be
+  a trigger. Every one of those mechanisms existed to keep that render rare. With the outline read
+  off the drawn frame there is nothing to keep rare. The throttle had its own failure too: one click
+  on PionNer_AMP2's EQ tab swaps the tab's image and, 14 ms later, moves the drawer, and a pull taken
+  between the two held the open drawer's shadow for 250 ms, a ghost outline.
+- **The shadow pulls; the view only invalidates.** `SkinWindowShadow` watches the window's move,
+  resize, key and occlusion notifications itself, never pulls while the window is hidden, and pulls
+  again as soon as the previous build lands. The layout-switch, canvas-change and resize triggers
+  still fire, and find the outline unchanged (`same`) when the frame has already reported it.
+- **A window too large for a canvas keeps its last shadow.** It draws straight into AppKit's context
+  (`drawDirectly`), which has no alpha to read back; no corpus window comes near the limit.
 - **A move is checked a turn late, and only for the frame (2026-10-02).** AppKit carries the child
   shadow *after* posting the parent's `didMove`, so a check inside the notification always saw the
   old frame. It then called `setFrame` on the shadow and `orderedIndex`, which lists every window on
@@ -418,8 +512,9 @@ also the nearer answer.
   does not move.
 - **The grid is the real pixel grid, not the context's.** A `.wal` view's `draw` runs at **CTM 1.0**
   on a 2x panel: AppKit records it into a display list and replays that at the backing scale. So
-  the view sets `devicePixelsPerContextUnit` to the backing factor over the CTM it was handed, and
-  the opaque-backing buffer sets it back to 1 for its own bitmap. Snapping to the context's own unit
+  the direct-draw fallback's `WasabiDrawList` carries `devicePixelsPerUnit` = the backing factor
+  over the CTM it was handed, while the canvas's lists (the window's and the harness's, which renders
+  through a `WinampModernCanvas` too), bitmaps already at device resolution, carry 1. Snapping to the context's own unit
   would have moved every edge to a whole *point* — up to a full device pixel off.
 - `WINAMP_MODERN_PIXEL_SNAP=0` turns it off; `WINAMP_MODERN_RENDER_SEAMS=1` counts what is left
   (`reference/harness.md`).
@@ -613,6 +708,23 @@ and CornerAmp and Anexa are themselves among them. The containment was never the
 it is the `text=` and no-bitmap test below. Corrected while measuring B95.) The renderer draws a 1px border in `palette.listText` with the label centred, but
 only when the instance resolves *no* bitmap and carries a non-empty `text=` — a skin with its own
 button artwork never reaches the fallback.
+
+**A labelled one with no `h` is 20 tall.** Winamp's stock button sizes itself to its label, so
+machina's help window writes `<wasabi:button text="switch" w="100">` and no height; it resolved 0
+tall and the only route to the winshade help never drew. 20 is machina's own About switch buttons'
+`h`, not a measured label.
+
+##### A standard frame in a layout with no backing (2026-10-20)
+
+Winamp's own `wasabi.standardframe.*` groupdefs carry `background="wasabi.frame.basetexture"`
+(Zygote ships a copy that says so), so a skin that wraps a window in a frame and gives the
+`<layout>` no `background=` still had one in Winamp. 19 corpus skins have that shape, most of them
+declaring `wasabi.frame.basetexture` without naming it anywhere. machina's help window was the
+reported case: dark-on-transparent help art on the bare desktop, where its playlist — the same
+frame on `background="component.bg"` — was gold. `WasabiSceneRenderer.frameBaseTexture` paints
+`wasabi.frame.basetexture`, else `component.basetexture`, under the frame, only when its layout
+declares no backing and is not `desktopalpha="1"`. JRS's config window and machina's skin-config
+went from white/holed to the skin's texture in the same sweep.
 
 ##### Window-chrome buttons with no artwork (B95, 2026-09-01)
 
@@ -930,14 +1042,20 @@ play head a pure function of the elapsed time since `play()`, which is what keep
 script runtime agreeing on the current frame without either owning a clock. `stop()` freezes the head
 where it actually is, and an explicit `playing` beats the XML's `autoplay`.
 
+Because nothing steps that clock, the events are polled: a layer a script `play()`s and that has an
+`onFrame` or `onStop` binding gets a 60 Hz runtime timer (`startFrameEvents`, in
+`WinampModernScriptRuntimeTimer.swift`). It raises `onFrame(frame)` once per frame the head reaches
+and `onStop()` when a range play ends or `stop()` is called. MMD3's knobs move the EQ from `onFrame`
+alone, so without it the knob turned and the EQ never changed (B194).
+
 #### `relat*="2"` is a **percentage**, every other non-zero value is additive
 
 `relatx`/`relaty`/`relatw`/`relath` read as `atoi(value)`, and the number matters:
 
 | value | meaning |
 |---|---|
-| `0`, absent, non-numeric (`"%"`) | absolute |
-| `2` | **percentage** of the parent's span — `span * value / 100` |
+| `0`, absent, non-numeric | absolute |
+| `2`, or a literal `"%"` | **percentage** of the parent's span — `span * value / 100` |
 | any other non-zero (`1`, `5`, `"1px"`) | additive — `value + span` |
 
 Corpus census (2026-08-31, 53 skins + the ClassicPro engine): `1` ×8197, `0` ×360, **`2` ×89**,
@@ -1060,7 +1178,7 @@ could never reflect the track position, because the width it is drawn from meant
 while the paint did not follow.
 
 **Only a *declared* box does this.** A group whose height we inferred, or failed to, keeps the
-inherited clip — the same reason `isSizedGroup` gates ordinary clipping: clipping children to a guess
+inherited clip — the same reason `clipAxes` gates ordinary clipping: clipping children to a guess
 erases content that is really there, which is a worse failure than the overhang it prevents. The
 empty clip is built as an explicit zero-size rect pinned inside the parent clip rather than
 `CGRect.null`, so `intersects` and `CGContext.clip(to:)` both behave.
@@ -1071,7 +1189,7 @@ their box across the window chrome; it is not a cPro2-only shape.
 ## A `<group>`'s `background` bitmap states its box (B109, 2026-09-03)
 
 A group that declares no `w`/`h` is the size of its **`background`** bitmap. That is a *declaration*,
-not an inference, so it satisfies `isSizedGroup` and the group clips its children — which is the whole
+not an inference, so `clipAxes` clips its children on both axes — which is the whole
 point of the attribute for the many groups that pair it with `drawbackground="0"`, where the bitmap is
 never painted and exists only to say how big the group is. Read with the section above: the two
 together are "a group clips to the box its author gave it, however the author gave it."

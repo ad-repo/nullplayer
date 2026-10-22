@@ -1,22 +1,116 @@
 # Winamp Modern (`.wal`) — Corpus Runner Plan
 
-**Status: partly built (reviewed 2026-09-06).** **S1 (load census) shipped** as
-`scripts/wal_skin_census.sh`, and the §6 regression sweep shipped as `scripts/wal_render_sweep.sh`
-(`capture` / `compare`) — both documented in `skills/winamp-modern-skin-guide/reference/harness.md`,
-and neither section below should be read as pending. **S0 is partial** (no committed manifest and no
-Gold/Silver tiering; the census emits a sha256 per row instead). **S2, S3, S3.5 and S4 are not
-built**, and the rest of this file is their specification. The stand-in for S2's demand ranking is the
-hand-run grep set under *Reproducible reach commands* in `WINAMP5_TASKS.md`.
+**Status (2026-10-19): instruments frozen; the work is fixing.** The corpus tooling is built and
+documented in `skills/winamp-modern-skin-guide/reference/harness.md`. What is open is the backlog
+in `tasks/WINAMP5_TASKS.md` — that file, not this one, records what is done.
 
-The durable method — defect classes, instrument blind spots, isolating one issue, dispositions,
-regression safety — lives in `skills/winamp-modern-skin-guide/triage-playbook.md`, whose §3 carries
-the same built/not-built table and is the copy to keep current.
+## The loop
 
-As each stage is built, its commands land in
-`skills/winamp-modern-skin-guide/reference/harness.md` and that part of this plan becomes history —
-the same lifecycle the phase handoffs have.
+1. Take the top row of *Corpus plan queue* in `WINAMP5_TASKS.md`. Skin-dead loader gaps
+   (B175–B181) first, then the MAKI method rows (B182–B201, B206–B207).
+2. Batch rows that share a seam — several effort-S method rows are one session.
+3. Implement, with a unit test per method or loader rule.
+4. Re-measure: `scripts/wal_demand.sh` for method rows, the quarantine census for loader rows, and
+   the sharded render sweep (`scripts/wal_render_sweep.sh --shards 10`) as the regression gate.
+5. Close the row into `backlog-archive.md` with its before/after number. Nothing else to update.
 
-Extracted verbatim from `triage-playbook.md` §3 and §7 (2026-08-18).
+**No new instruments.** A row may need a probe to find its cause; that probe serves the row and is
+not a plan step. Parked (§7): the rest of the menu sweep, state-space enumeration, the
+supported-surface manifest. Re-open one only when the queue runs dry or a fix needs it.
+
+**Parked rows:** B208–B210 are investigations from noisy suspect rules (a `Timer` also drives clocks
+and tooltips). Re-run `wal_motion_sweep.sh` / `wal_interaction_sweep.sh` after the method batch
+lands — many of those suspects are handlers aborting on the methods above — and only then decide.
+
+### Done: the B169 intake, promoted to gold (2026-10-22)
+
+The 25 skins B169 admitted to Silver were tried in the app, fixed skin by skin, and **promoted to
+gold on 2026-10-22** (manifest tier, files moved to `WinampModernCorpus/gold/`), with rows on
+`skin-compatibility.md` (24 B, 1010 Fullscreen C). Each fix is
+general, so it applies to every skin with the same shape, named after the skin that showed it.
+
+| Skin | What was wrong | Fix (where) |
+|---|---|---|
+| Mac OS X Panther, New_Night | A library or browser wider than either side of the player was clamped onto the player. | The tiler also tries the region's corners and takes the least-covered candidate, counting the player 4× (`WinampModernTiler`, `App/WinampModernTiler.swift`) |
+| CopperdeckII | Every window hung 178px off the player; the shade collapsed to 1px; the video window opened 2147 wide | Tiling uses the player's `snapadjust*` edges; a `linkwidth` entry keeps the entered layout's declared height; the content fit ignores an axis the skin sized with an absolute number |
+| Anunaki | The LCD was empty | A sizeless `<CustomObject>` takes the size of the group it hosts |
+| WinampAzenis2 | Switch, Prev, Next and the search buttons were blank | A plain `<button text=…>` draws its label; an `embed_xui` wrapper passes its label down |
+| NEO_CLASSIC | The 259px album-art pane was missing; the invisible crossfade toggle drew a font sheet | A sizeless group redefinition keeps the earlier size; a bare `image=` falls back only when `activeimage` is set |
+| Symplicipod | The library mounted twice (once blank white) and the playlist had no window | A container's actual contents outrank a `component=` that contradicts them; `:componentname` resolves inside a longer title |
+| Official_Tristania | The ticker drew small, in the default font | An `embed_xui` wrapper passes typography down to its `<text>` |
+| BOOM (97 skins) | Window titles were not uppercased | `forceuppercase`/`forcelowercase` |
+| krazyPlayer | Every frame title read `@COMPONENTNAME@` | `@COMPONENTNAME@` resolves |
+| Prakrit | The equalizer window was an empty frame; the player body was see-through | A plain `<group>` gets `onSetXuiParam` for the params it does not use itself; a `sysregion="1"` `<rect>` is backed black |
+| Simple | Every button drew its symbol's group id as a label | `onSetXuiParam` arrives in document order |
+| Nitrous_Audio_CTI_2_Glass | Monitor mode never moved; the title bar was under the menu bar | Only a write after its own origin was read counts as a round trip (B61); monitor height leaves out the menu bar |
+| 1010_Fullscreen | The transport left the canvas; the window was taller than the screen | `getGui*` on a relative axis returns the skin's markup value, not the resolved box; viewport is the work area; a window taller than the screen keeps its top on screen |
+| --Vortex-- | The 505-wide player became a 180×1169 strip | A write to a layout that is not showing is not applied to the window; winhelper crops a glued window group |
+| Alpha_Media_Player_X5 | The player scaled itself past both screen edges | A skin's `setScale` is capped at the largest UI Size that fits on screen |
+| wTunes | The right 25px were cut off | Layout sizes are trimmed (`w=" 300"`) |
+
+Second pass, the remaining eight (Dronev11, JRS, shark5, cPro2__minimal_1_1, Zygote,
+CPro_Winamp_for_Mac_Sync, LogicallityV1_0, machina):
+
+| Skin | What was wrong | Fix (where) |
+|---|---|---|
+| machina | The help window drew on the bare desktop; its switch button drew 0 tall | A standard frame in a backgroundless layout paints `wasabi.frame.basetexture` (`WasabiRenderer.frameBaseTexture`); a labelled `<Wasabi:Button>` with no `h` is 20 tall |
+| machina | An empty video window opened at launch, missing from the Windows menu | The B97 video exemption reads the container's own `hold=` — the catalog is not built yet at that point (`applyDefaultContainerVisibility`) |
+| JRS (~220 skins) | The playlist had no Add/Rem/Sel/Misc/List anywhere | A playlist frame's `<LayoutStatus>` gets the command bar, hidden where the skin has its own `PE_Add` (`WasabiStandardFrames`) |
+| Dronev11 | The compact player could not be dragged anywhere | Ghost artwork is window: `hitTest` counts it and `pressTarget` hands the press to the layout (`WinampModernMainView`) |
+| Mac OS X Panther, Core-X5, Ebonite | Cover windows never showed a cover, local or streamed | One recogniser for "a cover beside the playing file, or the file itself" answers all three script families from the host's artwork, a late cover is offered again, a missing `Map` is 64x64, `new PlEdit` is the singleton (`WinampModernTrackFolderImage`) |
+
+The other skins showed nothing more on a first look. Left: Dronev11's playlist info sits high in its
+bar (cosmetic), and its own cover script (`behaviors.m`, `file://` only) still finds no cover. Filed from the code review: B216 (check `.wmz`
+placement after the tiler change, then move the tiler out of `WindowManager.swift`) and B217 (one
+type-name accessor; one button-label rule).
+
+Third pass, at promotion (2026-10-22):
+
+| Skin | What was wrong | Fix (where) |
+|---|---|---|
+| Nitrous_Audio_CTI_2_Glass, 1010_Fullscreen, ClassicPro maximize | Monitor/party mode opened 1.35× the screen at 135% UI Size | `getScale()` answers UI Size (`hooks.uiScaleQuery`); the skins size to `viewport / getScale()` |
+| 1010_Fullscreen, corneramp_redux, Shield_Amp | EQ bands bunched left; theme buttons cut to "Pr…" | A literal `relat*="%"` is percent mode (`WasabiGeometry.percentFlag`) |
+| 1010_Fullscreen, impulse | Clock colons drew as gaps | A bitmap colon draws its whole atlas cell; only the advance narrows to `timecolonwidth` (`BitmapRun`) |
+
+Left open on 1010 Fullscreen (graded C): its song title draws ~12px low and overlaps the clock.
+Aligning skin-shipped TrueType by cap top fixed it and moved ~50 other skins wrong (corneramp, Winamp
+2000, CPro for Mac), so it was rolled back; the cause is unknown without a Winamp reference.
+
+**Next:** `feat/wal-corpus-scale` (B169 intake → gold, B233) goes to PR. Then `fix/wal-scale-events`
+(B238, B239), then intake #2 on `feat/wal-intake-2` — re-weight gain first (§8 *Progress*, B169
+entry: count a new tag once, `tag@attr` only on known tags). B212 needs a second display; B216's
+`.wmz` census waits on a go-ahead.
+
+### Branch strategy for the intakes (2026-10-22)
+
+`feat/wal-corpus-scale` ran to 103 commits because it held the intake, the promotion, refactors
+and fixes at once. One intake of 25 took about a week of in-app work, and ~950 candidates remain
+(827 bronze + 54 quarantine + new crawl finds), so at that pace the whole set is ~38 weeks. The
+branch shape has to make that sustainable:
+
+- **One branch per intake, cut from `origin/main`**: `feat/wal-intake-<n>`. It holds the
+  re-weighting or rule change (if any), the intake run, the manifest update, and that batch's
+  in-app fixes. Nothing else rides along — a backlog row unrelated to the batch gets its own
+  `fix/…` branch, and non-`.wal` work (marketing, other subsystems) never lands on an intake branch.
+- **PR at two checkpoints, not one**: (1) *admitted* — `wal_intake.sh` run, manifest committed,
+  sweep baseline green; (2) *promoted* — the in-app pass done and the batch moved to gold. A batch
+  that runs past ~a week PRs what it has and continues on a fresh branch.
+- **Merge `origin/main` in every few days** while a branch is open; never rebase a branch others
+  may have pulled. Before opening the PR, confirm `gh pr view <N> --json files` matches the work.
+- **Small rows found during a pass** (like B238/B239 from intake #1) are filed, then fixed on a
+  short `fix/wal-<topic>` branch between batches, so the next batch's in-app pass doesn't trip on them.
+- **Push with an explicit upstream** (`git push -u origin <branch>`); a branch tracking
+  `origin/main` is one bare `git push` away from main.
+
+**Not every candidate gets a week's share.** By the B169 curve only 123 candidates cleared gain ≥ 3
+and 594 added nothing. Every fix is general (see the tables above), so a skin that adds no feature
+is covered by the fixes its look-alikes earned. Intakes run while a batch still clears the gain
+floor (re-measured after the re-weighting); once it doesn't, the rest is certified by the census
+and the pre-merge render sweep, with a hand pass only where `wal_reach.sh` shows a feature that no
+gold skin has.
+
+Below is reference: the pipeline as designed (§3), what was built (§7), and the corpus-scale
+decisions (§8).
 
 ---
 
@@ -213,27 +307,150 @@ the artifact** — no phase should start without pointing at a row in it.
 
 ---
 
-## 7. Build order
+## 7. Build order (frozen 2026-10-19)
 
-Each step is independently useful; stop wherever the value runs out.
+Built:
 
-1. **Corpus runner + S1 load census.** Small — the loader and the `Codable` report already exist; this
-   is a CLI wrapper, a JSON writer, and a folder walk. Immediately answers "what fraction of real skins
-   load at all", which nobody currently knows.
-2. **S2 MAKI static demand.** Also small — the method table is already parsed. First real ranking data.
-3. **S4 aggregation + the demand index.** A script over the JSON. This is where capability-first
-   working actually starts.
-4. **S3 motion sweep.** Medium — a clock ladder around the existing render path plus per-object deltas.
-   Directly targets the animation complaint.
-5. **S3 interaction sweep.** Medium — generalises `RENDER_CLICK` from one point to every hooked object.
-5b. **Coverage metric + S3.5 state-space enumeration.** The coverage number is nearly free once S1 and
-   S3 exist (declared objects vs. objects ever visible) and is the cheapest way to find out which
-   "supported" skins we have barely seen. Full state enumeration is the expensive half — do layouts and
-   `cfgattrib` ranges first, script-invented preference spaces last, if ever.
-6. **Supported-surface manifest + XML census.** The curation cost, deferrable until the method-level
-   wins are exhausted.
-7. **Corpus render/motion hashing as the pre-merge gate.** Retires the manual sweep.
+1. **Corpus runner + S1 load census** — `wal_skin_census.sh`.
+2. **S2 MAKI static demand** — `wal_feature_index.sh`, `features.tsv`.
+3. **S4 aggregation + demand index** — `wal_demand.sh` (B182–B201).
+4. **S3 motion sweep** — `wal_motion_sweep.sh`, `impact.tsv`, `ranking.tsv` (B209–B210, parked).
+5. **S3 interaction sweep, click and drag gestures** — `wal_interaction_sweep.sh` (B206–B208).
+7. **Pre-merge gate** — the sharded render sweep, ~25 s over Gold+Silver.
 
-**Rule of thumb for the work itself:** batch by capability, never by skin, and use each batch's own
-re-measure as the definition of done. A skin is not a milestone any more — it is a test case.
+Parked, not owed: arc and right-click gestures, the menu sweep and its inventory, host-menu
+detection, S3.5 state-space enumeration and coverage, the supported-surface manifest and XML
+census, motion hashes in the gate.
 
+---
+
+## 8. Scaling the corpus past ~1,000 skins (locked 2026-10-19; built 2026-10-19 — history)
+
+**History.** B166–B172 are closed into `backlog-archive.md`, and every command below is documented
+in `reference/harness.md`, the copy to keep current. The decisions stand; the instructions to
+sessions are spent.
+
+**Why.** `scripts/wal_corpus_crawl.py` found 906 modern skins not in the 89-skin corpus
+(winampheritage, archive.org `winampskinsmodern`, wincustomize). Admitting them as-is breaks every
+corpus-wide action, so S0 is finished as below and the actions are re-scoped by tier. The work was the
+**B166–B172** rows, in that order; this section is their spec, and each
+row is closed against its own done-criterion.
+
+**Update this section at the end of every session that touches it** — this is a multi-session plan and
+the only record of where it stands. Mark the row's progress in `WINAMP5_TASKS.md` (or close it into the
+archive), and record here any decision a measurement changed, with the measurement. A session that ends
+without that update leaves the next one re-deriving it.
+
+**Then hand the session's skins over for in-app evaluation.** Every skin the session admitted to
+Silver or Gold is **copied** (never moved) into `~/Library/Application Support/NullPlayer/WinampModernSkins/`,
+the app's own skin folder, so the user can try them in the app; the session's closing note lists them
+by file. Copied, because the corpus copy is the measured input and must not change with the user's
+use of the app. A session that admitted no skins (B166–B168 do not) hands over none, and says so.
+
+### How deep each skin is evaluated
+
+Three depths, and only the first is part of this plan for every skin:
+
+1. **Automatic first round — every candidate, every tier.** The census (load, rating, surfaces, hosted
+   windows) plus the static feature index. Headless, deterministic, no human. This is what rates and
+   admits a skin (B169).
+2. **Targeted runs — any tier, by selection.** Impact-selected sweeps (`--touching`, B170) re-render the
+   skins a change could affect. Still automatic.
+3. **Full audit — Gold, and Silver on request only.** The live pass and the hand letter
+   (`/wal-skin-report`). Never for Bronze, and not part of this plan's work; admission to Silver makes a
+   skin eligible for an audit, not owed one.
+
+B166's per-skin log files are none of these — they change *where* the existing dump output is written
+so a corpus run can't lose lines, not *what* is measured.
+
+### Progress
+
+- **B166 closed 2026-10-19.** Every skin's dump lines go to `png/<skin>.log`; two consecutive
+  89-archive passes had zero damaged logs and matched the stdout-era pass for every skin it had not
+  damaged. The table row "Damaged logs" below no longer scales with the corpus: there are none to
+  re-run. No skins admitted, so none handed over. Next: B167.
+- **B167 closed 2026-10-19.** The corpus is copied to `WinampModernCorpus/{gold,silver}/` (56 + 33)
+  and recorded in `corpus-manifest.tsv`; every corpus script defaults to gold+silver. A sweep over the
+  new location matched one over `WinampModernSkins/` at the same rev bar the two documented
+  nondeterministic items. **Decision changed:** Gold is the `skins.md` status-table set, 56 archives,
+  not ~10–15 — the table is what we have worked on. `WinampModernSkins/` still holds all 89 until the
+  user prunes it to their own installs; nothing reads it as the corpus any more. No skins admitted, so
+  none handed over. Next: B168.
+- **B168 closed 2026-10-19.** `scripts/wal_feature_index.sh` writes `features.tsv` (`harness.md` →
+  *The static feature index*). It ran over gold+silver (89, all load) and the 906 candidates (54 do
+  not load and keep their XML rows) with no skipped skin, byte-identical twice, and four archive
+  reach figures reproduced against an extract-and-`rg`. **Decision changed:** the MAKI half reads
+  every `.maki` the archive ships as well as the bound programs, because a script in an
+  uninstantiated `<groupdef>` is never bound at load — exactly the demand S2 is for. For B169: value
+  should count `maki-*` and `xml-*` features but not `family`/`load`, and the bronze/quarantine split
+  can start from the 54 `load failed` rows. No skins admitted, so none handed over. Next: B169.
+- **B169 closed 2026-10-19.** `scripts/wal_intake.sh` rated all 906: **25 silver, 827 bronze, 54
+  quarantine** (the 54 `load failed` rows). Two runs byte-identical, 48 min each — the census's
+  hosted pass is ~40 of that, ~2.5 s a skin, so a full Bronze census is a batch job as planned.
+  Post-admission sweep (the new baseline): 114 skins, 93 s of test time, the 25 new ones 28 s of it
+  (~1.1 s a skin). **Gain curve** (new features per pick, first 60): `290 131 125 103 97 94 93 91 91
+  81 72 62 61 52 52 47 42 39 39 37 36 35 35 34 33 | 31 30 27 24 23 21 19 19 19 18 17 17 17 16 16 16
+  16 15 15 14 14 14 13 12 11 11 10 10 10 10 9 9 9 9 9`; 123 candidates clear gain ≥ 3, 55 clear 10,
+  594 add nothing. So **the budget of 25 bound, not the gain floor** — rank 25 still added 33.
+  **For the next intake, re-weight gain before raising the budget:** ~1,600 of the ~2,000 features
+  the picks added are `tag@attr`, so one new tag with its attributes scores ~15 (rank 25, `machina`,
+  is two new tags; rank 60 is one), and a typo (`container@miminum_h`) scores 1. Count a new tag once,
+  `tag@attr` only on tags the corpus already has, and the gain floor becomes a real filter. Handed
+  over (copied into `WinampModernSkins/`): the 25 silver files listed in the B169 archive entry.
+  Next: B170.
+- **B170 closed 2026-10-19.** `--touching <feature,…> --index <features.tsv>` sweeps every tier's
+  skins whose index rows name a feature (`Wasabi:Frame`: 9 of 995, exact); `--shards K` splits the
+  sha256 order over K `xctest` processes after one build. Gold+silver: 81 s at K=1, 30 s at K=4, 22 s
+  at K=10, memory flat at under 3 GB, every K equal to K=1 bar the known nondeterministic pair. The
+  core count is the ceiling, so **use `--shards` = cores** (10 here). **Decision changed:** shards
+  run `xcrun xctest` on the built bundle, not `swift test` — SwiftPM's `.build` lock serialised K
+  `swift test`s to the K=1 time. The pre-merge gate is now ~25 s, so the Silver budget is no longer
+  bound by sweep time at this corpus size. No skins admitted, so none handed over. Next: B171.
+- **B171 closed 2026-10-19.** `scripts/wal_reach.sh <kind> <regex>` prints reach per tier with the
+  manifest rev, from an all-tier index at `WinampModernCorpus/index/features.tsv` (995 skins, 375,489
+  rows). It reproduced B170's `Wasabi:Frame` 9 (4/1/4) and a per-file `getEndFrame` count (3/2/20).
+  **Decision changed:** the manifest lists four byte-identical archives twice, in gold and as silver
+  re-adds, so tier is joined by content and a duplicate counts once at its better tier — silver's
+  denominator is 54 distinct skins, not 58 rows. No skins admitted, so none handed over. Next: B172.
+- **B172 closed 2026-10-19.** The docs name `WinampModernCorpus/` as the corpus and
+  `WinampModernSkins/` only as the install folder; the tier rules and the hand-over copy moved into
+  `harness.md`, and the triage playbook's §3 marks S0 and S2 built. No skins admitted, so none
+  handed over. §8 is complete.
+
+### Decisions (fixed — re-open only with a measurement)
+
+- **The corpus leaves the app's skin folder.** `WinampModernSkins/` is the importer's install folder
+  (`WinampModernSkinImporter.swift`), so everything in the corpus is in the user's skin menu. The corpus
+  becomes `~/Library/Application Support/NullPlayer/WinampModernCorpus/{gold,silver,bronze,quarantine}/`;
+  `WinampModernSkins/` goes back to being the user's own install.
+- **The manifest is the source of truth for tier**: committed `docs/winamp-modern/corpus-manifest.tsv` —
+  `file, sha256, tier, source_url, internal_name, admitted_rev`. Skins are never committed.
+- **Dedupe is by content, never by name.** ≥90% shared (path-under-skin-root, crc32) entries is the same
+  skin. Filenames and `<skininfo><name>` both fail measured cases (three different `T-800`s; `K-jr.wal`
+  vs `k_jr_winamp_skin_by_marisa85_d329ymw.wal`).
+- **Two scores, never blended.** *Health* = the census rating plus the unimplemented-method count — how
+  well we serve the skin. *Value* = static features it adds that the admitted corpus does not already
+  exercise — what it is worth as a test case.
+- **Admission is greedy set cover on value**, from the gold+silver feature union, ties to lowest sha256.
+  Deterministic: a pure function of (candidate sha256s, corpus sha256s, git rev).
+- **Tiers.** Gold = the `skins.md` set. Silver = admitted by value, budgeted per intake: **≤ 25 skins, gain ≥ 3
+  features** (agreed 2026-10-19). Re-open it only after the first intake, from its measured gain curve in
+  `intake.tsv` and the sweep time it added — the budget is the sweep's cost. Bronze =
+  the rest, census-only. Quarantine = does-not-load, crash or hang — a trap on real input is a security
+  bug first (S1).
+- **Tier decides which actions run.** Pre-merge render sweep = gold+silver. Impact-selected sweep
+  (`--touching <feature,…>`) = every tier, selected from the feature index. Full Bronze census = batch,
+  after an intake or before a release. App-driven tools (`skin-screenshots`, `window-census`,
+  `skin-pick-matrix`) = gold+silver only.
+
+### Why each corpus-wide action has to change
+
+Linear from the 79-skin timings in `reference/harness.md`:
+
+| Action | ~80 skins | ~1,000 skins |
+|---|---|---|
+| Render sweep, the pre-merge gate | ~5 min per capture | ~1 h per capture |
+| Census (render + hosted) | minutes | 1–2 h |
+| Damaged logs (interleaved writes, ~half of passes) | 1–3 solo re-runs | dozens per pass |
+| Reach greps over a hand `7zz` extract, hand-quoted denominator | seconds | not tier-aware |
+| App-driven tools, one launch per skin | minutes | many hours |

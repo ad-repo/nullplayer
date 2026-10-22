@@ -85,16 +85,20 @@ The first two would be addressed by the unbuilt stages in §3; today, provoke th
 
 **Partly built.** The five-stage pipeline was specified in 2026-08-18 as S0 ingest/tier, S1 load
 census, S2 static MAKI demand, S3 motion + interaction sweep, S3.5 state-space enumeration, S4
-aggregate and rank. Two of those now exist as committed scripts, and the rest is still manual. Know
+aggregate and rank. What is done is recorded only in `docs/winamp-modern/corpus-runner-plan.md` §7;
+this table says what exists to run. Know
 which half you are standing on before planning work:
 
 | Stage | State | What to run |
 |---|---|---|
-| S0 ingest/tier | **Partly.** No committed manifest and no Gold/Silver tiering; the census enumerates whatever is installed and emits a **sha256 per row**, which is what makes duplicate archives and a moved corpus visible | — |
+| S0 ingest/tier | **Built** — `WinampModernCorpus/{gold,silver,bronze,quarantine}/`, tiered by the committed `corpus-manifest.tsv`; `scripts/wal_corpus_crawl.py` finds candidates and `scripts/wal_intake.sh` rates and admits them | [reference/harness.md](reference/harness.md) → *Growing the corpus* |
 | S1 load census | **Built** — `scripts/wal_skin_census.sh`, one TSV row per archive | [reference/harness.md](reference/harness.md) → *The corpus census* |
 | Regression sweep (§6) | **Built** — `scripts/wal_render_sweep.sh capture` / `compare`, invariants **and** every PNG | [reference/harness.md](reference/harness.md) → *The corpus render sweep* |
-| S2 static MAKI/XML demand | **Not built.** The stand-in is the hand-run `grep` set under *Reproducible reach commands* in `tasks/WINAMP5_TASKS.md`, which is where every measured Reach number in the backlog comes from | `tasks/WINAMP5_TASKS.md` |
-| S3 motion + interaction, S3.5 state space, S4 rank | **Not built.** Provoke motion and interaction by hand | — |
+| S2 static MAKI/XML demand | **Built for MAKI; XML half partial** — the XML census exists, but the supported-surface manifest it diffs against does not (corpus-runner-plan §7 step 6), so XML rows carry `implemented` `-`. `scripts/wal_feature_index.sh` writes `features.tsv`, and `scripts/wal_reach.sh` turns it into the per-tier Reach every measured backlog row carries; `wal_render_sweep.sh --touching` selects from it | [reference/harness.md](reference/harness.md) → *The static feature index* |
+| S4 demand index | **Built for MAKI** — `scripts/wal_demand.sh` inverts the index into call → skins per tier; the ranked queue it fed is B182–B201. XML waits on the supported-surface manifest; the impact and coverage scores wait on S3 | [reference/harness.md](reference/harness.md) → *The static feature index* |
+| S3 motion sweep | **In progress** — `scripts/wal_motion_sweep.sh` exists; what is left is `corpus-runner-plan.md` §7 step 4 | [reference/harness.md](reference/harness.md) → *The motion sweep* |
+| S3 interaction + menu sweep | **In progress** — `scripts/wal_interaction_sweep.sh` exists; the menu sweep and the rest are §7 step 5 | [reference/harness.md](reference/harness.md) → *The interaction sweep* |
+| S3.5 state space | **Not built.** Walk non-default states by hand | — |
 
 Two rules follow from the built half, and both are already paid for — the full versions, with the
 measurements behind them, are in [reference/harness.md](reference/harness.md):
@@ -102,9 +106,9 @@ measurements behind them, are in [reference/harness.md](reference/harness.md):
 - **A sweep or census is a build. Freeze the tree.** Both scripts refuse a dirty tree without
   `--allow-dirty`, because a binary that will not compile writes an *empty* capture that diffs as
   "everything changed".
-- **A damaged log is a first-class outcome, not a finding.** Interleaved writes eat whole blocks of
-  the capture in about half of all passes, and the result looks exactly like a dropped container.
-  `damaged.txt` names those skins; re-run each alone before believing anything about it.
+- **Read a skin's own log, `png/<skin>.log`, never the shared stdout.** On stdout, interleaved writes
+  ate whole blocks of the capture in about half of all passes and looked exactly like a dropped
+  container; the per-skin logs (B166) cannot interleave.
 
 The specification for the unbuilt stages, and the build order that would deliver them, are in
 `docs/winamp-modern/corpus-runner-plan.md` — a project plan, kept where the phase handoffs live. As
@@ -277,16 +281,18 @@ What §6 asked for in 2026-08-18 and what shipped are not quite the same thing, 
 worth keeping straight: it asked for **render hashes**; what exists is a **per-pixel delta**, which is
 strictly better, because a hash tells you a skin changed and a delta tells you by how much. Read the
 magnitude before calling a difference a regression — a `maxdelta` of 1 is one LSB. The traps that
-apply to every run (freeze the tree, redirect don't pipe, damaged logs, capture the baseline in a
+apply to every run (freeze the tree, redirect don't pipe, per-skin logs, capture the baseline in a
 worktree and never by `git stash`, and the one genuinely nondeterministic image in the corpus) are
 documented once in [reference/harness.md](reference/harness.md); do not re-derive them here.
 
 **Still not built**, and still the honest gaps:
 
-- **Motion signatures** — a change that freezes an animation passes the sweep, because a single frame
-  has no motion in it. This waits on S3.
-- **Interaction signatures** — the dead-control count per skin, so a routing or hit-test change that
-  kills controls in an unrelated skin shows up as a number moving. This waits on S3.
+- **Motion signatures in the gate** — a change that freezes an animation passes the render sweep,
+  because a single frame has no motion in it. Run `wal_motion_sweep.sh` before and after and diff the
+  `verdict` column; folding it into the gate is §7 step 7.
+- **Interaction signatures in the gate** — `wal_interaction_sweep.sh` gives the dead-control count
+  per skin; diff its `verdict` column before and after a routing or hit-test change. Folding it into
+  the gate is §7 step 7, and at ~17 min it is a batch run, not a pre-merge one.
 - **State beyond the default.** Every skin renders in its *stored default configuration*. Reproduce a
   non-default state explicitly (`WINAMP_MODERN_RENDER_CONFIG` / `RENDER_SET` seed it headlessly) and
   hand the build over to be checked on screen; a clean sweep is "no regression in the default state",

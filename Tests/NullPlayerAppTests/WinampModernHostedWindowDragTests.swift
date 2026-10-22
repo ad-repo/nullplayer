@@ -35,7 +35,7 @@ final class WinampModernHostedWindowDragTests: XCTestCase {
     /// mode) would move the window while they fired.
     @MainActor
     func testAPressThatBarelyMovesStaysAClick() throws {
-        let mounted = try mount(XCTUnwrap(WinampModernHostedWindowRegistry.entry(id: .peppyMeter)))
+        let mounted = try mount(XCTUnwrap(WinampModernHostedWindowID.peppyMeter.definition))
         let origin = mounted.window.frame.origin
         drag(mounted.surface.view, from: center(of: mounted.surface.view),
              by: NSPoint(x: 2, y: -1), in: mounted.window)
@@ -46,7 +46,7 @@ final class WinampModernHostedWindowDragTests: XCTestCase {
     /// The equalizer is the case that matters: its bands and buttons cover most of its body.
     @MainActor
     func testAControlOnAHostedSurfaceKeepsItsPress() throws {
-        let mounted = try mount(XCTUnwrap(WinampModernHostedWindowRegistry.entry(id: .equalizer)))
+        let mounted = try mount(XCTUnwrap(WinampModernHostedWindowID.equalizer.definition))
         let origin = mounted.window.frame.origin
         // Inside the band sliders. Hosted, the layout spreads to the width the frame gives it, so
         // the bands own roughly x 145…255 of this 300×200 mount, against a background that starts
@@ -61,7 +61,7 @@ final class WinampModernHostedWindowDragTests: XCTestCase {
     /// pins that as deliberate rather than an oversight.
     @MainActor
     func testTheHostedWaveformBodySeeksRatherThanDragging() throws {
-        let mounted = try mount(XCTUnwrap(WinampModernHostedWindowRegistry.entry(id: .waveform)))
+        let mounted = try mount(XCTUnwrap(WinampModernHostedWindowID.waveform.definition))
         let origin = mounted.window.frame.origin
         drag(mounted.surface.view, from: center(of: mounted.surface.view), by: Self.travel,
              in: mounted.window)
@@ -97,8 +97,7 @@ final class WinampModernHostedWindowDragTests: XCTestCase {
             nativeWindow: { window },
             requestClose: {},
             requestFullscreen: {})
-        let surface = try XCTUnwrap(definition.makeSurface?(context),
-                                    "\(definition.id.rawValue) has no surface factory")
+        let surface = definition.makeSurface(context)
         surface.view.frame = NSRect(x: 0, y: 0, width: 300, height: 200)
         window.contentView = surface.view
         addTeardownBlock { @MainActor in surface.prepareForUITeardown() }

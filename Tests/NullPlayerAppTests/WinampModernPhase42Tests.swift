@@ -203,7 +203,7 @@ final class WinampModernPhase42Tests: XCTestCase {
         let (runtime, host) = try makeRuntime()
         host.rows = Self.rows(20, current: 7)
         var revealed: [Int] = []
-        runtime.playlistRevealRowRequested = { revealed.append($0) }
+        runtime.hooks.playlistRevealRowRequested = { revealed.append($0) }
 
         _ = call(runtime, "showtrack", .integer(12))
         _ = call(runtime, "showcurrentlyplayingtrack")
@@ -217,7 +217,7 @@ final class WinampModernPhase42Tests: XCTestCase {
         let (runtime, host) = try makeRuntime()
         host.rows = []
         var revealed: [Int] = []
-        runtime.playlistRevealRowRequested = { revealed.append($0) }
+        runtime.hooks.playlistRevealRowRequested = { revealed.append($0) }
 
         _ = call(runtime, "showcurrentlyplayingtrack")
 
@@ -230,7 +230,7 @@ final class WinampModernPhase42Tests: XCTestCase {
         let (runtime, host) = try makeRuntime()
         host.rows = Self.rows(6, current: 4)
         var revealed: [Int] = []
-        runtime.playlistRevealRowRequested = { revealed.append($0) }
+        runtime.hooks.playlistRevealRowRequested = { revealed.append($0) }
         let object = try XCTUnwrap(runtime.loadedSkin.runtime.graph.allObjectsUnordered
             .first { $0.xmlID == "pl" })
         let program = try XCTUnwrap(runtime.programs.first)

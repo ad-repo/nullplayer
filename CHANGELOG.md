@@ -16,6 +16,8 @@
 
 ### Fixes
 
+- **Quitting no longer hangs with a Windows Media Player skin** — the skin's settings watcher could
+  wait on the app while the app waited on its final save, freezing quit.
 - **Geiss no longer goes black after Tripex** — switching the Visualizations window's engine away
   from Tripex left OpenGL state behind that could make Geiss draw nothing; each new engine now
   starts from a clean context.
@@ -24,27 +26,104 @@
   (crashes when switching skins or effects). Geiss now runs in one place at a time: whichever
   started it first keeps it, the other shows black, and it moves over as soon as the first one
   switches away, is hidden or closes.
-- **Modern skins whose window buttons have missing artwork no longer get stuck in shade mode** —
-  the Motorhead skin's compact bar had invisible minimize, shade and close buttons, so there was no
-  way back to the full player. They now draw as simple glyphs and work.
-- **Modern skins: seeking, time readouts and the file-type readout work in skins like ONYX V2** —
-  large numbers in a skin's scripts (such as one hour in milliseconds) were cut short, which sent
-  every track down the skin's "longer than an hour" path and broke its seek control. The file-type
-  readout now shows the file's real extension, and for server streams it never shows the server
-  login that was part of the stream address.
-- **Modern skins: the ONYX V2 mini player shows its volume level, and its visualization sits in the
-  player** — the volume bar's fill was never drawn, and the visualization opened as a separate
-  window away from the player (and as a black square in the mini player). It now opens over the
-  player's art box, follows the player when moved, and stays hidden in the mini player.
-- **Modern skins: text in fonts other than Arial is no longer oversized** — fonts with tall line
-  spacing such as Impact and Tahoma were drawn larger than Winamp draws them, so TOX Milla's timer
-  lost the tops of its digits. They now match each skin's own screenshot.
-- **Modern skins: no more flickering line below the XENERGY player** — the skin's visualization
-  sits in the space its config drawer slides into, and it drew on the desktop even with the drawer
-  closed. That space is now outside the window, as in Winamp.
 - **Library Browser Tiles mode keeps tiles small in a narrow window** — narrowing the window made
   the tiles bigger, down to a single column of two large tiles. Tiles are now never wider than
   120 pt: a narrower window fits more, smaller tiles.
+- **Plex no longer floods the log at startup** — connecting and preloading the library logged every
+  step and, in debug builds, a dump of every server response. Startup now logs two lines; failures
+  are still logged. Debug builds also stop dumping every Subsonic, Jellyfin and Emby response.
+- **Next and Previous work straight after a restart with a server playlist** — while a restored
+  Plex, Jellyfin, Emby or Subsonic playlist was still loading in the background, Next, Previous and
+  the end of a song moved the highlight but kept playing the same song, for as long as 17 minutes
+  on a large playlist. The chosen track now loads and plays at once. A song that fails to stream
+  also moves on to the next one and plays it, instead of stopping there.
+- **Modern skins: loading**
+  - 54 skins that failed to load now open.
+  - Ten more skins' scripts no longer fail at load.
+  - Accented text in older skins shows correctly.
+  - Dozens more Winamp script functions are supported.
+- **Modern skins: layout and artwork**
+  - ONYX V2's mini player shows its volume fill; its visualization opens over the player's art
+    box, follows the player, and stays hidden in the mini player.
+  - Prakrit's player is no longer see-through; its equalizer is no longer empty.
+  - wTunes is no longer cut off on the right.
+  - Anunaki's display and NEO_CLASSIC's album-art pane appear; NEO_CLASSIC's titles are centred.
+  - WinampAzenis2's text buttons have labels.
+  - Vortex's Party! layout shows its panes.
+  - Enkera's and Nullsoft 2000's shade modes lay out correctly.
+  - BOOM and 96 other skins show uppercase window titles.
+  - 1010 Fullscreen's ten EQ sliders span the equalizer instead of bunching at the left.
+  - corneramp redux and Shield Amp's theme buttons are full width ("Previous", not "Pr…").
+  - Ebonite's and iNTELLI_design's window-mode buttons are no longer squashed.
+  - No divider strip across Prakrit's Stop and Next buttons, or similar overhangs on Copperdeck
+    II's equalizer and cPro Venus's seek bar.
+  - MoonLight's equalizer labels are in place; Pure Inspired's seek line appears.
+- **Modern skins: Preferences, settings and About pages**
+  - 1010 Fullscreen's Preferences shows its tree, About sheet and Cover Search page.
+  - Mac OS X Panther's and Official Tristania's Preferences show their About sheets; Panther's tabs
+    are visible.
+  - Anunaki's Config Panel shows its five tabs.
+  - machina's help and configuration screens and JRS's configuration draw on the skin's background;
+    machina's help screen has its switch button.
+  - Link buttons on krazyPlayer's About page and Vortex's and 1010 Fullscreen's config pages show
+    their text.
+  - The Search button on five ClassicPro skins is no longer smeared.
+- **Modern skins: playlists**
+  - JRS, Mac OS X Panther and about 220 other skins show Add, Rem, Sel, Misc and List buttons.
+  - Nitrous Audio's playlist shows its rows.
+- **Modern skins: buttons, sliders and switches**
+  - Window buttons with missing artwork draw as glyphs, so Motorhead's compact bar can leave
+    shade mode.
+  - ONYX V2's seek control and time readouts work (large numbers in skin scripts were
+    truncated); its file-type readout shows the real extension and never a server login.
+  - Skin buttons for eject, minimize, quit and the Windows menu work.
+  - cPro2 minimal's system button quits on double-click; cPro2's clock shows the correct time.
+  - Clicking the stock track notifier brings the player forward.
+  - mmd3's bass knob turns the equalizer on.
+  - Clickable skin text and album art respond to clicks.
+  - Official Tristania: equalizer sliders no longer fill their whole track (multipass's EQ bars
+    also line up); Play shows pause while playing and pauses on click; the repeat, shuffle and
+    crossfade indicators work; the Fade slider keeps its value instead of resetting to 1 second.
+  - Prakrit's Rep, Shu and Xfd buttons toggle repeat, shuffle and crossfade.
+  - Alpha Media Player X5: bass, treble and volume sliders follow the pointer; the EQ and Mute
+    levers move and stay visible; Mute no longer turns itself off.
+- **Modern skins: cover art**
+  - Skins that look for `cover.jpg` or `folder.jpg` beside the song (Mac OS X Panther, Ebonite and
+    others) show the track's cover, for local files and Plex, Jellyfin, Emby and Subsonic.
+- **Modern skins: window placement**
+  - Vortex, Alpha Media Player X5 and 1010 Fullscreen stay on screen.
+  - Nitrous Audio's monitor mode, 1010 Fullscreen's party mode and ClassicPro's maximize fit the
+    screen at UI Sizes above 100%.
+  - A window with no room beside the player opens in a screen corner instead of over it.
+  - Dronev11's compact player and Prakrit's main window can be dragged.
+  - A skin's resize corner, such as Itemskin's playlist corner, resizes both edges.
+  - A skin's video window no longer opens empty at launch.
+  - krazyPlayer's Visualizations window keeps its full visualization when short and wide.
+- **Modern skins: text**
+  - Fonts with tall line spacing, such as Impact and Tahoma, are no longer oversized; TOX Milla's
+    timer keeps the tops of its digits.
+  - Copperdeck II's track title, MoonLight's title and clock, and cPro2 minimal's artist and title
+    lines appear.
+  - With scrolling off, a title too long for its box is clipped to the box: JRS's remote, and
+    Enkera's, NEO_CLASSIC's and Symplicipod's shade titles, no longer overlap other controls.
+  - Text in a skin's own font is positioned as in Winamp: CPro Winamp for Mac's time display is no
+    longer cut off; Winamp 2000 and about twenty other skins shift a pixel or two.
+  - Segoe UI text draws at Winamp's size, so cPro2 minimal's elapsed time no longer overlaps the
+    track length.
+  - 1010 Fullscreen's clock shows its colons; impulse's clock reads `1:13`, not `1 13`.
+  - wTunes' About text and Vortex's `POSITION` label are centred and no longer clipped.
+  - The Windows menu no longer shows names like `About%09Alt+A` (wTunes, CopperdeckII and others).
+- **Modern skins: VU meters**
+  - wTunes' needle meters move with the music.
+  - VU levels decay like a real meter instead of jumping on every peak.
+- **Modern skins: rendering and performance**
+  - No flickering line below the XENERGY player: its visualization's drawer space is outside
+    the window while the drawer is closed.
+  - Windows render at full Retina resolution; text is sharper at UI Sizes like 125% and 135%.
+  - Lower CPU use during playback (about 40% less on cPro Bento).
+  - Soft-edged skins such as meridian no longer have darkened edges.
+  - No dark line beside CopperdeckII's rounded corners.
+  - The drop shadow follows the window; Anunaki's sliding equalizer leaves no shadow behind.
 
 ## 0.33.0
 

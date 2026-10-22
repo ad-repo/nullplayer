@@ -31,6 +31,8 @@ final class WalArchive: WalResourceProvider {
     let rootPrefix: String?
     let entries: [WalArchiveEntryInfo]
     let skinXMLPath: String
+    /// Warnings about the archive's shape that still loaded: the root chosen when entries sit outside it.
+    let diagnostics: [WalDiagnostic]
 
     private let archive: Archive
     private let archiveLock = NSLock()
@@ -84,20 +86,22 @@ final class WalArchive: WalResourceProvider {
             fileEntries.append((entry, normalized))
         }
 
-        let skinCandidates = fileEntries.filter {
-            $0.normalized.split(separator: "/").last?.caseInsensitiveCompare("skin.xml") == .orderedSame
+        // Winamp takes the shallowest `skin.xml` as the root: published archives carry a nested
+        // second one (`player/skin.xml`, an old `2004/skin.xml`), a stray file beside the wrapper, or
+        // the skin several folders deep. Everything outside the root is ignored, so the VFS stays
+        // bounded to it; only a tie at the shallowest depth is ambiguous.
+        let skinCandidates = fileEntries
+            .map { $0.normalized.split(separator: "/") }
+            .filter { $0.last?.caseInsensitiveCompare("skin.xml") == .orderedSame }
+        guard let depth = skinCandidates.map(\.count).min() else {
+            throw WalFailure(WalDiagnostic(.invalidRoot, "Archive must contain skin.xml."))
         }
-        guard skinCandidates.count == 1 else {
-            throw WalFailure(WalDiagnostic(.invalidRoot, skinCandidates.isEmpty
-                ? "Archive must contain skin.xml at its root or inside one wrapper directory."
-                : "Archive contains multiple case-insensitive skin.xml candidates."))
+        let shallowest = skinCandidates.filter { $0.count == depth }
+        guard shallowest.count == 1 else {
+            throw WalFailure(WalDiagnostic(.invalidRoot, "Archive contains multiple case-insensitive skin.xml candidates at its shallowest depth."))
         }
-
-        let skinComponents = skinCandidates[0].normalized.split(separator: "/")
-        guard skinComponents.count == 1 || skinComponents.count == 2 else {
-            throw WalFailure(WalDiagnostic(.invalidRoot, "skin.xml may be nested under at most one wrapper directory."))
-        }
-        let rootPrefix = skinComponents.count == 2 ? String(skinComponents[0]) : nil
+        let rootPrefix = depth > 1 ? shallowest[0].dropLast().joined(separator: "/") : nil
+        var ignored = 0
 
         var byFolded: [String: Entry] = [:]
         var canonical: [String: String] = [:]
@@ -108,7 +112,8 @@ final class WalArchive: WalResourceProvider {
             if let rootPrefix {
                 let prefix = rootPrefix + "/"
                 guard item.normalized.lowercased().hasPrefix(prefix.lowercased()) else {
-                    throw WalFailure(WalDiagnostic(.invalidRoot, "Entry '\(item.entry.path)' sits outside the archive's single wrapper directory '\(rootPrefix)'."))
+                    ignored += 1
+                    continue
                 }
                 relative = String(item.normalized.dropFirst(prefix.count))
             } else {
@@ -140,6 +145,9 @@ final class WalArchive: WalResourceProvider {
         self.canonicalPathsByFoldedPath = canonical
         self.entries = publicEntries.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
         self.skinXMLPath = canonicalSkin
+        self.diagnostics = ignored == 0 ? [] : [WalDiagnostic(.invalidRoot,
+            "Skin root is '\(rootPrefix ?? "/")'; \(ignored) archive entries outside it are ignored.",
+            severity: .warning)]
     }
 
     var resourcePaths: [String] { entries.map(\.path) }

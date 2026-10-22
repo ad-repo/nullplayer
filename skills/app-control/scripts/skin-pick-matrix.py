@@ -84,7 +84,7 @@ def make_load_files():
     d = os.path.join(TMP, "load")
     os.makedirs(d)
     shutil.copy(os.path.join(SUPPORT, "Skins/aquamp.wsz"), os.path.join(d, "MatrixClassic.wsz"))
-    shutil.copy(os.path.join(SUPPORT, "WinampModernSkins/2222-cPro__Bento.wal"), os.path.join(d, "MatrixModern.wal"))
+    shutil.copy(os.path.join(SUPPORT, "WinampModernCorpus/gold/2222-cPro__Bento.wal"), os.path.join(d, "MatrixModern.wal"))
     shutil.copy(os.path.join(SUPPORT, "WMPSkins/corona.wmz"), os.path.join(d, "MatrixWMP.wmz"))
     subprocess.run(["zip", "-qr", os.path.join(d, "MatrixOriginal.nsz"), "."], check=True,
                    cwd=os.path.join(REPO, "Sources/NullPlayer/Resources/Skins/NeonWave"))

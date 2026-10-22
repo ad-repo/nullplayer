@@ -46,4 +46,10 @@ final class WinampModernThemeCoordinator {
     }
 
     func transform(group: String?) -> WasabiGammaTransform? { catalog.transform(group: group) }
+
+    /// Repaint every subscriber against the catalog as it now stands — after a script retinted a
+    /// group of the active theme and called `apply()`.
+    func reapply() {
+        for observer in observers { observer.onChange() }
+    }
 }

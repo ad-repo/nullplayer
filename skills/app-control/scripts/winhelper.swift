@@ -230,6 +230,24 @@ func capture(_ row: WindowRow, to path: String, siblings: [WindowRow], quiet: Bo
             return true
         }
     }
+    // A glued `.wal` stack is a group of *some* of the process's windows (each with its shadow),
+    // neither the window alone nor all of them: Vortex's player carries its cover, playlist, EQ and
+    // preferences windows but not its MSPP prompt. Find the sibling edges the image spans.
+    let lefts = Set(siblings.map(\.x)).filter { $0 <= row.x }.sorted()
+    let tops = Set(siblings.map(\.y)).filter { $0 <= row.y }.sorted()
+    let rights = Set(siblings.map { $0.x + $0.w }), bottoms = Set(siblings.map { $0.y + $0.h })
+    for scale in [1, 2, 3] where pw % scale == 0 && ph % scale == 0 {
+        guard let minX = lefts.first(where: { rights.contains($0 + pw / scale) && $0 + pw / scale >= row.x + row.w }),
+              let minY = tops.first(where: { bottoms.contains($0 + ph / scale) && $0 + ph / scale >= row.y + row.h })
+        else { continue }
+        let rect = CGRect(x: (row.x - minX) * scale, y: (row.y - minY) * scale, width: row.w * scale, height: row.h * scale)
+        guard let cropped = image.cropping(to: rect),
+              let dst = CGImageDestinationCreateWithURL(url, "public.png" as CFString, 1, nil) else { break }
+        CGImageDestinationAddImage(dst, cropped, nil)
+        guard CGImageDestinationFinalize(dst) else { break }
+        print("\(path)\t\(cropped.width)x\(cropped.height)\t@\(scale)x\t\(row.id)\t\(row.name)\tcropped-from-group")
+        return true
+    }
     try? FileManager.default.removeItem(atPath: path)
     if quiet { return false }
     FileHandle.standardError.write(("winhelper: window \(row.id) (\(row.name)) is \(row.w)x\(row.h) pt but the capture is "

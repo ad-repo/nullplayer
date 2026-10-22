@@ -185,7 +185,10 @@ Moved verbatim from `reference/rendering.md` § *Drawing the skin's own controls
   was showing when it was made**, held in `visualizationSettingsSkin`, because the defaults
   notification is delivered on the main queue asynchronously: a change made just before a skin
   switch would otherwise land in the record of the skin being switched *to*. `restoreVisualizationSettings`
-  flushes the outgoing skin first for the same reason.
+  flushes the outgoing skin first for the same reason. The defaults observers register with
+  `queue: nil` and hop with `DispatchQueue.main.async`, never `queue: .main`: defaults are also
+  written off main (`AppStateManager`'s save queue), and `queue: .main` makes that writer wait for
+  main — a deadlock on quit, when main is waiting on the save queue.
 
 - **PCM arrives on the audio thread and an overlay must not hop to the main actor to take it.**
   `.audioPCMDataUpdated` is posted from inside `AudioEngine.processAudioBuffer`; a

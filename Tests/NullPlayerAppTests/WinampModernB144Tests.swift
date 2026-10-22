@@ -134,9 +134,27 @@ final class WinampModernB144Tests: XCTestCase {
         XCTAssertLessThanOrEqual(rows.upperBound, 50, "nothing below it")
     }
 
-    /// `valign="top"` still means the top. Centring an oversized line is the *default* alignment's
-    /// business, not a new rule for the two a skin can ask for by name.
-    func testAnExplicitTopAlignmentIsUnaffected() throws {
+    /// `valign` places a line that **fits**: `top` pins it to the box's top edge.
+    func testAnExplicitTopAlignmentPlacesALineThatFits() throws {
+        let centred = try makeScene(canvas: CGSize(width: 200, height: 60), markup: """
+              <text id="label" x="0" y="10" w="200" h="40" fontsize="14" color="255,255,255"
+                    text="0:09"/>
+        """)
+        let topped = try makeScene(canvas: CGSize(width: 200, height: 60), markup: """
+              <text id="label" x="0" y="10" w="200" h="40" fontsize="14" color="255,255,255"
+                    valign="top" text="0:09"/>
+        """)
+        let a = try XCTUnwrap(centred.inkRows())
+        let b = try XCTUnwrap(topped.inkRows())
+
+        XCTAssertLessThan(b.lowerBound, a.lowerBound,
+                          "the line pinned to the top rides higher than the centred one")
+    }
+
+    /// A line **taller** than its box is centred whatever edge `valign` names. Anunaki's digital
+    /// clock is the measured case: its 60px digits in a 40px `valign="top"` box lost their bottoms
+    /// pinned to the top edge, and only line up with the 25px `AM` beside them once centred.
+    func testAnOversizedLineIsCentredWhateverItsVerticalAlignment() throws {
         let centred = try makeScene(canvas: CGSize(width: 200, height: 60), markup: """
               <text id="label" x="0" y="20" w="200" h="20" fontsize="30" color="255,255,255"
                     text="0:09"/>
@@ -145,11 +163,8 @@ final class WinampModernB144Tests: XCTestCase {
               <text id="label" x="0" y="20" w="200" h="20" fontsize="30" color="255,255,255"
                     valign="top" text="0:09"/>
         """)
-        let a = try XCTUnwrap(centred.inkRows())
-        let b = try XCTUnwrap(topped.inkRows())
 
-        XCTAssertLessThan(a.lowerBound, b.lowerBound,
-                          "the centred line rides higher than the one pinned to the box's top")
+        XCTAssertEqual(try XCTUnwrap(topped.inkRows()), try XCTUnwrap(centred.inkRows()))
     }
 
     // MARK: - Fixture

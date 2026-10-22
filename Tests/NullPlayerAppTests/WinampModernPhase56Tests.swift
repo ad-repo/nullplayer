@@ -75,6 +75,14 @@ final class WinampModernPhase56Tests: XCTestCase {
         XCTAssertEqual(spec.resolve(in: parent).height, 0)
     }
 
+    /// Geometry is read with `atoi`: MoonLight writes `w="29,5"` with a decimal comma, which is 29
+    /// wide in Winamp and was no width at all here. A value with no leading number is still absent.
+    func testADecimalCommaReadsAsItsLeadingNumber() {
+        XCTAssertEqual(WasabiGeometrySpec(attributes: ["w": "29,5"]).width, 29)
+        XCTAssertEqual(WasabiGeometrySpec(attributes: ["x": "-7,16"]).x, -7)
+        XCTAssertNil(WasabiGeometrySpec(attributes: ["w": "auto"]).width)
+    }
+
     /// The_Nokia_5220 ships `relatw="5"`. Nothing about 5 is special; it is simply non-zero, and
     /// stays additive — only `2` is the percentage.
     func testAnyNonZeroNumberOtherThanTwoIsAdditive() {
@@ -84,13 +92,20 @@ final class WinampModernPhase56Tests: XCTestCase {
         }
     }
 
-    /// `atoi("%")` is 0, and two skins depend on that answer — corneramp_redux and Shield_Amp ship a
-    /// literal `relatw="%"`. A non-numeric value must stay absolute.
+    /// A non-numeric value stays absolute — `atoi` answers 0.
     func testANonNumericValueStaysAbsolute() {
-        for value in ["%", "", "none", "false", "no", "abc"] {
+        for value in ["", "none", "false", "no", "abc"] {
             let spec = WasabiGeometrySpec(attributes: ["w": "10", "relatw": value])
             XCTAssertEqual(spec.resolve(in: parent).width, 10, "relatw=\"\(value)\" is absolute")
         }
+    }
+
+    /// …except a literal `"%"`, which is percent mode like `2`: corneramp_redux and Shield_Amp's
+    /// theme buttons are `w="50" relatw="%"`, and 1010 Fullscreen's EQ bands are laid out the same way.
+    func testALiteralPercentIsPercentMode() {
+        let spec = WasabiGeometrySpec(attributes: ["w": "10", "relatw": "%"])
+        XCTAssertEqual(spec.resolve(in: parent).width,
+                       WasabiGeometrySpec(attributes: ["w": "10", "relatw": "2"]).resolve(in: parent).width)
     }
 
     func testZeroAndAbsentStayAbsolute() {

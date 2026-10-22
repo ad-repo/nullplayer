@@ -108,7 +108,7 @@ final class WinampModernSkinLoader {
         let runtime = try WasabiSkinInitializer(vfs: vfs,
                                                 maximumObjectCount: xmlLimits.maximumExpandedNodeCount)
             .initialize(document: document)
-        for diagnostic in inventory.diagnostics { runtime.record(diagnostic) }
+        for diagnostic in archive.diagnostics + inventory.diagnostics { runtime.record(diagnostic) }
         // Before anything can read it: a skin's scripts lay its windows out from these values inside
         // `onScriptLoaded`, so a first-run seed applied afterwards would arrive a whole layout late.
         let configuration = WinampModernConfiguration(namespace: mountName)

@@ -3,6 +3,903 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B242 — Whose string it is decides how far it may overrun its box — closed 2026-10-22
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B242 | **A non-scrolling string is released past its box only up to `measurementSlack = 1.375`, a cutoff fitted between two sweep numbers.** `WasabiSceneRenderer.horizontalClip` (`WasabiRendererText.swift`) picks 1.375 because the corpus's own captions overrun by at most 1.33x and the harness's long-title strings start at 1.41x, so the rule is set by the test fixture. A 1.3x title in Anunaki's 180px *Classic No Scroll* songticker still runs across the chrome, and a skin caption at 1.4x is cut. The ratio covers two different causes. B87 is a measurement disagreement of 1–3px (cPro's SUI tab is `getAutoWidth() + 14` around `w="-15"`). JRS's `Playlist Editor` in 45px is a box the skin sized short. The same change ignores `valign="top"` for a line taller than its box. Two tests fail on it: `WinampModernB87Tests.testAStringWiderThanItsBoxIsBoundedByItsGroup`, whose `MMMMMM` is 2.5x its 40px box rather than the "one pixel narrower" its comment says, and `WinampModernB144Tests.testAnExplicitTopAlignmentIsUnaffected`. Choose a rule that names both causes, for example a pixel slack for B87 plus an explicit case for short-sized boxes, and update or replace both tests. Done when the rule cites no harness string, both tests pin the chosen behaviour, Anunaki's No Scroll ticker stays inside its LCD, cPro's SUI tabs and JRS's captions read whole, and every render-sweep diff is judged | `xml-attr '@ticker$'` (an upper bound: every skin that declares a ticker mode): gold 64/81, silver 24/29, bronze 747/827, quarantine 46/54 (manifest 23ad4485) | S | 2 |
+
+**Closed 2026-10-22**. `measurementSlack` is gone. `horizontalClip` releases a non-scrolling, non-wrapping string in a group to that group when it is the skin's own words — a literal, a resolved `:componentname`, a message a script writes — however far over, and cuts **track data** (`WasabiTextMetrics.showsTrackData`: an un-overridden host binding or songticker, or any string carrying the playing track's title, artist or album) at its box beyond `boxMargin`. A corpus probe of every overrun (114 skins) showed neither a ratio nor a pixel count separates the cases (wTunes' About line is 63px over and wants releasing, JRS's artist ticker 55px and wants cutting), and neither does content origin: JRS's and Defix's tickers are a script's `setText` of the metadata. cPro's 1.3x tab overruns are not a measurement disagreement — `getAutoWidth` sizes the tab right and `alignByResize` then squeezes the strip. `valign` places only a line that fits; a taller line stays centred (Anunaki's clock). Tests: B87's 2.5x caption reaches its group, a track title past the margin is cut, one within it is not; B144's top alignment of a fitting line and centring of an oversized one. Sweep vs the baseline: cPro tabs and JRS captions byte-identical, only WinampAzenis2's notifier changed (its `default=` placeholders, which `notifier.m` replaces with track data before the window shows, now reach the group's edge). Anunaki seeded to Classic No Scroll with `RENDER_SET` keeps the long title inside its LCD. `swift test --filter WinampModern`: 1632 tests, 0 failures.
+
+## B240 — The GDI font emulation has its own file — closed 2026-10-22
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B240 | **Move the GDI font emulation out of `WasabiTextMetrics.swift`, which is at 1,000 lines.** `gdiSized`, `gdiScale`, `gdiDrawsAsArial`, `gdiLine`, `winMetricsPerEm`, `substituteScale`, `arialCellPerEm` and `missingFaceCellPerEm` are one concern — sizing and placing a face the way Windows GDI does — and grew the file from 939 lines on `origin/main` to 1,000 on this branch. Give them a `WasabiGdiFontMetrics.swift` (an extension or a caseless enum), with no behaviour change. Done when `WasabiTextMetrics.swift` is well under 1,000 lines, the GDI helpers live in the new file, and `swift test --filter WinampModern` passes unchanged | code health; no corpus demand | S | 3 |
+
+**Closed 2026-10-22**. The GDI helpers (`gdiSized`, `gdiScale`, `gdiDrawsAsArial`, `winMetricsPerEm`, `gdiLine`, `arialCellPerEm`, `substituteScale`, `missingFaceCellPerEm`) are an extension of `WasabiTextMetrics` in `WasabiGdiFontMetrics.swift`, moved verbatim, so no call site changed. `windowsFontFileStem` and `windowsFontFileFamilies` lost `private` because `substituteScale` reads them from the new file. `WasabiTextMetrics.swift` is 919 lines. `swift test --filter WinampModern`: 1629 tests, 2 failures. Both come from the uncommitted valign/clip change that B242 owns: `WinampModernB87Tests` and `WinampModernB144Tests` fail on the text-draw path, which this move does not touch.
+
+## B233 — One presentation path for `.wal` frames, owned by `WinampModernFrames` — closed 2026-10-22
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B233 | **One presentation path for `.wal` frames, owned by `WinampModernFrames`.** Today:<br>• **Two paths to the layer.** `setNeedsDisplay` requests a frame *and* calls `super`, so every invalidation also runs `updateLayer → showFrame`, which re-assigns the picture already shown.<br>• **Two whole-frame triggers.** `canvas.isFresh` decides the synchronous render in `pumpFrame`; a picture-size compare decides another in `showFrame`, which ignores `isInFlight`. Only that bypass needs the three frame numbers (`pictureNumber`, `outlineNumber`, `nextNumber`).<br>• **A builder that switches modes.** `makeJob` flips `drawsDirectly`, clears `layer.contents`, calls `super.setNeedsDisplay` and returns nil both for "oversized" and for "nothing to draw".<br>• **The logic lives on the view.** `WinampModernFrames` is eleven mutable fields whose state machine is a view extension, which is why `pressedObject`, `hoveredObject` and `repaintDeferredWhileHidden` lost `private`.<br>The fix: present only from `show()`. Handle size, backing and the oversized switch at `setFrameSize`/`viewDidChangeBackingProperties`, pumping one whole frame through the same queue. Give `WinampModernFrames` the scheduling, with `record` and `present` closures. Done when frames land strictly in order with at most one number, `makeJob` has no side effects, scheduling has unit tests (partial equals whole, outline change), and a live resize, a display move and Anunaki's drawer slide still show no stale frame | code health; no corpus demand | M | 3 |
+
+**Closed 2026-10-22**. `WinampModernFrames` owns the scheduling, behind the `record` and `present` closures it is built with (`WinampModernMainView.makeFrames`). Its `target` (`idle`, `canvas(Geometry)`, `direct`) is set only from `setFrameSize`, `viewDidChangeBackingProperties` and the move to a window. A geometry the canvas was not last drawn whole at renders synchronously from `layout()`, and each change of target drops the frame in flight, so frames land strictly in order with one counter. `updateLayer` does nothing; `present` assigns the layer's `contents`. `makeJob` became the side-effect-free `canvasJob`, and the oversized switch lives in `canvasGeometryDidChange`. Visibility moved too: `isOnScreen` and `owesWholeFrame` live on the frames. `WinampModernFramesTests` pins partial-equals-whole, the outline following the shape, and a resize dropping the frame in flight; removing the drop fails it with `[40, 50, 40]`. In the app (debug, Anunaki, playing), a live resize of the Media Library sampled mid-drag showed every frame laid out at its own size, and the EQ drawer's slide drew frame by frame with its shadow following. The display move was not exercised: only one screen was attached.
+
+## B237 — Every namespace match is the tag's own — closed 2026-10-21
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B237 | **Thirteen sites ask `tag.kind ==`, which matches any namespace, carried over from `localTypeName` without a decision.** `WasabiGuiList.isList` counts a `<ColorThemes:List>` as a script list (so `addItem` and the rest dispatch on it), while the draw dispatch's `tag.is(.list)` does not; the same any-namespace match sits in the edit, menu, text, album-art and custom-object checks. Decide per site whether a foreign namespace belongs (Wasabi's own answer is the registered class, not the spelling), and write it as `tag.is(_:in:)`. Done when no `tag.kind ==` remains outside `WasabiTag`, and the render and interaction sweeps match their baselines or every diff is judged | `xml-tag '^colorthemes:list$'`: gold 23/56, silver 20/54, bronze 187/827, quarantine 18/54 (manifest 9e68ffe0) | S | 3 |
+
+**Closed 2026-10-21**. The thirteen sites now say which namespace they mean, and `WasabiTag.kind` is `private`, so the compiler keeps it that way: every match is `is(_:in:)`. Each site took the namespace its draw-side twin already used. `isList`/`isTree`, the `<edit>` hit test and focus, the `<text>` line height and declared bottom, `<CustomObject>` sizing and `groupid`, and `<Menu>` are bare-only. So a `<ColorThemes:List>` (gold 23/56) no longer takes `addItem` and the rest of the list API into rows nothing draws; it stays Winamp's theme picker. `AlbumArt.isLoading` keeps `Wasabi:AlbumArt` too, as the container topology does. The embedded-XUI forwards accept bare and `Wasabi:`: text styling for `text`, the button label for `button`/`togglebutton`. The first sweep caught the button case: krazyPlayer's and Vortex's `SC:HyperLinkButton` embed a `<Wasabi:Button>` and lost their link labels when only the bare tag matched. Gold+silver render sweep at 1x against HEAD: identical bar the documented noise. CopperdeckII's `MLibrary` `min=` flip is new to the list and was confirmed by solo runs. Interaction sweep (`--shards 60`) against two baseline passes: the seven rows that differed from both flip back in a solo run of the same build (added to `harness.md`). `swift test`: 3090 tests, 0 failures. Review follow-up: "bare or `Wasabi:`" is one call, `WasabiTag.isStandard(_:)`/`isStandard(anyOf:)`, at the four sites that spelled it as two (and `WasabiFrame.isFrame`). The `<text>` checks staying bare-only is correct, because `WasabiFormWidgets` rewrites an unclaimed `<Wasabi:Text>` to `text` before anything draws it.
+
+## B236 — The script runtime's concerns own their state — closed 2026-10-21
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B236 | **B230's split widened about fifty script-runtime members from `private` to internal, mutable state included.** `mapImages`, `bitmapSizes`, `eventsBeingDispatched`, `runtimeScriptStartDepth` and the per-concern caps are now writable from any file in the module, because a cross-file extension cannot see `private`. The concerns that own their state should be types the runtime holds: the Map image cache (`WinampModernScriptRuntimeMap.swift`), the XmlDoc reader, and the signature tables (pure static data, a plain `enum`). `WinampModernScriptRuntime.swift` is still 1,340 lines; `…Object.swift` (997) and `…System.swift` (973) sit at the limit. Done when each extracted concern keeps its state `private` behind its own type, no runtime state is internal only for an extension's sake, and the interaction sweep matches its baseline | code health; no corpus demand | M | 3 |
+
+**Closed 2026-10-21**. Each concern's state is now private inside a type of its own:
+
+- `WinampModernScriptSignatures`: an `enum` with private tables. The runtime's `signature(for:classGUID:)` asks it and records the miss.
+- `WinampModernScriptBitmaps`: the `Map` image cache and the bitmap size memo, in `…Map.swift`.
+- `WinampModernXmlDocReader`: the document walk, the element cap and `parserPath`.
+- `WinampModernScriptStarts`: bound script bindings and nesting depth.
+- `WinampModernAnnouncedEqualizer`: the last EQ values the scripts were told.
+- `WinampModernLayerFXStore`: per-layer FX state, meshes and staleness.
+- `WinampModernGeometrySettle`: the change flag and the re-entrancy guard.
+
+The B61 read set joined `WinampModernBorrowedOrigin`, which already owned the cross-window half of that rule. `eventsBeingDispatched` and its key are `private` behind `isDispatchingEvent`, and `nextPopupID` is `private` behind `newObjectID()`. Two pieces stay internal on purpose:
+
+- `isEvaluatingLayerFX` is a re-entrancy guard the main file, geometry and Layer FX all read.
+- `lastBridgedValues` and `strandingCandidates` are one collection each, used through the collection's own API, so a wrapper type would only pass calls through.
+
+Internal `static let` constants were left as they are, since they are immutable. Interaction sweep against two baseline passes: what differed from both flips between solo runs of the baseline itself (S7Reflex's beat-vis click, winampmodern566's album-art double-click, hatsune_miku's drive point). The render sweep is unchanged from B237's. `swift test`: 3090 tests, 0 failures.
+
+**Review follow-up, same day.** `dispatchableEventArity` moved into `WinampModernScriptSignatures`, which had been reading it back off the runtime. The `canonicalGUID` pass-through is gone, and every caller uses `MakiClassGUID.canonical`. The EQ switches `syncEqualizerSwitches` last saw joined `WinampModernAnnouncedEqualizer`. `WinampModernScriptBitmaps` takes a lookup and a store as separate calls rather than a mutating call with a decode closure, so a decode that reached back into the cache cannot trap as an overlapping access. With the table gone, `WinampModernScriptRuntime.swift` is 1,164 lines. Decided against, not deferred:
+
+- **A store type for the script-created objects** (`dynamicObjects`, `popupCommands`, `treeNodes`, `dynamicGUIObjects`). The six concern files that use them each read and write them, so the store would be a get/set wrapper with the same reach.
+- **`private(set)` on the concern holders** (`layerFX`, `scriptStarts` and the rest). A cross-file extension calls their mutating methods, which `private(set)` forbids.
+
+## B235 — The harness and the window build one canvas job — closed 2026-10-21
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B235 | **The harness's `WasabiSceneRenderer.draw(in:)` assembles its canvas job apart from the window's.** B231 made the sweep render through `WinampModernCanvas`, but the job is built twice: `draw(in:)` computes its own scale, pixel snap and `Job`, and the view's `makeJob` (`WinampModernMainView+Frames.swift`) does the same from the bounds, and adds `skinScale` and the host chrome the harness never applies. The oversized fallback is written twice as well (`draw(in:)`'s direct list and `drawDirectly`). So the sweep checks the canvas, not the recording the window does. The fix: one job builder (scale, pixel rect, clip, colour space, optional chrome list) that both call, which lands with B233's side-effect-free `makeJob`. Done when `draw(in:)` and the view share that builder and the oversized path, and the gold+silver render sweep at 1x, 2x and 2.5x matches its baseline bar the noise listed in `harness.md` | code health; no corpus demand | S | 3 |
+
+**Closed 2026-10-21**, ahead of B233. `WasabiSceneRenderer.canvasJob` (`WinampModernCanvas.swift`) builds the job. It records the scene, and optionally the host chrome, at a scale for a pixel size and rects, with an optional origin offset and UI Size, and it has no side effects. `drawDirectly` is the one oversized fallback, and `fitsCanvas` is the one limit test. `draw(in:)` and the view's `makeJob`/`drawDirectly` call all three. `makeJob` keeps its `drawsDirectly` switch, which is B233's to move. Gold+silver render sweep at 1x, 2x and 2.5x against HEAD: identical bar the documented noise (clocks, the MoonLight and Itemskin canvas flips, the MLibrary `min=` flips). In the app (debug, cPro Bento, playing), the main window renders. Its About page wears the host glass rim, which is the path where the view hands `canvasJob` a chrome closure.
+
+## B228 — A typed widget kind — closed 2026-10-21
+
+| B228 | **A typed widget kind instead of string compares on `typeName`.** "What is this object" is answered by about 40 string compares across seven files: 28 on `typeName.lowercased()` (`WasabiRenderer`, `WinampModernMainView`, the script runtime, hit testing, `WasabiChromeButtons`, `WasabiFrame`, `WinampModernComponents`) and 14 on `localTypeName`, plus the `isList`/`isTree`/`isMenu`/`isTextButton` predicates that wrap them. Whether a compare means the standard library's `Wasabi:Button` or a bare `<button>` is decided again at each site, and B217 found the two spellings matching differently from one line to the next. Parse the kind once when the graph is built: an enum whose cases keep the namespace distinction where it matters (`.button` vs `.wasabiButton`), stored on `WasabiObject` beside `typeName`. Route the predicates and the `let type = …` dispatches through it, and drop `localTypeName` if nothing still needs it. Done when no `typeName` string compare is left outside the parser and the gold+silver render sweep matches its baseline apart from the documented noise | code health; no corpus demand | L | 3 |
+
+**Closed 2026-10-21**. `WasabiKind` (`WasabiKind.swift`) is parsed once when a `WasabiObject` is made: `object.kind` is the tag's local name as an enum (the tags the engine treats specially, everything else `.other`) and `object.namespace` is `none`, `wasabi`, `wasabiStandardFrame`, `winamp`, `colorThemes` or `other`. A site now says which question it means: `object.kind == .button` for either spelling (what `localTypeName ==` meant), `object.is(.button)` for the bare tag (what a full-name compare meant), `object.is(.button, in: .wasabi)` for the standard library's. Each of the converted sites keeps the meaning it had, so nothing a namespace used to decide changes. The row undercounted: besides the ~40 `lowercased()`/`localTypeName` compares there were ~100 `typeName.caseInsensitiveCompare("…")` ones, and all of them moved. `localTypeName` is gone, as are `WasabiTitleBox.isTitleBox(typeName:)`, `WasabiTabSheet.isTabSheet(typeName:)`, `WasabiStandardFrames.flavour(forTypeName:)` and the `type:` string parameters of `isRegionOnly`, `layerImage`, `ancestor(of:type:)` and `findRoot(type:xmlID:)`. `isHolderElement` and `WasabiFrame.isFrame(typeName:)` keep a string form for the XML inventory, which works on tag names before any object exists, and parse through `WasabiKind.parse`. What still reads `typeName` as text: debug keys and trace lines, the initializer's XML-stage tag, and `isXUITag`, which looks the tag up in the skin's own registry. Gold+silver render sweep at 1x, 2x and 2.5x against B231's captures: identical bar the documented noise, plus Itemskin's `cont.clear.avs` canvas flipping 330x137 and 660x274 in both directions (added to `harness.md`). Interaction sweep (gold and silver, `--shards 60`) against two baseline passes of HEAD: every difference was either a cell the two baselines already disagreed on, a seek or mute pixel count, or a verdict that flips between solo baseline runs (CopperdeckII's ghost seeker, winampmodern566's vis trigger; cPro_Insomnis's sysmenu is silent in every solo run on both builds). `swift test`: 3090 tests, 0 failures.
+
+## B230 — The script runtime split into per-concern extensions — closed 2026-10-21
+
+| B230 | **Break `WinampModernScriptRuntime.swift` (3.8k lines) into per-concern extensions.** The host-bound sliders, EQ switches and posted positions moved out to `WinampModernScriptRuntimeHostControls.swift`. What remains still mixes the equalizer event funnel, window geometry, embedded-XUI plumbing, group instantiation and teardown. Split each into its own `WinampModernScriptRuntime*.swift` extension, as `…System`, `…Menu` and `…Timer` already are, and leave in the main file only the class, its stored state and dispatch. `…Object.swift` sits at 998 lines, so its next concern goes elsewhere too. Done when the main file is under ~1.5k lines, the move is the only change in its commit, and `swift test` passes | code health; no corpus demand | M | 3 |
+
+**Closed 2026-10-21**. A move and nothing else: `WinampModernScriptRuntime.swift` went from 3,806 to 1,340 lines, into `…Signatures` (783), `…Config` (303), `…XUIParams` (285), `…WindowGeometry` (252), `…Visibility` (222), `…LayerFX` (200), `…GroupInstantiation` (147), `…XmlDoc` (145), `…Map` (128) and `…Equalizer` (76). Stored properties stay in the class body; a moved member or a stored property it reads lost `private` where it now crosses files, and that is the only edit (a line-multiset compare of the old file against the new set differs only in file headers). Teardown and `recordRegisteredSetting` stayed in the main file rather than widen the `private(set)` of `programs`, `isTornDown` and `registeredSettings` for them; `startScripts` did widen `programs` and `scriptFailures`. `swift test`: 3090 tests, 0 failures. `…Object.swift` is still 998 lines.
+
+## B234 — One debug switch for "act as if visible" — closed 2026-10-21
+
+| B234 | **One debug switch for "act as if visible".** A locked-screen capture needs both `WINAMP_MODERN_ASSUME_VISIBLE` (the view) and `NP_SKIN_SHADOW_ASSUME_VISIBLE` (the shadow), and with only one set it captures half the picture without any warning. Have `SkinWindowShadow` read one shared flag, or have the view's flag imply the shadow's, and keep one row in `harness.md`. Done when one variable drives both and the harness reference lists one | code health; no corpus demand | S | 3 |
+
+**Closed 2026-10-21**. `SkinWindowShadow.assumesParentVisible` reads `WINAMP_MODERN_ASSUME_VISIBLE`, the view's flag, and `NP_SKIN_SHADOW_ASSUME_VISIBLE` is gone. `harness.md` lists one row, which now carries the shadow-capture note.
+
+## B232 — The draw list carries its device scale — closed 2026-10-21
+
+| B232 | **The draw list carries its device scale; the renderer stops holding it.** `devicePixelsPerContextUnit` is mutable renderer state that every caller sets before drawing: `makeJob` sets 1, `drawDirectly` computes it, `drawSceneOpaquely` saves and restores it. Readers (`snappedToPixelGrid`, `drawWindowRegionCut`) multiply it by the `ctm` of the `WasabiDrawList` they hold, and a caller that forgets to set it hands them the last caller's value. Every draw goes through a `WasabiDrawList` now, so give it `devicePixelsPerUnit` at init, plus a `deviceScale`, and delete the renderer field. `renderer.isWindowActive`, set the same way in two places, can travel with the record call too. Done when the renderer has neither field and the sweep matches its baseline | code health; no corpus demand | S | 3 |
+
+**Closed 2026-10-21**, with B231. `WasabiDrawList` takes `devicePixelsPerUnit` at init (default 1) and answers `deviceScale` (`|ctm.a|` × it); `snappedToPixelGrid` and `drawWindowRegionCut` read the list, and the renderer's `devicePixelsPerContextUnit` is gone. Only `drawDirectly` passes a factor other than 1. `isWindowActive` stays on the renderer: it is read while resolving scene nodes as well as in the walk, so it does not travel with the record call alone. Same sweep as B231.
+
+## B231 — The harness renders through `WinampModernCanvas` — closed 2026-10-21
+
+| B231 | **One opaque pipeline: the harness renders through `WinampModernCanvas`.** `WasabiSceneRenderer.drawSceneOpaquely` (a per-call buffer: record, replay, promote alpha) and `WinampModernCanvas.render` (clear, clip, replay, promote, host chrome under it, alpha mirror) are the same pipeline written twice. They differ in colour space (Device RGB against the window's), host chrome and how the dirty rect is snapped to pixels. So the corpus sweep checks a path the app no longer shows. Move the canvas to `WinampModern/`, make `draw(in:)` render one canvas job and draw its picture, and delete `drawSceneOpaquely` along with its save and restore of `devicePixelsPerContextUnit`. Done when `drawSceneOpaquely` is gone, and the gold+silver sweep at 1x, 2x and 2.5x matches its baseline apart from the documented noise (or every diff is explained by the colour space) | code health; no corpus demand | M | 3 |
+
+**Closed 2026-10-21**. `WinampModernCanvas` moved to `WinampModern/`; `WasabiSceneRenderer.draw(in:)` records one canvas job covering the context's clip at its device scale (snapped out to whole pixels, in the context's RGB space or sRGB), renders it with a fresh canvas and draws the picture; a clip over `maximumPrescaledPixels` is recorded and replayed straight. `drawSceneOpaquely` is gone. `drawDirectly` (a window too large for a canvas) now records and replays its own list rather than calling `draw(in:)`. Gold+silver sweep (114 skins, `--shards 10`) at `WINAMP_MODERN_RENDER_SCALE` 1, 2 and 2.5 against a HEAD worktree: 967/970 images identical at 1x, and at every scale the only differences were run-to-run noise: Anexa's shade clock, `--Vortex--` and `Mac_OS_X__-_Panther`'s `main-dashboard` clock (they differ between two solo runs of the baseline), `MoonLight`'s `cont.clear.dl` canvas (flips 410x281 and 560x340 in both directions, and solo runs of either build agree) and the documented `MLibrary/normal` min line. The new noise is listed in `harness.md`. Landed with B232.
+
+## B229 — Skin config keys stored folded — closed 2026-10-21
+
+| B229 | **Store skin config keys folded instead of resolving spellings through a cache.** `WinampModernConfiguration.storedSpelling` makes keys case-insensitive (Anunaki's "Normal" vs `normal`) with a lazy index built from all of `UserDefaults`. Only `reset` invalidates it, and when two spellings are already stored, whichever sorts first wins without any trace. Migrate the namespace's stored keys to lowercase once at load, using the same collision rule and logging each collision, and lowercase every key after that. Done when `spellingsByFoldedKey` is gone, a pre-migration store with both spellings keeps the sorted-first value, and Anunaki's Party! → normal switch still holds | code health; no corpus demand | S | 3 |
+
+**Closed 2026-10-21**. `WinampModernConfiguration` stores every key with its section and key lowercased, and `foldStoredKeys()` folds a store written before that once, at init: where two spellings were both stored, the one that sorts first keeps its value and the collision is logged (`WinampModern config: … stored as …; keeping …`). `spellingsByFoldedKey` and `storedSpelling` are gone. `WinampModernB229Tests` covers every spelling naming one setting, a pre-migration store keeping the sorted-first value, and a reset by any spelling. In the app on Anunaki (silver), the first launch logged one collision, its player-modes section stored under an upper- and a lower-case GUID, and Skin Settings → Party! held the 1600x1200 party layout; Normal returned the 482x271 player.
+
+## B217 — One accessor for a Wasabi type's local name — closed 2026-10-20
+
+| B217 | **One accessor for a Wasabi type's local name.** `typeName.lowercased().components(separatedBy: ":").last` appears 14 times across `WinampModern/` and `Windows/WinampModern/`, and comparisons next to it sometimes use the full lowercased `typeName` instead (`WasabiSkinInitializer`'s embedded `text` vs `button` checks), so `Wasabi:Button` and `button` match differently from one line to the next. Add `WasabiObject.localTypeName`, route every copy through it, and decide case by case whether the full-name compares should use it too. Fold `WasabiSceneRenderer.isTextButton`/`drawTextButton` into the plain-button label path at the same time: an `embed_xui` text button (WinampAzenis2's `Wasabi:Button`) currently draws its fallback label on the wrapper *and* its real label on the embedded `<button>`, and only the grid painted between them hides the first one. Done when one rule draws a button's label and the corpus render sweep is byte-identical | code health; no corpus demand | M | 3 |
+
+**Closed 2026-10-20**. `WasabiObject.localTypeName` replaces the 12 copies the tree still held (the row counted 14). Among the full-name compares, only the `embed_xui` button-label check moved to it, so an embedded `Wasabi:Button` now takes its wrapper's label as a bare `<button>` does. The rest stay on the full `typeName` on purpose, because they tell the standard library's `Wasabi:Button` from a bare `<button>`. Whether a button draws its own label is now decided by one rule, `WasabiSceneRenderer.ownLabel(of:)`, which both label sites use: the plain-button label in `draw`, and the label inside `drawTextButton`'s border. An `embed_xui` wrapper draws no label of its own. The gold+silver render sweep was **not** byte-identical; apart from the known nondeterministic images, 8 images moved and each is a fix. On five cPro skins (Ayon Port, both Insomnis, das-skin-prev, interface by jinghis), the `Search` label had been drawn twice, once by the wrapper and once by the embedded button, and is now drawn once. The About and config pages of krazyPlayer, Vortex and 1010 Fullscreen now show their link-button labels, which were blank before. 1,600 Winamp Modern tests pass.
+
+## B220 — The script runtime's window hooks held as one value — closed 2026-10-20
+
+| B220 | **Make the script runtime's window-side hooks a typed delegate.** `WinampModernScriptRuntime` carries 31 optional `…Requested` closures, and its teardown list nils them by hand and has drifted: `equalizerPreampSetterRequested`, `equalizerEnabledSetterRequested`, `applicationRaiseRequested`, `applicationMinimizedRequested` and `windowMenuRequested` are never cleared. Move them onto a protocol that `WinampModernMainView`/the window controller implement, held weakly, so a missing hook is a compile error and teardown is one assignment. Done when the closures are gone, teardown clears one reference, and `swift test` plus a skin switch in-app pass | code health; no corpus demand | L | 3 |
+
+**Closed 2026-10-20**, not as the row proposed. The 31 `…Requested` closures are now the fields of one `WinampModernScriptHooks` value (`runtime.hooks`), and teardown is `hooks = WinampModernScriptHooks()`, so the five hooks it had stopped clearing are cleared and a new one cannot be missed. They stay closures rather than a protocol for B219's reason: the render-dump, motion, interaction and drag harnesses and about a hundred tests wire only the hooks their run needs, and several call sites read a missing hook as "no window" (`refreshEqualizerState`, `requestRepaint`'s fallback). A protocol would make every one of them implement all 31. `swift test` passes (3,085 tests), the gold+silver render sweep is unchanged, and in one session the app switched JRS → cPro2 minimal → 1010 Fullscreen and stayed up.
+
+## B221 — `createObjects` without nested helpers — closed 2026-10-20
+
+| B221 | **Break up `WasabiSkinInitializer.createObjects`.** About 430 lines, with nested `buildHostedWidgetBody` and `inherit` closures, and a `skinClaimedObjects` instance set that is never cleared and only carries one node's claim to a later recursion. Move the `embed_xui` forwarding into its own type driven by a table of key groups by embedded type (range, commands, text styling, button label, structure), mark a skin's claim with an attribute as `nullplayer.embedxui` already does, and make the hosted-widget body a method. Done when the function no longer nests helpers, the set is gone, and the corpus render sweep is byte-identical | code health; no corpus demand | M | 3 |
+
+**Closed 2026-10-20**. No behaviour change. The `embed_xui` forwarding is `WasabiEmbeddedXUI`, a table of key groups (range, commands, text styling, button label, structure) plus the vertical-slider seed. `buildHostedWidgetBody` is a method, and `skinClaimedObjects` is gone. A skin's claim is the `nullplayer.skintabsheet` attribute, set only on tab sheets because they are its only reader, and kept out of `onSetXuiParam`. A first cut marked every skin-defined object, and delivering that attribute as an XUI param changed 1010 Fullscreen's analyzer, which counts its params (`main/Normal` 83 → 163 nodes). The gold+silver render sweep is byte-identical apart from the known nondeterministic images.
+
+## B222 — The playlist command bar built only where it is wanted — closed 2026-10-20
+
+| B222 | **Add the playlist command bar only where it is wanted, instead of adding it everywhere then hiding it.** `createObjects` builds the bar into every playlist `<LayoutStatus>` with a `nullplayer.pe.` id prefix, then `WasabiStandardFrames.hidePlaylistCommandBarsBesideSkinButtons` sets `visible=0` wherever the layout has the skin's own `PE_Add`. Build it in that post-pass, only where no `PE_Add` exists; the prefix marker, the hide and the per-node check in `createObjects` go. Done when JRS still shows the bar, the 89 own-button skins show none, and the render sweep is byte-identical | code health; no corpus demand | S | 3 |
+
+**Closed 2026-10-20**. `WasabiStandardFrames.playlistCommandBarSlots(beneath:)` finds the playlist `<LayoutStatus>` slots, once the graph is built, whose layout has no `PE_Add` of its own, and the initializer builds the bar into those only. That happens at load and for each new dynamic container. The id prefix, the hide pass and the per-node check are gone. The sweep was **not** byte-identical, and the difference is a fix: Mac OS X Panther's `Pledit/normal` gained the bar (39 → 69 nodes). The old hide pass had matched the bar's own `PE_Add`, which `embed_xui` forwards from Panther's `Wasabi:Button` onto the `<button>` inside it, and hid the bar it had just built. Panther's own playlist buttons are commented out, so its playlist had no buttons at all. JRS is unchanged, and no other gold+silver image moved.
+
+## B223 — A script-made GUI object before `init` is a `DynamicRole` — closed 2026-10-20
+
+| B223 | **Model a script-made GUI object before `init` as a `DynamicRole`.** `DynamicObjectState.guiType` is an optional beside `role`, and `invokeDynamic` opens with three `state.guiType != nil` checks for `setXmlParam`, `getXmlParam` and queued calls. Make it `DynamicRole.pendingGUI(type:attributes:calls:)`, so the pre-`init` state is one case of the switch. Done when `guiType`/`pendingAttributes`/`pendingCalls` are gone from the state and the `new Text`/`init` tests and Nitrous Audio's playlist and 1010 Fullscreen's analyzer still build in-app | code health; no corpus demand | S | 3 |
+
+**Closed 2026-10-20**. No behaviour change. `DynamicRole.pendingGUI(type:attributes:calls:)` replaces `guiType`, `pendingAttributes` and `pendingCalls`. `invokeDynamic` handles the pre-`init` state in one switch, and `init` sets the role back to `.generic`. The `new Text`/`init` tests pass, and the gold+silver render sweep is unchanged, including 1010 Fullscreen. 1010 came up whole after an in-session skin switch, but its analyzer panel is not shown in the default state and was not checked on screen.
+
+## B225 — The script-runtime files back under 1k lines — closed 2026-10-20
+
+| B225 | **Bring the script-runtime files back toward 1k lines.** `WinampModernScriptRuntimeSystem.swift` crossed 1k (929 → 1,100) with the date/clock fields, viewport/monitor answers and `showWindow`/`getWac`/`getMainBrowser`; `…RuntimeObject.swift` grew 1,252 → 1,500 with about forty `invokeGUI` cases (snap-adjust, layout enumeration, bring-above/below, vis mode, edit, tab sheet). Split them along those lines, as `…RuntimeWidgets.swift` was. While there, build the `nullplayer.snapadjust.` key in one place (it is built in three) and replace the frame-events and target-animation timer ids' magic high bits with one enum of timer-id namespaces. Done when no runtime extension file is past 1k lines and `swift test` passes | code health; no corpus demand | M | 3 |
+
+**Closed 2026-10-20**. No behaviour change. `…RuntimeSystem.swift` (1,100 → 971) gave its clock, screen and window lookups to `…RuntimeDesktop.swift`. `…RuntimeObject.swift` (1,500 → 985) gave `invokeDynamic` to `…RuntimeDynamic.swift` and its window, stacking, snapping, tab-sheet, edit and vis-mode cases to `…RuntimeWindow.swift`. Each new switch is asked from its owner's `default`, and no moved case name is still in the switch it left. The `nullplayer.snapadjust.` key is built by `snapAdjustKey(_:)` alone, and `TimerNamespace` names the frame-events and target-animation id bits. An orphaned doc comment went back onto `resolvedFrame(of:)`. `swift test` passes.
+
+## B226 — The main menu deferred without a flag — closed 2026-10-20
+
+| B226 | **Defer the main menu without a flag around `performAction`.** `WinampModernMainView.holdsMenuForDoubleClick` is set before `performAction` and read inside `showMainMenu`, so the menu's timing depends on state set two calls away (B187). Decide the deferral at the release site and pass it to the action instead. Done when the flag is gone and cPro2 minimal's system button still opens the menu on one click and shuts down on two | code health; no corpus demand | S | 3 |
+
+**Closed 2026-10-20**. No behaviour change. `holdsMenuForDoubleClick` is gone. `showMainMenu` asks `menuWaitsForDoubleClick`, which reads the event in flight: a first-click `leftMouseUp` on a pressed object that also handles `onLeftButtonDblClk`. The row's "pass it to the action" cannot reach the measured case, because cPro2 minimal opens the menu from its script (`onLeftClick` → `leftClick()` on a hidden SYSMENU button), and that arrives through `actionRequested`, which carries no click. Checked in the debug build: one click on cPro2 minimal's system button opens the main menu, and a double-click quits the app.
+
+## B219 — A renderer wired to its script runtime in one call — closed 2026-10-20
+
+| B219 | **Wire a renderer to the script runtime in one call.** The same six provider closures (`configStateProvider`, `pressBindingProvider`, `configValueProvider`, `settingStateProvider`, `layerFXProvider`, …) are pasted at `WinampModernMainWindowController` (player and auxiliary containers) and `WinampModernHostedWindowMaterializer`, and every new provider is pasted three times. Replace them with one `renderer.attach(scripts:)`, or a weakly held protocol the runtime conforms to, which deletes the closure properties. Done when one place connects a renderer to its runtime and `swift test` passes | code health; no corpus demand | S | 3 |
+
+**Closed 2026-10-20**. No behaviour change. `WasabiSceneRenderer.attach(scripts:)` sets the five runtime-backed providers, and the player, auxiliary-container and hosted-window paths call it instead of pasting the closures. The closure properties stay rather than going as the row proposed: the render-dump, motion and interaction harnesses wire their own subsets (the render dump sets no `settingStateProvider`), and unit tests stub single providers, so replacing them would change sweep output. `swift test` passes.
+
+## B224 — One MAKI dialect enum — closed 2026-10-20
+
+| B224 | **One MAKI dialect enum instead of `classTablePresent` plus `VariableRecord`.** `.shortObject` is exactly "no class table", so the two parameters encode three states between them, and `parse` tries them through a `do`/`catch` with a nested `try?`. Collapse them into one `Dialect` (`v5`, `shortGlobal`, `pre50`) and try each in order in a loop, reporting the `pre50` failure as now. Done when the parser tests pass and the corpus parse counts are unchanged | code health; no corpus demand | S | 3 |
+
+**Closed 2026-10-20**. No behaviour change. `MakiBytecodeParser.Dialect` (`v5`, `shortGlobal`, `pre50`) replaces `classTablePresent` plus `VariableRecord`; `pre50` is the one without a class table. `parse` tries each dialect in turn, and when all fail it reports the last one's error, as before. The nested `do`/`catch` with a `try?` was equivalent, since the inner parser throws only `ParseError`, so the corpus parse counts cannot move. `swift test` passes.
+
+## B227 — Each hosted window's surface factory written once — closed 2026-10-20
+
+| B227 | **Write each hosted window's surface factory once.** `WinampModernHostedWindowID.definition` repeats `id: .x` inside each `case .x` and the same three-line `makeSurface` body ten times. Pass `self` for the id, and put `configureForHostedSurface(context:)` and a frame initializer on a protocol so one generic helper builds every surface. Done when each case states only its title, sizes, stack policy and view type, and `swift test` passes | code health; no corpus demand | S | 3 |
+
+**Closed 2026-10-20**. No behaviour change. `WinampModernHostedWindowID.definition` builds every window through one `hosted(...)` helper that takes the title, sizes, stack placement and the view, which it builds, then configures for hosting, when a skin mounts it. `configureForHostedSurface(context:)` is now a `WinampModernHostedSurface` requirement, and the ten views already implemented it; the test stub got a no-op. Each case states its own view frame, because Sonos and Art build theirs at a size other than the window default. `swift test` passes (Winamp Modern, MAKI and hosted-window suites: 1,603 tests).
+
+## B161 — AppKit's edge band over a skin's resize handles — closed 2026-10-20
+
+| B161 | **A press in the outer few points of a resizable `.wal` window is AppKit's, and it moves one edge even at a corner.** The skin's auxiliary windows are `[.borderless, .resizable]`, so AppKit's own edge band takes the press before `WinampModernMainView.mouseDown` and the skin's `resize="bottomright"` layer never sees it. Measured 2026-09-30 with `WINAMP_MODERN_RESIZE_TRACE=1` on Itemskin: a press 8pt in from the playlist frame's bottom-right corner, dragged +60,+30, logged `live=true handle=false` and changed the width only; 13pt in on the PeppyMeter frame, dragged +30,+60, changed the height only. 20pt in, the same drags logged `handle=clear.bottom.right` and moved both axes. Decide whether the band should defer to a skin handle under the pointer, or the windows should drop `.resizable` where the layout declares handles. Found during B160; not changed by it | `xml-attr '@resize$'` (a skin resize handle, an upper bound — the index does not say which window): gold 43/56, silver 46/54, bronze 743/827, quarantine 44/54 (manifest 9e68ffe0) | S | 2 |
+
+**Closed 2026-10-20** (commit `3f4eb19c`). Decided for the skin: a window whose active layout declares
+a `resize=` handle drops `.resizable`, so its own handles are the only resize affordance, as in
+Winamp; a layout with a range and no handle keeps AppKit's band. The view matches the mask on attach
+and on every layout switch (`declaresResizeHandles`). In the app on Itemskin with
+`WINAMP_MODERN_RESIZE_TRACE=1`: the playlist frame pressed 8pt in from its bottom-right corner and
+dragged +60,+30 grew 330x137 → 390x167 and logged `handle=true live=false`, where the row measured
+`live=true handle=false` and the width alone. `swift test` passes and the render sweep is unchanged.
+
+## B214 — Deimos Preferences windows draw empty — closed 2026-10-20
+
+| B214 | **1010 Fullscreen's Preferences window draws empty.** Its `Wasabi:StandardFrame:Static` builds `wasabi.preferences.group` from script (`newGroup` + `init`), the configsystem script fills the `Deimos:ConfigTree` and opens the About `Deimos:ConfigSheet`, and `RENDER_GEOMETRY` puts the tree at (24,54,130,272) and the sheet at (162,57,388,266), yet the window shows only its frame and black ground, headless and in the app. Found running B189's in-app check, which this blocks: the cover config page is a tree entry in that window. Find what the tree and sheet draw (`RENDER_PROBE=config/normal` lists them) and why it is nothing. The same skin opens a "Please install Modern Skin PlusPack" window at launch, because its check for that Winamp add-on fails; note it, there is nothing to install | `xml-tag '^deimos:config(page\|tree\|sheet)$'`: gold 0/56, silver 4/54, bronze 0/827, quarantine 0/54 (manifest 9e68ffe0) | M | 2 |
+
+**Closed 2026-10-20** (commits `7998d778`, `d83b3abb`). Three defects stood behind the empty
+window. A `<tree>` was never painted: the draw chain matched `list` only, so the model the tree
+methods kept had no pixels. `GuiTree.getByLabel` searched one level, so the script's
+`getByLabel(null, "Cover Search")` missed a second-level page and hung its sub-pages at the root.
+And an `embed_xui` wrapper never passed `content=`/`title=`/`children=` to the `TitleBox` or
+`TabSheet` it embeds, which were built from the template before them; both now forward and build.
+A skin's `<groupdef id="wasabi.tabsheet">` is a restyle of Winamp's widget and no longer stops it
+building its pages. Render sweep: the Preferences windows of 1010 Fullscreen, Vortex, Mac OS X
+Panther and Official Tristania draw their tree and About sheet, and Anunaki's Config Panel draws its
+five-tab page instead of an empty slab; nothing else changed beyond the known pair and the two live
+clocks. In the app, 1010 Fullscreen's Cover Search page opens from the tree with its fields set
+(`setAutoEnter` runs on `edit#filename`; Image Quality reads "Large"), which is B189's check.
+A restyle is the content background, so it now sits below the tab strip (`c575cdd6`),
+and Panther's tabs draw with its own `wasabi.tabsheet.button.*` art.
+
+## B162 — the script-glue type — closed 2026-10-20
+
+| B162 | *Implemented 2026-10-20 (`WinampModernGluedWindows`, commits `fb59760b`, `a9bb62f0`; `swift test` passes, render sweep unchanged); only the live drag check under `WINAMP_MODERN_GLUE_TRACE=1` is left, blocked with B212 by the locked screen.* **Move the script-glue code out of `WinampModernMainWindowController.swift`.** The file is ~2,900 lines, and the glued-window code sits in two places ~800 lines apart. One part is `moveCarryingGluedWindow`, `gluedPartner(of:)`, `gluedWindow(over:)` and `gluedWindowPairs`. The other is `restackGluedWindows`, `attachGluedWindowsForDrag`/`detachGluedWindowsAfterDrag`, their `dragObservers` and `dragAttachedGluedWindows`, and the `tracesGlue`/`carriesGluedWindowsInDrag` switches. An extension file cannot carry the stored state and cannot reach the controller's private `skinView`/`viewsByContainer`. So give the glue its own small type that owns the drag observers and linked pairs and gets the pairs from the controller, leaving one property on the controller. No behaviour change. Done when `swift test` passes and a drag of Pure Inspired's docked playlist under `WINAMP_MODERN_GLUE_TRACE=1` still prints `drag carries` and `restacked` lines. Deferred from PR #468 to keep that diff a behaviour fix | none on screen; the glue-pair skins (Ebonite, Itemskin, Pure Inspired, K-jr, MoonLight) exercise it | M | 3 |
+
+**Closed 2026-10-20** (commits `fb59760b`, `a9bb62f0`). `WinampModernGluedWindows` owns the drag
+observers, the linked pairs and the two switches; the controller holds it as one stored `glue`
+property and supplies the pairs and windows through two closures set in its convenience init. A
+lazily created glue crashed when first touched from `deinit` ("Cannot form weak reference"), which
+is why it is stored. In the app, on Pure Inspired with `WINAMP_MODERN_GLUE_TRACE=1`: both pairs
+(`MLibrary`/`cont.clear.ml`, `PLEdit`/`cont.clear.pl`) printed `restacked` at launch, and a
+`winhelper drag` of the player printed `drag carries` for both, each pair still at one origin.
+
+## B212 — the closed rows' in-app checks — run 2026-10-20
+
+Twenty of the twenty-one checks run in the app with `app-control`; B41 needs a second display and
+stays as B212.
+
+**Pass as closed.** B196, B184, B207 (2026-10-19). B200: Dreliction's winshade menu ticks "Normal".
+B197: `_Scythe`'s Thinger "Open Files" opens the Open panel. B188: Nitrous Audio CTI 2 Glass's next
+button moved a three-track cue from 'First Index' to 'Second Index'. B186: a right-click on
+Winamp 3.0 Default's Thinger opens the window list at the pointer. B199: a right-click on Big Bento
+Modern's `shade.switch` minimizes the player (`AXMinimized` true). B201: 1010 Fullscreen's 222x289
+frame opened at (789,440) on the 1800x1169 display, exactly centred; its standard-frame timer only
+re-centres a window wholly off screen, which macOS would not let Accessibility produce. B162 above.
+B185: Symplicipod's tooltip toggle shows its state, and flips (`Enabled`/`Disabled`) on a click.
+B66: Styx's `Position` drop-down kept "3. Top Right" across closing and reopening Config.
+B110: Ebonite's playlist frame draws over its client, restacks above it, and a drag by its title
+moved both to one origin. B85: cPro2 minimal's Widgets Manager row moves the Now Playing widget into
+the player with **show in main**; **drawer** and **side** are the skin's own `ghost="1" alpha="50"`
+because that skin has neither area. Zygote's digits run while playing ("0022" at 22.6 s).
+
+**Fixed in the app** (commit `faed9f9d`, `swift test` 3,072 pass, render sweep against `sweep-e3`
+changed only the known pair and the two live clocks).
+- B187: cPro2 minimal's system button opens the menu from `onLeftClick` → a hidden SYSMENU button's
+  `leftClick()`, and the menu's tracking loop swallowed the second press, so a double-click never
+  quit. A click on an object whose script handles `onLeftButtonDblClk` now holds the main menu for
+  the double-click interval, and a second press cancels it. Single click: menu. Double: quits.
+- B183: jvc.tape's `skin.xml` never includes its `notifier.xml`, so the check moved to cPro2 minimal,
+  whose notifier calls `restoreApplication`. Three defects stood behind it: `isMinimized` answered
+  false; the notifier is all `ghost="1"` artwork, so a press fell through the window; and a press on
+  no control never reached `notifier_layout.onLeftButtonDown`. A layout whose script takes presses
+  now counts its ghosts as painted and receives the press. Minimized, track change, click: the
+  player is back.
+- B194: mmd3's knobs set the EQ from `AnimatedLayer.onFrame` alone, and nothing raised it: the play
+  head is a function of the clock. A script-played layer now raises `onFrame` per frame and `onStop`
+  at the end of its range. The bass knob ran `setEq(1)` seven times and `eqBypass` went false.
+- `System.getTimeOfDay` answered the epoch in milliseconds, truncated; cPro2's stopped clock read
+  "415:22". It is milliseconds since local midnight.
+
+**Filed.** B195 → B213: no tooltip shows at all in Winamp Modern mode. B189 → B214: 1010
+Fullscreen's Preferences window drew empty; fixed the same day (above), and B189's check then passed. B182, B198 → B215:
+the skin's `pledit.main.group` (with `pledit.poppler` and the sidecar) is never built, because the
+playlist component is the host's list; Bio-Nid also takes the group from `@DEFAULTSKINPATH@`.
+
+**Not reachable in the app.** B193: cPro Venus Port 1 names its "Other" tab from
+`hold_Other.getComponentName()` only when `onGetCancelComponent` routes an unclaimed component there,
+and every component NullPlayer offers (playlist, library, video, vis) has its own tab. Its headless
+number stands.
+
+## B163, B165 — hosted-window registry and frame descriptor — closed 2026-10-20
+
+| B163 | **Make the hosted-window registry exhaustive.** `WinampModernHostedWindowRegistry.all` is an array searched by `entry(id:)`, which returns an Optional, and every definition's `makeSurface` is Optional too, although every `WinampModernHostedWindowID` has an entry and every entry builds a surface. Three production callers (`WindowManager`, `WinampModernComponentBridge.makeHostedWindowSurface`, `WinampModernHostedWindowMaterializer`) guard a nil that cannot happen, about fifteen test lines `XCTUnwrap` it, and `WinampModernHostedProviderTests` asserts the two promises the types do not make. Give `WinampModernHostedWindowID` a `definition` built by an exhaustive `switch`, make `makeSurface` non-optional, and keep `all` as `allCases.map(\.definition)` for the synthesizer. A new hosted id then fails to compile without an entry rather than falling back at run time. No behaviour change. Done when `swift test` passes with the nil guards and the registration assertions gone | none on screen; every hosted window routes through it | S | 3 |
+| B165 | **Let the hosted-frame descriptor carry a `WasabiSurfaceSynthesizer.Frame` instead of mirroring it.** `WinampModernHostedFrameDescriptor` has exactly `Frame`'s fields (`groupIdentifier`, `xuiTag`, `hasArtwork`, `exemplar`, `clientInsets`), and a `Frame` is rebuilt from it field by field in `WinampModernHostedWindowInstantiation.raised`, `WasabiSkinInitializer.instantiateHostedWindowAtRuntime` and three places in `WinampModernB140Tests`. A rebuild that dropped the client rect is what B140's second screenshot was, and every new frame field has to be threaded through all of them. Store the `Frame` in the descriptor (or replace the descriptor with it) so the rebuilds go away. While there, move `hasContentScript` and `hasArtwork` onto `inheritanceChain(of:definitions:)`, which `clientInsets(of:definitions:)` already uses, so no frame helper walks `inherit_group` by hand. No behaviour change. Done when `swift test` passes and no code builds a `Frame` from a descriptor's fields. Deferred from PR #559's review | none on screen; every hosted window wearing a skin frame routes through it | S | 3 |
+
+**B163 closed 2026-10-20** (commit `cc8f70ef`).
+`WinampModernHostedWindowID.definition` is an exhaustive `switch` and `makeSurface` is non-optional.
+`WinampModernHostedWindowRegistry.all` is `allCases.map(\.definition)` for the synthesizer, and
+`entry(id:)` is gone. The three production callers (`WindowManager`'s stack record,
+`WinampModernComponentBridge.makeHostedWindowSurface`, `WinampModernHostedWindowMaterializer`) lost
+their nil guards. The renderer's hosted-id lookup is `allCases.first { reference == $0.holderReference }`.
+The tests lost their `XCTUnwrap`s, and `WinampModernHostedProviderTests` lost the two registration
+assertions the types now guarantee. A new hosted id does not compile without its window.
+
+**B165 closed 2026-10-20.** `WinampModernHostedFrameDescriptor` is deleted. The route
+(`.skinFrame`) and `WinampModernHostedWindowInstantiation.frame` carry `WasabiSurfaceSynthesizer.Frame`
+itself. The five field-by-field rebuilds are gone: `raised`, `instantiateHostedWindowAtRuntime` and
+three in `WinampModernB140Tests`. `hasContentScript` and `hasArtwork` walk
+`inheritanceChain(of:definitions:)`, with the same short-circuit order and no `depth` parameter.
+`collectArt` keeps its own walk, because it also follows child `<group id=…>` references through a
+visited set, which a chain cannot express.
+
+Both have no behaviour change: `swift test` passes (3,145), and `wal_render_sweep.sh --shards 10`
+against the previous capture changed only the known pair and the two live clocks.
+
+## B208 — the interaction sweep's dead list — closed 2026-10-20
+
+| B208 | **Triage the interaction sweep's dead list.** B205's run (gold+silver, rev `f3ca6c5c`): 343 silent and 117 blocked gestures, 433 unreachable. Blocked calls the demand queue already holds are covered there (B182's events-as-methods, 47 gestures; `shutdown` B187, 16; `getViewport*FromPoint` B195, 16). Left: the skins mostly dead — machina 31/33, shark5 23/23, HeadAMP 27/32, Anunaki 44/60, wTunes 19/27, Dreliction 57/83 (mostly right-clicks and hover labels) — and `Layout.onAccelerator` (10, Alpha_Media_Player_X5), `sqr`, `getNumLayouts`. For each, read the handler and, where it is drawn at rest, the running app: is the control dead, or doing something the sweep does not see (a hover-only layer, a sound, a state another click needs first)? Done when each skin above has a filed row or a dismissal reason in the archive | 6 skins named, 117 blocked gestures (manifest 9e68ffe0) | M | 2 |
+
+**Closed 2026-10-20.** Re-measured after the method batches (`wal_interaction_sweep.sh`, gold+silver,
+rev `a80787a3`, 2,520 gestures): **blocked 117 → 0** (`blocked by: nothing`), unreachable 433 → 346,
+works 1,781, silent 393. Every call the old list was blocked on is implemented: events as methods
+(B182), `shutdown` (B187), `getViewport*FromPoint` (B195), `Layout.onAccelerator`'s arity (B182),
+`sqr` and `getNumLayouts` (the demand tail). For each skin the row named, what its dead gestures
+are:
+
+- **Dreliction** (54/83): 27 silent and 26 covered. The covered ones are hover-label and `…2`
+  layers stacked under the real buttons (`layer#Next2` beneath `button#Next`). The silent ones are
+  those labels' fade handlers, which act on hover, not on a click.
+- **Anunaki** (40/60): 34 covered. The EQ sliders sit under `main.lcd.base` until the EQ page is
+  chosen, and the volume knob is under `window.shutter` while it is closed. Another state has to
+  come first.
+- **HeadAMP** (27/32): 26 covered by `BGLayer`. They live in the `LeftDrawer` groupdef (`eq9Top`,
+  `LeftDrawerCloseX`…), which slides behind the player body while the drawer is shut.
+- **machina** (31/33): 30 silent. They are its ten EQ-band map layers: `onMouseMove` reads a
+  `Map` value under the pointer and calls `setEqPreamp`/`gotoFrame`. The harness has no EQ host and
+  its drag stays on one map value, so the write is invisible there.
+- **wTunes** (17/27): 14 clipped and 3 covered by its seek slider. The clipped ones are in its
+  collapsed playlist and display areas.
+- **shark5**: its 10 remaining dead gestures are covered by the buttons drawn over them.
+
+None of it is a missing capability, so no row is filed. The in-app check of the stateful ones
+(open the drawer or EQ page, then press) is part of B212.
+
+## B209, B210 — the motion-dead classes — dismissed 2026-10-20
+
+| B209 | **Motion-dead: a script `Timer` declared, no animated layer, nothing moves at rest** (S4 motion ranking, §3 S3 suspect rule). 27 Gold+Silver skins declare a `Timer`, no `animatedlayer`, and render byte-identically across the 0–4 s ladder in every window. Find which capability the samples' timers are waiting on (a host event the harness does not send, a handler blocked on a method, or nothing — a timer used only for interaction), working across the samples, not one skin. S4: 27 × motion-dead 2 × at rest 3 ÷ cost 1 (untuned) = 162. Done when the cause is named for the class, fixed or dispositioned, and `wal_motion_sweep.sh`'s `ranking.tsv` re-measures the row | suspect skins: 27 of 114 Gold+Silver (`ranking.tsv`, rev `b24690b3`); samples canum, Core-X5, Darjah 1 | M | 2 |
+| B210 | **Motion-dead: an `animatedlayer` that never plays at rest** (S4 motion ranking, §3 S3 cause "never played"). 23 suspect Gold+Silver skins declare animated layers whose play head never starts and whose windows never change. Find which capability starts them in Winamp and not here (an event the harness does not send, `autoplay` semantics, a blocked handler), across the samples. S4: 23 × motion-dead 2 × at rest 3 ÷ cost 1 (untuned) = 138. Done when the cause is named for the class, fixed or dispositioned, and `ranking.tsv` re-measures the row | suspect skins: 23 of 114 Gold+Silver (`ranking.tsv`, rev `b24690b3`); samples --Vortex--, Dreliction, Anaheim_Player_01 | M | 2 |
+
+**Dismissed 2026-10-20**, after the method batches landed, as the plan asked. `wal_motion_sweep.sh`
+over gold+silver at rev `3b7a2c9f`: `ranking.tsv` keeps **B209 at 27 skins** and has **B210 at 19**,
+down from 23. Neither class is waiting on a missing capability. Both are what a skin's at-rest state
+looks like when the harness host is stopped and its clock does not advance.
+
+- **B209 (a Timer, no animated layer, nothing moved).** The 27 suspects were loaded with
+  `WINAMP_MODERN_TRACE_MAKI` and their `MAKI timer start` lines counted. **13 start no timer at
+  rest**: canum, Core-X5, Darjah 1, the five DewyTears, Simple, SingItKitty, Ujola Cat, Wiimote and
+  Winamp 3.0 Default. Their timers start on interaction. In canum's `main.m` the Thinger's wobble
+  starts `onEnterArea` and the songticker reverts after a volume change; Core-X5's run on volume
+  and seek hover. **14 start timers that redraw playback state.** wTunes's `timers.m` updates the
+  up/down time tickers and stops itself when stopped. TomK's and Formamp's 1 s timers and the
+  K-jr/MoonLight/Pure Inspired 10 ms family read position and VU levels. A stopped host gives them
+  nothing to change. After this session's fixes none of the 27 has a failing handler; the one
+  that had (Nitrous Audio's `playlistPlus.m`, `setXmlParam` on a `new Text`) was fixed.
+- **B210 (an animated layer that never plays at rest).** These layers are **frame-indexed
+  indicators**, not animations: a script scrubs them with `gotoFrame` and never `play()`s them. In
+  the 19 suspects `play()` reached an animated layer once (Dreliction), with or without a driven
+  `onPlay`, while `gotoFrame` reached 1–16 layers per skin at rest (Enkera 11 of 11, Nullsoft
+  Winamp 2000 15 of 15, ONYX V2 16). The rest are bound to values a stopped player holds still:
+  Overdrive_2's `VisAnim` is its VU meter, `SeekAnim`/`VolumeAnim` (Overdrive_2, Lobe, PionNer)
+  follow hidden seek and volume sliders, The Nokia 5220's `EQAnim1`…`10` the EQ bands, and
+  Tristania's clock hands and knobs the clock, pan and volume.
+
+Re-open only with a skin whose animation is meant to run at rest (an intro, a spinner, `autoplay`
+with no script stopping it) and does not. Checking that in the app while playing is part of B212.
+
+## B207, B211 and the demand table's tail — closed 2026-10-19
+
+| B207 | **A `text` or `AlbumArt` a script hooks the mouse on is never under the pointer.** `isInteractive` (`WasabiRendererHitTesting.swift`) admits buttons, sliders, layers and objects with an `action=`; a `text` or `AlbumArt` whose only behaviour is a script binding is skipped, so a press falls through to the layout. Wasabi gives every non-ghost GuiObject its rect. The time readout that toggles elapsed/remaining is the visible case: `text#timer` on Defix and Ebonite, `text#s2timer` on Vortex; also TRON Legacy's `songticker`, EPS's `volumetext`, and Darjah's and Formamp's album art. Found by the interaction sweep (B205) as `covered:layout`. Admit an object a script binds a pointer event on; the renderer will need the binding answer from the runtime. Done when those seven read `works` or `silent` instead of `unreachable`, and a ghost text still passes clicks through | 7 skins in gold+silver (the sweep's `covered:layout` rows on `text`/`AlbumArt`, rev `f3ca6c5c`) | M | 2 |
+| B211 | **Keep the corpus harnesses' skin settings out of each other's runs.** Every harness process (`wal_render_sweep.sh`, `wal_feature_index.sh`, the census, the motion and interaction sweeps) builds `WinampModernConfiguration` on `UserDefaults.standard`, which for `xctest` is the shared `com.apple.dt.xctest.tool` domain, so what one run's scripts store with `setPrivateInt` is the next run's starting state. Since B192 made `isChecked` work, the opensource notifier writes its checkboxes back at `onScriptUnloading`: the render sweep at `b3d4a676` drew EPS's and Itemskin's notifier prefs checked, the feature index run after it stored them as 0, and the next sweep drew them unchecked with no code change between them (B193's sweep, `fcc8d1fc`→`f25bccc6`). Give each harness run a fresh defaults suite, so a sweep is a function of the tree and not of the runs before it. Done when two sweeps with an index run between them are byte-identical bar the known nondeterministic pair | the corpus regression gate; every skin that persists private ints (`defaults find OpenNote` lists 8 skins today) | S | 2 |
+
+**B207 closed 2026-10-19** (commit `ddbdec7b`). `isInteractive` admits any non-group object a script
+binds a press on (`WinampModernScriptRuntime.pressEvents`: left/right down, up, click and double).
+The renderer asks through `pressBindingProvider`, which is wired where `configStateProvider` is. A
+hover-only binding is left out, so an `onMouseMove` overlay does not swallow clicks. The
+interaction sweep over the seven named skins now reads `hit=yes` for every one: `text#timer` on
+Defix and Ebonite, `text#s2timer` on Vortex, TRON Legacy's songticker and EPS's `volumetext` (works or silent),
+and Darjah's and Formamp's album art (right-click works). A ghost text still passes the click through
+(`testATextAScriptHooksAPressOnTakesTheClick`). In the app, Ebonite's timer right-click opens its
+four-entry clock menu.
+
+**B211 closed 2026-10-19** (commit `7989a2c9`, the in-memory store). An `xctest` process keeps
+`.wal` skin settings in a `UserDefaults` subclass held in memory
+(`WinampModernConfiguration.processDefaults`). The app keeps its own domain. Two earlier attempts
+failed in ways worth recording. Clearing the shared domain at process start raced the shards: a
+late shard wiped what an early one had written, and BLAKK lost a checkbox mid-sweep. A suite per
+process left a plist in `~/Library/Preferences` every run. Done-criterion: two
+`wal_render_sweep.sh --shards 10` captures with a full `wal_feature_index.sh` run between them
+differ only in the known pair (Anexa `main-shade`, S7Reflex's `MLibrary` minimum), Vortex's and Mac
+OS X Panther's dashboard clock (which ticks now that `dateToLongTime` works) and Itemskin's
+`MLibrary` minimum (same flake). The first clean capture moved 23 images against the polluted
+baseline. Those are first-run states that stored settings had been hiding: Big Bento Modern's four
+variants open at 1536×878, the size its skin page records, not a stored 814×530; BOOM shows its
+packaging intro; cPro Bento, Enkera, TomK and the notifier prefs show their defaults.
+
+**The demand table's tail** (commit `ddbdec7b`): `wal_demand.sh` went from 93 unimplemented calls to
+**4**. All four left are on class `686fa9c9…` (`appearance_getGlowButton*`, `applyStyle`), one bronze
+skin each (Winamp Portrait WMP12, cPro Creed Full Circle). No `.mi` the corpus ships declares that
+class: it is a third-party plugin's own object. What landed, by seam:
+
+- **System.** Date fields (`getDateDay`/`Month`/`Dow`/`Dst`), `formatDate`, `formatLongDate`,
+  `dateToLongTime`, `sqr`, `frac`, `enqueueFile`, `getMonitor*FromGuiObject`, `getWac` and
+  `Wac.sendCommand` (answers 0, "not handled"), `showWindow` (a component GUID opens that window
+  show-only, a group id shows its container), `get`/`popMainBrowser`.
+- **PlEdit.** `moveUp`, `moveDown`, `getRating`, `setRating` (per row, through `TrackRatingService`).
+- **GUI objects.** Container `getNumLayouts`/`enumLayout`/`setName`; `Group.isLayout`/`endModal`
+  (no modal loop, so it closes the window); Layout snap-adjust read-back and desktop alpha; client
+  and screen W/H; `bringBelow`/`bringAbove`; `Button.rightClick`; `Slider.lock`/`unlock`;
+  `Vis.nextMode`/`setRealtime`; `AnimatedLayer.getAutoReplay`; `Browser.back`/`forward`.
+- **Other objects.** `Timer.getSkipped`, `PopupMenu.disableCommand`, `Map.getRegion`.
+- **Widgets** (`WinampModernScriptRuntimeWidgets.swift`). `CfgGroup`; `DropDownList`
+  `getSelectedText`/`selectItem`/`setListHeight` (`selectItem` is gated by class against
+  `GuiTree.selectItem`); `ComponentBucket` `get`/`setScroll`; `MouseRedir.setRedirection` (the view
+  dispatches to the target); the `GuiList` row and column edits; `GuiTree`/`TreeItem`, modelled in
+  the runtime and drawn and clicked through the list renderer as indented rows.
+- **Colour themes.** `GammaSet.enumGammaGroup` and `GammaGroup` `setRed`/`Green`/`Blue`, which retint
+  a group of the active theme. `apply()` on the active theme repaints, for Ebonite's colour changer.
+
+Render sweep against the previous capture: Vortex's and Panther's dashboards lay their panels out
+and show the clock. Zygote's big time digits go blank at rest, because its script now hides the real
+timer and copies it only while playing.
+
+## B193 — `WindowHolder.getComponentName` — closed 2026-10-19
+
+| B193 | **`WindowHolder.getComponentName()`.** cPro skins name the drawer tab after the hosted component (`refreshAIOTab.onTimer`, `checkVisName.onTimer`, Venus's `CentroSUI.m`), so the timer aborts every tick and the tab keeps its default label. Return the hosted window's display name. S4: 91 × cosmetic-to-control 2 × off-rest 2 ÷ M 2 = 182. Done when `wal_demand.sh` does not list it and cPro Venus's tab shows the component's name | `maki-call '^403abcc0[0-9a-f]*[.]getcomponentname$'`: gold 10/56, silver 7/54, bronze 74/827, quarantine 0/54 (manifest 9e68ffe0) | M | 2 |
+
+**Closed 2026-10-19** (commit `f25bccc6`). Gone from `wal_demand.sh`, from 97 skins (all tiers;
+gold 10, silver 7, bronze 74, quarantine 6). The demand table went from 94 calls to 93. A
+holder answers the title the thinger already gives its surface
+(`WinampModernComponentBucketCatalog.icons`: "Playlist Editor", "Media Library", "Visualization",
+"Video", "Equalizer"), and `.other` answers "". The installed engine's `CentroSUI2.m` uses the name
+only as a label (`update_tabname`, `visName.setText`), so nothing compares it. Regression gate:
+`wal_render_sweep.sh --shards 10`, gold+silver, `b3d4a676` against `f25bccc6`: apart from the known
+nondeterministic pair, only EPS's and Itemskin's notifier prefs changed, and not from this commit.
+Their checkbox state persisted from the feature index run between the two sweeps, which is filed as
+B211. The in-app check is under *Awaiting manual QA*.
+
+## B189, B192, B198 — form widget methods — closed 2026-10-19
+
+| B189 | **`Edit.setAutoEnter` / `onIdleEditUpdate` / `enter`.** Config pages set up their path and value fields in `System.onScriptLoaded` (1010 Fullscreen's cover page calls `setAutoEnter` first), so the page's script dies at load. S4: 55 × surface-dead 4 × config 1 ÷ S 1 = 220. Done when `wal_demand.sh` lists none of the three and 1010 Fullscreen's cover config page fills its fields | `maki-call '^64e4bbfa[0-9a-f]*[.]setautoenter$'`: gold 0/56, silver 7/54, bronze 24/827, quarantine 0/54 (manifest 9e68ffe0) | S | 2 |
+| B192 | **`CheckBox.setChecked` / `isChecked`.** Fifty skins call `setChecked` in `System.onScriptLoaded`, so their options page or notifier never initialises. B64's archive entry measured it on Anexa: "`onScriptLoaded` still aborts on `setChecked`, so the notifier never initialises at all". `isChecked` is read in `onScriptUnloading` and toggle handlers. Back both with the checkbox's own state. S4: 50 × surface-dead 4 × off-rest 2 ÷ M 2 = 200. Done when `wal_demand.sh` lists neither and Styx's options checkboxes show their saved state | `maki-call '^c7ed3199[0-9a-f]*[.]setchecked$'`: gold 4/56, silver 6/54, bronze 40/827, quarantine 0/54 (manifest 9e68ffe0) | M | 2 |
+| B198 | **`TabSheet.getCurPage` / `setCurPage`.** The Bio-Nid lineage (Bio-Nid, Rika, T800) switches its playlist sidecar's tab from script (`toggleSearchLine` in `playlisteditor.m`), and the handler aborts. Expose the tabsheet's selected page. S4: 31 × control-dead 3 × off-rest 2 ÷ M 2 = 93. Done when `wal_demand.sh` lists neither and Bio-Nid's search toggle switches the sidecar page | `maki-call '^b5baa535[0-9a-f]*[.]setcurpage$'`: gold 3/56, silver 4/54, bronze 24/827, quarantine 0/54 (manifest 9e68ffe0) | M | 2 |
+
+**Closed 2026-10-19** (commit `b3d4a676`). All seven calls are gone from `wal_demand.sh`. Before,
+counting all tiers: `CheckBox.setChecked` 56 skins, `isChecked` 48, `TabSheet.getCurPage` and
+`setCurPage` 33 each, `Edit.setAutoEnter` 31, `onIdleEditUpdate` 27 and `enter` 7. The demand
+table went from 102 calls to 94.
+
+- A `<Wasabi:CheckBox>` is already a togglebutton, so `setChecked`/`isChecked` are
+  `setActivated`/`getActivated`: `onToggle` on a change, and the `cfgattrib` value when one is
+  bound.
+- `get`/`setCurPage` read and drive `WasabiTabSheet`'s selected page.
+- `setAutoEnter` stores a flag that makes each edit change an `onEnter`. `enter()` dispatches
+  `onEnter`. `onIdleEditUpdate` has its arity and fires on each keystroke beside `onEditUpdate`; a
+  `ponytail:` comment notes there is no idle pause.
+
+Regression gate: `wal_render_sweep.sh --shards 10`, gold+silver, `08671e78` against `b3d4a676`.
+Apart from Anexa, 11 images changed, all scripts that used to abort at their first `setChecked`
+and now initialise:
+
+- **Styx's Config** shows its saved radio choices. This is the row's own check, so B192 has no
+  in-app check left.
+- The opensource notifier's prefs page (EPS, Itemskin, Shield_Amp) shows its effect, checkboxes
+  and duration labels.
+- EPS's and Itemskin's notifier windows are hidden at rest, because the script's `Notifier.hide()`
+  is now reached. Shield_Amp's notifier lays its text out beside the cover.
+- machina's SkinConfig shows its two checked options. Its main window drops from 135 to 112 nodes
+  and changes by at most 5 levels.
+- krazyPlayer's AVS window greys its `RND` button.
+- Itemskin's playlist header now prints "0:0-2" and "-0.03 MB". This is a harness artefact: the
+  script parses a hidden `display="PE_Info"` text, which the app fills from the playlist and the
+  headless harness leaves empty.
+
+The in-app checks for B189 and B198 are under *Awaiting manual QA*.
+
+## B184, B185, B190, B195, B201, B206 — object and viewport methods — closed 2026-10-19
+
+| B184 | **`System.getAlbumArt(playitem)`.** Album-art scripts open their right-click menu only when `getAlbumArt(getPlayItemString()) > 0` (`AlbumArt.onRightButtonDown` in BLAKK, Ebonite and krazyPlayer), so the menu never opens. Answer from the same art lookup `AlbumArtLayer` draws from. S4: 117 × control-dead 3 × off-rest 2 ÷ S 1 = 702. Done when `wal_demand.sh` does not list it and Ebonite's album-art right-click opens its menu | `maki-call '^d6f50f64[0-9a-f]*[.]getalbumart$'`: gold 18/56, silver 11/54, bronze 88/827, quarantine 0/54 (manifest 9e68ffe0) | S | 2 |
+| B185 | **`ConfigAttribute.getAttributeName`.** Skin-options code matches attribute names to find the toggle or menu entry it owns: `SkinOptionsMenuToggle`, `vis_mode_attrib.onDataChanged`, and Symplicipod's `AttrToggle`/`AttrText`/`AttrSlider`. Each of those handlers aborts, so the controls never show the attribute's state. Return the name. `maki-surface.md` says it "has no corpus call site", which was true of the cPro-Bento measurement only. S4: 97 × control-dead 3 × off-rest 2 ÷ S 1 = 582. Done when `wal_demand.sh` does not list it and Symplicipod's attribute toggles show their state | `maki-call '^24dec283[0-9a-f]*[.]getattributename$'`: gold 10/56, silver 10/54, bronze 77/827, quarantine 0/54 (manifest 9e68ffe0) | S | 2 |
+| B190 | **`Vis.getMode()`.** Styx reads the visualizer mode in `System.onScriptLoaded` (`scripts/vis.m`) and the load handler aborts. Answer the mode `setMode` and the vis click already keep. S4: 23 × control-dead 3 × main window 3 ÷ S 1 = 207. Done when `wal_demand.sh` does not list it and Styx's vis script finishes loading | `maki-call '^ce4f97be[0-9a-f]*[.]getmode$'`: gold 2/56, silver 1/54, bronze 20/827, quarantine 0/54 (manifest 9e68ffe0) | S | 2 |
+| B195 | **`System.getViewport{Left,Top,Width,Height}FromPoint(x, y)`.** The stock `tooltips.m` places its tip inside the display under the pointer with these (`tipText.onTextChanged` in Shield_Amp, Study Skinning, Nullsoft Winamp 2000), so the handler aborts and no tooltip appears. `getViewportWidth` without a point is implemented; answer for the screen holding the point. S4: 25 × 2 × main window 3 ÷ S 1 = 150. Done when `wal_demand.sh` lists none of the four and Shield_Amp shows a tooltip | `maki-call '^d6f50f64[0-9a-f]*[.]getviewportwidthfrompoint$'`: gold 13/56, silver 3/54, bronze 9/827, quarantine 0/54 (manifest 9e68ffe0) | S | 2 |
+| B201 | **`Layout.center()`.** Standard-frame windows centre themselves when opened (1010 Fullscreen's `standardframe.m`), and whatever follows the call in that handler is lost. Centre the layout's window on its screen. S4: 10 × control-dead 3 × off-rest 2 ÷ S 1 = 60. Done when `wal_demand.sh` does not list it and 1010 Fullscreen's frame windows open centred | `maki-call '^60906d4e[0-9a-f]*[.]center$'`: gold 4/56, silver 3/54, bronze 3/827, quarantine 0/54 (manifest 9e68ffe0) | S | 2 |
+| B206 | **`GuiObject.isMouseOver(x, y)`.** Only `isMouseOverRect` is implemented. Core-X5 (gold) asks `isMouseOver` in every main-window button's handler, so the interaction sweep (B205) found **all 18** of its main-window gestures blocked on it. The demand index ranks it near the bottom on one skin per class GUID (`GuiObject`, `Button`, `Slider`, `ToggleButton`); one method on the GuiObject surface answers them all. Answer whether the point, in the object's parent space, is inside its frame and region. S4: 5 × control-dead 3 × main window 3 ÷ S 1 = 45, but surface-dead for Core-X5. Done when `wal_demand.sh` lists no `ismouseover` and `wal_interaction_sweep.sh` reports no Core-X5 gesture blocked on it | `maki-call '[.]ismouseover$'`: gold 1/56, silver 1/54, bronze 3/827, quarantine 0/54 (manifest 9e68ffe0) | S | 2 |
+
+**Closed 2026-10-19** (commit `08671e78`). Every call is gone from `wal_demand.sh` (index rev
+`08671e78`), from these skin counts (all tiers): `getAlbumArt` 123, `getAttributeName` 104,
+`getViewport{Left,Top,Width,Height}FromPoint` 29 each, `Vis.getMode` 24 (summed over the class
+GUIDs that call it), `Layout.center` 12 and `isMouseOver` 7, all → 0. The demand table went from
+114 calls to 102. Per row:
+
+- **B206:** `wal_interaction_sweep.sh` over Core-X5 alone reads **works 18/18, blocked by
+  nothing**, where B205's run had all 18 blocked on `isMouseOver`. The point is in parent space, the
+  space our pointer events carry, and is tested against `resolvedFrame`. The object's region is not
+  tested (a `ponytail:` comment says so).
+- **B190:** Styx's `player-normal.xml` script no longer reports `getmode`. NMP10's player script
+  reads `getMode` and then lays out its panes. It used to abort there, so the title strip ran over
+  the playlist column. In the render sweep it now finishes: the info pane is 196 px, the playlist
+  222 px and the EQ drawer bar is shown. The answer is `WasabiVisualizationMode`'s value, 1 when
+  nothing has been written.
+- **B185:** Symplicipod's `Config-Normal.xml` loses ten `getattributename` failures.
+- **B195:** the display under the point is converted to Winamp's top-left space against the
+  primary display. A point on no display answers the main one.
+- **B201:** `center` acts on layouts only and writes `x`/`y` through the same route as `resize`. It
+  centres on the main display, which is the display the other viewport methods answer for.
+- **B184:** answers 1 only for the playing item (`getPlayItemString`'s value) while the host has
+  its art, and 0 for any other item.
+
+Regression gate: `wal_render_sweep.sh --shards 10`, gold+silver, `05e2bad1` against `08671e78`.
+Apart from the known nondeterministic pair, NMP10 `main-normal` changed (B190, above) and Symplicipod
+`main-normal` changed by alpha level 1 over 390 px as its config scripts ran further. The in-app
+checks for B184, B185, B195 and B201 are under *Awaiting manual QA*. B190 and B206 have none left.
+
+## B182 — events called as methods — closed 2026-10-19
+
+| B182 | **Let a script call a pointer or notify event as a method.** Scripts call their own handlers to reuse them: Bio-Nid's playlist editor runs `poppler.onMouseMove(x, y)` while it resizes, and NMP10's `about` script runs `Next.onLeftButtonDown(0, 0)`. Thirteen event names called this way have no arity, and `dispatchableEventArity` is keyed by name, so one entry each covers every class: `onLeftButtonDown`/`Up`, `onRightButtonDown`/`Up`, `onMouseMove`, `onNotify`, `onEqChanged`, `onInfoChange`, `onSwitchToLayout`, `onPlay`, `onStop`, `onAccelerator`, `onFrame`. Each call aborts the handler that made it. Layer's `onLeftButtonDown` (101 skins) and `onMouseMove` (78) carry most of it. S4: 255 × control-dead 3 × off-rest 2 ÷ S 1 = 1,530. Done when `wal_demand.sh` lists none of the thirteen and Bio-Nid's playlist resize follows the pointer | `maki-call '^5ab9fa15[0-9a-f]*[.]onleftbuttondown$'`: gold 10/56, silver 13/54, bronze 78/827, quarantine 0/54 (manifest 9e68ffe0); all thirteen: gold 17/56, silver 21/54, bronze 217/827 | S | 2 |
+
+**Closed 2026-10-19** (commit `05e2bad1`). `wal_demand.sh` lists none of the thirteen. Before, all
+thirteen together reached gold 17/56, silver 21/54 and bronze 217/827, and `Layer.onLeftButtonDown`
+alone 108 skins in all tiers. The demand table went from 151 calls to 114. The row's premise
+was only nearly right: three names are declared with another arity on another class. They are
+`Wac.onNotify` (3 against Object's 4), `System.onAccelerator` (3 against GuiObject's 1) and
+`Vis.onFrame` (0 against AnimatedLayer's 1). The corpus calls them only on the Object, GuiObject
+and AnimatedLayer forms, so those arities go in `dispatchableEventArity`, and
+`signature(for:classGUID:)` gives the other three classes their own. A wrong arity desynchronises
+the stack, so the gate keeps that from happening. Regression gate: `wal_render_sweep.sh --shards 10`,
+gold+silver, `8c0386a5` against `05e2bad1`. Besides the known nondeterministic pair, one image
+changed: NMP10's About window. Its `dmove` script sets effect 4 and calls
+`Next.onLeftButtonDown(0, 0)` to step to effect 5, which shows the `vis` group (the gradient
+backdrop and twelve oscilloscopes) over the logo. The handler used to abort, which left the bare
+logo. The window now opens as the script intends. The in-app check is under *Awaiting manual QA*.
+
+## B183, B186–B188, B191, B194, B196, B197, B199, B200 — System host methods — closed 2026-10-19
+
+| B183 | **`System.restoreApplication` / `activateApplication`.** The stock notifier script (`notifier.m`) calls both last in `notifier_layout.onLeftButtonDown`. The popup closes first, then the handler aborts, so clicking a notification never raises a minimized player. Deminiaturize and activate the app. S4: 179 × 2 (the click half works) × off-rest 2 ÷ S 1 = 716. Done when `wal_demand.sh` lists neither and a click on jvc.tape's notifier raises a minimized player | `maki-call '^d6f50f64[0-9a-f]*[.]restoreapplication$'`: gold 25/56, silver 25/54, bronze 129/827, quarantine 0/54 (manifest 9e68ffe0) | S | 2 |
+| B186 | **`System.windowMenu()`.** The Winamp 3 lineage (Winamp 3.0 Default, micro, PaddPreview) opens Winamp's window menu from the Thinger's right-click, and nothing opens. Pop the Skin Windows menu (`WinampModernContainerTopology.isListedInWindowMenu`) at the mouse. S4: 95 × control-dead 3 × off-rest 2 ÷ S 1 = 570. Done when `wal_demand.sh` does not list it and Winamp 3.0 Default's Thinger right-click opens the window list | `maki-call '^d6f50f64[0-9a-f]*[.]windowmenu$'`: gold 3/56, silver 3/54, bronze 89/827, quarantine 0/54 (manifest 9e68ffe0) | S | 2 |
+| B187 | **`Application.shutdown()`.** The `Application` singleton's quit, called from a system-menu double-click (`sysMenu.onLeftButtonDblClk` in cPro2 minimal's `player-kai.m`). Nothing happens. Quit the app the way the main menu does. S4: 92 × control-dead 3 × off-rest 2 ÷ S 1 = 552. Done when `wal_demand.sh` does not list it and that double-click quits | `maki-call '^b8e867b0[0-9a-f]*[.]shutdown$'`: gold 10/56, silver 6/54, bronze 76/827, quarantine 0/54 (manifest 9e68ffe0) | S | 2 |
+| B188 | *Implemented 2026-10-19 (gone from `wal_demand.sh`); only the in-app check is left.* **`System.next()` / `previous()`.** `System.play` and `stop` are implemented and these two are not, so a skin's own scripted transport buttons (Nitrous Audio CTI 2 Glass's `maincore.m`, JRS's next-on-stop, 1010 Fullscreen's playback page) do nothing. Route to the host's next and previous. S4: 39 × control-dead 3 × main window 3 ÷ S 1 = 351. Done when `wal_demand.sh` lists neither and Nitrous Audio's next button skips | `maki-call '^d6f50f64[0-9a-f]*[.]next$'`: gold 0/56, silver 9/54, bronze 29/827, quarantine 0/54 (manifest 9e68ffe0) | S | 2 |
+| B191 | *Implemented 2026-10-19 (gone from `wal_demand.sh`); only the in-app check is left.* **`System.chr(code)`.** Scripts build path separators and character ranges with it: Shield_Amp's notifier cover does `mediaPath + chr(92) + file`, and Nitrous Audio's playlist search compares `chr(232)`. Big Bento Modern calls it too. S4: 34 × control-dead 3 × off-rest 2 ÷ S 1 = 204. Done when `wal_demand.sh` does not list it | `maki-call '^d6f50f64[0-9a-f]*[.]chr$'`: gold 7/56, silver 5/54, bronze 22/827, quarantine 0/54 (manifest 9e68ffe0) | S | 2 |
+| B194 | **`System.setEq(onoff)`.** `getEq` is implemented and `setEq` is not, so mmd3's bass/treble code (`volumebasstreble.m`, which turns the EQ on before moving bands) abort; Big Bento Modern calls it too. Route to the host EQ's enable. S4: 27 × control-dead 3 × off-rest 2 ÷ S 1 = 162. Done when `wal_demand.sh` does not list it and mmd3's bass knob turns the EQ on | `maki-call '^d6f50f64[0-9a-f]*[.]seteq$'`: gold 5/56, silver 5/54, bronze 17/827, quarantine 0/54 (manifest 9e68ffe0) | S | 2 |
+| B196 | *Implemented 2026-10-19 (gone from `wal_demand.sh`); only the in-app check is left.* **`System.getDateHour` / `getDateMin`.** `getDate` is implemented and its field readers are not, so skin clocks die in their timer: Ebonite's `clockTmr.onTimer`, Symplicipod's time-of-day mode, Nitrous Audio's `maincore.m`. S4: 11 × control-dead 3 × main window 3 ÷ S 1 = 99. Done when `wal_demand.sh` lists neither and Ebonite's clock shows the time | `maki-call '^d6f50f64[0-9a-f]*[.]getdatehour$'`: gold 1/56, silver 4/54, bronze 6/827, quarantine 0/54 (manifest 9e68ffe0) | S | 2 |
+| B197 | **`System.eject()`.** Winamp's eject is the open-file dialog; eleven bronze skins script it on their eject button. Route to the host's open-files action. S4: 11 × control-dead 3 × main window 3 ÷ S 1 = 99. Done when `wal_demand.sh` does not list it and `_Scythe`'s eject opens the file dialog | `maki-call '^d6f50f64[0-9a-f]*[.]eject$'`: gold 0/56, silver 0/54, bronze 11/827, quarantine 0/54 (manifest 9e68ffe0) | S | 2 |
+| B199 | **`System.minimizeApplication()`.** A skin's scripted minimize does nothing; Big Bento Modern and its variants call it. Miniaturize the player's windows. S4: 9 × control-dead 3 × main window 3 ÷ S 1 = 81. Done when `wal_demand.sh` does not list it and Big Bento Modern's scripted minimize minimizes the player | `maki-call '^d6f50f64[0-9a-f]*[.]minimizeapplication$'`: gold 4/56, silver 2/54, bronze 3/827, quarantine 0/54 (manifest 9e68ffe0) | S | 2 |
+| B200 | *Implemented 2026-10-19 (gone from `wal_demand.sh`); only the in-app check is left.* **`System.isObjectValid(obj)`.** A null check: Dreliction's winshade menu ticks its entries with `if (isObjectValid(normal)) …`, and its `skins/dreliction.md` letter grades it C for this alone. Return whether the reference is non-null and still alive. S4: 10 × control-dead 3 × off-rest 2 ÷ S 1 = 60. Done when `wal_demand.sh` does not list it and Dreliction's winshade menu ticks the current layout | `maki-call '^d6f50f64[0-9a-f]*[.]isobjectvalid$'`: gold 5/56, silver 2/54, bronze 3/827, quarantine 0/54 (manifest 9e68ffe0) | S | 2 |
+
+**Closed 2026-10-19.** Implemented in two batches: `8a83027c` (B188, B191, B196, B200) and
+`8c0386a5` (the rest). Every call is gone from `wal_demand.sh` (manifest 9e68ffe0, index rev
+`2f5cba32`), from these skin counts (all tiers): `restoreApplication` 187 and `activateApplication`
+185 → 0, `windowMenu` 99 → 0, `Application.shutdown` 98 → 0, `setEq` 27 → 0, `eject` 11 → 0,
+`minimizeApplication` 10 → 0. B188, B191, B196 and B200 went from their reach columns above to 0 in
+the first batch. Each method routes to what already answers the same request:
+
+- `eject` is `host.openFiles()`, as the `EJECT` action is.
+- `minimizeApplication` and `Application.shutdown` are the player's own `MINIMIZE` and `CLOSE`
+  actions, so the whole skin minimizes together and closing the player quits.
+- `windowMenu` pops the `WA5:Windows` menu at the pointer. Its skin-window section is the
+  `isListedInWindowMenu` list.
+- `setEq` is the absolute form of `EQ_TOGGLE`.
+- `restoreApplication` unhides the app and deminiaturizes its windows. `activateApplication`
+  brings the app to the front.
+
+`shutdown` gets an arity only on the `Application` class (`MakiClassGUID.application`). A probe of
+cPro2 minimal's `player-kai.maki` confirmed its `Application` global is system-flagged and holds the
+System object, so the call reaches `invokeSystem`. Regression gate: `wal_render_sweep.sh --shards
+10`, gold+silver, `2f5cba32` against `8c0386a5`: 968 of 969 images identical; the one image diff is
+Anexa's `main-shade` and the invariant diffs are S7Reflex's `MLibrary` minimum, the known
+nondeterministic pair. None of the in-app checks in the rows has been run. Each is listed under
+*Awaiting manual QA* (B191 had none).
+
+## B175–B181 — the quarantine's loader gaps — closed 2026-10-19
+
+| B175 | **Accept animation strips longer than 8,192 px on a side.** The image guard rejects any side past 8,192 even when the image is far under its 32,000,000-pixel budget, and a long animation strip is exactly that shape: `vu-meter_smooth.png` 98×17018 (three skins), `orb.anim.png` 15360×46, `waterstrip.png` 10320×344. The whole skin fails to load. Keep the pixel budget; decide what the per-side cap protects (a texture limit?) and slice or downscale the strip there instead of refusing the skin. Done when the 18 load with their strips animating, and a crafted image over the pixel budget is still refused | skin-dead: census `FAILED [imageDimensionsExceeded]`, quarantine 18/54 (list in B173's archive entry) | M | 2 |
+| B176 | **Tolerate the XML mistakes Winamp's parser forgives.** An unterminated `<!--` at end of file (Assmosis, PioNner3, RayPlayer, SleekyXtra) and a stray closing tag (`</elements>`, `</groupdef>`, `</gammaset>`, `</WinampAbstractionLayer>`) fail the whole skin; these are published skins, so Winamp loaded them. Recover the way Winamp's parser did (close a dangling comment at EOF, drop an unmatched close tag), with a warning finding. Done when the 13 load and every recovery reports a finding | skin-dead: census `FAILED [malformedXML]`, quarantine 13/54 | M | 2 |
+| B177 | **Find the skin root the way Winamp does.** Root detection refuses an archive with two `skin.xml` (a root one plus `player/skin.xml` or an old `2004/skin.xml`: 8 skins), a stray file beside the single wrapper (AniTransformers' `.avs`), and a `skin.xml` under more than one wrapper (MalteseXp, four deep). Take the shallowest `skin.xml` as the root, ignore files outside it, and keep the VFS bounded to it. Done when the 10 load and the root is reported in the census | skin-dead: census `FAILED [invalidRoot]`, quarantine 10/54 | S | 2 |
+| B178 | **A skin group that overrides a `wasabi.*` system group by inheriting its own id.** `_Mercury`, `Bubble_Tea`, `Official_Coldplay` (`wasabi.titlebox`) and both `Graviton`s (`wasabi.tabsheet`) define a group with the system group's id that inherits that same id, meaning "the previous definition". We report a cycle and fail the skin. Resolve the inherit against the definition being overridden. Done when the 5 load and a true cycle still fails | skin-dead: census `FAILED [groupInheritanceCycle]`, quarantine 5/54 | M | 2 |
+| B179 | **cPro skins that need the engine's `miniexes.xml`.** `cPro_SC`, `Cpro_Tokio` and `CPro_Winamp3000` include `/Plugins/classicPro/engine/miniexes.xml`, which the imported ClassicPro engine does not provide, perhaps because it is a different engine version. Find which version ships it and whether a missing include can degrade instead of failing. Done when the 3 load or are recorded as needing an engine we cannot ship | skin-dead: census `FAILED [resourceMissing]` on the cPro engine, quarantine 3/54 | S | 2 |
+| B180 | **One bad resource reference fails the whole skin.** VANDREAD and VISION point an image at the author's own `c:/…/pic1.jpg`; Slim names `scripts/TimeDisplay.maki ` with a trailing space. Keep refusing host paths, but degrade (a missing-bitmap finding) instead of failing the skin, and trim attribute whitespace from file references the way Winamp did. Done when the 3 load, the host path still never reaches the file system, and each degraded reference is a finding | skin-dead: census `FAILED [resourceEscapesVFS]` / `[resourceMissing]`, quarantine 3/54 | S | 2 |
+| B181 | **Skins that require the stock Big Bento.** Braun CC 50 and Nokia 5800 XpressMusic require the skin 'Big Bento' mounted, which is Winamp's own skin, and we can neither ship it nor find it in the corpus (gold holds *Big Bento Modern*, a different skin). Decide: fail with a user-readable message, or load what does not depend on it. Done when the decision is made and the 2 behave as decided | skin-dead: census `FAILED [missingRequiredMount]`, quarantine 2/54 | S | 3 |
+
+**Closed 2026-10-19** (commit `2f5cba32`). All 54 quarantined skins load: `load '^failed$'` went
+from quarantine 54/54 to **0/54** (gold, silver and bronze 0 before and after), and the rebuilt
+index reports "0 did not load" over 995 archives. Each skin's own diagnostic from B173 is gone, and
+each recovery is a warning finding. Per row:
+
+- **B175** (18): no per-side cap. Images are drawn by CoreGraphics on the CPU, so 8,192 px guarded
+  no texture limit, only memory, which the 32,000,000-pixel budget already bounds. The budget stays
+  fatal (`testOversizedImageResourceStillFailsTheLoad`, now on pixels). A motion sweep over the
+  quarantine tier (rev `2f5cba32`) has 10 of the 18 moving at rest. In the other 8 (Alfa Romeo,
+  the three AS-FxS, Chicken Little, Orbis, Stargate, Slither), the strip layers are `never-played`:
+  they are volume, seek and VU meters that need playback, or B210's autoplay class. That is not a
+  loader matter.
+- **B176** (13): an unterminated comment runs to the end of the file. A stray close tag is dropped.
+  A close tag for a deeper open tag also closes the tags left open inside it: cPro_Relax,
+  cPro_smpldrk and iNTELLI_design write `<color …>` without its `/` inside `<elements>`. Each is a
+  `malformedXML` warning.
+- **B177** (10): the root is the shallowest `skin.xml`. Only a tie at that depth is ambiguous.
+  Entries outside the root are ignored, and an `invalidRoot` warning names the root and how many
+  entries were dropped (AniTransformers: one `.avs`).
+- **B178** (5): a groupdef that inherits its own id extends the version it replaces, and the
+  inheritance cycle check is keyed by version (Official_Coldplay). Graviton and _Mercury were a
+  different shape that hit the same check: a tab page or title-box body holding a second
+  TabSheet/TitleBox. Panes, pages and title-box bodies are groups named by id, so they now recurse
+  on their own key and not the widget's. A group whose page is itself still fails.
+- **B179** (3): a missing include inside a *mounted* tree is skipped, so a lone missing file in
+  the engine we import is now treated like one in the skin. An uninstalled engine still fails by
+  name (B92's test). Which engine version ships `miniexes.xml` was not found. The three load
+  without it.
+- **B180** (3): bitmap host paths get their own code, `hostPath`. It is still refused before any
+  file access, and the bitmap degrades as a missing one. Skin file references are trimmed. The
+  render sweep found the same trailing space in gold: BLAKK's `remote-toggles-ml-text-off.png `,
+  whose ML button now draws.
+- **B181** (2): decided to load what does not depend on the absent skin. A bitmap or script that
+  reaches an uninstalled sibling skin degrades with a `missingRequiredMount` warning that names it.
+  An XML include from one still fails with the "requires the skin" message, so an overlay skin
+  still says what to install. Braun loses its nibbles easter egg and Nokia its mute script.
+
+Regression gate: `wal_render_sweep.sh --shards 10`, gold+silver, base `8a83027c` against
+`2f5cba32`. 966 of 969 images are identical. Anexa `main-shade` and S7Reflex's `MLibrary` min are
+the known nondeterministic pair. BLAKK `main-remote` gains its ML button (above). JRS `config-normal`
+was a blank frame and now shows its tab pages: its config window had been failing on B178's
+tab-in-tab, and its scripts now run far enough to report `setautoenter` (B189). `wal_demand.sh`
+lists the same calls, with the newly loading skins' demand added (e.g. `restoreapplication` 179
+→ 187).
+
+## B203, B204 — withdrawn 2026-10-19
+
+| B203 | **An `animatedlayer` with a relative or negative `w` resolves to one frame.** `animationFrameCount` takes the frame width from `framewidth`, else the raw `w`, so Big Bento Modern's reader busy bars (`w="-168" relatw="1" frameheight="2"`, a 57-frame strip, `autoplay="1"`) count 1 frame and never animate. Take the frame width from the sheet when `w` is not a positive absolute width, as `frameheight` alone already implies a vertical strip. Found by the motion sweep (B202): `one-frame` on all four Big Bento Modern variants. S4: 7 × motion-dead 2 × off-rest 2 ÷ S 1 = 28. Done when `wal_motion_sweep.sh` reports no `one-frame` layer on Big Bento Modern | `xml-attr '^animatedlayer@relatw$'`: gold 2/56, silver 1/54, bronze 3/827, quarantine 1/54 (manifest 9e68ffe0) | S | 2 |
+| B204 | **Triage the motion sweep's first flags.** B202's first run (gold+silver, rev `1dff452a`) flagged 40 suspect layouts (an `animatedlayer` in an open window, nothing moved), 4 suspect skins (`--Vortex--`, Ebonite_2_1, nullsoft_media_player_10_forked, PionNer_AMP2: a self-playing layer, no window moved), 4 `stuck` layers (Alpha_Media_Player_X5's `gearwheel.*`, the cPro `beatvis.*`), and 2 `not-repainted` (ZDL Reel-To-Reel's `window.runner.play` in its library and playlist windows). Also one engine question it raised: `WasabiAnimation.state` self-plays a layer with `autoplay="0" autoreplay="1"` (Ebonite's `cube2`, NMP10's `ani.stop`/`ani.pause`), where Wasabi's `autoreplay` is believed to mean "loop", not "start". Read each against the skin's script and, where it is drawn at rest, the running app; most are expected at rest (meters, interaction-driven knobs). Done when each flag is a filed row or dismissed with its reason in the archive entry | 40 layouts over 31 skins in gold+silver (manifest 9e68ffe0) | M | 2 |
+
+**Withdrawn 2026-10-19.** Both were filed from B202's first run outside the plan's S4 ranking, one
+named after a skin and one a "triage these skins" list (`corpus-runner-plan.md`, Rules 4 and 5).
+The S4 motion ranking (`wal_motion_sweep.sh` → `ranking.tsv`) replaces them with B209 and B210. B203's
+one-frame layer is not motion-dead under the plan's suspect rule (Big Bento Modern's windows move),
+so it has no ranked row.
+
+## B205 — the S3 interaction sweep — closed 2026-10-19
+
+| B205 | **The S3 interaction sweep (plan §7 step 5, §3 S3).** Generalise `RENDER_CLICK` to every object a script hooks the mouse on: pick a point the hit test actually reaches, drive the gesture its bindings call for (click, double-click, drag, right-click), and record whether the hit test reached it, whether a handler ran or failed on a missing method, and whether anything changed. Emit the dead-control list per skin. Done when it runs over gold+silver, two runs agree on the target list and nearly every verdict, and its first findings are filed | every skin with a script-hooked control: 106 of 114 in gold+silver | M | 2 |
+
+**Closed 2026-10-19.** `scripts/wal_interaction_sweep.sh` and `WinampModernInteractionSweepTests`
+(`harness.md` → *The interaction sweep*). Gold+silver: 2,502 gestures over 114 skins, ~17 min at 30
+shards. **1,609 works, 343 silent, 117 blocked, 433 unreachable**; 8 skins have no hooked control in
+an open window. The two independent instruments agree: every blocked call the demand index ranked
+in its top 20 shows up here where it was expected (B182, B187, B195).
+
+**What the first drafts got wrong, measured.** Each changed the table, so each is now in the
+instrument:
+
+- *Shared configuration.* Restoring every `winampModern.config.*` key after each gesture let 10 shards
+  wipe each other's writes through one defaults domain, and the run took **66 min**; scoped to the
+  skin's own namespace it took 9. The 8 "missing" skins were skins with no targets, now a `none` row.
+- *Timer noise.* A 0.3 s no-gesture window missed slower timers: 33 verdicts and Alpha_Media_Player_X5's
+  target list flipped between runs. At 1 s the target list is identical across runs and 23 of 2,502
+  verdicts flip, nearly all the cPro2 Styler beat meter (~1.5 Hz). EPS's clock fails `formatDate`
+  every tick, which made all 103 of its gestures read as blocked until a timer's failures in the
+  quiet window were excluded too.
+- *`embed_xui`.* A wrapped control is hit as its inner object and forwarded to the group; counting
+  only the group made 34 controls (Bento tab buttons, `Wasabi:Frame`s) unreachable that are not.
+  `embeddingOwners(of:)` became internal so the sweep uses the runtime's rule.
+- *The view's half.* Without mirroring `action=` and the toggle/radio/`cfgattrib` flip, 140 gestures
+  read silent that work — Dreliction's transport buttons, whose script only lights a label.
+- *Knobs.* mmd3's bass/treble/volume knobs bind no `onMouseMove`; they poll the pointer from a timer
+  while held, so they answer only a press-drag with the run loop pumped between steps.
+
+**Filed:** B206 (`isMouseOver`, all 18 of Core-X5's main buttons), B207 (the hit test skips a
+script-hooked `text`/`AlbumArt`: the time readout toggle on three skins), B208 (triage the rest).
+Menus are counted per gesture, not walked item by item; that half of the plan's S3 is not built.
+
+## B202 — the S3 motion sweep — closed 2026-10-19
+
+| B202 | **The S3 motion sweep (plan §7 step 4, §3 S3).** Draw every skin's windows on a clock ladder, t = 0, 0.25, 1, 4 s, pumping the run loop for each interval and pinning the render clock to match, and record per layout whether the pixels moved, which objects moved, and for each declared `animatedlayer` which of the plan's three causes keeps it still (never played, played but not repainted, played but drawn at one frame). Flag a declared animation whose pixels never change. Done when it runs over gold+silver, two runs agree on every verdict, and its first findings are filed | `xml-tag '^animatedlayer$'`: gold 26/56, silver 29/54, bronze 356/827, quarantine 34/54 (manifest 9e68ffe0) | M | 2 |
+
+**Closed 2026-10-19.** `scripts/wal_motion_sweep.sh` and `WinampModernMotionSweepTests`
+(`harness.md` → *The motion sweep*). Gold+silver, 114 archives, 10 shards: ~60 s. Two runs at rev
+`1dff452a` had identical `verdict` columns; 3 of 748 rows differed in `frames`/`anim`, all looping
+layers whose phase depends on the absolute uptime.
+
+**First run, at rest:** 748 layouts — 93 moving, 2 reverted, 653 static. Of the `animatedlayer`s:
+338 never played, 54 hidden, 14 moving, 9 one-frame, 4 stuck, 2 not repainted. Known behaviour
+reproduced: Love is War Miku's opening slide (a 300 ms timer) moves its main window, Defix's tickers
+move, and Defix's speaker cabinets stay still while closed. B203 is the one cause that is certain by
+construction; B204 holds the rest for triage.
+
+**Decisions measured.** The plan's skin-level rule counted a script `Timer` as a motion declaration;
+51 of 114 skins then came out suspect, because nearly every skin starts a timer for interaction.
+The summary counts self-playing layers only, which leaves 4. `suspect` per layout needs an open
+window, which drops Defix's closed speakers. The render clock runs on `systemUptime`, not from 0,
+because a script's `play()` stamps `animstart` with the uptime.
+
+## B174 — the S4 demand index — closed 2026-10-19
+
+| B174 | **The S4 demand index (plan §7 step 3, §3 S4).** Invert `features.tsv` into one table: capability → skins that declare it, per tier, with sample skins to test against, reproducible from the index plus the manifest rev. Start with the MAKI calls the runtime lacks (`maki-call`, `implemented=no`), because those have a verdict. XML rows wait on the supported-surface manifest (§7 step 6). Rank with the plan's `skins × severity × visibility ÷ cost` and file the top 20 as rows here, each with its Reach from `wal_reach.sh`. Done when the table regenerates byte-identically and the top 20 are filed | `maki-call implemented=no`: 157 distinct calls across 538 skins | M | 2 |
+
+**Closed 2026-10-19.** `scripts/wal_demand.sh` (`harness.md` → *The static feature index*) prints
+the 157 calls over the all-tier index (manifest `9e68ffe0`), and two runs are byte-identical. Class
+names come from the new `docs/winamp-modern/maki-classes.tsv`: 60 classes from the `extern class`
+lines of every `.mi` the gold, silver and bronze archives ship. One GUID has two names there,
+`Component` (older headers) and `WindowHolder` (newer); the table keeps `WindowHolder`. One class
+the headers lack, `686fa9c9…` (two skins), prints as its GUID. Quarantine is 0 on every row,
+because a skin that does not load has no MAKI rows.
+
+**Scoring.** Every miss aborts the handler that made it, so severity comes from the handler. It was
+read from the `scripts/*.m` that 57 gold and silver skins ship (780 files). Severity: surface-dead
+4, control-dead 3, partial or cosmetic 2. Visibility: main window at rest 3, a click or hover
+away 2, a config page 1. Cost: S 1, M 2. Sibling calls with one fix share a row and count the union
+of their skins.
+
+| Row | Calls | Skins | Sev | Vis | Cost | Priority |
+|---|---|---:|---:|---:|---:|---:|
+| B182 | events called as methods (13 names) | 255 | 3 | 2 | 1 | 1,530 |
+| B183 | `restoreApplication`, `activateApplication` | 179 | 2 | 2 | 1 | 716 |
+| B184 | `getAlbumArt` | 117 | 3 | 2 | 1 | 702 |
+| B185 | `ConfigAttribute.getAttributeName` | 97 | 3 | 2 | 1 | 582 |
+| B186 | `windowMenu` | 95 | 3 | 2 | 1 | 570 |
+| B187 | `Application.shutdown` | 92 | 3 | 2 | 1 | 552 |
+| B188 | `next`, `previous` | 39 | 3 | 3 | 1 | 351 |
+| B189 | `Edit.setAutoEnter`, `onIdleEditUpdate`, `enter` | 55 | 4 | 1 | 1 | 220 |
+| B190 | `Vis.getMode` | 23 | 3 | 3 | 1 | 207 |
+| B191 | `chr` | 34 | 3 | 2 | 1 | 204 |
+| B192 | `CheckBox.setChecked`, `isChecked` | 50 | 4 | 2 | 2 | 200 |
+| B193 | `WindowHolder.getComponentName` | 91 | 2 | 2 | 2 | 182 |
+| B194 | `setEq` | 27 | 3 | 2 | 1 | 162 |
+| B195 | `getViewport*FromPoint` | 25 | 2 | 3 | 1 | 150 |
+| B196 | `getDateHour`, `getDateMin` | 11 | 3 | 3 | 1 | 99 |
+| B197 | `eject` | 11 | 3 | 3 | 1 | 99 |
+| B198 | `TabSheet.getCurPage`, `setCurPage` | 31 | 3 | 2 | 2 | 93 |
+| B199 | `minimizeApplication` | 9 | 3 | 3 | 1 | 81 |
+| B200 | `isObjectValid` | 10 | 3 | 2 | 1 | 60 |
+| B201 | `Layout.center` | 10 | 3 | 2 | 1 | 60 |
+
+Just below the cut: `getSnapAdjustBottom`/`clientToScreenH` (10 skins, 60, one gold), `showWindow`
+(17, M, 51), `ComponentBucket.get/setScroll` (15, M, 45), `Container.enumLayout` (7, 42),
+`getMonitor*FromGuiObject` (10, config-deep, 30), `Browser.back/forward` (23, L: no browser, 23),
+and Zygote's `CfgGroup.cfg*` and `getWac` (21, config-deep, M). Each severity, filed or not, rests on one or two call sites,
+so it is the column to re-check when a row is taken.
+
+## B173 — the quarantined skins, sorted by cause — closed 2026-10-19
+
+| B173 | **Sort the 54 quarantined skins by cause.** Each one is a `load failed` row in the index, and nobody has looked at why. Split them into (a) a trap, hang or limit breach in our code: a security bug, filed as its own row ahead of everything (S1); (b) a malformed or non-`.wal` archive: stays quarantined; (c) a well-formed skin we reject: a loader gap, ranked like any capability. Record each skin's cause and evidence (the loader's error or the crash) in the archive entry. Done when all 54 have a cause and every (a) and (c) cause has a row | `load '^failed$'`: gold 0/56, silver 0/54, bronze 0/827, quarantine 54/54 (manifest 9e68ffe0) | M | 2 |
+
+**Closed 2026-10-19.** Every one of the 54 is a controlled `WalFailure` from the loader: no trap,
+hang or limit breach in our code, so no security row. Every one is also a well-formed published skin
+that we refuse, so each is a loader gap, and there is one row per cause, B175–B181. The evidence is the
+B169 intake capture's `SKIN … FAILED` lines (rev `69dbc2ee`), whose skin set matched the manifest's
+quarantine exactly. That capture lived in a session scratchpad, so the lines are kept here. The
+invalidRoot archives were checked by hand: Red Pearl and Hal's Eye 1.3 carry a root `skin.xml` plus a
+nested one, AniTransformers a stray `.avs`, and MalteseXp is four wrappers deep. None of it comes from
+the crawler's repack.
+
+| Skin | Code | Loader's diagnostic | Row |
+|---|---|---|---|
+| Alfa_Romeo_History.wal | `imageDimensionsExceeded` | Image resource '/Skins/Alfa_Romeo_History/player/play/vfani.png' is 11520×90; limits are 8192×8192 and 32000000 pixels. | B175 |
+| AS-FxS.wal | `imageDimensionsExceeded` | Image resource '/Skins/AS-FxS/immagini/vu-meter_smooth.png' is 98×17018; limits are 8192×8192 and 32000000 pixels. | B175 |
+| ASfx21Evo.wal | `imageDimensionsExceeded` | Image resource '/Skins/ASfx21Evo/immagini/vu-meter_smooth.png' is 98×17018; limits are 8192×8192 and 32000000 pixels. | B175 |
+| asnw.wal | `imageDimensionsExceeded` | Image resource '/Skins/asnw/immagini/vu-meter_smooth.png' is 98×17018; limits are 8192×8192 and 32000000 pixels. | B175 |
+| Baroque_1.0.wal | `imageDimensionsExceeded` | Image resource '/Skins/Baroque_1.0/player/HPD-anim.png' is 121×9640; limits are 8192×8192 and 32000000 pixels. | B175 |
+| CC_Red_Aler_2.wal | `imageDimensionsExceeded` | Image resource '/Skins/CC_Red_Aler_2/eq/anim.png' is 212×16960; limits are 8192×8192 and 32000000 pixels. | B175 |
+| Chicken_Little.wal | `imageDimensionsExceeded` | Image resource '/Skins/Chicken_Little/player/danceC.png' is 163×8680; limits are 8192×8192 and 32000000 pixels. | B175 |
+| DOMINO.wal | `imageDimensionsExceeded` | Image resource '/Skins/DOMINO/video/dominovideo.png' is 169×28380; limits are 8192×8192 and 32000000 pixels. | B175 |
+| Fast__Furious_Winamp5_Skin.wal | `imageDimensionsExceeded` | Image resource '/Skins/Fast__Furious_Winamp5_Skin/player/opening.png' is 500×16000; limits are 8192×8192 and 32000000 pixels. | B175 |
+| Helloween.wal | `imageDimensionsExceeded` | Image resource '/Skins/Helloween/player/ani.png' is 387×9860; limits are 8192×8192 and 32000000 pixels. | B175 |
+| Kepler_1.1.wal | `imageDimensionsExceeded` | Image resource '/Skins/Kepler_1.1/player/saturn-anim.png' is 150×18000; limits are 8192×8192 and 32000000 pixels. | B175 |
+| M3.wal | `imageDimensionsExceeded` | Image resource '/Skins/M3/elements/normal/lights/tube-ani3.png' is 83×10065; limits are 8192×8192 and 32000000 pixels. | B175 |
+| ORBAMP.wal | `imageDimensionsExceeded` | Image resource '/Skins/ORBAMP/EQ/orb.anim.png' is 15360×46; limits are 8192×8192 and 32000000 pixels. | B175 |
+| Orbis.wal | `imageDimensionsExceeded` | Image resource '/Skins/Orbis/player/volani.png' is 9075×81; limits are 8192×8192 and 32000000 pixels. | B175 |
+| Stargate_Winamp_-_SG1_edition.wal | `imageDimensionsExceeded` | Image resource '/Skins/Stargate_Winamp_-_SG1_edition/gate/waterstrip.png' is 10320×344; limits are 8192×8192 and 32000000 pixels. | B175 |
+| Steamed up 1.0.wal | `imageDimensionsExceeded` | Image resource '/Skins/Steamed up 1.0/player/HPD-anim.png' is 121×9640; limits are 8192×8192 and 32000000 pixels. | B175 |
+| The_Official_Slither_Winamp5_Skin.wal | `imageDimensionsExceeded` | Image resource '/Skins/The_Official_Slither_Winamp5_Skin/player/slug1-anim.png' is 335×19000; limits are 8192×8192 and 32000000 pixels. | B175 |
+| Tokyo_Drift.wal | `imageDimensionsExceeded` | Image resource '/Skins/Tokyo_Drift/intro_anim.png' is 480×14400; limits are 8192×8192 and 32000000 pixels. | B175 |
+| Assmosis.wal | `malformedXML` | Unterminated XML comment. | B176 |
+| cPro_Relax.wal | `malformedXML` | Unexpected closing tag </elements>. | B176 |
+| cPro_smpldrk.wal | `malformedXML` | Unexpected closing tag </elements>. | B176 |
+| Dynamic.wal | `malformedXML` | Unexpected closing tag </elements>. | B176 |
+| Eve_01_Amp.wal | `malformedXML` | Unexpected closing tag </WinampAbstractionLayer>. | B176 |
+| iNTELLI_design.wal | `malformedXML` | Unexpected closing tag </elements>. | B176 |
+| PioNner3.wal | `malformedXML` | Unterminated XML comment. | B176 |
+| Quadcore.wal | `malformedXML` | Unexpected closing tag </gammaset>. | B176 |
+| RayPlayer.wal | `malformedXML` | Unterminated XML comment. | B176 |
+| SleekyXtra.wal | `malformedXML` | Unterminated XML comment. | B176 |
+| sucksdotcomwinamp.wal | `malformedXML` | Unexpected closing tag </groupdef>. | B176 |
+| sx-2.wal | `malformedXML` | Unexpected closing tag </groupdef>. | B176 |
+| sx.wal | `malformedXML` | Unexpected closing tag </groupdef>. | B176 |
+| AniTransformers.wal | `invalidRoot` | Entry 'AniTransformers.avs' sits outside the archive's single wrapper directory 'AniTransformers'. | B177 |
+| Boarding_House_Winamp3_Skin.wal | `invalidRoot` | Archive contains multiple case-insensitive skin.xml candidates. | B177 |
+| Draculas_Helmet.wal | `invalidRoot` | Archive contains multiple case-insensitive skin.xml candidates. | B177 |
+| Gothic_Metal_v2_1.wal | `invalidRoot` | Archive contains multiple case-insensitive skin.xml candidates. | B177 |
+| Hals_Eye_1_3.wal | `invalidRoot` | Archive contains multiple case-insensitive skin.xml candidates. | B177 |
+| MalteseXpSkin.wal | `invalidRoot` | skin.xml may be nested under at most one wrapper directory. | B177 |
+| Multiplastic.wal | `invalidRoot` | Archive contains multiple case-insensitive skin.xml candidates. | B177 |
+| Official_Merv_4_Skin.wal | `invalidRoot` | Archive contains multiple case-insensitive skin.xml candidates. | B177 |
+| Official_Six_Feet_Under_Skin.wal | `invalidRoot` | Archive contains multiple case-insensitive skin.xml candidates. | B177 |
+| Red_Pearl.wal | `invalidRoot` | Archive contains multiple case-insensitive skin.xml candidates. | B177 |
+| -Graviton-.wal | `groupInheritanceCycle` | Recursive group expansion for 'wasabi.tabsheet'. | B178 |
+| _Mercury.wal | `groupInheritanceCycle` | Recursive group expansion for 'wasabi.titlebox'. | B178 |
+| Bubble_Tea_-_Updated.wal | `groupInheritanceCycle` | Recursive group expansion for 'wasabi.titlebox'. | B178 |
+| Graviton.wal | `groupInheritanceCycle` | Recursive group expansion for 'wasabi.tabsheet'. | B178 |
+| Official_Coldplay_skin.wal | `groupInheritanceCycle` | Group inheritance cycle detected: wasabi.titlebox -> wasabi.titlebox. | B178 |
+| cPro_SC.wal | `resourceMissing` | Logical resource '/Plugins/classicPro/engine/miniexes.xml' was not found in any mounted provider. | B179 |
+| Cpro_Tokio.wal | `resourceMissing` | Logical resource '/Plugins/classicPro/engine/miniexes.xml' was not found in any mounted provider. | B179 |
+| CPro_Winamp3000.wal | `resourceMissing` | Logical resource '/Plugins/classicPro/engine/miniexes.xml' was not found in any mounted provider. | B179 |
+| Slim.wal | `resourceMissing` | Logical resource '/Skins/Slim/scripts/TimeDisplay.maki ' was not found in any mounted provider. | B180 |
+| VANDREAD_WINAMP5_SKIN.wal | `resourceEscapesVFS` | Host path 'c:/vandread/pic1.jpg' is not allowed. | B180 |
+| VISION_WINAMP_SKIN_.wal | `resourceEscapesVFS` | Host path 'c:/vision/pic1.jpg' is not allowed. | B180 |
+| Braun_CC_50.wal | `missingRequiredMount` | This skin requires the skin 'Big Bento' to be installed. | B181 |
+| Nokia_5800_XpressMusic.wal | `missingRequiredMount` | This skin requires the skin 'Big Bento' to be installed. | B181 |
+
+## B172 — corpus docs close-out — closed 2026-10-19
+
+| B172 | **Docs close-out.** `reference/harness.md` (crawler, intake, index, `--touching`, `--shards`, the new corpus location), `triage-playbook.md` §3 (S0 and S2-MAKI → Built), `corpus-runner-plan.md` (§8 → history), and the `app-control`/`skin-screenshots`/`window-census` skills' corpus paths. Done when no doc names `WinampModernSkins/` as the corpus | the docs | S | 3 |
+
+**Closed 2026-10-19.** `harness.md` already carried the crawler, intake, index, `--touching` and
+`--shards` from their own rows. It now also says which tier each action runs on and that admitted
+Gold/Silver archives are copied into `WinampModernSkins/`; until now both lived only in §8. Its last
+"whatever is installed" wording is gone. The triage playbook's §3 marks S0 and S2 built. The plan's
+status names S0, S1 and S2 shipped, and §8 is marked history. The backlog's *Corpus scale* section
+went with its last row. `window-census` names gold+silver as its `.wal` family. `skin-screenshots`
+says its `.wal` set is the Skins menu, so the user's installs and not the corpus. `app-control`
+already named both folders correctly. A `git grep WinampModernSkins` over the docs now finds only
+the install folder, phase-handoff history and the dated 2026-09-05 provenance audit in `skins.md`.
+
+## B171 — reach from the index — closed 2026-10-19
+
+| B171 | **Reach from the index.** Replace *Reproducible reach commands* with one `features.tsv` query reported per tier ("silver n/N, bronze m/M") plus the manifest rev as the denominator's identity; move each open row's grep into its archive entry as it closes. Done when every open row's Reach comes from the query | every row's Reach | S | 2 |
+
+**Closed 2026-10-19.** `scripts/wal_reach.sh <kind> <feature-regex>` (`harness.md` → *The static
+feature index*) replaces the section, which held no command any open row cited, only the 80-archive
+corpus note. Over an index of all four tiers (995 skins, rev `cda73bd2`) it printed `Wasabi:Frame`
+as gold 4/56, silver 1/54, bronze 4/827, B170's 9 exactly, and `getEndFrame` as 3/2/20, matching a
+per-file `awk` count joined to the manifest. The first draft keyed tier by sha256 and lost four gold
+skins: the manifest lists Pure Inspired, K-jr and both DewyTears V2.5 again as silver re-adds, so a
+duplicate now counts once at its better tier. An index older than the manifest fails rather than
+printing a short denominator (the B168 gold+silver index: "covers 29 of 54 silver"). Of the open
+rows, only B161 has corpus demand; its Reach is now `xml-attr '@resize$'` from the query. The others
+are code health or corpus tooling, with no corpus demand.
+
+## B170 — impact-selected and sharded sweeps — closed 2026-10-19
+
+| B170 | **Impact-selected and sharded sweeps.** `wal_render_sweep.sh capture --touching <feature,…>` selects every skin in any tier whose index rows match; `--shards K` runs K test processes over a sha256-ordered split after one build. Measure the speed-up and the K at which memory or the ClassicPro mount stops it scaling; record that K in `harness.md`. Done when a `--touching Wasabi:Frame` capture selects exactly the index's matching skins, and a sharded capture equals an unsharded one | every engine change | M | 2 |
+
+**Closed 2026-10-19.** `wal_render_sweep.sh capture` takes `--touching <feature,…> --index
+<features.tsv>` and `--shards K` (`harness.md` → *Impact-selected and sharded sweeps*). Against an
+index over all four tiers (995 skins, rev `9e68ffe0`), `--touching Wasabi:Frame` selected 9 skins,
+exactly the index's `xml-tag wasabi:frame` set, and a `--shards 3` capture of them equalled the
+unsharded one (319 lines, 86 images identical). Over gold+silver (114 skins), K = 1/2/4/6/8/10 took
+81/42/30/27/24/22 s wall, peak summed xctest RSS 2.4–2.9 GB at every K; each K's capture equalled
+K=1's bar the documented nondeterministic pair, which two further K=1 runs reproduced. Neither memory
+nor the shared ClassicPro engine store stopped the scaling — the 10 cores did. The first draft ran
+each shard as `swift test --skip-build`, and SwiftPM's `.build` lock queued them (K=1/2/4: 90/89/94
+s); the shards run the bundle with `xcrun xctest`. The harness keys a skin's dump subdirectory on
+`isSweep` rather than on the archive count, so a one-skin shard cannot write into the shared root.
+
+## B169 — the intake run — closed 2026-10-19
+
+| B169 | **The intake run: rate and admit the crawled candidates.** `scripts/wal_intake.sh <candidates> <outdir>` runs the census over the candidates (health) and the index (value), then greedy set cover writes `intake.tsv` (every candidate's health, value, rank, the features it added) and moves skins into silver/bronze/quarantine, updating the manifest. Silver budget: ≤ 25 per intake, gain ≥ 3 (agreed 2026-10-19); record the gain curve and the sweep time the batch added in §8 so the next budget is set from them. Document `wal_corpus_crawl.py` in `harness.md` here. Done when two runs from a clean outdir produce byte-identical `intake.tsv`, and the post-admission sweep is captured as the new baseline in one commit with the manifest | the 906 candidates | M | 2 |
+
+**Closed 2026-10-19.** `scripts/wal_intake.sh` (`harness.md` → *Growing the corpus*). Over the 906
+crawl candidates: 25 silver, 827 bronze, 54 quarantine — the 54 are exactly the index's `load
+failed` rows, and no skin went unreached. Two runs from clean outdirs (48 min each, the census's
+hosted pass ~40 of it) wrote byte-identical `intake.tsv`; the second ran with `--admit`, moving all
+906 into their tiers and appending them to `corpus-manifest.tsv` at `69dbc2ee`. The post-admission
+sweep is the new baseline: 114 skins, 3,412 invariant lines, 969 images, 93 s of test time; the 25
+new skins alone take 28 s of it. Health of the batch: bronze 484 fully / 240 partly / 103
+player-skinned. The gain curve and what it says about the budget are in `corpus-runner-plan.md` §8.
+After both runs `added` switched from a space to a comma separator, because an `action=` value can
+contain spaces (`28 days later`); no rank or tier depends on it.
+
+Admitted to silver, in rank order: `--Vortex--.wal`, `Anunaki.wal`, `Symplicipod.wal`, `Mac_OS_X__-_Panther.wal`, `Dronev11.wal`, `Alpha_Media_Player_X5.wal`, `Simple.wal`, `WinampAzenis2.wal`, `JRS.wal`, `krazyPlayer.wal`, `Prakrit.wal`, `New_Night_v_2.wal`, `Nitrous_Audio_CTI_2_Glass.wal`, `shark5.wal`, `cPro2__minimal_1_1.wal`, `Zygote.wal`, `CopperdeckII.wal`, `NEO_CLASSIC.wal`, `BOOM.wal`, `wTunes.wal`, `Official_Tristania_Skin.wal`, `CPro_Winamp_for_Mac_Sync.wal`, `LogicallityV1_0.wal`, `1010_Fullscreen.wal`, `machina.wal`.
+
+## B168 — static feature index — closed 2026-10-19
+
+| B168 | **Static feature index (S2's MAKI half plus an XML scan).** A parse-only `WINAMP_MODERN_STATIC_DEMAND=<dir>` harness entry emits each skin's class-qualified MAKI methods, each marked implemented or not against `signature(for:)`, reusing `MakiProgram` with no execution. A Python pass adds the comment-stripped XML tags, `tag@attr`, `action=` and `display=` values, and a family label. Output: `features.tsv` (skin, sha256, kind, feature, implemented). Done when it runs over gold+silver plus the 906 candidates with no skipped skin, and three current reach numbers in this file reproduce from it | every ranking | L | 2 |
+
+**Closed 2026-10-19.** `scripts/wal_feature_index.sh` + `WinampModernStaticDemandTests`; the kinds
+and their limits are in `harness.md` → *The static feature index*. Gold+silver: 89/89 indexed, all
+load, 42,689 rows. The 906 candidates: 906/906 indexed, 54 do not load (each keeps its XML rows),
+332,800 rows. Both byte-identical across two runs. **No numeric reach was left in the file** when
+this closed, so the check used four from the archive, re-measured over gold+silver by the old method
+(a `7zz` extract and `rg`) and by the index: `getEndFrame` callers 3/3, `setClipboardText` 2/2,
+`activeimage` 75/75, `text@wrap` 8/8. The first draft read bound programs only and got
+`getEndFrame` 2 — Hal's Eye's `manual.maki` sits in a `<groupdef>` nothing instantiates at load —
+so the index also parses every `.maki` the archive ships. Three Windows-built archives (PokemonDS,
+SingItKitty, Wiimote) spell entries with `\` in the zip directory and `/` in the local header, which
+Python's `zipfile` refuses; the XML pass retries with `/`. The XML half has `implemented` `-`: the
+supported-surface manifest S2 names is not built.
+
+## B167 — the corpus moves out of the app's skin folder — closed 2026-10-19
+
+| B167 | **Move the corpus out of the app's skin folder.** Create `WinampModernCorpus/{gold,silver,bronze,quarantine}/`; the current 89 go to gold (the `skins.md` set) and silver (the rest), recorded in a committed `docs/winamp-modern/corpus-manifest.tsv`. Every corpus script defaults to gold+silver (a multi-dir walk), including `app-control`'s `window-census.sh`/`skin-pick-matrix.py` and `skin-screenshots`. Done when a sweep over the new location is byte-identical (invariants and PNGs) to one over `WinampModernSkins/` at the same rev, and the B166 count rule holds | every corpus run | M | 2 |
+
+**Closed 2026-10-19.** The 89 archives were **copied** (not moved) to
+`~/Library/Application Support/NullPlayer/WinampModernCorpus/{gold,silver}/` with empty `bronze/` and
+`quarantine/`; `docs/winamp-modern/corpus-manifest.tsv` records each one (38 carry a source URL from
+their `kMDItemWhereFroms`, the rest `-`). **Gold is every skin with a row in `skins.md`'s Per-skin
+status table — 56 archives**, not the plan's ~10–15: that table is the set we have worked on, and the
+tier only selects which actions run. Silver is the other 33, including the four byte-identical
+re-adds, which B169's content dedupe decides. `scripts/lib/wal_corpus.sh` holds the location and the
+gold+silver default; `--corpus` and `WINAMP_MODERN_WAL` / `WINAMP_MODERN_DRAG_PROBE` /
+`WINAMP_MODERN_DRAG_HOSTED` take a `:` list (`WinampModernCorpusPaths`). `window-census.sh --all wal`
+walks gold+silver, `launch.sh` falls back to them for an uninstalled bare name, `skin-pick-matrix.py`
+copies its load-test Bento from gold, and the crawler dedupes against every tier. Measured at
+fdde9eae plus this change: a capture over `WinampModernSkins/` and one over gold+silver had 89 logs
+each and 2,620 invariant lines each; 751 of 752 images identical and one invariant line different, and
+both are the documented nondeterministic pair (Anexa's wall-clock `main-shade`, S7Reflex's
+`MLibrary/normal` min) — `harness.md`. `--parse-only` census over both locations: identical TSVs.
+**`skin-screenshots` was not changed**: it photographs the app's live Skins menu, so once
+`WinampModernSkins/` holds only the user's installs it no longer scales with the corpus, and making it
+corpus-driven means a relaunch per skin instead of a menu pick. `skin-pick-matrix.py`'s menu picks
+still name two skins it expects installed.
+
+## B166 — each skin's dump goes to its own log file — closed 2026-10-19
+
+| B166 | **Each skin's dump goes to its own log file.** `WinampModernRenderDumpTests` over a directory writes every skin's lines to `<dumpdir>/<skin>.log` instead of the shared stdout, so nothing can interleave. `wal_render_sweep.sh` and `wal_skin_census.sh` read the per-skin files, and `damaged.txt` plus the solo re-run go away. Done when two consecutive full `capture` passes report zero damaged skins (today about half of all passes damage one or more), and the invariants match the last stdout-era capture for every skin that capture didn't damage | every corpus run | M | 2 |
+
+**Closed 2026-10-19.** In a directory run `WinampModernRenderDumpTests` points fd 1 at
+`<dumpdir>/<skin>.log` for the duration of each skin and echoes the file to stdout afterwards;
+`wal_render_sweep.sh` and `wal_skin_census.sh` build `invariants.txt` and every census row from those
+files, and `damaged.txt`, the `damaged` column and `compare`'s banner/damaged filtering are gone. The
+sweep's archive count now uses the census's `*.[wW][aA][lL]` rule (it had missed `Defix Hi-END
+200.WAL`). Measured over the 89-archive corpus at b63ccf61: a stdout-era pass damaged XENERGY1 as
+usual; two consecutive per-skin passes had zero mid-line collisions in any log, identical invariants
+(2,620 lines), and for each of the 88 skins the stdout-era pass had not damaged, invariants identical
+to it. XENERGY1 now gets a populated census row. The one image diff in every pair is Anexa's
+wall-clock `main-shade`.
+
 ## B164 — Anaheim's library text was the saved Text Size, not a defect — closed 2026-10-15
 
 | B164 | **The library window's text draws too large on Anaheim.** Reported 2026-10-13, not yet reproduced or measured. The library rows are host-drawn (`drawSurfaceText`), so the skin declares neither their face nor their size: the face is the undeclared-font Arial default, and the size comes from `WinampModernTextScale`'s cell height through `playlistCellToPointSize` (0.9), per `reference/rendering/text.md` § *Host-drawn text is not skin-declared text (B130)*. **Unmeasured, take first**: the point size the library rows draw at on Anaheim beside a small skin, and what cell height `auto` chose for it. Do not retune `pixelHeightToPointSize` (0.8) to fix it; that constant governs every skin-declared `<text>`. **Done when** Anaheim's library rows draw at the same size as its playlist rows, and a corpus sweep shows no other skin's host lists changed size unintentionally. | 1 skin reported | S–M | Live |

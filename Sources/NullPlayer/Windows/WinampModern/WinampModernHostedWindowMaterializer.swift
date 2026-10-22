@@ -177,8 +177,8 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
 
     private func materialize(_ id: WinampModernHostedWindowID) -> MaterializedWindow? {
         if let instance = instances[id] { return instance }
+        let definition = id.definition
         guard !failedIDs.contains(id),
-              let definition = WinampModernHostedWindowRegistry.entry(id: id),
               case .skinFrame(let frame) = loadedSkin.surfaceSynthesis.hostedWindows[id],
               let instantiate = loadedSkin.runtime.instantiateHostedWindow,
               let componentHost else { return nil }
@@ -194,12 +194,7 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
             let renderer = try WasabiSceneRenderer(loadedSkin: loadedSkin, host: host,
                                                    containerID: id.containerIdentifier)
             renderer.componentHost = componentHost
-            renderer.configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
-            renderer.configValueProvider = { [weak scripts] in scripts?.configInteger(of: $0) }
-            renderer.settingStateProvider = { [weak scripts] section, key in
-                scripts?.configAttributeValue(section: section, key: key).map { $0 != "0" }
-            }
-            renderer.layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }
+            renderer.attach(scripts: scripts)
             let createdView = WinampModernMainView(renderer: renderer, scripts: scripts, host: host,
                                                    componentHost: componentHost,
                                                    drivesScripts: false)

@@ -4,11 +4,12 @@ import NullPlayerCore
 /// Program level per channel for a `.wal` skin's VU meters — what `System.getLeftVUMeter()` and
 /// `getRightVUMeter()` answer with.
 ///
-/// **Linear peak amplitude, unsmoothed**, which is Winamp's own scale. A Winamp skin does the
-/// perceptual conversion and the ballistics itself: Defix maps the byte through `73.813 · x^¼ − 100`
-/// and then applies its own attack/decay before it turns a needle. Handing it a value that is already
-/// dB-mapped over a noise floor *and* already smoothed compresses the same signal twice, and the
-/// needle then sits high and barely answers the music.
+/// **Linear peak amplitude**, which is Winamp's own scale. A skin does the perceptual conversion
+/// itself: Defix maps the byte through `73.813 · x^¼ − 100` and then applies its own attack/decay
+/// before it turns a needle. Handing it a value that is already dB-mapped over a noise floor *and*
+/// smoothed compresses the same signal twice, and the needle then sits high and barely answers the
+/// music. The one smoothing kept is a release-only falloff on the read (`levels`), because half the
+/// VU skins have no ballistics of their own.
 ///
 /// Three things have to be right, and each was wrong on its own:
 ///
@@ -88,10 +89,29 @@ final class WinampModernLevelMeter {
         self.consumerId = consumerId
     }
 
-    /// Latest level per channel, 0…1 linear. Read on the main thread, once per skin timer tick.
+    /// Latest level per channel, 0…1 linear, with a VU's falloff. Read on the main thread, once per
+    /// skin timer tick.
+    ///
+    /// A block peak rises at once and falls back with `releaseTime`. Raw, consecutive ~13 ms blocks
+    /// on music swing by two-thirds of a needle's sweep (measured on wTunes, whose needle draws the
+    /// byte as is), so every skin without ballistics of its own twitched. Skins that do have their
+    /// own (Defix, mmd3) keep their attack and only fall a little slower.
     var levels: (left: Double, right: Double) {
-        let level = level(at: ProcessInfo.processInfo.systemUptime)
-        return (level.left, level.right)
+        let now = ProcessInfo.processInfo.systemUptime
+        held = Self.falloff(from: held, toward: level(at: now), elapsed: now - heldAt)
+        heldAt = now
+        return (held.left, held.right)
+    }
+    private var held = Level.silence
+    private var heldAt: TimeInterval = 0
+
+    /// The time constant a needle falls back with — a VU's ~300 ms integration.
+    static let releaseTime: TimeInterval = 0.3
+
+    /// Instant attack, exponential release, per channel.
+    static func falloff(from held: Level, toward raw: Level, elapsed: TimeInterval) -> Level {
+        let decay = exp(-max(0, elapsed) / releaseTime)
+        return Level(left: max(raw.left, held.left * decay), right: max(raw.right, held.right * decay))
     }
 
     /// The block that is current at `now`, or silence once the tap has stopped feeding us.
@@ -171,6 +191,7 @@ final class WinampModernLevelMeter {
         blocks = []
         lastArrival = nil
         lock.unlock()
+        held = .silence
     }
 
     /// Split one arriving buffer into blocks and schedule them.

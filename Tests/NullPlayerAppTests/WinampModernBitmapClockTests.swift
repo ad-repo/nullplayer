@@ -46,6 +46,16 @@ final class WinampModernBitmapClockTests: XCTestCase {
         XCTAssertEqual(scene.metrics.width(of: scene.clock, text: "63:16"), 15 + 15 + 6 + 15 + 15)
     }
 
+    /// A colon inked *past* its declared width is still drawn: the whole atlas cell goes down and
+    /// only the advance narrows. 1010 Fullscreen's 60px numfont inks its colon mid-cell with
+    /// `timecolonwidth="29"`, and cropping the cell to 29 columns drew every colon as a gap.
+    func testAColonInkedPastItsWidthIsStillDrawn() throws {
+        let scene = try makeScene(colon: #"timecolonwidth="6""#, seconds: 63 * 60 + 16, colonInk: 6...6)
+
+        XCTAssertEqual(scene.inkColumns(),
+                       expectedColumns(for: "63:16", colon: 6, colonInk: 6...6))
+    }
+
     // MARK: - What must not change
 
     /// An atlas clock with no `timecolonwidth` keeps the fixed pitch it always had. The attribute is
@@ -73,12 +83,13 @@ final class WinampModernBitmapClockTests: XCTestCase {
     /// Where each glyph's ink lands when `text` is drawn from column 0 with a 15px atlas cell and a
     /// `colon`-wide colon cell. Every glyph is inked into columns 1…13 of its own cell and the colon
     /// into columns 1…4 of its (narrower) one, so the drawn run reads back as an exact column set.
-    private func expectedColumns(for text: String, colon: Int) -> [Int] {
+    private func expectedColumns(for text: String, colon: Int,
+                                 colonInk: ClosedRange<Int> = 1...4) -> [Int] {
         var columns: Set<Int> = []
         var x = 0
         for character in text {
             let cell = character == ":" ? colon : 15
-            let ink = character == ":" ? 1...4 : 1...13
+            let ink = character == ":" ? colonInk : 1...13
             columns.formUnion(ink.map { x + $0 })
             x += cell
         }
@@ -114,7 +125,8 @@ final class WinampModernBitmapClockTests: XCTestCase {
     }
 
     private func makeScene(colon: String, seconds: TimeInterval,
-                           display: String = #"display="time""#) throws -> Scene {
+                           display: String = #"display="time""#,
+                           colonInk: ClosedRange<Int> = 1...4) throws -> Scene {
         let xml = """
         <WasabiXML>
           <bitmap id="nums.source" file="numfont.png" x="0" y="0" w="240" h="93"/>
@@ -126,7 +138,7 @@ final class WinampModernBitmapClockTests: XCTestCase {
           </container>
         </WasabiXML>
         """
-        let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: try makeArchive(xml: xml))
+        let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: try makeArchive(xml: xml, colonInk: colonInk))
         addTeardownBlock { loaded.teardown() }
         let host = Host()
         host.currentTime = seconds
@@ -141,7 +153,7 @@ final class WinampModernBitmapClockTests: XCTestCase {
     /// The engine's sheet geometry, drawn as blocks: 16 columns of 15px by 3 rows of 31px, digits on
     /// row 1 columns 0…9 and the colon on row 1 column 12 — Winamp's fixed three-row glyph map, which
     /// is what `WasabiSceneRenderer` indexes the atlas by.
-    private func makeAtlas() throws -> Data {
+    private func makeAtlas(colonInk: ClosedRange<Int>) throws -> Data {
         let (width, height) = (240, 93)
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         func fill(column: Int, ink: ClosedRange<Int>) {
@@ -153,7 +165,7 @@ final class WinampModernBitmapClockTests: XCTestCase {
             }
         }
         for digit in 0...9 { fill(column: digit, ink: 1...13) }
-        fill(column: 12, ink: 1...4)
+        fill(column: 12, ink: colonInk)
         let context = pixels.withUnsafeMutableBytes { bytes in
             CGContext(data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8,
                       bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
@@ -164,7 +176,7 @@ final class WinampModernBitmapClockTests: XCTestCase {
                                                                             properties: [:]))
     }
 
-    private func makeArchive(xml: String) throws -> URL {
+    private func makeArchive(xml: String, colonInk: ClosedRange<Int>) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("WinampModernBitmapClockTests-\(UUID().uuidString)",
                                     isDirectory: true)
@@ -172,7 +184,7 @@ final class WinampModernBitmapClockTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("clock-\(UUID().uuidString).wal")
         let archive = try Archive(url: url, accessMode: .create)
-        for (name, payload) in [("skin.xml", Data(xml.utf8)), ("numfont.png", try makeAtlas())] {
+        for (name, payload) in [("skin.xml", Data(xml.utf8)), ("numfont.png", try makeAtlas(colonInk: colonInk))] {
             try archive.addEntry(with: name, type: .file, uncompressedSize: Int64(payload.count),
                                  compressionMethod: .none) { position, size in
                 let start = Int(position)

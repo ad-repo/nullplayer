@@ -110,7 +110,8 @@ way of doing it (`defaults write` recipes, `NULLPLAYER_SKIN` for a `.wmz`, a bar
 `./.build/debug/NullPlayer`, `kill_build_run.sh` without `--debug`) has launched the wrong skin in
 a past session, silently.
 
-- `<skin>` is a bare installed name (searched across `Skins/`, `WinampModernSkins/`, `WMPSkins/`),
+- `<skin>` is a bare installed name (searched across `Skins/`, `WinampModernSkins/`, `WMPSkins/`, then
+  the `.wal` corpus's `WinampModernCorpus/{gold,silver}/`),
   `name.ext` to pin a family, or an absolute path. A name found in two families **fails and lists
   both** rather than guessing. A `.wmz` path outside `WMPSkins/` is imported via `-wmpSkinPath`.
   `audion:<name>` names a folder under `AudionFaces/` holding `index.json`, passed as
@@ -278,6 +279,11 @@ read -r WID _ X Y W H _ < <("$WH" windows --pid "$PID" --size 289x283)   # the s
   non-zero. It retries three times, 400 ms apart, because a pane that is fading in or resizing
   changes size between the listing and the shot. `-l` sees the window regardless of occlusion,
   unlike `-R`, which photographs the screen.
+- **A see-through window captures white.** A `.wal` frame laid over a separate content window
+  (Ebonite's, Itemskin's `desktopalpha` glued frames) comes back from `capture` with its hollow
+  middle filled white, which reads exactly like a frame painting over its content. Three launches
+  were spent on that on 2026-10-20 while Ebonite's Album Art was drawing the cover correctly.
+  Photograph the screen with `capture-region` before believing a white interior.
 - **A wheel gesture has two devices and a surface may read only one (W246).** `.line` events carry
   a line count and `.pixel` events a precise, continuous delta in points — the trackpad's, and the
   only one `hasPreciseScrollingDeltas` is true for. A list that advances one row per event however

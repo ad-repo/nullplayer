@@ -112,7 +112,7 @@ final class WinampModernPhase32Tests: XCTestCase {
         let loaded = try WinampModernSkinLoader().load(from: url)
         let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host)
         defer {
-            UserDefaults.standard.removeObject(
+            WinampModernConfiguration.processDefaults.removeObject(
                 forKey: "winampModern.config.\(loaded.configuration.namespace).appearance.theme")
         }
         let list = try XCTUnwrap(renderer.colorThemeLists().first { $0.object.xmlID == "near.list" })
@@ -203,6 +203,23 @@ final class WinampModernPhase32Tests: XCTestCase {
         XCTAssertTrue(renderer.colorThemeLists().isEmpty)
     }
 
+    /// B183: ghost artwork takes no press itself, but it still paints the window, and the stock
+    /// notifier is nothing but ghosts over a layout whose script takes the click.
+    func testGhostArtworkCountsAsPaintedOnlyWhenAsked() throws {
+        let xml = """
+        <WasabiXML>
+          <elements><bitmap id="sheet" file="sheet.png"/></elements>
+          <container id="Main"><layout id="normal" w="50" h="50"><layer image="sheet" ghost="1"/></layout></container>
+        </WasabiXML>
+        """
+        let loaded = try WinampModernSkinLoader().load(from: try makeArchive(xml: xml))
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: Host())
+        defer { renderer.teardown(); loaded.teardown() }
+        let point = CGPoint(x: 2, y: 2)
+        XCTAssertFalse(renderer.containsVisiblePixel(at: point))
+        XCTAssertTrue(renderer.containsVisiblePixel(at: point, includingGhosts: true))
+    }
+
     /// An artwork-less `<Wasabi:Button text="…">` is drawn and clickable (§5). No `.wal` ships
     /// `wasabi.button.*` artwork — it lives inside Winamp — so without this the Switch button under
     /// three skins' theme lists is invisible.
@@ -242,7 +259,7 @@ final class WinampModernPhase32Tests: XCTestCase {
     private func makeSkin() throws -> (WinampModernLoadedSkin, WasabiSceneRenderer) {
         let loaded = try WinampModernSkinLoader().load(from: try makeArchive(xml: Self.skinXML))
         addTeardownBlock {
-            UserDefaults.standard.removeObject(
+            WinampModernConfiguration.processDefaults.removeObject(
                 forKey: "winampModern.config.\(loaded.configuration.namespace).appearance.theme")
         }
         return (loaded, try WasabiSceneRenderer(loadedSkin: loaded, host: Host()))

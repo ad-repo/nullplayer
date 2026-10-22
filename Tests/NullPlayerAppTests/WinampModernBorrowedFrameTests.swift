@@ -42,10 +42,10 @@ final class WinampModernBorrowedFrameTests: XCTestCase {
     /// is the size of the *client*, so a 33x55 border eating into it left the chrome around a sliver.
     func testAHostedWindowGrowsByTheBorderItWears() throws {
         let loaded = try makeSkin(xml: Self.borrowedFrameSkin)
-        guard case .skinFrame(let frame) = loaded.surfaceSynthesis.hostedWindows[.cava],
-              let definition = WinampModernHostedWindowRegistry.entry(id: .cava) else {
+        guard case .skinFrame(let frame) = loaded.surfaceSynthesis.hostedWindows[.cava] else {
             return XCTFail("expected a borrowed-frame route")
         }
+        let definition = WinampModernHostedWindowID.cava.definition
         let request = WinampModernHostedWindowInstantiation(definition: definition, frame: frame)
         // The exemplar's client is `w="-53" h="-66"`, so the border costs 53x66.
         XCTAssertEqual(request.defaultSize.width, definition.defaultSize.width + 53)

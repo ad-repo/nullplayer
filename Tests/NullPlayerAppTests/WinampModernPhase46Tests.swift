@@ -12,8 +12,8 @@ import ZIPFoundation
 /// The decision this phase closes: it drives **NullPlayer's own UI Size**, not a skin-local scale.
 /// A `.wal` scene is laid out on the skin's pixel grid and `WinampModernMainView` applies UI Size
 /// at its drawing and input boundaries (Phase 10) — a second, layout-local scale would be a rival
-/// for the same pixels, and the two would fight over every window's size. `getScale()` therefore
-/// stays 1: the layout's own scale really is 1, whatever size the windows are drawn at.
+/// for the same pixels, and the two would fight over every window's size. `getScale()` answers that
+/// UI Size, because skins that fill the screen size themselves to `viewport / getScale()`.
 final class WinampModernPhase46Tests: XCTestCase {
     private final class TestHost: WinampModernHost {
         var playbackState: PlaybackState = .stopped
@@ -79,7 +79,7 @@ final class WinampModernPhase46Tests: XCTestCase {
     func testSetScaleOnALayoutAsksTheHostForThatUISize() throws {
         let (runtime, program) = try makeRuntime()
         var requested: [CGFloat] = []
-        runtime.uiScaleRequested = { requested.append($0) }
+        runtime.hooks.uiScaleRequested = { requested.append($0) }
         let layout = try reference(runtime, xmlID: "normal")
 
         _ = try runtime.invoke(method: "setScale", on: layout, arguments: [.double(1.75)],
@@ -95,7 +95,7 @@ final class WinampModernPhase46Tests: XCTestCase {
     func testSetScaleOnANonLayoutIsAcceptedAndAsksForNothing() throws {
         let (runtime, program) = try makeRuntime()
         var requested: [CGFloat] = []
-        runtime.uiScaleRequested = { requested.append($0) }
+        runtime.hooks.uiScaleRequested = { requested.append($0) }
         let button = try reference(runtime, xmlID: "b")
 
         let result = try runtime.invoke(method: "setScale", on: button, arguments: [.double(2)],
@@ -113,7 +113,7 @@ final class WinampModernPhase46Tests: XCTestCase {
     func testAnUnusableFactorIsNotOfferedToTheHost() throws {
         let (runtime, program) = try makeRuntime()
         var requested: [CGFloat] = []
-        runtime.uiScaleRequested = { requested.append($0) }
+        runtime.hooks.uiScaleRequested = { requested.append($0) }
         let layout = try reference(runtime, xmlID: "normal")
 
         for bad: Double in [0, -2, .nan, .infinity] {
@@ -127,18 +127,19 @@ final class WinampModernPhase46Tests: XCTestCase {
         XCTAssertEqual(requested, [4], "and a wild value arrives clamped")
     }
 
-    /// The read half stays 1. ClassicPro multiplies its resize arithmetic by `getScale()`, and that
-    /// arithmetic is in skin pixels — where the scale *is* 1 however large the window is drawn.
-    func testGetScaleStillAnswersOneAfterASetScale() throws {
+    /// The read half answers the host's UI Size — Nitrous Audio's monitor mode, 1010's party mode and
+    /// ClassicPro's maximize size the layout to `viewport / getScale()`, and answered 1 at 135% they
+    /// opened 1.35× the screen. With no host to ask (the harness), it is 1.
+    func testGetScaleAnswersTheHostsUISize() throws {
         let (runtime, program) = try makeRuntime()
-        runtime.uiScaleRequested = { _ in }
         let layout = try reference(runtime, xmlID: "normal")
+        func scale() throws -> Double? {
+            try runtime.invoke(method: "getScale", on: layout, arguments: [], program: program).doubleValue
+        }
 
-        _ = try runtime.invoke(method: "setScale", on: layout, arguments: [.double(3)],
-                               program: program)
-        let scale = try runtime.invoke(method: "getScale", on: layout, arguments: [], program: program)
-
-        XCTAssertEqual(scale.doubleValue, 1)
+        XCTAssertEqual(try scale(), 1)
+        runtime.hooks.uiScaleQuery = { 1.35 }
+        XCTAssertEqual(try XCTUnwrap(scale()), 1.35, accuracy: 0.0001)
     }
 
     /// Defix asks nine times for one click (five scripts, one holder per window). The host is what
@@ -147,7 +148,7 @@ final class WinampModernPhase46Tests: XCTestCase {
     func testARepeatedRequestIsForwardedEveryTime() throws {
         let (runtime, program) = try makeRuntime()
         var requested: [CGFloat] = []
-        runtime.uiScaleRequested = { requested.append($0) }
+        runtime.hooks.uiScaleRequested = { requested.append($0) }
         let layout = try reference(runtime, xmlID: "normal")
 
         for _ in 0..<9 {
@@ -161,9 +162,9 @@ final class WinampModernPhase46Tests: XCTestCase {
     /// closure onto a torn-down window controller is how a skin switch resizes the wrong windows.
     func testTeardownReleasesTheHook() throws {
         let (runtime, _) = try makeRuntime()
-        runtime.uiScaleRequested = { _ in }
+        runtime.hooks.uiScaleRequested = { _ in }
         runtime.teardown()
-        XCTAssertNil(runtime.uiScaleRequested)
+        XCTAssertNil(runtime.hooks.uiScaleRequested)
     }
 
     // MARK: - Helpers

@@ -20,12 +20,9 @@ enum WasabiFrame {
     /// on each side, leaving the grab strip between them.
     static let dividerHalfThickness = 4.0
 
-    static func isFrame(typeName: String) -> Bool {
-        let lower = typeName.lowercased()
-        return lower == "wasabi:frame" || lower == "frame"
+    static func isFrame(_ tag: WasabiTag) -> Bool {
+        tag.isStandard(.frame)
     }
-
-    static func isFrame(_ object: WasabiObject) -> Bool { isFrame(typeName: object.typeName) }
 
     /// The two group identifiers this frame instantiates, in `from`-edge-first document order
     /// (`left`/`right` for a vertical divider, `top`/`bottom` for a horizontal one). Empty when the

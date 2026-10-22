@@ -4,12 +4,6 @@ import XCTest
 
 final class WinampModernHostedProviderTests: XCTestCase {
     func testRegistryEnablesEveryInitialProviderThroughOneContract() throws {
-        XCTAssertEqual(WinampModernHostedWindowRegistry.all.map(\.id),
-                       WinampModernHostedWindowID.allCases)
-        XCTAssertEqual(Set(WinampModernHostedWindowRegistry.all.map(\.id)).count,
-                       WinampModernHostedWindowID.allCases.count)
-        XCTAssertTrue(WinampModernHostedWindowRegistry.all.allSatisfy { $0.makeSurface != nil })
-
         let context = WinampModernHostedSurfaceContext(
             audioEngine: WindowManager.shared.audioEngine,
             nativeWindow: { nil },
@@ -17,7 +11,7 @@ final class WinampModernHostedProviderTests: XCTestCase {
             requestFullscreen: {})
         var surfaces: [WinampModernHostedWindowID: WinampModernHostedSurface] = [:]
         for definition in WinampModernHostedWindowRegistry.all {
-            let surface = try XCTUnwrap(definition.makeSurface?(context))
+            let surface = definition.makeSurface(context)
             surfaces[definition.id] = surface
             XCTAssertTrue(surface.view === surface.view)
         }
@@ -39,9 +33,9 @@ final class WinampModernHostedProviderTests: XCTestCase {
     }
 
     func testRegistryGeometryRemainsFeatureSpecific() throws {
-        let peppy = try XCTUnwrap(WinampModernHostedWindowRegistry.entry(id: .peppyMeter))
-        let waveform = try XCTUnwrap(WinampModernHostedWindowRegistry.entry(id: .waveform))
-        let spectrum = try XCTUnwrap(WinampModernHostedWindowRegistry.entry(id: .spectrum))
+        let peppy = WinampModernHostedWindowID.peppyMeter.definition
+        let waveform = WinampModernHostedWindowID.waveform.definition
+        let spectrum = WinampModernHostedWindowID.spectrum.definition
 
         XCTAssertEqual(peppy.defaultSize, SkinElements.PeppyMeterWindow.windowSize)
         XCTAssertEqual(waveform.defaultSize, SkinElements.WaveformWindow.windowSize)
@@ -111,12 +105,12 @@ final class WinampModernHostedProviderTests: XCTestCase {
     private func instantiation(_ id: WinampModernHostedWindowID,
                                playerWidth: CGFloat?) throws
         -> WinampModernHostedWindowInstantiation {
-        let definition = try XCTUnwrap(WinampModernHostedWindowRegistry.entry(id: id))
+        let definition = id.definition
         return WinampModernHostedWindowInstantiation(
             definition: definition,
-            frame: WinampModernHostedFrameDescriptor(groupIdentifier: "test.frame",
-                                                     xuiTag: "Wasabi:StandardFrame",
-                                                     hasArtwork: true),
+            frame: WasabiSurfaceSynthesizer.Frame(groupIdentifier: "test.frame",
+                                                  xuiTag: "Wasabi:StandardFrame",
+                                                  hasArtwork: true),
             playerWidth: playerWidth)
     }
 
@@ -126,7 +120,7 @@ final class WinampModernHostedProviderTests: XCTestCase {
     func testANarrowerPlayerLowersTheDeclaredWidthFloor() throws {
         for id in WinampModernHostedWindowID.allCases {
             let request = try instantiation(id, playerWidth: 240)
-            let registry = try XCTUnwrap(WinampModernHostedWindowRegistry.entry(id: id)).minimumSize
+            let registry = id.definition.minimumSize
             XCTAssertEqual(request.minimumSize.width, min(registry.width, 240), accuracy: 0.001,
                            "\(id) kept a width floor above the player")
             XCTAssertEqual(request.minimumSize.height, registry.height, accuracy: 0.001,
@@ -137,14 +131,14 @@ final class WinampModernHostedProviderTests: XCTestCase {
     /// A wide player never *raises* the floor: the registry minimum is what the content needs.
     func testAWiderPlayerLeavesTheDeclaredFloorAlone() throws {
         let request = try instantiation(.cava, playerWidth: 900)
-        let registry = try XCTUnwrap(WinampModernHostedWindowRegistry.entry(id: .cava)).minimumSize
+        let registry = WinampModernHostedWindowID.cava.definition.minimumSize
 
         XCTAssertEqual(request.minimumSize, registry)
     }
 
     /// No player on screen to measure, and no degenerate one, leaves the registry floor in place.
     func testAnUnmeasurablePlayerLeavesTheDeclaredFloorAlone() throws {
-        let registry = try XCTUnwrap(WinampModernHostedWindowRegistry.entry(id: .spectrum)).minimumSize
+        let registry = WinampModernHostedWindowID.spectrum.definition.minimumSize
 
         XCTAssertEqual(try instantiation(.spectrum, playerWidth: nil).minimumSize, registry)
         XCTAssertEqual(try instantiation(.spectrum, playerWidth: 0).minimumSize, registry)

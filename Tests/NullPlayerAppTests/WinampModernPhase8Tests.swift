@@ -308,15 +308,15 @@ final class WinampModernPhase8Tests: XCTestCase {
     func testIsMouseOverRectDistinguishesInsideFromOutside() throws {
         let runtime = try makeGraphRuntime()
         let receiver = try object(named: "receiver", in: runtime)
-        runtime.resolvedGeometryRequested = { object in
+        runtime.hooks.resolvedGeometryRequested = { object in
             guard object === receiver else { return nil }
             let frame = CGRect(x: 20, y: 30, width: 40, height: 10)
             return (frame, frame)
         }
-        runtime.mousePositionInObjectSpaceRequested = { _ in CGPoint(x: 25, y: 35) }
+        runtime.hooks.mousePositionInObjectSpaceRequested = { _ in CGPoint(x: 25, y: 35) }
         XCTAssertTrue(try invokeMouseOver(receiver, in: runtime))
 
-        runtime.mousePositionInObjectSpaceRequested = { _ in CGPoint(x: 19, y: 35) }
+        runtime.hooks.mousePositionInObjectSpaceRequested = { _ in CGPoint(x: 19, y: 35) }
         XCTAssertFalse(try invokeMouseOver(receiver, in: runtime))
     }
 
@@ -324,12 +324,12 @@ final class WinampModernPhase8Tests: XCTestCase {
         let runtime = try makeGraphRuntime()
         let main = try object(named: "receiver", in: runtime)
         let auxiliary = try object(named: "other.container.target", in: runtime)
-        runtime.resolvedGeometryRequested = { object in
+        runtime.hooks.resolvedGeometryRequested = { object in
             guard object === main || object === auxiliary else { return nil }
             let frame = CGRect(x: 0, y: 0, width: 10, height: 10)
             return (frame, frame)
         }
-        runtime.mousePositionInObjectSpaceRequested = { object in
+        runtime.hooks.mousePositionInObjectSpaceRequested = { object in
             object === auxiliary ? CGPoint(x: 5, y: 5) : CGPoint(x: 50, y: 50)
         }
 
@@ -341,7 +341,7 @@ final class WinampModernPhase8Tests: XCTestCase {
     func testIsMouseOverRectIsFalseWhenNoWindowCanPlaceTheObject() throws {
         let runtime = try makeGraphRuntime()
         let receiver = try object(named: "receiver", in: runtime)
-        runtime.resolvedGeometryRequested = { _ in
+        runtime.hooks.resolvedGeometryRequested = { _ in
             let frame = CGRect(x: 0, y: 0, width: 10, height: 10)
             return (frame, frame)
         }

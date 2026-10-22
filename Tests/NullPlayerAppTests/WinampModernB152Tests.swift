@@ -61,7 +61,7 @@ final class WinampModernB152Tests: XCTestCase {
         var mutations = 0
         var repaints: [WasabiObjectID] = []
         runtime.graphDidMutate = { mutations += 1 }
-        runtime.objectRepaintRequested = { repaints.append($0.stableID) }
+        runtime.hooks.objectRepaintRequested = { repaints.append($0.stableID) }
         return Counts(mutations: { mutations }, objectRepaints: { repaints })
     }
 

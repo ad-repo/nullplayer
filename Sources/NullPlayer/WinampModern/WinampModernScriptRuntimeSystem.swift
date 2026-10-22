@@ -7,6 +7,24 @@ import Foundation
 /// out of `WinampModernScriptRuntime.swift`; see
 /// `skills/winamp-modern-skin-guide/reference/compatibility/maki-surface.md`.
 extension WinampModernScriptRuntime {
+    /// `newGroup`, `newGroupAsLayout` and `GroupList.instantiate` for a group the skin never defined:
+    /// Winamp answers NULL and the script carries on. 19 skins ask for one (machina's frames name a
+    /// `component.content.group` it dropped), and a throw aborted the rest of each handler.
+    func instantiateOrNull(_ identifier: String, _ parent: WasabiObject, program: MakiProgram) throws -> WasabiObject? {
+        guard let instantiate = loadedSkin.runtime.instantiateGroup else { return nil }
+        do {
+            return try instantiate(identifier, parent)
+        } catch let failure as WalFailure
+            where failure.diagnostics.allSatisfy({ $0.code == .missingGroupDefinition }) {
+            report(WalDiagnostic(.missingGroupDefinition,
+                                 "Script requested unknown group '\(identifier)'; it answered null.",
+                                 severity: .warning, location: program.source))
+            return nil
+        }
+    }
+
+    private var playItemString: String { host.trackPath.isEmpty ? host.trackDisplayTitle : host.trackPath }
+
     func invokeSystem(method: String, arguments: [MakiValue], program: MakiProgram) throws -> MakiValue {
         // A script may call a *system* event handler as a method to reuse it, exactly as it may an
         // object's (`System.onEqFreqChanged(freqmode)` in ClassicPro's `eq.m`).
@@ -20,13 +38,13 @@ extension WinampModernScriptRuntime {
                              arguments: arguments, in: [program])
             return .null
         }
-        if Self.dispatchableEventArity[method] != nil {
+        if WinampModernScriptSignatures.dispatchableEventArity[method] != nil {
             _ = try dispatchSystem(event: method, arguments: arguments)
             return method == "onaction" ? .integer(0) : .null
         }
         switch method {
         case "getcontainer":
-            return objectValue(findRoot(type: "container", xmlID: arguments[0].stringValue))
+            return objectValue(findRoot(type: .container, xmlID: arguments[0].stringValue))
         case "newdynamiccontainer":
             return objectValue(dynamicContainer(named: arguments[0].stringValue, for: program))
         case "getscriptgroup":
@@ -43,16 +61,33 @@ extension WinampModernScriptRuntime {
         case "getvisband":
             return .integer(visBand(channel: arguments[0].integerValue, band: arguments[1].integerValue))
         case "getvolume": return .integer(Int32((host.volume * 255).rounded()))
+        // Winamp keeps the volume in a byte, so a level outside 0…255 wraps rather than clamps — and a
+        // skin can be written against that. Symplicipod's rotary knob hands the left half of its
+        // sweep over as −254…−127, which only reads as the 2…129 its right half continues from once
+        // wrapped; clamped, half the knob was mute and the volume jumped as the pointer crossed the top.
         case "setvolume":
-            let level = max(0, min(255, arguments[0].integerValue))
+            let level = Int32(UInt8(truncatingIfNeeded: arguments[0].integerValue))
             host.volume = Double(level) / 255
+            noteVolumeAnnounced()
             // The change is what a skin listens for. Re-entrancy is bounded by the dispatch guard, so
             // a handler that sets the volume again cannot recurse.
             _ = try? dispatchSystem(event: "onvolumechanged", arguments: [.integer(level)])
+            postPosition(level, to: .volume)
             return .null
         case "play": host.play(); return .null
         case "pause": host.pause(); return .null
         case "stop": host.stop(); return .null
+        case "previous": host.previous(); return .null
+        case "next": host.next(); return .null
+        // Winamp's eject is the open-file dialog, as the `EJECT` button action is.
+        case "eject": host.openFiles(); return .null
+        // The player's own window commands: minimize takes the whole skin down together, and
+        // closing the player quits (`Application.shutdown()`).
+        case "minimizeapplication": hooks.actionRequested?("MINIMIZE", nil); return .null
+        case "shutdown": hooks.actionRequested?("CLOSE", nil); return .null
+        case "restoreapplication": hooks.applicationRaiseRequested?(true); return .null
+        case "activateapplication": hooks.applicationRaiseRequested?(false); return .null
+        case "windowmenu": hooks.windowMenuRequested?(); return .null
         // Milliseconds, like `getPosition` and `getPlayItemLength` — see `getposition`.
         case "seekto":
             host.seek(to: TimeInterval(arguments[0].integerValue) / 1000)
@@ -107,6 +142,11 @@ extension WinampModernScriptRuntime {
         case "string": return .string(arguments[0].stringValue)
         case "boolean": return .boolean(arguments[0].truthy)
         case "strlen": return .integer(Int32(clamping: arguments[0].stringValue.count))
+        // A code point to a one-character string. Skins spell path separators (`chr(92)`) and
+        // accented ranges with it; a value that is not a scalar answers empty rather than trapping.
+        case "chr":
+            return .string(Unicode.Scalar(UInt32(truncatingIfNeeded: arguments[0].integerValue))
+                .map { String(Character($0)) } ?? "")
         case "strlower": return .string(arguments[0].stringValue.lowercased())
         case "strupper": return .string(arguments[0].stringValue.uppercased())
         // RFC 3986 unreserved set, everything else escaped. Deliberately stricter than
@@ -170,7 +210,8 @@ extension WinampModernScriptRuntime {
                                                key: arguments[1].stringValue)
             return .null
         case "getitem":
-            return dynamicValue(role: .configItem(section: arguments[0].stringValue))
+            let section = WinampModernConfigBridge.section(forItemName: arguments[0].stringValue)
+            return dynamicValue(role: .configItem(section: section))
         case "getitembyguid":
             // Winamp's config is addressed either by display name or by the owning component's GUID.
             // Both name the same private store here, so the GUID is simply the section key —
@@ -190,29 +231,6 @@ extension WinampModernScriptRuntime {
         // A skin's trace output. Deliberately dropped rather than logged: it is per-frame in some
         // skins, and nothing in NullPlayer consumes it.
         case "debugstring": return .null
-        case "getviewportwidth": return .integer(Int32(NSScreen.main?.frame.width ?? 0))
-        case "getviewportheight": return .integer(Int32(NSScreen.main?.frame.height ?? 0))
-        case "getviewportleft", "getviewporttop", "getviewportleftfromguiobject", "getviewporttopfromguiobject":
-            return .integer(0)
-        case "getviewportwidthfromguiobject": return .integer(Int32(NSScreen.main?.frame.width ?? 0))
-        case "getviewportheightfromguiobject": return .integer(Int32(NSScreen.main?.frame.height ?? 0))
-        // The monitor is the whole display containing the skin's player window. Do not derive this
-        // from `NSScreen.main`: that is the primary display, not necessarily the one the skin is on.
-        // The controller answers in logical screen points so Retina backing pixels never enter MAKI
-        // geometry. The direct AppKit lookup is only the headless/unwired fallback.
-        case "getmonitorwidth":
-            return .integer(Self.screenDimension(monitorSizeRequested?()?.width
-                                                  ?? NSScreen.main?.frame.width))
-        case "getmonitorheight":
-            return .integer(Self.screenDimension(monitorSizeRequested?()?.height
-                                                  ?? NSScreen.main?.frame.height))
-        case "getmonitorleft", "getmonitortop": return .integer(0)
-        case "getcurappleft": return .integer(Self.appFrameDimension(playerWindowFrame?.minX))
-        case "getcurapptop": return .integer(Self.appFrameDimension(playerWindowFrame?.minY))
-        case "getcurappwidth": return .integer(Self.appFrameDimension(playerWindowFrame?.width))
-        case "getcurappheight": return .integer(Self.appFrameDimension(playerWindowFrame?.height))
-        case "getmouseposx": return .integer(Int32(clamping: Int((mousePositionRequested?().x ?? 0).rounded())))
-        case "getmouseposy": return .integer(Int32(clamping: Int((mousePositionRequested?().y ?? 0).rounded())))
         case "atan": return .float(atan(arguments[0].doubleValue))
         // The rest of MAKI's math library. Every result is guarded against a domain error: a script
         // that asks for `sqrt(-1)` gets 0 rather than a NaN that would then travel into a coordinate
@@ -236,11 +254,11 @@ extension WinampModernScriptRuntime {
             default: result = abs(x)
             }
             return .double(result.isFinite ? result : 0)
-        case "geteq": return .integer((equalizerEnabledRequested?() ?? false) ? 1 : 0)
+        case "geteq": return .integer((hooks.equalizerEnabledRequested?() ?? false) ? 1 : 0)
         case "geteqband":
-            return .integer(Int32(clamping: equalizerBandRequested?(Int(arguments[0].integerValue)) ?? 0))
+            return .integer(Int32(clamping: hooks.equalizerBandRequested?(Int(arguments[0].integerValue)) ?? 0))
         case "seteqband":
-            equalizerBandSetterRequested?(Int(arguments[0].integerValue), Int(arguments[1].integerValue))
+            hooks.equalizerBandSetterRequested?(Int(arguments[0].integerValue), Int(arguments[1].integerValue))
             // The change is what a skin listens for, exactly as `setVolume` announces itself. The
             // funnel dispatches only on a real change, so a handler that writes the band it was just
             // told about stops there rather than recursing.
@@ -249,11 +267,12 @@ extension WinampModernScriptRuntime {
         // The preamp is the band before band 0, on the same −127…127 scale. Rika's `eq.xml` reads it
         // while wiring its own equalizer window, and the miss aborted that whole script.
         case "geteqpreamp":
-            return .integer(Int32(clamping: equalizerPreampRequested?() ?? 0))
+            return .integer(Int32(clamping: hooks.equalizerPreampRequested?() ?? 0))
         case "seteqpreamp":
-            equalizerPreampSetterRequested?(Int(arguments[0].integerValue))
+            hooks.equalizerPreampSetterRequested?(Int(arguments[0].integerValue))
             refreshEqualizerState()
             return .null
+        case "seteq": hooks.equalizerEnabledSetterRequested?(arguments[0].truthy); return .null
         case "getruntimeversion": return .integer(5)
         case "getskinname": return .string(preferenceNamespace)
         // The player's own settings directory. Winamp answers its install/profile folder and skins
@@ -281,23 +300,25 @@ extension WinampModernScriptRuntime {
         // `@WINAMPPATH@` a skin writes in its own markup. Probes for Winamp's `/Lang` packs still
         // find nothing and still take their "not installed" branch.
         case "getapplicationpath": return .string(loadedSkin.vfs.winampRoot)
-        case "getcolortheme": return .string(activeThemeRequested?() ?? "Default")
+        case "getcolortheme": return .string(hooks.activeThemeRequested?() ?? "Default")
         case "setcolortheme":
-            _ = themeSwitchRequested?(arguments[0].stringValue)
+            _ = hooks.themeSwitchRequested?(arguments[0].stringValue)
             return .null
-        case "getnumcolorthemes": return .integer(Int32(clamping: themeNamesRequested?().count ?? 0))
+        case "getnumcolorthemes": return .integer(Int32(clamping: hooks.themeNamesRequested?().count ?? 0))
         case "enumcolorthemes":
-            let themes = themeNamesRequested?() ?? []
+            let themes = hooks.themeNamesRequested?() ?? []
             let index = Int(arguments[0].integerValue)
             return .string(themes.indices.contains(index) ? themes[index] : "")
-        case "gettimeofday": return .integer(Int32(truncatingIfNeeded: Int64(Date().timeIntervalSince1970 * 1000)))
         case "getplayitemdisplaytitle": return .string(host.trackDisplayTitle)
         // Winamp's play item string is the entry's filename or URL, not its title: 61 corpus call
         // sites hand it straight to `getExtension`, and ONYX V2's File Type readout printed the
         // title's tail ("sh - NullPlayer 20-minute sweep") while this answered the display title.
         // The title stays as the fallback for an item with no path, so `!= ""` still means playing.
-        case "getplayitemstring":
-            return .string(host.trackPath.isEmpty ? host.trackDisplayTitle : host.trackPath)
+        // Album-art scripts open their menu only when this is positive (BLAKK, Ebonite, B184). The
+        // host holds the playing track's art only, so another item answers 0.
+        case "getalbumart":
+            return .integer(arguments[0].stringValue == playItemString && host.albumArtwork != nil ? 1 : 0)
+        case "getplayitemstring": return .string(playItemString)
         // The whole key table lives on the host (`playItemMetadata(forKey:)`) rather than here: a
         // file-info panel asks for eighteen different fields and hides the line for every key that
         // comes back empty, and the harness has to answer them the same way the live host does.
@@ -313,7 +334,8 @@ extension WinampModernScriptRuntime {
         // The argument names an item, but every call site in the corpus passes the *current* one, and
         // the host only knows what it is decoding now — so the answer is about the playing track.
         case "getdecodername": return .string(host.decoderName)
-        case "isvideo", "isvideofullscreen", "iskeydown", "isminimized":
+        case "isminimized": return .boolean(hooks.applicationMinimizedRequested?() ?? false)
+        case "isvideo", "isvideofullscreen", "iskeydown":
             return .boolean(false)
         // A *component's* window, addressed by GUID. Winamp answers for the plugin windows it has
         // loaded; the only ones we have are the components we put in a holder, so the question is
@@ -357,10 +379,10 @@ extension WinampModernScriptRuntime {
         // which resolves it through `WinampModernWebNavigationPolicy` (HTTP/HTTPS with a real host,
         // nothing else) and asks the user before the external one leaves the app (B40).
         case "navigateurl":
-            globalNavigationRequested?(.defaultBrowser, arguments[0].stringValue)
+            hooks.globalNavigationRequested?(.defaultBrowser, arguments[0].stringValue)
             return .null
         case "navigateurlbrowser":
-            globalNavigationRequested?(.internalBrowser, arguments[0].stringValue)
+            hooks.globalNavigationRequested?(.internalBrowser, arguments[0].stringValue)
             return .null
         // The skin's own copy commands — Defix's playlist "Copy … to clipboard" items, the
         // ClassicPro engine's file-info and album-art menus. The string is whatever the script
@@ -375,9 +397,10 @@ extension WinampModernScriptRuntime {
             // Wasabi creates the group as a child of the calling script's own group; the script then
             // positions it with `setXmlParam`. This is how Winamp Modern fills a window frame's
             // client area (`content=` → `newGroup` → the whole player UI).
-            guard let owner = program.ownerID.flatMap(loadedSkin.runtime.graph.object(withID:)),
-                  let instantiate = loadedSkin.runtime.instantiateGroup else { return .null }
-            let created = try instantiate(arguments[0].stringValue, owner)
+            guard let owner = program.ownerID.flatMap(loadedSkin.runtime.graph.object(withID:)) else { return .null }
+            guard let created = try instantiateOrNull(arguments[0].stringValue, owner, program: program) else {
+                return .null
+            }
             // The subtree's scripts start on **attachment**, not here: `newGroup` is only the first half
             // of Wasabi's two-step, and a script that runs before its group has been `init`'d into place
             // reads the wrong parent. See `pendingRuntimeGroups`.
@@ -397,11 +420,12 @@ extension WinampModernScriptRuntime {
         // The created object keeps its **group** type. Typing it `layout` would send the `resize`
         // above through `layoutResizeRequested` and resize the *window* to 164×78.
         case "newgroupaslayout":
-            guard let instantiate = loadedSkin.runtime.instantiateGroup,
-                  let parent = ownerLayout(forGroupDefinition: arguments[0].stringValue, program: program)
+            guard let parent = ownerLayout(forGroupDefinition: arguments[0].stringValue, program: program)
             else { return .null }
             // Appended last, so it draws over the drawer background it sits on rather than under it.
-            let floated = try instantiate(arguments[0].stringValue, parent)
+            guard let floated = try instantiateOrNull(arguments[0].stringValue, parent, program: program) else {
+                return .null
+            }
             pendingRuntimeGroups.append(floated)
             notifyGraphDidMutate()
             return objectValue(floated)
@@ -430,7 +454,6 @@ extension WinampModernScriptRuntime {
             loadedSkin.configuration.setInteger(arguments[1].integerValue,
                                                 section: "@public", key: arguments[0].stringValue)
             return .null
-        case "getdate": return .integer(Int32(truncatingIfNeeded: Int64(Date().timeIntervalSince1970)))
         // Winamp's `random(max)` answers 0…max-1. A non-positive bound has no range to draw from and
         // answers 0 rather than trapping — this is called from animation timers, where a crash would
         // take the skin down. Without it the stock skin's About page aborted at its first statement
@@ -438,8 +461,26 @@ extension WinampModernScriptRuntime {
         case "random":
             let bound = arguments[0].integerValue
             return .integer(bound > 0 ? Int32.random(in: 0..<bound) : 0)
-        case "getdatedoy":
-            return .integer(Int32(Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0))
+        case "sqr":
+            let x = arguments[0].doubleValue
+            return .double((x * x).isFinite ? x * x : 0)
+        case "frac":
+            let x = arguments[0].doubleValue
+            return .double(x.isFinite ? x - x.rounded(.towardZero) : 0)
+        case "enqueuefile":
+            if let url = skinSuppliedMediaURL(arguments[0].stringValue, method: method) {
+                componentHost?.playlistAppend(mediaAt: url, play: false)
+            }
+            return .null
+        // A null check that also catches a graph object that has gone: the reference resolves the
+        // way a method call on it would.
+        case "isobjectvalid":
+            guard case .object(let reference) = arguments[0] else { return .boolean(false) }
+            if case .gui(let objectID) = reference.kind {
+                return .boolean(loadedSkin.runtime.graph.object(withID: objectID) != nil)
+            }
+            if case .dynamic(let id) = reference.kind { return .boolean(dynamicObjects[id] != nil) }
+            return .boolean(true)
         case "playfile":
             if let url = skinSuppliedMediaURL(arguments[0].stringValue, method: method) {
                 componentHost?.playlistAppend(mediaAt: url, play: true)
@@ -463,15 +504,13 @@ extension WinampModernScriptRuntime {
         case "setcurrenttrackrating":
             host.currentTrackRating = Int(arguments[0].integerValue)
             return .null
-        case "getdateyear":
-            // Years since 1900, as C's `tm_year`. Pinned by the engine's own use of it: `cproabout.m`
-            // computes an age as `1899 + getDateYear(...) - birthYear` (+1 once the birthday has
-            // passed) and leap-year-tests it with `% 4`, both of which are only correct on that scale.
-            let date = arguments[0].integerValue > 0
-                ? Date(timeIntervalSince1970: TimeInterval(arguments[0].integerValue)) : Date()
-            return .integer(Int32(Calendar.current.component(.year, from: date) - 1900))
         default:
             if let value = classicProFileMethod(method, arguments: arguments) { return value }
+            if let value = systemClockValue(method, arguments: arguments)
+                ?? systemScreenValue(method, arguments: arguments) {
+                return value
+            }
+            if let value = try systemWindowValue(method, arguments: arguments) { return value }
             throw unsupported(method, program: program)
         }
     }
@@ -577,7 +616,7 @@ extension WinampModernScriptRuntime {
            let object = loadedSkin.runtime.graph.object(withID: held), !object.isTornDown {
             return object
         }
-        guard let declared = findRoot(type: "container", xmlID: id) else { return nil }
+        guard let declared = findRoot(type: .container, xmlID: id) else { return nil }
         var takenIDs = Set(dynamicContainerInstances[key]?.values ?? [:].values)
         // A NullPlayer-owned window borrowing this skin's frame never takes the **declared**
         // container: that object is the skin's own window's chrome, and the borrowed frame has to be
@@ -595,7 +634,7 @@ extension WinampModernScriptRuntime {
             // `frame_cont.getLayout("scdef")`. Without it the whole rebuild ran against a null layout
             // and the second framed window came up with no chrome at all.
             let layouts = instance.children.filter {
-                $0.typeName.caseInsensitiveCompare("layout") == .orderedSame
+                $0.tag.is(.layout)
             }
             if let opening = layouts.first(where: {
                 $0.xmlID?.caseInsensitiveCompare("normal") == .orderedSame
@@ -622,8 +661,8 @@ extension WinampModernScriptRuntime {
     /// ones `startTrustedHostedWindowScripts` will start, so the source path identifies them exactly.
     private func hostedWindowContainer(of program: MakiProgram) -> WasabiObject? {
         guard let owner = program.ownerID.flatMap(loadedSkin.runtime.graph.object(withID:)),
-              let container = ancestor(of: owner, type: "container") ?? (
-                  owner.typeName.caseInsensitiveCompare("container") == .orderedSame ? owner : nil),
+              let container = ancestor(of: owner, type: .container) ?? (
+                  owner.tag.is(.container) ? owner : nil),
               container.source.path == WasabiSurfaceSynthesizer.sourcePath
         else { return nil }
         return container
@@ -662,7 +701,7 @@ extension WinampModernScriptRuntime {
         // here, and a skin need not size the pair alike (MoonLight's video chrome is 410x281 around a
         // 330x220 window). Read at the one moment it is knowable, and applied by the materializer.
         let layouts = container.children.filter {
-            $0.typeName.caseInsensitiveCompare("layout") == .orderedSame
+            $0.tag.is(.layout)
         }
         guard let layout = layouts.first else { return }
         func number(_ names: [String]) -> Double {
@@ -696,7 +735,7 @@ extension WinampModernScriptRuntime {
     private func liftHostedClient(into chrome: WasabiObject, for hosted: WasabiObject,
                                   pastHiddenControls hidden: [WasabiObject]) {
         func isLayout(_ object: WasabiObject?) -> Bool {
-            object?.typeName.caseInsensitiveCompare("layout") == .orderedSame
+            object?.tag.is(.layout) == true
         }
         func number(_ object: WasabiObject, _ name: String) -> Double? {
             object.attributes[name].flatMap(Double.init)
@@ -739,7 +778,7 @@ extension WinampModernScriptRuntime {
         // imageless layer. Anything else starting in the strip is something the skin still draws.
         let stillDrawn = drawn.contains { child in
             startsInStrip(child)
-                && (child.typeName.caseInsensitiveCompare("layer") != .orderedSame
+                && (!child.tag.is(.layer)
                     || child.attributes["image"] != nil)
         }
         guard !stillDrawn else { return }
@@ -904,6 +943,15 @@ extension WinampModernScriptRuntime {
             componentHost?.playlistMove(row: Int(arguments[0].integerValue),
                                         to: Int(arguments[1].integerValue))
             return .null
+        case "moveup", "movedown":
+            let item = Int(arguments[0].integerValue)
+            componentHost?.playlistMove(row: item, to: item + (method == "moveup" ? -1 : 1))
+            return .null
+        // Stars, 0–5, the unit `getCurrentTrackRating` answers in.
+        case "getrating": return .integer(Int32(host.rating(ofPlaylistRow: Int(arguments[0].integerValue))))
+        case "setrating":
+            host.setRating(Int(arguments[1].integerValue), ofPlaylistRow: Int(arguments[0].integerValue))
+            return .null
         case "clear":
             componentHost?.playlistClear()
             return .null
@@ -913,11 +961,11 @@ extension WinampModernScriptRuntime {
             }
             return .null
         case "showtrack":
-            playlistRevealRowRequested?(Int(arguments[0].integerValue))
+            hooks.playlistRevealRowRequested?(Int(arguments[0].integerValue))
             return .null
         case "showcurrentlyplayingtrack":
             guard snapshot.currentIndex >= 0 else { return .null }
-            playlistRevealRowRequested?(snapshot.currentIndex)
+            hooks.playlistRevealRowRequested?(snapshot.currentIndex)
             return .null
         default:
             // Unreachable while `playlistEditorSignatures` and this switch stay in step; recorded
@@ -927,3 +975,4 @@ extension WinampModernScriptRuntime {
         }
     }
 }
+

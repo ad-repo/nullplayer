@@ -69,7 +69,10 @@ never on a skin's object ids:
 
 - A holder at or above **3:1** width-to-height is a letterbox strip and never takes the engine — that
   is an analyzer's shape. Big Bento's three placements measure 7.3 (stretched), 1.0 (mini) and ~2.5
-  (the Visualization tab), so the boundary is nowhere near any of them.
+  (the Visualization tab), so the boundary is nowhere near any of them. **Not in a skin's own AVS
+  window** (container kind `.visualization`): there the box is whatever the user resized the window
+  to, and krazyPlayer's 408×117 default (3.5:1) flipped between the analyzer and the engine — and
+  between their two menus — as the window was dragged across 3:1. That window always takes the engine.
 - Of the rest, the **largest** takes the engine. `makeVisualizationSurface()` deliberately vends one
   surface per skin — two GL contexts, two display links and two spectrum consumers against the same
   audio is what that cache prevents — so a second holder asking for it got the same view moved out

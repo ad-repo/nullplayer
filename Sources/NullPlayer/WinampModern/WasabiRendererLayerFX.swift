@@ -21,7 +21,7 @@ extension WasabiSceneRenderer {
     /// that is not affine gets as much fidelity as the grid the skin asked for.
     @discardableResult
     func drawWarped(_ image: CGImage, in rect: CGRect, mesh: WasabiLayerFXMesh,
-                            context: CGContext) -> Bool {
+                            context: WasabiDrawList) -> Bool {
         if !mesh.wrap, let sourceFromDestination = mesh.affineSourceTransform {
             drawAffineWarp(image, in: rect, sourceFromDestination: sourceFromDestination,
                            bilinear: mesh.bilinear, context: context)
@@ -60,7 +60,7 @@ extension WasabiSceneRenderer {
     /// clip keeps the draw inside the layer's box as the resample's destination raster did.
     private func drawAffineWarp(_ image: CGImage, in rect: CGRect,
                                 sourceFromDestination: CGAffineTransform,
-                                bilinear: Bool, context: CGContext) {
+                                bilinear: Bool, context: WasabiDrawList) {
         context.saveGState()
         context.clip(to: rect)
         // Destination-normalized space: 0…1 over the layer's box, top-left origin, as the scene is.

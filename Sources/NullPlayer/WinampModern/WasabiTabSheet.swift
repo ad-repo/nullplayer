@@ -38,6 +38,7 @@ import Foundation
 /// `children` at all, so it stays as inert as it is today rather than being guessed at.
 enum WasabiTabSheet {
     static let xuiTag = "Wasabi:TabSheet"
+    static let tag = WasabiTag(xuiTag)
     static let groupIdentifier = "wasabi.tabsheet"
 
     /// Height of the tab strip, from Bio-Nid's `h="20"` on both replacement groupdefs.
@@ -85,11 +86,7 @@ enum WasabiTabSheet {
     /// artwork-less shell, and the renderer and the view both key off it rather than off the tag.
     static let hostedAttribute = "nullplayer.tabsheet"
 
-    static func isTabSheet(typeName: String) -> Bool {
-        typeName.caseInsensitiveCompare(xuiTag) == .orderedSame
-    }
-
-    static func isTabSheet(_ object: WasabiObject) -> Bool { isTabSheet(typeName: object.typeName) }
+    static func isTabSheet(_ object: WasabiObject) -> Bool { object.tag == tag }
 
     /// A tab sheet this engine supplies the body for — the only kind anything downstream acts on.
     static func isHosted(_ object: WasabiObject) -> Bool {

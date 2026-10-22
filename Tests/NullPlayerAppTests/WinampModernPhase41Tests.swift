@@ -131,17 +131,18 @@ final class WinampModernPhase41Tests: XCTestCase {
         let band = try XCTUnwrap(runtime.loadedSkin.runtime.graph.objects(xmlID: "eq.band.1").first)
         let preamp = try XCTUnwrap(runtime.loadedSkin.runtime.graph.objects(xmlID: "eq.preamp").first)
 
-        // Full boost and full cut, at the two ends of the 0…255 position a slider reports.
+        // Full boost and full cut, at the two ends of the −127…127 position an EQ slider reports —
+        // the `onEqBandChanged` scale, which Tristania's band fill reads both ways.
         equalizer.bands[0] = 127
         equalizer.preamp = -127
         runtime.refreshEqualizerState()
 
-        XCTAssertEqual(band.attributes["value"], "255")
-        XCTAssertEqual(preamp.attributes["value"], "0")
+        XCTAssertEqual(band.attributes["value"], "127")
+        XCTAssertEqual(preamp.attributes["value"], "-127")
 
         equalizer.bands[0] = 0
         runtime.refreshEqualizerState()
-        XCTAssertEqual(band.attributes["value"], "128", "flat is the middle of the slider's travel")
+        XCTAssertEqual(band.attributes["value"], "0", "flat is the middle of the slider's travel")
     }
 
     /// The same rule the decoder has always had: an out-of-range parameter is not an equalizer
@@ -197,13 +198,13 @@ final class WinampModernPhase41Tests: XCTestCase {
         let runtime = try WinampModernScriptRuntime(loadedSkin: loaded, host: Host())
         addTeardownBlock { runtime.teardown() }
         let equalizer = Equalizer()
-        runtime.equalizerBandRequested = { equalizer.bands.indices.contains($0) ? equalizer.bands[$0] : 0 }
-        runtime.equalizerBandSetterRequested = { band, value in
+        runtime.hooks.equalizerBandRequested = { equalizer.bands.indices.contains($0) ? equalizer.bands[$0] : 0 }
+        runtime.hooks.equalizerBandSetterRequested = { band, value in
             guard equalizer.bands.indices.contains(band) else { return }
             equalizer.bands[band] = value
         }
-        runtime.equalizerPreampRequested = { equalizer.preamp }
-        runtime.equalizerPreampSetterRequested = { equalizer.preamp = $0 }
+        runtime.hooks.equalizerPreampRequested = { equalizer.preamp }
+        runtime.hooks.equalizerPreampSetterRequested = { equalizer.preamp = $0 }
         let program = MakiProgram(version: 0x0403, classes: [], methods: [], variables: [], bindings: [],
                                   instructions: [], source: WalSourceLocation(path: "/Skins/Synthetic/t.maki"),
                                   ownerID: nil, parameter: nil)

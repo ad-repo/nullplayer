@@ -65,11 +65,12 @@ final class WinampModernMainView: NSView {
         for surface in librarySurfaces.values { surface.applyContentScale(scale) }
     }
 
-    private var pressedObject: WasabiObject?
+    private(set) var pressedObject: WasabiObject?
+    private var pendingMainMenu: DispatchWorkItem?
     private var rightPressedObject: WasabiObject?
     private var pressedEQHolder: WasabiObject?
     private var draggedDivider: WasabiObject?
-    private var hoveredObject: WasabiObject?
+    private(set) var hoveredObject: WasabiObject?
     private var isDraggingWindow = false
     private var windowDragStartPoint: NSPoint = .zero
     /// A press on a layer that acts on the button *up* and has nothing to do on the down: the drag is
@@ -93,8 +94,6 @@ final class WinampModernMainView: NSView {
     /// arrow back without stomping on a cursor somebody else set.
     private var showsResizeCursor = false
     private var lastPlaybackState: PlaybackState = .stopped
-    /// Last volume the scripts were told about, 0…255. −1 until the first update.
-    private var lastPostedVolume: Int32 = -1
 
     /// Last value sent to `onPostedPosition`, so the post happens on change rather than ten times a
     /// second. -1 is "never posted", which no real position can be.
@@ -115,14 +114,13 @@ final class WinampModernMainView: NSView {
               posted, host.currentTime, host.duration, String(describing: host.playbackState))
         for node in renderer.sceneNodes() {
             let object = node.object
-            let type = object.typeName.lowercased()
             let action = object.attributes["action"]?.lowercased() ?? "-"
             let id = object.attributes["id"] ?? object.attributes["xuitag"] ?? "-"
-            let looksRelevant = action == "seek" || type == "slider" || type == "progressgrid"
+            let looksRelevant = action == "seek" || object.tag.is(anyOf: [.slider, .progressGrid])
                 || id.lowercased().contains("seek")
             guard looksRelevant else { continue }
             NSLog("SEEK_TRACE   id=%@ type=%@ action=%@ value=%@ normalized=%.4f frame=%@",
-                  id, type, action, object.attributes["value"] ?? "-",
+                  id, object.typeName, action, object.attributes["value"] ?? "-",
                   Double(renderer.normalizedValue(of: object)),
                   NSStringFromRect(NSRectFromCGRect(node.frame)))
         }
@@ -138,9 +136,10 @@ final class WinampModernMainView: NSView {
     private var activeStateObservers: [NSObjectProtocol] = []
     private(set) var isTornDown = false
 
+    /// The window's pixels and the frames on their way to them (`WinampModernMainView+Frames`).
+    lazy var frames = makeFrames()
     /// This window's drop shadow, built from the scene's outline (`WinampModernMainView+Shadow`).
-    let windowShadow = SkinWindowShadow(minimumInterval: WinampModernMainView.shadowShapeInterval)
-    var shadowOutlineGate = WinampModernShadowOutlineGate()
+    let windowShadow = SkinWindowShadow()
     /// The scene readers graph writes this turn still owe (`WinampModernMainView+GraphSettle`).
     var pendingGraphSettle: WinampModernGraphSettle = []
     private var sceneIsVisible = false
@@ -286,26 +285,25 @@ final class WinampModernMainView: NSView {
     }
 
     /// The boxes of everything in this scene that moves on its own — animated layers, song tickers,
-    /// ticker text, and any layer whose script has switched Layer FX on.
+    /// ticker text, and any layer whose script has switched Layer FX on. A warped layer carries its
+    /// object, so a tick can skip it while its mesh holds still.
     ///
     /// Repainting *these* rather than the whole window is what keeps an animation smooth: Defix's
     /// player costs 19.3 ms a frame repainted whole at Retina scale and 6.9 ms clipped to its meters,
     /// and a 33 ms animation step cannot survive the first number. Cached because the scene walk is
     /// not free and the boxes only move when the scene itself does.
-    private func animatingRects() -> [NSRect] {
+    private func animatingRects() -> [(rect: NSRect, warped: WasabiObject?)] {
         if let animatingRectsCache { return animatingRectsCache }
-        let rects = renderer.sceneNodes().compactMap { node -> NSRect? in
+        let rects = renderer.sceneNodes().compactMap { node -> (rect: NSRect, warped: WasabiObject?)? in
             let object = node.object
-            let type = object.typeName.lowercased()
-            var animates = ["animatedlayer", "songticker"].contains(type)
-            if !animates, type == "text" {
+            let rect = viewRect(fromSkin: node.frame).insetBy(dx: -2, dy: -2)
+            if object.tag.is(anyOf: [.animatedLayer, .songticker]) { return (rect, nil) }
+            if object.tag.is(.text) {
                 // A plain `text` that opts into ticker scrolling also needs the redraw clock.
                 let ticker = (object.attributes["ticker"] ?? "0").lowercased()
-                animates = !["0", "off", "false", "no"].contains(ticker)
+                if !["0", "off", "false", "no"].contains(ticker) { return (rect, nil) }
             }
-            if !animates { animates = scripts.layerFXState(of: object)?.enabled == true }
-            guard animates else { return nil }
-            return viewRect(fromSkin: node.frame).insetBy(dx: -2, dy: -2)
+            return scripts.layerFXState(of: object)?.enabled == true ? (rect, object) : nil
         }
         animatingRectsCache = rects
         return rects
@@ -313,22 +311,42 @@ final class WinampModernMainView: NSView {
 
     private func repaintAnimatingObjects() {
         guard !isTornDown else { return }
-        guard isOnScreen else {
-            repaintDeferredWhileHidden = true
+        guard frames.isOnScreen else {
+            frames.owesWholeFrame = true
             return
         }
-        let rects = animatingRects()
+        let rects = animatingRects().compactMap { rect, warped -> NSRect? in
+            guard let warped else { return rect }
+            return warpChanged(warped) ? rect : nil
+        }
+        guard !rects.isEmpty else { return }
         // A scene with a great many moving parts is cheaper to repaint in one pass than to invalidate
         // piece by piece.
-        guard !rects.isEmpty, rects.count <= 24 else {
+        guard rects.count <= 24 else {
             needsDisplay = true
             return
         }
         for rect in rects { setNeedsDisplay(rect) }
     }
 
+    /// Whether a warped layer's mesh moved since this view last painted it. `fx_setRealtime(1)`
+    /// re-runs the callbacks every tick, and a skin may answer the same warp every time: cPro's About
+    /// `animationscreen` did, and repainting it whole at 30 Hz pinned the CPU with nothing moving.
+    /// `bgfx` is never rendered, so the mesh alone decides the layer's pixels. Kept per view, by the
+    /// object's stable id: every window of a skin shares its scripts, and one window's tick must not
+    /// consume the change another has yet to paint.
+    private func warpChanged(_ object: WasabiObject) -> Bool {
+        let mesh = scripts.layerFXMesh(for: object)
+        // `nil` for a never-painted layer, `.some(nil)` for one last painted unwarped.
+        let painted: WasabiLayerFXMesh?? = paintedWarps[object.stableID]
+        paintedWarps[object.stableID] = mesh
+        return painted != .some(mesh)
+    }
+
     /// Dropped whenever the scene itself may have changed shape.
-    private var animatingRectsCache: [NSRect]?
+    private var animatingRectsCache: [(rect: NSRect, warped: WasabiObject?)]?
+    /// The mesh each warped layer was last painted with (`warpChanged`).
+    private var paintedWarps: [WasabiObjectID: WasabiLayerFXMesh?] = [:]
 
     /// Switch this view's container to one of its own layouts. Returns false when the container has
     /// no such layout, so a script's `switchToLayout` on a container we do not host is a no-op rather
@@ -369,6 +387,7 @@ final class WinampModernMainView: NSView {
         dispatchResize(seeding: true)
         // A different layout declares a different height, which is what `auto` Text Size is keyed on.
         pushLibraryContentScale()
+        matchResizableMaskToLayout()
         needsDisplay = true
         return true
     }
@@ -590,11 +609,10 @@ final class WinampModernMainView: NSView {
             // Scoped: a warped layer on the *main* window fires this 30 times a second, and this
             // window has no business repainting for it.
             if let object, !self.owns(object) { return }
-            self.scheduleGraphSettle(.shadowOutline)
             // A window nobody can see does not paint for the skin's animation: it catches up in one
             // pass when it comes back (`occlusionDidChange`).
-            guard self.isOnScreen else {
-                self.repaintDeferredWhileHidden = true
+            guard self.frames.isOnScreen else {
+                self.frames.owesWholeFrame = true
                 return
             }
             if let object {
@@ -630,56 +648,80 @@ final class WinampModernMainView: NSView {
             self?.needsDisplay = true
             // A script can also turn Layer FX on outside load (switching Defix's display style does
             // exactly that), and the warp needs the repaint clock from then on.
-            self?.scheduleGraphSettle([.animationClock, .shadowOutline])
+            self?.scheduleGraphSettle(.animationClock)
         }
         // The light path a warped layer takes 30 times a second: repaint, nothing else.
-        scripts.repaintRequested = { [weak self] in self?.needsDisplay = true }
+        scripts.hooks.repaintRequested = { [weak self] in self?.needsDisplay = true }
         // Lighter still when the runtime can name what moved — only that rect is repainted.
         // Scoped like the auxiliary sink: an object in another container has no geometry in this
         // scene, and `setNeedsDisplay(for:)` would answer that with a whole-window repaint.
-        scripts.objectRepaintRequested = { [weak self] object in
+        scripts.hooks.objectRepaintRequested = { [weak self] object in
             guard let self, self.owns(object) else { return }
             self.setNeedsDisplay(for: object)
         }
-        scripts.actionRequested = { [weak self] action, parameter in
+        scripts.hooks.actionRequested = { [weak self] action, parameter in
             self?.performAction(action: action, parameter: parameter)
         }
-        scripts.focusRequested = { [weak self] object in self?.focusEdit(object) }
-        scripts.themeNamesRequested = { [weak renderer] in renderer?.themes.themeNames ?? [] }
-        scripts.activeThemeRequested = { [weak renderer] in renderer?.themes.activeTheme ?? "Default" }
-        scripts.mousePositionRequested = { [weak self] in
+        scripts.hooks.focusRequested = { [weak self] object in self?.focusEdit(object) }
+        scripts.hooks.themeNamesRequested = { [weak renderer] in renderer?.themes.themeNames ?? [] }
+        scripts.hooks.activeThemeRequested = { [weak renderer] in renderer?.themes.activeTheme ?? "Default" }
+        scripts.hooks.mousePositionRequested = { [weak self] in
             self?.currentMousePositionInSkinPixels() ?? .zero
         }
-        scripts.equalizerEnabledRequested = { [weak self] in
+        scripts.hooks.equalizerEnabledRequested = { [weak self] in
             self?.componentHost?.equalizerSnapshot().enabled ?? false
         }
         // MAKI's EQ scale is −127…127; the engine's is ±12 dB.
-        scripts.equalizerBandRequested = { [weak self] band in
+        scripts.hooks.equalizerBandRequested = { [weak self] band in
             guard let gains = self?.componentHost?.equalizerSnapshot().bandGainsDB,
                   gains.indices.contains(band) else { return 0 }
             return Int((gains[band] / 12 * 127).rounded())
         }
-        scripts.equalizerBandSetterRequested = { [weak self] band, value in
+        scripts.hooks.equalizerBandSetterRequested = { [weak self] band, value in
             let clamped = max(-127, min(127, value))
             self?.componentHost?.equalizerSetBandGainDB(band, gainDB: Float(clamped) / 127 * 12)
             self?.needsDisplay = true
         }
-        scripts.equalizerPreampRequested = { [weak self] in
+        scripts.hooks.equalizerPreampRequested = { [weak self] in
             guard let preamp = self?.componentHost?.equalizerSnapshot().preampDB else { return 0 }
             return Int((preamp / 12 * 127).rounded())
         }
-        scripts.equalizerPreampSetterRequested = { [weak self] value in
+        scripts.hooks.equalizerPreampSetterRequested = { [weak self] value in
             let clamped = max(-127, min(127, value))
             self?.componentHost?.equalizerSetPreampDB(Float(clamped) / 127 * 12)
             self?.needsDisplay = true
+        }
+        scripts.hooks.equalizerEnabledSetterRequested = { [weak self] enabled in
+            self?.componentHost?.equalizerSetEnabled(enabled)
+            self?.needsDisplay = true
+        }
+        // The stock notifier's click raises a minimized player (`restoreApplication`, then
+        // `activateApplication`).
+        scripts.hooks.applicationRaiseRequested = { restore in
+            if restore {
+                NSApp.unhide(nil)
+                for window in NSApp.windows where window.isMiniaturized { window.deminiaturize(nil) }
+            }
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        scripts.hooks.applicationMinimizedRequested = {
+            NSApp.isHidden || NSApp.windows.contains { $0.isMiniaturized }
+        }
+        scripts.hooks.componentShowRequested = { [weak self] kind in
+            guard let self, surfaceVisibilityQuery?(kind) != true else { return }
+            routeComponentToggle(kind)
+        }
+        scripts.hooks.windowMenuRequested = { [weak self] in
+            guard let menu = ContextMenuBuilder.winampModernMenuBarMenu(for: "wa5:windows") else { return }
+            self?.popUpMenu(menu, from: nil, atMouse: true)
         }
         // A skin's own right-click menus (Love is War Miku's visualization presets, MMD3's display
         // menu) are built by a script and shown through `popAtMouse`. With no presenter installed
         // that call answered 0 — "the user picked nothing" — so those menus never appeared at all.
         scripts.popupPresenter = { [weak self] items, point in
-            self?.presentScriptPopup(items, at: point) ?? 0
+            self?.presentScriptPopup(items, at: point) ?? WinampModernScriptRuntime.popupDismissed
         }
-        scripts.themeSwitchRequested = { [weak self] name in
+        scripts.hooks.themeSwitchRequested = { [weak self] name in
             guard let self else { return false }
             let changed = self.renderer.activateTheme(name)
             if changed { self.needsDisplay = true }
@@ -736,10 +778,10 @@ final class WinampModernMainView: NSView {
     }
 
     private static func editControl(in object: WasabiObject) -> WasabiObject? {
-        if object.typeName.lowercased().components(separatedBy: ":").last == "edit" { return object }
+        if object.tag.is(.edit) { return object }
         var stack = object.children
         while let node = stack.popLast() {
-            if node.typeName.lowercased().components(separatedBy: ":").last == "edit" { return node }
+            if node.tag.is(.edit) { return node }
             stack.append(contentsOf: node.children)
         }
         return nil
@@ -788,6 +830,9 @@ final class WinampModernMainView: NSView {
         _ = edit.setAttribute("text", value: text)
         _ = edit.setAttribute(WasabiTextMetrics.scriptTextKey, value: text)
         _ = try? scripts.dispatch(object: edit, event: "oneditupdate")
+        // ponytail: per keystroke, not after an idle pause; add the pause when a skin's filter lags.
+        _ = try? scripts.dispatch(object: edit, event: "onidleeditupdate")
+        if edit.attributes["autoenter"] == "1" { _ = try? scripts.dispatch(object: edit, event: "onenter") }
         needsDisplay = true
         return true
     }
@@ -818,6 +863,13 @@ final class WinampModernMainView: NSView {
         // shares its keys while the engine feeding it is paused.
         if videoSurfaces.values.contains(where: { $0.handleKeyDown(event) }) { return }
         if let surface = hostedVisualizationSurface, surface.handleKeyDown(event) { return }
+        // ↑/↓ step the volume, as in every other mode's main window. Only those two: the rest of that
+        // table's letters are the visualization's keys here. The engine announces no volume change, so
+        // the skin's own readout is told here, the way `updatePlaybackState` tells it of any other.
+        if MainWindowKeys.performVolumeStep(event) {
+            updatePlaybackState()
+            return
+        }
         super.keyDown(with: event)
     }
 
@@ -877,7 +929,10 @@ final class WinampModernMainView: NSView {
             traceHitTest(point, verdict: "self (holder)")
             return self
         }
-        let visible = renderer.containsVisiblePixel(at: skin)
+        // A ghost passes its press to the layout under it; it does not make its pixels desktop.
+        // Dronev11's compact player is ghost artwork from edge to edge and could not be dragged
+        // anywhere. The press itself is routed by `pressTarget`.
+        let visible = renderer.containsVisiblePixel(at: skin, includingGhosts: true)
         traceHitTest(point, verdict: visible ? "self (pixel)" : "nil (no visible pixel)")
         return visible ? self : nil
     }
@@ -902,7 +957,15 @@ final class WinampModernMainView: NSView {
     override func setFrameSize(_ newSize: NSSize) {
         let resized = newSize != frame.size
         super.setFrameSize(newSize)
-        if resized { windowShadow.invalidateShape("resize") }
+        guard resized else { return }
+        windowShadow.invalidateShape("resize")
+        canvasGeometryDidChange()
+    }
+
+    /// A move to a display of another scale or colour space.
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        canvasGeometryDidChange()
     }
 
     override func layout() {
@@ -915,6 +978,7 @@ final class WinampModernMainView: NSView {
         reconcileBrowserSurfaces(browsers)
         layoutHostedSubviews(browsers: browsers)
         cachedHolders = nil
+        frames.pumpNewCanvas()
     }
 
     /// Invalidate just one skin object's box (plus a pixel of slop for resampling at the edges).
@@ -963,68 +1027,68 @@ final class WinampModernMainView: NSView {
             })
         occlusionDidChange()
         attachWindowShadow(to: window)
-        needsDisplay = true
+        #if DEBUG
+        if drivesScripts { scheduleLiveClicksOnce() }
+        #endif
+        matchResizableMaskToLayout()
+        canvasGeometryDidChange()
     }
 
-    /// Whether any of this view's window is visible: ordered in, not minimized, on the current Space
-    /// and not wholly covered (B119).
-    ///
-    /// A skin's hidden windows kept painting. Their scripts run whether or not anyone can see them —
-    /// WMP11-BlueVU's never-opened *VU Meters Small* re-warped both needles ~100 times a second — and
-    /// AppKit still displays an ordered-out window that has been invalidated. Measured on a release
-    /// build with *VU Meters Large* open and music playing: main-thread busy **81.4% → 48.3%**, and
-    /// `CGDisplayListDrawInContextDelegate` 19.0% → 0.0%.
-    ///
-    /// **Cached** from the occlusion notification rather than asked per call: this is read on every
-    /// script notification, thousands of times a second, and a first draft that asked the window
-    /// each time cost 40% of the main thread on its own — more than the paint it saved.
-    private var isOnScreen = false
+    /// AppKit's edge band only where the skin offers no handle of its own (B161).
+    private func matchResizableMaskToLayout() {
+        guard let window else { return }
+        if renderer.declaresResizeHandles {
+            window.styleMask.remove(.resizable)
+        } else {
+            window.styleMask.insert(.resizable)
+        }
+    }
 
-    /// Repaints a hidden window skipped; the next time it shows, it redraws whole.
-    private var repaintDeferredWhileHidden = false
-
+    /// Tell the frames whether the window is visible — ordered in, not minimized, on the current
+    /// Space and not wholly covered (B119) — and redraw it whole if it hid with repaints owed.
+    ///
+    /// `WINAMP_MODERN_ASSUME_VISIBLE=1` (`SkinWindowShadow.assumesParentVisible`) treats the window as
+    /// on screen whatever its occlusion says, so a locked screen does not stop it painting.
     private func occlusionDidChange() {
-        isOnScreen = window?.occlusionState.contains(.visible) ?? false
-        guard !isTornDown, isOnScreen, repaintDeferredWhileHidden else { return }
-        repaintDeferredWhileHidden = false
+        frames.isOnScreen = SkinWindowShadow.assumesParentVisible
+            || (window?.occlusionState.contains(.visible) ?? false)
+        guard !isTornDown, frames.isOnScreen, frames.owesWholeFrame else { return }
+        frames.owesWholeFrame = false
         invalidateRectCaches()
         needsLayout = true
         needsDisplay = true
         updateAnimationTimer()
     }
 
+    /// The window's picture is the layer's `contents`, rendered off the main thread
+    /// (`WinampModernMainView+Frames`). Only a window too large for a canvas draws.
+    override var wantsUpdateLayer: Bool { !frames.drawsDirectly }
+
+    /// Nothing to do at display: every picture is presented as it lands (`WinampModernFrames`).
+    override func updateLayer() {}
+
     override func draw(_ dirtyRect: NSRect) {
         guard !isTornDown, let context = NSGraphicsContext.current?.cgContext else { return }
         #if DEBUG
         Self.reportDrawFormatOnce(context: context, view: self)
-        #endif
-        if Self.paintRateProbe { recordPaint(dirtyRect) }
-        #if DEBUG
         if Self.dirtyTrace { traceDirty(dirtyRect, context: context) }
         #endif
-        // Only what is being repainted is cleared: a partial repaint (a meter that moved) must not
-        // blank the rest of the window it is not going to draw again.
         context.clear(dirtyRect)
-        // Which of `activealpha`/`inactivealpha` every object paints at. Read here rather than
-        // cached on the notification: a window can lose key without either notification reaching us
-        // (the app deactivating, a sheet), and the read is one Boolean.
-        renderer.isWindowActive = window?.isKeyWindow ?? true
-        // Measured before `skinScale` is applied: a display-list context arrives at CTM 1.0 and is
-        // replayed at the backing scale, a bitmap one already carries it (B80).
-        let contextScale = abs(context.ctm.a)
-        renderer.devicePixelsPerContextUnit = contextScale > 0
-            ? max(1, (window?.backingScaleFactor ?? 1) / contextScale) : 1
-        context.saveGState()
-        if skinScale != 1 { context.scaleBy(x: skinScale, y: skinScale) }
-        if drawsHostChrome { drawHostChrome(in: context) }
-        renderer.draw(in: context, pressed: pressedObject?.stableID,
-                      hovered: hoveredObject?.stableID)
-        context.restoreGState()
+        drawDirectly(in: context)
     }
 
-    /// `WINAMP_MODERN_PAINT_RATE=1` — paints per second per window, and how much of the window each
-    /// one covered: `dirty=` is the mean share of `dirtyRect` (the union AppKit hands `draw`),
-    /// `rects=` the mean share of the rects actually being drawn. Printed every two seconds. Release
+    /// Every invalidation, `needsDisplay = true` and AppKit's own included, is a request for a new
+    /// frame: recorded at the end of the turn, rendered off the main thread, shown when it lands.
+    override func setNeedsDisplay(_ invalidRect: NSRect) {
+        guard !frames.drawsDirectly else { return super.setNeedsDisplay(invalidRect) }
+        let rect = invalidRect.intersection(bounds)
+        guard !rect.isNull, !rect.isEmpty, !isTornDown else { return }
+        frames.request(rect)
+    }
+
+    /// `WINAMP_MODERN_PAINT_RATE=1` — frames shown per second per window, and how much of the window
+    /// each one redrew: `dirty=` is the mean share of the rects' bounding box, `rects=` the mean share
+    /// of the rects themselves. Printed every two seconds. Release
     /// builds too, because the question it answers — is a periodic update repainting the whole
     /// window? — is a release-profile question (B152).
     #if DEBUG
@@ -1057,15 +1121,13 @@ final class WinampModernMainView: NSView {
     static let paintRateProbe = ProcessInfo.processInfo.environment["WINAMP_MODERN_PAINT_RATE"] == "1"
     private var paintRateWindow: (start: CFTimeInterval, paints: Int, dirty: CGFloat, rects: CGFloat)?
 
-    private func recordPaint(_ dirtyRect: NSRect) {
+    func recordPaint(_ rects: [NSRect]) {
         let area = max(1, bounds.width * bounds.height)
-        var drawn: UnsafePointer<NSRect>?
-        var count = 0
-        getRectsBeingDrawn(&drawn, count: &count)
-        let rectsArea = (0..<count).reduce(CGFloat(0)) { sum, i in
-            let rect = drawn![i].intersection(bounds)
+        let rectsArea = rects.reduce(CGFloat(0)) { sum, rect in
+            let rect = rect.intersection(bounds)
             return sum + rect.width * rect.height
         }
+        let dirtyRect = rects.reduce(NSRect.null) { $0.union($1) }
         let now = CACurrentMediaTime()
         var window = paintRateWindow ?? (now, 0, 0, 0)
         window.paints += 1
@@ -1174,7 +1236,9 @@ final class WinampModernMainView: NSView {
         // Not every `{0000000A}` holder gets the engine: a letterbox strip is an analyzer's box, and
         // the bridge vends one surface per skin, so a second holder asking for it stole the picture
         // from the first. Everything not named here falls through to the renderer's analyzer (BB9).
-        let engineHolderID = WinampModernVisualizationHolder.engineHolder(among: holders)
+        let engineHolderID = WinampModernVisualizationHolder.engineHolder(
+            among: holders,
+            inVisualizationWindow: WinampModernContainerTopology.kind(of: renderer.container) == .visualization)
         let liveVis: Set<WasabiObjectID> = engineHolderID.map { [$0] } ?? []
         if Self.surfaceTrace {
             let boxes = holders.filter { $0.kind == .visualization }.map {
@@ -1346,6 +1410,14 @@ final class WinampModernMainView: NSView {
             }
         }
         for id in deleted { browserSurfaces[id] = nil }
+    }
+
+    /// `Browser.back()`/`forward()` on this scene's surface; false when another container owns the
+    /// object, so the controller can ask that container's view instead.
+    func stepBrowserHistory(objectID: WasabiObjectID, forward: Bool) -> Bool {
+        guard let surface = browserSurfaces[objectID] else { return false }
+        surface.stepHistory(forward: forward)
+        return true
     }
 
     /// Route object-scoped MAKI navigation to this scene. A request before first layout is buffered;
@@ -1660,6 +1732,15 @@ final class WinampModernMainView: NSView {
 
     #endif
 
+    /// What a left press at `point` lands on. A press on no control goes to the layout itself when a
+    /// script handles presses there, as in Wasabi: the stock notifier raises a minimized player from
+    /// `notifier_layout.onLeftButtonDown`, and its window is all text and art (B183).
+    private func pressTarget(at point: CGPoint) -> WasabiObject? {
+        renderer.object(at: point)
+            ?? (scripts.hasPressBinding(for: renderer.layout)
+                || renderer.containsVisiblePixel(at: point, includingGhosts: true) ? renderer.layout : nil)
+    }
+
     override func mouseDown(with event: NSEvent) {
         // Before anything else this click might do: a transient popup elsewhere goes away, which is
         // what `autoclose="1"` means and the only way a chromeless one can be dismissed.
@@ -1789,6 +1870,11 @@ final class WinampModernMainView: NSView {
         // (which is what `getFirstItemSelected` reads back), a double-click is the skin's own
         // `onDoubleClick`, which is how its search jumps to the track.
         if let list = renderer.guiList(at: point), let row = renderer.guiListRow(at: point, in: list) {
+            if WasabiGuiList.isTree(list) {
+                try? scripts.clickTreeRow(row, in: list)
+                needsDisplay = true
+                return
+            }
             WasabiGuiList.setSelection([row], on: list)
             // `onDoubleClick(item)` — one argument, the row, counted off the single store at Big
             // Bento's handler entry. It is how its search result opens the track it names.
@@ -1819,12 +1905,14 @@ final class WinampModernMainView: NSView {
             }
             return
         }
-        guard let object = renderer.object(at: point) else { return }
+        guard let object = pressTarget(at: point) else { return }
         pressedObject = object
         dispatch(object: object, event: "onleftbuttondown", point: point)
         // A skin puts real commands on a double-click: cPro's beat display cycles its animation from
         // `mouseTrap.onLeftButtonDblClk`, and a tab's own dblclk suppresses the drag-to-reorder.
         if event.clickCount == 2 {
+            pendingMainMenu?.cancel()
+            pendingMainMenu = nil
             isDispatchingDoubleClick = true
             dispatch(object: object, event: "onleftbuttondblclk", point: point)
             isDispatchingDoubleClick = false
@@ -1862,7 +1950,7 @@ final class WinampModernMainView: NSView {
     /// `move="0"` and `action=` are still refusals, because there the skin has said what it wants.
     func shouldPrimeWindowDrag(from object: WasabiObject) -> Bool {
         guard !shouldDragWindow(from: object) else { return false }
-        guard object.typeName.lowercased() == "layer" else { return false }
+        guard object.tag.is(.layer) else { return false }
         guard object.attributes["move"] != "0", object.attributes["action"] == nil else { return false }
         guard !scripts.hasBinding(for: object, event: "onleftbuttondown") else { return false }
         return Self.mouseEvents.contains { scripts.hasBinding(for: object, event: $0) }
@@ -1999,7 +2087,7 @@ final class WinampModernMainView: NSView {
             return
         }
         if pressedEQHolder != nil { pressedEQHolder = nil; needsDisplay = true; return }
-        let releasedOver = renderer.object(at: point)
+        let releasedOver = pressTarget(at: point)
         // The drag session is closed **before** any action runs. A titlebar mousetrap is both a drag
         // handle and a `dblclickaction="SWITCH;shade"` control, so its double-click ends in a layout
         // switch that resizes the window — and doing that inside an open drag session hands the
@@ -2078,7 +2166,7 @@ final class WinampModernMainView: NSView {
         // point (Big Bento covers its own with an invisible `main.vis.trigger` layer carrying the
         // skin's settings page, and that menu wins), and it must have no right-button handler of its
         // own (Love is War Miku's `visualizer.maki` binds one).
-        if object.typeName.caseInsensitiveCompare("vis") == .orderedSame,
+        if object.tag.is(.vis),
            !scripts.hasBinding(for: object, event: "onrightbuttondown"),
            !scripts.hasBinding(for: object, event: "onrightbuttonup") {
             showVisualizationMenu(from: object)
@@ -2206,9 +2294,7 @@ final class WinampModernMainView: NSView {
         let posted = duration > 0 ? Int32(max(0, min(255, current / duration * 255))) : 0
         if posted != lastPostedPosition {
             lastPostedPosition = posted
-            for object in positionListeners {
-                _ = try? scripts.dispatch(object: object, event: "onpostedposition", arguments: [.integer(posted)])
-            }
+            scripts.postPosition(posted, to: .seek)
             traceSeekObjects(posted: posted)
         }
         let rects = timeDependentRects()
@@ -2226,59 +2312,23 @@ final class WinampModernMainView: NSView {
 
     /// The boxes of everything whose drawing follows the playback clock: an elapsed-time readout, a
     /// seek slider's thumb, a seek progress bar. Cached with the other rect scans.
-    /// The objects Winamp posts the play position to, ten times a second.
-    ///
-    /// This used to be `graph.objects(xmlID: "HiddenSeek")` alone — stock Winamp Modern's own name
-    /// for its off-screen seek slider — so a skin that calls its seek slider anything else never
-    /// heard the clock. ClassicPro engine "two" hangs its entire seek fill off
-    /// `two.info.seeker.slider.0`'s `onPostedPosition`, and in cPro2 Dark Aluminum the seek bar *is*
-    /// the whole top panel: it never advanced while a track played. Dragging it still worked, which
-    /// is what made this look like a paint bug rather than a missing event — a drag is the user's own
-    /// value change, and only the clock comes through here.
-    ///
-    /// The rule is the one `timeDependentRects` already uses to decide what repaints from the clock:
-    /// a seek slider is `action="SEEK"`, whatever it is named. `HiddenSeek` stays in the union so a
-    /// skin that names one without declaring the action keeps working; the ids are deduplicated
-    /// because stock declares both a `Seeker` and a `SeekerGhost` and a doubled post is a doubled
-    /// handler chain.
-    private var positionListeners: [WasabiObject] {
-        if let positionListenerCache { return positionListenerCache }
-        var seen: Set<WasabiObjectID> = []
-        var found: [WasabiObject] = []
-        func consider(_ object: WasabiObject) {
-            let isSeekSlider = object.typeName.caseInsensitiveCompare("slider") == .orderedSame
-                && object.attributes["action"]?.lowercased() == "seek"
-            if isSeekSlider, seen.insert(object.stableID).inserted { found.append(object) }
-            object.children.forEach(consider)
-        }
-        renderer.loadedSkin.runtime.graph.roots.forEach(consider)
-        for named in renderer.loadedSkin.runtime.graph.objects(xmlID: "HiddenSeek")
-        where seen.insert(named.stableID).inserted {
-            found.append(named)
-        }
-        positionListenerCache = found
-        return found
-    }
-
-    /// Cleared with the skin, not with the layout: the graph a skin declares does not change when a
-    /// different layout is activated, and this is read ten times a second while a track plays.
-    private var positionListenerCache: [WasabiObject]?
-
     func timeDependentRects() -> [NSRect] {
         if let timeRectsCache { return timeRectsCache }
         let rects = renderer.sceneNodes().compactMap { node -> NSRect? in
             let object = node.object
-            let type = object.typeName.lowercased()
             let display = object.attributes["display"]?.lowercased()
             let action = object.attributes["action"]?.lowercased()
             let follows: Bool
-            switch type {
-            case "text", "songticker": follows = display == "time"
-            case "slider": follows = action == "seek"
-            // A `progressgrid` with no action of its own takes its value from the slider it is
-            // paired with, so it has to be treated as a possible seek bar.
-            case "progressgrid": follows = action == "seek" || action == nil
-            default: follows = false
+            if object.tag.is(anyOf: [.text, .songticker]) {
+                follows = display == "time"
+            } else if object.tag.is(.slider) {
+                follows = action == "seek"
+            } else if object.tag.is(.progressGrid) {
+                // A `progressgrid` with no action of its own takes its value from the slider it is
+                // paired with, so it has to be treated as a possible seek bar.
+                follows = action == "seek" || action == nil
+            } else {
+                follows = false
             }
             guard follows else { return nil }
             return viewRect(fromSkin: node.frame).insetBy(dx: -2, dy: -2)
@@ -2309,21 +2359,11 @@ final class WinampModernMainView: NSView {
             }
             lastPlaybackState = state
         }
-        let postedVolume = Int32(max(0, min(255, host.volume * 255)))
-        // A volume change from outside the skin (the menu bar, a keyboard shortcut, another window)
-        // has to reach the scripts too, or a readout the skin drives from `onVolumeChanged` sits on a
-        // stale number. `setVolume` fires its own, so this only covers what the skin did not do.
-        if postedVolume != lastPostedVolume {
-            lastPostedVolume = postedVolume
-            _ = try? scripts.dispatchSystem(event: "onvolumechanged", arguments: [.integer(postedVolume)])
-        }
+        scripts.announceVolumeIfChanged()
         // An equalizer change made outside the skin — a preset, the menu bar, the classic EQ window,
         // a restored session — reaches the scripts on the same beat, and only when it moved.
         scripts.refreshEqualizerState()
-        for object in renderer.loadedSkin.runtime.graph.objects(xmlID: "HiddenVolume") {
-            _ = try? scripts.dispatch(object: object, event: "onpostedposition",
-                                      arguments: [.integer(postedVolume)])
-        }
+        scripts.postPosition(WinampModernScriptRuntime.volumeLevel(host.volume), to: .volume)
         needsDisplay = true
     }
 
@@ -2469,7 +2509,7 @@ final class WinampModernMainView: NSView {
     private func visualizationRects() -> [NSRect] {
         if let visualizationRectsCache { return visualizationRectsCache }
         var rects = renderer.sceneNodes().compactMap { node -> NSRect? in
-            guard ["vis", "eqvis"].contains(node.object.typeName.lowercased()) else { return nil }
+            guard node.object.tag.is(anyOf: [.vis, .eqVis]) else { return nil }
             return viewRect(fromSkin: node.frame).insetBy(dx: -2, dy: -2)
         }
         // A `{0000000A}` holder drawing its own analyzer (BB9) is not a `<vis>` and was invisible to
@@ -2521,6 +2561,7 @@ final class WinampModernMainView: NSView {
         activeStateObservers.forEach(NotificationCenter.default.removeObserver)
         activeStateObservers.removeAll()
         windowShadow.detach()
+        frames.target = .idle
         isTornDown = true
     }
 
@@ -2548,16 +2589,10 @@ final class WinampModernMainView: NSView {
     /// 48-wide map, which is 0 everywhere, so every drag seeked to zero and every knob turn set the
     /// volume to nothing.
     private func dispatch(object: WasabiObject, event: String, point: CGPoint) {
-        let local = pointInParentSpace(of: object, canvasPoint: point)
+        let object = scripts.mouseRedirectionTarget(of: object)
+        let local = scripts.pointInEventSpace(of: object, event: event, canvasPoint: point, renderer: renderer)
         _ = try? scripts.dispatch(object: object, event: event,
                                   arguments: [.integer(Int32(local.x)), .integer(Int32(local.y))])
-    }
-
-    /// The canvas point in `object`'s parent's coordinates. Unchanged for anything whose parent sits
-    /// at the origin, which is why this was invisible until a skin put a knob inside a placed group.
-    func pointInParentSpace(of object: WasabiObject, canvasPoint: CGPoint) -> CGPoint {
-        guard let parent = renderer.resolvedGeometry(of: object)?.parent else { return canvasPoint }
-        return CGPoint(x: canvasPoint.x - parent.minX, y: canvasPoint.y - parent.minY)
     }
 
     /// Whether a press on `object` moves the window. Internal so the drag policy can be tested
@@ -2568,7 +2603,6 @@ final class WinampModernMainView: NSView {
         // `move="0"` is how a skin says "this piece of the window is not a handle" — T800's volume
         // strip is a layer whose script owns the drag, and dragging the window off it loses the drag.
         if object.attributes["move"] == "0" { return false }
-        let type = object.typeName.lowercased()
         // `move="1"` is the skin *affirmatively* naming a drag handle, and it says so on far more
         // than groups: across the 30 installed skins it appears 981 times on 14 different element
         // types — `rect` 233, `text` 66, `grid` 36 — and honouring it only on `<group>` (421) left
@@ -2580,21 +2614,21 @@ final class WinampModernMainView: NSView {
         // A control is excluded even when it says `move="1"`: a button that both acts and drags
         // would swallow its own click, and the skins that declare it (17 of the 981) are relying on
         // Winamp's press-and-hold distinction, which this hit test does not model.
-        if object.attributes["move"] == "1", !Self.controlTypes.contains(type) { return true }
+        if object.attributes["move"] == "1", !Self.isControl(object) { return true }
         // The layout is the window's own background. A skin that paints the whole frame there and
         // hangs only controls off it (T800) otherwise has nothing to drag by at all.
-        if type == "layout" { return true }
+        if object.tag.is(.layout) { return true }
         // A bare group has no artwork of its own, so a click reaching one landed on the background it
         // covers, and without `move="1"` above the skin has not offered it as a handle.
-        if type == "group" { return false }
+        if object.tag.is(.group) { return false }
         // A layer a script hooks the mouse on is a control, not a handle — the same thing `move="0"`
         // says explicitly, for the skins that do not bother to say it. Love is War Miku's invisible
         // `visual.trigger` is one: dragging the window off it would eat the click that cycles the
         // visualization.
-        if type == "layer", Self.mouseEvents.contains(where: { scripts.hasBinding(for: object, event: $0) }) {
+        if object.tag.is(.layer), Self.mouseEvents.contains(where: { scripts.hasBinding(for: object, event: $0) }) {
             return false
         }
-        return type == "layer" && object.attributes["action"] == nil
+        return object.tag.is(.layer) && object.attributes["action"] == nil
     }
 
     private static let mouseEvents = ["onleftbuttondown", "onleftbuttonup", "onleftclick",
@@ -2602,10 +2636,13 @@ final class WinampModernMainView: NSView {
 
     /// Element types whose press belongs to the control, not to the window — `move="1"` on one of
     /// these is not taken as a drag handle.
-    private static let controlTypes: Set<String> = [
-        "button", "togglebutton", "nstatesbutton", "wasabi:button", "slider", "menu", "list",
-        "component", "browser", "edit", "editbox"
+    private static let controlKinds: Set<WasabiKind> = [
+        .button, .toggleButton, .nStatesButton, .slider, .menu, .list, .component, .browser, .edit, .editBox
     ]
+
+    private static func isControl(_ object: WasabiObject) -> Bool {
+        object.tag.is(anyOf: controlKinds) || object.tag.isStandard(anyOf: [.button, .toggleButton])
+    }
 
     /// Show a script-built menu at the mouse and answer the command id the user picked (0 = nothing).
     ///
@@ -2685,7 +2722,7 @@ final class WinampModernMainView: NSView {
     private func presentScriptPopup(_ items: [WinampModernPopupMenuItem], at point: CGPoint?) -> Int32 {
         let target = ScriptPopupTarget()
         let menu = build(popupMenu: items, target: target)
-        guard menu.numberOfItems > 0 else { return 0 }
+        guard menu.numberOfItems > 0 else { return WinampModernScriptRuntime.popupDismissed }
         let location: NSPoint?
         if let point {
             location = NSPoint(x: point.x * skinScale, y: bounds.height - point.y * skinScale)
@@ -2721,9 +2758,9 @@ final class WinampModernMainView: NSView {
         // *against* whatever NullPlayer engine was drawing: the box goes back to Winamp's own
         // analyzer, and the skin's own command runs on top of that as it always did. Without this,
         // "Oscilloscope" would tick a row and change nothing on screen while Cava kept painting.
-        // `0` is "nothing chosen" — a dismissed menu, and also what our own rows leave behind — so it
-        // can never mean the user asked for the skin's engine back.
-        if target.chosen != 0, skinModeCommands.contains(Int(target.chosen)) {
+        // `popupDismissed` — a dismissed menu, and also what our own rows leave behind — can never
+        // mean the user asked for the skin's engine back.
+        if skinModeCommands.contains(Int(target.chosen)) {
             WindowManager.shared.setWinampModernSpectrumAnalyzer(.skin)
         }
         return target.chosen
@@ -2757,41 +2794,27 @@ final class WinampModernMainView: NSView {
 
     /// Carries the picked command out of `NSMenu.popUp`'s tracking loop.
     private final class ScriptPopupTarget: NSObject {
-        var chosen: Int32 = 0
+        var chosen = WinampModernScriptRuntime.popupDismissed
         @objc func pick(_ sender: NSMenuItem) { chosen = Int32(sender.tag) }
     }
 
     private func updateSlider(_ object: WasabiObject, point: CGPoint) {
-        guard object.typeName.caseInsensitiveCompare("slider") == .orderedSame,
+        guard object.tag.is(.slider),
               let frame = renderer.frame(of: object), frame.width > 0, frame.height > 0 else { return }
         let vertical = WasabiSceneRenderer.isVerticalOrientation(object)
         let value = vertical ? 1 - (point.y - frame.minY) / frame.height
                              : (point.x - frame.minX) / frame.width
         let normalized = max(0, min(1, value))
-        if let eq = WinampModernEQAction.decode(action: object.attributes["action"],
-                                                parameter: object.attributes["param"]),
-           let componentHost {
-            // ±12 dB through the host, which is the same value the thumb is drawn from.
-            eq.apply(normalized: normalized, to: componentHost)
-            // …and the skin hears its own equalizer move, as it does in Winamp. Before `notePosition`
-            // below, so the drag's own position is the last thing written to this slider.
-            scripts.refreshEqualizerState()
-        } else if WinampModernPanAction.matches(action: object.attributes["action"]) {
-            // The balance slider. The engine's unit is −1…+1 and the slider's is 0…1; both
-            // conversions live in `WinampModernPanAction` so the thumb cannot disagree with the drag.
-            host.balance = WinampModernPanAction.balance(normalized: normalized)
-        } else if object.attributes["action"] == nil,
-                  scripts.setConfigAttribute(of: object, normalized: normalized) {
+        // EQ, balance, seek and volume, through the host — the same value the thumb is drawn from.
+        // The EQ half also lets the skin hear its own equalizer move, before `notePosition` below,
+        // so the drag's own position is the last thing written to this slider.
+        if !scripts.driveHost(from: object, normalized: normalized),
+           object.attributes["action"] == nil,
+           scripts.setConfigAttribute(of: object, normalized: normalized) {
             // A slider bound to a `cfgattrib` carries no action — the binding *is* what it drives.
             // mmd3's `sCrossfade` (`high="20"`) is the crossfade length, and four other skins spell
             // the same control the same way.
             WindowManager.shared.refreshWinampModernSurfaces()
-        } else {
-            switch object.attributes["action"]?.lowercased() {
-            case "seek": host.seek(to: host.duration * normalized)
-            case "volume": host.volume = normalized
-            default: break
-            }
         }
         // Wasabi moves the object's own position on a drag and tells the skin about it, whatever the
         // slider drives. Skins hang their only feedback off that: multipass's balance and crossfade
@@ -2813,7 +2836,7 @@ final class WinampModernMainView: NSView {
     /// carries. Only for sliders, and only when one was actually driven: every other pressed object
     /// releases without a position to report.
     private func noteFinalPosition(on object: WasabiObject) {
-        guard object.typeName.caseInsensitiveCompare("slider") == .orderedSame else { return }
+        guard object.tag.is(.slider) else { return }
         let target = scripts.embeddedControl(of: object) ?? object
         let position = Int32(target.attributes["value"]
                              ?? target.attributes["position"] ?? "") ?? 0
@@ -2822,9 +2845,7 @@ final class WinampModernMainView: NSView {
     }
 
     private func notePosition(_ normalized: CGFloat, on object: WasabiObject) {
-        let low = Double(object.attributes["low"] ?? "0") ?? 0
-        let high = Double(object.attributes["high"] ?? "255") ?? 255
-        let position = Int32((low + Double(normalized) * (high - low)).rounded())
+        let position = WinampModernScriptRuntime.sliderPosition(normalized: normalized, of: object)
         guard object.attributes["value"] != String(position) else { return }
         _ = object.setAttribute("value", value: String(position))
         _ = try? scripts.dispatch(object: object, event: "onsetposition",
@@ -2907,13 +2928,7 @@ final class WinampModernMainView: NSView {
         menu.popUp(positioning: nil, at: NSPoint(x: rect.minX, y: rect.minY), in: self)
         guard target.chosen > 0, items.indices.contains(Int(target.chosen) - 1) else { return }
         let picked = items[Int(target.chosen) - 1]
-        guard picked != current else { return }
-        _ = object.setAttribute("default", value: picked)
-        if let label = WasabiFormWidgets.dropDownLabel(of: object) {
-            _ = label.setAttribute("text", value: picked)
-            _ = try? scripts.dispatch(object: label, event: "ontextchanged",
-                                      arguments: [.string(picked)])
-        }
+        try? scripts.selectDropDownItem(picked, on: object)
         needsDisplay = true
     }
 
@@ -3084,9 +3099,27 @@ final class WinampModernMainView: NSView {
         }
     }
 
+    /// Whether the click being released is the first on an object whose script also handles its
+    /// double-click. The main menu's tracking loop would swallow the second click, so the menu waits
+    /// out the double-click interval and a second press cancels it: cPro2 minimal's system button
+    /// opens the menu on one click (`onLeftClick` → a hidden SYSMENU button's `leftClick()`) and
+    /// calls `Application.shutdown()` on two (B187). Read from the event in flight, because the
+    /// script's `leftClick()` reaches the menu through `actionRequested`, which carries no click.
+    private var menuWaitsForDoubleClick: Bool {
+        guard let event = NSApp.currentEvent, event.type == .leftMouseUp, event.clickCount < 2,
+              let pressedObject else { return false }
+        return scripts.hasBinding(for: pressedObject, event: "onleftbuttondblclk")
+    }
+
     /// The host's context menu, dropped under the button that asked for it (the mouse if that button
     /// has no resolved frame — a script can raise this from anywhere).
     private func showMainMenu(from object: WasabiObject?) {
+        if menuWaitsForDoubleClick {
+            let item = DispatchWorkItem { [weak self] in self?.showMainMenu(from: object) }
+            pendingMainMenu = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: item)
+            return
+        }
         let menu = ContextMenuBuilder.buildMenu()
         popUpMenu(menu, from: object)
     }

@@ -31,11 +31,11 @@ WH=$HERE/winhelper
 MENU=$HERE/menu.applescript
 
 SUPPORT="$HOME/Library/Application Support/NullPlayer"
-# Every installed skin of one family, one launch.sh argument per line.
+# Every installed skin of one family, one launch.sh argument per line; `wal` is the gold+silver corpus.
 enumerate() {
   case "$1" in
     classic) find "$SUPPORT/Skins" -maxdepth 1 -type f \( -iname '*.wsz' -o -iname '*.whsz' \) ;;
-    wal)     find "$SUPPORT/WinampModernSkins" -maxdepth 1 -type f -iname '*.wal' ;;
+    wal)     find "$SUPPORT/WinampModernCorpus/gold" "$SUPPORT/WinampModernCorpus/silver" -maxdepth 1 -type f -iname '*.wal' ;;
     wmz)     find "$SUPPORT/WMPSkins" -maxdepth 1 -type f -iname '*.wmz' ;;
   esac | while IFS= read -r f; do basename "$f"; done | sort -f
   case "$1" in

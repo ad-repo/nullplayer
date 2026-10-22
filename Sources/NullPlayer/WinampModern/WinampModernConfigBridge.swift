@@ -62,6 +62,15 @@ enum WinampModernConfigBridge {
     /// readout shows the clamped value rather than lying about a duration the engine never took.
     static let crossfadeSecondsRange: ClosedRange<Int32> = 1...10
 
+    /// The section `Config.getItem(name)` addresses. Winamp's own items answer to their display name
+    /// as well as their GUID, and a skin that asks by name means the same host state: Anunaki's
+    /// repeat menu writes `Config.getItem("Playlist editor").getAttribute("repeat")`, which landed in
+    /// a skin-private "Playlist editor" store and left repeat untouched. Any other name is the skin's.
+    static func section(forItemName name: String) -> String {
+        name.caseInsensitiveCompare("Playlist editor") == .orderedSame
+            ? Attribute.repeatPlayback.section : name
+    }
+
     /// The bridged attribute a `{GUID};Name` pair names, or nil when it is the skin's own.
     static func attribute(section: String, key: String) -> Attribute? {
         Attribute.allCases.first {

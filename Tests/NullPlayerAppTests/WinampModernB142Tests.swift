@@ -103,6 +103,15 @@ final class WinampModernB142Tests: XCTestCase {
         }
     }
 
+    /// Nor its `id`: cPro2 minimal's `OneDirectionText` forwards every param onto its inner text,
+    /// and handed the wrapper's `id` it renamed that text out from under the `embed_xui` link.
+    /// `nullplayer.*` keys are our own markers, which no skin script was ever handed.
+    func testIDAndOurOwnMarkersAreNotDeliveredAsXUIParams() {
+        for name in ["id", "ID", "nullplayer.embedxui"] {
+            XCTAssertTrue(WinampModernScriptRuntime.isConsumedBeforeXUIParams(name), name)
+        }
+    }
+
     /// Everything else still reaches the script. `ModernSongticker.maki` forwards `font`, `align` and
     /// `color` onto its ticker on purpose — a `<group>` has no use for them, and that forwarding is
     /// the whole point of the tag.

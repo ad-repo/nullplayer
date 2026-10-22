@@ -2,8 +2,8 @@ import CoreGraphics
 import XCTest
 @testable import NullPlayer
 
-/// The `.wmz` / `.wal` window drop shadow: the shadow image itself, and the two engine signals that
-/// decide when it is rebuilt.
+/// The window drop shadow: the shadow image itself, and the `.wmz` signal that decides when it is
+/// rebuilt. The `.wal` signal is the canvas's (`WinampModernCanvasTests`).
 final class SkinWindowShadowTests: XCTestCase {
 
     // MARK: - Fixtures
@@ -126,45 +126,5 @@ final class SkinWindowShadowTests: XCTestCase {
     func testAMarqueeOverBareCanvasMovesTheOutline() async throws {
         let renders = try await marqueeRenders(background: "")
         XCTAssertTrue(renders.repaint.alphaChanged)
-    }
-
-    // MARK: - `.wal`: which graph writes may have moved the outline
-
-    func testOnlyOutlineAttributesMoveTheShapeGeneration() {
-        let graph = WasabiObjectGraph()
-        addTeardownBlock { graph.teardown() }
-        let object = graph.makeObject(typeName: "layer", attributes: [:],
-                                      source: WalSourceLocation(path: "test", line: 0, column: 0))
-        func moves(_ attribute: String, _ value: String) -> Bool {
-            let before = object.graphShapeGeneration
-            _ = object.setAttribute(attribute, value: value)
-            return object.graphShapeGeneration != before
-        }
-        XCTAssertFalse(moves("text", "0:42"), "a readout a playing skin writes every second")
-        XCTAssertFalse(moves("color", "255,0,0"))
-        XCTAssertFalse(moves("frame", "3"), "an animation step")
-        XCTAssertTrue(moves("visible", "0"))
-        XCTAssertTrue(moves("alpha", "128"))
-        XCTAssertTrue(moves("image", "drawer.open"))
-        XCTAssertTrue(moves("x", "12"))
-        XCTAssertTrue(moves("h", "40"))
-    }
-
-    /// **Anaheim's mini player.** A layer whose frames are stepped to the music contributes only
-    /// what every frame shows, so the shadow never keeps a frame's ears behind as a ghost.
-    func testAnAnimatedLayerContributesOnlyWhatEveryFrameShows() throws {
-        // Two 4x4 frames side by side: the first is opaque in its left half, the second in its top
-        // half, so only the top-left quadrant is opaque in both.
-        let sheet = try maskImage(width: 8, height: 4) { x, y in
-            let leftFrame = x < 4
-            let column = x % 4
-            return (leftFrame ? column < 2 : y < 2) ? 255 : 0
-        }
-        let core = try XCTUnwrap(WasabiSceneRenderer.animationCore(
-            of: sheet, frameWidth: 4, frameHeight: 4, count: 2, columns: 2))
-        XCTAssertEqual(alpha(core, x: 0, yFromTop: 0), 255, "opaque in both frames")
-        XCTAssertEqual(alpha(core, x: 3, yFromTop: 0), 0, "only the second frame")
-        XCTAssertEqual(alpha(core, x: 0, yFromTop: 3), 0, "only the first frame")
-        XCTAssertEqual(alpha(core, x: 3, yFromTop: 3), 0, "neither")
     }
 }

@@ -62,11 +62,6 @@ class PlexManager {
         didSet {
             // Clear cached content when library changes
             if oldValue?.id != currentLibrary?.id {
-                NSLog("PlexManager: Library changed from %@ (%@) to %@ (%@) — clearing cached content",
-                      oldValue?.title ?? "nil",
-                      oldValue?.id ?? "nil",
-                      currentLibrary?.title ?? "nil",
-                      currentLibrary?.id ?? "nil")
                 clearCachedContent()
             }
             NotificationCenter.default.post(name: Self.libraryDidChangeNotification, object: self)
@@ -150,7 +145,6 @@ class PlexManager {
             return
         }
         
-        NSLog("PlexManager: Found saved account: %@", savedAccount.username)
         self.account = savedAccount
         
         // Restore servers and selection in background
@@ -269,7 +263,6 @@ class PlexManager {
         
         do {
             let fetchedServers = try await authClient.fetchResources(token: token)
-            NSLog("PlexManager: Fetched %d servers", fetchedServers.count)
             
             await MainActor.run {
                 self.servers = fetchedServers
@@ -281,10 +274,8 @@ class PlexManager {
             if let savedServerID = UserDefaults.standard.string(forKey: "PlexCurrentServerID"),
                let savedServer = fetchedServers.first(where: { $0.id == savedServerID }) {
                 serverToConnect = savedServer
-                NSLog("PlexManager: Will connect to saved server: %@", savedServer.name)
             } else if let firstServer = fetchedServers.first {
                 serverToConnect = firstServer
-                NSLog("PlexManager: Will connect to first server: %@", firstServer.name)
             }
             
             // Connect to the server using the full connection logic (tries all connections)
@@ -308,9 +299,7 @@ class PlexManager {
     /// Refresh servers without throwing (for background refresh)
     private func refreshServersInBackground() async {
         do {
-            NSLog("PlexManager: Background refresh of servers starting...")
             try await refreshServers()
-            NSLog("PlexManager: Background refresh completed, found %d servers", servers.count)
 
             // Preload library content in the background without blocking the refresh
             // task itself. Callers that await serverRefreshTask (e.g. the CLI) only need
@@ -339,22 +328,17 @@ class PlexManager {
             isPreloading = true
         }
 
-        NSLog("PlexManager: Starting library content preload")
 
         // Preload music from the current library if it's a music library
         if let musicLib = currentLibrary, musicLib.isMusicLibrary {
             do {
-                NSLog("PlexManager: Fetching artists...")
                 let artists = try await client.fetchAllArtists(libraryID: musicLib.id)
-                NSLog("PlexManager: Fetched %d artists, now fetching albums...", artists.count)
                 let albums = try await client.fetchAllAlbums(libraryID: musicLib.id)
-                NSLog("PlexManager: Fetched %d albums", albums.count)
 
                 await MainActor.run {
                     if self.currentLibrary?.id == musicLib.id {
                         self.cachedArtists = artists
                         self.cachedAlbums = albums
-                        NSLog("PlexManager: Stored preloaded music - %d artists, %d albums", artists.count, albums.count)
                     }
                 }
             } catch {
@@ -367,14 +351,12 @@ class PlexManager {
             ?? availableLibraries.first(where: { $0.isMovieLibrary })
         if let movieLib = movieLib {
             do {
-                NSLog("PlexManager: Fetching movies from '%@'...", movieLib.title)
                 let movies = try await client.fetchAllMovies(libraryID: movieLib.id)
                 await MainActor.run {
                     let activeMovieLib = (self.currentLibrary?.isMovieLibrary == true ? self.currentLibrary : nil)
                         ?? self.availableLibraries.first(where: { $0.isMovieLibrary })
                     if activeMovieLib?.id == movieLib.id {
                         self.cachedMovies = movies
-                        NSLog("PlexManager: Stored preloaded movies - %d", movies.count)
                     }
                 }
             } catch {
@@ -387,14 +369,12 @@ class PlexManager {
             ?? availableLibraries.first(where: { $0.isShowLibrary })
         if let showLib = showLib {
             do {
-                NSLog("PlexManager: Fetching shows from '%@'...", showLib.title)
                 let shows = try await client.fetchAllShows(libraryID: showLib.id)
                 await MainActor.run {
                     let activeShowLib = (self.currentLibrary?.isShowLibrary == true ? self.currentLibrary : nil)
                         ?? self.availableLibraries.first(where: { $0.isShowLibrary })
                     if activeShowLib?.id == showLib.id {
                         self.cachedShows = shows
-                        NSLog("PlexManager: Stored preloaded shows - %d", shows.count)
                     }
                 }
             } catch {
@@ -413,7 +393,6 @@ class PlexManager {
     
     /// Clear cached library content (called when library or server changes, or on refresh)
     func clearCachedContent() {
-        let cachedGenreCount = cachedGenres.count
         cachedArtists = []
         cachedAlbums = []
         cachedMovies = []
@@ -421,7 +400,6 @@ class PlexManager {
         cachedPlaylists = []
         cachedGenres = []
         isContentPreloaded = false
-        NSLog("PlexManager: Cleared cached library content (including %d cached genres)", cachedGenreCount)
     }
     
     /// Connect to a specific server
@@ -430,8 +408,6 @@ class PlexManager {
             throw PlexAuthError.unauthorized
         }
         
-        NSLog("PlexManager: Connecting to server '%@' (id: %@)", server.name, server.id)
-        NSLog("PlexManager: Server has %d connections", server.connections.count)
         for (index, conn) in server.connections.enumerated() {
             NSLog("  Connection %d: %@ (local: %d, relay: %d)", index, conn.uri, conn.local ? 1 : 0, conn.relay ? 1 : 0)
         }
@@ -458,7 +434,6 @@ class PlexManager {
             }
             
             let connType = connection.local ? "local" : (connection.relay ? "relay" : "remote")
-            NSLog("PlexManager: Trying connection: %@ (%@)", connection.uri, connType)
             triedConnections.append("\(connType): \(connection.uri)")
             
             // Create a temporary server with just this connection to test it
@@ -483,7 +458,6 @@ class PlexManager {
             // Check connection with short timeout
             let isOnline = await client.checkConnection()
             if isOnline {
-                NSLog("PlexManager: Connection successful: %@", connection.uri.redactingSensitiveURLQueryItems)
                 workingClient = client
                 break
             } else {
@@ -505,7 +479,6 @@ class PlexManager {
         }
         
         // Fetch libraries
-        NSLog("PlexManager: Fetching libraries...")
         try await refreshLibraries()
         
         connectionState = .connected
@@ -522,7 +495,6 @@ class PlexManager {
         
         // Fetch all libraries (music, movies, shows)
         let allLibraries = try await client.fetchLibraries()
-        NSLog("PlexManager: Found %d total libraries", allLibraries.count)
         for lib in allLibraries {
             NSLog("  Library: %@ (type: %@, id: %@)", lib.title, lib.type, lib.id)
         }
@@ -535,7 +507,6 @@ class PlexManager {
                let savedLibrary = allLibraries.first(where: { $0.id == savedLibraryID }) {
                 // Restore saved library
                 self.currentLibrary = savedLibrary
-                NSLog("PlexManager: Restored saved library: %@", savedLibrary.title)
             } else if let firstMusicLibrary = allLibraries.first(where: { $0.isMusicLibrary }) {
                 // Default to first music library
                 self.currentLibrary = firstMusicLibrary
@@ -546,7 +517,6 @@ class PlexManager {
                 NSLog("PlexManager: Defaulting to first library: %@", firstLibrary.title)
             }
             
-            NSLog("PlexManager: Current library: %@", self.currentLibrary?.title ?? "none")
         }
     }
     

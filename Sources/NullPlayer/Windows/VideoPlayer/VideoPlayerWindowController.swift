@@ -1188,6 +1188,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// right-click rather than a second, thinner imitation of it. Its items target the video view, so
     /// it works wherever it is popped up.
     var contextMenu: NSMenu? { videoPlayerView?.menu }
+    /// What `contextMenu`'s untargeted items act on, for a caller showing it from another window.
+    var contextMenuTarget: AnyObject? { videoPlayerView }
 }
 
 #if DEBUG

@@ -126,15 +126,6 @@ class SubsonicServerClient {
                 throw SubsonicClientError.httpError(statusCode: httpResponse.statusCode)
             }
             
-            // Debug: Print response for troubleshooting
-            #if DEBUG
-            if let jsonString = String(data: data, encoding: .utf8) {
-                NSLog("SubsonicServerClient: Response for %@: %@",
-                      request.url?.lastPathComponent ?? "unknown",
-                      String(jsonString.prefix(500)).redactingSensitiveURLQueryItems)
-            }
-            #endif
-            
             // Parse the response
             let decoder = JSONDecoder()
             let subsonicResponse = try decoder.decode(SubsonicResponse<T>.self, from: data)

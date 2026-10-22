@@ -29,9 +29,7 @@ import Foundation
 enum WasabiMenuBar {
 
     static func isMenu(_ object: WasabiObject) -> Bool {
-        // Namespaced spellings resolve through the type registry to the same tag, so the last
-        // component is what identifies it.
-        (object.typeName.lowercased().components(separatedBy: ":").last ?? "") == "menu"
+        object.tag.is(.menu)
     }
 
     /// Which of the three state objects a `<Menu>` is showing.

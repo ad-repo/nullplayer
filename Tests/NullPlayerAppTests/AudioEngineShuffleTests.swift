@@ -130,6 +130,18 @@ final class AudioEngineShuffleTests: XCTestCase {
         XCTAssertEqual(engine.playlist[engine.currentIndex].id, playing)
     }
 
+    /// Next onto a restored placeholder makes it current, so `play()` resolves it. Skipped, the
+    /// outgoing track stayed current and Next resumed it while the highlight moved on (#583).
+    func testNextMakesAPlaceholderCurrent() {
+        let engine = AudioEngine()
+        engine.setPlaylistTracks(makePlaceholderTracks(count: 3))
+        engine.debugStartShuffleCycleForTesting(at: 0)
+
+        engine.next()
+        XCTAssertEqual(engine.currentIndex, 1)
+        XCTAssertEqual(engine.currentTrack?.id, engine.playlist[1].id)
+    }
+
     private func makePlaceholderTracks(count: Int) -> [Track] {
         let placeholderURL = URL(string: "about:blank")!
         return (0..<count).map { index in

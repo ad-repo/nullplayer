@@ -35,7 +35,15 @@ extension WinampModernScriptRuntime {
                 popupCommands[id]?[index].checked = arguments[1].truthy
             }
             return .null
-        case "popatmouse": return .integer(popupPresenter?(popupItems(of: id, depth: 0), nil) ?? 0)
+        case "disablecommand":
+            let commandID = arguments[0].integerValue
+            if let index = popupCommands[id]?.firstIndex(where: { $0.commandID == commandID }) {
+                popupCommands[id]?[index].disabled = arguments[1].truthy
+            }
+            return .null
+        // No presenter means no menu was shown, which a skin reads as a dismissal.
+        case "popatmouse":
+            return .integer(popupPresenter?(popupItems(of: id, depth: 0), nil) ?? Self.popupDismissed)
         case "popatxy":
             // ClassicPro positions its tab-strip and "goto" menus with
             // `popAtXY(clientToScreenX(b.getLeft()), clientToScreenY(b.getTop() + 26))` — the point is
@@ -43,7 +51,7 @@ extension WinampModernScriptRuntime {
             // window-client space, and the presenter places the menu in that window.
             return .integer(popupPresenter?(popupItems(of: id, depth: 0),
                                             CGPoint(x: Int(arguments[0].integerValue),
-                                                    y: Int(arguments[1].integerValue))) ?? 0)
+                                                    y: Int(arguments[1].integerValue))) ?? Self.popupDismissed)
         default: return .null
         }
     }

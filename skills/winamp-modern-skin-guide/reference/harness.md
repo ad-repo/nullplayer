@@ -31,7 +31,7 @@ WINAMP_MODERN_RENDER_DUMP=/tmp/render \
 
 `WINAMP_MODERN_WAL` also accepts a **directory**, which renders every `.wal` in it inside one
 invocation — the corpus sweep, 79 archives in about five minutes as of 2026-09-06. The count is
-whatever is installed at run time; the sweep prints it rather than asserting one. See *The corpus render sweep* below.
+whatever the directories hold at run time (the corpus scripts default to gold+silver); the sweep prints it rather than asserting one. See *The corpus render sweep* below.
 
 Optional env switches, all off by default:
 
@@ -41,7 +41,7 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_PROBE=<container>/<layout>` | dump every scene node: type, id, frame, clip, bitmap, attributes |
 | `WINAMP_MODERN_RENDER_BITMAPS=1` | count resolved bitmaps and list any that fail to load |
 | `WINAMP_MODERN_PLACE_TRACE=1` | every window-placement decision, in the running app. `[place] <container>` — an auxiliary window's size, its preferred origin, the origin resolved for it, and every frame it had to avoid. `[place/stack] …` — `positionSubWindow`'s stack scan: the player's frame, how many stack members it saw, the `targetY` it chose, and what the non-overlap resolve did with it. `[place/hosted] <id> afterShow=…` — a hosted window's frame *after* it is on screen, which is what catches something moving it later. `[place/script] <container>` — the skin's own MAKI `resize()`/`setTargetX/Y` parking a window, which overrides whatever placement decided and is the one case where an overlap is the skin's arithmetic rather than the host's. `[place/tile] glued <frame> -> <origin>` — the sweep carrying a script-glued frame window with the window it tiled (B156). Window geometry has no useful armchair form; this is how B56 was actually found. The `[place/script]` line also names the window (`WinampModernContainer_<id>`) and ends in `pinned` for a borrowed-origin move; a bare `o<n>` could not say which of a glued pair had moved, and B160's top-edge defect was exactly the wrong one of the two moving first |
-| `NP_SKIN_SHADOW_TRACE=1` | the window drop shadow, **in the running app**, shared with `.wmz` (whose `harness/app-flags.md` row carries the line grammar). For `.wal` the trigger names the newest event that asked for an outline render — `attach`, `enabled`, `layout`, `canvas`, `resize`, `graph` — and each `same`/`rebuild` line carries `pull=<ms>`, the main-thread cost of the outline pass the off-main timing cannot see. A window that was hidden pulls when it is back on screen, under the trigger it was owed. **`scene -<old node> +<new node>` names what moved** whenever a graph write changed this window's own scene: it is how cPro2 Dark Aluminum's beat meter was found to be the 1.5 Hz source of `trigger=graph` checks. A skin that animates by stepping frames (Anaheim's mini player) prints nothing at all while it plays — see `reference/rendering.md` → *The window's drop shadow* |
+| `NP_SKIN_SHADOW_TRACE=1` | the window drop shadow, **in the running app**, shared with `.wmz` (whose `harness/app-flags.md` row carries the line grammar). For `.wal` the trigger is `draw` whenever a frame changed the canvas's alpha (`WinampModernCanvas`), plus `attach`, `enabled`, `layout`, `canvas` and `resize`; `pull=<ms>` is the main-thread cost of handing the outline over, a copy, so it reads `0.0`. A frame that drew only inside the outline pulls nothing, so a playing skin is silent until something moves its edge, and a sliding drawer prints one `rebuild` per drawn frame (Anunaki's EQ drawer: 33 over its 1 s slide, 2026-10-20). A window that was hidden pulls when it is back on screen, under the trigger it was owed. With the screen locked add `WINAMP_MODERN_ASSUME_VISIBLE=1` |
 | `WINAMP_MODERN_SURFACE_TRACE=1` | the hosted-surface reconcile, **in the running app**. One line per pass — `[surf/vis] reconcile engine=<id\|none> holders=<id#stable(frame) …>` — then `[surf/vis] unmount`, `[surf/vis] mount`, `[surf/vis] attached` (already in the hierarchy, left alone) and `[surf/vis] layout <id> frame=…`, each stamped with the **object pointer**. The pointer is the whole point: the bridge vends *one* visualization surface per skin, so the holder the engine moves to and the holder it moves from hand back the same object, and a mount and an unmount that name the same `obj=` in one pass is the double-registration BB35 was. The headless harness installs no component host, so `makeVisualizationSurface()` answers nil, no surface is ever made, and this entire path is invisible to every other probe — a `VIS holder` line proves the *box*, never the surface in it. BB35's addition |
 | `WINAMP_MODERN_RENDER_XUI=1` | list objects with scripts and whether their events bind |
 | `WINAMP_MODERN_RENDER_CLOCK=<seconds>` | pin the animation/ticker clock; render two values to prove motion |
@@ -71,7 +71,7 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_FX[=play]` | every layer whose script has switched **Layer FX** on: grid, flags, and where the evaluated mesh samples its corners from. A mesh that is not the identity is a layer that is actually moving. `=play` tells the skin a track started first, because a meter's FX is switched on from playback |
 | `WINAMP_MODERN_RENDER_FX_SPIN=<seconds>` | samples every warped layer's angle at 60 Hz, printing the wall-clock step between updates and how far it turned. This is how "the animation is rough" is split into *the script's cadence* and *our frame rate* — a smooth meter is a small, even step at an even interval |
 | `WINAMP_MODERN_RENDER_SHOW=<container>[,<container>]` | open auxiliary windows the way the user does from **Skin Windows**, dispatching `onSetVisible` to them and settling again afterwards. Without it the harness only ever sees the windows a skin opens by default, so a defect confined to one that ships `default_visible="0"` — Defix's speaker cabinets, whose `getVisBand` timer *starts* from `onSetVisible` — is invisible to every other probe. **A `default_visible="1"` window is opened without it** (Phase 40), because the app opens it too: the line reads `SHOW <id> (default_visible)`, and a container the app refuses to auto-open prints `DEFAULT-VISIBLE <id> suppressed: <reason>` instead. The settle applies to both |
-| `WINAMP_MODERN_RENDER_EQ=<band>=<value>[,…]` | drive an equalizer change from **outside** the skin — the route a preset, the menu bar or the classic equalizer window takes — and print the handlers it reaches (`EQ handler onEqBandChanged -> ledfillbar.xml`), the values driven, and every `EQ_BAND`/`EQ_PREAMP` slider's resulting 0…255 position. `band` is 0…9 or `preamp`, `value` is MAKI's −127…127; bare `1` sweeps every band. Without it the harness installs no equalizer at all, so `getEqBand` answers 0 and the events never fire. Phase 41's addition, and the only headless way to see a readout that follows the *event* rather than the drag |
+| `WINAMP_MODERN_RENDER_EQ=<band>=<value>[,…]` | drive an equalizer change from **outside** the skin — the route a preset, the menu bar or the classic equalizer window takes — and print the handlers it reaches (`EQ handler onEqBandChanged -> ledfillbar.xml`), the values driven, and every `EQ_BAND`/`EQ_PREAMP` slider's resulting position (−127…127 unless it declares a range). `band` is 0…9 or `preamp`, `value` is MAKI's −127…127; bare `1` sweeps every band. Without it the harness installs no equalizer at all, so `getEqBand` answers 0 and the events never fire. Phase 41's addition, and the only headless way to see a readout that follows the *event* rather than the drag |
 | `WINAMP_MODERN_RENDER_TEXT=1` | poll the host-bound text objects the way the running window does, so **`onTextChanged`** fires headlessly. Prints `TEXT handler -> <script> owner=<id>` per handler reached (with its failure, if any), `TEXT ontextchanged handlers=<n>`, and a `TEXT bound` line per object that declares the event with the content it currently reads. The poll lives in the window controller, so without this every `onTextChanged` in the corpus measures as an unreached handler and a skin whose readouts are written *only* from it reads as a skin with no readouts. Pair with `RENDER_PLAYLIST` for the `PE_Info` feeds, which are empty until there is a queue. B38's addition |
 | `WINAMP_MODERN_RENDER_PLAYLIST=<count>[,current=<n>]` | stand a synthetic queue up behind the component seam **before** the scripts start — the only way a skin's `PlEdit` API can be observed headlessly, since the dump harness sets no component host and every script that walks the queue otherwise takes its empty branch. It also fills the drawn playlist panel, which has always come out as an empty box for exactly that reason. Prints `PLAYLIST before:` / `PLAYLIST after:` so an edit a script made (`removeTrack`, `moveTo`, `clear`) is visible, and `PLAYLIST reveal row=<n>` for a `showTrack`. Pair with `WINAMP_MODERN_CALL_TRACE=1` to see each call and its result. Phase 42's addition |
 | `WINAMP_MODERN_RENDER_KEY=<accelerator>[,<accelerator>]` | press keys at the skin the way the window does — `System.onKeyDown("alt+g")` — and print the handlers each one reached (`KEY handler alt+g -> skin.xml`) plus `KEY <accel>: handlers=<n> consumed=<0/1>`, where `consumed` is whether any handler ran MAKI's `complete;` (what tells the view to swallow the key). Accelerators are Winamp's own lowercase strings: `alt+g`, `ctrl+w`, `esc`. Without it the harness has no keyboard at all and every `onKeyDown` in the corpus measures as an unreached handler. Note the harness answers `isActive()` **true** for every object (no windows, so no focus), where the app answers per window — a `ctrl+w` that measures `consumed=1` here is still gated by focus in the app. Phase 43's addition |
@@ -93,10 +93,13 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_DRAW_PROFILE=1` | per-object draw cost, top 8 — which node costs the frame, without a sampling profiler |
 | `WINAMP_MODERN_DRAW_PROFILE_TOP=<n>` | widen that report. Eight rows name the worst offender; a *distribution* — one object or two hundred? — needs the tail, and on a large skin the answer is usually the tail |
 | `WINAMP_MODERN_FX_TRACE=1` | every `fx_*` call with its receiver: which layers a skin warps, and **when** it switches them on |
-| `WINAMP_MODERN_DRAW_FORMAT=1` | **live**, not headless: what the window actually composites in, printed once per view on its first `draw(_:)` — the context's `bpc=`/`bitmapInfo=`, the backing layer's `contentsFormat`, the window's depth limit and gamut, the screen's EDR headroom, and the window's and screen's colour spaces. Two findings came out of it, both for B119(2). **`bpc=0`** — the context `draw(_:)` is handed is a *display list*, not a bitmap, so everything the renderer records is scaled and colour-matched later, at replay, and `context.ctm` is **1.0 even at 100% on a Retina display**. And `layerFormat=RGBA8` with `edrMax=1.0`, which is what ruled out a structurally f16 backing store |
-| `WINAMP_MODERN_DIRTY_TRACE=1` | **live**, debug builds: one `DIRTY` line per *partial* paint — the dirty rect, the rects being drawn and the clip, in **device pixels**, `FRACTIONAL` on any edge off the grid, and the CTM `draw` was handed. Its first reading (B80, 2026-09-28) is the one to remember: **a `.wal` view's `draw` runs at CTM 1.0 on a 2x panel** — AppKit records it into a display list and replays it at the backing scale — so anything that derives a pixel grid from `context.ctm` inside `draw` is aiming at points. That is why the renderer carries `devicePixelsPerContextUnit` |
+| `WINAMP_MODERN_DRAW_FORMAT=1` | **live**, not headless: what the window actually composites in, printed once per view on its first `draw(_:)` — which since the canvas (2026-10-20) is only the **direct-draw fallback** of a window too large for one; a canvas window shows its picture as the layer's `contents` and never draws — the context's `bpc=`/`bitmapInfo=`, the backing layer's `contentsFormat`, the window's depth limit and gamut, the screen's EDR headroom, and the window's and screen's colour spaces. Two findings came out of it, both for B119(2). **`bpc=0`** — the context `draw(_:)` is handed is a *display list*, not a bitmap, so everything the renderer records is scaled and colour-matched later, at replay, and `context.ctm` is **1.0 even at 100% on a Retina display**. And `layerFormat=RGBA8` with `edrMax=1.0`, which is what ruled out a structurally f16 backing store |
+| `WINAMP_MODERN_DIRTY_TRACE=1` | **live**, debug builds: one `DIRTY` line per *partial* paint of the **direct-draw fallback** (a canvas window never enters `draw(_:)`; its rects are on whole device pixels by construction) — the dirty rect, the rects being drawn and the clip, in **device pixels**, `FRACTIONAL` on any edge off the grid, and the CTM `draw` was handed. Its first reading (B80, 2026-09-28) is the one to remember: **a `.wal` view's `draw` runs at CTM 1.0 on a 2x panel** — AppKit records it into a display list and replays it at the backing scale — so anything that derives a pixel grid from `context.ctm` inside `draw` is aiming at points. That is why the renderer carries `devicePixelsPerContextUnit` |
 | `WINAMP_MODERN_UI_SIZE=<percent>` | **live**, debug builds: apply that UI Size once the skin has loaded, as a skin's `setScale` would. UI Size is otherwise only in the context menu, which cannot be driven, so a fractional-scale defect had no launch route: `WINAMP_MODERN_UI_SIZE=105 skills/app-control/scripts/launch.sh <skin>` |
-| `WINAMP_MODERN_PAINT_RATE=1` | **live, and release builds too** — the one `WINAMP_MODERN_*` probe that survives a release binary, because the question it answers is a release-profile question. Every 2 s, per window: `paints/s=`, then `dirty=` (the mean share of the window covered by the `dirtyRect` AppKit hands `draw`) and `rects=` (the mean share of the rects actually being drawn). A periodic update that repaints the whole window reads `dirty=100%` at the clock's rate. That is how B152 found WMP11-BlueVU's player at `paints/s=120 dirty=100%` and confirmed the fix at `88 / 25%`. Read it beside `sample`: it says *what* is repainting, and the profile says what that costs. `window=` is blank for a skin window with no title |
+| `WINAMP_MODERN_SYNC_FRAMES=1` | **live**: render every frame on the main thread instead of the canvas's queue (`WinampModernMainView+Frames`). The A/B switch for "did rendering off the main thread cause this?" — one binary, two launches. Also the way to see what the queue saves: debug cPro Bento, playing, ran **84.6%** main-thread busy with it and **36.9%** without (2026-10-20) |
+| `WINAMP_MODERN_ASSUME_VISIBLE=1` | **live**, debug builds: every `.wal` window counts as on screen whatever its occlusion says. A locked screen or a screen saver occludes every window, which stops them painting by design (B119), so this is what lets an agent drive and capture the app with nobody at the machine. `winhelper capture` still works locked; clicks and `capture-region` do not — use `WINAMP_MODERN_LIVE_CLICKS`. It also makes `SkinWindowShadow` (every family) pull shapes whatever its parent's occlusion says; `capture-region` cannot photograph a locked screen, so capture the shadow child itself: `screencapture -l <id>` of the window titled `NullPlayer.SkinShadow`, 30 pt larger than its parent on every side, and composite the parent over it |
+| `WINAMP_MODERN_LIVE_CLICKS=<s>@<x>,<y>[;…]` | **live**, debug builds: click the main window at view point `x,y` (top-left, 1x points) `s` seconds after it first gets a window, through its own `sendEvent`, with a `mouseMoved` first so hover-revealed controls are there. `<s>@move:<dx>,<dy>` moves the window instead. Posted events never reach a locked session; these do. A background window that never becomes key never links its shadow child, so open with a `move:1,0;…@move:-1,0` pair before measuring a shadow |
+| `WINAMP_MODERN_PAINT_RATE=1` | **live, and release builds too** — the one `WINAMP_MODERN_*` probe that survives a release binary, because the question it answers is a release-profile question. Every 2 s, per window: `paints/s=` (frames shown), then `dirty=` (the mean share of the window covered by a frame's rects' bounding box) and `rects=` (the mean share of the rects themselves). A periodic update that repaints the whole window reads `dirty=100%` at the clock's rate. That is how B152 found WMP11-BlueVU's player at `paints/s=120 dirty=100%` and confirmed the fix at `88 / 25%`. Read it beside `sample`: it says *what* is repainting, and the profile says what that costs. `window=` is blank for a skin window with no title |
 | `WINAMP_MODERN_SEEK_TRACE=1` | **live**, not headless: each time the posted play position moves, every object the seek bar is made of together — id, type, action, `value=`, the value it resolves to, and its frame — over one header line carrying the host's clock and state. **All of them, in one place, is the point**: a seek bar is routinely more than one object, and a skin that draws two thumbs is two objects disagreeing, which no single value can show. It is what found B107's second thumb — cPro_MMD stacks `seeker` and `seeker2` on the identical frame `{{10,434},{480,20}}`, and they agreed for exactly as long as they shared a clock |
 | `WINAMP_MODERN_CALL_TRACE=1` | every MAKI method call with its arguments and result |
 | `WINAMP_MODERN_ACTION_TRACE=1` | **runs in the app as well as the harness.** Every `sendAction` with its **receiver**: `ACTION hide_comp param=pe -> group#sui.content`. `CALL_TRACE` prints the same call without saying who it was addressed to, and the receiver is the whole question for a script-to-script message, because a handler only hears an action bound to *that* object. Big Bento's side playlist narrows the SUI content from an action sent to `sui.content` on open and had no counterpart on close (BB30) — a pair that is invisible in every other probe |
@@ -120,9 +123,10 @@ Optional env switches, all off by default:
 Timing probes need an optimized build: `swift test -Xswiftc -O --filter WinampModernRenderDumpTests`
 (a debug build is ~6× slower and will mislead you; `swift test -c release` does not compile, because
 the test target uses `#if DEBUG` hooks). Two things that waste an afternoon: `cd`-ing out of the repo
-before `swift test` fails silently when the output is piped to `grep`, and the harness's skin
-configuration persists in the **xctest** UserDefaults domain between runs
-(`defaults delete com.apple.dt.xctest.tool` resets it).
+before `swift test` fails silently when the output is piped to `grep`. Skin configuration does
+**not** persist between runs: an `xctest` process keeps it in memory
+(`WinampModernConfiguration.processDefaults`, B211), so every harness run starts from a skin's
+first-run state — Big Bento Modern at 1536×878, BOOM on its packaging intro.
 
 ### What the probe models about windows
 
@@ -227,16 +231,14 @@ that changes the right attributes but nothing on screen is a renderer gap.
 > **Anexa's `main-shade` is genuinely nondeterministic**, not just an encoder artifact: two runs of
 > the same binary differ in the pixels around `(47, 38)-(75, 64)`. Discount it in a sweep.
 >
-> **Reset the xctest defaults domain before a before/after sweep, and take both halves of the pair
-> without running anything else in between.** Skin configuration persists in that domain (see above),
-> so *any* probe run between the two halves contaminates the second one — and a probe that calls
-> `runtime.start()` is enough on its own, because a skin's `onScriptLoaded` writes configuration.
-> This has produced a false regression: a `ColorMgr` pass whose "after" sweep was taken downstream of
-> a corpus-wide probe reported changed images in a skin the change could not touch, and the diff read
-> exactly like a real defect — **no new diagnostic, no failed handler, and reproducible against the
-> stale baseline** (two runs of the same binary agreed with each other, which is the check that
-> normally separates a real change from noise, and it passed). The tell is a skin changing that the
-> change has no mechanism to reach. `defaults delete com.apple.dt.xctest.tool`, then re-run.
+> **Every harness process starts from no stored skin settings** (B211). They used to share the
+> `xctest` tool's defaults domain, so a probe run between the two halves of a before/after pair
+> contaminated the second one — a skin's `onScriptLoaded` writes configuration — and produced false
+> regressions with no new diagnostic. The store is now in memory per process, so a sweep is a
+> function of the tree: two captures with a full feature-index run between them differ only in the
+> known nondeterministic items and the live clocks (Vortex's and Mac OS X Panther's dashboards).
+> Itemskin's `cont.clear.avs` is one of those items: it dumps at 330x137 or 660x274 from run to run
+> of the same tree, and running the skin alone flips it either way (measured 2026-10-20).
 
 > **A click is driven when the loop reaches its container, so the clicked container is dumped
 > first.** The dump walks containers in declaration order and drives `RENDER_CLICK` inside that walk;
@@ -311,7 +313,7 @@ That is how a title box overlapping the artist beneath it survived a clean rende
 are deliberately long enough to need more room than a toast declares, because auto-width and ticker
 behaviour are only exercised by a string that does not fit.
 
-### The corpus census — one structural row per installed skin
+### The corpus census — one structural row per corpus skin
 
 `scripts/wal_skin_census.sh <outdir>` is the sweep's reporting sibling. It runs one render-dump pass
 and one `WINAMP_MODERN_DRAG_HOSTED` pass over the corpus and writes **one TSV row per archive** —
@@ -322,10 +324,21 @@ was measured at. It answers "what is the state of the whole corpus" where the sw
 change move anything". No engine code: everything in a row already existed on a dump line.
 
 ```sh
-scripts/wal_skin_census.sh <outdir>                 # census.tsv, plus render.txt/hosted.txt/damaged.txt
+scripts/wal_skin_census.sh <outdir>                 # census.tsv, plus png/<skin>.log, hosted.txt, render.txt
 scripts/wal_skin_census.sh <outdir> --parse-only    # re-derive census.tsv from a capture already there
-scripts/wal_skin_census.sh <outdir> --corpus <dir>  # one skin alone, for a damaged-log re-run
+scripts/wal_skin_census.sh <outdir> --corpus <dir>  # one skin alone
 ```
+
+**The corpus is `~/Library/Application Support/NullPlayer/WinampModernCorpus/{gold,silver,bronze,quarantine}/`**
+(B167), tiered by the committed `docs/winamp-modern/corpus-manifest.tsv`, and never the app's own
+`WinampModernSkins/` — that is the importer's install folder, so whatever sits there is in the user's
+skin menu. Every corpus script defaults to gold+silver (`scripts/lib/wal_corpus.sh`). `--corpus` and
+the harness variables `WINAMP_MODERN_WAL`, `WINAMP_MODERN_DRAG_PROBE` and `WINAMP_MODERN_DRAG_HOSTED`
+all take one archive, one directory, or a `:`-separated list of directories walked as one corpus
+(`WinampModernCorpusPaths`); a file name is unique across tiers, so per-skin logs and PNG folders
+never collide. The ClassicPro engine stays at `WinampModernSkins/ClassicProEngine/`: it is app state,
+not a corpus member. `app-control`'s `window-census.sh --all wal` walks gold+silver, and `launch.sh`
+falls back to them for a bare name that is not installed.
 
 It inherits the sweep's freeze rule, its dirty-tree refusal and its redirect-don't-pipe rule, and
 `--parse-only` exists so a parsing or rating change can be checked against a known-good capture
@@ -338,13 +351,11 @@ without paying five minutes for another one. Two things about it are load-bearin
   asserting a fixed number goes wrong in a way that looks right. On 2026-09-06 it measured **79
   archives, 75 distinct skins** — four archives are byte-identical duplicates under a second filename,
   which the sha256 column makes visible. **Count per file where a row is per file, per distinct skin
-  where a row is per skin.**
-- **`damaged` is a column, not an afterthought.** The sweep's interleaved writes eat whole blocks of
-  the log at random in about half of all passes, so a census that inherited the sweep but not this
-  would emit *silently missing fields*. A skin whose log came back damaged gets a row carrying its
-  identity and the flag and nothing else, and is named for a solo re-run. Two consecutive passes on
-  an unchanged tree (2026-09-06) came back byte-identical, with one skin damaged in both; run alone it
-  produced a full row.
+  where a row is per skin.** Since B167 the committed manifest pins the corpus, and its rev is the
+  corpus's name — `wal_reach.sh` prints it beside every count.
+- **Each row is parsed from that skin's own log, `png/<skin>.log`** — see *one log per skin* under
+  the sweep's traps below. Until B166 the census parsed the shared stdout and needed a `damaged`
+  column for the rows interleaving had eaten.
 
 **A count in this guide is dated by its corpus, and the date cannot be recovered from `git blame`.**
 Sentences like "19 of the 36 installed skins ship `<slider>`" are measurements: the denominator is a
@@ -363,10 +374,209 @@ is defined, with the measurements that ruled out the obvious alternatives, in
 `.claude/skills/wal-skin-report/SKILL.md` → *The census rating is not a grade*; the user-facing list
 it feeds is `docs/winamp-modern/skin-compatibility.md`.
 
+### The static feature index — what every skin declares, without running it
+
+`scripts/wal_feature_index.sh <outdir> [--corpus <dir[:dir…]>]` (B168) writes `features.tsv` — one row
+per (skin, feature): `skin, sha256, kind, feature, implemented`. It is the reach instrument: "how many
+skins use X" is a query over it, not a grep over a hand extract. ~30 s over gold+silver, ~90 s over
+the 906 crawl candidates (2026-10-19), mostly the build.
+
+- `maki-call` `<classguid>.<method>` an instruction invokes, `implemented` yes/no against the
+  runtime's own `signature(for:)`; `maki-event` a handler a binding names (`-`: the host dispatches
+  events). From `WinampModernStaticDemandTests`, driven by `WINAMP_MODERN_STATIC_DEMAND=<dir[:dir…]>`
+  and `WINAMP_MODERN_STATIC_DEMAND_OUT=<file>`. Parse-only: the runtime is built and never started.
+  It reads the bound programs (the engine's too, for a cPro skin) **plus every `.maki` the archive
+  ships** — a `<script>` inside a `<groupdef>` binds only when something instantiates the group, and
+  the bound-only first draft missed Hal's Eye's `manual.maki` that way. The GUID is
+  `MakiClassGUID.canonical`; `docs/winamp-modern/maki-classes.tsv` names it (`d6f50f64…` is
+  `System`), harvested from the `extern class` lines of the `.mi` headers the corpus ships.
+- `xml-tag`, `xml-attr` (`tag@attr`), `xml-action`, `xml-display`: every comment-stripped `.xml` in
+  the archive, lowercased. The **tree**, not the include closure — an orphan file counts.
+- `family` (cpro / standardframe / own-wasabi / plain, a path heuristic) and `load` (ok/failed). A
+  skin that does not load keeps its XML and family rows; the script fails if any archive lacks a
+  `load` row, so none is skipped silently.
+
+Reach is `scripts/wal_reach.sh <kind> <feature-regex> [--index <features.tsv>]` (B171): it joins the
+index to `corpus-manifest.tsv` by sha256 and prints `gold a/A, silver n/N, bronze m/M, quarantine q/Q
+(manifest <rev>)`. A byte-identical archive listed in two tiers counts once, in the better one; a tier
+the index covers in part, or a skin the manifest lacks, fails as a stale index. The default index is
+`WinampModernCorpus/index/features.tsv`, built over every tier with
+`wal_feature_index.sh "$WAL_CORPUS_ROOT/index" --corpus "$WAL_CORPUS_ALL"` (~2 min); rebuild it after
+an intake. At B168's close the plain `awk … | cut -f1 | sort -u | wc -l` count matched an independent extract-and-`rg` over gold+silver for `getEndFrame` (3),
+`setClipboardText` (2), `activeimage` (75) and `text@wrap` (8, which needs `rg -U` — Wasabi tags span
+lines). Two runs are byte-identical.
+
+The **demand index** is `scripts/wal_demand.sh [--index <features.tsv>] > demand.tsv` (B174, the S4
+table): one row per MAKI call the runtime lacks (`maki-call`, `implemented` `no`), named
+`Class.method`, with distinct skins per tier and three sample skins, best tier first. It joins tier
+the way `wal_reach.sh` does, and its first line carries the manifest rev. Rows are ordered by skins,
+then gold+silver, then call, so two runs are byte-identical (~1 s). It counts declarations, not
+consequences: the backlog's S4 ranking multiplies the count by a severity and visibility read from
+the call site, because every miss aborts its whole handler and *which* handler decides the damage.
+Skins that ship `scripts/*.m` show the handler directly; `RENDER_DISASM=@<source>` covers the rest.
+
+### The motion sweep — does declared motion move? (B202, S3)
+
+```sh
+scripts/wal_motion_sweep.sh <outdir> --shards 10      # gold+silver, ~60 s; --corpus <dir[:dir…]>
+```
+
+`WinampModernMotionSweepTests` (`WINAMP_MODERN_MOTION_SWEEP=<dir[:dir…]>`,
+`WINAMP_MODERN_MOTION_SWEEP_OUT=<file>`) loads each skin, starts its scripts, seeds `onResize`, and
+draws every window container's **opening** layout at t = 0, 0.25, 1 and 4 s. Each rung is a pair: the
+run loop is pumped until t, so a script `Timer` ticks, and the render clock is pinned to the same
+instant, so a play head agrees with it. The clock is `systemUptime`-based, not zero-based, because
+`play()` stamps `animstart` with the uptime, and a ladder from 0 reads every script-started
+animation as frame 0. The host is `WinampModernStubHost`: **nothing is playing**, so this is motion
+*at rest*, and a VU meter or beat layer reading `never-played` is the expected answer, not a defect.
+Every skin costs the 4 s ladder, so shard it.
+
+`motion.tsv`, one row per (skin, container, layout):
+
+| Column | Meaning |
+|---|---|
+| `open` | `1` for the main player and `default_visible` windows the app opens; a closed window legitimately waits for `onSetVisible` (Defix's speakers) |
+| `frames` | each rung labelled by the first rung it is pixel-identical to: `aaaa` still, `abcd` moving, `abca` back where it started |
+| `verdict` | `static`, `moving`, or `reverted` (the last rung equals the first: a timer undid its transition, Phase 26) |
+| `animatedlayers`, `autoplay` | `animatedlayer`s under the layout, and how many self-play (`autoplay` or `autoreplay`, as `WasabiAnimation.state` reads them) |
+| `timer` | a bound program calls `Timer.start` — nearly every skin, so it is not a motion signal on its own |
+| `suspect` | an `animatedlayer` declared in this layout, and `static` |
+| `moved` | scene nodes whose frame, bitmap or alpha changed across the ladder. Pixel motion with no node here is drawn content: a ticker, a scrolling text |
+| `anim` | per `animatedlayer`: `moving`; `never-played`; `stuck` (playing, frame never advanced); `one-frame` (playing, but its sheet resolves to one frame); `not-repainted` (frame advanced, layout pixels did not); `hidden` (advancing, not in the drawn scene) |
+| `still` | how many of this layout's `animatedlayer`s are not `moving` |
+
+The summary names suspect skins by the plan's rule (§3 S3): the skin declares an `animatedlayer`, an
+`autoplay` or a script `Timer`, and no window moved — 51 of 114 on 2026-10-19, most of them on the
+`Timer` clause. `impact.tsv` is S4's motion impact score per skin: `animated`, `still`, `suspect`.
+`ranking.tsv` is S4's motion-dead ranking: one row per plan cause (never played; played but not
+repainted; played but drawn at one frame; plus suspects with a `Timer` and no animated layer),
+counted over suspect skins only, `priority = skins × 2 × visibility ÷ 1` — severity 2 is motion-dead's
+place on the S4 ladder, visibility 3 when the cause sits in an open window, and cost stays 1 until
+the plan's hand-tuning sets it. `hidden` layers are not ranked: never drawn is coverage, not motion.
+**Verdicts are repeatable; the detail is not quite.** Two runs on 2026-10-19 (manifest `9e68ffe0`)
+had identical `verdict` columns, and 3 of 748 rows differed in `frames` or `anim`, all layers whose
+looping phase depends on the absolute uptime. Diff `verdict` across a change, not the whole file.
+`not-repainted` compares the *layout's* pixels, so a layer that moves beside a ticker reads as
+`moving` either way. Its first run's findings are in B202's archive entry.
+
+### The interaction sweep — does a hooked control do anything? (B205, S3)
+
+```sh
+scripts/wal_interaction_sweep.sh <outdir> --shards 30   # gold+silver, ~17 min; --corpus <dir[:dir…]>
+```
+
+`WinampModernInteractionSweepTests` (`WINAMP_MODERN_INTERACTION_SWEEP=<dir[:dir…]>`,
+`WINAMP_MODERN_INTERACTION_SWEEP_OUT=<file>`) is `RENDER_CLICK` generalised: every object in an open
+window's opening layout that a script binds a pointer event on, driven the way
+`WinampModernMainView` drives it — x/y on the button events converted by the view's own
+`pointInEventSpace` (`reference/scripting.md` → *An XUI widget is not a space of its own*), none on `onLeftClick`,
+the pointer parked where the press is for `isMouseOverRect` and `getMousePosX`. The press goes to
+whatever the hit test returns there, so a control an `embed_xui` group wraps (`bento:tabbutton`,
+`Wasabi:Frame`) is driven through its inner object and reaches the group by the runtime's own
+forward (`embeddingOwners`). The view's half of a gesture is mirrored as the render dump's `CLICK`
+mirrors it: a click performs the radio / togglebutton / `cfgattrib` flip, and `action=`,
+`dblclickaction` and `rightclickaction` count as an effect unless the host answers them as inert.
+Without that, a transport button whose script only lights a label (Dreliction) read as dead.
+Gestures follow the bindings:
+
+| Gesture | When | Events |
+|---|---|---|
+| `click` | a left down, up or click is bound | down, up, `onLeftClick` |
+| `dblclick` | `onLeftButtonDblClk` is bound | down, dblclk, up |
+| `drag` | `onMouseMove` is bound, or a `layer`/`animatedlayer`/`slider` binds a press | down, four moves to the far end of the long axis with 0.1 s pumped between them, up. A knob that polls the pointer from a timer while held (mmd3's bass/treble) binds no `onMouseMove` and only answers this |
+| `right` | a right down, up or click is bound | down, up, `onRightClick`; the menu it builds is counted and answered 0 |
+
+**Every gesture is a fresh load**, and the skin's stored configuration (`winampModern.config.*` in
+this process's defaults) is put back after each one and after the run. Without that, a close button
+or a tab earlier in the walk makes every later control unreachable, and a click that writes a
+private value changes the next load. Rows are therefore independent of order. The cost is a load per
+gesture plus ~2.5 s of settling, mostly asleep: 30 shards on 10 cores ran at ~500% CPU. It is past
+a foreground tool call's 10-minute limit, so run it with `run_in_background`; rows are appended per
+skin, so the shard files show progress and a crash costs one skin.
+
+**The noise control.** A fresh load runs 1 s before anything is measured, then watches 1 s more with
+nothing driven. Any attribute that changes by itself in that window (a ticker, a clock) is excluded
+from `changed`; if it moved pixels, pixels are not counted for that gesture; and the handlers and
+failures a timer produced in it are excluded from `handlers` and `failed` — EPS's clock fails
+`formatDate` every second, and without this every one of its 103 gestures read as blocked. With a
+0.3 s window, 33 verdicts and one skin's control list flipped between runs. At 1 s two runs had the
+same 2,502 rows and differed on 23 verdicts, nearly all in the cPro2 Styler family, whose beat meter
+writes at ~1.5 Hz — slower than the window. Diff verdicts across a change with that in mind.
+B228's check (2026-10-21, gold and silver run separately at `--shards 60`, ~4 min each) found the
+noise reaches past Styler: two baseline passes of one build disagreed on 67 cells and 8 verdicts,
+led by seek sliders, mute toggles and vis triggers. CopperdeckII's `seeker.ghost.act` drag and
+winampmodern566's `main.vis.trigger` drag flip verdict between two solo baseline runs. B236/B237's
+check (2026-10-21) added more that flip between solo runs of one build: Dreliction's transport labels
+(`Label Play/Pause/Stop over-active`, `button#Stop` right), CopperdeckII's `player.vis.cover` drag,
+S7Reflex's `beatvisualization` click, winampmodern566's album-art double-click, Symplicipod's
+`window:notifier=0` effect, and hatsune_miku's `visual.trigger` drive point (440/441/436). Take a second
+baseline pass and count only what differs from both.
+
+`interaction.tsv`, one row per (skin, container, layout, object, gesture):
+
+| Column | Meaning |
+|---|---|
+| `point` | where it was driven: the centre, else the first point of a 7×7 grid over the visible frame where the hit test returns the object — so the artwork's alpha and region decide it, with no second model of either |
+| `hit` | `yes`; for an unreachable control, `clipped` (out of its window) or `covered:<type#id>` (what the hit test answers at its centre) |
+| `verdict` | `works` (an attribute anywhere changed, pixels moved, or it asked for an action, a window, a menu or a markup command); `silent` (handlers ran, nothing observable); `blocked` (a handler failed); `unbound` (no handler ran); `unreachable`; per skin, `none` (no hooked control in an open window) or `failed` (did not load) |
+| `handlers` | handlers run, including script-to-script chains |
+| `failed` | `method:<name>` for a call the runtime lacks — the demand index's unit — else the diagnostic code |
+| `changed` | attributes changed graph-wide, `+px` when this window's pixels moved |
+| `effect` | `action:<action>;<param>` (a script's), `markup:<action>` (the view's), `window:<id>=0/1`, `menu:<items>` |
+
+**What it does not do.** Only the opening layout of open windows is walked, at rest: a control in a
+closed drawer, another layout or a later state is S3.5's. A `covered:` row is often the *other half
+of a state pair* (mmd3's `cttoggle2` sits under `cttoggle` until the drawer opens), so read it as
+"not reachable in this state", not "never reachable"; `covered:layout` is the exception, a control
+the hit test never admits at all. And a plain `action=` button with no script is not a target at all — its whole behaviour is static,
+and the host-action census answers it. Menus are counted, not walked item by item: the plan's per-item menu sweep is not
+built.
+
+### Growing the corpus — the crawler and the intake
+
+New skins enter in two steps (`corpus-runner-plan.md` §8). Neither touches gold.
+
+```sh
+python3 -I scripts/wal_corpus_crawl.py <dir> [--source heritage|archive|wincustomize]  # download candidates
+python3 -I scripts/wal_corpus_crawl.py selftest
+scripts/wal_intake.sh <dir> <outdir>            # rate them: <outdir>/intake.tsv, nothing moves
+scripts/wal_intake.sh <dir> <outdir> --admit    # and move each into its tier + append the manifest
+```
+
+**The crawler** (`wal_corpus_crawl.py`) walks winampheritage.com, archive.org's `winampskinsmodern`
+and wincustomize.com, keeps a `.wal` as-is, and repacks every skin root (a folder holding `skin.xml`)
+inside a `.zip` as its own `.wal`; classic skins and RAR/7z payloads are skipped. It dedupes **by
+content** against every tier, quarantine included: ≥90% shared (path, crc32) entries is the same
+skin, because both file names and `<skininfo><name>` fail measured cases. A name match with other
+content is kept and flagged `name-matches:` in `<dir>/manifest.tsv` (`file, internal_name, url,
+flag`). Downloads are cached in `<dir>/.cache`, so a re-run fetches only what is new.
+
+**The intake** (`wal_intake.sh`) runs the census over the candidates, the feature index over them and
+over gold+silver, and writes `intake.tsv` — `rank, file, sha256, tier, load, rating, unimplemented,
+features, gain, added`, one row per candidate. *Health* is `rating` plus `unimplemented` (distinct
+MAKI calls `signature(for:)` lacks); *value* is `gain`, the `maki-*`/`xml-*` features it adds that the
+corpus and every earlier pick lack (`added` lists the first 40). Rank is greedy set cover, ties to
+the lowest sha256, so the file is a pure function of the two sha256 sets and the rev — two runs from
+a clean outdir are byte-identical. Silver is the first 25 of the order with gain ≥ 3 (the constants
+at the top of the script); does-not-load is quarantine; the rest is bronze. A skin the census never
+reached stops the run instead of being quarantined, because that is a crashed pass, not a verdict.
+
+It takes ~48 min over 906 candidates (2026-10-19), ~40 of it the census's hosted pass, so it is
+past a foreground tool call's 10-minute limit: run it with `run_in_background` and trust the run only
+on its `wal_intake: … -> intake.tsv` line. A backgrounded run survived to a complete capture under
+this harness on 2026-10-19 (39 skins, byte-identical to the foreground run).
+
+**Tier decides what runs.** The pre-merge render sweep, the census and the app-driven tools
+(`window-census.sh --all wal`, `skin-pick-matrix`) take gold+silver. `--touching` selects from every
+tier. A full Bronze census is a batch job, after an intake or before a release. Gold and Silver are
+eligible for a live audit (`/wal-skin-report`), Bronze never. **After an admission, copy (never move)
+each new Gold or Silver archive into `WinampModernSkins/`**, so the user can try it from the skin
+menu. Copy, because the corpus file is the measured input and must not change when the app is used.
+
 ### The corpus render sweep — what an engine-wide change reached
 
 A change to loading, initialization, script startup, hit testing or **drawing** reaches every skin,
-so the way to see what it did to them is a before/after capture across the whole installed corpus.
+so the way to see what it did to them is a before/after capture across the whole corpus (gold+silver).
 **The baseline is the engine's previous guess, not Winamp**: a skin that moves may have been
 repaired as easily as broken, and each difference is classified against the skin's own artwork and
 script — `skin-subsystem-blueprint` § *A sweep diff is unclassified, not a regression* is the method.
@@ -387,7 +597,7 @@ checked on screen.
 It is a committed script. Do not paste a shell function out of this file:
 
 ```sh
-scripts/wal_render_sweep.sh capture <outdir>        # one pass: raw.txt, invariants.txt, png/
+scripts/wal_render_sweep.sh capture <outdir>        # one pass: png/ (+ png/<skin>.log), invariants.txt, raw.txt
 scripts/wal_render_sweep.sh compare <base> <curr>   # invariants diff + per-image maxdelta report
 ```
 
@@ -395,6 +605,29 @@ scripts/wal_render_sweep.sh compare <base> <curr>   # invariants diff + per-imag
 run **one skin alone** — point it at a directory holding just that archive. That check is worth
 knowing: if a skin's lines come back when it runs by itself, the sweep capture was the problem and
 not the code.
+
+#### Impact-selected and sharded sweeps
+
+```sh
+scripts/wal_render_sweep.sh capture <outdir> --shards 10                     # gold+silver, ~25 s
+scripts/wal_render_sweep.sh capture <outdir> --touching Wasabi:Frame,text@wrap \
+    --index <features.tsv> --shards 10                                        # every tier, selected
+```
+
+**`--touching <feature,…> --index <features.tsv>`** (B170) sweeps only the skins whose index rows
+name one of the features — the `feature` column, case-insensitive, any kind, so `Wasabi:Frame` is the
+xml-tag and `text@wrap` the attribute; a MAKI feature is matched whole, `<classguid>.<method>`. Its corpus defaults to **every tier** (gold, silver, bronze,
+quarantine): it is how a change reaches Bronze at all. The index must cover the corpus — build one with
+`wal_feature_index.sh --corpus` over all four tiers (~2 min) — and a matching skin the corpus lacks
+stops the run as a stale index. Two captures for a before/after need the same `--touching` and index.
+
+**`--shards K`** builds once, then runs K `xcrun xctest` processes over the archives' sha256 order
+(shard *i* takes every K-th), all writing per-skin logs into one `png/`, so the capture is the same
+shape as an unsharded one and `compare` does not care. Not `swift test --skip-build`: SwiftPM holds a
+lock on `.build`, and K of those ran one after another. Measured 2026-10-19 over gold+silver (114
+skins, 10 cores, 32 GB): K = 1/2/4/6/8/10 → **81/42/30/27/24/22 s** wall, peak summed RSS 2.4–2.9 GB
+at every K, and every K's capture equal to K=1's bar the nondeterministic pair below. Neither memory
+nor the shared ClassicPro engine store limits it; **the core count does — pass `--shards` = cores.**
 
 **`compare` does the half that used to be done by hand and mostly therefore not at all.** It diffs
 the invariant lines *and* compares every dumped PNG, reporting per image: identical, `maxdelta=N`
@@ -422,7 +655,15 @@ it. Confirm it the cheap way before spending a thought on it: capture twice off 
 
 **One invariant line is nondeterministic too.** `S7Reflex`'s `RENDER-DUMP MLibrary/normal` reports
 `min=452x164` on some runs and `min=354x164` on others, from one binary — measured 2026-10-08, two
-solo runs of the same baseline build giving one of each. Confirm it the same way.
+solo runs of the same baseline build giving one of each. Confirm it the same way. Since B169 the same
+line flips in `winampmodern566` and `XENERGY1` too (2026-10-19), which share that library layout.
+Two more, from B231's sweeps at 2x and 2.5x (2026-10-21): `MoonLight`'s `cont.clear.dl/layout.clear.dl`
+canvas flips between 410x281 and 560x340 in a sharded pass (solo runs of either build agree), and
+`--Vortex--` and `Mac_OS_X__-_Panther`'s `main-dashboard.png` draw a clock at the bottom, so they
+differ between two solo runs of one build, like Anexa's shade. `Itemskin`'s `cont.clear.avs` canvas
+flips between 330x137 and 660x274 the same way as MoonLight's (B228's sweeps, both directions).
+`CopperdeckII`'s `MLibrary/normal` flips `min=467x135`/`min=289x135` between solo runs of one build,
+like S7Reflex's (B237, 2026-10-21).
 
 Those grep-selected lines are the invariants worth diffing: the container list, the surface catalog,
 the window menu, every layout's canvas size and node count, every hosted holder's frame, and the
@@ -458,17 +699,19 @@ need the worktree at all — capture the baseline *before* you start editing.
   lines, reproducibly and with no error. *Handled:* the script redirects, and keeps **stderr in its
   own file** — `2>&1` is not enough, because the runner's banners reach fd 2 through a second file
   offset and overwrite stdout mid-line.
-- **Interleaved writes still eat whole blocks of the log, and they look exactly like a dropped
-  container.** Splitting stderr helps and does not cure it. Measured 2026-09-02: one pass lost 25 of
-  BLAKK.wal's invariant lines and another lost 3 of Itemskin.wal's, while every one of their PNGs
-  stayed byte-identical and **both skins came back identical when run alone**. Re-running does not
-  reliably clear it — four consecutive passes over one build damaged the same skin every time.
-  *Handled:* `capture` attributes each collision to its owning `SKIN` line and writes the names to
-  `damaged.txt`; `compare` leaves those skins out of the invariants diff and tells you to run each
-  alone. Their PNGs are unaffected and are still compared.
+- **One log per skin; the shared stdout is for reading only.** On stdout, interleaved writes ate
+  whole blocks of the log in about half of all passes and looked exactly like a dropped container —
+  measured 2026-09-02, one pass lost 25 of BLAKK.wal's invariant lines and another 3 of Itemskin.wal's,
+  PNGs byte-identical, both skins identical run alone; XENERGY1's last `FINDING` line took XCTest's
+  `Test Case … passed` banner every pass. *Handled (B166):* in a directory run the harness points
+  fd 1 at `<dumpdir>/<skin>.log` for the duration of that skin (`writingStdout(to:)` in
+  `WinampModernRenderDumpTests`), then echoes the file to stdout for a person reading by hand.
+  `capture` and the census build everything from those files. Measured 2026-10-19, 89 archives: two
+  consecutive passes with zero mid-line collisions in any log, invariants identical to each other and,
+  for all 88 skins the stdout-era pass had not damaged, to that pass.
 - **Run the same build twice before believing any diff.** Verified 2026-09-02 on this corpus: two
   passes over one unchanged build were byte-identical on all 590 images and differed on the
-  invariants only where a runner banner landed (which `compare` sets aside and counts separately).
+  invariants only where a runner banner landed (before B166's per-skin logs).
   Some skins can be genuinely non-deterministic — Anexa's `main/shade` draws an analogue clock from
   the wall clock — so record which images those are *before* the change, or every later diff is
   unreadable.
@@ -506,7 +749,7 @@ becomes the expectation.
 
 > **A golden nobody has seen fail is a blind instrument** (§"A blind instrument reads as a working
 > feature"). Each of these five was checked to fail under a deliberately reintroduced regression —
-> `isSizedGroup` → `false`, the animation row → `0`, the bitmap-font `valign` offset → top,
+> `clipAxes` → `[]`, the animation row → `0`, the bitmap-font `valign` offset → top,
 > `WasabiFrame.dividerHalfThickness` → 2 — and to fail nowhere else. Do the same for a scene you add.
 > `group-background-box` was added that way and it earned its keep immediately: its first draft put
 > the oversized child at the group's origin, where it covered the backing exactly, so the
