@@ -14,7 +14,7 @@ BIN=.build/arm64-apple-macosx/debug/NullPlayer     # Intel: .build/x86_64-apple-
 
 ## Part 1 — skin family
 
-One line, any family. It builds, launches, plays `audio-long`, and prints a verified
+One line, any family. It builds, launches, queues and plays the `music` playlist, and prints a verified
 `LAUNCH PASS`/`LAUNCH FAIL` — see `SKILL.md` Route B for the options.
 
 ```bash
@@ -44,10 +44,10 @@ also works but needs a drag tool.
 ```bash
 scripts/testdata.sh ensure
 skills/app-control/scripts/launch.sh aquamp                                   # GUI
-"$BIN" --cli --file "$(scripts/testdata.sh path audio-long)"                 # headless
+"$BIN" --cli --file "$(scripts/testdata.sh path music)/01-hackbeat.mp3"     # headless
 ```
 
-Confirm: `loadLocalTrack: audio-long.mp3` in the log; the CLI's own progress bar.
+Confirm: `loadTracks: 6 valid tracks` and `loadLocalTrack: 01-hackbeat.mp3` in the log; the CLI's own progress bar.
 
 ### Local video
 
@@ -119,7 +119,7 @@ Frozen from this machine's library so the blocks run as written. Re-resolve with
 
 | Slot | Value | Source |
 |---|---|---|
-| Local audio | `audio-long` (20 min) | `scripts/testdata.sh` |
+| Local audio | `music` (6 tracks, ~20 min) | `scripts/testdata.sh` |
 | Local video | `video-short` (10 s) | `scripts/testdata.sh` |
 | Server audio | `Dead Meadow` / `Dead Meadow`, `Meshuggah` | Plex, library `AD-FLAC` |
 | Server video | `Airplane!` (1980, 1:27:42) | Plex, library `Movies` |

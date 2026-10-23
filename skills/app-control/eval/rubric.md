@@ -22,7 +22,7 @@ rest, because those are the errors that make every later number meaningless.
 | 4 | Selected the skin as a `.wmz` (`launch.sh`, `wmpSkinName` or `-wmpSkinPath`), **not** `NULLPLAYER_SKIN` |
 | 5 | Session restoration off for the launch (`launch.sh` does it by launch argument) |
 | 6 | Started playback via `NULLPLAYER_PLAY`, not a file dialog |
-| 7 | Used `audio-long`, not `audio-short` |
+| 7 | Used the `music` playlist, not `audio-short` |
 | 8 | Redirected the log, did not pipe |
 | 9 | Un-throttled QoS (or launched through `launch.sh` / `kill_build_run.sh`, which do it) |
 | 10 | Left no persistent setting behind that changes the next launch (`launch.sh` writes none that needs restoring) |

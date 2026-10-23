@@ -513,8 +513,8 @@ By area:
     and a 300 ms exponential release** (`WinampModernLevelMeter.falloff`). The 90th-percentile needle
     step on wTunes fell from 0.40 to 0.08 rad. Skins with their own ballistics (Defix, mmd3) keep their
     attack and decay a little slower, which the user checked on Defix. Silence detection reads the raw
-    block, so a pause still drops the needle at once. Measure needle motion with **real music**, never
-    `audio-long`: it is a frequency sweep, a steady level that cannot show twitching.
+    block, so a pause still drops the needle at once. Measure needle motion with **real music** (the
+    `music` test-data row, `launch.sh`'s default), never a sweep or tone: a steady level cannot show twitching.
 
   The tap is the shared stereo PCM notification, received with `queue: nil` and measured on the
   posting thread; the main thread only reads the played-out block. Registering with `queue: .main`

@@ -116,8 +116,8 @@ a past session, silently.
   both** rather than guessing. A `.wmz` path outside `WMPSkins/` is imported via `-wmpSkinPath`.
   `audion:<name>` names a folder under `AudionFaces/` holding `index.json`, passed as
   `-audionFacePath`; it is confirmed by the log line `AudionFace: loaded '<name>'`.
-- `--no-play` skips `NULLPLAYER_PLAY` (default: `audio-long` playing; an exported
-  `NULLPLAYER_PLAY` replaces it). `--log <path>` (default
+- `--no-play` skips `NULLPLAYER_PLAY` (default: the `music` playlist playing; an exported
+  `NULLPLAYER_PLAY` — a file, a `.cue`, or a `:`-separated list — replaces it). `--log <path>` (default
   `/tmp/np.log`). App arguments go after `--`; trace env vars are simply exported in front:
   `WMP_SEEK_TRACE=1 skills/app-control/scripts/launch.sh corona -- -winampModernShowVisualization 1`.
 - It quits any running NullPlayer first — including another session's. Say so before using it
@@ -541,8 +541,9 @@ mid-skin, the remaining items read `app-exited`.
 ## Test data
 
 `scripts/testdata.sh ensure | path <name> | list | servers`. Per-row route validity is in
-`reference/test-data.md`. **`audio-long` is the default for anything timed** — a 5-second file
-ends mid-diagnosis and the `stop()` reads as the bug.
+`reference/test-data.md`. **`music` is the default for anything timed or visual** — six real tracks, ~20 min: a 5-second
+file ends mid-diagnosis and the `stop()` reads as the bug, and a sine sweep is one steady bar that
+no spectrum, VU or peak cap can be judged on.
 
 ## Debugging a live defect
 

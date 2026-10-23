@@ -17,7 +17,7 @@ skills/app-control/scripts/launch.sh corona --log /tmp/gt.log
 |---|---|
 | The skin loaded | `defaults read NullPlayer wmpSkinViewID` → `vPlayer` (corona's own default view) |
 | The window is corona's | `winhelper windows` → `596x468`, not the unskinned `440x170` |
-| A track is playing | `loadLocalTrack: audio-long.mp3` in the log |
+| A track is playing | `loadLocalTrack: 01-hackbeat.mp3` in the log |
 
 ## The measurement
 

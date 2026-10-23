@@ -6,7 +6,7 @@ gets byte-identical media.
 
 ```bash
 scripts/testdata.sh ensure            # generate anything missing (idempotent)
-scripts/testdata.sh path audio-long   # absolute path, or exit 1
+scripts/testdata.sh path music        # absolute path, or exit 1
 scripts/testdata.sh list              # the manifest with present/missing state
 scripts/testdata.sh servers           # what the configured media servers hold
 ```
@@ -16,7 +16,9 @@ scripts/testdata.sh servers           # what the configured media servers hold
 which `exec`s the installed `/Applications` build. With no debug binary it exits non-zero and
 tells you to run `./scripts/kill_build_run.sh --debug`; there is no fallback.
 
-Generation needs `ffmpeg` (`brew install ffmpeg`). The plain audio rows fall back to
+Generation needs `ffmpeg` (`brew install ffmpeg`), and the `music` row needs the network once:
+it is downloaded from incompetech.com and pinned by sha256, so a changed upstream file fails
+`ensure` rather than silently changing every agent's input. The plain audio rows fall back to
 `afconvert` over a python-generated waveform; MP3, tags, cover art and video need ffmpeg and
 say so. Failed encodes exit non-zero and discard their temporary output; `ensure` repairs
 missing or empty files individually, including members of the gapless and library groups.
@@ -26,7 +28,7 @@ missing or empty files individually, including members of the gapless and librar
 | Name | What | Routes it is valid for | Not valid for |
 |---|---|---|---|
 | `audio-short` | 5 s 440 Hz tone, AAC | B, C — start/stop, end-of-track, next-track | **Any seek, drag or timed capture.** It ends mid-diagnosis and the `stop()` reads as the bug |
-| `audio-long` | 20 min 100→4000 Hz sweep, MP3 | B, C, D, E — **the default for anything timed**: seek, slider drag, elapsed readout, animation cadence, a QA session | — |
+| `music` | a folder of 6 real tracks, ~20 min, MP3 — Kevin MacLeod, CC BY 4.0: beats, rock, funk, jazz, chiptune, and a 2 min one | B, C, D, E — **the default for anything timed or visual**: spectrum, VU, peak caps, seek, slider drag, elapsed readout, next/previous, end-of-track, a QA session. `launch.sh` queues all six as a playlist | — |
 | `audio-lossless` | 30 s sweep, FLAC | B, E — lossless decode path, bit-depth readouts | Seek (too short) |
 | `audio-gapless` / `-2` | two 10 s FLACs meeting at a phase boundary | B, E — gapless transition; a gap is an audible click | Anything needing tags |
 | `audio-tagged` | 60 s tone, title/artist/album/track/year + embedded cover | B, C, D, E — every skin readout, album-art visualizer, browser columns | Seek (too short) |
@@ -48,7 +50,7 @@ exactly like a playback bug. `playlist-m3u` and `video-short` are both in that s
 
 | Row | Reaches the app by |
 |---|---|
-| every audio row, and `cue-sheet` | `NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)"` |
+| every audio row, and `cue-sheet` | `NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-short)"`; several files `:`-separated queue a playlist, which is how `launch.sh` plays `music` |
 | `playlist-m3u` | **a local-library scan** — `importMedia` passes `includePlaylists: true`, and the file lands in `library_playlists` (measured). The Playlist window's Load panel (`PlaylistView.swift:1827`) is reached only through the LIST button's `NSMenu` popup, so it is **Route D, not C** — a synthetic click cannot drive it |
 | `video-short` | **a local-library scan, then open it from the browser's MOVIES tab** — that is the only route to the video window; `WindowManager.toggleVideoPlayer` returns early until a video has been opened this way. Or `"$BIN" --cli --file <path> --cast <device>`; without `--cast` the CLI refuses: *"Video casting in CLI mode requires --cast <Chromecast or DLNA TV>."* |
 | `library-dir` | a local-library scan of the folder; see `local-library` |
@@ -57,13 +59,14 @@ exactly like a playback bug. `playlist-m3u` and `video-short` are both in that s
 
 No row here is a long playlist, and driving 200 files in through the GUI is a Route D session per
 launch. **A `.cue` is the way in**: `NULLPLAYER_PLAY` accepts one, `AudioEngine.tracksForCueOrSibling`
-expands it, and every `INDEX` becomes a playlist row — so a cue written over `audio-long` is an
+expands it, and every `INDEX` becomes a playlist row — so a cue written over one long file is an
 arbitrary-length playlist that costs one environment variable. This is what reproduced W246:
 
 ```bash
-cp tmp/testdata/audio-long.mp3 "$SCRATCH/big.mp3"
+"$FFMPEG" -f concat -safe 0 -i <(for f in tmp/testdata/music/*.mp3; do echo "file '$PWD/$f'"; done) \
+         -c copy "$SCRATCH/big.mp3"      # ~20 min
 { echo 'FILE "big.mp3" MP3'
-  for i in $(seq 1 200); do s=$(( (i-1)*6 ))
+  for i in $(seq 1 200); do s=$(( (i-1)*5 ))
     printf '  TRACK %02d AUDIO\n    TITLE "Row %03d of 200"\n    INDEX 01 %02d:%02d:00\n' \
            $i $i $(( s/60 )) $(( s%60 ))
   done
@@ -73,12 +76,12 @@ NULLPLAYER_PLAY="$SCRATCH/big.cue" skills/app-control/scripts/launch.sh corona
 
 **Number the rows in their titles.** "Row 137 of 200" on screen is the scroll position, read
 straight off a capture; identical titles measure nothing. And keep the tracks long enough for the
-measurement: 6-second rows advance the playing track every 6 seconds, and any surface that follows
+measurement: 5-second rows advance the playing track every 5 seconds, and any surface that follows
 the playing track will fight the gesture you are testing — which is a true behaviour, but it is not
 the one under test. Widen the `INDEX` spacing when the follow gets in the way.
 
 **The row an agent gets wrong is `audio-short`.** A seek, a drag, a two-capture comparison or any
-session long enough to read a log needs `audio-long`. Five seconds is not a test; it is a race
+session long enough to read a log needs `music`. Five seconds is not a test; it is a race
 against the track ending.
 
 ## Network rows
