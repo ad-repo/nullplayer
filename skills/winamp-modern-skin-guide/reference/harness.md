@@ -655,7 +655,7 @@ their maxdelta, apart from the `DIFF`s. Take a `--fresh` noise run once per corp
 session. A noise image is still printed: a real change to one of those images reads as a much larger
 maxdelta than its noise. The interaction and motion sweeps have no `compare` and no noise file yet.
 
-Delete `runs/` (or one key) to reclaim space; nothing else reads it.
+**Lifetime: one batch.** The run store is deleted when a batch closes (`skills/skin-intake`): the next admission changes the gold+silver set, so every stored key is dead, and the first `--fresh` compare of the new batch rebuilds the noise file.
 
 #### Impact-selected and sharded sweeps
 

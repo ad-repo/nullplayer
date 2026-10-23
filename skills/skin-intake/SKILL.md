@@ -1,141 +1,120 @@
 ---
 name: skin-intake
-description: Runs a corpus intake batch end to end — admit, hand over, the triage pass, promote, PR — owns the only route to editing docs/winamp-modern/corpus-runner-plan.md, and owns the one place intake progress is recorded, the per-intake ledger docs/winamp-modern/intakes/intake-<n>.tsv, read with scripts/wal_intake_status.sh. Use when starting, resuming or closing an intake, before any edit to the corpus-runner plan, when asked where an intake stands or which skin is next, or when a loop drives an intake unattended.
+description: Processes the .wal candidate corpus mechanically — ~900 skins in batches of 25, each batch worked over many sessions — and owns the batch ledger docs/winamp-modern/intakes/intake-<n>.tsv, the status script scripts/wal_intake_status.sh that picks every session's work, and the only route to editing docs/winamp-modern/corpus-runner-plan.md. Use at the start of any intake session, when asked where the corpus or a batch stands or what is next, before any edit to the corpus-runner plan, or when a loop drives intakes unattended.
 ---
 
-# Running an intake
+# Processing the corpus
 
-An intake is a batch of up to 25 skins taken from Bronze into Silver, worked in the app, and promoted
-to Gold. This file owns the **lifecycle** and **where progress is recorded**. Each step's mechanics
-live elsewhere and are not restated here:
+Three levels, each finished by the one below it:
 
-| Step | Owner |
-|---|---|
-| Crawl, rate, admit (`wal_intake.sh`), the hand-over copy | `winamp-modern-skin-guide/reference/harness.md` § *Growing the corpus* |
-| Why the budget is ≤ 25 and gain ≥ 3; the tiers | `docs/winamp-modern/corpus-runner-plan.md` §8 *Decisions* |
-| The per-skin pass, Phases 0–9 | `skills/skin-triage` (its § *A batch is one pass*) |
-| Backlog rows the pass files | `tasks/WINAMP5_TASKS.md`, closed into `backlog-archive.md` |
-| Grades after promotion | `docs/winamp-modern/skin-compatibility.md`, rubric in `/wal-skin-report` |
+| Level | Is | Done when | Recorded in |
+|---|---|---|---|
+| **Corpus** | ~900 candidates in Bronze | every candidate is Gold, or Bronze below the gain floor (certified by the census and the pre-merge sweep, plan §8) | `corpus-manifest.tsv` tiers |
+| **Batch** | 25 skins, one branch, one ledger, one run store | every skin `promoted` and the PR merged | `docs/winamp-modern/intakes/intake-<n>.tsv` |
+| **Session** | one unit of work on the open batch | its result is in the ledger and committed | the ledger and the commit |
 
-`.wal` is the only family with a corpus and intakes today. A family that gains a corpus adds its
-manifest and status script here; it does not get a second intake skill.
+**One batch is open at a time.** The next is admitted only when the last is merged.
 
-## The ledger is the only progress record
+```sh
+scripts/wal_intake_status.sh      # corpus counts, the open batch per stage, the next session's work
+```
 
-`docs/winamp-modern/intakes/intake-<n>.tsv`, committed, one row per skin in the batch:
+Every session starts with it and does the `next:` line. It exits 1 when the ledger disagrees with the
+manifest or the corpus on disk (sha256, tier, file); then the session's work is fixing the ledger.
+
+## The batch ledger
+
+One row per skin, committed. **It is the only progress record**: not the plan, not a commit message,
+not a chat summary, not a scratchpad. Intake #2's plan said "closed" with 11 skins unworked, and its
+batch record lived in a scratchpad that recovering cost a session.
 
 | Column | Holds |
 |---|---|
-| `file` | archive name, as in `corpus-manifest.tsv` |
-| `sha256` | must match the manifest |
-| `stage` | `admitted` → `headless` → `live` → `accepted` → `promoted` |
+| `file`, `sha256` | as in `corpus-manifest.tsv` |
+| `stage` | below |
 | `updated` | the date the stage last moved |
 | `rows` | backlog ids this skin filed or was fixed under (`B254`, `B261(open)`), or `-` |
-| `note` | one line — where an unfinished stage stopped (`Phase 5: next B262`), what blocks it, or `-` |
+| `note` | one line: where an unfinished stage stopped (`Phase 5: next B262`), what blocks it, or `-` |
 
-| Stage | Means | Set when |
+| Stage | Means |
+|---|---|
+| `admitted` | in Silver and in the user's skin menu (`WinampModernSkins/`) |
+| `headless` | `skin-triage` Phases 1–4 done: every row has a verdict, the fix list is in `note`/`rows` |
+| `live` | Phases 5–8 done, or the user took it straight to their UI round (`note` says which) |
+| `accepted` | the user tried it and said it works |
+| `promoted` | manifest tier `gold`, file in `WinampModernCorpus/gold/`, a `skin-compatibility.md` row |
+
+A stage moves only on its evidence, in the commit that carries the work; it moves back only with a
+`note` saying why. A user's verdict moves a skin to `accepted` from any stage.
+
+## The batch, as sessions
+
+The batch's lowest stage decides the next session's work. `wal_intake_status.sh` prints it.
+
+| Lowest stage | Next session | Moves |
 |---|---|---|
-| `admitted` | in Silver, copied into `WinampModernSkins/` | `wal_intake.sh --admit` ran (seed the ledger from its picks) |
-| `headless` | the skin's Phases 1–4 rows all have a verdict | its fix list exists |
-| `live` | its Phases 5–8 are done: inventory all `works`/D/H, sweep classified | Phase 8's *Confirm it took* holds |
-| `accepted` | the user tried it and said it works | Phase 9 — or the user's verdict on a skin they tried before any recorded pass, from any stage; the `note` says so |
-| `promoted` | manifest tier `gold`, file in `WinampModernCorpus/gold/`, `skin-compatibility.md` row | the promotion commit |
+| — (no open batch) | **Admit** batch n: branch `feat/wal-intake-<n>` from `origin/main`; `wal_intake.sh <bronze> <out> --admit`; copy the picks into `WinampModernSkins/`; commit `<out>/intake.tsv` as `intakes/intake-<n>.ranking.tsv` and the ledger at `admitted` | all → `admitted` |
+| `admitted` | **Headless pass, whole batch at once**: `skin-triage` Phases 1–4 over one folder holding the batch, failures ranked across skins | all → `headless` |
+| `headless` | **One skin**, the `next:` one: Phases 5–8. Skins whose note says `headless clean` share one live smoke session instead (one launch, switch skins from the menu) | one → `live` |
+| `live` | **Hand over** the `live` skins in one list for the user's UI round; their verdicts go in | → `accepted`, or back with a note |
+| `accepted` | **Promote** every skin in one commit, then the branch's code-quality review and the PR | all → `promoted` |
+| `promoted` | **Close** once the PR is merged: delete the run store (`rm -rf WinampModernCorpus/runs`), then admit batch n+1 | — |
 
-**Move a stage only on its evidence, in the same commit as the work.** Nothing else records intake
-progress — not the plan, not a commit message, not a summary in chat. Prose that says "the pass is
-done" while the ledger says otherwise is wrong; intake #2's plan said "closed" with 11 skins
-unworked. A stage never moves back silently: a skin that regresses goes back with a `note` naming why.
+**The user may cut a batch short** at any stage and send the rest to their UI round: mark each `live`
+with `note` `handed over without a pass (user, <date>)`. A defect the round finds puts that skin back
+to `headless` with the defect in its note, and the next session fixes it from Phase 5.
 
-```sh
-scripts/wal_intake_status.sh [n]    # counts per stage, the next skin, exit 1 on any disagreement
-```
+Only the batch rides on its branch; an unrelated backlog row gets its own `fix/…` branch. Push with
+`git push -u origin <branch>`. A batch past about a week PRs its `promoted` skins and continues on a
+fresh branch with the same ledger. Merge `origin/main` in every few days; never rebase a pushed branch.
 
-It checks every row against the manifest (sha256, tier `silver` until `promoted`, then `gold`) and
-the corpus folder on disk, and prints the next skin's note. Run it before a PR; a loop takes `next:`
-as its work item and stops on a non-zero exit.
+**Stop admitting batches** when a batch no longer clears the gain floor (plan §8 *Decisions*).
 
 ## A session
 
-A batch takes many sessions, and no session remembers the last one. Everything the next session
-needs is in the committed ledger, the backlog and the branch — never in the scratchpad, a chat
-summary or a handover note. One session works an intake at a time.
+No session remembers the last. What the next one needs is in the ledger, the backlog and the
+branch, so a session reads those and writes those, nothing else.
 
-**Start:**
-1. On `feat/wal-intake-<n>` with a clean tree; `git fetch origin` and merge `origin/main` in if it
-   has been a few days.
-2. `scripts/wal_intake_status.sh`. Exit 1: fix the ledger first, nothing else. All skins at
-   `accepted` or later: go to promotion (lifecycle step 6).
-3. Take the `next:` skin. Read its `note` and its `rows` in `tasks/WINAMP5_TASKS.md`.
-4. Resume at the phase the note names. Trust the committed note; re-measure only a row that a fix
-   landed since `updated` could have moved.
-5. A sweep or baseline comes from the run store, never a fresh scratchpad capture: the sweep
-   scripts serve a stored run for this tree, and `--rev <commit>` serves another commit's
-   (`harness.md` § *The run store*). The status script's last line says what is stored for this tree.
+**Start:** on the batch branch, clean tree. Run the status script and take its `next:` work. Read that
+skin's `note` and its `rows` in `tasks/WINAMP5_TASKS.md`, and trust them: re-measure only a row a fix
+landed since `updated` could have moved.
 
-**Work** one skin to its next stage, with two batch exceptions: the headless pass (lifecycle step 3)
-is one session over the whole batch, and every skin whose note says `headless clean` shares one live
-smoke session — one launch, switching skins from the menu.
-
-**Write each result into the ledger the moment it is known**, not at the end. A record kept only in
-the scratchpad is lost with the session: intake #2's whole batch record was, and recovering it from
-transcripts cost a session.
+**Work:** sweeps and baselines come from the run store, never a fresh scratchpad capture — the sweep
+scripts serve what is stored for this code, and `--rev <commit>` another commit's (`harness.md` §
+*The run store*). **Write each result into the ledger the moment it is known**, not at the end.
 
 **End**, in the commit that carries the work:
-1. Stage reached: move it and set `note` to `-`. Not reached: keep the stage and write the `note`
-   as `Phase <k>: <the next action>`, specific enough to start on without re-reading the session.
-2. Every fix-list entry not done becomes a backlog row (or is already one) and its id goes in `rows`
-   — the scratchpad record dies with the session, the backlog does not.
-3. Any edit the plan takes, by § *Changing the plan*.
-4. `scripts/wal_intake_status.sh` exits 0. Report the session as "skin X: stage A → B, N rows fixed,
-   M open", and the `next:` line.
+1. Stage reached: move it, `note` `-`. Not reached: keep it, `note` `Phase <k>: <next action>`,
+   specific enough to start on without reading the session.
+2. A fix-list entry not done is a backlog row, its id in `rows`.
+3. Any plan edit, by § *Changing the plan*.
+4. The status script exits 0. Report "skin X: stage A → B, N rows fixed, M open" and the `next:` line.
 
-## The lifecycle
+## What this skill routes to
 
-1. **Branch** `feat/wal-intake-<n>` from `origin/main`. Only the batch rides on it: the re-weighting
-   or rule change (if any), the intake run, the manifest update, the ledger, and the batch's fixes.
-   An unrelated row gets its own `fix/…` branch. Push with `git push -u origin <branch>`.
-2. **Admit**: `wal_intake.sh <bronze> <out> --admit`, copy the picks into `WinampModernSkins/`, commit
-   `<out>/intake.tsv` as `intakes/intake-<n>.ranking.tsv` (the next intake's re-weighting reads it),
-   seed the ledger at `admitted`, record the gain curve and post-admission sweep in the plan's §8
-   *Progress* (that is history, not progress — one bullet per intake).
-3. **Headless, whole batch at once**: `skin-triage` Phases 1–4 over one directory holding the batch;
-   rank failures across skins. Move each skin to `headless`. A skin with fixes but no recorded
-   inventory is still `admitted` and goes through this step: a fix for a defect seen on screen is not
-   a pass.
-4. **Fix and go live**, skin by skin by `next:`: Phases 5–8. Move each to `live`.
-5. **Hand over** (Phase 9) the `live` skins in one list; the user's verdicts move them to
-   `accepted`, or back with a note.
+| Need | Owner |
+|---|---|
+| The per-skin pass, Phases 0–9 | `skills/skin-triage` |
+| `wal_intake.sh`, the crawler, the run store, every sweep | `winamp-modern-skin-guide/reference/harness.md` |
+| Budget (25, gain ≥ 3), tiers, why | `corpus-runner-plan.md` §8 *Decisions* |
+| Backlog rows | `tasks/WINAMP5_TASKS.md`, closed into `backlog-archive.md` |
+| Grades after promotion | `docs/winamp-modern/skin-compatibility.md`, rubric in `/wal-skin-report` |
 
-**The user may cut a batch short** and send the remaining skins straight to their UI round, skipping
-steps 3–4. Mark each `live` with the note `handed over without a pass (user, <date>)`. A defect the
-round finds puts that skin back to `admitted` with the defect in its note (or a backlog row); a fix
-for it follows `skin-triage` from Phase 5 for that skin only.
-6. **Promote** the `accepted` skins in one commit: manifest tier `gold`, move the file to
-   `WinampModernCorpus/gold/`, add the `skin-compatibility.md` row, stage `promoted`.
-   `wal_intake_status.sh` must exit 0.
-7. **PR**, after the branch's code-quality review. Confirm `gh pr view <N> --json files` matches.
-
-A batch that runs past about a week PRs its `promoted` skins and continues on a fresh branch with the
-same ledger. Merge `origin/main` in every few days; never rebase a pushed branch.
+`.wal` is the only family with a corpus today; a family that gains one adds its manifest and status
+script here.
 
 ## Changing the plan
 
-`docs/winamp-modern/corpus-runner-plan.md` changes **only** by the edits below, for intakes and for
-the backlog loop alike. It is design and history; it never holds progress.
+`docs/winamp-modern/corpus-runner-plan.md` changes **only** by these edits. It is design and
+history, never progress.
 
 | When | Edit | Where |
 |---|---|---|
-| An intake is admitted (step 2) | one bullet: rev, tier counts, run time, gain curve, post-admission sweep, the batch's files | §8 *Progress* |
-| An intake is promoted (step 6) | a *Done: intake #n* block: one row per skin that needed a fix — what was wrong, the fix and where; then what was left open, by row id | after the last *Done* block |
-| A measurement changes a decision | the decision, the measurement, its date and rev — **proposed to the user first** | §8 *Decisions* |
-| A parked instrument is built | move it from *Parked* to *Built* in §7; its commands go in `harness.md` | §7 |
-| The loop's order or the queue it reads changes | the changed step | § *The loop* |
+| A batch is admitted | one bullet: rev, tier counts, run time, gain curve, post-admission sweep | §8 *Progress* |
+| A batch is promoted | a *Done: intake #n* block: per skin that needed a fix, what was wrong and the fix; open rows by id | after the last *Done* block |
+| A measurement changes a decision | the decision, measurement, date and rev — **proposed to the user first** | §8 *Decisions* |
+| A parked instrument is built | *Parked* → *Built*; commands in `harness.md` | §7 |
+| The backlog loop changes | the changed step | § *The loop* |
 
-The **Next:** line stays a pointer to this skill and `wal_intake_status.sh`; it is never rewritten
-with a status. Anything else — a session's progress, what is half-done, a rewrite or reorganisation
-— is not a plan edit: progress goes in the ledger or the backlog, knowledge goes in the owning
-skill, and a restructuring is proposed to the user, not done. Make the plan edit in the same commit
-as the work that earned it.
-
-**When to stop running intakes:** while a batch clears the gain floor. Once it does not, the rest is
-certified by the census and the pre-merge render sweep (plan §8), not by an intake.
+The plan's **Next:** line stays a pointer here. Anything else (progress, session notes, rewrites)
+is not a plan edit; a restructuring is proposed to the user, not done.

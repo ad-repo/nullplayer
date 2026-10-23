@@ -4,7 +4,7 @@ RODE_3_Lite.wal	406fc5c77195993d2b0a3159b9db7d4ab6d200c089a9f18680bebe181145241f
 Winamp_Single_GUI.wal	0567a578f8e7eef422cf7e7e2cc890f0522cf6f75310c357e2c396c4c1b92b64	accepted	2026-10-23	B246,B247,B248(open)	user accepted 2026-10-23 without a recorded pass; 9c2ab6cb films in player + detach; own Reattach button dead (B248)
 wasabi_player_skin.wal	2e304c4b4325ebf357ddbe353a9e0fd3526faaf49fc49ebe7048962e950c1066	accepted	2026-10-23	B257	user accepted 2026-10-23 without a recorded pass; only touched by Moon Groove's B257 command bar; never worked directly
 Moon_Groove_1-1.wal	3f71e0f51a1e0066fa28af5eebad14905ca741ab263405d32cefab9298fc1072	accepted	2026-10-23	B255,B256,B257,B258	user accepted 2026-10-23 without a recorded pass; 04a3f1f6 LCD, ticker, playlist bar; B257 verified live
-cPro__KAO.wal	6d32a8bddf7da79a15a4cd96e5399dbee3d74fa1afd672e853b60cefeea19c99	headless	2026-10-22	-	Phase 7: notifier text overlaps in the dump (template pane, H); needs a live look
+cPro__KAO.wal	6d32a8bddf7da79a15a4cd96e5399dbee3d74fa1afd672e853b60cefeea19c99	headless	2026-10-22	-	headless clean; check the notifier live (the dump draws its unused template)
 hm_Touch_m_1.wal	53e1cbafee9a412dc83cd40b593f7d263ab88172eca13d53a697b220628cc3ce	accepted	2026-10-23	-	user accepted 2026-10-23 without a recorded pass; 138f9161 timer digits; library canvas flips between runs (harness noise, 97138247)
 MIDISUI_1_1.wal	6778daa51be3e2a316bab0eff96ed5e6c5db645caf26627c2695d99b2fefff3e	accepted	2026-10-23	-	user accepted 2026-10-23 without a recorded pass; a62f4b5e drawer, LED rows, library, back button
 MusicshowB_version.wal	cb826b29966c3a5497e428f2dd230ee195706112ecc1cbbd4ad36fd9c813aeb5	live	2026-10-23	-	headless + live pass 2026-10-23 (focus window, web view: not defects); awaiting user verdict
@@ -13,14 +13,14 @@ Metaskins_net_-_H2O_Liquid.wal	f4567f6679fc8343357f37ba4e4cd59d6074ee22307bc17c2
 Official_Mad_Magazine_Skin.wal	665f8d157d4f5d32783b0e696938a68a5b9fcb4b1d95c031365ca36292910724	accepted	2026-10-23	B260	user accepted 2026-10-23 without a recorded pass; 4bebd3b4 playlist under title bar
 Vision_V1.wal	55c148a29163470ac730cf1caa67eac357788db446e70c7ecf4dc19e99dfe108	accepted	2026-10-23	-	user accepted 2026-10-23 without a recorded pass; c0e927a2 untextured frames
 ArmorAmp.wal	6bf39ee0346dc745f45a6751a0df94f5bd474faca65b176603498f550a5d02c1	accepted	2026-10-23	-	user accepted 2026-10-23 without a recorded pass; 94789d61 spectrum clip, EQ drawer; verified live 97138247
-Ashen_Player_for_Winamp_1_1.wal	b2484e1953f411332f7727364f4219bb307cb27bfb1ae82c8e23b735b896d23e	headless	2026-10-22	-	Phase 7: notifier text overlaps in the dump (template pane, H); needs a live look
+Ashen_Player_for_Winamp_1_1.wal	b2484e1953f411332f7727364f4219bb307cb27bfb1ae82c8e23b735b896d23e	headless	2026-10-22	-	headless clean; check the notifier live (the dump draws its unused template)
 MD_-_Ayanami_Rei_the_Fifth_v1.wal	1ac6e8e7fe57dacb537ae7d8980fb9cd55fffcd703ee23fc3b878ed281ff2dfc	live	2026-10-23	-	headless + live pass 2026-10-23, clean (missing Eva bitmaps absent from archive); awaiting user verdict
 The_Crow__v1.wal	25e8631a9500b864a1a7895c0561e6dd011f3852dec425449f203aac81c75663	headless	2026-10-22	-	Phase 5: user saw a white offset silhouette while dragging main (2026-10-22, unresolved); recheck frame content after B260
-Winamp_Portrait__WMP12_1.wal	6be7b78c547a5079aa4311157f43af7b6cff8c2bc5deee17c782d62af82938b3	headless	2026-10-22	-	Phase 7: headless clean; no live pass
-RazorEdge_V1.wal	6c0c71a80a0e922d432000cede9c6b1e864e1e4c4a02a2e627a6c09396a1c185	headless	2026-10-22	-	Phase 7: headless clean; no live pass
-Moonkore.wal	ba998811a2d7b88ec540362166ff1bfc7a19763dfca6b2376e3bf5010c165d13	headless	2026-10-22	-	Phase 7: headless clean (LCD absent at clock 0 is H); two controls reachable after 9c2ab6cb; no live pass
-The_Official_YoYoBoy_Skin.wal	065064dc71d29b7ed443f16ba97280f34ab144d122b201718df821021f942f03	headless	2026-10-22	-	Phase 7: headless clean (:componenttitle is H); no live pass
+Winamp_Portrait__WMP12_1.wal	6be7b78c547a5079aa4311157f43af7b6cff8c2bc5deee17c782d62af82938b3	headless	2026-10-22	-	headless clean; no live pass
+RazorEdge_V1.wal	6c0c71a80a0e922d432000cede9c6b1e864e1e4c4a02a2e627a6c09396a1c185	headless	2026-10-22	-	headless clean; no live pass
+Moonkore.wal	ba998811a2d7b88ec540362166ff1bfc7a19763dfca6b2376e3bf5010c165d13	headless	2026-10-22	-	headless clean (LCD absent at clock 0 is H); two controls reachable after 9c2ab6cb; no live pass
+The_Official_YoYoBoy_Skin.wal	065064dc71d29b7ed443f16ba97280f34ab144d122b201718df821021f942f03	headless	2026-10-22	-	headless clean (:componenttitle is H); no live pass
 CPro_iPhone3gv2.wal	30899ac2ef28a96e2a5a9378f68a5d271db58c48ec2bfdac94678e42a030d3cc	headless	2026-10-22	-	Phase 5: About page blank, main.shadow tiled 2x2 (unmeasured); notifier needs a live look
-Slimline_XP_final.wal	3b9ee38ccd389a2b59ea30edc78d8a7daad3ef48073546bc5fd6bd75737e80eb	headless	2026-10-22	-	Phase 7: headless clean; no live pass
+Slimline_XP_final.wal	3b9ee38ccd389a2b59ea30edc78d8a7daad3ef48073546bc5fd6bd75737e80eb	headless	2026-10-22	-	headless clean; no live pass
 EMP2.wal	d7718cbc583aafb4b39e5144add30e75948b5336ca7b7ddf9a8035c1ea4eba9c	accepted	2026-10-23	B260	user accepted 2026-10-23 without a recorded pass; 4bebd3b4 library opens at authored width
 MetAlchemy_III_Wa3.wal	f7345453b626256107c7f57d1571dea66ad448ffd25e5d40f158818ebafd944b	accepted	2026-10-23	B254	user accepted 2026-10-23 without a recorded pass; 9c2ab6cb playlist notify; 57bc1511 height cut-off
