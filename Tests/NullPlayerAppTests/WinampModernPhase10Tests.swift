@@ -210,6 +210,23 @@ final class WinampModernPhase10Tests: XCTestCase {
         XCTAssertFalse(done.isPlaying, "isPlaying() must go false so the driving timer can finish")
     }
 
+    /// B256 — an unranged `play()` loops, unless the layer says `autoreplay="0"`: then it plays once
+    /// to the last frame and stops, so its `onStop` arrives (Moon Groove's PLAY/PAUSE/STOP status).
+    func testAnUnrangedPlayWithoutAutoreplayStopsOnTheLastFrame() throws {
+        let once = try makeAnimatedLayer(attributes: [
+            "autoreplay": "0", "speed": "100", "playing": "1", "animstart": "1000"
+        ])
+        XCTAssertEqual(WasabiAnimation.state(of: once, frameCount: 5, clock: 1000.25).frame, 2)
+        let done = WasabiAnimation.state(of: once, frameCount: 5, clock: 1001)
+        XCTAssertEqual(done.frame, 4)
+        XCTAssertFalse(done.isPlaying)
+
+        let looping = try makeAnimatedLayer(attributes: ["speed": "100", "playing": "1", "animstart": "1000"])
+        let wrapped = WasabiAnimation.state(of: looping, frameCount: 5, clock: 1000.65)
+        XCTAssertEqual(wrapped.frame, 1, "with no autoreplay=\"0\" it is still the classic loop")
+        XCTAssertTrue(wrapped.isPlaying)
+    }
+
     /// A knob turned down runs the range backwards.
     func testAnimatedLayerPlaysAFrameRangeBackwards() throws {
         let object = try makeAnimatedLayer(attributes: [

@@ -269,12 +269,16 @@ extension WinampModernScriptRuntime {
         // deliberate silent write for a state that *did* move.
         // A `<Wasabi:CheckBox>` is a togglebutton (`WasabiFormWidgets`), so its checked state is its
         // activation: fifty skins set it in `onScriptLoaded` (B192).
+        // A changed write raises `onActivate` but not `onToggle`, which is the click's event: Moon
+        // Groove's `EqPage.onToggle` drew its EQ page over the LCD from a load-time restore (B255).
         case "setactivated", "setchecked":
             let wanted = arguments[0].truthy
             let activationChanged = (object.attributes["activated"] == "1") != wanted
             setActivated(object, wanted)
             if activationChanged {
-                _ = try dispatch(object: object, event: "ontoggle", arguments: [.boolean(wanted)])
+                if Self.setActivatedRaisesToggle {
+                    _ = try dispatch(object: object, event: "ontoggle", arguments: [.boolean(wanted)])
+                }
                 notifyActivated(object, activated: wanted)
             }
             return .null
@@ -593,6 +597,7 @@ extension WinampModernScriptRuntime {
             _ = object.setAttribute(WasabiTextMetrics.scriptAlternateTextKey,
                                     value: arguments[0].stringValue)
             notifyObjectDidMutate(object)
+            expireAlternateText(of: object)
             return .null
         case "leftclick":
             // `leftClick()` is a press, so a togglebutton flips and a `cfgattrib` control writes its
@@ -900,6 +905,9 @@ extension WinampModernScriptRuntime {
     }
 
     static let maximumPendingCalls = 256
+    /// `WINAMP_MODERN_SETACTIVATED_TOGGLE=1` — A/B: `setActivated` raises `onToggle` again (B255).
+    static let setActivatedRaisesToggle =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_SETACTIVATED_TOGGLE"] != nil
     static let snapAdjustEdges = ["left", "top", "right", "bottom"]
 
     /// Where a script's `snapAdjust()` stores a layout's snap margin on `edge`.

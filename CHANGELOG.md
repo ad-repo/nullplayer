@@ -142,6 +142,13 @@
     the player instead of quitting the app.
 - **Ganbare Rakkatan and M3 open at the size of their artwork** — Ganbare's player had an empty
   strip as wide as itself down its right side, and M3's was cut off through its transport buttons.
+- **Moon Groove**
+  - The player's display shows at startup, where the EQ page had covered it with the config menu
+    closed.
+  - The song title comes back on the ticker after a volume or shuffle readout, and after the
+    PLAY/PAUSE/STOP status.
+  - The playlist's Add/Rem/Sel/Misc/List buttons no longer run under the playlist info text; the
+    same fix applies to Core-X5, corneramp, motorhead and wasabi_player.
 
 ## 0.33.0
 

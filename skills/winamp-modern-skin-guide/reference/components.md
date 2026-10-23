@@ -255,6 +255,10 @@ the old build-then-hide pass found that copy and hid Mac OS X Panther's only but
 the skin's frame. Only the playlist: the video and library components fill their own slots
 differently and none of those is wired.
 
+The bar is 114 px wide: five 22 px buttons on a 23 px stride, with labels inset 1 px. Skins that rely
+on it start their `PE_Info` text 95–130 px into the slot (Moon Groove, Core-X5, corneramp, motorhead,
+wasabi_player), and the original 34 px stride ran the List button under that text (B257).
+
 #### The component bucket — Winamp's thinger (B34, 2026-08-25)
 
 `<componentbucket>` is Winamp's scrolling strip of *installed component* icons: click one to open that

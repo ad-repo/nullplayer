@@ -204,12 +204,12 @@ final class WinampModernPhase33Tests: XCTestCase {
         XCTAssertFalse(runtime.dispatchedEventsForTesting.contains { $0.event == "ontoggle" },
                        "this is the method whose whole purpose is not re-entering the handler")
 
-        // The plain setter is the contrast, and the reason the quiet one has to exist.
+        // The plain setter is the contrast: it raises `onActivate` (and, since B255, not `onToggle`).
         _ = try runtime.invoke(method: "setActivated", on: reference,
                                arguments: [.boolean(false)], program: program)
         XCTAssertEqual(button.attributes["activated"], "0")
         XCTAssertTrue(runtime.dispatchedEventsForTesting.contains {
-            $0.object == "drawer.toggle" && $0.event == "ontoggle"
+            $0.object == "drawer.toggle" && $0.event == "onactivate"
         })
     }
 

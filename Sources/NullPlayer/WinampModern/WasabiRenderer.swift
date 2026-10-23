@@ -663,6 +663,8 @@ final class WasabiResourceCache {
 /// without either of them owning a ticking clock.
 enum WasabiAnimation {
     static func now() -> TimeInterval { ProcessInfo.processInfo.systemUptime }
+    /// `WINAMP_MODERN_UNRANGED_PLAY_LOOPS=1` — A/B: an unranged `play()` loops whatever `autoreplay` says (B256).
+    static let loopsUnrangedPlay = ProcessInfo.processInfo.environment["WINAMP_MODERN_UNRANGED_PLAY_LOOPS"] != nil
 
     static func state(of object: WasabiObject, frameCount: Int,
                       clock: TimeInterval = now()) -> (frame: Int, isPlaying: Bool) {
@@ -682,10 +684,13 @@ enum WasabiAnimation {
         let elapsed = max(0, clock - (Double(attributes["animstart"] ?? "") ?? 0))
         let steps = Int(elapsed / period)
 
-        guard let endRaw = attributes["endframe"], let end = Int(endRaw) else {
-            // No range set: the classic looping animation.
-            return ((selected + steps) % count, true)
-        }
+        // No range set: `autoreplay="0"` plays once to the last frame, so its `onStop` arrives — Moon
+        // Groove's PLAY/PAUSE/STOP status hides itself and brings the song ticker back from there
+        // (B256). Anything else is the classic looping animation.
+        let end: Int? = if let raw = attributes["endframe"] { Int(raw) }
+            else if attributes["autoreplay"] == "0" && !loopsUnrangedPlay { count - 1 }
+            else { nil }
+        guard let end else { return ((selected + steps) % count, true) }
         let start = max(0, min(count - 1, Int(attributes["startframe"] ?? "") ?? selected))
         let target = max(0, min(count - 1, end))
         let distance = abs(target - start)
@@ -3891,7 +3896,7 @@ final class WasabiSceneRenderer {
             context.fill(frame.insetBy(dx: 1, dy: 1))
         }
         if let label = Self.ownLabel(of: object) {
-            let inset = frame.insetBy(dx: 2, dy: max(0, (frame.height - 11) / 2))
+            let inset = frame.insetBy(dx: 1, dy: max(0, (frame.height - 11) / 2))
             drawSurfaceText(label, in: inset, color: color, alignment: .center, pointSize: 9,
                             context: context)
         }

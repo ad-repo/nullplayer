@@ -3,6 +3,38 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B258 — `setAlternateText` expires by itself — closed 2026-10-23
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B258 | **Moon Groove's song ticker never shows the song again after a volume or shuffle change.** The skin writes "Volume: 20%" and "Shuffle: On" with `setAlternateText` and never clears them, and the override holds until a script does. Done when the readout gives way to the song title by itself and a held volume drag keeps its readout up | live: Moon Groove (2026-10-23) | S | 2 |
+
+**Closed 2026-10-23**. `WinampModernScriptRuntime.expireAlternateText(of:)` (`WinampModernScriptRuntimeTimer.swift`) clears a non-empty `setAlternateText` 2 s after its last write, on a `TimerNamespace.alternateTextExpiry` timer; each write restarts it, and an empty write cancels it. The 2 s is a guess (MMD3 clears its own after 1 s). A/B: `WINAMP_MODERN_ALTERNATE_TEXT_PERSISTS=1`. Verified live on Moon Groove. Test: `WinampModernPhase64Tests.testAlternateTextSchedulesItsOwnExpiry`. Engine note: `reference/rendering/text.md` → *What a `<text>` shows*.
+
+## B257 — The playlist command bar clears a skin's `PE_Info` text — closed 2026-10-23
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B257 | **The synthesized playlist command bar runs under the skin's own playlist info text.** Skins that rely on the `LayoutStatus` bar start their `PE_Info` text 95–130 px into the slot (Moon Groove, Core-X5, corneramp, motorhead, wasabi_player); the bar's 34 px stride put the List button under it. Done when the five buttons end before that text | live: Moon Groove (2026-10-23) | S | 2 |
+
+**Closed 2026-10-23**. `WasabiStandardFrames.playlistCommandBar` lays its five buttons 22 px wide on a 23 px stride (114 px in all), and `drawTextButton` insets a label 1 px instead of 2 px so "Misc" fits; that inset applies to every bitmap-less text button in `.wal` mode. Verified live on Moon Groove. Test: `WinampModernB114Tests.testAPlaylistStatusSlotGetsTheCommandBarUnlessTheSkinHasItsOwn`. Engine note: `reference/components.md` → *A playlist frame's `<LayoutStatus>` is the playlist's command bar*.
+
+## B256 — An unranged `play()` with `autoreplay="0"` plays once — closed 2026-10-23
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B256 | **Moon Groove's PLAY/PAUSE/STOP status never hands the ticker back.** The status `animatedlayer` is `play()`ed with no end frame and `autoreplay="0"`, and hides itself and restores the song ticker from `onStop`. `WasabiAnimation` looped every unranged play, so `onStop` never arrived. Done when the status plays once and the ticker returns | live: Moon Groove (2026-10-23) | S | 2 |
+
+**Closed 2026-10-23**. `WasabiAnimation.state` treats an unranged play on an `autoreplay="0"` layer as a range to the last frame, so it stops there and `startFrameEvents` raises `onStop`; any other unranged play still loops. A/B: `WINAMP_MODERN_UNRANGED_PLAY_LOOPS=1`. Verified live on Moon Groove. Test: `WinampModernPhase10Tests.testAnUnrangedPlayWithoutAutoreplayStopsOnTheLastFrame`. Engine note: `reference/rendering.md` → *Animated layers are played as a range*.
+
+## B255 — `setActivated` does not raise `onToggle` — closed 2026-10-23
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B255 | **Moon Groove draws its EQ page over the player's LCD at load, with the config menu closed.** The skin restores its saved config page with `EqPage.setActivated(1)`, and its `EqPage.onToggle` shows that page unconditionally; a changed `setActivated` raised `onToggle`. Done when the LCD shows at load and the config pages still switch | live: Moon Groove (2026-10-23) | S | 2 |
+
+**Closed 2026-10-23**. A script's `setActivated`/`setChecked` raises `onActivate` only; `onToggle` is the click's event. Moon Groove's page switcher re-activates the clicked page from inside that page's `onToggle`, which only terminates because the write is silent. A/B: `WINAMP_MODERN_SETACTIVATED_TOGGLE=1`. Verified live on Moon Groove. Tests: `WinampModernConfigBridgeTests.testAnUnchangedSetActivatedNotifiesNobody`, `WinampModernPhase33Tests.testSetActivatedNoCallbackWritesTheStateWithoutTheNotification`. Engine note: `reference/rendering.md` → `onActivate` section.
+
 ## B254 — An `alphabackground` layout is its artwork's size — closed 2026-10-23
 
 | Id | Item | Reach | Effort | Tier |

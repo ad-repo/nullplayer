@@ -322,14 +322,16 @@ extension WasabiStandardFrames {
     /// frame is that slot and nothing else — no Add/Remove/Select/Misc/List of its own — so with
     /// the slot empty its playlist could not be edited at all. 773 corpus skins declare a
     /// `LayoutStatus`; only one inside a playlist container gets these. They send the `PE_*`
-    /// actions a skin's own playlist buttons send.
+    /// actions a skin's own playlist buttons send. The row is 114 px: skins that rely on it start
+    /// their `PE_Info` text 95–130 px into the slot (Moon Groove, Core-X5, corneramp, motorhead,
+    /// wasabi_player), and the old 34 px stride ran the List button under that text (B257).
     static func playlistCommandBar(location: WalSourceLocation) -> [WalXMLNode] {
         let buttons = [("Add", "PE_Add"), ("Rem", "PE_Rem"), ("Sel", "PE_Sel"),
                        ("Misc", "PE_Misc"), ("List", "PE_List")]
         return buttons.enumerated().map { index, button in
             WalXMLNode(name: "Wasabi:Button", attributes: [
-                "text": button.0, "action": button.1, "x": String(index * 34), "y": "0",
-                "w": "32", "h": "0", "relath": "1",
+                "text": button.0, "action": button.1, "x": String(index * 23), "y": "0",
+                "w": "22", "h": "0", "relath": "1",
             ], location: location)
         }
     }

@@ -127,6 +127,12 @@ Dispatch it from all three places activation can move — `toggleActivation`, `s
 the last, to **every** object bound to that attribute: a skin declares the same switch once per
 layout, and its indicators are per-layout too.
 
+`onToggle` is the **click's** event, so a script's `setActivated` never raises it, changed or not
+(B255). Moon Groove restores its saved config page with `EqPage.setActivated(1)` at load, and its
+`EqPage.onToggle` shows that page unconditionally: raising it drew the EQ page over the player's
+LCD with the config menu closed. Its page switcher also re-activates the clicked page from inside
+that page's own `onToggle`, which only terminates because the write is silent.
+
 **A setting can also move from outside the skin**, and a `.wal` indicator is written once and never
 polled — so a shuffle toggled in NullPlayer's own Playback menu left mmd3's lamp on the old state,
 the same drift arriving by a different road. `WinampModernMainWindowController` observes
@@ -1047,6 +1053,11 @@ Because nothing steps that clock, the events are polled: a layer a script `play(
 `WinampModernScriptRuntimeTimer.swift`). It raises `onFrame(frame)` once per frame the head reaches
 and `onStop()` when a range play ends or `stop()` is called. MMD3's knobs move the EQ from `onFrame`
 alone, so without it the knob turned and the EQ never changed (B194).
+
+A `play()` with no `endframe` loops, unless the layer says `autoreplay="0"`: then it plays once,
+from its current frame to the last, and stops there, so its `onStop` arrives (B256). Moon Groove's
+PLAY/PAUSE/STOP status layer hides itself and brings the song ticker back from that `onStop`;
+looping, it never did.
 
 #### `relat*="2"` is a **percentage**, every other non-zero value is additive
 

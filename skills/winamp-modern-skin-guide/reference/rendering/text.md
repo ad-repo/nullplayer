@@ -382,7 +382,10 @@ because `songinfo.maki` reads a text object back out and tokenises it:
 
 1. a script's `setAlternateText`, while it is non-empty — an **override** (MMD3 puts its SEEK, VOLUME,
    BASS and TREBLE readouts on the song ticker this way). `setText` clears it, which is how a skin
-   takes it back down a second later.
+   takes it back down a second later. It also expires on its own 2 s after the last write
+   (`expireAlternateText`), because Moon Groove puts "Volume: 20%" and "Shuffle: On" there and never
+   clears them, so the song title never came back (B258). The 2 s is a guess, not a measurement;
+   each write restarts it, so a held volume drag keeps its readout up.
 2. the `display=` binding (below), else a `songticker`'s implicit track title, else `text`/`default`.
 3. the XML `alternatetext` attribute, when everything above is empty — a **placeholder**, not an
    override. These are stored apart (`WasabiTextMetrics.scriptAlternateTextKey`) precisely because
