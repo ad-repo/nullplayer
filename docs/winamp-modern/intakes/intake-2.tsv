@@ -15,7 +15,7 @@ Vision_V1.wal	55c148a29163470ac730cf1caa67eac357788db446e70c7ecf4dc19e99dfe108	a
 ArmorAmp.wal	6bf39ee0346dc745f45a6751a0df94f5bd474faca65b176603498f550a5d02c1	accepted	2026-10-23	-	user accepted 2026-10-23 without a recorded pass; 94789d61 spectrum clip, EQ drawer; verified live 97138247
 Ashen_Player_for_Winamp_1_1.wal	b2484e1953f411332f7727364f4219bb307cb27bfb1ae82c8e23b735b896d23e	headless	2026-10-22	-	headless clean; check the notifier live (the dump draws its unused template)
 MD_-_Ayanami_Rei_the_Fifth_v1.wal	1ac6e8e7fe57dacb537ae7d8980fb9cd55fffcd703ee23fc3b878ed281ff2dfc	live	2026-10-23	-	headless + live pass 2026-10-23, clean (missing Eva bitmaps absent from archive); awaiting user verdict
-The_Crow__v1.wal	25e8631a9500b864a1a7895c0561e6dd011f3852dec425449f203aac81c75663	headless	2026-10-22	-	Phase 5: user saw a white offset silhouette while dragging main (2026-10-22, unresolved); recheck frame content after B260
+The_Crow__v1.wal	25e8631a9500b864a1a7895c0561e6dd011f3852dec425449f203aac81c75663	live	2026-10-23	B260	drag silhouette fixed (user, 2026-10-23); playlist fills its frame after B260 (headless, 2026-10-23)
 Winamp_Portrait__WMP12_1.wal	6be7b78c547a5079aa4311157f43af7b6cff8c2bc5deee17c782d62af82938b3	headless	2026-10-22	-	headless clean; no live pass
 RazorEdge_V1.wal	6c0c71a80a0e922d432000cede9c6b1e864e1e4c4a02a2e627a6c09396a1c185	headless	2026-10-22	-	headless clean; no live pass
 Moonkore.wal	ba998811a2d7b88ec540362166ff1bfc7a19763dfca6b2376e3bf5010c165d13	headless	2026-10-22	-	headless clean (LCD absent at clock 0 is H); two controls reachable after 9c2ab6cb; no live pass
