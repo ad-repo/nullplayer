@@ -282,7 +282,8 @@ anything that only reproduces on screen. The `.wmz` session that produced this f
 rediscovering five rules already written there, because nothing pointed at them.
 
 Every family skill carries a *Debugging a live defect* section that does that routing and adds only
-what is specific to its engine. That is a required section, not an optional one.
+what is specific to its engine. That is a required section, not an optional one. A new family also
+adds its row to `skills/skin-triage`'s family table and its probe order to that file's Phase 5.
 
 **One hop, not a fork.** The section routes to `live-ui-testing` for the epistemics; that file
 forwards the mechanics — launching into a state, driving a control, capturing a window — to

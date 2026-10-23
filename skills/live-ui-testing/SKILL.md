@@ -5,6 +5,9 @@ description: How to debug a defect that only exists on screen — instrument fir
 
 # Debugging a live UI defect
 
+**For a skin defect, `skills/skin-triage` is the phase order**; this file is the epistemics each of
+its phases relies on.
+
 ## Read the subsystem's own debugging reference first
 
 **`skills/winamp-modern-skin-guide/reference/harness.md` § *Debugging a live defect* is the reference

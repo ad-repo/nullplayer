@@ -107,6 +107,8 @@ branch shape has to make that sustainable:
   that runs past ~a week PRs what it has and continues on a fresh branch.
 - **Merge `origin/main` in every few days** while a branch is open; never rebase a branch others
   may have pulled. Before opening the PR, confirm `gh pr view <N> --json files` matches the work.
+- **Run the in-app pass by `skills/skin-triage`'s batch order**: the whole batch headless first,
+  failures ranked across skins, then live only for the residual.
 - **Small rows found during a pass** (like B238/B239 from intake #1) are filed, then fixed on a
   short `fix/wal-<topic>` branch between batches, so the next batch's in-app pass doesn't trip on them.
 - **Push with an explicit upstream** (`git push -u origin <branch>`); a branch tracking

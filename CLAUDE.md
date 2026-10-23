@@ -17,6 +17,7 @@ See `docs/development-workflow.md` for build details, log monitoring, and versio
 Technical documentation lives in `skills/`. Read the owning skill before changing a subsystem.
 
 - `ui-guide`: UI geometry/rendering; `audio-system`: playback/EQ; `eq-profiles`: EQ Profiles, the Equalizer Studio and EQ Cast; `app-state`: restoration and persistence; `user-guide`: features and menus
+- `skin-triage`: the canonical order for triaging, fixing and verifying one reported skin defect in any family, with a fill-in record
 - `skin-subsystem-blueprint`: adding/extending a skin family — shared seams, isolation, harness, docs layout.
   `.wal` and `.wmz` are clean-room reverse engineering: a sweep diff there is unclassified, not a
   regression — it may be newly unlocked behaviour (Classic/Original diffs are always regressions)
