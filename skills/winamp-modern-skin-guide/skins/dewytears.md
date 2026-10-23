@@ -13,7 +13,14 @@ Three variants of one skin, in one file for the reason [big-bento-modern.md](big
 
 **Known outstanding:**
 
-- nothing outstanding that a headless pass can see
+- **The playlist and library frames are filled with the list colour where Winamp drew its own
+  texture** (2026-10-23, Vision V1's fix). These skins name `wasabi.frame.basetexture` and
+  `component.basetexture` and ship neither, so `WasabiRenderer.needsFrameBaseTexture` fills the
+  frame with `palette.contentBackground` (`rgb(236,236,236)` here). The 8px band between the list
+  and the bottom strip (y 288–296 of 312 in `nullplayer.playlist`, 408–416 in `nullplayer.library`)
+  went from black to that light grey, leaving a black notch where `component.right` ends. Accepted
+  as is; if it reads wrong in the app, the likely fix is clipping the fill to inside the frame art.
+  A/B: `WINAMP_MODERN_FRAME_TEXTURE_CLEAR=1` leaves it unfilled.
 
 
 **Measured status:**

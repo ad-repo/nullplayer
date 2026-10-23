@@ -132,7 +132,7 @@ final class WinampModernInteractionSweepTests: XCTestCase {
                     gestures.append("drag")
                 }
                 if !bound.isDisjoint(with: ["onrightbuttondown", "onrightbuttonup", "onrightclick"]) { gestures.append("right") }
-                let point = reachablePoint(of: object, frame: node.frame.intersection(node.clip),
+                let point = reachablePoint(of: node, frame: node.frame.intersection(node.clip),
                                            renderer: renderer, runtime: census.runtime)
                 // Why an unreachable control is unreachable: clipped out of its window, or what the
                 // hit test answers at its centre instead.
@@ -284,18 +284,31 @@ final class WinampModernInteractionSweepTests: XCTestCase {
     /// The first point, centre first and then on a 7×7 grid, where the hit test returns `object`.
     /// The artwork's alpha and the declared region both decide that, so asking the hit test is the
     /// plan's "pick the point from the artwork alpha or region" without a second model of either.
-    private static func reachablePoint(of object: WasabiObject, frame: CGRect, renderer: WasabiSceneRenderer,
+    /// The art's opaque box is searched before the frame: Vision's buttons are window-sized sprites
+    /// around 25px of art, which a grid over the whole frame steps over.
+    private static func reachablePoint(of node: WasabiSceneNode, frame: CGRect, renderer: WasabiSceneRenderer,
                                        runtime: WinampModernScriptRuntime) -> CGPoint? {
         guard !frame.isEmpty else { return nil }
-        var candidates = [CGPoint(x: frame.midX, y: frame.midY)]
-        for row in 0..<7 {
-            for column in 0..<7 {
-                let x: CGFloat = frame.minX + frame.width * (CGFloat(column) + 0.5) / 7
-                let y: CGFloat = frame.minY + frame.height * (CGFloat(row) + 0.5) / 7
-                candidates.append(CGPoint(x: x, y: y))
+        func grid(_ box: CGRect) -> [CGPoint] {
+            var points = [CGPoint(x: box.midX, y: box.midY)]
+            for row in 0..<7 {
+                for column in 0..<7 {
+                    points.append(CGPoint(x: box.minX + box.width * (CGFloat(column) + 0.5) / 7,
+                                          y: box.minY + box.height * (CGFloat(row) + 0.5) / 7))
+                }
             }
+            return points
         }
-        return candidates.first { receiver(at: $0, for: object, renderer: renderer, runtime: runtime) != nil }
+        var candidates: [CGPoint] = []
+        if let image = renderer.resources.bitmap(identifier: node.bitmapID)?.image,
+           let opaque = WasabiResourceCache.opaqueBounds(of: image) {
+            let sx = node.frame.width / CGFloat(image.width), sy = node.frame.height / CGFloat(image.height)
+            let art = CGRect(x: node.frame.minX + opaque.minX * sx, y: node.frame.minY + opaque.minY * sy,
+                             width: opaque.width * sx, height: opaque.height * sy).intersection(frame)
+            if !art.isEmpty { candidates = grid(art) }
+        }
+        candidates += grid(frame)
+        return candidates.first { receiver(at: $0, for: node.object, renderer: renderer, runtime: runtime) != nil }
     }
 
     /// What the view would dispatch to for a press at `point` that reaches `object`: the object

@@ -2542,26 +2542,34 @@ final class WasabiSceneRenderer {
         // else — the skin does not want it painted. Free until now, because a group's box resolved
         // to 0x0 and the draw was a no-op; the moment the box is the bitmap's, honouring the flag is
         // what keeps BLAKK's region map off the front of its display.
-        if let background = paintedBackingID(of: object) {
-            if let bitmap = resources.bitmap(background: background, declaredIn: object.source) {
-                drawImage(bitmap.image, in: node.frame, context: context)
-            } else if object.tag.is(.layout) {
-                // A layout's `background=` is the window's backing, and 13 corpus skins name a
-                // resource the `.wal` does not ship — `component.basetexture`,
-                // `wasabi.frame.basetexture`, `studio.BaseTexture`, `wasabi.frame` — because in
-                // Winamp those come from the base Wasabi skin, which we have no equivalent of. A
-                // window whose only backing is one of those drew entirely transparent: EPS
-                // High-End's and Itemskin's notifier preferences are the reported case, where every
-                // control is painted in the skin's light list colours and vanishes against the
-                // desktop. The skin's own content background is the nearest thing we can answer
-                // with, and it is the same colour NullPlayer's embedded surfaces already use.
-                // Only when the skin *asked* for a backing: a layout that declares none is
-                // deliberately shaped and must stay transparent.
+        let backing = paintedBackingID(of: object)
+            .flatMap { resources.bitmap(background: $0, declaredIn: object.source) }
+        if let backing {
+            drawImage(backing.image, in: node.frame, context: context)
+        } else if needsFrameBaseTexture(object) {
+            // Vision names both base textures and ships neither, so its framed windows were
+            // see-through between the chrome and the content: the layout rule's colour stands in.
+            if let texture = resources.bitmap(identifier: "wasabi.frame.basetexture")
+                ?? resources.bitmap(identifier: "component.basetexture") {
+                drawImage(texture.image, in: node.frame, context: context)
+            } else if !Self.leavesUntexturedFrameClear {
                 context.setFillColor(palette.contentBackground.cgColor)
                 context.fill(node.frame)
             }
-        } else if let texture = frameBaseTexture(for: object) {
-            drawImage(texture.image, in: node.frame, context: context)
+        } else if object.tag.is(.layout), paintedBackingID(of: object) != nil {
+            // A layout's `background=` is the window's backing, and 13 corpus skins name a
+            // resource the `.wal` does not ship — `component.basetexture`,
+            // `wasabi.frame.basetexture`, `studio.BaseTexture`, `wasabi.frame` — because in
+            // Winamp those come from the base Wasabi skin, which we have no equivalent of. A
+            // window whose only backing is one of those drew entirely transparent: EPS
+            // High-End's and Itemskin's notifier preferences are the reported case, where every
+            // control is painted in the skin's light list colours and vanishes against the
+            // desktop. The skin's own content background is the nearest thing we can answer
+            // with, and it is the same colour NullPlayer's embedded surfaces already use.
+            // Only when the skin *asked* for a backing: a layout that declares none is
+            // deliberately shaped and must stay transparent.
+            context.setFillColor(palette.contentBackground.cgColor)
+            context.fill(node.frame)
         }
 
         // The window chrome Winamp's own standard frame drew. Before the type chain because a frame
@@ -4783,13 +4791,13 @@ final class WasabiSceneRenderer {
     /// stock frame draws it. machina's help window drew its dark-on-transparent help art on the
     /// bare desktop without it, where its playlist — the same frame on `background="component.bg"`
     /// — was gold. A layout that declares a backing, or composites against the desktop, keeps its own.
-    private func frameBaseTexture(for object: WasabiObject) -> WasabiBitmap? {
+    private static let leavesUntexturedFrameClear =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_FRAME_TEXTURE_CLEAR"] != nil
+
+    private func needsFrameBaseTexture(_ object: WasabiObject) -> Bool {
         guard WasabiStandardFrames.isStandardFrame(object),
-              let layout = object.parent, layout.tag.is(.layout),
-              layout.attributes["background"] == nil,
-              layout.attributes["desktopalpha"] != "1" else { return nil }
-        return resources.bitmap(identifier: "wasabi.frame.basetexture")
-            ?? resources.bitmap(identifier: "component.basetexture")
+              let layout = object.parent, layout.tag.is(.layout) else { return false }
+        return layout.attributes["background"] == nil && layout.attributes["desktopalpha"] != "1"
     }
 
     /// The object's declared geometry, with `fitparent="1"` folded in.

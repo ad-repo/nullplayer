@@ -151,6 +151,10 @@
     same fix applies to Core-X5, corneramp, motorhead and wasabi_player.
 - **Mad Magazine's playlist no longer sits under its title bar**, and EMP2's Media Library opens at
   its own 400px width instead of 450px.
+- **Vision's playlist and library windows are solid**, where the desktop showed through between
+  the frame and the list.
+- **A Modern skin's paragraph that is taller than its box starts at its first line** instead of
+  being cut at the top (H2O Liquid's Configuration window).
 
 ## 0.33.0
 
