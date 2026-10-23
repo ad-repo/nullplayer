@@ -1,10 +1,21 @@
 import CoreGraphics
 import Foundation
+import ImageIO
 
 /// A `<bitmap>`'s sprite cut — its `x`/`y`/`w`/`h` applied to the decoded file — and the pixel
 /// questions asked of one. The renderer draws the cut; the initializer measures a frame's strips
 /// from it, so both read the same rectangle out of the atlas.
 extension WasabiResourceCache {
+    /// A `<bitmap>` definition's file, decoded and cut. Nil for one with no file (`$solid`), or
+    /// whose file cannot be read.
+    static func cutImage(of definition: WalResourceDefinition, in vfs: WalVirtualFileSystem) -> CGImage? {
+        guard definition.kind == "bitmap", let path = definition.logicalFile,
+              let data = try? vfs.data(at: path, location: definition.source),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        return cut(image, attributes: definition.attributes)
+    }
+
     /// The part of `image` a `<bitmap>` with these attributes names. `w`/`h` default to the rest of
     /// the image and are clamped to it; nil when the cut falls outside the image.
     static func cut(_ image: CGImage, attributes: [String: String]) -> CGImage? {

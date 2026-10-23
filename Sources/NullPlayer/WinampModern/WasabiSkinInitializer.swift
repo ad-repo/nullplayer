@@ -1673,17 +1673,13 @@ final class WasabiSkinInitializer {
                     bitmapOpaqueBounds: { [resourceRegistry, vfs] identifier in
                         guard let resource = resourceRegistry?.resolvedDefinition(identifier: identifier)
                         else { return nil }
-                        guard let path = resource.logicalFile,
-                              let data = try? vfs.data(at: path, location: resource.source),
-                              let source = CGImageSourceCreateWithData(data as CFData, nil),
-                              let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
-                              let cut = WasabiResourceCache.cut(image, attributes: resource.attributes)
-                        else {
-                            // A generated (`$solid`) bitmap has no file: it is its declared size.
-                            let number = { resource.attributes[$0].flatMap(Double.init) }
-                            return number("w").flatMap { w in number("h").map { CGRect(x: 0, y: 0, width: w, height: $0) } }
+                        if let cut = WasabiResourceCache.cutImage(of: resource, in: vfs) {
+                            return WasabiResourceCache.opaqueBounds(of: cut)
                         }
-                        return WasabiResourceCache.opaqueBounds(of: cut)
+                        // A generated (`$solid`) bitmap has no file: it is its declared size.
+                        guard let width = resource.attributes["w"].flatMap(Double.init),
+                              let height = resource.attributes["h"].flatMap(Double.init) else { return nil }
+                        return CGRect(x: 0, y: 0, width: width, height: height)
                     })
                 let content = WasabiStandardFrames.measuredContentGroupNode(
                     identifier: contentID, border: border, location: node.location)

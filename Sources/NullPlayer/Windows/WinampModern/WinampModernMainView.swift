@@ -1209,56 +1209,44 @@ final class WinampModernMainView: NSView {
     private func reconcileHostedSurfaces() {
         guard !isTornDown else { return }
         let holders = renderer.componentHolders()
-        // Unmount first, then mount, and attach every pass — the visualization's BB35 trap. The bridge
-        // hands the same browser back for a holder that comes back under a new id, so mounting first
-        // added it and the stale id's unmount then pulled it straight back out: Winamp Single GUI's
-        // library pane stayed an empty blue box.
-        let live = Set(holders.filter { $0.kind == .library }.map(\.object.stableID))
-        for (id, surface) in librarySurfaces where !live.contains(id) {
-            surface.unmountFromHolder()
-            librarySurfaces[id] = nil
-        }
-        for holder in holders where holder.kind == .library {
-            let surface: WinampModernLibrarySurface
-            if let existing = librarySurfaces[holder.object.stableID] {
-                surface = existing
-            } else if let made = componentHost?.makeLibrarySurface() {
-                librarySurfaces[holder.object.stableID] = made
-                made.applyContentScale(libraryContentScale)
-                made.applyPalette(renderer.palette)
-                surface = made
-            } else {
-                continue
-            }
-            if surface.view.superview !== self { addSubview(surface.view) }
+        // Attach every pass, not only on creation: the unmount of a stale id is what detaches a
+        // surface that comes back under a new one.
+        for entry in reconcile(&librarySurfaces, to: holders.filter { $0.kind == .library },
+                               unmount: { _, surface in surface.unmountFromHolder() },
+                               make: { _ in
+                                   guard let made = componentHost?.makeLibrarySurface() else { return nil }
+                                   made.applyContentScale(libraryContentScale)
+                                   made.applyPalette(renderer.palette)
+                                   return made
+                               })
+        where entry.surface.view.superview !== self {
+            addSubview(entry.surface.view)
         }
 
-        // Unmount first, then mount — the library's and the visualization's trap again. The bridge
-        // vends one box per skin, so with the mount first, Winamp Single GUI's "Switch Video Screen
-        // Mode" (mini pane → big pane) registered the box for the big holder and the mini holder's
-        // unmount then pulled that same box out and put the picture away.
-        let liveVideo = Set(holders.filter { $0.kind == .video }.map(\.object.stableID))
-        for (id, surface) in videoSurfaces where !liveVideo.contains(id) {
-            // Unparks the picture — the one video view in the app must never be left orphaned in a
-            // view that is about to leave the hierarchy — and leaves it hidden. The holder going away
-            // is a tab switch, not a stop, so the film plays on and the window it came from stays put.
-            // Only a box this view still holds: one another window has claimed since (a detach, or
-            // the reattach back) is that window's picture, and this entry is just stale.
-            if surface.view.superview === self { surface.unmountFromHolder() }
-            videoSurfaces[id] = nil
-        }
+        let videoEntries = reconcile(
+            &videoSurfaces, to: holders.filter { $0.kind == .video },
+            unmount: { _, surface in
+                // Unparks the picture — the one video view in the app must never be left orphaned in
+                // a view that is about to leave the hierarchy — and leaves it hidden. The holder going
+                // away is a tab switch, not a stop, so the film plays on and the window it came from
+                // stays put. Only a box this view still holds: one another window has claimed since (a
+                // detach, or the reattach back) is that window's picture, and this entry is just stale.
+                if surface.view.superview === self { surface.unmountFromHolder() }
+            },
+            make: { holder in
+                // A box already mounted in another *visible* window is that window's picture. Taking
+                // it moved the parked film onto this window at the other box's geometry — the film
+                // floated over the player. A hidden window does not keep it: Winamp Single GUI builds
+                // its detached `Video` window at load, hidden, and that held the box against the
+                // player's own mini pane.
+                guard let made = componentHost?.makeVideoSurface() else { return nil }
+                if let other = made.view.superview, other !== self, other.window?.isVisible == true { return nil }
+                return configured(made, for: holder)
+            })
         var videoHolderAppeared = false
-        for holder in holders where holder.kind == .video {
-            // The bridge vends one box per skin, so a box already mounted in another *visible*
-            // window is that window's picture. Taking it moved the parked film onto this window at
-            // the other box's geometry — the film floated over the player. A hidden window does not
-            // keep it: Winamp Single GUI builds its detached `Video` window at load, hidden, and
-            // that held the box against the player's own mini pane.
-            guard videoSurfaces[holder.object.stableID] == nil,
-                  let surface = componentHost?.makeVideoSurface() else { continue }
-            if let other = surface.view.superview, other !== self, other.window?.isVisible == true { continue }
+        for entry in videoEntries where entry.isNew {
             videoHolderAppeared = true
-            mountVideoSurface(surface, for: holder)
+            addSubview(entry.surface.view)
         }
         // Not every `{0000000A}` holder gets the engine: a letterbox strip is an analyzer's box, and
         // the bridge vends one surface per skin, so a second holder asking for it stole the picture
@@ -1276,53 +1264,31 @@ final class WinampModernMainView: NSView {
                 + " holders=" + boxes.joined(separator: " ")
             NSLog("%@", line)
         }
-        // **Unmount first, then mount.** The bridge vends one surface per skin, so the holder the
-        // engine moves *to* and the holder it moves *from* hand back the same object. With the mount
-        // pass first, that object was registered under both ids at once and the unmount pass then ran
-        // `unmountFromHolder()` on the instance the mount pass had just added — stopping the engine
-        // and pulling the view straight back out of the hierarchy. `[B]` kept the detached, stopped
-        // surface, and every later reconcile skipped it as already mounted, so the box stayed black
-        // for the rest of the session. That is Big Bento Modern's Visualization tab going black once
-        // the Multi Content View mini pane is ticked: ticking it adds a second eligible holder, and
-        // opening the tab flips the election from the mini pane to the tab (BB35).
-        for (id, surface) in visualizationSurfaces where !liveVis.contains(id) {
-            if Self.surfaceTrace {
-                let line = "[surf/vis] unmount #\(id)"
-                    + " obj=\(Unmanaged.passUnretained(surface.view).toOpaque())"
-                NSLog("%@", line)
-            }
-            surface.unmountFromHolder()
-            visualizationSurfaces[id] = nil
-        }
-        for holder in holders where holder.kind == .visualization {
-            guard holder.object.stableID == engineHolderID else { continue }
-            let surface: WinampModernVisualizationSurface
-            if let existing = visualizationSurfaces[holder.object.stableID] {
-                surface = existing
-            } else if let made = componentHost?.makeVisualizationSurface() {
-                visualizationSurfaces[holder.object.stableID] = made
-                made.applySkinScale(skinScale)
-                made.applyPalette(renderer.palette)
-                surface = made
-            } else {
-                continue
-            }
-            // **Attach every pass, not only on creation.** A surface is detached by an unmount above
-            // — the move this pass is completing — and the old "create it, add it, resume it once"
-            // shape could only ever start the engine on the pass that made it. Anything that left the
-            // view hierarchy afterwards had nothing to put it back (BB35).
-            guard surface.view.superview !== self else {
+        let visEntries = reconcile(
+            &visualizationSurfaces,
+            to: holders.filter { $0.kind == .visualization && $0.object.stableID == engineHolderID },
+            unmount: { id, surface in
                 if Self.surfaceTrace {
-                    let line = "[surf/vis] attached \(holder.object.xmlID ?? "-")"
-                        + "#\(holder.object.stableID)"
+                    let line = "[surf/vis] unmount #\(id)"
                         + " obj=\(Unmanaged.passUnretained(surface.view).toOpaque())"
                     NSLog("%@", line)
                 }
-                continue
-            }
-            addSubview(surface.view)
+                surface.unmountFromHolder()
+            },
+            make: { _ in
+                guard let made = componentHost?.makeVisualizationSurface() else { return nil }
+                made.applySkinScale(skinScale)
+                made.applyPalette(renderer.palette)
+                return made
+            })
+        for (holder, surface, _) in visEntries {
+            // **Attach every pass, not only on creation.** The old "create it, add it, resume it
+            // once" shape could only ever start the engine on the pass that made it. Anything that
+            // left the view hierarchy afterwards had nothing to put it back (BB35).
+            let attached = surface.view.superview === self
+            if !attached { addSubview(surface.view) }
             if Self.surfaceTrace {
-                let line = "[surf/vis] mount \(holder.object.xmlID ?? "-")"
+                let line = "[surf/vis] \(attached ? "attached" : "mount") \(holder.object.xmlID ?? "-")"
                     + "#\(holder.object.stableID)"
                     + " obj=\(Unmanaged.passUnretained(surface.view).toOpaque())"
                 NSLog("%@", line)
@@ -1330,7 +1296,7 @@ final class WinampModernMainView: NSView {
             // A surface the bridge handed back was stopped when its holder went away, and the only
             // other thing that starts an engine is a window becoming visible — which has already
             // happened for a holder that lives in a window that is on screen.
-            surface.resumeRendering()
+            if !attached { surface.resumeRendering() }
         }
         // What the renderer paints in the box behind them: bars are the skin's analyzer, and drawing
         // one under a live engine is a second visualization nobody can see costing a repaint a frame.
@@ -1352,30 +1318,53 @@ final class WinampModernMainView: NSView {
             }
         }
 
-        // Unmount first, then mount — the trap above once more: the bridge caches one surface per
-        // hosted-window id, so a holder back under a new object id is handed the same surface, and
-        // mounting first let the stale id's unmount pull it straight back out.
-        let liveHostedWindows = Set(holders.compactMap { holder -> WasabiObjectID? in
-            guard case .hostWindow = holder.surfaceID else { return nil }
-            return holder.object.stableID
-        })
-        for (id, surface) in hostedWindowSurfaces where !liveHostedWindows.contains(id) {
-            surface.suspend()
-            surface.unmountFromHolder()
-            hostedWindowSurfaces[id] = nil
-        }
         let hostedStyle = WinampModernSurfaceStyle(palette: renderer.palette)
-        for holder in holders {
-            guard case .hostWindow(let id) = holder.surfaceID,
-                  hostedWindowSurfaces[holder.object.stableID] == nil,
-                  let surface = componentHost?.makeHostedWindowSurface(id: id) else { continue }
-            hostedWindowSurfaces[holder.object.stableID] = surface
-            surface.applySkinScale(skinScale)
-            surface.applyPalette(hostedStyle)
-            addSubview(surface.view)
-            if sceneIsVisible { surface.resume() }
+        let hostedEntries = reconcile(
+            &hostedWindowSurfaces,
+            to: holders.filter { if case .hostWindow = $0.surfaceID { true } else { false } },
+            unmount: { _, surface in
+                surface.suspend()
+                surface.unmountFromHolder()
+            },
+            make: { holder in
+                guard case .hostWindow(let id) = holder.surfaceID,
+                      let made = componentHost?.makeHostedWindowSurface(id: id) else { return nil }
+                made.applySkinScale(skinScale)
+                made.applyPalette(hostedStyle)
+                return made
+            })
+        for entry in hostedEntries where entry.isNew {
+            addSubview(entry.surface.view)
+            if sceneIsVisible { entry.surface.resume() }
         }
         cachedHolders = holders
+    }
+
+    /// Bring one kind's surface table up to `holders`: unmount the entries whose holder has gone
+    /// **first**, then look up or `make` each live holder's surface. `isNew` marks the ones made now.
+    ///
+    /// The order is the BB35 trap. The bridge vends one surface per skin (per id, for hosted
+    /// windows), so a holder that comes back under a new object id is handed the very instance the
+    /// stale id still names. With the mount first, the stale id's unmount then pulled it straight
+    /// back out: Big Bento Modern's Visualization tab went black once its mini pane was ticked, and
+    /// Winamp Single GUI's library pane stayed an empty box and its "Switch Video Screen Mode" put
+    /// the picture away.
+    private func reconcile<Surface>(
+        _ table: inout [WasabiObjectID: Surface], to holders: [WinampModernComponentHolder],
+        unmount: (WasabiObjectID, Surface) -> Void,
+        make: (WinampModernComponentHolder) -> Surface?
+    ) -> [(holder: WinampModernComponentHolder, surface: Surface, isNew: Bool)] {
+        let live = Set(holders.map(\.object.stableID))
+        for (id, surface) in table where !live.contains(id) {
+            unmount(id, surface)
+            table[id] = nil
+        }
+        return holders.compactMap { holder in
+            if let existing = table[holder.object.stableID] { return (holder, existing, false) }
+            guard let made = make(holder) else { return nil }
+            table[holder.object.stableID] = made
+            return (holder, made, true)
+        }
     }
 
     private var cachedHolders: [WinampModernComponentHolder]?
@@ -1491,7 +1480,7 @@ final class WinampModernMainView: NSView {
         if hostedVideoSurface == nil,
            let holder = renderer.componentHolders().first(where: { $0.kind == .video }),
            let made = componentHost?.makeVideoSurface() {
-            mountVideoSurface(made, for: holder)
+            videoSurfaces[holder.object.stableID] = configured(made, for: holder)
         }
         guard let surface = hostedVideoSurface else { return nil }
         if surface.view.superview !== self {
@@ -1504,14 +1493,14 @@ final class WinampModernMainView: NSView {
         return surface
     }
 
-    private func mountVideoSurface(_ surface: WinampModernVideoSurface, for holder: WinampModernComponentHolder) {
-        videoSurfaces[holder.object.stableID] = surface
+    private func configured(_ surface: WinampModernVideoSurface,
+                            for holder: WinampModernComponentHolder) -> WinampModernVideoSurface {
         // `noshowcmdbar="1"` — the holder's own instruction that it draws the transport itself.
         surface.showsCommandBar =
             WinampModernVideoHolder.showsCommandBar(holderAttributes: holder.object.attributes)
         surface.applySkinScale(skinScale)
         surface.applyPalette(renderer.palette)
-        addSubview(surface.view)
+        return surface
     }
 
     /// The video surface in this scene, if the skin's holder made one. The window layer needs it to

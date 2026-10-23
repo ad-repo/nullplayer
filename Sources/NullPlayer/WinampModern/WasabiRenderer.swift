@@ -358,11 +358,7 @@ final class WasabiResourceCache {
         let key = identifier.lowercased()
         if let hit = cachedBitmap(key) { return hit }
         guard let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
-              definition.kind == "bitmap", let path = definition.logicalFile,
-              let data = try? loadedSkin.vfs.data(at: path, location: definition.source),
-              let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let fullImage = CGImageSourceCreateImageAtIndex(source, 0, nil),
-              let cropped = Self.cut(fullImage, attributes: definition.attributes) else { return nil }
+              let cropped = Self.cutImage(of: definition, in: loadedSkin.vfs) else { return nil }
         let width = cropped.width, height = cropped.height
         let declaredGroup = definition.attributes["gammagroup"]
         let image = themed(cropped, transform: themes.transform(
@@ -664,29 +660,23 @@ enum WasabiAnimation {
 struct WasabiSceneNode {
     let object: WasabiObject
     let frame: CGRect
-    let clip: CGRect
-    let bitmapID: String?
+    // The memoized scene is refreshed by copying a node and changing these, never by rebuilding it.
+    var clip: CGRect
+    var bitmapID: String?
     /// The box this node resolved against. Only the protective-minimum probe reads it: a child that
     /// escapes this rect is an object whose parent has become too small to hold it.
     let parentFrame: CGRect
     /// Product of ancestor alphas (0…1). Groups with alpha < 255 multiply into their children.
-    let inheritedAlpha: CGFloat
+    var inheritedAlpha: CGFloat
     /// Ancestor alpha masks this node is clipped to, outermost first (`groupRegionMask`).
     var regionMasks: [WasabiMaskClip] = []
 
     func clipped(to box: CGRect) -> WasabiSceneNode {
+        var node = self
         let cut = clip.intersection(box)
-        return WasabiSceneNode(object: object, frame: frame,
-                               clip: cut.isNull ? CGRect(origin: box.origin, size: .zero) : cut,
-                               bitmapID: bitmapID, parentFrame: parentFrame,
-                               inheritedAlpha: inheritedAlpha, regionMasks: regionMasks)
+        node.clip = cut.isNull ? CGRect(origin: box.origin, size: .zero) : cut
+        return node
     }
-}
-
-/// An alpha mask placed in scene coordinates.
-struct WasabiMaskClip {
-    let mask: CGImage
-    let rect: CGRect
 }
 
 final class WasabiSceneRenderer {
@@ -1246,15 +1236,9 @@ final class WasabiSceneRenderer {
                 .flatMap { product[ObjectIdentifier($0)] } ?? node.inheritedAlpha
             product[ObjectIdentifier(node.object)] = inherited
                 * Self.alphaFraction(of: node.object, active: isWindowActive)
-            if inherited == node.inheritedAlpha {
-                refreshed.append(node)
-            } else {
-                refreshed.append(WasabiSceneNode(object: node.object, frame: node.frame,
-                                                 clip: node.clip, bitmapID: node.bitmapID,
-                                                 parentFrame: node.parentFrame,
-                                                 inheritedAlpha: inherited,
-                                                 regionMasks: node.regionMasks))
-            }
+            var node = node
+            node.inheritedAlpha = inherited
+            refreshed.append(node)
         }
         return refreshed
     }
@@ -1269,10 +1253,9 @@ final class WasabiSceneRenderer {
         guard object.tag.is(anyOf: [.status, .nStatesButton, .toggleButton])
                 || node.object.attributes["activeimage"] != nil else { return node }
         let bitmapID = resolvedBitmapID(for: node.object, pressed: false, hovered: false)
-        guard bitmapID != node.bitmapID else { return node }
-        return WasabiSceneNode(object: node.object, frame: node.frame, clip: node.clip,
-                               bitmapID: bitmapID, parentFrame: node.parentFrame,
-                               inheritedAlpha: node.inheritedAlpha, regionMasks: node.regionMasks)
+        var node = node
+        node.bitmapID = bitmapID
+        return node
     }
 
     /// Drop the memoized scene. Needed only for the inputs the graph's own generation cannot see.
@@ -2399,56 +2382,6 @@ final class WasabiSceneRenderer {
     static let ignoresGroupImage =
         ProcessInfo.processInfo.environment["WINAMP_MODERN_GROUP_IMAGE"] != "1"
 
-    static let honoursTargetApertures =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_TARGET_APERTURE"] != "0"
-
-    /// The box a group that declares none clips to while a target animation has moved one of its
-    /// children: the children's union at their **declared** places (`xmlParam`, which `gotoTarget`
-    /// leaves alone). A slide is a move within a box. MIDISUI's vis drawer is a 121×124 `Drawer`
-    /// layer in a `DrawerGroup` with no `w`/`h`; `drawer.maki` opens it with `setTargetX(-118)`, and
-    /// unclipped the cover slid out over the COMPONENT column and the playlist, burying the
-    /// playlist / vis studio / video buttons, instead of disappearing into its own frame.
-    ///
-    /// Only while something has moved: at rest the union is the children themselves, and a group
-    /// with no declared box otherwise keeps the inherited clip (`clipAxes`).
-    private func targetAperture(of group: WasabiObject,
-                                children: ArraySlice<WasabiSceneNode>) -> CGRect? {
-        guard Self.honoursTargetApertures, group.tag.is(.group), clipAxes(of: group).isEmpty else {
-            return nil
-        }
-        var union = CGRect.null
-        var moved = false
-        for node in children where node.object.parent === group {
-            let child = node.object
-            func offset(_ key: String) -> CGFloat {
-                guard let now = Double(child.attributes[key] ?? ""),
-                      let declared = Double(child.xmlParam(key) ?? "") else { return 0 }
-                return CGFloat(now - declared)
-            }
-            let dx = offset("x"), dy = offset("y")
-            if dx != 0 || dy != 0 { moved = true }
-            if !node.frame.isEmpty { union = union.union(node.frame.offsetBy(dx: -dx, dy: -dy)) }
-        }
-        return moved && !union.isNull ? union : nil
-    }
-
-    static let honoursGroupRegions =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_GROUP_REGION"] != "0"
-
-    /// A group whose `background` is not painted (`drawbackground="0"`) is shaped by it: Wasabi takes
-    /// a group's region from its background's alpha, and the group's children draw inside that region
-    /// only. ArmorAmp is the measured case: its spectrum is a 170x70 `<vis>` inside
-    /// `background="visgroup.bg"`, a blade-shaped map of the screen. Clipped only to the box, the bars
-    /// spilled over the screen bezel. `WINAMP_MODERN_GROUP_REGION=0` turns this off for an A/B.
-    private func groupRegionMask(of object: WasabiObject, frame: CGRect) -> WasabiMaskClip? {
-        guard Self.honoursGroupRegions, !frame.isEmpty, paintedBackingID(of: object) == nil,
-              let background = object.attributes["background"], backgroundBitmap(of: object) != nil,
-              let mask = resources.regionMask(WasabiRegionClip(mapID: background, mapPath: nil,
-                                                               threshold: 0, reversed: false))
-        else { return nil }
-        return WasabiMaskClip(mask: mask, rect: frame)
-    }
-
     /// Is this control laid out along the vertical axis?
     ///
     /// Skins spell it **both** ways and mean the same thing. Across the installed corpus: 158 slider
@@ -2542,32 +2475,26 @@ final class WasabiSceneRenderer {
         // else — the skin does not want it painted. Free until now, because a group's box resolved
         // to 0x0 and the draw was a no-op; the moment the box is the bitmap's, honouring the flag is
         // what keeps BLAKK's region map off the front of its display.
-        let backing = paintedBackingID(of: object)
-            .flatMap { resources.bitmap(background: $0, declaredIn: object.source) }
-        if let backing {
+        let backingID = paintedBackingID(of: object)
+        let needsFrameTexture = needsFrameBaseTexture(object)
+        if let backing = backingID.flatMap({ resources.bitmap(background: $0, declaredIn: object.source) }) {
             drawImage(backing.image, in: node.frame, context: context)
-        } else if needsFrameBaseTexture(object) {
-            // Vision names both base textures and ships neither, so its framed windows were
-            // see-through between the chrome and the content: the layout rule's colour stands in.
-            if let texture = resources.bitmap(identifier: "wasabi.frame.basetexture")
-                ?? resources.bitmap(identifier: "component.basetexture") {
-                drawImage(texture.image, in: node.frame, context: context)
-            } else if !Self.leavesUntexturedFrameClear {
-                context.setFillColor(palette.contentBackground.cgColor)
-                context.fill(node.frame)
-            }
-        } else if object.tag.is(.layout), paintedBackingID(of: object) != nil {
-            // A layout's `background=` is the window's backing, and 13 corpus skins name a
-            // resource the `.wal` does not ship — `component.basetexture`,
-            // `wasabi.frame.basetexture`, `studio.BaseTexture`, `wasabi.frame` — because in
-            // Winamp those come from the base Wasabi skin, which we have no equivalent of. A
-            // window whose only backing is one of those drew entirely transparent: EPS
-            // High-End's and Itemskin's notifier preferences are the reported case, where every
-            // control is painted in the skin's light list colours and vanishes against the
-            // desktop. The skin's own content background is the nearest thing we can answer
-            // with, and it is the same colour NullPlayer's embedded surfaces already use.
-            // Only when the skin *asked* for a backing: a layout that declares none is
-            // deliberately shaped and must stay transparent.
+        } else if needsFrameTexture, let texture = resources.bitmap(identifier: "wasabi.frame.basetexture")
+                    ?? resources.bitmap(identifier: "component.basetexture") {
+            drawImage(texture.image, in: node.frame, context: context)
+        } else if (needsFrameTexture && !Self.leavesUntexturedFrameClear)
+                    || (object.tag.is(.layout) && backingID != nil) {
+            // A backing the skin asked for and the `.wal` does not ship. 13 corpus skins name a
+            // layout `background=` — `component.basetexture`, `wasabi.frame.basetexture`,
+            // `studio.BaseTexture`, `wasabi.frame` — that in Winamp comes from the base Wasabi
+            // skin, which we have no equivalent of. A window whose only backing is one of those drew
+            // entirely transparent: EPS High-End's and Itemskin's notifier preferences are the
+            // reported case, where every control is painted in the skin's light list colours and
+            // vanishes against the desktop. Vision's standard frames name both base textures and
+            // ship neither, so they were see-through between the chrome and the content. The skin's
+            // own content background is the nearest thing we can answer with, and it is the same
+            // colour NullPlayer's embedded surfaces already use. Only when the skin *asked* for a
+            // backing: a layout that declares none is deliberately shaped and must stay transparent.
             context.setFillColor(palette.contentBackground.cgColor)
             context.fill(node.frame)
         }
@@ -4769,7 +4696,7 @@ final class WasabiSceneRenderer {
     /// (Fuzzy Muffins' `main.alpha`, impulse's `player.normal.background.region`), and painting it
     /// put the mask's grey through every translucent pane.
     /// `WINAMP_MODERN_LAYOUT_DRAWBACKGROUND=1` treats a layout like a group again, for an A/B.
-    private func paintedBackingID(of object: WasabiObject) -> String? {
+    func paintedBackingID(of object: WasabiObject) -> String? {
         if object.tag.is(.layout), !Self.honoursLayoutDrawBackground {
             if object.attributes["desktopalpha"] == "1", let alpha = object.attributes["alphabackground"] {
                 return alpha
@@ -4850,7 +4777,7 @@ final class WasabiSceneRenderer {
     /// An `xuitag` instance is a group too — `<OneDirectionText>` is its `groupdef`, instantiated
     /// under the tag's name — so it clips on the same terms. Shield_Amp's 293px songticker drew its
     /// 900px moving text across the whole player body without it (B149).
-    private func clipAxes(of object: WasabiObject) -> WasabiClipAxes {
+    func clipAxes(of object: WasabiObject) -> WasabiClipAxes {
         let value = object.attributes["clipchildren"]?.lowercased()
         if value == "1" || value == "true" || isFramePane(object) { return .both }
         guard object.tag.is(.group) || loadedSkin.runtime.types.isXUITag(object.typeName) else { return [] }
@@ -4869,7 +4796,7 @@ final class WasabiSceneRenderer {
     ///
     /// Only for a group: a `<layout>`'s background is the window's backing and is sized separately
     /// (`defaultSize`), and every other object type is sized by its `image`.
-    private func backgroundBitmap(of object: WasabiObject) -> WasabiBitmap? {
+    func backgroundBitmap(of object: WasabiObject) -> WasabiBitmap? {
         guard object.tag.is(.group),
               let background = object.attributes["background"] else { return nil }
         return resources.bitmap(background: background, declaredIn: object.source)
