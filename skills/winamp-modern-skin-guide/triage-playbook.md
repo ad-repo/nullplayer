@@ -112,8 +112,8 @@ measurements behind them, are in [reference/harness.md](reference/harness.md):
 
 The specification for the unbuilt stages, and the build order that would deliver them, are in
 `docs/winamp-modern/corpus-runner-plan.md` — a project plan, kept where the phase handoffs live. As
-each further stage is built, its commands land in [reference/harness.md](reference/harness.md), that
-part of the plan becomes history, and the row above changes to **Built**.
+each further stage is built, its commands land in [reference/harness.md](reference/harness.md), the
+row above changes to **Built**, and the plan is marked by `skills/skin-intake` § *Changing the plan*.
 
 ---
 
