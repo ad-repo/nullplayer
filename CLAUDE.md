@@ -92,6 +92,10 @@ Run `swift test`. For UI or playback work, manually exercise local and server pl
 ## Rules
 
 - No Spotify, Apple Music, or Amazon Music integrations; they are explicitly not accepted.
+- **Never look at Winamp, Wasabi or Windows Media Player source code** — leaked, "released",
+  mirrored or quoted, on GitHub or anywhere else — and never download it. Skin support is clean-room:
+  the evidence is the skin's own files, its screenshots, and observed behaviour. If a search turns
+  up such source, do not open it; if any was fetched, delete it and say so.
 - `ModernSkin/` and `Windows/Modern*/` must never import from `Skin/` or `Windows/MainWindow/`; see `original-skin-guide`.
 - Winamp Modern (`.wal`) work must never change Classic or Original behavior. This binds shared
   code too — a change in `App/` that both modes run is gated on the mode, not justified by
