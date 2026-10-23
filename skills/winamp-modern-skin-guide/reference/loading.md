@@ -742,6 +742,15 @@ layout axes on two skins** change with the rule — each toward the number the a
 
 The floor stays a floor: it clamps whatever the chain produced, exactly as before.
 
+**A layout shaped by its `alphabackground` skips step 2** (B254, 2026-10-23). Its window is cut out of
+that bitmap, so it ends where the artwork does and the container's number can only add empty space or
+crop the art: MD__Ganbare_Rakkatan_the_Sixth's 408×531 player opened 816 wide under
+`default_w="816"`, and M3's 344×222 player was cut off at `default_h="164"`. Moving the background
+above the container for *every* layout is wrong — 75 unsized layouts in the corpus sit under a sized
+container, and most are AVS, video, playlist or browser frames whose background is a small tile
+(Arion's 72×72, SP4's 10×10) that the container's size is meant to stretch. Across the 318 skins that
+use `alphabackground` (every tier), the rule moved exactly those two windows.
+
 #### A component window with no stated size, and why its fit cannot wait for `start()`
 
 `minimum_*` standing in as a size is wrong in general and mostly harmless — until a skin states an

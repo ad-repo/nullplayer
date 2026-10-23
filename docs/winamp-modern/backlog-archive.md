@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B254 — An `alphabackground` layout is its artwork's size — closed 2026-10-23
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B254 | **A container's `default_w` widens a fixed-art player past its background.** MD__Ganbare_Rakkatan_the_Sixth_(fixed)'s `main/normal` states no size; its container says `default_w="816"`, exactly twice the opaque 408×531 `mew.png` background, and the close/min/shade buttons (x 352–386) and `<snappoint x="408">` mark 408 as the right edge. `WasabiRenderer.defaultSize` ranks the container default (B136) above the background, so the render dump opens it 816×531 with an empty right half. Swapping the order globally is wrong: an unsized layout with a background inside a sized container occurs 75 times in the installed corpus, mostly AVS/Video/playlist/browser frames that tile a small background (Arion's 72×72, SP4's 10×10) and rely on the container default. Find the rule that tells a fixed-art window from a framed one (candidates: `alphabackground`, a background at least as large as the content, no `minimum_*`), check it against all 75 (Dragon_v3.0's `main/normal`, 400×366 against a 364×335 background, is the other player in the list), then make it so. Done when Ganbare's player renders 408×531 and the corpus sweep changes no other layout the rule did not name | render dump: MD__Ganbare_Rakkatan_the_Sixth_(fixed) `main/normal: 816x531` (2026-10-23) | S | 2 |
+
+**Closed 2026-10-23**. `WasabiSceneRenderer.defaultSize` skips the container's `default_w`/`default_h` when the layout has an `alphabackground` and a resolvable `background`, so such a layout falls through to the background bitmap's size; a layout's own box still wins. Before/after sweep over the 318 skins that use `layout@alphabackground` (all tiers): two windows moved, MD__Ganbare's `main/normal` 816×531 → 408×531 and M3's `main/normal` 344×164 → 344×222 (its transport row had been cut off); every other difference is noise: Vortex's dashboard and Anexa's shade are the documented nondeterministic images, and HALOAMP, WTM and Official_Midnight_Club_2 differed between two runs with the fix off (HALOAMP's and WTM's dynamic `cont.clear.*` window sizes are not yet listed as nondeterministic in `harness.md`). Both skins checked live. Tests: `WinampModernB136Tests.testAnAlphaBackgroundLayoutIsItsArtworkSize`, `testAPlainBackgroundLayoutIsStillSizedByItsContainer`. Engine note: `reference/loading.md` → *`default_w`/`default_h` are `<container>` attributes too*.
+
 ## B239 — `onScale` is dispatched on a UI Size change — closed 2026-10-22
 
 | Id | Item | Reach | Effort | Tier |

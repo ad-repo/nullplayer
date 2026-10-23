@@ -5208,10 +5208,14 @@ final class WasabiSceneRenderer {
     /// own box still wins; the container only answers for an axis the layout never states.
     private static func defaultSize(for layout: WasabiObject, resources: WasabiResourceCache) -> CGSize {
         let attributes = layout.attributes
-        let container = layout.parent?.attributes ?? [:]
         let minimum = CGSize(width: dimension(attributes, keys: ["minimum_w"], fallback: 1),
                              height: dimension(attributes, keys: ["minimum_h"], fallback: 1))
         let background = resources.bitmap(identifier: attributes["background"])
+        /// A layout shaped by its `alphabackground` ends where that artwork does, so the container's
+        /// default cannot resize it (B254: Ganbare's 408-wide player under `default_w="816"`, M3's
+        /// 222-tall one cut off by `default_h="164"`).
+        let container = attributes["alphabackground"] != nil && background != nil
+            ? [:] : layout.parent?.attributes ?? [:]
         /// The layout's own box, then the container's default, then the floor, then the artwork.
         func extent(_ own: String, _ box: String, _ floor: String, artwork: CGFloat?,
                     classic: CGFloat) -> CGFloat {

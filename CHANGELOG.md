@@ -140,6 +140,8 @@
   - The panel labels show; rows of red dots no longer cover them or run past the window's edge.
   - The library shows your library instead of a blank frame, and its corner button goes back to
     the player instead of quitting the app.
+- **Ganbare Rakkatan and M3 open at the size of their artwork** — Ganbare's player had an empty
+  strip as wide as itself down its right side, and M3's was cut off through its transport buttons.
 
 ## 0.33.0
 
