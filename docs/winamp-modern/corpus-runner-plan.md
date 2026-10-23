@@ -89,7 +89,7 @@ Follow-up on `fix/wal-scale-events` (PR #593), for the two rows the promotion fi
 Left open from it: B244 (a layout hidden during the change misses `onScale`) and B245 (the host
 playlist under Nitrous overflows the screen at 135%).
 
-**Next:** intake #2 on `feat/wal-intake-2` is *admitted* (§8 *Progress*); its in-app pass by
+**Next:** intake #2 on `feat/wal-intake-2` is admitted (§8 *Progress*); its in-app pass by
 `skills/skin-triage` is next, over the 25 skins listed there. B212 needs a second display; B216's
 `.wmz` census waits on a go-ahead.
 
@@ -104,9 +104,7 @@ branch shape has to make that sustainable:
   re-weighting or rule change (if any), the intake run, the manifest update, and that batch's
   in-app fixes. Nothing else rides along — a backlog row unrelated to the batch gets its own
   `fix/…` branch, and non-`.wal` work (marketing, other subsystems) never lands on an intake branch.
-- **PR at two checkpoints, not one**: (1) *admitted* — `wal_intake.sh` run, manifest committed,
-  sweep baseline green; (2) *promoted* — the in-app pass done and the batch moved to gold. A batch
-  that runs past ~a week PRs what it has and continues on a fresh branch.
+- **A batch that runs past ~a week PRs what it has** and continues on a fresh branch.
 - **Merge `origin/main` in every few days** while a branch is open; never rebase a branch others
   may have pulled. Before opening the PR, confirm `gh pr view <N> --json files` matches the work.
 - **Run the in-app pass by `skills/skin-triage`'s batch order**: the whole batch headless first,
