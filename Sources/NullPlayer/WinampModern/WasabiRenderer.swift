@@ -361,7 +361,15 @@ final class WasabiResourceCache {
               definition.kind == "bitmap", let path = definition.logicalFile,
               let data = try? loadedSkin.vfs.data(at: path, location: definition.source),
               let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let fullImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+              var fullImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        // A negative offset reaches **before** the image: the rect starts in transparent space.
+        // hm_Touch ships its timer digits as a one-row sheet and declares it `y="-30" h="60"`, so
+        // the digits land on row 1 — where a bitmap font keeps them. Clamped to 0, the sheet was
+        // one row tall and every digit fell off it: the player's big timer drew nothing.
+        // `relatx`/`relaty` offsets count from the far edge and are not padding.
+        if let padded = Self.padForNegativeOffset(fullImage, attributes: definition.attributes) {
+            fullImage = padded
+        }
         let x = max(0, Int(Double(definition.attributes["x"] ?? "0") ?? 0))
         let topY = max(0, Int(Double(definition.attributes["y"] ?? "0") ?? 0))
         let width = max(1, min(fullImage.width - x,
@@ -383,6 +391,25 @@ final class WasabiResourceCache {
         currentCost += cost
         evictIfNeeded(protecting: key)
         return bitmap
+    }
+
+    /// `image` moved down/right by a declared negative `y`/`x`, on a transparent canvas, so the
+    /// crop that follows can start at 0. Nil when there is nothing to pad.
+    static func padForNegativeOffset(_ image: CGImage, attributes: [String: String]) -> CGImage? {
+        func padding(_ axis: String, _ relat: String) -> Int {
+            guard attributes[relat] != "1", let value = Double(attributes[axis] ?? "") else { return 0 }
+            return max(0, -Int(value))
+        }
+        let left = padding("x", "relatx"), top = padding("y", "relaty")
+        guard left > 0 || top > 0,
+              ProcessInfo.processInfo.environment["WINAMP_MODERN_BITMAP_NEGATIVE_CLAMP"] == nil,
+              let context = CGContext(data: nil, width: image.width + left, height: image.height + top,
+                                      bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        // CGContext is bottom-left origin: the image's top edge sits `top` rows below the canvas top.
+        context.draw(image, in: CGRect(x: left, y: 0, width: image.width, height: image.height))
+        return context.makeImage()
     }
 
     /// The bitmap cached under `key`, marked as just used, in one hash. Keys are lowercased rather
@@ -2464,7 +2491,7 @@ final class WasabiSceneRenderer {
         // else — the skin does not want it painted. Free until now, because a group's box resolved
         // to 0x0 and the draw was a no-op; the moment the box is the bitmap's, honouring the flag is
         // what keeps BLAKK's region map off the front of its display.
-        if let background = object.attributes["background"], drawsBackground(object) {
+        if let background = backingBitmapID(of: object), drawsBackground(object) {
             if let bitmap = resources.bitmap(background: background, declaredIn: object.source) {
                 drawImage(bitmap.image, in: node.frame, context: context)
             } else if object.tag.is(.layout) {
@@ -4666,8 +4693,29 @@ final class WasabiSceneRenderer {
         return value != "0" && value != "false" && value != "no"
     }
 
+    /// The bitmap an object paints as its backing. A `desktopalpha="1"` layout paints its
+    /// `alphabackground` — `background` is then the opaque or region-map variant (Fuzzy Muffins'
+    /// `main.alpha`, impulse's `player.normal.background.region`), and painting it put the mask's
+    /// grey through every translucent pane.
+    private func backingBitmapID(of object: WasabiObject) -> String? {
+        if object.tag.is(.layout), object.attributes["desktopalpha"] == "1",
+           ProcessInfo.processInfo.environment["WINAMP_MODERN_LAYOUT_DRAWBACKGROUND"] == nil,
+           let alpha = object.attributes["alphabackground"] {
+            return alpha
+        }
+        return object.attributes["background"]
+    }
+
     /// Whether a `background` bitmap is painted. Defaults to on, as Wasabi does.
+    ///
+    /// A **layout** paints its backing whatever `drawbackground` says: the window's backing is the
+    /// layout's bitmap, and the flag is a group's. 36 corpus skins pair `drawbackground="0"` with a
+    /// layout `background=` — DDtank Glass's equalizer and about window drew their controls on the
+    /// bare desktop, where its own preview shows the glass panel behind them.
+    /// `WINAMP_MODERN_LAYOUT_DRAWBACKGROUND=1` honours the flag on layouts again, for an A/B.
     private func drawsBackground(_ object: WasabiObject) -> Bool {
+        if object.tag.is(.layout),
+           ProcessInfo.processInfo.environment["WINAMP_MODERN_LAYOUT_DRAWBACKGROUND"] == nil { return true }
         guard let value = object.attributes["drawbackground"]?.lowercased() else { return true }
         return value != "0" && value != "false" && value != "no"
     }

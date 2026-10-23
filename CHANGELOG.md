@@ -120,6 +120,10 @@
   Switching skins now returns to the UI Size you chose, and a size you pick yourself is kept.
 - **Full-screen Modern skins refit when UI Size changes** — Nitrous Audio's monitor mode stayed
   sized for the old UI Size and ran off the screen; it now fills the screen again.
+- **Modern skin windows draw their background** — DDtank Glass's equalizer and about window showed
+  their controls on the bare desktop; Fuzzy Muffins no longer shows a grey mask through its
+  see-through areas.
+- **hm_Touch shows its big timer** beside the spectrum, which had been blank.
 
 ## 0.33.0
 
