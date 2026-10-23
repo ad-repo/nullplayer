@@ -89,9 +89,8 @@ Follow-up on `fix/wal-scale-events` (PR #593), for the two rows the promotion fi
 Left open from it: B244 (a layout hidden during the change misses `onScale`) and B245 (the host
 playlist under Nitrous overflows the screen at 135%).
 
-**Next:** `feat/wal-corpus-scale` (B169 intake → gold, B233) merged as #587; `fix/wal-scale-events`
-(B238, B239) is in review as #593. Then intake #2 on `feat/wal-intake-2` — re-weight gain first (§8 *Progress*, B169
-entry: count a new tag once, `tag@attr` only on known tags). B212 needs a second display; B216's
+**Next:** intake #2 on `feat/wal-intake-2` is *admitted* (§8 *Progress*); its in-app pass by
+`skills/skin-triage` is next, over the 25 skins listed there. B212 needs a second display; B216's
 `.wmz` census waits on a go-ahead.
 
 ### Branch strategy for the intakes (2026-10-22)
@@ -439,6 +438,21 @@ so a corpus run can't lose lines, not *what* is measured.
   `WinampModernSkins/` only as the install folder; the tier rules and the hand-over copy moved into
   `harness.md`, and the triage playbook's §3 marks S0 and S2 built. No skins admitted, so none
   handed over. §8 is complete.
+- **Intake #2 admitted 2026-10-22** (`feat/wal-intake-2`, rev `2987be4e`). Gain re-weighted first:
+  a new tag counts once, `tag@attr` only on a covered tag. Run over the 827 bronze: **25 silver, 802
+  bronze, 0 quarantine**, 45 min. **Gain curve** (first 60): `31 27 16 16 14 14 12 11 11 11 10 10 10
+  9 9 9 9 9 9 8 8 8 7 7 7 | 7 7 7 7 7 6 6 6 6 6 6 5 5 5 5 5 5 5 5 5 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4`.
+  Against the old weighting's top of 290, the floor now filters: a pre-run check over the all-tier
+  index had 89 clear gain ≥ 3 and 12 clear 10. The budget still binds (rank 25 adds 7), so ≤ 25 / ≥ 3
+  stands; by this curve ~64 more clear gain ≥ 3 — about three batches, the next ending near gain 4.
+  Post-admission sweep (the new baseline): 139 skins, 29 s at `--shards 10`, no failures. Batch:
+  DDtank_Glass_Winamp_Skin, RODE_3_Lite, hm_Touch_m_1, MIDISUI_1_1,
+  MD__Ganbare_Rakkatan_the_Sixth_(fixed), Metaskins_net_-_H2O_Liquid, Winamp_Single_GUI,
+  wasabi_player_skin, Official_Mad_Magazine_Skin, MusicshowB_version, Moon_Groove_1-1, ArmorAmp,
+  MetAlchemy_III_Wa3, MD_-_Ayanami_Rei_the_Fifth_v1, Vision_V1, Winamp_Portrait__WMP12_1, cPro__KAO,
+  Ashen_Player_for_Winamp_1_1, EMP2, The_Crow__v1, RazorEdge_V1, Moonkore,
+  The_Official_YoYoBoy_Skin, CPro_iPhone3gv2, Slimline_XP_final (`.wal` each); copied into
+  `WinampModernSkins/`.
 
 ### Decisions (fixed — re-open only with a measurement)
 

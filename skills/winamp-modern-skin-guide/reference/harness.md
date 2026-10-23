@@ -555,7 +555,10 @@ flag`). Downloads are cached in `<dir>/.cache`, so a re-run fetches only what is
 over gold+silver, and writes `intake.tsv` — `rank, file, sha256, tier, load, rating, unimplemented,
 features, gain, added`, one row per candidate. *Health* is `rating` plus `unimplemented` (distinct
 MAKI calls `signature(for:)` lacks); *value* is `gain`, the `maki-*`/`xml-*` features it adds that the
-corpus and every earlier pick lack (`added` lists the first 40). Rank is greedy set cover, ties to
+corpus and every earlier pick lack (`added` lists the first 40). A new tag counts once and a
+`tag@attr` counts only on a tag already covered, so a skin with one new tag no longer scores ~15
+(re-weighted for intake #2, 2026-10-22). Pointed at `WinampModernCorpus/bronze`, `--admit` re-tiers
+the picks in place — their manifest rows' tier and rev are rewritten and only they move. Rank is greedy set cover, ties to
 the lowest sha256, so the file is a pure function of the two sha256 sets and the rev — two runs from
 a clean outdir are byte-identical. Silver is the first 25 of the order with gain ≥ 3 (the constants
 at the top of the script); does-not-load is quarantine; the rest is bronze. A skin the census never
