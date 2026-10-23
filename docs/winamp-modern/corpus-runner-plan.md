@@ -89,9 +89,10 @@ Follow-up on `fix/wal-scale-events` (PR #593), for the two rows the promotion fi
 Left open from it: B244 (a layout hidden during the change misses `onScale`) and B245 (the host
 playlist under Nitrous overflows the screen at 135%).
 
-**Next:** intake #2 on `feat/wal-intake-2` is admitted (§8 *Progress*); its in-app pass by
-`skills/skin-triage` is next, over the 25 skins listed there. B212 needs a second display; B216's
-`.wmz` census waits on a go-ahead.
+**Next:** intake #2's in-app pass is done (§8 *Progress*), so `feat/wal-intake-2` goes to a PR.
+Then the code-health rows it filed (B246–B252, B259) on their own `fix/wal-<topic>` branches, and
+intake #3 on a fresh `feat/wal-intake-3`. B212 needs a second display; B216's `.wmz` census waits on
+a go-ahead.
 
 ### Branch strategy for the intakes (2026-10-22)
 
@@ -451,6 +452,15 @@ so a corpus run can't lose lines, not *what* is measured.
   Ashen_Player_for_Winamp_1_1, EMP2, The_Crow__v1, RazorEdge_V1, Moonkore,
   The_Official_YoYoBoy_Skin, CPro_iPhone3gv2, Slimline_XP_final (`.wal` each); copied into
   `WinampModernSkins/`.
+- **Intake #2's in-app pass closed 2026-10-23**, by `skills/skin-triage`. Fixed on the branch:
+  ArmorAmp's spectrum and EQ drawer, MIDISUI's drawer, LED rows and library, Winamp Single GUI's
+  films in its player and their detach, Moon Groove's LCD, ticker and playlist bar (B255–B258),
+  alphabackground layout sizing (B254: Ganbare, M3), frame borders from strip art (B260: Mad
+  Magazine, EMP2), Vision's untextured frames, H2O Liquid's overfull paragraph, hm_Touch's timer
+  digits. Left open: B253 (embedded-EQ menu item) and B261 (H2O's Cfg content size). The branch's
+  code-quality review filed B246–B252 and B259; its first pass landed (one surface reconcile,
+  copyable scene nodes, a shared bitmap cut, clipping and object geometry in their own files) with
+  the gold+silver sweep matching its baseline. Next: intake #3, the next ~25 by gain, ending near 4.
 
 ### Decisions (fixed — re-open only with a measurement)
 
