@@ -60,14 +60,14 @@ usage() {
 usage:
   wal_render_sweep.sh capture <outdir> [--allow-dirty] [--corpus <dir[:dir…]>]   (default gold:silver)
                               [--touching <feature,…> --index <features.tsv>]  (default corpus: every tier)
-                              [--shards <K>]
+                              [--shards <K>] [--rev <commit>] [--fresh]
   wal_render_sweep.sh compare <base-outdir> <curr-outdir>
 USAGE
     exit 2
 }
 
 capture() {
-    local out="" corpus="" allow_dirty=0 touching="" index="" shards=1
+    local out="" corpus="" allow_dirty=0 touching="" index="" shards=1 rev="" fresh=0
     while [ $# -gt 0 ]; do
         case "$1" in
             --allow-dirty) allow_dirty=1; shift ;;
@@ -75,6 +75,8 @@ capture() {
             --touching) touching="${2:-}"; shift 2 ;;
             --index) index="${2:-}"; shift 2 ;;
             --shards) shards="${2:-}"; shift 2 ;;
+            --rev) rev="${2:-}"; shift 2 ;;
+            --fresh) fresh=1; shift ;;
             -*) echo "unknown option: $1" >&2; usage ;;
             *) [ -n "$out" ] && usage; out="$1"; shift ;;
         esac
@@ -96,6 +98,10 @@ capture() {
         echo "wal_render_sweep: no .wal archives in $corpus" >&2
         exit 1
     fi
+
+    local key
+    key=$(wal_run_key "$list" "$rev") || exit 1
+    wal_store_serve render "$key" "$out" "$fresh" "$rev" && return 0
 
     # The pair of passes is what is being compared, so an uncommitted difference between them is
     # exactly the thing this guard is for.
@@ -131,6 +137,8 @@ capture() {
     fi
     if [ $status -ne 0 ]; then
         echo "wal_render_sweep: swift test exited $status; capture kept, read $out/raw.txt before trusting it" >&2
+    else
+        wal_store_put render "$key" "$out" "$list"
     fi
     # A skin that fails to load prints SKIN <file> FAILED and the sweep carries on, which is right —
     # one broken archive must not abandon the other 68 — but it should never pass unremarked.
@@ -181,20 +189,39 @@ compare() {
         fi
     done
 
+    # Two captures of the same code and archives (`--fresh` against a stored one) differ only by
+    # noise, so every difference between them is recorded in the store's noise file; any other
+    # comparison sets those apart instead of counting them.
+    local noise="$WAL_RUNS_ROOT/render/noise.txt" same=0
+    if [ -s "$base/key" ] && cmp -s "$base/key" "$curr/key"; then
+        same=1
+        echo "same code and archives ($(cat "$base/key")): every difference is noise -> $noise"
+    fi
+    mkdir -p "$(dirname "$noise")" && touch "$noise"
+    export WAL_NOISE="$noise" WAL_SAME="$same"
+
     echo "=== invariants ==="
     python3 - "$base/invariants.txt" "$curr/invariants.txt" <<'PYINVARIANTS'
-import difflib, sys
+import difflib, os, sys
 
 def read(path):
     return open(path, errors="replace").read().splitlines()
 
 base, curr = read(sys.argv[1]), read(sys.argv[2])
-real = []
+known = {line[4:] for line in read(os.environ["WAL_NOISE"]) if line.startswith("inv ")}
+real, noisy = [], []
 for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, base, curr, autojunk=False).get_opcodes():
     if tag == "equal":
         continue
-    real += ["- " + line for line in base[i1:i2]]
-    real += ["+ " + line for line in curr[j1:j2]]
+    for sign, lines in (("- ", base[i1:i2]), ("+ ", curr[j1:j2])):
+        for line in lines:
+            (noisy if line in known else real).append(sign + line)
+if os.environ["WAL_SAME"] == "1":
+    with open(os.environ["WAL_NOISE"], "a") as handle:
+        handle.writelines("inv %s\n" % line[2:] for line in real)
+    noisy, real = noisy + real, []
+if noisy:
+    print("%d changed lines are known noise" % len(noisy))
 
 summary = "%d base lines, %d curr lines" % (len(base), len(curr))
 if not real:
@@ -261,10 +288,20 @@ for name in shared:
     except Exception as error:                                    # a truncated or absent PNG
         unreadable.append((name, str(error)))
 
-print("%d identical, %d differing, %d only in base, %d only in curr, %d unreadable"
-      % (identical, len(differing), len(only_base), len(only_curr), len(unreadable)))
+known = {line[4:].rstrip("\n") for line in open(os.environ["WAL_NOISE"]) if line.startswith("img ")}
+if os.environ["WAL_SAME"] == "1":
+    with open(os.environ["WAL_NOISE"], "a") as handle:
+        handle.writelines("img %s\n" % name for name, _ in differing if name not in known)
+    known |= {name for name, _ in differing}
+noise = [(name, why) for name, why in differing if name in known]
+differing = [(name, why) for name, why in differing if name not in known]
+
+print("%d identical, %d differing, %d known noise, %d only in base, %d only in curr, %d unreadable"
+      % (identical, len(differing), len(noise), len(only_base), len(only_curr), len(unreadable)))
 for name, why in differing:
     print("  DIFF %s  %s" % (name, why))
+for name, why in noise:
+    print("  NOISE %s  %s" % (name, why))
 for name in only_base:
     print("  ONLY-BASE %s" % name)
 for name in only_curr:

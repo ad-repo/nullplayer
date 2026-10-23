@@ -68,6 +68,9 @@ summary or a handover note. One session works an intake at a time.
 3. Take the `next:` skin. Read its `note` and its `rows` in `tasks/WINAMP5_TASKS.md`.
 4. Resume at the phase the note names. Trust the committed note; re-measure only a row that a fix
    landed since `updated` could have moved.
+5. A sweep or baseline comes from the run store, never a fresh scratchpad capture: the sweep
+   scripts serve a stored run for this tree, and `--rev <commit>` serves another commit's
+   (`harness.md` § *The run store*). The status script's last line says what is stored for this tree.
 
 **Work** one skin to its next stage, with two batch exceptions: the headless pass (lifecycle step 3)
 is one session over the whole batch, and every skin whose note says `headless clean` shares one live
@@ -91,8 +94,9 @@ transcripts cost a session.
 1. **Branch** `feat/wal-intake-<n>` from `origin/main`. Only the batch rides on it: the re-weighting
    or rule change (if any), the intake run, the manifest update, the ledger, and the batch's fixes.
    An unrelated row gets its own `fix/…` branch. Push with `git push -u origin <branch>`.
-2. **Admit**: `wal_intake.sh <bronze> <out> --admit`, copy the picks into `WinampModernSkins/`, seed
-   the ledger at `admitted`, record the gain curve and post-admission sweep in the plan's §8
+2. **Admit**: `wal_intake.sh <bronze> <out> --admit`, copy the picks into `WinampModernSkins/`, commit
+   `<out>/intake.tsv` as `intakes/intake-<n>.ranking.tsv` (the next intake's re-weighting reads it),
+   seed the ledger at `admitted`, record the gain curve and post-admission sweep in the plan's §8
    *Progress* (that is history, not progress — one bullet per intake).
 3. **Headless, whole batch at once**: `skin-triage` Phases 1–4 over one directory holding the batch;
    rank failures across skins. Move each skin to `headless`. A skin with fixes but no recorded

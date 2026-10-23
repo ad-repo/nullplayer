@@ -40,3 +40,12 @@ END {
     else print "next: " next_file " (" s[next_rank] ") — note: " next_note
     if (bad) { print bad " ledger problem(s)"; exit 1 }
 }' docs/winamp-modern/corpus-manifest.tsv "$ledger"
+
+# What this tree can take from the run store (harness.md § "The run store") over gold+silver, so a
+# session knows before it starts whether its baseline is free.
+key=$(wal_run_key "$(wal_corpus_archives "$WAL_CORPUS_DEFAULT")")
+stored=""
+for kind in render interaction motion; do
+    [ -n "$key" ] && [ -f "$WAL_RUNS_ROOT/$kind/$key/.complete" ] && stored="$stored $kind"
+done
+echo "run store for this tree, gold+silver:${stored:- nothing}"

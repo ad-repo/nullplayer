@@ -621,6 +621,42 @@ run **one skin alone** — point it at a directory holding just that archive. Th
 knowing: if a skin's lines come back when it runs by itself, the sweep capture was the problem and
 not the code.
 
+#### The run store — a capture is taken once per code
+
+The render, interaction and motion sweeps keep every finished run in
+`WinampModernCorpus/runs/<render|interaction|motion>/<key>/` and serve it to any later run with the
+same key, instead of running again. Before the store, every session re-captured its own baseline in
+its scratchpad: 41 render captures and 24 interaction runs across the intake sessions of 2026-10-22–23,
+most of them commits an earlier session had already captured.
+
+- **The key** is `<code>-<archives>`: one hash of `Sources/`, `Tests/` and the `Package` files in the
+  working tree (edits and untracked files included, through a throwaway index), and one of the
+  archives' sha256 set. Docs and scripts are not in it. An uncommitted run and the commit that later
+  holds the same code share a key, so a session's "after" is the next session's "before".
+- **No key, no store**, when any `WINAMP_MODERN_*` variable is set: a probe or A/B kill switch
+  changes the output and the key cannot name it. Those runs go to `<outdir>` only.
+- A run is stored only when it finishes clean (no short capture, no shard exit, every archive has
+  rows) and the code key still matches at the end; a mid-run edit voids it with a message.
+
+```sh
+scripts/wal_render_sweep.sh capture <outdir> --shards 10                 # served if stored, else run and stored
+scripts/wal_render_sweep.sh capture <outdir> --rev origin/main --shards 10   # another commit's capture, no worktree
+scripts/wal_render_sweep.sh capture <outdir> --fresh                     # run even if stored (the noise control)
+```
+
+`--rev <commit>` and `--fresh` work the same on `wal_interaction_sweep.sh` and `wal_motion_sweep.sh`.
+`--rev` fails when that commit was never captured; capture it once in a worktree (below), and it is
+stored for everyone after. A served run is an APFS clone into `<outdir>`, so it costs nothing.
+
+**The noise file**, `runs/render/noise.txt`: `compare` of two captures with the same key (a `--fresh`
+run against the stored one) can only differ by noise, so it appends every differing image (`img
+<path>`) and invariant line (`inv <line>`) there. Every other `compare` lists those as `NOISE`, with
+their maxdelta, apart from the `DIFF`s. Take a `--fresh` noise run once per corpus change, not once per
+session. A noise image is still printed: a real change to one of those images reads as a much larger
+maxdelta than its noise. The interaction and motion sweeps have no `compare` and no noise file yet.
+
+Delete `runs/` (or one key) to reclaim space; nothing else reads it.
+
 #### Impact-selected and sharded sweeps
 
 ```sh
@@ -690,8 +726,10 @@ carries on — one broken archive must not abandon the other 68, and the failure
 where you will see it. In a directory run each skin gets **its own subdirectory** of PNGs, named for
 the archive, so skins cannot collide on a shared container name.
 
-**Capture the baseline in a worktree, never with `git stash`** — a stash relinks `.build` under the
-user's running app:
+**Ask the run store first:** `capture <outdir> --rev <commit>` serves any commit already captured
+(*The run store*, above). Only when it says nothing is stored, **capture the baseline in a worktree,
+never with `git stash`** — a stash relinks `.build` under the user's running app. The worktree's
+capture is stored too:
 
 ```sh
 scripts/baseline_worktree.sh ../nullplayer-base HEAD   # worktree + the vendored frameworks it needs
