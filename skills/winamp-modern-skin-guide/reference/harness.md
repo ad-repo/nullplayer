@@ -29,6 +29,15 @@ WINAMP_MODERN_RENDER_DUMP=/tmp/render \
   swift test --filter WinampModernRenderDumpTests
 ```
 
+The **triage inventory dump** (`skills/skin-triage` Phase 2) adds missing bitmaps, script bindings and
+script-hooked hit targets in one run; redirect, never pipe:
+
+```sh
+WINAMP_MODERN_WAL=/abs/Skin.wal WINAMP_MODERN_RENDER_DUMP="$S/base" WINAMP_MODERN_RENDER_BITMAPS=1 \
+  WINAMP_MODERN_RENDER_SCRIPTS=bindings WINAMP_MODERN_RENDER_CLICKABLE=1 \
+  swift test --filter WinampModernRenderDumpTests > "$S/base.log" 2>&1
+```
+
 `WINAMP_MODERN_WAL` also accepts a **directory**, which renders every `.wal` in it inside one
 invocation — the corpus sweep, 79 archives in about five minutes as of 2026-09-06. The count is
 whatever the directories hold at run time (the corpus scripts default to gold+silver); the sweep prints it rather than asserting one. See *The corpus render sweep* below.

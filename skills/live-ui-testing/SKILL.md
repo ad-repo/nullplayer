@@ -233,11 +233,8 @@ and reading it as a general one has now cost two sessions.
 - **When the user contradicts you, check their claim before defending yours.** They are reporting the
   screen; you are reporting a model of it.
 - **A skin, theme or preset that produced two or more unrelated defects earns a dossier**, not just
-  backlog rows: what it exercises that nothing else does, what it found, **what was ruled out**, and
-  the coordinates that reach its controls. The ruled-out section is what saves the next session and
-  the one always left out. `skills/wmp-skin-guide/reference/skins/` is the worked example. Record
-  beside it the *counter-evidence* — the cases that disagreed with a fix that looked right, one rule
-  each. A sweep tells you that once and nothing else remembers it.
+  backlog rows — its shape, and the *what was ruled out* section most often left out, are in
+  `skin-subsystem-blueprint` § *What a family's documentation looks like*.
 - **Land the finding in the owning subsystem's skill**, not here and not in `CLAUDE.md`. An ad-hoc
   dump nobody wrote down gets re-derived — two `.wal` phases were lost that way. Keep measured
   numbers next to the command that produces them; a number pasted into prose goes stale silently

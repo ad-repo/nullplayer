@@ -1,7 +1,9 @@
 # Skin triage record
 
 Copy to the scratchpad at Phase 0 of `skin-triage`; fill each block before leaving its phase. Never
-commit a filled record — what it taught lands in the owning skill (Phase 9).
+commit a filled record — what it taught lands in the owning skill (Phase 9). Across sessions the
+record does not survive: in an intake the fix list lives in the ledger and backlog, and Phase 5's
+before/after verdicts come from the run store (`wal_interaction_sweep.sh --rev <commit>`).
 
 ## Report (Phase 0)
 

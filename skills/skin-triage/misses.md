@@ -21,17 +21,16 @@ before trusting its silence.
 
 ## Traps that look like defects
 
+Driving traps — a missed click, a synthetic right-click, a capture of the screen, raising the app by
+name — are in `app-control` and `live-ui-testing` § *Drive it yourself*. These are the skin ones:
+
 | You see | It is usually | Check |
 |---|---|---|
-| A click changes nothing, trace silent | the click missed, or `clickCount == 0` | probe frame centre; `winhelper click` |
-| No menu after a synthetic right-click | the tool | right-click by hand |
 | The skin looks unskinned or tiny | the launch picked no skin | `LAUNCH PASS`, `menu.applescript family` |
 | A blank pane in a dump | no component host in the harness | the live window |
 | A whole window blank in a dump | a timer-driven fade not yet run | re-dump with a settle |
 | Every control in a skin dead | its startup handler aborted | the script report — Phase 2 step 4 |
 | A green sweep, user says broken | non-default state | Phase 3 states |
-| A capture shows your terminal | `-R` photographs the screen | `-l <windowid>` |
-| Raising the app launched another copy | activation by name | `winhelper raise <pid>` |
 | The trace says shown, screen says hidden | a trace is the script's write | pixels answer visibility |
 | A reference diff everywhere by a few px | scale or crop mismatch | crop to the window at 1x first |
 | A number improved, report persists | a second fault on the same screen | the reporter's own steps |

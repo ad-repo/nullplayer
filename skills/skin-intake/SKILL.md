@@ -25,8 +25,7 @@ manifest or the corpus on disk (sha256, tier, file); then the session's work is 
 ## The batch ledger
 
 One row per skin, committed. **It is the only progress record**: not the plan, not a commit message,
-not a chat summary, not a scratchpad. Intake #2's plan said "closed" with 11 skins unworked, and its
-batch record lived in a scratchpad that recovering cost a session.
+not a chat summary, not a scratchpad — a record outside it is lost with the session that wrote it.
 
 | Column | Holds |
 |---|---|
@@ -34,12 +33,12 @@ batch record lived in a scratchpad that recovering cost a session.
 | `stage` | below |
 | `updated` | the date the stage last moved |
 | `rows` | backlog ids this skin filed or was fixed under (`B254`, `B261(open)`), or `-` |
-| `note` | one line: where an unfinished stage stopped (`Phase 5: next B262`), what blocks it, or `-` |
+| `note` | one line: where an unfinished stage stopped (`Phase 5: next B262`), what blocks it, or `-`. A `headless` skin with an empty fix list starts its note with `headless clean`, which the status script reads |
 
 | Stage | Means |
 |---|---|
 | `admitted` | in Silver and in the user's skin menu (`WinampModernSkins/`) |
-| `headless` | `skin-triage` Phases 1–4 done: every row has a verdict, the fix list is in `note`/`rows` |
+| `headless` | `skin-triage` Phases 1–4 done: every row has a verdict, the fix list is in `note`/`rows`. A fix for a defect seen on screen is not this pass. Also: a skin sent back by the user's round, the defect in its `note` |
 | `live` | Phases 5–8 done, or the user took it straight to their UI round (`note` says which) |
 | `accepted` | the user tried it and said it works |
 | `promoted` | manifest tier `gold`, file in `WinampModernCorpus/gold/`, a `skin-compatibility.md` row |
@@ -54,7 +53,7 @@ The batch's lowest stage decides the next session's work. `wal_intake_status.sh`
 | Lowest stage | Next session | Moves |
 |---|---|---|
 | — (no open batch) | **Admit** batch n: branch `feat/wal-intake-<n>` from `origin/main`; `wal_intake.sh <bronze> <out> --admit`; copy the picks into `WinampModernSkins/`; commit `<out>/intake.tsv` as `intakes/intake-<n>.ranking.tsv` and the ledger at `admitted` | all → `admitted` |
-| `admitted` | **Headless pass, whole batch at once**: `skin-triage` Phases 1–4 over one folder holding the batch, failures ranked across skins | all → `headless` |
+| `admitted` | **The batch pass** (below); reorder the ledger rows by its rank, since `next:` takes the first unfinished row | all → `headless` |
 | `headless` | **One skin**, the `next:` one: Phases 5–8. Skins whose note says `headless clean` share one live smoke session instead (one launch, switch skins from the menu) | one → `live` |
 | `live` | **Hand over** the `live` skins in one list for the user's UI round; their verdicts go in | → `accepted`, or back with a note |
 | `accepted` | **Promote** every skin in one commit, then the branch's code-quality review and the PR | all → `promoted` |
@@ -69,6 +68,22 @@ Only the batch rides on its branch; an unrelated backlog row gets its own `fix/�
 fresh branch with the same ledger. Merge `origin/main` in every few days; never rebase a pushed branch.
 
 **Stop admitting batches** when a batch no longer clears the gain floor (plan §8 *Decisions*).
+
+## The batch pass
+
+`skin-triage` is the pass for one skin; a batch runs it once, not 25 times.¹
+
+1. **Phases 1–3 over the whole batch at once**: one folder holding the batch, one dump, one
+   interaction sweep, one motion sweep, each a single invocation (`--corpus <batch dir>`).
+2. **Phase 4 ranked across the batch**: group every non-`works` row from every skin by its failing
+   line. A group that spans skins is the unlocker; fix it once and re-run the batch.
+3. **Live per skin only for the residual**: rows marked H, every class W check, and menus. A skin
+   whose headless pass is clean gets one live smoke pass, not a full re-drive.
+4. **One pass per skin**: do not leave a skin until its inventory is complete.
+5. **Reviews, refactors and changelog regrouping** happen once at the end, not between skins.
+
+¹ Intake #1 went skin by skin, live first, over three passes; most of what it found was visible in
+a headless dump (`corpus-runner-plan.md` § *Done: the B169 intake*).
 
 ## A session
 
@@ -94,7 +109,7 @@ scripts serve what is stored for this code, and `--rev <commit>` another commit'
 
 | Need | Owner |
 |---|---|
-| The per-skin pass, Phases 0–9 | `skills/skin-triage` |
+| The per-skin pass, Phases 0–9 | `skills/skin-triage` (its record, `template.md`, lives in the scratchpad: what must outlive the session goes in the ledger, the backlog and the run store) |
 | `wal_intake.sh`, the crawler, the run store, every sweep | `winamp-modern-skin-guide/reference/harness.md` |
 | Budget (25, gain ≥ 3), tiers, why | `corpus-runner-plan.md` §8 *Decisions* |
 | Backlog rows | `tasks/WINAMP5_TASKS.md`, closed into `backlog-archive.md` |

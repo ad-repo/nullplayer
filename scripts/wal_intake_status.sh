@@ -23,14 +23,13 @@ FILENAME ~ /corpus-manifest/ { tier[$1] = $3; sha[$1] = $2; tiers[$3]++; next }
 {
     if (!($3 in rank)) { print "bad stage \"" $3 "\" for " $1; bad++; next }
     count[$3]++; total++
-    if ($3 == "headless" && $6 ~ /headless clean/) clean++
+    if ($3 == "headless") { if ($6 ~ /^headless clean/) clean++; else if (first == "") { first = $1; first_note = $6 } }
     if (!($1 in tier)) { print "not in manifest: " $1; bad++; next }
     if (sha[$1] != $2) { print "sha256 differs from manifest: " $1; bad++ }
     want = $3 == "promoted" ? "gold" : "silver"
     if (tier[$1] != want) { print $1 ": stage " $3 " but manifest tier " tier[$1]; bad++ }
     if (system("test -f \"" corpus "/" want "/" $1 "\"")) { print "not in " want "/: " $1; bad++ }
     if (low == 0 || rank[$3] < low) low = rank[$3]
-    if ($3 == "headless" && $6 !~ /headless clean/ && first == "") { first = $1; first_note = $6 }
 }
 END {
     print "corpus: gold " tiers["gold"] + 0 ", silver " tiers["silver"] + 0 ", bronze " tiers["bronze"] + 0 \

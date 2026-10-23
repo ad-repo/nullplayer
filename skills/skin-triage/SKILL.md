@@ -27,9 +27,7 @@ on a **Confirm it took** line; do not leave a phase until it holds.
 
 ## Measuring has a budget; fixing starts early
 
-Intake #1 measured for about a day — crawler, census, index, reach, demand, two new sweeps, plan
-rewrites — before the first skin fix, and only stopped when the user forced it. Thoroughness means
-every row gets a verdict, not that measurement goes on until the skins run out.
+Thoroughness means every row gets a verdict, not that measurement goes on until the skins run out.¹
 
 - **Instruments are frozen during a pass.** Use the probes and sweeps that exist. Build a new one
   only when a row cannot be measured any other way. Build it in one step, prove it on one known
@@ -44,10 +42,12 @@ every row gets a verdict, not that measurement goes on until the skins run out.
 - **The state matrix is capped**, not exhaustive: default theme, the reference's theme, and one
   other; each declared layout; stopped and playing; 1x and 2x; UI Size 100 and 135; the reported
   size. Add a state only for a row that names it.
-- **Re-measure the row, not the world**, after a fix. Re-run the full batch pass once per blocker or
-  unlocker landed, not after every edit.
+- **How much to re-measure after a fix** is Phase 5 step 4's rule, and nowhere else.
 - **Report progress as fixes**, so a stall shows: "N rows fixed, M open". Several measurements in
   a row with no new fix is the signal to stop and fix.
+
+¹ Intake #1 measured for about a day before its first skin fix (`corpus-runner-plan.md` § *Done: the
+B169 intake*).
 
 ## What the automated checks miss
 
@@ -55,30 +55,10 @@ A green automated check is a regression result, not a correctness result. Intake
 checks missed five groups of defects; each group, its examples and the check that catches it are in
 [misses.md](misses.md), with the table of traps that look like defects.
 
-## A batch is one pass, not N single-skin passes
+## More than one skin
 
-Applies to an intake or any set of skins. Intake #1 (B169, 25 `.wal` skins, about a week in the app)
-went skin by skin, in the app first, and over three passes. Most of what it found was visible in a
-headless dump — blank buttons, a group id drawn as a label, a font sheet drawn as art, titles not
-uppercased. The rest were states nobody drove (UI Size 135%), and a click harness that had to be
-fixed mid-pass. The plan's own record: `docs/winamp-modern/corpus-runner-plan.md`.
-
-1. **Run Phases 1–3 over the whole batch at once**: one directory holding the batch, one dump, one
-   interaction sweep, one motion sweep, each a single invocation (`--corpus <batch dir>`).
-2. **Rank Phase 4 across the batch**: group every non-`works` row from every skin by its failing
-   line. A group that spans skins is the unlocker; fix it once and re-run the batch.
-3. **Prove the instruments before the batch**: one known-good control per gesture type (click, drag,
-   hover, right-click) must read `works`. An instrument fixed mid-pass voids every verdict before it.
-4. **The capped state matrix per skin** (above), driven headlessly in Phase 3 rather than
-   discovered live.
-5. **Go live per skin only for the residual**: rows the harness marks H, every class W check, and
-   menus. A skin whose headless pass is clean gets one live smoke pass, not a full re-drive.
-6. **One pass per skin.** Do not leave a skin until its inventory is complete; a second and third
-   pass over the same skins is the cost this order exists to remove.
-7. **Before an engine-wide fix, count its reach and check it against a reference**: a fix that moves
-   ~50 other skins wrong is cheaper to reject before it is built (intake #1's TrueType cap-top rollback).
-8. **Keep the branch to the batch**: code-quality reviews, refactors and changelog regrouping are
-   done once at the end, not between skins.
+This file is the pass for one skin. For a set of skins — an intake or any batch — run it the way
+`skin-intake` § *The batch pass* says: Phases 1–4 once over the whole set, ranked across skins.
 
 ## The family decides what "wrong" means
 
@@ -148,16 +128,13 @@ Phase 6.
    art, see-through areas inside the body, content past the canvas edge, wrong font size. A
    structural pass with an unread PNG is not a pass.
 
-```bash
-WINAMP_MODERN_WAL="/abs/Skin.wal" WINAMP_MODERN_RENDER_DUMP="$S/base" WINAMP_MODERN_RENDER_BITMAPS=1 \
-  WINAMP_MODERN_RENDER_SCRIPTS=bindings WINAMP_MODERN_RENDER_CLICKABLE=1 \
-  swift test --filter WinampModernRenderDumpTests > "$S/base.log" 2>&1
-WMP_SKIN="/abs/Skin.wmz" WMP_RENDER_DUMP="$S/base" WMP_RENDER_PROBE=all WMP_RENDER_OCCLUDED=1 \
-  WMP_RENDER_SCRIPTS=1 swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus > "$S/base.log" 2>&1
-```
+The dump command is the family's *triage inventory dump*, kept with its flags:
 
-Audion: `AUDION_FACE=<folder> AUDION_RENDER_DUMP=…` per `audion-face-guide/reference/harness.md`.
-Redirect, never pipe — a pipe silently drops lines.
+| Family | Command |
+|---|---|
+| `.wal` | `winamp-modern-skin-guide/reference/harness.md` § *Debugging a skin* |
+| `.wmz` | `wmp-skin-guide/reference/harness/probe-flags.md` § *The probe flags* |
+| Audion | `audion-face-guide/reference/harness.md` § *The harness* |
 
 **Confirm it took:** an inventory table with a row per window, control and component, and the count
 of each — the denominator every later verdict is out of.
@@ -166,6 +143,8 @@ of each — the denominator every later verdict is out of.
 
 Applies to every inventory row. Drive each one the way its bindings call for and record a verdict:
 **works / silent / blocked / unbound / unreachable / wrong** (wrong = acts, but not as intended).
+The `.wal` interaction sweep prints the first five; `wrong`, D and H are assigned by hand, so never
+grep sweep output for them.
 
 1. **Every control:** click, double-click, right-click (menu built?), drag for sliders/knobs, hover
    for hover art. A second click must undo a toggle.
@@ -174,16 +153,18 @@ Applies to every inventory row. Drive each one the way its bindings call for and
    clocks, compare). Add a skin setting or theme only for a row that names it.
 4. **Every component:** fed with data — a queue for the playlist, EQ values, a vis/VU level.
 
-| Family | Drive every control | States |
-|---|---|---|
-| `.wal` | `WINAMP_MODERN_INTERACTION_SWEEP=<dir holding only this skin>` (`harness.md` § *The interaction sweep*), then `RENDER_CLICK`/`RENDER_HOVER` per row it did not settle | `RENDER_SHOW`, `RENDER_THEME`, `RENDER_SET`, `RENDER_LAYOUTS`, `RENDER_SIZE`, `RENDER_SCALE`, `RENDER_CLOCK`, `RENDER_PLAYLIST`, `RENDER_EQ`, `RENDER_VU`, `wal_motion_sweep.sh` |
-| `.wmz` | `WMP_RENDER_CLICK`/`WMP_RENDER_HOVER` at each probed frame's centre; `scripts/wmp_control_audit.py <member>` for a control's corpus-wide reach | `WMP_RENDER_HOST=playing`, `WMP_RENDER_SIZE`, `WMP_RENDER_SCALE`, `WMP_RENDER_CLOCK`, `WMP_RENDER_APPKIT=1` |
-| Audion | `AUDION_RENDER_CLICK` / `AUDION_RENDER_HOVER` per button | `AUDION_RENDER_STATE`, `AUDION_RENDER_CLOCK`, `AUDION_RENDER_SCALE`, oracle per state |
+| Family | Drive every control, then each state |
+|---|---|
+| `.wal` | the interaction sweep over a folder holding only this skin (`harness.md` § *The interaction sweep*), then the click/hover and state flags in § *Debugging a skin*, and `wal_motion_sweep.sh` (§ *The motion sweep*) |
+| `.wmz` | the click/hover and state flags in `harness/probe-flags.md`; a control's corpus-wide reach by `harness/live-loop.md` § *Auditing one authored control* |
+| Audion | `audion-face-guide/reference/harness.md` § *Probe flags*; the oracle per state |
 
 **Test every button.** Every control in every window, layout, view, tab and drawer gets every gesture
 it can take, and **driven rows = Phase 2 control count**. Use the sweep first. Then drive whatever
 the sweep skipped with the point probes (`RENDER_CLICK`, `WMP_RENDER_CLICK`, `AUDION_RENDER_CLICK`)
-at each control's frame centre. The `.wal` sweep skips controls no script listens to (plain
+at each control's frame centre. **Prove each instrument before the pass**: one known-good control per
+gesture (click, drag, hover, right-click) must read `works`; an instrument fixed mid-pass voids every
+verdict before it. The `.wal` sweep skips controls no script listens to (plain
 `action=` buttons, script-free sliders and toggles) and covers only each open window's opening
 layout. Classic and Original buttons are driven live in Phase 7.
 
@@ -236,9 +217,10 @@ and H remain.
    consumer at once. Never relax a load limit or sandbox rule — degrade with a diagnostic.
 3. A mechanism change gets an env A/B kill switch, documented in the family `harness.md` in the same
    change.
-4. **Re-run Phase 2 and Phase 3 in full** — not just the row. A cleared blocker exposes the next
-   fault; new rows join the list and are re-ranked.
-5. A fix that changes nothing: look for the next stacked fault before reverting.
+4. **Re-measure**: a blocker or unlocker re-runs Phases 2 and 3 in full (the whole batch, in a
+   batch) — a cleared blocker exposes the next fault, and new rows join the list and are re-ranked.
+   A single-row fix re-measures that row and its window. Never re-run after every edit.
+5. A fix that changes nothing: `live-ui-testing` § *Reading a result without fooling yourself*.
 
 **Confirm it took:** the after-run's verdict table, with the rows the entry predicted now `works` and
 no row that was `works` before now worse.
@@ -311,8 +293,8 @@ reads "N changed: opened, repairs, regressions, unexamined".
    inventory and residual tables.
 2. Stop driving the moment the user starts testing.
 3. After the user confirms (or after Phase 8 for agent-verifiable rows): tests that fail without each
-   fix; findings in the owning skill reference, numbers dated beside their command; a dossier for a
-   skin with two or more unrelated defects, including **what was ruled out**; backlog rows closed
+   fix; findings in the owning skill reference, numbers dated beside their command; a dossier when
+   `skin-subsystem-blueprint` § *What a family's documentation looks like* calls for one; backlog rows closed
    into the archive; a changelog line at the bottom of the current version.
 
 **Confirm it took:** the user said it works, and every artefact names the skin's sha256 or its row.
