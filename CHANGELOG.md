@@ -132,6 +132,8 @@
 - **MetAlchemy III's playlist window shows the playlist** instead of an empty frame.
 - **A film shown inside a Modern skin no longer flickers**, and starting one no longer freezes the
   app.
+- **ArmorAmp's spectrum stays inside its screen**, where the bars had spilled over the bezel, and
+  its EQ button opens the equalizer drawer again.
 
 ## 0.33.0
 
