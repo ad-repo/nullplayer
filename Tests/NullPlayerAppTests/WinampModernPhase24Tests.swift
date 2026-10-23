@@ -798,6 +798,31 @@ final class WinampModernPhase24Tests: XCTestCase {
         }
     }
 
+    /// The fallback corner is empty space's. MIDISUI's Media Library layout has no `CLOSE`, and its
+    /// only way back is a `SWITCH normal` button in that corner: the corner quit the app instead.
+    func testTheFallbackCornerYieldsToASkinControl() throws {
+        let loaded = try load(xml: skin(size: 40, body: """
+            <button id="back" action="SWITCH" param="normal" x="20" y="0" w="20" h="20"/>
+            """))
+        let host = Host()
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host, clock: { 0 })
+        addTeardownBlock { renderer.teardown() }
+        let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
+        addTeardownBlock { scripts.teardown() }
+        let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host)
+        addTeardownBlock { view.teardown() }
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: renderer.canvasSize),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = view
+        view.setFrameSize(renderer.canvasSize)
+        var closed = 0
+        view.closeRequested = { closed += 1 }
+
+        XCTAssertTrue(view.needsFallbackClose)
+        click(view, in: window, at: NSPoint(x: 27, y: 27))
+        XCTAssertEqual(closed, 0, "a press on the skin's own button is the button's")
+    }
+
     /// A `TOGGLE` parameter first keeps the established component route, then falls through to a
     /// skin container id. An unknown id is offered to that bounded lookup and changes nothing.
     func testToggleRoutesComponentsThenFallsBackToAContainerID() throws {

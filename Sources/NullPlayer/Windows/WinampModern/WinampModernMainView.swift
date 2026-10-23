@@ -2701,7 +2701,7 @@ final class WinampModernMainView: NSView {
         .button, .toggleButton, .nStatesButton, .slider, .menu, .list, .component, .browser, .edit, .editBox
     ]
 
-    private static func isControl(_ object: WasabiObject) -> Bool {
+    static func isControl(_ object: WasabiObject) -> Bool {
         object.tag.is(anyOf: controlKinds) || object.tag.isStandard(anyOf: [.button, .toggleButton])
     }
 

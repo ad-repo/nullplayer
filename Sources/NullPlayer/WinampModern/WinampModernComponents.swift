@@ -68,6 +68,9 @@ enum WinampModernComponentRegistry {
         value = value.lowercased()
         if value == "@all@" { return .other }
         if value.hasPrefix("guid:") { value = String(value.dropFirst("guid:".count)) }
+        // A braced GUID ends at its brace: MIDISUI holds its library as
+        // `guid:{6B0EDF80-…} (Media library)`, and the label's hex letters joined the digits.
+        if value.hasPrefix("{"), let close = value.firstIndex(of: "}") { value = String(value[...close]) }
         if let short = shortTokenToKind[value] { return short }
         return guidToKind[normalize(value)]
     }

@@ -707,6 +707,14 @@ struct WasabiSceneNode {
     let inheritedAlpha: CGFloat
     /// Ancestor alpha masks this node is clipped to, outermost first (`groupRegionMask`).
     var regionMasks: [WasabiMaskClip] = []
+
+    func clipped(to box: CGRect) -> WasabiSceneNode {
+        let cut = clip.intersection(box)
+        return WasabiSceneNode(object: object, frame: frame,
+                               clip: cut.isNull ? CGRect(origin: box.origin, size: .zero) : cut,
+                               bitmapID: bitmapID, parentFrame: parentFrame,
+                               inheritedAlpha: inheritedAlpha, regionMasks: regionMasks)
+    }
 }
 
 /// An alpha mask placed in scene coordinates.
@@ -2409,11 +2417,53 @@ final class WasabiSceneRenderer {
         // halfway up the page is clickable where it is drawn and nowhere else.
         let childFrame = resolved.offsetBy(dx: 0, dy: -scrollOffset(of: object, frame: resolved))
         let childMasks = groupRegionMask(of: object, frame: resolved).map { regionMasks + [$0] } ?? regionMasks
+        let firstChildNode = nodes.count
         for child in object.children {
             append(object: child, frame: childFrame, clip: childClip, into: &nodes,
                    includingHidden: includingHidden, inheritedAlpha: childAlpha,
                    regionMasks: childMasks)
         }
+        if let aperture = targetAperture(of: object, children: nodes[firstChildNode...]) {
+            for index in firstChildNode..<nodes.count {
+                nodes[index] = nodes[index].clipped(to: aperture)
+            }
+        }
+    }
+
+    static let ignoresGroupImage =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_GROUP_IMAGE"] != "1"
+
+    static let honoursTargetApertures =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_TARGET_APERTURE"] != "0"
+
+    /// The box a group that declares none clips to while a target animation has moved one of its
+    /// children: the children's union at their **declared** places (`xmlParam`, which `gotoTarget`
+    /// leaves alone). A slide is a move within a box. MIDISUI's vis drawer is a 121×124 `Drawer`
+    /// layer in a `DrawerGroup` with no `w`/`h`; `drawer.maki` opens it with `setTargetX(-118)`, and
+    /// unclipped the cover slid out over the COMPONENT column and the playlist, burying the
+    /// playlist / vis studio / video buttons, instead of disappearing into its own frame.
+    ///
+    /// Only while something has moved: at rest the union is the children themselves, and a group
+    /// with no declared box otherwise keeps the inherited clip (`clipAxes`).
+    private func targetAperture(of group: WasabiObject,
+                                children: ArraySlice<WasabiSceneNode>) -> CGRect? {
+        guard Self.honoursTargetApertures, group.tag.is(.group), clipAxes(of: group).isEmpty else {
+            return nil
+        }
+        var union = CGRect.null
+        var moved = false
+        for node in children where node.object.parent === group {
+            let child = node.object
+            func offset(_ key: String) -> CGFloat {
+                guard let now = Double(child.attributes[key] ?? ""),
+                      let declared = Double(child.xmlParam(key) ?? "") else { return 0 }
+                return CGFloat(now - declared)
+            }
+            let dx = offset("x"), dy = offset("y")
+            if dx != 0 || dy != 0 { moved = true }
+            if !node.frame.isEmpty { union = union.union(node.frame.offsetBy(dx: -dx, dy: -dy)) }
+        }
+        return moved && !union.isNull ? union : nil
     }
 
     static let honoursGroupRegions =
@@ -4583,6 +4633,12 @@ final class WasabiSceneRenderer {
     }
 
     private func resolvedBitmapID(for object: WasabiObject, pressed: Bool, hovered: Bool) -> String? {
+        // A `<group>` states its artwork with `background` (`backgroundBitmap`); `image=` on one is
+        // a parameter for the groupdef's children, not art. MIDISUI instances its one-LED
+        // `ledAnimation` group as `image="led.animation"`, the 280×14 sheet of 20 frames: taken
+        // as the group's bitmap it painted every frame as a row of red dots over the TIMER and
+        // SONGINFO panel labels and ran 120px off the window's right edge.
+        if object.tag.is(.group), Self.ignoresGroupImage { return nil }
         if object.tag.is(.status) {
             switch host.playbackState {
             case .playing: return object.attributes["playbitmap"]

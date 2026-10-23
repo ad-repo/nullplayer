@@ -1232,6 +1232,25 @@ Golden scene: `group-background-box` ([harness.md](harness.md) -> *The golden im
 the box, and `drawbackground` — were checked to fail under a deliberately reintroduced regression and
 to fail nowhere else.
 
+## A slide is a move within a box; a `<group>` has no `image` (2026-10-23)
+
+**A group with no declared box clips to where its children were declared while a target animation
+has moved one** (`targetAperture`, kill switch `WINAMP_MODERN_TARGET_APERTURE=0`). MIDISUI's vis
+drawer is a 121×124 `Drawer` layer in a `DrawerGroup` with no `w`/`h` and no `background`;
+`drawer.maki` opens it with `setTargetX(-118)` — a cover sliding out of its own frame. Unclipped, it
+slid over the COMPONENT column and the playlist. The box is the union of the children at their
+`xmlParam` places (what `gotoTarget` leaves alone), applied only while a child is off its place, so a
+group at rest keeps the inherited clip `clipAxes` gives an undeclared box. Reach, gold+silver: that
+one group.
+
+**`image=` on a `<group>` is not art** (kill switch `WINAMP_MODERN_GROUP_IMAGE=1`). A group states its
+artwork with `background`; MIDISUI instances its one-LED `ledAnimation` group as
+`image="led.animation"`, the 280×14 sheet of 20 frames, and drawn as the group's bitmap it put 20
+red dots over the TIMER, SONG INFO and TRACK labels and 120px past the window's right edge. The
+before/after sweep moved MIDISUI's four images and nothing outside the documented noise.
+
+Tests: `WinampModernMIDISUITests`.
+
 ## `autoheightsource` sizes a plain `<group>`, not only a `<Wasabi:TitleBox>`
 
 It was read for the title box alone, so every other group carrying it resolved to **no height**. That

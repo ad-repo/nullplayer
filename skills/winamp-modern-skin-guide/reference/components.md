@@ -144,7 +144,10 @@ CornerAmp ships playlist + EQ, Winamp Modern ships playlist + library. The engin
 - `WinampModernComponentRegistry` maps the standard Winamp component GUIDs to a typed
   `WinampModernComponentKind`. **GUIDs never escape the registry**, and matching is *exact* — the
   fuzzy id rule lives in `kindFromHolderIdentifier` and is only ever applied to an engine holder's id
-  (`centro.windowholder.library`), never to a container id or a menu parameter.
+  (`centro.windowholder.library`), never to a container id or a menu parameter. A braced GUID ends
+  at its brace: MIDISUI holds `guid:{6B0EDF80-…} (Media library)`, and the label's hex letters had
+  joined the digits, so its library was an inert `.other`; five Miku-family `TOGGLE` buttons write
+  `guid:{…};video` and now resolve to video.
 - Three element types are holders: `<windowholder hold=…>`, `<componentbucket>`, and
   `<component param=…>` (`isHolderElement`). The last is what separate-window skins use for their real
   content — mmd3's `pledit-normal.xml`, Winamp Modern's `ml-normal.xml`.
@@ -321,7 +324,9 @@ Every `.wal` window is `.borderless`, which changes what AppKit will do for you:
   `closeRequested` and the skin takes the frame down with it. Itemskin's standard frame around the
   Equalizer Studio is the case: it has no close, so the Studio could only be closed from the Windows
   menu. Auxiliary windows get their commands as each is built, so a dynamic copy a script creates
-  after load closes too. Phase 24
+  after load closes too. Phase 24. **The corner yields to a skin control under it**: MIDISUI's
+  Media Library layout has no `CLOSE`, and its only way back is a `SWITCH normal` button in that
+  corner, which the corner turned into closing the player — quitting the app.
 - **A window created with `NSRect(origin: .zero, …)` opens at the bottom-left corner of the screen**,
   which is where every auxiliary container window used to appear. They are placed on **first show**
   — stacked under the main window, clamped to the screen — and never repositioned again, so a window

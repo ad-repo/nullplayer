@@ -134,6 +134,12 @@
   app.
 - **ArmorAmp's spectrum stays inside its screen**, where the bars had spilled over the bezel, and
   its EQ button opens the equalizer drawer again.
+- **MIDISUI**
+  - The vis drawer slides into its own frame instead of over the COMPONENT buttons and the
+    playlist, so the playlist, vis studio and video buttons can be clicked.
+  - The panel labels show; rows of red dots no longer cover them or run past the window's edge.
+  - The library shows your library instead of a blank frame, and its corner button goes back to
+    the player instead of quitting the app.
 
 ## 0.33.0
 
