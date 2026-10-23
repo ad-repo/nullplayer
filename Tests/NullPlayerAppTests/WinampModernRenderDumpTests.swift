@@ -143,14 +143,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
         // when `onScriptLoaded` runs. Note it *stays* set for later runs of the harness, exactly as
         // it does for the app.
         if let spec = env["WINAMP_MODERN_RENDER_CONFIG"] {
-            for entry in spec.split(separator: "|") {
-                let parts = entry.split(separator: ";", maxSplits: 1).map(String.init)
-                guard parts.count == 2 else { continue }
-                let assignment = parts[1].split(separator: "=", maxSplits: 1).map(String.init)
-                guard assignment.count == 2 else { continue }
-                loaded.configuration.setString(assignment[1], section: parts[0], key: assignment[0])
-                print("CONFIG set [\(parts[0])] \(assignment[0]) = \(assignment[1])")
-            }
+            loaded.configuration.seed(renderConfig: spec)
         }
 
         // WINAMP_MODERN_RENDER_PLAYLIST=<count>[,current=<n>] stands a synthetic queue up behind the

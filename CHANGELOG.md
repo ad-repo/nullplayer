@@ -149,6 +149,8 @@
     PLAY/PAUSE/STOP status.
   - The playlist's Add/Rem/Sel/Misc/List buttons no longer run under the playlist info text; the
     same fix applies to Core-X5, corneramp, motorhead and wasabi_player.
+- **Mad Magazine's playlist no longer sits under its title bar**, and EMP2's Media Library opens at
+  its own 400px width instead of 450px.
 
 ## 0.33.0
 

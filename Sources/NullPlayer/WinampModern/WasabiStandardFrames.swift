@@ -169,14 +169,16 @@ extension WasabiStandardFrames {
     /// yields land where the authors of comparable skins wrote theirs by hand: TRON measures
     /// `5,15,-10,-34` against corneramp_redux's authored `5,15,-10,-36` for the same Winamp frame.
     ///
-    /// A strip usually states no `w`/`h` at all and takes it from its bitmap, so the sizes come from
-    /// the resource registry; a bitmap that declares neither contributes nothing rather than zero.
+    /// A strip usually states no `w`/`h` at all and takes it from its bitmap, so the thickness is the
+    /// extent of the bitmap's opaque pixels (a sprite cut's, or the whole file's); a bitmap that
+    /// cannot be read falls back to its declared size, and one that declares none contributes
+    /// nothing rather than zero.
     static func measuredBorder(in children: [WalXMLNode],
                                group: (String) -> [WalXMLNode]?,
-                               bitmapSize: (String) -> CGSize?) -> Border {
+                               bitmapOpaqueBounds: (String) -> CGRect?) -> Border {
         var border = Border()
         measure(children, into: &border, offset: .zero, margin: .zero,
-                group: group, bitmapSize: bitmapSize, depth: 0, visited: [])
+                group: group, bitmapOpaqueBounds: bitmapOpaqueBounds, depth: 0, visited: [])
         return border
     }
 
@@ -224,7 +226,7 @@ extension WasabiStandardFrames {
     private static func measure(_ children: [WalXMLNode], into border: inout Border,
                                 offset: CGPoint, margin: CGPoint,
                                 group: (String) -> [WalXMLNode]?,
-                                bitmapSize: (String) -> CGSize?,
+                                bitmapOpaqueBounds: (String) -> CGRect?,
                                 depth: Int, visited: Set<String>) {
         guard depth <= maximumFrameDepth else { return }
         for node in children {
@@ -242,27 +244,31 @@ extension WasabiStandardFrames {
                 y: margin.y + (isRelative("relath") ? max(0, -(number("h") ?? 0)) : 0))
 
             if let edges = WasabiResizeEdges(attribute: node.attribute("resize")) {
-                let image = node.attribute("image").flatMap(bitmapSize)
-                let width = number("w") ?? image.map { Double($0.width) }
-                let height = number("h") ?? image.map { Double($0.height) }
+                // The strip's *opaque* part is the border: Mad Magazine's strips are 39x37 tiles
+                // whose art is a 4-5px edge, and measured by tile size its playlist sat under the title.
+                // The art wins over a declared `w`/`h` on every side; the declared size stands only
+                // for a strip whose bitmap cannot be read.
+                let opaque = node.attribute("image").flatMap(bitmapOpaqueBounds)
+                let width = opaque.map { Double($0.maxX) } ?? number("w")
+                let height = opaque.map { Double($0.maxY) } ?? number("h")
                 switch edges {
                 case .left where !isRelative("relatx"):
                     if let width { border.left = max(border.left, offset.x + x + width) }
                 case .right where isRelative("relatx"):
-                    border.right = max(border.right, margin.x - x)
+                    border.right = max(border.right, margin.x - x - Double(opaque?.minX ?? 0))
                 case .top where !isRelative("relaty"):
                     if let height { border.top = max(border.top, offset.y + y + height) }
                 case .bottom where isRelative("relaty"):
-                    border.bottom = max(border.bottom, margin.y - y)
+                    border.bottom = max(border.bottom, margin.y - y - Double(opaque?.minY ?? 0))
                 default: break
                 }
             }
 
             measure(node.children, into: &border, offset: childOffset, margin: childMargin,
-                    group: group, bitmapSize: bitmapSize, depth: depth + 1, visited: visited)
+                    group: group, bitmapOpaqueBounds: bitmapOpaqueBounds, depth: depth + 1, visited: visited)
             if let nested = referencedGroup(node, group: group, visited: visited) {
                 measure(nested.children, into: &border, offset: childOffset, margin: childMargin,
-                        group: group, bitmapSize: bitmapSize, depth: depth + 1,
+                        group: group, bitmapOpaqueBounds: bitmapOpaqueBounds, depth: depth + 1,
                         visited: nested.visited)
             }
         }

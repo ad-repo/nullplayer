@@ -361,27 +361,9 @@ final class WasabiResourceCache {
               definition.kind == "bitmap", let path = definition.logicalFile,
               let data = try? loadedSkin.vfs.data(at: path, location: definition.source),
               let source = CGImageSourceCreateWithData(data as CFData, nil),
-              var fullImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
-        // A negative offset reaches **before** the image: the rect starts in transparent space.
-        // hm_Touch ships its timer digits as a one-row sheet and declares it `y="-30" h="60"`, so
-        // the digits land on row 1 — where a bitmap font keeps them. Clamped to 0, the sheet was
-        // one row tall and every digit fell off it: the player's big timer drew nothing.
-        // `relatx`/`relaty` offsets count from the far edge and are not padding.
-        if let padded = Self.padForNegativeOffset(fullImage, attributes: definition.attributes) {
-            fullImage = padded
-        }
-        let x = max(0, Int(Double(definition.attributes["x"] ?? "0") ?? 0))
-        let topY = max(0, Int(Double(definition.attributes["y"] ?? "0") ?? 0))
-        let width = max(1, min(fullImage.width - x,
-                               Int(Double(definition.attributes["w"] ?? "") ?? Double(fullImage.width - x))))
-        let height = max(1, min(fullImage.height - topY,
-                                Int(Double(definition.attributes["h"] ?? "") ?? Double(fullImage.height - topY))))
-        // `CGImage.cropping(to:)` addresses raw pixel data, whose origin is the image's TOP-left —
-        // the same convention Wasabi's `y=` uses. Converting to a bottom-left origin here mirrored
-        // every sprite's source rect about the sheet's centreline, so each element was cut from the
-        // wrong row of the atlas.
-        guard topY + height <= fullImage.height,
-              let cropped = fullImage.cropping(to: CGRect(x: x, y: topY, width: width, height: height)) else { return nil }
+              let fullImage = CGImageSourceCreateImageAtIndex(source, 0, nil),
+              let cropped = Self.cut(fullImage, attributes: definition.attributes) else { return nil }
+        let width = cropped.width, height = cropped.height
         let declaredGroup = definition.attributes["gammagroup"]
         let image = themed(cropped, transform: themes.transform(
             group: WasabiSkinQuirks.gammaGroup(declared: declaredGroup) ?? declaredGroup))
@@ -391,27 +373,6 @@ final class WasabiResourceCache {
         currentCost += cost
         evictIfNeeded(protecting: key)
         return bitmap
-    }
-
-    private static let clampsNegativeOffsets =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_BITMAP_NEGATIVE_CLAMP"] != nil
-
-    /// `image` moved down/right by a declared negative `y`/`x`, on a transparent canvas, so the
-    /// crop that follows can start at 0. Nil when there is nothing to pad.
-    static func padForNegativeOffset(_ image: CGImage, attributes: [String: String]) -> CGImage? {
-        func padding(_ axis: String, _ relat: String) -> Int {
-            guard attributes[relat] != "1", let value = Double(attributes[axis] ?? "") else { return 0 }
-            return max(0, -Int(value))
-        }
-        let left = padding("x", "relatx"), top = padding("y", "relaty")
-        guard left > 0 || top > 0, !clampsNegativeOffsets,
-              let context = CGContext(data: nil, width: image.width + left, height: image.height + top,
-                                      bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: CGColorSpaceCreateDeviceRGB(),
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        // CGContext is bottom-left origin: the image's top edge sits `top` rows below the canvas top.
-        context.draw(image, in: CGRect(x: left, y: 0, width: image.width, height: image.height))
-        return context.makeImage()
     }
 
     /// The bitmap cached under `key`, marked as just used, in one hash. Keys are lowercased rather

@@ -229,9 +229,13 @@ content="pledit.content.group">`), **Sony Walkman** and **canum**. Four things c
   exactly the hole the artwork leaves. The check that this is the right rule is external: it yields
   `5,15,-10,-34` for TRON against the `5,15,-10,-36` corneramp_redux's author **wrote by hand** for
   the same Winamp frame.
-- **A strip usually states no `w`/`h`**, taking it from its bitmap, so the sizes come from the
-  resource registry — which is why `WasabiSkinInitializer` now holds one (`resourceRegistry`). A
-  bitmap that declares neither contributes nothing rather than zero.
+- **A strip's thickness is its art, not its tile** (B260): the extent of the opaque pixels in its
+  bitmap's cut, read from the resource registry (`WasabiSkinInitializer.resourceRegistry`) and cut
+  by `WasabiResourceCache.cut` — the renderer's own rectangle, negative offsets included. Mad
+  Magazine's strips are 39x37 tiles around a 4-5px edge; measured by tile, its playlist sat under the
+  title. The art wins over a declared `w`/`h` on every side (EMP2's library came out at its authored
+  400px wide only then); the declared size stands for a bitmap with no file (`$solid`), and a strip
+  with neither contributes nothing rather than zero.
 
 **The synthesizer still rejects these frames, and that is now stale.** `usableFrame` asks the
 bytecode whether a frame can build its own client area, so TRON's Media Library — a window *we*

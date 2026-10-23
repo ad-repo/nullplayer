@@ -95,6 +95,12 @@ final class WinampModernInteractionSweepTests: XCTestCase {
     /// Rows without the skin column: `container, layout, object, gesture, point, hit, verdict,
     /// handlers, failed, changed, effect`.
     private static func sweep(_ wal: URL) throws -> [String] {
+        // A returning user's settings, seeded as the dump seeds them: H2O Liquid's first-launch
+        // splash hides every control, and `showSplash=0` is what its own script stores after it.
+        if let spec = ProcessInfo.processInfo.environment["WINAMP_MODERN_RENDER_CONFIG"] {
+            WinampModernConfiguration(namespace: WinampModernSkinLoader.mountName(of: wal))
+                .seed(renderConfig: spec)
+        }
         // Taken before the first load, which may itself write values; scoped below to this skin's
         // own namespace, because the other shards are writing theirs into the same defaults domain.
         let everything = storedConfiguration(prefix: configurationPrefix)

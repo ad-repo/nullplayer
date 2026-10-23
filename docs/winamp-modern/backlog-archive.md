@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B260 — A measured frame's border is its strips' art, not their tiles — closed 2026-10-23
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B260 | **Mad Magazine's playlist sits under its title bar.** Its standard frame has no script, so the client rect is measured from the `resize=` strips, and those are 39x37 tiles whose art is a 4-5px edge. Done when the playlist starts below the title and inside the side strips | live: Mad Magazine (2026-10-23) | S | 2 |
+
+**Closed 2026-10-23**. `WasabiStandardFrames.measure` takes each strip's thickness from the opaque pixels of its bitmap's cut (`WasabiResourceCache.opaqueBounds`, `WasabiBitmapCut.swift`), on every side and ahead of a declared `w`/`h`; the cut is `WasabiResourceCache.cut`, moved out of `bitmap(identifier:)` so the measurement reads the rectangle the renderer draws. Gold+silver sweep: Mad Magazine as fixed, and EMP2's `MLibrary/normal` from 450x200 (min 450) to its authored 400x200 (min 303), confirmed by an A/B of the edge order on three solo runs; every other diff is listed sweep noise. Test: `WinampModernStripBorderTests`. The interaction sweep now seeds `WINAMP_MODERN_RENDER_CONFIG` like the render dump.
+
 ## B258 — `setAlternateText` expires by itself — closed 2026-10-23
 
 | Id | Item | Reach | Effort | Tier |
