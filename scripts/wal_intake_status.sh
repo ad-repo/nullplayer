@@ -36,6 +36,7 @@ END {
     print line
     if (next_file == "") print "next: none — promote the accepted rows, then PR"
     else if (s[next_rank] == "admitted") print "next: the batch headless pass (lifecycle step 3) over the " count["admitted"] " admitted skins"
+    else if (s[next_rank] == "live") print "next: the user'"'"'s UI round (lifecycle step 5) over the " count["live"] " live skins"
     else print "next: " next_file " (" s[next_rank] ") — note: " next_note
     if (bad) { print bad " ledger problem(s)"; exit 1 }
 }' docs/winamp-modern/corpus-manifest.tsv "$ledger"

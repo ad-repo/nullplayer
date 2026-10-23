@@ -97,6 +97,11 @@ headless pass is one session.
 4. **Fix and go live**, skin by skin by `next:`: Phases 5–8. Move each to `live`.
 5. **Hand over** (Phase 9) the `live` skins in one list; the user's verdicts move them to
    `accepted`, or back with a note.
+
+**The user may cut a batch short** and send the remaining skins straight to their UI round, skipping
+steps 3–4. Mark each `live` with the note `handed over without a pass (user, <date>)`. A defect the
+round finds puts that skin back to `admitted` with the defect in its note (or a backlog row); a fix
+for it follows `skin-triage` from Phase 5 for that skin only.
 6. **Promote** the `accepted` skins in one commit: manifest tier `gold`, move the file to
    `WinampModernCorpus/gold/`, add the `skin-compatibility.md` row, stage `promoted`.
    `wal_intake_status.sh` must exit 0.
