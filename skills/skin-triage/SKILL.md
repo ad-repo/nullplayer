@@ -18,6 +18,8 @@ This file owns the **order**. The mechanics live elsewhere and are not restated:
 | Not fooling yourself with what came back | `live-ui-testing` |
 | A family's probe flags and corpus scripts | that family's `reference/harness.md` (table below) |
 | Cross-skin ranking (what to build next across the corpus) | `winamp-modern-skin-guide/triage-playbook.md` |
+| A graded `.wal` report (A–F), on request | `/wal-skin-report` — grading, not this pass |
+| Backlog rows outside an intake | `docs/winamp-modern/corpus-runner-plan.md` § *The loop* |
 
 Copy [template.md](template.md) into the scratchpad at Phase 0 and fill it as you go. Each phase ends
 on a **Confirm it took** line; do not leave a phase until it holds.

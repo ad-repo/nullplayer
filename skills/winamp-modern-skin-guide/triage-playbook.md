@@ -119,6 +119,9 @@ part of the plan becomes history, and the row above changes to **Built**.
 
 ## 4. Isolating one issue, once it is ranked
 
+(This is the `.wal` probe order inside `skills/skin-triage` Phase 5. That skill owns the order of a
+whole skin pass.)
+
 The corpus tells you *what* to fix; this is how you find *why*, and the order matters because each
 probe is cheap only if the previous one has narrowed the space. Never change renderer code before
 step 3 answers.

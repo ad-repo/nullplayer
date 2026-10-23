@@ -6,6 +6,9 @@ in `tasks/WINAMP5_TASKS.md` — that file, not this one, records what is done.
 
 ## The loop
 
+This loop is for **backlog rows**. An intake batch's skin pass follows `skills/skin-triage` (see
+*Branch strategy for the intakes*); rows that pass files come back here.
+
 1. Take the top row of *Corpus plan queue* in `WINAMP5_TASKS.md`. Skin-dead loader gaps
    (B175–B181) first, then the MAKI method rows (B182–B201, B206–B207).
 2. Batch rows that share a seam — several effort-S method rows are one session.
@@ -119,7 +122,8 @@ and 594 added nothing. Every fix is general (see the tables above), so a skin th
 is covered by the fixes its look-alikes earned. Intakes run while a batch still clears the gain
 floor (re-measured after the re-weighting); once it doesn't, the rest is certified by the census
 and the pre-merge render sweep, with a hand pass only where `wal_reach.sh` shows a feature that no
-gold skin has.
+gold skin has. That certification is a known limit: intake #1's census and sweep missed most of its
+in-app defects (`skills/skin-triage/misses.md`).
 
 Below is reference: the pipeline as designed (§3), what was built (§7), and the corpus-scale
 decisions (§8).
@@ -353,6 +357,10 @@ the only record of where it stands. Mark the row's progress in `WINAMP5_TASKS.md
 archive), and record here any decision a measurement changed, with the measurement. A session that ends
 without that update leaves the next one re-deriving it.
 
+**Superseded for intake batches (2026-10-22):** the in-app pass is the agent's, by
+`skills/skin-triage`, and the user sees the batch at that skill's Phase 9 hand-over. The copy rule
+below still applies.
+
 **Then hand the session's skins over for in-app evaluation.** Every skin the session admitted to
 Silver or Gold is **copied** (never moved) into `~/Library/Application Support/NullPlayer/WinampModernSkins/`,
 the app's own skin folder, so the user can try them in the app; the session's closing note lists them
@@ -361,16 +369,19 @@ use of the app. A session that admitted no skins (B166–B168 do not) hands over
 
 ### How deep each skin is evaluated
 
-Three depths, and only the first is part of this plan for every skin:
+Four depths, and only the first is part of this plan for every skin:
 
 1. **Automatic first round — every candidate, every tier.** The census (load, rating, surfaces, hosted
    windows) plus the static feature index. Headless, deterministic, no human. This is what rates and
    admits a skin (B169).
 2. **Targeted runs — any tier, by selection.** Impact-selected sweeps (`--touching`, B170) re-render the
    skins a change could affect. Still automatic.
-3. **Full audit — Gold, and Silver on request only.** The live pass and the hand letter
-   (`/wal-skin-report`). Never for Bronze, and not part of this plan's work; admission to Silver makes a
-   skin eligible for an audit, not owed one.
+3. **Intake pass — every skin in an intake batch** (changed 2026-10-22). The `skills/skin-triage`
+   pass: headless over every window, button and component, then live. This is what promotes a
+   batch to Gold.
+4. **Full audit — Gold, and Silver on request only.** The graded report (`/wal-skin-report`).
+   Never for Bronze, and not part of this plan's work; admission to Silver makes a skin eligible for
+   an audit, not owed one.
 
 B166's per-skin log files are none of these — they change *where* the existing dump output is written
 so a corpus run can't lose lines, not *what* is measured.

@@ -63,11 +63,12 @@ a worked example in [reference/harness.md](reference/harness.md):
 ### Pick your working mode first
 
 Coverage is demand-driven and the wild corpus is effectively unbounded, so the *unit of work* matters
-as much as the code. Three modes, three different entry points:
+as much as the code. Four modes, four different entry points:
 
 | You are… | Start with | Not |
 |---|---|---|
 | Debugging one named skin | [skins.md](skins.md) → `skins/<skin>.md`, then [reference/harness.md](reference/harness.md) | reading this file top to bottom |
+| **Testing and fixing** a skin or an intake batch end to end | **`skills/skin-triage`** — the phase order, every button, headless then live | a skin-by-skin pass in the app |
 | **Measuring** a skin — what does it contain, what works, how good is it? | **`/wal-skin-report <skin.wal>`** (`skills/wal-skin-report`) — fixed measurement order, structured report, A–F grade with a confidence axis | ad-hoc dumps whose findings evaporate |
 | Deciding what to implement next across many skins | [triage-playbook.md](triage-playbook.md) — corpus measurement, defect classes, the demand index | fixing whatever the last bug report named |
 
