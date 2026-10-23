@@ -1352,23 +1352,28 @@ final class WinampModernMainView: NSView {
             }
         }
 
-        var liveHostedWindows: Set<WasabiObjectID> = []
+        // Unmount first, then mount — the trap above once more: the bridge caches one surface per
+        // hosted-window id, so a holder back under a new object id is handed the same surface, and
+        // mounting first let the stale id's unmount pull it straight back out.
+        let liveHostedWindows = Set(holders.compactMap { holder -> WasabiObjectID? in
+            guard case .hostWindow = holder.surfaceID else { return nil }
+            return holder.object.stableID
+        })
+        for (id, surface) in hostedWindowSurfaces where !liveHostedWindows.contains(id) {
+            surface.suspend()
+            surface.unmountFromHolder()
+            hostedWindowSurfaces[id] = nil
+        }
         let hostedStyle = WinampModernSurfaceStyle(palette: renderer.palette)
         for holder in holders {
-            guard case .hostWindow(let id) = holder.surfaceID else { continue }
-            liveHostedWindows.insert(holder.object.stableID)
-            guard hostedWindowSurfaces[holder.object.stableID] == nil,
+            guard case .hostWindow(let id) = holder.surfaceID,
+                  hostedWindowSurfaces[holder.object.stableID] == nil,
                   let surface = componentHost?.makeHostedWindowSurface(id: id) else { continue }
             hostedWindowSurfaces[holder.object.stableID] = surface
             surface.applySkinScale(skinScale)
             surface.applyPalette(hostedStyle)
             addSubview(surface.view)
             if sceneIsVisible { surface.resume() }
-        }
-        for (id, surface) in hostedWindowSurfaces where !liveHostedWindows.contains(id) {
-            surface.suspend()
-            surface.unmountFromHolder()
-            hostedWindowSurfaces[id] = nil
         }
         cachedHolders = holders
     }

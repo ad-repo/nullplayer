@@ -1698,8 +1698,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         return loadedSkin?.surfaceInventory.declaredContainers[.video]
     }
 
-    private func isVideoDetachContainer(_ id: String) -> Bool { videoDetachContainerID == id }
-
     /// `VID_1X` / `VID_2X`: size the skin's video window so its **box** is the stream's own pixel
     /// size times `multiple`.
     ///
@@ -1804,13 +1802,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 container.view.layoutSubtreeIfNeeded()
                 container.view.hostedVisualizationSurface?.resumeRendering()
             }
-            if isVideoSurfaceContainer(id) || isVideoDetachContainer(id) {
+            if isVideoSurfaceContainer(id) || videoDetachContainerID == id {
                 container.view.claimVideoSurface()
             }
         } else {
             container.window.orderOut(nil)
             // Closing the detached window is the reattach: the film goes back into the player.
-            if isVideoDetachContainer(id), WindowManager.shared.currentVideoPlayerController?.currentTitle != nil {
+            if videoDetachContainerID == id, WindowManager.shared.currentVideoPlayerController?.currentTitle != nil {
                 _ = hostVideoOutputInPlayer()
             }
         }
@@ -2438,7 +2436,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             return true
         }
         // The detached video window moves the film as it opens and closes; that lives in one place.
-        if isVideoDetachContainer(container.containerID) {
+        if videoDetachContainerID == container.containerID {
             _ = toggleVideoDetach()
             return true
         }

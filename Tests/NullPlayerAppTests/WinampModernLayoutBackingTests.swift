@@ -1,6 +1,5 @@
 import AppKit
 import XCTest
-import ZIPFoundation
 @testable import NullPlayer
 
 /// Two ways a `.wal` window drew less than its skin declares.
@@ -82,9 +81,17 @@ final class WinampModernLayoutBackingTests: XCTestCase {
           </container>
         </WasabiXML>
         """
-        let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: try makeArchive(xml: xml))
-        addTeardownBlock { loaded.teardown() }
-        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: Host(), clock: { 0 })
+        // One row of 16 ten-pixel digit cells, each inked in its middle 8x8: the bitmap font reads
+        // digits from row 1, which only exists once the declared `y="-10"` pads the sheet.
+        let digits = Self.image(width: 160, height: 10, rgba: [255, 255, 255, 255]) { x, y in
+            (1...8).contains(x % 10) && (1...8).contains(y)
+        }
+        let loaded = try makeWinampModernSkin(xml: xml, files: [
+            "red.png": try png(Self.image(width: 40, height: 40, rgba: Self.red)),
+            "blue.png": try png(Self.image(width: 40, height: 40, rgba: Self.blue)),
+            "digits.png": try png(digits),
+        ])
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: WinampModernStubHost(), clock: { 0 })
         addTeardownBlock { renderer.teardown() }
         let (width, height) = (Int(renderer.canvasSize.width), Int(renderer.canvasSize.height))
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
@@ -116,57 +123,5 @@ final class WinampModernLayoutBackingTests: XCTestCase {
 
     private func png(_ image: CGImage?) throws -> Data {
         try XCTUnwrap(NSBitmapImageRep(cgImage: try XCTUnwrap(image)).representation(using: .png, properties: [:]))
-    }
-
-    private func makeArchive(xml: String) throws -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("WinampModernLayoutBackingTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let url = directory.appendingPathComponent("backing.wal")
-        let archive = try Archive(url: url, accessMode: .create)
-        // One row of 16 ten-pixel digit cells, each inked in its middle 8x8: the bitmap font reads
-        // digits from row 1, which only exists once the declared `y="-10"` pads the sheet.
-        let digits = Self.image(width: 160, height: 10, rgba: [255, 255, 255, 255]) { x, y in
-            (1...8).contains(x % 10) && (1...8).contains(y)
-        }
-        let files: [(String, Data)] = [
-            ("skin.xml", Data(xml.utf8)),
-            ("red.png", try png(Self.image(width: 40, height: 40, rgba: Self.red))),
-            ("blue.png", try png(Self.image(width: 40, height: 40, rgba: Self.blue))),
-            ("digits.png", try png(digits)),
-        ]
-        for (name, payload) in files {
-            try archive.addEntry(with: name, type: .file, uncompressedSize: Int64(payload.count),
-                                 compressionMethod: .none) { position, size in
-                let start = Int(position)
-                guard start < payload.count else { return Data() }
-                return payload.subdata(in: start..<min(payload.count, start + size))
-            }
-        }
-        return url
-    }
-
-    private final class Host: WinampModernHost {
-        var playbackState: PlaybackState = .stopped
-        var currentTime: TimeInterval = 0
-        var duration: TimeInterval = 200
-        var volume: Double = 0.5
-        var balance: Double = 0
-        var shuffleEnabled = false
-        var repeatEnabled = false
-        var trackTitle = ""
-        var trackInfo = ""
-        var spectrumLevels: [Float] = []
-
-        func play() {}
-        func pause() {}
-        func stop() {}
-        func previous() {}
-        func next() {}
-        func seek(to seconds: TimeInterval) {}
-        func openFiles() {}
-        func beginVisualizationConsumption() {}
-        func endVisualizationConsumption() {}
     }
 }
