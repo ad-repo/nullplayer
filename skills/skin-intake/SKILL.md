@@ -38,7 +38,7 @@ manifest and status script here; it does not get a second intake skill.
 | `admitted` | in Silver, copied into `WinampModernSkins/` | `wal_intake.sh --admit` ran (seed the ledger from its picks) |
 | `headless` | the skin's Phases 1–4 rows all have a verdict | its fix list exists |
 | `live` | its Phases 5–8 are done: inventory all `works`/D/H, sweep classified | Phase 8's *Confirm it took* holds |
-| `accepted` | the user tried it and said it works | Phase 9 |
+| `accepted` | the user tried it and said it works | Phase 9 — or the user's verdict on a skin they tried before any recorded pass, from any stage; the `note` says so |
 | `promoted` | manifest tier `gold`, file in `WinampModernCorpus/gold/`, `skin-compatibility.md` row | the promotion commit |
 
 **Move a stage only on its evidence, in the same commit as the work.** Nothing else records intake
