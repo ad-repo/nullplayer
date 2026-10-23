@@ -66,12 +66,16 @@ summary or a handover note. One session works an intake at a time.
 2. `scripts/wal_intake_status.sh`. Exit 1: fix the ledger first, nothing else. All skins at
    `accepted` or later: go to promotion (lifecycle step 6).
 3. Take the `next:` skin. Read its `note` and its `rows` in `tasks/WINAMP5_TASKS.md`.
-4. Copy `skills/skin-triage/template.md` to the scratchpad and resume at the phase the note names.
-   Re-run that skin's Phase 2–3 dump before trusting a verdict an earlier session recorded — it is
-   seconds, and the engine has moved since.
+4. Resume at the phase the note names. Trust the committed note; re-measure only a row that a fix
+   landed since `updated` could have moved.
 
-**Work** one skin to its next stage. Step 3 of the lifecycle is the exception: the whole batch's
-headless pass is one session.
+**Work** one skin to its next stage, with two batch exceptions: the headless pass (lifecycle step 3)
+is one session over the whole batch, and every skin whose note says `headless clean` shares one live
+smoke session — one launch, switching skins from the menu.
+
+**Write each result into the ledger the moment it is known**, not at the end. A record kept only in
+the scratchpad is lost with the session: intake #2's whole batch record was, and recovering it from
+transcripts cost a session.
 
 **End**, in the commit that carries the work:
 1. Stage reached: move it and set `note` to `-`. Not reached: keep the stage and write the `note`
