@@ -1209,35 +1209,56 @@ final class WinampModernMainView: NSView {
     private func reconcileHostedSurfaces() {
         guard !isTornDown else { return }
         let holders = renderer.componentHolders()
-        var live: Set<WasabiObjectID> = []
-        for holder in holders where holder.kind == .library {
-            live.insert(holder.object.stableID)
-            guard librarySurfaces[holder.object.stableID] == nil,
-                  let surface = componentHost?.makeLibrarySurface() else { continue }
-            librarySurfaces[holder.object.stableID] = surface
-            surface.applyContentScale(libraryContentScale)
-            surface.applyPalette(renderer.palette)
-            addSubview(surface.view)
-        }
+        // Unmount first, then mount, and attach every pass — the visualization's BB35 trap. The bridge
+        // hands the same browser back for a holder that comes back under a new id, so mounting first
+        // added it and the stale id's unmount then pulled it straight back out: Winamp Single GUI's
+        // library pane stayed an empty blue box.
+        let live = Set(holders.filter { $0.kind == .library }.map(\.object.stableID))
         for (id, surface) in librarySurfaces where !live.contains(id) {
             surface.unmountFromHolder()
             librarySurfaces[id] = nil
         }
+        for holder in holders where holder.kind == .library {
+            let surface: WinampModernLibrarySurface
+            if let existing = librarySurfaces[holder.object.stableID] {
+                surface = existing
+            } else if let made = componentHost?.makeLibrarySurface() {
+                librarySurfaces[holder.object.stableID] = made
+                made.applyContentScale(libraryContentScale)
+                made.applyPalette(renderer.palette)
+                surface = made
+            } else {
+                continue
+            }
+            if surface.view.superview !== self { addSubview(surface.view) }
+        }
 
-        var liveVideo: Set<WasabiObjectID> = []
+        // Unmount first, then mount — the library's and the visualization's trap again. The bridge
+        // vends one box per skin, so with the mount first, Winamp Single GUI's "Switch Video Screen
+        // Mode" (mini pane → big pane) registered the box for the big holder and the mini holder's
+        // unmount then pulled that same box out and put the picture away.
+        let liveVideo = Set(holders.filter { $0.kind == .video }.map(\.object.stableID))
+        for (id, surface) in videoSurfaces where !liveVideo.contains(id) {
+            // Unparks the picture — the one video view in the app must never be left orphaned in a
+            // view that is about to leave the hierarchy — and leaves it hidden. The holder going away
+            // is a tab switch, not a stop, so the film plays on and the window it came from stays put.
+            // Only a box this view still holds: one another window has claimed since (a detach, or
+            // the reattach back) is that window's picture, and this entry is just stale.
+            if surface.view.superview === self { surface.unmountFromHolder() }
+            videoSurfaces[id] = nil
+        }
         var videoHolderAppeared = false
         for holder in holders where holder.kind == .video {
-            liveVideo.insert(holder.object.stableID)
+            // The bridge vends one box per skin, so a box already mounted in another *visible*
+            // window is that window's picture. Taking it moved the parked film onto this window at
+            // the other box's geometry — the film floated over the player. A hidden window does not
+            // keep it: Winamp Single GUI builds its detached `Video` window at load, hidden, and
+            // that held the box against the player's own mini pane.
             guard videoSurfaces[holder.object.stableID] == nil,
                   let surface = componentHost?.makeVideoSurface() else { continue }
+            if let other = surface.view.superview, other !== self, other.window?.isVisible == true { continue }
             videoHolderAppeared = true
-            videoSurfaces[holder.object.stableID] = surface
-            // `noshowcmdbar="1"` — the holder's own instruction that it draws the transport itself.
-            surface.showsCommandBar =
-                WinampModernVideoHolder.showsCommandBar(holderAttributes: holder.object.attributes)
-            surface.applySkinScale(skinScale)
-            surface.applyPalette(renderer.palette)
-            addSubview(surface.view)
+            mountVideoSurface(surface, for: holder)
         }
         // Not every `{0000000A}` holder gets the engine: a letterbox strip is an analyzer's box, and
         // the bridge vends one surface per skin, so a second holder asking for it stole the picture
@@ -1315,14 +1336,7 @@ final class WinampModernMainView: NSView {
         // one under a live engine is a second visualization nobody can see costing a repaint a frame.
         renderer.hostedVisualizationHolders = liveVis
 
-        for (id, surface) in videoSurfaces where !liveVideo.contains(id) {
-            // Unparks the picture — the one video view in the app must never be left orphaned in a
-            // view that is about to leave the hierarchy — and leaves it hidden. The holder going away
-            // is a tab switch, not a stop, so the film plays on and the window it came from stays put.
-            surface.unmountFromHolder()
-            videoSurfaces[id] = nil
-        }
-        // …and the holder coming *back* is the tab being switched to again, which is the only moment
+        // The holder coming *back* is the tab being switched to again, which is the only moment
         // that can park the picture there a second time: the reveal route runs on a *play* call, and
         // the film has been playing all along. After a layout pass, because that is what gives the
         // new box its frame, and asked of `hostedVideoSurface` so the largest visible box wins the
@@ -1461,6 +1475,40 @@ final class WinampModernMainView: NSView {
         return nodes.first.map { ($0.object, false) }
     }
 
+    /// Pull the skin's one video box into this view's holder and park the picture on it: the detach
+    /// into a skin's video window, and the reattach back into the player. The reconcile never moves
+    /// the box out of a window on screen, so a deliberate move has to say so.
+    @discardableResult
+    func claimVideoSurface() -> WinampModernVideoSurface? {
+        needsLayout = true
+        layoutSubtreeIfNeeded()
+        // The reconcile registers nothing while another window on screen holds the box.
+        if hostedVideoSurface == nil,
+           let holder = renderer.componentHolders().first(where: { $0.kind == .video }),
+           let made = componentHost?.makeVideoSurface() {
+            mountVideoSurface(made, for: holder)
+        }
+        guard let surface = hostedVideoSurface else { return nil }
+        if surface.view.superview !== self {
+            addSubview(surface.view)
+            needsLayout = true
+            layoutSubtreeIfNeeded()
+        }
+        surface.attachVideoOutput()
+        surface.updateOutputPlacement()
+        return surface
+    }
+
+    private func mountVideoSurface(_ surface: WinampModernVideoSurface, for holder: WinampModernComponentHolder) {
+        videoSurfaces[holder.object.stableID] = surface
+        // `noshowcmdbar="1"` — the holder's own instruction that it draws the transport itself.
+        surface.showsCommandBar =
+            WinampModernVideoHolder.showsCommandBar(holderAttributes: holder.object.attributes)
+        surface.applySkinScale(skinScale)
+        surface.applyPalette(renderer.palette)
+        addSubview(surface.view)
+    }
+
     /// The video surface in this scene, if the skin's holder made one. The window layer needs it to
     /// hand the picture over before showing the skin's video window, and to size that window from
     /// the stream's own dimensions for `VID_1X` / `VID_2X`.
@@ -1540,11 +1588,13 @@ final class WinampModernMainView: NSView {
             }
         }
         for holder in holders where holder.kind == .video {
-            guard let surface = videoSurfaces[holder.object.stableID] else { continue }
-            surface.view.frame = placed(holder.frame)
-            // The picture is a child window parked on that box, and a child window follows its
-            // parent's moves but not a resize of the box inside it.
-            surface.updateOutputPlacement()
+            // Not a box another window has claimed since (a detach): its frame is that window's.
+            guard let surface = videoSurfaces[holder.object.stableID], surface.view.superview === self else { continue }
+            // The box re-places the parked picture itself when this actually moves or resizes it.
+            // Clipped like the renderer's black box: the picture is a window of its own, so nothing
+            // else cuts it, and Winamp Single GUI's 228px mini pane in a 280px player ran it down
+            // over the LCD and the transport.
+            surface.view.frame = placed(holder.frame.intersection(holder.clip))
         }
         for holder in holders {
             guard case .hostWindow = holder.surfaceID,

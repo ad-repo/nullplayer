@@ -25,8 +25,11 @@ extension WasabiSceneRenderer {
             // first and fourth buttons were dead while the second and third (denser artwork under the
             // same point) worked — which reads as "two of my buttons are broken", not as a hit test
             // disagreeing with a declared region.
+            // A group's artwork is its `background`, and its region is that artwork's alpha like any
+            // layer's. RODE 3 Lite lays `player.main.sliders` (343x212, 97% transparent mask) over the
+            // whole player; tested as a solid box it covered 24 of the controls beneath it.
             if object.attributes["rectrgn"] != "1",
-               let bitmap = resources.bitmap(identifier: node.bitmapID),
+               let bitmap = resources.bitmap(identifier: node.bitmapID ?? Self.groupBackgroundID(object)),
                !scriptRegionContains(object, frame: node.frame, point: point) {
                 // An animated layer's artwork is a *strip*, and mapping the point across the whole
                 // sheet would sample whichever frame happened to line up with that row. Its region is
@@ -49,6 +52,17 @@ extension WasabiSceneRenderer {
         }
         return nil
     }
+
+    /// A group's `background`, read as its artwork for the alpha test. `WINAMP_MODERN_GROUP_HIT_BOX=1`
+    /// restores the solid-box answer, for an A/B in one binary.
+    static func groupBackgroundID(_ object: WasabiObject) -> String? {
+        guard object.tag.is(.group), !testsGroupsAsBoxes else { return nil }
+        return object.attributes["background"]
+    }
+
+    private static let testsGroupsAsBoxes = ProcessInfo.processInfo.environment["WINAMP_MODERN_GROUP_HIT_BOX"] != nil
+    private static let dropsRegionGroupFills =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_REGION_GROUP_DROP"] != nil
 
     /// Whether a point is inside the region a script gave this object.
     ///
@@ -244,17 +258,38 @@ extension WasabiSceneRenderer {
         // `inner`, whose box overhangs that opening by 13px into the title bar and 7px into the
         // bottom bar. Restoring it printed an opaque black bar across the frame's own glossy
         // titlebar, stopping 19px short of the right edge where the backdrop's own box ends.
+        //
+        // So inside such a group the cuts land **after** its own fills, whatever the document order:
+        // the group is its artwork less its cut-outs. Ebonite's backdrop overhang sits inside its own
+        // cut strips, so it is cut away either way. Dropping the fills instead (the first version of
+        // this rule) erased Winamp_Single_GUI's whole lower body — `window.left/center/right` share a
+        // group with the two bottom-corner `sysregion="-2"` silhouettes, and the player drew nothing
+        // below y=154 of 280. `WINAMP_MODERN_REGION_GROUP_DROP=1` restores the drop, for an A/B.
         let cutParents = Set(declared.lazy.filter { !$0.additive }
             .compactMap { $0.node.object.parent.map(ObjectIdentifier.init) })
         // A layout that cuts nothing keeps its rectangle (see `buildWindowRegion`), and this runs on
         // every frame as the cache key, so the content walk below is only paid for one that cuts.
         let cuts = declared.contains { !$0.additive }
         let contentBoxes = cuts ? wrapperContentBoxes(nodes: nodes, declared: declared) : [:]
-        return declared.compactMap { entry in
-            let object = entry.node.object
-            if entry.additive, let parent = object.parent, cutParents.contains(ObjectIdentifier(parent)) {
-                return nil
+        func cutParent(_ entry: (node: WasabiSceneNode, additive: Bool)) -> ObjectIdentifier? {
+            entry.node.object.parent.map(ObjectIdentifier.init).flatMap { cutParents.contains($0) ? $0 : nil }
+        }
+        let kept = declared.enumerated().filter { _, entry in
+            !(Self.dropsRegionGroupFills && entry.additive && cutParent(entry) != nil)
+        }
+        // Each cut-parent group's cuts sort to just after that group's last fill, in their own order.
+        var lastFill: [ObjectIdentifier: Int] = [:]
+        for (index, entry) in kept where entry.additive {
+            if let parent = cutParent(entry) { lastFill[parent] = index }
+        }
+        func slot(_ index: Int, _ entry: (node: WasabiSceneNode, additive: Bool)) -> (Int, Int, Int) {
+            if !entry.additive, let parent = cutParent(entry), let last = lastFill[parent], index < last {
+                return (last, 1, index)
             }
+            return (index, 0, index)
+        }
+        return kept.sorted { slot($0.offset, $0.element) < slot($1.offset, $1.element) }.map { _, entry in
+            let object = entry.node.object
             return WasabiRegionCut(object: object, frame: entry.node.frame, clip: entry.node.clip,
                                    bitmapID: entry.node.bitmapID, additive: entry.additive,
                                    contentBoxes: contentBoxes[ObjectIdentifier(object)])

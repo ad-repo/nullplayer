@@ -2138,6 +2138,13 @@ class WindowManager {
         return hostVideoOutputInWinampModernSkin()
     }
 
+    /// Move the film between a `.wal` player and the skin's detached video window. False for every
+    /// other mode, and for a skin with no detached window.
+    func toggleWinampModernVideoDetach() -> Bool {
+        guard uiMode.controllerFamily == .winampModern else { return false }
+        return (mainWindowController as? WinampModernMainWindowController)?.toggleVideoDetach() ?? false
+    }
+
     /// Put the skin's video window away (`autoclose="1"`). False when there is none showing.
     @discardableResult
     func hideWinampModernVideoSurface() -> Bool {
@@ -3714,6 +3721,9 @@ class WindowManager {
     func toggleVideoPlayer() {
         if routeWMPSkinSurface(.video) { return }
         guard let controller = videoPlayerWindowController else { return }
+        // A `.wal` skin that plays films in its player and ships a detached video window: this item
+        // is the detach, since the skin's own buttons already show and hide the film in the player.
+        if controller.currentTitle != nil, toggleWinampModernVideoDetach() { return }
         // A hosted picture lives in the skin's own video window, so that is the window this shows and
         // hides — ordering out this controller's own would do nothing visible at all (B20).
         if controller.isVideoOutputHosted {

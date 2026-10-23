@@ -124,6 +124,14 @@
   their controls on the bare desktop; Fuzzy Muffins no longer shows a grey mask through its
   see-through areas.
 - **hm_Touch shows its big timer** beside the spectrum, which had been blank.
+- **Winamp Single GUI plays films in its player** — the film shows in the player's own video pane,
+  and Windows → Video Player detaches it into the skin's Video window and back. The player's lower
+  half and its library pane are drawn again.
+- **RODE 3 Lite's controls answer clicks** — a see-through panel laid over the player was taking
+  clicks meant for 24 controls beneath it.
+- **MetAlchemy III's playlist window shows the playlist** instead of an empty frame.
+- **A film shown inside a Modern skin no longer flickers**, and starting one no longer freezes the
+  app.
 
 ## 0.33.0
 

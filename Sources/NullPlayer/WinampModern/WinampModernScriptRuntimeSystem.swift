@@ -335,7 +335,8 @@ extension WinampModernScriptRuntime {
         // the host only knows what it is decoding now — so the answer is about the playing track.
         case "getdecodername": return .string(host.decoderName)
         case "isminimized": return .boolean(hooks.applicationMinimizedRequested?() ?? false)
-        case "isvideo", "isvideofullscreen", "iskeydown":
+        case "isvideo": return .boolean(host.isVideo)
+        case "isvideofullscreen", "iskeydown":
             return .boolean(false)
         // A *component's* window, addressed by GUID. Winamp answers for the plugin windows it has
         // loaded; the only ones we have are the components we put in a holder, so the question is

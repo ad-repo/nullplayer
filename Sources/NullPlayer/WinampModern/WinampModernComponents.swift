@@ -155,6 +155,8 @@ struct WinampModernComponentHolder {
     let object: WasabiObject
     let surfaceID: WinampModernSurfaceID
     let frame: CGRect
+    /// What the holder's ancestors let show of it — the same clip the renderer paints it through.
+    var clip: CGRect = .infinite
 
     /// Legacy accessor for the real Winamp components already routed through this type. Hosted
     /// NullPlayer windows are not components, so they report `.other` here until their dedicated

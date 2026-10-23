@@ -1681,7 +1681,8 @@ final class WasabiSceneRenderer {
                let diagnostic = Self.unknownComponentDiagnostic(for: node.object) {
                 loadedSkin.runtime.record(diagnostic)
             }
-            return WinampModernComponentHolder(object: node.object, surfaceID: surfaceID, frame: node.frame)
+            return WinampModernComponentHolder(object: node.object, surfaceID: surfaceID, frame: node.frame,
+                                               clip: node.clip)
         }
     }
 

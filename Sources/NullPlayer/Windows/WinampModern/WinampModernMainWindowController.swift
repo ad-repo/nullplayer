@@ -1609,11 +1609,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         coordinator.showSurface(.video)
         // The surface is made by the view's own layout pass, and revealing the tab has only changed
         // the graph so far: without this the first film of a session finds no box to fill.
-        view.needsLayout = true
-        view.layoutSubtreeIfNeeded()
-        guard let surface = view.hostedVideoSurface else { return false }
-        surface.attachVideoOutput()
-        surface.updateOutputPlacement()
+        guard view.claimVideoSurface() != nil else { return false }
         // Key focus goes with the picture: off an embedded Library Browser that started the film,
         // where Return replays the row (M5), to the skin view, which hands the film its keys (M18).
         view.window?.makeFirstResponder(view)
@@ -1684,6 +1680,25 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         guard case .declaredContainer(let videoID) = surfaceCoordinator?.catalog.video else { return false }
         return videoID == id
     }
+
+    /// Move the film between the player and the skin's detached video window — the Video Player
+    /// menu item for such a skin, and its own Skin Windows entry. False when the skin has no detached
+    /// window. Not recorded: a video window remembered as open reopened empty at launch (B97).
+    func toggleVideoDetach() -> Bool {
+        guard let id = videoDetachContainerID,
+              let container = auxiliaryContainers.first(where: { $0.containerID == id }) else { return false }
+        setAuxiliaryWindow(id: id, visible: !container.window.isVisible)
+        return true
+    }
+
+    /// A skin's own video window when the picture's home is the player: Winamp Single GUI's
+    /// `Video` container, the detached view of the film its player panes show. Opening it detaches.
+    private var videoDetachContainerID: String? {
+        guard case .embedded = surfaceCoordinator?.catalog.video else { return nil }
+        return loadedSkin?.surfaceInventory.declaredContainers[.video]
+    }
+
+    private func isVideoDetachContainer(_ id: String) -> Bool { videoDetachContainerID == id }
 
     /// `VID_1X` / `VID_2X`: size the skin's video window so its **box** is the stream's own pixel
     /// size times `multiple`.
@@ -1789,14 +1804,15 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 container.view.layoutSubtreeIfNeeded()
                 container.view.hostedVisualizationSurface?.resumeRendering()
             }
-            if isVideoSurfaceContainer(id) {
-                container.view.needsLayout = true
-                container.view.layoutSubtreeIfNeeded()
-                container.view.hostedVideoSurface?.attachVideoOutput()
-                container.view.hostedVideoSurface?.updateOutputPlacement()
+            if isVideoSurfaceContainer(id) || isVideoDetachContainer(id) {
+                container.view.claimVideoSurface()
             }
         } else {
             container.window.orderOut(nil)
+            // Closing the detached window is the reattach: the film goes back into the player.
+            if isVideoDetachContainer(id), WindowManager.shared.currentVideoPlayerController?.currentTitle != nil {
+                _ = hostVideoOutputInPlayer()
+            }
         }
         container.view.setSceneVisible(visible)
         // A window that just opened is above (or below) whatever it is glued to; put the pair back in
@@ -2419,6 +2435,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // visibility bookkeeping and ensuring the video window still gets its picture parked on it.
         if let kind = routedSurfaceKind(ofContainer: container.containerID) {
             surfaceCoordinator?.toggleSurface(kind)
+            return true
+        }
+        // The detached video window moves the film as it opens and closes; that lives in one place.
+        if isVideoDetachContainer(container.containerID) {
+            _ = toggleVideoDetach()
             return true
         }
         if container.window.isVisible {

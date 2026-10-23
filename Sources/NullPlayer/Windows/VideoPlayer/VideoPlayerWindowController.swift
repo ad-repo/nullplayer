@@ -1074,6 +1074,7 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// `addChildWindow` keeps it glued to the skin window as that window moves, hides and closes.
     func hostOutputWindow(over host: NSView) {
         guard let window, let parent = host.window else { return }
+        parkedHost = host
         if frameBeforeHosting == nil { frameBeforeHosting = window.frame }
         if minSizeBeforeHosting == nil { minSizeBeforeHosting = window.minSize }
         videoPlayerView?.isEmbeddedInSkin = true
@@ -1100,7 +1101,9 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     func updateHostedOutputFrame(over host: NSView) {
         guard isVideoOutputHosted, let window, let parent = host.window else { return }
         let inParent = host.convert(host.bounds, to: nil)
-        window.setFrame(parent.convertToScreen(inParent), display: true)
+        let target = parent.convertToScreen(inParent)
+        guard window.frame != target else { return }
+        window.setFrame(target, display: true)
         #if DEBUG
         // The frame AppKit *granted*, not the one asked for. A window whose content carries required
         // Auto Layout constraints has a minimum size derived from them and silently refuses anything
@@ -1147,6 +1150,10 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
     /// Set while a parked picture is borrowed back for fullscreen, so exiting returns it.
     private var shouldReturnOutputToSkinAfterFullScreen = false
 
+    /// The box the picture was last parked over, so leaving fullscreen returns it to *that* box — a
+    /// film detached into a `.wal` skin's video window, not wherever the skin's routing points.
+    private weak var parkedHost: NSView?
+
     func windowDidExitFullScreen(_ notification: Notification) {
         guard shouldReturnOutputToSkinAfterFullScreen else { return }
         shouldReturnOutputToSkinAfterFullScreen = false
@@ -1156,6 +1163,8 @@ class VideoPlayerWindowController: NSWindowController, NSWindowDelegate {
             let manager = WindowManager.shared
             if manager.uiMode.controllerFamily == .wmp {
                 manager.mainWindowController?.updatePlaybackState()
+            } else if let host = self.parkedHost, host.window?.isVisible == true {
+                self.hostOutputWindow(over: host)
             } else {
                 manager.hostVideoOutputInWinampModernSkin()
             }
