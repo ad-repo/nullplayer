@@ -156,6 +156,7 @@ Art rendering and log suppression each have their own section below.
 | `--list-tracks` | Yes (optional `--artist`/`--album` filter) |
 | `--search-albums <query>` | Yes (`local`, `plex`, `subsonic`, `jellyfin`, `emby`) |
 | `--list-genres` | No (local library only) |
+| `--list-queue` | Yes, with `--radio <mode>`: prints the queue that radio mode would play (`--json` for an array) and exits |
 | `--list-playlists` | Yes |
 | `--list-stations` | No (optional `--folder` filter) |
 | `--list-devices` | No (5s discovery wait) |

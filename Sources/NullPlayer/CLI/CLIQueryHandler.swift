@@ -53,6 +53,11 @@ struct CLIQueryHandler {
             return
         }
 
+        if opts.listQueue {
+            try await listQueue(opts)
+            return
+        }
+
         // Source-dependent queries
         let source = opts.source ?? "local"
         try await CLISourceResolver.checkConnectivity(source: source)
@@ -404,6 +409,23 @@ struct CLIQueryHandler {
             }
         default:
             fputs("Error: --list-albums not supported for source '\(source)'\n", cliStderr)
+        }
+    }
+
+    /// Resolves `--radio` exactly as playback would and prints the queue instead of playing it.
+    private static func listQueue(_ opts: CLIOptions) async throws {
+        guard opts.radio != nil else {
+            throw CLISourceError.missingRequiredArg("--list-queue", "--radio <mode>")
+        }
+        guard case .tracks(let tracks) = try await CLISourceResolver.resolve(opts) else { return }
+        let rows = tracks.map { track -> String in
+            let album = track.album.map { " (\($0))" } ?? ""
+            return "\(track.artist ?? "Unknown") - \(track.title)\(album)"
+        }
+        if opts.json { CLIDisplay.printJSON(rows) }
+        else {
+            for (index, row) in rows.enumerated() { print("\(index + 1). \(row)") }
+            print("\n\(rows.count) track(s)")
         }
     }
 
