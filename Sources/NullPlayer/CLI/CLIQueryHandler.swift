@@ -417,7 +417,9 @@ struct CLIQueryHandler {
         guard opts.radio != nil else {
             throw CLISourceError.missingRequiredArg("--list-queue", "--radio <mode>")
         }
-        guard case .tracks(let tracks) = try await CLISourceResolver.resolve(opts) else { return }
+        guard case .tracks(let tracks) = try await CLISourceResolver.resolve(opts) else {
+            throw CLISourceError.noTracksFound("for --radio \(opts.radio ?? "")")
+        }
         let rows = tracks.map { track -> String in
             let album = track.album.map { " (\($0))" } ?? ""
             return "\(track.artist ?? "Unknown") - \(track.title)\(album)"

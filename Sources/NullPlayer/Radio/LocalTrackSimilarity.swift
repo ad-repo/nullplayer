@@ -4,10 +4,11 @@ import Foundation
 ///
 /// The local library has no server behind it to answer "what sounds like this?", so this scores
 /// what the tags can tell us: shared artist, overlapping genres, nearby release years, close
-/// tempo and key, and a shared grouping. Higher is more alike. The score is deterministic;
-/// `MediaLibrary.createLocalTrackRadio(from:)` adds a little randomness when it ranks, so the
+/// tempo and key, and a shared grouping. Higher is more alike. Build one per seed and call
+/// `rank` on each candidate; the seed's tags are normalized once, here, not per candidate.
+/// `MediaLibrary.createLocalTrackRadio(from:)` adds a little randomness when it sorts, so the
 /// same seed does not always produce the same queue.
-enum LocalTrackSimilarity {
+struct LocalTrackSimilarity {
 
     // MARK: - Weights
 
@@ -23,64 +24,73 @@ enum LocalTrackSimilarity {
     /// Tempo gaps beyond this fraction of the seed's tempo earn no tempo credit.
     static let bpmTolerance = 0.15
 
-    /// A track must score at least this to be considered "like" the seed. One shared artist or
+    /// A track must be at least this similar to count as "like" the seed. One shared artist or
     /// one fully shared genre clears it; a year match alone, even an exact one, does not.
     static let minimumScore = 2.0
 
-    // MARK: - Score
+    // MARK: - Seed
 
-    /// How alike the tags are, before the listener's taste is considered. Admission to a queue
-    /// is judged on this alone, so a rating or play count can reorder matches but never create one.
-    static func similarity(seed: LibraryTrack, candidate: LibraryTrack) -> Double {
+    private let artists: Set<String>
+    private let genres: Set<String>
+    private let year: Int?
+    private let bpm: Int?
+    private let key: String?
+    private let grouping: String?
+
+    init(seed: LibraryTrack) {
+        artists = Self.artistSet(seed)
+        genres = Self.genreTokens(seed.genre)
+        year = seed.year
+        bpm = seed.bpm
+        key = Self.normalizedKey(seed.musicalKey)
+        grouping = Self.normalizedText(seed.grouping)
+    }
+
+    // MARK: - Rank
+
+    /// The candidate's sort score, or nil when its tags are not alike enough to belong in the
+    /// seed's queue. Admission is judged on tag similarity alone: the listener's rating and play
+    /// count reorder the matches but can never create one.
+    func rank(_ candidate: LibraryTrack) -> Double? {
+        let alike = similarity(candidate)
+        guard alike >= Self.minimumScore else { return nil }
+        return alike + Self.preference(for: candidate)
+    }
+
+    /// How alike the tags are, before the listener's taste is considered.
+    func similarity(_ candidate: LibraryTrack) -> Double {
         var total = 0.0
 
-        if sharesArtist(seed, candidate) {
-            total += artistWeight
+        if !artists.isDisjoint(with: Self.artistSet(candidate)) {
+            total += Self.artistWeight
         }
 
-        total += genreWeight * genreOverlap(seed.genre, candidate.genre)
+        total += Self.genreWeight * Self.overlap(genres, Self.genreTokens(candidate.genre))
 
-        if let a = seed.year, let b = candidate.year, a > 0, b > 0 {
+        if let a = year, let b = candidate.year, a > 0, b > 0 {
             let gap = Double(abs(a - b))
-            total += yearWeight * max(0, 1 - gap / yearHorizon)
+            total += Self.yearWeight * max(0, 1 - gap / Self.yearHorizon)
         }
 
-        total += bpmWeight * tempoCloseness(seed.bpm, candidate.bpm)
+        total += Self.bpmWeight * Self.tempoCloseness(bpm, candidate.bpm)
 
-        if let a = normalizedKey(seed.musicalKey), let b = normalizedKey(candidate.musicalKey), a == b {
-            total += keyWeight
+        if let a = key, let b = Self.normalizedKey(candidate.musicalKey), a == b {
+            total += Self.keyWeight
         }
 
-        if let a = normalizedText(seed.grouping), let b = normalizedText(candidate.grouping), a == b {
-            total += groupingWeight
+        if let a = grouping, let b = Self.normalizedText(candidate.grouping), a == b {
+            total += Self.groupingWeight
         }
 
         return total
     }
 
-    /// Similarity plus the taste nudge; what a queue is ranked by.
-    static func score(seed: LibraryTrack, candidate: LibraryTrack) -> Double {
-        similarity(seed: seed, candidate: candidate) + preference(for: candidate)
-    }
-
     // MARK: - Signals
-
-    /// Same artist or album artist, ignoring case and surrounding whitespace.
-    static func sharesArtist(_ a: LibraryTrack, _ b: LibraryTrack) -> Bool {
-        let aNames = Set([a.artist, a.albumArtist].compactMap { normalizedText($0) })
-        let bNames = Set([b.artist, b.albumArtist].compactMap { normalizedText($0) })
-        return !aNames.isDisjoint(with: bNames)
-    }
 
     /// Jaccard overlap (0...1) of two genre tag strings. A tag such as "Rock; Blues" counts as
     /// the two genres Rock and Blues. Either side missing a genre scores 0.
     static func genreOverlap(_ a: String?, _ b: String?) -> Double {
-        let aSet = genreTokens(a)
-        let bSet = genreTokens(b)
-        guard !aSet.isEmpty, !bSet.isEmpty else { return 0 }
-        let shared = aSet.intersection(bSet).count
-        let union = aSet.union(bSet).count
-        return Double(shared) / Double(union)
+        overlap(genreTokens(a), genreTokens(b))
     }
 
     /// 1 for the same tempo, falling to 0 at `bpmTolerance` apart. Half and double time count as
@@ -106,6 +116,17 @@ enum LocalTrackSimilarity {
     }
 
     // MARK: - Normalizing
+
+    /// Every credited artist, split the way the library splits them ("feat." and list
+    /// separators), lowercased.
+    private static func artistSet(_ track: LibraryTrack) -> Set<String> {
+        Set(track.artistNames.compactMap { normalizedText($0) })
+    }
+
+    private static func overlap(_ a: Set<String>, _ b: Set<String>) -> Double {
+        guard !a.isEmpty, !b.isEmpty else { return 0 }
+        return Double(a.intersection(b).count) / Double(a.union(b).count)
+    }
 
     private static func genreTokens(_ genre: String?) -> Set<String> {
         guard let genre else { return [] }
