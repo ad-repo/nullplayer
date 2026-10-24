@@ -79,6 +79,13 @@ final class LocalTrackSimilarityTests: XCTestCase {
         XCTAssertEqual(LocalTrackSimilarity.score(seed: seed, candidate: distant), 0, accuracy: 0.0001)
     }
 
+    func testYearAloneStaysBelowTheMinimum() {
+        let seed = track("Seed", artist: "A", genre: "Rock", year: 1970)
+        let sameYear = track("Same Year", artist: "B", genre: "Jazz", year: 1970)
+        XCTAssertLessThan(LocalTrackSimilarity.score(seed: seed, candidate: sameYear),
+                          LocalTrackSimilarity.minimumScore)
+    }
+
     func testSameYearEarnsFullYearWeight() {
         let seed = track("Seed", year: 1970)
         let twin = track("Twin", year: 1970)

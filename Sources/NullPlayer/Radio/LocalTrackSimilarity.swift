@@ -13,7 +13,7 @@ enum LocalTrackSimilarity {
 
     static let artistWeight = 2.0
     static let genreWeight = 4.0
-    static let yearWeight = 2.0
+    static let yearWeight = 1.5
     static let bpmWeight = 1.5
     static let keyWeight = 0.75
     static let groupingWeight = 1.5
@@ -24,7 +24,7 @@ enum LocalTrackSimilarity {
     static let bpmTolerance = 0.15
 
     /// A track must score at least this to be considered "like" the seed. One shared artist or
-    /// one fully shared genre clears it; a lone nearby year does not.
+    /// one fully shared genre clears it; a year match alone, even an exact one, does not.
     static let minimumScore = 2.0
 
     // MARK: - Score
