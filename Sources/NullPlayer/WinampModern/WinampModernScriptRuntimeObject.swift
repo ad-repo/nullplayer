@@ -271,7 +271,10 @@ extension WinampModernScriptRuntime {
         // activation: fifty skins set it in `onScriptLoaded` (B192).
         // A changed write raises `onActivate` but not `onToggle`, which is the click's event: Moon
         // Groove's `EqPage.onToggle` drew its EQ page over the LCD from a load-time restore (B255).
+        // An `embed_xui` wrapper's activation is its button's: ClassicPro's `closeTab` deactivates
+        // every `cpro.tab` *group*, and kept on the group every tab ever clicked stayed lit.
         case "setactivated", "setchecked":
+            let object = embeddedControl(of: object) ?? object
             let wanted = arguments[0].truthy
             let activationChanged = (object.attributes["activated"] == "1") != wanted
             setActivated(object, wanted)
@@ -283,13 +286,14 @@ extension WinampModernScriptRuntime {
             }
             return .null
         case "setactivatednocallback":
-            setActivated(object, arguments[0].truthy)
+            setActivated(embeddedControl(of: object) ?? object, arguments[0].truthy)
             return .null
         // For a `cfgattrib`-bound control the stored preference **is** the activation — the button
         // keeps no second copy, which is why `toggleActivation` refuses these. Answering from the
         // `activated` attribute instead reported every such button as off forever, and mmd3's whole
         // crossfade/shuffle/repeat indicator set is `alpha = 255 * getActivated()` at load.
         case "getactivated", "ischecked":
+            let object = embeddedControl(of: object) ?? object
             if Self.configBinding(of: object) != nil { return .boolean(configValue(of: object)) }
             if let on = equalizerSwitchState(of: object) { return .boolean(on) }
             return .boolean(object.attributes["activated"] == "1")
@@ -605,9 +609,10 @@ extension WinampModernScriptRuntime {
             // Defix's detached visualizer is the measured case: its Reattach and Random buttons are
             // plain groups whose script answers a click with `leftClick()` on a ghosted
             // `cfgattrib` togglebutton, and with only `onLeftClick` dispatched the attribute never
-            // moved and neither button did anything.
+            // moved and neither button did anything. The flip comes first, as the mouse's does.
+            if !Self.togglesAfterRelease { _ = toggleActivation(of: object) }
             _ = try dispatch(object: object, event: "onleftclick")
-            _ = toggleActivation(of: object)
+            if Self.togglesAfterRelease { _ = toggleActivation(of: object) }
             let action = object.attributes["action"]
             hooks.actionRequested?(action ?? "", object.attributes["param"])
             if action == nil { _ = toggleConfigAttribute(of: object) }
@@ -908,6 +913,9 @@ extension WinampModernScriptRuntime {
     /// `WINAMP_MODERN_SETACTIVATED_TOGGLE=1` — A/B: `setActivated` raises `onToggle` again (B255).
     static let setActivatedRaisesToggle =
         ProcessInfo.processInfo.environment["WINAMP_MODERN_SETACTIVATED_TOGGLE"] != nil
+    /// Kill switch: a click flips its togglebutton after the script hears `onLeftButtonUp`, not before.
+    static let togglesAfterRelease =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_TOGGLE_AFTER_RELEASE"] != nil
     static let snapAdjustEdges = ["left", "top", "right", "bottom"]
 
     /// Where a script's `snapAdjust()` stores a layout's snap margin on `edge`.

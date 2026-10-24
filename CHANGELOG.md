@@ -155,6 +155,10 @@
   the frame and the list.
 - **A Modern skin's paragraph that is taller than its box starts at its first line** instead of
   being cut at the top (H2O Liquid's Configuration window).
+- **ClassicPro tabs light only the one you chose**, where every tab you had clicked stayed lit
+  (CPro iPhone 3G and every ClassicPro skin with the LIB/PLE/VID tab strip). Defix and Big Bento
+  show their current tab at startup, Big Bento Windows 10 with its icon, and Azenis² shows its
+  selected EQ mode.
 
 ## 0.33.0
 

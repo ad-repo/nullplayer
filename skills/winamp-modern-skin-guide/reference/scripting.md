@@ -609,10 +609,19 @@ broken on its own, and each fix looked like it had done nothing until the next o
   so a disc drawn on the wrapper covered Pause's ‖ glyph and still took the click. Its
   `Deimos:NStatesGlowButton` repeat/shuffle/crossfade lamps drew nothing at all, because
   `image="player.button.repeat"` is a state prefix that only means something on the
-  `NStatesButton`. **All or nothing:** an embedded button that states its own `image` keeps its
-  artwork whole, and its wrapper draws as before. Big Bento's tab mousetrap is `image="wtf"` under
-  a wrapper that draws the tab icon. Corpus effect: Ebonite's and iNTELLI_design's window-mode
-  buttons now draw at their bitmap's own size, clipped by the wrapper, instead of squashed into it.
+  `NStatesButton`. **The instance wins, all or nothing:** a wrapper that states `image` replaces the
+  embedded button's own artwork set, as Wasabi sets an instance's params after the groupdef's. Big
+  Bento's tab mousetrap is a placeholder `image="wtf"`; left on the wrapper, the tab icon drew under
+  the active-tab layer once a tab could show as active (CPro_iPhone3gv2's pass, 2026-10-24: gold+silver
+  moved only the two Win10 Big Bento variants, whose icons now sit 1px in, on the mousetrap). A/B:
+  `WINAMP_MODERN_EMBED_OWN_IMAGE=1`. Corpus effect of the rule itself: Ebonite's and iNTELLI_design's
+  window-mode buttons draw at their bitmap's own size, clipped by the wrapper, instead of squashed into it.
+- **A wrapper's activation is its button's.** `setActivated`, `setChecked`,
+  `setActivatedNoCallback`, `getActivated` and `isChecked` called on an `embed_xui` wrapper act on the
+  control it embeds (`embeddedControl(of:)`). ClassicPro's `closeTab` clears every tab by
+  `setActivated(0)` on each `cpro.tab` *group*; kept on the group, every tab ever clicked stayed lit
+  (CPro_iPhone3gv2, every CentroSUI skin). Corpus effect: Defix and Big Bento draw their current tab
+  as active at load, and JRS's `basic.scroll` option reads the state its script set.
 - **A button's label is drawn once, by the embedded button** (B217). The wrapper's `text=` crosses
   onto an embedded `button`/`togglebutton` that declares none, bare or `Wasabi:` (B237), so an
   embedded `Wasabi:Button` takes it too — krazyPlayer's and Vortex's `SC:HyperLinkButton` link labels
@@ -634,13 +643,22 @@ Two related rules that fell out of the same investigation:
 
 #### `leftClick()` is a press, not just an event
 
-A script's `obj.leftClick()` does what the mouse does to that object (B71): `onLeftClick`, then a
-togglebutton flips (`toggleActivation`), then the object's `action=`, and — when it has no action — a
-`cfgattrib` control writes its attribute (`toggleConfigAttribute`). That is the order
-`WinampModernMainView.performAction` runs for a real click; keep the two in step. Skins use it to
+A script's `obj.leftClick()` does what the mouse does to that object (B71): a togglebutton flips
+(`toggleActivation`), then `onLeftClick`, then the object's `action=`, and — when it has no action — a
+`cfgattrib` control writes its attribute (`toggleConfigAttribute`). That is the order a real click
+runs in `WinampModernMainView`; keep the two in step. Skins use it to
 route a click through an invisible proxy: Defix's detached visualizer answers Reattach and Random
 with `leftClick()` on a ghosted `cfgattrib` togglebutton (`vis.DTTB`, `vis.random.active`), and while
 `leftClick` dispatched only `onLeftClick` the attribute never moved and both buttons were dead.
+
+#### A click flips its togglebutton before the script hears the release
+
+Wasabi's `ButtonWnd` flips a togglebutton (or selects a radio) in `onLeftPush`, before the release
+reaches the script's `onLeftButtonUp`/`onLeftClick`, so a handler's own `setActivated` has the last
+word. ClassicPro's `CproTabButton` relies on it: its `onLeftButtonUp` clears every tab and then
+`setActivated(1)` on itself, and flipped afterwards the tab just chosen went dark. Azenis² selects its
+EQ mode the same way through `leftClick()` at load. The view, the render dump's `CLICK` and the
+interaction sweep all flip before `onleftbuttonup`; A/B: `WINAMP_MODERN_TOGGLE_AFTER_RELEASE=1`.
 
 #### Scrolling: `scrollToPercent` is a viewport offset, not a layout change
 

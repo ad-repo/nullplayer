@@ -93,16 +93,17 @@ final class WinampModernPhase83Tests: XCTestCase {
         XCTAssertNil(inner.attributes["x"], "the child is fitparent; it must not be placed twice")
     }
 
-    /// A button that states its own `image` keeps its artwork whole, and the wrapper keeps drawing
-    /// its own: Big Bento's tab mousetrap is `image="wtf"` under a wrapper that draws the tab icon.
-    func testAButtonWithItsOwnImageLeavesTheWrapperDrawing() throws {
+    /// The instance's artwork replaces a placeholder the groupdef gave the button, whole: Big Bento's
+    /// tab mousetrap is `image="wtf"`, and with the wrapper drawing the icon, the active-tab layer
+    /// covered it (CPro_iPhone3gv2's intake pass, which first let a tab show as active).
+    func testTheWrappersArtworkReplacesTheButtonsPlaceholder() throws {
         let loaded = try makeSkin(xml: Self.embeddedButtonWithOwnImage)
         let wrapper = try XCTUnwrap(findObject(in: loaded, id: "tab"))
         let inner = try XCTUnwrap(wrapper.children.first { $0.xmlID == "trap" })
 
-        XCTAssertEqual(inner.attributes["image"], "wtf")
-        XCTAssertNil(inner.attributes["hoverimage"], "no half of the wrapper's artwork crosses")
-        XCTAssertFalse(WasabiEmbeddedXUI.wrapsButton(wrapper))
+        XCTAssertEqual(inner.attributes["image"], "tab.icon")
+        XCTAssertEqual(inner.attributes["hoverimage"], "tab.icon.hover", "the whole set crosses")
+        XCTAssertTrue(WasabiEmbeddedXUI.wrapsButton(wrapper), "so the wrapper does not draw it too")
     }
 
     /// A control that states its own command keeps it — the wrapper does not overwrite the inside.

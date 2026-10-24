@@ -84,12 +84,18 @@ enum WasabiEmbeddedXUI {
                 return embedded.tag.isStandard(anyOf: [.button, .toggleButton])
                     && embedded.attributes["text"] == nil && !(attributes["text"] ?? "").isEmpty
             case .buttonArtwork:
-                // All or nothing: a button that states its own `image` keeps its own artwork whole,
-                // rather than gaining the wrapper's hover and press frames over it.
-                return embedded.tag.is(anyOf: WasabiKind.buttons)
-                    && embedded.attributes["image"] == nil && attributes["image"] != nil
+                // The instance's artwork wins over a placeholder the groupdef gave the button, as
+                // Wasabi sets an instance's params after the groupdef's: Big Bento's tab mousetrap
+                // states `image="wtf"`, and drawn on the wrapper its icon sat under the active-tab
+                // layer the moment a tab could show as active. All or nothing, so a button never
+                // mixes its own frames with the wrapper's.
+                return embedded.tag.is(anyOf: WasabiKind.buttons) && attributes["image"] != nil
+                    && (embedded.attributes["image"] == nil || !WasabiEmbeddedXUI.keepsOwnButtonImage)
             }
         }
+
+        /// Whether the wrapper's value replaces one the embedded object already states.
+        var overrides: Bool { self == .buttonArtwork }
     }
 
     /// The embedded widget's tag when `object` is an `embed_xui` wrapper, else nil.
@@ -99,6 +105,9 @@ enum WasabiEmbeddedXUI {
     /// keeps its box — its children are laid out and clipped in it — but the button inside draws
     /// the artwork and takes the press, so the wrapper does neither.
     static func wrapsButton(_ object: WasabiObject) -> Bool { object.attributes[buttonMarkerKey] == "1" }
+
+    /// Kill switch: an embedded button that states its own `image` keeps it, and the wrapper draws its own.
+    static let keepsOwnButtonImage = ProcessInfo.processInfo.environment["WINAMP_MODERN_EMBED_OWN_IMAGE"] != nil
 
     private static let markerKey = "nullplayer.embedxui"
     private static let buttonMarkerKey = "nullplayer.embedbutton"
@@ -112,14 +121,12 @@ enum WasabiEmbeddedXUI {
         var structureCrossed = false
         for group in KeyGroup.allCases where group.applies(to: embedded, wrapper: attributes) {
             var forwarded = false
-            for key in group.keys where embedded.attributes[key] == nil {
+            for key in group.keys where group.overrides || embedded.attributes[key] == nil {
                 if let value = attributes[key] {
                     _ = embedded.setAttribute(key, value: value)
                     forwarded = true
                 }
             }
-            // Only artwork that actually moved takes the drawing with it: Big Bento's tab mousetrap
-            // states its own placeholder `image="wtf"`, and its wrapper draws the tab icon as before.
             if group == .buttonArtwork { _ = wrapper.setAttribute(buttonMarkerKey, value: "1") }
             if group == .buttonLabel, embedded.attributes["align"] == nil {
                 _ = embedded.setAttribute("align", value: attributes["align"] ?? "center")

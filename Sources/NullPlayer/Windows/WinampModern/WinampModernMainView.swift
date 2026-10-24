@@ -2159,10 +2159,17 @@ final class WinampModernMainView: NSView {
         // the object that was pressed, not to whatever is under the mouse when it stops.
         if let pressedObject { noteFinalPosition(on: pressedObject) }
         if let pressedObject, !moved {
+            let clicked = releasedOver === pressedObject
+            // Wasabi's `ButtonWnd` flips a togglebutton in `onLeftPush`, before the script hears the
+            // release, so a handler's own `setActivated` has the last word. ClassicPro's tab button
+            // clears every tab and then `setActivated(1)` on itself from `onLeftButtonUp`; flipped
+            // afterwards, the tab just chosen went dark.
+            let flip = clicked && !WinampModernScriptRuntime.togglesAfterRelease
+                ? flipActivation(of: pressedObject) : nil
             dispatch(object: pressedObject, event: "onleftbuttonup", point: point)
-            if releasedOver === pressedObject {
+            if clicked {
                 _ = try? scripts.dispatch(object: pressedObject, event: "onleftclick")
-                performAction(for: pressedObject)
+                performAction(for: pressedObject, flip: flip)
                 // The *second* click carries its own command in Wasabi, and for most objects that
                 // carry one it is the only command they have: a titlebar mousetrap's
                 // `dblclickaction="SWITCH;shade"`, a song title's `TRACKINFO`. It runs after the
@@ -2902,24 +2909,31 @@ final class WinampModernMainView: NSView {
                                   arguments: [.integer(position)])
     }
 
-    private func performAction(for object: WasabiObject) {
+    private enum ActivationFlip { case none, toggled, radio }
+
+    /// A `<Wasabi:CheckBox radioid="…">` is a radio, not a toggle: the clicked member goes on and its
+    /// set goes off, and clicking the one already on changes nothing — so it is tried before the
+    /// toggle, which would otherwise flip it back off. A togglebutton flips itself, then tells the
+    /// skin — the whole of some skins' UI hangs off that notification (multipass's bottom drawer
+    /// opens from `onToggle` and nowhere else).
+    private func flipActivation(of object: WasabiObject) -> ActivationFlip {
+        if scripts.selectRadioMember(object) { return .radio }
+        return scripts.toggleActivation(of: object) ? .toggled : .none
+    }
+
+    /// `flip` is the activation change the release already made, or nil to make it here.
+    private func performAction(for object: WasabiObject, flip: ActivationFlip? = nil) {
         // A Wasabi standard drop-down opens its list; nothing else this method does applies to it
         // (B66).
         if WasabiFormWidgets.kind(of: object) == .dropDownList {
             presentDropDownList(object)
             return
         }
-        // A `<Wasabi:CheckBox radioid="…">` is a radio, not a toggle: the clicked member goes on and
-        // its set goes off, and clicking the one already on changes nothing. Before the toggle below,
-        // which would otherwise flip it back off.
-        if scripts.selectRadioMember(object) {
-            needsDisplay = true
-            return
-        }
-        // A togglebutton flips itself first, then tells the skin — the whole of some skins' UI hangs
-        // off that notification (multipass's bottom drawer opens from `onToggle` and nowhere else).
-        // It runs alongside whatever `action=` the button also carries, as it does in Wasabi.
-        if scripts.toggleActivation(of: object) { needsDisplay = true }
+        // The flip runs alongside whatever `action=` the button also carries, as it does in Wasabi;
+        // a radio carries none.
+        let flip = flip ?? flipActivation(of: object)
+        if flip != .none { needsDisplay = true }
+        if flip == .radio { return }
         let action = object.attributes["action"]
         let parameter = object.attributes["param"]
         // The object comes with the action now: `action_target=` is an attribute of the *button*, and

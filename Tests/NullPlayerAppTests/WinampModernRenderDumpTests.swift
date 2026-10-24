@@ -1129,6 +1129,24 @@ final class WinampModernRenderDumpTests: XCTestCase {
                             print("CLICK chain: \(chain.joined(separator: " -> "))")
                             runtime.dispatchObserver = nil
                         }
+                        // The view's own activation change, made where the view makes it: before
+                        // `onleftbuttonup` (`WinampModernMainView.mouseUp`), or after every event
+                        // when none is a release. A `radioid` check box is a **radio**, answered
+                        // instead of the toggle (B14 live QA, 2026-08-29); a togglebutton's
+                        // `onToggle` can carry a whole drawer.
+                        var flipped = false
+                        func flip() {
+                            flipped = true
+                            guard let target else { return }
+                            if runtime.selectRadioMember(target) {
+                                print("CLICK radio \(target.xmlID ?? "-") "
+                                      + "set=\(WasabiFormWidgets.radioIdentifier(of: target) ?? "-") "
+                                      + "activated=\(target.attributes["activated"] ?? "0")")
+                            } else if runtime.toggleActivation(of: target) {
+                                print("CLICK toggled \(target.xmlID ?? "-") "
+                                      + "activated=\(target.attributes["activated"] ?? "0")")
+                            }
+                        }
                         if let target {
                             // `onleftbuttondblclk` is included because the view sends it (on
                             // `clickCount == 2`) between the down and the up, and skins put real
@@ -1163,6 +1181,8 @@ final class WinampModernRenderDumpTests: XCTestCase {
                             let known = allEvents + hoverEvents
                             for event in (requested.isEmpty ? allEvents
                                           : requested.filter { known.contains($0) }) {
+                                if event == "onleftbuttonup", !flipped,
+                                   !WinampModernScriptRuntime.togglesAfterRelease { flip() }
                                 // The button events carry the click's x/y, exactly as the view sends
                                 // them: a handler that pops two arguments off an empty stack fails
                                 // with an underflow that belongs to the harness, not the skin.
@@ -1203,24 +1223,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
                                 print("CLICK   \(event) -> \(handled)")
                             }
                         }
-                        // A `radioid` check box is a **radio**, and the view answers it *before* the
-                        // toggle below and returns — so a probe that only toggled was reporting the
-                        // wrong route for every radio in the corpus, and reported one that works
-                        // (B14 live QA, 2026-08-29). Mirrors `performAction(for:)`'s order exactly.
-                        var claimedByRadio = false
-                        if let target, runtime.selectRadioMember(target) {
-                            claimedByRadio = true
-                            print("CLICK radio \(target.xmlID ?? "-") "
-                                  + "set=\(WasabiFormWidgets.radioIdentifier(of: target) ?? "-") "
-                                  + "activated=\(target.attributes["activated"] ?? "0")")
-                        }
-                        // A togglebutton's own state change is the view's job too, and a skin can put
-                        // its whole drawer behind the `onToggle` that follows it. Mirrored here for
-                        // the same reason the `cfgattrib` step below is.
-                        if let target, !claimedByRadio, runtime.toggleActivation(of: target) {
-                            print("CLICK toggled \(target.xmlID ?? "-") "
-                                  + "activated=\(target.attributes["activated"] ?? "0")")
-                        }
+                        if !flipped { flip() }
                         // The object's **own** `action=`, decoded the way the view decodes it.
                         // Every line above reports what the *scripts* did with a click; a plain
                         // toolbar button has no script at all — its whole behaviour is this one
