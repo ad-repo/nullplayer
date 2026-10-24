@@ -20,7 +20,7 @@ Winamp_Portrait__WMP12_1.wal	6be7b78c547a5079aa4311157f43af7b6cff8c2bc5deee17c78
 RazorEdge_V1.wal	6c0c71a80a0e922d432000cede9c6b1e864e1e4c4a02a2e627a6c09396a1c185	headless	2026-10-22	-	headless clean; no live pass
 Moonkore.wal	ba998811a2d7b88ec540362166ff1bfc7a19763dfca6b2376e3bf5010c165d13	headless	2026-10-22	-	headless clean (LCD absent at clock 0 is H); two controls reachable after 9c2ab6cb; no live pass
 The_Official_YoYoBoy_Skin.wal	065064dc71d29b7ed443f16ba97280f34ab144d122b201718df821021f942f03	headless	2026-10-22	-	headless clean (:componenttitle is H); no live pass
-CPro_iPhone3gv2.wal	30899ac2ef28a96e2a5a9378f68a5d271db58c48ec2bfdac94678e42a030d3cc	headless	2026-10-24	-	Phase 5: next About page blank, main.shadow tiled 2x2 (unmeasured); notifier needs a live look; tab strip stuck-lit fixed 2026-10-24
+CPro_iPhone3gv2.wal	30899ac2ef28a96e2a5a9378f68a5d271db58c48ec2bfdac94678e42a030d3cc	live	2026-10-24	B262(open),B263(open)	headless + live pass 2026-10-24: tabs stuck lit and 2x2 shadow fixed; About blank is the skin (transparent about.png, white credits on host chrome); notifier works bar a top strip (B262)
 Slimline_XP_final.wal	3b9ee38ccd389a2b59ea30edc78d8a7daad3ef48073546bc5fd6bd75737e80eb	headless	2026-10-22	-	headless clean; no live pass
 EMP2.wal	d7718cbc583aafb4b39e5144add30e75948b5336ca7b7ddf9a8035c1ea4eba9c	accepted	2026-10-23	B260	user accepted 2026-10-23 without a recorded pass; 4bebd3b4 library opens at authored width
 MetAlchemy_III_Wa3.wal	f7345453b626256107c7f57d1571dea66ad448ffd25e5d40f158818ebafd944b	accepted	2026-10-23	B254	user accepted 2026-10-23 without a recorded pass; 9c2ab6cb playlist notify; 57bc1511 height cut-off

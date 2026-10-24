@@ -497,6 +497,16 @@ Shadows (Every Family)*). Trace: `NP_SKIN_SHADOW_TRACE=1` (`reference/harness.md
   top/bottom/left/right/center strips. Tiles are blitted 1:1 with interpolation off, or the resampled
   edges leave a visible seam grid.
 
+#### A grid whose edges overfill it clips them, never squashes them (2026-10-24)
+
+When a `<grid>`'s two edge pieces on one axis are together wider (or taller) than the grid, they
+still split the box between them, but each is drawn at its own size, anchored to its own side and
+clipped to its share (`drawNineSlice`), as Wasabi draws it. CPro_iPhone3gv2's `main.shadow` gives all
+nine slots the whole 399x741 shadow inside a 399x741 window: squashed into halves it drew as four
+phones, clipped the quadrants add up to one. Gold+silver otherwise moved only small overfull edges
+by a few pixels (Defix's tab strip frame, Panther's playlist buttons and URL pill, Nullsoft 2000's
+shade time box). A/B: `WINAMP_MODERN_GRID_SQUASH_EDGES=1`.
+
 #### Abutting pieces share a pixel edge (B80)
 
 Every bitmap and tiled layer is drawn to a rect whose edges have been rounded to the nearest
