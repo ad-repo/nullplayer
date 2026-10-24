@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### New features
+
+- **Track Radio for the local library** — right-click a local track and choose **Start Track Radio**
+  to queue tracks like it, scored from the tags (artist, genre, year, tempo, key, grouping) with
+  no audio analysis. The CLI gains `--source local --radio track|library|genre|decade|artist` and
+  `--list-queue`, which prints the queue a `--radio` mode would play without playing it.
+
 ## 0.33.1
 
 ### New features

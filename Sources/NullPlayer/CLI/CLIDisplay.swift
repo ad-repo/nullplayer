@@ -162,6 +162,7 @@ class CLIDisplay {
             --list-artists              List artists (requires --source)
             --list-albums               List albums (optional --artist filter)
             --list-tracks               List tracks (optional --artist/--album filter)
+            --list-queue                List the tracks a --radio mode would queue, without playing
             --search-albums <query>     List the albums a search finds, as the
                                         Library Browser's Search tab shows them
             --list-genres               List genres (local library only)
