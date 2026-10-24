@@ -2698,8 +2698,7 @@ final class WasabiSceneRenderer {
         let maxOffset = max(0, items.count - visible)
         let offset = min(max(0, WasabiGuiList.scrollOffset(of: object)), maxOffset)
         let selected = Set(WasabiGuiList.selection(of: object))
-        let pointSize = CGFloat(WasabiTextMetrics.pixelHeight(of: object)
-                                * WasabiTextMetrics.pixelHeightToPointSize)
+        let pointSize = WasabiTextMetrics.pointSize(of: object)
         let showsIcons = WasabiGuiList.showsIcons(object)
         let columnWidths = (object.attributes["columnwidths"] ?? "")
             .split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }

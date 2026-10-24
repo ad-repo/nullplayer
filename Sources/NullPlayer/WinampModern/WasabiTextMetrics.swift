@@ -606,8 +606,13 @@ final class WasabiTextMetrics {
     /// 17px tall — Arial's cap height at a 24px em — and `fontsize="10"` matches an 8px em, both at
     /// the same 0.8 ratio. Taken as a point size, every string is a quarter too big and overflows the
     /// box the skin drew for it.
+    ///
+    /// **A whole pixel, rounded down** — GDI takes an integer height. Both calibration points are
+    /// whole either way; Winamp Portrait's `fontsize="16"` tab labels are one string spaced with
+    /// blanks, and only a 12px em (not 12.8) lands each label in its tab rather than "Collapse" off
+    /// the window's edge.
     static func pointSize(of object: WasabiObject) -> CGFloat {
-        CGFloat(pixelHeight(of: object) * pixelHeightToPointSize)
+        CGFloat(max(1, (pixelHeight(of: object) * pixelHeightToPointSize).rounded(.down)))
     }
 
 
