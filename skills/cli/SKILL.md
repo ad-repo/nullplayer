@@ -303,7 +303,7 @@ This pairs with the connectivity fix: `checkConnectivity` now `await`s the backg
 | `favorites` | — | Jellyfin, Emby only |
 | `artist` | `--artist <name>` | All |
 | `album` | `--artist <name> --album <name>` | All |
-| `track` | `--track <name>` or `--search <name>` | All (local: seed-based similarity, optional `--artist` to disambiguate) |
+| `track` | `--track <name>` or `--search <name>` | All (local: seed-based similarity; optional `--artist` and `--album` disambiguate, an ambiguous title fails listing candidates) |
 
 **Plex param differences:** `createDecadeRadio(startYear:endYear:)` — not `start:end:`.
 **Subsonic/Jellyfin/Emby:** `createDecadeRadio(start:end:)`.

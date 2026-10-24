@@ -1,9 +1,9 @@
 import XCTest
 @testable import NullPlayer
 
-/// Tests for the tag-based scoring behind local Track Radio, and for the queue it builds. The
-/// scoring is pure and deterministic; the randomness lives in
-/// `MediaLibrary.createLocalTrackRadio(from:)`.
+/// Tests for the tag-based scoring and ranking behind local Track Radio. They never touch the
+/// library or radio-history singletons, which open the user's real databases.
+/// Only `ranked` is random, by less than `jitter`, so order tests use larger score gaps.
 final class LocalTrackSimilarityTests: XCTestCase {
 
     /// Tag similarity of `candidate` to `seed`, before taste.
@@ -154,41 +154,30 @@ final class LocalTrackSimilarityTests: XCTestCase {
                        try XCTUnwrap(rank(seed, track("Absurd", artist: "A", playCount: 5_000))), accuracy: 0.0001)
     }
 
-    // MARK: - The queue
+    // MARK: - Ranking
 
-    func testQueueStartsWithSeedOnceAndKeepsOnlyAlikeTracks() {
+    private func ranked(_ seed: LibraryTrack, _ candidates: [LibraryTrack]) -> [String] {
+        LocalTrackSimilarity(seed: seed).ranked(candidates).map(\.title)
+    }
+
+    func testRankedLeavesOutTheSeedAndTracksThatAreNotAlike() {
         let seed = track("Seed", artist: "A", genre: "Rock")
         let alike = track("Alike", artist: "B", genre: "Rock")
         let stranger = track("Stranger", artist: "C", genre: "Jazz")
-        let queue = MediaLibrary.shared.createLocalTrackRadio(from: seed, among: [alike, seed, stranger],
-                                                              limit: 10, maxPerArtist: 0)
-        XCTAssertEqual(queue.map(\.title), ["Seed", "Alike"])
+        XCTAssertEqual(ranked(seed, [alike, seed, stranger]), ["Alike"])
     }
 
-    func testQueueAppliesThePerArtistCap() {
+    func testRankedPutsCloserMatchesFirst() {
+        // Same artist + genre scores 6.0; genre alone scores 4.0. The gap is larger than
+        // `jitter`, so the order is the same on every run.
         let seed = track("Seed", artist: "A", genre: "Rock")
-        let crowd = (1...5).map { track("Crowd \($0)", artist: "B", genre: "Rock") }
-        let other = track("Other", artist: "C", genre: "Rock")
-        let queue = MediaLibrary.shared.createLocalTrackRadio(from: seed, among: crowd + [other],
-                                                              limit: 20, maxPerArtist: 2)
-        XCTAssertEqual(queue.first?.title, "Seed")
-        XCTAssertEqual(queue.filter { $0.artist == "B" }.count, 2)
-        XCTAssertTrue(queue.contains { $0.title == "Other" })
+        let weaker = track("Weaker", artist: "B", genre: "Rock")
+        let closer = track("Closer", artist: "A", genre: "Rock")
+        XCTAssertEqual(ranked(seed, [weaker, closer]), ["Closer", "Weaker"])
     }
 
-    func testQueueStopsAtTheLimit() {
+    func testRankedIsEmptyWhenNothingIsAlike() {
         let seed = track("Seed", artist: "A", genre: "Rock")
-        let others = (1...8).map { track("Other \($0)", artist: "Band \($0)", genre: "Rock") }
-        let queue = MediaLibrary.shared.createLocalTrackRadio(from: seed, among: others,
-                                                              limit: 4, maxPerArtist: 0)
-        XCTAssertEqual(queue.count, 4)
-        XCTAssertEqual(queue.first?.title, "Seed")
-    }
-
-    func testSeedWithNoMatchesYieldsJustTheSeed() {
-        let seed = track("Seed", artist: "A", genre: "Rock")
-        let queue = MediaLibrary.shared.createLocalTrackRadio(from: seed, among: [track("Else", artist: "B", genre: "Jazz")],
-                                                              limit: 10, maxPerArtist: 0)
-        XCTAssertEqual(queue.map(\.title), ["Seed"])
+        XCTAssertEqual(ranked(seed, [track("Other", artist: "B", genre: "Jazz")]), [])
     }
 }

@@ -2723,23 +2723,13 @@ class MediaLibrary {
 
     /// Tracks like `seed`, with the seed first and the closest matches after it.
     ///
-    /// Ranks every other track in `library` (the whole library by default) with
-    /// `LocalTrackSimilarity`, adds a little randomness so the same seed does not always produce
-    /// the same queue, then applies the radio history filter and the per-artist variety cap as
-    /// the other local radios do. A seed whose tags match nothing yields just the seed.
-    func createLocalTrackRadio(from seed: LibraryTrack,
-                               among library: [LibraryTrack]? = nil,
-                               limit: Int = RadioPlaybackOptions.playlistLength,
-                               maxPerArtist: Int = RadioPlaybackOptions.maxTracksPerArtist) -> [Track] {
-        let scorer = LocalTrackSimilarity(seed: seed)
-        let ranked = (library ?? tracksSnapshot)
-            .filter { $0.id != seed.id }
-            .compactMap { candidate in
-                scorer.rank(candidate).map { (track: candidate, rank: $0 + Double.random(in: 0..<0.75)) }
-            }
-            .sorted { $0.rank > $1.rank }
-        let historyFiltered = LocalRadioHistory.shared.filterOutHistoryTracks(ranked.map { $0.track.toTrack() })
-        return filterLocalForArtistVariety([seed.toTrack()] + historyFiltered, limit: limit, maxPerArtist: maxPerArtist)
+    /// Ranks the rest of the library with `LocalTrackSimilarity`, then applies the radio history
+    /// filter and the per-artist variety cap as the other local radios do. A seed whose tags
+    /// match nothing yields just the seed.
+    func createLocalTrackRadio(from seed: LibraryTrack, limit: Int = RadioPlaybackOptions.playlistLength) -> [Track] {
+        let ranked = LocalTrackSimilarity(seed: seed).ranked(tracksSnapshot).map { $0.toTrack() }
+        let historyFiltered = LocalRadioHistory.shared.filterOutHistoryTracks(ranked)
+        return filterLocalForArtistVariety([seed.toTrack()] + historyFiltered, limit: limit)
     }
 
     private func filterLocalForArtistVariety(_ tracks: [Track], limit: Int, maxPerArtist: Int = RadioPlaybackOptions.maxTracksPerArtist) -> [Track] {

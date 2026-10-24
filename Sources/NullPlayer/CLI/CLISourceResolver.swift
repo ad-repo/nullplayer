@@ -822,24 +822,31 @@ struct CLISourceResolver {
         }
     }
 
-    /// The library track a typed title (and optional artist) names. Curly and straight
+    /// The library track a typed title (and optional artist and album) names. Curly and straight
     /// apostrophes are treated alike.
-    private static func resolveLocalSeed(title: String, artist: String?) throws -> LibraryTrack {
+    private static func resolveLocalSeed(title: String, artist: String?, album: String?) throws -> LibraryTrack {
         func fold(_ text: String) -> String {
             text.replacingOccurrences(of: "\u{2019}", with: "'")
                 .replacingOccurrences(of: "\u{2018}", with: "'")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        let wantedArtist = artist.map(fold)
+        let wantedArtist = artist.map(fold).flatMap { $0.isEmpty ? nil : $0 }
+        let wantedAlbum = album.map(fold).flatMap { $0.isEmpty ? nil : $0 }
         let pool = MediaLibrary.shared.tracksSnapshot.filter { track in
-            guard let wantedArtist, !wantedArtist.isEmpty else { return true }
-            return track.artistNames.contains { fold($0).localizedCaseInsensitiveCompare(wantedArtist) == .orderedSame }
+            if let wantedArtist,
+               !track.artistNames.contains(where: { fold($0).localizedCaseInsensitiveCompare(wantedArtist) == .orderedSame }) {
+                return false
+            }
+            if let wantedAlbum, fold(track.album ?? "").localizedCaseInsensitiveCompare(wantedAlbum) != .orderedSame {
+                return false
+            }
+            return true
         }
         return try TitleMatch.exactOrContains(
             pool,
             query: fold(title),
             title: { fold($0.title) },
-            candidateDescription: { "\($0.artist ?? "Unknown") - \($0.title)" }
+            candidateDescription: { "\($0.artist ?? "Unknown") - \($0.title)" + ($0.album.map { " (\($0))" } ?? "") }
         )
     }
 
@@ -865,9 +872,9 @@ struct CLISourceResolver {
             return library.createLocalArtistRadio(artist: artist)
         case "track":
             guard let trackName = opts.track ?? opts.search else {
-                throw CLISourceError.missingRequiredArg("--radio track", "--track <name> [--artist <name>]")
+                throw CLISourceError.missingRequiredArg("--radio track", "--track <name> [--artist <name>] [--album <name>]")
             }
-            let seed = try resolveLocalSeed(title: trackName, artist: opts.artist)
+            let seed = try resolveLocalSeed(title: trackName, artist: opts.artist, album: opts.album)
             return library.createLocalTrackRadio(from: seed)
         default:
             throw CLISourceError.invalidRadioMode(mode, "local",

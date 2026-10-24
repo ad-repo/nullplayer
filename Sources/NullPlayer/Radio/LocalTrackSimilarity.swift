@@ -5,9 +5,9 @@ import Foundation
 /// The local library has no server behind it to answer "what sounds like this?", so this scores
 /// what the tags can tell us: shared artist, overlapping genres, nearby release years, close
 /// tempo and key, and a shared grouping. Higher is more alike. Build one per seed and call
-/// `rank` on each candidate; the seed's tags are normalized once, here, not per candidate.
-/// `MediaLibrary.createLocalTrackRadio(from:)` adds a little randomness when it sorts, so the
-/// same seed does not always produce the same queue.
+/// `ranked` (or `rank` on a single candidate); the seed's tags are normalized once, here, not
+/// per candidate. `ranked` adds a little randomness when it sorts, so the same seed does not
+/// always produce the same queue.
 struct LocalTrackSimilarity {
 
     // MARK: - Weights
@@ -28,8 +28,13 @@ struct LocalTrackSimilarity {
     /// one fully shared genre clears it; a year match alone, even an exact one, does not.
     static let minimumScore = 2.0
 
+    /// Randomness added to each rank so near-ties reorder between runs. Matches more than this
+    /// far apart keep their order.
+    static let jitter = 0.75
+
     // MARK: - Seed
 
+    private let seedID: UUID
     private let artists: Set<String>
     private let genres: Set<String>
     private let year: Int?
@@ -38,6 +43,7 @@ struct LocalTrackSimilarity {
     private let grouping: String?
 
     init(seed: LibraryTrack) {
+        seedID = seed.id
         artists = Self.artistSet(seed)
         genres = Self.genreTokens(seed.genre)
         year = seed.year
@@ -47,6 +53,17 @@ struct LocalTrackSimilarity {
     }
 
     // MARK: - Rank
+
+    /// The candidates alike enough to follow the seed, best first. The seed itself is left out.
+    func ranked(_ candidates: [LibraryTrack]) -> [LibraryTrack] {
+        candidates
+            .filter { $0.id != seedID }
+            .compactMap { candidate in
+                rank(candidate).map { (track: candidate, rank: $0 + Double.random(in: 0..<Self.jitter)) }
+            }
+            .sorted { $0.rank > $1.rank }
+            .map(\.track)
+    }
 
     /// The candidate's sort score, or nil when its tags are not alike enough to belong in the
     /// seed's queue. Admission is judged on tag similarity alone: the listener's rating and play
