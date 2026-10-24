@@ -360,8 +360,11 @@ class WindowManager {
     /// chose. A `.wmz` main window is the skin's own canvas instead — Corona's is over three times
     /// that — and reading it as a zoom drew our playlist title and rows at 3x. UI Size in WMP mode
     /// zooms the skin's window and nothing else, so these windows stay at the app's own scale.
+    /// A `.wal` main window is the skin's canvas too: Slimline XP's 1024-wide taskbar drew the
+    /// fallback playlist at 3.7x and snapped it to 1024 wide.
     var playlistChromeScale: CGFloat {
-        if !uiMode.controllerFamily.bringsOwnRuntime,
+        let family = uiMode.controllerFamily
+        if !family.bringsOwnRuntime, family != .winampModern,
            let mainWindow = mainWindowController?.window, mainWindow.frame.width > 0 {
             return mainWindow.frame.width / Skin.baseMainSize.width
         }

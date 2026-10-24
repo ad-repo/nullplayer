@@ -159,6 +159,8 @@
   (CPro iPhone 3G and every ClassicPro skin with the LIB/PLE/VID tab strip). Defix and Big Bento
   show their current tab at startup, Big Bento Windows 10 with its icon, and Azenis² shows its
   selected EQ mode.
+- **NullPlayer's own playlist opens at normal size beside a wide Modern skin**, where Slimline XP's
+  full-width taskbar drew it screen-wide with oversized rows.
 
 ## 0.33.0
 

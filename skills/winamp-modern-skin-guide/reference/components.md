@@ -676,7 +676,10 @@ session — resolves through this one catalog in this one order:
    failed**. Until the skin's palette loads, geometry is unchanged from the classic windows — same
    title-bar height, borders, and button boxes — so only the pixels differ. Once it has loaded,
    `SkinnedSurfaceChrome.hidesPaletteTitleBar` is true and the window wears the titleless 6pt gloss
-   rim instead (see *NullPlayer-owned hosted windows are lazy*).
+   rim instead (see *NullPlayer-owned hosted windows are lazy*). These windows draw at the app's
+   own scale, never `player width / 275`: `WindowManager.playlistChromeScale` exempts `.wal` as it
+   does `.wmz`, since a `.wal` player's width is its skin's canvas, not a zoom. Slimline XP's
+   1024-wide taskbar had drawn the playlist at 3.7x and snapped it 1024 wide (fixed 2026-10-24).
 
 Which skin lands on which step is measured per skin: see the routing table in
 [compatibility.md](../compatibility.md#hosted-components).
