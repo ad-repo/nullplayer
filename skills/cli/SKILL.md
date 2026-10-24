@@ -293,7 +293,7 @@ This pairs with the connectivity fix: `checkConnectivity` now `await`s the backg
 
 | Mode | Required flags | Source availability |
 |------|---------------|-------------------|
-| `library` | — | Plex, Subsonic, Jellyfin, Emby |
+| `library` | — | Plex, Subsonic, Jellyfin, Emby, Local |
 | `genre` | `--genre <name>` | All |
 | `decade` | `--decade <year>` | All |
 | `hits` | — | Plex only |
@@ -302,7 +302,7 @@ This pairs with the connectivity fix: `checkConnectivity` now `await`s the backg
 | `favorites` | — | Jellyfin, Emby only |
 | `artist` | `--artist <name>` | All |
 | `album` | `--artist <name> --album <name>` | All |
-| `track` | `--track <name>` or `--search <name>` | All |
+| `track` | `--track <name>` or `--search <name>` | All (local: seed-based similarity, optional `--artist` to disambiguate) |
 
 **Plex param differences:** `createDecadeRadio(startYear:endYear:)` — not `start:end:`.
 **Subsonic/Jellyfin/Emby:** `createDecadeRadio(start:end:)`.

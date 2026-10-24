@@ -805,6 +805,8 @@ struct CLISourceResolver {
 
     private static func resolveRadio(source: String, mode: String, opts: CLIOptions) async throws -> [Track] {
         switch source {
+        case "local":
+            return try resolveLocalRadio(mode: mode, opts: opts)
         case "plex":
             return try await resolvePlexRadio(mode: mode, opts: opts)
         case "subsonic":
@@ -815,6 +817,40 @@ struct CLISourceResolver {
             return try await resolveEmbyRadio(mode: mode, opts: opts)
         default:
             throw CLISourceError.invalidRadioMode(mode, source, [])
+        }
+    }
+
+    private static func resolveLocalRadio(mode: String, opts: CLIOptions) throws -> [Track] {
+        let library = MediaLibrary.shared
+        switch mode {
+        case "library":
+            return library.createLocalLibraryRadio()
+        case "genre":
+            guard let genre = opts.genre else {
+                throw CLISourceError.missingRequiredArg("--radio genre", "--genre <name>")
+            }
+            return library.createLocalGenreRadio(genre: genre)
+        case "decade":
+            guard let decade = opts.decade else {
+                throw CLISourceError.missingRequiredArg("--radio decade", "--decade <year>")
+            }
+            return library.createLocalDecadeRadio(start: decade, end: decade + 9)
+        case "artist":
+            guard let artist = opts.artist else {
+                throw CLISourceError.missingRequiredArg("--radio artist", "--artist <name>")
+            }
+            return library.createLocalArtistRadio(artist: artist)
+        case "track":
+            guard let trackName = opts.track ?? opts.search else {
+                throw CLISourceError.missingRequiredArg("--radio track", "--track <name> [--artist <name>]")
+            }
+            guard let seed = library.findLocalTrack(title: trackName, artist: opts.artist) else {
+                throw CLISourceError.noTracksFound("for track '\(trackName)' in the local library")
+            }
+            return library.createLocalTrackRadio(from: seed)
+        default:
+            throw CLISourceError.invalidRadioMode(mode, "local",
+                ["library", "genre", "decade", "artist", "track"])
         }
     }
 

@@ -61,6 +61,9 @@ extension LibraryBrowserActions {
 
         case .localTrack(let track):
             menu.addItem(.separator())
+            menu.addItem(menuItem("Start Track Radio") { [unowned self] in
+                startPlexRadio { MediaLibrary.shared.createLocalTrackRadio(from: track) }
+            })
             menu.addItem(rateItem { [unowned self] in rateLocalTrack(track.id, stars: $0) })
             menu.addItem(.separator())
             menu.addItem(menuItem("Edit Tags") { [unowned self] in editTags(track) })
