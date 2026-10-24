@@ -29,7 +29,9 @@ enum LocalTrackSimilarity {
 
     // MARK: - Score
 
-    static func score(seed: LibraryTrack, candidate: LibraryTrack) -> Double {
+    /// How alike the tags are, before the listener's taste is considered. Admission to a queue
+    /// is judged on this alone, so a rating or play count can reorder matches but never create one.
+    static func similarity(seed: LibraryTrack, candidate: LibraryTrack) -> Double {
         var total = 0.0
 
         if sharesArtist(seed, candidate) {
@@ -53,8 +55,12 @@ enum LocalTrackSimilarity {
             total += groupingWeight
         }
 
-        total += preference(for: candidate)
         return total
+    }
+
+    /// Similarity plus the taste nudge; what a queue is ranked by.
+    static func score(seed: LibraryTrack, candidate: LibraryTrack) -> Double {
+        similarity(seed: seed, candidate: candidate) + preference(for: candidate)
     }
 
     // MARK: - Signals

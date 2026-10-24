@@ -2731,8 +2731,9 @@ class MediaLibrary {
         let ranked = tracksSnapshot
             .filter { $0.id != seed.id }
             .compactMap { candidate -> (track: LibraryTrack, rank: Double)? in
-                let score = LocalTrackSimilarity.score(seed: seed, candidate: candidate)
-                guard score >= LocalTrackSimilarity.minimumScore else { return nil }
+                let similarity = LocalTrackSimilarity.similarity(seed: seed, candidate: candidate)
+                guard similarity >= LocalTrackSimilarity.minimumScore else { return nil }
+                let score = similarity + LocalTrackSimilarity.preference(for: candidate)
                 return (candidate, score + Double.random(in: 0..<0.75))
             }
             .sorted { $0.rank > $1.rank }
