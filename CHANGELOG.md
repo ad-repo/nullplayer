@@ -161,6 +161,9 @@
   selected EQ mode.
 - **NullPlayer's own playlist opens at normal size beside a wide Modern skin**, where Slimline XP's
   full-width taskbar drew it screen-wide with oversized rows.
+- **A Modern skin's spectrum analyzer draws without gaps**: Big Bento's bars no longer show dark
+  lines between their colour bands, and thin-band analyzers (cPro KAO) fill their box instead of
+  leaving an uneven comb of gaps.
 
 ## 0.33.0
 

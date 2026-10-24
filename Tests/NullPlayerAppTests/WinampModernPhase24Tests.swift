@@ -567,7 +567,8 @@ final class WinampModernPhase24Tests: XCTestCase {
             let host = Host()
             host.spectrumLevels = Array(repeating: 1, count: 75)
             let pixels = try render(loaded: loaded, size: size, host: host)
-            // Runs of painted columns: one run per bar, since each bar leaves a 1px gap.
+            // Runs of painted columns: one run per `wide` bar, which leaves a 1px gap. `thin` bars
+            // abut (B264), so a full-scale thin row is one run.
             var count = 0, widest = 0, run = 0
             for x in 0..<size {
                 if pixel(pixels, x: x, y: 4, width: size)[3] > 0 {
@@ -581,8 +582,8 @@ final class WinampModernPhase24Tests: XCTestCase {
         }
         let thin = try bars("thin")
         let wide = try bars("wide")
-        XCTAssertGreaterThan(thin.count, wide.count, "thin packs more bands into the same box")
-        XCTAssertLessThan(thin.widest, wide.widest, "and each of them is narrower")
+        XCTAssertEqual(thin.count, 1, "thin's comb abuts, with no gaps between its bars")
+        XCTAssertEqual(thin.widest, 150, "and fills the box")
         XCTAssertGreaterThan(wide.count, 1, "but wide is a row of bars, not one block")
     }
 
