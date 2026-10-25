@@ -152,11 +152,10 @@ final class WinampModernSurfaceCoordinator {
         case .embedded:
             // An embedded surface is part of the player window: it is as visible as that window is.
             // There is no separate thing to hide, and nothing to hand to docking or persistence.
-            // An equalizer is the exception: the skin shows and hides its own controls inside the
-            // player (Love is War Miku swaps faces, Moonkore slides a drawer), so it is open exactly
-            // when those are drawn (B253).
+            // A surface the skin switches itself is the exception (`isSwitchedBySkin`): it is open
+            // exactly when its controls are drawn (B253).
             guard environment.isMainWindowVisible() else { return false }
-            return kind == .equalizer ? environment.showsEmbeddedEqualizer() : true
+            return isSwitchedBySkin(kind) ? environment.showsEmbeddedEqualizer() : true
         case .declaredContainer(let id), .synthesizedContainer(let id):
             return environment.window(id)?.isVisible == true
         case .classicFallback:
@@ -164,12 +163,15 @@ final class WinampModernSurfaceCoordinator {
         }
     }
 
-    /// Whether the Windows menu can open and close this surface. Not an embedded surface with no
-    /// component GUID — the equalizer: there is no component for `onGetCancelComponent` to reveal,
-    /// only the skin's own controls, so the menu item reports the skin's state and leaves the
-    /// switching to them (B253).
-    func isMenuToggleable(_ kind: WinampModernComponentKind) -> Bool {
-        !isEmbedded(kind) || WinampModernComponentRegistry.canonicalGUID(for: kind) != nil
+    /// Whether the Windows menu can open and close this surface: not one the skin switches itself.
+    func isMenuToggleable(_ kind: WinampModernComponentKind) -> Bool { !isSwitchedBySkin(kind) }
+
+    /// An embedded surface with no component GUID — the equalizer, the only such kind. There is no
+    /// component for `onGetCancelComponent` to reveal, only the skin's own controls inside the
+    /// player (Love is War Miku swaps faces, Moonkore slides a drawer), so the skin alone opens and
+    /// closes it and the menu item only reports its state (B253).
+    private func isSwitchedBySkin(_ kind: WinampModernComponentKind) -> Bool {
+        isEmbedded(kind) && WinampModernComponentRegistry.canonicalGUID(for: kind) == nil
     }
 
     func showSurface(_ kind: WinampModernComponentKind,

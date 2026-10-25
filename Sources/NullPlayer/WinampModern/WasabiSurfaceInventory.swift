@@ -396,18 +396,7 @@ struct WinampModernSurfaceInventory {
         isEqualizerControl(tag: node.name, action: node.attribute("action"))
     }
 
-    /// Whether a drawn scene shows the skin's equalizer: an EQ control with room on screen and some
-    /// alpha. What *open* means for an equalizer the skin draws inside the player — Love is War
-    /// Miku's second face, Moonkore's drawer — which has no window of its own (B253).
-    static func showsEqualizer(_ nodes: [WasabiSceneNode]) -> Bool {
-        nodes.contains { node in
-            isEqualizerControl(tag: node.object.typeName, action: node.object.attributes["action"])
-                && !node.frame.intersection(node.clip).isEmpty
-                && node.inheritedAlpha * WasabiSceneRenderer.alphaFraction(of: node.object) > 0
-        }
-    }
-
-    private static func isEqualizerControl(tag: String, action: String?) -> Bool {
+    static func isEqualizerControl(tag: String, action: String?) -> Bool {
         if tag.caseInsensitiveCompare("eqvis") == .orderedSame { return true }
         switch action?.uppercased() {
         case "EQ_BAND", "EQ_PREAMP": return true
@@ -459,4 +448,18 @@ private extension Set where Element == WinampModernComponentKind {
     /// The single element, or `nil` when there are none or several — "exactly one surface lives here"
     /// is evidence; "some surfaces live here" is not.
     var singleElement: WinampModernComponentKind? { count == 1 ? first : nil }
+}
+
+extension WasabiSceneRenderer {
+    /// Whether the scene shows the skin's equalizer: an EQ control with room on screen and some
+    /// alpha. What *open* means for an equalizer the skin draws inside the player — Love is War
+    /// Miku's second face, Moonkore's drawer — which has no window of its own (B253).
+    var showsEqualizerControls: Bool {
+        sceneNodes().contains { node in
+            WinampModernSurfaceInventory.isEqualizerControl(tag: node.object.typeName,
+                                                            action: node.object.attributes["action"])
+                && !node.frame.intersection(node.clip).isEmpty
+                && node.inheritedAlpha * Self.alphaFraction(of: node.object) > 0
+        }
+    }
 }

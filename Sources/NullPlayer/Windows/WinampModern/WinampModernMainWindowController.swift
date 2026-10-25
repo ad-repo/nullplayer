@@ -955,10 +955,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 },
                 isMainWindowVisible: { [weak self] in self?.window?.isVisible == true },
                 showsEmbeddedEqualizer: { [weak self] in
-                    self?.skinView.map { WinampModernSurfaceInventory.showsEqualizer($0.renderer.sceneNodes()) } ?? false
+                    self?.skinView?.renderer.showsEqualizerControls ?? false
                 },
                 window: { [weak self] id in
-                    self?.auxiliaryContainers.first { $0.containerID == id }?.window
+                    self?.auxiliaryContainer(id: id)?.window
                 },
                 setVisible: { [weak self] id, visible in
                     // A menu item or a skin button asked: an explicit decision, remembered.
@@ -986,7 +986,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             return true
         }
         skinView?.surfaceToggleRequested = toggle
-        skinView?.videoHolderRefused = { [weak self] in self?.playerVideoHolderWantsTheBox() }
+        skinView?.videoHolderWantsTheBox = { [weak self] in self?.playerVideoHolderWantsTheBox() }
         auxiliaryContainers.forEach { $0.view.surfaceToggleRequested = toggle }
         // `TOGGLE <container-id>`: the skin's own windows, addressed by name. Case-insensitive
         // because a skin writes the id as it likes and its own container declaration is the match.
@@ -999,7 +999,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             }
             guard let matchedID = Self.matchingContainerID(id,
                                                            in: auxiliaryContainers.map(\.containerID)),
-                  let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
+                  let container = auxiliaryContainer(id: matchedID)
             else { return false }
             setAuxiliaryWindow(id: container.containerID, visible: !container.window.isVisible,
                                record: true)
@@ -1052,7 +1052,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             }
             guard let matchedID = Self.matchingContainerID(id,
                                                            in: auxiliaryContainers.map(\.containerID)),
-                  let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
+                  let container = auxiliaryContainer(id: matchedID)
             else { return nil }
             return container.window.isVisible
         }
@@ -1078,7 +1078,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             }
             guard let matchedID = Self.matchingContainerID(
                 id, in: auxiliaryContainers.map(\.containerID)),
-                  let container = auxiliaryContainers.first(where: { $0.containerID == matchedID }),
+                  let container = auxiliaryContainer(id: matchedID),
                   container.window.isVisible != visible
             else { return }
             setAuxiliaryWindow(id: matchedID, visible: visible)
@@ -1094,7 +1094,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             }
             guard let matchedID = Self.matchingContainerID(
                 id, in: auxiliaryContainers.map(\.containerID)),
-                  let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
+                  let container = auxiliaryContainer(id: matchedID)
             else { return nil }
             return container.window.isVisible
         }
@@ -1115,7 +1115,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             }
             guard let matchedID = Self.matchingContainerID(id,
                                                            in: auxiliaryContainers.map(\.containerID)),
-                  let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
+                  let container = auxiliaryContainer(id: matchedID)
             else { return nil }
             return container.window.isKeyWindow
         }
@@ -1147,7 +1147,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         guard let matchedID = Self.matchingContainerID(id,
                                                        in: auxiliaryContainers.map(\.containerID)),
-              let container = auxiliaryContainers.first(where: { $0.containerID == matchedID })
+              let container = auxiliaryContainer(id: matchedID)
         else { return nil }
         return container.window
     }
@@ -1582,9 +1582,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
     }
 
+    func auxiliaryContainer(id: String) -> AuxiliaryContainer? {
+        auxiliaryContainers.first { $0.containerID == id }
+    }
+
     func setAuxiliaryWindow(id: String, visible: Bool, record: Bool = false,
                                     activate: Bool = true) {
-        guard let container = auxiliaryContainers.first(where: { $0.containerID == id }) else { return }
+        guard let container = auxiliaryContainer(id: id) else { return }
         // A window that only fakes a Windows desktop effect never opens, whoever asked — a script's
         // `show()`, `default_visible`, or the menu. cPro2's drop shadow and Aero-snap preview each
         // draw a bare rectangle of lines and nothing else, and both showed up beside the player once
@@ -1972,7 +1976,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // as it is today.
         scripts.hooks.containerVisibilityRequested = { [weak self] id, visible in
             guard let self,
-                  let container = auxiliaryContainers.first(where: { $0.containerID == id }),
+                  let container = auxiliaryContainer(id: id),
                   isDynamicWindow(container), container.window.isVisible != visible else { return }
             setAuxiliaryWindow(id: id, visible: visible, activate: false)
         }
@@ -2068,7 +2072,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             guard let self else { return }
             if id.caseInsensitiveCompare("main") == .orderedSame {
                 self.window?.alphaValue = alpha
-            } else if let aux = self.auxiliaryContainers.first(where: { $0.containerID == id }) {
+            } else if let aux = self.auxiliaryContainer(id: id) {
                 aux.window.alphaValue = alpha
             }
         }
@@ -2222,7 +2226,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     @discardableResult
     func showSkinAbout() -> Bool {
         guard let id = skinAboutContainerID,
-              let container = auxiliaryContainers.first(where: { $0.containerID == id })
+              let container = auxiliaryContainer(id: id)
         else { return false }
         if !container.window.isVisible { return toggleSkinWindow(id: id) }
         container.window.orderFront(nil)
@@ -2248,7 +2252,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// no NullPlayer surface behind them.
     @discardableResult
     func toggleSkinWindow(id: String) -> Bool {
-        guard let container = auxiliaryContainers.first(where: { $0.containerID == id }) else { return false }
+        guard let container = auxiliaryContainer(id: id) else { return false }
         // Routed surfaces go through the coordinator for non-menu callers too, preserving the same
         // visibility bookkeeping and ensuring the video window still gets its picture parked on it.
         if let kind = routedSurfaceKind(ofContainer: container.containerID) {
@@ -2697,7 +2701,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         componentBridge?.releaseLibrarySurface()
         // The picture goes home before the windows holding it do — the video view is the app's, not
         // the skin's, and a still-running film survives a skin or mode switch in its own window.
-        componentBridge?.releaseVideoSurface()
+        componentBridge?.tearDownVideoSurface()
         // The visualization engine stops with the skin that asked for it: an OpenGL context and a
         // display link left running behind a torn-down window is a frame a second nobody sees (B20a).
         componentBridge?.releaseVisualizationSurface()

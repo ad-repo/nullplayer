@@ -323,10 +323,13 @@ protocol WinampModernComponentHost: AnyObject {
     /// Video — the same shape as the library's, and for the same reason: the skin draws a window
     /// around a box it cannot fill, and only the host can put the picture in it. One box per skin,
     /// held by one scene view at a time (B246): `holder` takes it unless a view in another visible
-    /// window holds it, or always when `fromVisibleWindow` — a deliberate move, the detach into a
-    /// skin's video window and the reattach back. `nil` when no video output exists in this session,
-    /// or when the box stays where it is.
-    func claimVideoSurface(by holder: NSView, fromVisibleWindow: Bool) -> WinampModernVideoSurface?
+    /// window holds it. `nil` when no video output exists in this session, or when the box stays
+    /// where it is.
+    func claimVideoSurface(by holder: NSView) -> WinampModernVideoSurface?
+
+    /// The box, moved to `holder` wherever it is: a deliberate move, the detach into a skin's video
+    /// window and the reattach back. `nil` when no video output exists in this session.
+    func takeVideoSurface(by holder: NSView) -> WinampModernVideoSurface?
 
     /// The box, only while `holder` holds it.
     func videoSurface(heldBy holder: NSView) -> WinampModernVideoSurface?
@@ -352,7 +355,8 @@ extension WinampModernComponentHost {
     func makeLibrarySurface() -> WinampModernLibrarySurface? { nil }
     @MainActor
     func makeBrowserSurface(initialRequest: WinampModernBrowserRequest?) -> WinampModernBrowserSurface? { nil }
-    func claimVideoSurface(by holder: NSView, fromVisibleWindow: Bool) -> WinampModernVideoSurface? { nil }
+    func claimVideoSurface(by holder: NSView) -> WinampModernVideoSurface? { nil }
+    func takeVideoSurface(by holder: NSView) -> WinampModernVideoSurface? { nil }
     func videoSurface(heldBy holder: NSView) -> WinampModernVideoSurface? { nil }
     func releaseVideoSurface(heldBy holder: NSView) {}
     func makeVisualizationSurface() -> WinampModernVisualizationSurface? { nil }

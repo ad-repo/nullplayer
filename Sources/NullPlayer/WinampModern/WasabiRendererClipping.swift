@@ -1,18 +1,17 @@
 import CoreGraphics
 import Foundation
 
-/// An alpha mask placed in scene coordinates, with the artwork it was made from so a point can be
-/// tested against the same coverage the draw clips to.
+/// An alpha mask placed in scene coordinates. A point is tested against the mask itself, so a hit
+/// lands exactly where the draw clips to.
 struct WasabiMaskClip {
     let mask: CGImage
     let rect: CGRect
-    let artwork: WasabiBitmap
 
     func contains(_ point: CGPoint) -> Bool {
         guard rect.contains(point) else { return false }
-        let local = CGPoint(x: (point.x - rect.minX) / max(1, rect.width) * CGFloat(artwork.width),
-                            y: (point.y - rect.minY) / max(1, rect.height) * CGFloat(artwork.height))
-        return artwork.alpha(at: local) > 0
+        let x = (point.x - rect.minX) / max(1, rect.width) * CGFloat(mask.width)
+        let y = (point.y - rect.minY) / max(1, rect.height) * CGFloat(mask.height)
+        return WasabiResourceCache.maskContains(mask, x: Int(x.rounded(.down)), y: Int(y.rounded(.down)))
     }
 }
 
@@ -85,12 +84,11 @@ extension WasabiSceneRenderer {
     /// `background="visgroup.bg"`, a blade-shaped map of the screen. Clipped only to the box, the bars
     /// spilled over the screen bezel.
     func groupRegionMask(of object: WasabiObject, frame: CGRect) -> WasabiMaskClip? {
-        guard !frame.isEmpty, paintedBackingID(of: object) == nil,
+        guard object.tag.is(.group), !frame.isEmpty, paintedBackingID(of: object) == nil,
               let background = object.attributes["background"],
-              let artwork = backgroundBitmap(of: object),
               let mask = resources.alphaMask(background: background, declaredIn: object.source)
         else { return nil }
-        return WasabiMaskClip(mask: mask, rect: frame, artwork: artwork)
+        return WasabiMaskClip(mask: mask, rect: frame)
     }
 
     /// Clip one object to the region a script gave it, if any.

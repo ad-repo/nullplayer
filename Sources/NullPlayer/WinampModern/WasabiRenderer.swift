@@ -434,7 +434,39 @@ final class WasabiResourceCache {
         guard !isTornDown else { return nil }
         let key = region.cacheKey
         if let cached = regionMasks[key] { return cached }
-        guard let source = rawMapImage(region) else { return nil }
+        guard let source = rawMapImage(region),
+              // A transparent pixel is outside every region: it is not part of the artwork.
+              let image = Self.binaryMask(of: source, inside: { value, alpha in
+                  alpha > 0 && WasabiRegionClip.contains(value: value, threshold: region.threshold,
+                                                         reversed: region.reversed)
+              }) else { return nil }
+        // A volume drag walks the threshold, so this fills with one entry per value it passes.
+        // Small (a map is a control-sized bitmap), but bounded all the same.
+        cacheMask(image, key: key)
+        return image
+    }
+
+    /// A group background's coverage as a clip mask: in wherever its artwork has any alpha (B249).
+    /// Keyed by the declaring file as well as the name: a path background resolves relative to it.
+    func alphaMask(background: String, declaredIn location: WalSourceLocation) -> CGImage? {
+        guard !isTornDown else { return nil }
+        let key = "alpha:" + location.path + "|" + background.lowercased()
+        if let cached = regionMasks[key] { return cached }
+        guard let artwork = bitmap(background: background, declaredIn: location)?.image,
+              let image = Self.binaryMask(of: artwork, inside: { _, alpha in alpha > 0 }) else { return nil }
+        cacheMask(image, key: key)
+        return image
+    }
+
+    private func cacheMask(_ mask: CGImage, key: String) {
+        if regionMasks.count >= Self.maximumCachedRegionMasks { regionMasks.removeAll() }
+        regionMasks[key] = mask
+    }
+
+    /// A one-byte-per-pixel clip mask of `source`: 255 where `inside(red, alpha)` holds, else 0.
+    /// Row 0 of a bitmap context's data is the image's *top* row, so the rows are written bottom-up:
+    /// the mask has to arrive pre-flipped to survive the y-flipped scene context.
+    private static func binaryMask(of source: CGImage, inside: (UInt8, UInt8) -> Bool) -> CGImage? {
         let width = source.width
         let height = source.height
         var rgba = [UInt8](repeating: 0, count: width * height * 4)
@@ -447,72 +479,30 @@ final class WasabiResourceCache {
         }
         var mask = [UInt8](repeating: 0, count: width * height)
         for row in 0..<height {
-            // Row 0 of a bitmap context's data is the image's *top* row, so this reads the map
-            // bottom-up: the mask has to arrive pre-flipped to survive the y-flipped scene context.
             let sourceRow = height - 1 - row
             for column in 0..<width {
                 let offset = (sourceRow * width + column) * 4
-                let inside = WasabiRegionClip.contains(value: rgba[offset],
-                                                       threshold: region.threshold,
-                                                       reversed: region.reversed)
-                // A transparent pixel is outside every region: it is not part of the artwork.
-                mask[row * width + column] = inside && rgba[offset + 3] > 0 ? 255 : 0
+                if inside(rgba[offset], rgba[offset + 3]) { mask[row * width + column] = 255 }
             }
         }
-        guard let provider = CGDataProvider(data: Data(mask) as CFData),
-              let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 8,
-                                  bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
-                                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
-                                  provider: provider, decode: nil, shouldInterpolate: false,
-                                  intent: .defaultIntent) else { return nil }
-        // A volume drag walks the threshold, so this fills with one entry per value it passes.
-        // Small (a map is a control-sized bitmap), but bounded all the same.
-        if regionMasks.count >= Self.maximumCachedRegionMasks { regionMasks.removeAll() }
-        regionMasks[key] = image
-        return image
+        guard let provider = CGDataProvider(data: Data(mask) as CFData) else { return nil }
+        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 8,
+                       bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     }
 
-    /// A group background's coverage as a clip mask: in wherever its artwork has any alpha (B249).
-    /// Rows are written bottom-up for the y-flipped scene context, as `regionMask` writes them.
-    func alphaMask(background: String, declaredIn location: WalSourceLocation) -> CGImage? {
-        guard !isTornDown else { return nil }
-        let key = "alpha:" + background.lowercased()
-        if let cached = regionMasks[key] { return cached }
-        guard let image = bitmap(background: background, declaredIn: location)?.image else { return nil }
-        let width = image.width
-        let height = image.height
-        var alpha = [UInt8](repeating: 0, count: width * height)
-        alpha.withUnsafeMutableBytes { bytes in
-            guard let context = CGContext(data: bytes.baseAddress, width: width, height: height,
-                                          bitsPerComponent: 8, bytesPerRow: width,
-                                          space: CGColorSpaceCreateDeviceGray(),
-                                          bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue) else { return }
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        }
-        var mask = [UInt8](repeating: 0, count: width * height)
-        for row in 0..<height {
-            let sourceRow = height - 1 - row
-            for column in 0..<width where alpha[sourceRow * width + column] > 0 {
-                mask[row * width + column] = 255
-            }
-        }
-        guard let provider = CGDataProvider(data: Data(mask) as CFData),
-              let made = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 8,
-                                 bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
-                                 bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
-                                 provider: provider, decode: nil, shouldInterpolate: false,
-                                 intent: .defaultIntent) else { return nil }
-        if regionMasks.count >= Self.maximumCachedRegionMasks { regionMasks.removeAll() }
-        regionMasks[key] = made
-        return made
-    }
-
-    /// Whether one map pixel, counted from the region's top-left, is inside the region. The mask is
-    /// stored bottom-up for the flipped scene context, so the row is read from the other end.
-    func regionContains(_ region: WasabiRegionClip, x: Int, y: Int) -> Bool {
-        guard let mask = regionMask(region), x >= 0, y >= 0, x < mask.width, y < mask.height,
+    /// Whether one pixel of a mask, counted from its top-left, is in. The mask is stored bottom-up
+    /// for the flipped scene context, so the row is read from the other end.
+    static func maskContains(_ mask: CGImage, x: Int, y: Int) -> Bool {
+        guard x >= 0, y >= 0, x < mask.width, y < mask.height,
               let data = mask.dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return false }
         return bytes[(mask.height - 1 - y) * mask.bytesPerRow + x] != 0
+    }
+
+    /// Whether one map pixel, counted from the region's top-left, is inside the region.
+    func regionContains(_ region: WasabiRegionClip, x: Int, y: Int) -> Bool {
+        regionMask(region).map { Self.maskContains($0, x: x, y: y) } ?? false
     }
 
     /// The map bitmap behind a region, gamma-free. `loadMap` takes either a declared id or a path,

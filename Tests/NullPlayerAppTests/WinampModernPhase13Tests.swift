@@ -826,7 +826,7 @@ final class WinampModernPhase13Tests: XCTestCase {
             """)
             let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: TestHost())
             addTeardownBlock { renderer.teardown() }
-            return WinampModernSurfaceInventory.showsEqualizer(renderer.sceneNodes())
+            return renderer.showsEqualizerControls
         }
         XCTAssertTrue(try shows(""))
         XCTAssertFalse(try shows("visible=\"0\""))

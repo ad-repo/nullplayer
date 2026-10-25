@@ -23,7 +23,7 @@ extension WinampModernMainView {
         needsLayout = true
         layoutSubtreeIfNeeded()
         guard let holder = Self.videoHolder(among: renderer.componentHolders()),
-              let surface = componentHost?.claimVideoSurface(by: self, fromVisibleWindow: true)
+              let surface = componentHost?.takeVideoSurface(by: self)
         else { return nil }
         if surface.view.superview !== self {
             mount(surface, for: holder)
@@ -50,9 +50,9 @@ extension WinampModernMainView {
             return false
         }
         guard hostedVideoSurface == nil else { return false }
-        guard let surface = componentHost?.claimVideoSurface(by: self, fromVisibleWindow: false) else {
+        guard let surface = componentHost?.claimVideoSurface(by: self) else {
             // Asked after this pass: the answer may close a window and re-park the picture.
-            if let refused = videoHolderRefused { DispatchQueue.main.async(execute: refused) }
+            if let wants = videoHolderWantsTheBox { DispatchQueue.main.async(execute: wants) }
             return false
         }
         mount(surface, for: holder)

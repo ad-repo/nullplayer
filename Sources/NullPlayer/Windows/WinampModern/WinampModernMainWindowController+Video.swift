@@ -14,7 +14,7 @@ extension WinampModernMainWindowController {
         guard let coordinator = surfaceCoordinator else { return false }
         if case .embedded = coordinator.catalog.video { return hostVideoOutputInPlayer() }
         guard case .declaredContainer(let id) = coordinator.catalog.video,
-              let container = auxiliaryContainers.first(where: { $0.containerID == id })
+              let container = auxiliaryContainer(id: id)
         else { return false }
         // The holder's surface is made by the view's own layout pass, and a window that has never
         // been on screen has not run one — the first video of a session would otherwise find no
@@ -85,7 +85,7 @@ extension WinampModernMainWindowController {
     @discardableResult
     func closeVideoSurfaceWindow() -> Bool {
         guard case .declaredContainer(let id) = surfaceCoordinator?.catalog.video,
-              let container = auxiliaryContainers.first(where: { $0.containerID == id }),
+              let container = auxiliaryContainer(id: id),
               container.window.isVisible
         else { return false }
         // The `autoclose` counterpart of `hostVideoOutput`, and unrecorded for the same reason.
@@ -101,7 +101,7 @@ extension WinampModernMainWindowController {
             return
         }
         guard case .declaredContainer(let id) = catalog.video,
-              let container = auxiliaryContainers.first(where: { $0.containerID == id })
+              let container = auxiliaryContainer(id: id)
         else { return }
         container.view.hostedVideoSurface?.detachVideoOutput()
     }
@@ -148,7 +148,7 @@ extension WinampModernMainWindowController {
     /// to its normal layout. Closing the window is the reattach (`setAuxiliaryWindow`).
     func playerVideoHolderWantsTheBox() {
         guard let id = videoDetachContainerID,
-              let container = auxiliaryContainers.first(where: { $0.containerID == id }),
+              let container = auxiliaryContainer(id: id),
               container.window.isVisible, container.view.hostedVideoSurface != nil else { return }
         setAuxiliaryWindow(id: id, visible: false)
     }
@@ -178,7 +178,7 @@ extension WinampModernMainWindowController {
     func sizeVideoSurface(toNativeMultiple multiple: CGFloat) -> Bool {
         guard let coordinator = surfaceCoordinator,
               case .declaredContainer(let id) = coordinator.catalog.video,
-              let container = auxiliaryContainers.first(where: { $0.containerID == id }),
+              let container = auxiliaryContainer(id: id),
               let holder = container.view.videoHolderFrame,
               let surface = container.view.hostedVideoSurface
         else { return false }

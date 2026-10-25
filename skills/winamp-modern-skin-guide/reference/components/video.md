@@ -222,7 +222,7 @@ Three rules it obeys:
 - **One runloop turn after the load**, so the skin's own `onScriptLoaded` resizes and layout cascade
   have settled — the same reason `hostVideoOutputInPlayer` re-places asynchronously.
 
-Switching *out* needs nothing: `tearDownSkin()` → `releaseVideoSurface()` → `prepareForUITeardown()`
+Switching *out* needs nothing: `tearDownSkin()` → `tearDownVideoSurface()` → `prepareForUITeardown()`
 already unparks and reveals a still-running film, which is what makes the round trip through a
 no-video skin work.
 
@@ -254,7 +254,7 @@ the first time.
 ### One box per skin, held by one view (B246)
 
 The bridge vends one video box per skin and records which scene view's holder it is in
-(`claimVideoSurface(by:fromVisibleWindow:)`, `videoSurface(heldBy:)`, `releaseVideoSurface(heldBy:)`).
+(`claimVideoSurface(by:)`, which yields to a visible holder, `takeVideoSurface(by:)`, a deliberate move, `videoSurface(heldBy:)`, `releaseVideoSurface(heldBy:)`).
 A view mounts, places and feeds (scale, palette, keys) the box only while it holds it, through
 `hostedVideoSurface`; the view's half lives in `WinampModernMainView+Video.swift`. The reconcile
 claims for a holder that appears unless a view in another *visible* window holds the box; a
@@ -271,7 +271,7 @@ its own window only when no holder takes it, so the host does the same: `hostVid
 reveals through the skin (`onGetCancelComponent`, then the holders) and opens the `Video` window only
 when the player offers no holder — the shaded player. A player holder that comes back while the film
 is in that window takes it back (`playerVideoHolderWantsTheBox`, fed by the view's
-`videoHolderRefused`): un-shading reattaches. Windows → Video Player no longer detaches by opening
+`videoHolderWantsTheBox`): un-shading reattaches. Windows → Video Player no longer detaches by opening
 the window directly; it shows and hides the film where the skin's holders put it, and a film it hid
 is shown again through the skin, not in NullPlayer's own window. The skin's *Reattach Video* button
 and its detach buttons are inert in Winamp too: `video.maki` and `videoavs.maki` (which includes
