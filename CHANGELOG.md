@@ -8,6 +8,11 @@
   to queue tracks like it, scored from the tags (artist, genre, year, tempo, key, grouping) with
   no audio analysis. The CLI gains `--source local --radio track|library|genre|decade|artist` and
   `--list-queue`, which prints the queue a `--radio` mode would play without playing it.
+- **25 more Winamp Modern (`.wal`) skins checked and fixed in the app** (the second corpus intake):
+  ArmorAMP, Ashen Player, cPro - KAO, cPro - iPhone3g, DDTank Glass, EMP - Evolved Media Player,
+  hm_Touch, MD Ganbare Rakkatan the Sixth, Ayanami Rei the Fifth, MetAlchemy III, H2O Liquid,
+  MIDISUI, Moon Groove, Moonkore, Music Show, Mad Magazine, RazorEdge, RODE 3 Lite, Slimline XP,
+  The Crow, YoYoBoy, Vision, wasabi.player, Winamp Portrait and Winamp Single GUI.
 
 ### Fixes
 
@@ -84,6 +89,11 @@
 - **Classic skins' clutterbar works** — the O A I D V buttons on the main window's left edge now
   open the options menu, toggle Always on Top, show Now Playing info, toggle double size and open
   the Visuals menu, drawn with the skin's own pressed and lit art.
+- **25 more Winamp Modern (`.wal`) skins checked and fixed in the app** (the first corpus intake):
+  --Vortex--, 1010 - Fullscreen, Alpha Media Player X5, Anunaki, BOOM, Copperdeck II,
+  cPro2 - Winamp for Mac Sync, cPro2 - minimal, Drone, JRS, KrazyPlayer, Logicallity,
+  Mac OS X - Panther, machina, NEO CLASSIC, New Night, Nitrous Audio CTI 2 Glass,
+  Official Tristania, Prakrit, Shark5, Simple, Symplicipod, Winamp Azenis 2, wTunes and Zygote.
 
 ### Fixes
 
