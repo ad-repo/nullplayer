@@ -93,6 +93,35 @@ Follow-up on `fix/wal-scale-events` (PR #593), for the two rows the promotion fi
 Left open from it: B244 (a layout hidden during the change misses `onScale`) and B245 (the host
 playlist under Nitrous overflows the screen at 135%).
 
+### Done: intake #2, promoted to gold (2026-10-24)
+
+The 25 skins admitted at `2987be4e` were worked by `skills/skin-intake` on `feat/wal-intake-2`, all
+passed by the user in the app, and promoted to gold on 2026-10-24 (manifest tier, files moved to
+`WinampModernCorpus/gold/`), with rows on `skin-compatibility.md` (21 B, 4 C). The per-skin record is
+`intakes/intake-2.tsv`. Each fix is general, named after the skin that showed it.
+
+| Skin | What was wrong | Fix (where) |
+|---|---|---|
+| DDtank Glass, Fuzzy Muffins | Equalizer and about drew on the bare desktop; an opaque mask showed through panes | A layout paints its backing whatever `drawbackground` says (`138f9161`) |
+| hm_Touch | Big timer drew nothing | A negative `<bitmap>` x/y pads with transparency instead of clamping |
+| Winamp Single GUI | Films opened outside the player; lower body lost | `isVideo()`, an in-player holder beats a declared Video container, Video Player detaches; region cuts after fills (`9c2ab6cb`) |
+| RODE 3 Lite | A transparent slider panel swallowed 24 controls | A group hit-tests through its background's alpha |
+| ArmorAmp | Spectrum spilled over its bezel; EQ drawer button dead | An unpainted group clips to its background's alpha; numeric character references decode (`94789d61`) |
+| MIDISUI | Vis drawer slid over buttons; LED dots over labels; back button quit the app | Animated groups clip to their children's union; a group's `image=` is not art; the fallback close yields (`a62f4b5e`) |
+| MD Ganbare Rakkatan, M3 | Player opened 816 wide / cut off | An alphabackground layout sizes by its art (B254) |
+| Moon Groove | LCD, ticker and playlist bar wrong | `setActivated` raises `onActivate` only; one-shot `play()`; 114px command bar; `setAlternateText` expires (B255–B258) |
+| Mad Magazine, EMP2 | Playlist under its title bar; library 450 wide | A frame's border is its strips' opaque art (B260) |
+| Vision, H2O Liquid | Frames see-through; Configuration text cut at the top | Untextured frames take the list colour; an overfull paragraph top-aligns (`c0e927a2`) |
+| CPro_iPhone3gv2, Big Bento Win10 | Every clicked tab stayed lit; icon under the active layer | Toggles flip on press; a wrapper's image replaces the embed's placeholder (`d78034ce`) |
+| CPro_iPhone3gv2 | Shadow drew four phones | Overfull grid edges clip instead of squashing (`3c90943d`) |
+| Slimline XP | Fallback playlist 3.7× and screen-wide | `.wal` fallback windows do not read the player width as a zoom (`c706a1b4`) |
+| cPro KAO, Big Bento | Analyzer gaps: an uneven comb at `thin`, seams between colour bands | Thin bars abut; ramp slices on whole pixels (B264) |
+| Winamp Portrait | "Collapse" tab label ran off the window | A text's em is a whole pixel, rounded down — moved 126 skins' text by under a pixel (`283c15b2`) |
+
+Left open: B253 (Windows → Equalizer inert on an embedded EQ; Moonkore, Love is War Miku ×2),
+B259 (split `WinampModernScriptRuntimeObject.swift`), B261, B262 (CPro_iPhone3gv2 notifier strip),
+B263 (host-chrome About has no close).
+
 **Next:** the open intake, by `skills/skin-intake`. Where it stands is
 `scripts/wal_intake_status.sh` over its ledger (`docs/winamp-modern/intakes/`), never this file.
 B212 needs a second display; B216's `.wmz` census waits on a go-ahead.
