@@ -58,6 +58,25 @@ final class WinampModernEmbeddedToggleTests: XCTestCase {
         XCTAssertLessThan(toggle, release, "flipped before the script's own setActivated can run")
     }
 
+    /// `WINAMP_MODERN_DEBUG_CLICK` replays the real click, flip order included: it used to flip after
+    /// the release, so it reproduced the dark-tab bug the mouse no longer has.
+    func testTheDebugClickFlipsInTheSameOrderAsTheMouse() throws {
+        let (loaded, scripts) = try makeRuntime()
+        let host = TestHost()
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host, clock: { 0 })
+        addTeardownBlock { renderer.teardown() }
+        let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host)
+        addTeardownBlock { view.teardown() }
+        scripts.recordsDispatchedEventsForTesting = true
+
+        view.debugClick(atSkinPoint: CGPoint(x: 10, y: 10))
+
+        let events = scripts.dispatchedEventsForTesting.filter { $0.object == "tab.button" }.map(\.event)
+        let toggle = try XCTUnwrap(events.firstIndex(of: "ontoggle"), "the click flips the button")
+        let release = try XCTUnwrap(events.firstIndex(of: "onleftbuttonup"))
+        XCTAssertLessThan(toggle, release)
+    }
+
     // MARK: -
 
     private func makeRuntime() throws -> (WinampModernLoadedSkin, WinampModernScriptRuntime) {
