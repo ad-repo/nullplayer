@@ -12,7 +12,7 @@ extension WasabiSceneRenderer {
         // Outside the window's own shape there is nothing to hit: a corner the skin trimmed away is
         // gone for the pointer as well as for the eye (B76).
         guard containsRegionPixel(at: point) else { return nil }
-        for node in sceneNodes().reversed() where node.clip.contains(point) && node.frame.contains(point) {
+        for node in sceneNodes().reversed() where node.clipping.contains(point) && node.frame.contains(point) {
             let object = node.object
             guard isVisible(object), includingGhosts || object.attributes["ghost"] != "1" else { continue }
             if shouldIgnore?(object) == true { continue }
@@ -132,24 +132,6 @@ extension WasabiSceneRenderer {
 
     func frameDivider(at point: CGPoint) -> WasabiObject? {
         frameDividers().reversed().first { $0.rect.contains(point) }?.object
-    }
-
-    /// Clip one object to the region a script gave it, if any.
-    ///
-    /// The mask is placed at its own natural size at the object's origin, not stretched to the
-    /// object's rect: a region is a set of *map pixels*, and `Region.offset` moves it in those same
-    /// units. An unresolvable map leaves the object unclipped — a skin whose map is missing should
-    /// look the way it did before regions existed, not lose the control altogether.
-    func applyRegionClip(of object: WasabiObject, frame: CGRect, context: WasabiDrawList) {
-        guard let region = WasabiRegionClip(object: object),
-              let mask = resources.regionMask(region) else { return }
-        let rect = CGRect(x: frame.minX + CGFloat(region.offsetX),
-                          y: frame.minY + CGFloat(region.offsetY),
-                          width: CGFloat(mask.width), height: CGFloat(mask.height))
-        let quality = context.interpolationQuality
-        context.interpolationQuality = .none
-        context.clip(to: rect, mask: mask)
-        context.interpolationQuality = quality
     }
 
     /// A layer that contributes its bitmap to the **window region** and nothing else.

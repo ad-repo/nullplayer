@@ -27,6 +27,16 @@ clips most of it away. The corpus gate (`RENDER_CLICKABLE=1`, 2026-09-28) moved 
 falls and all unlocked: Itemskin's `vol`, BLAKK's two seek bars (`blakk.bb.seek-empty`,
 `blakk.remote.seekempty`, which now seek to the clicked point) and Bio-Nid's `VolumeAnim`.
 
+**A region group's mask is part of the clip, for the pointer too** (B249). A group whose
+`background` it does not paint (`drawbackground="0"`) clips its descendants to that bitmap's alpha
+(ArmorAmp's blade-shaped spectrum screen). The mask travels down the scene with the clip rect in one
+value, `WasabiClip { rect; masks }` on every node, which the draw applies and `object(at:)` tests
+(`WasabiMaskClip.contains` samples the same artwork the mask was cut from), so a control in a
+masked-off corner is neither drawn nor clicked. The group's own hit region is a different question
+with the same answer: a group's `background` is its region whether it paints it or not, the way a
+layer's artwork is, so the group is hit through that alpha always, and only an unpainted one also
+clips its children — a painted background already shows the shape the children sit on.
+
 #### Hit testing: who owns a point
 
 `object(at:)` walks the scene in reverse (`sceneNodes()` is a pre-order DFS, so reversing puts every
