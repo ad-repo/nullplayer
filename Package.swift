@@ -6,7 +6,10 @@ import PackageDescription
 // Let the compiler find the vendored VLCKit.framework module map (Frameworks/VLCKit.framework)
 // so `import VLCKit` resolves. Unsafe flags don't carry over to dependent targets, and the
 // swiftbuild build system resolves NullPlayer's imports again while scanning the test target.
-let vlcKitSearchPath: SwiftSetting = .unsafeFlags(["-F", "Frameworks"])
+// Absolute, because swiftbuild runs the compiler from the package's *parent* directory: a relative
+// `Frameworks` there only resolved where a stray copy happened to sit beside the checkout.
+let frameworksPath = Context.packageDirectory + "/Frameworks"
+let vlcKitSearchPath: SwiftSetting = .unsafeFlags(["-F", frameworksPath])
 
 let package = Package(
     name: "NullPlayer",
@@ -172,10 +175,10 @@ let package = Package(
                 // reachable surface is `WMPObjectModel`; see the wmp-skin-guide skill.
                 .linkedFramework("JavaScriptCore"),
                 .unsafeFlags([
-                    "-L", "Frameworks",
+                    "-L", frameworksPath,
                     "-L", "/opt/homebrew/lib",
                     // Link the vendored VLCKit.framework (LGPL video engine).
-                    "-F", "Frameworks",
+                    "-F", frameworksPath,
                     "-framework", "VLCKit",
                     "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
                 ]),
