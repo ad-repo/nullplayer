@@ -81,6 +81,12 @@
   image larger than any the skin could ship.
 - **A Modern skin's film no longer lands at a nonsense position when its holder is clipped away
   entirely**; the picture is hidden until the holder is visible again.
+- **The bundled iTunes Miniplayer skin is updated to 1.139.**
+- **A Modern skin's window corners show a diagonal resize cursor** on macOS 15 and later, instead of
+  a crosshair (#601).
+- **A Modern skin's selected rows dim when their window loses focus**, in the colours the skin
+  declares for that (iTunes Miniplayer's playlist), unless you set the selection colours yourself
+  (#603).
 
 ## 0.33.1
 

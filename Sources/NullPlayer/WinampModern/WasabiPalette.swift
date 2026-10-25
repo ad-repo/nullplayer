@@ -24,6 +24,11 @@ struct WasabiPalette: Equatable {
     let editBackground: NSColor
     let treeText: NSColor
     let treeSelection: NSColor
+    /// What a selected row turns to while its window is not key (#603): Wasabi's
+    /// `wasabi.list.text.selected{,.background}.inactive`, nil when the skin declares none. Read
+    /// through `unfocused()`, never directly.
+    let inactiveSelectionText: NSColor?
+    let inactiveSelectionBackground: NSColor?
 
     /// The roles the **user** set by hand, rather than the skin (B146).
     ///
@@ -57,6 +62,7 @@ struct WasabiPalette: Equatable {
          selectionBackground: NSColor, contentBackground: NSColor,
          editBackground: NSColor? = nil,
          treeText: NSColor, treeSelection: NSColor,
+         inactiveSelectionText: NSColor? = nil, inactiveSelectionBackground: NSColor? = nil,
          overriddenRoles: Set<Role> = []) {
         self.overriddenRoles = overriddenRoles
         self.listText = Self.rgb(listText)
@@ -67,6 +73,8 @@ struct WasabiPalette: Equatable {
         self.editBackground = Self.rgb(editBackground ?? contentBackground)
         self.treeText = Self.rgb(treeText)
         self.treeSelection = Self.rgb(treeSelection)
+        self.inactiveSelectionText = inactiveSelectionText.map(Self.rgb)
+        self.inactiveSelectionBackground = inactiveSelectionBackground.map(Self.rgb)
     }
 
     /// Conversion only fails for a pattern colour, which has no single component value to give; a
@@ -222,7 +230,27 @@ struct WasabiPalette: Equatable {
             editBackground: first(.editBackground, default: contentBackground),
             treeText: first(.treeText, default: listText),
             treeSelection: first(.treeSelection, default: selectionBackground),
+            inactiveSelectionText: resolve(inactiveSelectionTextIdentifier),
+            inactiveSelectionBackground: resolve(inactiveSelectionBackgroundIdentifier),
             overriddenRoles: Set(overrides.keys))
+    }
+
+    static let inactiveSelectionTextIdentifier = "wasabi.list.text.selected.inactive"
+    static let inactiveSelectionBackgroundIdentifier = "wasabi.list.text.selected.background.inactive"
+
+    /// The palette an unfocused window's rows draw with (#603): the skin's inactive selection pair in
+    /// place of the active one. Unchanged when the skin declares neither, or when the user set
+    /// **either** selection role by hand — a hand-picked colour is never paired with a skin colour
+    /// the Skin Colors panel did not preview it against (B146).
+    func unfocused() -> WasabiPalette {
+        guard inactiveSelectionText != nil || inactiveSelectionBackground != nil,
+              !isOverridden(.selectionText), !isOverridden(.selectionBackground) else { return self }
+        return WasabiPalette(listText: listText, currentText: currentText,
+                             selectionText: inactiveSelectionText ?? selectionText,
+                             selectionBackground: inactiveSelectionBackground ?? selectionBackground,
+                             contentBackground: contentBackground, editBackground: editBackground,
+                             treeText: treeText, treeSelection: treeSelection,
+                             overriddenRoles: overriddenRoles)
     }
 
     /// The list plate: the skin's own `wasabi.list.background` when it declares one, else the first

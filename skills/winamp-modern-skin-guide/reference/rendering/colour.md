@@ -350,6 +350,15 @@ equalizer title ramps `rgb(32,60,126)` → `rgb(154,188,230)`, the unfocused pla
 `rgb(128,128,128)` → `rgb(187,187,187)`, which is also the proof that the active/inactive pair is
 being chosen per window.
 
+**A selected row follows focus too (#603).** `wasabi.list.text.selected.inactive` and
+`wasabi.list.text.selected.background.inactive` are the unfocused selection pair. They are not
+palette roles: `WasabiPalette.unfocused()` swaps them in for `selectionText`/`selectionBackground`,
+and the renderer's own rows (playlist panel, colour-theme picker, `<list>`) read `rowPalette` —
+`palette` or that projection, off `isWindowActive` — so the fill, the legibility guards and the
+current-row colour all see one bar. AppKit surfaces keep `palette`. The swap is all-or-nothing and
+is skipped when the user overrode **either** selection role (B146). `RENDER_PALETTE` prints both ids
+as `PALETTE unfocused <id>: …` after the roles.
+
 #### A user override outranks the chain (B146, 2026-09-06)
 
 Reported as *"winampmodern566's Media Library is unreadable"* on one of its colour themes. **It is not
