@@ -619,6 +619,16 @@ extension WinampModernScriptRuntime {
                   let frame = runtime.hooks.resolvedGeometryRequested?(call.object)?.frame else { return .boolean(false) }
             return .boolean(frame.contains(point))
         }
+        // `Group.getMousePosX/Y()` (a `Layout` is a group): the pointer in the receiver's own space,
+        // from the same two hooks as `isMouseOverRect`. Clock V2.76 parks its date-entry popup at
+        // `layout.getMousePosY() - 60`, and the miss aborted every calendar day's click handler.
+        // With no window the answer is 0, so the handler still runs to the end.
+        table.add(["getmouseposx", "getmouseposy"], 0) { runtime, call in
+            guard let point = runtime.hooks.mousePositionInObjectSpaceRequested?(call.object),
+                  let origin = runtime.hooks.resolvedGeometryRequested?(call.object)?.frame.origin else { return .integer(0) }
+            let value = call.method.hasSuffix("x") ? point.x - origin.x : point.y - origin.y
+            return .integer(Int32(clamping: Int(value.rounded())))
+        }
         // The point arrives in the object's parent space, the space its pointer events carry
         // (Core-X5 asks this in every main-window button's handler, B206).
         // ponytail: the frame only, not the object's region; add the region test when a skin needs it.
