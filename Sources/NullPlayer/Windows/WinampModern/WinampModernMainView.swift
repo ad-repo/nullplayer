@@ -158,6 +158,8 @@ final class WinampModernMainView: NSView {
     /// skin button and a menu item can never resolve differently. Returns false before the
     /// coordinator exists (during `scripts.start()`), where the older direct routing still applies.
     var surfaceToggleRequested: ((WinampModernComponentKind) -> Bool)?
+    /// This scene has a video holder but another visible window holds the box (B248).
+    var videoHolderRefused: (() -> Void)?
     /// Whether a surface a `TOGGLE` addresses is on screen, for the lamp on the button that
     /// toggles it (BB36). Nil means "no window to answer for" — an embedded surface, or a kind the
     /// coordinator does not handle — and the button falls back to its own `activated`. The write
@@ -2524,6 +2526,7 @@ final class WinampModernMainView: NSView {
         renderer.toggleTargetVisibleProvider = nil
         containerWindowToggleRequested = nil
         surfaceToggleRequested = nil
+        videoHolderRefused = nil
         webNavigationRequested = nil
         activeStateObservers.forEach(NotificationCenter.default.removeObserver)
         activeStateObservers.removeAll()

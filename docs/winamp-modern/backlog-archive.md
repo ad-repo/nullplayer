@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B248 — The video component's own window is for a film no holder takes — closed 2026-10-25
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B248 | **Winamp Single GUI's own Reattach Video button does nothing after a menu detach.** Its `video.m` reattaches only by setting `video_detach_attrib` to `"0"`, and the skin's drawer script (`videoavs.m`, `onAttachVideo`/`onDetachVideo`) is driven by that attribute. Windows → Video Player opens the `Video` container directly and never sets the attribute to `"1"`, so the button writes the value it already holds and nothing hears it; only the window's close button reattaches. Establish whether the detach should go through the skin's attribute (so its own scripts and buttons agree) or the host should treat the attribute write as a reattach, then make it so. Done when, after a menu detach, the skin's Reattach Video button puts the film back in the player's pane with a film playing | live: Winamp Single GUI (2026-10-23) | S | 2 |
+
+**Closed 2026-10-25; the row's premise was wrong (class H for the button).** Single GUI's Reattach Video has no script and no action: `video.maki` is commented out at `video-normal.xml:204`, and the drawer script that listens to `Detach Video Window` (`videoavs.maki` → `drawer.m`) at `player-normal-group.xml:1627`. The script that runs, `screen.m`, answers `onGetCancelComponent` for video by pane state. So no Winamp route opens the `Video` window over a player that holds the film, and the host's menu detach made a state Winamp cannot reach. The user chose "menu asks the skin": the menu's direct detach route (`toggleWinampModernVideoDetach`/`toggleVideoDetach`) is gone; `hostVideoOutputInPlayer` opens the `Video` window only when no player holder takes the film; a player holder refused the box while that window holds it closes the window (`playerVideoHolderWantsTheBox`), so un-shading reattaches; and a film the menu hid is shown again through the skin (`toggleVideoPlayer`), where it used to open NullPlayer's own window (also cPro-Bento's path). Live with a 3-minute film: shaded → Video Player → film in the `Video` window; un-shade → window closed, film in the player; on the normal player the menu alternates hide/show in the pane. No render change.
+
 ## B246 — The bridge owns the video box and the view that holds it — closed 2026-10-25
 
 | Id | Item | Reach | Effort | Tier |

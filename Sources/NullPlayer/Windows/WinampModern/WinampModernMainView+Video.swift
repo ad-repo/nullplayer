@@ -49,9 +49,12 @@ extension WinampModernMainView {
             }
             return false
         }
-        guard hostedVideoSurface == nil,
-              let surface = componentHost?.claimVideoSurface(by: self, fromVisibleWindow: false)
-        else { return false }
+        guard hostedVideoSurface == nil else { return false }
+        guard let surface = componentHost?.claimVideoSurface(by: self, fromVisibleWindow: false) else {
+            // Asked after this pass: the answer may close a window and re-park the picture.
+            if let refused = videoHolderRefused { DispatchQueue.main.async(execute: refused) }
+            return false
+        }
         mount(surface, for: holder)
         return true
     }

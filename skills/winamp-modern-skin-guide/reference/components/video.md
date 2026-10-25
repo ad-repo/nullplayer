@@ -263,6 +263,20 @@ When each view kept its own map of the box, Winamp Single GUI's player went on n
 detached `Video` window took it, and three guards (skip a box another visible window holds, skip one
 whose superview is not this view, re-add it on claim) stood in for the missing owner.
 
+### A component's own window is for a film no holder takes (B248)
+
+Winamp Single GUI ships its video component's own window (`<container id="Video"
+component="guid:{F0816D7B-…}">`) beside the holders in its player panes. Winamp shows a component in
+its own window only when no holder takes it, so the host does the same: `hostVideoOutputInPlayer`
+reveals through the skin (`onGetCancelComponent`, then the holders) and opens the `Video` window only
+when the player offers no holder — the shaded player. A player holder that comes back while the film
+is in that window takes it back (`playerVideoHolderWantsTheBox`, fed by the view's
+`videoHolderRefused`): un-shading reattaches. Windows → Video Player no longer detaches by opening
+the window directly; it shows and hides the film where the skin's holders put it, and a film it hid
+is shown again through the skin, not in NullPlayer's own window. The skin's *Reattach Video* button
+and its detach buttons are inert in Winamp too: `video.maki` and `videoavs.maki` (which includes
+`drawer.m`) are commented out in `video-normal.xml` and `player-normal-group.xml`.
+
 ### The rest of the shape
 
 - **Routing.** `.video` is a **routed** surface but not a **managed** one

@@ -67,6 +67,10 @@
 - **Modern skin windows open big enough for the content their frame holds**: H2O Liquid's
   Configuration window shows its whole CPU-usage table, with its columns lined up, and the settings
   windows of PaddPreview and motorhead open at the size their content asks for.
+- **Windows → Video Player shows and hides a Modern skin's film where the skin puts it** (Winamp
+  Single GUI): it no longer pops the film out into the skin's Video window, uses that window only
+  while the player is shaded, takes the film back when the player is restored, and a hidden film comes
+  back in the player instead of in NullPlayer's own video window.
 
 ## 0.33.1
 

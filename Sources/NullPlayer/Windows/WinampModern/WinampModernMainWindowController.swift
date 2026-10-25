@@ -986,6 +986,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             return true
         }
         skinView?.surfaceToggleRequested = toggle
+        skinView?.videoHolderRefused = { [weak self] in self?.playerVideoHolderWantsTheBox() }
         auxiliaryContainers.forEach { $0.view.surfaceToggleRequested = toggle }
         // `TOGGLE <container-id>`: the skin's own windows, addressed by name. Case-insensitive
         // because a skin writes the id as it likes and its own container declaration is the match.
@@ -1612,7 +1613,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         coordinator.showSurface(.video)
         // The surface is made by the view's own layout pass, and revealing the tab has only changed
         // the graph so far: without this the first film of a session finds no box to fill.
-        guard view.claimVideoSurface() != nil else { return false }
+        guard view.claimVideoSurface() != nil else { return openOwnVideoWindow() }
         // Key focus goes with the picture: off an embedded Library Browser that started the film,
         // where Return replays the row (M5), to the skin view, which hands the film its keys (M18).
         view.window?.makeFirstResponder(view)
@@ -1684,14 +1685,25 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         return videoID == id
     }
 
-    /// Move the film between the player and the skin's detached video window — the Video Player
-    /// menu item for such a skin, and its own Skin Windows entry. False when the skin has no detached
-    /// window. Not recorded: a video window remembered as open reopened empty at launch (B97).
-    func toggleVideoDetach() -> Bool {
-        guard let id = videoDetachContainerID,
-              let container = auxiliaryContainers.first(where: { $0.containerID == id }) else { return false }
-        setAuxiliaryWindow(id: id, visible: !container.window.isVisible)
+    /// The video component's own window, for a film the player has no holder for — Winamp Single
+    /// GUI's `Video` container while the player is shaded. Winamp shows a component in its own window
+    /// only when no holder takes it, so neither the menu nor the host opens this window over a
+    /// player that can hold the film: the skin's own Detach/Reattach buttons agree with the window
+    /// only that way (B248). False when the skin ships no such window.
+    private func openOwnVideoWindow() -> Bool {
+        guard let id = videoDetachContainerID else { return false }
+        setAuxiliaryWindow(id: id, visible: true)
         return true
+    }
+
+    /// A player holder that appears while the film is in the component's own window takes it back,
+    /// which is what Single GUI's Reattach Video button relies on: it only switches the shaded player
+    /// to its normal layout. Closing the window is the reattach (`setAuxiliaryWindow`).
+    private func playerVideoHolderWantsTheBox() {
+        guard let id = videoDetachContainerID,
+              let container = auxiliaryContainers.first(where: { $0.containerID == id }),
+              container.window.isVisible, container.view.hostedVideoSurface != nil else { return }
+        setAuxiliaryWindow(id: id, visible: false)
     }
 
     /// A skin's own video window when the picture's home is the player: Winamp Single GUI's
@@ -2440,7 +2452,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         // The detached video window moves the film as it opens and closes; that lives in one place.
         if videoDetachContainerID == container.containerID {
-            _ = toggleVideoDetach()
+            if container.window.isVisible { setAuxiliaryWindow(id: container.containerID, visible: false) }
+            else { _ = hostVideoOutputInPlayer() }
             return true
         }
         if container.window.isVisible {
