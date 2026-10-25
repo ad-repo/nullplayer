@@ -505,7 +505,7 @@ clipped to its share (`drawNineSlice`), as Wasabi draws it. CPro_iPhone3gv2's `m
 nine slots the whole 399x741 shadow inside a 399x741 window: squashed into halves it drew as four
 phones, clipped the quadrants add up to one. Gold+silver otherwise moved only small overfull edges
 by a few pixels (Defix's tab strip frame, Panther's playlist buttons and URL pill, Nullsoft 2000's
-shade time box). A/B: `WINAMP_MODERN_GRID_SQUASH_EDGES=1`.
+shade time box).
 
 #### Abutting pieces share a pixel edge (B80)
 
@@ -1256,7 +1256,7 @@ to fail nowhere else.
 ## A slide is a move within a box; a `<group>` has no `image` (2026-10-23)
 
 **A group with no declared box clips to where its children were declared while a target animation
-has moved one** (`targetAperture`, kill switch `WINAMP_MODERN_TARGET_APERTURE=0`). MIDISUI's vis
+has moved one** (`targetAperture`). MIDISUI's vis
 drawer is a 121×124 `Drawer` layer in a `DrawerGroup` with no `w`/`h` and no `background`;
 `drawer.maki` opens it with `setTargetX(-118)` — a cover sliding out of its own frame. Unclipped, it
 slid over the COMPONENT column and the playlist. The box is the union of the children at their
@@ -1264,7 +1264,7 @@ slid over the COMPONENT column and the playlist. The box is the union of the chi
 group at rest keeps the inherited clip `clipAxes` gives an undeclared box. Reach, gold+silver: that
 one group.
 
-**`image=` on a `<group>` is not art** (kill switch `WINAMP_MODERN_GROUP_IMAGE=1`). A group states its
+**`image=` on a `<group>` is not art**. A group states its
 artwork with `background`; MIDISUI instances its one-LED `ledAnimation` group as
 `image="led.animation"`, the 280×14 sheet of 20 frames, and drawn as the group's bitmap it put 20
 red dots over the TIMER, SONG INFO and TRACK labels and 120px past the window's right edge. The

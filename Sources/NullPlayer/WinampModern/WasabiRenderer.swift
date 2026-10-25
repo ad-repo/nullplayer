@@ -620,9 +620,6 @@ final class WasabiResourceCache {
 /// without either of them owning a ticking clock.
 enum WasabiAnimation {
     static func now() -> TimeInterval { ProcessInfo.processInfo.systemUptime }
-    /// `WINAMP_MODERN_UNRANGED_PLAY_LOOPS=1` — A/B: an unranged `play()` loops whatever `autoreplay` says (B256).
-    static let loopsUnrangedPlay = ProcessInfo.processInfo.environment["WINAMP_MODERN_UNRANGED_PLAY_LOOPS"] != nil
-
     static func state(of object: WasabiObject, frameCount: Int,
                       clock: TimeInterval = now()) -> (frame: Int, isPlaying: Bool) {
         let attributes = object.attributes
@@ -645,7 +642,7 @@ enum WasabiAnimation {
         // Groove's PLAY/PAUSE/STOP status hides itself and brings the song ticker back from there
         // (B256). Anything else is the classic looping animation.
         let end: Int? = if let raw = attributes["endframe"] { Int(raw) }
-            else if attributes["autoreplay"] == "0" && !loopsUnrangedPlay { count - 1 }
+            else if attributes["autoreplay"] == "0" { count - 1 }
             else { nil }
         guard let end else { return ((selected + steps) % count, true) }
         let start = max(0, min(count - 1, Int(attributes["startframe"] ?? "") ?? selected))
@@ -2393,9 +2390,6 @@ final class WasabiSceneRenderer {
             }
         }
     }
-
-    static let ignoresGroupImage =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_GROUP_IMAGE"] != "1"
 
     /// Is this control laid out along the vertical axis?
     ///
@@ -4539,7 +4533,7 @@ final class WasabiSceneRenderer {
         // `ledAnimation` group as `image="led.animation"`, the 280×14 sheet of 20 frames: taken
         // as the group's bitmap it painted every frame as a row of red dots over the TIMER and
         // SONGINFO panel labels and ran 120px off the window's right edge.
-        if object.tag.is(.group), Self.ignoresGroupImage { return nil }
+        if object.tag.is(.group) { return nil }
         if object.tag.is(.status) {
             switch host.playbackState {
             case .playing: return object.attributes["playbitmap"]
@@ -4695,9 +4689,8 @@ final class WasabiSceneRenderer {
     /// layout paints its `alphabackground` — `background` is then the opaque or region-map variant
     /// (Fuzzy Muffins' `main.alpha`, impulse's `player.normal.background.region`), and painting it
     /// put the mask's grey through every translucent pane.
-    /// `WINAMP_MODERN_LAYOUT_DRAWBACKGROUND=1` treats a layout like a group again, for an A/B.
     func paintedBackingID(of object: WasabiObject) -> String? {
-        if object.tag.is(.layout), !Self.honoursLayoutDrawBackground {
+        if object.tag.is(.layout) {
             if object.attributes["desktopalpha"] == "1", let alpha = object.attributes["alphabackground"] {
                 return alpha
             }
@@ -4707,9 +4700,6 @@ final class WasabiSceneRenderer {
         let flag = object.attributes["drawbackground"]?.lowercased()
         return flag == "0" || flag == "false" || flag == "no" ? nil : background
     }
-
-    private static let honoursLayoutDrawBackground =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_LAYOUT_DRAWBACKGROUND"] != nil
 
     private enum Backing {
         case bitmap(WasabiBitmap)
@@ -4739,7 +4729,7 @@ final class WasabiSceneRenderer {
                 ?? resources.bitmap(identifier: "component.basetexture") {
                 return .bitmap(texture)
             }
-            if !Self.leavesUntexturedFrameClear { return .contentBackground }
+            return .contentBackground
         }
         return object.tag.is(.layout) && backingID != nil ? .contentBackground : nil
     }
@@ -4751,9 +4741,6 @@ final class WasabiSceneRenderer {
     /// stock frame draws it. machina's help window drew its dark-on-transparent help art on the
     /// bare desktop without it, where its playlist — the same frame on `background="component.bg"`
     /// — was gold. A layout that declares a backing, or composites against the desktop, keeps its own.
-    private static let leavesUntexturedFrameClear =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_FRAME_TEXTURE_CLEAR"] != nil
-
     private func needsFrameBaseTexture(_ object: WasabiObject) -> Bool {
         guard WasabiStandardFrames.isStandardFrame(object),
               let layout = object.parent, layout.tag.is(.layout) else { return false }

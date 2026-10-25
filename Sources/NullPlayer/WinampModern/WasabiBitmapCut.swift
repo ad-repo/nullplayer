@@ -42,9 +42,6 @@ extension WasabiResourceCache {
         return fullImage.cropping(to: CGRect(x: x, y: topY, width: width, height: height))
     }
 
-    private static let clampsNegativeOffsets =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_BITMAP_NEGATIVE_CLAMP"] != nil
-
     /// `image` moved down/right by a declared negative `y`/`x`, on a transparent canvas, so the
     /// crop that follows can start at 0. Nil when there is nothing to pad.
     static func padForNegativeOffset(_ image: CGImage, attributes: [String: String]) -> CGImage? {
@@ -53,7 +50,7 @@ extension WasabiResourceCache {
             return max(0, -Int(value))
         }
         let left = padding("x", "relatx"), top = padding("y", "relaty")
-        guard left > 0 || top > 0, !clampsNegativeOffsets,
+        guard left > 0 || top > 0,
               let context = CGContext(data: nil, width: image.width + left, height: image.height + top,
                                       bitsPerComponent: 8, bytesPerRow: 0,
                                       space: CGColorSpaceCreateDeviceRGB(),

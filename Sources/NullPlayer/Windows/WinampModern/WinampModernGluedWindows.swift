@@ -7,8 +7,6 @@ import AppKit
 final class WinampModernGluedWindows {
     /// `WINAMP_MODERN_GLUE_TRACE=1` — the script-glued window pairs and every restack, live.
     static let traces = ProcessInfo.processInfo.environment["WINAMP_MODERN_GLUE_TRACE"] != nil
-    /// `WINAMP_MODERN_DRAG_GLUE=0` turns off carrying a glued frame with its window during a drag.
-    static let carriesInDrag = ProcessInfo.processInfo.environment["WINAMP_MODERN_DRAG_GLUE"] != "0"
 
     /// The pairs the skin's scripts have glued, by container, leader first. Set by the owner.
     var pairIDs: () -> [(leader: WasabiObjectID, follower: WasabiObjectID)] = { [] }
@@ -145,7 +143,6 @@ final class WinampModernGluedWindows {
     /// script-driven move or resize of the content must not carry the frame. The script moves the
     /// frame onto the content itself, and a second carry would move the frame twice.
     private func attachForDrag(dragged: NSWindow?) {
-        guard Self.carriesInDrag else { return }
         detachAfterDrag()
         for (leader, follower) in pairs
         where follower !== dragged && leader.isVisible && follower.isVisible && follower.parent == nil {

@@ -311,8 +311,7 @@ which is left out of the region. Bounded by its cuts, the wrapper cleared the wi
 `sysregion="1"` titlebar and the whole body vanished — both base and Light editions, while the
 native library pane kept drawing over the hole. Cut leaves are now skipped when a wrapper's content
 is collected, and a wrapper left with none fills its box. The corpus sweep moved only the two Bento
-editions (normal and shade); XENERGY is unchanged. `WINAMP_MODERN_REGION_WRAPPER_CUTS=1` restores
-the old reading.
+editions (normal and shade); XENERGY is unchanged.
 
 The shape reaches the **window** without any `NSWindow` work: all three `.wal` window paths — the
 player, auxiliary containers, and the hosted-window materializer — already set `isOpaque = false`,

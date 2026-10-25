@@ -20,7 +20,6 @@ Three variants of one skin, in one file for the reason [big-bento-modern.md](big
   and the bottom strip (y 288–296 of 312 in `nullplayer.playlist`, 408–416 in `nullplayer.library`)
   went from black to that light grey, leaving a black notch where `component.right` ends. Accepted
   as is; if it reads wrong in the app, the likely fix is clipping the fill to inside the frame art.
-  A/B: `WINAMP_MODERN_FRAME_TEXTURE_CLEAR=1` leaves it unfilled.
 
 
 **Measured status:**

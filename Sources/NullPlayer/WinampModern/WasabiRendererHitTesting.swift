@@ -54,16 +54,10 @@ extension WasabiSceneRenderer {
     }
 
     /// A group's `background`, resolved as the renderer draws it, read as its artwork for the alpha
-    /// test. `WINAMP_MODERN_GROUP_HIT_BOX=1` restores the solid-box answer, for an A/B in one binary.
+    /// test.
     private func groupHitArtwork(_ object: WasabiObject) -> WasabiBitmap? {
-        Self.testsGroupsAsBoxes ? nil : backgroundBitmap(of: object)
+        backgroundBitmap(of: object)
     }
-
-    private static let testsGroupsAsBoxes = ProcessInfo.processInfo.environment["WINAMP_MODERN_GROUP_HIT_BOX"] != nil
-    private static let dropsRegionGroupFills =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_REGION_GROUP_DROP"] != nil
-    private static let wrapperContentIncludesCuts =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_REGION_WRAPPER_CUTS"] != nil
 
     /// Whether a point is inside the region a script gave this object.
     ///
@@ -265,7 +259,7 @@ extension WasabiSceneRenderer {
         // cut strips, so it is cut away either way. Dropping the fills instead (the first version of
         // this rule) erased Winamp_Single_GUI's whole lower body — `window.left/center/right` share a
         // group with the two bottom-corner `sysregion="-2"` silhouettes, and the player drew nothing
-        // below y=154 of 280. `WINAMP_MODERN_REGION_GROUP_DROP=1` restores the drop, for an A/B.
+        // below y=154 of 280.
         let cutParents = Set(declared.lazy.filter { !$0.additive }
             .compactMap { $0.node.object.parent.map(ObjectIdentifier.init) })
         // A layout that cuts nothing keeps its rectangle (see `buildWindowRegion`), and this runs on
@@ -278,16 +272,13 @@ extension WasabiSceneRenderer {
         // Each cut-parent group's cuts are held back to just after that group's last fill, in their
         // own order.
         var lastFill: [ObjectIdentifier: Int] = [:]
-        if !Self.dropsRegionGroupFills {
-            for (index, entry) in declared.enumerated() where entry.additive {
-                if let parent = cutParent(entry) { lastFill[parent] = index }
-            }
+        for (index, entry) in declared.enumerated() where entry.additive {
+            if let parent = cutParent(entry) { lastFill[parent] = index }
         }
         var ordered: [(node: WasabiSceneNode, additive: Bool)] = []
         var held: [ObjectIdentifier: [(node: WasabiSceneNode, additive: Bool)]] = [:]
         for (index, entry) in declared.enumerated() {
             let parent = cutParent(entry)
-            if entry.additive, parent != nil, Self.dropsRegionGroupFills { continue }
             if !entry.additive, let parent, let last = lastFill[parent], index < last {
                 held[parent, default: []].append(entry)
                 continue
@@ -331,8 +322,7 @@ extension WasabiSceneRenderer {
         // them erased everything below the titlebar.
         for node in nodes where !parents.contains(ObjectIdentifier(node.object))
             || node.object.attributes["background"] != nil {
-            if !Self.wrapperContentIncludesCuts,
-               let value = Self.windowRegionValue(of: node.object), value < 0 { continue }
+            if let value = Self.windowRegionValue(of: node.object), value < 0 { continue }
             let box = node.frame.intersection(node.clip)
             guard !box.isNull, !box.isEmpty else { continue }
             for ancestor in ancestors(of: node.object) where wrappers.contains(ancestor) {
@@ -340,7 +330,7 @@ extension WasabiSceneRenderer {
             }
         }
         // A wrapper that holds no content is its box, like any other artwork-less group.
-        return Self.wrapperContentIncludesCuts ? boxes : boxes.filter { !$0.value.isEmpty }
+        return boxes.filter { !$0.value.isEmpty }
     }
 
     /// Whether a `sysregion="1"` box is backed black: every layout that has not opted in to

@@ -427,7 +427,7 @@ extension WasabiSceneRenderer {
                 start = (start * scale).rounded(.down)
                 end = total - start
             }
-            return ([start, total - start - end, end], overfull && !Self.gridSquashesEdges)
+            return ([start, total - start - end, end], overfull)
         }
         func widest(_ candidates: [WasabiBitmap?]) -> CGFloat {
             CGFloat(candidates.compactMap { $0?.width }.max() ?? 0)
@@ -480,7 +480,4 @@ extension WasabiSceneRenderer {
         }
         context.restoreGState()
     }
-
-    /// Kill switch: edges that overfill a grid squash into their share again instead of being clipped.
-    static let gridSquashesEdges = ProcessInfo.processInfo.environment["WINAMP_MODERN_GRID_SQUASH_EDGES"] != nil
 }

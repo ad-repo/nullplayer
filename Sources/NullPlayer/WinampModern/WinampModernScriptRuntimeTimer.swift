@@ -329,18 +329,14 @@ extension WinampModernScriptRuntime {
         _ = try? dispatch(object: object, event: "onstop")
     }
 
-    /// `WINAMP_MODERN_ALTERNATE_TEXT_PERSISTS=1` — A/B: `setAlternateText` stays until cleared (B258).
-    static let alternateTextPersists =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_ALTERNATE_TEXT_PERSISTS"] != nil
-
     /// A script's `setAlternateText` clears itself: Moon Groove puts "Volume: 20%" and "Shuffle: On"
     /// on its ticker and never clears them, so the song title never came back (B258). Each write
     /// restarts the clock, so a held volume drag keeps its readout up.
     func expireAlternateText(of object: WasabiObject) {
         let id = object.stableID
         let timerID = TimerNamespace.alternateTextExpiry.id(for: id)
-        guard object.attributes[WasabiTextMetrics.scriptAlternateTextKey]?.isEmpty == false,
-              !Self.alternateTextPersists else { return timers.cancel(id: timerID) }
+        guard object.attributes[WasabiTextMetrics.scriptAlternateTextKey]?.isEmpty == false
+        else { return timers.cancel(id: timerID) }
         // ponytail: 2 s is a guess (MMD3 clears its own after 1 s); measure Winamp if a skin disagrees.
         _ = try? timers.schedule(id: timerID, period: 2) { [weak self] in
             guard let self else { return }

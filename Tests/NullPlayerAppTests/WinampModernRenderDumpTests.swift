@@ -1181,8 +1181,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
                             let known = allEvents + hoverEvents
                             for event in (requested.isEmpty ? allEvents
                                           : requested.filter { known.contains($0) }) {
-                                if event == "onleftbuttonup", !flipped,
-                                   !WinampModernScriptRuntime.togglesAfterRelease { flip() }
+                                if event == "onleftbuttonup", !flipped { flip() }
                                 // The button events carry the click's x/y, exactly as the view sends
                                 // them: a handler that pops two arguments off an empty stack fails
                                 // with an underflow that belongs to the harness, not the skin.

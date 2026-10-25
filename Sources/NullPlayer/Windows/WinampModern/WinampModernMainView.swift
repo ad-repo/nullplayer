@@ -2831,12 +2831,11 @@ final class WinampModernMainView: NSView {
     /// `ButtonWnd` flips in `onLeftPush`, before the script hears the release, so a handler's own
     /// `setActivated` has the last word: ClassicPro's tab button clears every tab and then
     /// `setActivated(1)` on itself from `onLeftButtonUp`, and flipped afterwards the tab just chosen
-    /// went dark. `WINAMP_MODERN_TOGGLE_AFTER_RELEASE=1` flips after it again.
+    /// went dark.
     private func flipActivation(of object: WasabiObject, around release: () -> Void) -> ActivationFlip {
-        if WinampModernScriptRuntime.togglesAfterRelease { release() }
         let flip: ActivationFlip = scripts.selectRadioMember(object) ? .radio
             : scripts.toggleActivation(of: object) ? .toggled : .none
-        if !WinampModernScriptRuntime.togglesAfterRelease { release() }
+        release()
         return flip
     }
 

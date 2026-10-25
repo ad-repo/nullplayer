@@ -242,12 +242,11 @@ final class WinampModernInteractionSweepTests: XCTestCase {
             // The flip comes before the release, where the view makes it.
             func flip() { if !runtime.selectRadioMember(pressed) { _ = runtime.toggleActivation(of: pressed) } }
             send("onleftbuttondown", at: point)
-            if !WinampModernScriptRuntime.togglesAfterRelease { flip() }
+            flip()
             send("onleftbuttonup", at: point); send("onleftclick")
             if let raw = pressed.attributes["action"], !raw.isEmpty {
                 markup(WasabiClickAction.split(action: raw, parameter: pressed.attributes["param"]))
             }
-            if WinampModernScriptRuntime.togglesAfterRelease { flip() }
             if WinampModernScriptRuntime.configBinding(of: pressed) != nil { runtime.toggleConfigAttribute(of: pressed) }
         case "dblclick":
             send("onleftbuttondown", at: point); send("onleftbuttondblclk", at: point); send("onleftbuttonup", at: point)

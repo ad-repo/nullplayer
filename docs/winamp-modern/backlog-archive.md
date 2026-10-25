@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B252 — A/B kill switches retire with their rows — closed 2026-10-25
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B252 | **The `.wal` A/B kill switches have no common form and no retirement.** This branch alone added six (`BITMAP_NEGATIVE_CLAMP`, `LAYOUT_DRAWBACKGROUND`, `GROUP_HIT_BOX`, `REGION_GROUP_DROP`, `NOTIFY_EVENT_OFF`, `GROUP_REGION`; then `TOGGLE_AFTER_RELEASE`, `EMBED_OWN_IMAGE`, `GRID_SQUASH_EDGES` from CPro_iPhone3gv2's pass), with mixed polarity (`!= nil` on, `!= "0"` off), and `REGION_GROUP_DROP` keeps the superseded algorithm inside the new region sort. Each is a live second code path in a shared hot path once its fix is accepted. Settle one declaration form (a cached `static let` beside the code it guards, one polarity), record each switch's owning row in `harness.md`, and delete a switch with its old path when that row closes. Done when every switch in `harness.md` names a row, the ones whose rows are archived are gone, and the corpus sweep matches its baseline | code health; no corpus demand | S | 3 |
+
+**Closed 2026-10-25**. Every one of the seventeen `**A/B kill switch**` rows in `harness.md` traced (by `git log -S`) to a fix whose backlog row is archived, so all seventeen went with their old paths: `DRAG_GLUE`, `LAYOUT_DRAWBACKGROUND`, `FRAME_TEXTURE_CLEAR`, `GROUP_REGION`, `TARGET_APERTURE`, `GROUP_IMAGE`, `BITMAP_NEGATIVE_CLAMP`, `GROUP_HIT_BOX`, `REGION_GROUP_DROP` (and the superseded drop inside the region sort), `REGION_WRAPPER_CUTS`, `NOTIFY_EVENT_OFF`, `SETACTIVATED_TOGGLE`, `TOGGLE_AFTER_RELEASE` (view, runtime and both harnesses), `EMBED_OWN_IMAGE`, `GRID_SQUASH_EDGES`, `UNRANGED_PLAY_LOOPS`, `ALTERNATE_TEXT_PERSISTS`. `harness.md` states the rule: a switch is a `static let` beside its code, set means the old path, listed with its open row, and deleted by the change that closes that row. `PIXEL_SNAP`, `SYNC_FRAMES` and `RESIZE_NOTIFY` are standing subsystem instruments and stay. Gold+silver sweep against B261's capture: identical apart from listed noise; `swift test --filter WinampModern` green.
+
 ## B250 — The deferred re-park reuses the video claim — closed 2026-10-25
 
 | Id | Item | Reach | Effort | Tier |

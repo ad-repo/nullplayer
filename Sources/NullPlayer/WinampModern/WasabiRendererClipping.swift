@@ -10,9 +10,6 @@ struct WasabiMaskClip {
 /// What a group clips its children to beyond its declared box: the alpha of a background it does
 /// not paint, and the aperture a target animation slides a child within.
 extension WasabiSceneRenderer {
-    static let honoursTargetApertures =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_TARGET_APERTURE"] != "0"
-
     /// The box a group that declares none clips to while a target animation has moved one of its
     /// children: the children's union at their **declared** places (`xmlParam`, which `gotoTarget`
     /// leaves alone). A slide is a move within a box. MIDISUI's vis drawer is a 121×124 `Drawer`
@@ -24,7 +21,7 @@ extension WasabiSceneRenderer {
     /// with no declared box otherwise keeps the inherited clip (`clipAxes`).
     func targetAperture(of group: WasabiObject,
                                 children: ArraySlice<WasabiSceneNode>) -> CGRect? {
-        guard Self.honoursTargetApertures, group.tag.is(.group), clipAxes(of: group).isEmpty else {
+        guard group.tag.is(.group), clipAxes(of: group).isEmpty else {
             return nil
         }
         var union = CGRect.null
@@ -43,16 +40,13 @@ extension WasabiSceneRenderer {
         return moved && !union.isNull ? union : nil
     }
 
-    static let honoursGroupRegions =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_GROUP_REGION"] != "0"
-
     /// A group whose `background` is not painted (`drawbackground="0"`) is shaped by it: Wasabi takes
     /// a group's region from its background's alpha, and the group's children draw inside that region
     /// only. ArmorAmp is the measured case: its spectrum is a 170x70 `<vis>` inside
     /// `background="visgroup.bg"`, a blade-shaped map of the screen. Clipped only to the box, the bars
-    /// spilled over the screen bezel. `WINAMP_MODERN_GROUP_REGION=0` turns this off for an A/B.
+    /// spilled over the screen bezel.
     func groupRegionMask(of object: WasabiObject, frame: CGRect) -> WasabiMaskClip? {
-        guard Self.honoursGroupRegions, !frame.isEmpty, paintedBackingID(of: object) == nil,
+        guard !frame.isEmpty, paintedBackingID(of: object) == nil,
               let background = object.attributes["background"], backgroundBitmap(of: object) != nil,
               let mask = resources.regionMask(WasabiRegionClip(mapID: background, mapPath: nil,
                                                                threshold: 0, reversed: false))

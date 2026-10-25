@@ -83,11 +83,10 @@ extension WinampModernScriptRuntime {
         // Only to a script that does not take its params from `onSetXuiParam`: Winamp 5 frames bind
         // both, and handed `content` twice they built the client group twice (NEO_CLASSIC, EMP2,
         // CopperdeckII, Lobe — up to five stacked holders in one `Component` window).
-        // `WINAMP_MODERN_NOTIFY_EVENT_OFF=1` withholds `onNotify`, for an A/B.
         let listensForParams = owned.contains { program in
             program.bindings.contains { program.methods[$0.methodIndex].name == "onsetxuiparam" }
         }
-        let sendsNotifyEvent = !listensForParams && !Self.withholdsNotifyEvent
+        let sendsNotifyEvent = !listensForParams
         for name in object.orderedAttributeNames where Self.isNotifyParam(name) {
             let notify = object.attributes[name] ?? ""
             let parts = notify.split(separator: ",", maxSplits: 1)
@@ -110,9 +109,6 @@ extension WinampModernScriptRuntime {
     static func isGroupClaimedParam(_ name: String) -> Bool {
         groupClaimedParams.contains(name.lowercased()) || isNotifyParam(name)
     }
-
-    private static let withholdsNotifyEvent =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_NOTIFY_EVENT_OFF"] != nil
 
     /// `<CustomObject groupid="…">` — a holder whose **content is named by an attribute**.
     ///

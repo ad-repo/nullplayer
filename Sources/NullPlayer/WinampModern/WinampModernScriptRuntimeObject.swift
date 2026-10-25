@@ -278,12 +278,7 @@ extension WinampModernScriptRuntime {
             let wanted = arguments[0].truthy
             let activationChanged = (object.attributes["activated"] == "1") != wanted
             setActivated(object, wanted)
-            if activationChanged {
-                if Self.setActivatedRaisesToggle {
-                    _ = try dispatch(object: object, event: "ontoggle", arguments: [.boolean(wanted)])
-                }
-                notifyActivated(object, activated: wanted)
-            }
+            if activationChanged { notifyActivated(object, activated: wanted) }
             return .null
         case "setactivatednocallback":
             setActivated(embeddedControl(of: object) ?? object, arguments[0].truthy)
@@ -610,9 +605,8 @@ extension WinampModernScriptRuntime {
             // plain groups whose script answers a click with `leftClick()` on a ghosted
             // `cfgattrib` togglebutton, and with only `onLeftClick` dispatched the attribute never
             // moved and neither button did anything. The flip comes first, as the mouse's does.
-            if !Self.togglesAfterRelease { _ = toggleActivation(of: object) }
+            _ = toggleActivation(of: object)
             _ = try dispatch(object: object, event: "onleftclick")
-            if Self.togglesAfterRelease { _ = toggleActivation(of: object) }
             let action = object.attributes["action"]
             hooks.actionRequested?(action ?? "", object.attributes["param"])
             if action == nil { _ = toggleConfigAttribute(of: object) }
@@ -910,12 +904,6 @@ extension WinampModernScriptRuntime {
     }
 
     static let maximumPendingCalls = 256
-    /// `WINAMP_MODERN_SETACTIVATED_TOGGLE=1` — A/B: `setActivated` raises `onToggle` again (B255).
-    static let setActivatedRaisesToggle =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_SETACTIVATED_TOGGLE"] != nil
-    /// Kill switch: a click flips its togglebutton after the script hears `onLeftButtonUp`, not before.
-    static let togglesAfterRelease =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_TOGGLE_AFTER_RELEASE"] != nil
     static let snapAdjustEdges = ["left", "top", "right", "bottom"]
 
     /// Where a script's `snapAdjust()` stores a layout's snap margin on `edge`.

@@ -613,8 +613,8 @@ broken on its own, and each fix looked like it had done nothing until the next o
   embedded button's own artwork set, as Wasabi sets an instance's params after the groupdef's. Big
   Bento's tab mousetrap is a placeholder `image="wtf"`; left on the wrapper, the tab icon drew under
   the active-tab layer once a tab could show as active (CPro_iPhone3gv2's pass, 2026-10-24: gold+silver
-  moved only the two Win10 Big Bento variants, whose icons now sit 1px in, on the mousetrap). A/B:
-  `WINAMP_MODERN_EMBED_OWN_IMAGE=1`. Corpus effect of the rule itself: Ebonite's and iNTELLI_design's
+  moved only the two Win10 Big Bento variants, whose icons now sit 1px in, on the mousetrap).
+  Corpus effect of the rule itself: Ebonite's and iNTELLI_design's
   window-mode buttons draw at their bitmap's own size, clipped by the wrapper, instead of squashed into it.
 - **A wrapper's activation is its button's.** `setActivated`, `setChecked`,
   `setActivatedNoCallback`, `getActivated` and `isChecked` called on an `embed_xui` wrapper act on the
@@ -658,7 +658,7 @@ reaches the script's `onLeftButtonUp`/`onLeftClick`, so a handler's own `setActi
 word. ClassicPro's `CproTabButton` relies on it: its `onLeftButtonUp` clears every tab and then
 `setActivated(1)` on itself, and flipped afterwards the tab just chosen went dark. Azenis² selects its
 EQ mode the same way through `leftClick()` at load. The view, the render dump's `CLICK` and the
-interaction sweep all flip before `onleftbuttonup`; A/B: `WINAMP_MODERN_TOGGLE_AFTER_RELEASE=1`.
+interaction sweep all flip before `onleftbuttonup`.
 
 #### Scrolling: `scrollToPercent` is a viewport offset, not a layout change
 
@@ -1083,8 +1083,7 @@ resize of the content must not carry the frame, which the script then moves itse
 A follower that is the dragged window itself is not linked; its own `onMove` pulls the content, as
 before. Snapping skips a window's glued partner (`gluedPartner(of:)`). Snapped against the content on the
 frame's exact rect, a solo drag of the frame stuck until the pointer passed the 15 pt threshold, in
-~16 pt jumps every ~35 ms; after the fix it moved every 8.5 ms. A/B: `WINAMP_MODERN_DRAG_GLUE=0`
-([harness.md](harness.md)).
+~16 pt jumps every ~35 ms; after the fix it moved every 8.5 ms.
 
 ### `onSetVisible` — a window a script closes has to be *reopened*, not just ordered in
 

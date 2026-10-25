@@ -16,10 +16,10 @@
 - The vis drawer (`DrawerGroup`, no `w`/`h`) opens from `drawer.maki` with `setTargetX(-118)`; it
   slid over the COMPONENT column and the playlist, burying the playlist / vis studio / video
   buttons. A group with no declared box now clips to its children's declared union while a target
-  move is under way (`WINAMP_MODERN_TARGET_APERTURE`, [rendering.md](../reference/rendering.md)).
+  move is under way ([rendering.md](../reference/rendering.md)).
 - `ledAnimation` groups are instanced `image="led.animation"` (the 280×14 sheet); the engine drew
   the group's `image=` as art — 20 dots over the TIMER / SONG INFO / TRACK labels, 120px past the
-  right edge. A group no longer takes `image=` (`WINAMP_MODERN_GROUP_IMAGE`).
+  right edge. A group no longer takes `image=`.
 - The library holder is `hold="guid:{6B0EDF80-…} (Media library)"`; the label's hex letters joined
   the GUID, so it held nothing. A braced GUID now ends at its brace ([components.md](../reference/components.md)).
 - The Media Library layout has no `CLOSE`; the view's fallback close corner sat on the skin's

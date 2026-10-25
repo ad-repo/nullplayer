@@ -90,12 +90,11 @@ enum WasabiEmbeddedXUI {
                 // layer the moment a tab could show as active. All or nothing, so a button never
                 // mixes its own frames with the wrapper's.
                 return embedded.tag.is(anyOf: WasabiKind.buttons) && attributes["image"] != nil
-                    && (embedded.attributes["image"] == nil || !WasabiEmbeddedXUI.keepsOwnButtonImage)
             }
         }
 
         /// Whether the wrapper's value replaces one the embedded object already states.
-        var overrides: Bool { self == .buttonArtwork && !WasabiEmbeddedXUI.keepsOwnButtonImage }
+        var overrides: Bool { self == .buttonArtwork }
     }
 
     /// The embedded widget's tag when `object` is an `embed_xui` wrapper, else nil.
@@ -105,9 +104,6 @@ enum WasabiEmbeddedXUI {
     /// keeps its box — its children are laid out and clipped in it — but the button inside draws
     /// the artwork and takes the press, so the wrapper does neither.
     static func wrapsButton(_ object: WasabiObject) -> Bool { object.attributes[buttonMarkerKey] == "1" }
-
-    /// Kill switch: an embedded button that states its own `image` keeps it, and the wrapper draws its own.
-    static let keepsOwnButtonImage = ProcessInfo.processInfo.environment["WINAMP_MODERN_EMBED_OWN_IMAGE"] != nil
 
     private static let markerKey = "nullplayer.embedxui"
     private static let buttonMarkerKey = "nullplayer.embedbutton"
