@@ -130,6 +130,10 @@ protocol WinampModernHost: AnyObject {
     /// `WinampModernSeekerWaveform`.
     var seekerWaveform: (samples: [UInt16], isLoading: Bool) { get }
 
+    /// `System.isVideo()` — whether the playing item is a film. Winamp Single GUI's `onPlay` opens
+    /// its in-player video pane on it; answered false, a film never reached that box.
+    var isVideo: Bool { get }
+
     /// Whether a claimed seeker holder is on screen, on the same terms as `setWaveformNeeded`: the
     /// envelope costs a file decode, so it stays off unless a skin actually draws one. Idempotent.
     func setSeekerWaveformNeeded(_ needed: Bool)
@@ -159,6 +163,7 @@ protocol WinampModernHost: AnyObject {
 
 extension WinampModernHost {
     var albumArtwork: CGImage? { nil }
+    var isVideo: Bool { false }
     // A host with no mixer to pan (the render harness, a test double) reads centred and swallows the
     // write, the same way `vuLevels` reads silence — a `PAN` slider still draws, at its centre.
     var balance: Double {
@@ -550,6 +555,7 @@ final class WinampModernAudioEngineHost: WinampModernHost {
             seek: { WindowManager.shared.seekVideo(to: $0) })
     }
 
+    var isVideo: Bool { videoSession() != nil }
     var playbackState: PlaybackState { videoSession()?.state ?? engine.state }
     var currentTime: TimeInterval { videoSession()?.currentTime ?? engine.currentTime }
     var duration: TimeInterval { videoSession()?.duration ?? engine.duration }

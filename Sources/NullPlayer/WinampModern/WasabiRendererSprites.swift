@@ -411,20 +411,23 @@ extension WasabiSceneRenderer {
 
         /// Extents for the three slots along one axis: a single declared slot spans everything, and
         /// otherwise the edges keep their art's own size and the centre takes the remainder. Edges
-        /// that together exceed the box (a pane the user collapsed) shrink instead of overlapping.
-        func extents(total: CGFloat, declared: [Int], natural: (Int) -> CGFloat) -> [CGFloat] {
+        /// that together exceed the box (a pane the user collapsed) split it instead of overlapping,
+        /// and `cropped` says their art is then drawn whole and clipped rather than squashed.
+        func extents(total: CGFloat, declared: [Int],
+                     natural: (Int) -> CGFloat) -> (sizes: [CGFloat], cropped: Bool) {
             if declared.count == 1 {
                 var result: [CGFloat] = [0, 0, 0]
                 result[declared[0]] = total
-                return result
+                return (result, false)
             }
             var (start, end) = (natural(0), natural(2))
-            if start + end > total {
+            let overfull = start + end > total
+            if overfull {
                 let scale = total / max(1, start + end)
                 start = (start * scale).rounded(.down)
                 end = total - start
             }
-            return [start, total - start - end, end]
+            return ([start, total - start - end, end], overfull)
         }
         func widest(_ candidates: [WasabiBitmap?]) -> CGFloat {
             CGFloat(candidates.compactMap { $0?.width }.max() ?? 0)
@@ -434,8 +437,8 @@ extension WasabiSceneRenderer {
         }
         let columnArt = [[topLeft, left, bottomLeft], [top, middle, bottom], [topRight, right, bottomRight]]
         let rowArt = [[topLeft, top, topRight], [left, middle, right], [bottomLeft, bottom, bottomRight]]
-        let columns = extents(total: frame.width, declared: declaredColumns) { widest(columnArt[$0]) }
-        let rows = extents(total: frame.height, declared: declaredRows) { tallest(rowArt[$0]) }
+        let (columns, cropColumns) = extents(total: frame.width, declared: declaredColumns) { widest(columnArt[$0]) }
+        let (rows, cropRows) = extents(total: frame.height, declared: declaredRows) { tallest(rowArt[$0]) }
 
         let tiles = tile
         context.saveGState()
@@ -452,6 +455,23 @@ extension WasabiSceneRenderer {
                 let tileY = tiles && row == 1
                 if tileX || tileY {
                     drawTiled(bitmap, in: cell, tileX: tileX, tileY: tileY, context: context)
+                } else if (cropColumns && column != 1) || (cropRows && row != 1) {
+                    // An edge too big for its share keeps its size, anchored to its own side and
+                    // clipped, as Wasabi draws it. CPro iPhone's shadow gives all nine slots the whole
+                    // 399x741 shadow in a 399x741 window; squashed, it drew as four phones.
+                    var art = cell
+                    if cropColumns && column != 1 {
+                        art.size.width = CGFloat(bitmap.width)
+                        if column == 2 { art.origin.x = cell.maxX - art.width }
+                    }
+                    if cropRows && row != 1 {
+                        art.size.height = CGFloat(bitmap.height)
+                        if row == 2 { art.origin.y = cell.maxY - art.height }
+                    }
+                    context.saveGState()
+                    context.clip(to: cell)
+                    drawImage(bitmap.image, in: art, context: context)
+                    context.restoreGState()
                 } else {
                     drawImage(bitmap.image, in: cell, context: context)
                 }

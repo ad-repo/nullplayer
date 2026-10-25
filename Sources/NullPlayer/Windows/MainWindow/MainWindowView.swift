@@ -147,6 +147,8 @@ class MainWindowView: NSView {
     /// Button being pressed
     private var pressedButton: ButtonType?
 
+    private let clutterbar = ClassicClutterbar()
+
     /// Dragging state
 
     /// Which slider is being dragged (nil = none)
@@ -1196,6 +1198,7 @@ class MainWindowView: NSView {
         // Draw main window background
         if isFullRedraw || dirtySkin.intersects(drawBounds) {
             renderer.drawMainWindowBackground(in: context, bounds: drawBounds, isActive: isActive)
+            renderer.drawClutterbarSelections(clutterbar.selectedButtons, in: context)
         }
 
         if mainVisMode == .visClassicExact {
@@ -1624,7 +1627,11 @@ class MainWindowView: NSView {
             
         case .openMainMenu:
             pressedButton = .menu
-            
+
+        case .clutterbar(let button):
+            let rect = exactViewRect(forSkinRect: button.rect)
+            clutterbar.press(button, menuAnchor: NSPoint(x: rect.maxX, y: rect.maxY), in: self)
+
         // Note: cycleMainVisMode is handled via single-click in mouseDown()
             
         // Slider interactions
@@ -1770,6 +1777,10 @@ class MainWindowView: NSView {
             }
 
             pressedButton = nil
+            needsDisplay = true
+        }
+
+        if clutterbar.release(over: regionManager.hitTest(point: point, in: .main, windowSize: originalWindowSize)) {
             needsDisplay = true
         }
     }

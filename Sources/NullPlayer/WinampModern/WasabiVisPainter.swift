@@ -164,18 +164,26 @@ struct WasabiVisStyle {
     /// lined up across bars of different heights.
     func fillRamped(bar: CGRect, boxBottom: CGFloat, boxHeight: CGFloat, in context: WasabiDrawList) {
         guard !bandColors.isEmpty, bar.height > 0, boxHeight > 0 else { return }
-        let slice = boxHeight / CGFloat(bandColors.count)
         for step in bandColors.indices {
-            // The context is the renderer's, with y increasing downward, so step 0 is the slice
-            // sitting on the bottom edge and later steps climb toward the top.
-            let top = boxBottom - CGFloat(step + 1) * slice
-            let bottom = boxBottom - CGFloat(step) * slice
+            let (top, bottom) = Self.rampSlice(step, count: bandColors.count,
+                                               boxBottom: boxBottom, boxHeight: boxHeight)
             let y = max(top, bar.minY)
             let height = min(bottom, bar.maxY) - y
             guard height > 0 else { continue }
             context.setFillColor(bandColors[step])
             context.fill(CGRect(x: bar.minX, y: y, width: bar.width, height: height))
         }
+    }
+
+    /// Colour slice `step` of `count` in the box, as top and bottom edges. The context is the
+    /// renderer's, with y increasing downward, so step 0 is the slice on the bottom edge and later
+    /// steps climb toward the top. Edges sit on whole pixels, shared by neighbours: a fractional
+    /// edge antialiased into a dark seam between every slice (B264, Big Bento's 16 bands).
+    static func rampSlice(_ step: Int, count: Int, boxBottom: CGFloat,
+                          boxHeight: CGFloat) -> (top: CGFloat, bottom: CGFloat) {
+        let slice = boxHeight / CGFloat(count)
+        return ((boxBottom - CGFloat(step + 1) * slice).rounded(),
+                (boxBottom - CGFloat(step) * slice).rounded())
     }
 
     /// The colour of one oscilloscope sample. Winamp bands the scope by **excursion** into five
@@ -292,6 +300,18 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
         barTop - (capY + capHeight) >= minimumCapGap
     }
 
+    /// Bar `index` of `count` in `frame`, on whole pixels. A fractional slot antialiases the 1px gap
+    /// between bars into a smear, and a `wide` row then reads as one solid block rather than as
+    /// Winamp's separated bars. **`thin` bars abut** (B264): its 75 bands leave a 1–2px slot, where
+    /// the gap ate whole bars and left an irregular comb of gaps.
+    static func analyzerColumn(_ index: Int, count: Int, in frame: CGRect,
+                               isThin: Bool) -> (x: CGFloat, width: CGFloat) {
+        let slot = frame.width / CGFloat(count)
+        let start = (CGFloat(index) * slot).rounded(.down)
+        let end = (CGFloat(index + 1) * slot).rounded(.down)
+        return (frame.minX + start, max(1, end - start - (isThin ? 0 : 1)))
+    }
+
     /// The longest step a single frame may decay by. A stall — or the first draw, whose `lastDraw` is
     /// zero — must not drop every bar to the floor in one frame.
     private static let maximumDecayStep: CFTimeInterval = 0.25
@@ -352,16 +372,6 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
         func bandFraction(_ index: Int) -> CGFloat {
             max(0, min(1, bands[index] * gain))
         }
-        // Bars are laid out on whole pixels. A fractional slot antialiases the 1px gap between bars
-        // into a smear, and a `wide` row then reads as one solid block rather than as Winamp's
-        // separated bars.
-        let slot = frame.width / CGFloat(count)
-        func columns(_ index: Int) -> (x: CGFloat, width: CGFloat) {
-            let start = (CGFloat(index) * slot).rounded(.down)
-            let end = (CGFloat(index + 1) * slot).rounded(.down)
-            return (frame.minX + start, max(1, end - start - 1))
-        }
-
         var state = boxes[input.objectID] ?? BoxState()
         #if DEBUG
         if !state.bars.isEmpty, state.bars.count != count {
@@ -396,7 +406,8 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
                 : max(level, previous - barStep)
             state.bars[index] = bar
             state.peaks[index] = max(bar, state.peaks[index] - peakStep)
-            let (x, barWidth) = columns(index)
+            let (x, barWidth) = Self.analyzerColumn(index, count: count, in: frame,
+                                                    isThin: style.isThin)
             let barRect = CGRect(x: x, y: frame.maxY - bar * frame.height,
                                  width: barWidth, height: bar * frame.height)
             if style.coloring == .normal {

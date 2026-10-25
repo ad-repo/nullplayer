@@ -28,10 +28,13 @@ The version argument is the explicit instruction to bump (it overrides [[no-vers
 ```bash
 V=0.26.1   # the version being released
 git switch main && git pull --ff-only origin main
-/usr/libexec/PlistBuddy -c "Set CFBundleShortVersionString $V" Sources/NullPlayer/Resources/Info.plist
+OLD=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Sources/NullPlayer/Resources/Info.plist)
+# sed, not PlistBuddy Set — PlistBuddy rewrites the file and drops the NSAppTransportSecurity comment
+sed -i '' "s|<string>$OLD</string>|<string>$V</string>|" Sources/NullPlayer/Resources/Info.plist
 sed -i '' "s/^## Unreleased\$/## $V/" CHANGELOG.md
+./scripts/generate_third_party_notices.sh  # stamps $V in ThirdPartyNotices.txt; the build does it otherwise and dirties the tree
 grep -n "^## $V\$" CHANGELOG.md   # exactly one hit; if none, there was no Unreleased section — stop and ask
-git diff --stat                    # only Info.plist and CHANGELOG.md
+git diff --stat                    # Info.plist (1 line), CHANGELOG.md, ThirdPartyNotices.txt
 git commit -am "Release $V" && git push origin main
 ```
 
@@ -57,7 +60,11 @@ The release is cut from `main@HEAD`, which must be the commit that contains the 
 
 ### 3. Run the release helper
 
+The DMG must be Developer ID signed and notarized, or the helper refuses to publish. Neither variable is exported in the user's shell — always pass both inline, exactly as below; never ask the user for them:
+
 ```bash
+export DEVELOPER_ID="Developer ID Application: Andrew Donheiser (Z5ASF6C682)"
+export NOTARY_PROFILE=nullplayer   # notarytool keychain profile
 ./scripts/create_release.sh              # build DMG, publish release, update the Homebrew cask
 ./scripts/create_release.sh --skip-build # reuse an existing dist/NullPlayer-$V.dmg instead of rebuilding
 ```

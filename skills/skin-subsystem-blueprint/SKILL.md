@@ -232,7 +232,7 @@ Build, in this order:
 4. **A committed baseline the gate ratchets against**, so a change is a diff rather than an
    opinion — and a diff is then classified, not assumed to be a regression (see *A sweep diff is
    unclassified, not a regression* below).
-5. A **demand-driven backlog** (`<FAMILY>_TASKS.md` at the repo root, closed entries moved to
+5. A **demand-driven backlog** (`tasks/<FAMILY>_TASKS.md`, closed entries moved to
    `docs/<family>/…-archive.md`) ranked by what the corpus actually asks for. A test case is not a
    milestone: one fix that unblocks 200 inputs beats ten that unblock one.
 
@@ -302,7 +302,8 @@ anything that only reproduces on screen. The `.wmz` session that produced this f
 rediscovering five rules already written there, because nothing pointed at them.
 
 Every family skill carries a *Debugging a live defect* section that does that routing and adds only
-what is specific to its engine. That is a required section, not an optional one.
+what is specific to its engine. That is a required section, not an optional one. A new family also
+adds its row to `skills/skin-triage`'s family table, and to its Phase 2 and Phase 3 tables.
 
 **One hop, not a fork.** The section routes to `live-ui-testing` for the epistemics; that file
 forwards the mechanics — launching into a state, driving a control, capturing a window — to
@@ -339,7 +340,7 @@ skills/<family>-skin-guide/
   reference/loading.md  what is tolerated, what stays fatal
   reference/<area>.md   rendering, scripting, components — split when a file gets long
   reference/skins/      one dossier per skin that taught the engine something, plus the index
-<FAMILY>_TASKS.md       the ranked backlog
+tasks/<FAMILY>_TASKS.md the ranked backlog
 docs/<family>/          phase handoffs and the closed-entry archive
 ```
 
@@ -349,10 +350,9 @@ docs/<family>/          phase handoffs and the closed-entry archive
 - **Treat phase handoffs as unverified narrative.** Check their claims against the code before
   relying on them — `.wmz`'s phase 7 asserts a capability gate that does not exist, and its census
   numbers were wrong in both directions.
-- **A corpus sweep proves the default state and nothing else.** No sweep here hovers, drags, ticks a
-  timer or plays a track, so a byte-identical capture across a change to any of those means
-  *unmeasured*. Build a state-aware probe (`WMP_RENDER_HOVER`, `WMP_RENDER_CLICK`'s drag form) beside
-  the sweep, and say which of the two a number came from.
+- **A corpus sweep proves the default state and nothing else** (`live-ui-testing` § *What a green
+  sweep does not cover*). Build a state-aware probe (`WMP_RENDER_HOVER`, `WMP_RENDER_CLICK`'s drag
+  form) beside the sweep, and say which of the two a number came from.
 - **A corpus is not a memory.** A skin that produced two or more unrelated defects, or one no probe
   could see, earns a dossier in `reference/skins/`: what it exercises, what it found, **what was
   ruled out**, and the decoded coordinates that reach its controls. The ruled-out section is the one

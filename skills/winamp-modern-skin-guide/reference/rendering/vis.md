@@ -75,6 +75,11 @@ Three rules, all of them measured on Ujola Cat, all of them engine-wide:
   *thickness* while the bars stayed one per FFT bin, so every skin drew the same 64 hairlines — and
   silently dropped the top 11 of the tap's 75 bands. Bars are laid out on **whole pixels**: at a
   fractional slot the 1px gap antialiases into a smear and a `wide` row reads as one solid block.
+  **Only `wide` gets the gap; `thin` bars abut** (B264): 75 bands leave a 1–2px slot, where the gap
+  ate whole bars and drew an irregular comb (cPro__KAO). The colour ramp's slices sit on whole pixels
+  too (`WasabiVisStyle.rampSlice`) — fractional slice edges drew a dark seam between every one of Big
+  Bento's 16 bands. Both rules are pure statics with tests in `WinampModernB73Tests`; the render
+  sweep cannot see them, since the harness draws no bars without audio.
 
 `colorbandpeak` is the falling cap over each bar, held at the running max and decayed at
 `peakfalloff` per second, and painted in the band's own colour when the skin declares no peak colour.

@@ -12,7 +12,7 @@ extension WasabiSceneRenderer {
         // Outside the window's own shape there is nothing to hit: a corner the skin trimmed away is
         // gone for the pointer as well as for the eye (B76).
         guard containsRegionPixel(at: point) else { return nil }
-        for node in sceneNodes().reversed() where node.clip.contains(point) && node.frame.contains(point) {
+        for node in sceneNodes().reversed() where node.clipping.contains(point) && node.frame.contains(point) {
             let object = node.object
             guard isVisible(object), includingGhosts || object.attributes["ghost"] != "1" else { continue }
             if shouldIgnore?(object) == true { continue }
@@ -25,8 +25,11 @@ extension WasabiSceneRenderer {
             // first and fourth buttons were dead while the second and third (denser artwork under the
             // same point) worked — which reads as "two of my buttons are broken", not as a hit test
             // disagreeing with a declared region.
+            // A group's artwork is its `background`, and its region is that artwork's alpha like any
+            // layer's. RODE 3 Lite lays `player.main.sliders` (343x212, 97% transparent mask) over the
+            // whole player; tested as a solid box it covered 24 of the controls beneath it.
             if object.attributes["rectrgn"] != "1",
-               let bitmap = resources.bitmap(identifier: node.bitmapID),
+               let bitmap = node.bitmapID.map({ resources.bitmap(identifier: $0) }) ?? groupHitArtwork(object),
                !scriptRegionContains(object, frame: node.frame, point: point) {
                 // An animated layer's artwork is a *strip*, and mapping the point across the whole
                 // sheet would sample whichever frame happened to line up with that row. Its region is
@@ -48,6 +51,12 @@ extension WasabiSceneRenderer {
             return object
         }
         return nil
+    }
+
+    /// A group's `background`, resolved as the renderer draws it, read as its artwork for the alpha
+    /// test.
+    private func groupHitArtwork(_ object: WasabiObject) -> WasabiBitmap? {
+        backgroundBitmap(of: object)
     }
 
     /// Whether a point is inside the region a script gave this object.
@@ -123,24 +132,6 @@ extension WasabiSceneRenderer {
 
     func frameDivider(at point: CGPoint) -> WasabiObject? {
         frameDividers().reversed().first { $0.rect.contains(point) }?.object
-    }
-
-    /// Clip one object to the region a script gave it, if any.
-    ///
-    /// The mask is placed at its own natural size at the object's origin, not stretched to the
-    /// object's rect: a region is a set of *map pixels*, and `Region.offset` moves it in those same
-    /// units. An unresolvable map leaves the object unclipped — a skin whose map is missing should
-    /// look the way it did before regions existed, not lose the control altogether.
-    func applyRegionClip(of object: WasabiObject, frame: CGRect, context: WasabiDrawList) {
-        guard let region = WasabiRegionClip(object: object),
-              let mask = resources.regionMask(region) else { return }
-        let rect = CGRect(x: frame.minX + CGFloat(region.offsetX),
-                          y: frame.minY + CGFloat(region.offsetY),
-                          width: CGFloat(mask.width), height: CGFloat(mask.height))
-        let quality = context.interpolationQuality
-        context.interpolationQuality = .none
-        context.clip(to: rect, mask: mask)
-        context.interpolationQuality = quality
     }
 
     /// A layer that contributes its bitmap to the **window region** and nothing else.
@@ -244,17 +235,41 @@ extension WasabiSceneRenderer {
         // `inner`, whose box overhangs that opening by 13px into the title bar and 7px into the
         // bottom bar. Restoring it printed an opaque black bar across the frame's own glossy
         // titlebar, stopping 19px short of the right edge where the backdrop's own box ends.
+        //
+        // So inside such a group the cuts land **after** its own fills, whatever the document order:
+        // the group is its artwork less its cut-outs. Ebonite's backdrop overhang sits inside its own
+        // cut strips, so it is cut away either way. Dropping the fills instead (the first version of
+        // this rule) erased Winamp_Single_GUI's whole lower body — `window.left/center/right` share a
+        // group with the two bottom-corner `sysregion="-2"` silhouettes, and the player drew nothing
+        // below y=154 of 280.
         let cutParents = Set(declared.lazy.filter { !$0.additive }
             .compactMap { $0.node.object.parent.map(ObjectIdentifier.init) })
         // A layout that cuts nothing keeps its rectangle (see `buildWindowRegion`), and this runs on
         // every frame as the cache key, so the content walk below is only paid for one that cuts.
         let cuts = declared.contains { !$0.additive }
         let contentBoxes = cuts ? wrapperContentBoxes(nodes: nodes, declared: declared) : [:]
-        return declared.compactMap { entry in
-            let object = entry.node.object
-            if entry.additive, let parent = object.parent, cutParents.contains(ObjectIdentifier(parent)) {
-                return nil
+        func cutParent(_ entry: (node: WasabiSceneNode, additive: Bool)) -> ObjectIdentifier? {
+            entry.node.object.parent.map(ObjectIdentifier.init).flatMap { cutParents.contains($0) ? $0 : nil }
+        }
+        // Each cut-parent group's cuts are held back to just after that group's last fill, in their
+        // own order.
+        var lastFill: [ObjectIdentifier: Int] = [:]
+        for (index, entry) in declared.enumerated() where entry.additive {
+            if let parent = cutParent(entry) { lastFill[parent] = index }
+        }
+        var ordered: [(node: WasabiSceneNode, additive: Bool)] = []
+        var held: [ObjectIdentifier: [(node: WasabiSceneNode, additive: Bool)]] = [:]
+        for (index, entry) in declared.enumerated() {
+            let parent = cutParent(entry)
+            if !entry.additive, let parent, let last = lastFill[parent], index < last {
+                held[parent, default: []].append(entry)
+                continue
             }
+            ordered.append(entry)
+            if let parent, lastFill[parent] == index { ordered += held.removeValue(forKey: parent) ?? [] }
+        }
+        return ordered.map { entry in
+            let object = entry.node.object
             return WasabiRegionCut(object: object, frame: entry.node.frame, clip: entry.node.clip,
                                    bitmapID: entry.node.bitmapID, additive: entry.additive,
                                    contentBoxes: contentBoxes[ObjectIdentifier(object)])
@@ -284,16 +299,20 @@ extension WasabiSceneRenderer {
         var boxes: [ObjectIdentifier: [CGRect]] = Dictionary(uniqueKeysWithValues: wrappers.map { ($0, []) })
         let parents = Set(nodes.compactMap { $0.object.parent.map(ObjectIdentifier.init) })
         // A group counts when it paints a `background`; otherwise its box is only the room its
-        // children are laid out in.
+        // children are laid out in. A cut is a silhouette, not content: Big Bento's full-window
+        // `window.background.regions` holds nothing but four 3x3 corner cuts, and bounding it by
+        // them erased everything below the titlebar.
         for node in nodes where !parents.contains(ObjectIdentifier(node.object))
             || node.object.attributes["background"] != nil {
+            if let value = Self.windowRegionValue(of: node.object), value < 0 { continue }
             let box = node.frame.intersection(node.clip)
             guard !box.isNull, !box.isEmpty else { continue }
             for ancestor in ancestors(of: node.object) where wrappers.contains(ancestor) {
                 boxes[ancestor]?.append(box)
             }
         }
-        return boxes
+        // A wrapper that holds no content is its box, like any other artwork-less group.
+        return boxes.filter { !$0.value.isEmpty }
     }
 
     /// Whether a `sysregion="1"` box is backed black: every layout that has not opted in to

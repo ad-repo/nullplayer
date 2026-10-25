@@ -443,6 +443,33 @@ struct SkinElements {
         static let background = NSRect(x: 304, y: 0, width: 8, height: 43)
         /// Position on main window
         static let position = NSPoint(x: 10, y: 22)
+
+        /// The O A I D V buttons. titlebar.bmp holds five more full bars below the idle one, at
+        /// x 304, 312, 320, 328, 336 from y 44, each with one button drawn selected.
+        enum Button: Int, CaseIterable {
+            case options, alwaysOnTop, fileInfo, doubleSize, visualization
+
+            /// Top offset and height within the bar
+            private var span: (y: CGFloat, height: CGFloat) {
+                switch self {
+                case .options: return (3, 8)
+                case .alwaysOnTop: return (11, 7)
+                case .fileInfo: return (18, 7)
+                case .doubleSize: return (25, 8)
+                case .visualization: return (33, 7)
+                }
+            }
+
+            /// Hit and draw rect on the main window
+            var rect: NSRect {
+                NSRect(x: position.x, y: position.y + span.y, width: 8, height: span.height)
+            }
+
+            /// Selected sprite in titlebar.bmp
+            var selectedSprite: NSRect {
+                NSRect(x: 304 + CGFloat(rawValue) * 8, y: 44 + span.y, width: 8, height: span.height)
+            }
+        }
     }
     
     // MARK: - Bitrate/Sample Rate Display

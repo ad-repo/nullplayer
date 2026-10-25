@@ -730,7 +730,7 @@ final class WinampModernPhase13Tests: XCTestCase {
                 revealed.append((kind, allowAutoOpenFallback))
                 return true
             },
-            isMainWindowVisible: { true },
+            isMainWindowVisible: { true }, showsEmbeddedEqualizer: { false },
             window: { _ in nil },
             setVisible: { _, _ in XCTFail("an embedded surface has no window to show") },
             classicFallback: { kind, _ in classicCalls.append(kind) },
@@ -765,7 +765,7 @@ final class WinampModernPhase13Tests: XCTestCase {
         let windows: [String: NSWindow] = [:]
         let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
             revealEmbedded: { _, _, _ in XCTFail("nothing is embedded here"); return false },
-            isMainWindowVisible: { true },
+            isMainWindowVisible: { true }, showsEmbeddedEqualizer: { false },
             window: { windows[$0] },
             setVisible: { id, visible in visibility[id] = visible },
             classicFallback: { _, _ in },
@@ -786,11 +786,51 @@ final class WinampModernPhase13Tests: XCTestCase {
                                                  video: .classicFallback(reason: "no video window"),
                                                  visualization: .classicFallback(reason: "no AVS window"))
         let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
-            revealEmbedded: { _, _, _ in true }, isMainWindowVisible: { true }, window: { _ in nil },
+            revealEmbedded: { _, _, _ in true }, isMainWindowVisible: { true }, showsEmbeddedEqualizer: { false }, window: { _ in nil },
             setVisible: { _, _ in }, classicFallback: { _, _ in }, redraw: {}))
         XCTAssertEqual(coordinator.summary,
                        "playlist=declared:Pledit equalizer=embedded library=classic(no frame) "
                        + "video=classic(no video window) visualization=classic(no AVS window)")
+    }
+
+    /// B253: an embedded equalizer is open when the skin draws its controls, and the menu cannot
+    /// switch it — there is no component to reveal. An embedded playlist keeps both.
+    func testAnEmbeddedEqualizerReportsTheSkinsFaceAndIsNotMenuToggleable() {
+        let catalog = WinampModernSurfaceCatalog(playlist: .embedded(containerID: WasabiObjectID(rawValue: 1)),
+                                                 equalizer: .embedded(containerID: WasabiObjectID(rawValue: 1)),
+                                                 library: .classicFallback(reason: "no frame"),
+                                                 video: .classicFallback(reason: "no video window"),
+                                                 visualization: .classicFallback(reason: "no AVS window"))
+        var drawn = false
+        let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
+            revealEmbedded: { _, _, _ in true }, isMainWindowVisible: { true },
+            showsEmbeddedEqualizer: { drawn }, window: { _ in nil },
+            setVisible: { _, _ in }, classicFallback: { _, _ in }, redraw: {}))
+        XCTAssertFalse(coordinator.isSurfaceVisible(.equalizer))
+        drawn = true
+        XCTAssertTrue(coordinator.isSurfaceVisible(.equalizer))
+        XCTAssertFalse(coordinator.isMenuToggleable(.equalizer))
+        XCTAssertTrue(coordinator.isMenuToggleable(.playlist))
+        XCTAssertTrue(coordinator.isMenuToggleable(.library))
+    }
+
+    /// The scene half of B253: EQ controls in a hidden or fully transparent group are not shown.
+    func testShowsEqualizerReadsTheDrawnScene() throws {
+        func shows(_ group: String) throws -> Bool {
+            let loaded = try makeSkin(xml: """
+            <WasabiXML><container id="main"><layout id="normal" w="100" h="100">
+              <group id="face" x="0" y="0" w="100" h="100" \(group)>
+                <slider id="band" x="0" y="0" w="10" h="50" action="EQ_BAND" param="1"/>
+              </group>
+            </layout></container></WasabiXML>
+            """)
+            let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: TestHost())
+            addTeardownBlock { renderer.teardown() }
+            return renderer.showsEqualizerControls
+        }
+        XCTAssertTrue(try shows(""))
+        XCTAssertFalse(try shows("visible=\"0\""))
+        XCTAssertFalse(try shows("alpha=\"0\""))
     }
 
     // MARK: - 13.5 Shared theme and palette

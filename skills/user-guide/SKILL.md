@@ -166,6 +166,8 @@ Previous, Play, Pause, Stop, Next
 - **EQ**: Show/hide Equalizer
 - **PL**: Show/hide Playlist
 
+Classic UI's clutterbar (the O A I D V strip at the main window's left edge): **O** opens the options menu, **A** toggles Always on Top, **I** shows Now Playing info, **D** toggles 200% UI Size, **V** opens the Visuals menu. A and D stay lit while on.
+
 Original and Original-Metal UI add: **HT** (Hide Title Bars), **CP** (Compact Mode), **VZ** (Visualizations), **FL** (Flow), **PM** (PeppyMeter), **AR** (Art), **SP** (Spectrum), **AA** (Audio Analysis), **WV** (Waveform), **LB** (Library)
 
 ## Media Sources
@@ -263,6 +265,8 @@ Switch the Library Browser source to "Local" to manage a persistent media librar
 - Progress updates are throttled/coarse during large imports to keep UI responsive
 
 **Tabs:** Artists, Albums, Playlists (`Plists` in the UI), Movies, TV (the TV-shows tab, labeled `Shows` internally), Radio, Search, Data
+
+**Track Radio (local):** right-click a local track → **Start Track Radio** builds a Genius-style queue seeded from that song, led by the seed. Matching uses tags only (no audio analysis): shared artist, genre overlap, year proximity, BPM (half/double time count), key and grouping, with rating and play count as small nudges. Tracks recently played by local radio are skipped, no artist fills the queue, and tracks below a minimum similarity are left out, so a sparsely tagged seed may return little more than itself. From the CLI: `--source local --radio track --track <name> [--artist <name>] [--album <name>]` (an ambiguous title fails with the candidates; add `--artist`/`--album` to pick one).
 
 **Sorting is per tab:** each tab keeps its own Sort-menu choice and column-header sort, remembered across launches. Setting Albums to "Recently Added" leaves Artists as it was. A tab's sort is the same whichever source is selected, and Folders and Plists sort separately even though they share a slot. Both browsers (classic and modern) share the saved sort. Hiding a column drops it as the header sort on every tab. YouTube channels keep their session-only sort (see `youtube-source`).
 

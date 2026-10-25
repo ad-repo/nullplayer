@@ -148,7 +148,7 @@ final class WinampModernPhase48Tests: XCTestCase {
                     XCTFail("the visualization is never embedded")
                     return false
                 },
-                isMainWindowVisible: { true },
+                isMainWindowVisible: { true }, showsEmbeddedEqualizer: { false },
                 window: { _ in nil },
                 setVisible: { id, visible in visibility[id] = visible },
                 classicFallback: { kind, _ in classicCalls.append(kind) },

@@ -35,10 +35,8 @@ final class WinampModernPhase55Tests: XCTestCase {
         let getter = try XCTUnwrap(runtime.signature(for: "getGammaSet",
                                                      classGUID: Self.rawColorManager))
         XCTAssertEqual(getter.argumentCount, 1)
-        XCTAssertEqual(getter.returnKind, .object)
         let apply = try XCTUnwrap(runtime.signature(for: "apply", classGUID: Self.rawGammaSet))
         XCTAssertEqual(apply.argumentCount, 0)
-        XCTAssertEqual(apply.returnKind, .null)
     }
 
     /// The whole point of the gate: an `apply` belonging to some other class must not pick up

@@ -13,6 +13,106 @@
   the drawer is the equalizer (the Equalizer menu item opens it). Mid mode's rings show song and
   playlist progress; small mode's drawer slides out on hover. A skin missing any part borrows it
   from NullPlayer's own built-in Sonique skin, which is also what shows until you install one.
+- **Track Radio for the local library** — right-click a local track and choose **Start Track Radio**
+  to queue tracks like it, scored from the tags (artist, genre, year, tempo, key, grouping) with
+  no audio analysis. The CLI gains `--source local --radio track|library|genre|decade|artist` and
+  `--list-queue`, which prints the queue a `--radio` mode would play without playing it.
+- **25 more Winamp Modern (`.wal`) skins checked and fixed in the app** (the second corpus intake):
+  ArmorAMP, Ashen Player, cPro - KAO, cPro - iPhone3g, DDTank Glass, EMP - Evolved Media Player,
+  hm_Touch, MD Ganbare Rakkatan the Sixth, Ayanami Rei the Fifth, MetAlchemy III, H2O Liquid,
+  MIDISUI, Moon Groove, Moonkore, Music Show, Mad Magazine, RazorEdge, RODE 3 Lite, Slimline XP,
+  The Crow, YoYoBoy, Vision, wasabi.player, Winamp Portrait and Winamp Single GUI.
+
+### Fixes
+
+- **Modern skin windows draw their background** — DDtank Glass's equalizer and about window showed
+  their controls on the bare desktop; Fuzzy Muffins no longer shows a grey mask through its
+  see-through areas.
+- **hm_Touch shows its big timer** beside the spectrum, which had been blank.
+- **Winamp Single GUI plays films in its player** — the film shows in the player's own video pane,
+  and Windows → Video Player detaches it into the skin's Video window and back. The player's lower
+  half and its library pane are drawn again.
+- **RODE 3 Lite's controls answer clicks** — a see-through panel laid over the player was taking
+  clicks meant for 24 controls beneath it.
+- **MetAlchemy III's playlist window shows the playlist** instead of an empty frame.
+- **A film shown inside a Modern skin no longer flickers**, and starting one no longer freezes the
+  app.
+- **ArmorAmp's spectrum stays inside its screen**, where the bars had spilled over the bezel, and
+  its EQ button opens the equalizer drawer again.
+- **MIDISUI**
+  - The vis drawer slides into its own frame instead of over the COMPONENT buttons and the
+    playlist, so the playlist, vis studio and video buttons can be clicked.
+  - The panel labels show; rows of red dots no longer cover them or run past the window's edge.
+  - The library shows your library instead of a blank frame, and its corner button goes back to
+    the player instead of quitting the app.
+- **Ganbare Rakkatan and M3 open at the size of their artwork** — Ganbare's player had an empty
+  strip as wide as itself down its right side, and M3's was cut off through its transport buttons.
+- **Moon Groove**
+  - The player's display shows at startup, where the EQ page had covered it with the config menu
+    closed.
+  - The song title comes back on the ticker after a volume or shuffle readout, and after the
+    PLAY/PAUSE/STOP status.
+  - The playlist's Add/Rem/Sel/Misc/List buttons no longer run under the playlist info text; the
+    same fix applies to Core-X5, corneramp, motorhead and wasabi_player.
+- **Mad Magazine's playlist no longer sits under its title bar**, and EMP2's Media Library opens at
+  its own 400px width instead of 450px.
+- **Vision's playlist and library windows are solid**, where the desktop showed through between
+  the frame and the list.
+- **A Modern skin's paragraph that is taller than its box starts at its first line** instead of
+  being cut at the top (H2O Liquid's Configuration window).
+- **ClassicPro tabs light only the one you chose**, where every tab you had clicked stayed lit
+  (CPro iPhone 3G and every ClassicPro skin with the LIB/PLE/VID tab strip). Defix and Big Bento
+  show their current tab at startup, Big Bento Windows 10 with its icon, and Azenis² shows its
+  selected EQ mode.
+- **NullPlayer's own playlist opens at normal size beside a wide Modern skin**, where Slimline XP's
+  full-width taskbar drew it screen-wide with oversized rows.
+- **A Modern skin's spectrum analyzer draws without gaps**: Big Bento's bars no longer show dark
+  lines between their colour bands, and thin-band analyzers (cPro KAO) fill their box instead of
+  leaving an uneven comb of gaps.
+- **Modern skins draw text at the whole-pixel size Winamp used**: Winamp Portrait's tab labels sit
+  in their tabs instead of "Collapse" running off the window.
+- **Big Bento Modern draws its background again**: the base and Light editions showed only the
+  titlebar and the library pane over an empty window.
+- **ClassicPro's track notifier no longer draws a dark bar across its top edge** (CPro iPhone 3G):
+  notifiers now open in the glass style Winamp shows on a desktop with alpha blending.
+- **Windows → Equalizer shows whether a Modern skin's built-in equalizer is open**: on skins that
+  draw the EQ inside the player (Love is War Miku, Moonkore) the item is ticked only while the EQ is
+  showing, and is greyed out because the skin's own buttons switch it.
+- **Modern skin windows open big enough for the content their frame holds**: H2O Liquid's
+  Configuration window shows its whole CPU-usage table, with its columns lined up, and the settings
+  windows of PaddPreview and motorhead open at the size their content asks for.
+- **Windows → Video Player shows and hides a Modern skin's film where the skin puts it** (Winamp
+  Single GUI): it no longer pops the film out into the skin's Video window, uses that window only
+  while the player is shaded, takes the film back when the player is restored, and a hidden film comes
+  back in the player instead of in NullPlayer's own video window.
+- **A Modern skin with absurd sprite geometry loads instead of crashing**: a bitmap `x`/`y`/`w`/`h`
+  of `nan`, `inf` or `1e30` is ignored, and a huge negative offset no longer tries to allocate an
+  image larger than any the skin could ship.
+- **A Modern skin's film no longer lands at a nonsense position when its holder is clipped away
+  entirely**; the picture is hidden until the holder is visible again.
+- **The bundled iTunes Miniplayer skin is updated to 1.139.**
+- **A Modern skin's window corners show a diagonal resize cursor** on macOS 15 and later, instead of
+  a crosshair (#601).
+- **A Modern skin's selected rows dim when their window loses focus**, in the colours the skin
+  declares for that (iTunes Miniplayer's playlist), unless you set the selection colours yourself
+  (#603).
+- **Audion faces draw their text in fonts close to the ones they name** — Chicago, Charcoal and
+  the Mac OS 8.5 theme fonts, the pixel fonts (Mini, 04b, Silkscreen and others), Textile and SF
+  Digital Readout now use bundled lookalikes instead of Helvetica, and Techno Jammo's artist line
+  matches its album line. A font you have installed is still used first.
+
+## 0.33.1
+
+### New features
+
+- **Classic skins' clutterbar works** — the O A I D V buttons on the main window's left edge now
+  open the options menu, toggle Always on Top, show Now Playing info, toggle double size and open
+  the Visuals menu, drawn with the skin's own pressed and lit art.
+- **25 more Winamp Modern (`.wal`) skins checked and fixed in the app** (the first corpus intake):
+  --Vortex--, 1010 - Fullscreen, Alpha Media Player X5, Anunaki, BOOM, Copperdeck II,
+  cPro2 - Winamp for Mac Sync, cPro2 - minimal, Drone, JRS, KrazyPlayer, Logicallity,
+  Mac OS X - Panther, machina, NEO CLASSIC, New Night, Nitrous Audio CTI 2 Glass,
+  Official Tristania, Prakrit, Shark5, Simple, Symplicipod, Winamp Azenis 2, wTunes and Zygote.
 
 ### Fixes
 
@@ -37,6 +137,9 @@
   the end of a song moved the highlight but kept playing the same song, for as long as 17 minutes
   on a large playlist. The chosen track now loads and plays at once. A song that fails to stream
   also moves on to the next one and plays it, instead of stopping there.
+- **The About window always closes** — opening About while it was already open left a stuck copy on
+  screen that neither OK nor its close button could dismiss. Opening it again now brings the open
+  one to the front.
 - **Modern skins: loading**
   - 54 skins that failed to load now open.
   - Ten more skins' scripts no longer fail at load.
@@ -124,6 +227,11 @@
   - Soft-edged skins such as meridian no longer have darkened edges.
   - No dark line beside CopperdeckII's rounded corners.
   - The drop shadow follows the window; Anunaki's sliding equalizer leaves no shadow behind.
+- **A Modern skin's UI Size stays with that skin** — Alpha Media Player X5 raises UI Size to fit
+  the screen, and every skin loaded after it, in any mode and after a restart, opened at that size.
+  Switching skins now returns to the UI Size you chose, and a size you pick yourself is kept.
+- **Full-screen Modern skins refit when UI Size changes** — Nitrous Audio's monitor mode stayed
+  sized for the old UI Size and ran off the screen; it now fills the screen again.
 
 ## 0.33.0
 

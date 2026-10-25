@@ -142,6 +142,20 @@ final class WinampModernPhase46Tests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(scale()), 1.35, accuracy: 0.0001)
     }
 
+    /// And the event half (B239): a UI Size change is announced to the layout as Wasabi's
+    /// `onScale(newScale)`, so a skin that filled the screen from `getScale()` can re-fit. It goes to
+    /// the layout only — the scale is the layout's, and its children were never told in Wasabi.
+    func testAScaleChangeIsAnnouncedToTheLayout() throws {
+        let (runtime, _) = try makeRuntime()
+        let layout = try XCTUnwrap(runtime.loadedSkin.runtime.graph.objects(xmlID: "normal").first)
+        runtime.recordsDispatchedEventsForTesting = true
+
+        runtime.dispatchLayoutScale(layout: layout, scale: 1.35)
+
+        XCTAssertEqual(runtime.dispatchedEventsForTesting.map(\.object), ["normal"])
+        XCTAssertEqual(runtime.dispatchedEventsForTesting.map(\.event), ["onscale"])
+    }
+
     /// Defix asks nine times for one click (five scripts, one holder per window). The host is what
     /// de-duplicates — `WindowManager.uiScaleLevel` ignores a write of the level it is already at —
     /// so the runtime must forward every one of them rather than trying to be clever about it.

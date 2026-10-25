@@ -174,6 +174,13 @@ render is the ground truth for this kind of thing):
   (`WasabiTextMetrics.pixelHeightToPointSize`). Taken at face value every string is a quarter too big
   and overflows the box the skin drew for it: this skin's song ticker spilled its descenders onto the
   seek bar below and its `0:00` collided with the title.
+  **The em is a whole pixel, rounded down** (2026-10-24): GDI takes an integer height, and both
+  calibration points above are whole either way. Winamp Portrait spaces its four tab labels inside
+  one `fontsize="16"` string with blanks; at 12.8px each run of spaces pushed the next label further
+  right until "Collapse" ran off the window, and only a 12px em lands all four in their 64px tabs
+  (within 3px). `WasabiGuiList.rowHeight` already floored the same em for Big Bento's search popup.
+  The rule moved 126 gold+silver skins' text by under a pixel; no shipped screenshot was large
+  enough to tell the two apart.
 - **`font=` is an id *or* a plain family name.** A skin that ships no `<truetypefont>` simply names one
   it expects the system to have (`font="Arial"`), exactly as it asks GDI. Resolving only declared
   resources drew every such string in the monospaced fallback. `bold="1"`/`italic="1"` are their own
@@ -382,7 +389,10 @@ because `songinfo.maki` reads a text object back out and tokenises it:
 
 1. a script's `setAlternateText`, while it is non-empty — an **override** (MMD3 puts its SEEK, VOLUME,
    BASS and TREBLE readouts on the song ticker this way). `setText` clears it, which is how a skin
-   takes it back down a second later.
+   takes it back down a second later. It also expires on its own 2 s after the last write
+   (`expireAlternateText`), because Moon Groove puts "Volume: 20%" and "Shuffle: On" there and never
+   clears them, so the song title never came back (B258). The 2 s is a guess, not a measurement;
+   each write restarts it, so a held volume drag keeps its readout up.
 2. the `display=` binding (below), else a `songticker`'s implicit track title, else `text`/`default`.
 3. the XML `alternatetext` attribute, when everything above is empty — a **placeholder**, not an
    override. These are stored apart (`WasabiTextMetrics.scriptAlternateTextKey`) precisely because

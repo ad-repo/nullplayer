@@ -12,7 +12,8 @@
 # The family (and so -uiMode) comes from the extension: .wsz/.whsz classic, .wal winampModern,
 # .wmz wmp. Nothing needs restoring afterwards: restoration is disabled with a *launch argument*
 # (NSArgumentDomain), never a `defaults write`, so the user's saved Save State on Quit choice is untouched.
-# NULLPLAYER_PLAY set by the caller replaces the default audio-long track.
+# NULLPLAYER_PLAY set by the caller (a file, a .cue, or a :-separated list) replaces the default
+# `music` playlist.
 # --restore leaves session restoration to the saved setting — only for testing restoration itself,
 # and restoration may then put the saved skin back, which the confirm below will catch.
 set -euo pipefail
@@ -99,7 +100,8 @@ esac
 
 if [ "$PLAY" = 1 ] && [ -z "${NULLPLAYER_PLAY:-}" ]; then   # a caller's own file (e.g. a .cue) wins
   scripts/testdata.sh ensure >/dev/null
-  ENVS+=(NULLPLAYER_PLAY="$(scripts/testdata.sh path audio-long)")
+  MUSIC=("$(scripts/testdata.sh path music)"/*.mp3)
+  ENVS+=(NULLPLAYER_PLAY="$(IFS=:; echo "${MUSIC[*]}")")
 fi
 
 # --- build + launch the debug build through the front door ------------------------------------

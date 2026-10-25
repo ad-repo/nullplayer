@@ -149,14 +149,18 @@ private final class VideoSurfaceBoxView: NSView {
 
     override var isOpaque: Bool { true }
 
+    // Only on a real change: the skin's layout pass re-sets this frame every repaint, and re-placing
+    // the parked window ~140 times a second for an unchanged box made the picture flash.
     override func setFrameSize(_ newSize: NSSize) {
+        let changed = newSize != frame.size
         super.setFrameSize(newSize)
-        onGeometryChange?()
+        if changed { onGeometryChange?() }
     }
 
     override func setFrameOrigin(_ newOrigin: NSPoint) {
+        let changed = newOrigin != frame.origin
         super.setFrameOrigin(newOrigin)
-        onGeometryChange?()
+        if changed { onGeometryChange?() }
     }
 
     override func viewDidMoveToWindow() {

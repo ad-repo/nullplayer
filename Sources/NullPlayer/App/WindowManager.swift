@@ -306,9 +306,35 @@ class WindowManager {
     /// UI scale mode - not persisted here, restored by AppStateManager when Remember State is enabled.
     var uiScaleLevel: UIScaleLevel = .p100 {
         didSet {
+            // Any level set except through `setUIScaleLevelForSkin` is the user's (or the app's own),
+            // and replaces whatever a skin asked for.
+            skinUIScaleOverride = nil
             guard oldValue != uiScaleLevel else { return }
             applyUIScaleLevelChangeIfNeeded()
         }
+    }
+
+    /// The level a `.wal` skin's `setScale` moved UI Size to, and the user's level it replaced (B238).
+    /// Winamp's scale belongs to the layout, so it dies with the skin: Alpha Media Player X5 raises
+    /// UI Size to 135% on load, and every skin loaded after it opened at 135%. Only
+    /// `WinampModernMainWindowController` sets it, so with no `.wal` skin loaded it is always nil and
+    /// `userUIScaleLevel` is `uiScaleLevel`.
+    private var skinUIScaleOverride: (user: UIScaleLevel, skin: UIScaleLevel)?
+
+    /// The level the user chose, under any skin override: what is persisted, and what a mode switch
+    /// carries into the next mode.
+    var userUIScaleLevel: UIScaleLevel { skinUIScaleOverride?.user ?? uiScaleLevel }
+
+    func setUIScaleLevelForSkin(_ level: UIScaleLevel) {
+        let user = userUIScaleLevel
+        uiScaleLevel = level
+        skinUIScaleOverride = (user: user, skin: level)
+    }
+
+    /// The skin that asked for its level is going away; UI Size goes back to the user's.
+    func endSkinUIScaleLevel() {
+        guard let override = skinUIScaleOverride else { return }
+        uiScaleLevel = override.user
     }
 
     private var appliedUIScaleLevel: UIScaleLevel = .p100
@@ -329,13 +355,14 @@ class WindowManager {
     /// Scale factor for playlist-style title-bar controls on NullPlayer's own secondary windows,
     /// derived from the live main-window width so chrome stays in sync when the user resizes.
     ///
-    /// **Except beside a `.wmz` skin, where that derivation is meaningless.** The ratio assumes the
+    /// **Except beside a foreign skin, where that derivation is meaningless.** The ratio assumes the
     /// main window is a *classic* player, 275 skin-pixels wide, so its width is the zoom the user
-    /// chose. A `.wmz` main window is the skin's own canvas instead — Corona's is over three times
-    /// that — and reading it as a zoom drew our playlist title and rows at 3x. UI Size in WMP mode
-    /// zooms the skin's window and nothing else, so these windows stay at the app's own scale.
+    /// chose. A `.wmz` or `.wal` main window is the skin's own canvas instead: Corona's drew our
+    /// playlist title and rows at 3x, and Slimline XP's 1024-wide taskbar drew the fallback playlist
+    /// at 3.7x and snapped it 1024 wide. UI Size there zooms the skin's window and nothing else, so
+    /// these windows stay at the app's own scale.
     var playlistChromeScale: CGFloat {
-        if !uiMode.controllerFamily.bringsOwnRuntime,
+        if !uiMode.controllerFamily.hostsForeignSkin,
            let mainWindow = mainWindowController?.window, mainWindow.frame.width > 0 {
             return mainWindow.frame.width / Skin.baseMainSize.width
         }
@@ -348,6 +375,7 @@ class WindowManager {
             UserDefaults.standard.set(isAlwaysOnTop, forKey: "isAlwaysOnTop")
             NSLog("WindowManager: isAlwaysOnTop changed to %d, applying to windows", isAlwaysOnTop ? 1 : 0)
             applyAlwaysOnTop()
+            mainWindowController?.setNeedsDisplay()  // the main window may draw this state
         }
     }
 
@@ -1460,8 +1488,7 @@ class WindowManager {
     /// is the classic width anyway, and an Original skin's `window.scale` sizes its player and its
     /// stack together — a fixed width there left the stack misaligned with the player and the EQ.
     var nativeWindowDefaultWidth: CGFloat {
-        let family = uiMode.controllerFamily
-        if matchesMainWindowWidth || family == .classic || family == .nullPlayerModern,
+        if matchesMainWindowWidth || !uiMode.controllerFamily.hostsForeignSkin,
            let width = mainWindowController?.window?.frame.width, width > 0 {
             return width
         }
@@ -2261,6 +2288,11 @@ class WindowManager {
         }
         if wmpSkinProvides(.equalizer) { return wmpSkinShowsInActiveView(.equalizer) }
         return equalizerWindowController?.window?.isVisible == true
+    }
+
+    /// False only for a `.wal` skin that draws its equalizer inside the player (B253).
+    var isEqualizerMenuToggleable: Bool {
+        winampModernSurfaces?.isMenuToggleable(.equalizer) ?? true
     }
 
     /// The equalizer's native window, whichever of the three routes owns it. An equalizer the *skin*
@@ -3660,13 +3692,8 @@ class WindowManager {
     func toggleVideoPlayer() {
         if routeWMPSkinSurface(.video) { return }
         guard let controller = videoPlayerWindowController else { return }
-        // A hosted picture lives in the skin's own video window, so that is the window this shows and
-        // hides — ordering out this controller's own would do nothing visible at all (B20).
-        if controller.isVideoOutputHosted {
-            if controller.isVideoOutputVisible { hideWinampModernVideoSurface() }
-            else { hostVideoOutputInWinampModernSkin() }
-            return
-        }
+        if uiMode.controllerFamily == .winampModern,
+           (mainWindowController as? WinampModernMainWindowController)?.toggleVideo() == true { return }
         if controller.window?.isVisible == true {
             controller.window?.orderOut(nil)
         } else {
@@ -7826,11 +7853,14 @@ class WindowManager {
         // Compact Window also leaves the regular main hidden, so rebuild-time docking must not use
         // that inactive window as an anchor. Compact Mode hides every regular window, so derive its
         // frames from `regularWindowSnapshot`, which recorded detached state at entry.
-        let restoreScaleLevel = uiScaleLevel
+        // The windows are drawn at `uiScaleLevel`, which is what gets collapsed; the target mode gets
+        // the user's level, not one a `.wal` skin asked for (B238).
+        let drawnScaleLevel = uiScaleLevel
+        let restoreScaleLevel = userUIScaleLevel
         let preservedDetachedFrames = compactModeEnabled
             ? detachedWindowFrames(from: regularWindowSnapshot)
             : captureDetachedWindowFrames()
-        if restoreScaleLevel != .p100 { uiScaleLevel = .p100 }
+        if drawnScaleLevel != .p100 { uiScaleLevel = .p100 }
 
         // Compact Mode hides the underlying regular window layout and restores it *asynchronously*
         // on exit. When in Compact Mode, derive the layout to rebuild from the pre-compact capture
@@ -7839,7 +7869,7 @@ class WindowManager {
         // Defer the swap until the compact teardown completes so the re-enter sees
         // `compactModeState == .regular` instead of a no-op `.exiting` guard.
         if compactModeEnabled {
-            let snapshot = modeDependentLayout(from: regularWindowSnapshot, collapsingScaleLevel: restoreScaleLevel)
+            let snapshot = modeDependentLayout(from: regularWindowSnapshot, collapsingScaleLevel: drawnScaleLevel)
             // The hidden mode-independent windows (app panels) survive teardown but were
             // hidden on compact entry and are not re-shown here. enterCompactMode() will re-capture
             // the snapshot from the live (still-hidden) windows, losing their visibility — so carry

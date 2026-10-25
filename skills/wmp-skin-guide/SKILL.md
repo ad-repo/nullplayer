@@ -125,6 +125,9 @@ the file this table gives for it.
 
 ## Debugging a live defect
 
+The phase order for testing and fixing a skin is **`skills/skin-triage`**; this section is the
+`.wmz`-specific half.
+
 Read **`skills/live-ui-testing`** before diagnosing anything that only reproduces on screen, and the
 process section it points at — `winamp-modern-skin-guide/reference/harness.md`
 § *Debugging a live defect* — which is the reference implementation of that workflow. The 2026-09-07

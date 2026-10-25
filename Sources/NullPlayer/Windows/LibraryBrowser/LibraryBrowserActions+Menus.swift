@@ -61,6 +61,14 @@ extension LibraryBrowserActions {
 
         case .localTrack(let track):
             menu.addItem(.separator())
+            menu.addItem(menuItem("Start Track Radio") { [unowned self] in
+                // Scoring the library and reading `tracksSnapshot` can wait on a scan; keep it off main.
+                startPlexRadio {
+                    await Task.detached(priority: .userInitiated) {
+                        MediaLibrary.shared.createLocalTrackRadio(from: track)
+                    }.value
+                }
+            })
             menu.addItem(rateItem { [unowned self] in rateLocalTrack(track.id, stars: $0) })
             menu.addItem(.separator())
             menu.addItem(menuItem("Edit Tags") { [unowned self] in editTags(track) })

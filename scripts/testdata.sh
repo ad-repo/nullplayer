@@ -27,7 +27,7 @@ FFMPEG="${FFMPEG:-/opt/homebrew/bin/ffmpeg}"
 manifest() {
   cat <<'ROWS'
 audio-short	audio-short.m4a	5 s 440 Hz tone, AAC — fast start/stop only
-audio-long	audio-long.mp3	20 min 100-4000 Hz sweep, MP3 — seek, drag, and any session long enough to diagnose
+music	music	6 real tracks, ~20 min, MP3 (Kevin MacLeod, CC BY 4.0) — the default: spectrum, seek, next/prev, any timed session
 audio-lossless	audio-lossless.flac	30 s sweep, FLAC — the lossless path; host for the cue row
 audio-gapless	gapless/01-gapless.flac	first of two 10 s tracks that meet at a phase boundary
 audio-gapless-2	gapless/02-gapless.flac	second of the gapless pair
@@ -101,6 +101,20 @@ plain_audio() {
   return 0
 }
 
+# file <TAB> sha256 <TAB> url. Kevin MacLeod (incompetech.com), CC BY 4.0. Varied on purpose:
+# beats, rock, funk, jazz, chiptune (bright treble), and a short one for end-of-track.
+music_rows() {
+  local base=https://incompetech.com/music/royalty-free/mp3-royaltyfree
+  cat <<ROWS
+01-hackbeat.mp3	be06327a3578250c84c189ad89c9e6c2f8b326bf342a701775824e9cbedfea64	$base/Hackbeat.mp3
+02-volatile-reaction.mp3	ced1148df201a6c69062a96b7ef49c49924572ca5023c2ac5a2d6c5828ecb218	$base/Volatile%20Reaction.mp3
+03-funkorama.mp3	6be229815d85a0b99382b944d31098b882702c04ac7ad899e44ab7f8ba89b5ad	$base/Funkorama.mp3
+04-local-forecast-elevator.mp3	8c46b44e65324bc339fbbc3e770611d671f6c74a40f3ec8dd50332c082b25cc9	$base/Local%20Forecast%20-%20Elevator.mp3
+05-pixelland.mp3	889fd6f06fd077689d512d4169a0efc4a61b717af73ac64ecca361eb5a4c4b7d	$base/Pixelland.mp3
+06-sneaky-snitch.mp3	db1710333d68a215277f77e4e17e1a64bf4ed38f87c70f8d0f56b16b6aa4f884	$base/Sneaky%20Snitch.mp3
+ROWS
+}
+
 # A tone/sweep source. $1 duration, $2 the lavfi expression.
 gen_ensure() {
   mkdir -p "$DIR" "$DIR/gapless" "$DIR/cue" "$DIR/library"
@@ -111,16 +125,20 @@ gen_ensure() {
     echo "made audio-short.m4a"
   fi
 
-  # 20 minutes, because a 5 s file ends mid-diagnosis and the stop() reads as a bug.
-  if [ ! -s "$DIR/audio-long.mp3" ]; then
-    require_ffmpeg
-    ff -f lavfi -i "sine=frequency=100:duration=1200:sample_rate=44100" \
-       -af "aeval=sin(2*PI*(100+3900*t/1200)*t):c=same" \
-       -c:a libmp3lame -b:a 160k \
-       -metadata title="NullPlayer 20-minute sweep" -metadata artist="testdata.sh" \
-       "$DIR/audio-long.mp3"
-    echo "made audio-long.mp3"
-  fi
+  # Real music, because a sine sweep is one steady bar: a spectrum, a VU or a peak cap
+  # cannot be judged on it. Several tracks, so next/previous and end-of-track are exercised
+  # too. Downloaded rather than synthesized, and pinned by sha256 so every agent gets the
+  # same bytes.
+  mkdir -p "$DIR/music"
+  while IFS=$'\t' read -r file sha url; do
+    out="$DIR/music/$file"
+    [ -s "$out" ] && continue
+    ENCODE_TMP="$out.partial.$$"
+    curl -sfL -o "$ENCODE_TMP" "$url" || die "cannot download $url (offline?)"
+    [ "$(shasum -a 256 "$ENCODE_TMP" | cut -c1-64)" = "$sha" ] || die "checksum mismatch for $url"
+    mv -f "$ENCODE_TMP" "$out"; ENCODE_TMP=""
+    echo "made music/$file"
+  done < <(music_rows)
 
   if [ ! -s "$DIR/audio-lossless.flac" ]; then
     plain_audio "$DIR/audio-lossless.flac" 30 440 flac flac ||
@@ -230,8 +248,10 @@ CUE
     echo "$DIR/audio-tagged.mp3"
     echo "#EXTINF:30,testdata.sh - audio-lossless"
     echo "$DIR/audio-lossless.flac"
-    echo "#EXTINF:1200,testdata.sh - NullPlayer 20-minute sweep"
-    echo "$DIR/audio-long.mp3"
+    for f in "$DIR"/music/*.mp3; do
+      echo "#EXTINF:-1,Kevin MacLeod - $(basename "$f" .mp3)"
+      echo "$f"
+    done
   } > "$DIR/playlist.m3u8"
 }
 

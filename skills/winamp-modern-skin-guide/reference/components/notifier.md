@@ -109,12 +109,15 @@ capabilities have to be present for any of that to appear:
 
 - **A container's geometry must reach its window.** See [rendering.md](rendering.md) →
   *A container's `x`/`y`/`w`/`h` are its window's*.
-- **`isDesktopAlphaAvailable()` must answer false.** A skin asks once and then addresses
-  `getLayout("desktopalpha")` for the rest of the session without ever switching to it — in Winamp
-  the container is already on that layout. Nothing here activates one, so a true answer sends every
-  write to a layout no window draws. This is the failure mode that looks like nothing is wrong: the
-  render dump of `notifier/desktopalpha` comes out perfect while the app draws the untouched
-  `normal` layout.
+- **The window must be on the layout `isDesktopAlphaAvailable()` points the skin at.** A skin asks
+  once and then addresses `getLayout("desktopalpha")` for the rest of the session without ever
+  switching to it — in Winamp the container is already on that layout. So a container that ships a
+  `desktopalpha` layout opens on it (`WasabiSceneRenderer.primaryLayout`, B262), and the call
+  answers true exactly when some container does. Answer true with the window left on `normal` and
+  every write goes to a layout no window draws (BB27): the render dump of `notifier/desktopalpha`
+  comes out perfect while the app draws the untouched `normal` layout. The `normal` layout is the
+  no-desktop-alpha fallback, a region window: drawn through it, CPro_iPhone3gv2's cover sprite
+  turned a faint shadow it shares with its neighbour on the sheet into a solid strip.
 - **The host must not fight it.** `setNotifierText` runs before the skin's timer does, so the
   skin's own sizing lands last and wins. Keep it that way.
 

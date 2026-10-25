@@ -178,7 +178,7 @@ class ContextMenuBuilder {
         menu.addItem(buildWindowItem("Library Browser", visible: wm.isPlexBrowserVisible, action: #selector(MenuActions.togglePlexBrowser), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildSkinOwnableWindowItem("Playlist Editor", surface: .playlist, visible: wm.isPlaylistVisible, action: #selector(MenuActions.togglePlaylist), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(buildSkinOwnableWindowItem("Equalizer", surface: .equalizer, visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ), enabled: supportsSkinnedAuxiliaryWindows))
+        menu.addItem(buildSkinOwnableWindowItem("Equalizer", surface: .equalizer, visible: wm.isEqualizerVisible, action: #selector(MenuActions.toggleEQ), enabled: supportsSkinnedAuxiliaryWindows && wm.isEqualizerMenuToggleable))
         menu.addItem(buildWindowItem("Equalizer Studio", visible: wm.isEqualizerStudioVisible, action: #selector(MenuActions.toggleEqualizerStudio)))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(buildWindowItem("Visualizations", visible: wm.isProjectMVisible, action: #selector(MenuActions.toggleProjectM), enabled: supportsSkinnedAuxiliaryWindows))

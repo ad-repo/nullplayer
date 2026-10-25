@@ -117,6 +117,12 @@ closing** tag (a `</foo>` matching nothing on the stack — no corpus skin does 
 until one demands otherwise), an unterminated comment, declaration, tag or attribute value, a tag
 with no name, and every depth/node-count bound.
 
+**An attribute value is normalized as XML says** (B261): a literal tab or line break inside it is a
+blank, and only a character reference (`&#09;`, `&#10;`) is the character. H2O Liquid lines its
+CPU-usage columns up with blanks and literal tabs, which meet only at one blank per tab; RODE 3 Lite
+wraps its About text across source lines *and* writes `\n`, and kept as breaks the two doubled every
+line and ran the text into the logo below it.
+
 ### A byte order mark decides the encoding, and it has to be read before the fallback chain
 
 `WalXMLDocumentLoader.decodeText` sniffs the mark — UTF-32LE/BE, UTF-8, UTF-16LE/BE — strips it, and
@@ -453,6 +459,13 @@ Four bounds, all pinned in `WinampModernB94Tests`:
   branch returned the untinted whole file, so the ticker, time, KBPS and KHZ went grey inside a
   themed player. The font's sheet carries the *font's* gamma group.
 
+**The id is the path string, so it is skin-wide.** Two files that write the same relative path from
+different directories — `a/a.xml` and `b/b.xml` both saying `background="bg.png"` — get one implicit
+bitmap, the first file's; the second never reaches the directory-relative lookup in
+`bitmap(background:declaredIn:)`. Nothing in the corpus has been seen to depend on either reading,
+and this is not measured against Winamp; checked 2026-10-25 while keying the group alpha-mask cache,
+whose per-file key cannot help while the bitmap underneath is shared.
+
 The file gets the same `validateImage` check a declared `<bitmap>` gets, sharing its memo; a failure
 just declines to create the implicit bitmap, with no warning — nothing asked for the file yet, so
 there is no skin to fail. A path-shaped value the archive does not contain still registers nothing
@@ -718,6 +731,20 @@ resize and never retroactively, so `applyLayoutConstraints` also grows an alread
 upward only, bounded by the same limits a drag obeys — and is called a second time after
 `scriptsDidStart()`, because the first call runs before any content exists.
 
+#### A standard frame's content states its own minimum, and the window grows to it (B261)
+
+A frame's content groupdef can declare `minimum_w`/`minimum_h` (H2O Liquid's `cfg.content.group`
+fixes itself at 350x235). The frame's script places the content at its margins, so the window that
+honours it is the content's minimum plus those margins: H2O's `Cfg` grows from its declared 400x300
+to 405x335. `WasabiSceneRenderer.frameContentFittedSize` (`WasabiRendererFrameContent.swift`)
+measures each content group a frame names (`content=` or `notify="content,…"`) on the resolved
+scene and is folded into the same two places as the content fit above: the auto-fitted canvas and
+`contentFittedFloor`. Clamping the *group* to its range instead was tried first and pushed content
+past the frame in Lobe, Hal's Eye, PaddPreview, motorhead and H2O's Color Controls. Gold+silver:
+eight windows grew, all with their content inside the frame. Rika's Color Themes is the borderline
+one: its content group is empty with a 350x200 minimum and its picker sits on the layout at a fixed
+313, so the window widened 38px and the picker no longer spans it.
+
 #### `default_w`/`default_h` are `<container>` attributes too (B136, 2026-09-05)
 
 Step 1 of that chain reads the **layout**. A `<container>` may state the same pair, and the fallback
@@ -741,6 +768,15 @@ layout axes on two skins** change with the rule — each toward the number the a
 | Ujola Cat | `PLEdit/normalpl` | 430×200 | `default_h="242"` |
 
 The floor stays a floor: it clamps whatever the chain produced, exactly as before.
+
+**A layout shaped by its `alphabackground` skips step 2** (B254, 2026-10-23). Its window is cut out of
+that bitmap, so it ends where the artwork does and the container's number can only add empty space or
+crop the art: MD__Ganbare_Rakkatan_the_Sixth's 408×531 player opened 816 wide under
+`default_w="816"`, and M3's 344×222 player was cut off at `default_h="164"`. Moving the background
+above the container for *every* layout is wrong — 75 unsized layouts in the corpus sit under a sized
+container, and most are AVS, video, playlist or browser frames whose background is a small tile
+(Arion's 72×72, SP4's 10×10) that the container's size is meant to stretch. Across the 318 skins that
+use `alphabackground` (every tier), the rule moved exactly those two windows.
 
 #### A component window with no stated size, and why its fit cannot wait for `start()`
 

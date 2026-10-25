@@ -54,15 +54,30 @@ the class — everything else becomes a generic dynamic object, which is what a 
 > `execute` silently returns at its `guard let dispatcher` without running an instruction — the test
 > then passes for the wrong reason. Bind the dispatcher to a local first.
 
-Extending the API: add to `signature(for:)` (`WinampModernScriptSignatures`) **and** the matching system/GUI/object dispatch path
-together, so argument counts and return kinds stay explicit. Add a regression test with each method.
+Extending the API: one `table.add("name", arity) { runtime, call in … }` in the receiver's
+method table (`systemMethods`, `guiStateMethods`, `dynamicMethods`, … — a `static let` beside the code
+it calls). The arity is declared beside the body, and `signature(for:)` is derived from the tables, so
+the two cannot drift (B243). Names are lowercased. A name another table already declares takes the
+**same** arity there — the interpreter unwinds by one arity whichever body answers, and
+`WinampModernB243Tests` fails on a mismatch; a verb that means something else on one class is gated
+with `on: MakiClassGUID.<class>` — which gates the **arity** only; the body runs for whatever
+reaches its table, so a table a kind of object owns is asked only for that kind (`guiKindTables`). A
+new table joins a dispatch list (`systemFamilies`, `guiKindTables`, `guiFamilies`,
+`dynamicFamiliesBeforeInit`, `dynamicFamilies`), and `tables` reads the arities off those lists; a
+table written for another receiver joins one with `pulledBack(_:)` (`classicProFileMethods` answers a
+script-made object as it answers `System`). Only the four whole-receiver tables `invokeTraced` names
+(ColorMgr, PlEdit, MLPlaylists, PopupMenu) are listed in `tables` by hand. A body answers nil to pass the call to the next table that declares
+the name (the `GuiObject` families run in `guiFamilies` order). Bodies are static closures: reach the
+runtime through `runtime.`, the call through `call.arguments`, `call.object`, `call.program`, and
+spell the type out (`WinampModernScriptRuntime.x`) — `Self` is not available in a stored property's
+initializer. Add a regression test with each method.
 Use the measured-demand signal rather than porting reference stubs blindly — see
 [Debugging](#debugging-a-skin) below.
 
-> **Gotcha:** a method with a `signature(for:)` entry but a stubbed dispatch case is **invisible to
+> **Gotcha:** a method with a table entry but a stubbed body is **invisible to
 > the compatibility report** — it looks implemented and returns a plausible value. `newgroup`
 > returned `.null` this way, and the report showed zero script findings while the entire Winamp
-> Modern window body was missing. If you cannot implement a method, leave it out of `signature(for:)`
+> Modern window body was missing. If you cannot implement a method, leave it out of the tables
 > so the demand tally records it.
 
 > **Gotcha:** the blocking list is a **queue, not a set**. Each method you add lets its script run
@@ -602,17 +617,28 @@ broken on its own, and each fix looked like it had done nothing until the next o
 
 - **A bare button's artwork and state are the embedded button's.** `image`, `hoverimage`,
   `downimage`, `activeimage`, `nstates`, `cfgattrib` and `cfgvals` cross onto an embedded
-  `button`/`togglebutton`/`nstatesbutton` that states no `image` of its own, and the wrapper
+  `button`/`togglebutton`/`nstatesbutton` whenever the wrapper states `image`, replacing the ones
+  the button states, and the wrapper
   (`WasabiEmbeddedXUI.wrapsButton`) then neither draws that artwork nor takes the press. It keeps
   its box, because its other children are laid out and clipped in it. Official Tristania is the
   case: its `Deimos:GlowButton` script shows Play or Pause by hiding the *inner* `glowbutton.button`,
   so a disc drawn on the wrapper covered Pause's ‖ glyph and still took the click. Its
   `Deimos:NStatesGlowButton` repeat/shuffle/crossfade lamps drew nothing at all, because
   `image="player.button.repeat"` is a state prefix that only means something on the
-  `NStatesButton`. **All or nothing:** an embedded button that states its own `image` keeps its
-  artwork whole, and its wrapper draws as before. Big Bento's tab mousetrap is `image="wtf"` under
-  a wrapper that draws the tab icon. Corpus effect: Ebonite's and iNTELLI_design's window-mode
-  buttons now draw at their bitmap's own size, clipped by the wrapper, instead of squashed into it.
+  `NStatesButton`. **The instance wins:** a wrapper that states `image` replaces each key of the
+  embedded button's artwork set that it states, as Wasabi sets an instance's params after the
+  groupdef's; a key it does not state (a `hoverimage`, say) stays the button's own. Big
+  Bento's tab mousetrap is a placeholder `image="wtf"`; left on the wrapper, the tab icon drew under
+  the active-tab layer once a tab could show as active (CPro_iPhone3gv2's pass, 2026-10-24: gold+silver
+  moved only the two Win10 Big Bento variants, whose icons now sit 1px in, on the mousetrap).
+  Corpus effect of the rule itself: Ebonite's and iNTELLI_design's
+  window-mode buttons draw at their bitmap's own size, clipped by the wrapper, instead of squashed into it.
+- **A wrapper's activation is its button's.** `setActivated`, `setChecked`,
+  `setActivatedNoCallback`, `getActivated` and `isChecked` called on an `embed_xui` wrapper act on the
+  control it embeds (`embeddedControl(of:)`). ClassicPro's `closeTab` clears every tab by
+  `setActivated(0)` on each `cpro.tab` *group*; kept on the group, every tab ever clicked stayed lit
+  (CPro_iPhone3gv2, every CentroSUI skin). Corpus effect: Defix and Big Bento draw their current tab
+  as active at load, and JRS's `basic.scroll` option reads the state its script set.
 - **A button's label is drawn once, by the embedded button** (B217). The wrapper's `text=` crosses
   onto an embedded `button`/`togglebutton` that declares none, bare or `Wasabi:` (B237), so an
   embedded `Wasabi:Button` takes it too — krazyPlayer's and Vortex's `SC:HyperLinkButton` link labels
@@ -634,13 +660,22 @@ Two related rules that fell out of the same investigation:
 
 #### `leftClick()` is a press, not just an event
 
-A script's `obj.leftClick()` does what the mouse does to that object (B71): `onLeftClick`, then a
-togglebutton flips (`toggleActivation`), then the object's `action=`, and — when it has no action — a
-`cfgattrib` control writes its attribute (`toggleConfigAttribute`). That is the order
-`WinampModernMainView.performAction` runs for a real click; keep the two in step. Skins use it to
+A script's `obj.leftClick()` does what the mouse does to that object (B71): a togglebutton flips
+(`toggleActivation`), then `onLeftClick`, then the object's `action=`, and — when it has no action — a
+`cfgattrib` control writes its attribute (`toggleConfigAttribute`). That is the order a real click
+runs in `WinampModernMainView`; keep the two in step. Skins use it to
 route a click through an invisible proxy: Defix's detached visualizer answers Reattach and Random
 with `leftClick()` on a ghosted `cfgattrib` togglebutton (`vis.DTTB`, `vis.random.active`), and while
 `leftClick` dispatched only `onLeftClick` the attribute never moved and both buttons were dead.
+
+#### A click flips its togglebutton before the script hears the release
+
+Wasabi's `ButtonWnd` flips a togglebutton (or selects a radio) in `onLeftPush`, before the release
+reaches the script's `onLeftButtonUp`/`onLeftClick`, so a handler's own `setActivated` has the last
+word. ClassicPro's `CproTabButton` relies on it: its `onLeftButtonUp` clears every tab and then
+`setActivated(1)` on itself, and flipped afterwards the tab just chosen went dark. Azenis² selects its
+EQ mode the same way through `leftClick()` at load. The view, the render dump's `CLICK` and the
+interaction sweep all flip before `onleftbuttonup`.
 
 #### Scrolling: `scrollToPercent` is a viewport offset, not a layout change
 
@@ -1065,8 +1100,7 @@ resize of the content must not carry the frame, which the script then moves itse
 A follower that is the dragged window itself is not linked; its own `onMove` pulls the content, as
 before. Snapping skips a window's glued partner (`gluedPartner(of:)`). Snapped against the content on the
 frame's exact rect, a solo drag of the frame stuck until the pointer passed the 15 pt threshold, in
-~16 pt jumps every ~35 ms; after the fix it moved every 8.5 ms. A/B: `WINAMP_MODERN_DRAG_GLUE=0`
-([harness.md](harness.md)).
+~16 pt jumps every ~35 ms; after the fix it moved every 8.5 ms.
 
 ### `onSetVisible` — a window a script closes has to be *reopened*, not just ordered in
 

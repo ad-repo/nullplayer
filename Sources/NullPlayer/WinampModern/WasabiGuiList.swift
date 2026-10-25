@@ -128,11 +128,11 @@ enum WasabiGuiList {
     /// (`pixelHeightToPointSize`). The skin sizes the window around its *own* expectation of this, so
     /// the number has to match: Big Bento asks its search popup for 118px to hold four hits over a
     /// 36px banner, i.e. 20.5px a row at the `fontsize="22"` its script sets on the list — and a
-    /// fontsize-based row of 24 fitted only three, cropping the last hit every time. The em is
-    /// floored before the leading is added, because a row that rounds *up* is the one that costs the
-    /// list its last visible line: 21 left the fourth hit one pixel outside an 82px box.
+    /// fontsize-based row of 24 fitted only three, cropping the last hit every time. The em is the
+    /// floored one every text draws at (`WasabiTextMetrics.pointSize`), because a row that rounds
+    /// *up* is the one that costs the list its last visible line: 21 left the fourth hit one pixel
+    /// outside an 82px box.
     static func rowHeight(of object: WasabiObject) -> Double {
-        let em = WasabiTextMetrics.pixelHeight(of: object) * WasabiTextMetrics.pixelHeightToPointSize
-        return max(8, em.rounded(.down) + 3)
+        max(8, Double(WasabiTextMetrics.pointSize(of: object)) + 3)
     }
 }

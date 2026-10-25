@@ -230,6 +230,14 @@ extension WinampModernScriptRuntime {
         return dispatched
     }
 
+    /// Wasabi's `onScale(newScale)` — the layout's scale changed, which here is UI Size (B239). Skins
+    /// that fill the screen from `viewport / getScale()` — Nitrous Audio's monitor mode — re-fit
+    /// from it, or stay sized for the old scale.
+    @discardableResult
+    func dispatchLayoutScale(layout: WasabiObject, scale: CGFloat) -> Int {
+        (try? dispatch(object: layout, event: "onscale", arguments: [.float(Double(scale))])) ?? 0
+    }
+
     @discardableResult
     func dispatchResize(targets: [(object: WasabiObject, frame: CGRect)],
                         previous: [WasabiObjectID: CGRect]?) -> Int {

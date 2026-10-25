@@ -43,6 +43,7 @@ extension WinampModernScriptRuntime {
     /// dynamic-object id; the timers the runtime runs on a GUI object's behalf set a high bit over
     /// that object's id, one bit per job, so no two owners can collide.
     enum TimerNamespace: UInt64 {
+        case alternateTextExpiry = 0x2000_0000_0000_0000
         case frameEvents = 0x4000_0000_0000_0000
         case targetAnimation = 0x8000_0000_0000_0000
 
@@ -326,6 +327,24 @@ extension WinampModernScriptRuntime {
         guard timers.contains(id: timerID) else { return }
         timers.cancel(id: timerID)
         _ = try? dispatch(object: object, event: "onstop")
+    }
+
+    /// A script's `setAlternateText` clears itself: Moon Groove puts "Volume: 20%" and "Shuffle: On"
+    /// on its ticker and never clears them, so the song title never came back (B258). Each write
+    /// restarts the clock, so a held volume drag keeps its readout up.
+    func expireAlternateText(of object: WasabiObject) {
+        let id = object.stableID
+        let timerID = TimerNamespace.alternateTextExpiry.id(for: id)
+        guard object.attributes[WasabiTextMetrics.scriptAlternateTextKey]?.isEmpty == false
+        else { return timers.cancel(id: timerID) }
+        // ponytail: 2 s is a guess (MMD3 clears its own after 1 s); measure Winamp if a skin disagrees.
+        _ = try? timers.schedule(id: timerID, period: 2) { [weak self] in
+            guard let self else { return }
+            timers.cancel(id: timerID)
+            guard let object = loadedSkin.runtime.graph.object(withID: id),
+                  object.setAttribute(WasabiTextMetrics.scriptAlternateTextKey, value: "") else { return }
+            notifyObjectDidMutate(object)
+        }
     }
 
     func cancelTargetAnimation(objectID: WasabiObjectID) {

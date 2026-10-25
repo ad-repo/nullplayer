@@ -31,7 +31,6 @@ final class WinampModernPhase59Tests: XCTestCase {
             let signature = try XCTUnwrap(runtime.signature(for: event, classGUID: nil),
                                           "\(event) must be dispatchable")
             XCTAssertEqual(signature.argumentCount, 2, "\(event) takes (clicks, lines)")
-            XCTAssertEqual(signature.returnKind, .null)
         }
     }
 

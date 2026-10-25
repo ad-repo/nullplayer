@@ -354,19 +354,6 @@ public struct SkinElements {
         }
     }
     
-    // MARK: - Clutterbar (main.bmp sections)
-    
-    struct Clutterbar {
-        /// The clutterbar on the left side of the main window
-        public static let area = NSRect(x: 0, y: 72, width: 8, height: 43)
-        
-        // Individual button areas (within clutterbar)
-        public static let optionA = NSRect(x: 0, y: 0, width: 8, height: 8)
-        public static let optionD = NSRect(x: 0, y: 9, width: 8, height: 8)
-        public static let optionUp = NSRect(x: 0, y: 18, width: 8, height: 8)
-        public static let optionDown = NSRect(x: 0, y: 27, width: 8, height: 8)
-    }
-    
     // MARK: - Bitrate/Sample Rate Display
     
     struct InfoDisplay {

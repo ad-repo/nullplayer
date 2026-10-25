@@ -8,8 +8,6 @@ final class WinampModernMainView: NSView {
     /// Live library surfaces by holder id. Typed, so each one can be told about a palette change, a
     /// UI Size change, and its own teardown (Phase 13.8).
     private var librarySurfaces: [WasabiObjectID: WinampModernLibrarySurface] = [:]
-    /// Live video surfaces by holder id, on the same typed handle for the same reasons (B20).
-    private var videoSurfaces: [WasabiObjectID: WinampModernVideoSurface] = [:]
     /// Live visualization surfaces by holder id — the skin's AVS window, filled with the host's own
     /// visualization engine rather than the engine-drawn analyzer (B20a).
     private var visualizationSurfaces: [WasabiObjectID: WinampModernVisualizationSurface] = [:]
@@ -31,7 +29,7 @@ final class WinampModernMainView: NSView {
             guard skinScale != oldValue else { return }
             setFrameSize(scaledCanvasSize)
             pushLibraryContentScale()
-            for surface in videoSurfaces.values { surface.applySkinScale(skinScale) }
+            hostedVideoSurface?.applySkinScale(skinScale)
             for surface in visualizationSurfaces.values { surface.applySkinScale(skinScale) }
             for surface in hostedWindowSurfaces.values { surface.applySkinScale(skinScale) }
             for surface in browserSurfaces.values { surface.applySkinScale(skinScale) }
@@ -160,6 +158,8 @@ final class WinampModernMainView: NSView {
     /// skin button and a menu item can never resolve differently. Returns false before the
     /// coordinator exists (during `scripts.start()`), where the older direct routing still applies.
     var surfaceToggleRequested: ((WinampModernComponentKind) -> Bool)?
+    /// This scene has a video holder but another visible window holds the box (B248).
+    var videoHolderWantsTheBox: (() -> Void)?
     /// Whether a surface a `TOGGLE` addresses is on screen, for the lamp on the button that
     /// toggles it (BB36). Nil means "no window to answer for" — an embedded surface, or a kind the
     /// coordinator does not handle — and the button falls back to its own `activated`. The write
@@ -544,6 +544,12 @@ final class WinampModernMainView: NSView {
         scripts.dispatchWindowMove(container: renderer.container, layout: renderer.layout)
     }
 
+    /// UI Size changed. Wasabi's `onScale(newScale)`; see `WinampModernScriptRuntime.dispatchLayoutScale`.
+    func dispatchScaleChanged(to scale: CGFloat) {
+        guard !isTornDown else { return }
+        scripts.dispatchLayoutScale(layout: renderer.layout, scale: scale)
+    }
+
     /// Wasabi's `onUserResize()` — the resize the user dragged, which a standard frame answers by
     /// resizing the window it is glued to. See `WinampModernScriptRuntime.dispatchWindowUserResize`.
     func dispatchWindowUserResized() {
@@ -587,7 +593,7 @@ final class WinampModernMainView: NSView {
     /// for that reason — the controller calls it after writing an override.
     func paletteDidChange() {
         for surface in librarySurfaces.values { surface.applyPalette(renderer.palette) }
-        for surface in videoSurfaces.values { surface.applyPalette(renderer.palette) }
+        hostedVideoSurface?.applyPalette(renderer.palette)
         for surface in visualizationSurfaces.values { surface.applyPalette(renderer.palette) }
         let style = WinampModernSurfaceStyle(palette: renderer.palette)
         for surface in hostedWindowSurfaces.values { surface.applyPalette(style) }
@@ -861,7 +867,7 @@ final class WinampModernMainView: NSView {
         // window's own keys (←/→, R, F, P, C) — after the skin has had its say, so a skin accelerator
         // always wins (B20a). The film goes first: it is what is on screen, and the visualization
         // shares its keys while the engine feeding it is paused.
-        if videoSurfaces.values.contains(where: { $0.handleKeyDown(event) }) { return }
+        if hostedVideoSurface?.handleKeyDown(event) == true { return }
         if let surface = hostedVisualizationSurface, surface.handleKeyDown(event) { return }
         // ↑/↓ step the volume, as in every other mode's main window. Only those two: the rest of that
         // table's letters are the visualization's keys here. The engine announces no volume change, so
@@ -1203,36 +1209,21 @@ final class WinampModernMainView: NSView {
     private func reconcileHostedSurfaces() {
         guard !isTornDown else { return }
         let holders = renderer.componentHolders()
-        var live: Set<WasabiObjectID> = []
-        for holder in holders where holder.kind == .library {
-            live.insert(holder.object.stableID)
-            guard librarySurfaces[holder.object.stableID] == nil,
-                  let surface = componentHost?.makeLibrarySurface() else { continue }
-            librarySurfaces[holder.object.stableID] = surface
-            surface.applyContentScale(libraryContentScale)
-            surface.applyPalette(renderer.palette)
-            addSubview(surface.view)
-        }
-        for (id, surface) in librarySurfaces where !live.contains(id) {
-            surface.unmountFromHolder()
-            librarySurfaces[id] = nil
+        // Attach every pass, not only on creation: the unmount of a stale id is what detaches a
+        // surface that comes back under a new one.
+        for entry in reconcile(&librarySurfaces, to: holders.filter { $0.kind == .library },
+                               unmount: { _, surface in surface.unmountFromHolder() },
+                               make: { _ in
+                                   guard let made = componentHost?.makeLibrarySurface() else { return nil }
+                                   made.applyContentScale(libraryContentScale)
+                                   made.applyPalette(renderer.palette)
+                                   return made
+                               })
+        where entry.surface.view.superview !== self {
+            addSubview(entry.surface.view)
         }
 
-        var liveVideo: Set<WasabiObjectID> = []
-        var videoHolderAppeared = false
-        for holder in holders where holder.kind == .video {
-            liveVideo.insert(holder.object.stableID)
-            guard videoSurfaces[holder.object.stableID] == nil,
-                  let surface = componentHost?.makeVideoSurface() else { continue }
-            videoHolderAppeared = true
-            videoSurfaces[holder.object.stableID] = surface
-            // `noshowcmdbar="1"` — the holder's own instruction that it draws the transport itself.
-            surface.showsCommandBar =
-                WinampModernVideoHolder.showsCommandBar(holderAttributes: holder.object.attributes)
-            surface.applySkinScale(skinScale)
-            surface.applyPalette(renderer.palette)
-            addSubview(surface.view)
-        }
+        let videoHolderAppeared = reconcileVideoSurface(holders: holders)
         // Not every `{0000000A}` holder gets the engine: a letterbox strip is an analyzer's box, and
         // the bridge vends one surface per skin, so a second holder asking for it stole the picture
         // from the first. Everything not named here falls through to the renderer's analyzer (BB9).
@@ -1249,53 +1240,31 @@ final class WinampModernMainView: NSView {
                 + " holders=" + boxes.joined(separator: " ")
             NSLog("%@", line)
         }
-        // **Unmount first, then mount.** The bridge vends one surface per skin, so the holder the
-        // engine moves *to* and the holder it moves *from* hand back the same object. With the mount
-        // pass first, that object was registered under both ids at once and the unmount pass then ran
-        // `unmountFromHolder()` on the instance the mount pass had just added — stopping the engine
-        // and pulling the view straight back out of the hierarchy. `[B]` kept the detached, stopped
-        // surface, and every later reconcile skipped it as already mounted, so the box stayed black
-        // for the rest of the session. That is Big Bento Modern's Visualization tab going black once
-        // the Multi Content View mini pane is ticked: ticking it adds a second eligible holder, and
-        // opening the tab flips the election from the mini pane to the tab (BB35).
-        for (id, surface) in visualizationSurfaces where !liveVis.contains(id) {
-            if Self.surfaceTrace {
-                let line = "[surf/vis] unmount #\(id)"
-                    + " obj=\(Unmanaged.passUnretained(surface.view).toOpaque())"
-                NSLog("%@", line)
-            }
-            surface.unmountFromHolder()
-            visualizationSurfaces[id] = nil
-        }
-        for holder in holders where holder.kind == .visualization {
-            guard holder.object.stableID == engineHolderID else { continue }
-            let surface: WinampModernVisualizationSurface
-            if let existing = visualizationSurfaces[holder.object.stableID] {
-                surface = existing
-            } else if let made = componentHost?.makeVisualizationSurface() {
-                visualizationSurfaces[holder.object.stableID] = made
-                made.applySkinScale(skinScale)
-                made.applyPalette(renderer.palette)
-                surface = made
-            } else {
-                continue
-            }
-            // **Attach every pass, not only on creation.** A surface is detached by an unmount above
-            // — the move this pass is completing — and the old "create it, add it, resume it once"
-            // shape could only ever start the engine on the pass that made it. Anything that left the
-            // view hierarchy afterwards had nothing to put it back (BB35).
-            guard surface.view.superview !== self else {
+        let visEntries = reconcile(
+            &visualizationSurfaces,
+            to: holders.filter { $0.kind == .visualization && $0.object.stableID == engineHolderID },
+            unmount: { id, surface in
                 if Self.surfaceTrace {
-                    let line = "[surf/vis] attached \(holder.object.xmlID ?? "-")"
-                        + "#\(holder.object.stableID)"
+                    let line = "[surf/vis] unmount #\(id)"
                         + " obj=\(Unmanaged.passUnretained(surface.view).toOpaque())"
                     NSLog("%@", line)
                 }
-                continue
-            }
-            addSubview(surface.view)
+                surface.unmountFromHolder()
+            },
+            make: { _ in
+                guard let made = componentHost?.makeVisualizationSurface() else { return nil }
+                made.applySkinScale(skinScale)
+                made.applyPalette(renderer.palette)
+                return made
+            })
+        for (holder, surface, _) in visEntries {
+            // **Attach every pass, not only on creation.** The old "create it, add it, resume it
+            // once" shape could only ever start the engine on the pass that made it. Anything that
+            // left the view hierarchy afterwards had nothing to put it back (BB35).
+            let attached = surface.view.superview === self
+            if !attached { addSubview(surface.view) }
             if Self.surfaceTrace {
-                let line = "[surf/vis] mount \(holder.object.xmlID ?? "-")"
+                let line = "[surf/vis] \(attached ? "attached" : "mount") \(holder.object.xmlID ?? "-")"
                     + "#\(holder.object.stableID)"
                     + " obj=\(Unmanaged.passUnretained(surface.view).toOpaque())"
                 NSLog("%@", line)
@@ -1303,54 +1272,72 @@ final class WinampModernMainView: NSView {
             // A surface the bridge handed back was stopped when its holder went away, and the only
             // other thing that starts an engine is a window becoming visible — which has already
             // happened for a holder that lives in a window that is on screen.
-            surface.resumeRendering()
+            if !attached { surface.resumeRendering() }
         }
         // What the renderer paints in the box behind them: bars are the skin's analyzer, and drawing
         // one under a live engine is a second visualization nobody can see costing a repaint a frame.
         renderer.hostedVisualizationHolders = liveVis
 
-        for (id, surface) in videoSurfaces where !liveVideo.contains(id) {
-            // Unparks the picture — the one video view in the app must never be left orphaned in a
-            // view that is about to leave the hierarchy — and leaves it hidden. The holder going away
-            // is a tab switch, not a stop, so the film plays on and the window it came from stays put.
-            surface.unmountFromHolder()
-            videoSurfaces[id] = nil
-        }
-        // …and the holder coming *back* is the tab being switched to again, which is the only moment
+        // The holder coming *back* is the tab being switched to again, which is the only moment
         // that can park the picture there a second time: the reveal route runs on a *play* call, and
-        // the film has been playing all along. After a layout pass, because that is what gives the
-        // new box its frame, and asked of `hostedVideoSurface` so the largest visible box wins the
-        // same way the first parking did.
+        // the film has been playing all along. One turn later, through the same claim the first
+        // parking took, which lays the scene out first: that is what gives the new box its frame.
         if videoHolderAppeared, sceneIsVisible,
            WindowManager.shared.currentVideoPlayerController?.currentTitle != nil {
             DispatchQueue.main.async { [weak self] in
-                guard let self, !self.isTornDown else { return }
-                self.needsLayout = true
-                self.layoutSubtreeIfNeeded()
-                self.hostedVideoSurface?.attachVideoOutput()
-                self.hostedVideoSurface?.updateOutputPlacement()
+                // Still this view's box: another window may have claimed it in the meantime.
+                guard let self, !self.isTornDown, self.hostedVideoSurface != nil else { return }
+                self.claimVideoSurface()
             }
         }
 
-        var liveHostedWindows: Set<WasabiObjectID> = []
         let hostedStyle = WinampModernSurfaceStyle(palette: renderer.palette)
-        for holder in holders {
-            guard case .hostWindow(let id) = holder.surfaceID else { continue }
-            liveHostedWindows.insert(holder.object.stableID)
-            guard hostedWindowSurfaces[holder.object.stableID] == nil,
-                  let surface = componentHost?.makeHostedWindowSurface(id: id) else { continue }
-            hostedWindowSurfaces[holder.object.stableID] = surface
-            surface.applySkinScale(skinScale)
-            surface.applyPalette(hostedStyle)
-            addSubview(surface.view)
-            if sceneIsVisible { surface.resume() }
-        }
-        for (id, surface) in hostedWindowSurfaces where !liveHostedWindows.contains(id) {
-            surface.suspend()
-            surface.unmountFromHolder()
-            hostedWindowSurfaces[id] = nil
+        let hostedEntries = reconcile(
+            &hostedWindowSurfaces,
+            to: holders.filter { if case .hostWindow = $0.surfaceID { true } else { false } },
+            unmount: { _, surface in
+                surface.suspend()
+                surface.unmountFromHolder()
+            },
+            make: { holder in
+                guard case .hostWindow(let id) = holder.surfaceID,
+                      let made = componentHost?.makeHostedWindowSurface(id: id) else { return nil }
+                made.applySkinScale(skinScale)
+                made.applyPalette(hostedStyle)
+                return made
+            })
+        for entry in hostedEntries where entry.isNew {
+            addSubview(entry.surface.view)
+            if sceneIsVisible { entry.surface.resume() }
         }
         cachedHolders = holders
+    }
+
+    /// Bring one kind's surface table up to `holders`: unmount the entries whose holder has gone
+    /// **first**, then look up or `make` each live holder's surface. `isNew` marks the ones made now.
+    ///
+    /// The order is the BB35 trap. The bridge vends one surface per skin (per id, for hosted
+    /// windows), so a holder that comes back under a new object id is handed the very instance the
+    /// stale id still names. With the mount first, the stale id's unmount then pulled it straight
+    /// back out: Big Bento Modern's Visualization tab went black once its mini pane was ticked, and
+    /// Winamp Single GUI's library pane stayed an empty box and its "Switch Video Screen Mode" put
+    /// the picture away.
+    private func reconcile<Surface>(
+        _ table: inout [WasabiObjectID: Surface], to holders: [WinampModernComponentHolder],
+        unmount: (WasabiObjectID, Surface) -> Void,
+        make: (WinampModernComponentHolder) -> Surface?
+    ) -> [(holder: WinampModernComponentHolder, surface: Surface, isNew: Bool)] {
+        let live = Set(holders.map(\.object.stableID))
+        for (id, surface) in table where !live.contains(id) {
+            unmount(id, surface)
+            table[id] = nil
+        }
+        return holders.compactMap { holder in
+            if let existing = table[holder.object.stableID] { return (holder, existing, false) }
+            guard let made = make(holder) else { return nil }
+            table[holder.object.stableID] = made
+            return (holder, made, true)
+        }
     }
 
     private var cachedHolders: [WinampModernComponentHolder]?
@@ -1455,32 +1442,9 @@ final class WinampModernMainView: NSView {
         return nodes.first.map { ($0.object, false) }
     }
 
-    /// The video surface in this scene, if the skin's holder made one. The window layer needs it to
-    /// hand the picture over before showing the skin's video window, and to size that window from
-    /// the stream's own dimensions for `VID_1X` / `VID_2X`.
-    ///
-    /// **The biggest visible box wins.** A skin can hold the same component in several places at
-    /// once — cPro-Bento's video lives in its tab, in the mini view above the playlist column *and*
-    /// in the drawer — and a dictionary's first value is whichever the hash gave up, so the picture
-    /// landed in a different box between runs of the same build. The largest is the one the user
-    /// asked to see: the small ones are strips the skin leaves open beside it.
-    var hostedVideoSurface: WinampModernVideoSurface? {
-        let holders = renderer.componentHolders()
-            .filter { $0.kind == .video && videoSurfaces[$0.object.stableID] != nil }
-            .sorted { $0.frame.width * $0.frame.height > $1.frame.width * $1.frame.height }
-        if let best = holders.first { return videoSurfaces[best.object.stableID] }
-        return videoSurfaces.values.first
-    }
-
     /// The visualization surface in this scene, if the skin's AVS holder made one. The host actions
     /// (`VIS_NEXT`, `VIS_CFG`) and the Visualizations menu reach the running engine through it.
     var hostedVisualizationSurface: WinampModernVisualizationSurface? { visualizationSurfaces.values.first }
-
-    /// The video holder's frame in skin pixels, for the sizing arithmetic `VID_1X` / `VID_2X` do:
-    /// the window grows by the difference between the box the skin drew and the box the stream wants.
-    var videoHolderFrame: CGRect? {
-        renderer.componentHolders().first { $0.kind == .video }?.frame
-    }
 
     /// How far a video or visualization surface passes under the skin's surrounding artwork, in skin
     /// pixels.
@@ -1533,13 +1497,7 @@ final class WinampModernMainView: NSView {
                 NSLog("%@", line)
             }
         }
-        for holder in holders where holder.kind == .video {
-            guard let surface = videoSurfaces[holder.object.stableID] else { continue }
-            surface.view.frame = placed(holder.frame)
-            // The picture is a child window parked on that box, and a child window follows its
-            // parent's moves but not a resize of the box inside it.
-            surface.updateOutputPlacement()
-        }
+        layoutVideoSurface(holders: holders, placed: placed)
         for holder in holders {
             guard case .hostWindow = holder.surfaceID,
                   let surface = hostedWindowSurfaces[holder.object.stableID] else { continue }
@@ -1688,9 +1646,11 @@ final class WinampModernMainView: NSView {
         NSLog("WinampModern debug click: %@#%@", object.typeName, object.xmlID ?? "-")
         pressedObject = object
         dispatch(object: object, event: "onleftbuttondown", point: point)
-        dispatch(object: object, event: "onleftbuttonup", point: point)
-        _ = try? scripts.dispatch(object: object, event: "onleftclick")
-        performAction(for: object)
+        let flip = flipActivation(of: object) {
+            dispatch(object: object, event: "onleftbuttonup", point: point)
+            _ = try? scripts.dispatch(object: object, event: "onleftclick")
+        }
+        performAction(for: object, flip: flip)
         pressedObject = nil
         needsDisplay = true
         logHolders(tag: "debug click")
@@ -1725,7 +1685,7 @@ final class WinampModernMainView: NSView {
                 .map { "\(type(of: $0))\($0.frame)hidden=\($0.isHidden ? 1 : 0)" }
                 .joined(separator: " | ")
             NSLog("WinampModern HOLDERS after %@: lib=%d brw=%d vid=%d vis=%d holders=[%@] subviews=[%@]",
-                  tag, self.librarySurfaces.count, self.browserSurfaces.count, self.videoSurfaces.count,
+                  tag, self.librarySurfaces.count, self.browserSurfaces.count, self.hostedVideoSurface == nil ? 0 : 1,
                   self.visualizationSurfaces.count, holders, subs)
         }
     }
@@ -2018,11 +1978,17 @@ final class WinampModernMainView: NSView {
         return NSRect(origin: origin, size: size)
     }
 
-    /// macOS ships no diagonal resize cursor, so a corner gets the crosshair — the same substitution
-    /// `BorderlessWindow` makes for the other window families.
+    /// A corner gets the system's diagonal frame-resize cursor (#601); before macOS 15 there is none,
+    /// so it falls back to the crosshair — the substitution `BorderlessWindow` still makes for the
+    /// other window families.
     private static func cursor(for edges: WasabiResizeEdges) -> NSCursor {
         switch (edges.isHorizontal, edges.isVertical) {
-        case (true, true): return .crosshair
+        case (true, true):
+            guard #available(macOS 15, *) else { return .crosshair }
+            let position: NSCursor.FrameResizePosition = edges.contains(.top)
+                ? (edges.contains(.left) ? .topLeft : .topRight)
+                : (edges.contains(.left) ? .bottomLeft : .bottomRight)
+            return .frameResize(position: position, directions: .all)
         case (true, false): return .resizeLeftRight
         default: return .resizeUpDown
         }
@@ -2109,15 +2075,19 @@ final class WinampModernMainView: NSView {
         // the object that was pressed, not to whatever is under the mouse when it stops.
         if let pressedObject { noteFinalPosition(on: pressedObject) }
         if let pressedObject, !moved {
-            dispatch(object: pressedObject, event: "onleftbuttonup", point: point)
             if releasedOver === pressedObject {
-                _ = try? scripts.dispatch(object: pressedObject, event: "onleftclick")
-                performAction(for: pressedObject)
+                let flip = flipActivation(of: pressedObject) {
+                    dispatch(object: pressedObject, event: "onleftbuttonup", point: point)
+                    _ = try? scripts.dispatch(object: pressedObject, event: "onleftclick")
+                }
+                performAction(for: pressedObject, flip: flip)
                 // The *second* click carries its own command in Wasabi, and for most objects that
                 // carry one it is the only command they have: a titlebar mousetrap's
                 // `dblclickaction="SWITCH;shade"`, a song title's `TRACKINFO`. It runs after the
                 // normal click's action, as it does in Winamp — the two are independent attributes.
                 if event.clickCount >= 2 { performClickAction(.double, for: pressedObject) }
+            } else {
+                dispatch(object: pressedObject, event: "onleftbuttonup", point: point)
             }
         }
         pressedObject = nil
@@ -2537,8 +2507,10 @@ final class WinampModernMainView: NSView {
         hoveredObject = nil
         for surface in librarySurfaces.values { surface.prepareForUITeardown() }
         librarySurfaces.removeAll()
-        for surface in videoSurfaces.values { surface.prepareForUITeardown() }
-        videoSurfaces.removeAll()
+        if let surface = hostedVideoSurface {
+            surface.prepareForUITeardown()
+            componentHost?.releaseVideoSurface(heldBy: self)
+        }
         for surface in visualizationSurfaces.values { surface.prepareForUITeardown() }
         visualizationSurfaces.removeAll()
         for surface in hostedWindowSurfaces.values { surface.prepareForUITeardown() }
@@ -2557,6 +2529,7 @@ final class WinampModernMainView: NSView {
         renderer.toggleTargetVisibleProvider = nil
         containerWindowToggleRequested = nil
         surfaceToggleRequested = nil
+        videoHolderWantsTheBox = nil
         webNavigationRequested = nil
         activeStateObservers.forEach(NotificationCenter.default.removeObserver)
         activeStateObservers.removeAll()
@@ -2640,7 +2613,7 @@ final class WinampModernMainView: NSView {
         .button, .toggleButton, .nStatesButton, .slider, .menu, .list, .component, .browser, .edit, .editBox
     ]
 
-    private static func isControl(_ object: WasabiObject) -> Bool {
+    static func isControl(_ object: WasabiObject) -> Bool {
         object.tag.is(anyOf: controlKinds) || object.tag.isStandard(anyOf: [.button, .toggleButton])
     }
 
@@ -2852,24 +2825,38 @@ final class WinampModernMainView: NSView {
                                   arguments: [.integer(position)])
     }
 
-    private func performAction(for object: WasabiObject) {
+    private enum ActivationFlip { case none, toggled, radio }
+
+    /// A `<Wasabi:CheckBox radioid="…">` is a radio, not a toggle: the clicked member goes on and its
+    /// set goes off, and clicking the one already on changes nothing — so it is tried before the
+    /// toggle, which would otherwise flip it back off. A togglebutton flips itself, then tells the
+    /// skin — the whole of some skins' UI hangs off that notification (multipass's bottom drawer
+    /// opens from `onToggle` and nowhere else).
+    ///
+    /// The flip lands around `release`, the script's `onLeftButtonUp`/`onLeftClick`. Wasabi's
+    /// `ButtonWnd` flips in `onLeftPush`, before the script hears the release, so a handler's own
+    /// `setActivated` has the last word: ClassicPro's tab button clears every tab and then
+    /// `setActivated(1)` on itself from `onLeftButtonUp`, and flipped afterwards the tab just chosen
+    /// went dark.
+    private func flipActivation(of object: WasabiObject, around release: () -> Void) -> ActivationFlip {
+        let flip: ActivationFlip = scripts.selectRadioMember(object) ? .radio
+            : scripts.toggleActivation(of: object) ? .toggled : .none
+        release()
+        return flip
+    }
+
+    /// `flip` is the activation change the click made (`flipActivation(of:around:)`).
+    private func performAction(for object: WasabiObject, flip: ActivationFlip) {
         // A Wasabi standard drop-down opens its list; nothing else this method does applies to it
         // (B66).
         if WasabiFormWidgets.kind(of: object) == .dropDownList {
             presentDropDownList(object)
             return
         }
-        // A `<Wasabi:CheckBox radioid="…">` is a radio, not a toggle: the clicked member goes on and
-        // its set goes off, and clicking the one already on changes nothing. Before the toggle below,
-        // which would otherwise flip it back off.
-        if scripts.selectRadioMember(object) {
-            needsDisplay = true
-            return
-        }
-        // A togglebutton flips itself first, then tells the skin — the whole of some skins' UI hangs
-        // off that notification (multipass's bottom drawer opens from `onToggle` and nowhere else).
-        // It runs alongside whatever `action=` the button also carries, as it does in Wasabi.
-        if scripts.toggleActivation(of: object) { needsDisplay = true }
+        // The flip runs alongside whatever `action=` the button also carries, as it does in Wasabi;
+        // a radio carries none.
+        if flip != .none { needsDisplay = true }
+        if flip == .radio { return }
         let action = object.attributes["action"]
         let parameter = object.attributes["param"]
         // The object comes with the action now: `action_target=` is an attribute of the *button*, and

@@ -714,8 +714,9 @@ class AppStateManager {
             projectMPresetIndex: wm.visualizationPresetIndex,
             
             // v2 fields
-            uiScaleLevel: wm.uiScaleLevel,
-            isDoubleSize: wm.isDoubleSize,
+            // The user's level: one a `.wal` skin asked for is the skin's, and dies with it (B238).
+            uiScaleLevel: wm.userUIScaleLevel,
+            isDoubleSize: wm.userUIScaleLevel != .p100,
             modernSkinName: UserDefaults.standard.string(forKey: ModernSkinFamily.modern.skinNameKey),
             metalSkinName: UserDefaults.standard.string(forKey: ModernSkinFamily.metal.skinNameKey),
             wmpSkinName: wm.uiMode == .wmp

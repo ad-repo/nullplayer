@@ -76,6 +76,31 @@ final class WinampModernB136Tests: XCTestCase {
         XCTAssertEqual(renderer.canvasSize, CGSize(width: 276, height: 242))
     }
 
+    /// B254: a layout shaped by its `alphabackground` is that bitmap's size, whatever the container
+    /// says — MD__Ganbare's 408-wide player opened 816 wide under `default_w="816"`.
+    func testAnAlphaBackgroundLayoutIsItsArtworkSize() throws {
+        let renderer = try makeRenderer(
+            container: #"<container id="main" default_w="816" default_h="164">"#,
+            layout: """
+            <bitmap id="base" file="base.png"/>
+            <layout id="normal" background="base" alphabackground="base"/>
+            """,
+            files: ["base.png": try png(width: 408, height: 222)])
+        XCTAssertEqual(renderer.canvasSize, CGSize(width: 408, height: 222))
+    }
+
+    /// An opaque background is a tile a framed window stretches, so the container still sizes it.
+    func testAPlainBackgroundLayoutIsStillSizedByItsContainer() throws {
+        let renderer = try makeRenderer(
+            container: #"<container id="AVS" default_w="345" default_h="275">"#,
+            layout: """
+            <bitmap id="tile" file="tile.png"/>
+            <layout id="normal" background="tile"/>
+            """,
+            files: ["tile.png": try png(width: 72, height: 72)])
+        XCTAssertEqual(renderer.canvasSize, CGSize(width: 345, height: 275))
+    }
+
     // MARK: - The component-room fit
 
     /// The reported window: a component container whose layout states no height at all, only a
@@ -242,7 +267,8 @@ final class WinampModernB136Tests: XCTestCase {
         return try XCTUnwrap(renderer.sceneNodes().first { $0.object.xmlID == "probe" }?.object)
     }
 
-    private func makeRenderer(container: String, layout: String) throws -> WasabiSceneRenderer {
+    private func makeRenderer(container: String, layout: String,
+                              files: [String: Data] = [:]) throws -> WasabiSceneRenderer {
         let xml = """
         <WasabiXML>
         \(container)
@@ -250,7 +276,7 @@ final class WinampModernB136Tests: XCTestCase {
         </container>
         </WasabiXML>
         """
-        let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: try makeArchive(xml: xml))
+        let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: try makeArchive(xml: xml, files: files))
         addTeardownBlock { loaded.teardown() }
         let id = try XCTUnwrap(loaded.runtime.graph.roots.first {
             $0.typeName.caseInsensitiveCompare("container") == .orderedSame
@@ -284,19 +310,28 @@ final class WinampModernB136Tests: XCTestCase {
         }
     }
 
-    private func makeArchive(xml: String) throws -> URL {
+    private func png(width: Int, height: Int) throws -> Data {
+        let rep = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8,
+            samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+            bytesPerRow: 0, bitsPerPixel: 0))
+        return try XCTUnwrap(rep.representation(using: .png, properties: [:]))
+    }
+
+    private func makeArchive(xml: String, files: [String: Data] = [:]) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("WinampModernB136Tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("B136-\(UUID().uuidString).wal")
         let archive = try Archive(url: url, accessMode: .create)
-        let payload = Data(xml.utf8)
-        try archive.addEntry(with: "skin.xml", type: .file, uncompressedSize: Int64(payload.count),
-                             compressionMethod: .none) { position, size in
-            let start = Int(position)
-            guard start < payload.count else { return Data() }
-            return payload.subdata(in: start..<min(payload.count, start + size))
+        for (path, payload) in files.merging(["skin.xml": Data(xml.utf8)], uniquingKeysWith: { $1 }) {
+            try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(payload.count),
+                                 compressionMethod: .none) { position, size in
+                let start = Int(position)
+                guard start < payload.count else { return Data() }
+                return payload.subdata(in: start..<min(payload.count, start + size))
+            }
         }
         return url
     }

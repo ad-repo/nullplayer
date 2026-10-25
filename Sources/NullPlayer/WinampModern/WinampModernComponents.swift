@@ -68,6 +68,9 @@ enum WinampModernComponentRegistry {
         value = value.lowercased()
         if value == "@all@" { return .other }
         if value.hasPrefix("guid:") { value = String(value.dropFirst("guid:".count)) }
+        // A braced GUID ends at its brace: MIDISUI holds its library as
+        // `guid:{6B0EDF80-…} (Media library)`, and the label's hex letters joined the digits.
+        if value.hasPrefix("{"), let close = value.firstIndex(of: "}") { value = String(value[...close]) }
         if let short = shortTokenToKind[value] { return short }
         return guidToKind[normalize(value)]
     }
@@ -155,6 +158,8 @@ struct WinampModernComponentHolder {
     let object: WasabiObject
     let surfaceID: WinampModernSurfaceID
     let frame: CGRect
+    /// What the holder's ancestors let show of it — the same clip the renderer paints it through.
+    var clip: CGRect = .infinite
 
     /// Legacy accessor for the real Winamp components already routed through this type. Hosted
     /// NullPlayer windows are not components, so they report `.other` here until their dedicated
@@ -316,9 +321,21 @@ protocol WinampModernComponentHost: AnyObject {
     func makeBrowserSurface(initialRequest: WinampModernBrowserRequest?) -> WinampModernBrowserSurface?
 
     /// Video — the same shape as the library's, and for the same reason: the skin draws a window
-    /// around a box it cannot fill, and only the host can put the picture in it. `nil` when no video
-    /// output exists in this session.
-    func makeVideoSurface() -> WinampModernVideoSurface?
+    /// around a box it cannot fill, and only the host can put the picture in it. One box per skin,
+    /// held by one scene view at a time (B246): `holder` takes it unless a view in another visible
+    /// window holds it. `nil` when no video output exists in this session, or when the box stays
+    /// where it is.
+    func claimVideoSurface(by holder: NSView) -> WinampModernVideoSurface?
+
+    /// The box, moved to `holder` wherever it is: a deliberate move, the detach into a skin's video
+    /// window and the reattach back. `nil` when no video output exists in this session.
+    func takeVideoSurface(by holder: NSView) -> WinampModernVideoSurface?
+
+    /// The box, only while `holder` holds it.
+    func videoSurface(heldBy holder: NSView) -> WinampModernVideoSurface?
+
+    /// `holder`'s video holder has gone; the box is free for the next view that claims it.
+    func releaseVideoSurface(heldBy holder: NSView)
 
     /// Visualization — the skin's AVS/vis window, filled with the host's real visualization engine
     /// (ProjectM/MilkDrop, Geiss, Tripex) rather than the engine-drawn analyzer. `nil` when no
@@ -338,7 +355,10 @@ extension WinampModernComponentHost {
     func makeLibrarySurface() -> WinampModernLibrarySurface? { nil }
     @MainActor
     func makeBrowserSurface(initialRequest: WinampModernBrowserRequest?) -> WinampModernBrowserSurface? { nil }
-    func makeVideoSurface() -> WinampModernVideoSurface? { nil }
+    func claimVideoSurface(by holder: NSView) -> WinampModernVideoSurface? { nil }
+    func takeVideoSurface(by holder: NSView) -> WinampModernVideoSurface? { nil }
+    func videoSurface(heldBy holder: NSView) -> WinampModernVideoSurface? { nil }
+    func releaseVideoSurface(heldBy holder: NSView) {}
     func makeVisualizationSurface() -> WinampModernVisualizationSurface? { nil }
     func makeHostedWindowSurface(id: WinampModernHostedWindowID) -> WinampModernHostedSurface? { nil }
     /// A host with no selection model of its own keeps the single anchor it already had.

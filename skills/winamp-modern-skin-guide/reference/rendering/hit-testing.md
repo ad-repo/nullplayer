@@ -27,6 +27,17 @@ clips most of it away. The corpus gate (`RENDER_CLICKABLE=1`, 2026-09-28) moved 
 falls and all unlocked: Itemskin's `vol`, BLAKK's two seek bars (`blakk.bb.seek-empty`,
 `blakk.remote.seekempty`, which now seek to the clicked point) and Bio-Nid's `VolumeAnim`.
 
+**A region group's mask is part of the clip, for the pointer too** (B249). A group whose
+`background` it does not paint (`drawbackground="0"`) clips its descendants to that bitmap's alpha
+(ArmorAmp's blade-shaped spectrum screen). The mask travels down the scene with the clip rect in one
+value, `WasabiClip { rect; masks }` on every node, which the draw applies and `object(at:)` tests
+(`WasabiMaskClip.contains` reads the mask the draw clips to, through `WasabiResourceCache.maskContains`,
+which also answers script regions; both masks are stored bottom-up and read top-down), so a control in a
+masked-off corner is neither drawn nor clicked. The group's own hit region is a different question
+with the same answer: a group's `background` is its region whether it paints it or not, the way a
+layer's artwork is, so the group is hit through that alpha always, and only an unpainted one also
+clips its children — a painted background already shows the shape the children sit on.
+
 #### Hit testing: who owns a point
 
 `object(at:)` walks the scene in reverse (`sceneNodes()` is a pre-order DFS, so reversing puts every
@@ -201,7 +212,9 @@ Four rules, and the first is what makes the other three cheap:
 The cursor comes from the same hit test, set in `mouseMoved` rather than from a cursor rect: a rect
 can only describe the handle's *box*, and the exceptions above live in what covers that box. Promising
 a resize cursor where the press does something else is precisely the BB21 defect. Corners get the
-crosshair — macOS ships no diagonal resize cursor, the same substitution `BorderlessWindow` makes.
+system's diagonal `NSCursor.frameResize(position:directions:)` (#601). It is macOS 15+, so earlier
+systems fall back to the crosshair, the substitution `BorderlessWindow` still makes for the other
+window families.
 
 The size is clamped to the layout's range **before** the origin is derived from the anchored corner.
 Clamping the finished frame instead leaves the origin where the unclamped drag put it, and a window
@@ -303,6 +316,15 @@ wrapper's box the seeded rect still stands. Two broader versions were measured a
 the whole window by its positive declarations moved 87 corpus images, and counting leaves only
 (not `background` groups) still erased Formamp's and Ebonite's client areas. The shipped rule moved
 none.
+
+**A cut is not content, and a wrapper with no content is its box** (2026-10-24). Big Bento Modern's
+`window.background.regions` is a full-window `sysregion="1"` group holding nothing but four 3x3
+`regionop="-2"` corner silhouettes; its frame artwork sits beside it with a *positive* `regionop`,
+which is left out of the region. Bounded by its cuts, the wrapper cleared the window to its
+`sysregion="1"` titlebar and the whole body vanished — both base and Light editions, while the
+native library pane kept drawing over the hole. Cut leaves are now skipped when a wrapper's content
+is collected, and a wrapper left with none fills its box. The corpus sweep moved only the two Bento
+editions (normal and shade); XENERGY is unchanged.
 
 The shape reaches the **window** without any `NSWindow` work: all three `.wal` window paths — the
 player, auxiliary containers, and the hosted-window materializer — already set `isOpaque = false`,

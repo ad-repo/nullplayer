@@ -567,7 +567,8 @@ final class WinampModernPhase24Tests: XCTestCase {
             let host = Host()
             host.spectrumLevels = Array(repeating: 1, count: 75)
             let pixels = try render(loaded: loaded, size: size, host: host)
-            // Runs of painted columns: one run per bar, since each bar leaves a 1px gap.
+            // Runs of painted columns: one run per `wide` bar, which leaves a 1px gap. `thin` bars
+            // abut (B264), so a full-scale thin row is one run.
             var count = 0, widest = 0, run = 0
             for x in 0..<size {
                 if pixel(pixels, x: x, y: 4, width: size)[3] > 0 {
@@ -581,8 +582,8 @@ final class WinampModernPhase24Tests: XCTestCase {
         }
         let thin = try bars("thin")
         let wide = try bars("wide")
-        XCTAssertGreaterThan(thin.count, wide.count, "thin packs more bands into the same box")
-        XCTAssertLessThan(thin.widest, wide.widest, "and each of them is narrower")
+        XCTAssertEqual(thin.count, 1, "thin's comb abuts, with no gaps between its bars")
+        XCTAssertEqual(thin.widest, 150, "and fills the box")
         XCTAssertGreaterThan(wide.count, 1, "but wide is a row of bars, not one block")
     }
 
@@ -796,6 +797,59 @@ final class WinampModernPhase24Tests: XCTestCase {
                 XCTAssertEqual(closed, 1, "only the corner closes")
             }
         }
+    }
+
+    /// B263: a window in NullPlayer's glass chrome (the About page of a skin with no usable standard
+    /// frame) closes from its corner even when the page lays a fitparent `mousetrap` over it all.
+    func testAHostChromeWindowClosesFromItsCornerOverAFitparentLayer() throws {
+        let loaded = try load(xml: skin(size: 80, body: """
+            <layer id="mousetrap" x="0" y="0" w="0" h="0" relatw="1" relath="1" move="1"/>
+            """))
+        let host = Host()
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host, clock: { 0 })
+        addTeardownBlock { renderer.teardown() }
+        let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
+        addTeardownBlock { scripts.teardown() }
+        let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host)
+        addTeardownBlock { view.teardown() }
+        view.drawsHostChrome = true
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: renderer.canvasSize),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = view
+        view.setFrameSize(renderer.canvasSize)
+        var closed = 0
+        view.closeRequested = { closed += 1 }
+
+        // The matrix's first probe: 12 pt in from the right, 6 pt down from the top.
+        let corner = NSPoint(x: 68, y: 74)
+        XCTAssertTrue(view.hitTest(corner) === view)
+        click(view, in: window, at: corner)
+        XCTAssertEqual(closed, 1)
+    }
+
+    /// The fallback corner is empty space's. MIDISUI's Media Library layout has no `CLOSE`, and its
+    /// only way back is a `SWITCH normal` button in that corner: the corner quit the app instead.
+    func testTheFallbackCornerYieldsToASkinControl() throws {
+        let loaded = try load(xml: skin(size: 40, body: """
+            <button id="back" action="SWITCH" param="normal" x="20" y="0" w="20" h="20"/>
+            """))
+        let host = Host()
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host, clock: { 0 })
+        addTeardownBlock { renderer.teardown() }
+        let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
+        addTeardownBlock { scripts.teardown() }
+        let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host)
+        addTeardownBlock { view.teardown() }
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: renderer.canvasSize),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = view
+        view.setFrameSize(renderer.canvasSize)
+        var closed = 0
+        view.closeRequested = { closed += 1 }
+
+        XCTAssertTrue(view.needsFallbackClose)
+        click(view, in: window, at: NSPoint(x: 27, y: 27))
+        XCTAssertEqual(closed, 0, "a press on the skin's own button is the button's")
     }
 
     /// A `TOGGLE` parameter first keeps the established component route, then falls through to a

@@ -196,6 +196,39 @@ final class WinampModernB73Tests: XCTestCase {
         XCTAssertFalse(WasabiBuiltInVisRenderer.capClears(barTop: 50, capY: 60, capHeight: 2))
     }
 
+    // MARK: - Bar layout (B264)
+
+    /// `thin`'s 75 bands in Big Bento's 144px and KAO's 108px boxes leave a 1–2px slot. Every bar
+    /// must end where the next begins; the `wide` gap there left an irregular comb of gaps.
+    func testThinBarsAbutAndWideBarsKeepTheirGap() {
+        for width: CGFloat in [108, 144] {
+            let frame = CGRect(x: 10, y: 0, width: width, height: 20)
+            for index in 0..<74 {
+                let bar = WasabiBuiltInVisRenderer.analyzerColumn(index, count: 75, in: frame, isThin: true)
+                let next = WasabiBuiltInVisRenderer.analyzerColumn(index + 1, count: 75, in: frame, isThin: true)
+                XCTAssertEqual(bar.x + bar.width, next.x, "thin bar \(index) at width \(width)")
+            }
+        }
+        let frame = CGRect(x: 0, y: 0, width: 76, height: 20)
+        let bar = WasabiBuiltInVisRenderer.analyzerColumn(0, count: 19, in: frame, isThin: false)
+        let next = WasabiBuiltInVisRenderer.analyzerColumn(1, count: 19, in: frame, isThin: false)
+        XCTAssertEqual(next.x - (bar.x + bar.width), 1)
+    }
+
+    /// Big Bento's 16 colour slices in a fractional box: every edge on a whole pixel and shared
+    /// with its neighbour, so no antialiased seam runs between them.
+    func testRampSlicesShareWholePixelEdges() {
+        let (bottom, height): (CGFloat, CGFloat) = (40.3, 29.7)
+        for step in 0..<16 {
+            let slice = WasabiVisStyle.rampSlice(step, count: 16, boxBottom: bottom, boxHeight: height)
+            XCTAssertEqual(slice.top, slice.top.rounded())
+            XCTAssertEqual(slice.bottom, slice.bottom.rounded())
+            guard step < 15 else { continue }
+            XCTAssertEqual(slice.top, WasabiVisStyle.rampSlice(step + 1, count: 16, boxBottom: bottom,
+                                                               boxHeight: height).bottom)
+        }
+    }
+
     // MARK: - The FFT that feeds the calibration
 
     /// The calibration above is pinned against a *hand-built* spectrum. This pins the thing that

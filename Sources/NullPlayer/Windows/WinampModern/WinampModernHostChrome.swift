@@ -39,7 +39,11 @@ extension WinampModernMainView {
     /// for the contents: the fallback close corner of a scene with no close of its own, or the glass
     /// chrome's close and rim.
     func hostChromeHit(at viewPoint: NSPoint) -> HostChromeHit? {
-        if FallbackCloseArea.contains(viewPoint, in: self), needsFallbackClose { return .close }
+        // The fallback corner is empty space's, never a skin control's: MIDISUI's Media Library
+        // layout has no `CLOSE`, and its only way back is a `SWITCH normal` button in that very
+        // corner, so the corner closed the main window — quitting the app — on every press of it.
+        if FallbackCloseArea.contains(viewPoint, in: self), needsFallbackClose,
+           !(renderer.object(at: skinPoint(viewPoint)).map(Self.isControl) ?? false) { return .close }
         guard drawsHostChrome else { return nil }
         let point = skinPoint(viewPoint)
         let canvas = CGRect(origin: .zero, size: renderer.canvasSize)

@@ -8,7 +8,7 @@ Part of [compatibility.md](../compatibility.md). Implemented and unimplemented s
 unconditional branches; host/global method calls; local call/return; move; pre/post
 increment/decrement; arithmetic and modulo; bitwise and logical operations; allocation; delete.
 
-**Supported API** — the authoritative list is `WinampModernScriptSignatures` in `WinampModernScriptRuntimeSignatures.swift`, which the runtime's `signature(for:)` asks.
+**Supported API** — the authoritative list is the method tables (`WinampModernScriptSignatures.tables` in `WinampModernScriptRuntimeSignatures.swift` names them all), from which the runtime's `signature(for:)` is derived.
 By area:
 
 - **Playback host**: playback state, current time, duration, volume, shuffle/repeat, title/info,
@@ -87,9 +87,15 @@ By area:
   maximize — and answered 1 at 135% they opened 1.35× the screen. On a receiver that is not a layout the call
   is accepted and inert. Measured demand: Defix's seven configurator buttons (100, 125, 150, 175,
   200, 250, 300 — the ladder gained 175/250/300 for them), Ebonite's `standardframe.m` and boom's
-  `prefs.m`; all three call it on a layout. **Not** dispatched: `onScale`, the layout event Wasabi
-  raises when a scale changes (Ebonite uses it to keep two layouts in step, which our one global
-  scale already does)
+  `prefs.m`; all three call it on a layout. **A skin's level is the skin's** (B238): Winamp's scale
+  belongs to the layout, so `WindowManager` keeps the user's level beneath the one `setScale` asked
+  for (`setUIScaleLevelForSkin`), the next skin load goes back to it (`endSkinUIScaleLevel`), and a
+  mode switch and Save State carry `userUIScaleLevel`, never the skin's. Any other UI Size write — the
+  menu, a state restore — is the user's and drops the skin's claim. Without it Alpha Media Player X5's
+  135% opened every later skin at 135%. **`onScale(newScale)`** goes to each showing container's
+  active layout whenever UI Size changes (`dispatchLayoutScale`, B239), which is how Nitrous's monitor
+  mode re-fits the screen after a change instead of staying sized for the old scale. A layout hidden
+  during the change is not told (B244)
 - **Object validity**: `isInvalid()` is true for a null receiver *and* for an object whose declared
   bitmap never resolved. ClassicPro probes for optional artwork by declaring a hidden layer over it
   and asking that layer whether it is invalid
@@ -507,8 +513,8 @@ By area:
     and a 300 ms exponential release** (`WinampModernLevelMeter.falloff`). The 90th-percentile needle
     step on wTunes fell from 0.40 to 0.08 rad. Skins with their own ballistics (Defix, mmd3) keep their
     attack and decay a little slower, which the user checked on Defix. Silence detection reads the raw
-    block, so a pause still drops the needle at once. Measure needle motion with **real music**, never
-    `audio-long`: it is a frequency sweep, a steady level that cannot show twitching.
+    block, so a pause still drops the needle at once. Measure needle motion with **real music** (the
+    `music` test-data row, `launch.sh`'s default), never a sweep or tone: a steady level cannot show twitching.
 
   The tap is the shared stereo PCM notification, received with `queue: nil` and measured on the
   posting thread; the main thread only reads the played-out block. Registering with `queue: .main`

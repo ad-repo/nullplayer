@@ -96,7 +96,6 @@ final class WinampModernB128Tests: XCTestCase {
             let signature = try XCTUnwrap(runtime.signature(for: method, classGUID: nil),
                                           "\(method) has no signature, so no call to it can unwind")
             XCTAssertEqual(signature.argumentCount, 0)
-            XCTAssertEqual(signature.returnKind, .integer)
         }
     }
 

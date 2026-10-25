@@ -235,7 +235,7 @@ final class WinampModernPhase11Tests: XCTestCase {
 
     private final class NoOpDispatcher: MakiMethodDispatching {
         func signature(for method: String, classGUID: String?) -> MakiMethodSignature? {
-            .init(argumentCount: 0, returnKind: .string)
+            .init(argumentCount: 0)
         }
         func invoke(method: String, on object: MakiObjectReference, arguments: [MakiValue],
                     program: MakiProgram) throws -> MakiValue { .string("called") }

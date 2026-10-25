@@ -46,9 +46,14 @@ facekit	FaceKit (Panic Audion face viewer)	GPL-3.0-or-later	Copyright 2020-2021 
 #
 # === Fonts and bundled assets ===
 departuremono	Departure Mono	OFL-1.1	Copyright (c) 2024 Helena Zhang	https://departuremono.com	1.422	Fonts/DepartureMono-LICENSE.txt	-
+chicagokare	Chicago Kare (Audion face font substitute)	MIT	Copyright (c) 2024 Duane King	https://github.com/KingDuane/Chicago-Kare	bundled	Fonts/ChicagoKare-LICENSE.txt	-
+comicneue	Comic Neue Bold Italic (Audion face font substitute)	OFL-1.1	Copyright 2014 The Comic Neue Project Authors	https://github.com/crozynski/comicneue	bundled	Fonts/ComicNeue-LICENSE.txt	-
+dseg14	NullPlayer Segment14 (Audion face font substitute)	OFL-1.1	Copyright (c) 2020, keshikan, with Reserved Font Name "DSEG"	https://www.keshikan.net	Modified Version of DSEG14 Classic Light: renamed, descent added	Fonts/DSEG14-LICENSE.txt	-
+silkscreen	Silkscreen (Audion face font substitute)	OFL-1.1	Copyright 2001 The Silkscreen Project Authors	https://github.com/googlefonts/silkscreen	bundled	Fonts/Silkscreen-LICENSE.txt	-
+tiny5	Tiny5 (Audion face font substitute)	OFL-1.1	Copyright 2022-2024 The Tiny5 Project Authors	https://github.com/Gissio/font_tiny5	bundled	Fonts/Tiny5-LICENSE.txt	-
 milkdrop-presets	MilkDrop / projectM presets	community (see notice)	Various MilkDrop / projectM preset authors	https://github.com/projectM-visualizer/presets-cream-of-the-crop	bundled assets	ThirdPartyLicenses/MilkDropPresets_NOTICE.txt	-
 bundled-skins	Bundled skins and visual assets	project-original	NullPlayer project	https://github.com/ad-repo/nullplayer	bundled assets	ThirdPartyLicenses/BundledSkins_NOTICE.txt	-
-itunes-miniplayer	iTunes Miniplayer skin	used with permission (see notice)	Copyright spacecowgoesmoo	https://github.com/spacecowgoesmoo/Old-iTunes-Miniplayer	1.64	ThirdPartyLicenses/iTunesMiniplayer_NOTICE.txt	-
+itunes-miniplayer	iTunes Miniplayer skin	used with permission (see notice)	Copyright spacecowgoesmoo	https://github.com/spacecowgoesmoo/Old-iTunes-Miniplayer	1.139	ThirdPartyLicenses/iTunesMiniplayer_NOTICE.txt	-
 dejavu-fonts	DejaVu Sans (in iTunes Miniplayer skin)	Bitstream-Vera AND LicenseRef-Arev-Fonts	Copyright (c) 2003 Bitstream, Inc.; (c) 2006 Tavmjong Bah; DejaVu changes public domain	https://dejavu-fonts.github.io	bundled in iTunes Miniplayer.wal	ThirdPartyLicenses/DejaVu_LICENSE.txt	-
 viridis	Viridis colormap	CC0-1.0	Copyright waived — Stéfan van der Walt and Nathaniel Smith (public domain via CC0)	https://github.com/BIDS/colormap	bundled constants	ThirdPartyLicenses/Viridis_NOTICE.txt	-
 simple-icons	Simple Icons brand marks	CC0-1.0	Copyright waived — Simple Icons contributors (public domain via CC0); logos are trademarks of their owners	https://github.com/simple-icons/simple-icons	GitHub, LinkedIn and Reddit marks	ThirdPartyLicenses/SimpleIcons_NOTICE.txt	-

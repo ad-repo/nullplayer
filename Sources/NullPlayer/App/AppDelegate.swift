@@ -70,9 +70,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // pass with nothing playing is a different test, and driving a file in through the GUI
         // costs a Local Library window and a CGEvent double-click per launch. This is the same
         // path a Finder open takes (`application(_:openFiles:)`), so it enqueues and plays exactly
-        // as a dropped file does.
+        // as a dropped file does. A `:`-separated list queues a playlist, as a multi-file drop does.
         if let play = ProcessInfo.processInfo.environment["NULLPLAYER_PLAY"] {
-            application(NSApp, openFiles: [play])
+            application(NSApp, openFiles: play.split(separator: ":").map(String.init))
         }
         #endif
         

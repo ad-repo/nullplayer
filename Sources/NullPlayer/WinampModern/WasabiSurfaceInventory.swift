@@ -33,6 +33,9 @@ struct WinampModernSurfaceInventory {
         /// `EQ_PREAMP`, `<eqvis>`) rather than an EQ component GUID — which is the only way any
         /// measured skin expresses an equalizer, since Winamp has no EQ component GUID.
         let hasEqualizerControls: Bool
+        /// True when the first layout reaches a video holder that is not declared `visible="0"` — a
+        /// box the skin means to show the picture in, as against Winamp Modern's hidden one.
+        let defaultLayoutShowsVideo: Bool
     }
 
     let containers: [Container]
@@ -184,6 +187,7 @@ struct WinampModernSurfaceInventory {
             var visitedGroups: Set<GroupVisit> = []
             var found: Set<WinampModernComponentKind> = []
             var equalizerControls = false
+            var showsVideo = false
 
             func visit(_ node: WalXMLNode, depth: Int, enclosingOrder: Int? = nil) {
                 guard visitedBudget > 0, depth <= limits.maximumGroupDepth else {
@@ -203,7 +207,10 @@ struct WinampModernSurfaceInventory {
                 let nodeOrder = enclosingOrder ?? documentOrder[ObjectIdentifier(node)]
 
                 if WinampModernComponentRegistry.isHolderElement(WasabiTag(node.name)) {
-                    if let kind = holderKind(of: node) { found.insert(kind) }
+                    if let kind = holderKind(of: node) {
+                        found.insert(kind)
+                        if kind == .video, node.attribute("visible") != "0" { showsVideo = true }
+                    }
                 }
                 if isEqualizerControl(node) { equalizerControls = true }
 
@@ -235,10 +242,14 @@ struct WinampModernSurfaceInventory {
             }
 
             var defaultLayoutKinds: Set<WinampModernComponentKind>?
+            var defaultLayoutShowsVideo = false
             for layout in container.children
             where layout.name.caseInsensitiveCompare("layout") == .orderedSame {
                 visit(layout, depth: 0)
-                if defaultLayoutKinds == nil { defaultLayoutKinds = found }
+                if defaultLayoutKinds == nil {
+                    defaultLayoutKinds = found
+                    defaultLayoutShowsVideo = showsVideo
+                }
             }
 
             let declaredKind = containerKind(of: container)
@@ -249,7 +260,8 @@ struct WinampModernSurfaceInventory {
                 isVisibleWindow: isVisibleWindow(container),
                 reachableKinds: found,
                 defaultLayoutKinds: defaultLayoutKinds ?? [],
-                hasEqualizerControls: equalizerControls
+                hasEqualizerControls: equalizerControls,
+                defaultLayoutShowsVideo: defaultLayoutShowsVideo
             ))
         }
 
@@ -312,7 +324,14 @@ struct WinampModernSurfaceInventory {
         // layout that was not on screen and opened nothing, and it measured as a single-window SUI.
         embedded = embedded.filter { main?.defaultLayoutKinds.contains($0) == true || declared[$0] == nil }
         if main?.hasEqualizerControls == true, declared[.equalizer] == nil { embedded.insert(.equalizer) }
-        if mainReaches.contains(.video), declared[.video] == nil { embedded.insert(.video) }
+        // A declared video window also yields to a player box the skin *shows*: Winamp Single GUI's
+        // `Video` container is its detached view, and its own script plays films in the player's
+        // mini and big panes. Winamp Modern's in-player holder is `visible="0"` and keeps its window.
+        // Measured over gold, silver and bronze (941 skins): this moves Single GUI, and Tewnz and
+        // Tewnz 2.0, whose `Video` container is a 1×1 stub — cPro-Bento's shape, declared directly.
+        if mainReaches.contains(.video), declared[.video] == nil || main?.defaultLayoutShowsVideo == true {
+            embedded.insert(.video)
+        }
 
         // cPro-Bento hosts its surfaces inside the player window; everyone else opens windows. The
         // count of containers cannot tell them apart (cPro also ships a notifier, a widget manager and
@@ -374,8 +393,12 @@ struct WinampModernSurfaceInventory {
     /// A control that drives the equalizer. `EQ_TOGGLE`/`EQ_AUTO` deliberately do not count: a skin
     /// can put an "open the EQ" button anywhere, and that button is not an equalizer.
     private static func isEqualizerControl(_ node: WalXMLNode) -> Bool {
-        if node.name.caseInsensitiveCompare("eqvis") == .orderedSame { return true }
-        switch node.attribute("action")?.uppercased() {
+        isEqualizerControl(tag: node.name, action: node.attribute("action"))
+    }
+
+    static func isEqualizerControl(tag: String, action: String?) -> Bool {
+        if tag.caseInsensitiveCompare("eqvis") == .orderedSame { return true }
+        switch action?.uppercased() {
         case "EQ_BAND", "EQ_PREAMP": return true
         default: return false
         }
@@ -425,4 +448,18 @@ private extension Set where Element == WinampModernComponentKind {
     /// The single element, or `nil` when there are none or several — "exactly one surface lives here"
     /// is evidence; "some surfaces live here" is not.
     var singleElement: WinampModernComponentKind? { count == 1 ? first : nil }
+}
+
+extension WasabiSceneRenderer {
+    /// Whether the scene shows the skin's equalizer: an EQ control with room on screen and some
+    /// alpha. What *open* means for an equalizer the skin draws inside the player — Love is War
+    /// Miku's second face, Moonkore's drawer — which has no window of its own (B253).
+    var showsEqualizerControls: Bool {
+        sceneNodes().contains { node in
+            WinampModernSurfaceInventory.isEqualizerControl(tag: node.object.typeName,
+                                                            action: node.object.attributes["action"])
+                && !node.frame.intersection(node.clip).isEmpty
+                && node.inheritedAlpha * Self.alphaFraction(of: node.object) > 0
+        }
+    }
 }

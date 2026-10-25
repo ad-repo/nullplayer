@@ -228,6 +228,30 @@ final class AudionFaceLoaderTests: XCTestCase {
         XCTAssertEqual(CTFontGetSize(album.font), 12, "no font name: Helvetica 12")
     }
 
+    /// Departure: a name macOS lacks resolves to a bundled lookalike before Helvetica, and every
+    /// bundled file loads (one name per file).
+    func testUnresolvedFontNamesTakeTheBundledLookalike() {
+        let expected = ["Chicago": "ChicagoKare-Regular", "Mini": "Tiny5-Regular", "Silkscreen": "Silkscreen-Regular",
+                        "Textile": "ComicNeue-BoldItalic", "SF Digital Readout Medium": "NullPlayerSegment14-Light"]
+        for (name, postScriptName) in expected {
+            let font = AudionFace.font(named: name, size: 12)
+            XCTAssertEqual(CTFontCopyPostScriptName(font) as String, postScriptName, name)
+        }
+        XCTAssertEqual(CTFontGetSize(AudionFace.font(named: "SF Digital Readout Medium", size: 12)), 12 * 0.56, accuracy: 0.001)
+    }
+
+    /// Departure: an artist line with no font name takes the album line's font and size.
+    func testAnArtistLineWithoutAFontTakesTheAlbumLinesFont() async throws {
+        let face = try await AudionFaceFixture(json: [
+            "artistDisplayRect": rect(0, 0, 2, 4), "artistTextMode": 1, "artistFontSize": 18,
+            "albumDisplayRect": rect(2, 0, 4, 4), "albumTextMode": 1,
+            "albumDisplayFontName": "Chicago", "albumFontSize": 9,
+        ]).load()
+        let artist = try XCTUnwrap(face.artist)
+        XCTAssertEqual(CTFontCopyPostScriptName(artist.font) as String, "ChicagoKare-Regular")
+        XCTAssertEqual(CTFontGetSize(artist.font), 9)
+    }
+
     func testRoleKeysMatchFaceKit() {
         XCTAssertEqual(AudionFace.ButtonRole.rewind.rectKey, "rewindButtonRect")
         XCTAssertEqual(AudionFace.ButtonRole.pause.rectKey, "playButtonRect")
