@@ -9,6 +9,55 @@
   no audio analysis. The CLI gains `--source local --radio track|library|genre|decade|artist` and
   `--list-queue`, which prints the queue a `--radio` mode would play without playing it.
 
+### Fixes
+
+- **Modern skin windows draw their background** — DDtank Glass's equalizer and about window showed
+  their controls on the bare desktop; Fuzzy Muffins no longer shows a grey mask through its
+  see-through areas.
+- **hm_Touch shows its big timer** beside the spectrum, which had been blank.
+- **Winamp Single GUI plays films in its player** — the film shows in the player's own video pane,
+  and Windows → Video Player detaches it into the skin's Video window and back. The player's lower
+  half and its library pane are drawn again.
+- **RODE 3 Lite's controls answer clicks** — a see-through panel laid over the player was taking
+  clicks meant for 24 controls beneath it.
+- **MetAlchemy III's playlist window shows the playlist** instead of an empty frame.
+- **A film shown inside a Modern skin no longer flickers**, and starting one no longer freezes the
+  app.
+- **ArmorAmp's spectrum stays inside its screen**, where the bars had spilled over the bezel, and
+  its EQ button opens the equalizer drawer again.
+- **MIDISUI**
+  - The vis drawer slides into its own frame instead of over the COMPONENT buttons and the
+    playlist, so the playlist, vis studio and video buttons can be clicked.
+  - The panel labels show; rows of red dots no longer cover them or run past the window's edge.
+  - The library shows your library instead of a blank frame, and its corner button goes back to
+    the player instead of quitting the app.
+- **Ganbare Rakkatan and M3 open at the size of their artwork** — Ganbare's player had an empty
+  strip as wide as itself down its right side, and M3's was cut off through its transport buttons.
+- **Moon Groove**
+  - The player's display shows at startup, where the EQ page had covered it with the config menu
+    closed.
+  - The song title comes back on the ticker after a volume or shuffle readout, and after the
+    PLAY/PAUSE/STOP status.
+  - The playlist's Add/Rem/Sel/Misc/List buttons no longer run under the playlist info text; the
+    same fix applies to Core-X5, corneramp, motorhead and wasabi_player.
+- **Mad Magazine's playlist no longer sits under its title bar**, and EMP2's Media Library opens at
+  its own 400px width instead of 450px.
+- **Vision's playlist and library windows are solid**, where the desktop showed through between
+  the frame and the list.
+- **A Modern skin's paragraph that is taller than its box starts at its first line** instead of
+  being cut at the top (H2O Liquid's Configuration window).
+- **ClassicPro tabs light only the one you chose**, where every tab you had clicked stayed lit
+  (CPro iPhone 3G and every ClassicPro skin with the LIB/PLE/VID tab strip). Defix and Big Bento
+  show their current tab at startup, Big Bento Windows 10 with its icon, and Azenis² shows its
+  selected EQ mode.
+- **NullPlayer's own playlist opens at normal size beside a wide Modern skin**, where Slimline XP's
+  full-width taskbar drew it screen-wide with oversized rows.
+- **A Modern skin's spectrum analyzer draws without gaps**: Big Bento's bars no longer show dark
+  lines between their colour bands, and thin-band analyzers (cPro KAO) fill their box instead of
+  leaving an uneven comb of gaps.
+- **Modern skins draw text at the whole-pixel size Winamp used**: Winamp Portrait's tab labels sit
+  in their tabs instead of "Collapse" running off the window.
+
 ## 0.33.1
 
 ### New features
@@ -135,52 +184,6 @@
   Switching skins now returns to the UI Size you chose, and a size you pick yourself is kept.
 - **Full-screen Modern skins refit when UI Size changes** — Nitrous Audio's monitor mode stayed
   sized for the old UI Size and ran off the screen; it now fills the screen again.
-- **Modern skin windows draw their background** — DDtank Glass's equalizer and about window showed
-  their controls on the bare desktop; Fuzzy Muffins no longer shows a grey mask through its
-  see-through areas.
-- **hm_Touch shows its big timer** beside the spectrum, which had been blank.
-- **Winamp Single GUI plays films in its player** — the film shows in the player's own video pane,
-  and Windows → Video Player detaches it into the skin's Video window and back. The player's lower
-  half and its library pane are drawn again.
-- **RODE 3 Lite's controls answer clicks** — a see-through panel laid over the player was taking
-  clicks meant for 24 controls beneath it.
-- **MetAlchemy III's playlist window shows the playlist** instead of an empty frame.
-- **A film shown inside a Modern skin no longer flickers**, and starting one no longer freezes the
-  app.
-- **ArmorAmp's spectrum stays inside its screen**, where the bars had spilled over the bezel, and
-  its EQ button opens the equalizer drawer again.
-- **MIDISUI**
-  - The vis drawer slides into its own frame instead of over the COMPONENT buttons and the
-    playlist, so the playlist, vis studio and video buttons can be clicked.
-  - The panel labels show; rows of red dots no longer cover them or run past the window's edge.
-  - The library shows your library instead of a blank frame, and its corner button goes back to
-    the player instead of quitting the app.
-- **Ganbare Rakkatan and M3 open at the size of their artwork** — Ganbare's player had an empty
-  strip as wide as itself down its right side, and M3's was cut off through its transport buttons.
-- **Moon Groove**
-  - The player's display shows at startup, where the EQ page had covered it with the config menu
-    closed.
-  - The song title comes back on the ticker after a volume or shuffle readout, and after the
-    PLAY/PAUSE/STOP status.
-  - The playlist's Add/Rem/Sel/Misc/List buttons no longer run under the playlist info text; the
-    same fix applies to Core-X5, corneramp, motorhead and wasabi_player.
-- **Mad Magazine's playlist no longer sits under its title bar**, and EMP2's Media Library opens at
-  its own 400px width instead of 450px.
-- **Vision's playlist and library windows are solid**, where the desktop showed through between
-  the frame and the list.
-- **A Modern skin's paragraph that is taller than its box starts at its first line** instead of
-  being cut at the top (H2O Liquid's Configuration window).
-- **ClassicPro tabs light only the one you chose**, where every tab you had clicked stayed lit
-  (CPro iPhone 3G and every ClassicPro skin with the LIB/PLE/VID tab strip). Defix and Big Bento
-  show their current tab at startup, Big Bento Windows 10 with its icon, and Azenis² shows its
-  selected EQ mode.
-- **NullPlayer's own playlist opens at normal size beside a wide Modern skin**, where Slimline XP's
-  full-width taskbar drew it screen-wide with oversized rows.
-- **A Modern skin's spectrum analyzer draws without gaps**: Big Bento's bars no longer show dark
-  lines between their colour bands, and thin-band analyzers (cPro KAO) fill their box instead of
-  leaving an uneven comb of gaps.
-- **Modern skins draw text at the whole-pixel size Winamp used**: Winamp Portrait's tab labels sit
-  in their tabs instead of "Collapse" running off the window.
 
 ## 0.33.0
 
