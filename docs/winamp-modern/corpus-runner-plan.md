@@ -470,6 +470,16 @@ so a corpus run can't lose lines, not *what* is measured.
   layout sizing (B254), frame borders from strip art (B260), Vision's untextured frames, H2O
   Liquid's overfull paragraph, hm_Touch's timer digits. Filed: B253, B261. The branch's code-quality
   review filed B246–B252 and B259.
+- **Intake #3 admitted 2026-10-25** (`feat/wal-intake-3`, rev `fc3043cf`). Run over the 802 bronze:
+  **25 silver, 777 bronze, 0 quarantine**, 47 min. **Gain curve** (first 60): `7 7 7 7 7 6 6 6 6 6 6
+  5 5 5 5 5 5 5 5 5 4 4 4 4 4 | 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3`; 66 candidates clear gain ≥ 3, so 41 remain after this batch — batch 4 fills at gain 3 and
+  batch 5 would be a partial 16 at the floor. Post-admission sweep (the new baseline): 164 skins,
+  37 s at `--shards 10`, no failures. Batch: Sencillo_1_1, Abducted, WoopieAMP3, Angrenthoron,
+  CardiumII, Avalon_Winamp_Modern, Apill, Aria_of_the_Soul, Circlo_T_roniC, Official_Trapt_Skin,
+  Winampple_1_1, Clock V2.76, intellidesign, BeatSugar, Nebular, METASKINS-WooHoo-FER, Hybridv10,
+  LCDx, cPro__Creed__Full_Circle, Celica_Amp, Ebonitefix, Official_28_Days_Later_Skin, Invicta,
+  TAL_96, Freeform_Simpsons_Skin (`.wal` each); copied into `WinampModernSkins/`.
 
 ### Decisions (fixed — re-open only with a measurement)
 
