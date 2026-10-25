@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B259 — `invokeGUI` dispatches to one function per object family — closed 2026-10-25
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B259 | **`WinampModernScriptRuntimeObject.swift` is past 1,000 lines, almost all of it one method switch.** `invokeGUI` runs from line 10 to about 800: every GUI-object MAKI method, from activation through animation, text, geometry and clicks, in one `switch`. B255 and B258 took the file from 998 to 1,006 lines, even though the alternate-text expiry went into `WinampModernScriptRuntimeTimer.swift`. Split the switch by object family, as the sibling `WinampModernScriptRuntime*.swift` files already split the runtime (for example animatedlayer play/frame methods, text/alternate text, togglebutton activation), with `invokeGUI` dispatching to one function per family, The geometry helpers (`resolvedFrame`, `declaredFrame`, `stackInGroupList`, `relativeMarkup`) moved to `WinampModernScriptRuntimeObjectGeometry.swift` (2026-10-23), bringing the file to 929 lines; the switch itself is the work left. Done when no file in the split is over 1,000 lines, `invokeGUI` is a dispatcher, and `swift test` plus the gold+silver sweep match their baselines | code health; no corpus demand | M | 3 |
+
+**Closed 2026-10-25**. The switch was cut at case boundaries into seven functions that each answer nil for a method they do not own — `invokeGUIStructure`, `…Text`, `…State` (in `WinampModernScriptRuntimeObject.swift`, now 539 lines) and `…Position`, `…Animation`, `…List`, `…Actions` (new `WinampModernScriptRuntimeObjectFamilies.swift`, 453) — and `invokeGUI` chains them in the original order, then `invokeWindowGUI`, so every `where`-qualified name resolves as before. `swift test --filter WinampModern`: one failure, `testAPlayedAnimationRaisesFrameAndStopEvents` (10 ms frame timing under full-suite load), which passed 4 of 4 runs alone. Gold+silver sweep against B252's capture: identical apart from the hm_Touch `MLibrary` minimum that flips between runs of one tree.
+
 ## B252 — A/B kill switches retire with their rows — closed 2026-10-25
 
 | Id | Item | Reach | Effort | Tier |
