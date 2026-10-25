@@ -651,8 +651,9 @@ Two things about the embedded case that are easy to get wrong:
   inside the player — Love is War Miku swaps the main face for an EQ face from its own `eq`
   togglebutton (`param=""`, the script's `onToggle` does the swap) and turns back from a second
   button on that face; Moonkore slides a drawer. So Windows → Equalizer is checked when
-  `WinampModernSurfaceInventory.showsEqualizer` finds an `EQ_BAND`/`EQ_PREAMP`/`eqvis` drawn with
-  room and alpha, and disabled (`WinampModernSurfaceCoordinator.isMenuToggleable`). Pressing the
+  `WasabiSceneRenderer.showsEqualizerControls` finds an `EQ_BAND`/`EQ_PREAMP`/`eqvis` drawn with
+  room and alpha, and disabled. The coordinator names the rule once, `isSwitchedBySkin` (embedded
+  with no component GUID), which both `isSurfaceVisible` and `isMenuToggleable` read. Pressing the
   skin's button for the user was weighed and left: the button that closes the face is not
   identifiable from markup (Miku's is `back`, `TOGGLE` with no param).
 - **`.video` can be embedded, `.visualization` cannot** (B23). B20 made video never-embedded to stop

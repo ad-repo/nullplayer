@@ -31,7 +31,8 @@ falls and all unlocked: Itemskin's `vol`, BLAKK's two seek bars (`blakk.bb.seek-
 `background` it does not paint (`drawbackground="0"`) clips its descendants to that bitmap's alpha
 (ArmorAmp's blade-shaped spectrum screen). The mask travels down the scene with the clip rect in one
 value, `WasabiClip { rect; masks }` on every node, which the draw applies and `object(at:)` tests
-(`WasabiMaskClip.contains` samples the same artwork the mask was cut from), so a control in a
+(`WasabiMaskClip.contains` reads the mask the draw clips to, through `WasabiResourceCache.maskContains`,
+which also answers script regions; both masks are stored bottom-up and read top-down), so a control in a
 masked-off corner is neither drawn nor clicked. The group's own hit region is a different question
 with the same answer: a group's `background` is its region whether it paints it or not, the way a
 layer's artwork is, so the group is hit through that alpha always, and only an unpainted one also

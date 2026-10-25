@@ -459,6 +459,13 @@ Four bounds, all pinned in `WinampModernB94Tests`:
   branch returned the untinted whole file, so the ticker, time, KBPS and KHZ went grey inside a
   themed player. The font's sheet carries the *font's* gamma group.
 
+**The id is the path string, so it is skin-wide.** Two files that write the same relative path from
+different directories — `a/a.xml` and `b/b.xml` both saying `background="bg.png"` — get one implicit
+bitmap, the first file's; the second never reaches the directory-relative lookup in
+`bitmap(background:declaredIn:)`. Nothing in the corpus has been seen to depend on either reading,
+and this is not measured against Winamp; checked 2026-10-25 while keying the group alpha-mask cache,
+whose per-file key cannot help while the bitmap underneath is shared.
+
 The file gets the same `validateImage` check a declared `<bitmap>` gets, sharing its memo; a failure
 just declines to create the implicit bitmap, with no warning — nothing asked for the file yet, so
 there is no skin to fail. A path-shaped value the archive does not contain still registers nothing
