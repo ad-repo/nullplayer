@@ -95,7 +95,7 @@ enum WasabiEmbeddedXUI {
         }
 
         /// Whether the wrapper's value replaces one the embedded object already states.
-        var overrides: Bool { self == .buttonArtwork }
+        var overrides: Bool { self == .buttonArtwork && !WasabiEmbeddedXUI.keepsOwnButtonImage }
     }
 
     /// The embedded widget's tag when `object` is an `embed_xui` wrapper, else nil.

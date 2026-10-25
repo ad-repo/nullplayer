@@ -1738,9 +1738,11 @@ final class WinampModernMainView: NSView {
         NSLog("WinampModern debug click: %@#%@", object.typeName, object.xmlID ?? "-")
         pressedObject = object
         dispatch(object: object, event: "onleftbuttondown", point: point)
-        dispatch(object: object, event: "onleftbuttonup", point: point)
-        _ = try? scripts.dispatch(object: object, event: "onleftclick")
-        performAction(for: object)
+        let flip = flipActivation(of: object) {
+            dispatch(object: object, event: "onleftbuttonup", point: point)
+            _ = try? scripts.dispatch(object: object, event: "onleftclick")
+        }
+        performAction(for: object, flip: flip)
         pressedObject = nil
         needsDisplay = true
         logHolders(tag: "debug click")
@@ -2159,22 +2161,19 @@ final class WinampModernMainView: NSView {
         // the object that was pressed, not to whatever is under the mouse when it stops.
         if let pressedObject { noteFinalPosition(on: pressedObject) }
         if let pressedObject, !moved {
-            let clicked = releasedOver === pressedObject
-            // Wasabi's `ButtonWnd` flips a togglebutton in `onLeftPush`, before the script hears the
-            // release, so a handler's own `setActivated` has the last word. ClassicPro's tab button
-            // clears every tab and then `setActivated(1)` on itself from `onLeftButtonUp`; flipped
-            // afterwards, the tab just chosen went dark.
-            let flip = clicked && !WinampModernScriptRuntime.togglesAfterRelease
-                ? flipActivation(of: pressedObject) : nil
-            dispatch(object: pressedObject, event: "onleftbuttonup", point: point)
-            if clicked {
-                _ = try? scripts.dispatch(object: pressedObject, event: "onleftclick")
+            if releasedOver === pressedObject {
+                let flip = flipActivation(of: pressedObject) {
+                    dispatch(object: pressedObject, event: "onleftbuttonup", point: point)
+                    _ = try? scripts.dispatch(object: pressedObject, event: "onleftclick")
+                }
                 performAction(for: pressedObject, flip: flip)
                 // The *second* click carries its own command in Wasabi, and for most objects that
                 // carry one it is the only command they have: a titlebar mousetrap's
                 // `dblclickaction="SWITCH;shade"`, a song title's `TRACKINFO`. It runs after the
                 // normal click's action, as it does in Winamp — the two are independent attributes.
                 if event.clickCount >= 2 { performClickAction(.double, for: pressedObject) }
+            } else {
+                dispatch(object: pressedObject, event: "onleftbuttonup", point: point)
             }
         }
         pressedObject = nil
@@ -2916,13 +2915,22 @@ final class WinampModernMainView: NSView {
     /// toggle, which would otherwise flip it back off. A togglebutton flips itself, then tells the
     /// skin — the whole of some skins' UI hangs off that notification (multipass's bottom drawer
     /// opens from `onToggle` and nowhere else).
-    private func flipActivation(of object: WasabiObject) -> ActivationFlip {
-        if scripts.selectRadioMember(object) { return .radio }
-        return scripts.toggleActivation(of: object) ? .toggled : .none
+    ///
+    /// The flip lands around `release`, the script's `onLeftButtonUp`/`onLeftClick`. Wasabi's
+    /// `ButtonWnd` flips in `onLeftPush`, before the script hears the release, so a handler's own
+    /// `setActivated` has the last word: ClassicPro's tab button clears every tab and then
+    /// `setActivated(1)` on itself from `onLeftButtonUp`, and flipped afterwards the tab just chosen
+    /// went dark. `WINAMP_MODERN_TOGGLE_AFTER_RELEASE=1` flips after it again.
+    private func flipActivation(of object: WasabiObject, around release: () -> Void) -> ActivationFlip {
+        if WinampModernScriptRuntime.togglesAfterRelease { release() }
+        let flip: ActivationFlip = scripts.selectRadioMember(object) ? .radio
+            : scripts.toggleActivation(of: object) ? .toggled : .none
+        if !WinampModernScriptRuntime.togglesAfterRelease { release() }
+        return flip
     }
 
-    /// `flip` is the activation change the release already made, or nil to make it here.
-    private func performAction(for object: WasabiObject, flip: ActivationFlip? = nil) {
+    /// `flip` is the activation change the click made (`flipActivation(of:around:)`).
+    private func performAction(for object: WasabiObject, flip: ActivationFlip) {
         // A Wasabi standard drop-down opens its list; nothing else this method does applies to it
         // (B66).
         if WasabiFormWidgets.kind(of: object) == .dropDownList {
@@ -2931,7 +2939,6 @@ final class WinampModernMainView: NSView {
         }
         // The flip runs alongside whatever `action=` the button also carries, as it does in Wasabi;
         // a radio carries none.
-        let flip = flip ?? flipActivation(of: object)
         if flip != .none { needsDisplay = true }
         if flip == .radio { return }
         let action = object.attributes["action"]

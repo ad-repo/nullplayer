@@ -29,7 +29,7 @@ extension WasabiSceneRenderer {
             // layer's. RODE 3 Lite lays `player.main.sliders` (343x212, 97% transparent mask) over the
             // whole player; tested as a solid box it covered 24 of the controls beneath it.
             if object.attributes["rectrgn"] != "1",
-               let bitmap = resources.bitmap(identifier: node.bitmapID ?? Self.groupBackgroundID(object)),
+               let bitmap = node.bitmapID.map({ resources.bitmap(identifier: $0) }) ?? groupHitArtwork(object),
                !scriptRegionContains(object, frame: node.frame, point: point) {
                 // An animated layer's artwork is a *strip*, and mapping the point across the whole
                 // sheet would sample whichever frame happened to line up with that row. Its region is
@@ -53,11 +53,10 @@ extension WasabiSceneRenderer {
         return nil
     }
 
-    /// A group's `background`, read as its artwork for the alpha test. `WINAMP_MODERN_GROUP_HIT_BOX=1`
-    /// restores the solid-box answer, for an A/B in one binary.
-    static func groupBackgroundID(_ object: WasabiObject) -> String? {
-        guard object.tag.is(.group), !testsGroupsAsBoxes else { return nil }
-        return object.attributes["background"]
+    /// A group's `background`, resolved as the renderer draws it, read as its artwork for the alpha
+    /// test. `WINAMP_MODERN_GROUP_HIT_BOX=1` restores the solid-box answer, for an A/B in one binary.
+    private func groupHitArtwork(_ object: WasabiObject) -> WasabiBitmap? {
+        Self.testsGroupsAsBoxes ? nil : backgroundBitmap(of: object)
     }
 
     private static let testsGroupsAsBoxes = ProcessInfo.processInfo.environment["WINAMP_MODERN_GROUP_HIT_BOX"] != nil
@@ -276,21 +275,27 @@ extension WasabiSceneRenderer {
         func cutParent(_ entry: (node: WasabiSceneNode, additive: Bool)) -> ObjectIdentifier? {
             entry.node.object.parent.map(ObjectIdentifier.init).flatMap { cutParents.contains($0) ? $0 : nil }
         }
-        let kept = declared.enumerated().filter { _, entry in
-            !(Self.dropsRegionGroupFills && entry.additive && cutParent(entry) != nil)
-        }
-        // Each cut-parent group's cuts sort to just after that group's last fill, in their own order.
+        // Each cut-parent group's cuts are held back to just after that group's last fill, in their
+        // own order.
         var lastFill: [ObjectIdentifier: Int] = [:]
-        for (index, entry) in kept where entry.additive {
-            if let parent = cutParent(entry) { lastFill[parent] = index }
-        }
-        func slot(_ index: Int, _ entry: (node: WasabiSceneNode, additive: Bool)) -> (Int, Int, Int) {
-            if !entry.additive, let parent = cutParent(entry), let last = lastFill[parent], index < last {
-                return (last, 1, index)
+        if !Self.dropsRegionGroupFills {
+            for (index, entry) in declared.enumerated() where entry.additive {
+                if let parent = cutParent(entry) { lastFill[parent] = index }
             }
-            return (index, 0, index)
         }
-        return kept.sorted { slot($0.offset, $0.element) < slot($1.offset, $1.element) }.map { _, entry in
+        var ordered: [(node: WasabiSceneNode, additive: Bool)] = []
+        var held: [ObjectIdentifier: [(node: WasabiSceneNode, additive: Bool)]] = [:]
+        for (index, entry) in declared.enumerated() {
+            let parent = cutParent(entry)
+            if entry.additive, parent != nil, Self.dropsRegionGroupFills { continue }
+            if !entry.additive, let parent, let last = lastFill[parent], index < last {
+                held[parent, default: []].append(entry)
+                continue
+            }
+            ordered.append(entry)
+            if let parent, lastFill[parent] == index { ordered += held.removeValue(forKey: parent) ?? [] }
+        }
+        return ordered.map { entry in
             let object = entry.node.object
             return WasabiRegionCut(object: object, frame: entry.node.frame, clip: entry.node.clip,
                                    bitmapID: entry.node.bitmapID, additive: entry.additive,
