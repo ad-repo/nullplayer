@@ -62,8 +62,11 @@ the two cannot drift (B243). Names are lowercased. A name another table already 
 `WinampModernB243Tests` fails on a mismatch; a verb that means something else on one class is gated
 with `on: MakiClassGUID.<class>` — which gates the **arity** only; the body runs for whatever
 reaches its table, so a table a kind of object owns is asked only for that kind (`guiKindTables`). A
-new table joins a dispatch list (`systemFamilies`, `guiKindTables`, `guiFamilies`), and `tables` reads
-the arities off those lists. A body answers nil to pass the call to the next table that declares
+new table joins a dispatch list (`systemFamilies`, `guiKindTables`, `guiFamilies`,
+`dynamicFamiliesBeforeInit`, `dynamicFamilies`), and `tables` reads the arities off those lists; a
+table written for another receiver joins one with `pulledBack(_:)` (`classicProFileMethods` answers a
+script-made object as it answers `System`). Only the four whole-receiver tables `invokeTraced` names
+(ColorMgr, PlEdit, MLPlaylists, PopupMenu) are listed in `tables` by hand. A body answers nil to pass the call to the next table that declares
 the name (the `GuiObject` families run in `guiFamilies` order). Bodies are static closures: reach the
 runtime through `runtime.`, the call through `call.arguments`, `call.object`, `call.program`, and
 spell the type out (`WinampModernScriptRuntime.x`) — `Self` is not available in a stored property's

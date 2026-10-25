@@ -9,19 +9,16 @@ import Foundation
 extension WinampModernScriptRuntime {
     func invokeGUI(method: String, object: WasabiObject, arguments: [MakiValue],
                            program: MakiProgram) throws -> MakiValue {
-        if WinampModernScriptSignatures.dispatchableEventArity[method] != nil {
-            _ = try dispatch(object: object, event: method, arguments: arguments)
-            // No handler can answer through this path (the interpreter's return value belongs to the
-            // handler's own frame), so `onAction` reports the neutral slot 0 rather than a fiction.
-            return method == "onaction" ? .integer(0) : .null
+        if let value = try answerEventCall(method, dispatching: {
+            try dispatch(object: object, event: method, arguments: arguments)
+        }) {
+            return value
         }
         let call = MakiCall(method: method, receiver: object, arguments: arguments, program: program)
         for (applies, table) in Self.guiKindTables where applies(object) {
             if let value = try answer(table, call) { return value }
         }
-        for family in Self.guiFamilies {
-            if let value = try answer(family, call) { return value }
-        }
+        if let value = try answer(Self.guiFamilies, call) { return value }
         throw unsupported(method, program: program)
     }
 

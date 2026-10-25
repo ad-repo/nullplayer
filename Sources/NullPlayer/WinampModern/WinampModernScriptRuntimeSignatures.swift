@@ -158,15 +158,16 @@ enum WinampModernScriptSignatures {
     ]
 
     /// Every method table the runtime answers from, read off the lists the receivers dispatch through,
-    /// so a table is declared here by being dispatched at all (B243).
+    /// so a table joins a receiver by being added to its list (B243). The four single tables are each
+    /// the whole of one receiver kind in `invokeTraced`'s switch.
     static var tables: [[MakiMethodDeclaration]] {
         typealias R = WinampModernScriptRuntime
         var tables = R.systemFamilies.map(\.declarations)
         tables += R.guiKindTables.map(\.table.declarations)
         tables += R.guiFamilies.map(\.declarations)
+        tables += (R.dynamicFamiliesBeforeInit + R.dynamicFamilies).map(\.declarations)
         tables += [R.colorManagerMethods, R.playlistEditorMethods, R.playlistManagerMethods].map(\.declarations)
-        tables += [R.popupMethods.declarations, R.treeItemMethods.declarations,
-                   R.dynamicMethods.declarations, R.pendingGUIMethods.declarations]
+        tables.append(R.popupMethods.declarations)
         return tables
     }
 
@@ -294,6 +295,20 @@ struct MakiMethodTable<Receiver> {
                       _ body: @escaping MakiMethodDefinition<Receiver>.Body) {
         add([name], argumentCount, on: declaringClass, body)
     }
+
+    /// These methods on a receiver `receiver` reads this table's receiver off, so a table can join
+    /// another receiver's list: a script-made object answers `ClassicProFile` as `System` does.
+    func pulledBack<Outer>(_ receiver: @escaping (Outer) -> Receiver) -> MakiMethodTable<Outer> {
+        var table = MakiMethodTable<Outer>()
+        table.methods = methods.mapValues { definition in
+            MakiMethodDefinition(signature: definition.signature, declaringClass: definition.declaringClass) {
+                runtime, call in
+                try definition.body(runtime, MakiCall(method: call.method, receiver: receiver(call.receiver),
+                                                      arguments: call.arguments, program: call.program))
+            }
+        }
+        return table
+    }
 }
 
 extension WinampModernScriptRuntime {
@@ -301,6 +316,24 @@ extension WinampModernScriptRuntime {
     /// passes.
     func answer<Receiver>(_ table: MakiMethodTable<Receiver>, _ call: MakiCall<Receiver>) throws -> MakiValue? {
         try table[call.method]?.body(self, call)
+    }
+
+    /// `call` answered by the first of `tables` that answers it, in order.
+    func answer<Receiver>(_ tables: [MakiMethodTable<Receiver>], _ call: MakiCall<Receiver>) throws -> MakiValue? {
+        for table in tables {
+            if let value = try answer(table, call) { return value }
+        }
+        return nil
+    }
+
+    /// A script calling one of its receiver's own event handlers as a method, which `dispatching`
+    /// fires exactly as the UI would; nil when `method` is not a dispatchable event. No handler can
+    /// answer through this path (the interpreter's return value belongs to the handler's own frame),
+    /// so `onAction` reports the neutral slot 0 rather than a fiction.
+    func answerEventCall(_ method: String, dispatching: () throws -> Int) rethrows -> MakiValue? {
+        guard WinampModernScriptSignatures.dispatchableEventArity[method] != nil else { return nil }
+        _ = try dispatching()
+        return method == "onaction" ? .integer(0) : .null
     }
 
     func signature(for method: String, classGUID: String?) -> MakiMethodSignature? {

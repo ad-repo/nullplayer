@@ -21,6 +21,22 @@ final class WinampModernB243Tests: XCTestCase {
         }
     }
 
+    /// A table pulled back onto another receiver keeps every declaration, so ClassicProFile answers a
+    /// script-made object with the arities it answers `System` with, and a TreeItem's reach the
+    /// derived table through the dynamic list rather than a hand-kept one.
+    func testAPulledBackTableKeepsItsDeclarations() {
+        typealias R = WinampModernScriptRuntime
+        let pulled = R.classicProFileMethods.pulledBack { (_: MakiDynamicReceiver) in () }
+        let sorted = { (table: [MakiMethodDeclaration]) in
+            table.map { "\($0.name)/\($0.signature.argumentCount)" }.sorted()
+        }
+        XCTAssertEqual(sorted(pulled.declarations), sorted(R.classicProFileMethods.declarations))
+        XCTAssertTrue(R.dynamicFamilies.contains { $0["findfiles"] != nil })
+        XCTAssertNotNil(WinampModernScriptSignatures.signature(for: "explorefile", classGUID: nil))
+        XCTAssertNotNil(WinampModernScriptSignatures.signature(for: "setlabel", classGUID: nil),
+                        "a TreeItem arity reaches the derived table through the dynamic list")
+    }
+
     /// The tables are lowercased-name keyed, because that is what `invoke` looks them up by.
     func testEveryDeclaredNameIsLowercased() {
         for declaration in WinampModernScriptSignatures.tables.joined() {

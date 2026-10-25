@@ -3,8 +3,8 @@ import CoreGraphics
 import Foundation
 
 /// The parts of MAKI's `System` that answer about the desk rather than the player: the clock and
-/// date fields, the screen (viewport, monitor, the player's own frame, the pointer), the
-/// windows a script can look up or show by name, and ClassicPro's file shell. Split out of
+/// date fields, the screen (viewport, monitor, the player's own frame, the pointer) and the
+/// windows a script can look up or show by name. Split out of
 /// `WinampModernScriptRuntimeSystem.swift`, whose `invokeSystem` asks these after its own table;
 /// see `skills/winamp-modern-skin-guide/reference/compatibility/maki-surface.md`.
 extension WinampModernScriptRuntime {
@@ -222,27 +222,6 @@ extension WinampModernScriptRuntime {
                     ? object : runtime.ancestor(of: object, type: .container) else { return .null }
             _ = try runtime.setVisible(container, true)
             return runtime.objectValue(object)
-        }
-        return table
-    }()
-
-    /// The complete native surface ClassicPro's MAKI invokes (P0B §1): three `ClassicProFile`
-    /// filesystem-shell helpers, each routed through the host's intentional reveal/open policy or a
-    /// bounded no-op.
-    static let classicProFileMethods: MakiMethodTable<Void> = {
-        var table = MakiMethodTable<Void>()
-        table.add("explorefile", 1) { runtime, call in
-            runtime.host.revealInFinder(call.arguments[0].stringValue)
-            return .null
-        }
-        table.add("openfile", 2) { runtime, call in
-            runtime.host.openExternally(call.arguments[0].stringValue)
-            return .null
-        }
-        table.add("findfiles", 3) { runtime, call in
-            // Bounded no-op: report "unavailable" so callers take their early-return path rather than
-            // enumerating results. Skins never gain a filesystem-search capability.
-            return .integer(-1)
         }
         return table
     }()

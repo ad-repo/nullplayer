@@ -42,37 +42,34 @@ extension WinampModernScriptRuntime {
         // answers `sendAction("cancelinfo")` — which `seek.maki` posts on every mouse-up and on
         // `onSetFinalPosition` — with `timer.onTimer()`, and without this the whole `onAction`
         // handler aborted there, leaving the ticker stuck on its `Seek: 1:13/4:05 (30%)` preview.
-        if WinampModernScriptSignatures.dispatchableEventArity[method] != nil {
-            _ = try dispatch(target: MakiObjectReference(.dynamic(id)), event: method,
-                             arguments: arguments)
-            return method == "onaction" ? .integer(0) : .null
-        }
-        if let value = try answer(Self.treeItemMethods,
-                                  MakiCall(method: method, receiver: id, arguments: arguments, program: program)) {
+        if let value = try answerEventCall(method, dispatching: {
+            try dispatch(target: MakiObjectReference(.dynamic(id)), event: method, arguments: arguments)
+        }) {
             return value
         }
         let call = MakiCall(method: method, receiver: MakiDynamicReceiver(id: id, state: state),
                             arguments: arguments, program: program)
-        if case .pendingGUI(let type, let attributes, var calls) = state.role {
-            if let value = try answer(Self.pendingGUIMethods, call) { return value }
-            // Anything else with an arity waits for `init`, which replays it on the object it creates.
-            if method != "init", signature(for: method, classGUID: nil) != nil,
-               calls.count < Self.maximumPendingCalls {
-                calls.append((method, arguments))
-                dynamicObjects[id]?.role = .pendingGUI(type: type, attributes: attributes, calls: calls)
-                return .null
-            }
+        if let value = try answer(Self.dynamicFamiliesBeforeInit, call) { return value }
+        // Anything else with an arity waits for `init`, which replays it on the object it creates.
+        if case .pendingGUI(let type, let attributes, var calls) = state.role, method != "init",
+           signature(for: method, classGUID: nil) != nil, calls.count < Self.maximumPendingCalls {
+            calls.append((method, arguments))
+            dynamicObjects[id]?.role = .pendingGUI(type: type, attributes: attributes, calls: calls)
+            return .null
         }
-        if let value = try answer(Self.dynamicMethods, call)
-            ?? answer(Self.classicProFileMethods, MakiCall(method: method, receiver: (), arguments: arguments,
-                                                           program: program)) {
-            return value
-        }
+        if let value = try answer(Self.dynamicFamilies, call) { return value }
         throw unsupported(method, program: program)
     }
 
+    /// What a script-made object is asked before a GUI object still waiting for `init` queues the
+    /// call, in order.
+    static let dynamicFamiliesBeforeInit = [treeItemMethods.pulledBack(\MakiDynamicReceiver.id), pendingGUIMethods]
+
+    /// What it is asked after: its role's methods, then `ClassicProFile`'s, which answer on any receiver.
+    static let dynamicFamilies = [dynamicMethods, classicProFileMethods.pulledBack { (_: MakiDynamicReceiver) in () }]
+
     /// A GUI object a script made with `new` and has not `init`'d yet. It is not in the graph, so its
-    /// markup is kept on the role until `init` puts it there.
+    /// markup is kept on the role until `init` puts it there; any other object passes.
     static let pendingGUIMethods: MakiMethodTable<MakiDynamicReceiver> = {
         var table = MakiMethodTable<MakiDynamicReceiver>()
         table.add("setxmlparam", 2) { runtime, call in
@@ -109,13 +106,14 @@ extension WinampModernScriptRuntime {
                     theme: name, index: Int(call.arguments[0].integerValue)) else { return .null }
             return runtime.dynamicValue(role: .gammaGroup(theme: name, group: group))
         }
-        table.add(["setred", "setgreen", "setblue"], 1) { runtime, call in
-            guard case .gammaGroup(let theme, let group) = call.state.role else { return .null }
-            runtime.loadedSkin.themeCoordinator.catalog.setGammaChannel(["setred": 0, "setgreen": 1,
-                                                                         "setblue": 2][call.method] ?? 0,
-                                                               to: Int(call.arguments[0].integerValue),
-                                                               theme: theme, group: group)
-            return .null
+        for (channel, name) in ["setred", "setgreen", "setblue"].enumerated() {
+            table.add(name, 1) { runtime, call in
+                guard case .gammaGroup(let theme, let group) = call.state.role else { return .null }
+                runtime.loadedSkin.themeCoordinator.catalog.setGammaChannel(channel,
+                                                                   to: Int(call.arguments[0].integerValue),
+                                                                   theme: theme, group: group)
+                return .null
+            }
         }
         // The map's own shape: every pixel at or above 1, the unreversed `loadFromMap` form.
         table.add("getregion", 0) { runtime, call in
