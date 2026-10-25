@@ -8,8 +8,6 @@ final class WinampModernMainView: NSView {
     /// Live library surfaces by holder id. Typed, so each one can be told about a palette change, a
     /// UI Size change, and its own teardown (Phase 13.8).
     private var librarySurfaces: [WasabiObjectID: WinampModernLibrarySurface] = [:]
-    /// Live video surfaces by holder id, on the same typed handle for the same reasons (B20).
-    private var videoSurfaces: [WasabiObjectID: WinampModernVideoSurface] = [:]
     /// Live visualization surfaces by holder id — the skin's AVS window, filled with the host's own
     /// visualization engine rather than the engine-drawn analyzer (B20a).
     private var visualizationSurfaces: [WasabiObjectID: WinampModernVisualizationSurface] = [:]
@@ -31,7 +29,7 @@ final class WinampModernMainView: NSView {
             guard skinScale != oldValue else { return }
             setFrameSize(scaledCanvasSize)
             pushLibraryContentScale()
-            for surface in videoSurfaces.values { surface.applySkinScale(skinScale) }
+            hostedVideoSurface?.applySkinScale(skinScale)
             for surface in visualizationSurfaces.values { surface.applySkinScale(skinScale) }
             for surface in hostedWindowSurfaces.values { surface.applySkinScale(skinScale) }
             for surface in browserSurfaces.values { surface.applySkinScale(skinScale) }
@@ -593,7 +591,7 @@ final class WinampModernMainView: NSView {
     /// for that reason — the controller calls it after writing an override.
     func paletteDidChange() {
         for surface in librarySurfaces.values { surface.applyPalette(renderer.palette) }
-        for surface in videoSurfaces.values { surface.applyPalette(renderer.palette) }
+        hostedVideoSurface?.applyPalette(renderer.palette)
         for surface in visualizationSurfaces.values { surface.applyPalette(renderer.palette) }
         let style = WinampModernSurfaceStyle(palette: renderer.palette)
         for surface in hostedWindowSurfaces.values { surface.applyPalette(style) }
@@ -867,7 +865,7 @@ final class WinampModernMainView: NSView {
         // window's own keys (←/→, R, F, P, C) — after the skin has had its say, so a skin accelerator
         // always wins (B20a). The film goes first: it is what is on screen, and the visualization
         // shares its keys while the engine feeding it is paused.
-        if videoSurfaces.values.contains(where: { $0.handleKeyDown(event) }) { return }
+        if hostedVideoSurface?.handleKeyDown(event) == true { return }
         if let surface = hostedVisualizationSurface, surface.handleKeyDown(event) { return }
         // ↑/↓ step the volume, as in every other mode's main window. Only those two: the rest of that
         // table's letters are the visualization's keys here. The engine announces no volume change, so
@@ -1223,31 +1221,7 @@ final class WinampModernMainView: NSView {
             addSubview(entry.surface.view)
         }
 
-        let videoEntries = reconcile(
-            &videoSurfaces, to: holders.filter { $0.kind == .video },
-            unmount: { _, surface in
-                // Unparks the picture — the one video view in the app must never be left orphaned in
-                // a view that is about to leave the hierarchy — and leaves it hidden. The holder going
-                // away is a tab switch, not a stop, so the film plays on and the window it came from
-                // stays put. Only a box this view still holds: one another window has claimed since (a
-                // detach, or the reattach back) is that window's picture, and this entry is just stale.
-                if surface.view.superview === self { surface.unmountFromHolder() }
-            },
-            make: { holder in
-                // A box already mounted in another *visible* window is that window's picture. Taking
-                // it moved the parked film onto this window at the other box's geometry — the film
-                // floated over the player. A hidden window does not keep it: Winamp Single GUI builds
-                // its detached `Video` window at load, hidden, and that held the box against the
-                // player's own mini pane.
-                guard let made = componentHost?.makeVideoSurface() else { return nil }
-                if let other = made.view.superview, other !== self, other.window?.isVisible == true { return nil }
-                return configured(made, for: holder)
-            })
-        var videoHolderAppeared = false
-        for entry in videoEntries where entry.isNew {
-            videoHolderAppeared = true
-            addSubview(entry.surface.view)
-        }
+        let videoHolderAppeared = reconcileVideoSurface(holders: holders)
         // Not every `{0000000A}` holder gets the engine: a letterbox strip is an analyzer's box, and
         // the bridge vends one surface per skin, so a second holder asking for it stole the picture
         // from the first. Everything not named here falls through to the renderer's analyzer (BB9).
@@ -1469,66 +1443,9 @@ final class WinampModernMainView: NSView {
         return nodes.first.map { ($0.object, false) }
     }
 
-    /// Pull the skin's one video box into this view's holder and park the picture on it: the detach
-    /// into a skin's video window, and the reattach back into the player. The reconcile never moves
-    /// the box out of a window on screen, so a deliberate move has to say so.
-    @discardableResult
-    func claimVideoSurface() -> WinampModernVideoSurface? {
-        needsLayout = true
-        layoutSubtreeIfNeeded()
-        // The reconcile registers nothing while another window on screen holds the box.
-        if hostedVideoSurface == nil,
-           let holder = renderer.componentHolders().first(where: { $0.kind == .video }),
-           let made = componentHost?.makeVideoSurface() {
-            videoSurfaces[holder.object.stableID] = configured(made, for: holder)
-        }
-        guard let surface = hostedVideoSurface else { return nil }
-        if surface.view.superview !== self {
-            addSubview(surface.view)
-            needsLayout = true
-            layoutSubtreeIfNeeded()
-        }
-        surface.attachVideoOutput()
-        surface.updateOutputPlacement()
-        return surface
-    }
-
-    private func configured(_ surface: WinampModernVideoSurface,
-                            for holder: WinampModernComponentHolder) -> WinampModernVideoSurface {
-        // `noshowcmdbar="1"` — the holder's own instruction that it draws the transport itself.
-        surface.showsCommandBar =
-            WinampModernVideoHolder.showsCommandBar(holderAttributes: holder.object.attributes)
-        surface.applySkinScale(skinScale)
-        surface.applyPalette(renderer.palette)
-        return surface
-    }
-
-    /// The video surface in this scene, if the skin's holder made one. The window layer needs it to
-    /// hand the picture over before showing the skin's video window, and to size that window from
-    /// the stream's own dimensions for `VID_1X` / `VID_2X`.
-    ///
-    /// **The biggest visible box wins.** A skin can hold the same component in several places at
-    /// once — cPro-Bento's video lives in its tab, in the mini view above the playlist column *and*
-    /// in the drawer — and a dictionary's first value is whichever the hash gave up, so the picture
-    /// landed in a different box between runs of the same build. The largest is the one the user
-    /// asked to see: the small ones are strips the skin leaves open beside it.
-    var hostedVideoSurface: WinampModernVideoSurface? {
-        let holders = renderer.componentHolders()
-            .filter { $0.kind == .video && videoSurfaces[$0.object.stableID] != nil }
-            .sorted { $0.frame.width * $0.frame.height > $1.frame.width * $1.frame.height }
-        if let best = holders.first { return videoSurfaces[best.object.stableID] }
-        return videoSurfaces.values.first
-    }
-
     /// The visualization surface in this scene, if the skin's AVS holder made one. The host actions
     /// (`VIS_NEXT`, `VIS_CFG`) and the Visualizations menu reach the running engine through it.
     var hostedVisualizationSurface: WinampModernVisualizationSurface? { visualizationSurfaces.values.first }
-
-    /// The video holder's frame in skin pixels, for the sizing arithmetic `VID_1X` / `VID_2X` do:
-    /// the window grows by the difference between the box the skin drew and the box the stream wants.
-    var videoHolderFrame: CGRect? {
-        renderer.componentHolders().first { $0.kind == .video }?.frame
-    }
 
     /// How far a video or visualization surface passes under the skin's surrounding artwork, in skin
     /// pixels.
@@ -1581,15 +1498,7 @@ final class WinampModernMainView: NSView {
                 NSLog("%@", line)
             }
         }
-        for holder in holders where holder.kind == .video {
-            // Not a box another window has claimed since (a detach): its frame is that window's.
-            guard let surface = videoSurfaces[holder.object.stableID], surface.view.superview === self else { continue }
-            // The box re-places the parked picture itself when this actually moves or resizes it.
-            // Clipped like the renderer's black box: the picture is a window of its own, so nothing
-            // else cuts it, and Winamp Single GUI's 228px mini pane in a 280px player ran it down
-            // over the LCD and the transport.
-            surface.view.frame = placed(holder.frame.intersection(holder.clip))
-        }
+        layoutVideoSurface(holders: holders, placed: placed)
         for holder in holders {
             guard case .hostWindow = holder.surfaceID,
                   let surface = hostedWindowSurfaces[holder.object.stableID] else { continue }
@@ -1777,7 +1686,7 @@ final class WinampModernMainView: NSView {
                 .map { "\(type(of: $0))\($0.frame)hidden=\($0.isHidden ? 1 : 0)" }
                 .joined(separator: " | ")
             NSLog("WinampModern HOLDERS after %@: lib=%d brw=%d vid=%d vis=%d holders=[%@] subviews=[%@]",
-                  tag, self.librarySurfaces.count, self.browserSurfaces.count, self.videoSurfaces.count,
+                  tag, self.librarySurfaces.count, self.browserSurfaces.count, self.hostedVideoSurface == nil ? 0 : 1,
                   self.visualizationSurfaces.count, holders, subs)
         }
     }
@@ -2593,8 +2502,10 @@ final class WinampModernMainView: NSView {
         hoveredObject = nil
         for surface in librarySurfaces.values { surface.prepareForUITeardown() }
         librarySurfaces.removeAll()
-        for surface in videoSurfaces.values { surface.prepareForUITeardown() }
-        videoSurfaces.removeAll()
+        if let surface = hostedVideoSurface {
+            surface.prepareForUITeardown()
+            componentHost?.releaseVideoSurface(heldBy: self)
+        }
         for surface in visualizationSurfaces.values { surface.prepareForUITeardown() }
         visualizationSurfaces.removeAll()
         for surface in hostedWindowSurfaces.values { surface.prepareForUITeardown() }

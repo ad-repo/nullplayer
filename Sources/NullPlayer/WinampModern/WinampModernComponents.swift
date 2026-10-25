@@ -321,9 +321,18 @@ protocol WinampModernComponentHost: AnyObject {
     func makeBrowserSurface(initialRequest: WinampModernBrowserRequest?) -> WinampModernBrowserSurface?
 
     /// Video — the same shape as the library's, and for the same reason: the skin draws a window
-    /// around a box it cannot fill, and only the host can put the picture in it. `nil` when no video
-    /// output exists in this session.
-    func makeVideoSurface() -> WinampModernVideoSurface?
+    /// around a box it cannot fill, and only the host can put the picture in it. One box per skin,
+    /// held by one scene view at a time (B246): `holder` takes it unless a view in another visible
+    /// window holds it, or always when `fromVisibleWindow` — a deliberate move, the detach into a
+    /// skin's video window and the reattach back. `nil` when no video output exists in this session,
+    /// or when the box stays where it is.
+    func claimVideoSurface(by holder: NSView, fromVisibleWindow: Bool) -> WinampModernVideoSurface?
+
+    /// The box, only while `holder` holds it.
+    func videoSurface(heldBy holder: NSView) -> WinampModernVideoSurface?
+
+    /// `holder`'s video holder has gone; the box is free for the next view that claims it.
+    func releaseVideoSurface(heldBy holder: NSView)
 
     /// Visualization — the skin's AVS/vis window, filled with the host's real visualization engine
     /// (ProjectM/MilkDrop, Geiss, Tripex) rather than the engine-drawn analyzer. `nil` when no
@@ -343,7 +352,9 @@ extension WinampModernComponentHost {
     func makeLibrarySurface() -> WinampModernLibrarySurface? { nil }
     @MainActor
     func makeBrowserSurface(initialRequest: WinampModernBrowserRequest?) -> WinampModernBrowserSurface? { nil }
-    func makeVideoSurface() -> WinampModernVideoSurface? { nil }
+    func claimVideoSurface(by holder: NSView, fromVisibleWindow: Bool) -> WinampModernVideoSurface? { nil }
+    func videoSurface(heldBy holder: NSView) -> WinampModernVideoSurface? { nil }
+    func releaseVideoSurface(heldBy holder: NSView) {}
     func makeVisualizationSurface() -> WinampModernVisualizationSurface? { nil }
     func makeHostedWindowSurface(id: WinampModernHostedWindowID) -> WinampModernHostedSurface? { nil }
     /// A host with no selection model of its own keeps the single anchor it already had.

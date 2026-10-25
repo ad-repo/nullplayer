@@ -251,6 +251,18 @@ along. It re-attaches one turn later (after a layout pass, which is what gives t
 frame) and asks `hostedVideoSurface` for the target, so the largest visible box wins exactly as it did
 the first time.
 
+### One box per skin, held by one view (B246)
+
+The bridge vends one video box per skin and records which scene view's holder it is in
+(`claimVideoSurface(by:fromVisibleWindow:)`, `videoSurface(heldBy:)`, `releaseVideoSurface(heldBy:)`).
+A view mounts, places and feeds (scale, palette, keys) the box only while it holds it, through
+`hostedVideoSurface`; the view's half lives in `WinampModernMainView+Video.swift`. The reconcile
+claims for a holder that appears unless a view in another *visible* window holds the box; a
+deliberate move — the detach into a skin's video window, the reattach back — claims regardless.
+When each view kept its own map of the box, Winamp Single GUI's player went on naming it after its
+detached `Video` window took it, and three guards (skip a box another visible window holds, skip one
+whose superview is not this view, re-add it on claim) stood in for the missing owner.
+
 ### The rest of the shape
 
 - **Routing.** `.video` is a **routed** surface but not a **managed** one

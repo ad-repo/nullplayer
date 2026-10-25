@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B246 — The bridge owns the video box and the view that holds it — closed 2026-10-25
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B246 | **The skin's one video box is tracked by every scene view that ever mounted it.** The bridge vends one `WinampModernVideoSurface` per skin, but each `WinampModernMainView` keeps its own `videoSurfaces[holderID]`, so once Winamp Single GUI's detached `Video` window claims the box the player's entry goes stale. Three guards make up the difference: the reconcile skips a box held by another visible window, the layout pass skips one whose `superview !== self`, and `claimVideoSurface` re-adds it. The stale-entry unmount was a fourth, now guarded. A stale entry still gets the player's skin scale, palette and key events. Make the bridge own the box and its current holder view, with one `claim(by:)` policy, so a view acts on the box only while it holds it. This also gives the video lifecycle its own file (`WinampModernMainView+Video.swift`: `configured(_:for:)`, `claimVideoSurface`, `hostedVideoSurface`, the reconcile's video closures) rather than growing a 3,385-line view. Done when `videoSurfaces` cannot name a box held elsewhere, the three guards are gone, and Single GUI's detach, reattach and Switch Video Screen Mode still move the picture correctly with a film playing | code health; no corpus demand | M | 3 |
+
+**Closed 2026-10-25**. `WinampModernComponentHost` trades `makeVideoSurface()` for `claimVideoSurface(by:fromVisibleWindow:)`, `videoSurface(heldBy:)` and `releaseVideoSurface(heldBy:)`; the bridge keeps the box and a weak holder view, and the one claim policy (a box in another visible window stays put unless the move is deliberate) replaces the reconcile's guard. The view's `videoSurfaces` map is gone: `hostedVideoSurface` is the box only while this view holds it, so scale, palette and keys reach the holder alone; the layout pass places it at the largest video holder, and the lifecycle (`claimVideoSurface`, `reconcileVideoSurface`, `layoutVideoSurface`, mounting) is in `WinampModernMainView+Video.swift`. Live on Winamp Single GUI with a 3-minute film: Windows → Video Player moved the picture into the `Video` window and back; closing the mini pane unparked it and reopening re-parked it; Switch Video Screen Mode (big pane, reached by seeding `wtunes.secondaryismini=0`) moved it into the mini pane. No render change.
+
 ## B261 — A standard frame's content minimum sizes the window; attribute whitespace is normalized — closed 2026-10-24
 
 | Id | Item | Reach | Effort | Tier |
