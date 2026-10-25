@@ -728,6 +728,8 @@ flips between 330x137 and 660x274 the same way as MoonLight's (B228's sweeps, bo
 `CopperdeckII`'s `MLibrary/normal` flips `min=467x135`/`min=289x135` between solo runs of one build,
 like S7Reflex's (B237, 2026-10-21). `hm_Touch_m_1`'s `MLibrary/normal` flips its canvas between
 354x280 and 528x280, its library holder with it, between solo runs of one build (2026-10-23).
+`Winamp_Single_GUI`'s `MLibrary/normal` flips `min=354x164`/`min=452x164` the same way (452, 452,
+354 over three solo runs of one build, 2026-10-24).
 
 Those grep-selected lines are the invariants worth diffing: the container list, the surface catalog,
 the window menu, every layout's canvas size and node count, every hosted holder's frame, and the
