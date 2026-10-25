@@ -45,12 +45,22 @@ extension WasabiSceneRenderer {
                 } else {
                     let local = CGPoint(x: (point.x - node.frame.minX) / max(1, node.frame.width) * CGFloat(bitmap.width),
                                         y: (point.y - node.frame.minY) / max(1, node.frame.height) * CGFloat(bitmap.height))
-                    guard bitmap.alpha(at: local) > Self.regionAlphaFloor else { continue }
+                    guard bitmap.alpha(at: local) > Self.regionAlphaFloor || isClearMousetrap(object, bitmap)
+                    else { continue }
                 }
             }
             return object
         }
         return nil
+    }
+
+    /// A layer whose artwork is clear in every pixel, with a press a script hooks on it: an empty
+    /// region is no region, and the layer takes its whole rect. Official Trapt's volume and seek are
+    /// `customvol.m`/`customseek.m` surfaces on wholly transparent `volume.png`/`seek.png`, shaped by a
+    /// `Map` the script reads at the click; alpha-tested, both were dead.
+    /// ponytail: scans the bitmap on each such miss; cache per bitmap id if a large one shows in hover.
+    private func isClearMousetrap(_ object: WasabiObject, _ bitmap: WasabiBitmap) -> Bool {
+        pressBindingProvider?(object) == true && WasabiResourceCache.opaqueBounds(of: bitmap.image) == nil
     }
 
     /// A group's `background`, resolved as the renderer draws it, read as its artwork for the alpha

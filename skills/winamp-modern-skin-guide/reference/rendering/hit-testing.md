@@ -78,6 +78,14 @@ Two rules about *which* objects may claim a point:
   point, worked. That reads as "two of my buttons are broken", not as a hit test disagreeing with a
   declared region. Only objects that *have* a bitmap are affected; a bare `rectrgn` layer never had an
   alpha test to skip.
+- **A wholly clear layer a script hooks a press on is its rect** (2026-10-25). An empty region is no
+  region. Official Trapt's volume and seek are `customvol.m`/`customseek.m` surfaces on
+  `volume.png`/`seek.png`, transparent in every pixel, shaped by a `Map` the script reads at the
+  click; alpha-tested, both were dead. Unhooked, such a layer stays see-through. 40 corpus skins
+  carry a clear non-ghost layer, almost all named as traps (`resize*`, `trigger`, `*Catch`,
+  `vis.mousetrap`, `*switch`); only a hooked one changes (`isClearMousetrap`).
+- **A self-playing `animatedlayer` is hit on the frame showing** — see `rendering.md` → the union of
+  its frames, which still holds for one a script steps.
 - **`animatedlayer` is clickable like `layer`.** MMD3's rotary volume/bass/treble knobs are animated
   layers whose scripts hook `onLeftButtonDown`; leaving the type out of `isInteractive` meant no click
   ever reached them.

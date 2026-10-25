@@ -151,6 +151,17 @@ final class WinampModernB114Tests: XCTestCase {
         XCTAssertEqual(try hit(#"autoplay="0""#), "glass", "a stepped strip is hit on any frame")
     }
 
+    /// A wholly clear layer a script hooks a press on takes its rect: an empty region is no region.
+    /// Official Trapt's volume and seek are such surfaces, shaped by a `Map` the script reads.
+    func testAClearLayerAScriptHooksIsAMousetrap() throws {
+        let scene = try makeScene(
+            layoutAttributes: "", resources: #"<bitmap id="clear" file="lift.png" y="8" h="8"/>"#,
+            markup: #"<layer id="trap" x="0" y="0" image="clear"/>"#, art: ["lift.png": Self.liftPNG()])
+        XCTAssertNil(scene.renderer.object(at: CGPoint(x: 4, y: 4)), "unhooked, it is see-through")
+        scene.renderer.pressBindingProvider = { $0.xmlID == "trap" }
+        XCTAssertEqual(scene.renderer.object(at: CGPoint(x: 4, y: 4))?.xmlID, "trap")
+    }
+
     /// The buffer the opaque path renders through is snapped to the caller's device grid, so the
     /// picture that comes back is the same one an ordinary draw produces — pixel for pixel, at 2x.
     func testTheOpaquePathIsPixelExactAtRetinaScale() throws {
