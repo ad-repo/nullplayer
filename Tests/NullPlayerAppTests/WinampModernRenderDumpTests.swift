@@ -1071,6 +1071,9 @@ final class WinampModernRenderDumpTests: XCTestCase {
                             let coords = entry.split(separator: ",").compactMap { Double($0) }
                             return coords.count == 2 ? CGPoint(x: coords[0], y: coords[1]) : nil
                         }
+                    // Hit-tested as the app does, with the script bindings that make a hooked `text`
+                    // a control (B207): markup-only, Freeform Simpsons' checkbox labels read as dead.
+                    renderer.attach(scripts: runtime)
                     for point in points {
                         // Every object in the graph, not only the ones currently on screen: a control
                         // that was hidden and becomes visible is exactly what a click like this does

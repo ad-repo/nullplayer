@@ -108,6 +108,17 @@ final class WinampModernPhase81Tests: XCTestCase {
                              "the label is inside the object, not beyond its right edge")
     }
 
+    /// A skin's own check-box toggle on Winamp's stock art, which it does not ship (Freeform
+    /// Simpsons' `T3:Checkbox`): 7x7 like every skin that does ship it, so it is drawn and clickable.
+    func testAToggleOnUnshippedStockCheckBoxArtIsSevenSquare() throws {
+        let renderer = try makeRenderer(layout: """
+        <layout id="normal" w="400" h="100" default_w="400" default_h="100">
+          <button id="toggle" x="2" y="4" image="wasabi.button.checkbox" activeImage="wasabi.button.checkbox.pressed"/>
+        </layout>
+        """, groups: "")
+        XCTAssertEqual(try XCTUnwrap(frame(of: "toggle", in: renderer)).size, CGSize(width: 7, height: 7))
+    }
+
     /// The box has to be **opaque to hit testing** without owning a bitmap — the artwork is Winamp's,
     /// the same deliberate exception a `<Wasabi:Button text="…">` and a title box are. Without this a
     /// click passes straight through the switch.

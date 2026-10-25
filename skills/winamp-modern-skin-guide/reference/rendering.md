@@ -901,6 +901,13 @@ Four things worth keeping:
   those ids and the skin's own artwork draws. Only a skin shipping neither reaches the flat track and
   drawn thumb. A check box is the opposite — **no** `.wal` ships `wasabi.checkbox.*` — so it is drawn,
   on the same deliberate exception as an artwork-less `<Wasabi:Button>` above.
+- **A skin's own check box can name the stock art without shipping it** (2026-10-25). Freeform
+  Simpsons' `T3:Checkbox` groupdef is an 11x11 `wasabi.objectframe.group` and a `<button
+  image="wasabi.button.checkbox">` 2px inside it, and defines neither; 9 corpus skins do this, and
+  the 42 that define the bitmap all cut it 7x7. Unresolved, the toggle was 0x0 and the options
+  window's ten switches were labels alone. A `<button>` on an unresolved `wasabi.button.checkbox*`
+  is now 7x7 and draws the 11x11 outline round itself, filled while activated
+  (`WasabiFormWidgets.isStockCheckBox`, `drawStockCheckBox`).
 - **A `radioid` check box is a radio, and that is half the tag**: 32 of the 67 declarations carry the
   attribute. It draws round, its set is looked up from the top of its own tree (`radioid` is flat, and
   Styx's pairs live in two different content groups of one window), and clicking the member already on

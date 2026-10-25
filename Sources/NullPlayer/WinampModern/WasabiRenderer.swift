@@ -2350,6 +2350,13 @@ final class WasabiSceneRenderer {
            object.children.contains(where: { $0.attributes["relatw"] == "1" }) {
             intrinsic.width = max(0, Double(parentFrame.width) - (Double(object.attributes["x"] ?? "") ?? 0))
         }
+        // A button on Winamp's stock check-box art, which no skin that names it without defining it
+        // can ship: the 7x7 every defining skin in the corpus cuts (`drawStockCheckBox` draws it).
+        if object.tag.is(.button), let image = object.attributes["image"],
+           WasabiFormWidgets.isStockCheckBox(image), resources.bitmap(identifier: image) == nil {
+            if object.attributes["w"] == nil { intrinsic.width = WasabiFormWidgets.stockCheckBoxSide }
+            if object.attributes["h"] == nil { intrinsic.height = WasabiFormWidgets.stockCheckBoxSide }
+        }
         let resolved: CGRect
         if isRoot {
             resolved = parentFrame
@@ -2587,6 +2594,9 @@ final class WasabiSceneRenderer {
             drawImage(image, in: node.frame, context: context)
         } else if WasabiEmbeddedXUI.wrapsButton(object) {
             // The button inside draws this artwork (`WasabiEmbeddedXUI.wrapsButton`).
+        } else if object.tag.is(.button), let image = object.attributes["image"],
+                  WasabiFormWidgets.isStockCheckBox(image), resources.bitmap(identifier: image) == nil {
+            drawStockCheckBox(object, frame: node.frame, context: context)
         } else if let imageID = resolvedBitmapID(for: object,
                                                   pressed: pressed == object.stableID,
                                                   hovered: hovered == object.stableID),
@@ -4137,6 +4147,20 @@ final class WasabiSceneRenderer {
                  frame: CGRect(x: start, y: frame.minY, width: max(0, frame.maxX - start),
                                height: frame.height),
                  context: context, undeclaredColor: palette.listText)
+    }
+
+    /// A toggle on Winamp's unshipped stock check-box art: the 11x11 object frame its groupdef lays
+    /// 2px around it — which is stock art too — and a tick while it is activated.
+    private func drawStockCheckBox(_ object: WasabiObject, frame: CGRect, context: WasabiDrawList) {
+        let color = palette.listText
+        context.saveGState()
+        defer { context.restoreGState() }
+        context.setStrokeColor(color.withAlphaComponent(0.75).cgColor)
+        context.setLineWidth(1)
+        context.stroke(frame.insetBy(dx: -1.5, dy: -1.5))
+        guard WasabiFormWidgets.isOn(object, boundState: nil) else { return }
+        context.setFillColor(color.cgColor)
+        context.fill(frame.insetBy(dx: 1, dy: 1))
     }
 
     /// A `<Wasabi:DropDownList>`: the box, the item it is showing, and the arrow that says it opens.
