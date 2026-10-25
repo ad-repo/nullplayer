@@ -691,6 +691,9 @@ session — resolves through this one catalog in this one order:
    own scale, never `player width / 275`: `WindowManager.playlistChromeScale` exempts `.wal` as it
    does `.wmz`, since a `.wal` player's width is its skin's canvas, not a zoom. Slimline XP's
    1024-wide taskbar had drawn the playlist at 3.7x and snapped it 1024 wide (fixed 2026-10-24).
+   The equalizer likewise opens at its own width, not the player's (`EQWindowController`, gated on
+   `.wal`): its view keeps its aspect, and under Clock V2.76's 597-wide player it drew 343 wide
+   between clear margins, with the close corner in one of them (fixed 2026-10-25).
 
 Which skin lands on which step is measured per skin: see the routing table in
 [compatibility.md](../compatibility.md#hosted-components).

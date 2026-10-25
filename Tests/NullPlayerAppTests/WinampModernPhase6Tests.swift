@@ -325,9 +325,21 @@ final class WinampModernPhase6Tests: XCTestCase {
                                            arguments: [.string("ClassicPro.dontRemindOldWinamp"), .integer(0)],
                                            program: program)
         XCTAssertEqual(publicInt.integerValue, 0)
-        let doy = try runtime.invoke(method: "getdatedoy", on: system,
-                                     arguments: [.integer(0)], program: program)
-        XCTAssertGreaterThan(doy.integerValue, 0)
+        _ = try runtime.invoke(method: "getdatedoy", on: system, arguments: [.integer(0)], program: program)
+    }
+
+    /// `getDateDoy` reads the stamp it is handed, 0-based (`std.mi`: "0-365"). Clock V2.76's
+    /// calendar passes one stamp per row and printed one week number on all of them.
+    func testGetDateDoyReadsItsArgumentZeroBased() throws {
+        let (runtime, program) = try makeRuntime(host: SpyHost())
+        let system = MakiObjectReference(.system)
+        func doy(_ components: DateComponents) throws -> Int {
+            let stamp = Int32(Calendar.current.date(from: components)!.timeIntervalSince1970)
+            return Int(try runtime.invoke(method: "getdatedoy", on: system,
+                                          arguments: [.integer(stamp)], program: program).integerValue)
+        }
+        XCTAssertEqual(try doy(DateComponents(year: 2026, month: 1, day: 1, hour: 12)), 0)
+        XCTAssertEqual(try doy(DateComponents(year: 2026, month: 10, day: 25, hour: 12)), 297)
     }
 
     func testClassicProFileShellAdaptersRouteThroughPolicy() throws {

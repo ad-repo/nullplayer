@@ -39,6 +39,9 @@ extension WinampModernScriptRuntime {
             "getdateday": { Calendar.current.component(.day, from: $0) },
             "getdatemonth": { Calendar.current.component(.month, from: $0) - 1 },
             "getdatedow": { Calendar.current.component(.weekday, from: $0) - 1 },
+            // 0-based like `tm_yday` ("0-365", `std.mi`). Clock V2.76 numbers its calendar's weeks
+            // from it, one stamp per row; read from now, every row printed this week's number.
+            "getdatedoy": { (Calendar.current.ordinality(of: .day, in: .year, for: $0) ?? 1) - 1 },
         ]
         for (name, field) in clockFields {
             table.add(name, 1) { runtime, call in
@@ -67,9 +70,6 @@ extension WinampModernScriptRuntime {
         table.add("gettimeofday", 0) { runtime, call in
             let now = Date()
             return .integer(Int32(now.timeIntervalSince(Calendar.current.startOfDay(for: now)) * 1000))
-        }
-        table.add("getdatedoy", 1) { runtime, call in
-            .integer(Int32(Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0))
         }
         table.add("getdateyear", 1) { runtime, call in
             // Years since 1900, as C's `tm_year`. Pinned by the engine's own use of it: `cproabout.m`

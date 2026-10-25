@@ -13,7 +13,9 @@
 # A close click-searches the top-right corner, outermost first and down to 40 pt (a stretched
 # window can letterbox its art and move the close button down). It is CLOSED only when the window
 # is off screen, its Windows-menu item is unchecked and Accessibility does not report it minimized.
-# A miss that shades, resizes or minimizes the window is logged as `<step>-miss` and undone.
+# Only points the window draws are clicked or dragged: a transparent pixel passes the click to the
+# desktop, so a grab point there logs `drag-<edge> transparent` and a corner with nothing drawn is
+# NOT-CLOSED without a click. A miss that shades, resizes or minimizes the window is logged as `<step>-miss` and undone.
 # NOT-CLOSED saves `noclose-<skin>-<window>-<step>.png` beside <out.tsv>; it is not by itself a
 # defect: Original/Metal with Hide Title Bars on (`-hideTitleBars NO` shows them for one run) and
 # some gloss-framed `.wmz`/`.wal` windows have no close target, and a synthetic click can miss a window
@@ -57,6 +59,23 @@ open() {
   echo "$new"
 }
 
+# drawn <id> <x,y>…: the window-relative points the window paints (alpha > 0). A transparent pixel
+# passes the click to whatever is under it — Clock V2.76's 597x1024 window is a dial in a clear
+# rect, and every corner probe clicked the desktop. Every point when the capture fails.
+drawn() {
+  local id=$1; shift
+  "$WH" capture "$id" "$SHOTS/.drawn.png" --pid "$PID" >/dev/null 2>&1 </dev/null || { printf '%s\n' "$@"; return; }
+  python3 -I - "$SHOTS/.drawn.png" "$(row "$id" | awk '{print $3}')" "$@" <<'EOF'
+import sys
+from PIL import Image
+image = Image.open(sys.argv[1]).convert("RGBA"); scale = image.width / float(sys.argv[2])
+for point in sys.argv[3:]:
+    x, y = (int(int(v) * scale) for v in point.split(","))
+    if 0 <= x < image.width and 0 <= y < image.height and image.getpixel((x, y))[3] > 0:
+        print(point)
+EOF
+}
+
 # stretch <id> <name>
 stretch() {
   local id=$1 name=$2 X Y W H X2 Y2 W2 H2 PX PY DX DY V
@@ -69,6 +88,8 @@ stretch() {
       left)   PX=$((X+3));   PY=$((Y+H/2)); DX=-40; DY=0 ;;
       top)    PX=$((X+W/2)); PY=$((Y+1));   DX=0;   DY=-40 ;;
     esac
+    [ -n "$(drawn "$id" "$((PX-X)),$((PY-Y))")" ] \
+      || { emit "$name" "drag-$STEP" transparent "grab point $PX $PY is not drawn; not dragged"; continue; }
     "$WH" drag $PX $PY $((PX+DX/2)) $((PY+DY/2)) $((PX+DX)) $((PY+DY)) >/dev/null 2>&1 </dev/null; sleep 0.6
     read -r X2 Y2 W2 H2 < <(row "$id")
     if [ -z "${X2:-}" ]; then V=GONE
@@ -82,10 +103,13 @@ stretch() {
 
 # close_search <id> <name> <menu name, or - for the main window> <step>
 close_search() {
-  local id=$1 name=$2 mname=$3 step=$4 t X Y W H X2 Y2 W2 H2 DX DY c
+  local id=$1 name=$2 mname=$3 step=$4 t X Y W H X2 Y2 W2 H2 DX DY c P points=()
   t=$(title "$id")
-  for DY in 6 10 14 20 26 32 40; do for DX in 6 9 12 16 20 26; do
-    raise; read -r X Y W H < <(row "$id"); [ -n "${X:-}" ] || break 2
+  raise; read -r X Y W H < <(row "$id")
+  for DY in 6 10 14 20 26 32 40; do for DX in 6 9 12 16 20 26; do points+=("$((W-DX)),$DY"); done; done
+  for P in $([ -n "${X:-}" ] && drawn "$id" "${points[@]}"); do
+    DX=$((W-${P%,*})); DY=${P#*,}
+    raise; read -r X Y W H < <(row "$id"); [ -n "${X:-}" ] || break
     "$WH" click $((X+W-DX)) $((Y+DY)) >/dev/null 2>&1 </dev/null; sleep 1
     alive || { emit "$name" "$step" CLOSED "app quit at -$DX,+$DY"; return; }
     read -r X2 Y2 W2 H2 < <(row "$id")
@@ -103,7 +127,7 @@ close_search() {
       emit "$name" "$step-miss" "size $W $H -> $W2 $H2" "at -$DX,+$DY (undone)"
       "$WH" click $((X2+W2-DX)) $((Y2+DY)) >/dev/null 2>&1 </dev/null; sleep 1
     fi
-  done; done
+  done
   "$WH" capture "$id" "$SHOTS/noclose-$SAFE-${name// /_}-$step.png" --pid "$PID" >/dev/null 2>&1 </dev/null
   emit "$name" "$step" NOT-CLOSED "no corner point closed it; see noclose-$SAFE-${name// /_}-$step.png"
 }
