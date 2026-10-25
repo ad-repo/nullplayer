@@ -24,6 +24,7 @@ enum PlayerUIControllerFamily {
     /// and NullPlayer's own windows float free beside it rather than in Classic's centre stack: tiled
     /// on first show, reopened where they were left, recovered when off screen, never slid up or
     /// refit to a stack, and with none of NullPlayer's compact or inline-visualization alternatives.
+    /// Its main window is the skin's own canvas, so its width is never a classic zoom.
     var hostsForeignSkin: Bool {
         switch self {
         case .winampModern, .wmp, .audion: return true
@@ -33,8 +34,8 @@ enum PlayerUIControllerFamily {
 
     /// Brings its own player runtime, app-authored fallback included (`.wmz`, Audion). Nothing built
     /// on the Classic/Original skin engines runs beside it: no default skin load, no Compact Mode or
-    /// Compact Window, no Classic stack size floor, no classic-zoom reading of the main window's
-    /// width. `.wal` hosts a Classic skin beneath its own, so it is not one.
+    /// Compact Window, no Classic stack size floor. `.wal` hosts a Classic skin beneath its own, so it
+    /// is not one.
     var bringsOwnRuntime: Bool {
         switch self {
         case .wmp, .audion: return true

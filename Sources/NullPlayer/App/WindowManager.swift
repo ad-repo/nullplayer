@@ -355,16 +355,14 @@ class WindowManager {
     /// Scale factor for playlist-style title-bar controls on NullPlayer's own secondary windows,
     /// derived from the live main-window width so chrome stays in sync when the user resizes.
     ///
-    /// **Except beside a `.wmz` skin, where that derivation is meaningless.** The ratio assumes the
+    /// **Except beside a foreign skin, where that derivation is meaningless.** The ratio assumes the
     /// main window is a *classic* player, 275 skin-pixels wide, so its width is the zoom the user
-    /// chose. A `.wmz` main window is the skin's own canvas instead — Corona's is over three times
-    /// that — and reading it as a zoom drew our playlist title and rows at 3x. UI Size in WMP mode
-    /// zooms the skin's window and nothing else, so these windows stay at the app's own scale.
-    /// A `.wal` main window is the skin's canvas too: Slimline XP's 1024-wide taskbar drew the
-    /// fallback playlist at 3.7x and snapped it to 1024 wide.
+    /// chose. A `.wmz` or `.wal` main window is the skin's own canvas instead: Corona's drew our
+    /// playlist title and rows at 3x, and Slimline XP's 1024-wide taskbar drew the fallback playlist
+    /// at 3.7x and snapped it 1024 wide. UI Size there zooms the skin's window and nothing else, so
+    /// these windows stay at the app's own scale.
     var playlistChromeScale: CGFloat {
-        let family = uiMode.controllerFamily
-        if !family.bringsOwnRuntime, family != .winampModern,
+        if !uiMode.controllerFamily.hostsForeignSkin,
            let mainWindow = mainWindowController?.window, mainWindow.frame.width > 0 {
             return mainWindow.frame.width / Skin.baseMainSize.width
         }
@@ -1532,8 +1530,7 @@ class WindowManager {
     /// is the classic width anyway, and an Original skin's `window.scale` sizes its player and its
     /// stack together — a fixed width there left the stack misaligned with the player and the EQ.
     var nativeWindowDefaultWidth: CGFloat {
-        let family = uiMode.controllerFamily
-        if matchesMainWindowWidth || family == .classic || family == .nullPlayerModern,
+        if matchesMainWindowWidth || !uiMode.controllerFamily.hostsForeignSkin,
            let width = mainWindowController?.window?.frame.width, width > 0 {
             return width
         }

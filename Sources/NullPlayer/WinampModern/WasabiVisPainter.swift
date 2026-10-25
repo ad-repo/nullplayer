@@ -372,10 +372,6 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
         func bandFraction(_ index: Int) -> CGFloat {
             max(0, min(1, bands[index] * gain))
         }
-        func columns(_ index: Int) -> (x: CGFloat, width: CGFloat) {
-            Self.analyzerColumn(index, count: count, in: frame, isThin: style.isThin)
-        }
-
         var state = boxes[input.objectID] ?? BoxState()
         #if DEBUG
         if !state.bars.isEmpty, state.bars.count != count {
@@ -410,7 +406,8 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
                 : max(level, previous - barStep)
             state.bars[index] = bar
             state.peaks[index] = max(bar, state.peaks[index] - peakStep)
-            let (x, barWidth) = columns(index)
+            let (x, barWidth) = Self.analyzerColumn(index, count: count, in: frame,
+                                                    isThin: style.isThin)
             let barRect = CGRect(x: x, y: frame.maxY - bar * frame.height,
                                  width: barWidth, height: bar * frame.height)
             if style.coloring == .normal {
