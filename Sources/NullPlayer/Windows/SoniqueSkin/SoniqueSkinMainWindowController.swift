@@ -24,10 +24,6 @@ final class SoniqueSkinMainWindowController: NSWindowController, MainWindowProvi
     /// Small mode's blinkers, so a spectrum frame redraws only when they change.
     private var blinkersLit = false
 
-    static let effectKey = "soniqueEffect"
-    /// Saves the visual mode screen's effect and preset on every change (`persistEffect`).
-    private var effectObserver: NSObjectProtocol?
-
     var mode: SoniqueSkin.Mode {
         get { skinView.state.mode }
         set {
@@ -50,7 +46,6 @@ final class SoniqueSkinMainWindowController: NSWindowController, MainWindowProvi
         window.setAccessibilityIdentifier("SoniqueSkinMainWindow")
         window.center()
         super.init(window: window)
-        effectObserver = MainActor.assumeIsolated { Self.persistEffect() }
         window.delegate = self
         window.contentView = skinView
         skinView.state.mode = UserDefaults.standard.string(forKey: Self.modeKey).flatMap(SoniqueSkin.Mode.init(rawValue:)) ?? .navigator
@@ -65,20 +60,6 @@ final class SoniqueSkinMainWindowController: NSWindowController, MainWindowProvi
     }
 
     required init?(coder: NSCoder) { nil }
-
-    /// The visual mode screen's effect and preset, remembered across launches: Sonique had one
-    /// visualizer choice, not one per skin. Put back as the window opens, then saved on every change.
-    @MainActor private static func persistEffect() -> NSObjectProtocol {
-        let selection = SkinEffectSelection.sonique, defaults = UserDefaults.standard
-        selection.restore(effect: defaults.string(forKey: effectKey), preset: defaults.integer(forKey: effectKey + "Preset"))
-        return NotificationCenter.default.addObserver(forName: SkinEffectSelection.didChange, object: selection,
-                                                      queue: .main) { _ in
-            MainActor.assumeIsolated {
-                defaults.set(selection.current.id, forKey: effectKey)
-                defaults.set(selection.preset, forKey: effectKey + "Preset")
-            }
-        }
-    }
 
     // MARK: - Choosing a skin (`SingleCanvasMainWindow`)
 
@@ -247,8 +228,6 @@ final class SoniqueSkinMainWindowController: NSWindowController, MainWindowProvi
 
     func prepareForUITeardown() {
         skinLoad.cancel()
-        effectObserver.map(NotificationCenter.default.removeObserver)
-        effectObserver = nil
     }
 
     // MARK: - Window delegate

@@ -139,21 +139,29 @@ struct SoniqueSkinScene {
         return .init(left: b.left + 16, top: y, right: b.right - 12, bottom: y + 11)
     }
 
-    /// What a canvas pixel hits: a control, the chassis (nil control, inside the outline), or
-    /// nothing at all (outside it, which is not part of the window).
-    func hit(x canvasX: Int, y canvasY: Int) -> (inside: Bool, control: SoniqueSkinControl?) {
-        let x = canvasX + canvas.left, y = canvasY + canvas.top
-        if let ball = ballRects.first(where: { $0.1.contains(x, y) }) { return (true, .ball(ball.0)) }
-        if let button = drawerButtons.first(where: { $0.1.contains(x, y) }) { return (true, button.0) }
-        let inside = outline.contains { $0.contains(x, y) }
-        guard inside else { return (false, nil) }
-        if state.mode == .navigator, let tab = drawerPart("/rgn/nav/drawertop"), tab.contains(x, y) { return (true, .drawerTab) }
-        if let entry = menuEntries.first(where: { $0.hit.contains(x, y) }) { return (true, .menu(entry.item)) }
-        for (control, name) in regionControls {
-            if skin.region(state.mode.regions + name)?.contains(x, y) == true { return (true, control) }
+    /// What a canvas pixel hits. Outside the outline is not part of the window.
+    enum Hit: Equatable {
+        case outside, chassis, control(SoniqueSkinControl)
+
+        var isInside: Bool { self != .outside }
+        var control: SoniqueSkinControl? {
+            if case .control(let control) = self { return control }
+            return nil
         }
-        if let dial = drawerDials.first(where: { $0.1.contains(x, y) }) { return (true, dial.0) }
-        return (true, nil)
+    }
+
+    func hit(x canvasX: Int, y canvasY: Int) -> Hit {
+        let x = canvasX + canvas.left, y = canvasY + canvas.top
+        if let ball = ballRects.first(where: { $0.1.contains(x, y) }) { return .control(.ball(ball.0)) }
+        if let button = drawerButtons.first(where: { $0.1.contains(x, y) }) { return .control(button.0) }
+        guard outline.contains(where: { $0.contains(x, y) }) else { return .outside }
+        if state.mode == .navigator, let tab = drawerPart("/rgn/nav/drawertop"), tab.contains(x, y) { return .control(.drawerTab) }
+        if let entry = menuEntries.first(where: { $0.hit.contains(x, y) }) { return .control(.menu(entry.item)) }
+        for (control, name) in regionControls {
+            if skin.region(state.mode.regions + name)?.contains(x, y) == true { return .control(control) }
+        }
+        if let dial = drawerDials.first(where: { $0.1.contains(x, y) }) { return .control(dial.0) }
+        return .chassis
     }
 
     // MARK: - The navigator's menu screen

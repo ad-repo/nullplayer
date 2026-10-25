@@ -112,6 +112,13 @@ extension SoniqueSkinScene {
             smallDrawer = nil
         }
 
+        /// What follows from a change from `old`: a new mode lets go of the press and closes small
+        /// mode's drawer, and a new title scrolls from its start.
+        mutating func settle(after old: Self) {
+            if mode != old.mode { letGo() }
+            if host.title != old.host.title { marqueeOffset = 0 }
+        }
+
         /// Whether this is `old` with only the marquee moved on.
         func isScrolled(from old: Self) -> Bool {
             var scrolled = old

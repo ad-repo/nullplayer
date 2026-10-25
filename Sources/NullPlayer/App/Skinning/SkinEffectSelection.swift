@@ -27,15 +27,20 @@ final class SkinEffectSelection {
     /// A `.wmz` skin's `<EFFECTS>` rects.
     static let wmp = SkinEffectSelection(cavaScope: .wmpEffects, visClassicScope: .wmpEffects,
                                          waveformConsumerID: "wmp.effects.visclassic")
-    /// The Sonique navigator's visual mode screen, remembered by `SoniqueSkinMainWindowController`.
+    /// The Sonique navigator's visual mode screen: one choice for the family, as Sonique had one
+    /// visualizer, remembered across launches.
     static let sonique = SkinEffectSelection(cavaScope: .soniqueEffects, visClassicScope: .soniqueEffects,
-                                             waveformConsumerID: "sonique.effects.visclassic")
+                                             waveformConsumerID: "sonique.effects.visclassic",
+                                             persistenceKey: "soniqueEffect")
 
     /// The family's own Cava and vis_classic settings, which its surfaces draw with, so a choice
     /// in one family's right-click menu never moves another's or the standalone windows'.
     let cavaScope: CavaSettings.Scope
     let visClassicScope: VisClassicBridge.PreferenceScope
     let waveformConsumerID: String
+    /// Where the selection saves itself on every change (the effect id, and the preset under the
+    /// key plus `Preset`); nil when its family remembers it elsewhere (WMP, per skin).
+    private let persistenceKey: String?
 
     struct Effect {
         let id: String
@@ -90,14 +95,26 @@ final class SkinEffectSelection {
     var presetTitle: String = ""
 
     private init(cavaScope: CavaSettings.Scope, visClassicScope: VisClassicBridge.PreferenceScope,
-                 waveformConsumerID: String) {
+                 waveformConsumerID: String, persistenceKey: String? = nil) {
         self.cavaScope = cavaScope
         self.visClassicScope = visClassicScope
         self.waveformConsumerID = waveformConsumerID
+        self.persistenceKey = persistenceKey
         // The compact Spikes is a better first effect for the small, framed rectangles skins
         // author than borrowing the application's full-window visualization preference.
         index = 0
         presetTitle = ""
+        if let persistenceKey {
+            let defaults = UserDefaults.standard
+            index = Self.index(of: defaults.string(forKey: persistenceKey)) ?? 0
+            preset = max(0, defaults.integer(forKey: persistenceKey + "Preset"))
+        }
+    }
+
+    /// The catalogue entry a skin or a saved choice names, by id or title, case-insensitively.
+    private static func index(of name: String?) -> Int? {
+        let wanted = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return catalogue.firstIndex { $0.id == wanted || $0.title.lowercased() == wanted }
     }
 
     var current: Effect { Self.catalogue[min(max(0, index), Self.catalogue.count - 1)] }
@@ -107,10 +124,7 @@ final class SkinEffectSelection {
     /// what it was drawing and the read-back stays honest.
     @discardableResult
     func select(_ name: String) -> Bool {
-        let wanted = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard let match = Self.catalogue.firstIndex(where: {
-            $0.id == wanted || $0.title.lowercased() == wanted
-        }) else { return false }
+        guard let match = Self.index(of: name) else { return false }
         guard match != index else { return true }
         index = match
         preset = 0
@@ -119,15 +133,11 @@ final class SkinEffectSelection {
         return true
     }
 
-    /// Puts the rect back on what was last left showing (WMP: `WMPVisualizationSettingsStore`, per
-    /// skin; Sonique: one choice for the family).
+    /// Puts the rect back on what this skin was last left showing (`WMPVisualizationSettingsStore`).
     /// Unlike `select`, a missing or unknown id means *the default* rather than "change nothing":
     /// restoring a skin that has no record must not leave the previous skin's effect on screen.
     func restore(effect id: String?, preset value: Int) {
-        let wanted = (id ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        index = Self.catalogue.firstIndex(where: {
-            $0.id == wanted || $0.title.lowercased() == wanted
-        }) ?? 0
+        index = Self.index(of: id) ?? 0
         preset = max(0, value)
         presetTitle = ""
         post()
@@ -150,5 +160,11 @@ final class SkinEffectSelection {
 
     func stepPreset(by delta: Int) { setPreset(max(0, preset + delta)) }
 
-    private func post() { NotificationCenter.default.post(name: Self.didChange, object: self) }
+    private func post() {
+        if let persistenceKey {
+            UserDefaults.standard.set(current.id, forKey: persistenceKey)
+            UserDefaults.standard.set(preset, forKey: persistenceKey + "Preset")
+        }
+        NotificationCenter.default.post(name: Self.didChange, object: self)
+    }
 }

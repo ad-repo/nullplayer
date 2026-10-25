@@ -174,9 +174,10 @@ struct SkinnedSurfaceStyle: Equatable {
     /// How far a marked row's colour must be from the row colour to count as a different one.
     static let distinctFromRows: CGFloat = 1.5
 
-    /// `.wal`'s rule for a marked row (`legibleCurrentRowColor`): the first of `candidates` readable
-    /// on `background`, never one within `distinctFromRows` of the `rows` colour. Without the filter
-    /// `legible`'s walk can end on the row colour itself, and the marked row looks like every other.
+    /// A marked row's colour: the first of `candidates` readable on `background`, never one within
+    /// `distinctFromRows` of the `rows` colour. Without the filter `legible`'s walk can end on the row
+    /// colour itself, and the marked row looks like every other. `.wal`'s `legibleCurrentRowColor`
+    /// guards the same failure but drops only the exact row colour.
     static func marked(_ candidates: [NSColor], apartFrom rows: NSColor, on background: NSColor) -> NSColor {
         legible(preferring: candidates.filter { contrastRatio($0, rows) >= distinctFromRows }, on: background)
     }

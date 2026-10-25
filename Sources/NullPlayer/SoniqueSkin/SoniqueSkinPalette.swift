@@ -6,7 +6,7 @@ import AppKit
 /// every foreground through `legible`.
 ///
 /// The selected and the playing playlist row are marked apart from the rows
-/// (`SkinnedSurfaceStyle.marked`, `.wal`'s rule): the skin's other colours, readable on the
+/// (`SkinnedSurfaceStyle.marked`): the skin's other colours, readable on the
 /// background, never the row colour. Classic white collides with the rows on
 /// skins whose rows are near-white (sonique's cyan and Pokemon's yellow are 1.25:1 from it), and the
 /// guard that keeps a row readable otherwise walks straight back to the row colour: on sonique,

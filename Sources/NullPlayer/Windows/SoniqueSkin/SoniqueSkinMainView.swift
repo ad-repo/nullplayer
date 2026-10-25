@@ -15,12 +15,10 @@ final class SoniqueSkinMainView: NSView {
             if released == state { redraw() } else { state = released }
         }
     }
-    /// Everything on screen but the skin. A mode change lets go of the press and closes small mode's
-    /// drawer; a new title scrolls from its start.
+    /// Everything on screen but the skin, settled after every change (`State.settle(after:)`).
     var state = SoniqueSkinScene.State() {
         didSet {
-            if state.mode != oldValue.mode { state.letGo() }
-            if state.host.title != oldValue.host.title { state.marqueeOffset = 0 }
+            state.settle(after: oldValue)
             guard state != oldValue else { return }
             show(state, after: oldValue)
         }
@@ -172,12 +170,13 @@ final class SoniqueSkinMainView: NSView {
 
     // MARK: - Hit testing, skin pixels
 
-    private func hit(_ event: NSEvent) -> (inside: Bool, control: SoniqueSkinControl?)? {
+    private func hit(_ event: NSEvent) -> SoniqueSkinScene.Hit {
         hit(at: convert(event.locationInWindow, from: nil))
     }
 
-    private func hit(at point: NSPoint) -> (inside: Bool, control: SoniqueSkinControl?)? {
-        guard let scene, let canvas = canvasPoint(point) else { return nil }
+    /// With no scene yet, nothing is part of the window.
+    private func hit(at point: NSPoint) -> SoniqueSkinScene.Hit {
+        guard let scene, let canvas = canvasPoint(point) else { return .outside }
         return scene.hit(x: canvas.x, y: canvas.y)
     }
 
@@ -205,7 +204,7 @@ final class SoniqueSkinMainView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let local = superview.map({ convert(point, from: $0) }), bounds.contains(local) else { return super.hitTest(point) }
-        return hit(at: local)?.inside == true ? self : nil
+        return hit(at: local).isInside ? self : nil
     }
 
     // MARK: - Mouse
@@ -223,7 +222,7 @@ final class SoniqueSkinMainView: NSView {
     /// unless the screen's top edge leaves it no room.
     override func mouseMoved(with event: NSEvent) {
         guard state.mode == .small else { return }
-        if hit(event)?.inside == true {
+        if hit(event).isInside {
             drawerClose?.cancel()
             if state.smallDrawer == nil { state.smallDrawer = roomAbove ? .top : .bottom }
         } else {
@@ -246,7 +245,8 @@ final class SoniqueSkinMainView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard let hit = hit(event), hit.inside else { return }
+        let hit = self.hit(event)
+        guard hit.isInside else { return }
         if let control = hit.control, control.isActionable {
             state.pressed = control
             if case .eqSlider(let index) = control, let value = sliderValue(index, at: event) {
@@ -282,7 +282,7 @@ final class SoniqueSkinMainView: NSView {
         knobDrag = nil
         guard let pressed = state.pressed else { return }
         state.pressed = nil
-        guard state.host.dial(pressed) == nil, hit(event)?.control == pressed else { return }
+        guard state.host.dial(pressed) == nil, hit(event).control == pressed else { return }
         onCommand?(pressed)
     }
 

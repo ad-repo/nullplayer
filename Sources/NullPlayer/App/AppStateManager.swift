@@ -720,7 +720,7 @@ class AppStateManager {
             modernSkinName: UserDefaults.standard.string(forKey: ModernSkinFamily.modern.skinNameKey),
             metalSkinName: UserDefaults.standard.string(forKey: ModernSkinFamily.metal.skinNameKey),
             wmpSkinName: wm.uiMode == .wmp
-                ? UserDefaults.standard.string(forKey: WMPSkinImporter.selectedSkinNameKey) : nil,
+                ? WMPSkinImporter().selection.name : nil,
             wmpViewID: wm.uiMode == .wmp
                 ? UserDefaults.standard.string(forKey: WMPSkinImporter.selectedViewIDKey) : nil,
             audionFaceName: wm.uiMode == .audion ? AudionFaceImporter().selection.name : nil,
