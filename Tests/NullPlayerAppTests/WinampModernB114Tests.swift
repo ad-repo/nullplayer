@@ -122,6 +122,20 @@ final class WinampModernB114Tests: XCTestCase {
                        "and the half it kept is opaque")
     }
 
+    /// A cut with nothing positive beside it never takes most of the window: Winampple's holders
+    /// stretch an opaque 1x1 over their whole client at `sysregion="-2"`, and its author saw a
+    /// library there, not the desktop.
+    func testACutAloneNeverTakesMostOfTheWindow() throws {
+        let scene = try makeScene(
+            layoutAttributes: #"desktopalpha="0""#,
+            resources: Self.sheenBitmap + #"<bitmap id="bite" file="bite.png"/>"#,
+            markup: Self.sheenLayer
+                + #"<layer id="bite" x="0" y="0" w="100" h="40" image="bite" sysregion="-2"/>"#,
+            art: Self.sheenArt.merging(["bite.png": Self.solidPNG(red: 255, green: 255, blue: 255)]) { a, _ in a }
+        )
+        XCTAssertEqual(Int(try XCTUnwrap(scene.pixel(x: 30, y: 10)).alpha), 255, "the window stays whole")
+    }
+
     /// The buffer the opaque path renders through is snapped to the caller's device grid, so the
     /// picture that comes back is the same one an ordinary draw produces — pixel for pixel, at 2x.
     func testTheOpaquePathIsPixelExactAtRetinaScale() throws {

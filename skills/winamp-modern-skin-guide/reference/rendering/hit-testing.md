@@ -303,6 +303,17 @@ the corpus opens its composition with a full-bleed positive anyway (`wasabi.stan
 `Wasabi:MainFrame:*` all carry `sysregion="1"` on the group that fills the window), so the seeded
 rect gives the same answer wherever a skin does say.
 
+**Nor by cuts alone, past half the window** (2026-10-25). Winampple_1_1's four holder windows
+(`MLibrary`, `video`, `Visualizations`, the playlist) each stretch `bg.playlist` — an opaque 1x1
+white — over their client at `sysregion="-2"`, 20px up and left of it, with no positive region object
+in the layout. Cut from the seeded rect that took 85% of each window: the library body was desktop and
+only an offset white or black strip stayed right and below ("four frames draw offset slabs"). A layout
+with no positive region object whose cut would remove more than half the window keeps its rect. The
+simpler rule — "no positive object, no region", which is what building from nothing implies — was
+measured first and un-cut the corner silhouettes of 47 skins (179 images) whose cut-only layouts are
+clearly meant to round. The half-window line moves Winampple's four images and nothing else; every
+other corpus cut is 18% or less. A threshold is a stand-in, marked `ponytail:` in `buildWindowRegion`.
+
 **A wrapper group reaches only as far as what it holds** (2026-10-17). That full-bleed positive is
 an artwork-less group, and such a group counts as its box only when nothing inside it declares a
 region. When its descendants do, it reaches as far as its visible leaves plus any group inside it

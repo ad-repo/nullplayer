@@ -490,7 +490,7 @@ extension WasabiSceneRenderer {
         // test reads, and the two must agree pixel for pixel or a click lands on a corner the eye
         // cannot see.
         var alpha = [UInt8](repeating: 255, count: width * height)
-        var cutsAnything = false
+        var cutCount = 0
         rgba.withUnsafeMutableBufferPointer { buffer in
             for index in 0..<(width * height) {
                 // The buffer holds what the window *keeps*; the image it becomes is the complement,
@@ -499,12 +499,20 @@ extension WasabiSceneRenderer {
                 let cut: UInt8 = buffer[index * 4 + 3] >= Self.regionKeepFloor ? 0 : 255
                 for component in 0..<4 { buffer[index * 4 + component] = cut }
                 alpha[index] = 255 - cut
-                if cut != 0 { cutsAnything = true }
+                if cut != 0 { cutCount += 1 }
             }
         }
         // Region objects that resolve to nothing overlapping the window leave it rectangular, and an
         // empty cut is a full-window composite per frame for no shape at all.
-        guard cutsAnything else { return nil }
+        guard cutCount > 0 else { return nil }
+        // **Cuts alone never take most of the window.** Every corpus silhouette trims corners and
+        // edges, 18% at most; Winampple's four holders each stretch an opaque 1x1 white over their
+        // client at `sysregion="-2"`, 20px up and left of it, with no positive region object at all.
+        // As a cut from the rect that took 85% of the window — the whole body — and left the offset
+        // strip right and below. Its author saw a library there.
+        // ponytail: a half-window threshold stands in for Winamp's build-from-nothing composition,
+        // which cut-only corner skins contradict; replace it when a skin shows the real rule.
+        if !cuts.contains(where: \.additive), cutCount * 2 > width * height { return nil }
         guard let provider = CGDataProvider(data: Data(rgba) as CFData),
               let cut = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
                                 bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
