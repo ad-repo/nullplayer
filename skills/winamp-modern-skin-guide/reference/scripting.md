@@ -54,15 +54,27 @@ the class — everything else becomes a generic dynamic object, which is what a 
 > `execute` silently returns at its `guard let dispatcher` without running an instruction — the test
 > then passes for the wrong reason. Bind the dispatcher to a local first.
 
-Extending the API: add to `signature(for:)` (`WinampModernScriptSignatures`) **and** the matching system/GUI/object dispatch path
-together, so argument counts and return kinds stay explicit. Add a regression test with each method.
+Extending the API: one `table.add("name", arity) { runtime, call in … }` in the receiver's
+method table (`systemMethods`, `guiStateMethods`, `dynamicMethods`, … — a `static let` beside the code
+it calls). The arity is declared beside the body, and `signature(for:)` is derived from the tables, so
+the two cannot drift (B243). Names are lowercased. A name another table already declares takes the
+**same** arity there — the interpreter unwinds by one arity whichever body answers, and
+`WinampModernB243Tests` fails on a mismatch; a verb that means something else on one class is gated
+with `on: MakiClassGUID.<class>` — which gates the **arity** only; the body runs for whatever
+reaches its table, so a table a kind of object owns is asked only for that kind (`guiKindTables`). A
+new table joins a dispatch list (`systemFamilies`, `guiKindTables`, `guiFamilies`), and `tables` reads
+the arities off those lists. A body answers nil to pass the call to the next table that declares
+the name (the `GuiObject` families run in `guiFamilies` order). Bodies are static closures: reach the
+runtime through `runtime.`, the call through `call.arguments`, `call.object`, `call.program`, and
+spell the type out (`WinampModernScriptRuntime.x`) — `Self` is not available in a stored property's
+initializer. Add a regression test with each method.
 Use the measured-demand signal rather than porting reference stubs blindly — see
 [Debugging](#debugging-a-skin) below.
 
-> **Gotcha:** a method with a `signature(for:)` entry but a stubbed dispatch case is **invisible to
+> **Gotcha:** a method with a table entry but a stubbed body is **invisible to
 > the compatibility report** — it looks implemented and returns a plausible value. `newgroup`
 > returned `.null` this way, and the report showed zero script findings while the entire Winamp
-> Modern window body was missing. If you cannot implement a method, leave it out of `signature(for:)`
+> Modern window body was missing. If you cannot implement a method, leave it out of the tables
 > so the demand tally records it.
 
 > **Gotcha:** the blocking list is a **queue, not a set**. Each method you add lets its script run

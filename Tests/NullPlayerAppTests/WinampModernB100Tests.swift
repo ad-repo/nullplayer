@@ -35,7 +35,6 @@ final class WinampModernB100Tests: XCTestCase {
             let signature = try XCTUnwrap(runtime.signature(for: name, classGUID: nil),
                                           "CentroSUI calls \(name) as a method five times")
             XCTAssertEqual(signature.argumentCount, 0)
-            XCTAssertEqual(signature.returnKind, .null)
         }
     }
 

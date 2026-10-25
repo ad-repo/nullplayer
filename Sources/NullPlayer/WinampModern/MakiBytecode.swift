@@ -750,9 +750,9 @@ struct MakiBytecodeParser {
     }
 }
 
+/// How many arguments the interpreter pops for a call. The return value is whatever the body answers.
 struct MakiMethodSignature {
     let argumentCount: Int
-    let returnKind: MakiValueKind
 }
 
 protocol MakiMethodDispatching: AnyObject {

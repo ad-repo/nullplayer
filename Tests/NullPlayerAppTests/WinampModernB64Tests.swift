@@ -46,7 +46,6 @@ final class WinampModernB64Tests: XCTestCase {
         let signature = try XCTUnwrap(runtime.signature(for: "onSeek", classGUID: nil),
                                       "Anexa's progress bar is filled by calling this handler")
         XCTAssertEqual(signature.argumentCount, 1)
-        XCTAssertEqual(signature.returnKind, .null)
     }
 
     /// And the call is a *dispatch*, not a swallow — and is never counted as an unsupported method,
