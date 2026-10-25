@@ -3720,17 +3720,8 @@ class WindowManager {
     func toggleVideoPlayer() {
         if routeWMPSkinSurface(.video) { return }
         guard let controller = videoPlayerWindowController else { return }
-        // A hosted picture lives in the skin's own video window, so that is the window this shows and
-        // hides — ordering out this controller's own would do nothing visible at all (B20).
-        if controller.isVideoOutputHosted {
-            if controller.isVideoOutputVisible { hideWinampModernVideoSurface() }
-            else { hostVideoOutputInWinampModernSkin() }
-            return
-        }
-        // A film a `.wal` player put away is unparked, not lost: showing it again asks the skin, as
-        // the first showing did, rather than opening this controller's own window (B248).
-        if controller.currentTitle != nil, controller.window?.isVisible != true,
-           hostVideoOutputInWinampModernSkin() { return }
+        if uiMode.controllerFamily == .winampModern,
+           (mainWindowController as? WinampModernMainWindowController)?.toggleVideo() == true { return }
         if controller.window?.isVisible == true {
             controller.window?.orderOut(nil)
         } else {

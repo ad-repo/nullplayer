@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B251 — The Video Player menu item makes one `.wal` call — closed 2026-10-25
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B251 | **The Video Player menu item decides `.wal` routing in `WindowManager`.** `toggleVideoPlayer` now carries a WMP route, a `.wal` detach route (through the pass-through `toggleWinampModernVideoDetach`) and a `.wal` hosted-output route, in that order; the controller's `setAuxiliaryWindow` and its skin-window toggle each add their own detach branch. Move the decision behind one controller entry (`toggleVideo() -> Bool`) so `WindowManager` makes one call for the mode, and fold `isVideoSurfaceContainer(id) \|\| videoDetachContainerID == id` into one "this window holds the video box" predicate (after B246, hide releases the box and the player reclaims it). The detach code moves with the rest of the video lifecycle out of the 2,915-line controller. Done when `toggleVideoPlayer` has one `.wal` call and Winamp Single GUI's menu detach, window close and fullscreen round-trip behave as now | code health; no corpus demand | S | 3 |
+
+**Closed 2026-10-25**. B248 already removed the detach route and its pass-through. `toggleVideoPlayer` now makes one `.wal` call, `WinampModernMainWindowController.toggleVideo() -> Bool` (hosted: hide or re-host; a film the player put away: re-host through the skin; false leaves NullPlayer's own window in charge). `isVideoSurfaceContainer(id) || videoDetachContainerID == id` is one predicate, `isVideoWindow(_:)`. The video lifecycle moved to `WinampModernMainWindowController+Video.swift`, taking the controller from 2,932 to 2,737 lines. Live on Winamp Single GUI with a film: menu hide/show in the pane, shaded → `Video` window → un-shade back to the pane, and VID_FS → fullscreen → Escape back to the pane.
+
 ## B248 — The video component's own window is for a film no holder takes — closed 2026-10-25
 
 | Id | Item | Reach | Effort | Tier |
