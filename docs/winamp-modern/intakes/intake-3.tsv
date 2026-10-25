@@ -7,7 +7,7 @@ Freeform_Simpsons_Skin.wal	1012a6a777caf32e59b5530a8b794f7361645a442373a076e068a
 Celica_Amp.wal	b151e18ffb84bf5fc6a033d55c40d7ef0febb3d8e3460c99b87b1bbc5f9de2bd	live	2026-10-25	-	-
 Official_Trapt_Skin.wal	c18cdc9f76b4105c4256b3745bcfa520f00a91b021f9395fae5771c541cd6d6d	live	2026-10-25	-	-
 Abducted.wal	7d3d351a0e6d622b429a9f4616e1aaac358003131c7717c5a94bf42df608e8f1	live	2026-10-25	-	-
-CardiumII.wal	a0ce1ae47a2a870b249ea492350811702b67abba2da653185348ffab902a47d4	headless	2026-10-25	-	Phase 5: 5 buttons covered by main_bg (drawer state?), seek under ghost; volanim silent
+CardiumII.wal	a0ce1ae47a2a870b249ea492350811702b67abba2da653185348ffab902a47d4	live	2026-10-25	-	-
 cPro__Creed__Full_Circle.wal	a84b2601029de0ed3fd8c8188579c7b49b0fba07dc271d0919450c3228e0c5b1	headless	2026-10-25	-	Phase 5: notifier 2/15 and Back overlap; applyStyle is a third-party plugin class (D); sysmenu right flips (noise)
 Apill.wal	2a8e7da33fe3898ae63dadd7da379036a559aa3211725022d60c569dc109a554	headless	2026-10-25	-	Phase 5: :componenttitle drawn as text in Component frames; SeekAnim silent; motion suspect
 Sencillo_1_1.wal	3ff0c388597b7155ea137ccb14d16355ca04d8d9582f694349067760e65ff20a	headless	2026-10-25	-	Phase 5: player.seek.track.* bitmaps missing; motion suspect
