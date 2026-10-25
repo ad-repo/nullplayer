@@ -177,8 +177,13 @@ extension WasabiStandardFrames {
                                group: (String) -> [WalXMLNode]?,
                                bitmapOpaqueBounds: (String) -> CGRect?) -> Border {
         var border = Border()
-        measure(children, into: &border, offset: .zero, margin: .zero,
+        var titleBottom = 0.0
+        measure(children, into: &border, titleBottom: &titleBottom, offset: .zero, margin: .zero,
                 group: group, bitmapOpaqueBounds: bitmapOpaqueBounds, depth: 0, visited: [])
+        // A frame with no top strip still has a title, and the client starts below it: Circlo's top
+        // band is a `move` tile and two corners, and measured as 0 its Color Themes list sat under
+        // the title text.
+        if border.top == 0 { border.top = titleBottom }
         return border
     }
 
@@ -224,7 +229,7 @@ extension WasabiStandardFrames {
     }
 
     private static func measure(_ children: [WalXMLNode], into border: inout Border,
-                                offset: CGPoint, margin: CGPoint,
+                                titleBottom: inout Double, offset: CGPoint, margin: CGPoint,
                                 group: (String) -> [WalXMLNode]?,
                                 bitmapOpaqueBounds: (String) -> CGRect?,
                                 depth: Int, visited: Set<String>) {
@@ -243,9 +248,15 @@ extension WasabiStandardFrames {
                 x: margin.x + (isRelative("relatw") ? max(0, -(number("w") ?? 0)) : 0),
                 y: margin.y + (isRelative("relath") ? max(0, -(number("h") ?? 0)) : 0))
 
+            if node.name.caseInsensitiveCompare("group") == .orderedSame,
+               node.attribute("id")?.caseInsensitiveCompare("wasabi.titlebar") == .orderedSame,
+               !isRelative("relaty"), let height = number("h") {
+                titleBottom = max(titleBottom, offset.y + y + height)
+            }
             if let edges = WasabiResizeEdges(attribute: node.attribute("resize")) {
-                // The strip's *opaque* part is the border: Mad Magazine's strips are 39x37 tiles
-                // whose art is a 4-5px edge, and measured by tile size its playlist sat under the title.
+                // The strip's *drawn edge* is the border: Mad Magazine's strips are 39x37 tiles
+                // whose art is a 4-5px edge, and measured by tile size its playlist sat under the title;
+                // Circlo's are opaque 44px tiles, an 8px edge and the rest body fill (`edgeBounds`).
                 // The art wins over a declared `w`/`h` on every side; the declared size stands only
                 // for a strip whose bitmap cannot be read.
                 let opaque = node.attribute("image").flatMap(bitmapOpaqueBounds)
@@ -264,10 +275,10 @@ extension WasabiStandardFrames {
                 }
             }
 
-            measure(node.children, into: &border, offset: childOffset, margin: childMargin,
+            measure(node.children, into: &border, titleBottom: &titleBottom, offset: childOffset, margin: childMargin,
                     group: group, bitmapOpaqueBounds: bitmapOpaqueBounds, depth: depth + 1, visited: visited)
             if let nested = referencedGroup(node, group: group, visited: visited) {
-                measure(nested.children, into: &border, offset: childOffset, margin: childMargin,
+                measure(nested.children, into: &border, titleBottom: &titleBottom, offset: childOffset, margin: childMargin,
                         group: group, bitmapOpaqueBounds: bitmapOpaqueBounds, depth: depth + 1,
                         visited: nested.visited)
             }

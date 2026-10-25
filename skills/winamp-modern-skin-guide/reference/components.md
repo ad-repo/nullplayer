@@ -236,6 +236,14 @@ content="pledit.content.group">`), **Sony Walkman** and **canum**. Four things c
   title. The art wins over a declared `w`/`h` on every side (EMP2's library came out at its authored
   400px wide only then); the declared size stands for a bitmap with no file (`$solid`), and a strip
   with neither contributes nothing rather than zero.
+- **A side strip's flat band is not its edge** (2026-10-25, `WasabiResourceCache.edgeBounds`): a run of
+  identical columns covering half the tile or more is body fill. Circlo_T_roniC's `frame-l`/`frame-r`
+  are fully opaque 44px tiles around an 8px edge, and measured whole the browser's buttons overlapped
+  and hid `Stop`. Columns only: a top or bottom band's flat part holds the title or status bar, and
+  trimming rows put YoYoBoy's playlist over its Add/Rem/Sel bar.
+- **No top strip, the client starts below the title** — the frame's `wasabi.titlebar` group's bottom.
+  Circlo's top band is a `move` tile and two corners; measured as 0, its Color Themes list ran under
+  the title, and Celica's playlist covered its own title bar.
 
 **The synthesizer still rejects these frames, and that is now stale.** `usableFrame` asks the
 bytecode whether a frame can build its own client area, so TRON's Media Library — a window *we*

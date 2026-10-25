@@ -93,4 +93,39 @@ extension WasabiResourceCache {
         guard maxX >= 0 else { return nil }
         return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
     }
+
+    /// `opaqueBounds` less a flat band at its left or right: a run of identical columns covering at
+    /// least half the box is fill, not edge. Circlo_T_roniC's `frame-l.png` is a 44px opaque tile whose
+    /// edge is its first 8 columns and the rest the body colour; read whole, its windows' contents
+    /// sat 44px in and the browser's buttons ran into each other. **Columns only**: a top or bottom
+    /// band's flat part is where the title or the status bar sits, and trimming rows put
+    /// YoYoBoy's playlist over its Add/Rem/Sel bar.
+    static func edgeBounds(of image: CGImage) -> CGRect? {
+        guard let box = opaqueBounds(of: image) else { return nil }
+        let width = image.width, height = image.height
+        var rgba = [UInt32](repeating: 0, count: width * height)
+        let drawn = rgba.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                                          bitsPerComponent: 8, bytesPerRow: width * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return box }
+        let rows = Int(box.minY)..<Int(box.maxY), columns = Array(Int(box.minX)..<Int(box.maxX))
+        func column(_ x: Int) -> [UInt32] { rows.map { rgba[$0 * width + x] } }
+        // How many columns from one end repeat the end column, stepping inward; 0 under half.
+        func band(_ xs: [Int], of total: Int) -> Int {
+            guard let first = xs.first else { return 0 }
+            let end = column(first)
+            let count = xs.dropFirst().prefix { column($0) == end }.count + 1
+            return count * 2 >= total && count < total ? count : 0
+        }
+        let right = band(columns.reversed(), of: columns.count)
+        let left = band(columns, of: columns.count - right)
+        guard left + right < columns.count else { return box }
+        return CGRect(x: box.minX + CGFloat(left), y: box.minY,
+                      width: box.width - CGFloat(left + right), height: box.height)
+    }
 }

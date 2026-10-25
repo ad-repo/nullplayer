@@ -1674,7 +1674,7 @@ final class WasabiSkinInitializer {
                         guard let resource = resourceRegistry?.resolvedDefinition(identifier: identifier)
                         else { return nil }
                         if let cut = WasabiResourceCache.cutImage(of: resource, in: vfs) {
-                            return WasabiResourceCache.opaqueBounds(of: cut)
+                            return WasabiResourceCache.edgeBounds(of: cut)
                         }
                         // A generated (`$solid`) bitmap has no file: it is its declared size.
                         guard let width = resource.attributes["w"].flatMap(Double.init),
