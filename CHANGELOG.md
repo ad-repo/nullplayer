@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### New features
+
+- **Track Radio for the local library** — right-click a local track and choose **Start Track Radio**
+  to queue tracks like it, scored from the tags (artist, genre, year, tempo, key, grouping) with
+  no audio analysis. The CLI gains `--source local --radio track|library|genre|decade|artist` and
+  `--list-queue`, which prints the queue a `--radio` mode would play without playing it.
+
+## 0.33.1
+
+### New features
+
+- **Classic skins' clutterbar works** — the O A I D V buttons on the main window's left edge now
+  open the options menu, toggle Always on Top, show Now Playing info, toggle double size and open
+  the Visuals menu, drawn with the skin's own pressed and lit art.
+
 ### Fixes
 
 - **Quitting no longer hangs with a Windows Media Player skin** — the skin's settings watcher could

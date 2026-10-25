@@ -33,6 +33,7 @@ struct CLIOptions {
     var listArtists = false
     var listAlbums = false
     var listTracks = false
+    var listQueue = false
     var listGenres = false
     var listPlaylists = false
     var listStations = false
@@ -75,7 +76,7 @@ struct CLIOptions {
     var tuningOffsetCents: Double? // direct override in cents
 
     var isQueryMode: Bool {
-        listSources || listLibraries || listArtists || listAlbums || listTracks ||
+        listSources || listLibraries || listArtists || listAlbums || listTracks || listQueue ||
         listGenres || listPlaylists || listStations || listDevices ||
         listOutputs || listEQ || isSearchQuery || searchAlbums != nil
     }
@@ -108,6 +109,7 @@ struct CLIOptions {
             case "--list-artists": opts.listArtists = true
             case "--list-albums": opts.listAlbums = true
             case "--list-tracks": opts.listTracks = true
+            case "--list-queue": opts.listQueue = true
             case "--list-genres": opts.listGenres = true
             case "--list-playlists": opts.listPlaylists = true
             case "--list-stations": opts.listStations = true

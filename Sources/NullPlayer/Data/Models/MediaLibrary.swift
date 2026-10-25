@@ -2721,6 +2721,17 @@ class MediaLibrary {
         return Array(filtered.prefix(limit))
     }
 
+    /// Tracks like `seed`, with the seed first and the closest matches after it.
+    ///
+    /// Ranks the rest of the library with `LocalTrackSimilarity`, then applies the radio history
+    /// filter and the per-artist variety cap as the other local radios do. A seed whose tags
+    /// match nothing yields just the seed.
+    func createLocalTrackRadio(from seed: LibraryTrack, limit: Int = RadioPlaybackOptions.playlistLength) -> [Track] {
+        let ranked = LocalTrackSimilarity(seed: seed).ranked(tracksSnapshot).map { $0.toTrack() }
+        let historyFiltered = LocalRadioHistory.shared.filterOutHistoryTracks(ranked)
+        return filterLocalForArtistVariety([seed.toTrack()] + historyFiltered, limit: limit)
+    }
+
     private func filterLocalForArtistVariety(_ tracks: [Track], limit: Int, maxPerArtist: Int = RadioPlaybackOptions.maxTracksPerArtist) -> [Track] {
         if maxPerArtist <= RadioPlaybackOptions.unlimitedMaxTracksPerArtist {
             return Array(tracks.prefix(limit))

@@ -331,6 +331,8 @@ Sources/NullPlayer/
 
 `MediaLibrary` also has `createLocalArtistRadio(artist:limit:)` for artist-seeded radio (prefers `albumArtist` over `artist`).
 
+**Local Track Radio:** `createLocalTrackRadio(from:limit:)` builds a `LocalTrackSimilarity(seed:)` (`Radio/LocalTrackSimilarity.swift`; the seed is normalized once) and calls `ranked(_:)` on the library: tracks whose tag similarity (artist via `LibraryTrack.artistNames`, genre-token Jaccard, year, BPM incl. half/double time, key, grouping) is below `minimumScore = 2.0` are dropped, rating/playCount nudges only reorder the rest, and `jitter` shuffles near-ties. `MediaLibrary` then filters local radio history, caps per artist and puts the seed first. A CLI seed is resolved by `CLISourceResolver.resolveLocalSeed` (`TitleMatch`: exact title wins, ambiguous titles fail listing candidates, `--artist`/`--album` narrow, curly apostrophes folded). Entry points: the `.localTrack` context menu item "Start Track Radio" (`LibraryBrowserActions+Menus.swift`, built on a detached task) and `CLISourceResolver.resolveLocalRadio`. Tags only. **Tests must not touch `MediaLibrary.shared` or `LocalRadioHistory.shared`** (they open the real databases); test `LocalTrackSimilarity` directly.
+
 ### RadioConfig
 
 `RadioConfig` (file: `Plex/PlexServerClient.swift`) provides shared constants:

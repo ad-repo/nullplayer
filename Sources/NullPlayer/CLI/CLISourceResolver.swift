@@ -538,7 +538,9 @@ struct CLISourceResolver {
 
     // MARK: - Video Resolution
 
-    private enum VideoMatch {
+    /// Resolves a title typed on the command line: an exact (case-insensitive) match wins, else a
+    /// single partial match; several matches fail listing the candidates rather than guessing.
+    private enum TitleMatch {
         static func exactOrContains<T>(
             _ items: [T],
             query: String,
@@ -581,7 +583,7 @@ struct CLISourceResolver {
         let mgr = PlexManager.shared
         if let title = opts.movie {
             let movies = try await mgr.fetchAllMovies()
-            let movie = try VideoMatch.exactOrContains(
+            let movie = try TitleMatch.exactOrContains(
                 movies,
                 query: title,
                 title: { $0.title },
@@ -599,7 +601,7 @@ struct CLISourceResolver {
             throw CLISourceError.missingRequiredArg("--episode", "--show <name>")
         }
         let shows = try await mgr.fetchAllShows()
-        let show = try VideoMatch.exactOrContains(
+        let show = try TitleMatch.exactOrContains(
             shows,
             query: showName,
             title: { $0.title },
@@ -616,7 +618,7 @@ struct CLISourceResolver {
         if let episodeNumber = opts.number {
             episodes = episodes.filter { $0.index == episodeNumber }
         }
-        let episode = try VideoMatch.exactOrContains(
+        let episode = try TitleMatch.exactOrContains(
             episodes,
             query: episodeTitle,
             title: { $0.title },
@@ -629,7 +631,7 @@ struct CLISourceResolver {
         let mgr = JellyfinManager.shared
         if let title = opts.movie {
             let movies = try await mgr.fetchMovies()
-            let movie = try VideoMatch.exactOrContains(
+            let movie = try TitleMatch.exactOrContains(
                 movies,
                 query: title,
                 title: { $0.title },
@@ -647,7 +649,7 @@ struct CLISourceResolver {
             throw CLISourceError.missingRequiredArg("--episode", "--show <name>")
         }
         let shows = try await mgr.fetchShows()
-        let show = try VideoMatch.exactOrContains(
+        let show = try TitleMatch.exactOrContains(
             shows,
             query: showName,
             title: { $0.title },
@@ -664,7 +666,7 @@ struct CLISourceResolver {
         if let episodeNumber = opts.number {
             episodes = episodes.filter { $0.index == episodeNumber }
         }
-        let episode = try VideoMatch.exactOrContains(
+        let episode = try TitleMatch.exactOrContains(
             episodes,
             query: episodeTitle,
             title: { $0.title },
@@ -677,7 +679,7 @@ struct CLISourceResolver {
         let mgr = EmbyManager.shared
         if let title = opts.movie {
             let movies = try await mgr.fetchMovies()
-            let movie = try VideoMatch.exactOrContains(
+            let movie = try TitleMatch.exactOrContains(
                 movies,
                 query: title,
                 title: { $0.title },
@@ -695,7 +697,7 @@ struct CLISourceResolver {
             throw CLISourceError.missingRequiredArg("--episode", "--show <name>")
         }
         let shows = try await mgr.fetchShows()
-        let show = try VideoMatch.exactOrContains(
+        let show = try TitleMatch.exactOrContains(
             shows,
             query: showName,
             title: { $0.title },
@@ -712,7 +714,7 @@ struct CLISourceResolver {
         if let episodeNumber = opts.number {
             episodes = episodes.filter { $0.index == episodeNumber }
         }
-        let episode = try VideoMatch.exactOrContains(
+        let episode = try TitleMatch.exactOrContains(
             episodes,
             query: episodeTitle,
             title: { $0.title },
@@ -805,6 +807,8 @@ struct CLISourceResolver {
 
     private static func resolveRadio(source: String, mode: String, opts: CLIOptions) async throws -> [Track] {
         switch source {
+        case "local":
+            return try resolveLocalRadio(mode: mode, opts: opts)
         case "plex":
             return try await resolvePlexRadio(mode: mode, opts: opts)
         case "subsonic":
@@ -815,6 +819,66 @@ struct CLISourceResolver {
             return try await resolveEmbyRadio(mode: mode, opts: opts)
         default:
             throw CLISourceError.invalidRadioMode(mode, source, [])
+        }
+    }
+
+    /// The library track a typed title (and optional artist and album) names. Curly and straight
+    /// apostrophes are treated alike.
+    private static func resolveLocalSeed(title: String, artist: String?, album: String?) throws -> LibraryTrack {
+        func fold(_ text: String) -> String {
+            text.replacingOccurrences(of: "\u{2019}", with: "'")
+                .replacingOccurrences(of: "\u{2018}", with: "'")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let wantedArtist = artist.map(fold).flatMap { $0.isEmpty ? nil : $0 }
+        let wantedAlbum = album.map(fold).flatMap { $0.isEmpty ? nil : $0 }
+        let pool = MediaLibrary.shared.tracksSnapshot.filter { track in
+            if let wantedArtist,
+               !track.artistNames.contains(where: { fold($0).localizedCaseInsensitiveCompare(wantedArtist) == .orderedSame }) {
+                return false
+            }
+            if let wantedAlbum, fold(track.album ?? "").localizedCaseInsensitiveCompare(wantedAlbum) != .orderedSame {
+                return false
+            }
+            return true
+        }
+        return try TitleMatch.exactOrContains(
+            pool,
+            query: fold(title),
+            title: { fold($0.title) },
+            candidateDescription: { "\($0.artist ?? "Unknown") - \($0.title)" + ($0.album.map { " (\($0))" } ?? "") }
+        )
+    }
+
+    private static func resolveLocalRadio(mode: String, opts: CLIOptions) throws -> [Track] {
+        let library = MediaLibrary.shared
+        switch mode {
+        case "library":
+            return library.createLocalLibraryRadio()
+        case "genre":
+            guard let genre = opts.genre else {
+                throw CLISourceError.missingRequiredArg("--radio genre", "--genre <name>")
+            }
+            return library.createLocalGenreRadio(genre: genre)
+        case "decade":
+            guard let decade = opts.decade else {
+                throw CLISourceError.missingRequiredArg("--radio decade", "--decade <year>")
+            }
+            return library.createLocalDecadeRadio(start: decade, end: decade + 9)
+        case "artist":
+            guard let artist = opts.artist else {
+                throw CLISourceError.missingRequiredArg("--radio artist", "--artist <name>")
+            }
+            return library.createLocalArtistRadio(artist: artist)
+        case "track":
+            guard let trackName = opts.track ?? opts.search else {
+                throw CLISourceError.missingRequiredArg("--radio track", "--track <name> [--artist <name>] [--album <name>]")
+            }
+            let seed = try resolveLocalSeed(title: trackName, artist: opts.artist, album: opts.album)
+            return library.createLocalTrackRadio(from: seed)
+        default:
+            throw CLISourceError.invalidRadioMode(mode, "local",
+                ["library", "genre", "decade", "artist", "track"])
         }
     }
 

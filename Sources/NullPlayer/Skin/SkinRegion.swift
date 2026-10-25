@@ -54,8 +54,10 @@ enum PlayerAction: Equatable {
     
     // Menu actions
     case openMainMenu
-    case openOptionsMenu
     
+    // Clutterbar (O A I D V)
+    case clutterbar(SkinElements.Clutterbar.Button)
+
     // Plex
     case openPlexBrowser
     
@@ -126,6 +128,10 @@ class RegionManager {
             cursor: .pointer
         ))
         
+        for button in SkinElements.Clutterbar.Button.allCases {
+            regions.append(ClickableRegion(rect: button.rect, action: .clutterbar(button), cursor: .pointer))
+        }
+
         // Transport buttons
         regions.append(ClickableRegion(
             rect: NSRect(x: 16, y: 88, width: 23, height: 18),

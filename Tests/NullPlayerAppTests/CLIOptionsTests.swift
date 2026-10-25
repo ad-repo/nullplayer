@@ -136,7 +136,7 @@ final class CLIOptionsTests: XCTestCase {
     func testEveryListFlagIsQueryMode() {
         for flag in ["--list-sources", "--list-libraries", "--list-artists", "--list-albums",
                      "--list-tracks", "--list-genres", "--list-playlists", "--list-stations",
-                     "--list-devices", "--list-outputs", "--list-eq"] {
+                     "--list-devices", "--list-outputs", "--list-eq", "--list-queue"] {
             XCTAssertTrue(parse(flag).isQueryMode, "\(flag) should be query mode")
         }
     }

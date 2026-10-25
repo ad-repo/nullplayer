@@ -156,6 +156,7 @@ Art rendering and log suppression each have their own section below.
 | `--list-tracks` | Yes (optional `--artist`/`--album` filter) |
 | `--search-albums <query>` | Yes (`local`, `plex`, `subsonic`, `jellyfin`, `emby`) |
 | `--list-genres` | No (local library only) |
+| `--list-queue` | Yes, with `--radio <mode>`: prints the queue that radio mode would play (`--json` for an array) and exits |
 | `--list-playlists` | Yes |
 | `--list-stations` | No (optional `--folder` filter) |
 | `--list-devices` | No (5s discovery wait) |
@@ -293,7 +294,7 @@ This pairs with the connectivity fix: `checkConnectivity` now `await`s the backg
 
 | Mode | Required flags | Source availability |
 |------|---------------|-------------------|
-| `library` | — | Plex, Subsonic, Jellyfin, Emby |
+| `library` | — | Plex, Subsonic, Jellyfin, Emby, Local |
 | `genre` | `--genre <name>` | All |
 | `decade` | `--decade <year>` | All |
 | `hits` | — | Plex only |
@@ -302,7 +303,7 @@ This pairs with the connectivity fix: `checkConnectivity` now `await`s the backg
 | `favorites` | — | Jellyfin, Emby only |
 | `artist` | `--artist <name>` | All |
 | `album` | `--artist <name> --album <name>` | All |
-| `track` | `--track <name>` or `--search <name>` | All |
+| `track` | `--track <name>` or `--search <name>` | All (local: seed-based similarity; optional `--artist` and `--album` disambiguate, an ambiguous title fails listing candidates) |
 
 **Plex param differences:** `createDecadeRadio(startYear:endYear:)` — not `start:end:`.
 **Subsonic/Jellyfin/Emby:** `createDecadeRadio(start:end:)`.

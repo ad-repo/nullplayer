@@ -213,6 +213,15 @@ class SkinRenderer {
         }
     }
     
+    /// Draw clutterbar buttons in their selected state, over the idle strip
+    func drawClutterbarSelections(_ buttons: [SkinElements.Clutterbar.Button], in context: CGContext) {
+        guard let titlebarImage = skin.titlebar else { return }
+        for button in buttons where titlebarImage.size.width >= button.selectedSprite.maxX
+                                 && titlebarImage.size.height >= button.selectedSprite.maxY {
+            drawSprite(from: titlebarImage, sourceRect: button.selectedSprite, to: button.rect, in: context)
+        }
+    }
+
     /// Draw title bar using original TITLEBAR.BMP from the skin
     func drawTitleBar(in context: CGContext, bounds: NSRect, isActive: Bool) {
         let titleHeight = SkinElements.titleBarHeight  // 14 - native titlebar.bmp height

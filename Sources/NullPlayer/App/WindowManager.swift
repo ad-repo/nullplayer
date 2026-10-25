@@ -375,6 +375,7 @@ class WindowManager {
             UserDefaults.standard.set(isAlwaysOnTop, forKey: "isAlwaysOnTop")
             NSLog("WindowManager: isAlwaysOnTop changed to %d, applying to windows", isAlwaysOnTop ? 1 : 0)
             applyAlwaysOnTop()
+            mainWindowController?.setNeedsDisplay()  // the main window may draw this state
         }
     }
 
