@@ -988,7 +988,7 @@ final class WasabiSceneRenderer {
         isFittingContent = true
         defer { isFittingContent = false }
         let declared = Self.defaultSize(for: layout, resources: resources)
-        let fitted = contentFittedSize(declared, for: layout)
+        let fitted = frameContentFittedSize(contentFittedSize(declared, for: layout))
         let value: CGSize? = fitted == declared ? nil : fitted
         contentFloorCache = value
         return value
@@ -1282,7 +1282,7 @@ final class WasabiSceneRenderer {
 
     private var sceneNodeCache: (generation: UInt64, canvas: CGSize, nodes: [WasabiSceneNode])?
 
-    private func sceneNodes(canvas: CGSize) -> [WasabiSceneNode] {
+    func sceneNodes(canvas: CGSize) -> [WasabiSceneNode] {
         let rootRect = CGRect(origin: .zero, size: canvas)
         var nodes: [WasabiSceneNode] = []
         append(object: layout, frame: rootRect, clip: rootRect, into: &nodes, isRoot: true)
@@ -4888,8 +4888,8 @@ final class WasabiSceneRenderer {
               storedCanvasSize == autoFittedCanvas else { return }
         isFittingContent = true
         defer { isFittingContent = false; hasFittedContent = true }
-        commitAutoFit(componentRoomFittedSize(contentFittedSize(defaultSize(for: layout), for: layout),
-                                              for: layout))
+        let content = frameContentFittedSize(contentFittedSize(defaultSize(for: layout), for: layout))
+        commitAutoFit(componentRoomFittedSize(content, for: layout))
     }
 
     /// Adopt a canvas one of the fits chose, raised to the hosted component's floor so the window

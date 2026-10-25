@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B261 — A standard frame's content minimum sizes the window; attribute whitespace is normalized — closed 2026-10-24
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B261 | **A standard frame's content groupdef that fixes its own size does not size the window around it.** H2O Liquid's Configuration window (`Cfg`) is a 400x300 layout around `<Wasabi:StandardFrame:Static>`, whose margins (`28,56,-55,-100`) leave its content `cfg.content.group` 345x200; the groupdef declares `minimum_w = maximum_w = 350`, `minimum_h = maximum_h = 235`. At 200 tall the CPU-usage table (`usage.content`, five rows) shows 2½ rows. Clamping the *group* to its range was tried and rejected (2026-10-23): it pushed content past the frame in Lobe's playlist, Hal's Eye's config and credits, PaddPreview's and motorhead's settings, and H2O's own Color Controls. The range more likely raises the *layout's* size and minimum by the frame margins (H2O: 405x335). Establish that from the corpus's frame/content pairs, then make it so. Done when H2O's Cfg shows all five rows, and Lobe, Hal's Eye, PaddPreview and motorhead keep their content inside their frames | `xml-attr '^groupdef@minimum_h$'`: gold 16/81, silver 7/54, bronze 118/802, quarantine 9/54 (manifest 8afecf61) | M | 2 |
+
+**Closed 2026-10-24**. Two faults. (1) `WasabiSceneRenderer.frameContentFittedSize` (`WasabiRendererFrameContent.swift`) grows the canvas and the floor so a frame's content group gets its declared `minimum_w`/`minimum_h`, the row's hypothesis: H2O's `Cfg` 400x300 → 405x335 with the content at 350x235. (2) The table still wrapped: its columns are aligned with blanks and literal tabs, which only meet at one blank per tab, and `WalLenientXMLParser` now normalizes literal tab/line-break characters in attribute values to blanks as XML does (character references stay). Gold+silver sweep against B262's capture: Cfg and CT (H2O), Bio-Nid/Core-X5/Rika `Message`, PaddPreview/motorhead `Settings` grew, each with its content inside the frame; Rika's fixed-width picker no longer spans its 38px-wider window (borderline, left); RODE 3 Lite's About went single-spaced and clear of its logo (literal line breaks plus `\n` had doubled it); Lobe and Hal's Eye unchanged; the hm_Touch `MLibrary` minimum is the known noise. Live: H2O's Configuration window shows all five rows. Tests: `WinampModernB261Tests`.
+
 ## B253 — An embedded equalizer's menu item reports the skin's face and is disabled — closed 2026-10-24
 
 | Id | Item | Reach | Effort | Tier |

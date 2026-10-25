@@ -64,6 +64,9 @@
 - **Windows → Equalizer shows whether a Modern skin's built-in equalizer is open**: on skins that
   draw the EQ inside the player (Love is War Miku, Moonkore) the item is ticked only while the EQ is
   showing, and is greyed out because the skin's own buttons switch it.
+- **Modern skin windows open big enough for the content their frame holds**: H2O Liquid's
+  Configuration window shows its whole CPU-usage table, with its columns lined up, and the settings
+  windows of PaddPreview and motorhead open at the size their content asks for.
 
 ## 0.33.1
 

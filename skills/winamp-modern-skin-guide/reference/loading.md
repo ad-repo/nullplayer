@@ -117,6 +117,12 @@ closing** tag (a `</foo>` matching nothing on the stack — no corpus skin does 
 until one demands otherwise), an unterminated comment, declaration, tag or attribute value, a tag
 with no name, and every depth/node-count bound.
 
+**An attribute value is normalized as XML says** (B261): a literal tab or line break inside it is a
+blank, and only a character reference (`&#09;`, `&#10;`) is the character. H2O Liquid lines its
+CPU-usage columns up with blanks and literal tabs, which meet only at one blank per tab; RODE 3 Lite
+wraps its About text across source lines *and* writes `\n`, and kept as breaks the two doubled every
+line and ran the text into the logo below it.
+
 ### A byte order mark decides the encoding, and it has to be read before the fallback chain
 
 `WalXMLDocumentLoader.decodeText` sniffs the mark — UTF-32LE/BE, UTF-8, UTF-16LE/BE — strips it, and
@@ -717,6 +723,20 @@ header is genuinely clipped, so it is not a size anyone can have meant, and the 
 resize and never retroactively, so `applyLayoutConstraints` also grows an already-too-small window —
 upward only, bounded by the same limits a drag obeys — and is called a second time after
 `scriptsDidStart()`, because the first call runs before any content exists.
+
+#### A standard frame's content states its own minimum, and the window grows to it (B261)
+
+A frame's content groupdef can declare `minimum_w`/`minimum_h` (H2O Liquid's `cfg.content.group`
+fixes itself at 350x235). The frame's script places the content at its margins, so the window that
+honours it is the content's minimum plus those margins: H2O's `Cfg` grows from its declared 400x300
+to 405x335. `WasabiSceneRenderer.frameContentFittedSize` (`WasabiRendererFrameContent.swift`)
+measures each content group a frame names (`content=` or `notify="content,…"`) on the resolved
+scene and is folded into the same two places as the content fit above: the auto-fitted canvas and
+`contentFittedFloor`. Clamping the *group* to its range instead was tried first and pushed content
+past the frame in Lobe, Hal's Eye, PaddPreview, motorhead and H2O's Color Controls. Gold+silver:
+eight windows grew, all with their content inside the frame. Rika's Color Themes is the borderline
+one: its content group is empty with a 350x200 minimum and its picker sits on the layout at a fixed
+313, so the window widened 38px and the picker no longer spans it.
 
 #### `default_w`/`default_h` are `<container>` attributes too (B136, 2026-09-05)
 
