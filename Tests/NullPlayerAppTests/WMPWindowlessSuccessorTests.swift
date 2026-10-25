@@ -224,7 +224,7 @@ final class WMPWindowlessSuccessorTests: XCTestCase {
         let controller = WMPMainWindowController(importer: importer)
         defer { controller.prepareForUITeardown(); controller.window?.close() }
         let store = WMPViewFrameStore(defaults: defaults)
-        let skin = try XCTUnwrap(importer.selectedSkinName)
+        let skin = try XCTUnwrap(importer.selection.name)
         let clock = ContinuousClock(), deadline = clock.now.advanced(by: .seconds(3))
         while !store.openViews(skin: skin).contains("plView"), clock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))

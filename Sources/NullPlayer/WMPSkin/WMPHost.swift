@@ -16,7 +16,7 @@ enum WMPTransportAction: Hashable, Codable {
     /// An index into `EQPreset.allPresets`. Every `<POPUP>` in the corpus is a preset menu, and
     /// `eq.currentPreset` is what its handler writes.
     case setEQPreset(Int)
-    /// What an `<EFFECTS>` rect draws, by `WMPEffectSelection` id. 96 of the 179 corpus archives
+    /// What an `<EFFECTS>` rect draws, by `SkinEffectSelection` id. 96 of the 179 corpus archives
     /// bind `currentEffectType="wmpprop:mediacenter.effectType"`, so the selector is a host
     /// property the skin reads and writes rather than a menu this engine invents (W101).
     case setEffectType(String)
@@ -90,7 +90,7 @@ extension Array where Element == WMPPlaylistItemSnapshot {
 ///
 /// `type` and `presetTitle` are the strings a skin puts on screen beside the surface —
 /// `visEffects.currentEffectTitle` is read by 61 archives and `currentPresetTitle` by 42 — so they
-/// answer what is actually being drawn rather than a constant. See `WMPEffectSelection`.
+/// answer what is actually being drawn rather than a constant. See `SkinEffectSelection`.
 struct WMPEffectsSnapshot: Hashable, Codable {
     /// The stable id of the selected effect: `bars`, `projectm`, `geiss`, `tripex`.
     var type = ""

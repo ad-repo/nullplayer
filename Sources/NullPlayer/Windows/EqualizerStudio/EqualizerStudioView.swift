@@ -355,7 +355,7 @@ final class EqualizerStudioView: NSView {
             return ModernSkinEngine.shared.currentSkin.map {
                 SkinnedSurfaceStyle(roles: SkinnedSurfaceRoles(modern: $0.config.palette))
             } ?? Self.neutralStyle
-        case .winampModern, .wmp, .audion:
+        case .winampModern, .wmp, .audion, .sonique:
             // These lend a style once their skin is up; until then, the neutral one.
             return Self.neutralStyle
         }
@@ -376,7 +376,7 @@ final class EqualizerStudioView: NSView {
             if let colors = wm.currentSkin?.visColors, colors.count >= 18 { return [colors[17], colors[9], colors[2]] }
         case .nullPlayerModern:
             if let skin = ModernSkinEngine.shared.currentSkin { return [skin.eqLowColor, skin.eqMidColor, skin.eqHighColor] }
-        case .winampModern, .wmp, .audion:
+        case .winampModern, .wmp, .audion, .sonique:
             break
         }
         return Self.winampMeter

@@ -9,7 +9,7 @@ final class VisClassicBridge {
     // reading bitrevtable, producing a null-dereference crash.
     private let coreLock = NSLock()
 
-    enum PreferenceScope {
+    enum PreferenceScope: String {
         case spectrumWindow
         case mainWindow
         /// A `.wal` skin's own `<vis>` box (B53). Its own keys, per CLAUDE.md's rule that
@@ -19,53 +19,17 @@ final class VisClassicBridge {
         /// A WMP skin's `<EFFECTS>` slot. Its profile controls stay in the skin surface's menu
         /// instead of altering the standalone analyzer or a `.wal` skin.
         case wmpEffects
+        /// The Sonique navigator's visual mode screen, the same surface as WMP's slot with its own keys.
+        case soniqueEffects
 
-        var lastProfileNameKey: String {
-            switch self {
-            case .spectrumWindow: return "visClassicLastProfileName.spectrumWindow"
-            case .mainWindow: return "visClassicLastProfileName.mainWindow"
-            case .winampModernVisBox: return "visClassicLastProfileName.winampModernVisBox"
-            case .wmpEffects: return "visClassicLastProfileName.wmpEffects"
-            }
-        }
-
+        // Each key is `visClassic<Setting>.<case>`: renaming a case loses users' saved settings.
+        var lastProfileNameKey: String { "visClassicLastProfileName.\(rawValue)" }
         /// The `.wal`/`.wmz` skin this scope's profile was last auto-matched for
         /// (`VisClassicProfileMatcher`), so a same-skin relaunch keeps a user's pick.
-        var skinDefaultAppliedForKey: String {
-            switch self {
-            case .spectrumWindow: return "visClassicSkinDefaultAppliedFor.spectrumWindow"
-            case .mainWindow: return "visClassicSkinDefaultAppliedFor.mainWindow"
-            case .winampModernVisBox: return "visClassicSkinDefaultAppliedFor.winampModernVisBox"
-            case .wmpEffects: return "visClassicSkinDefaultAppliedFor.wmpEffects"
-            }
-        }
-
-        var fitToWidthKey: String {
-            switch self {
-            case .spectrumWindow: return "visClassicFitToWidth.spectrumWindow"
-            case .mainWindow: return "visClassicFitToWidth.mainWindow"
-            case .winampModernVisBox: return "visClassicFitToWidth.winampModernVisBox"
-            case .wmpEffects: return "visClassicFitToWidth.wmpEffects"
-            }
-        }
-
-        var transparentBgKey: String {
-            switch self {
-            case .spectrumWindow: return "visClassicTransparentBg.spectrumWindow"
-            case .mainWindow: return "visClassicTransparentBg.mainWindow"
-            case .winampModernVisBox: return "visClassicTransparentBg.winampModernVisBox"
-            case .wmpEffects: return "visClassicTransparentBg.wmpEffects"
-            }
-        }
-
-        var opacityKey: String {
-            switch self {
-            case .spectrumWindow: return "visClassicOpacity.spectrumWindow"
-            case .mainWindow: return "visClassicOpacity.mainWindow"
-            case .winampModernVisBox: return "visClassicOpacity.winampModernVisBox"
-            case .wmpEffects: return "visClassicOpacity.wmpEffects"
-            }
-        }
+        var skinDefaultAppliedForKey: String { "visClassicSkinDefaultAppliedFor.\(rawValue)" }
+        var fitToWidthKey: String { "visClassicFitToWidth.\(rawValue)" }
+        var transparentBgKey: String { "visClassicTransparentBg.\(rawValue)" }
+        var opacityKey: String { "visClassicOpacity.\(rawValue)" }
     }
 
     struct ProfileEntry {
@@ -390,8 +354,9 @@ final class VisClassicBridge {
         }
         // A `.wal` skin's `<vis>` box is a recess its author drew, and the analyzer that normally
         // lives there paints only its bars — an opaque black rectangle would cover the artwork.
-        if scope == .winampModernVisBox || scope == .wmpEffects {
-            return true
+        switch scope {
+        case .winampModernVisBox, .wmpEffects, .soniqueEffects: return true
+        case .spectrumWindow, .mainWindow: break
         }
         // Metal finishes default to a transparent vis_classic background so the analyzer
         // bars sit on the brushed-metal chrome instead of an opaque black box. Only the

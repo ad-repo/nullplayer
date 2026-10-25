@@ -104,9 +104,10 @@ the file this table gives for it.
 
 - WMP maps to its own `PlayerUIControllerFamily.wmp`; it is neither Classic nor a
   `ModernSkinFamily`. Keep capability and menu exposure DEBUG-only until the public-exposure phase.
-- `WMPSkinImporter` owns `Application Support/NullPlayer/WMPSkins`, complete pre-commit validation,
-  same-directory atomic replacement, installed enumeration, and the `wmpSkinName` / view selection
-  keys. A failed replacement must leave both the installed archive and selection usable.
+- `WMPSkinImporter` owns `Application Support/NullPlayer/WMPSkins` (through the shared
+  `SkinInstallFolder`, which stages, validates the copy and commits by same-directory replacement),
+  complete pre-commit validation of the source, installed enumeration, and the `wmpSkinName` / view
+  selection keys. A failed replacement must leave both the installed archive and selection usable.
 - `WMPMainWindowController` must first present `WMPUnskinnedMainView`, then swap in only a completed
   static WMP scene. Missing/corrupt selections stay in WMP with an actionable diagnostic. Main-window
   fallback must never instantiate or consult Classic, Original, or Winamp Modern skin machinery.
@@ -279,7 +280,7 @@ is wrong and must be revised or dropped; it is never a licence to fix that famil
 - `<EFFECTS>` colour sources: Cava takes the hosted surface style (`WMPSurfacePalette.surfaceStyle`,
   dim text → current text) as its `.wmpEffects` skin default; vis_classic starts on the bundled
   profile nearest that style, once per skin (`vis-classic-guide` §7); the native Bars / Spikes /
-  Ambience keep their fixed per-preset colours, as real WMP drew them. `WMPEffectsSurfaceView`
+  Ambience keep their fixed per-preset colours, as real WMP drew them. `SkinEffectsSurfaceView`
   re-reads all of it on `.hostedSurfaceStyleDidChange` — it has no palette reference of its own.
 - `VIDEO`/`WMPVIDEO` draw nothing — the placeholder that painted them opaque black over the skin's
   own artwork is gone (W9). Their `backgroundColor` paints only over what is already drawn beneath

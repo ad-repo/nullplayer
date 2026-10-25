@@ -557,9 +557,12 @@ class PlaylistView: NSView {
         // Draw track list in the content area
         let colors = style?.playlistColors ?? skin?.playlistColors ?? .default
         // Selected rows are white, the classic idiom, with no selection fill under them; beside a
-        // hosted skin or face whose ground is light, white is corrected against that ground.
-        let selectedText = style.map { $0.legibleText(.white, on: $0.background) } ?? .white
-        drawTrackList(in: context, colors: colors, selectedText: selectedText, drawBounds: drawBounds)
+        // hosted skin or face whose ground is light, white is corrected against that ground, and a
+        // family may pick its own against its row colour, for the playing row too
+        // (`SkinnedSurfaceStyle.playlistSelectedText`, `playlistPlayingText`).
+        let selectedText = style?.playlistSelectedText ?? .white
+        drawTrackList(in: context, colors: colors, selectedText: selectedText,
+                      playingText: style?.playlistPlayingText ?? colors.currentText, drawBounds: drawBounds)
 
         // Bottom bar removed - no track info or playback time rendering needed
 
@@ -719,7 +722,7 @@ class PlaylistView: NSView {
 
     /// Draw the track list
     private func drawTrackList(in context: CGContext, colors: PlaylistColors, selectedText: NSColor,
-                               drawBounds: NSRect) {
+                               playingText: NSColor, drawBounds: NSRect) {
         let titleHeight = Layout.titleBarHeight
         let bottomHeight = Layout.bottomBarHeight
 
@@ -762,7 +765,7 @@ class PlaylistView: NSView {
             let track = tracks[index]
             let isCurrentTrack = index == currentIndex
             let textColor = selectedIndices.contains(index) ? selectedText
-                : isCurrentTrack ? colors.currentText : colors.normalText
+                : isCurrentTrack ? playingText : colors.normalText
 
             // Draw track text with clipping and marquee for current track
             drawTrackText(in: context, track: track, index: index, rect: itemRect, color: textColor, font: colors.font, isCurrentTrack: isCurrentTrack)
@@ -1911,18 +1914,19 @@ class PlaylistView: NSView {
             needsDisplay = true
 
         case 116: // Page Up - move selection up by visible page
-            guard !tracks.isEmpty else { return }
-            let visibleCount = visibleTrackCount
-            navigateSelection(direction: -visibleCount, extend: hasShift)
+            page(by: -1, extend: hasShift)
 
         case 121: // Page Down - move selection down by visible page
-            guard !tracks.isEmpty else { return }
-            let visibleCount = visibleTrackCount
-            navigateSelection(direction: visibleCount, extend: hasShift)
+            page(by: 1, extend: hasShift)
 
         default:
             super.keyDown(with: event)
         }
+    }
+
+    /// The selection `pages` visible pages down (negative: up), as Page Up and Page Down move it.
+    func page(by pages: Int, extend: Bool = false) {
+        navigateSelection(direction: pages * visibleTrackCount, extend: extend)
     }
 
     /// Number of tracks visible in the current view

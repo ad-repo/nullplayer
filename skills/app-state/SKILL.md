@@ -39,7 +39,8 @@ Restore state in two phases: settings first with `restoreSettingsState`, then th
 
 Restore never overrides a preference that is written on every change: the UI mode (`uiMode`, or a
 `-uiMode` launch argument) and each family's skin selection (`modernSkinName`, `metalSkinName`,
-`wmpSkinName`/`wmpSkinViewID`, `audionFaceName`). Those are always at least as new as the session's
+`wmpSkinName`/`wmpSkinViewID`, `audionFaceName`; Sonique's `soniqueSkinName` is never in the
+session at all). Those are always at least as new as the session's
 copy, which goes stale after a force quit, a crash inside the autosave interval, or a run under
 `-rememberStateEnabled NO`. The session still writes them because older builds restore from them; a
 session saved in another mode is applied to the running mode.

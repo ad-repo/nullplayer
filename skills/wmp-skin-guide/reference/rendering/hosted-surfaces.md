@@ -104,11 +104,11 @@ Moved verbatim from `reference/rendering.md` § *Drawing the skin's own controls
   does not construct AppKit controls; an authored or scripted height wins.
 
 - **The visualization surface is this player's own visuals in the rect the skin authored (W101).**
-  `WMPEffectsSurfaceView` draws compact WMP-native **Spikes**, **Bars**, **Ambience**, **Cava**, and
+  `SkinEffectsSurfaceView` draws compact WMP-native **Spikes**, **Bars**, **Ambience**, **Cava**, and
   **vis_classic** directly. Cava uses its actual presenter/full-stereo tap and vis_classic uses its
   actual waveform/profile core, each with a WMP-only preference scope. Their right-click controls are
   therefore the real Cava tuning menu and vis_classic profile menu, not inert replicas.
-  `WMPEffectSelection` is the one place the choice lives, because 96 archives bind
+  `SkinEffectSelection` is the one place the choice lives, because 96 archives bind
   `currentEffectType` to `wmpprop:mediacenter.effectType`. Three rules it is built on: **nothing
   playing draws nothing at all** (the skin's own screen artwork stands); **the surface never takes a
   click**, because 51 archives wire an `onClick` on `<EFFECTS>` and that handler belongs to scene hit
@@ -120,7 +120,7 @@ Moved verbatim from `reference/rendering.md` § *Drawing the skin's own controls
   Geiss's and Tripex's effects, vis_classic's profiles, Cava's mono/stereo. An effect with no
   inside (Spikes, Bars, Ambience) *refuses* left/right rather than swallowing them, so the key
   falls through. Two things this wiring depends on: a preset step goes through
-  `WMPEffectSelection.setPreset`, never the engine's own `nextPreset()`, or the `currentPreset` /
+  `SkinEffectSelection.setPreset`, never the engine's own `nextPreset()`, or the `currentPreset` /
   `currentPresetTitle` bindings 144 archives read would show a preset that is not on screen; and
   `applySelection` must tell a preset change from an effect change, because `setPreset` posts the
   same notification as `select` and rebuilding the engine for it reinitializes ProjectM on every
@@ -135,7 +135,7 @@ Moved verbatim from `reference/rendering.md` § *Drawing the skin's own controls
 - **The ban on hosting ProjectM / Geiss / Tripex in the slot is reversed, and this records why
   (W140).** The rule read: *it must never host ProjectM, Geiss, Tripex, or any other standalone
   visualization window in that slot*, with the black panels reported in Asimov Radio and Cerulean as
-  its evidence, and `WMPEffectsSurfaceView.makeEngineView()` / `applyPreset(to:engine:)` were left in
+  its evidence, and `SkinEffectsSurfaceView.makeEngineView()` / `applyPreset(to:engine:)` were left in
   the file as dead code with zero call sites.
 
   **Those black panels were the occlusion defect, not the engines.** `WMPMainView` blitted the whole
@@ -153,7 +153,7 @@ Moved verbatim from `reference/rendering.md` § *Drawing the skin's own controls
   and its own `CVDisplayLink` clock tears against the overlay's alpha-blended edge. Do not mount it
   live "just to try"; that is what produced the black panels the first time.
 
-  **How the three are hosted.** `WMPEffectsSurfaceView` builds a `VisualizationGLView` and never adds
+  **How the three are hosted.** `SkinEffectsSurfaceView` builds a `VisualizationGLView` and never adds
   it to the hierarchy: its display link never starts, and a 30fps timer pulls one frame at a time
   through `renderOffscreenImage(pixelWidth:pixelHeight:)` — an FBO render plus `glReadPixels` — which
   `draw(_:)` presents like any other picture. **The GL path takes no y-flip**, where vis_classic
@@ -176,7 +176,7 @@ Moved verbatim from `reference/rendering.md` § *Drawing the skin's own controls
   keys are shared with the standalone Visualizations window and the `.wal` surface by design, and
   per-skin copies would rewrite that window's settings on every skin switch.
   Three things it is built on. **A skin with no record restores the app's defaults** — every scoped
-  key is cleared, and `WMPEffectSelection.restore` falls back to the default effect where `select`
+  key is cleared, and `SkinEffectSelection.restore` falls back to the default effect where `select`
   would change nothing — or the second skin silently inherits the first one's choices, which is the
   half that regresses invisibly. **Capture is driven off `UserDefaults.didChangeNotification`**,
   not off each menu item: the Cava and vis_classic controls in the slot's menu write their own keys

@@ -80,6 +80,10 @@ class ModernPlaylistWindowController: NSWindowController, PlaylistWindowProvidin
     func reloadPlaylist() {
         playlistView.reloadData()
     }
+
+    func page(by pages: Int) {
+        playlistView.page(by: pages)
+    }
     
 }
 

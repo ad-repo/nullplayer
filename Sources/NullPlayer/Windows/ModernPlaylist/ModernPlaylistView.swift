@@ -1022,11 +1022,9 @@ class ModernPlaylistView: NSView {
             else { selectedIndices = [last]; selectionAnchor = last }
             scrollToSelection(); needsDisplay = true
         case 116: // Page Up
-            guard !tracks.isEmpty else { return }
-            navigateSelection(direction: -visibleTrackCount, extend: hasShift)
+            page(by: -1, extend: hasShift)
         case 121: // Page Down
-            guard !tracks.isEmpty else { return }
-            navigateSelection(direction: visibleTrackCount, extend: hasShift)
+            page(by: 1, extend: hasShift)
         default:
             super.keyDown(with: event)
         }
@@ -1070,6 +1068,11 @@ class ModernPlaylistView: NSView {
         selectedIndices = Set(start...end)
     }
     
+    /// The selection `pages` visible pages down (negative: up), as Page Up and Page Down move it.
+    func page(by pages: Int, extend: Bool = false) {
+        navigateSelection(direction: pages * visibleTrackCount, extend: extend)
+    }
+
     private func scrollToSelection() {
         guard let focusIndex = selectionAnchor ?? selectedIndices.min() else { return }
         

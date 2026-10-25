@@ -8,34 +8,34 @@ final class WMPPhase7Tests: XCTestCase {
 
     @MainActor
     func testWMPEffectsUseTheNativeCompactCatalogue() {
-        let selection = WMPEffectSelection.shared
+        let selection = SkinEffectSelection.wmp
         XCTAssertTrue(selection.select("spikes"))
-        XCTAssertEqual(selection.snapshot.type, "spikes")
-        XCTAssertEqual(selection.snapshot.title, "Spikes")
+        XCTAssertEqual(selection.current.id, "spikes")
+        XCTAssertEqual(selection.current.title, "Spikes")
         XCTAssertNil(selection.current.engine, "a WMP-native effect is drawn by the surface itself")
 
         selection.step(by: 1)
-        XCTAssertEqual(selection.snapshot.type, "bars")
+        XCTAssertEqual(selection.current.id, "bars")
         selection.step(by: 1)
-        XCTAssertEqual(selection.snapshot.type, "ambience")
+        XCTAssertEqual(selection.current.id, "ambience")
         selection.step(by: 1)
-        XCTAssertEqual(selection.snapshot.type, "cava")
+        XCTAssertEqual(selection.current.id, "cava")
         selection.step(by: 1)
-        XCTAssertEqual(selection.snapshot.type, "vis_classic")
+        XCTAssertEqual(selection.current.id, "vis_classic")
         // **The three suite engines joined the catalogue with W140**, because what made them a
         // black rectangle in the slot was the missing occlusion (W139) and not the engines. They
         // render offscreen and are presented as an image; nothing is mounted in the rect.
         selection.step(by: 1)
-        XCTAssertEqual(selection.snapshot.type, "projectm")
+        XCTAssertEqual(selection.current.id, "projectm")
         XCTAssertEqual(selection.current.engine, .projectM)
         XCTAssertTrue(selection.current.isOffscreenEngine)
         selection.step(by: 1)
-        XCTAssertEqual(selection.snapshot.type, "geiss")
+        XCTAssertEqual(selection.current.id, "geiss")
         selection.step(by: 1)
-        XCTAssertEqual(selection.snapshot.type, "tripex")
+        XCTAssertEqual(selection.current.id, "tripex")
         // Eight entries, so one more step is back to the start.
         selection.step(by: 1)
-        XCTAssertEqual(selection.snapshot.type, "spikes")
+        XCTAssertEqual(selection.current.id, "spikes")
         _ = selection.select("spikes")
     }
 
@@ -63,23 +63,22 @@ final class WMPPhase7Tests: XCTestCase {
 
     @MainActor
     func testWMPEffectSuiteOptionsUseTheirRealContextMenus() {
-        let effects = WMPEffectsSurfaceView(frame: NSRect(x: 0, y: 0, width: 120, height: 80))
-        var playing = WMPHostSnapshot(); playing.state = .playing
-        effects.update(playing)
+        let effects = SkinEffectsSurfaceView(frame: NSRect(x: 0, y: 0, width: 120, height: 80), selection: .wmp)
+        effects.setActive(true)
 
-        XCTAssertTrue(WMPEffectSelection.shared.select("cava"))
+        XCTAssertTrue(SkinEffectSelection.wmp.select("cava"))
         let cavaTitles = effects.buildMenu().items.map(\.title)
         XCTAssertTrue(cavaTitles.contains("Effect"))
         XCTAssertTrue(cavaTitles.contains("Mono"))
         XCTAssertTrue(cavaTitles.contains("Color"))
         XCTAssertTrue(cavaTitles.contains("Bars"))
 
-        XCTAssertTrue(WMPEffectSelection.shared.select("vis_classic"))
+        XCTAssertTrue(SkinEffectSelection.wmp.select("vis_classic"))
         let classicTitles = effects.buildMenu().items.map(\.title)
         XCTAssertTrue(classicTitles.contains("Profile"))
         XCTAssertTrue(classicTitles.contains("Fit To Width"))
         XCTAssertTrue(classicTitles.contains("Transparent Background"))
-        _ = WMPEffectSelection.shared.select("spikes")
+        _ = SkinEffectSelection.wmp.select("spikes")
     }
 
     /// The overlays paint their own `bounds`, never the `dirtyRect` handed to them.
@@ -101,12 +100,11 @@ final class WMPPhase7Tests: XCTestCase {
         // The effects surface draws nothing at all unless a visualizer is running — that is the
         // W9 rule the rect is hosted under (W101) — so it is put in the state it paints in before
         // being asked whether it paints outside itself.
-        let effects = WMPEffectsSurfaceView(frame: frame)
+        let effects = SkinEffectsSurfaceView(frame: frame, selection: .wmp)
         // The bars are the one effect this view paints itself; the other three are engines drawing
         // their own frames into a child view, which is not what this test measures.
-        WMPEffectSelection.shared.select("bars")
-        var playing = WMPHostSnapshot(); playing.state = .playing
-        effects.update(playing)
+        SkinEffectSelection.wmp.select("bars")
+        effects.setActive(true)
         effects.updateSpectrum(Array(repeating: 0.5, count: 32))
 
         for overlay in [effects, WMPPlaylistSurfaceView(frame: frame)] as [NSView] {

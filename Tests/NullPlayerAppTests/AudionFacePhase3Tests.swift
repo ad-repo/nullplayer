@@ -77,12 +77,12 @@ final class AudionFacePhase3Tests: XCTestCase {
 
         try await importer.removeFace(named: " Spaced Face ")
         XCTAssertTrue(importer.installedFaces().isEmpty)
-        XCTAssertNil(importer.selectedFaceName)
+        XCTAssertNil(importer.selection.name)
     }
 
     func testAMissingSelectionThrowsAndAnInvalidFaceInstallsNothing() async throws {
         let importer = try importer()
-        importer.select("Gone")
+        importer.selection.select("Gone")
         XCTAssertThrowsError(try importer.selectedFaceURL())
 
         let broken = try AudionFaceFixture(name: "Broken")

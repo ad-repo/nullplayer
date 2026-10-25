@@ -209,7 +209,7 @@ each one is a separate place a name can go missing:
 **A host attribute needs something to call `refreshHostState` before any of this fires.** Every
 other path into it is a track, a 10 Hz clock tick, a transport action or a file open, and the
 effect selection is none of them: choosing a visualization from NullPlayer's own menu goes through
-`WMPEffectSelection`, so the controller observes `WMPEffectSelection.didChange` explicitly. With a
+`SkinEffectSelection`, so the controller observes `SkinEffectSelection.didChange` explicitly. With a
 track playing the position tick hides the gap — the event lands inside 100 ms and looks immediate —
 and with the player stopped nothing would have been raised at all. **Check what refreshes the
 snapshot before adding a host-side `_onchange`**; a diff nothing runs is a dispatch site that is not
@@ -230,7 +230,7 @@ a `<POPUP>` choice still does not — so it stays off the list too.
 **A write-back is safe when the host setter is idempotent, and that is a thing to check rather than
 assume.** All 40 `currentPreset_onchange` uses are `mediacenter.effectPreset=currentPreset` — the
 handler handing the host back the number it was just given — which settles only because
-`WMPEffectSelection.setPreset` early-returns on an unchanged value. A setter that re-applied would
+`SkinEffectSelection.setPreset` early-returns on an unchanged value. A setter that re-applied would
 have restarted the visualizer on every preset change instead. Same argument as W51's write-backs,
 made at the host rather than at the registry.
 

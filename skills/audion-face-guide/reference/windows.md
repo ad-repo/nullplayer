@@ -7,7 +7,7 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
 
 | File | Owns |
 |---|---|
-| `AudionFaceMainWindowController.swift` | `AudionFaceWindow` (borderless, clear, key/main-capable) and the `MainWindowProviding` controller: loads the selected face off the main thread, swaps between the face and the unskinned view, sizes the window to `base` × UI scale keeping the top-left, holds `surfaceStyle` |
+| `AudionFaceMainWindowController.swift` | the `SingleCanvasMainWindow` controller on a shared `SkinnedBorderlessWindow` (borderless, clear, key/main-capable; `App/Skinning/`): loads the selected face off the main thread, swaps between the face and the unskinned view, sizes the window to `base` × UI scale keeping the top-left, holds `surfaceStyle` |
 | `AudionFaceMainView.swift` | Draws `AudionFaceScene`s through an `AudionFaceCanvas` at `ceil(uiScale × backing)`, marking only the changed rects dirty and painting them in `draw(_:)`; the frame clock; hit-tests; drags; the two slider popups and the info menu; keys; right-click menu; accessibility |
 | `AudionFaceSliderWindow.swift` | FaceKit's `AudionSliderWindow`, ported (Panic's header): a borderless popup holding one `NSSlider`, closed when it resigns key |
 | `AudionFaceAudioEngineHost.swift` | `AudioEngine` → `AudionFaceHostState`, and an `AudionFaceCommand` (a button, a volume, a seek) → its NullPlayer action |
@@ -24,7 +24,7 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
   pixel drags, a superset of the authored drag region, and FaceKit ignores the file too (decided in
   Phase 4; `format.md` § *Files FaceKit ignores*).
 - **Drag** goes through `WindowManager.windowWillStartDragging` / `windowWillMove` /
-  `windowDidFinishDragging` (`AudionFaceWindowDrag`, used by both the face and the unskinned
+  `windowDidFinishDragging` (`SkinnedWindowDrag`, shared with Sonique, used by both the face and the unskinned
   view), and `windowDidMove` applies the snapped position, the Classic recipe — so snapping and
   docked groups work. AppKit's background drag is off for the window and both views.
 - **Drawing:** the view is layer-backed and paints the canvas image in `draw(_:)`, so AppKit updates
@@ -42,7 +42,7 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
   itself (a new face, a UI scale). The app-authored unskinned player casts `window.hasSkinShadow`, from what it draws. The
   shared mechanism is `ui-guide` § *Window Drop Shadows (Every Family)*.
 - **Launch:** the controller shows no placeholder while the selected face loads, so the window
-  never appears at `unskinnedSize` first. `reloadSelectedFace` presents the
+  never appears at `unskinnedSize` first. `reloadSelectedSkin` presents the
   unskinned view itself when there is no face, or the face fails to load.
 - **Buttons** (decision record § *Button mapping*): play, pause, stop, rw/ff (previous/next), eject
   (Open Files…), menu (toggle the playlist), close (quit, as every NullPlayer main window's close

@@ -493,4 +493,18 @@ final class CavaSettingsTests: XCTestCase {
         XCTAssertEqual(repairedCava.minX, repaired.mainFrame.minX, accuracy: 0.001)
         XCTAssertTrue(repaired.repaired)
     }
+
+    /// Each scope's raw value names its saved settings: a renamed case would orphan them.
+    func testScopeRawValuesKeepSavedPreferenceKeys() {
+        XCTAssertEqual(CavaSettings.Scope.allCases.map(\.rawValue),
+                       ["window", "mainWindow", "compactWindow", "libraryWindow", "winampModernVisBox", "wmpEffects",
+                        "soniqueEffects"])
+        XCTAssertEqual(CavaSettings.preferenceKeys(for: .cavaWindow).first, "cavaMode")
+        XCTAssertEqual(CavaSettings.preferenceKeys(for: .wmpEffects).first, "cava.wmpEffects.mode")
+        let visClassic: [VisClassicBridge.PreferenceScope] = [.spectrumWindow, .mainWindow, .winampModernVisBox, .wmpEffects,
+                                                              .soniqueEffects]
+        XCTAssertEqual(visClassic.map(\.opacityKey),
+                       ["visClassicOpacity.spectrumWindow", "visClassicOpacity.mainWindow", "visClassicOpacity.winampModernVisBox",
+                        "visClassicOpacity.wmpEffects", "visClassicOpacity.soniqueEffects"])
+    }
 }

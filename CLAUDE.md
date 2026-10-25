@@ -25,6 +25,7 @@ Technical documentation lives in `skills/`. Read the owning skill before changin
 - `original-skin-guide`: Original skins; `winamp-modern-skin-guide`: `.wal` support, a slim router over `reference/`; `wal-skin-report`: `/wal-skin-report <skin.wal>`
 - `wmp-skin-guide`: Windows Media Player `.wmz`/`.wms` loading, rendering, scripting, menus, state, and WMP-owned windows
 - `audion-face-guide`: Panic Audion faces — a FaceKit port with a FaceKit oracle, so a diff against the oracle is a defect
+- `sonique-skin-guide`: Sonique `.sgf` skins — public since Phase 2; the decoded format, the corpus, and real Sonique under Wine as the oracle
 - `plex-integration`, `jellyfin-integration`, `subsonic-integration`, `emby-integration`: media servers
 - `sonos-casting`, `chromecast-casting`: casting protocols and debugging
 - `stream-ripper`: URL ripping; `youtube-source`: YouTube audio; `cue-sheets`: cue playback/splitting; `radio-streaming`: radio
@@ -34,7 +35,7 @@ Technical documentation lives in `skills/`. Read the owning skill before changin
 - `geiss-port`, `tripex-port`, `vis-classic-guide`: visualization ports and compatibility
 - `app-control`: launching, configuring, driving and measuring the running app; test-data targets
 - Backlogs live in `tasks/`: `WMP_TASKS.md` (`.wmz`), `WINAMP5_TASKS.md` (`.wal`), `AUDION_TASKS.md`
-  (Audion faces), plus `MISC_TASKS.md` (everything else, including the local library)
+  (Audion faces), `SONIQUE_TASKS.md` (`.sgf`), plus `MISC_TASKS.md` (everything else, including the local library)
 - `live-ui-testing`: process skill for screen-only defects — instrument first, drive the app yourself, measure what is drawn
 - `testing`: UI test workflows; `non-retina-fixes`: 1x display fixes; `local-library`: SQLite and scanning; `cli`: headless mode
 - `skin-screenshots`: per-skin main-window captures across all skin systems, and slideshow GIFs

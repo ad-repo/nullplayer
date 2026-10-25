@@ -140,14 +140,14 @@ final class WMPPhase6Tests: XCTestCase {
         var demand: [Bool] = []; view.onSpectrumDemandChanged = { demand.append($0) }
         view.present(try XCTUnwrap(context.makeImage()), scene: scene)
         XCTAssertEqual(view.subviews.compactMap { $0 as? WMPPlaylistSurfaceView }.count, 1)
-        XCTAssertEqual(view.subviews.compactMap { $0 as? WMPEffectsSurfaceView }.count, 1)
+        XCTAssertEqual(view.subviews.compactMap { $0 as? SkinEffectsSurfaceView }.count, 1)
         XCTAssertEqual(demand.last, true)
         view.prepareForUITeardown()
         XCTAssertEqual(demand.last, false)
         // Every hosted surface goes; the one subview left is the persistent artwork overlay the
         // effects surface is ordered against, which is created once in `init` and never a widget.
         XCTAssertTrue(view.subviews.allSatisfy {
-            !($0 is WMPPlaylistSurfaceView) && !($0 is WMPEffectsSurfaceView)
+            !($0 is WMPPlaylistSurfaceView) && !($0 is SkinEffectsSurfaceView)
         })
         XCTAssertEqual(view.subviews.count, 1)
     }

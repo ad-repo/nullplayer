@@ -23,8 +23,8 @@ final class WMPPlacementRecoveryTests: XCTestCase {
     // MARK: - The gate
 
     /// The recovery half applies to the families whose windows are sized and placed by a skin
-    /// (`.wal`, `.wmz`, Audion), and to neither of the two whose window positions people have laid their desktops out around.
-    func testPlacementRecoveryAppliesToWinampModernAndWMPOnly() {
+    /// (`.wal`, `.wmz`, Audion, Sonique), and to neither of the two whose window positions people have laid their desktops out around.
+    func testPlacementRecoveryAppliesToForeignSkinFamiliesOnly() {
         let windowManager = WindowManager.shared
         let originalMode = windowManager.uiMode
         defer { windowManager.uiMode = originalMode }
@@ -36,7 +36,7 @@ final class WMPPlacementRecoveryTests: XCTestCase {
             checked.append(mode)
             let family = mode.controllerFamily
             XCTAssertEqual(windowManager.appliesPlacementRecovery,
-                           family == .winampModern || family == .wmp || family == .audion,
+                           family == .winampModern || family == .wmp || family == .audion || family == .sonique,
                            "\(mode.displayName) must not run the placement recovery sweeps")
         }
 

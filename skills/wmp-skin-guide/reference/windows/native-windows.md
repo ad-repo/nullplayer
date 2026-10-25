@@ -153,7 +153,7 @@ reasoning.
 - **NullPlayer's playlist width is free beside a `.wmz` player.** The classic playlist steps its
   width in 25px PLEDIT tiles and stops at 275px; the gloss frame draws neither, and both kept the
   playlist off the player's width (Classic.wmz is 285 pt). `PlaylistWindowController.hasFreeWidth`
-  (shared with Audion) turns off the step, and `minimumWidth(stepped:)` replaces the minimum,
+  (shared with Audion and Sonique) turns off the step, and `minimumWidth(stepped:)` replaces the minimum,
   including on a UI Size change. `.wal` keeps the step: its gloss frame arrives with its palette,
   after the limits are set.
 

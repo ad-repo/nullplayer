@@ -22,17 +22,19 @@ enum WMPSkinImportError: LocalizedError {
     }
 }
 
-/// Owns WMP's installed archive directory and selection preference. Import validates the complete
-/// hostile archive before any destination is touched, then commits through one same-directory
-/// atomic replacement.
+/// WMP's installed-archives folder and selection preference. Import validates the complete hostile
+/// archive before any destination is touched, and again as the copy that is committed
+/// (`SkinInstallFolder`).
 struct WMPSkinImporter {
     static let selectedSkinNameKey = "wmpSkinName"
     static let selectedViewIDKey = "wmpSkinViewID"
 
-    let directoryURL: URL
+    let folder: SkinInstallFolder
+    let selection: SkinSelection
     let defaults: UserDefaults
-    let fileManager: FileManager
     let loader: WMPSkinLoader
+    var directoryURL: URL { folder.url }
+    private var fileManager: FileManager { folder.fileManager }
 
     init(
         directoryURL: URL? = nil,
@@ -40,22 +42,10 @@ struct WMPSkinImporter {
         fileManager: FileManager = .default,
         loader: WMPSkinLoader = WMPSkinLoader()
     ) {
-        self.fileManager = fileManager
         self.defaults = defaults
+        selection = SkinSelection(key: Self.selectedSkinNameKey, defaults: defaults)
         self.loader = loader
-        if let directoryURL {
-            self.directoryURL = directoryURL
-        } else {
-            let applicationSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-                ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            self.directoryURL = applicationSupport
-                .appendingPathComponent("NullPlayer", isDirectory: true)
-                .appendingPathComponent("WMPSkins", isDirectory: true)
-        }
-    }
-
-    var selectedSkinName: String? {
-        defaults.string(forKey: Self.selectedSkinNameKey)
+        folder = SkinInstallFolder("WMPSkins", at: directoryURL, fileManager: fileManager)
     }
 
     var selectedViewID: String? {
@@ -75,12 +65,8 @@ struct WMPSkinImporter {
         }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    func ensureDirectoryExists() throws {
-        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-    }
-
     func selectedSkinURL() throws -> URL? {
-        guard let name = selectedSkinName, !name.isEmpty else { return nil }
+        guard let name = selection.name, !name.isEmpty else { return nil }
         guard let installed = installedSkins().first(where: {
             $0.name.caseInsensitiveCompare(name) == .orderedSame
         }) else { throw WMPSkinImportError.selectionMissing(name) }
@@ -97,11 +83,12 @@ struct WMPSkinImporter {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name != ".", name != ".." else { throw WMPSkinImportError.invalidFilename }
 
-        let installed = try await Task.detached(priority: .userInitiated) {
+        let installed = try await Task.detached(priority: .userInitiated) { [folder, loader] in
             // Keep validation, directory enumeration, archive copy, and atomic commit away from
             // MainActor even when an AppKit controller initiated the import.
             _ = try await loader.load(from: sourceURL)
-            try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+            try folder.ensureExists()
+            let directoryURL = folder.url, fileManager = folder.fileManager
             let urls = try fileManager.contentsOfDirectory(
                 at: directoryURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
             let existing = urls.first {
@@ -114,26 +101,15 @@ struct WMPSkinImporter {
                 return WMPInstalledSkin(name: name, url: destination)
             }
 
-            let incoming = directoryURL.appendingPathComponent(".incoming-\(UUID().uuidString).wmz")
-            defer { try? fileManager.removeItem(at: incoming) }
-            try fileManager.copyItem(at: sourceURL, to: incoming)
-            // Validate the exact copied bytes before commit, not just the source path.
-            _ = try await loader.load(from: incoming)
-
-            if fileManager.fileExists(atPath: destination.path) {
-                _ = try fileManager.replaceItemAt(destination, withItemAt: incoming,
-                                                   backupItemName: nil, options: [])
-            } else {
-                try fileManager.moveItem(at: incoming, to: destination)
-            }
+            try await folder.commit(sourceURL, to: destination, suffix: ".wmz") { _ = try await loader.load(from: $0) }
             return WMPInstalledSkin(name: name, url: destination)
         }.value
-        defaults.set(name, forKey: Self.selectedSkinNameKey)
+        selection.select(name)
         return installed
     }
 
     func select(_ skin: WMPInstalledSkin, viewID: String? = nil) {
-        defaults.set(skin.name, forKey: Self.selectedSkinNameKey)
+        selection.select(skin.name)
         if let viewID, !viewID.isEmpty {
             defaults.set(viewID, forKey: Self.selectedViewIDKey)
         } else {
@@ -142,21 +118,18 @@ struct WMPSkinImporter {
     }
 
     func resetSelection() {
-        defaults.removeObject(forKey: Self.selectedSkinNameKey)
+        selection.reset()
         defaults.removeObject(forKey: Self.selectedViewIDKey)
     }
 
     /// Removes one installed archive off-main. Removing the selected skin also clears its view
     /// identity so the active WMP controller can recover to the app-authored unskinned player.
     func removeSkin(named name: String) async throws {
-        let skin = try await Task.detached(priority: .userInitiated) {
-            guard let skin = installedSkins().first(where: {
-                $0.name.caseInsensitiveCompare(name) == .orderedSame
-            }) else { throw WMPSkinImportError.selectionMissing(name) }
-            try fileManager.removeItem(at: skin.url)
-            return skin
-        }.value
-        if selectedSkinName?.caseInsensitiveCompare(skin.name) == .orderedSame {
+        guard let skin = installedSkins().first(where: {
+            $0.name.caseInsensitiveCompare(name) == .orderedSame
+        }) else { throw WMPSkinImportError.selectionMissing(name) }
+        try await folder.remove(skin.url)
+        if selection.name?.caseInsensitiveCompare(skin.name) == .orderedSame {
             resetSelection()
         }
     }

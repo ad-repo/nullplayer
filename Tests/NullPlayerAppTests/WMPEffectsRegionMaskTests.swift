@@ -264,7 +264,7 @@ final class WMPEffectsRegionMaskTests: XCTestCase {
     }
 
     /// 255 means keep. Row zero is the authored **top** — the same convention `WMPMappingImage` and
-    /// the clipping mask already hold, and the reason `WMPEffectsSurfaceView` counter-flips before
+    /// the clipping mask already hold, and the reason `SkinEffectsSurfaceView` counter-flips before
     /// it clips rather than flipping the rows here.
     func testTheRegionMaskKeepsTheOpeningAndTheTrimAndCutsTheKeyedSurround() async throws {
         let store = try store(image: try containerImage(opening: .transparent))

@@ -16,7 +16,7 @@ final class WMPSkinImporterTests: XCTestCase {
 
         let imported = try await importer.importSkin(from: first)
         XCTAssertEqual(imported.name, "Player")
-        XCTAssertEqual(importer.selectedSkinName, "Player")
+        XCTAssertEqual(importer.selection.name, "Player")
         XCTAssertEqual(importer.installedSkins().map(\.name), [imported.name])
         XCTAssertEqual(importer.installedSkins().first?.url.resolvingSymlinksInPath().path,
                        imported.url.resolvingSymlinksInPath().path)
@@ -49,7 +49,7 @@ final class WMPSkinImporterTests: XCTestCase {
         await XCTAssertThrowsErrorAsync { try await importer.importSkin(from: corrupt) }
 
         XCTAssertEqual(try Data(contentsOf: installedSkin.url), original)
-        XCTAssertEqual(importer.selectedSkinName, "Player")
+        XCTAssertEqual(importer.selection.name, "Player")
     }
 
     func testMissingSelectionHasActionableFailureAndResetPath() throws {
@@ -64,7 +64,7 @@ final class WMPSkinImporterTests: XCTestCase {
             XCTAssertTrue(error.localizedDescription.contains("no longer installed"))
         }
         importer.resetSelection()
-        XCTAssertNil(importer.selectedSkinName)
+        XCTAssertNil(importer.selection.name)
         XCTAssertNil(try importer.selectedSkinURL())
     }
 
@@ -85,7 +85,7 @@ final class WMPSkinImporterTests: XCTestCase {
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: skin.url.path))
         XCTAssertTrue(importer.installedSkins().isEmpty)
-        XCTAssertNil(importer.selectedSkinName)
+        XCTAssertNil(importer.selection.name)
         XCTAssertNil(importer.selectedViewID)
         XCTAssertTrue(FileManager.default.fileExists(atPath: source.path),
                       "Removing an installed skin must not delete the user's downloaded source")

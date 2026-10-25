@@ -75,7 +75,7 @@ struct WMPHitTester {
     /// build `commands`, so what the pointer finds is what the user can see.
     ///
     /// **A hosted surface is always last.** `<EFFECTS>` and `<VIDEO>` are click-through by design —
-    /// `WMPEffectsSurfaceView` returns `nil` from `hitTest`, and `WMPMainView.menu(for:)` says the
+    /// `SkinEffectsSurfaceView` returns `nil` from `hitTest`, and `WMPMainView.menu(for:)` says the
     /// same of both — but 51 corpus skins wire an `onClick` on the effects node itself, so it is a
     /// *fallback* target rather than a blocker. Both are also routinely the largest node in their
     /// view and declared late, so ranking them by paint order alone swallows whatever the skin

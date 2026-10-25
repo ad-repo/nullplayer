@@ -4,6 +4,15 @@
 
 ### New features
 
+- **Sonique skins** — support for Sonique 1.x `.sgf` skins in the new **Skins ▸ Sonique** menu.
+  **Get More Skins...** opens the Internet Archive's Sonique collection; **Load Skin...** installs
+  an `.sgf` and switches to it. All three of Sonique's modes are drawn from the skin — the
+  navigator, mid and small — and its balls switch between them, as does **Skins ▸ Sonique ▸
+  Mode**. The navigator's menu screen opens NullPlayer's playlist, library and windows; its visual
+  mode screen shows Spikes, Bars, Ambience, Cava or vis_classic, stepped with the up/down rocker;
+  the drawer is the equalizer (the Equalizer menu item opens it). Mid mode's rings show song and
+  playlist progress; small mode's drawer slides out on hover. A skin missing any part borrows it
+  from NullPlayer's own built-in Sonique skin, which is also what shows until you install one.
 - **Track Radio for the local library** — right-click a local track and choose **Start Track Radio**
   to queue tracks like it, scored from the tags (artist, genre, year, tempo, key, grouping) with
   no audio analysis. The CLI gains `--source local --radio track|library|genre|decade|artist` and

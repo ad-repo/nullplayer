@@ -13,7 +13,7 @@
 # --allow-extra REGEX shoots the matching labels despite other windows on screen, recording
 #   `extra-ignored` in the framing column; use it only after looking at the shot, since
 #   `screencapture -l` of a docked group returns the whole group as one image.
-# --log is the app's log, used to confirm a .wal has rendered (default $NULLPLAYER_LOG, /tmp/np.log).
+# --log is the app's log, used to confirm a .wal or .sgf has rendered (default $NULLPLAYER_LOG, /tmp/np.log).
 set -u
 cd "$(dirname "$0")"
 LIST=""; FRAME=800; OUT="$HOME/Documents/shots"; SETTLE=""; ONLY=""; ALLOW=""; LOG="${NULLPLAYER_LOG:-/tmp/np.log}"
@@ -47,21 +47,24 @@ if [ -z "$LIST" ]; then LIST="$(mktemp)"; ./enumerate_skins.sh > "$LIST"; fi
 # ("NullPlayer — <view>") all start with it and sort ahead of the real one.
 main_title() { case "$1" in
   modern) echo "NullPlayer — Winamp Modern";; wmp) echo "NullPlayer — Windows Media Player";;
-  audion) echo "NullPlayer — Audion Faces";; *) echo "NullPlayer";; esac; }
+  audion) echo "NullPlayer — Audion Faces";; sonique) echo "NullPlayer — Sonique";; *) echo "NullPlayer";; esac; }
 # Time for animations after the skin is confirmed loaded.
-family_settle() { case "$1" in modern) echo 15;; wmp) echo 15;; *) echo 0.5;; esac; }
+family_settle() { case "$1" in modern) echo 15;; wmp) echo 15;; sonique) echo 0;; *) echo 0.5;; esac; }
 settle_for() { # $1 system $2 item
   local o; o=$(awk -F'\t' -v k="$2" '$1==k{print $2; exit}' "$SETTLE_TSV" 2>/dev/null)
   if [ -n "$o" ]; then echo "$o"; elif [ -n "$SETTLE" ]; then echo "$SETTLE"; else family_settle "$1"; fi; }
 # This process's on-screen layer-0 windows (shadow windows are already filtered out):
 #   id <TAB> layer <TAB> x <TAB> y <TAB> w <TAB> h <TAB> alpha <TAB> title
 wins() { "$WH" windows --pid "$PID" | awk -F'\t' '$2==0 && $7>0'; }
-wal_count() { grep -c 'WinampModern surfaces \[' "$LOG" 2>/dev/null || echo 0; }
+# The log line a family writes once a skin has rendered (or, for Sonique, failed to); none for the rest.
+load_marker() { case "$1" in modern) echo 'WinampModern surfaces \[';; sonique) echo 'SoniqueSkin: ';; esac; }
+load_count() { local m; m=$(load_marker "$1"); [ -n "$m" ] || { echo 0; return; }
+  grep -c "$m" "$LOG" 2>/dev/null || echo 0; }
 # Window Shadows (default on). Read live from the app's defaults: the sweep's own menu driving
 # once switched it off mid-run, which left shadowless shots that looked fine.
 shadows() { local v; v=$(defaults read NullPlayer skinWindowShadows 2>/dev/null); [ "$v" = 0 ] && echo off || echo on; }
 rec() { printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" "${7:-}" "${8:-}" "${9:-}" "${10:-}" "$(shadows)" >> "$MAN"; }
-[ -r "$LOG" ] || echo "note  no app log at $LOG: .wal render is confirmed by the family settle alone"
+[ -r "$LOG" ] || echo "note  no app log at $LOG: .wal and .sgf renders are confirmed by the family settle alone"
 
 cursys=""
 while IFS=$'\t' read -r sys sub item label; do
@@ -76,7 +79,7 @@ while IFS=$'\t' read -r sys sub item label; do
     timeout 30 osascript "$MENU" mode "$PID" "$sub" >/dev/null 2>&1; sleep 4; cursys="$sys"
   fi
 
-  walbefore=$(wal_count)
+  loadsbefore=$(load_count "$sys")
   ok=""; for t in 1 2 3; do timeout 30 osascript "$MENU" skin "$PID" "$sub" "$item" >/dev/null 2>&1 && { ok=1; break; }; sleep 2; done
   [ -z "$ok" ] && { echo "MENU-FAIL"; rec "$label" "$sys" "$item" menu-fail "" "" "" "" "$want"; continue; }
 
@@ -84,15 +87,21 @@ while IFS=$'\t' read -r sys sub item label; do
   # change it, and a heavy .wal leaves the old window up unchanged while it loads.
   # A skin that pegs the app's main thread makes every menu call hang (211786-Cpro, 2026-10-11),
   # so each call is bounded and the whole wait is capped at 60 s.
+  # Sonique's log line names the .sgf it loaded, so it replaces the ~2.5 s menu read below.
   loaded=""; t0=$SECONDS
-  while [ $((SECONDS - t0)) -lt 60 ]; do
+  [ "$sys" = sonique ] && [ -r "$LOG" ] && loaded=1
+  while [ -z "$loaded" ] && [ $((SECONDS - t0)) -lt 60 ]; do
     [ "$(timeout 30 osascript "$MENU" current "$PID" "$sub" 2>/dev/null)" = "$item" ] && { loaded=1; break; }
     sleep 0.25
   done
   [ -z "$loaded" ] && { echo "NOT-LOADED"; rec "$label" "$sys" "$item" not-loaded "" "" "" "" "$want"; continue; }
-  # The menu ticks before a .wal renders; its surfaces line is the render marker.
-  if [ "$sys" = modern ] && [ -r "$LOG" ]; then
-    for i in $(seq 1 120); do [ "$(wal_count)" -gt "$walbefore" ] && break; sleep 0.25; done
+  # The menu ticks before a .wal or .sgf renders; its log line is the render marker.
+  if [ -n "$(load_marker "$sys")" ] && [ -r "$LOG" ]; then
+    for i in $(seq 1 120); do [ "$(load_count "$sys")" -gt "$loadsbefore" ] && break; sleep 0.25; done
+  fi
+  # A .sgf that fails to load leaves the default skin on screen: never shoot it under this name.
+  if [ "$sys" = sonique ] && [ -r "$LOG" ] && ! grep 'SoniqueSkin: ' "$LOG" | tail -1 | grep -qiF "SoniqueSkin: loaded '$item.sgf'"; then
+    echo "LOAD-FAILED"; rec "$label" "$sys" "$item" load-failed "" "" "" "" "$want"; continue
   fi
   sleep "$(settle_for "$sys" "$item")"
 

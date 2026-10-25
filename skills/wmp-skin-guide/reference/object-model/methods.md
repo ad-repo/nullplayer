@@ -276,7 +276,7 @@ is no video surface to zoom (`imageSourceWidth`/`Height` already answer 0 for th
 no high-contrast mode. Nothing behind those has a host to be live about.
 
 **`effectType` and `effectPreset` are the two that left that class (W101).** The `<EFFECTS>` rect
-they select for is hosted now, so they answer `WMPEffectSelection` — what is actually being drawn —
+they select for is hosted now, so they answer `SkinEffectSelection` — what is actually being drawn —
 and a write posts a `setEffectType`/`setEffectPreset` host command instead of storing session state.
 96 archives bind them straight onto the rect (`currentEffectType="wmpprop:mediacenter.effectType"`),
 so this is the corpus's own selector and not a menu this engine invented.
@@ -315,7 +315,7 @@ Two things this deliberately does not do:
 - **It became a route to the visualization subsystem only once there was one to route to.**
   `effectType`/`effectPreset` naming a real NullPlayer visualization was a capability rather than a
   member — it needed an `<EFFECTS>` that could host one and a snapshot field to answer from. W101
-  built both: `WMPEffectsSurfaceView` hosts `VisualizationGLView` in the authored rect and
+  built both: `SkinEffectsSurfaceView` hosts `VisualizationGLView` in the authored rect and
   `WMPHostSnapshot.effects` is what these two read. Until then the honest answer was a stored
   string, because a mapping with nothing behind it makes the demand disappear while nothing changes
   on screen.

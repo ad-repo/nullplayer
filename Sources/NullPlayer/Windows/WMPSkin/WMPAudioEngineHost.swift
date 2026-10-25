@@ -177,6 +177,7 @@ final class WMPAudioEngineHost: WMPHost {
         let sourceLayout = engine.eqConfiguration
         let sourceGains = (0..<sourceLayout.bandCount).map { engine.getEQBand($0) }
         let classicGains = EQBandRemapper.remap(gains: sourceGains, from: sourceLayout, to: .classic10)
+        let effects = SkinEffectSelection.wmp
         var result = WMPHostSnapshot(state: state, currentTime: Self.finite(engine.currentTime),
             duration: Self.finite(engine.duration), volume: reportedVolume(engine.volume, preMute: preMuteVolume),
             balance: Double(max(-1, min(1, engine.balance))), muted: engine.volume == 0,
@@ -196,7 +197,8 @@ final class WMPAudioEngineHost: WMPHost {
                 crossFadeWindow: Self.finite(engine.sweetFadeDuration) * 1_000,
                 normalization: engine.volumeNormalizationEnabled,
                 preamp: Double(engine.getPreamp()), gains: classicGains.map(Double.init)),
-            effects: WMPEffectSelection.shared.snapshot)
+            effects: WMPEffectsSnapshot(type: effects.current.id, title: effects.current.title,
+                                       preset: effects.preset, presetTitle: effects.presetTitle))
         // Also the title, while nothing is loaded: most skins print `currentMedia.name` and never
         // `player.status`, the same reason a `.wal` songticker prints the failure.
         if track == nil, state == .stopped, let failure = trackLoadFailureMessage {
@@ -404,13 +406,13 @@ final class WMPAudioEngineHost: WMPHost {
             for (band, gain) in remapped.enumerated() { engine.setEQBand(band, gain: gain) }
             engageEqualizer()
         // What the skin's `<EFFECTS>` rect draws. The selection is the WMP session's own — see
-        // `WMPEffectSelection` for why cycling it does not write the app's visualization
+        // `SkinEffectSelection` for why cycling it does not write the app's visualization
         // preference back.
-        case let .setEffectType(name): WMPEffectSelection.shared.select(name)
-        case .nextEffect: WMPEffectSelection.shared.step(by: 1)
-        case .previousEffect: WMPEffectSelection.shared.step(by: -1)
-        case let .setEffectPreset(index): WMPEffectSelection.shared.setPreset(index)
-        case .nextEffectPreset: WMPEffectSelection.shared.stepPreset(by: 1)
+        case let .setEffectType(name): SkinEffectSelection.wmp.select(name)
+        case .nextEffect: SkinEffectSelection.wmp.step(by: 1)
+        case .previousEffect: SkinEffectSelection.wmp.step(by: -1)
+        case let .setEffectPreset(index): SkinEffectSelection.wmp.setPreset(index)
+        case .nextEffectPreset: SkinEffectSelection.wmp.stepPreset(by: 1)
         }
     }
 

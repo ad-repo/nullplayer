@@ -251,10 +251,10 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     /// top, so a playlist that appears after the overlay would otherwise land on the wrong side of
     /// it and cover the artwork it is meant to sit under.
     private func enforceLayerOrder() {
-        for (_, view) in widgetViews where view is WMPEffectsSurfaceView {
+        for (_, view) in widgetViews where view is SkinEffectsSurfaceView {
             addSubview(view, positioned: .below, relativeTo: overlayView)
         }
-        for (_, view) in widgetViews where !(view is WMPEffectsSurfaceView) {
+        for (_, view) in widgetViews where !(view is SkinEffectsSurfaceView) {
             addSubview(view, positioned: .above, relativeTo: overlayView)
         }
     }
@@ -353,7 +353,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     /// surface's own origin, at this view's size.
     private func applySilhouette() {
         for (_, view) in widgetViews {
-            guard let effects = view as? WMPEffectsSurfaceView else { continue }
+            guard let effects = view as? SkinEffectsSurfaceView else { continue }
             effects.applySilhouette(silhouette, rect: silhouette == nil ? .zero
                 : NSRect(x: -view.frame.minX, y: -view.frame.minY,
                          width: bounds.width, height: bounds.height))
@@ -401,7 +401,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         for view in widgetViews.values {
             (view as? WMPPlaylistSurfaceView)?.update(snapshot)
             (view as? WMPDropdownPlaylistSurfaceView)?.update(snapshot)
-            (view as? WMPEffectsSurfaceView)?.update(snapshot)
+            (view as? SkinEffectsSurfaceView)?.setActive(snapshot.state.isRunning)
         }
     }
 
@@ -448,7 +448,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     }
 
     func updateSpectrum(_ levels: [Float]) {
-        widgetViews.values.compactMap { $0 as? WMPEffectsSurfaceView }.forEach { $0.updateSpectrum(levels) }
+        widgetViews.values.compactMap { $0 as? SkinEffectsSurfaceView }.forEach { $0.updateSpectrum(levels) }
     }
 
     func cancelInputCapture() {
@@ -563,7 +563,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
                 + "clipped=\(visible.map(String.init(describing:)) ?? "none") "
                 + "view=\(WMPNumber.format(view.frame.width))x\(WMPNumber.format(view.frame.height))")
             #endif
-            guard let effects = view as? WMPEffectsSurfaceView else { continue }
+            guard let effects = view as? SkinEffectsSurfaceView else { continue }
             // The mask image covers its container's frame, which is not always the widget's own —
             // so the rect is the offset between the two, in this surface's scaled bounds.
             func placed(_ mask: WMPWidgetRegionMask) -> (CGImage, NSRect)? {
@@ -601,7 +601,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         let point = convert(event.locationInWindow, from: nil)
         if let video = videoSurface?.menu(at: point) { return video }
         for view in widgetViews.values {
-            guard let effects = view as? WMPEffectsSurfaceView, effects.frame.contains(point) else { continue }
+            guard let effects = view as? SkinEffectsSurfaceView, effects.frame.contains(point) else { continue }
             return effects.buildMenu()
         }
         // **Everywhere else the host's own menu, so a `.wmz` window is never a dead end.** This
@@ -891,7 +891,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     /// a slider's arrows are the slider's.
     private func hostedSurfaceHandled(_ event: NSEvent) -> Bool {
         videoSurface?.handleKeyDown(event) == true
-            || widgetViews.values.compactMap { $0 as? WMPEffectsSurfaceView }.contains { $0.handleKeyDown(event) }
+            || widgetViews.values.compactMap { $0 as? SkinEffectsSurfaceView }.contains { $0.handleKeyDown(event) }
     }
 
     override func accessibilityChildren() -> [Any]? {
@@ -1045,7 +1045,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         // hosted `NSView` is not a paint command, so `Plus! Bionic Dot`'s `<subview id="visMask"
         // alphaBlend="0">` correctly drew no artwork while the `<EFFECTS>` inside it put a 169x160
         // visualizer over the face. Dropping the view rather than setting `alphaValue = 0` is what
-        // stops an invisible `WMPEffectsSurfaceView` from running a GL engine and a 30fps readback
+        // stops an invisible `SkinEffectsSurfaceView` from running a GL engine and a 30fps readback
         // for a pane the user has not opened; `toggleVis()` fades the mask back up, the scene is
         // rebuilt, and the surface is created again. Cerulean's `<effects>` has no `alphaBlend`
         // above it, reads 1, and is hosted exactly as before.
@@ -1070,7 +1070,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             // A `<LISTBOX>` is a playlist chooser the skin fills from script, out of
             // `player.playlistCollection` — the library browser's selected source (W136).
             case .listBox: view = WMPListBoxSurfaceView()
-            case .effects: view = WMPEffectsSurfaceView(frame: .zero)
+            case .effects: view = SkinEffectsSurfaceView(frame: .zero, selection: .wmp)
             default: continue
             }
             view.toolTip = widget.toolTip

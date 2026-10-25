@@ -216,6 +216,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return controller is WMPMainWindowController
             case .audion:
                 return controller is AudionFaceMainWindowController
+            case .sonique:
+                return controller is SoniqueSkinMainWindowController
             }
         }
 

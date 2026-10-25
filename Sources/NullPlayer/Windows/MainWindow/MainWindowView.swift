@@ -68,12 +68,12 @@ enum MainWindowVisMode: String, CaseIterable {
     static let originalDefaultsKey = "modernMainWindowVisMode"
 
     /// The running family's mode key; nil where the main window isn't a NullPlayer visualizer
-    /// (`.wal`, `.wmz` and Audion draw their own, and hide the Main Window vis menu).
+    /// (`.wal`, `.wmz`, Audion and Sonique draw their own, and hide the Main Window vis menu).
     static func defaultsKey(for family: PlayerUIControllerFamily) -> String? {
         switch family {
         case .classic: return classicDefaultsKey
         case .nullPlayerModern: return originalDefaultsKey
-        case .winampModern, .wmp, .audion: return nil
+        case .winampModern, .wmp, .audion, .sonique: return nil
         }
     }
 }

@@ -329,7 +329,7 @@ keeps the identity and does not re-pick. Hooks, and how each reaches a live brid
 - `.spectrumWindow`: `WindowManager.applyHostedVisClassicSkinDefault` on
   `.hostedSurfaceStyleDidChange`; reloads `sharedVisClassicBridge` and posts
   `.visClassicProfileCommand` `load` / `spectrumWindow` for a visible window.
-- `.wmpEffects`: `WMPEffectsSurfaceView` before its bridge is built and on the style notification;
+- `.wmpEffects`: `SkinEffectsSurfaceView` before its bridge is built and on the style notification;
   loads its own bridge directly (nothing listens to the notification for this target).
 - `.winampModernVisBox`: `VisClassicVisRenderer.draw`, gated on a per-renderer last-seen identity;
   loads its own bridge when the stored name differs (several boxes, one scope).

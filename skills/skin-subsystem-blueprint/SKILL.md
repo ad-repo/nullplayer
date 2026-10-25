@@ -1,6 +1,6 @@
 ---
 name: skin-subsystem-blueprint
-description: How to add or extend a skin family (Classic, Original, Winamp Modern .wal, Windows Media Player .wmz, and the VLC family next) — the shared-code seams a new family must touch, the isolation rules, the harness and corpus pattern, and the skill/backlog layout every family is expected to produce. Use when starting a new skin engine, reviewing a change that touches PlayerUIMode or WindowManager routing, or deciding where a new subsystem's documentation goes.
+description: How to add or extend a skin family (Classic, Original, Winamp Modern .wal, Windows Media Player .wmz, Audion faces, Sonique .sgf, and the VLC family next) — the shared-code seams a new family must touch, the isolation rules, the harness and corpus pattern, and the skill/backlog layout every family is expected to produce. Use when starting a new skin engine, reviewing a change that touches PlayerUIMode or WindowManager routing, or deciding where a new subsystem's documentation goes.
 ---
 
 # Adding a skin family
@@ -13,6 +13,9 @@ A fifth, `audion` (Panic Audion faces, `audion-face-guide`, backlog `tasks/AUDIO
 construction on this pattern. It is the one family that is a port rather than a clean-room effort:
 Panic's GPL FaceKit defines the format and renders an oracle, so a diff against that oracle is a
 defect, not an unclassified change.
+
+A sixth, `sonique` (Sonique 1.x `.sgf`, `sonique-skin-guide`, backlog `tasks/SONIQUE_TASKS.md`), is
+public: the three modes drawn from the skin and driven, with real Sonique under Wine as its oracle.
 
 **The reference implementation is `winamp-modern-skin-guide`**: the most successful engine here, and
 the model for the engine rules, the harness, the corpus census, the demand-driven backlog and the
@@ -48,6 +51,13 @@ family may quietly inherit Classic's or Original's behaviour.
 
 - **Never add a new boolean** of the form `isRunningXUI` used at more than one call site. Add the
   case to `PlayerUIControllerFamily` and switch on it.
+- **A capability whose absence is right for every other family is asked with `as?`, not a switch.**
+  `SkinDrawnEqualizer` (Sonique's drawer is its equaliser), and `WindowManager.frameLender` (a `.wmz`
+  lends NullPlayer's windows frame artwork; Sonique S22 deleted eight switches for it): a family that
+  never hears of it lends nothing and is always settled, which is correct. With one family behind a
+  capability, cast to its controller; a protocol whose requirement is that family's own type is
+  the same cast with an extra name, and a protocol of forwarded operations is pass-through wrappers. Anything every family must
+  answer for itself — the surface style, the interior scope — stays an exhaustive switch.
 - `isModernUIEnabled` is **safe**: it is derived (`controllerFamily == .nullPlayerModern`).
 - `isRunningModernUI` is **not**: it is a negative allow-list of controller types
   (`is ModernMainWindowController` → true; `is MainWindowController`, `is WMPMainWindowController`
@@ -69,7 +79,7 @@ family needed (`git diff main...HEAD -- Sources/NullPlayer/App` on the WMP branc
 | File | What a new family adds |
 |---|---|
 | `App/PlayerUIMode.swift` | the `PlayerUIMode` case, its `PlayerUIControllerFamily` case, and answers in `usesModernEQLayout` / `modernSkinFamily` |
-| `App/AppCapabilities.swift` | an `AppFeature` case, so an edition can turn the family off and DEBUG-only exposure is expressible |
+| `App/AppCapabilities.swift` | an `AppFeature` case, so an edition can turn the family off (a family under construction can make it DEBUG-only in `AppCapabilities.supports`, as Sonique's was until `docs/sonique/phase-0-decision-record.md` Amendment 5) |
 | `App/WindowManager.swift` | `makeMainWindowController(for:)`; the auxiliary-window policy; the init-time default-skin gate; `prepareUIRuntime(for:)`; the `reloadUI` availability guard; the fallback main-window size; compact-mode/window guards |
 | `App/AppDelegate.swift` | menu-bar items |
 | `App/ContextMenuBuilder.swift` | context-menu items; the family's Skins submenu goes in `ContextMenuBuilder+SkinFamilies.swift` (`buildSkinFamilyMenu` fixes the order: options, one divider, skins) and its `MenuActions.RemovableSkin` case |
@@ -78,9 +88,19 @@ family needed (`git diff main...HEAD -- Sources/NullPlayer/App` on the WMP branc
 Adding the `PlayerUIControllerFamily` case **first** turns the rest into a compiler worklist. That is
 the intended workflow: let the build tell you the seams instead of grepping for them.
 
+One shared type a family's importer uses rather than re-implements: **`SkinInstallFolder`**
+(`App/Skinning/`) owns `Application Support/NullPlayer/<folder>`, the `.incoming-<UUID>` copy that
+is validated as the bytes committed, the one same-directory move or replace, and the off-main
+delete. The family keeps its file test, loader call and naming. WMP, `.wal`, Audion and Sonique all
+go through it (Sonique S13, 2026-10-18). Beside it, **`SkinSelection(key:)`** is the saved choice
+(WMP, Audion and Sonique; WMP keeps its view id itself, `.wal` its bundled fallback). A
+single-canvas window (`SingleCanvasMainWindow`, Audion and Sonique) supplies its selection, URL lookup,
+loader, `loadedSkinURL` and `present(_:error:)`, and gets `reloadSelectedSkin`, `selectSkin(named:)` and
+`resetToUnskinned` over one `SkinLoadTask` (`App/Skinning/`, Sonique S18).
+
 One seam the compiler will not list: **the window drop shadow.** A family's windows never set
 `hasShadow`; they set `window.hasSkinShadow = true`, or attach `SkinWindowShadow` to the outline the
-engine already has, as `.wal`, `.wmz` and Audion do. Either way they join the one **Window Shadows**
+engine already has, as `.wal`, `.wmz`, Audion and Sonique do. Either way they join the one **Window Shadows**
 switch. `ui-guide` § *Window Drop Shadows (Every Family)*.
 
 ### The auxiliary-window policy is a decision, not a default

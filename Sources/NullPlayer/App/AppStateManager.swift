@@ -720,10 +720,10 @@ class AppStateManager {
             modernSkinName: UserDefaults.standard.string(forKey: ModernSkinFamily.modern.skinNameKey),
             metalSkinName: UserDefaults.standard.string(forKey: ModernSkinFamily.metal.skinNameKey),
             wmpSkinName: wm.uiMode == .wmp
-                ? UserDefaults.standard.string(forKey: WMPSkinImporter.selectedSkinNameKey) : nil,
+                ? WMPSkinImporter().selection.name : nil,
             wmpViewID: wm.uiMode == .wmp
                 ? UserDefaults.standard.string(forKey: WMPSkinImporter.selectedViewIDKey) : nil,
-            audionFaceName: wm.uiMode == .audion ? AudionFaceImporter().selectedFaceName : nil,
+            audionFaceName: wm.uiMode == .audion ? AudionFaceImporter().selection.name : nil,
             selectedOutputDeviceUID: UserDefaults.standard.string(forKey: "selectedOutputDeviceUID"),
             browserBrowseMode: browserBrowseMode,
             uiMode: wm.uiMode.rawValue,
@@ -903,9 +903,7 @@ class AppStateManager {
         if runningMode == .wmp {
             (wm.mainWindowController as? WMPMainWindowController)?.reloadSelectedSkin()
         }
-        if runningMode == .audion {
-            (wm.mainWindowController as? AudionFaceMainWindowController)?.reloadSelectedFace()
-        }
+        (wm.mainWindowController as? any SingleCanvasMainWindow)?.reloadSelectedSkin()
         
         // Restore audio output device
         if let deviceUID = state.selectedOutputDeviceUID {
@@ -1341,8 +1339,8 @@ class AppStateManager {
             controller.restoreFrame(correctedMainFrame ?? NSRectFromString(frameString),
                                     skinName: state.wmpSkinName, viewID: state.wmpViewID)
         } else if let frameString = state.mainWindowFrame,
-                  let controller = wm.mainWindowController as? AudionFaceMainWindowController {
-            // The face decides the size; the saved frame places its top-left.
+                  let controller = wm.mainWindowController as? any SingleCanvasMainWindow {
+            // The face or skin decides the size; the saved frame places its top-left.
             controller.restoreFrame(correctedMainFrame ?? NSRectFromString(frameString))
         } else if let frameString = state.mainWindowFrame,
            let controller = wm.mainWindowController,

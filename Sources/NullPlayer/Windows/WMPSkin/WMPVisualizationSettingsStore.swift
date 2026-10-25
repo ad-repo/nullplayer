@@ -8,7 +8,7 @@ import Foundation
 /// what was left there. This is the same rule `WMPViewFrameStore` already applies to geometry:
 /// what the user last decided for *this* skin wins.
 ///
-/// **What is in scope is what WMP owns.** The selected effect and its preset (`WMPEffectSelection`)
+/// **What is in scope is what WMP owns.** The selected effect and its preset (`SkinEffectSelection`)
 /// plus every preference key already namespaced to the effects slot — Cava's `.wmpEffects` tuning
 /// and vis_classic's `.wmpEffects` profile/fit/transparency. ProjectM, Geiss and Tripex cycle and
 /// sensitivity settings are deliberately *not* here: those keys are shared with NullPlayer's own

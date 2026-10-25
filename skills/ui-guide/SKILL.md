@@ -788,7 +788,7 @@ geometry as an exact match.
   ordered below it, holding a blur of the window's outline with the outline knocked back out.
   AppKit's own (`hasShadow`) is not used on a skin window: it traces every non-zero alpha pixel,
   and macOS draws a hard rim along that edge — around a face's baked-in soft shadow, for one (#527).
-- `.wal`, `.wmz` and Audion attach it to their engine's outline (their skills). Classic, Original
+- `.wal`, `.wmz`, Audion and Sonique attach it to their engine's outline (their skills). Classic, Original
   and every shared window — playlist, EQ, library, visualizers, video — set
   `window.hasSkinShadow = true` (`Windows/Shared/NSWindow+SkinShadow.swift`): the outline is the
   content view's layer tree rendered at one pixel per point, and an opaque window's is its frame.
@@ -933,7 +933,7 @@ The regular Library and Compact surfaces each support a durable visual mode: **O
 `compactBackdropMode`. Controls live under **Visuals > Library Window** or
 **Visuals > Compact Window** and in the corresponding surface's context menus.
 
-The classic browser (Classic, and the `.wal` fallback, `.wmz` and Audion library windows) has its
+The classic browser (Classic, and the `.wal` fallback, `.wmz`, Audion and Sonique library windows) has its
 own Library Window choice, `ClassicLibraryBackdropMode` (registered default Art,
 `BrowserBackdropMode.classicDefaultMode`); `migrateLegacyArtworkPreference` seeds it once from the
 legacy `showBrowserArtworkBackground` toggle (on → Art, off → Off), so Classic keeps its look until
@@ -1421,8 +1421,8 @@ too, whose script also carries its frames itself.
 
 Background-work progress (a rip, an EQ Cast render or cache delete) shows in `App/ActivityCenter.swift`:
 one borderless, non-activating floating panel at the top-right of the visible frame of the screen
-holding the main window, 16pt inset — the same for every skin family, because `.wal`, `.wmz` and
-Audion players are arbitrary shapes a bar inside the player cannot fit. Native look
+holding the main window, 16pt inset — the same for every skin family, because `.wal`, `.wmz`,
+Audion and Sonique players are arbitrary shapes a bar inside the player cannot fit. Native look
 (`NSVisualEffectView` `.hudWindow`, built by `App/HUDPanel.swift` (shared with the skin loader) and rounded by its mask, never
 `layer.cornerRadius`), a faded app icon on the left, a "NullPlayer" header, and one spinner row per job.
 

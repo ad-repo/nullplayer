@@ -145,7 +145,7 @@ of these was invisible to the harness and visible in the first minute of live QA
   will not run just because a scene arrived, so an equaliser the skin slid away keeps its old frame.
 - **The overlays are not in the dumped PNG.** The renderer draws the scene; playlist, equaliser,
   popup, effects and video are `NSView`s hosted over it, and `WMPVideoPlaceholderView` and
-  `WMPEffectsSurfaceView` both paint an opaque background. A skin can dump a perfect frame and look
+  `SkinEffectsSurfaceView` both paint an opaque background. A skin can dump a perfect frame and look
   wrong on screen. `WMP_RENDER_PROBE`'s `WIDGET` line reports where the scene put them, and
   **`WMP_RENDER_APPKIT` is what actually runs their `draw(_:)`** — it hosts the scene in a real
   `WMPMainView`, `cacheDisplay`s it twice (once with the overlays hidden), and reports what the
@@ -169,11 +169,11 @@ of these was invisible to the harness and visible in the first minute of live QA
   *measurement*; painting is clipped by `CGContext.clip(to:)` and is unaffected, but a `visible=`
   number taken off those paths reads a disjoint clip as unclipped.
 - **An overlay fills `bounds`, never `dirtyRect`.** AppKit is free to hand a view a dirty rect
-  larger than itself, and it does: the 320x240 `WMPEffectsSurfaceView` was called with
+  larger than itself, and it does: the 320x240 `SkinEffectsSurfaceView` was called with
   `{{-269, -26}, {596, 468}}` — the whole window in its own coordinates — and a layer-backed view
   does not clip that (`masksToBounds` is false). `dirtyRect.fill()` therefore painted the spectrum
   pane's translucent wash over the entire skin, reported as "a giant black box over the player".
-  Both `WMPEffectsSurfaceView` and `WMPPlaylistSurfaceView` had it. It only appears once the overlay
+  Both `SkinEffectsSurfaceView` and `WMPPlaylistSurfaceView` had it. It only appears once the overlay
   exists, and the overlay only exists after a skin reload with a track playing, which is why it read
   as "switching skins causes it".
 - **The selected view is persisted on every present, and Corona's route into its compact view is an

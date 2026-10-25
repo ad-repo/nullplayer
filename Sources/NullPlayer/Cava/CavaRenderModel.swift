@@ -60,9 +60,9 @@ final class CavaRenderModel {
 
     init(scope: CavaSettings.Scope = .cavaWindow) {
         self.scope = scope
-        self.consumerId = "cava.\(scope.identifier)"
+        self.consumerId = "cava.\(scope.rawValue)"
         self.processingQueue = DispatchQueue(
-            label: "com.nullplayer.cava.processing.\(scope.identifier)",
+            label: "com.nullplayer.cava.processing.\(scope.rawValue)",
             qos: .userInteractive
         )
     }

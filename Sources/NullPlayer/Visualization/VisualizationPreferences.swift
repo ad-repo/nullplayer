@@ -159,7 +159,7 @@ enum VisualizationPreferences {
                 defaults.set(MainWindowVisMode.spectrum.rawValue, forKey: MainWindowVisMode.classicDefaultsKey)
             }
             return
-        case .winampModern, .wmp, .audion:
+        case .winampModern, .wmp, .audion, .sonique:
             WindowManager.shared.writeClassicVisualizationDefaultKeys(for: scope, defaults: defaults)
             if scope == .spectrumWindow || scope == .all {
                 VisClassicProfileMatcher.forgetAppliedSkin(for: [.spectrumWindow], defaults: defaults)
@@ -306,9 +306,11 @@ enum VisualizationPreferences {
         // The `.wal` `<vis>` box has no notification target: it is repainted by the skin window's
         // own visualization clock, not by the `visClassicProfileCommand` broadcast.
         case .winampModernVisBox: return "winampModernVisBox"
-        // WMP's effect slot owns its repaint through `WMPEffectsSurfaceView`, so it likewise does
-        // not subscribe to the standalone analyzer's command broadcast.
+        // The skin effects slots (WMP's, Sonique's) own their repaint through
+        // `SkinEffectsSurfaceView`, so they likewise do not subscribe to the standalone analyzer's
+        // command broadcast.
         case .wmpEffects: return "wmpEffects"
+        case .soniqueEffects: return "soniqueEffects"
         }
     }
 

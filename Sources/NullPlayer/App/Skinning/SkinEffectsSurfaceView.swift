@@ -1,12 +1,15 @@
 import AppKit
 
-/// The `<EFFECTS>` rect: NullPlayer's own visuals, in the frame the skin authored for them.
+/// A skin's effects surface: NullPlayer's own visuals, in the frame the skin gives them — a `.wmz`
+/// skin's `<EFFECTS>` rect, or the Sonique navigator's visual mode screen. Each family has its own
+/// `SkinEffectSelection`, which carries its own Cava and vis_classic settings. What follows is
+/// WMP's case, which the surface was built for.
 ///
 /// **The geometry was always there and nothing is invented here.** Every `<EFFECTS>` element
 /// measured in the corpus carries `width` and `height`, most of them expressions off the frame the
 /// skin drew around it (`WoW`: `<effects id="visEffects" width="jscript:visFrame.width" …>`), and
 /// 183 of them across 166 of 177 archives were hosted on nothing at all until `<EFFECTS>` became an
-/// element kind (W101). What goes in the rect is `WMPEffectSelection`'s compact WMP-native effect,
+/// element kind (W101). What goes in the rect is `SkinEffectSelection`'s compact WMP-native effect,
 /// rendered in this view rather than borrowed from NullPlayer's standalone visualization window.
 ///
 /// **Nothing playing draws nothing at all.** W9 removed the video placeholder because an opaque
@@ -16,10 +19,12 @@ import AppKit
 /// `onClick` on the rect to cycle their effect and that handler belongs to the scene's own hit
 /// testing, not to this overlay.
 @MainActor
-final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
+final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
+    /// The family's selection: what the surface draws, and whose Cava and vis_classic settings.
+    private let selection: SkinEffectSelection
     private var levels: [Float] = []
     private var isActive = false
-    private var effect = WMPEffectSelection.shared.current
+    private var effect: SkinEffectSelection.Effect
     private var appliedPreset = -1
     private var engineView: VisualizationGLView?
     private var pcmObserver: NSObjectProtocol?
@@ -35,8 +40,8 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private var cycleTimer: Timer?
     /// These are the actual suite renderers, not visual approximations. Their scopes keep a WMP
     /// skin's right-click choices separate from the standalone and `.wal` surfaces.
-    private let cavaPresenter = CavaPresenter(scope: .wmpEffects)
-    private let visClassicWaveform = WinampModernWaveformTap(consumerId: "wmp.effects.visclassic")
+    private let cavaPresenter: CavaPresenter
+    private let visClassicWaveform: WinampModernWaveformTap
     private var visClassicBridge: VisClassicBridge?
     private var visClassicBytes: [UInt8] = []
     /// The GL engines are pulled, not pushed: the view is never in the hierarchy, its display link
@@ -63,7 +68,11 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
 
     override var isFlipped: Bool { true }
 
-    override init(frame frameRect: NSRect) {
+    init(frame frameRect: NSRect, selection: SkinEffectSelection) {
+        self.selection = selection
+        effect = selection.current
+        cavaPresenter = CavaPresenter(scope: selection.cavaScope)
+        visClassicWaveform = WinampModernWaveformTap(consumerId: selection.waveformConsumerID)
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -72,7 +81,7 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
             self.needsDisplay = true
         }
         selectionObserver = NotificationCenter.default.addObserver(
-            forName: WMPEffectSelection.didChange, object: nil, queue: .main
+            forName: SkinEffectSelection.didChange, object: selection, queue: .main
         ) { [weak self] _ in MainActor.assumeIsolated { self?.applySelection() } }
         // The controller posts this when the presented view (and so the palette) changes.
         surfaceStyleObserver = NotificationCenter.default.addObserver(
@@ -89,14 +98,14 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private func applySkinDefaultColors() {
         guard let style = WindowManager.shared.hostedSurfaceStyle else { return }
         CavaSettings.setSkinDefaultColors(low: style.visualizationLow, high: style.visualizationHigh,
-                                          scope: .wmpEffects)
+                                          scope: selection.cavaScope)
     }
 
     private func hostedSurfaceStyleDidChange() {
         guard !isTornDown else { return }
         applySkinDefaultColors()
         applyVisClassicSkinDefault()
-        if let bridge = visClassicBridge, let name = VisClassicBridge.lastProfileName(for: .wmpEffects),
+        if let bridge = visClassicBridge, let name = VisClassicBridge.lastProfileName(for: selection.visClassicScope),
            bridge.currentProfileName != name {
             bridge.loadProfile(named: name)
         }
@@ -108,7 +117,7 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private func applyVisClassicSkinDefault() {
         guard let style = WindowManager.shared.hostedSurfaceStyle,
               let identity = WindowManager.shared.hostedSkinIdentity else { return }
-        VisClassicProfileMatcher.applySkinDefault(for: .wmpEffects, skinIdentity: identity,
+        VisClassicProfileMatcher.applySkinDefault(for: selection.visClassicScope, skinIdentity: identity,
                                                   low: style.visualizationLow, high: style.visualizationHigh)
     }
 
@@ -172,9 +181,8 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     // MARK: - Host state
 
     /// Playback state is what decides whether anything is drawn at all, and the selection is what
-    /// decides what. Both arrive on the same snapshot the rest of the window refreshes from.
-    func update(_ snapshot: WMPHostSnapshot) {
-        let active = snapshot.state.isRunning
+    /// decides what. The host passes whether a track is running on every state refresh.
+    func setActive(_ active: Bool) {
         guard active != isActive else { return }
         isActive = active
         applySelection()
@@ -193,7 +201,7 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private func applySelection() {
         guard !isTornDown else { return }
         let previous = effect
-        effect = WMPEffectSelection.shared.current
+        effect = selection.current
         // **A preset step is not an effect change.** `setPreset` posts the same notification as
         // `select`, and rebuilding the engine for it would reinitialize ProjectM on every press of
         // the left/right keys. The running engine takes the new number instead, and `applyPreset`
@@ -297,7 +305,7 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     /// what the running engine has, and the title it landed on is reported back. A skin reading
     /// `currentPresetTitle` (42 archives) then sees the preset that is actually on screen.
     private func applyPreset(to view: VisualizationGLView, engine: VisualizationType) {
-        let wanted = WMPEffectSelection.shared.preset
+        let wanted = selection.preset
         guard wanted != appliedPreset else { return }
         appliedPreset = wanted
         switch engine {
@@ -305,17 +313,17 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
             guard view.presetCount > 0 else { return }
             let index = wanted % view.presetCount
             view.selectPreset(at: index)
-            WMPEffectSelection.shared.presetTitle = view.presetName(at: index)
+            selection.presetTitle = view.presetName(at: index)
         case .geiss:
             guard view.geissEffectCount > 0 else { return }
             let index = wanted % view.geissEffectCount
             view.selectGeissEffect(at: index)
-            WMPEffectSelection.shared.presetTitle = view.geissEffectName(at: index)
+            selection.presetTitle = view.geissEffectName(at: index)
         case .tripex:
             guard view.tripexEffectCount > 0 else { return }
             let index = wanted % view.tripexEffectCount
             view.selectTripexEffect(at: index)
-            WMPEffectSelection.shared.presetTitle = view.tripexEffectName(at: index)
+            selection.presetTitle = view.tripexEffectName(at: index)
         }
     }
 
@@ -435,7 +443,7 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
             visClassicBridge.setReferenceWidth(width)
             return visClassicBridge
         }
-        guard let made = VisClassicBridge(width: width, height: height, scope: .wmpEffects) else {
+        guard let made = VisClassicBridge(width: width, height: height, scope: selection.visClassicScope) else {
             return nil
         }
         made.setReferenceWidth(width)
@@ -563,8 +571,8 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     func handleKeyDown(_ event: NSEvent) -> Bool {
         guard !isTornDown else { return false }
         switch event.keyCode {
-        case 125: WMPEffectSelection.shared.step(by: 1); return true
-        case 126: WMPEffectSelection.shared.step(by: -1); return true
+        case 125: selection.step(by: 1); return true
+        case 126: selection.step(by: -1); return true
         case 124: return stepWithinEffect(by: 1)
         case 123: return stepWithinEffect(by: -1)
         default: return false
@@ -573,7 +581,7 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
 
     /// One step inside the selected effect, or `false` when this effect has no inside.
     ///
-    /// The GL engines go through `WMPEffectSelection.setPreset`, not through the engine's own
+    /// The GL engines go through `SkinEffectSelection.setPreset`, not through the engine's own
     /// `nextPreset()`: the skin's `currentPreset` / `currentPresetTitle` bindings read that number,
     /// so stepping the engine behind the selection's back would leave 144 archives displaying a
     /// preset that is not the one on screen. The index wraps on the running engine's own count and
@@ -584,8 +592,8 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         switch effect.style {
         case .projectM, .geiss, .tripex:
             guard let count = presetCount(), count > 0 else { return false }
-            let current = WMPEffectSelection.shared.preset % count
-            WMPEffectSelection.shared.setPreset(((current + delta) % count + count) % count)
+            let current = selection.preset % count
+            selection.setPreset(((current + delta) % count + count) % count)
             return true
         case .visClassic:
             guard let bridge = visClassicBridge else { return false }
@@ -622,7 +630,7 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         let menu = NSMenu(title: "Visual Effects")
         let effectItem = NSMenuItem(title: "Effect", action: nil, keyEquivalent: "")
         let effectMenu = NSMenu(title: "Effect")
-        for candidate in WMPEffectSelection.catalogue {
+        for candidate in SkinEffectSelection.catalogue {
             let item = NSMenuItem(title: candidate.title, action: #selector(selectNativeEffect(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = candidate.id
@@ -660,7 +668,7 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
 
     private func visClassicOptionsMenu() -> NSMenu {
         let menu = NSMenu(title: "vis_classic")
-        let current = visClassicBridge?.currentProfileName ?? VisClassicBridge.lastProfileName(for: .wmpEffects)
+        let current = visClassicBridge?.currentProfileName ?? VisClassicBridge.lastProfileName(for: selection.visClassicScope)
         let profileItem = NSMenuItem(title: "Profile", action: nil, keyEquivalent: "")
         let profileMenu = NSMenu(title: "Profile")
         for profile in VisClassicBridge.availableProfilesCatalog() {
@@ -674,39 +682,39 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
         menu.addItem(profileItem)
         let fit = NSMenuItem(title: "Fit To Width", action: #selector(toggleVisClassicFit(_:)), keyEquivalent: "")
         fit.target = self
-        fit.state = VisClassicBridge.fitToWidthDefault(for: .wmpEffects) ? .on : .off
+        fit.state = VisClassicBridge.fitToWidthDefault(for: selection.visClassicScope) ? .on : .off
         menu.addItem(fit)
         let transparent = NSMenuItem(title: "Transparent Background", action: #selector(toggleVisClassicTransparency(_:)), keyEquivalent: "")
         transparent.target = self
-        transparent.state = VisClassicBridge.transparentBgDefault(for: .wmpEffects) ? .on : .off
+        transparent.state = VisClassicBridge.transparentBgDefault(for: selection.visClassicScope) ? .on : .off
         menu.addItem(transparent)
         return menu
     }
 
     @objc private func selectVisClassicProfile(_ sender: NSMenuItem) {
         guard let name = sender.representedObject as? String else { return }
-        UserDefaults.standard.set(name, forKey: VisClassicBridge.PreferenceScope.wmpEffects.lastProfileNameKey)
+        UserDefaults.standard.set(name, forKey: selection.visClassicScope.lastProfileNameKey)
         _ = visClassicBridge?.loadProfile(named: name)
         needsDisplay = true
     }
 
     @objc private func toggleVisClassicFit(_ sender: NSMenuItem) {
-        let enabled = !VisClassicBridge.fitToWidthDefault(for: .wmpEffects)
-        UserDefaults.standard.set(enabled, forKey: VisClassicBridge.PreferenceScope.wmpEffects.fitToWidthKey)
+        let enabled = !VisClassicBridge.fitToWidthDefault(for: selection.visClassicScope)
+        UserDefaults.standard.set(enabled, forKey: selection.visClassicScope.fitToWidthKey)
         _ = visClassicBridge?.setFitToWidth(enabled)
         needsDisplay = true
     }
 
     @objc private func toggleVisClassicTransparency(_ sender: NSMenuItem) {
-        let enabled = !VisClassicBridge.transparentBgDefault(for: .wmpEffects)
-        UserDefaults.standard.set(enabled, forKey: VisClassicBridge.PreferenceScope.wmpEffects.transparentBgKey)
+        let enabled = !VisClassicBridge.transparentBgDefault(for: selection.visClassicScope)
+        UserDefaults.standard.set(enabled, forKey: selection.visClassicScope.transparentBgKey)
         _ = visClassicBridge?.setTransparentBackground(enabled)
         needsDisplay = true
     }
 
     @objc private func selectNativeEffect(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
-        WMPEffectSelection.shared.select(id)
+        selection.select(id)
     }
 
     /// `VisualizationMenuTarget` / `GeissMenuTarget`: the engine the shared menu acts on. It is nil
@@ -761,8 +769,8 @@ final class WMPEffectsSurfaceView: NSView, VisualizationMenuTarget {
     /// visualization window and the menu bar share, and a skin is not entitled to rewrite it.
     @objc func switchVisualizationEngine(_ sender: NSMenuItem) {
         guard let type = sender.representedObject as? VisualizationType,
-              let effect = WMPEffectSelection.catalogue.first(where: { $0.engine == type }) else { return }
-        WMPEffectSelection.shared.select(effect.id)
+              let effect = SkinEffectSelection.catalogue.first(where: { $0.engine == type }) else { return }
+        selection.select(effect.id)
         applyPresetCycleMode()
     }
 

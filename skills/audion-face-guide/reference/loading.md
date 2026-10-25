@@ -89,7 +89,8 @@ files and header-only PNGs reach the production bounds without building large fi
 
 ## Install, select, remove
 
-Phase 3 (`AudionFaceImporter`).
+Phase 3 (`AudionFaceImporter`). Staging, the copy's validation, the commit and the delete are the
+shared `SkinInstallFolder`'s (`skin-subsystem-blueprint` § *The shared-code seams*).
 
 Beyond the codes: `testAFIFOIsAbsentNeverOpened`, `testATruncatedSpriteIsMissing`, and
 `AudionFaceFuzzTests` — 400 seeded mutations of an every-element face (hostile values per key, byte

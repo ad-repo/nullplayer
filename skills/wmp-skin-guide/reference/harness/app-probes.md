@@ -156,7 +156,7 @@ few open/close cycles; zero is the pass.
 
 **`src=` is the field to read, and a `drop` followed by a `create` of a different kind is the
 signature.** The black frame is not a paint bug: dropping a hosted view and building a new
-`WMPEffectsSurfaceView` in its place shows an empty GL surface until its first frame. Read the
+`SkinEffectsSurfaceView` in its place shows an empty GL surface until its first frame. Read the
 sources against each other — an `interaction` or `animation` present that contradicts the last
 `transaction` is a repaint built on overrides a script transaction has already replaced
 (W223: `renderInteraction` re-checks them, closed 2026-09-17).

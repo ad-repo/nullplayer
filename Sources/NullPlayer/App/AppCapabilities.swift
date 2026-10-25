@@ -16,6 +16,7 @@ enum AppFeature {
     case winampModernMode
     case wmpSkinMode
     case audionFaceMode
+    case soniqueSkinMode
     case compactWindowVisualsMenu
 }
 

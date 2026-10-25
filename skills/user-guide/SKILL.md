@@ -35,6 +35,20 @@ the playlist, the mode button the Library Browser, eject is Open Files…, info 
 credits, volume and the clock open sliders. NullPlayer's windows take their colours from the face.
 See `skills/audion-face-guide/reference/user-guide.md`.
 
+### Sonique skins
+
+**Skins > Sonique** wears Sonique 1.x `.sgf` skins. **Get More Skins...** opens the Internet
+Archive's Sonique collection; **Load Skin...** installs an `.sgf` and switches to it; **Open Skins
+Folder...** shows the installed copies; installed skins are listed in the same menu (A–Z submenus
+past 40). **Remove “name”...** deletes the installed copy. With no skin installed, NullPlayer's own
+built-in Sonique skin shows; it also supplies any part a skin omits. The window has Sonique's three
+modes — navigator, mid and small — switched by the skin's balls or **Skins > Sonique > Mode**. The
+navigator's menu screen opens the Playlist Editor, Library Browser and NullPlayer's windows; its
+visual mode screen hosts the effects (Spikes, Bars, Ambience, Cava, vis_classic), stepped by the
+up/down rocker, which elsewhere pages an open Playlist Editor; the drawer is the equalizer, and the
+Equalizer menu item opens it instead of a separate window. The drawer's amp, balance and pitch knobs
+show the current preamp, balance and speed but cannot be turned. See `skills/sonique-skin-guide`.
+
 ### Windows
 
 | Window | Description | Toggle |
@@ -508,7 +522,7 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - **Skins > Modern** lists installed Winamp 5.x `.wal` skins, imported with **Load Skin...**; **Get More Skins...** opens WinampHeritage.
 - **Windows > Window Shadows** (on by default) gives every skin window a soft drop shadow that
   follows the skin's own outline. It is the same switch in every skin family — Classic, Original,
-  Modern, Windows Media Player and Audion faces — and covers NullPlayer's own windows beside the
+  Modern, Windows Media Player, Audion faces and Sonique — and covers NullPlayer's own windows beside the
   skin too.
 - **iTunes Miniplayer** is the default skin that ships with the app — what Modern mode loads on a
   first run, before any skin is imported, and after the selected skin is removed. It is listed in

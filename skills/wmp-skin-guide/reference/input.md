@@ -254,7 +254,7 @@ a dispatch defect — it is a control the pointer never reached at all.
   `WMP_CLICK_TRACE=1` prints `offer keydown keyCode=38 targetID=view … authored=0` on such a skin,
   and a `[wmp/pref] … currenteffecttype_onchange` line follows each up/down press.
 - **`<EFFECTS>` and `<VIDEO>` are fallbacks, never blockers.** Both are click-through by design —
-  `WMPEffectsSurfaceView.hitTest` returns `nil` — but 51 skins wire an `onClick` on the effects node,
+  `SkinEffectsSurfaceView.hitTest` returns `nil` — but 51 skins wire an `onClick` on the effects node,
   so they rank last rather than not at all. Both are routinely the largest node in their view and
   declared late, so paint order alone buries whatever is drawn over them: `Alienware Invader`'s
   rating stars, `Radio`'s equalizer sliders, `XBOX`'s `xDown`.

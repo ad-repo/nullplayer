@@ -176,7 +176,7 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   then records the index into `WMPScene.commands` the walk had reached when the widget's node was
   visited, `WMPRenderer` rasterizes the scene as two images
   either side of it, and `WMPMainView` hosts the effects surface between them —
-  `WMPEffectsSurfaceView` → the "above" overlay `NSImageView` → the interactive widgets, re-enforced
+  `SkinEffectsSurfaceView` → the "above" overlay `NSImageView` → the interactive widgets, re-enforced
   on every `synchronizeWidgetViews` pass because a plain `addSubview` goes to absolute top. **The
   split is an index and not a zIndex threshold**: `WMPSceneBuilder.walk` sorts only siblings, so
   `commands` is DFS order and a `zIndex = -5` node in one subtree can legitimately follow a

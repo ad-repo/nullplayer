@@ -163,7 +163,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private let host: any WMPHost
     /// **The effect selection is the one host property nothing else refreshes for.** Every other
     /// path into `refreshHostState` is a track, a clock tick, a transport action or a file open;
-    /// choosing a visualization from NullPlayer's own menu goes through `WMPEffectSelection` and
+    /// choosing a visualization from NullPlayer's own menu goes through `SkinEffectSelection` and
     /// touches none of them. With a track playing the 10 Hz position tick hides that — the event
     /// lands within 100 ms and looks immediate — and with the player stopped the skin's
     /// `currentEffectType_onchange` would never be raised at all (W129).
@@ -180,7 +180,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// is created first, so its own observer has run by the time this one does.
     private var trackLoadFailureObserver: NSObjectProtocol?
     /// The skin a captured change belongs to. It is the skin that was showing when the change was
-    /// made, not `importer.selectedSkinName` at the moment the notification is delivered: the
+    /// made, not `importer.selection.name` at the moment the notification is delivered: the
     /// defaults notification arrives on the main queue asynchronously, so a change made just before
     /// a skin switch would otherwise be filed against the skin being switched *to*. Nil until the
     /// first restore, so nothing is captured before anything has been put in place.
@@ -214,6 +214,23 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// newer load replaced, and that newer load has already set this again.
     private(set) var isResolvingHostedFrames = false
 
+    /// Whether a hosted window's frame can be read back as interior + border (W238).
+    ///
+    /// **A skin still on its way is a third state and it is not settled (W250).** The provider is
+    /// configured only once the player has rendered, so before that it has no template and
+    /// `lendsFrame` is false — the same reading a skin that lends nothing gives, and the one that let
+    /// a restored hosted window come up at launch wearing palette chrome. Nothing measured against a
+    /// border that is about to arrive is worth keeping, which is what this predicate has always meant.
+    ///
+    /// **Unless the skin on screen still lends a frame.** A `.wmz` switch is staged: the old skin
+    /// keeps answering, with its own border, until every window flips in one turn, so a window
+    /// resized meanwhile is read against the border it is wearing — and must be, or a drag during
+    /// the switch is put straight back by the next pass.
+    @MainActor var hostedBordersAreSettled: Bool {
+        guard !isResolvingHostedFrames || hostedFrames.lendsFrame else { return false }
+        return !hostedFrames.lendsFrame || hostedFrames.donorInsets != nil
+    }
+
     /// The colours NullPlayer's *own* windows are drawn in while this skin is presented — see
     /// `WMPSurfacePalette`. Nil whenever the app-authored unskinned player is up, which is what makes
     /// `WindowManager.hostedSurfaceStyle` nil there and sends those windows back to their own drawing.
@@ -225,7 +242,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// a skin's view sizes and its hosted windows' sizes belong to the same identity. Nil with no
     /// skin loaded (the unskinned fallback), which stores nothing.
     var hostedInteriorSkinKey: String? {
-        guard loadedSkin != nil, let name = importer.selectedSkinName, !name.isEmpty else { return nil }
+        guard loadedSkin != nil, let name = importer.selection.name, !name.isEmpty else { return nil }
         return WMPViewFrameStore.skinKey(name)
     }
 
@@ -348,7 +365,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// "nothing has been opened over the player" now reads "this *is* the player and it is the only
     /// window open", which is the same statement made in the new vocabulary.
     private func closeNVIDIAEmbeddedMode(_ presentation: WMPViewPresentation) -> Bool {
-        guard importer.selectedSkinName?.caseInsensitiveCompare("NVIDIA") == .orderedSame,
+        guard importer.selection.name?.caseInsensitiveCompare("NVIDIA") == .orderedSame,
               presentation.isPlayer, materializer.openPresentations.count == 1,
               let widgets = presentation.activeScene?.widgets,
               widgets.contains(where: { $0.kind == .playlist || $0.kind == .video })
@@ -378,7 +395,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
         hostedFrames.hostedWindowsVisible = { WindowManager.shared.hasVisibleHostedWindows }
         effectSelectionObserver = NotificationCenter.default.addObserver(
-            forName: WMPEffectSelection.didChange, object: nil, queue: .main
+            forName: SkinEffectSelection.didChange, object: SkinEffectSelection.wmp, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.refreshHostState()
@@ -620,8 +637,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private func captureVisualizationSettings() {
         guard let skin = visualizationSettingsSkin else { return }
         visualizationSettings.capture(skin: skin,
-                                      effect: WMPEffectSelection.shared.current.id,
-                                      preset: WMPEffectSelection.shared.preset)
+                                      effect: SkinEffectSelection.wmp.current.id,
+                                      preset: SkinEffectSelection.wmp.preset)
     }
 
     /// Puts the incoming skin's effect, preset and WMP-scoped Cava / vis_classic preferences in
@@ -631,10 +648,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// notifications reach the capture observer only after this returns, against a finished restore.
     private func restoreVisualizationSettings() {
         captureVisualizationSettings()
-        let skin = importer.selectedSkinName ?? ""
+        let skin = importer.selection.name ?? ""
         visualizationSettingsSkin = skin
         let selection = visualizationSettings.restore(skin: skin)
-        WMPEffectSelection.shared.restore(effect: selection.effect, preset: selection.preset)
+        SkinEffectSelection.wmp.restore(effect: selection.effect, preset: selection.preset)
     }
 
     func reloadSelectedSkin() {
@@ -945,7 +962,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     private func restoreOpenAuxiliaryViews(skin: WMPLoadedSkin, store: WMPImageStore,
                                            runtime: WMPScriptRuntime) {
         let stored = WMPViewFrameStore(defaults: importer.defaults)
-            .openViews(skin: importer.selectedSkinName ?? "")
+            .openViews(skin: importer.selection.name ?? "")
         guard !stored.isEmpty, let player = materializer.playerPresentation else { return }
         for viewID in stored.prefix(Self.maximumOpenViews)
         where !materializer.isOpen(viewID)
@@ -1010,7 +1027,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
 
     func restoreFrame(_ frame: NSRect, skinName: String?, viewID: String?) {
         guard frame != .zero else { return }
-        let selectedName = importer.selectedSkinName
+        let selectedName = importer.selection.name
         let nameMatches = selectedName?.caseInsensitiveCompare(skinName ?? "") == .orderedSame
             || (selectedName == nil && skinName == nil)
         let selectedView = importer.selectedViewID
@@ -1754,7 +1771,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             NSPoint(x: $0.window.frame.minX, y: $0.window.frame.maxY)
         }
         let frameStore = WMPViewFrameStore(defaults: importer.defaults)
-        let skinName = importer.selectedSkinName ?? ""
+        let skinName = importer.selection.name ?? ""
         // **A stored size belongs to a view the user can size, and to no other (W213).** The store
         // keeps whatever the window came to rest at, and `windowDidResize` files it on any resize —
         // including one this app made rather than the user. A fixed view then re-opens at it: the
@@ -2065,14 +2082,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         guard loadedSkin != nil else { return }
         let open = materializer.openPresentations.filter { !$0.isPlayer }.map(\.viewID)
         WMPViewFrameStore(defaults: importer.defaults)
-            .setOpenViews(open, skin: importer.selectedSkinName ?? "")
+            .setOpenViews(open, skin: importer.selection.name ?? "")
     }
 
     /// Persist one window's size and origin, so the user's own arrangement survives a relaunch.
     func persistViewFrame(for window: NSWindow) {
         guard let presentation = materializer.presentation(for: window), loadedSkin != nil else { return }
         let store = WMPViewFrameStore(defaults: importer.defaults)
-        let skinName = importer.selectedSkinName ?? ""
+        let skinName = importer.selection.name ?? ""
         store.setOrigin(CGPoint(x: presentation.window.frame.minX,
                                 y: presentation.window.frame.maxY),
                         skin: skinName, view: presentation.viewID)
@@ -2132,7 +2149,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             WMPViewFrameStore(defaults: importer.defaults).setSize(
                 WMPSize(width: presentation.skinSpaceSize.width,
                         height: presentation.skinSpaceSize.height),
-                skin: importer.selectedSkinName ?? "", view: presentation.viewID)
+                skin: importer.selection.name ?? "", view: presentation.viewID)
         }
         renderCurrentSize(presentation)
     }
@@ -2469,7 +2486,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         if previous?.effects.type != snapshot.effects.type { events.append("currenteffecttype_onchange") }
         // `currentPreset_onchange` is the same element, the same idiom and the same write-back: all
         // 40 corpus uses are `mediacenter.effectPreset=currentPreset`. It is safe because
-        // `WMPEffectSelection.setPreset` early-returns on an unchanged value, so the handler
+        // `SkinEffectSelection.setPreset` early-returns on an unchanged value, so the handler
         // handing the host back the number it was just given cannot loop or restart the visualizer
         // — the same settling argument W51's write-backs rest on.
         if previous?.effects.preset != snapshot.effects.preset {

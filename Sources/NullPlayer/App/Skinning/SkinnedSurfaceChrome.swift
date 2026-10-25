@@ -100,7 +100,7 @@ struct SkinnedSurfaceChrome {
         let manager = WindowManager.shared
         switch manager.runningControllerFamily {
         // An Audion face lends no frame either, so its windows wear the same rim.
-        case .wmp, .audion: return true
+        case .wmp, .audion, .sonique: return true
         case .winampModern:
             return (manager.mainWindowController as? WinampModernMainWindowController)?.currentPalette != nil
         case .classic, .nullPlayerModern: return false

@@ -78,8 +78,9 @@ final class WinampModernSkinImporter {
     static let shared = WinampModernSkinImporter()
     static let selectedSkinNameKey = "winampModernSkinName"
 
-    let destinationDirectory: URL
-    private let fileManager: FileManager
+    private let folder: SkinInstallFolder
+    var destinationDirectory: URL { folder.url }
+    private var fileManager: FileManager { folder.fileManager }
     private let ingestors: [WinampModernContainerIngesting]
 
     init(
@@ -87,15 +88,14 @@ final class WinampModernSkinImporter {
         fileManager: FileManager = .default,
         ingestors: [WinampModernContainerIngesting] = [WalContainerIngestor()]
     ) {
-        self.fileManager = fileManager
-        self.destinationDirectory = destinationDirectory ?? Self.defaultDestinationDirectory(fileManager: fileManager)
+        folder = SkinInstallFolder(Self.folderName, at: destinationDirectory, fileManager: fileManager)
         self.ingestors = ingestors
     }
 
+    private static let folderName = "WinampModernSkins"
+
     static func defaultDestinationDirectory(fileManager: FileManager = .default) -> URL {
-        let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support.appendingPathComponent("NullPlayer", isDirectory: true)
-            .appendingPathComponent("WinampModernSkins", isDirectory: true)
+        SkinInstallFolder(folderName, fileManager: fileManager).url
     }
 
     @discardableResult
@@ -107,17 +107,10 @@ final class WinampModernSkinImporter {
 
         // Validation is deliberately complete before the installed archive can be replaced.
         let validated = try ingestor.validate(sourceURL)
-        try fileManager.createDirectory(at: destinationDirectory, withIntermediateDirectories: true)
+        try folder.ensureExists()
         let destination = destinationDirectory.appendingPathComponent(validated.preferredFilename, isDirectory: false)
         if sourceURL.standardizedFileURL != destination.standardizedFileURL {
-            let staging = destinationDirectory.appendingPathComponent(".\(UUID().uuidString).wal-importing")
-            defer { try? fileManager.removeItem(at: staging) }
-            try fileManager.copyItem(at: sourceURL, to: staging)
-            if fileManager.fileExists(atPath: destination.path) {
-                _ = try fileManager.replaceItemAt(destination, withItemAt: staging)
-            } else {
-                try fileManager.moveItem(at: staging, to: destination)
-            }
+            try folder.commit(sourceURL, to: destination, suffix: ".wal-importing")
         }
         let imported = WinampModernImportedSkin(name: validated.displayName, archiveURL: destination)
         selectSkin(imported)

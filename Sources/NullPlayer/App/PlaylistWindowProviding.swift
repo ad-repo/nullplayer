@@ -18,4 +18,8 @@ protocol PlaylistWindowProviding: ModeDependentWindow {
 
     /// Reload playlist data (called when tracks are added/removed/reordered)
     func reloadPlaylist()
+
+    /// Move the selection a visible page up (negative) or down (positive), as Page Up and Page Down
+    /// do; a Sonique skin's up/down rocker pages the open playlist through this.
+    func page(by pages: Int)
 }

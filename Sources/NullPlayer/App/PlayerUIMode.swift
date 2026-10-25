@@ -13,12 +13,14 @@ import Foundation
 ///   would silently fold `winampModern` into one of the other families.
 /// - `wmp`: the Windows Media Player `.wmz`/`.wms` family.
 /// - `audion`: Panic Audion faces (folders of `index.json` + PNGs).
+/// - `sonique`: Sonique 1.x skins (`.sgf`).
 enum PlayerUIControllerFamily {
     case classic
     case nullPlayerModern
     case winampModern
     case wmp
     case audion
+    case sonique
 
     /// Draws a third-party skin format (`.wal`, `.wmz`, an Audion face), so the skin owns the player
     /// and NullPlayer's own windows float free beside it rather than in Classic's centre stack: tiled
@@ -27,19 +29,29 @@ enum PlayerUIControllerFamily {
     /// Its main window is the skin's own canvas, so its width is never a classic zoom.
     var hostsForeignSkin: Bool {
         switch self {
-        case .winampModern, .wmp, .audion: return true
+        case .winampModern, .wmp, .audion, .sonique: return true
         case .classic, .nullPlayerModern: return false
         }
     }
 
-    /// Brings its own player runtime, app-authored fallback included (`.wmz`, Audion). Nothing built
+    /// Brings its own player runtime, app-authored fallback included (`.wmz`, Audion, Sonique). Nothing built
     /// on the Classic/Original skin engines runs beside it: no default skin load, no Compact Mode or
     /// Compact Window, no Classic stack size floor. `.wal` hosts a Classic skin beneath its own, so it
     /// is not one.
     var bringsOwnRuntime: Bool {
         switch self {
-        case .wmp, .audion: return true
+        case .wmp, .audion, .sonique: return true
         case .classic, .nullPlayerModern, .winampModern: return false
+        }
+    }
+
+    /// The skin is one borderless canvas and nothing else (an Audion face, a Sonique skin): no
+    /// windows of its own beside the player, and no column for NullPlayer's centre stack to hang off.
+    /// `.wal` and `.wmz` declare windows of their own, so they are not.
+    var isSingleCanvas: Bool {
+        switch self {
+        case .audion, .sonique: return true
+        case .classic, .nullPlayerModern, .winampModern, .wmp: return false
         }
     }
 }
@@ -51,6 +63,7 @@ enum PlayerUIMode: String, CaseIterable {
     case winampModern
     case wmp
     case audion
+    case sonique
 
     static let userDefaultsKey = "uiMode"
     private static let legacyModernEnabledKey = "modernUIEnabled"
@@ -63,6 +76,7 @@ enum PlayerUIMode: String, CaseIterable {
         case .winampModern: return "Modern"
         case .wmp: return "Media Player"
         case .audion: return "Audion Faces"
+        case .sonique: return "Sonique"
         }
     }
 
@@ -75,6 +89,7 @@ enum PlayerUIMode: String, CaseIterable {
         case .winampModern: return .winampModern
         case .wmp: return .wmp
         case .audion: return .audion
+        case .sonique: return .sonique
         }
     }
 
@@ -83,6 +98,7 @@ enum PlayerUIMode: String, CaseIterable {
         switch controllerFamily {
         case .wmp: return AppCapabilities.supports(.wmpSkinMode)
         case .audion: return AppCapabilities.supports(.audionFaceMode)
+        case .sonique: return AppCapabilities.supports(.soniqueSkinMode)
         case .classic, .nullPlayerModern, .winampModern: return true
         }
     }
@@ -105,14 +121,14 @@ enum PlayerUIMode: String, CaseIterable {
     /// it returns `false` here even though it is a "modern" skin system.
     var usesModernEQLayout: Bool {
         switch self {
-        case .classic, .winampModern, .wmp, .audion: return false
+        case .classic, .winampModern, .wmp, .audion, .sonique: return false
         case .modern, .metal: return true
         }
     }
 
     var modernSkinFamily: ModernSkinFamily? {
         switch self {
-        case .classic, .winampModern, .wmp, .audion: return nil
+        case .classic, .winampModern, .wmp, .audion, .sonique: return nil
         case .modern: return .modern
         case .metal: return .metal
         }

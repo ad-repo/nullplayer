@@ -16,7 +16,7 @@ Cava window. Cava is also available inside the 76×16 main-window visualization 
 Modern and Metal Library and Compact Window surfaces can also use Cava as a full-window backdrop
 via **Visuals > Library Window > Cava**, **Visuals > Compact Window > Cava**, or the corresponding
 surface's context menu. The classic browser's library window (Classic, and the `.wal` fallback,
-`.wmz` and Audion library windows) offers **Visuals > Library Window** too, with Cava behind the
+`.wmz`, Audion and Sonique library windows) offers **Visuals > Library Window** too, with Cava behind the
 list area only, so a hosted frame's keyed-out corners stay clear. The `.wal` embedded library
 holder and classic Compact Mode never show it. Each backdrop has its own settings scope and lifecycle; neither borrows the
 standalone or main-window presenter.
@@ -160,7 +160,8 @@ Access via `CavaSettings.mode`, `CavaSettings.barCount`, etc. Menu and double-cl
 The legacy static properties above remain wrappers for `.cavaWindow` and continue using the existing
 keys. Scope-aware accessors use `cava.mainWindow.*` for the embedded analyzer,
 `cava.libraryWindow.*` for the regular Library backdrop, and `cava.compactWindow.*` for the Compact
-backdrop. Main-window mode always resolves to Mono. Library mode defaults to Mono, while Compact
+backdrop; every scope but `.cavaWindow` keys as `cava.<raw value>.<setting>`, so a new scope adds
+no key code, and renaming a case orphans its saved settings. Main-window mode always resolves to Mono. Library mode defaults to Mono, while Compact
 mode defaults to Stereo; both preserve an explicit mode choice. Compact smoothing defaults to
 `0.80`, while the other scopes default to `0.65`. Library and Compact bar count defaults to `64`;
 standalone and main-window Cava remain at `32`. Each scope's tuning and color choices are independent.
@@ -336,7 +337,7 @@ they choose **Match Skin** or explicitly switch/reset skins. A same-skin app rel
     which keep "Winamp Green". This writes the same `.cavaWindow` in-memory default as Classic and
     Modern; each view re-pushes on setup, so a family switch re-derives it.
   - **`.wal` `<vis>` box** (`.winampModernVisBox`): the box's own `colorband` first → last.
-  - **WMP `<EFFECTS>`** (`.wmpEffects`, `WMPEffectsSurfaceView`): the hosted surface style, dim text →
+  - **WMP `<EFFECTS>`** (`.wmpEffects`, `SkinEffectsSurfaceView`): the hosted surface style, dim text →
     current text, pushed at init, when the Cava effect starts, and on `.hostedSurfaceStyleDidChange`
     (posted when the presented view changes the palette).
   The low end is dim text rather than the background for the same reason Classic inline starts at the

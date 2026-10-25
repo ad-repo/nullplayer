@@ -1342,7 +1342,7 @@ final class WMPScriptRuntimeTests: XCTestCase {
                            [source], "\(event) must reach its authored handler")
         }
         // `currentPreset_onchange` is the fifth: the same element, the same write-back idiom, and
-        // safe because `WMPEffectSelection.setPreset` early-returns on an unchanged value.
+        // safe because `SkinEffectSelection.setPreset` early-returns on an unchanged value.
         XCTAssertEqual(WMPMainWindowController.handlers(in: skin, event: "currentpreset_onchange",
                                                         targetID: nil, viewID: "main"),
                        ["mediacenter.effectPreset=currentPreset;"])

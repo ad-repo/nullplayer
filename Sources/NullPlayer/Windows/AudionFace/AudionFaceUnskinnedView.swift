@@ -17,7 +17,7 @@ final class AudionFaceUnskinnedView: NSView {
         (NSButton(title: "▶▶", target: nil, action: nil), .fastForward),
     ]
 
-    private var drag = AudionFaceWindowDrag()
+    private var drag = SkinnedWindowDrag()
 
     override var isFlipped: Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }

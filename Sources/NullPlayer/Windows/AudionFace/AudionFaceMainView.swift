@@ -17,7 +17,7 @@ final class AudionFaceMainView: NSView {
     /// The face's drop shadow, from its pixels. AppKit's own traced the faint shadow many faces
     /// bake into their alpha and drew a hard rim along its outer edge (#527).
     private let windowShadow = SkinWindowShadow()
-    private var drag = AudionFaceWindowDrag()
+    private var drag = SkinnedWindowDrag()
     /// FaceKit's 60 Hz tick count. The clock runs only while `AudionFaceScene.isAnimated` and the
     /// window is on screen.
     private var tick = 0 { didSet { redraw() } }
@@ -335,31 +335,5 @@ private final class AudionFaceAccessibilityElement: NSAccessibilityElement {
     override func accessibilityPerformPress() -> Bool {
         press?()
         return press != nil
-    }
-}
-
-/// A drag of the borderless Audion window, through `WindowManager` so docking and snapping see it;
-/// AppKit's own background drag would bypass both. Both of the mode's views drag with it.
-struct AudionFaceWindowDrag {
-    private var start: NSPoint?
-
-    mutating func begin(_ event: NSEvent) {
-        guard let window = event.window else { return }
-        start = event.locationInWindow
-        WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true)
-    }
-
-    func move(_ event: NSEvent) {
-        guard let start, let window = event.window else { return }
-        var origin = window.frame.origin
-        origin.x += event.locationInWindow.x - start.x
-        origin.y += event.locationInWindow.y - start.y
-        window.setFrameOrigin(WindowManager.shared.windowWillMove(window, to: origin))
-    }
-
-    mutating func end(_ event: NSEvent) {
-        guard start != nil, let window = event.window else { return }
-        start = nil
-        WindowManager.shared.windowDidFinishDragging(window)
     }
 }

@@ -83,13 +83,19 @@ extension ContextMenuBuilder {
             let importer = WMPSkinImporter()
             return importer.installedSkins().map {
                 skinMenuItem($0.name, #selector(MenuActions.selectWMPSkin(_:)), representedObject: $0.name,
-                             isOn: isActive && importer.selectedSkinName?.caseInsensitiveCompare($0.name) == .orderedSame)
+                             isOn: isActive && importer.selection.name?.caseInsensitiveCompare($0.name) == .orderedSame)
             }
         case .audion:
             let importer = AudionFaceImporter()
             return importer.installedFaces().map {
                 skinMenuItem($0.name, #selector(MenuActions.selectAudionFace(_:)), representedObject: $0.name,
-                             isOn: isActive && importer.selectedFaceName == $0.name)
+                             isOn: isActive && importer.selection.name == $0.name)
+            }
+        case .sonique:
+            let importer = SoniqueSkinImporter()
+            return importer.installedSkins().map {
+                skinMenuItem($0.name, #selector(MenuActions.selectSoniqueSkin(_:)), representedObject: $0.name,
+                             isOn: isActive && importer.selection.name == $0.name)
             }
         }
     }
@@ -306,9 +312,6 @@ extension ContextMenuBuilder {
 
     // MARK: - Audion Faces
 
-    /// Above this many faces the list is grouped into A–Z submenus: Panic's archive alone is 856.
-    static let audionFacesFlatListLimit = 40
-
     static func buildAudionFacesMenu() -> NSMenu {
         let options = [
             skinMenuItem("Load Face...", #selector(MenuActions.loadAudionFaceFromFile)),
@@ -318,8 +321,38 @@ extension ContextMenuBuilder {
         ].compactMap { $0 }
         return buildSkinFamilyMenu(
             switchItem: switchItem(to: .audion, action: #selector(MenuActions.setAudionMode)),
-            options: options, skins: groupedAlphabetically(skinRows(for: .audion), over: audionFacesFlatListLimit))
+            options: options, skins: groupedAlphabetically(skinRows(for: .audion), over: groupedSkinsFlatListLimit))
     }
+
+    // MARK: - Sonique skins
+
+    static func buildSoniqueSkinsMenu() -> NSMenu {
+        var options = [
+            skinMenuItem("Load Skin...", #selector(MenuActions.loadSoniqueSkinFromFile)),
+            skinMenuItem("Get More Skins...", #selector(MenuActions.getMoreSoniqueSkins)),
+            skinMenuItem("Open Skins Folder...", #selector(MenuActions.openSoniqueSkinsFolder)),
+            removeSkinItem(for: .sonique),
+        ].compactMap { $0 }
+        // Sonique's three modes, the same jumps as its navigation balls.
+        if let controller = WindowManager.shared.mainWindowController as? SoniqueSkinMainWindowController {
+            let modes = NSMenu()
+            for (mode, title) in [(SoniqueSkin.Mode.navigator, "Navigator"), (.mid, "Mid"), (.small, "Small")] {
+                let item = skinMenuItem(title, #selector(MenuActions.setSoniqueWindowMode(_:)), representedObject: mode.rawValue,
+                                        isOn: controller.mode == mode)
+                modes.addItem(item)
+            }
+            let modesItem = NSMenuItem(title: "Mode", action: nil, keyEquivalent: "")
+            modesItem.submenu = modes
+            options.append(modesItem)
+        }
+        return buildSkinFamilyMenu(
+            switchItem: switchItem(to: .sonique, action: #selector(MenuActions.setSoniqueMode)),
+            options: options, skins: groupedAlphabetically(skinRows(for: .sonique), over: groupedSkinsFlatListLimit))
+    }
+
+    /// Above this many skins a list is grouped into A–Z submenus: Panic's Audion archive alone is
+    /// 856 faces, the Sonique corpus 524 skins.
+    static let groupedSkinsFlatListLimit = 40
 
     /// `items` as one submenu per initial letter (`#` for the rest) once there are more than `limit`.
     /// A submenu holding the checked item is checked too, so the current face can be found.
@@ -579,13 +612,14 @@ extension MenuActions {
         case winampModern(WinampModernImportedSkin)
         case wmp(name: String)
         case audion(name: String)
+        case sonique(name: String)
 
         var name: String {
             switch self {
             case .classic(let url): return url.deletingPathExtension().lastPathComponent
             case .modernFamily(let skin, _): return skin.name
             case .winampModern(let skin): return skin.name
-            case .wmp(let name), .audion(let name): return name
+            case .wmp(let name), .audion(let name), .sonique(let name): return name
             }
         }
     }
@@ -602,10 +636,13 @@ extension MenuActions {
             return WinampModernSkinImporter.shared.removableSelectedSkin().map(RemovableSkin.winampModern)
         case .wmp:
             guard AppCapabilities.supports(.wmpSkinMode) else { return nil }
-            return WMPSkinImporter().selectedSkinName.map { .wmp(name: $0) }
+            return WMPSkinImporter().selection.name.map { .wmp(name: $0) }
         case .audion:
             guard AppCapabilities.supports(.audionFaceMode) else { return nil }
-            return AudionFaceImporter().selectedFaceName.map { .audion(name: $0) }
+            return AudionFaceImporter().selection.name.map { .audion(name: $0) }
+        case .sonique:
+            guard AppCapabilities.supports(.soniqueSkinMode) else { return nil }
+            return SoniqueSkinImporter().selection.name.map { .sonique(name: $0) }
         }
     }
 
@@ -619,7 +656,7 @@ extension MenuActions {
         let alert = NSAlert()
         alert.messageText = "Remove Skin?"
         switch skin {
-        case .wmp, .audion:
+        case .wmp, .audion, .sonique:
             alert.informativeText = "\u{201c}\(skin.name)\u{201d} will be removed from NullPlayer. "
                 + "The original downloaded file is not affected."
         case .classic, .modernFamily, .winampModern:
@@ -651,6 +688,8 @@ extension MenuActions {
                 removeWMPSkin(named: name)
             case .audion(let name):
                 removeAudionFace(named: name)
+            case .sonique(let name):
+                removeSoniqueSkin(named: name)
             }
         } catch {
             NSAlert(error: error).runModal()
@@ -692,9 +731,9 @@ extension MenuActions {
     @objc func selectAudionFace(_ sender: NSMenuItem) {
         guard AppCapabilities.supports(.audionFaceMode), let name = sender.representedObject as? String else { return }
         if let controller = audionController {
-            controller.selectFace(named: name)
+            controller.selectSkin(named: name)
         } else {
-            AudionFaceImporter().select(name)
+            AudionFaceImporter().selection.select(name)
             WindowManager.shared.reloadUI(to: .audion)
         }
     }
@@ -716,7 +755,7 @@ extension MenuActions {
     @objc func openAudionFacesFolder() {
         let importer = AudionFaceImporter()
         do {
-            try importer.ensureDirectoryExists()
+            try importer.folder.ensureExists()
             NSWorkspace.shared.open(importer.directoryURL)
         } catch {
             NSAlert(error: error).runModal()

@@ -471,7 +471,7 @@ class VisualizationGLView: NSOpenGLView {
     /// `persistPreference` is false for a host that is **not** the app's visualization setting.
     /// A `.wmz` skin cycling its `<EFFECTS>` slot is one: `visualizationEngineType` belongs to the
     /// standalone Visualizations window and the menu bar, and a skin is not entitled to rewrite it
-    /// (`WMPEffectSelection`). Everything else about the switch is identical.
+    /// (`SkinEffectSelection`). Everything else about the switch is identical.
     func switchEngine(to type: VisualizationType, forceReload: Bool = false,
                       persistPreference: Bool = true) {
         // Skip if already using this engine type

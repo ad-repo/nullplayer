@@ -102,16 +102,16 @@ final class WMPVisualizationSettingsTests: XCTestCase {
     /// no record would keep drawing the previous skin's.
     @MainActor
     func testSelectionRestoreFallsBackToTheDefaultEffect() {
-        let selection = WMPEffectSelection.shared
+        let selection = SkinEffectSelection.wmp
         selection.restore(effect: "geiss", preset: 4)
         XCTAssertEqual(selection.current.id, "geiss")
         XCTAssertEqual(selection.preset, 4)
 
         selection.restore(effect: nil, preset: 0)
-        XCTAssertEqual(selection.current.id, WMPEffectSelection.catalogue[0].id)
+        XCTAssertEqual(selection.current.id, SkinEffectSelection.catalogue[0].id)
         XCTAssertEqual(selection.preset, 0)
 
         selection.restore(effect: "not-an-effect", preset: 9)
-        XCTAssertEqual(selection.current.id, WMPEffectSelection.catalogue[0].id)
+        XCTAssertEqual(selection.current.id, SkinEffectSelection.catalogue[0].id)
     }
 }

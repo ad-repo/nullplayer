@@ -35,7 +35,7 @@ NullPlayer is also the **first macOS and only open-source engine capable of rend
 
 NullPlayer is not affiliated with, endorsed by, or connected to Winamp, Nullsoft, Microsoft, Winamp Group SA, Llama Group, Radionomy Group, Jamendo, Hotmix, Bridger, SHOUTcast, Sonos, Plex, WACUP, Emby, Jellyfin, Google, Panic or anyone else
 
-No Winamp or Windows Media Player skins or Audion faces are distributed with the project, apart from the default `.wal` skin, [iTunes Miniplayer](https://github.com/spacecowgoesmoo/Old-iTunes-Miniplayer), shipped with its author's permission
+No Winamp, Windows Media Player or Sonique skins or Audion faces are distributed with the project, apart from the default `.wal` skin, [iTunes Miniplayer](https://github.com/spacecowgoesmoo/Old-iTunes-Miniplayer), shipped with its author's permission
 
 ### General Features
 
@@ -69,8 +69,9 @@ No Winamp or Windows Media Player skins or Audion faces are distributed with the
 - Original-Metal mode: seven brushed-metal finishes with backlit LCD displays
 - Windows Media Player mode: the only Mac player that runs WMP 7–12 `.wmz` skins, loaded through a bounded, isolated engine with a sandboxed JScript runtime; import, select, remove, and switch views from **Skins > Media Player**, or fall back to a built-in unskinned player
 - Panic Audion faces: the 2021 face archive, drawn by a port of Panic's own FaceKit viewer and checked against it face by face; every face button drives NullPlayer, and its windows take their colours from the face. Install and select from **Skins > Audion Faces**
-- Live skin switching. Cycle through Classic, Modern, Original, Original-Metal, Windows Media Player skins and Audion faces with no restart or interuption in playback
-- Full development harness for debugging and reverse engineering Winamp 5, ClassicPro, and Windows Media Player skins, and for checking Audion faces against Panic's FaceKit
+- Sonique 1.x `.sgf` skins: all three modes (navigator, mid and small) drawn from the skin, with the navigator's visual mode screen and equalizer drawer; checked against real Sonique 1.96 skin by skin. Install and select from **Skins > Sonique**
+- Live skin switching. Cycle through Classic, Modern, Original, Original-Metal, Windows Media Player skins, Audion faces and Sonique skins with no restart or interuption in playback
+- Full development harness for debugging and reverse engineering Winamp 5, ClassicPro, and Windows Media Player skins, and for checking Audion faces against Panic's FaceKit, and Sonique skins against real Sonique
 - Native nullplayer windows are themed to the host skin
 
 ### Media Support
@@ -119,7 +120,7 @@ NullPlayer's visualizations span its windows, from the in-skin main-window displ
  - **Live-defect workflow** — a `live-ui-testing` process skill for bugs that only show on screen: instrument first, drive the running app with AppleScript and synthesized input, and measure what is actually drawn; every subsystem skill routes its *Debugging a live defect* section there.
  - **Unit tests** under [`Tests/`](Tests/), with a documented testing philosophy (`skills/testing`) that explicitly forbids weakening tests changing app code just to make them pass.
  - **Explicit architectural guardrails** encoded where an agent will read them: skin engines must not cross-import, Winamp Modern (`.wal`) and Windows Media Player (`.wmz`) work must never alter Classic or Original behavior, the sprite-origin and `Data`-slicing gotchas are stated up front.
- - **App control: agents drive the real app** — the [`app-control`](skills/app-control/SKILL.md) skill lets an agent launch, configure, drive, screenshot, and measure the running debug build across every skin family (Classic, Original, Original-Metal, `.wal`, `.wmz`, Audion faces):
+ - **App control: agents drive the real app** — the [`app-control`](skills/app-control/SKILL.md) skill lets an agent launch, configure, drive, screenshot, and measure the running debug build across every skin family (Classic, Original, Original-Metal, `.wal`, `.wmz`, Audion faces, Sonique `.sgf`):
 - **Token friendly agent routing** A routing table picks the cheapest way to answer a question, from a headless probe to handing the user a preloaded interactive session. Canonical test media and launch recipes included.
   
 ## Installation
@@ -378,7 +379,7 @@ Backups are stored in `~/Library/Application Support/NullPlayer/Backups/`.
 
 ## Skins
 
-NullPlayer has six looks — Modern, Classic, Original, Original-Metal, Windows Media Player, and Audion Faces — selectable from the right-click context menu under **Skins**. Switching between them happens **live, with no restart** — playback, casting, and the open playlist continue uninterrupted while the windows rebuild in the new look:
+NullPlayer has seven looks — Modern, Classic, Original, Original-Metal, Windows Media Player, Audion Faces, and Sonique — selectable from the right-click context menu under **Skins**. Switching between them happens **live, with no restart** — playback, casting, and the open playlist continue uninterrupted while the windows rebuild in the new look:
 
 ### Winamp Modern (`.wal`) / ClassicPro
 
@@ -413,6 +414,16 @@ Panic Audion faces (a folder of `index.json` and PNGs) are drawn by a port of Pa
 3. Pick an installed face from **Skins > Audion Faces**; **Remove “name”...** deletes NullPlayer's copy and returns to the plain player.
 
 See the [Audion faces guide](skills/audion-face-guide/reference/user-guide.md).
+
+### Sonique (`.sgf`)
+
+Sonique 1.x skins are drawn in all three of Sonique's modes — the navigator, mid and small — and checked against real Sonique 1.96 skin by skin. No third-party skins are bundled; until you install one, NullPlayer shows its own built-in Sonique skin, which also fills in any part a skin leaves out.
+
+1. **Skins > Sonique > Get More Skins...** opens the Internet Archive's Sonique collection (its torrent file pulls the large skin archive most reliably). Only the skins work; Sonique's plugins are not supported.
+2. **Load Skin...** installs an `.sgf` and switches to it.
+3. Pick an installed skin from **Skins > Sonique**, and a mode from **Skins > Sonique > Mode**; **Remove “name”...** deletes NullPlayer's copy and returns to the built-in skin.
+
+The navigator's menu screen opens NullPlayer's Playlist Editor, Library Browser and other windows; the visual mode screen shows NullPlayer's effects, stepped with the up/down rocker; the drawer is the equalizer.
 
 ### Winamp Classic Mode
 
