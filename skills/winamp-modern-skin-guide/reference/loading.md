@@ -677,6 +677,14 @@ is built pre-flipped instead (`WasabiResourceCache.regionMask`, which reads its 
 row first). A mask built the wrong way up looks plausible on a symmetric control and is wrong on
 every other one.
 
+### A custom XUI with no width spans its parent (2026-10-25)
+
+An `embed_xui` instance that states no `w`, around a child sized from it (`relatw="1"`), takes its
+parent's width from its own `x` (`WasabiRenderer`, beside the other unstated-size rules). Nebular's and
+BLAKK's `<Nebular:Checkbox x="0" y="0" usetext="…"/>` carry the label as `w="-10" relatw="1"`; at 0 wide
+the label resolved to -10 and every Configure checkbox drew bare, while the same author sized the
+dropdown beside them. Corpus sweep: those two windows moved and nothing else.
+
 ### A layout with no size of its own is sized by its content
 
 `w`/`h` are optional on a `<layout>`, and the fallback chain runs:

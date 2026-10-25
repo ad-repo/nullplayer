@@ -1,7 +1,7 @@
 file	sha256	stage	updated	rows	note
 Clock V2.76.wal	28a75a88fcfd6b1f65e017e4d2489d238b2d2c2d73136a54a16ee5a0514b579c	live	2026-10-25	B268(open)	-
 Circlo_T_roniC.wal	8380b1d66f1f65140b97a4b073a623f3f3e1d68ca93dcab9b157c53732f8a822	live	2026-10-25	-	-
-Nebular.wal	6a8232e92fcae4b4fb91fa489f0b7ab850af127beb72b4e8dd90acbe8750c2af	headless	2026-10-25	-	Phase 5: Configure CPU-tweak checkboxes have no labels; main-vis-left/right covered by layer#-
+Nebular.wal	6a8232e92fcae4b4fb91fa489f0b7ab850af127beb72b4e8dd90acbe8750c2af	live	2026-10-25	-	-
 Winampple_1_1.wal	db15b863b51f4381e2aa46612ac127f653c3dc4ef2f4d4d59f9e48a15fbab098	headless	2026-10-25	-	Phase 5: four frames draw offset white/black slabs; empty grey bodies
 Freeform_Simpsons_Skin.wal	1012a6a777caf32e59b5530a8b794f7361645a442373a076e068a8a15bc67c1f	headless	2026-10-25	-	Phase 5: options 10 checkbox.toggle clipped, checkbox.text silent; Hide All overlaps Enable Homer Dancing
 Celica_Amp.wal	b151e18ffb84bf5fc6a033d55c40d7ef0febb3d8e3460c99b87b1bbc5f9de2bd	headless	2026-10-25	-	Phase 5: 8 main controls covered by animatedlayer#glasscover; one blank blue window; motion suspect

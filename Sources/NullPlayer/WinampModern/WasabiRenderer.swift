@@ -2340,6 +2340,16 @@ final class WasabiSceneRenderer {
             if object.attributes["w"] == nil, intrinsic.width == 0 { intrinsic.width = max(0, entry.width) }
             if object.attributes["h"] == nil, intrinsic.height == 0 { intrinsic.height = max(0, entry.height) }
         }
+        // A custom XUI instance that states no width, around a child sized from it, spans its parent
+        // from its `x`. Nebular's `<Nebular:Checkbox x="0" y="0" usetext="…"/>` carries its label as
+        // `w="-10" relatw="1"`: at 0 wide the label was -10 and every Configure checkbox drew bare,
+        // while the same author sized the dropdown beside them. ponytail: the parent's width, not a
+        // measured label; a skin whose unsized XUI should stop short would need its content's extent.
+        if !isRoot, WasabiEmbeddedXUI.embeddedTag(of: object) != nil,
+           object.attributes["w"] == nil, intrinsic.width == 0,
+           object.children.contains(where: { $0.attributes["relatw"] == "1" }) {
+            intrinsic.width = max(0, Double(parentFrame.width) - (Double(object.attributes["x"] ?? "") ?? 0))
+        }
         let resolved: CGRect
         if isRoot {
             resolved = parentFrame
