@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B263 — The host-chrome About window closes from its corner; the matrix's click never arrives — closed 2026-10-24
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B263 | **The About window in NullPlayer's own chrome cannot be closed from the window.** A skin with no usable standard frame gets `nullplayer.about` in host chrome (`WasabiSurfaceSynthesizer.makeAboutContainer(frame: nil)`), which draws no close control. `window-interaction-matrix.sh` on CPro_iPhone3gv2 (About open from saved state, `_nullplayer_windows.nullplayer_about = 1`) reports `close-stretched NOT-CLOSED: no corner point closed it`. The page's fitparent `mousetrap` layer may be outranking the `FallbackCloseArea` corner, which `testAWindowWithNoCloseOfItsOwnClosesFromItsCorner` says should win. Establish why no corner closes it, then make the corner close it. Done when the matrix closes the About window on CPro_iPhone3gv2 and on one other host-chrome skin opened with `WINAMP_MODERN_SHOW_WINDOWS=nullplayer.about` | host-chrome About (`No usable standard frame to host the skin's About page`): 17 gold+silver skins, 14 of them ClassicPro (2026-10-24) | S | 2 |
+
+**Closed 2026-10-24, not a defect (class H).** A real click closes it. On CPro_iPhone3gv2 with `WINAMP_MODERN_SHOW_WINDOWS=nullplayer.about` and `WINAMP_MODERN_DRAG_TRACE=1`, two `winhelper click`s inside the About window's top-right corner each logged a `hitTest … -> self (close corner)` and no `down`, and the window stayed; the user's own click on the same corner logged `down … object=layer#mousetrap` and closed it. So the fitparent `mousetrap` does not outrank the corner (`testAHostChromeWindowClosesFromItsCornerOverAFitparentLayer` pins that headlessly), and `window-interaction-matrix.sh`'s NOT-CLOSED for this window is its synthetic click not reaching the window. On the same launch the About page's text was white on the glass chrome's near-white ground.
+
 ## B264 — The analyzer's bars and colour slices sit on whole pixels — closed 2026-10-24
 
 | Id | Item | Reach | Effort | Tier |

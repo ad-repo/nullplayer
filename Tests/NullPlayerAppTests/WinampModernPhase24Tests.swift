@@ -799,6 +799,34 @@ final class WinampModernPhase24Tests: XCTestCase {
         }
     }
 
+    /// B263: a window in NullPlayer's glass chrome (the About page of a skin with no usable standard
+    /// frame) closes from its corner even when the page lays a fitparent `mousetrap` over it all.
+    func testAHostChromeWindowClosesFromItsCornerOverAFitparentLayer() throws {
+        let loaded = try load(xml: skin(size: 80, body: """
+            <layer id="mousetrap" x="0" y="0" w="0" h="0" relatw="1" relath="1" move="1"/>
+            """))
+        let host = Host()
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: host, clock: { 0 })
+        addTeardownBlock { renderer.teardown() }
+        let scripts = try WinampModernScriptRuntime(loadedSkin: loaded, host: host)
+        addTeardownBlock { scripts.teardown() }
+        let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host)
+        addTeardownBlock { view.teardown() }
+        view.drawsHostChrome = true
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: renderer.canvasSize),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = view
+        view.setFrameSize(renderer.canvasSize)
+        var closed = 0
+        view.closeRequested = { closed += 1 }
+
+        // The matrix's first probe: 12 pt in from the right, 6 pt down from the top.
+        let corner = NSPoint(x: 68, y: 74)
+        XCTAssertTrue(view.hitTest(corner) === view)
+        click(view, in: window, at: corner)
+        XCTAssertEqual(closed, 1)
+    }
+
     /// The fallback corner is empty space's. MIDISUI's Media Library layout has no `CLOSE`, and its
     /// only way back is a `SWITCH normal` button in that corner: the corner quit the app instead.
     func testTheFallbackCornerYieldsToASkinControl() throws {
