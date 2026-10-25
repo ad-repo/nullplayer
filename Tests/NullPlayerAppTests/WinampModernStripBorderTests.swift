@@ -21,6 +21,16 @@ final class WinampModernStripBorderTests: XCTestCase {
         XCTAssertEqual(WasabiResourceCache.opaqueBounds(of: cut), CGRect(x: 0, y: 5, width: 10, height: 2))
     }
 
+    /// Geometry is the skin's to write: a value `Int(_:)` traps on, or a negative offset whose padding
+    /// would outgrow the pixel budget, is ignored rather than crashing or allocating it.
+    func testTheCutSurvivesHostileGeometry() throws {
+        let sheet = try Self.image(width: 10, height: 10, opaque: CGRect(x: 0, y: 0, width: 10, height: 2))
+        for attributes in [["x": "nan"], ["y": "inf"], ["w": "1e30"], ["h": "-1e30"], ["y": "-1e30"]] {
+            XCTAssertNotNil(WasabiResourceCache.cut(sheet, attributes: attributes), "\(attributes)")
+        }
+        XCTAssertNil(WasabiResourceCache.padForNegativeOffset(sheet, attributes: ["y": "-20000000"]))
+    }
+
     func testEveryEdgeMeasuresTheArtOverADeclaredSize() {
         let art: [String: CGRect] = [
             "l": CGRect(x: 0, y: 0, width: 4, height: 37),

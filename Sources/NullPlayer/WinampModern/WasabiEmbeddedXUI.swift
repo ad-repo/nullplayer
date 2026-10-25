@@ -87,8 +87,8 @@ enum WasabiEmbeddedXUI {
                 // The instance's artwork wins over a placeholder the groupdef gave the button, as
                 // Wasabi sets an instance's params after the groupdef's: Big Bento's tab mousetrap
                 // states `image="wtf"`, and drawn on the wrapper its icon sat under the active-tab
-                // layer the moment a tab could show as active. All or nothing, so a button never
-                // mixes its own frames with the wrapper's.
+                // layer the moment a tab could show as active. Only when the wrapper states `image`;
+                // a frame key it does not state stays the button's own, as Wasabi's param order leaves it.
                 return embedded.tag.is(anyOf: WasabiKind.buttons) && attributes["image"] != nil
             }
         }

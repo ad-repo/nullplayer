@@ -634,14 +634,18 @@ same key, instead of running again. Before the store, every session re-captured 
 its scratchpad: 41 render captures and 24 interaction runs across the intake sessions of 2026-10-22–23,
 most of them commits an earlier session had already captured.
 
-- **The key** is `<code>-<archives>`: one hash of `Sources/`, `Tests/` and the `Package` files in the
-  working tree (edits and untracked files included, through a throwaway index), and one of the
-  archives' sha256 set. Docs and scripts are not in it. An uncommitted run and the commit that later
-  holds the same code share a key, so a session's "after" is the next session's "before".
+- **The key** is `<code>-<archives>`: one hash of `Sources/`, `Tests/`, the `wal_*_sweep.sh` scripts and
+  `scripts/lib/` (they choose what is stored) and the `Package` files in the working tree (edits and untracked files included,
+  through a throwaway index), and one of the archives' names with their sha256. Docs are not in it. An
+  uncommitted run and the commit that later holds the same code share a key, so a session's "after"
+  is the next session's "before".
+- **A stored run is served only into an empty `<outdir>` or one already holding that run** (its `key`
+  file); one holding another capture is refused rather than mixed.
 - **No key, no store**, when any `WINAMP_MODERN_*` variable is set: a probe or A/B kill switch
   changes the output and the key cannot name it. Those runs go to `<outdir>` only.
 - A run is stored only when it finishes clean (no short capture, no shard exit, every archive has
-  rows) and the code key still matches at the end; a mid-run edit voids it with a message.
+  rows and its own log) and the code key still matches at the end; a mid-run edit voids it with a
+  message.
 
 ```sh
 scripts/wal_render_sweep.sh capture <outdir> --shards 10                 # served if stored, else run and stored

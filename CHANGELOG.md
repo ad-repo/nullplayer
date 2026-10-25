@@ -71,6 +71,11 @@
   Single GUI): it no longer pops the film out into the skin's Video window, uses that window only
   while the player is shaded, takes the film back when the player is restored, and a hidden film comes
   back in the player instead of in NullPlayer's own video window.
+- **A Modern skin with absurd sprite geometry loads instead of crashing**: a bitmap `x`/`y`/`w`/`h`
+  of `nan`, `inf` or `1e30` is ignored, and a huge negative offset no longer tries to allocate an
+  image larger than any the skin could ship.
+- **A Modern skin's film no longer lands at a nonsense position when its holder is clipped away
+  entirely**; the picture is hidden until the holder is visible again.
 
 ## 0.33.1
 

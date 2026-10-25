@@ -66,7 +66,9 @@ extension WinampModernMainView {
         // Clipped like the renderer's black box: the picture is a window of its own, so nothing
         // else cuts it, and Winamp Single GUI's 228px mini pane in a 280px player ran it down over
         // the LCD and the transport.
-        surface.view.frame = placed(holder.frame.intersection(holder.clip))
+        // A holder clipped away entirely intersects to `.null`, whose infinite origin is no frame.
+        let visible = holder.frame.intersection(holder.clip)
+        surface.view.frame = visible.isNull ? .zero : placed(visible)
     }
 
     /// **The biggest visible box wins.** A skin can hold the same component in several places at

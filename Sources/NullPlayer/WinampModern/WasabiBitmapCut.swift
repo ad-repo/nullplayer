@@ -28,12 +28,10 @@ extension WasabiResourceCache {
         if let padded = padForNegativeOffset(fullImage, attributes: attributes) {
             fullImage = padded
         }
-        let x = max(0, Int(Double(attributes["x"] ?? "0") ?? 0))
-        let topY = max(0, Int(Double(attributes["y"] ?? "0") ?? 0))
-        let width = max(1, min(fullImage.width - x,
-                               Int(Double(attributes["w"] ?? "") ?? Double(fullImage.width - x))))
-        let height = max(1, min(fullImage.height - topY,
-                                Int(Double(attributes["h"] ?? "") ?? Double(fullImage.height - topY))))
+        let x = max(0, pixels(attributes["x"]) ?? 0)
+        let topY = max(0, pixels(attributes["y"]) ?? 0)
+        let width = max(1, min(fullImage.width - x, pixels(attributes["w"]) ?? fullImage.width - x))
+        let height = max(1, min(fullImage.height - topY, pixels(attributes["h"]) ?? fullImage.height - topY))
         // `CGImage.cropping(to:)` addresses raw pixel data, whose origin is the image's TOP-left —
         // the same convention Wasabi's `y=` uses. Converting to a bottom-left origin here mirrored
         // every sprite's source rect about the sheet's centreline, so each element was cut from the
@@ -46,11 +44,15 @@ extension WasabiResourceCache {
     /// crop that follows can start at 0. Nil when there is nothing to pad.
     static func padForNegativeOffset(_ image: CGImage, attributes: [String: String]) -> CGImage? {
         func padding(_ axis: String, _ relat: String) -> Int {
-            guard attributes[relat] != "1", let value = Double(attributes[axis] ?? "") else { return 0 }
-            return max(0, -Int(value))
+            guard attributes[relat] != "1", let value = pixels(attributes[axis]) else { return 0 }
+            return max(0, -value)
         }
         let left = padding("x", "relatx"), top = padding("y", "relaty")
+        // The padded canvas answers to the same pixel budget as a decoded file: a skin's
+        // `y="-20000"` must not allocate what no image in it could.
+        // `pixels` bounds both offsets to 2²⁴, so the product cannot overflow.
         guard left > 0 || top > 0,
+              (image.width + left) * (image.height + top) <= WasabiResourceLimits.production.maximumImagePixels,
               let context = CGContext(data: nil, width: image.width + left, height: image.height + top,
                                       bitsPerComponent: 8, bytesPerRow: 0,
                                       space: CGColorSpaceCreateDeviceRGB(),
@@ -58,6 +60,14 @@ extension WasabiResourceCache {
         // CGContext is bottom-left origin: the image's top edge sits `top` rows below the canvas top.
         context.draw(image, in: CGRect(x: left, y: 0, width: image.width, height: image.height))
         return context.makeImage()
+    }
+
+    /// A geometry attribute as whole pixels: nil when absent, unparsable or not finite, and clamped
+    /// to ±2²⁴ so a skin's `x="1e30"` cannot trap `Int(_:)` or overflow the arithmetic after it.
+    private static func pixels(_ value: String?) -> Int? {
+        guard let value = Double(value ?? ""), value.isFinite else { return nil }
+        let limit = Double(1 << 24)
+        return Int(min(limit, max(-limit, value)))
     }
 
     /// The box around `image`'s non-transparent pixels, top-left origin; nil when nothing in it is

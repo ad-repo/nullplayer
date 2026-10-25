@@ -34,9 +34,10 @@ wal_require_clean_tree() {
 # WAL_RUNS_ROOT/<kind>/<key> and handed to any later run with the same key instead of re-running.
 WAL_RUNS_ROOT="$WAL_CORPUS_ROOT/runs"
 
-# wal_code_key [rev]: one hash of Sources/, Tests/ and the Package files — at <rev>, or in the working
-# tree when no rev is given (edits and untracked files included, through a throwaway index), so an
-# uncommitted run and the commit that later holds the same code share a key.
+# wal_code_key [rev]: one hash of Sources/, Tests/, the sweep scripts and their library (they select
+# what is stored) and the Package files — at <rev>, or in the working tree when no rev is given
+# (edits and untracked files included, through a throwaway index), so an uncommitted run and the
+# commit that later holds the same code share a key.
 wal_code_key() {
     local tree index
     if [ -n "${1:-}" ]; then
@@ -47,7 +48,9 @@ wal_code_key() {
         tree=$(GIT_INDEX_FILE="$index" git add -A :/ && GIT_INDEX_FILE="$index" git write-tree)
         rm -f "$index"
     fi
-    git rev-parse "$tree:Sources" "$tree:Tests" "$tree:Package.swift" "$tree:Package.resolved" | shasum | cut -c1-16
+    git rev-parse "$tree:Sources" "$tree:Tests" "$tree:scripts/lib" "$tree:scripts/wal_render_sweep.sh" \
+        "$tree:scripts/wal_interaction_sweep.sh" "$tree:scripts/wal_motion_sweep.sh" \
+        "$tree:Package.swift" "$tree:Package.resolved" | shasum | cut -c1-16
 }
 
 # wal_run_key <archive list> [rev]: the store key for a run over those archives. Prints nothing when a
@@ -56,7 +59,11 @@ wal_run_key() {
     env | grep -q '^WINAMP_MODERN_' && return 0
     local code archives
     code=$(wal_code_key "${2:-}") || return 1
-    archives=$(printf '%s\n' "$1" | while IFS= read -r path; do shasum -a 256 "$path" | cut -d' ' -f1; done | sort | shasum | cut -c1-16)
+    # Name and content: the output is filed under each archive's name, so the same bytes renamed are
+    # a different run.
+    archives=$(printf '%s\n' "$1" | while IFS= read -r path; do
+                   printf '%s %s\n' "$(shasum -a 256 "$path" | cut -d' ' -f1)" "${path##*/}"
+               done | sort | shasum | cut -c1-16)
     echo "$code-$archives"
 }
 
@@ -65,6 +72,13 @@ wal_run_key() {
 wal_store_fetch() {
     local stored="$WAL_RUNS_ROOT/$1/$2"
     [ -n "$2" ] && [ -f "$stored/.complete" ] || return 1
+    # Into an empty directory, or one already holding this run: copied over another capture, the
+    # result is a mix of both. An exit, not a return: `return 1` means "none stored", and the caller
+    # would then run the sweep into that same directory.
+    if [ -n "$(ls -A "$3" 2>/dev/null)" ] && [ "$(cat "$3/key" 2>/dev/null)" != "$2" ]; then
+        echo "$1: $3 holds another run; give an empty or new directory to serve the stored one ($2)" >&2
+        exit 1
+    fi
     mkdir -p "$3"
     cp -cR "$stored/." "$3/" 2>/dev/null || cp -R "$stored/." "$3/"
     echo "$1: from the run store ($2) -> $3"

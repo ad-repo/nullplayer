@@ -47,7 +47,8 @@ skills/app-control/scripts/launch.sh aquamp                                   # 
 "$BIN" --cli --file "$(scripts/testdata.sh path music)/01-hackbeat.mp3"     # headless
 ```
 
-Confirm: `loadTracks: 6 valid tracks` and `loadLocalTrack: 01-hackbeat.mp3` in the log; the CLI's own progress bar.
+Confirm: `loadTracks: 6 valid tracks` in the GUI's log. The headless run plays the one file it is
+given: `loadTracks: 1 valid tracks`, `loadLocalTrack: 01-hackbeat.mp3` and the CLI's own progress bar.
 
 ### Local video
 

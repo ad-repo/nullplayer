@@ -134,8 +134,8 @@ capture() {
     logs=$(find "$out/png" -maxdepth 1 -name '*.log' | wc -l | tr -d ' ')
     if [ "$logs" -ne "$archives" ]; then
         echo "wal_render_sweep: $logs skin logs for $archives archives — a skin is missing its log; see $out/stderr.txt" >&2
-    fi
-    if [ $status -ne 0 ]; then
+        echo "wal_render_sweep: capture kept but not stored" >&2
+    elif [ $status -ne 0 ]; then
         echo "wal_render_sweep: swift test exited $status; capture kept, read $out/raw.txt before trusting it" >&2
     else
         wal_store_put render "$key" "$out" "$list"

@@ -95,13 +95,15 @@ final class WinampModernLayoutBackingTests: XCTestCase {
         addTeardownBlock { renderer.teardown() }
         let (width, height) = (Int(renderer.canvasSize.width), Int(renderer.canvasSize.height))
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
-        let context = bytes.withUnsafeMutableBytes { buffer in
-            CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
-                      bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
-                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        // Drawn inside the closure: the context's pointer into `bytes` is only valid there.
+        let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                                          bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            renderer.draw(in: context)
+            return true
         }
-        let drawing = try XCTUnwrap(context)
-        renderer.draw(in: drawing)
+        XCTAssertTrue(drawn)
         return Pixels(bytes: bytes, width: width)
     }
 
@@ -113,12 +115,11 @@ final class WinampModernLayoutBackingTests: XCTestCase {
                 pixels.replaceSubrange((y * width + x) * 4..<((y * width + x) * 4 + 4), with: rgba)
             }
         }
-        let context = pixels.withUnsafeMutableBytes { bytes in
+        return pixels.withUnsafeMutableBytes { bytes in
             CGContext(data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8,
                       bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
-                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage()
         }
-        return context?.makeImage()
     }
 
     private func png(_ image: CGImage?) throws -> Data {

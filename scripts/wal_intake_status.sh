@@ -28,7 +28,9 @@ FILENAME ~ /corpus-manifest/ { tier[$1] = $3; sha[$1] = $2; tiers[$3]++; next }
     if (sha[$1] != $2) { print "sha256 differs from manifest: " $1; bad++ }
     want = $3 == "promoted" ? "gold" : "silver"
     if (tier[$1] != want) { print $1 ": stage " $3 " but manifest tier " tier[$1]; bad++ }
-    if (system("test -f \"" corpus "/" want "/" $1 "\"")) { print "not in " want "/: " $1; bad++ }
+    # getline, not system(): the crawl named the archive, and a quote in that name would be shell.
+    path = corpus "/" want "/" $1
+    if ((getline line < path) < 0) { print "not in " want "/: " $1; bad++ } else close(path)
     if (low == 0 || rank[$3] < low) low = rank[$3]
 }
 END {

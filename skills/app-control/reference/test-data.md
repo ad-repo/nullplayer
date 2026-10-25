@@ -63,7 +63,7 @@ expands it, and every `INDEX` becomes a playlist row — so a cue written over o
 arbitrary-length playlist that costs one environment variable. This is what reproduced W246:
 
 ```bash
-"$FFMPEG" -f concat -safe 0 -i <(for f in tmp/testdata/music/*.mp3; do echo "file '$PWD/$f'"; done) \
+ffmpeg -f concat -safe 0 -i <(for f in tmp/testdata/music/*.mp3; do echo "file '$PWD/$f'"; done) \
          -c copy "$SCRATCH/big.mp3"      # ~20 min
 { echo 'FILE "big.mp3" MP3'
   for i in $(seq 1 200); do s=$(( (i-1)*5 ))

@@ -614,15 +614,17 @@ broken on its own, and each fix looked like it had done nothing until the next o
 
 - **A bare button's artwork and state are the embedded button's.** `image`, `hoverimage`,
   `downimage`, `activeimage`, `nstates`, `cfgattrib` and `cfgvals` cross onto an embedded
-  `button`/`togglebutton`/`nstatesbutton` that states no `image` of its own, and the wrapper
+  `button`/`togglebutton`/`nstatesbutton` whenever the wrapper states `image`, replacing the ones
+  the button states, and the wrapper
   (`WasabiEmbeddedXUI.wrapsButton`) then neither draws that artwork nor takes the press. It keeps
   its box, because its other children are laid out and clipped in it. Official Tristania is the
   case: its `Deimos:GlowButton` script shows Play or Pause by hiding the *inner* `glowbutton.button`,
   so a disc drawn on the wrapper covered Pause's ‖ glyph and still took the click. Its
   `Deimos:NStatesGlowButton` repeat/shuffle/crossfade lamps drew nothing at all, because
   `image="player.button.repeat"` is a state prefix that only means something on the
-  `NStatesButton`. **The instance wins, all or nothing:** a wrapper that states `image` replaces the
-  embedded button's own artwork set, as Wasabi sets an instance's params after the groupdef's. Big
+  `NStatesButton`. **The instance wins:** a wrapper that states `image` replaces each key of the
+  embedded button's artwork set that it states, as Wasabi sets an instance's params after the
+  groupdef's; a key it does not state (a `hoverimage`, say) stays the button's own. Big
   Bento's tab mousetrap is a placeholder `image="wtf"`; left on the wrapper, the tab icon drew under
   the active-tab layer once a tab could show as active (CPro_iPhone3gv2's pass, 2026-10-24: gold+silver
   moved only the two Win10 Big Bento variants, whose icons now sit 1px in, on the mousetrap).
