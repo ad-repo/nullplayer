@@ -76,6 +76,8 @@ final class WinampModernSurfaceCoordinator {
         let revealEmbedded: (WinampModernComponentKind, WasabiObjectID, Bool) -> Bool
         /// Whether the window hosting the embedded surfaces is on screen.
         let isMainWindowVisible: () -> Bool
+        /// Whether the player draws the skin's own equalizer controls right now.
+        let showsEmbeddedEqualizer: () -> Bool
         /// The native window hosting a container, if the controller made one.
         let window: (String) -> NSWindow?
         /// Show/hide a container's window.
@@ -150,12 +152,24 @@ final class WinampModernSurfaceCoordinator {
         case .embedded:
             // An embedded surface is part of the player window: it is as visible as that window is.
             // There is no separate thing to hide, and nothing to hand to docking or persistence.
-            return environment.isMainWindowVisible()
+            // An equalizer is the exception: the skin shows and hides its own controls inside the
+            // player (Love is War Miku swaps faces, Moonkore slides a drawer), so it is open exactly
+            // when those are drawn (B253).
+            guard environment.isMainWindowVisible() else { return false }
+            return kind == .equalizer ? environment.showsEmbeddedEqualizer() : true
         case .declaredContainer(let id), .synthesizedContainer(let id):
             return environment.window(id)?.isVisible == true
         case .classicFallback:
             return false
         }
+    }
+
+    /// Whether the Windows menu can open and close this surface. Not an embedded surface with no
+    /// component GUID — the equalizer: there is no component for `onGetCancelComponent` to reveal,
+    /// only the skin's own controls, so the menu item reports the skin's state and leaves the
+    /// switching to them (B253).
+    func isMenuToggleable(_ kind: WinampModernComponentKind) -> Bool {
+        !isEmbedded(kind) || WinampModernComponentRegistry.canonicalGUID(for: kind) != nil
     }
 
     func showSurface(_ kind: WinampModernComponentKind,

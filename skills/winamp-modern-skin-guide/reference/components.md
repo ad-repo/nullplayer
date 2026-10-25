@@ -645,6 +645,16 @@ Two things about the embedded case that are easy to get wrong:
   unreachable — routed to as the equalizer surface, and therefore absent from **Skin Windows** too.
   The gate is measured, not assumed: over the 36 skins then installed 14 declare an equalizer container
   and 4 embed, and impulse is the only skin in both sets, so this moves that one skin.
+- **An embedded equalizer is open when its controls are drawn, and the menu cannot switch it**
+  (B253). Every other embedded surface is as visible as the player, because revealing it is a
+  component request the skin answers. The equalizer has no component, only the skin's own controls
+  inside the player — Love is War Miku swaps the main face for an EQ face from its own `eq`
+  togglebutton (`param=""`, the script's `onToggle` does the swap) and turns back from a second
+  button on that face; Moonkore slides a drawer. So Windows → Equalizer is checked when
+  `WinampModernSurfaceInventory.showsEqualizer` finds an `EQ_BAND`/`EQ_PREAMP`/`eqvis` drawn with
+  room and alpha, and disabled (`WinampModernSurfaceCoordinator.isMenuToggleable`). Pressing the
+  skin's button for the user was weighed and left: the button that closes the face is not
+  identifiable from markup (Miku's is `back`, `TOGGLE` with no param).
 - **`.video` can be embedded, `.visualization` cannot** (B23). B20 made video never-embedded to stop
   Winamp Modern's *invisible* in-player holder winning over its real video window; the rule is now
   conditional on the skin declaring a **visible** video container, so an SUI skin whose only video

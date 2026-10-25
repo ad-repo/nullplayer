@@ -2327,6 +2327,11 @@ class WindowManager {
         return equalizerWindowController?.window?.isVisible == true
     }
 
+    /// False only for a `.wal` skin that draws its equalizer inside the player (B253).
+    var isEqualizerMenuToggleable: Bool {
+        winampModernSurfaces?.isMenuToggleable(.equalizer) ?? true
+    }
+
     /// The equalizer's native window, whichever of the three routes owns it. An equalizer the *skin*
     /// draws has no NullPlayer window at all, so this is nil for it — as it is for every other
     /// skin-owned surface.

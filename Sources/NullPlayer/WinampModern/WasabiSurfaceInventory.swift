@@ -393,8 +393,23 @@ struct WinampModernSurfaceInventory {
     /// A control that drives the equalizer. `EQ_TOGGLE`/`EQ_AUTO` deliberately do not count: a skin
     /// can put an "open the EQ" button anywhere, and that button is not an equalizer.
     private static func isEqualizerControl(_ node: WalXMLNode) -> Bool {
-        if node.name.caseInsensitiveCompare("eqvis") == .orderedSame { return true }
-        switch node.attribute("action")?.uppercased() {
+        isEqualizerControl(tag: node.name, action: node.attribute("action"))
+    }
+
+    /// Whether a drawn scene shows the skin's equalizer: an EQ control with room on screen and some
+    /// alpha. What *open* means for an equalizer the skin draws inside the player — Love is War
+    /// Miku's second face, Moonkore's drawer — which has no window of its own (B253).
+    static func showsEqualizer(_ nodes: [WasabiSceneNode]) -> Bool {
+        nodes.contains { node in
+            isEqualizerControl(tag: node.object.typeName, action: node.object.attributes["action"])
+                && !node.frame.intersection(node.clip).isEmpty
+                && node.inheritedAlpha * WasabiSceneRenderer.alphaFraction(of: node.object) > 0
+        }
+    }
+
+    private static func isEqualizerControl(tag: String, action: String?) -> Bool {
+        if tag.caseInsensitiveCompare("eqvis") == .orderedSame { return true }
+        switch action?.uppercased() {
         case "EQ_BAND", "EQ_PREAMP": return true
         default: return false
         }

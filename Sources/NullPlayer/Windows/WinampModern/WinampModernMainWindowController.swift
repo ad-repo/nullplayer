@@ -954,6 +954,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                     return revealed
                 },
                 isMainWindowVisible: { [weak self] in self?.window?.isVisible == true },
+                showsEmbeddedEqualizer: { [weak self] in
+                    self?.skinView.map { WinampModernSurfaceInventory.showsEqualizer($0.renderer.sceneNodes()) } ?? false
+                },
                 window: { [weak self] id in
                     self?.auxiliaryContainers.first { $0.containerID == id }?.window
                 },

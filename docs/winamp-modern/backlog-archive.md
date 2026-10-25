@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B253 — An embedded equalizer's menu item reports the skin's face and is disabled — closed 2026-10-24
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B253 | **Windows → Equalizer is inert and always checked on a skin whose equalizer is embedded.** Love is War Miku and Love Is War Miku V2 report `equalizer=embedded`: the EQ is a second face of the main layout, swapped by the skin's `maineq.maki` from its own `eq` togglebutton. The menu item reads checked whether that face is showing or not, and pressing it changes nothing on screen (`menu.applescript toggle <pid> 5 Equalizer`, twice, on both skins). Establish what the item should mean for an embedded EQ, either driving the skin's own toggle so its script runs the swap, or disabling the item, then make it so. Done when, on both skins, the item's check follows the EQ face and pressing it either swaps the face as the skin's EQ button does or is disabled | live: Love is War Miku, Love Is War Miku V2 (2026-10-23); Moonkore, whose EQ is a scripted slide-out drawer (`drawer.maki`) with no EQ toggle to drive (2026-10-24) | S | 2 |
+
+**Closed 2026-10-24**. Windows → Equalizer, for a skin whose equalizer is embedded (77 of 139 gold+silver skins), is checked while `WinampModernSurfaceInventory.showsEqualizer` finds an EQ control drawn with room and alpha in the player's scene, and disabled (`WinampModernSurfaceCoordinator.isMenuToggleable`: an embedded surface with no component GUID). Driving the skin's toggle was weighed and left: Love is War Miku's `maineq.maki` (disassembled with `RENDER_DISASM=@/xml/player.xml`) opens the EQ face from `eq`'s `onToggle` and closes it from a second togglebutton, `back`, on that face, both `action="TOGGLE" param=""`, so the button that closes is not identifiable from markup; Moonkore has none. Live: Miku and Miku V2 read unchecked, checked after the skin's EQ button, unchecked after Miku's back arrow; Moonkore (drawer open at startup) reads checked; all disabled. Tests: `testAnEmbeddedEqualizerReportsTheSkinsFaceAndIsNotMenuToggleable`, `testShowsEqualizerReadsTheDrawnScene`. No render change, so no sweep.
+
 ## B262 — A notifier opens on its `desktopalpha` layout — closed 2026-10-24
 
 | Id | Item | Reach | Effort | Tier |

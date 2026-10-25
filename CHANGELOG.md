@@ -61,6 +61,9 @@
   titlebar and the library pane over an empty window.
 - **ClassicPro's track notifier no longer draws a dark bar across its top edge** (CPro iPhone 3G):
   notifiers now open in the glass style Winamp shows on a desktop with alpha blending.
+- **Windows → Equalizer shows whether a Modern skin's built-in equalizer is open**: on skins that
+  draw the EQ inside the player (Love is War Miku, Moonkore) the item is ticked only while the EQ is
+  showing, and is greyed out because the skin's own buttons switch it.
 
 ## 0.33.1
 
