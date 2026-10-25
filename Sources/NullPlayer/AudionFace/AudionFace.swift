@@ -175,10 +175,13 @@ struct AudionFace {
 
     /// FaceKit `decodeFont`: a name that does not resolve falls back to Helvetica at the authored
     /// size; a missing name or size falls back to Helvetica 12, and so does a size outside
-    /// `AudionFacePolicy.fontSizes`.
+    /// `AudionFacePolicy.fontSizes`. Departure: an unresolved name first tries a bundled
+    /// lookalike (`AudionFaceFontSubstitutes`).
     static func font(named name: String?, size: Int?) -> CTFont {
         guard let name, let size, AudionFacePolicy.fontSizes.contains(size) else { return NSFont(name: "Helvetica", size: 12)! }
-        return NSFont(name: name, size: CGFloat(size)) ?? NSFont(name: "Helvetica", size: CGFloat(size))!
+        return NSFont(name: name, size: CGFloat(size))
+            ?? AudionFaceFontSubstitutes.font(for: name, size: CGFloat(size))
+            ?? NSFont(name: "Helvetica", size: CGFloat(size))!
     }
 
     /// FaceKit `decodeColor`'s output: 0–255 components, opaque.

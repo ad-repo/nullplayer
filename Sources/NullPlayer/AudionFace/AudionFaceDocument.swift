@@ -186,6 +186,10 @@ private struct Reader {
         return AudionFace.color(red: red, green: green, blue: blue)
     }
 
+    func name(_ key: String) -> String? {
+        try? container.decode(String.self, forKey: Key(key))
+    }
+
     mutating func textLine(_ role: AudionFace.TextRole) -> AudionFace.TextLine? {
         let element = "\(role) text"
         guard let rect = rect(role.rectKey, element: element) else { return nil }
@@ -194,7 +198,10 @@ private struct Reader {
             drop(element, "`\(role.textModeKey)` is missing or malformed")
             return nil
         }
-        let fontName = try? container.decode(String.self, forKey: Key(role.fontNameKey))
+        // Departure: an artist line with no font name (Techno Jammo) takes the album line's font and
+        // size, as the face's Audion screenshots show; FaceKit draws it in Helvetica 12.
+        let fontRole: AudionFace.TextRole = name(role.fontNameKey) == nil ? .album : role
+        let fontName = name(fontRole.fontNameKey)
         // FaceKit `decodeStyle`: if any one of the eight keys fails to decode, the style is empty.
         var style: AudionFace.TextStyle = []
         for (bit, key) in role.styleKeys.enumerated() {
@@ -202,7 +209,7 @@ private struct Reader {
             if on { style.insert(AudionFace.TextStyle(rawValue: 1 << bit)) }
         }
         return AudionFace.TextLine(
-            rect: rect, font: AudionFace.font(named: fontName, size: int(role.fontSizeKey)),
+            rect: rect, font: AudionFace.font(named: fontName, size: int(fontRole.fontSizeKey)),
             color: color(role.txtrColorKey) ?? color(role.faceColorKey) ?? AudionFace.color(red: 0, green: 0, blue: 0),
             style: style, xor: mode & 2 != 0)
     }

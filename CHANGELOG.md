@@ -87,6 +87,10 @@
 - **A Modern skin's selected rows dim when their window loses focus**, in the colours the skin
   declares for that (iTunes Miniplayer's playlist), unless you set the selection colours yourself
   (#603).
+- **Audion faces draw their text in fonts close to the ones they name** — Chicago, Charcoal and
+  the Mac OS 8.5 theme fonts, the pixel fonts (Mini, 04b, Silkscreen and others), Textile and SF
+  Digital Readout now use bundled lookalikes instead of Helvetica, and Techno Jammo's artist line
+  matches its album line. A font you have installed is still used first.
 
 ## 0.33.1
 
