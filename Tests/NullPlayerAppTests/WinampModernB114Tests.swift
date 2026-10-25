@@ -136,6 +136,21 @@ final class WinampModernB114Tests: XCTestCase {
         XCTAssertEqual(Int(try XCTUnwrap(scene.pixel(x: 30, y: 10)).alpha), 255, "the window stays whole")
     }
 
+    /// A layer that plays itself is hit where it is now; one a script steps is hit on any frame.
+    /// Celica Amp's `glasscover` lifts once and ends nearly clear, and as a union of its frames it
+    /// covered eight controls for good. multipass's seek fill (`autoplay="0"`) still needs the union.
+    func testAFinishedOneShotAnimationIsHitOnItsLastFrame() throws {
+        func hit(_ play: String) throws -> String? {
+            let scene = try makeScene(
+                layoutAttributes: "", resources: #"<bitmap id="lift" file="lift.png"/>"#,
+                markup: #"<animatedlayer id="glass" x="0" y="0" w="8" h="8" image="lift" frame="1" \#(play)/>"#,
+                art: ["lift.png": Self.liftPNG()])
+            return scene.renderer.object(at: CGPoint(x: 4, y: 4))?.xmlID
+        }
+        XCTAssertNil(try hit(#"autoplay="1" autoreplay="0""#), "the lifted glass takes no click")
+        XCTAssertEqual(try hit(#"autoplay="0""#), "glass", "a stepped strip is hit on any frame")
+    }
+
     /// The buffer the opaque path renders through is snapped to the caller's device grid, so the
     /// picture that comes back is the same one an ordinary draw produces — pixel for pixel, at 2x.
     func testTheOpaquePathIsPixelExactAtRetinaScale() throws {
@@ -406,6 +421,19 @@ final class WinampModernB114Tests: XCTestCase {
             }
         }
         return url
+    }
+
+    /// Two 8x8 frames down an 8x16 sheet: the first opaque white, the second clear.
+    private static func liftPNG() -> Data {
+        let representation = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 8, pixelsHigh: 16,
+                                              bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                              isPlanar: false, colorSpaceName: .deviceRGB,
+                                              bytesPerRow: 32, bitsPerPixel: 32)!
+        for y in 0..<16 {
+            var components = y < 8 ? [255, 255, 255, 255] : [0, 0, 0, 0]
+            for x in 0..<8 { representation.setPixel(&components, atX: x, y: y) }
+        }
+        return representation.representation(using: .png, properties: [:])!
     }
 
     private static func solidPNG(red: UInt8, green: UInt8, blue: UInt8) -> Data {

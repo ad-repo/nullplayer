@@ -215,8 +215,16 @@ extension WasabiSceneRenderer {
         guard drawn.contains(point) else { return 0 }
         let x = (point.x - drawn.minX) / max(1, drawn.width) * CGFloat(grid.width)
         let y = (point.y - drawn.minY) / max(1, drawn.height) * CGFloat(grid.height)
+        // A layer that plays itself (`autoplay`/`autoreplay`) is a picture of time, not of a value, so
+        // it is hit where it is now. Celica Amp's `glasscover` is a one-shot lift: frame 0 covers the
+        // whole player and the last is nearly clear, and as a union it took the eight controls under
+        // it for good.
+        let frames = object.attributes["autoplay"] == "1" || object.attributes["autoreplay"] == "1"
+            ? [max(0, min(grid.count - 1, WasabiAnimation.state(of: object, frameCount: grid.count,
+                                                                clock: clock()).frame))]
+            : Array(0..<grid.count)
         var strongest = 0
-        for index in 0..<grid.count {
+        for index in frames {
             let origin = CGPoint(x: CGFloat((index % grid.columns) * grid.width),
                                  y: CGFloat((index / grid.columns) * grid.height))
             strongest = max(strongest, Int(bitmap.alpha(at: CGPoint(x: origin.x + x, y: origin.y + y))))

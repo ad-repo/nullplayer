@@ -702,6 +702,10 @@ invisible while the script driving it worked perfectly.
 Its **region** is the union of its frames: a point is clickable if *any* frame paints there. Testing
 only the frame on screen is wrong for the commonest use of the type — a fill animation is transparent
 ahead of the playhead, which is precisely where a seek click lands. Phase 33.
+**Except a layer that plays itself** (`autoplay="1"` or `autoreplay="1"`, 2026-10-25): its frame is
+time, not a value, so it is hit on the frame showing. Celica Amp's `glasscover` is a one-shot lift
+— frame 0 covers the whole 309x145 player, the seventh is nearly clear — and as a union it took the
+eight controls beneath it for good. multipass's seek fill is `autoplay="0"` and keeps the union.
 
 **A box larger than the whole image shows that image once, at its own size, from the top left**
 (`AnimationGrid.isWholeSheet`). ONYX V2's shade volume fill is an 89×12 image in an 89×24 box: cut at
