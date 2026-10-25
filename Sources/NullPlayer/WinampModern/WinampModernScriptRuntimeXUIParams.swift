@@ -63,7 +63,7 @@ extension WinampModernScriptRuntime {
             // symbol came first and every button drew its symbol's group id as a label.
             for name in object.orderedAttributeNames
             where !Self.isConsumedBeforeXUIParams(name)
-                && (isXUI || !Self.groupClaimedParams.contains(name.lowercased())) {
+                && (isXUI || !Self.isGroupClaimedParam(name)) {
                 _ = try? dispatch(target: MakiObjectReference(.system), event: "onsetxuiparam",
                                   arguments: [.string(name), .string(object.attributes[name] ?? "")], in: owned)
             }
@@ -73,15 +73,41 @@ extension WinampModernScriptRuntime {
         // content.group">` — a `<group>` instance, not a XUI tag, so the standard param loop
         // above never fires, but the standard frame script still needs `content` to instantiate
         // the playlist body.
-        if let notify = object.attributes["notify"] {
+        //
+        // A Winamp 3 frame hears the whole value as `onNotify("key,value", "", 0, 0)` on its group —
+        // it splits the command with `getToken` itself — and numbers the extra ones: MetAlchemy III's
+        // `studio.standardframe` script builds the playlist body only from `onNotify("content,…")`,
+        // and its layout passes `notify`, `notify1="padtitleright,18"` and `notify2="shade,shade"`.
+        // Heard only as `onSetXuiParam`, the playlist window was an empty frame.
+        //
+        // Only to a script that does not take its params from `onSetXuiParam`: Winamp 5 frames bind
+        // both, and handed `content` twice they built the client group twice (NEO_CLASSIC, EMP2,
+        // CopperdeckII, Lobe — up to five stacked holders in one `Component` window).
+        let listensForParams = owned.contains { program in
+            program.bindings.contains { program.methods[$0.methodIndex].name == "onsetxuiparam" }
+        }
+        let sendsNotifyEvent = !listensForParams
+        for name in object.orderedAttributeNames where Self.isNotifyParam(name) {
+            let notify = object.attributes[name] ?? ""
             let parts = notify.split(separator: ",", maxSplits: 1)
-            if parts.count == 2 {
-                let key = String(parts[0])
-                let value = String(parts[1])
-                _ = try? dispatch(target: MakiObjectReference(.system), event: "onsetxuiparam",
-                                  arguments: [.string(key), .string(value)], in: owned)
+            guard parts.count == 2 else { continue }
+            _ = try? dispatch(target: MakiObjectReference(.system), event: "onsetxuiparam",
+                              arguments: [.string(String(parts[0])), .string(String(parts[1]))], in: owned)
+            if sendsNotifyEvent {
+                _ = try? dispatch(target: MakiObjectReference(.gui(object.stableID)), event: "onnotify",
+                                  arguments: [.string(notify), .string(""), .integer(0), .integer(0)], in: owned)
             }
         }
+    }
+
+    /// `notify`, `notify1`, `notify2`…: a group's messages to its own script, not XUI params.
+    static func isNotifyParam(_ name: String) -> Bool {
+        let lowered = name.lowercased()
+        return lowered.hasPrefix("notify") && lowered.dropFirst("notify".count).allSatisfy(\.isNumber)
+    }
+
+    static func isGroupClaimedParam(_ name: String) -> Bool {
+        groupClaimedParams.contains(name.lowercased()) || isNotifyParam(name)
     }
 
     /// `<CustomObject groupid="…">` — a holder whose **content is named by an attribute**.

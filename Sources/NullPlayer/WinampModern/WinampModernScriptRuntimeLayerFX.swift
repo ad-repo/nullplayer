@@ -186,50 +186,56 @@ extension WinampModernScriptRuntime {
                                  wrap: state.wrap, bilinear: state.bilinear)
     }
 
-    /// One `fx_*` call. Every setter writes state and, where it changes what is drawn, invalidates the
-    /// layer's mesh and asks for a repaint; the getters answer from the same state.
-    func invokeLayerFX(method: String, object: WasabiObject,
-                               arguments: [MakiValue]) -> MakiValue {
-        var state = layerFX.state(of: object.stableID) ?? WasabiLayerFXState()
-        let flag = arguments.first?.truthy ?? false
+    /// The `fx_*` methods. Winamp warps a layer through a grid whose per-pixel source is supplied by
+    /// the skin's own `fx_onGetPixel*` callbacks — implemented in Phase 28 (`layerFXMesh(for:)`).
+    /// Arities are read off the call sites, not assumed (`WINAMP_MODERN_RENDER_DISASM=fx_setgridsize`):
+    /// every setter takes one argument except `fx_setGridSize(w, h)`, and `fx_update()` takes none.
+    /// Every setter writes state and, where it changes what is drawn, invalidates the layer's mesh and
+    /// asks for a repaint; the getters answer from the same state.
+    static let layerFXMethods: MakiMethodTable<WasabiObject> = {
+        var table = MakiMethodTable<WasabiObject>()
+        let flags: [String: WritableKeyPath<WasabiLayerFXState, Bool>] = [
+            "enabled": \.enabled, "wrap": \.wrap, "rect": \.rect, "bgfx": \.backgroundFX, "clear": \.clear,
+            "realtime": \.realtime, "localized": \.localized, "bilinear": \.bilinear, "alphamode": \.alphaMode,
+        ]
+        for (name, flag) in flags {
+            table.add("fx_set" + name, 1) { runtime, call in
+                runtime.writeLayerFX(call) { $0[keyPath: flag] = call.arguments[0].truthy }
+            }
+            table.add("fx_get" + name, 0) { runtime, call in
+                .boolean(runtime.readLayerFX(call)[keyPath: flag])
+            }
+        }
+        table.add("fx_setspeed", 1) { runtime, call in
+            runtime.writeLayerFX(call) { $0.speedMilliseconds = call.arguments[0].integerValue }
+        }
+        table.add("fx_getspeed", 0) { runtime, call in .integer(runtime.readLayerFX(call).speedMilliseconds) }
+        table.add("fx_setgridsize", 2) { runtime, call in
+            runtime.writeLayerFX(call) {
+                $0.gridX = max(1, Int(call.arguments[0].integerValue))
+                $0.gridY = max(1, Int(call.arguments[1].integerValue))
+            }
+        }
+        // The skin has changed whatever its callbacks read (a needle's angle) and is telling the host
+        // to re-run them. This is the repaint that moves the meter.
+        table.add(["fx_update", "fx_restart"], 0) { runtime, call in runtime.writeLayerFX(call) { _ in } }
+        return table
+    }()
+
+    private func readLayerFX(_ call: MakiCall<WasabiObject>) -> WasabiLayerFXState {
         if Self.tracesLayerFX {
-            print("FX-TRACE \(method) on \(object.typeName)#\(object.xmlID ?? "-") "
-                  + "args=\(arguments.map(\.stringValue))")
+            print("FX-TRACE \(call.method) on \(call.object.typeName)#\(call.object.xmlID ?? "-") "
+                  + "args=\(call.arguments.map(\.stringValue))")
         }
-        switch method {
-        case "fx_setenabled": state.enabled = flag
-        case "fx_setwrap": state.wrap = flag
-        case "fx_setrect": state.rect = flag
-        case "fx_setbgfx": state.backgroundFX = flag
-        case "fx_setclear": state.clear = flag
-        case "fx_setrealtime": state.realtime = flag
-        case "fx_setlocalized": state.localized = flag
-        case "fx_setbilinear": state.bilinear = flag
-        case "fx_setalphamode": state.alphaMode = flag
-        case "fx_setspeed": state.speedMilliseconds = arguments.first?.integerValue ?? 0
-        case "fx_setgridsize":
-            state.gridX = max(1, Int(arguments.first?.integerValue ?? 1))
-            state.gridY = max(1, Int(arguments.count > 1 ? arguments[1].integerValue : 1))
-        case "fx_getenabled": return .boolean(state.enabled)
-        case "fx_getwrap": return .boolean(state.wrap)
-        case "fx_getrect": return .boolean(state.rect)
-        case "fx_getbgfx": return .boolean(state.backgroundFX)
-        case "fx_getclear": return .boolean(state.clear)
-        case "fx_getrealtime": return .boolean(state.realtime)
-        case "fx_getlocalized": return .boolean(state.localized)
-        case "fx_getbilinear": return .boolean(state.bilinear)
-        case "fx_getalphamode": return .boolean(state.alphaMode)
-        case "fx_getspeed": return .integer(state.speedMilliseconds)
-        case "fx_update", "fx_restart":
-            // The skin has changed whatever its callbacks read (a needle's angle) and is telling the
-            // host to re-run them. This is the repaint that moves the meter.
-            layerFX.set(state, for: object.stableID)
-            requestRepaint(for: object)
-            return .null
-        default: return .null
-        }
-        layerFX.set(state, for: object.stableID)
-        requestRepaint(for: object)
+        return layerFX.state(of: call.object.stableID) ?? WasabiLayerFXState()
+    }
+
+    private func writeLayerFX(_ call: MakiCall<WasabiObject>,
+                              _ change: (inout WasabiLayerFXState) -> Void) -> MakiValue {
+        var state = readLayerFX(call)
+        change(&state)
+        layerFX.set(state, for: call.object.stableID)
+        requestRepaint(for: call.object)
         return .null
     }
 }

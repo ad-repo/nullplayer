@@ -4,7 +4,7 @@
 # Every object a script hooks the mouse on, driven with the gesture its bindings call for: does
 # anything happen?
 #
-#   scripts/wal_interaction_sweep.sh <outdir> [--corpus <dir[:dir…]>] [--shards K] [--allow-dirty]
+#   scripts/wal_interaction_sweep.sh <outdir> [--corpus <dir[:dir…]>] [--shards K] [--allow-dirty] [--rev <commit>] [--fresh]
 #
 # Output: <outdir>/interaction.tsv, one row per (skin, container, layout, object, gesture), and the
 # dead-control summary on stdout. Columns and their reading are in
@@ -21,16 +21,18 @@ source "$(dirname "$0")/lib/swiftpm.sh"
 source "$(dirname "$0")/lib/wal_corpus.sh"
 
 usage() {
-    echo "usage: wal_interaction_sweep.sh <outdir> [--corpus <dir[:dir…]>] [--shards K] [--allow-dirty]" >&2
+    echo "usage: wal_interaction_sweep.sh <outdir> [--corpus <dir[:dir…]>] [--shards K] [--allow-dirty] [--rev <commit>] [--fresh]" >&2
     exit 2
 }
 
-out="" corpus="$WAL_CORPUS_DEFAULT" allow_dirty=0 shards=1
+out="" corpus="$WAL_CORPUS_DEFAULT" allow_dirty=0 shards=1 rev="" fresh=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --allow-dirty) allow_dirty=1; shift ;;
         --corpus) corpus="${2:-}"; shift 2 ;;
         --shards) shards="${2:-}"; shift 2 ;;
+        --rev) rev="${2:-}"; shift 2 ;;
+        --fresh) fresh=1; shift ;;
         -*) echo "unknown option: $1" >&2; usage ;;
         *) [ -n "$out" ] && usage; out="$1"; shift ;;
     esac
@@ -41,6 +43,9 @@ done
 list=$(wal_corpus_archives "$corpus") || exit 1
 archives=$(printf '%s' "$list" | grep -c .)
 [ "$archives" -gt 0 ] || { echo "wal_interaction_sweep: no .wal archives in $corpus" >&2; exit 1; }
+
+key=$(wal_run_key "$list" "$rev") || exit 1
+wal_store_serve interaction "$key" "$out" "$fresh" "$rev" && exit 0
 
 wal_require_clean_tree wal_interaction_sweep "$allow_dirty" || exit 1
 
@@ -60,7 +65,7 @@ status=0
 wal_run_shards "$shards" "$list" run_shard || status=$?
 [ "$status" -eq 0 ] || echo "wal_interaction_sweep: a shard exited $status; read $out/raw-*.txt before trusting the result" >&2
 
-python3 -I - "$out" "$list" <<'PYINTERACTION'
+python3 -I - "$out" "$list" <<'PYINTERACTION' || status=1
 import glob, os, sys
 from collections import Counter
 
@@ -91,3 +96,4 @@ print("  most dead (dead/driven):")
 for skin, count in sorted(dead.items(), key=lambda kv: (-kv[1], kv[0].lower()))[:15]:
     print(f"    {count}/{total[skin]}  {skin}")
 PYINTERACTION
+[ "$status" -eq 0 ] && wal_store_put interaction "$key" "$out" "$list"

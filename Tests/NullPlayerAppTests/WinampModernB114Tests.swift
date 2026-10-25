@@ -230,6 +230,11 @@ final class WinampModernB114Tests: XCTestCase {
             markup: status + #"<button id="add" action="PE_Add" x="0" y="0" w="10" h="10"/>"#)
         XCTAssertTrue(ownButtons.children(ofID: "status").isEmpty)
 
+        // B257 — the bar ends at 114 px, so it clears Moon Groove's `PE_Info` text beside it.
+        let bar = WasabiStandardFrames.playlistCommandBar(location: WalSourceLocation(path: "/x.xml"))
+        let last = try XCTUnwrap(bar.last?.attributes)
+        XCTAssertEqual(Int(last["x"] ?? "")! + Int(last["w"] ?? "")!, 114)
+
         let notAPlaylist = try makeScene(layoutAttributes: "", markup: status)
         XCTAssertTrue(notAPlaylist.children(ofID: "status").isEmpty)
     }

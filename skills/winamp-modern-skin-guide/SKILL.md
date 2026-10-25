@@ -63,11 +63,13 @@ a worked example in [reference/harness.md](reference/harness.md):
 ### Pick your working mode first
 
 Coverage is demand-driven and the wild corpus is effectively unbounded, so the *unit of work* matters
-as much as the code. Three modes, three different entry points:
+as much as the code. Four modes, four different entry points:
 
 | You are… | Start with | Not |
 |---|---|---|
 | Debugging one named skin | [skins.md](skins.md) → `skins/<skin>.md`, then [reference/harness.md](reference/harness.md) | reading this file top to bottom |
+| Running an intake batch, or asking where one stands | **`skills/skin-intake`** — lifecycle and the per-skin ledger; `scripts/wal_intake_status.sh` | reading progress from the plan or commit messages |
+| **Testing and fixing** a skin or an intake batch end to end | **`skills/skin-triage`** — the phase order, every button, headless then live | a skin-by-skin pass in the app |
 | **Measuring** a skin — what does it contain, what works, how good is it? | **`/wal-skin-report <skin.wal>`** (`skills/wal-skin-report`) — fixed measurement order, structured report, A–F grade with a confidence axis | ad-hoc dumps whose findings evaporate |
 | Deciding what to implement next across many skins | [triage-playbook.md](triage-playbook.md) — corpus measurement, defect classes, the demand index | fixing whatever the last bug report named |
 
@@ -259,8 +261,8 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Resource cache + scene renderer | `WasabiRenderer.swift` — the spine: scene walk, clipping, dispatch |
 | Sprites, text, colour, hit testing, Layer FX | `WasabiRendererSprites.swift`, `…Text.swift`, `…Colour.swift`, `…HitTesting.swift`, `…LayerFX.swift` |
 | MAKI parser + interpreter | `MakiBytecode.swift` |
-| Script runtime + method dispatch | `WinampModernScriptRuntime.swift` — the class, its stored state, dispatch and teardown; by concern: `…Signatures.swift` (the arity tables), `…Config.swift` (`cfgattrib`/`ConfigAttribute`), `…WindowGeometry.swift`, `…Visibility.swift`, `…XUIParams.swift`, `…GroupInstantiation.swift`, `…Equalizer.swift`, `…LayerFX.swift`, `…Map.swift`, `…XmlDoc.swift`, `…HostControls.swift` |
-| MAKI receivers, by class | `WinampModernScriptRuntimeSystem.swift` (System, PlEdit, ColorMgr), `…Desktop.swift` (System's clock, screen and window lookups), `…Object.swift` (GuiObject), `…Window.swift` (GuiObject's window, stacking and snapping methods), `…Dynamic.swift` (objects a script makes with `new`), `…Menu.swift` (PopupMenu), `…Timer.swift` (`target*`), `…Text.swift` |
+| Script runtime + method dispatch | `WinampModernScriptRuntime.swift` — the class, its stored state, dispatch and teardown; by concern: `…Signatures.swift` (`MakiMethodTable`, and `signature(for:)` derived from every table), `…Config.swift` (`cfgattrib`/`ConfigAttribute`), `…WindowGeometry.swift`, `…Visibility.swift`, `…XUIParams.swift`, `…GroupInstantiation.swift`, `…Equalizer.swift`, `…LayerFX.swift`, `…Map.swift`, `…XmlDoc.swift`, `…HostControls.swift` |
+| MAKI receivers, by class | Each receiver is one method table per concern, arity beside body (B243): `WinampModernScriptRuntimeSystem.swift` (System), `…Singletons.swift` (PlEdit, MLPlaylists, ColorMgr), `…Desktop.swift` (System's clock, screen and window lookups), `…Files.swift` (the skin-path sandbox and ClassicPro's file shell, also answered on objects a script makes with `new`), `…Object.swift` (GuiObject: `invokeGUI` asks `guiKindTables` for the object's widget kind, then `guiFamilies` in order — structure, text, state there; position, animation, list and actions in `…ObjectFamilies.swift`), `…Window.swift` (GuiObject's window, stacking and snapping methods), `…Dynamic.swift` (objects a script makes with `new`), `…Menu.swift` (PopupMenu), `…Timer.swift` (`target*`), `…Text.swift` |
 | Skin-facing host API | `WinampModernHost.swift` |
 | Component model + host protocol | `WinampModernComponents.swift` |
 | Component bucket (thinger): icon set, box layout, strip state | `WinampModernComponentBucket.swift`, `WasabiRenderer.swift` |

@@ -1,10 +1,17 @@
 # Winamp Modern (`.wal`) — Corpus Runner Plan
 
+> **Edited only through `skills/skin-intake` § *Changing the plan*.** That section lists every edit
+> this file takes and when; anything it does not list — progress, session notes, rewrites — goes
+> elsewhere or nowhere.
+
 **Status (2026-10-19): instruments frozen; the work is fixing.** The corpus tooling is built and
 documented in `skills/winamp-modern-skin-guide/reference/harness.md`. What is open is the backlog
 in `tasks/WINAMP5_TASKS.md` — that file, not this one, records what is done.
 
 ## The loop
+
+This loop is for **backlog rows**. An intake batch runs by `skills/skin-intake`; rows its pass
+files come back here.
 
 1. Take the top row of *Corpus plan queue* in `WINAMP5_TASKS.md`. Skin-dead loader gaps
    (B175–B181) first, then the MAKI method rows (B182–B201, B206–B207).
@@ -86,38 +93,51 @@ Follow-up on `fix/wal-scale-events` (PR #593), for the two rows the promotion fi
 Left open from it: B244 (a layout hidden during the change misses `onScale`) and B245 (the host
 playlist under Nitrous overflows the screen at 135%).
 
-**Next:** `feat/wal-corpus-scale` (B169 intake → gold, B233) merged as #587; `fix/wal-scale-events`
-(B238, B239) is in review as #593. Then intake #2 on `feat/wal-intake-2` — re-weight gain first (§8 *Progress*, B169
-entry: count a new tag once, `tag@attr` only on known tags). B212 needs a second display; B216's
-`.wmz` census waits on a go-ahead.
+### Done: intake #2, promoted to gold (2026-10-24)
 
-### Branch strategy for the intakes (2026-10-22)
+The 25 skins admitted at `2987be4e` were worked by `skills/skin-intake` on `feat/wal-intake-2`, all
+passed by the user in the app, and promoted to gold on 2026-10-24 (manifest tier, files moved to
+`WinampModernCorpus/gold/`), with rows on `skin-compatibility.md` (21 B, 4 C). The per-skin record is
+`intakes/intake-2.tsv`. Each fix is general, named after the skin that showed it.
 
-`feat/wal-corpus-scale` ran to 103 commits because it held the intake, the promotion, refactors
-and fixes at once. One intake of 25 took about a week of in-app work, and ~950 candidates remain
-(827 bronze + 54 quarantine + new crawl finds), so at that pace the whole set is ~38 weeks. The
-branch shape has to make that sustainable:
+| Skin | What was wrong | Fix (where) |
+|---|---|---|
+| DDtank Glass, Fuzzy Muffins | Equalizer and about drew on the bare desktop; an opaque mask showed through panes | A layout paints its backing whatever `drawbackground` says (`138f9161`) |
+| hm_Touch | Big timer drew nothing | A negative `<bitmap>` x/y pads with transparency instead of clamping |
+| Winamp Single GUI | Films opened outside the player; lower body lost | `isVideo()`, an in-player holder beats a declared Video container, Video Player detaches; region cuts after fills (`9c2ab6cb`) |
+| RODE 3 Lite | A transparent slider panel swallowed 24 controls | A group hit-tests through its background's alpha |
+| ArmorAmp | Spectrum spilled over its bezel; EQ drawer button dead | An unpainted group clips to its background's alpha; numeric character references decode (`94789d61`) |
+| MIDISUI | Vis drawer slid over buttons; LED dots over labels; back button quit the app | Animated groups clip to their children's union; a group's `image=` is not art; the fallback close yields (`a62f4b5e`) |
+| MD Ganbare Rakkatan, M3 | Player opened 816 wide / cut off | An alphabackground layout sizes by its art (B254) |
+| Moon Groove | LCD, ticker and playlist bar wrong | `setActivated` raises `onActivate` only; one-shot `play()`; 114px command bar; `setAlternateText` expires (B255–B258) |
+| Mad Magazine, EMP2 | Playlist under its title bar; library 450 wide | A frame's border is its strips' opaque art (B260) |
+| Vision, H2O Liquid | Frames see-through; Configuration text cut at the top | Untextured frames take the list colour; an overfull paragraph top-aligns (`c0e927a2`) |
+| CPro_iPhone3gv2, Big Bento Win10 | Every clicked tab stayed lit; icon under the active layer | Toggles flip on press; a wrapper's image replaces the embed's placeholder (`d78034ce`) |
+| CPro_iPhone3gv2 | Shadow drew four phones | Overfull grid edges clip instead of squashing (`3c90943d`) |
+| Slimline XP | Fallback playlist 3.7× and screen-wide | `.wal` fallback windows do not read the player width as a zoom (`c706a1b4`) |
+| cPro KAO, Big Bento | Analyzer gaps: an uneven comb at `thin`, seams between colour bands | Thin bars abut; ramp slices on whole pixels (B264) |
+| Winamp Portrait | "Collapse" tab label ran off the window | A text's em is a whole pixel, rounded down — moved 126 skins' text by under a pixel (`283c15b2`) |
 
-- **One branch per intake, cut from `origin/main`**: `feat/wal-intake-<n>`. It holds the
-  re-weighting or rule change (if any), the intake run, the manifest update, and that batch's
-  in-app fixes. Nothing else rides along — a backlog row unrelated to the batch gets its own
-  `fix/…` branch, and non-`.wal` work (marketing, other subsystems) never lands on an intake branch.
-- **PR at two checkpoints, not one**: (1) *admitted* — `wal_intake.sh` run, manifest committed,
-  sweep baseline green; (2) *promoted* — the in-app pass done and the batch moved to gold. A batch
-  that runs past ~a week PRs what it has and continues on a fresh branch.
-- **Merge `origin/main` in every few days** while a branch is open; never rebase a branch others
-  may have pulled. Before opening the PR, confirm `gh pr view <N> --json files` matches the work.
-- **Small rows found during a pass** (like B238/B239 from intake #1) are filed, then fixed on a
-  short `fix/wal-<topic>` branch between batches, so the next batch's in-app pass doesn't trip on them.
-- **Push with an explicit upstream** (`git push -u origin <branch>`); a branch tracking
-  `origin/main` is one bare `git push` away from main.
+Left open: B253 (Windows → Equalizer inert on an embedded EQ; Moonkore, Love is War Miku ×2),
+B259 (split `WinampModernScriptRuntimeObject.swift`), B261, B262 (CPro_iPhone3gv2 notifier strip),
+B263 (host-chrome About has no close).
+
+**Next:** the open intake, by `skills/skin-intake`. Where it stands is
+`scripts/wal_intake_status.sh` over its ledger (`docs/winamp-modern/intakes/`), never this file.
+B212 needs a second display; B216's `.wmz` census waits on a go-ahead.
+
+### Intakes (2026-10-22)
+
+The lifecycle, branch rules and progress ledger are `skills/skin-intake`. One intake of 25 took
+about a week of in-app work and ~950 candidates remain, so at that pace the whole set is ~38 weeks.
 
 **Not every candidate gets a week's share.** By the B169 curve only 123 candidates cleared gain ≥ 3
 and 594 added nothing. Every fix is general (see the tables above), so a skin that adds no feature
 is covered by the fixes its look-alikes earned. Intakes run while a batch still clears the gain
 floor (re-measured after the re-weighting); once it doesn't, the rest is certified by the census
 and the pre-merge render sweep, with a hand pass only where `wal_reach.sh` shows a feature that no
-gold skin has.
+gold skin has. That certification is a known limit: intake #1's census and sweep missed most of its
+in-app defects (`skills/skin-triage/misses.md`).
 
 Below is reference: the pipeline as designed (§3), what was built (§7), and the corpus-scale
 decisions (§8).
@@ -346,10 +366,9 @@ corpus-wide action, so S0 is finished as below and the actions are re-scoped by 
 **B166–B172** rows, in that order; this section is their spec, and each
 row is closed against its own done-criterion.
 
-**Update this section at the end of every session that touches it** — this is a multi-session plan and
-the only record of where it stands. Mark the row's progress in `WINAMP5_TASKS.md` (or close it into the
-archive), and record here any decision a measurement changed, with the measurement. A session that ends
-without that update leaves the next one re-deriving it.
+**Superseded (2026-10-23):** row progress lives in `WINAMP5_TASKS.md` and the archive, intake
+progress in the intake's ledger, and this section changes only by `skills/skin-intake` § *Changing
+the plan*. The copy rule below still applies.
 
 **Then hand the session's skins over for in-app evaluation.** Every skin the session admitted to
 Silver or Gold is **copied** (never moved) into `~/Library/Application Support/NullPlayer/WinampModernSkins/`,
@@ -359,16 +378,19 @@ use of the app. A session that admitted no skins (B166–B168 do not) hands over
 
 ### How deep each skin is evaluated
 
-Three depths, and only the first is part of this plan for every skin:
+Four depths, and only the first is part of this plan for every skin:
 
 1. **Automatic first round — every candidate, every tier.** The census (load, rating, surfaces, hosted
    windows) plus the static feature index. Headless, deterministic, no human. This is what rates and
    admits a skin (B169).
 2. **Targeted runs — any tier, by selection.** Impact-selected sweeps (`--touching`, B170) re-render the
    skins a change could affect. Still automatic.
-3. **Full audit — Gold, and Silver on request only.** The live pass and the hand letter
-   (`/wal-skin-report`). Never for Bronze, and not part of this plan's work; admission to Silver makes a
-   skin eligible for an audit, not owed one.
+3. **Intake pass — every skin in an intake batch** (changed 2026-10-22). The `skills/skin-triage`
+   pass: headless over every window, button and component, then live. This is what promotes a
+   batch to Gold.
+4. **Full audit — Gold, and Silver on request only.** The graded report (`/wal-skin-report`).
+   Never for Bronze, and not part of this plan's work; admission to Silver makes a skin eligible for
+   an audit, not owed one.
 
 B166's per-skin log files are none of these — they change *where* the existing dump output is written
 so a corpus run can't lose lines, not *what* is measured.
@@ -426,6 +448,28 @@ so a corpus run can't lose lines, not *what* is measured.
   `WinampModernSkins/` only as the install folder; the tier rules and the hand-over copy moved into
   `harness.md`, and the triage playbook's §3 marks S0 and S2 built. No skins admitted, so none
   handed over. §8 is complete.
+- **Intake #2 admitted 2026-10-22** (`feat/wal-intake-2`, rev `2987be4e`). Gain re-weighted first:
+  a new tag counts once, `tag@attr` only on a covered tag. Run over the 827 bronze: **25 silver, 802
+  bronze, 0 quarantine**, 45 min. **Gain curve** (first 60): `31 27 16 16 14 14 12 11 11 11 10 10 10
+  9 9 9 9 9 9 8 8 8 7 7 7 | 7 7 7 7 7 6 6 6 6 6 6 5 5 5 5 5 5 5 5 5 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4`.
+  Against the old weighting's top of 290, the floor now filters: a pre-run check over the all-tier
+  index had 89 clear gain ≥ 3 and 12 clear 10. The budget still binds (rank 25 adds 7), so ≤ 25 / ≥ 3
+  stands; by this curve ~64 more clear gain ≥ 3 — about three batches, the next ending near gain 4.
+  Post-admission sweep (the new baseline): 139 skins, 29 s at `--shards 10`, no failures. Batch:
+  DDtank_Glass_Winamp_Skin, RODE_3_Lite, hm_Touch_m_1, MIDISUI_1_1,
+  MD__Ganbare_Rakkatan_the_Sixth_(fixed), Metaskins_net_-_H2O_Liquid, Winamp_Single_GUI,
+  wasabi_player_skin, Official_Mad_Magazine_Skin, MusicshowB_version, Moon_Groove_1-1, ArmorAmp,
+  MetAlchemy_III_Wa3, MD_-_Ayanami_Rei_the_Fifth_v1, Vision_V1, Winamp_Portrait__WMP12_1, cPro__KAO,
+  Ashen_Player_for_Winamp_1_1, EMP2, The_Crow__v1, RazorEdge_V1, Moonkore,
+  The_Official_YoYoBoy_Skin, CPro_iPhone3gv2, Slimline_XP_final (`.wal` each); copied into
+  `WinampModernSkins/`.
+- **Intake #2's in-app pass** is tracked per skin in `docs/winamp-modern/intakes/intake-2.tsv`.
+  Fixes that landed before the ledger, from defects seen in the app:
+  ArmorAmp's spectrum and EQ drawer, MIDISUI's drawer, LED rows and library, Winamp Single GUI's
+  films and their detach, Moon Groove's LCD, ticker and playlist bar (B255–B258), alphabackground
+  layout sizing (B254), frame borders from strip art (B260), Vision's untextured frames, H2O
+  Liquid's overfull paragraph, hm_Touch's timer digits. Filed: B253, B261. The branch's code-quality
+  review filed B246–B252 and B259.
 
 ### Decisions (fixed — re-open only with a measurement)
 

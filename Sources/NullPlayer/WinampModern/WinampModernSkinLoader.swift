@@ -70,7 +70,7 @@ final class WinampModernSkinLoader {
             throw WalFailure(WalDiagnostic(.unsupportedContainer, "Winamp Modern skins must use the .wal extension."))
         }
         let archive = try WalArchive(url: archiveURL, limits: archiveLimits)
-        let mountName = Self.safeMountName(archiveURL.deletingPathExtension().lastPathComponent)
+        let mountName = Self.mountName(of: archiveURL)
         let vfs = try WalVirtualFileSystem(skinName: mountName, skin: archive)
         // Attach the user-supplied ClassicPro engine (once, reused across all cPro skins) at the
         // logical path cPro-Bento's include resolves to. Non-cPro skins simply never reference it.
@@ -147,13 +147,18 @@ final class WinampModernSkinLoader {
             let contents = (try? FileManager.default.contentsOfDirectory(
                 at: directory, includingPropertiesForKeys: nil)) ?? []
             for candidate in contents where candidate.pathExtension.lowercased() == "wal" {
-                let mountName = safeMountName(candidate.deletingPathExtension().lastPathComponent)
+                let mountName = Self.mountName(of: candidate)
                 guard mountName.lowercased() == wanted,
                       candidate.standardizedFileURL != archiveURL.standardizedFileURL else { continue }
                 return try WalArchive(url: candidate, limits: limits)
             }
         }
         return nil
+    }
+
+    /// The name a `.wal` mounts under, which is also its configuration namespace.
+    static func mountName(of archiveURL: URL) -> String {
+        safeMountName(archiveURL.deletingPathExtension().lastPathComponent)
     }
 
     private static func safeMountName(_ name: String) -> String {

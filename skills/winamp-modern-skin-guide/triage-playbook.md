@@ -112,12 +112,15 @@ measurements behind them, are in [reference/harness.md](reference/harness.md):
 
 The specification for the unbuilt stages, and the build order that would deliver them, are in
 `docs/winamp-modern/corpus-runner-plan.md` — a project plan, kept where the phase handoffs live. As
-each further stage is built, its commands land in [reference/harness.md](reference/harness.md), that
-part of the plan becomes history, and the row above changes to **Built**.
+each further stage is built, its commands land in [reference/harness.md](reference/harness.md), the
+row above changes to **Built**, and the plan is marked by `skills/skin-intake` § *Changing the plan*.
 
 ---
 
 ## 4. Isolating one issue, once it is ranked
+
+(This is the `.wal` probe order inside `skills/skin-triage` Phase 5. That skill owns the order of a
+whole skin pass.)
 
 The corpus tells you *what* to fix; this is how you find *why*, and the order matters because each
 probe is cheap only if the previous one has narrowed the space. Never change renderer code before

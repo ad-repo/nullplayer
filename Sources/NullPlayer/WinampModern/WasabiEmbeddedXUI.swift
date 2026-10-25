@@ -84,12 +84,17 @@ enum WasabiEmbeddedXUI {
                 return embedded.tag.isStandard(anyOf: [.button, .toggleButton])
                     && embedded.attributes["text"] == nil && !(attributes["text"] ?? "").isEmpty
             case .buttonArtwork:
-                // All or nothing: a button that states its own `image` keeps its own artwork whole,
-                // rather than gaining the wrapper's hover and press frames over it.
-                return embedded.tag.is(anyOf: WasabiKind.buttons)
-                    && embedded.attributes["image"] == nil && attributes["image"] != nil
+                // The instance's artwork wins over a placeholder the groupdef gave the button, as
+                // Wasabi sets an instance's params after the groupdef's: Big Bento's tab mousetrap
+                // states `image="wtf"`, and drawn on the wrapper its icon sat under the active-tab
+                // layer the moment a tab could show as active. Only when the wrapper states `image`;
+                // a frame key it does not state stays the button's own, as Wasabi's param order leaves it.
+                return embedded.tag.is(anyOf: WasabiKind.buttons) && attributes["image"] != nil
             }
         }
+
+        /// Whether the wrapper's value replaces one the embedded object already states.
+        var overrides: Bool { self == .buttonArtwork }
     }
 
     /// The embedded widget's tag when `object` is an `embed_xui` wrapper, else nil.
@@ -112,14 +117,12 @@ enum WasabiEmbeddedXUI {
         var structureCrossed = false
         for group in KeyGroup.allCases where group.applies(to: embedded, wrapper: attributes) {
             var forwarded = false
-            for key in group.keys where embedded.attributes[key] == nil {
+            for key in group.keys where group.overrides || embedded.attributes[key] == nil {
                 if let value = attributes[key] {
                     _ = embedded.setAttribute(key, value: value)
                     forwarded = true
                 }
             }
-            // Only artwork that actually moved takes the drawing with it: Big Bento's tab mousetrap
-            // states its own placeholder `image="wtf"`, and its wrapper draws the tab icon as before.
             if group == .buttonArtwork { _ = wrapper.setAttribute(buttonMarkerKey, value: "1") }
             if group == .buttonLabel, embedded.attributes["align"] == nil {
                 _ = embedded.setAttribute("align", value: attributes["align"] ?? "center")

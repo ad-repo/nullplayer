@@ -9,7 +9,8 @@
 # it added. Two scores, never blended:
 #
 #   health  the census rating plus the count of distinct MAKI calls the runtime does not implement
-#   value   maki-* and xml-* features the corpus does not already exercise (family/load do not count)
+#   value   maki-* and xml-* features the corpus does not already exercise (family/load do not count);
+#           a new tag counts once, and a tag@attr counts only on a tag the corpus already has
 #
 # Rank is greedy set cover on value, from the gold+silver feature union, ties to the lowest sha256,
 # so intake.tsv is a pure function of (candidate sha256s, corpus sha256s, git rev). Tier:
@@ -20,7 +21,9 @@
 #
 # Without --admit nothing moves. With it, every candidate is moved into
 # WinampModernCorpus/<tier>/ and appended to docs/winamp-modern/corpus-manifest.tsv, taking its
-# source URL and internal name from the crawler's <candidates>/manifest.tsv.
+# source URL and internal name from the crawler's <candidates>/manifest.tsv. A candidate already in
+# the manifest as bronze (an intake run over WinampModernCorpus/bronze) is re-tiered in place: its
+# row's tier and rev are rewritten and the file moves only if its tier changed.
 
 set -u -o pipefail
 
@@ -95,11 +98,17 @@ quarantined = {name for name, row in census.items()
 
 # Greedy set cover. ponytail: recomputes every gain per pick, O(n²·f); ~1 s at 900 candidates.
 order, pool = [], sorted(set(census) - quarantined, key=lambda name: census[name]["sha256"])
+tags = {f[len("xml-tag:"):] for f in covered if f.startswith("xml-tag:")}
+def value(name):
+    return {f for f in features[name] - covered
+            if not f.startswith("xml-attr:") or f[len("xml-attr:"):].split("@", 1)[0] in tags}
+
 while pool:
-    best = max(pool, key=lambda name: len(features[name] - covered))  # first max = lowest sha256
-    added = sorted(features[best] - covered)
+    best = max(pool, key=lambda name: len(value(name)))  # first max = lowest sha256
+    added = sorted(value(best))
     order.append((best, added))
     covered |= features[best]
+    tags |= {f[len("xml-tag:"):] for f in features[best] if f.startswith("xml-tag:")}
     pool.remove(best)
 
 tier, rank, gain = {}, {}, {}
@@ -128,23 +137,38 @@ print(f"wal_intake: gain curve (first 60) {' '.join(map(str, curve))}")
 if not admit:
     sys.exit(0)
 
-crawl = {}
-for line in open(os.path.join(candidates, "manifest.tsv"), errors="replace"):
+crawl, crawl_manifest = {}, os.path.join(candidates, "manifest.tsv")
+for line in open(crawl_manifest, errors="replace") if os.path.exists(crawl_manifest) else ():
     fields = line.rstrip("\n").split("\t")
     if len(fields) >= 3:
         crawl[fields[0]] = (fields[2] or "-", fields[1].replace("\t", " ") or "-")
-existing = {line.split("\t", 1)[0] for line in open(manifest)}
-clash = [name for name in ordered if name in existing]
+manifest_rows = [line.split("\t") for line in open(manifest).read().splitlines()]
+existing = {}
+for position, fields in enumerate(manifest_rows[1:], 1):
+    existing.setdefault(fields[0], []).append(position)
+# Only a bronze file re-tiers in place; any other name already in the manifest is a clash.
+clash = [name for name in ordered if name in existing and not (
+    len(existing[name]) == 1 and manifest_rows[existing[name][0]][2] == "bronze"
+    and manifest_rows[existing[name][0]][1] == census[name]["sha256"])]
 if clash:
-    sys.exit(f"wal_intake: already in the manifest, nothing moved: {', '.join(clash[:10])}")
-with open(manifest, "a") as handle:
+    sys.exit(f"wal_intake: already in the manifest and not this bronze file, nothing moved: {', '.join(clash[:10])}")
+try:
     for name in ordered:
+        if name in existing and tier[name] == "bronze":
+            continue
         os.makedirs(os.path.join(root, tier[name]), exist_ok=True)
         destination = os.path.join(root, tier[name], name)
         if os.path.exists(destination):
-            sys.exit(f"wal_intake: {destination} exists; stopped part-way, see the manifest tail")
+            sys.exit(f"wal_intake: {destination} exists; stopped part-way, see the manifest")
         shutil.move(os.path.join(candidates, name), destination)
-        url, internal = crawl.get(name, ("-", "-"))
-        handle.write("\t".join((name, census[name]["sha256"], tier[name], url, internal, rev)) + "\n")
+        if name in existing:
+            row = manifest_rows[existing[name][0]]
+            row[2], row[5] = tier[name], rev
+        else:
+            url, internal = crawl.get(name, ("-", "-"))
+            manifest_rows.append([name, census[name]["sha256"], tier[name], url, internal, rev])
+finally:
+    with open(manifest, "w") as handle:
+        handle.write("".join("\t".join(fields) + "\n" for fields in manifest_rows))
 print(f"wal_intake: admitted {len(ordered)} into {root} and {manifest}")
 PYINTAKE

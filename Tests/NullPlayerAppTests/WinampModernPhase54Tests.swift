@@ -120,7 +120,6 @@ final class WinampModernPhase54Tests: XCTestCase {
         let (runtime, _) = try makeListRuntime()
         let signature = try XCTUnwrap(runtime.signature(for: "instantiate", classGUID: nil))
         XCTAssertEqual(signature.argumentCount, 2)
-        XCTAssertEqual(signature.returnKind, .object)
     }
 
     // MARK: - getApplicationPath

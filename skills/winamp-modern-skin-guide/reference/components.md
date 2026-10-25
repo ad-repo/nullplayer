@@ -144,7 +144,10 @@ CornerAmp ships playlist + EQ, Winamp Modern ships playlist + library. The engin
 - `WinampModernComponentRegistry` maps the standard Winamp component GUIDs to a typed
   `WinampModernComponentKind`. **GUIDs never escape the registry**, and matching is *exact* — the
   fuzzy id rule lives in `kindFromHolderIdentifier` and is only ever applied to an engine holder's id
-  (`centro.windowholder.library`), never to a container id or a menu parameter.
+  (`centro.windowholder.library`), never to a container id or a menu parameter. A braced GUID ends
+  at its brace: MIDISUI holds `guid:{6B0EDF80-…} (Media library)`, and the label's hex letters had
+  joined the digits, so its library was an inert `.other`; five Miku-family `TOGGLE` buttons write
+  `guid:{…};video` and now resolve to video.
 - Three element types are holders: `<windowholder hold=…>`, `<componentbucket>`, and
   `<component param=…>` (`isHolderElement`). The last is what separate-window skins use for their real
   content — mmd3's `pledit-normal.xml`, Winamp Modern's `ml-normal.xml`.
@@ -226,9 +229,13 @@ content="pledit.content.group">`), **Sony Walkman** and **canum**. Four things c
   exactly the hole the artwork leaves. The check that this is the right rule is external: it yields
   `5,15,-10,-34` for TRON against the `5,15,-10,-36` corneramp_redux's author **wrote by hand** for
   the same Winamp frame.
-- **A strip usually states no `w`/`h`**, taking it from its bitmap, so the sizes come from the
-  resource registry — which is why `WasabiSkinInitializer` now holds one (`resourceRegistry`). A
-  bitmap that declares neither contributes nothing rather than zero.
+- **A strip's thickness is its art, not its tile** (B260): the extent of the opaque pixels in its
+  bitmap's cut, read from the resource registry (`WasabiSkinInitializer.resourceRegistry`) and cut
+  by `WasabiResourceCache.cut` — the renderer's own rectangle, negative offsets included. Mad
+  Magazine's strips are 39x37 tiles around a 4-5px edge; measured by tile, its playlist sat under the
+  title. The art wins over a declared `w`/`h` on every side (EMP2's library came out at its authored
+  400px wide only then); the declared size stands for a bitmap with no file (`$solid`), and a strip
+  with neither contributes nothing rather than zero.
 
 **The synthesizer still rejects these frames, and that is now stale.** `usableFrame` asks the
 bytecode whether a frame can build its own client area, so TRON's Media Library — a window *we*
@@ -251,6 +258,10 @@ exists, because the bar's own `Wasabi:Button` forwards its `PE_Add` onto the `<b
 the old build-then-hide pass found that copy and hid Mac OS X Panther's only buttons (B222). ~220 skins gain the bar, NullPlayer's own playlist window among them where it borrows
 the skin's frame. Only the playlist: the video and library components fill their own slots
 differently and none of those is wired.
+
+The bar is 114 px wide: five 22 px buttons on a 23 px stride, with labels inset 1 px. Skins that rely
+on it start their `PE_Info` text 95–130 px into the slot (Moon Groove, Core-X5, corneramp, motorhead,
+wasabi_player), and the original 34 px stride ran the List button under that text (B257).
 
 #### The component bucket — Winamp's thinger (B34, 2026-08-25)
 
@@ -321,7 +332,9 @@ Every `.wal` window is `.borderless`, which changes what AppKit will do for you:
   `closeRequested` and the skin takes the frame down with it. Itemskin's standard frame around the
   Equalizer Studio is the case: it has no close, so the Studio could only be closed from the Windows
   menu. Auxiliary windows get their commands as each is built, so a dynamic copy a script creates
-  after load closes too. Phase 24
+  after load closes too. Phase 24. **The corner yields to a skin control under it**: MIDISUI's
+  Media Library layout has no `CLOSE`, and its only way back is a `SWITCH normal` button in that
+  corner, which the corner turned into closing the player — quitting the app.
 - **A window created with `NSRect(origin: .zero, …)` opens at the bottom-left corner of the screen**,
   which is where every auxiliary container window used to appear. They are placed on **first show**
   — stacked under the main window, clamped to the screen — and never repositioned again, so a window
@@ -632,6 +645,17 @@ Two things about the embedded case that are easy to get wrong:
   unreachable — routed to as the equalizer surface, and therefore absent from **Skin Windows** too.
   The gate is measured, not assumed: over the 36 skins then installed 14 declare an equalizer container
   and 4 embed, and impulse is the only skin in both sets, so this moves that one skin.
+- **An embedded equalizer is open when its controls are drawn, and the menu cannot switch it**
+  (B253). Every other embedded surface is as visible as the player, because revealing it is a
+  component request the skin answers. The equalizer has no component, only the skin's own controls
+  inside the player — Love is War Miku swaps the main face for an EQ face from its own `eq`
+  togglebutton (`param=""`, the script's `onToggle` does the swap) and turns back from a second
+  button on that face; Moonkore slides a drawer. So Windows → Equalizer is checked when
+  `WasabiSceneRenderer.showsEqualizerControls` finds an `EQ_BAND`/`EQ_PREAMP`/`eqvis` drawn with
+  room and alpha, and disabled. The coordinator names the rule once, `isSwitchedBySkin` (embedded
+  with no component GUID), which both `isSurfaceVisible` and `isMenuToggleable` read. Pressing the
+  skin's button for the user was weighed and left: the button that closes the face is not
+  identifiable from markup (Miku's is `back`, `TOGGLE` with no param).
 - **`.video` can be embedded, `.visualization` cannot** (B23). B20 made video never-embedded to stop
   Winamp Modern's *invisible* in-player holder winning over its real video window; the rule is now
   conditional on the skin declaring a **visible** video container, so an SUI skin whose only video
@@ -663,7 +687,10 @@ session — resolves through this one catalog in this one order:
    failed**. Until the skin's palette loads, geometry is unchanged from the classic windows — same
    title-bar height, borders, and button boxes — so only the pixels differ. Once it has loaded,
    `SkinnedSurfaceChrome.hidesPaletteTitleBar` is true and the window wears the titleless 6pt gloss
-   rim instead (see *NullPlayer-owned hosted windows are lazy*).
+   rim instead (see *NullPlayer-owned hosted windows are lazy*). These windows draw at the app's
+   own scale, never `player width / 275`: `WindowManager.playlistChromeScale` exempts `.wal` as it
+   does `.wmz`, since a `.wal` player's width is its skin's canvas, not a zoom. Slimline XP's
+   1024-wide taskbar had drawn the playlist at 3.7x and snapped it 1024 wide (fixed 2026-10-24).
 
 Which skin lands on which step is measured per skin: see the routing table in
 [compatibility.md](../compatibility.md#hosted-components).

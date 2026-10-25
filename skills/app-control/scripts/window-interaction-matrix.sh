@@ -16,7 +16,8 @@
 # A miss that shades, resizes or minimizes the window is logged as `<step>-miss` and undone.
 # NOT-CLOSED saves `noclose-<skin>-<window>-<step>.png` beside <out.tsv>; it is not by itself a
 # defect: Original/Metal with Hide Title Bars on (`-hideTitleBars NO` shows them for one run) and
-# some gloss-framed `.wmz`/`.wal` windows have no close target.
+# some gloss-framed `.wmz`/`.wal` windows have no close target, and a synthetic click can miss a window
+# a real one closes (B263: CPro_iPhone3gv2's host-chrome About logged a hitTest and no mouseDown).
 #
 # App args go to the launched app. TAG=<label> is appended to the skin column. The repo is the
 # checkout this script lives in, so a worktree's copy measures that worktree's build.

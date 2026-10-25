@@ -355,15 +355,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         self.scriptStarts = WinampModernScriptStarts(bound: Set(loadedSkin.runtime.scriptBindings))
         self.scriptFailures = Array(parseFailures.prefix(Self.maximumRecordedScriptFailures))
         for root in loadedSkin.runtime.graph.roots where root.tag.is(.container) {
-            let layouts = root.children.filter {
-                $0.tag.is(.layout)
-            }
-            // The layout a container comes up in: the one Winamp names `normal`, or its only one.
-            // The first is the fallback rather than nothing, so a container that names neither still
-            // has *a* realized layout — `getLayout` answers only for realized ones, and a container
-            // with no entry at all would answer NULL for every layout it has.
-            if let opening = layouts.first(where: { $0.xmlID?.caseInsensitiveCompare("normal") == .orderedSame })
-                ?? layouts.first {
+            // The layout a container comes up in (`primaryLayout`). The first is the fallback rather
+            // than nothing, so a container that names neither still has *a* realized layout —
+            // `getLayout` answers only for realized ones, and a container with no entry at all would
+            // answer NULL for every layout it has.
+            if let opening = WasabiSceneRenderer.primaryLayout(of: root) {
                 activeLayoutByContainer[root.stableID] = opening.stableID
                 realizedLayouts.insert(opening.stableID)
             }
@@ -896,16 +892,21 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         case .system:
             return try invokeSystem(method: method, arguments: arguments, program: program)
         case .playlistEditor:
-            return invokePlaylistEditor(method: method, arguments: arguments)
+            return try answerSingleton(Self.playlistEditorMethods, method: method, arguments: arguments,
+                                       program: program)
         case .colorManager:
-            return try invokeColorManager(method: method, arguments: arguments, program: program)
+            let call = MakiCall(method: method, receiver: (), arguments: arguments, program: program)
+            return try answer(Self.colorManagerMethods, call)
+                ?? invokeSystem(method: method, arguments: arguments, program: program)
         case .playlistManager:
-            return invokePlaylistManager(method: method, arguments: arguments)
+            return try answerSingleton(Self.playlistManagerMethods, method: method, arguments: arguments,
+                                       program: program)
         case .gui(let objectID):
             guard let object = loadedSkin.runtime.graph.object(withID: objectID) else { return .null }
             return try invokeGUI(method: method, object: object, arguments: arguments, program: program)
         case .popupMenu(let id):
-            return invokePopup(method: method, id: id, arguments: arguments)
+            return try answer(Self.popupMethods, MakiCall(method: method, receiver: id, arguments: arguments,
+                                                          program: program)) ?? .null
         case .dynamic(let id):
             if let objectID = dynamicGUIObjects[id] {
                 guard let object = loadedSkin.runtime.graph.object(withID: objectID) else { return .null }
@@ -913,6 +914,19 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             }
             return try invokeDynamic(method: method, id: id, arguments: arguments, program: program)
         }
+    }
+
+    /// `PlEdit` and `MLPlaylists`: a host singleton whose table is its whole class. A name it does not
+    /// declare reached it on another class's arity, and answers null — recorded rather than thrown,
+    /// because both are polled from timers and an abort would take the caller's handler down.
+    private func answerSingleton(_ table: MakiMethodTable<Void>, method: String, arguments: [MakiValue],
+                                 program: MakiProgram) throws -> MakiValue {
+        if let value = try answer(table, MakiCall(method: method, receiver: (), arguments: arguments,
+                                                  program: program)) {
+            return value
+        }
+        unsupportedMethodCalls[method, default: 0] += 1
+        return .null
     }
 
     /// An object that was never found *is* invalid, which is the whole reason ClassicPro asks:

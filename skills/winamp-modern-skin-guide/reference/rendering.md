@@ -127,6 +127,12 @@ Dispatch it from all three places activation can move — `toggleActivation`, `s
 the last, to **every** object bound to that attribute: a skin declares the same switch once per
 layout, and its indicators are per-layout too.
 
+`onToggle` is the **click's** event, so a script's `setActivated` never raises it, changed or not
+(B255). Moon Groove restores its saved config page with `EqPage.setActivated(1)` at load, and its
+`EqPage.onToggle` shows that page unconditionally: raising it drew the EQ page over the player's
+LCD with the config menu closed. Its page switcher also re-activates the clicked page from inside
+that page's own `onToggle`, which only terminates because the write is silent.
+
 **A setting can also move from outside the skin**, and a `.wal` indicator is written once and never
 polled — so a shuffle toggled in NullPlayer's own Playback menu left mmd3's lamp on the old state,
 the same drift arriving by a different road. `WinampModernMainWindowController` observes
@@ -490,6 +496,16 @@ Shadows (Every Family)*). Trace: `NP_SKIN_SHADOW_TRACE=1` (`reference/harness.md
 - **`tile`/`tilex`/`tiley`**: repeat the bitmap instead. Bento-style frames tile their
   top/bottom/left/right/center strips. Tiles are blitted 1:1 with interpolation off, or the resampled
   edges leave a visible seam grid.
+
+#### A grid whose edges overfill it clips them, never squashes them (2026-10-24)
+
+When a `<grid>`'s two edge pieces on one axis are together wider (or taller) than the grid, they
+still split the box between them, but each is drawn at its own size, anchored to its own side and
+clipped to its share (`drawNineSlice`), as Wasabi draws it. CPro_iPhone3gv2's `main.shadow` gives all
+nine slots the whole 399x741 shadow inside a 399x741 window: squashed into halves it drew as four
+phones, clipped the quadrants add up to one. Gold+silver otherwise moved only small overfull edges
+by a few pixels (Defix's tab strip frame, Panther's playlist buttons and URL pill, Nullsoft 2000's
+shade time box).
 
 #### Abutting pieces share a pixel edge (B80)
 
@@ -1048,6 +1064,11 @@ Because nothing steps that clock, the events are polled: a layer a script `play(
 and `onStop()` when a range play ends or `stop()` is called. MMD3's knobs move the EQ from `onFrame`
 alone, so without it the knob turned and the EQ never changed (B194).
 
+A `play()` with no `endframe` loops, unless the layer says `autoreplay="0"`: then it plays once,
+from its current frame to the last, and stops there, so its `onStop` arrives (B256). Moon Groove's
+PLAY/PAUSE/STOP status layer hides itself and brings the song ticker back from that `onStop`;
+looping, it never did.
+
 #### `relat*="2"` is a **percentage**, every other non-zero value is additive
 
 `relatx`/`relaty`/`relatw`/`relath` read as `atoi(value)`, and the number matters:
@@ -1231,6 +1252,25 @@ visibly wrong for it today; it is the next step if a skin turns up whose group i
 Golden scene: `group-background-box` ([harness.md](harness.md) -> *The golden images*). Both halves —
 the box, and `drawbackground` — were checked to fail under a deliberately reintroduced regression and
 to fail nowhere else.
+
+## A slide is a move within a box; a `<group>` has no `image` (2026-10-23)
+
+**A group with no declared box clips to where its children were declared while a target animation
+has moved one** (`targetAperture`). MIDISUI's vis
+drawer is a 121×124 `Drawer` layer in a `DrawerGroup` with no `w`/`h` and no `background`;
+`drawer.maki` opens it with `setTargetX(-118)` — a cover sliding out of its own frame. Unclipped, it
+slid over the COMPONENT column and the playlist. The box is the union of the children at their
+`xmlParam` places (what `gotoTarget` leaves alone), applied only while a child is off its place, so a
+group at rest keeps the inherited clip `clipAxes` gives an undeclared box. Reach, gold+silver: that
+one group.
+
+**`image=` on a `<group>` is not art**. A group states its
+artwork with `background`; MIDISUI instances its one-LED `ledAnimation` group as
+`image="led.animation"`, the 280×14 sheet of 20 frames, and drawn as the group's bitmap it put 20
+red dots over the TIMER, SONG INFO and TRACK labels and 120px past the window's right edge. The
+before/after sweep moved MIDISUI's four images and nothing outside the documented noise.
+
+Tests: `WinampModernMIDISUITests`.
 
 ## `autoheightsource` sizes a plain `<group>`, not only a `<Wasabi:TitleBox>`
 

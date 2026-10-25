@@ -76,8 +76,6 @@ final class WinampModernPhase42Tests: XCTestCase {
         XCTAssertEqual(runtime.signature(for: "showTrack", classGUID: guid)?.argumentCount, 1)
         XCTAssertEqual(runtime.signature(for: "getMetaData", classGUID: guid)?.argumentCount, 2)
         XCTAssertEqual(runtime.signature(for: "moveTo", classGUID: guid)?.argumentCount, 2)
-        // A string, not a number — ClassicPro tests it against "" before bracketing it.
-        XCTAssertEqual(runtime.signature(for: "getLength", classGUID: guid)?.returnKind, .string)
     }
 
     /// Half these names belong to other classes, and one of them was already implemented for one:
@@ -90,7 +88,6 @@ final class WinampModernPhase42Tests: XCTestCase {
 
         let elsewhere = runtime.signature(for: "getLength", classGUID: Self.someOtherGUID)
         XCTAssertEqual(elsewhere?.argumentCount, 0)
-        XCTAssertEqual(elsewhere?.returnKind, .integer)
         XCTAssertNil(runtime.signature(for: "getTitle", classGUID: Self.someOtherGUID))
         XCTAssertNil(runtime.signature(for: "clear", classGUID: Self.someOtherGUID))
         XCTAssertNil(runtime.signature(for: "moveTo", classGUID: Self.someOtherGUID))

@@ -590,9 +590,9 @@ Two traps worth carrying:
 
 - **The dump can be perfect while the app is wrong.** The skin takes `getLayout("desktopalpha")` when
   `isDesktopAlphaAvailable()` is true and addresses that layout forever after without switching to
-  it. Nothing here activates such a layout, so `RENDER_PROBE notifier/desktopalpha` showed a flawless
-  toast while the window drew the untouched `normal` one. Check *which layout* a probe is showing you
-  against the one the window is on.
+  it. Before the window opened on that layout (B262), `RENDER_PROBE notifier/desktopalpha` showed a
+  flawless toast while the window drew the untouched `normal` one. Check *which layout* a probe is
+  showing you against the one the window is on.
 - **Its transport row and its album line are one row.** `Show Playback Controls` and `Show Album Tag`
   are a mutually-exclusive pair enforced by the skin's own `ondatachanged` in `skin.xml`
   (`if (getData()=="0") { setData("1"); return; }`), so unticking playback controls alone is refused

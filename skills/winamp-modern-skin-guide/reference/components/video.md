@@ -222,7 +222,7 @@ Three rules it obeys:
 - **One runloop turn after the load**, so the skin's own `onScriptLoaded` resizes and layout cascade
   have settled — the same reason `hostVideoOutputInPlayer` re-places asynchronously.
 
-Switching *out* needs nothing: `tearDownSkin()` → `releaseVideoSurface()` → `prepareForUITeardown()`
+Switching *out* needs nothing: `tearDownSkin()` → `tearDownVideoSurface()` → `prepareForUITeardown()`
 already unparks and reveals a still-running film, which is what makes the round trip through a
 no-video skin work.
 
@@ -250,6 +250,32 @@ parks a picture runs on a **play** call, which will not come, because the film h
 along. It re-attaches one turn later (after a layout pass, which is what gives the returning box its
 frame) and asks `hostedVideoSurface` for the target, so the largest visible box wins exactly as it did
 the first time.
+
+### One box per skin, held by one view (B246)
+
+The bridge vends one video box per skin and records which scene view's holder it is in
+(`claimVideoSurface(by:)`, which yields to a visible holder, `takeVideoSurface(by:)`, a deliberate move, `videoSurface(heldBy:)`, `releaseVideoSurface(heldBy:)`).
+A view mounts, places and feeds (scale, palette, keys) the box only while it holds it, through
+`hostedVideoSurface`; the view's half lives in `WinampModernMainView+Video.swift`. The reconcile
+claims for a holder that appears unless a view in another *visible* window holds the box; a
+deliberate move — the detach into a skin's video window, the reattach back — claims regardless.
+When each view kept its own map of the box, Winamp Single GUI's player went on naming it after its
+detached `Video` window took it, and three guards (skip a box another visible window holds, skip one
+whose superview is not this view, re-add it on claim) stood in for the missing owner.
+
+### A component's own window is for a film no holder takes (B248)
+
+Winamp Single GUI ships its video component's own window (`<container id="Video"
+component="guid:{F0816D7B-…}">`) beside the holders in its player panes. Winamp shows a component in
+its own window only when no holder takes it, so the host does the same: `hostVideoOutputInPlayer`
+reveals through the skin (`onGetCancelComponent`, then the holders) and opens the `Video` window only
+when the player offers no holder — the shaded player. A player holder that comes back while the film
+is in that window takes it back (`playerVideoHolderWantsTheBox`, fed by the view's
+`videoHolderWantsTheBox`): un-shading reattaches. Windows → Video Player no longer detaches by opening
+the window directly; it shows and hides the film where the skin's holders put it, and a film it hid
+is shown again through the skin, not in NullPlayer's own window. The skin's *Reattach Video* button
+and its detach buttons are inert in Winamp too: `video.maki` and `videoavs.maki` (which includes
+`drawer.m`) are commented out in `video-normal.xml` and `player-normal-group.xml`.
 
 ### The rest of the shape
 

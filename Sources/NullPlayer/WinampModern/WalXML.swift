@@ -325,12 +325,55 @@ struct WalLenientXMLParser {
         return WalParsedXML(roots: roots, diagnostics: diagnostics)
     }
 
-    private static func unescape(_ value: String) -> String {
-        value.replacingOccurrences(of: "&quot;", with: "\"")
-            .replacingOccurrences(of: "&apos;", with: "'")
-            .replacingOccurrences(of: "&lt;", with: "<")
-            .replacingOccurrences(of: "&gt;", with: ">")
-            .replacingOccurrences(of: "&amp;", with: "&")
+    private static let namedEntities: [Substring: Character] = [
+        "quot": "\"", "apos": "'", "lt": "<", "gt": ">", "amp": "&",
+    ]
+    /// How far past `&` a `;` may sit and still close an entity: `#x10FFFF;` is the longest form, so
+    /// a bare `&` in running text never swallows the next sentence's semicolon.
+    private static let maximumEntityLength = 10
+
+    /// One pass, so `&amp;#09;` stays the literal `&#09;`. Numeric references matter: the
+    /// Winamp 5 menu cfgattribs are named `Equalizer&#09;Alt+G` in markup and `"Equalizer\tAlt+G"`
+    /// in MAKI, and ArmorAmp's EQ drawer toggle never reached its script while `&#09;` stayed literal.
+    ///
+    /// XML's attribute-value normalization comes first: a literal tab or line break is a space, and
+    /// only a character reference is the character itself. H2O Liquid lines up its CPU-usage table
+    /// with runs of blanks and literal tabs, and the columns meet only if each tab is one blank; drawn
+    /// at Cocoa's tab stops every row overran its box and wrapped (B261).
+    private static func unescape(_ raw: String) -> String {
+        let value = raw.contains(where: isNormalizedWhitespace)
+            ? String(raw.map { isNormalizedWhitespace($0) ? " " : $0 }) : raw
+        guard value.contains("&") else { return value }
+        var result = ""
+        var rest = value[...]
+        while let amp = rest.firstIndex(of: "&") {
+            result += rest[..<amp]
+            let afterAmp = rest.index(after: amp)
+            if let semi = rest[afterAmp...].prefix(maximumEntityLength).firstIndex(of: ";"),
+               let decoded = decodeEntity(rest[afterAmp..<semi]) {
+                result.append(decoded)
+                rest = rest[rest.index(after: semi)...]
+            } else {
+                result.append("&")
+                rest = rest[afterAmp...]
+            }
+        }
+        result += rest
+        return result
+    }
+
+    private static func isNormalizedWhitespace(_ character: Character) -> Bool {
+        character == "\t" || character == "\n" || character == "\r" || character == "\r\n"
+    }
+
+    private static func decodeEntity(_ name: Substring) -> Character? {
+        if let named = namedEntities[name] { return named }
+        guard name.first == "#" else { return nil }
+        let digits = name.dropFirst()
+        let code = digits.first == "x" || digits.first == "X"
+            ? UInt32(digits.dropFirst(), radix: 16)
+            : UInt32(digits, radix: 10)
+        return code.flatMap(Unicode.Scalar.init).map(Character.init)
     }
 }
 

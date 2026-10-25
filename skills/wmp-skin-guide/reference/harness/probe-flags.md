@@ -9,6 +9,14 @@ Unless explicitly labeled app-only, these flags are read by
 Live-app flags such as `WMP_BORDER_TRACE` and `WMP_CAPTION_TRACE` require the DEBUG app and emit
 through `NSLog`; setting them on the test probe does not exercise their instrumentation.
 
+The **triage inventory dump** (`skills/skin-triage` Phase 2) — every node, unreachable controls and
+script availability in one run; redirect, never pipe:
+
+```bash
+WMP_SKIN=/abs/Skin.wmz WMP_RENDER_DUMP="$S/base" WMP_RENDER_PROBE=all WMP_RENDER_OCCLUDED=1 \
+  WMP_RENDER_SCRIPTS=1 swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus > "$S/base.log" 2>&1
+```
+
 | Flag | Value | What it prints |
 |---|---|---|
 | `WMP_SKIN` | file **or directory** | the archive(s) to measure — required |

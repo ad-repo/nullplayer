@@ -138,6 +138,23 @@ final class WinampModernPhase64Tests: XCTestCase {
         XCTAssertEqual(WasabiTextMetrics.content(of: ticker, host: host), "Artist - Title")
     }
 
+    /// B258 — a `setAlternateText` expires by itself, because Moon Groove never clears its
+    /// "Volume: 20%"; an empty one has nothing left to expire.
+    func testAlternateTextSchedulesItsOwnExpiry() throws {
+        let (loaded, runtime) = try makeSkin()
+        let ticker = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "ticker").first)
+        let reference = MakiObjectReference(.gui(ticker.stableID))
+        let expiry = WinampModernScriptRuntime.TimerNamespace.alternateTextExpiry.id(for: ticker.stableID)
+
+        _ = try runtime.invoke(method: "setalternatetext", on: reference,
+                               arguments: [.string("Volume: 20%")], program: Self.makeProgram())
+        XCTAssertEqual(runtime.timers.period(id: expiry), 2)
+
+        _ = try runtime.invoke(method: "setalternatetext", on: reference,
+                               arguments: [.string("")], program: Self.makeProgram())
+        XCTAssertFalse(runtime.timers.contains(id: expiry))
+    }
+
     /// An object with no binding is unaffected: the declared literal shows until a script replaces it,
     /// exactly as before.
     func testAnUnboundObjectStillReadsItsDeclaredText() throws {

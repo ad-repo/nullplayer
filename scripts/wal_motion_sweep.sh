@@ -3,7 +3,7 @@
 # S3 motion sweep of the Winamp Modern (`.wal`) corpus (corpus-runner-plan.md §3 S3, §7 step 4).
 # Does what a skin declares as moving actually move, at rest?
 #
-#   scripts/wal_motion_sweep.sh <outdir> [--corpus <dir[:dir…]>] [--shards K] [--allow-dirty]
+#   scripts/wal_motion_sweep.sh <outdir> [--corpus <dir[:dir…]>] [--shards K] [--allow-dirty] [--rev <commit>] [--fresh]
 #
 # Output: <outdir>/motion.tsv, one row per (skin, container, opening layout), and a summary on
 # stdout. Columns and their reading are in
@@ -19,16 +19,18 @@ source "$(dirname "$0")/lib/swiftpm.sh"
 source "$(dirname "$0")/lib/wal_corpus.sh"
 
 usage() {
-    echo "usage: wal_motion_sweep.sh <outdir> [--corpus <dir[:dir…]>] [--shards K] [--allow-dirty]" >&2
+    echo "usage: wal_motion_sweep.sh <outdir> [--corpus <dir[:dir…]>] [--shards K] [--allow-dirty] [--rev <commit>] [--fresh]" >&2
     exit 2
 }
 
-out="" corpus="$WAL_CORPUS_DEFAULT" allow_dirty=0 shards=1
+out="" corpus="$WAL_CORPUS_DEFAULT" allow_dirty=0 shards=1 rev="" fresh=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --allow-dirty) allow_dirty=1; shift ;;
         --corpus) corpus="${2:-}"; shift 2 ;;
         --shards) shards="${2:-}"; shift 2 ;;
+        --rev) rev="${2:-}"; shift 2 ;;
+        --fresh) fresh=1; shift ;;
         -*) echo "unknown option: $1" >&2; usage ;;
         *) [ -n "$out" ] && usage; out="$1"; shift ;;
     esac
@@ -39,6 +41,9 @@ done
 list=$(wal_corpus_archives "$corpus") || exit 1
 archives=$(printf '%s' "$list" | grep -c .)
 [ "$archives" -gt 0 ] || { echo "wal_motion_sweep: no .wal archives in $corpus" >&2; exit 1; }
+
+key=$(wal_run_key "$list" "$rev") || exit 1
+wal_store_serve motion "$key" "$out" "$fresh" "$rev" && exit 0
 
 wal_require_clean_tree wal_motion_sweep "$allow_dirty" || exit 1
 
@@ -58,7 +63,7 @@ status=0
 wal_run_shards "$shards" "$list" run_shard || status=$?
 [ "$status" -eq 0 ] || echo "wal_motion_sweep: a shard exited $status; read $out/raw-*.txt before trusting the result" >&2
 
-python3 -I - "$out" "$list" <<'PYMOTION'
+python3 -I - "$out" "$list" <<'PYMOTION' || status=1
 import glob, os, sys
 
 out, archives = sys.argv[1], {os.path.basename(p) for p in sys.argv[2].splitlines() if p}
@@ -142,3 +147,4 @@ print(f"  suspect skins (animatedlayer, autoplay or Timer declared, nothing move
 for skin in still:
     print("    " + skin)
 PYMOTION
+[ "$status" -eq 0 ] && wal_store_put motion "$key" "$out" "$list"

@@ -263,16 +263,17 @@ final class WinampModernConfigBridgeTests: XCTestCase {
                       "an unchanged write is not an event — this is what keeps a skin that calls "
                       + "setActivated from inside its own notification out of its own handler")
 
-        // A write that *does* move it is an event, exactly as before.
+        // A write that *does* move it is an `onActivate`, but not an `onToggle`: that is the
+        // click's event (B255).
         _ = try runtime.invoke(method: "setActivated", on: reference(plain),
                                arguments: [.boolean(true)], program: program)
-        XCTAssertEqual(runtime.dispatchedEventsForTesting.filter { $0.event == "ontoggle" }.count, 1)
+        XCTAssertEqual(runtime.dispatchedEventsForTesting.filter { $0.event == "ontoggle" }.count, 0)
         XCTAssertEqual(runtime.dispatchedEventsForTesting.filter { $0.event == "onactivate" }.count, 1)
 
         // And repeating it does not send a second one.
         _ = try runtime.invoke(method: "setActivated", on: reference(plain),
                                arguments: [.boolean(true)], program: program)
-        XCTAssertEqual(runtime.dispatchedEventsForTesting.filter { $0.event == "ontoggle" }.count, 1)
+        XCTAssertEqual(runtime.dispatchedEventsForTesting.filter { $0.event == "onactivate" }.count, 1)
     }
 
     // MARK: - Changes made from outside the skin

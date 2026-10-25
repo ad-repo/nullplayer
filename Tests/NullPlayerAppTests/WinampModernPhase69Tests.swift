@@ -94,6 +94,27 @@ final class WinampModernPhase69Tests: XCTestCase {
         XCTAssertTrue(try ask(runtime, program, "isLayoutAnimationSafe"))
     }
 
+    /// B262: a container that ships a `desktopalpha` layout opens on it, so the skin is told desktop
+    /// alpha is available and its `getLayout("desktopalpha")` is the layout on screen.
+    func testAContainerWithADesktopAlphaLayoutOpensOnIt() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="main"><layout id="normal" w="300" h="200"/></container>
+          <container id="notifier">
+            <layout id="normal" w="128" h="80"/>
+            <layout id="desktopalpha" w="128" h="80" desktopalpha="1"/>
+          </container>
+        </WasabiXML>
+        """)
+        let runtime = try makeRuntime(loaded: loaded)
+        XCTAssertTrue(try ask(runtime, Self.syntheticProgram, "isDesktopAlphaAvailable"))
+        let notifier = try XCTUnwrap(loaded.runtime.graph.roots.first { $0.xmlID == "notifier" })
+        XCTAssertEqual(WasabiSceneRenderer.primaryLayout(of: notifier)?.xmlID, "desktopalpha")
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: TestHost(), containerID: "notifier")
+        addTeardownBlock { renderer.teardown() }
+        XCTAssertEqual(renderer.layout.xmlID, "desktopalpha")
+    }
+
     // MARK: - A container's geometry reaches its window
 
     /// `container.resize(x, y, w, h)` — the call Bento's notifier makes before it animates into the

@@ -346,11 +346,13 @@ extension WasabiSceneRenderer {
         // 40px `valign="top"` box lost their bottoms pinned to the top edge, and the 25px `AM` beside
         // them (which fits, so it does sit on the edge) only lines up with the digits' tops once they
         // are centred. Its mekanik timer lands where the author's own preview puts it the same way.
-        // A paragraph keeps its edge: centring a nine-line block would cut its first line.
+        // A paragraph keeps its edge: centring a nine-line block would cut its first line. That
+        // holds for a centred paragraph too — GDI's `DT_VCENTER` only acts on a single line — so one
+        // taller than its box starts at the top (H2O Liquid's CPU-usage table lost its first row).
         let alignedVertically = WasabiTextMetrics.verticalAlignment(of: object)
         let placedBy = !wraps && cell > frame.height ? .center : alignedVertically
         let offset = placedBy.offset(cell: cell, in: frame.height)
-        return (placedBy == .center ? offset : max(0, offset)) + baselineDrop
+        return (placedBy == .center && !wraps ? offset : max(0, offset)) + baselineDrop
     }
 
     /// What a string is scissored to: its own box, or released horizontally to the ambient clip.

@@ -26,6 +26,7 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
     var linkSheetPresenter: (() -> Void)?
     private var librarySurface: WinampModernLibrarySurface?
     private var videoSurface: WinampModernVideoSurface?
+    private weak var videoHolder: NSView?
     private var visualizationSurface: WinampModernVisualizationSurface?
     private var hostedWindowSurfaces: [WinampModernHostedWindowID: WinampModernHostedSurface] = [:]
     /// The visualization surface if one has been created, without creating one.
@@ -286,23 +287,46 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
 
     // MARK: - Video
 
-    /// The skin's video box, filled with the app's own video output (B20).
+    /// The skin's video box, filled with the app's own video output (B20), and the scene view whose
+    /// holder it is in.
     ///
     /// One per skin, and owned here for the same two reasons the library surface is: it must survive
     /// a layout switch that removes and re-adds the holder's subview, and a second holder for the
-    /// same component must reuse it rather than fight over the one video view the app has.
-    func makeVideoSurface() -> WinampModernVideoSurface? {
-        if let videoSurface { return videoSurface }
-        let surface = WinampModernVideoSurfaceView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+    /// same component must reuse it rather than fight over the one video view the app has. The
+    /// holder is kept here too (B246): when each view kept its own map, Winamp Single GUI's player
+    /// still named the box after its detached `Video` window took it, and went on pushing it the
+    /// player's scale, palette and keys.
+    func claimVideoSurface(by holder: NSView) -> WinampModernVideoSurface? {
+        // A box in another *visible* window is that window's picture. Taking it moved the parked film
+        // onto the claimer at the other box's geometry — the film floated over the player. A hidden
+        // window does not keep it: Single GUI builds its `Video` window at load, hidden, and that
+        // held the box against the player's own mini pane.
+        if let current = videoHolder, current !== holder, current.window?.isVisible == true { return nil }
+        return takeVideoSurface(by: holder)
+    }
+
+    func takeVideoSurface(by holder: NSView) -> WinampModernVideoSurface? {
+        let surface = videoSurface
+            ?? WinampModernVideoSurfaceView(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
         videoSurface = surface
+        videoHolder = holder
         return surface
+    }
+
+    func videoSurface(heldBy holder: NSView) -> WinampModernVideoSurface? {
+        videoHolder === holder ? videoSurface : nil
+    }
+
+    func releaseVideoSurface(heldBy holder: NSView) {
+        if videoHolder === holder { videoHolder = nil }
     }
 
     /// Hand the video output back and drop the surface. The view layer tears the surface down first;
     /// this only drops the bridge's own reference, and is safe to call twice.
-    func releaseVideoSurface() {
+    func tearDownVideoSurface() {
         videoSurface?.prepareForUITeardown()
         videoSurface = nil
+        videoHolder = nil
     }
 
     // MARK: - Visualization

@@ -934,7 +934,12 @@ class VideoPlayerView: NSView {
     /// rather than before `play()`.
     private func applyVolume() {
         guard let audio = mediaPlayer?.audio else { return }
-        audio.volume = Int32(max(0, min(1, volume)) * 100)
+        let target = Int32(max(0, min(1, volume)) * 100)
+        // Only on a change: macOS's audio output saves the volume to libVLC's global config under its
+        // write lock, and `.buffering` re-runs this all through playback. A write queued while a VLC
+        // thread re-takes that lock for reading deadlocked the main thread on a film's start.
+        guard audio.volume != target else { return }
+        audio.volume = target
     }
 
     /// Handle the player actually running. VLCKit reports either `.playing` or

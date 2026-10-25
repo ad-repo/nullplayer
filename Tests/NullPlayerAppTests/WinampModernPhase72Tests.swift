@@ -33,7 +33,6 @@ final class WinampModernPhase72Tests: XCTestCase {
         let signature = try XCTUnwrap(runtime.signature(for: "onDataChanged", classGUID: nil),
                                       "a skin applies its stored settings by calling this")
         XCTAssertEqual(signature.argumentCount, 0)
-        XCTAssertEqual(signature.returnKind, .null)
     }
 
     /// Calling the handler runs it, rather than being swallowed. Before the fix this reached

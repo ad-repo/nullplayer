@@ -80,6 +80,9 @@ flag there in the change that adds it.
 
 ## Debugging a live defect
 
+The phase order for testing and fixing a face is **`skills/skin-triage`**; this section is the
+Audion-specific half.
+
 Read **`skills/live-ui-testing`** before diagnosing anything that only reproduces on screen, and the
 process section it points at — `winamp-modern-skin-guide/reference/harness.md`
 § *Debugging a live defect* — which is the reference implementation of that workflow. Launching,
