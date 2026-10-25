@@ -355,15 +355,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         self.scriptStarts = WinampModernScriptStarts(bound: Set(loadedSkin.runtime.scriptBindings))
         self.scriptFailures = Array(parseFailures.prefix(Self.maximumRecordedScriptFailures))
         for root in loadedSkin.runtime.graph.roots where root.tag.is(.container) {
-            let layouts = root.children.filter {
-                $0.tag.is(.layout)
-            }
-            // The layout a container comes up in: the one Winamp names `normal`, or its only one.
-            // The first is the fallback rather than nothing, so a container that names neither still
-            // has *a* realized layout — `getLayout` answers only for realized ones, and a container
-            // with no entry at all would answer NULL for every layout it has.
-            if let opening = layouts.first(where: { $0.xmlID?.caseInsensitiveCompare("normal") == .orderedSame })
-                ?? layouts.first {
+            // The layout a container comes up in (`primaryLayout`). The first is the fallback rather
+            // than nothing, so a container that names neither still has *a* realized layout —
+            // `getLayout` answers only for realized ones, and a container with no entry at all would
+            // answer NULL for every layout it has.
+            if let opening = WasabiSceneRenderer.primaryLayout(of: root) {
                 activeLayoutByContainer[root.stableID] = opening.stableID
                 realizedLayouts.insert(opening.stableID)
             }

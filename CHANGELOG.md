@@ -59,6 +59,8 @@
   in their tabs instead of "Collapse" running off the window.
 - **Big Bento Modern draws its background again**: the base and Light editions showed only the
   titlebar and the library pane over an empty window.
+- **ClassicPro's track notifier no longer draws a dark bar across its top edge** (CPro iPhone 3G):
+  notifiers now open in the glass style Winamp shows on a desktop with alpha blending.
 
 ## 0.33.1
 

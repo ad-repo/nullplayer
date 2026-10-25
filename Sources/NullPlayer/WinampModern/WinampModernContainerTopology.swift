@@ -82,7 +82,7 @@ enum WinampModernContainerTopology {
             .map { container in
                 let id = container.xmlID ?? ""
                 let isMain = id.caseInsensitiveCompare("main") == .orderedSame
-                let layout = normalLayout(of: container)
+                let layout = WasabiSceneRenderer.primaryLayout(of: container)
                 let declared = size(of: layout, keys: [["default_w", "w", "minimum_w"],
                                                        ["default_h", "h", "minimum_h"]])
                 let hidden = isHidden(container)
@@ -272,11 +272,6 @@ enum WinampModernContainerTopology {
     /// separate-windows arrangement). An all-collapsed skin yields just the main window.
     static func windowContainers(graph: WasabiObjectGraph) -> [WinampModernContainerInfo] {
         analyze(graph: graph).filter(\.isVisibleWindow)
-    }
-
-    private static func normalLayout(of container: WasabiObject) -> WasabiObject? {
-        let layouts = container.children.filter { $0.tag.is(.layout) }
-        return layouts.first { $0.xmlID?.caseInsensitiveCompare("normal") == .orderedSame } ?? layouts.first
     }
 
     /// `keys` is `[widthKeysInPreferenceOrder, heightKeysInPreferenceOrder]`; an axis nothing answers

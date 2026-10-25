@@ -815,17 +815,32 @@ final class WasabiSceneRenderer {
         }
     }
 
-    /// The layout a container opens in: the one named `normal`, else its **first declared** layout.
-    /// Winamp's own rule, and the reason Lobe's Colour Themes window (six layouts, `about1`…`about6`,
-    /// none of them `normal`) used to be unreachable — the initializer threw and the host dropped the
-    /// whole container. `WinampModernContainerTopology.normalLayout` picks by the same rule, so the
-    /// window the topology measures is the window this renderer draws.
+    /// The layout a container opens in: the one named `desktopalpha`, else the one named `normal`,
+    /// else its **first declared** layout. The topology, the script runtime and this renderer all
+    /// pick through here, so the window the topology measures is the window this renderer draws and
+    /// the layout a script reaches with `getLayout` is the one on screen.
+    ///
+    /// `normal` and first-declared are Winamp's rule, and the reason Lobe's Colour Themes window
+    /// (six layouts, `about1`…`about6`, none of them `normal`) used to be unreachable — the
+    /// initializer threw and the host dropped the whole container.
+    ///
+    /// `desktopalpha` comes first because a skin that ships one addresses it as the open layout
+    /// whenever `isDesktopAlphaAvailable()` is true, which in Winamp it is on any system with desktop
+    /// alpha. Every corpus container that has one is a notifier with a `normal` fallback beside it,
+    /// built from separate artwork for a window with no per-pixel alpha. Drawn through that fallback,
+    /// CPro_iPhone3gv2's cover sprite promoted the faint shadow it shares with its neighbour on the
+    /// sheet into a solid black strip across the toast's top edge (B262).
     static func primaryLayout(of container: WasabiObject) -> WasabiObject? {
         let layouts = container.children.filter {
             $0.tag.is(.layout)
         }
-        return layouts.first { $0.xmlID?.caseInsensitiveCompare("normal") == .orderedSame } ?? layouts.first
+        func named(_ id: String) -> WasabiObject? {
+            layouts.first { $0.xmlID?.caseInsensitiveCompare(id) == .orderedSame }
+        }
+        return named(desktopAlphaLayoutID) ?? named("normal") ?? layouts.first
     }
+
+    static let desktopAlphaLayoutID = "desktopalpha"
 
     init(loadedSkin: WinampModernLoadedSkin, host: WinampModernHost, containerID: String = "main",
          clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) throws {

@@ -25,6 +25,14 @@ extension WinampModernScriptRuntime {
 
     private var playItemString: String { host.trackPath.isEmpty ? host.trackDisplayTitle : host.trackPath }
 
+    /// Whether any container opens on its `desktopalpha` layout — `isDesktopAlphaAvailable()`.
+    private var opensDesktopAlphaLayout: Bool {
+        loadedSkin.runtime.graph.roots.contains { root in
+            root.tag.is(.container) && WasabiSceneRenderer.primaryLayout(of: root)?.xmlID?
+                .caseInsensitiveCompare(WasabiSceneRenderer.desktopAlphaLayoutID) == .orderedSame
+        }
+    }
+
     func invokeSystem(method: String, arguments: [MakiValue], program: MakiProgram) throws -> MakiValue {
         // A script may call a *system* event handler as a method to reuse it, exactly as it may an
         // object's (`System.onEqFreqChanged(freqmode)` in ClassicPro's `eq.m`).
@@ -355,17 +363,17 @@ extension WinampModernScriptRuntime {
         case "isappactive": return .boolean(NSApp?.isActive ?? true)
         case "istransparencyavailable", "istransparencysafe", "islayoutanimationsafe":
             return .boolean(true)
-        // **False, unlike the three above.** Desktop alpha is not "can this window be translucent" —
-        // it is Winamp asking whether it may run the container on its `desktopalpha="1"` *layout*,
-        // which is a second layout built from a second set of artwork. A skin asks once and then
+        // **Not the same question as the three above.** Desktop alpha is not "can this window be
+        // translucent" — it is Winamp asking whether the container runs on its `desktopalpha`
+        // *layout*, a second layout built from a second set of artwork. A skin asks once and then
         // addresses that layout for the rest of the session without ever switching to it, because in
-        // Winamp the container is already on it. Nothing here activates it, so answering true sent
-        // every write to a layout no window shows: Big Bento's notifier laid out `desktopalpha`
-        // perfectly — sized to its text, album art in, transport row placed — while the app went on
-        // drawing the untouched `normal` layout underneath (BB27). Answer it the way the engine
-        // actually behaves and the skin lays out the layout that is on screen.
+        // Winamp the container is already on it. So the answer is whether this skin has a container
+        // that opens on one (`primaryLayout`): true sends a notifier's layout work to the layout on
+        // screen, and a skin with none — CopperdeckII asks, then `return`s on a NULL
+        // `getLayout("desktopalpha")` — keeps the `normal` branch it has always taken. Answered true
+        // with nothing opened on it, Big Bento's notifier laid out a layout no window showed (BB27).
         case "isdesktopalphaavailable":
-            return .boolean(false)
+            return .boolean(opensDesktopAlphaLayout)
         // No video *component*: a `.wal` video holder gets the neutral backing every unhosted kind
         // gets, so a skin that asks is told the truth and lays itself out without a video tab. Defix
         // asks in the same `onScriptLoaded` that positions its whole tab strip — while the question
@@ -634,12 +642,7 @@ extension WinampModernScriptRuntime {
             // `getLayout` answers only for realized layouts — and the caller's very next statement is
             // `frame_cont.getLayout("scdef")`. Without it the whole rebuild ran against a null layout
             // and the second framed window came up with no chrome at all.
-            let layouts = instance.children.filter {
-                $0.tag.is(.layout)
-            }
-            if let opening = layouts.first(where: {
-                $0.xmlID?.caseInsensitiveCompare("normal") == .orderedSame
-            }) ?? layouts.first {
+            if let opening = WasabiSceneRenderer.primaryLayout(of: instance) {
                 markLayoutRealized(opening)
             }
             containerInstanceCreated?(instance)
