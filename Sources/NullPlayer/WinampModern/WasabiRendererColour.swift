@@ -94,6 +94,11 @@ extension WasabiSceneRenderer {
                 lines.append("PALETTE   \(identifier): \(describeLink(identifier))")
             }
         }
+        // Not roles: the pair `unfocused()` swaps in while the window is not key (#603).
+        for identifier in [WasabiPalette.inactiveSelectionTextIdentifier,
+                           WasabiPalette.inactiveSelectionBackgroundIdentifier] {
+            lines.append("PALETTE unfocused \(identifier): \(describeLink(identifier))")
+        }
         return lines
     }
 
@@ -168,6 +173,7 @@ extension WasabiSceneRenderer {
     /// separate pairing and a separate measurement.
     func legibleRowColor(_ preferred: NSColor, selected: Bool) -> NSColor {
         guard selected else { return preferred }
+        let palette = rowPalette
         // A colour the user set by hand is not a mongrel pairing — it is the answer (B146). The guard
         // rescues what a skin's author never meant to put together; overruling a deliberate pick would
         // make the Skin Colors panel preview a colour the app then refuses to draw.
@@ -192,6 +198,7 @@ extension WasabiSceneRenderer {
     /// The threshold is deliberately far below `minimumContrast`: this asks "is anything drawn at
     /// all", not "can text be read on it".
     var rowSelectionBackground: NSColor {
+        let palette = rowPalette
         // A user who set the selection background gets it, even against a plate it barely differs
         // from — B122's derived bar exists for a skin that collided with itself by accident (B146).
         if palette.isOverridden(.selectionBackground) { return palette.selectionBackground }
@@ -201,6 +208,10 @@ extension WasabiSceneRenderer {
         }
         return WinampModernSurfaceStyle.blend(plate, toward: palette.listText, by: 0.35)
     }
+
+    /// The palette the rows this renderer paints draw with: `palette`, or its `unfocused()` projection
+    /// while the window is not key (#603). NullPlayer's AppKit surfaces keep `palette` itself.
+    var rowPalette: WasabiPalette { isWindowActive ? palette : palette.unfocused() }
 
     /// The playing row's colour, which has to stay distinguishable from an ordinary row's.
     ///
@@ -214,6 +225,7 @@ extension WasabiSceneRenderer {
     /// Only called when the skin actually named a current colour; a skin that named none is marked by
     /// its selection bar, as Winamp marks it.
     func legibleCurrentRowColor(on background: NSColor, plain: NSColor) -> NSColor {
+        let palette = rowPalette
         if palette.isOverridden(.currentText) { return palette.currentText }
         let candidates = [palette.currentText, palette.selectionText].filter { $0 != plain }
         return WinampModernSurfaceStyle.legible(preferring: candidates, on: background)

@@ -4957,7 +4957,7 @@ iTunes Miniplayer skin
 License:    used with permission (see notice)
 Copyright:  Copyright spacecowgoesmoo
 Source:     https://github.com/spacecowgoesmoo/Old-iTunes-Miniplayer
-Version:    1.64
+Version:    1.139
 
 iTunes Miniplayer (Winamp Modern skin)
 

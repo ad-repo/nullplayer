@@ -1978,11 +1978,17 @@ final class WinampModernMainView: NSView {
         return NSRect(origin: origin, size: size)
     }
 
-    /// macOS ships no diagonal resize cursor, so a corner gets the crosshair — the same substitution
-    /// `BorderlessWindow` makes for the other window families.
+    /// A corner gets the system's diagonal frame-resize cursor (#601); before macOS 15 there is none,
+    /// so it falls back to the crosshair — the substitution `BorderlessWindow` still makes for the
+    /// other window families.
     private static func cursor(for edges: WasabiResizeEdges) -> NSCursor {
         switch (edges.isHorizontal, edges.isVertical) {
-        case (true, true): return .crosshair
+        case (true, true):
+            guard #available(macOS 15, *) else { return .crosshair }
+            let position: NSCursor.FrameResizePosition = edges.contains(.top)
+                ? (edges.contains(.left) ? .topLeft : .topRight)
+                : (edges.contains(.left) ? .bottomLeft : .bottomRight)
+            return .frameResize(position: position, directions: .all)
         case (true, false): return .resizeLeftRight
         default: return .resizeUpDown
         }

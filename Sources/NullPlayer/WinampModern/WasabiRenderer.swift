@@ -2712,6 +2712,7 @@ final class WasabiSceneRenderer {
         guard !items.isEmpty, frame.width > 2, frame.height > 2 else { return }
         let rowHeight = CGFloat(WasabiGuiList.rowHeight(of: object))
         let visible = max(0, Int(frame.height / rowHeight))
+        let palette = rowPalette
         guard visible > 0 else { return }
         let maxOffset = max(0, items.count - visible)
         let offset = min(max(0, WasabiGuiList.scrollOffset(of: object)), maxOffset)
@@ -2729,7 +2730,8 @@ final class WasabiSceneRenderer {
                                  width: frame.width, height: rowHeight)
             let isSelected = selected.contains(index)
             if isSelected {
-                context.setFillColor(palette.selectionBackground.cgColor)
+                // The bar `legibleRowColor` measures against, so the text is chosen for what is drawn.
+                context.setFillColor(rowSelectionBackground.cgColor)
                 context.fill(rowRect)
             }
             let color = legibleRowColor(isSelected ? palette.selectionText : palette.listText,
@@ -3720,7 +3722,7 @@ final class WasabiSceneRenderer {
     /// Opening scrolled to the applied theme is the mitigation; see the rendering reference.
     private func drawColorThemeList(_ object: WasabiObject, frame: CGRect, context: WasabiDrawList) {
         guard frame.width > 1, frame.height > 1 else { return }
-        let palette = palette
+        let palette = rowPalette
         // The caller has already drawn a declared `background=`. Only when the skin declared none do
         // we paint one — first the conventional list background bitmap, then a flat fill.
         if object.attributes["background"] == nil {
@@ -4202,7 +4204,7 @@ final class WasabiSceneRenderer {
     private func drawPlaylistComponent(_ holder: WasabiObject, frame: CGRect, context: WasabiDrawList) {
         // Drawn by us, coloured by the skin: the list sits inside the skin's own frame, so its text
         // and selection follow the skin's colour resources and its active colour theme.
-        let palette = palette
+        let palette = rowPalette
         context.setFillColor(palette.contentBackground.cgColor)
         context.fill(frame)
         guard let snapshot = componentHost?.playlistSnapshot() else { return }
