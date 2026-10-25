@@ -63,6 +63,8 @@ extension WasabiSceneRenderer {
     private static let testsGroupsAsBoxes = ProcessInfo.processInfo.environment["WINAMP_MODERN_GROUP_HIT_BOX"] != nil
     private static let dropsRegionGroupFills =
         ProcessInfo.processInfo.environment["WINAMP_MODERN_REGION_GROUP_DROP"] != nil
+    private static let wrapperContentIncludesCuts =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_REGION_WRAPPER_CUTS"] != nil
 
     /// Whether a point is inside the region a script gave this object.
     ///
@@ -319,16 +321,21 @@ extension WasabiSceneRenderer {
         var boxes: [ObjectIdentifier: [CGRect]] = Dictionary(uniqueKeysWithValues: wrappers.map { ($0, []) })
         let parents = Set(nodes.compactMap { $0.object.parent.map(ObjectIdentifier.init) })
         // A group counts when it paints a `background`; otherwise its box is only the room its
-        // children are laid out in.
+        // children are laid out in. A cut is a silhouette, not content: Big Bento's full-window
+        // `window.background.regions` holds nothing but four 3x3 corner cuts, and bounding it by
+        // them erased everything below the titlebar.
         for node in nodes where !parents.contains(ObjectIdentifier(node.object))
             || node.object.attributes["background"] != nil {
+            if !Self.wrapperContentIncludesCuts,
+               let value = Self.windowRegionValue(of: node.object), value < 0 { continue }
             let box = node.frame.intersection(node.clip)
             guard !box.isNull, !box.isEmpty else { continue }
             for ancestor in ancestors(of: node.object) where wrappers.contains(ancestor) {
                 boxes[ancestor]?.append(box)
             }
         }
-        return boxes
+        // A wrapper that holds no content is its box, like any other artwork-less group.
+        return Self.wrapperContentIncludesCuts ? boxes : boxes.filter { !$0.value.isEmpty }
     }
 
     /// Whether a `sysregion="1"` box is backed black: every layout that has not opted in to

@@ -113,6 +113,21 @@ final class WinampModernPhase88Tests: XCTestCase {
         XCTAssertEqual(alpha(pixels, x: 8, y: 12), 0, "nothing past the content may draw")
     }
 
+    /// Big Bento Modern's case, the limit of the property above: a wrapper that holds nothing but
+    /// cuts has no content, so it is its box. `window.background.regions` fills the window and holds
+    /// only four 3x3 corner silhouettes; bounded by them, everything below the titlebar was erased.
+    func testAWrapperHoldingOnlyCutsKeepsItsBox() throws {
+        let pixels = try render(layout: """
+            <group id="regions" x="0" y="0" w="16" h="16" sysregion="1">
+              <layer id="trim" image="art.opaque" x="0" y="0" w="2" h="2" regionop="-2"/>
+            </group>
+            <layer id="bg" image="art.opaque" x="0" y="0" w="16" h="16"/>
+            """)
+
+        XCTAssertEqual(alpha(pixels, x: 0, y: 0), 0, "the corner cut must still apply")
+        XCTAssertEqual(alpha(pixels, x: 8, y: 8), 255, "the rest of the window must stay")
+    }
+
     /// Ebonite's case. `art.soft` is alpha 179 — as coverage it would leave 76 here.
     func testAPartiallyTransparentSilhouetteCutsCompletely() throws {
         let pixels = try render(layout: """

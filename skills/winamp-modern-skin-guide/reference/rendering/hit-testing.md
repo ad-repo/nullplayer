@@ -304,6 +304,16 @@ the whole window by its positive declarations moved 87 corpus images, and counti
 (not `background` groups) still erased Formamp's and Ebonite's client areas. The shipped rule moved
 none.
 
+**A cut is not content, and a wrapper with no content is its box** (2026-10-24). Big Bento Modern's
+`window.background.regions` is a full-window `sysregion="1"` group holding nothing but four 3x3
+`regionop="-2"` corner silhouettes; its frame artwork sits beside it with a *positive* `regionop`,
+which is left out of the region. Bounded by its cuts, the wrapper cleared the window to its
+`sysregion="1"` titlebar and the whole body vanished — both base and Light editions, while the
+native library pane kept drawing over the hole. Cut leaves are now skipped when a wrapper's content
+is collected, and a wrapper left with none fills its box. The corpus sweep moved only the two Bento
+editions (normal and shade); XENERGY is unchanged. `WINAMP_MODERN_REGION_WRAPPER_CUTS=1` restores
+the old reading.
+
 The shape reaches the **window** without any `NSWindow` work: all three `.wal` window paths — the
 player, auxiliary containers, and the hosted-window materializer — already set `isOpaque = false`,
 a clear `backgroundColor` and `hasShadow = false`, so an erased corner is genuinely transparent. It

@@ -57,6 +57,8 @@
   leaving an uneven comb of gaps.
 - **Modern skins draw text at the whole-pixel size Winamp used**: Winamp Portrait's tab labels sit
   in their tabs instead of "Collapse" running off the window.
+- **Big Bento Modern draws its background again**: the base and Light editions showed only the
+  titlebar and the library pane over an empty window.
 
 ## 0.33.1
 
