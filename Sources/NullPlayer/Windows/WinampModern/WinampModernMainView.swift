@@ -1280,17 +1280,14 @@ final class WinampModernMainView: NSView {
 
         // The holder coming *back* is the tab being switched to again, which is the only moment
         // that can park the picture there a second time: the reveal route runs on a *play* call, and
-        // the film has been playing all along. After a layout pass, because that is what gives the
-        // new box its frame, and asked of `hostedVideoSurface` so the largest visible box wins the
-        // same way the first parking did.
+        // the film has been playing all along. One turn later, through the same claim the first
+        // parking took, which lays the scene out first: that is what gives the new box its frame.
         if videoHolderAppeared, sceneIsVisible,
            WindowManager.shared.currentVideoPlayerController?.currentTitle != nil {
             DispatchQueue.main.async { [weak self] in
-                guard let self, !self.isTornDown else { return }
-                self.needsLayout = true
-                self.layoutSubtreeIfNeeded()
-                self.hostedVideoSurface?.attachVideoOutput()
-                self.hostedVideoSurface?.updateOutputPlacement()
+                // Still this view's box: another window may have claimed it in the meantime.
+                guard let self, !self.isTornDown, self.hostedVideoSurface != nil else { return }
+                self.claimVideoSurface()
             }
         }
 

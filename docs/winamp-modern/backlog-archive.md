@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B250 — The deferred re-park reuses the video claim — closed 2026-10-25
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B250 | **`reconcileHostedSurfaces` is four copies of one loop, and the BB35 ordering trap was fixed in each separately.** Library, video, visualization and hosted-window surfaces each keep an `[WasabiObjectID: Surface]` map with their own unmount and mount passes; "unmount first, then mount, attach every pass" was learned for the visualization loop (BB35) and then again for library, video and hosted windows on this branch. The deferred re-park (`videoHolderAppeared`) also re-spells the layout-attach-place sequence `claimVideoSurface` now owns. The generic `reconcile(_:to:unmount:make:)` landed (2026-10-23): the ordering lives in one function and each kind supplies only what differs. Left: the deferred re-park still re-spells the claim's layout-attach-place sequence, and the extraction has not been driven live (the headless harness installs no component host). Done when the deferred re-park reuses the video claim, and Big Bento Modern's Visualization tab, Winamp Single GUI's library pane and its Switch Video Screen Mode all still mount | code health; no corpus demand | M | 3 |
+
+**Closed 2026-10-25**. The re-park one turn after a video holder reappears now calls `claimVideoSurface()` (layout, claim, mount, attach, place) instead of re-spelling it, and only while the view still holds the box (B246's `hostedVideoSurface`), so it cannot take a box another window claimed in that turn. Live: Big Bento Modern's Visualization tab mounts and runs; Winamp Single GUI's library pane mounts, its mini pane closed and reopened re-parks the film, and Switch Video Screen Mode was driven under B246 on the same claim.
+
 ## B251 — The Video Player menu item makes one `.wal` call — closed 2026-10-25
 
 | Id | Item | Reach | Effort | Tier |
