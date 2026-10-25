@@ -1047,8 +1047,14 @@ final class WinampModernRenderDumpTests: XCTestCase {
                                 .joined(separator: " "))
                     }
                 }
-                // WINAMP_MODERN_RENDER_CLICKABLE lists objects the markup-only hit test rejects but
-                // a script hooks the mouse on — the ClassicPro SUI tabs are the measured case.
+                // Both hit-test probes below test as the app does, with the script bindings that make
+                // a hooked `text` or a clear mousetrap a control: markup-only, Freeform Simpsons'
+                // checkbox labels and Official Trapt's volume and seek read as dead.
+                if env["WINAMP_MODERN_RENDER_CLICKABLE"] != nil || env["WINAMP_MODERN_RENDER_CLICK"] != nil {
+                    renderer.attach(scripts: runtime)
+                }
+                // WINAMP_MODERN_RENDER_CLICKABLE lists objects the hit test rejects but a script hooks
+                // the mouse on — the ClassicPro SUI tabs are the measured case.
                 if env["WINAMP_MODERN_RENDER_CLICKABLE"] != nil {
                     let events = ["onleftbuttondown", "onleftbuttonup", "onleftclick"]
                     let scripted = renderer.sceneNodes().filter { node in
@@ -1071,9 +1077,6 @@ final class WinampModernRenderDumpTests: XCTestCase {
                             let coords = entry.split(separator: ",").compactMap { Double($0) }
                             return coords.count == 2 ? CGPoint(x: coords[0], y: coords[1]) : nil
                         }
-                    // Hit-tested as the app does, with the script bindings that make a hooked `text`
-                    // a control (B207): markup-only, Freeform Simpsons' checkbox labels read as dead.
-                    renderer.attach(scripts: runtime)
                     for point in points {
                         // Every object in the graph, not only the ones currently on screen: a control
                         // that was hidden and becomes visible is exactly what a click like this does

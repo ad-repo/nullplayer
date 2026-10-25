@@ -6,7 +6,7 @@ Winampple_1_1.wal	db15b863b51f4381e2aa46612ac127f653c3dc4ef2f4d4d59f9e48a15fbab0
 Freeform_Simpsons_Skin.wal	1012a6a777caf32e59b5530a8b794f7361645a442373a076e068a8a15bc67c1f	live	2026-10-25	-	-
 Celica_Amp.wal	b151e18ffb84bf5fc6a033d55c40d7ef0febb3d8e3460c99b87b1bbc5f9de2bd	live	2026-10-25	-	-
 Official_Trapt_Skin.wal	c18cdc9f76b4105c4256b3745bcfa520f00a91b021f9395fae5771c541cd6d6d	live	2026-10-25	-	-
-Abducted.wal	7d3d351a0e6d622b429a9f4616e1aaac358003131c7717c5a94bf42df608e8f1	headless	2026-10-25	-	Phase 5: 24 unreachable (cfgdraw/topdraw toggles under masks, Seeker under SeekerGhost): open the drawers and re-drive
+Abducted.wal	7d3d351a0e6d622b429a9f4616e1aaac358003131c7717c5a94bf42df608e8f1	live	2026-10-25	-	-
 CardiumII.wal	a0ce1ae47a2a870b249ea492350811702b67abba2da653185348ffab902a47d4	headless	2026-10-25	-	Phase 5: 5 buttons covered by main_bg (drawer state?), seek under ghost; volanim silent
 cPro__Creed__Full_Circle.wal	a84b2601029de0ed3fd8c8188579c7b49b0fba07dc271d0919450c3228e0c5b1	headless	2026-10-25	-	Phase 5: notifier 2/15 and Back overlap; applyStyle is a third-party plugin class (D); sysmenu right flips (noise)
 Apill.wal	2a8e7da33fe3898ae63dadd7da379036a559aa3211725022d60c569dc109a554	headless	2026-10-25	-	Phase 5: :componenttitle drawn as text in Component frames; SeekAnim silent; motion suspect

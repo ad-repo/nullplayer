@@ -176,7 +176,7 @@ object the hit test returned:
   never the named transport/title objects on the exclusion list.
 
 `WINAMP_MODERN_RENDER_CLICKABLE=1` is the check for both hit-test rules: it lists objects a script hooks the mouse on
-that the markup-only hit test rejects. It is not expected to be empty — several objects legitimately
+that the hit test rejects (with the script runtime attached, since 2026-10-25). It is not expected to be empty — several objects legitimately
 share a rect and only the topmost can win — but a control the user can see should never be in it.
 
 #### Resizing the window (Phase 89, B77)
