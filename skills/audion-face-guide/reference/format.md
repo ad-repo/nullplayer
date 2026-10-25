@@ -72,8 +72,11 @@ measured in them.
 
 - Two lines: **artist** (`artistDisplayRect`) and **album** (`albumDisplayRect`).
 - Colour: the `…TextFaceColorFromTxtr` key when it decodes, else `…TextFaceColorFromFace`, else black.
-- Font: `…DisplayFontName` at `…FontSize`. A name that does not resolve falls back to Helvetica at
-  that size; a missing name or size falls back to Helvetica 12.
+- Font: `…DisplayFontName` at `…FontSize`. A name that does not resolve tries a bundled lookalike
+  (`AudionFaceFontSubstitutes`: Chicago and its metric-twins, the pixel fonts, Textile, SF Digital
+  Readout), then falls back to Helvetica at that size; a missing name or size falls back to
+  Helvetica 12. An artist line with no font name takes the album line's name and size. Both are
+  departures from FaceKit.
 - Style: eight booleans (bold, italic, underline, outline, shadow, condense, extend, justify). If
   **any one** of the eight keys fails to decode, the whole style is empty.
 - XOR text (`…TextMode & 2`) is parsed and drawn plainly: FaceKit leaves its invert filter
