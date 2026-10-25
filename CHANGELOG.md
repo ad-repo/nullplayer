@@ -164,6 +164,8 @@
 - **A Modern skin's spectrum analyzer draws without gaps**: Big Bento's bars no longer show dark
   lines between their colour bands, and thin-band analyzers (cPro KAO) fill their box instead of
   leaving an uneven comb of gaps.
+- **Modern skins draw text at the whole-pixel size Winamp used**: Winamp Portrait's tab labels sit
+  in their tabs instead of "Collapse" running off the window.
 
 ## 0.33.0
 

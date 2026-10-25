@@ -156,9 +156,9 @@ final class WinampModernPhase25RegressionTests: XCTestCase {
 
         XCTAssertEqual(text.attributes["fontsize"], "19", "the attribute the XML would have carried")
         // …and it goes through the one pixel-height→point conversion the renderer and `getAutoWidth()`
-        // share, rather than being handed to CoreText as a point size of its own.
-        XCTAssertEqual(WasabiTextMetrics.pointSize(of: text),
-                       19 * CGFloat(WasabiTextMetrics.pixelHeightToPointSize))
+        // share, rather than being handed to CoreText as a point size of its own — on a whole pixel,
+        // as GDI draws it: 19 x 0.8 = 15.2 draws a 15px em (Winamp Portrait's tab labels).
+        XCTAssertEqual(WasabiTextMetrics.pointSize(of: text), 15)
     }
 
     /// Global navigation remains denied, while the object form is routed only to the addressed
