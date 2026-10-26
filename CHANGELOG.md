@@ -102,6 +102,8 @@
   matches its album line. A font you have installed is still used first.
 - **Winampple no longer opens an empty Media Library frame at launch**, and its Windows menu no
   longer lists empty Media Library, Visualizations and video frames beside the real windows.
+- **Winampple's Media Library can be clicked again.** Its video window's frame no longer sits over
+  the library, and Itemskin, K-jr and MoonLight keep the library frame their authors drew.
 
 ## 0.33.1
 

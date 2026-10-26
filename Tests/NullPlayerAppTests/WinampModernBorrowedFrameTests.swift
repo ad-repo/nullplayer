@@ -64,9 +64,10 @@ final class WinampModernBorrowedFrameTests: XCTestCase {
         XCTAssertNil(frame.exemplar)
     }
 
-    /// The one window the skin declares that we re-frame: its media library, whose contents are
-    /// entirely NullPlayer's and whose rows a frame drawn for a picture costs outright.
-    func testTheSkinsOwnLibraryWindowIsReFramedInTheThinnerFrame() throws {
+    /// The library keeps the frame the skin gave it, even beside a thinner one: swapping the tag swaps
+    /// the frame's script, and Winampple's library then ran its video frame's, which parked an opaque
+    /// window over the library.
+    func testTheLibraryKeepsTheFrameTheSkinGaveIt() throws {
         let loaded = try makeSkin(xml: Self.borrowedFrameSkin)
         let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: Host(),
                                                containerID: "MLibrary")
@@ -74,21 +75,7 @@ final class WinampModernBorrowedFrameTests: XCTestCase {
         let frames = renderer.sceneNodes().filter {
             $0.object.typeName.lowercased().hasPrefix("wasabi:standardframe")
         }
-        XCTAssertEqual(frames.first?.object.typeName, "Wasabi:StandardFrame:AVS",
-                       "the library keeps a frame, and it is the thin one")
-    }
-
-    /// …and only ever *downward*. A skin whose library already wears its thinnest frame is untouched.
-    func testALibraryAlreadyWearingTheThinFrameIsLeftAlone() throws {
-        let loaded = try makeSkin(xml: Self.thinLibrarySkin)
-        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: Host(),
-                                               containerID: "MLibrary")
-        addTeardownBlock { renderer.teardown() }
-        let component = renderer.sceneNodes().first {
-            $0.object.typeName.caseInsensitiveCompare("component") == .orderedSame
-        }
-        XCTAssertEqual(component?.object.attributes["x"], "27",
-                       "the declared rect stays exactly as the author wrote it")
+        XCTAssertEqual(frames.first?.object.typeName, "Wasabi:StandardFrame:ML")
     }
 
     // MARK: - Fixtures
@@ -125,27 +112,6 @@ final class WinampModernBorrowedFrameTests: XCTestCase {
           <Wasabi:StandardFrame:AVS x="-16" y="-8" w="32" h="66" relatw="1" relath="1"/>
           <component x="27" y="40" w="-53" h="-66" relatw="1" relath="1"
                      param="guid:{0000000A-000C-0010-FF7B-01014263450C}"/>
-        </layout>
-      </container>
-    </WasabiXML>
-    """
-
-    /// The library window already wears the thinnest frame the skin has.
-    private static let thinLibrarySkin = """
-    <WasabiXML>
-      <bitmap id="frame.art" file="art.png" x="0" y="0" w="8" h="8"/>
-      <groupdef id="wasabi.standardframe.avs" xuitag="Wasabi:StandardFrame:AVS">
-        <layer id="art" x="0" y="0" image="frame.art"/>
-        <script file="scripts/standardframe.maki"/>
-      </groupdef>
-      <container id="main">
-        <layout id="normal" default_w="300" default_h="160"/>
-      </container>
-      <container id="MLibrary" component="guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}">
-        <layout id="normal" default_w="660" default_h="274">
-          <Wasabi:StandardFrame:AVS x="-16" y="-8" w="32" h="66" relatw="1" relath="1"/>
-          <component x="27" y="40" w="-53" h="-66" relatw="1" relath="1"
-                     param="guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}"/>
         </layout>
       </container>
     </WasabiXML>
