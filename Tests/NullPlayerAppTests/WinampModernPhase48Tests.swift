@@ -151,6 +151,7 @@ final class WinampModernPhase48Tests: XCTestCase {
                 isMainWindowVisible: { true }, showsEmbeddedEqualizer: { false },
                 window: { _ in nil },
                 setVisible: { id, visible in visibility[id] = visible },
+                closeCarriedOver: { _ in },
                 classicFallback: { kind, _ in classicCalls.append(kind) },
                 redraw: {}))
         }

@@ -964,6 +964,14 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                     // A menu item or a skin button asked: an explicit decision, remembered.
                     self?.setAuxiliaryWindow(id: id, visible: visible, record: true)
                 },
+                closeCarriedOver: { [weak self] id in
+                    // Not the user's decision in this skin, so not remembered, and not done at all
+                    // once they have made one here. Recording it shut Winampple's playlist, the
+                    // centre of its player, on every later load after one switch in from a skin
+                    // with its playlist closed.
+                    guard let self, self.rememberedContainerVisibility(id: id) == nil else { return }
+                    self.setAuxiliaryWindow(id: id, visible: false, record: false)
+                },
                 classicFallback: { kind, showOnly in
                     WindowManager.shared.showClassicSurfaceForWinampModern(kind, showOnly: showOnly)
                 },
@@ -1721,17 +1729,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }) else { return }
         guard let configuration = loadedSkin?.configuration else { return }
         WinampModernSkinState.setWindowIsVisible(visible, container: id, in: configuration)
-    }
-
-    /// A skin switch carrying "closed" over from the outgoing skin: close this skin's window for it,
-    /// unless the user has already said in *this* skin whether they want it. Not their decision here,
-    /// so not remembered — recording it shut Winampple's playlist, the centre of its player, on every
-    /// later load after one switch in from a skin with its playlist closed.
-    func closeCarriedSurface(_ kind: WinampModernComponentKind) {
-        guard let window = surfaceCoordinator?.nativeWindow(for: kind),
-              let id = auxiliaryContainers.first(where: { $0.window === window })?.containerID,
-              rememberedContainerVisibility(id: id) == nil else { return }
-        setAuxiliaryWindow(id: id, visible: false, record: false)
     }
 
     /// Close / Minimize as Winamp means them, for the player window; `installWindowCommands(on:id:)`

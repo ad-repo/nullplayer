@@ -424,21 +424,8 @@ struct WinampModernSurfaceInventory {
         let layout = layouts.first { $0.attribute("id")?.caseInsensitiveCompare("normal") == .orderedSame }
             ?? layouts.first
         guard let layout else { return true }
-        func dimension(_ keys: [String]) -> Double {
-            for key in keys {
-                if let raw = layout.attribute(key), let value = Double(raw) { return value }
-            }
-            return 0
-        }
-        // The fixed `w`/`h` only, as `WinampModernContainerTopology.analyze` reads it: a tiny
-        // `default_w`/`default_h` is a resizable window's starting size (Winampple's `PLEdit`).
-        let width = dimension(["w"])
-        let height = dimension(["h"])
-        // A layout that declares no box at all is not collapsed — it is sized by its `background`
-        // bitmap. Counting its two zeroes as 0×0 made the skin's own equalizer look absent, and the
-        // synthesizer then built a plain one over the top of it.
-        guard width > 0 || height > 0 else { return true }
-        return !(width <= 2 && height <= 2)
+        func dimension(_ key: String) -> Double { layout.attribute(key).flatMap(Double.init) ?? 0 }
+        return !WinampModernContainerTopology.isCollapsed(width: dimension("w"), height: dimension("h"))
     }
 
     private static func fold(_ value: String) -> String {

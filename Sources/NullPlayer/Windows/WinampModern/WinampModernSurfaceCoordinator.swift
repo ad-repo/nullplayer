@@ -82,6 +82,8 @@ final class WinampModernSurfaceCoordinator {
         let window: (String) -> NSWindow?
         /// Show/hide a container's window.
         let setVisible: (String, Bool) -> Void
+        /// Close a container's window on the outgoing skin's say-so, not the user's.
+        let closeCarriedOver: (String) -> Void
         /// Ask the classic provider to take this surface — the deliberate bypass that must never
         /// re-enter the public routing.
         let classicFallback: (WinampModernComponentKind, Bool) -> Void
@@ -194,6 +196,15 @@ final class WinampModernSurfaceCoordinator {
             environment.setVisible(id, !(environment.window(id)?.isVisible == true))
         case .classicFallback:
             environment.classicFallback(kind, false)
+        }
+    }
+
+    /// A skin switch carrying "closed" over from the outgoing skin. An embedded surface has no window
+    /// of its own to close.
+    func closeCarriedOver(_ kind: WinampModernComponentKind) {
+        switch catalog[kind] {
+        case .declaredContainer(let id), .synthesizedContainer(let id): environment.closeCarriedOver(id)
+        case .embedded, .classicFallback: break
         }
     }
 

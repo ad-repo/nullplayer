@@ -123,6 +123,27 @@ extension WasabiSceneRenderer {
         drawImage(bitmap.image, in: frame, context: context)
     }
 
+    /// A button on Winamp's stock check-box art that the skin names without defining, which no such
+    /// skin can ship (`WasabiFormWidgets.isStockCheckBox`): sized and drawn as stock.
+    func isUnshippedStockCheckBox(_ object: WasabiObject) -> Bool {
+        guard object.tag.is(.button), let image = object.attributes["image"] else { return false }
+        return WasabiFormWidgets.isStockCheckBox(image) && resources.bitmap(identifier: image) == nil
+    }
+
+    /// A toggle on Winamp's unshipped stock check-box art: the 11x11 object frame its groupdef lays
+    /// 2px around it — which is stock art too — and a tick while it is activated.
+    func drawStockCheckBox(_ object: WasabiObject, frame: CGRect, context: WasabiDrawList) {
+        let color = palette.listText
+        context.saveGState()
+        defer { context.restoreGState() }
+        context.setStrokeColor(color.withAlphaComponent(0.75).cgColor)
+        context.setLineWidth(1)
+        context.stroke(frame.insetBy(dx: -1.5, dy: -1.5))
+        guard WasabiFormWidgets.isOn(object, boundState: nil) else { return }
+        context.setFillColor(color.cgColor)
+        context.fill(frame.insetBy(dx: 1, dy: 1))
+    }
+
     /// `<AlbumArt>` fits its cover inside the box with the aspect kept, centred, unless the skin
     /// asks for `stretched="1"` — 29 declarations across the corpus say one or the other. Winampple's
     /// small art leans on the fit: a 111×310 box at `y="-107"` in a 96px-tall group, which shows the

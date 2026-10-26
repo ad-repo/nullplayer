@@ -308,7 +308,7 @@ extension WasabiSceneRenderer {
         }
         return ordered.map { entry in
             let object = entry.node.object
-            let hidden = sequence(first: object, next: \.parent).contains { $0.attributes["alpha"] == "0" }
+            let hidden = Self.alphaFraction(of: object) * entry.node.inheritedAlpha == 0
             return WasabiRegionCut(object: object, frame: entry.node.frame, clip: entry.node.clip,
                                    bitmapID: entry.node.bitmapID, additive: entry.additive,
                                    contentBoxes: contentBoxes[ObjectIdentifier(object)], hidden: hidden)
@@ -481,6 +481,10 @@ extension WasabiSceneRenderer {
         // MMD3's slanted shade edge and alpha-17 haze under hatsune miku's player (B268).
         let composes = Self.marksWholeWindow(layout)
         guard composes || cuts.contains(where: { !$0.additive }) else { return nil }
+        // Composed from the marks, what nothing can see is not window — Clock hides its calendar at
+        // `alpha="0"`, and its marked `cal-bg` kept a band below the case where wedges showed — and
+        // a group that holds marked objects is what they are, not its box.
+        let drawnCuts = composes ? cuts.filter { !$0.hidden } : cuts
         let markedWrappers = composes ? Self.markedWrappers(in: cuts) : []
         let width = Int(canvasSize.width.rounded())
         let height = Int(canvasSize.height.rounded())
@@ -523,9 +527,7 @@ extension WasabiSceneRenderer {
                 context.fill(contentBoxes)
                 context.restoreGState()
             }
-            // Composed from the marks, what nothing can see is not window: Clock hides its calendar
-            // at `alpha="0"`, and its marked `cal-bg` kept a band below the case where wedges showed.
-            for cut in cuts where !(composes && cut.hidden) {
+            for cut in drawnCuts {
                 context.saveGState()
                 context.clip(to: cut.clip)
                 // Subtract or restore, in scene order. Colours are discarded either way — the buffer
@@ -536,9 +538,7 @@ extension WasabiSceneRenderer {
                 } else if let background = cut.object.attributes["background"],
                           let bitmap = resources.bitmap(identifier: background) {
                     draw(bitmap, object: cut.object, frame: cut.frame, context: context)
-                } else if markedWrappers.contains(ObjectIdentifier(cut.object)) {
-                    // Composed from the marks, a group that holds marked objects is what they are.
-                } else if cut.additive {
+                } else if cut.additive, !markedWrappers.contains(ObjectIdentifier(cut.object)) {
                     // A group with no artwork of its own is its box — or, wrapping region objects,
                     // what it holds: that is what a `<groupdef … sysregion="1">` wrapping a whole
                     // window contributes. Only additive, because a *negative* object with no bitmap

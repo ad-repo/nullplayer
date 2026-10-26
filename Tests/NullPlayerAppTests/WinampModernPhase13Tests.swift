@@ -733,6 +733,7 @@ final class WinampModernPhase13Tests: XCTestCase {
             isMainWindowVisible: { true }, showsEmbeddedEqualizer: { false },
             window: { _ in nil },
             setVisible: { _, _ in XCTFail("an embedded surface has no window to show") },
+            closeCarriedOver: { _ in },
             classicFallback: { kind, _ in classicCalls.append(kind) },
             redraw: {}))
 
@@ -768,6 +769,7 @@ final class WinampModernPhase13Tests: XCTestCase {
             isMainWindowVisible: { true }, showsEmbeddedEqualizer: { false },
             window: { windows[$0] },
             setVisible: { id, visible in visibility[id] = visible },
+            closeCarriedOver: { _ in },
             classicFallback: { _, _ in },
             redraw: {}))
 
@@ -787,7 +789,8 @@ final class WinampModernPhase13Tests: XCTestCase {
                                                  visualization: .classicFallback(reason: "no AVS window"))
         let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
             revealEmbedded: { _, _, _ in true }, isMainWindowVisible: { true }, showsEmbeddedEqualizer: { false }, window: { _ in nil },
-            setVisible: { _, _ in }, classicFallback: { _, _ in }, redraw: {}))
+            setVisible: { _, _ in }, closeCarriedOver: { _ in }, classicFallback: { _, _ in },
+            redraw: {}))
         XCTAssertEqual(coordinator.summary,
                        "playlist=declared:Pledit equalizer=embedded library=classic(no frame) "
                        + "video=classic(no video window) visualization=classic(no AVS window)")
@@ -805,7 +808,8 @@ final class WinampModernPhase13Tests: XCTestCase {
         let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
             revealEmbedded: { _, _, _ in true }, isMainWindowVisible: { true },
             showsEmbeddedEqualizer: { drawn }, window: { _ in nil },
-            setVisible: { _, _ in }, classicFallback: { _, _ in }, redraw: {}))
+            setVisible: { _, _ in }, closeCarriedOver: { _ in }, classicFallback: { _, _ in },
+            redraw: {}))
         XCTAssertFalse(coordinator.isSurfaceVisible(.equalizer))
         drawn = true
         XCTAssertTrue(coordinator.isSurfaceVisible(.equalizer))

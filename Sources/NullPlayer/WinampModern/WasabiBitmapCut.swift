@@ -83,10 +83,15 @@ extension WasabiResourceCache {
             return true
         }
         guard drawn else { return nil }
+        return box(width: width, height: height) { alpha[$0] > 0 }
+    }
+
+    /// The box around the pixels `isOpaque` accepts, by buffer index; nil when it accepts none.
+    private static func box(width: Int, height: Int, isOpaque: (Int) -> Bool) -> CGRect? {
         var minX = width, minY = height, maxX = -1, maxY = -1
         // The buffer's first row is the image's top row: a bitmap context's memory is top-down.
         for y in 0..<height {
-            for x in 0..<width where alpha[y * width + x] > 0 {
+            for x in 0..<width where isOpaque(y * width + x) {
                 minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
             }
         }
@@ -101,7 +106,6 @@ extension WasabiResourceCache {
     /// band's flat part is where the title or the status bar sits, and trimming rows put
     /// YoYoBoy's playlist over its Add/Rem/Sel bar.
     static func edgeBounds(of image: CGImage) -> CGRect? {
-        guard let box = opaqueBounds(of: image) else { return nil }
         let width = image.width, height = image.height
         var rgba = [UInt32](repeating: 0, count: width * height)
         let drawn = rgba.withUnsafeMutableBytes { buffer -> Bool in
@@ -112,7 +116,9 @@ extension WasabiResourceCache {
             context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
             return true
         }
-        guard drawn else { return box }
+        guard drawn else { return opaqueBounds(of: image) }
+        // Premultiplied RGBA read as one little-endian word: alpha is the top byte.
+        guard let box = Self.box(width: width, height: height, isOpaque: { rgba[$0] >> 24 > 0 }) else { return nil }
         let rows = Int(box.minY)..<Int(box.maxY), columns = Array(Int(box.minX)..<Int(box.maxX))
         func column(_ x: Int) -> [UInt32] { rows.map { rgba[$0 * width + x] } }
         // How many columns from one end repeat the end column, stepping inward; 0 under half.

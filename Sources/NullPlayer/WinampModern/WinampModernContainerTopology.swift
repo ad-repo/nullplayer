@@ -74,7 +74,17 @@ enum WinampModernDefaultVisibilitySuppression: String {
 /// separate-windows model (skins that declare multiple visible containers).
 enum WinampModernContainerTopology {
     /// A container collapsed by window-overrides is at most this many pixels on a side.
-    private static let collapsedThreshold: CGFloat = 2
+    private static let collapsedThreshold = 2.0
+
+    /// Whether a layout's fixed `w`/`h` (0 when unstated) say window-overrides collapsed it. Only a
+    /// layout that *declares* a tiny box has been: one that declares no box at all is sized by its
+    /// `background` bitmap (ZDL's Reel-To-Reel declares its equalizer that way), and reading its two
+    /// zeroes as 0×0 hid the window the skin ships. And only the fixed `w`/`h`, the size
+    /// `window-overrides` writes: a tiny `default_w`/`default_h` is where a resizable window starts —
+    /// Winampple's `PLEdit` starts at 1×1 and its script sizes it over the player body.
+    static func isCollapsed(width: Double, height: Double) -> Bool {
+        (width > 0 || height > 0) && width <= collapsedThreshold && height <= collapsedThreshold
+    }
 
     static func analyze(graph: WasabiObjectGraph) -> [WinampModernContainerInfo] {
         graph.roots
@@ -86,15 +96,8 @@ enum WinampModernContainerTopology {
                 let declared = size(of: layout, keys: [["default_w", "w", "minimum_w"],
                                                        ["default_h", "h", "minimum_h"]])
                 let hidden = isHidden(container)
-                // Only a layout that *declares* a tiny box has been collapsed. A layout that declares
-                // no box at all is sized by its `background` bitmap (ZDL's Reel-To-Reel declares its
-                // equalizer that way), and reading its two zeroes as 0×0 hid the window the skin ships.
-                // And only the fixed `w`/`h` collapse it, the size `window-overrides` writes: a tiny
-                // `default_w`/`default_h` is where a resizable window starts. Winampple's `PLEdit`
-                // starts at 1×1 and its script sizes it over the player body.
                 let fixed = size(of: layout, keys: [["w"], ["h"]])
-                let collapsed = (fixed.width > 0 || fixed.height > 0) &&
-                    fixed.width <= collapsedThreshold && fixed.height <= collapsedThreshold
+                let collapsed = isCollapsed(width: fixed.width, height: fixed.height)
                 let minimum = size(of: layout, keys: [["minimum_w"], ["minimum_h"]])
                 let maximum = size(of: layout, keys: [["maximum_w"], ["maximum_h"]])
                 return WinampModernContainerInfo(

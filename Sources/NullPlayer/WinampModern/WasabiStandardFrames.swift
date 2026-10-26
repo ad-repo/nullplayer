@@ -176,19 +176,10 @@ extension WasabiStandardFrames {
     static func measuredBorder(in children: [WalXMLNode],
                                group: (String) -> [WalXMLNode]?,
                                bitmapOpaqueBounds: (String) -> CGRect?) -> Border {
-        var border = Border()
-        var titleBottom = 0.0, statusTop = 0.0
-        measure(children, into: &border, titleBottom: &titleBottom, statusTop: &statusTop,
-                offset: .zero, margin: .zero,
+        var measurement = Measurement()
+        measure(children, into: &measurement, offset: .zero, margin: .zero,
                 group: group, bitmapOpaqueBounds: bitmapOpaqueBounds, depth: 0, visited: [])
-        // A frame with no top strip still has a title, and the client starts below it: Circlo's top
-        // band is a `move` tile and two corners, and measured as 0 its Color Themes list sat under
-        // the title text.
-        if border.top == 0 { border.top = titleBottom }
-        // And one with no bottom strip still has its status bar, and the client ends above it.
-        // LCDx's strips are a fully transparent `frame.png`, and its `LayoutStatus` sits 17px up.
-        if border.bottom == 0 { border.bottom = statusTop }
-        return border
+        return measurement.resolved
     }
 
     /// The client area of such a frame, as the `<group>` the frame's missing script would have made.
@@ -206,6 +197,26 @@ extension WasabiStandardFrames {
     // MARK: - Measurement
 
     private static let maximumFrameDepth = 16
+
+    /// What one walk of a frame's markup finds: its strips, and where its title and status bar sit.
+    private struct Measurement {
+        var border = Border()
+        var titleBottom = 0.0
+        var statusTop = 0.0
+
+        /// The strips, with the title and status bar standing in for a strip the frame lacks.
+        var resolved: Border {
+            var border = border
+            // A frame with no top strip still has a title, and the client starts below it: Circlo's
+            // top band is a `move` tile and two corners, and measured as 0 its Color Themes list sat
+            // under the title text.
+            if border.top == 0 { border.top = titleBottom }
+            // And one with no bottom strip still has its status bar, and the client ends above it.
+            // LCDx's strips are a fully transparent `frame.png`, and its `LayoutStatus` sits 17px up.
+            if border.bottom == 0 { border.bottom = statusTop }
+            return border
+        }
+    }
 
     private static func declaresScript(in children: [WalXMLNode], group: (String) -> [WalXMLNode]?,
                                        depth: Int, visited: Set<String>) -> Bool {
@@ -232,8 +243,7 @@ extension WasabiStandardFrames {
         return (children, visited.union([identifier]))
     }
 
-    private static func measure(_ children: [WalXMLNode], into border: inout Border,
-                                titleBottom: inout Double, statusTop: inout Double,
+    private static func measure(_ children: [WalXMLNode], into measurement: inout Measurement,
                                 offset: CGPoint, margin: CGPoint,
                                 group: (String) -> [WalXMLNode]?,
                                 bitmapOpaqueBounds: (String) -> CGRect?,
@@ -256,10 +266,10 @@ extension WasabiStandardFrames {
             if node.name.caseInsensitiveCompare("group") == .orderedSame,
                node.attribute("id")?.caseInsensitiveCompare("wasabi.titlebar") == .orderedSame,
                !isRelative("relaty"), let height = number("h") {
-                titleBottom = max(titleBottom, offset.y + y + height)
+                measurement.titleBottom = max(measurement.titleBottom, offset.y + y + height)
             }
             if node.name.caseInsensitiveCompare("LayoutStatus") == .orderedSame, isRelative("relaty") {
-                statusTop = max(statusTop, margin.y - y)
+                measurement.statusTop = max(measurement.statusTop, margin.y - y)
             }
             // The strip's *drawn edge* is the border: Mad Magazine's strips are 39x37 tiles
             // whose art is a 4-5px edge, and measured by tile size its playlist sat under the title;
@@ -274,23 +284,21 @@ extension WasabiStandardFrames {
                 let height = opaque.map { Double($0.maxY) } ?? number("h")
                 switch edges {
                 case .left where !isRelative("relatx"):
-                    if let width { border.left = max(border.left, offset.x + x + width) }
+                    if let width { measurement.border.left = max(measurement.border.left, offset.x + x + width) }
                 case .right where isRelative("relatx"):
-                    border.right = max(border.right, margin.x - x - Double(opaque?.minX ?? 0))
+                    measurement.border.right = max(measurement.border.right, margin.x - x - Double(opaque?.minX ?? 0))
                 case .top where !isRelative("relaty"):
-                    if let height { border.top = max(border.top, offset.y + y + height) }
+                    if let height { measurement.border.top = max(measurement.border.top, offset.y + y + height) }
                 case .bottom where isRelative("relaty"):
-                    border.bottom = max(border.bottom, margin.y - y - Double(opaque?.minY ?? 0))
+                    measurement.border.bottom = max(measurement.border.bottom, margin.y - y - Double(opaque?.minY ?? 0))
                 default: break
                 }
             }
 
-            measure(node.children, into: &border, titleBottom: &titleBottom, statusTop: &statusTop,
-                    offset: childOffset, margin: childMargin,
+            measure(node.children, into: &measurement, offset: childOffset, margin: childMargin,
                     group: group, bitmapOpaqueBounds: bitmapOpaqueBounds, depth: depth + 1, visited: visited)
             if let nested = referencedGroup(node, group: group, visited: visited) {
-                measure(nested.children, into: &border, titleBottom: &titleBottom, statusTop: &statusTop,
-                        offset: childOffset, margin: childMargin,
+                measure(nested.children, into: &measurement, offset: childOffset, margin: childMargin,
                         group: group, bitmapOpaqueBounds: bitmapOpaqueBounds, depth: depth + 1,
                         visited: nested.visited)
             }
