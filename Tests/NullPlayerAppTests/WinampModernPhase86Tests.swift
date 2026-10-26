@@ -219,7 +219,7 @@ final class WinampModernPhase86Tests: XCTestCase {
         </layout>
         """)
         XCTAssertNil(renderer.object(at: CGPoint(x: 20, y: 15)), "unbound text stays out of the way")
-        renderer.pressBindingProvider = { _ in true }
+        renderer.pressBindingProvider = { _, _ in true }
         XCTAssertEqual(renderer.object(at: CGPoint(x: 20, y: 15))?.xmlID, "timer")
         XCTAssertNotEqual(renderer.object(at: CGPoint(x: 60, y: 15))?.xmlID, "ticker")
     }

@@ -84,6 +84,12 @@ Two rules about *which* objects may claim a point:
   click; alpha-tested, both were dead. Unhooked, such a layer stays see-through. 40 corpus skins
   carry a clear non-ghost layer, almost all named as traps (`resize*`, `trigger`, `*Catch`,
   `vis.mousetrap`, `*switch`); only a hooked one changes (`isClearMousetrap`).
+  **Only for a button its script hooks** (2026-10-25): the view's left press and release ask
+  `object(at:button: .left)`, its right ones `.right`, and the claim checks that button's events
+  (`hasPressBinding(for:button:)`). Ebonitefix stacks a clear `vis` layer that opens its menu on a
+  right-click over `local.cdcover`, whose double-click opens the track's folder, and the author's two
+  tooltips say both work in the one box; claimed by any button, the cover was unreachable. Hover,
+  menus and the harness pass no button and count either.
 - **So is a hooked layer under Layer FX** (2026-10-25): the warp moves its pixels off its bitmap, so
   the bitmap's alpha says nothing about where it is drawn. Official 28 Days Later's volume knob is a
   90x90 layer whose only artwork is a 6x2 dot `fx_onGetPixelR` turns, and `player.maki` reads

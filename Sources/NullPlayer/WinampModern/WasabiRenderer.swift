@@ -719,8 +719,9 @@ final class WasabiSceneRenderer {
     /// the configuration store; nil in a renderer built without one (the pixel tests).
     var configStateProvider: ((WasabiObject) -> Bool)?
     /// Whether a script hooks a press on the object (`WinampModernScriptRuntime.hasPressBinding`),
-    /// which makes it a hit target. Nil in a renderer built without a script runtime.
-    var pressBindingProvider: ((WasabiObject) -> Bool)?
+    /// which makes it a hit target — a press of that button, or of either when nil. Nil in a
+    /// renderer built without a script runtime.
+    var pressBindingProvider: ((WasabiObject, WasabiPressButton?) -> Bool)?
     /// The raw integer behind a `cfgattrib` binding, in the control's own unit — what a **slider**
     /// bound to an attribute stands at. Separate from `configStateProvider` because a lamp and a
     /// number are different questions about the same binding: mmd3's crossfade slider names
@@ -763,7 +764,7 @@ final class WasabiSceneRenderer {
     /// switch in the settings window and the control it mirrors in another window always agree.
     func attach(scripts: WinampModernScriptRuntime) {
         configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
-        pressBindingProvider = { [weak scripts] in scripts?.hasPressBinding(for: $0) ?? false }
+        pressBindingProvider = { [weak scripts] in scripts?.hasPressBinding(for: $0, button: $1) ?? false }
         configValueProvider = { [weak scripts] in scripts?.configInteger(of: $0) }
         settingStateProvider = { [weak scripts] section, key in
             scripts?.configAttributeValue(section: section, key: key).map { $0 != "0" }

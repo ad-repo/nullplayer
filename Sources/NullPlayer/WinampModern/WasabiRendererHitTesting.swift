@@ -6,8 +6,21 @@ import Foundation
 /// decides what a drag grabs, `rectrgn` clipping, and the window shape those regions cut.
 /// Split out of `WasabiRenderer.swift`; see
 /// `skills/winamp-modern-skin-guide/reference/rendering/hit-testing.md`.
+
+/// The mouse button a press is for, where the answer depends on it: a clear mousetrap is claimed only
+/// by a button its script hooks.
+enum WasabiPressButton {
+    case left, right
+
+    /// The prefix of this button's MAKI press events (`onleftbuttondown`, `onrightclick`, …).
+    var eventPrefix: String { self == .left ? "onleft" : "onright" }
+}
+
 extension WasabiSceneRenderer {
+    /// `button` is the button pressing, for the view's press paths; nil (hover, menus, the harness)
+    /// counts a press of either.
     func object(at point: CGPoint, interactiveOnly: Bool = true, includingGhosts: Bool = false,
+                button: WasabiPressButton? = nil,
                 ignoring shouldIgnore: ((WasabiObject) -> Bool)? = nil) -> WasabiObject? {
         // Outside the window's own shape there is nothing to hit: a corner the skin trimmed away is
         // gone for the pointer as well as for the eye (B76).
@@ -46,7 +59,8 @@ extension WasabiSceneRenderer {
                     let drawn = centeredImageRect(bitmap, object: object, in: node.frame) ?? node.frame
                     let local = CGPoint(x: (point.x - drawn.minX) / max(1, drawn.width) * CGFloat(bitmap.width),
                                         y: (point.y - drawn.minY) / max(1, drawn.height) * CGFloat(bitmap.height))
-                    guard bitmap.alpha(at: local) > Self.regionAlphaFloor || isClearMousetrap(object, bitmap)
+                    guard bitmap.alpha(at: local) > Self.regionAlphaFloor
+                            || isClearMousetrap(object, bitmap, button: button)
                     else { continue }
                 }
             }
@@ -63,9 +77,14 @@ extension WasabiSceneRenderer {
     /// So is a hooked layer under Layer FX: the warp moves its pixels away from where its bitmap says
     /// they are. Official 28 Days Later's volume knob is a 90x90 layer whose only artwork is a 6x2 dot
     /// `fx_onGetPixelR` turns around the dial, and `player.maki` reads `volume.map` at the press.
+    ///
+    /// Only for a button the script hooks: Ebonitefix stacks a clear `vis` layer that opens its menu
+    /// on a right-click over `local.cdcover`, whose double-click opens the track's folder, and the
+    /// author's two tooltips say both work in the one box.
     /// ponytail: scans the bitmap on each such miss; cache per bitmap id if a large one shows in hover.
-    private func isClearMousetrap(_ object: WasabiObject, _ bitmap: WasabiBitmap) -> Bool {
-        guard pressBindingProvider?(object) == true else { return false }
+    private func isClearMousetrap(_ object: WasabiObject, _ bitmap: WasabiBitmap,
+                                  button: WasabiPressButton?) -> Bool {
+        guard pressBindingProvider?(object, button) == true else { return false }
         return layerFXEnabledProvider?(object) == true || WasabiResourceCache.opaqueBounds(of: bitmap.image) == nil
     }
 
@@ -604,7 +623,7 @@ extension WasabiSceneRenderer {
         if object.attributes["move"] == "1" { return true }
         // ponytail: asks the runtime's bindings per candidate under the pointer; cache per object if
         // hover profiling shows it.
-        if pressBindingProvider?(object) == true { return true }
+        if pressBindingProvider?(object, nil) == true { return true }
         // An `animatedlayer` is a layer that moves. MMD3's rotary volume/bass/treble knobs are
         // animated layers with their own `onLeftButtonDown` handlers, and leaving the type out here
         // meant a click never reached them.

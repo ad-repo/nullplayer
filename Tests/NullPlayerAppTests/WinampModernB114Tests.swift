@@ -158,8 +158,20 @@ final class WinampModernB114Tests: XCTestCase {
             layoutAttributes: "", resources: #"<bitmap id="clear" file="lift.png" y="8" h="8"/>"#,
             markup: #"<layer id="trap" x="0" y="0" image="clear"/>"#, art: ["lift.png": Self.liftPNG()])
         XCTAssertNil(scene.renderer.object(at: CGPoint(x: 4, y: 4)), "unhooked, it is see-through")
-        scene.renderer.pressBindingProvider = { $0.xmlID == "trap" }
+        scene.renderer.pressBindingProvider = { object, _ in object.xmlID == "trap" }
         XCTAssertEqual(scene.renderer.object(at: CGPoint(x: 4, y: 4))?.xmlID, "trap")
+    }
+
+    /// Only for a button its script hooks: Ebonitefix's clear `vis` layer opens a menu on a right-click
+    /// over the cover whose double-click opens the track's folder.
+    func testAClearMousetrapIsClaimedOnlyByTheButtonItHooks() throws {
+        let scene = try makeScene(
+            layoutAttributes: "", resources: #"<bitmap id="clear" file="lift.png" y="8" h="8"/>"#,
+            markup: #"<layer id="trap" x="0" y="0" image="clear"/>"#, art: ["lift.png": Self.liftPNG()])
+        scene.renderer.pressBindingProvider = { object, button in object.xmlID == "trap" && button != .left }
+        let point = CGPoint(x: 4, y: 4)
+        XCTAssertNil(scene.renderer.object(at: point, button: .left), "a left press falls through")
+        XCTAssertEqual(scene.renderer.object(at: point, button: .right)?.xmlID, "trap")
     }
 
     /// A hooked layer under Layer FX takes its rect: the warp moves its pixels off its bitmap.
@@ -169,7 +181,7 @@ final class WinampModernB114Tests: XCTestCase {
             layoutAttributes: "", resources: #"<bitmap id="half" file="lift.png"/>"#,
             markup: #"<layer id="knob" x="0" y="0" image="half"/>"#, art: ["lift.png": Self.liftPNG()])
         let clear = CGPoint(x: 4, y: 12)
-        scene.renderer.pressBindingProvider = { $0.xmlID == "knob" }
+        scene.renderer.pressBindingProvider = { object, _ in object.xmlID == "knob" }
         XCTAssertNil(scene.renderer.object(at: clear), "without FX, its clear half is see-through")
         scene.renderer.layerFXEnabledProvider = { $0.xmlID == "knob" }
         XCTAssertEqual(scene.renderer.object(at: clear)?.xmlID, "knob")

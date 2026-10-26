@@ -634,8 +634,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
                                            "onleftbuttondblclk", "onrightbuttondown",
                                            "onrightbuttonup", "onrightclick"]
 
-    func hasPressBinding(for object: WasabiObject) -> Bool {
-        !programsBinding(object) { Self.pressEvents.contains($0) }.isEmpty
+    /// `button` narrows it to that button's presses; nil is either.
+    func hasPressBinding(for object: WasabiObject, button: WasabiPressButton? = nil) -> Bool {
+        !programsBinding(object) { event in
+            Self.pressEvents.contains(event) && (button.map { event.hasPrefix($0.eventPrefix) } ?? true)
+        }.isEmpty
     }
 
     /// The scripts with a handler bound to `object` for an event `matches` accepts.
