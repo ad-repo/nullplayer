@@ -1340,7 +1340,10 @@ is the host's, exactly as the playlist panel is.
 - **`<list>`**: rows live on the object (`WasabiGuiList`) so the renderer draws what the script just
   wrote. `deleteAllItems` / `addItem` / `getNumItems` / `getItemLabel(item, column)` /
   `getFirstItemSelected` / `getNextItemSelected(after)` / `scrollToItem`, plus wheel scrolling, click
-  to select and `onDoubleClick(item)` — one argument, the row.
+  to select and `onDoubleClick(item)` — one argument, the row. Until a script writes rows, the list
+  shows its markup `items=`, `;`-separated and trimmed like a drop-down's; `deleteAllItems` clears
+  them. Aria of the Soul's Skin Info tabs are three such lists with no script and drew empty
+  (2026-10-26); Vortex and WinampAzenis2 declare them too.
 - **`<tree>`**: the runtime keeps the `TreeItem` model and writes its visible rows, indented, onto the
   object, so the same list renderer paints it and a click selects or folds a row (`clickTreeRow`).
   `getByLabel(item, label)` searches depth-first under `item`, or the whole tree from null.

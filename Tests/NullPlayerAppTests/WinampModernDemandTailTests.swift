@@ -88,6 +88,15 @@ final class WinampModernDemandTailTests: XCTestCase {
         XCTAssertEqual(try call(runtime, program, list, "getColumnLabel", [.integer(0)]).stringValue, "Title")
     }
 
+    /// Aria of the Soul's Skin Info: a list's markup `items=` are its rows until a script clears them.
+    func testAListShowsItsMarkupItemsUntilAScriptClearsThem() throws {
+        let (runtime, program) = try makeRuntime(body: "<list id=\"l\" w=\"40\" h=\"40\" items=\"\tTitle: Aria;\nAuthor: Saek\"/>")
+        let list = try object(runtime, "l")
+        XCTAssertEqual(WasabiGuiList.items(of: list), ["Title: Aria", "Author: Saek"])
+        _ = try call(runtime, program, list, "deleteAllItems")
+        XCTAssertEqual(WasabiGuiList.items(of: list), [])
+    }
+
     /// A tree is a model of script-made items, drawn through the list renderer as visible rows.
     func testTreeItemsAddExpandAndDraw() throws {
         let (runtime, program) = try makeRuntime(body: #"<tree id="t" w="60" h="60"/>"#)

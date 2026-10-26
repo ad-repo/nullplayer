@@ -51,9 +51,12 @@ enum WasabiGuiList {
         object.tag.is(.tree)
     }
 
+    /// Until a script writes rows, a list shows the `items=` its markup declares — `;`-separated, as
+    /// a drop-down's are. Aria of the Soul's Skin Info pages are three such lists and no script, and
+    /// drew empty. A script's `deleteAllItems` writes an empty value, so it clears them for good.
     static func items(of object: WasabiObject) -> [String] {
-        guard let raw = object.attributes[itemsKey], !raw.isEmpty else { return [] }
-        return raw.components(separatedBy: separator)
+        guard let raw = object.attributes[itemsKey] else { return WasabiFormWidgets.items(of: object) }
+        return raw.isEmpty ? [] : raw.components(separatedBy: separator)
     }
 
     static func setItems(_ items: [String], on object: WasabiObject) {

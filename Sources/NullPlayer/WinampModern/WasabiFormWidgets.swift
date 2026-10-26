@@ -150,7 +150,7 @@ enum WasabiFormWidgets {
     static func items(of object: WasabiObject) -> [String] {
         (object.attributes["items"] ?? "")
             .split(separator: ";", omittingEmptySubsequences: false)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
     }
 
