@@ -21,6 +21,6 @@ BeatSugar.wal	2c4294253d6066f4aedaefacffef31677d66de0ec8d6dc3f041451b3df4a6f06	l
 Official_28_Days_Later_Skin.wal	081bbe6cb629fea7b77b7ab3b2ef26b9f1d48ecd9df3c2cef1725fab0e95b63b	live	2026-10-25	-	-
 TAL_96.wal	0a2edbd0884f5629ea04413c4a803f32a82a198dec673105ba3c9a97b00a377a	live	2026-10-25	-	-
 Ebonitefix.wal	0363af8d2092af23c0d1b4814a63827952ac765c5ba5e52be107e4a58211a893	headless	2026-10-25	-	needs live: drag vol.slider/prog.slider (action=VOLUME/SEEK; the harness does not mirror a slider drag); notifier overlap was the at-rest template; cdcover dblclick fixed
-Angrenthoron.wal	8cbefb87a374fb21d42388dc7a540046907f5f695d20140f2ecd1c263b87f484	headless	2026-10-25	-	Phase 5: script asks undefined player/eq/thinger.content.group (null); no hooked control
-WoopieAMP3.wal	84cde4165cda61c6ec0a51dcabe0dd95928fe3b4fce929fe1b484f0d20fee5bf	headless	2026-10-25	-	Phase 5: bitmap right-up missing; no hooked control
+Angrenthoron.wal	8cbefb87a374fb21d42388dc7a540046907f5f695d20140f2ecd1c263b87f484	headless	2026-10-25	-	headless clean
+WoopieAMP3.wal	84cde4165cda61c6ec0a51dcabe0dd95928fe3b4fce929fe1b484f0d20fee5bf	headless	2026-10-25	-	headless clean
 Avalon_Winamp_Modern.wal	004c80009ac3a70f16d0c836338957877136be3cbf8d7ed8d4c7873455d8a564	headless	2026-10-25	-	headless clean
