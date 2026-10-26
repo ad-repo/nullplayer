@@ -226,11 +226,14 @@ extension WasabiSceneRenderer {
         /// of what it holds — its visible leaves, and any group inside that paints a `background`.
         /// Such a group reaches that far, not as far as its own box. Nil for anything else.
         let contentBoxes: [CGRect]?
+        /// Drawn at `alpha="0"`, itself or by a group above it. Part of the cache key, because a
+        /// script shows such an object by raising its alpha (Clock V2.76's calendar).
+        let hidden: Bool
 
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.object === rhs.object && lhs.frame == rhs.frame && lhs.clip == rhs.clip
                 && lhs.bitmapID == rhs.bitmapID && lhs.additive == rhs.additive
-                && lhs.contentBoxes == rhs.contentBoxes
+                && lhs.contentBoxes == rhs.contentBoxes && lhs.hidden == rhs.hidden
         }
     }
 
@@ -305,9 +308,10 @@ extension WasabiSceneRenderer {
         }
         return ordered.map { entry in
             let object = entry.node.object
+            let hidden = sequence(first: object, next: \.parent).contains { $0.attributes["alpha"] == "0" }
             return WasabiRegionCut(object: object, frame: entry.node.frame, clip: entry.node.clip,
                                    bitmapID: entry.node.bitmapID, additive: entry.additive,
-                                   contentBoxes: contentBoxes[ObjectIdentifier(object)])
+                                   contentBoxes: contentBoxes[ObjectIdentifier(object)], hidden: hidden)
         }
     }
 
@@ -443,6 +447,21 @@ extension WasabiSceneRenderer {
         return region
     }
 
+    /// Whether every object `layout` holds at its top level is a positive `sysregion`.
+    static func marksWholeWindow(_ layout: WasabiObject) -> Bool {
+        !layout.children.isEmpty && layout.children.allSatisfy { (windowRegionValue(of: $0) ?? 0) > 0 }
+    }
+
+    /// The groups above a positive cut, which stand for those marks when a region is composed. A
+    /// standard frame is never one: it is its box (B151), and Prakrit's EQ frame marks only its four
+    /// border strips — as their union, the window lost its whole body.
+    static func markedWrappers(in cuts: [WasabiRegionCut]) -> Set<ObjectIdentifier> {
+        Set(cuts.lazy.filter(\.additive).flatMap { sequence(first: $0.object, next: \.parent).dropFirst() }
+            .filter { $0.tag.namespace != .wasabiStandardFrame
+                && !WasabiStandardFrames.isStandardFrameIdentifier($0.xmlID ?? "") }
+            .map(ObjectIdentifier.init))
+    }
+
     private func buildWindowRegion(cuts: [WasabiRegionCut])
         -> (cut: CGImage, alpha: [UInt8], width: Int, height: Int)? {
         // **A window is never shrunk by additions alone.** 672 of the corpus's 926 `sysregion`
@@ -450,8 +469,19 @@ extension WasabiSceneRenderer {
         // window" — Ujola Cat marks fourteen console layers that way. Composing a region purely from
         // those would decide the shape of every skin that uses the attribute at all, on the strength
         // of whichever layers its author happened to mark, and take a window away wherever the union
-        // fell short. A layout that cuts nothing keeps the rectangle it has always had.
-        guard cuts.contains(where: { !$0.additive }) else { return nil }
+        // fell short. A layout that cuts nothing keeps the rectangle it has always had —
+        //
+        // **unless the skin marks the whole window.** When every object a layout holds at its top
+        // level is a positive `sysregion`, the author has described the window's shape rather than
+        // decorated part of it, and the window is composed from those marks alone. Clock V2.76 is
+        // the case: its `Main/normal` is two marked groups, the dial case (`cadran` and `main`, both
+        // cut out by their own transparency) and the calendar, and the yellow/blue `cache` wedges its
+        // date script shows through the dial ring overhang the case; kept as a rectangle, they drew
+        // as quarter discs around the clock. Gold+silver moved Clock alone, bar a 13px outline on
+        // MMD3's slanted shade edge and alpha-17 haze under hatsune miku's player (B268).
+        let composes = Self.marksWholeWindow(layout)
+        guard composes || cuts.contains(where: { !$0.additive }) else { return nil }
+        let markedWrappers = composes ? Self.markedWrappers(in: cuts) : []
         let width = Int(canvasSize.width.rounded())
         let height = Int(canvasSize.height.rounded())
         guard width >= 1, height >= 1 else { return nil }
@@ -469,7 +499,7 @@ extension WasabiSceneRenderer {
             // answer where a skin does say — and leaves the window whole where one does not, rather
             // than erasing it.
             target.setFillColor(gray: 1, alpha: 1)
-            target.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            if !composes { target.fill(CGRect(x: 0, y: 0, width: width, height: height)) }
             target.translateBy(x: 0, y: CGFloat(height))
             target.scaleBy(x: 1, y: -1)
             // Drawn through the scene's own sprite path, which records; replayed straight back.
@@ -493,7 +523,9 @@ extension WasabiSceneRenderer {
                 context.fill(contentBoxes)
                 context.restoreGState()
             }
-            for cut in cuts {
+            // Composed from the marks, what nothing can see is not window: Clock hides its calendar
+            // at `alpha="0"`, and its marked `cal-bg` kept a band below the case where wedges showed.
+            for cut in cuts where !(composes && cut.hidden) {
                 context.saveGState()
                 context.clip(to: cut.clip)
                 // Subtract or restore, in scene order. Colours are discarded either way — the buffer
@@ -504,6 +536,8 @@ extension WasabiSceneRenderer {
                 } else if let background = cut.object.attributes["background"],
                           let bitmap = resources.bitmap(identifier: background) {
                     draw(bitmap, object: cut.object, frame: cut.frame, context: context)
+                } else if markedWrappers.contains(ObjectIdentifier(cut.object)) {
+                    // Composed from the marks, a group that holds marked objects is what they are.
                 } else if cut.additive {
                     // A group with no artwork of its own is its box — or, wrapping region objects,
                     // what it holds: that is what a `<groupdef … sysregion="1">` wrapping a whole

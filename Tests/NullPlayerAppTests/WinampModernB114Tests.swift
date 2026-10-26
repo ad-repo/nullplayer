@@ -187,6 +187,32 @@ final class WinampModernB114Tests: XCTestCase {
         XCTAssertEqual(scene.renderer.object(at: clear)?.xmlID, "knob")
     }
 
+    /// B268, Clock V2.76: a layout whose top-level objects are all positive `sysregion` is composed
+    /// from those marks, so art beside them is outside the window; a hidden (`alpha="0"`) mark adds
+    /// nothing. One unmarked top-level object keeps the rectangle.
+    func testAWholeWindowOfMarksIsComposedFromThem() throws {
+        let resources = #"<bitmap id="red" file="red.png"/><bitmap id="blue" file="blue.png"/>"#
+        let art = ["red.png": Self.solidPNG(red: 255, green: 0, blue: 0),
+                   "blue.png": Self.solidPNG(red: 0, green: 0, blue: 255)]
+        let marks = """
+        <group id="case" x="0" y="0" w="120" h="40" sysregion="1">
+          <layer id="body" x="0" y="0" w="8" h="8" image="red" sysregion="1"/>
+          <layer id="wedge" x="16" y="0" w="8" h="8" image="blue" ghost="1"/>
+        </group>
+        <group id="calendar" x="0" y="0" w="120" h="40" sysregion="1" alpha="0">
+          <layer id="cal" x="16" y="0" w="8" h="8" image="red" sysregion="1"/>
+        </group>
+        """
+        let composed = try makeScene(layoutAttributes: #"desktopalpha="1""#, resources: resources,
+                                     markup: marks, art: art)
+        XCTAssertEqual(try XCTUnwrap(composed.pixel(x: 4, y: 35)).alpha, 255, "the case is window")
+        XCTAssertEqual(try XCTUnwrap(composed.pixel(x: 20, y: 35)).alpha, 0, "the wedge beside it is not")
+
+        let decorated = try makeScene(layoutAttributes: #"desktopalpha="1""#, resources: resources,
+                                      markup: marks + #"<layer id="plain" x="40" y="0" image="red"/>"#, art: art)
+        XCTAssertEqual(try XCTUnwrap(decorated.pixel(x: 20, y: 35)).alpha, 255, "marks that decorate trim nothing")
+    }
+
     /// `<AlbumArt>` fits its cover with the aspect kept, centred, unless `stretched="1"`. Winampple's
     /// small art is a 111×310 box whose 96px middle band is the only part its group shows.
     func testAlbumArtKeepsItsAspectUnlessStretched() {

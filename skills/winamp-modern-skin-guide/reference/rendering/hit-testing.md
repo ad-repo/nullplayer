@@ -326,6 +326,21 @@ the corpus opens its composition with a full-bleed positive anyway (`wasabi.stan
 `Wasabi:MainFrame:*` all carry `sysregion="1"` on the group that fills the window), so the seeded
 rect gives the same answer wherever a skin does say.
 
+**Unless the skin marks the whole window** (B268, 2026-10-26). When every object a layout holds at
+its top level is a positive `sysregion`, the region is composed from the marks alone, from nothing:
+a marked group with no artwork stands for the marks it holds (its own box would be the whole window),
+a standard frame is still its box (Prakrit's EQ frame marks only its border strips, and as their
+union it lost its body), and an object drawn at `alpha="0"`, itself or by a group above it, adds
+nothing — `hidden` is part of the cut so the cache sees a script raise it. Clock V2.76 is the case:
+`Main/normal` is two marked groups, the dial case (`cadran` with a tRNS white, `main` with alpha)
+and the calendar a script hides at `alpha="0"`; the yellow/blue `cache` wedges `date.maki` shows
+through the dial ring overhang the case and drew as quarter discs around it. A layout with even one
+unmarked top-level object is decorated, not described, and keeps its rectangle — the earlier
+rules, "every positive-only layout" (233 of 1441 images) and "every `desktopalpha` one" (135),
+failed on Big Bento's notifier, BOOM and Pure Inspired, which mark objects deep inside unmarked
+content. Gold+silver moved Clock alone, bar a 13px outline on MMD3's slanted shade edge.
+`WasabiSceneRenderer.marksWholeWindow`.
+
 **Nor by cuts alone, past half the window** (2026-10-25). Winampple_1_1's four holder windows
 (`MLibrary`, `video`, `Visualizations`, the playlist) each stretch `bg.playlist` — an opaque 1x1
 white — over their client at `sysregion="-2"`, 20px up and left of it, with no positive region object
