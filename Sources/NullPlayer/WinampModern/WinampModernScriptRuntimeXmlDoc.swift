@@ -106,6 +106,15 @@ extension WinampModernScriptRuntime {
         return resolved.logicalPath
     }
 
+    /// A skin XML document's top-level elements, read leniently as the engine reads its own; nil when
+    /// the file is missing or does not parse.
+    func xmlDocumentRoots(at path: String, program: MakiProgram) -> [WalXMLNode]? {
+        guard let data = try? loadedSkin.vfs.data(at: path, location: program.source),
+              let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+        else { return nil }
+        return try? WalLenientXMLParser().parse(text, path: path).roots
+    }
+
     /// Walks the loaded document once and dispatches `parser_onCallback` at the `XmlDoc` for every
     /// element whose path matches one of the registered callbacks.
     ///
@@ -117,11 +126,7 @@ extension WinampModernScriptRuntime {
     /// a script object per attribute set with nothing to free it.
     func parserStart(documentAt path: String, callbacks: [String], id: UInt64,
                      program: MakiProgram) {
-        guard !callbacks.isEmpty,
-              let data = try? loadedSkin.vfs.data(at: path, location: program.source),
-              let text = String(data: data, encoding: .utf8)
-                  ?? String(data: data, encoding: .isoLatin1),
-              let parsed = try? WalLenientXMLParser().parse(text, path: path) else { return }
+        guard !callbacks.isEmpty, let roots = xmlDocumentRoots(at: path, program: program) else { return }
 
         let names = newObjectID(), values = newObjectID()
         dynamicObjects[names] = DynamicObjectState()
@@ -131,7 +136,7 @@ extension WinampModernScriptRuntime {
             dynamicObjects.removeValue(forKey: values)
         }
 
-        WinampModernXmlDocReader.forEachMatch(in: parsed.roots, callbacks: callbacks) { here, node in
+        WinampModernXmlDocReader.forEachMatch(in: roots, callbacks: callbacks) { here, node in
             // Document order, not alphabetical: a `parser_onCallback` body reads these two lists
             // positionally and ClassicPro's keys its whole apply loop on reaching `id` first.
             // See `WalXMLNode.attributeOrder`.

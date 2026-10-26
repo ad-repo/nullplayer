@@ -818,9 +818,11 @@ final class WasabiTextMetrics {
         var depth = 0
         while let node = current, depth < 64 {
             if let name = node.attributes["componentname"], !name.isEmpty { return name }
+            // A container named by a placeholder itself (`name=":componenttitle"`, the generic
+            // component holder Circlo and its kin declare) names whatever it hosts, not a title.
             if node.tag.is(.container),
                let name = node.attributes["name"], !name.isEmpty {
-                return name
+                return name.hasPrefix(":") ? "" : name
             }
             current = node.parent
             depth += 1

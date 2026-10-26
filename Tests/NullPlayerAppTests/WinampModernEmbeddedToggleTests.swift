@@ -31,6 +31,23 @@ final class WinampModernEmbeddedToggleTests: XCTestCase {
         XCTAssertEqual(button.attributes["activated"], "0", "closeTab's clear turns the tab off")
     }
 
+    /// Freeform Simpsons (intake #3): its options script binds `onActivate` to each `T3:Checkbox`
+    /// wrapper, so the button's activation event must reach the group that speaks for it.
+    func testAButtonsActivationEventReachesItsWrapper() throws {
+        let (loaded, scripts) = try makeRuntime()
+        let wrapper = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "tab").first)
+        let program = MakiProgram(version: 0x0403, classes: [], methods: [], variables: [], bindings: [],
+                                  instructions: [], source: WalSourceLocation(path: "/Skins/Synthetic/t.maki"),
+                                  ownerID: nil, parameter: nil)
+        scripts.recordsDispatchedEventsForTesting = true
+
+        _ = try scripts.invoke(method: "setActivated", on: MakiObjectReference(.gui(wrapper.stableID)),
+                               arguments: [.boolean(true)], program: program)
+
+        let activations = scripts.dispatchedEventsForTesting.filter { $0.event == "onactivate" }.map(\.object)
+        XCTAssertEqual(activations, ["tab.button", "tab"])
+    }
+
     func testAClickFlipsTheToggleBeforeTheScriptHearsTheRelease() throws {
         let (loaded, scripts) = try makeRuntime()
         let host = TestHost()

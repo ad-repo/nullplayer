@@ -133,6 +133,38 @@ final class WinampModernLoaderGapTests: XCTestCase {
         XCTAssertTrue(loaded.runtime.graph.allObjectsUnordered.allSatisfy(\.scriptBindings.isEmpty))
     }
 
+    /// A `<scripts>` block inside a layout and a `<group>` naming no `<groupdef>` only bracket the
+    /// declaration: the script's group is the object the bracket sits in (METASKINS-WooHoo-FER,
+    /// WoopieAMP3). A top-level `<scripts>` block stays skin-level, and a real group keeps its own.
+    func testABracketIsNotTheScriptGroup() throws {
+        let stub = Data([0x46, 0x47])
+        let loaded = try load(files: [
+            "skin.xml": Data("""
+            <WasabiXML>
+              <groupdef id="real"><script file="scripts/real.maki"/></groupdef>
+              <container id="main" name="Main Window">
+                <layout id="normal" w="20" h="10">
+                  <scripts><script file="scripts/wrapped.maki"/></scripts>
+                  <group id="bracket"><script file="scripts/bracketed.maki"/></group>
+                  <group id="real"/>
+                </layout>
+              </container>
+              <scripts><script file="scripts/skin.maki"/></scripts>
+            </WasabiXML>
+            """.utf8),
+            "scripts/real.maki": stub, "scripts/wrapped.maki": stub,
+            "scripts/bracketed.maki": stub, "scripts/skin.maki": stub,
+        ])
+        var owners: [String: String] = [:]
+        for object in loaded.runtime.graph.allObjectsUnordered {
+            for binding in object.scriptBindings {
+                owners[(binding.logicalPath as NSString).lastPathComponent] = object.xmlID ?? object.typeName
+            }
+        }
+        XCTAssertEqual(owners, ["wrapped.maki": "normal", "bracketed.maki": "normal",
+                                "real.maki": "real", "skin.maki": "scripts"])
+    }
+
     // MARK: - Fixtures
 
     private static let container = container(script: nil)

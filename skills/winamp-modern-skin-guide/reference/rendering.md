@@ -171,6 +171,14 @@ cache is dropped on a track change, or the previous track's cover stays on scree
 title. Art arrives asynchronously, so the window controller repaints on
 `NowPlayingManager.artworkDidLoadNotification` — with playback paused nothing else would.
 
+**The cover keeps its aspect, centred, unless the object says `stretched="1"`** — the cover and the
+`notfoundImage` alike (`WasabiSceneRenderer.albumArtRect`). Skins write both values (29 declarations
+in gold+silver), and Big Bento's own backdrop says `stretched="0"`. Winampple's small art depends on
+it: a 111×310 `<albumart>` at `y="-107"` inside a 96px-tall group, so the group's window is exactly
+the fitted 110×96 cover; stretched, it showed a tall sliver of the middle (reported 2026-10-26).
+Sweep effect: Winampple, the four Big Bento Moderns' backdrop, and a pixel of letterbox on a few cPro
+not-found covers in non-square boxes.
+
 #### A cover a script looks for beside the playing file (2026-10-20)
 
 Skins older than `<AlbumArt>` find the cover themselves, by building a file path from the play item
@@ -493,6 +501,11 @@ Shadows (Every Family)*). Trace: `NP_SKIN_SHADOW_TRACE=1` (`reference/harness.md
   depends on this — `wasabi.frame.top` is a 10×18 sprite stretched across the whole titlebar, and the
   menubar/titlebar streaks are 5–10px sprites stretched to hundreds of pixels. Drawing them at
   natural size paints one sprite and leaves the rest of the bar blank.
+- **`center_image="1"`**: the bitmap at its own size in the middle of the box, clipped to it
+  (`centeredImageRect`), and hit-tested where it is drawn. 24 gold+silver skins use it, all on
+  buttons. Winampple's 40x40 logo sits on a 434px button and stretched into a smear across the
+  transport bar; the Thinger scroll arrows of Nullsoft 2000 SP4 Lite, Mad Magazine and
+  wasabi_player, BOOM's drop-down arrows and Azenis² EQ icons were stretched blobs too.
 - **`tile`/`tilex`/`tiley`**: repeat the bitmap instead. Bento-style frames tile their
   top/bottom/left/right/center strips. Tiles are blitted 1:1 with interpolation off, or the resampled
   edges leave a visible seam grid.
@@ -702,6 +715,10 @@ invisible while the script driving it worked perfectly.
 Its **region** is the union of its frames: a point is clickable if *any* frame paints there. Testing
 only the frame on screen is wrong for the commonest use of the type — a fill animation is transparent
 ahead of the playhead, which is precisely where a seek click lands. Phase 33.
+**Except a layer that plays itself** (`autoplay="1"` or `autoreplay="1"`, 2026-10-25): its frame is
+time, not a value, so it is hit on the frame showing. Celica Amp's `glasscover` is a one-shot lift
+— frame 0 covers the whole 309x145 player, the seventh is nearly clear — and as a union it took the
+eight controls beneath it for good. multipass's seek fill is `autoplay="0"` and keeps the union.
 
 **A box larger than the whole image shows that image once, at its own size, from the top left**
 (`AnimationGrid.isWholeSheet`). ONYX V2's shade volume fill is an 89×12 image in an 89×24 box: cut at
@@ -901,6 +918,13 @@ Four things worth keeping:
   those ids and the skin's own artwork draws. Only a skin shipping neither reaches the flat track and
   drawn thumb. A check box is the opposite — **no** `.wal` ships `wasabi.checkbox.*` — so it is drawn,
   on the same deliberate exception as an artwork-less `<Wasabi:Button>` above.
+- **A skin's own check box can name the stock art without shipping it** (2026-10-25). Freeform
+  Simpsons' `T3:Checkbox` groupdef is an 11x11 `wasabi.objectframe.group` and a `<button
+  image="wasabi.button.checkbox">` 2px inside it, and defines neither; 9 corpus skins do this, and
+  the 42 that define the bitmap all cut it 7x7. Unresolved, the toggle was 0x0 and the options
+  window's ten switches were labels alone. A `<button>` on an unresolved `wasabi.button.checkbox*`
+  is now 7x7 and draws the 11x11 outline round itself, filled while activated
+  (`WasabiFormWidgets.isStockCheckBox`, `drawStockCheckBox`).
 - **A `radioid` check box is a radio, and that is half the tag**: 32 of the 67 declarations carry the
   attribute. It draws round, its set is looked up from the top of its own tree (`radioid` is flat, and
   Styx's pairs live in two different content groups of one window), and clicking the member already on
@@ -1206,6 +1230,14 @@ empty clip is built as an explicit zero-size rect pinned inside the parent clip 
 
 The same bug was quietly damaging `211786-Cpro_Winamp_Modern`, whose beat-vis bars spilled out of
 their box across the window chrome; it is not a cPro2-only shape.
+
+## An object's `default_w`/`default_h` states its box when `w`/`h` do not (2026-10-25)
+
+An object that declares `default_w`/`default_h` and no `w`/`h` is that size, as a layout is; it fills
+an axis only after every rule below has left it zero. LCDx's "plus" player is
+`<Wasabi:StandardFrame:noStatus h="0" relath="1" default_w="543">` holding the whole player, and at 0
+wide its body drew nothing but the layout's own buttons. It is the only such object in the four
+tiers (zip scan, 2026-10-25).
 
 ## A `<group>`'s `background` bitmap states its box (B109, 2026-09-03)
 

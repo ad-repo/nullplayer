@@ -151,6 +151,7 @@ final class WinampModernPhase48Tests: XCTestCase {
                 isMainWindowVisible: { true }, showsEmbeddedEqualizer: { false },
                 window: { _ in nil },
                 setVisible: { id, visible in visibility[id] = visible },
+                closeCarriedOver: { _ in },
                 classicFallback: { kind, _ in classicCalls.append(kind) },
                 redraw: {}))
         }
@@ -209,6 +210,36 @@ final class WinampModernPhase48Tests: XCTestCase {
         let containers = WinampModernContainerTopology.windowContainers(graph: loaded.runtime.graph)
         let pledit = try XCTUnwrap(containers.first { $0.id == "Pledit" })
         XCTAssertFalse(WinampModernContainerTopology.isListedInWindowMenu(pledit))
+    }
+
+    /// Winampple's `cont.clear.ml` is a frame-only container named like the `MLibrary` it wraps;
+    /// listed or restored on its own it is an empty frame. A differently named window stays a window.
+    func testAComponentsChromeCompanionIsRecognisedByItsName() throws {
+        let xml = """
+        <WasabiXML>
+          <container id="main">
+            <layout id="normal" w="64" h="20"/>
+          </container>
+          <container id="cont.clear.ml" name="Media Library">
+            <layout id="layout.clear.ml" w="64" h="20"/>
+          </container>
+          <container id="MLibrary" name="Media Library" component="guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}">
+            <layout id="normal" w="64" h="20"/>
+          </container>
+          <container id="settings" name="Skin Settings">
+            <layout id="normal" w="64" h="20"/>
+          </container>
+        </WasabiXML>
+        """
+        let loaded = try load(xml: xml)
+        let containers = WinampModernContainerTopology.windowContainers(graph: loaded.runtime.graph)
+        func isCompanion(_ id: String) throws -> Bool {
+            WinampModernContainerTopology.isComponentChromeCompanion(
+                try XCTUnwrap(containers.first { $0.id == id }), among: containers)
+        }
+        XCTAssertTrue(try isCompanion("cont.clear.ml"))
+        XCTAssertFalse(try isCompanion("MLibrary"))
+        XCTAssertFalse(try isCompanion("settings"))
     }
 
     /// winampmodern566's `winamp.albumart` is `nomenu="1"`, because Winamp's own *View → Album Art*

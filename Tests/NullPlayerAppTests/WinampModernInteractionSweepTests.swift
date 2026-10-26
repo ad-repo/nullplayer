@@ -71,7 +71,7 @@ final class WinampModernInteractionSweepTests: XCTestCase {
                                                               containerID: info.id) else { continue }
                 renderer.layerFXProvider = { [weak runtime] in runtime?.layerFXMesh(for: $0) }
                 renderer.configStateProvider = { [weak runtime] in runtime?.configValue(of: $0) ?? false }
-                renderer.pressBindingProvider = { [weak runtime] in runtime?.hasPressBinding(for: $0) ?? false }
+                renderer.pressBindingProvider = { [weak runtime] in runtime?.hasPressBinding(for: $0, button: $1) ?? false }
                 renderer.configValueProvider = { [weak runtime] in runtime?.configInteger(of: $0) }
                 renderers[info.id] = renderer
             }

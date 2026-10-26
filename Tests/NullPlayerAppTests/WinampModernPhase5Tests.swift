@@ -115,9 +115,12 @@ final class WinampModernPhase5Tests: XCTestCase {
         let video = try XCTUnwrap(infos.first { $0.id.caseInsensitiveCompare("video") == .orderedSame })
         XCTAssertTrue(video.isVisibleWindow)
 
+        let grown = try XCTUnwrap(infos.first { $0.id.caseInsensitiveCompare("grown") == .orderedSame })
+        XCTAssertTrue(grown.isVisibleWindow, "A 1×1 default_w/default_h is a starting size, not a stub")
+
         let windows = WinampModernContainerTopology.windowContainers(graph: loaded.runtime.graph)
-        XCTAssertEqual(Set(windows.map(\.id)), ["main", "video"])
-        XCTAssertEqual(windows.filter { !$0.isMainPlayer }.count, 1, "One auxiliary window")
+        XCTAssertEqual(Set(windows.map(\.id)), ["main", "video", "grown"])
+        XCTAssertEqual(windows.filter { !$0.isMainPlayer }.count, 2, "Two auxiliary windows")
     }
 
     func testSuiSkinCollapsesToSingleWindow() throws {
@@ -480,6 +483,7 @@ final class WinampModernPhase5Tests: XCTestCase {
       <container id="main"><layout id="normal" w="300" h="200"/></container>
       <container id="pl"><layout id="normal" w="1" h="1"/></container>
       <container id="video"><layout id="normal" w="200" h="150"/></container>
+      <container id="grown"><layout id="normal" default_w="1" default_h="1"/></container>
     </WasabiXML>
     """
 

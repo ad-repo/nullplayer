@@ -67,6 +67,14 @@ enum WasabiFormWidgets {
     static let checkBoxGlyph: CGFloat = 11
     static let checkBoxLabelGap: CGFloat = 4
 
+    /// Winamp's stock check-box art, which a skin's own check-box groupdef may name for its toggle
+    /// without defining it: 9 corpus skins do, the 42 that define it all cut it 7x7, inside the 11x11
+    /// `wasabi.objectframe.group` their groupdef lays 2px up and left of it.
+    static func isStockCheckBox(_ image: String) -> Bool {
+        image.lowercased().hasPrefix("wasabi.button.checkbox")
+    }
+    static let stockCheckBoxSide: Double = 7
+
     /// One row, which is the height Winamp's check box takes when a skin states none — impulse's own
     /// `Impulse:Checkbox` groupdef says `h="14"` and stacks its rows on a 20px pitch, and Styx spaces
     /// its unsized ones 14 apart (`y="57"`, `y="71"`). Every measured declaration agrees on 14.
@@ -142,7 +150,7 @@ enum WasabiFormWidgets {
     static func items(of object: WasabiObject) -> [String] {
         (object.attributes["items"] ?? "")
             .split(separator: ";", omittingEmptySubsequences: false)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
     }
 

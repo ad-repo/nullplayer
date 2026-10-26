@@ -171,6 +171,13 @@ One file per measured skin. A pointer that says "read `skins.md` for skin X" res
 |---|---|
 | cPro-Bento (+ ClassicPro engine) | [skins/cpro-bento.md](skins/cpro-bento.md) |
 | Anexa | [skins/anexa.md](skins/anexa.md) |
+| intellidesign | [skins/intellidesign.md](skins/intellidesign.md) |
+| Official 28 Days Later | [skins/official-28-days-later.md](skins/official-28-days-later.md) |
+| TAL_96 | [skins/tal-96.md](skins/tal-96.md) |
+| Angren Thoron | [skins/angrenthoron.md](skins/angrenthoron.md) |
+| WoopieAMP3 | [skins/woopieamp3.md](skins/woopieamp3.md) |
+| Freeform Simpsons | [skins/freeform-simpsons.md](skins/freeform-simpsons.md) |
+| Abducted | [skins/abducted.md](skins/abducted.md) |
 | T-800 (`T800.wal`) | [skins/t800.md](skins/t800.md) |
 | Ebonite | [skins/ebonite.md](skins/ebonite.md) |
 | JVC Tape | [skins/jvc-tape.md](skins/jvc-tape.md) |

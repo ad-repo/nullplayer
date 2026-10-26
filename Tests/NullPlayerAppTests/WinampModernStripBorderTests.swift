@@ -49,6 +49,16 @@ final class WinampModernStripBorderTests: XCTestCase {
         XCTAssertEqual(border, .init(left: 39, top: 0, right: 39, bottom: 37))
     }
 
+    /// LCDx's strips are readable and wholly transparent: they draw no edge, so they are no border,
+    /// and with no bottom edge the client still ends above the frame's status slot.
+    func testATransparentStripIsNoBorderAndTheStatusSlotBoundsTheBottom() {
+        let status = WalXMLNode(name: "LayoutStatus", attributes: ["x": "10", "y": "-17", "relaty": "1", "h": "15"],
+                                location: WalSourceLocation(path: "/frame.xml"))
+        let border = WasabiStandardFrames.measuredBorder(in: Self.strips + [status], group: { _ in nil },
+                                                         bitmapOpaqueBounds: { _ in .zero })
+        XCTAssertEqual(border, .init(left: 0, top: 0, right: 0, bottom: 17))
+    }
+
     // MARK: - Fixture
 
     /// Mad Magazine's four strips, as `component.*` declares them.

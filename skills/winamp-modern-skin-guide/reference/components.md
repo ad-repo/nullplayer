@@ -89,6 +89,16 @@ CopperdeckII, Studiosus and Winamp_Single_GUI. The shortcut itself is not bound;
 `onKeyDown` handles it where it declares one. Duplicate names are qualified with the container id by
 `menuLabels` (Bio-Nid's eight `Equalizer` copies).
 
+#### A component's chrome companion is neither listed nor restored (2026-10-26)
+
+Winampple declares `cont.clear.ml`, `.vis` and `.vid`: frame-only containers its scripts show around
+`MLibrary`, `Visualizations` and `video`, each carrying the *same* `name`. Listed, each opened as an
+empty frame; and once opened from the menu the remembered `_nullplayer_windows.cont_clear_ml = 1`
+reopened it at every launch. `WinampModernContainerTopology.isComponentChromeCompanion` — no
+component, same display name as a container that declares one — is the one rule `skinWindows` and
+`applyDefaultContainerVisibility` both read. It is markup, not the catalog, because the launch
+restore runs before the catalog exists. Corpus match set (2026-10-26): Winampple's three only.
+
 #### A window that only fakes a Windows desktop effect never opens (B101, 2026-09-04)
 
 Two containers in the corpus draw no UI at all: they exist to supply something the Windows shell did
@@ -125,6 +135,11 @@ The declared value is snapshotted at container creation (`declaredVisibleAttribu
 `WasabiSkinInitializer`) and is what `isHidden` reads. **No container in the 36-skin corpus declares a
 bare `visible=` at all**, so the check only ever fired on a runtime hide; the collapsed-stub case is
 carried by the 1×1 size test beside it, which is what `window-overrides.xml` actually writes.
+
+That size test reads the fixed `w`/`h` only, in both `WinampModernContainerTopology.analyze` and
+`WinampModernSurfaceInventory.isVisibleWindow`. A tiny `default_w`/`default_h` is where a resizable
+window starts: Winampple's `PLEdit` starts at 1×1 and its `standardframePL.maki` resizes it over the
+player body every 10 ms. Every other ≤2px container in the corpus declares fixed `w`/`h` (B269).
 
 Measured on Defix, the only skin in the corpus that does this: `CORE_SCRIPT.maki` hides `VISCON` — a
 406×360 detached-visualizer window with its own `{0000000A}` holder and control bar — from
@@ -236,6 +251,21 @@ content="pledit.content.group">`), **Sony Walkman** and **canum**. Four things c
   title. The art wins over a declared `w`/`h` on every side (EMP2's library came out at its authored
   400px wide only then); the declared size stands for a bitmap with no file (`$solid`), and a strip
   with neither contributes nothing rather than zero.
+- **A side strip's flat band is not its edge** (2026-10-25, `WasabiResourceCache.edgeBounds`): a run of
+  identical columns covering half the tile or more is body fill. Circlo_T_roniC's `frame-l`/`frame-r`
+  are fully opaque 44px tiles around an 8px edge, and measured whole the browser's buttons overlapped
+  and hid `Stop`. Columns only: a top or bottom band's flat part holds the title or status bar, and
+  trimming rows put YoYoBoy's playlist over its Add/Rem/Sel bar.
+- **No top strip, the client starts below the title** — the frame's `wasabi.titlebar` group's bottom.
+  Circlo's top band is a `move` tile and two corners; measured as 0, its Color Themes list ran under
+  the title, and Celica's playlist covered its own title bar.
+- **A wholly transparent strip is no border** (2026-10-25): a cut that is readable but has nothing
+  opaque in it is an empty box, not an unreadable one, so it neither counts nor falls back to its
+  declared size. LCDx's strips are all one empty 39x37 `frame.png`; counted at their offsets, every
+  framed window lost 39px on the right and 37px below, clipping the Thinger's icons to 21 rows.
+- **No bottom strip, the client ends above the status slot** — the frame's relative `LayoutStatus`
+  top. With LCDx's strips gone it would otherwise run under its own status bar; Celica's playlist
+  had been covering its command bar, and Circlo's client now stops above its status text.
 
 **The synthesizer still rejects these frames, and that is now stale.** `usableFrame` asks the
 bytecode whether a frame can build its own client area, so TRON's Media Library — a window *we*
@@ -691,6 +721,9 @@ session — resolves through this one catalog in this one order:
    own scale, never `player width / 275`: `WindowManager.playlistChromeScale` exempts `.wal` as it
    does `.wmz`, since a `.wal` player's width is its skin's canvas, not a zoom. Slimline XP's
    1024-wide taskbar had drawn the playlist at 3.7x and snapped it 1024 wide (fixed 2026-10-24).
+   The equalizer likewise opens at its own width, not the player's (`EQWindowController`, gated on
+   `.wal`): its view keeps its aspect, and under Clock V2.76's 597-wide player it drew 343 wide
+   between clear margins, with the close corner in one of them (fixed 2026-10-25).
 
 Which skin lands on which step is measured per skin: see the routing table in
 [compatibility.md](../compatibility.md#hosted-components).
@@ -1308,11 +1341,19 @@ is the host's, exactly as the playlist panel is.
   sends `onEnter` / `onAbort` / `onEditUpdate`. Printable keys are **consumed**, or a letter typed
   into a search box also fires a skin accelerator. An edit that declares no `color=` draws in
   `wasabi.list.text`, not white — Winamp's edit text is the list colour, which the skins say in their
-  own comments.
+  own comments. Its box is **opaque `wasabi.list.background`** (`contentBackground`), the native
+  window's plate — the stock colour template says "lists/trees item background (also bg for edit)".
+  Clock V2.76's comment field, left blank in its box art, drew as nothing and could not be found to
+  click; BOOM's white `150` readouts, Circlo/Moonkore's and RODE's URL bars were invisible the same
+  way (2026-10-26). A `Wasabi:EditBox`, or an edit inside one, is skipped — the form widget paints
+  its own `wasabi.edit.background` plate and border (B113).
 - **`<list>`**: rows live on the object (`WasabiGuiList`) so the renderer draws what the script just
   wrote. `deleteAllItems` / `addItem` / `getNumItems` / `getItemLabel(item, column)` /
   `getFirstItemSelected` / `getNextItemSelected(after)` / `scrollToItem`, plus wheel scrolling, click
-  to select and `onDoubleClick(item)` — one argument, the row.
+  to select and `onDoubleClick(item)` — one argument, the row. Until a script writes rows, the list
+  shows its markup `items=`, `;`-separated and trimmed like a drop-down's; `deleteAllItems` clears
+  them. Aria of the Soul's Skin Info tabs are three such lists with no script and drew empty
+  (2026-10-26); Vortex and WinampAzenis2 declare them too.
 - **`<tree>`**: the runtime keeps the `TreeItem` model and writes its visible rows, indented, onto the
   object, so the same list renderer paints it and a click selects or folds a row (`clickTreeRow`).
   `getByLabel(item, label)` searches depth-first under `item`, or the whole tree from null.

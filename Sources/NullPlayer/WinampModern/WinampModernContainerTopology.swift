@@ -74,7 +74,17 @@ enum WinampModernDefaultVisibilitySuppression: String {
 /// separate-windows model (skins that declare multiple visible containers).
 enum WinampModernContainerTopology {
     /// A container collapsed by window-overrides is at most this many pixels on a side.
-    private static let collapsedThreshold: CGFloat = 2
+    private static let collapsedThreshold = 2.0
+
+    /// Whether a layout's fixed `w`/`h` (0 when unstated) say window-overrides collapsed it. Only a
+    /// layout that *declares* a tiny box has been: one that declares no box at all is sized by its
+    /// `background` bitmap (ZDL's Reel-To-Reel declares its equalizer that way), and reading its two
+    /// zeroes as 0×0 hid the window the skin ships. And only the fixed `w`/`h`, the size
+    /// `window-overrides` writes: a tiny `default_w`/`default_h` is where a resizable window starts —
+    /// Winampple's `PLEdit` starts at 1×1 and its script sizes it over the player body.
+    static func isCollapsed(width: Double, height: Double) -> Bool {
+        (width > 0 || height > 0) && width <= collapsedThreshold && height <= collapsedThreshold
+    }
 
     static func analyze(graph: WasabiObjectGraph) -> [WinampModernContainerInfo] {
         graph.roots
@@ -86,11 +96,8 @@ enum WinampModernContainerTopology {
                 let declared = size(of: layout, keys: [["default_w", "w", "minimum_w"],
                                                        ["default_h", "h", "minimum_h"]])
                 let hidden = isHidden(container)
-                // Only a layout that *declares* a tiny box has been collapsed. A layout that declares
-                // no box at all is sized by its `background` bitmap (ZDL's Reel-To-Reel declares its
-                // equalizer that way), and reading its two zeroes as 0×0 hid the window the skin ships.
-                let collapsed = (declared.width > 0 || declared.height > 0) &&
-                    declared.width <= collapsedThreshold && declared.height <= collapsedThreshold
+                let fixed = size(of: layout, keys: [["w"], ["h"]])
+                let collapsed = isCollapsed(width: fixed.width, height: fixed.height)
                 let minimum = size(of: layout, keys: [["minimum_w"], ["minimum_h"]])
                 let maximum = size(of: layout, keys: [["maximum_w"], ["maximum_h"]])
                 return WinampModernContainerInfo(
@@ -222,6 +229,21 @@ enum WinampModernContainerTopology {
     static func isHostProvidedDesktopEffect(id: String) -> Bool {
         let leaf = id.lowercased().split(separator: ".").last.map(String.init) ?? ""
         return leaf == "shadow" || leaf == "aerosnap"
+    }
+
+    /// A frame-only container the skin's scripts show around a component window, recognised by
+    /// declaring no component and sharing its `name` with a container that does. Winampple's
+    /// `cont.clear.ml`/`.vis`/`.vid` are the corpus's only instances (2026-10-26): `name="Media
+    /// Library"` beside `MLibrary`, and so on. Opened by itself it is an empty frame, so it is neither
+    /// listed in the Windows menu nor restored at launch; the skin's own pairing script still opens it.
+    static func isComponentChromeCompanion(_ info: WinampModernContainerInfo,
+                                           among containers: [WinampModernContainerInfo]) -> Bool {
+        guard info.kind == nil, info.object.attributes["name"] != nil else { return false }
+        let name = displayName(of: info).lowercased()
+        return containers.contains { other in
+            other.kind != nil && other.id.lowercased() != info.id.lowercased()
+                && displayName(of: other).lowercased() == name
+        }
     }
 
     /// The container's own display name, which is what the menu shows.

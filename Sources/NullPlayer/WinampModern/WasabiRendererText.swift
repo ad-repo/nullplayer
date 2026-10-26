@@ -59,8 +59,9 @@ extension WasabiSceneRenderer {
         let wraps = WasabiTextMetrics.wraps(of: object)
         var attributes = textAttributes(font: font, color: color, alignment: alignment,
                                         lineBreakMode: wraps ? .byWordWrapping : .byClipping)
-        // `forcefixed` is a different layout, not a different font: every glyph gets the same cell.
-        // A fixed run is a clock or a counter and is sized to fit, so it never enters the ticker.
+        // `forcefixed` reserves a width (see `fixedPitch`); it does not take the text out of the
+        // ticker. Circlo_T_roniC's song title is `forcefixed="1" ticker="1"` in a 93px box, and kept
+        // off the ticker it sat still, cut off at both ends.
         let pitch = WasabiTextMetrics.fixedPitch(of: object, font: font)
         // A clock is laid out in fields with their own cells, which is a third layout again — and it
         // is sized to fit for the same reason a fixed run is, so it never scrolls either.
@@ -76,7 +77,7 @@ extension WasabiSceneRenderer {
             ?? resources.textWidth(of: text, font: font)
         // A paragraph absorbs its overflow into extra lines, so there is nothing left for a ticker
         // to carry — and a marquee running a wrapped block sideways is never what a skin asked for.
-        let overflow = pitch == nil && clock == nil && !wraps ? measured - frame.width : 0
+        let overflow = clock == nil && !wraps ? measured - frame.width : 0
         let scroll = overflow > 0 ? tickerMotion(for: object, overflow: overflow, textWidth: measured) : nil
         if scroll != nil {
             // While scrolling, the string is drawn into an oversized rect, so any alignment other

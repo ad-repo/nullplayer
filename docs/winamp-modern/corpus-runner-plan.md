@@ -122,6 +122,29 @@ Left open: B253 (Windows → Equalizer inert on an embedded EQ; Moonkore, Love i
 B259 (split `WinampModernScriptRuntimeObject.swift`), B261, B262 (CPro_iPhone3gv2 notifier strip),
 B263 (host-chrome About has no close).
 
+### Done: intake #3, promoted to gold (2026-10-26)
+
+The 25 skins admitted at `fc3043cf` were worked by `skills/skin-intake` on `feat/wal-intake-3`, all
+passed by the user in the app, and promoted to gold on 2026-10-26 (manifest tier, files moved to
+`WinampModernCorpus/gold/`), with rows on `skin-compatibility.md` (22 B, 3 C). The per-skin record is
+`intakes/intake-3.tsv`. Each fix is general, named after the skin that showed it.
+
+| Skin | What was wrong | Fix (where) |
+|---|---|---|
+| (batch) | `Layout`/`Group.getMousePosX/Y` answered only on `System`; Clock's calendar blocked 56 gestures on it | Both answer (`6ebd89e5`) |
+| Clock V2.76 | Day of year, fallback EQ width; lower wedges filled in; comment box see-through | `getDateDoy`, fallback EQ width (`190bd606`); a layout marked whole is composed from its marks (B268); a plain edit is an opaque field (`1666778e`) |
+| Circlo_T_roniC | Browser buttons ran into each other and hid Stop; song title did not scroll | A strip's flat band is body fill; title floor; `:componenttitle` (`8d6b6168`); a forcefixed text still scrolls on a ticker (`e4652ba7`) |
+| Nebular, BLAKK | Configure check boxes drew without their text | An unsized `embed_xui` around a `relatw` child spans its parent (`762e8b85`) |
+| Winampple | Four holders cut 85% of each window; playlist dropped as a stub; logo smeared; art stretched; centre lost after a skin switch | A cut alone never takes most of the window (`3a5a8d27`); a tiny default size is a starting size (B269); `center_image` draws at its own size (`e8b92046`); art keeps its aspect (`e8de2eca`); a switch's carried-over close is not remembered (`d72cb73b`) |
+| Freeform Simpsons | Check boxes blank; options buttons dead | Stock check-box art (`31aa800c`); `onActivate` reaches the `embed_xui` wrapper (`627831ff`) |
+| Celica Amp, Official Trapt, 28 Days Later, Ebonitefix | A finished glass lift covered eight controls; a clear layer, the volume knob and a cover took the wrong clicks | A self-playing animation is hit where it is (`6485f309`); a clear hooked layer is its rect (`a90a8baf`, `d6c56792`); a clear mousetrap is claimed only by its button (`2f842e13`) |
+| LCDx | Plus player and Thinger cut short | An object with only `default_w/h` is that size; a clear frame strip is no border (`7e7a16be`) |
+| WoopieAMP3, WooHoo-FER | Thinger drawer bound nothing; playlist logo off centre | A bracket is not a script group (`4560a2a2`) |
+| Aria of the Soul | Skin Info empty | A list shows its markup items until a script writes rows (`4e9c3355`) |
+| cPro Creed Full Circle | File info drawn over the song title | `ClassicPro.applyStyle` (`370b2264`) |
+
+Left open: nothing filed by this intake.
+
 **Next:** the open intake, by `skills/skin-intake`. Where it stands is
 `scripts/wal_intake_status.sh` over its ledger (`docs/winamp-modern/intakes/`), never this file.
 B212 needs a second display; B216's `.wmz` census waits on a go-ahead.
@@ -470,6 +493,16 @@ so a corpus run can't lose lines, not *what* is measured.
   layout sizing (B254), frame borders from strip art (B260), Vision's untextured frames, H2O
   Liquid's overfull paragraph, hm_Touch's timer digits. Filed: B253, B261. The branch's code-quality
   review filed B246–B252 and B259.
+- **Intake #3 admitted 2026-10-25** (`feat/wal-intake-3`, rev `fc3043cf`). Run over the 802 bronze:
+  **25 silver, 777 bronze, 0 quarantine**, 47 min. **Gain curve** (first 60): `7 7 7 7 7 6 6 6 6 6 6
+  5 5 5 5 5 5 5 5 5 4 4 4 4 4 | 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3`; 66 candidates clear gain ≥ 3, so 41 remain after this batch — batch 4 fills at gain 3 and
+  batch 5 would be a partial 16 at the floor. Post-admission sweep (the new baseline): 164 skins,
+  37 s at `--shards 10`, no failures. Batch: Sencillo_1_1, Abducted, WoopieAMP3, Angrenthoron,
+  CardiumII, Avalon_Winamp_Modern, Apill, Aria_of_the_Soul, Circlo_T_roniC, Official_Trapt_Skin,
+  Winampple_1_1, Clock V2.76, intellidesign, BeatSugar, Nebular, METASKINS-WooHoo-FER, Hybridv10,
+  LCDx, cPro__Creed__Full_Circle, Celica_Amp, Ebonitefix, Official_28_Days_Later_Skin, Invicta,
+  TAL_96, Freeform_Simpsons_Skin (`.wal` each); copied into `WinampModernSkins/`.
 
 ### Decisions (fixed — re-open only with a measurement)
 

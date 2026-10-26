@@ -40,11 +40,17 @@ class EQWindowController: NSWindowController, EQWindowProviding {
         // Match main window's width and position below it
         if let mainWindow = WindowManager.shared.mainWindowController?.window {
             let mainFrame = mainWindow.frame
-            let eqHeight = Skin.eqWindowSize.height * WindowManager.shared.classicScaleMultiplier
+            let multiplier = WindowManager.shared.classicScaleMultiplier
+            let eqHeight = Skin.eqWindowSize.height * multiplier
+            // A `.wal` player is the skin's own width, not the classic 275, and the view keeps its
+            // aspect: under Clock V2.76's 597-wide player it drew 343 wide between clear margins
+            // that took no clicks, and the close corner was one of them.
+            let width = WindowManager.shared.uiMode.controllerFamily == .winampModern
+                ? Skin.eqWindowSize.width * multiplier : mainFrame.width
             let newFrame = NSRect(
                 x: mainFrame.minX,
                 y: mainFrame.minY - eqHeight,
-                width: mainFrame.width,
+                width: width,
                 height: eqHeight
             )
             window.setFrame(newFrame, display: true)

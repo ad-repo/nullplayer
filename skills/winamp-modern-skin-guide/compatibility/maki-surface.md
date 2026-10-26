@@ -524,7 +524,7 @@ By area:
   cached miss, with nothing playing, and for any receiver that is not an `<AlbumArt>`. Skins poll it
   from a timer (Defix's playlist window aborted its `ontimer` on the miss every single tick), so a
   stub answering "yes" would be a spinner that never stops. Phase 27
-- **ClassicPro shell**: `exploreFile`, `openFile`, `findFiles` (policy below)
+- **ClassicPro shell**: `exploreFile`, `openFile`, `findFiles` (policy below); `applyStyle` (a skin `ClassicPro.xml` style onto an object, `reference/classicpro.md`)
 
 **Events dispatched to scripts.** Occurrence counts are call sites across the ClassicPro engine's
 `.m` sources, which is the largest measured script corpus.

@@ -109,11 +109,63 @@ extension WasabiSceneRenderer {
             drawTiled(bitmap, in: frame, tileX: tileX, tileY: tileY, context: context)
             return
         }
+        if let centered = centeredImageRect(bitmap, object: object, in: frame) {
+            context.saveGState()
+            context.clip(to: frame)
+            drawImage(bitmap.image, in: centered, context: context)
+            context.restoreGState()
+            return
+        }
         // A non-tiled layer stretches its bitmap to fill its rect. Resizable window chrome depends on
         // this: `wasabi.frame.top` is a 10×18 sprite stretched across the whole titlebar, and the
         // menubar/titlebar streaks are 5–10px sprites stretched to hundreds of pixels. Drawing them
         // at natural size instead painted one sprite and left the rest of the bar blank.
         drawImage(bitmap.image, in: frame, context: context)
+    }
+
+    /// A button on Winamp's stock check-box art that the skin names without defining, which no such
+    /// skin can ship (`WasabiFormWidgets.isStockCheckBox`): sized and drawn as stock.
+    func isUnshippedStockCheckBox(_ object: WasabiObject) -> Bool {
+        guard object.tag.is(.button), let image = object.attributes["image"] else { return false }
+        return WasabiFormWidgets.isStockCheckBox(image) && resources.bitmap(identifier: image) == nil
+    }
+
+    /// A toggle on Winamp's unshipped stock check-box art: the 11x11 object frame its groupdef lays
+    /// 2px around it — which is stock art too — and a tick while it is activated.
+    func drawStockCheckBox(_ object: WasabiObject, frame: CGRect, context: WasabiDrawList) {
+        let color = palette.listText
+        context.saveGState()
+        defer { context.restoreGState() }
+        context.setStrokeColor(color.withAlphaComponent(0.75).cgColor)
+        context.setLineWidth(1)
+        context.stroke(frame.insetBy(dx: -1.5, dy: -1.5))
+        guard WasabiFormWidgets.isOn(object, boundState: nil) else { return }
+        context.setFillColor(color.cgColor)
+        context.fill(frame.insetBy(dx: 1, dy: 1))
+    }
+
+    /// `<AlbumArt>` fits its cover inside the box with the aspect kept, centred, unless the skin
+    /// asks for `stretched="1"` — 29 declarations across the corpus say one or the other. Winampple's
+    /// small art leans on the fit: a 111×310 box at `y="-107"` in a 96px-tall group, which shows the
+    /// fitted 110×96 cover exactly and, stretched, showed a tall sliver of its middle instead.
+    static func albumArtRect(of imageSize: CGSize, in frame: CGRect, stretched: Bool) -> CGRect {
+        guard !stretched, imageSize.width > 0, imageSize.height > 0 else { return frame }
+        let scale = min(frame.width / imageSize.width, frame.height / imageSize.height)
+        let size = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        return CGRect(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2,
+                      width: size.width, height: size.height)
+    }
+
+    /// `center_image="1"`: the bitmap at its own size in the middle of the box, clipped to it, instead
+    /// of stretched. Winampple's logo is a 40x40 face on a full-width 434px button ("Put logo at
+    /// center"); stretched it drew as a dark smear across the whole transport bar. Shared with the hit
+    /// test, so the clickable pixels are the drawn ones.
+    func centeredImageRect(_ bitmap: WasabiBitmap, object: WasabiObject, in frame: CGRect) -> CGRect? {
+        guard object.attributes["center_image"] == "1" else { return nil }
+        let width = CGFloat(bitmap.width), height = CGFloat(bitmap.height)
+        return CGRect(x: frame.minX + ((frame.width - width) / 2).rounded(.down),
+                      y: frame.minY + ((frame.height - height) / 2).rounded(.down),
+                      width: width, height: height)
     }
 
     /// `tile`/`tilex`/`tiley`: repeat the bitmap across the layer instead of stretching it. Every
@@ -215,8 +267,16 @@ extension WasabiSceneRenderer {
         guard drawn.contains(point) else { return 0 }
         let x = (point.x - drawn.minX) / max(1, drawn.width) * CGFloat(grid.width)
         let y = (point.y - drawn.minY) / max(1, drawn.height) * CGFloat(grid.height)
+        // A layer that plays itself (`autoplay`/`autoreplay`) is a picture of time, not of a value, so
+        // it is hit where it is now. Celica Amp's `glasscover` is a one-shot lift: frame 0 covers the
+        // whole player and the last is nearly clear, and as a union it took the eight controls under
+        // it for good.
+        let frames = object.attributes["autoplay"] == "1" || object.attributes["autoreplay"] == "1"
+            ? [max(0, min(grid.count - 1, WasabiAnimation.state(of: object, frameCount: grid.count,
+                                                                clock: clock()).frame))]
+            : Array(0..<grid.count)
         var strongest = 0
-        for index in 0..<grid.count {
+        for index in frames {
             let origin = CGPoint(x: CGFloat((index % grid.columns) * grid.width),
                                  y: CGFloat((index / grid.columns) * grid.height))
             strongest = max(strongest, Int(bitmap.alpha(at: CGPoint(x: origin.x + x, y: origin.y + y))))

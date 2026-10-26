@@ -83,14 +83,55 @@ extension WasabiResourceCache {
             return true
         }
         guard drawn else { return nil }
+        return box(width: width, height: height) { alpha[$0] > 0 }
+    }
+
+    /// The box around the pixels `isOpaque` accepts, by buffer index; nil when it accepts none.
+    private static func box(width: Int, height: Int, isOpaque: (Int) -> Bool) -> CGRect? {
         var minX = width, minY = height, maxX = -1, maxY = -1
         // The buffer's first row is the image's top row: a bitmap context's memory is top-down.
         for y in 0..<height {
-            for x in 0..<width where alpha[y * width + x] > 0 {
+            for x in 0..<width where isOpaque(y * width + x) {
                 minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
             }
         }
         guard maxX >= 0 else { return nil }
         return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+    }
+
+    /// `opaqueBounds` less a flat band at its left or right: a run of identical columns covering at
+    /// least half the box is fill, not edge. Circlo_T_roniC's `frame-l.png` is a 44px opaque tile whose
+    /// edge is its first 8 columns and the rest the body colour; read whole, its windows' contents
+    /// sat 44px in and the browser's buttons ran into each other. **Columns only**: a top or bottom
+    /// band's flat part is where the title or the status bar sits, and trimming rows put
+    /// YoYoBoy's playlist over its Add/Rem/Sel bar.
+    static func edgeBounds(of image: CGImage) -> CGRect? {
+        let width = image.width, height = image.height
+        var rgba = [UInt32](repeating: 0, count: width * height)
+        let drawn = rgba.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                                          bitsPerComponent: 8, bytesPerRow: width * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return opaqueBounds(of: image) }
+        // Premultiplied RGBA read as one little-endian word: alpha is the top byte.
+        guard let box = Self.box(width: width, height: height, isOpaque: { rgba[$0] >> 24 > 0 }) else { return nil }
+        let rows = Int(box.minY)..<Int(box.maxY), columns = Array(Int(box.minX)..<Int(box.maxX))
+        func column(_ x: Int) -> [UInt32] { rows.map { rgba[$0 * width + x] } }
+        // How many columns from one end repeat the end column, stepping inward; 0 under half.
+        func band(_ xs: [Int], of total: Int) -> Int {
+            guard let first = xs.first else { return 0 }
+            let end = column(first)
+            let count = xs.dropFirst().prefix { column($0) == end }.count + 1
+            return count * 2 >= total && count < total ? count : 0
+        }
+        let right = band(columns.reversed(), of: columns.count)
+        let left = band(columns, of: columns.count - right)
+        guard left + right < columns.count else { return box }
+        return CGRect(x: box.minX + CGFloat(left), y: box.minY,
+                      width: box.width - CGFloat(left + right), height: box.height)
     }
 }

@@ -964,6 +964,14 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                     // A menu item or a skin button asked: an explicit decision, remembered.
                     self?.setAuxiliaryWindow(id: id, visible: visible, record: true)
                 },
+                closeCarriedOver: { [weak self] id in
+                    // Not the user's decision in this skin, so not remembered, and not done at all
+                    // once they have made one here. Recording it shut Winampple's playlist, the
+                    // centre of its player, on every later load after one switch in from a skin
+                    // with its playlist closed.
+                    guard let self, self.rememberedContainerVisibility(id: id) == nil else { return }
+                    self.setAuxiliaryWindow(id: id, visible: false, record: false)
+                },
                 classicFallback: { kind, showOnly in
                     WindowManager.shared.showClassicSurfaceForWinampModern(kind, showOnly: showOnly)
                 },
@@ -1665,7 +1673,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// configurator that happened to open behind it.
     private func applyDefaultContainerVisibility() {
         var opened = false
-        for container in auxiliaryContainers where !container.window.isVisible {
+        let infos = auxiliaryContainers.map(\.info)
+        for container in auxiliaryContainers where !container.window.isVisible
+            && !WinampModernContainerTopology.isComponentChromeCompanion(container.info, among: infos) {
             // The container's own `hold=` GUID as well as the catalog: this runs before
             // `makeSurfaceCoordinator`, so the catalog is still nil here and machina's
             // `<container id="Video" hold="guid:{F0816D7B-…}" default_visible="1">` opened empty at
@@ -2238,9 +2248,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // container is *routed* is a runtime fact (Defix's `pledit` carries no component GUID and is
         // recognized from the declarative inventory), and the catalog is the only thing that knows it.
         let routed = surfaceCoordinator?.catalog.routedContainerIDs ?? []
+        let infos = auxiliaryContainers.map(\.info)
         let listed = auxiliaryContainers
             .filter { WinampModernContainerTopology.isListedInWindowMenu($0.info)
-                && !routed.contains($0.containerID.lowercased()) }
+                && !routed.contains($0.containerID.lowercased())
+                && !WinampModernContainerTopology.isComponentChromeCompanion($0.info, among: infos) }
         let labels = WinampModernContainerTopology.menuLabels(
             forWindowNames: listed.map { (id: $0.containerID, name: $0.displayName) })
         return zip(listed, labels).map { ($0.containerID, $1, $0.window.isVisible) }

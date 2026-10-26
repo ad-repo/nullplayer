@@ -719,8 +719,9 @@ final class WasabiSceneRenderer {
     /// the configuration store; nil in a renderer built without one (the pixel tests).
     var configStateProvider: ((WasabiObject) -> Bool)?
     /// Whether a script hooks a press on the object (`WinampModernScriptRuntime.hasPressBinding`),
-    /// which makes it a hit target. Nil in a renderer built without a script runtime.
-    var pressBindingProvider: ((WasabiObject) -> Bool)?
+    /// which makes it a hit target — a press of that button, or of either when nil. Nil in a
+    /// renderer built without a script runtime.
+    var pressBindingProvider: ((WasabiObject, WasabiPressButton?) -> Bool)?
     /// The raw integer behind a `cfgattrib` binding, in the control's own unit — what a **slider**
     /// bound to an attribute stands at. Separate from `configStateProvider` because a lamp and a
     /// number are different questions about the same binding: mmd3's crossfade slider names
@@ -754,18 +755,22 @@ final class WasabiSceneRenderer {
         /// The Layer FX warp for one object, or nil when it has none. Supplied by the script runtime,
     /// which owns the FX state and runs the skin's `fx_onGetPixel*` callbacks (Phase 28).
     var layerFXProvider: ((WasabiObject) -> WasabiLayerFXMesh?)?
+    /// Whether a script has switched Layer FX on for the object, at any warp — identity included,
+    /// which `layerFXProvider` answers nil for. Read by hit testing, which must not run the callbacks.
+    var layerFXEnabledProvider: ((WasabiObject) -> Bool)?
 
     /// Answer every provider above that the script runtime owns from `scripts`, held weakly. The one
     /// place a window connects a renderer to its runtime; every renderer asks the same runtime, so a
     /// switch in the settings window and the control it mirrors in another window always agree.
     func attach(scripts: WinampModernScriptRuntime) {
         configStateProvider = { [weak scripts] in scripts?.configValue(of: $0) ?? false }
-        pressBindingProvider = { [weak scripts] in scripts?.hasPressBinding(for: $0) ?? false }
+        pressBindingProvider = { [weak scripts] in scripts?.hasPressBinding(for: $0, button: $1) ?? false }
         configValueProvider = { [weak scripts] in scripts?.configInteger(of: $0) }
         settingStateProvider = { [weak scripts] section, key in
             scripts?.configAttributeValue(section: section, key: key).map { $0 != "0" }
         }
         layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }
+        layerFXEnabledProvider = { [weak scripts] in scripts?.layerFXIsEnabled(for: $0) ?? false }
     }
 
     let resources: WasabiResourceCache
@@ -2108,238 +2113,14 @@ final class WasabiSceneRenderer {
         cropCache.removeAll()
     }
 
-    /// Width an object takes from text rather than from a `w=`, in skin pixels — `nil` when it takes
-    /// none. Two cases: a group with `autowidthsource="<id>"` sizes to that descendant's text, and a
-    /// text object that declares no width at all sizes to its own (ClassicPro's menu labels do the
-    /// latter inside groups that do the former).
-    private func autoWidth(of object: WasabiObject) -> CGFloat? {
-        if let sourceID = object.attributes["autowidthsource"],
-           let source = descendant(of: object, xmlID: sourceID) {
-            // The inset corrects a real measurement. A source that measures nothing — S7Reflex's
-            // config tabs are `<text default="">` filled in by a script that has not run — wants a
-            // collapsed group, not a group the width of its own padding.
-            //
-            // A source that is not text is sized by its artwork (B79): winampmodern566 and
-            // The_Nokia_5220 point every `menugroup.*` at a `<layer id="File.txt" image=…>`, and
-            // answering nil left each group 0 wide, so the `<Menu>` filling it had no hit target.
-            // Same order as the script's `getAutoWidth()` — a declared width, then the bitmap.
-            guard let width = autoWidth(of: source) ?? artworkWidth(of: source) else { return nil }
-            guard width > 0 else { return width }
-            return width + WasabiGeometrySpec.autoWidthInset(of: source.attributes)
-        }
-        // A `<Wasabi:CheckBox>` states no width — Winamp sizes it to its own label, the way the
-        // groupdefs that replace the tag do (`autowidthsource` on their label). Left at zero the box
-        // and its text both fell outside the object and the whole switch was unclickable.
-        if WasabiFormWidgets.kind(of: object) == .checkBox {
-            let label = object.attributes["text"] ?? ""
-            return WasabiFormWidgets.checkBoxGlyph + WasabiFormWidgets.checkBoxLabelGap
-                + resources.metrics.width(of: object, text: label)
-        }
-        guard object.tag.is(anyOf: [.text, .songticker]) else { return nil }
-        return resources.metrics.width(of: object,
-                                       text: WasabiTextMetrics.content(of: object, host: host))
-    }
-
-    /// The width an `autowidthsource` that is not text answers: its declared width when positive,
-    /// otherwise the bitmap it draws at rest. `nil` when it has neither.
-    private func artworkWidth(of object: WasabiObject) -> CGFloat? {
-        if let declared = Double(object.attributes["w"] ?? ""), declared > 0 { return CGFloat(declared) }
-        let bitmapID = resolvedBitmapID(for: object, pressed: false, hovered: false)
-        return resources.bitmap(identifier: bitmapID).map { CGFloat($0.width) }
-    }
-
-    /// How tall a `<Wasabi:TitleBox>` that declares no height has to be, or `nil` when its body says
-    /// nothing that can be measured (B67).
-    ///
-    /// **Measured, not guessed.** The height is the body's own content height plus the inset the body
-    /// already sits in (`WasabiTitleBox.contentInset` — 18 above, 6 below), which is the only number
-    /// that makes the box fit exactly what it was drawn around. Checked against impulse, the one skin
-    /// that needs it: `Skin Options` measures 74 + 24 = 98 under a box declared at `y="5"` with the
-    /// next box at `y="110"`, and `Glass Opacity` 13 + 24 = 37 at `y="273"` with the next at
-    /// `y="319"` — a 7–9px gap between boxes in all three cases, which is the spacing the skin's own
-    /// sized box has.
-    ///
-    /// The body's content height comes from the same two sources Wasabi resolves any auto height
-    /// from: an `autoheightsource="<id>"` naming the last child (all four of impulse's content groups
-    /// state one), and otherwise the lowest edge any child reaches. Both answer the child's **bottom**
-    /// rather than its own height — a group sized to the height of its last row would clip everything
-    /// above it.
-    private func titleBoxAutoHeight(of object: WasabiObject) -> CGFloat? {
-        guard let body = object.children.first(where: { $0.tag.is(.group) }),
-              let content = contentBottom(of: body) else { return nil }
-        return content - CGFloat(WasabiTitleBox.contentInset.height)
-    }
-
-    /// The lowest edge anything inside this group reaches, in the group's own coordinates.
-    ///
-    /// Relative geometry is skipped rather than resolved: a child anchored to a parent whose height
-    /// is what we are trying to compute has no answer, and one that states a relative height is
-    /// asking to *fill* the box, not to size it.
-    private func contentBottom(of group: WasabiObject) -> CGFloat? {
-        if let sourceID = group.attributes["autoheightsource"],
-           let source = descendant(of: group, xmlID: sourceID), source !== group {
-            return declaredBottom(of: source)
-        }
-        return group.children.compactMap(declaredBottom(of:)).max()
-    }
-
-    private func declaredBottom(of object: WasabiObject) -> CGFloat? {
-        let spec = WasabiGeometrySpec(attributes: object.attributes)
-        guard !spec.relativeY, !spec.relativeHeight else { return nil }
-        if let height = spec.height, height > 0 { return CGFloat(spec.y + height) }
-        guard object.tag.is(.text) else {
-            return nil
-        }
-        return CGFloat(spec.y) + resources.metrics.lineHeight(of: object)
-    }
-
-    private func descendant(of root: WasabiObject, xmlID: String) -> WasabiObject? {
-        for child in root.children {
-            if child.xmlID?.caseInsensitiveCompare(xmlID) == .orderedSame { return child }
-            if let match = descendant(of: child, xmlID: xmlID) { return match }
-        }
-        return nil
-    }
-
     private func append(object: WasabiObject, frame parentFrame: CGRect, clip parentClip: CGRect,
                         into nodes: inout [WasabiSceneNode], isRoot: Bool = false,
                         includingHidden: Bool = false, inheritedAlpha: CGFloat = 1,
                         masks: [WasabiMaskClip] = []) {
         guard includingHidden || isVisible(object) else { return }
         let bitmapID = resolvedBitmapID(for: object, pressed: false, hovered: false)
-        var intrinsic = resources.bitmap(identifier: bitmapID).map {
-            WasabiSize(width: Double($0.width), height: Double($0.height))
-        } ?? .zero
-        // An animated layer that states no size of its own is one **frame** tall, not one sheet tall:
-        // its bitmap is a strip of N frames and `framewidth`/`frameheight` say how it is cut. Taking
-        // the sheet made multipass's seek bar a 139×364 box where the skin drew a 139×13 one — one
-        // frame stretched over twenty-eight frames' worth of height, then clipped by the display group
-        // to a transparent sliver, so the skin's only seek indicator was invisible while the script
-        // behind it worked perfectly.
-        if object.tag.is(.animatedLayer) {
-            if let width = Double(object.attributes["framewidth"] ?? ""), width > 0 { intrinsic.width = width }
-            if let height = Double(object.attributes["frameheight"] ?? ""), height > 0 { intrinsic.height = height }
-        }
-        // `autowidthsource="<id>"` sizes a group to the text of the named descendant. ClassicPro's
-        // menu bar is five such groups: without this each is 0 wide and its label, a `relatw="1"`
-        // child, has nowhere to draw — the whole File/Play/Options/View/Help strip disappears.
-        if object.attributes["w"] == nil, let width = autoWidth(of: object) {
-            intrinsic.width = Double(width)
-        }
-        // A `<text>` that states no `h` is one line tall, not zero. Wasabi sizes such an object to the
-        // font it draws in; here it resolved to 0, the draw clipped to the frame, and the string was
-        // simply absent. Big Bento's notifier is three of them — `<text id="title" w="0" relatw="1"
-        // fontsize="46">` with no height at all — so its song title never drew, and the host had to
-        // paste a height on before showing the toast (`ensureTextHeight`) to get anything on screen.
-        // That patch guessed `fontsize * 1.4`, which is 18 pixels taller than the line the skin
-        // spaced its rows for, and the title then sat on top of the artist underneath it (BB27).
-        // `lineHeight` is the same number `getAutoHeight()` answers, so the box a script measures and
-        // the box we draw are one measurement. A `<SongTicker>` is a Wasabi text too: CopperdeckII's
-        // states no `h`, and its song title was a zero-height box.
-        if object.attributes["h"] == nil,
-           object.tag.is(anyOf: [.text, .songticker]) {
-            intrinsic.height = Double(resources.metrics.lineHeight(of: object))
-        }
-        // A window-chrome button whose artwork Winamp supplied and the skin does not. It has no
-        // bitmap to size to, so it resolved to 0x0 and never appeared at all — `Winamp 3.0 Default`'s
-        // titlebar is four such buttons and had no menu, minimize, windowshade or close (B95).
-        if intrinsic == .zero, let role = chromeButtonRole(of: object, bitmapID: bitmapID) {
-            if object.attributes["w"] == nil { intrinsic.width = Double(role.defaultSize.width) }
-            if object.attributes["h"] == nil { intrinsic.height = Double(role.defaultSize.height) }
-        }
-        // A `<Wasabi:TitleBox>` that declares no `h` is as tall as its body needs (B67). Four of
-        // impulse's five say `<Wasabi:TitleBox x="320" y="5" w="-325" relatw="1" …/>` and nothing
-        // more, so the box resolved to no height, the negative-box guard below dropped it, and its
-        // whole content group was laid out inside nothing — only its one sized box appeared.
-        if object.attributes["h"] == nil, WasabiTitleBox.isTitleBox(object),
-           let height = titleBoxAutoHeight(of: object) {
-            intrinsic.height = Double(height)
-        }
-        // `autoheightsource="<id>"` on a plain `<group>` is the same rule the title box already uses:
-        // the group is as tall as the bottom of the child it names. It was only ever read for a
-        // `<Wasabi:TitleBox>`, so every other group carrying it resolved to **no height**.
-        //
-        // ClassicPro engine "two" is the measured case. Its whole transport band is
-        // `<group id="two.playback" autoheightsource="two.playback.left">` with no `h`, so it came out
-        // 0 tall — and a zero-height group is not a resize target, so `playback-layout.maki`'s
-        // `g.onResize` never ran. That handler is what centres the transport strip
-        // (`g_buttons.x = w/2 - 112`), picks the normal/mini/micro band from the window width, and
-        // places the volume group; with it dead the buttons stayed hard left at their declared `x=8`,
-        // the visualization sat on top of them at the same x, and the volume slider never appeared.
-        // The children still drew, because a group does not clip to its own box — which is why this
-        // read as a layout bug rather than a missing group.
-        if object.attributes["h"] == nil,
-           object.tag.is(.group),
-           object.attributes["autoheightsource"] != nil,
-           let bottom = contentBottom(of: object), bottom > 0 {
-            intrinsic.height = Double(bottom)
-        }
-        // A `<group>` draws no artwork of its own, so it had no intrinsic size at all — but Wasabi
-        // sizes a group that declares no `w`/`h` to its **`background`** bitmap, and that box is the
-        // whole point of the attribute for a group that says `drawbackground="0"`: the bitmap is
-        // never painted, it only states how big the group is.
-        //
-        // BLAKK's boombox is the measured case, and it is a drawer. `blakk.bb.group.SpecVol` is
-        // `background="player.bb-SpecVol-map"` (192x14) at (122,84) holding two child groups that
-        // slide through it: the spectrum sits at y=0 and the volume bar at y=14, and hovering the
-        // player moves both up by 14 so the volume takes the spectrum's place while the spectrum
-        // leaves through the top. The aperture *is* the effect. With the group resolving 0x0 it
-        // clipped nothing, so both halves drew at once — the volume bar parked permanently over the
-        // seek bar as a second, wrong progress bar — and on mouseover the spectrum climbed out over
-        // the song ticker and the timer instead of disappearing.
-        //
-        // Per axis, and only where nothing more specific has already answered: `autowidthsource` and
-        // `autoheightsource` above name a *child* to size to, and that beats the backing artwork —
-        // mmd3's component title bar is `background="component.titlebg" autowidthsource="titlebar"`,
-        // where the backing is a narrow tile meant to stretch, so taking its width clipped every
-        // hosted component's title to "CO".
-        if object.tag.is(.group),
-           let background = backgroundBitmap(of: object) {
-            if object.attributes["w"] == nil, intrinsic.width == 0 {
-                intrinsic.width = Double(background.width)
-            }
-            if object.attributes["h"] == nil, intrinsic.height == 0 {
-                intrinsic.height = Double(background.height)
-            }
-        }
-        // A `<CustomObject>` that states no size is the size of the group it hosts, the way Wasabi
-        // sizes any object from its content's suggested size. Anunaki's LCD is
-        // `<customobject groupid="main.lcd.layout2" x="51" y="32"/>` around a `fitparent="1"`
-        // group declared 482x281: at 0x0 the group fitted to nothing and the display stayed empty.
-        if object.tag.is(.customObject),
-           let content = object.children.first(where: { $0.tag.is(.group) }) {
-            if object.attributes["w"] == nil, intrinsic.width == 0, content.attributes["relatw"] != "1" {
-                intrinsic.width = max(0, Double(content.attributes["w"] ?? "") ?? 0)
-            }
-            if object.attributes["h"] == nil, intrinsic.height == 0, content.attributes["relath"] != "1" {
-                intrinsic.height = max(0, Double(content.attributes["h"] ?? "") ?? 0)
-            }
-        }
-        // A labelled `<Wasabi:Button>` that states no height is Winamp's stock button, which sizes
-        // itself to its label. machina's help window writes `<wasabi:button text="switch" w="100">`
-        // with no `h`, so it resolved 0 tall and the one way to reach the winshade help never drew.
-        // ponytail: a fixed 20 (machina's own About switch buttons state h="20"), not a measured label.
-        if object.attributes["h"] == nil, intrinsic.height == 0, Self.isTextButton(object) {
-            intrinsic.height = 20
-        }
-        // A `<Menu>`'s hover or pressed art that states no size of its own is the entry's size (B150).
-        // winampmodern566 and The_Nokia_5220 write `<menu:button_hover id="File.hover.btn" x="0"
-        // y="0"/>` into a groupdef with only `h="16"`, and the art inside is a three-slice cut to
-        // stretch (`w="-7" relatw="1"`) — so at 0 wide, hovering or pressing an entry drew nothing.
-        // Only an unstated axis is filled: every other `<Menu>` in the corpus (Big Bento, nsmp10,
-        // impulse, cPro Venus, NWA2000) gives its state objects explicit geometry, some deliberately
-        // different from the entry's box, and that stays theirs.
-        if !isRoot, object.attributes["w"] == nil || object.attributes["h"] == nil,
-           intrinsic.width == 0 || intrinsic.height == 0,
-           let menu = WasabiMenuBar.owningMenu(of: object) {
-            let entry = geometry(of: menu).resolve(
-                in: WasabiRect(x: Double(parentFrame.minX), y: Double(parentFrame.minY),
-                               width: Double(parentFrame.width), height: Double(parentFrame.height)),
-                intrinsicSize: .zero
-            )
-            if object.attributes["w"] == nil, intrinsic.width == 0 { intrinsic.width = max(0, entry.width) }
-            if object.attributes["h"] == nil, intrinsic.height == 0 { intrinsic.height = max(0, entry.height) }
-        }
+        let intrinsic = intrinsicSize(of: object, bitmapID: bitmapID, parentFrame: parentFrame,
+                                      isRoot: isRoot)
         let resolved: CGRect
         if isRoot {
             resolved = parentFrame
@@ -2558,11 +2339,12 @@ final class WasabiSceneRenderer {
         } else if object.tag.is(.list, in: .colorThemes) {
             drawColorThemeList(object, frame: node.frame, context: context)
         } else if object.tag.is(.albumArt) {
-            if let artwork = host.albumArtwork {
-                drawImage(artwork, in: node.frame, context: context)
-            } else if let fallback = object.attributes["notfoundimage"],
-                      let bitmap = resources.bitmap(identifier: fallback) {
-                draw(bitmap, object: object, frame: node.frame, context: context)
+            if let image = host.albumArtwork
+                ?? object.attributes["notfoundimage"].flatMap({ resources.bitmap(identifier: $0)?.image }) {
+                drawImage(image, in: Self.albumArtRect(of: CGSize(width: image.width, height: image.height),
+                                                       in: node.frame,
+                                                       stretched: object.attributes["stretched"] == "1"),
+                          context: context)
             }
         } else if object.tag.is(.componentBucket) {
             // Before the holder branch: a bucket *is* a holder element, and a skin whose bucket id
@@ -2577,6 +2359,8 @@ final class WasabiSceneRenderer {
             drawImage(image, in: node.frame, context: context)
         } else if WasabiEmbeddedXUI.wrapsButton(object) {
             // The button inside draws this artwork (`WasabiEmbeddedXUI.wrapsButton`).
+        } else if isUnshippedStockCheckBox(object) {
+            drawStockCheckBox(object, frame: node.frame, context: context)
         } else if let imageID = resolvedBitmapID(for: object,
                                                   pressed: pressed == object.stableID,
                                                   hovered: hovered == object.stableID),
@@ -2807,7 +2591,17 @@ final class WasabiSceneRenderer {
     /// draws the string — in Winamp the edit is a native child window. So this paints only the content
     /// and the insertion point, in the object's own font and colour, which is what makes the typed
     /// text land in the box the skin drew rather than in a rectangle of our choosing.
+    ///
+    /// **The native window is opaque, on `wasabi.list.background`.** Winamp's stock colour template,
+    /// which dozens of skins ship verbatim, says so: "lists/trees item background (also bg for
+    /// edit)". Without it Clock V2.76's comment field, which its box art leaves to the native window,
+    /// drew as nothing, and the field could not be found to click. A `Wasabi:EditBox`, or an edit
+    /// inside one, is skipped: the widget has already painted its own plate and border (B113).
     private func drawEdit(_ object: WasabiObject, frame: CGRect, context: WasabiDrawList) {
+        if !sequence(first: object, next: \.parent).contains(where: { WasabiFormWidgets.kind(of: $0) != nil }) {
+            context.setFillColor(palette.contentBackground.cgColor)
+            context.fill(frame)
+        }
         let text = object.attributes["text"] ?? ""
         if !text.isEmpty {
             drawText(text, object: object, frame: frame, context: context,
@@ -3820,7 +3614,7 @@ final class WasabiSceneRenderer {
 
     /// The chrome control an object stands in for when `bitmapID` resolves to no artwork, or nil. The
     /// one question the sizing, drawing and hit-testing paths all ask (see `WasabiChromeButtons`).
-    private func chromeButtonRole(of object: WasabiObject, bitmapID: String?) -> WasabiChromeButtons.Role? {
+    func chromeButtonRole(of object: WasabiObject, bitmapID: String?) -> WasabiChromeButtons.Role? {
         guard resources.bitmap(identifier: bitmapID) == nil else { return nil }
         return WasabiChromeButtons.role(of: object, bitmapID: bitmapID,
                                         resolves: { self.resources.bitmap(identifier: $0) != nil })
@@ -4552,7 +4346,7 @@ final class WasabiSceneRenderer {
                        alpha: 1)
     }
 
-    private func resolvedBitmapID(for object: WasabiObject, pressed: Bool, hovered: Bool) -> String? {
+    func resolvedBitmapID(for object: WasabiObject, pressed: Bool, hovered: Bool) -> String? {
         // A `<group>` states its artwork with `background` (`backgroundBitmap`); `image=` on one is
         // a parameter for the groupdef's children, not art. MIDISUI instances its one-LED
         // `ledAnimation` group as `image="led.animation"`, the 280×14 sheet of 20 frames: taken

@@ -78,6 +78,29 @@ Two rules about *which* objects may claim a point:
   point, worked. That reads as "two of my buttons are broken", not as a hit test disagreeing with a
   declared region. Only objects that *have* a bitmap are affected; a bare `rectrgn` layer never had an
   alpha test to skip.
+- **A wholly clear layer a script hooks a press on is its rect** (2026-10-25). An empty region is no
+  region. Official Trapt's volume and seek are `customvol.m`/`customseek.m` surfaces on
+  `volume.png`/`seek.png`, transparent in every pixel, shaped by a `Map` the script reads at the
+  click; alpha-tested, both were dead. Unhooked, such a layer stays see-through. 40 corpus skins
+  carry a clear non-ghost layer, almost all named as traps (`resize*`, `trigger`, `*Catch`,
+  `vis.mousetrap`, `*switch`); only a hooked one changes (`isClearMousetrap`).
+  **Only for a button its script hooks** (2026-10-25): the view's left press and release ask
+  `object(at:button: .left)`, its right ones `.right`, and the claim checks that button's events
+  (`hasPressBinding(for:button:)`). Ebonitefix stacks a clear `vis` layer that opens its menu on a
+  right-click over `local.cdcover`, whose double-click opens the track's folder, and the author's two
+  tooltips say both work in the one box; claimed by any button, the cover was unreachable. Hover,
+  menus and the harness pass no button and count either.
+- **So is a hooked layer under Layer FX** (2026-10-25): the warp moves its pixels off its bitmap, so
+  the bitmap's alpha says nothing about where it is drawn. Official 28 Days Later's volume knob is a
+  90x90 layer whose only artwork is a 6x2 dot `fx_onGetPixelR` turns, and `player.maki` reads
+  `volume.map` at the press. The runtime answers through `layerFXEnabledProvider`, never by
+  evaluating the mesh. `RENDER_CLICKABLE` over the 19 gold+silver skins that enable FX and bind a
+  press, rule off then on: four knobs fall off the list (28 Days Later, JRS `BassKnob`, EPS
+  `VolumeKnob` on both EQ layouts, jvc.tape `volumeknob`) and nothing rises.
+- **A self-playing `animatedlayer` is hit on the frame showing** — see `rendering.md` → the union of
+  its frames, which still holds for one a script steps.
+- **A `center_image="1"` face is hit where it is drawn** — at its own size mid-box, not mapped
+  across the whole button (`centeredImageRect`, shared with the draw).
 - **`animatedlayer` is clickable like `layer`.** MMD3's rotary volume/bass/treble knobs are animated
   layers whose scripts hook `onLeftButtonDown`; leaving the type out of `isInteractive` meant no click
   ever reached them.
@@ -168,7 +191,7 @@ object the hit test returned:
   never the named transport/title objects on the exclusion list.
 
 `WINAMP_MODERN_RENDER_CLICKABLE=1` is the check for both hit-test rules: it lists objects a script hooks the mouse on
-that the markup-only hit test rejects. It is not expected to be empty — several objects legitimately
+that the hit test rejects (with the script runtime attached, since 2026-10-25). It is not expected to be empty — several objects legitimately
 share a rect and only the topmost can win — but a control the user can see should never be in it.
 
 #### Resizing the window (Phase 89, B77)
@@ -302,6 +325,32 @@ author happened to mark, and take a window away wherever the union fell short. E
 the corpus opens its composition with a full-bleed positive anyway (`wasabi.standardframe.*` and
 `Wasabi:MainFrame:*` all carry `sysregion="1"` on the group that fills the window), so the seeded
 rect gives the same answer wherever a skin does say.
+
+**Unless the skin marks the whole window** (B268, 2026-10-26). When every object a layout holds at
+its top level is a positive `sysregion`, the region is composed from the marks alone, from nothing:
+a marked group with no artwork stands for the marks it holds (its own box would be the whole window),
+a standard frame is still its box (Prakrit's EQ frame marks only its border strips, and as their
+union it lost its body), and an object drawn at `alpha="0"`, itself or by a group above it, adds
+nothing — `hidden` is part of the cut so the cache sees a script raise it. Clock V2.76 is the case:
+`Main/normal` is two marked groups, the dial case (`cadran` with a tRNS white, `main` with alpha)
+and the calendar a script hides at `alpha="0"`; the yellow/blue `cache` wedges `date.maki` shows
+through the dial ring overhang the case and drew as quarter discs around it. A layout with even one
+unmarked top-level object is decorated, not described, and keeps its rectangle — the earlier
+rules, "every positive-only layout" (233 of 1441 images) and "every `desktopalpha` one" (135),
+failed on Big Bento's notifier, BOOM and Pure Inspired, which mark objects deep inside unmarked
+content. Gold+silver moved Clock alone, bar a 13px outline on MMD3's slanted shade edge.
+`WasabiSceneRenderer.marksWholeWindow`.
+
+**Nor by cuts alone, past half the window** (2026-10-25). Winampple_1_1's four holder windows
+(`MLibrary`, `video`, `Visualizations`, the playlist) each stretch `bg.playlist` — an opaque 1x1
+white — over their client at `sysregion="-2"`, 20px up and left of it, with no positive region object
+in the layout. Cut from the seeded rect that took 85% of each window: the library body was desktop and
+only an offset white or black strip stayed right and below ("four frames draw offset slabs"). A layout
+with no positive region object whose cut would remove more than half the window keeps its rect. The
+simpler rule — "no positive object, no region", which is what building from nothing implies — was
+measured first and un-cut the corner silhouettes of 47 skins (179 images) whose cut-only layouts are
+clearly meant to round. The half-window line moves Winampple's four images and nothing else; every
+other corpus cut is 18% or less. A threshold is a stand-in, marked `ponytail:` in `buildWindowRegion`.
 
 **A wrapper group reaches only as far as what it holds** (2026-10-17). That full-bleed positive is
 an artwork-less group, and such a group counts as its box only when nothing inside it declares a

@@ -519,6 +519,10 @@ would need a cell 8px wider than the glyph on each side. The archive's own `scre
 `2:16 / 3:56` with a clear gap. Only a proportionally drawn string inside a fixed reservation
 produces it.
 
+**Nor does it stop a ticker** (2026-10-26). A `forcefixed` string that overflows scrolls when its
+`ticker` says so; only a clock run is kept out. Circlo_T_roniC's song title is `forcefixed="1"
+ticker="1"` in a 93px box and sat still, cut at both ends. Gold+silver moved Circlo alone.
+
 **A clock run is unaffected and must stay that way.** `display="time"` / `timeelapsed"` / `songlength`
 goes through `clockRun`, which keeps its per-field cells — that is what holds Big Bento Modern's
 digits in their columns across 9:59 → 10:00, and it is a separately measured case. The corpus check

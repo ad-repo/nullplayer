@@ -1419,7 +1419,8 @@ final class WasabiSkinInitializer {
         definitionStack: [String],
         createdCount: inout Int,
         documentOrder: [ObjectIdentifier: Int],
-        enclosingOrder: Int?
+        enclosingOrder: Int?,
+        scriptOwner: WasabiObject? = nil
     ) throws {
         let wrappers: Set<String> = ["wasabixml", "winampabstractionlayer", "elements", "skininfo"]
         let declarations: Set<String> = ["groupdef", "bitmap", "bitmapfont", "truetypefont", "color", "gammagroup", "gammaset", "cursor", "elementalias"]
@@ -1428,7 +1429,7 @@ final class WasabiSkinInitializer {
             let lower = node.name.lowercased()
             if lower == "script" {
                 if let rawFile = node.attribute("file"), !rawFile.isEmpty {
-                    pendingScripts.append(PendingScript(owner: parent, rawPath: rawFile,
+                    pendingScripts.append(PendingScript(owner: scriptOwner ?? parent, rawPath: rawFile,
                                                         parameter: WasabiXMLMacroResolver.resolve(node.attribute("param")),
                                                         source: node.location))
                 }
@@ -1445,7 +1446,8 @@ final class WasabiSkinInitializer {
                                   pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
                                   definitionStack: definitionStack,
                                   createdCount: &createdCount,
-                                  documentOrder: documentOrder, enclosingOrder: enclosingOrder)
+                                  documentOrder: documentOrder, enclosingOrder: enclosingOrder,
+                                  scriptOwner: scriptOwner)
                 continue
             }
 
@@ -1476,7 +1478,8 @@ final class WasabiSkinInitializer {
             // — expanded here, but written elsewhere — instantiates at the position of the reference
             // that brought it in, which is when Winamp would have read it.
             let nodeOrder = documentOrder[ObjectIdentifier(node)] ?? enclosingOrder
-            if let definition = types.definition(forInstance: node, documentOrder: nodeOrder) {
+            let definition = types.definition(forInstance: node, documentOrder: nodeOrder)
+            if let definition {
                 let key = definition.identifier.lowercased()
                 guard !definitionStack.contains(key) else {
                     throw WalFailure(WalDiagnostic(.groupInheritanceCycle, "Recursive group expansion for '\(definition.identifier)'.", location: node.location))
@@ -1601,11 +1604,21 @@ final class WasabiSkinInitializer {
                                           definitionStack: definitionStack, createdCount: &createdCount,
                                           documentOrder: documentOrder, enclosingOrder: nodeOrder)
             }
+            // A `<scripts>` block, or a `<group>` naming no `<groupdef>`, only brackets markup: a
+            // script inside speaks for the object the bracket sits in. METASKINS-WooHoo-FER's
+            // playlist centres its logo on `getScriptGroup().getWidth()`, and answered with the
+            // zero-width `<scripts>` it pushed the logo off the window's left edge; WoopieAMP3 wraps
+            // `title.maki` in `<group id="songtitle">` and has it `getScriptGroup().getObject(...)`
+            // the layout's transport buttons, and answered from the bracket every lookup was null.
+            // A top-level `<scripts>` speaks for itself, which is what makes it skin-level
+            // (`WinampModernScriptRuntime.isSkinLevel`).
+            let brackets = object.tag.is(.scripts) || (lower == "group" && definition == nil)
             try createObjects(from: instanceChildren, parent: embeddedParent, graph: graph, types: types,
                               pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
                               definitionStack: nextDefinitionStack,
                               createdCount: &createdCount,
-                              documentOrder: documentOrder, enclosingOrder: nodeOrder)
+                              documentOrder: documentOrder, enclosingOrder: nodeOrder,
+                              scriptOwner: brackets ? scriptOwner ?? parent ?? object : nil)
             // A `<Wasabi:Frame>` declares its two panes by group id rather than nesting them, so the
             // splitter is what brings them into the graph. cPro-Bento's entire body (library tree,
             // playlist, tabs) hangs off one, and without this the SUI expands to an empty frame.
@@ -1673,8 +1686,9 @@ final class WasabiSkinInitializer {
                     bitmapOpaqueBounds: { [resourceRegistry, vfs] identifier in
                         guard let resource = resourceRegistry?.resolvedDefinition(identifier: identifier)
                         else { return nil }
+                        // A cut with nothing opaque in it is an empty box, not an unreadable one.
                         if let cut = WasabiResourceCache.cutImage(of: resource, in: vfs) {
-                            return WasabiResourceCache.opaqueBounds(of: cut)
+                            return WasabiResourceCache.edgeBounds(of: cut) ?? .zero
                         }
                         // A generated (`$solid`) bitmap has no file: it is its declared size.
                         guard let width = resource.attributes["w"].flatMap(Double.init),

@@ -101,6 +101,19 @@ final class WinampModernB87Tests: XCTestCase {
                                  "a ticker is still scissored at the box its motion is defined by")
     }
 
+    /// `forcefixed` reserves a width; it does not take a `ticker="1"` out of the ticker. Circlo_T_roniC's
+    /// song title is both, and sat still, cut at both ends, until it scrolled like any other.
+    func testAFixedPitchTickerStillScrolls() throws {
+        let scene = try makeScene(markup: """
+              <group id="holder" x="0" y="0" w="120" h="40">
+                <text id="label" x="0" y="0" w="\(narrowBox)" h="40" fontsize="20" ticker="1"
+                      forcefixed="1" color="255,255,255" text="\(word)"/>
+              </group>
+        """)
+        let ink = try XCTUnwrap(scene.inkColumns())
+        XCTAssertLessThanOrEqual(ink.upperBound, CGFloat(narrowBox), "scrolling inside its own box")
+    }
+
     /// The box is only released horizontally. BB27's auto-height still decides whether a line draws
     /// at all, and a string must not bleed onto the row above or below it — a skin stacks readouts one
     /// box apart and shows them by moving their alphas.

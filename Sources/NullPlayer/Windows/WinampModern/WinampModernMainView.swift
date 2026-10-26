@@ -1696,7 +1696,7 @@ final class WinampModernMainView: NSView {
     /// script handles presses there, as in Wasabi: the stock notifier raises a minimized player from
     /// `notifier_layout.onLeftButtonDown`, and its window is all text and art (B183).
     private func pressTarget(at point: CGPoint) -> WasabiObject? {
-        renderer.object(at: point)
+        renderer.object(at: point, button: .left)
             ?? (scripts.hasPressBinding(for: renderer.layout)
                 || renderer.containsVisiblePixel(at: point, includingGhosts: true) ? renderer.layout : nil)
     }
@@ -2120,7 +2120,7 @@ final class WinampModernMainView: NSView {
         // has to be what the pointer is actually over, and a skin control sitting on it (Big Bento's
         // `vis.full.buttons` overlap their pane) keeps its own right-button handler.
         if renderer.componentHolder(at: point)?.kind == .visualization {
-            let claimed = renderer.object(at: point).map {
+            let claimed = renderer.object(at: point, button: .right).map {
                 scripts.hasBinding(for: $0, event: "onrightbuttondown")
                     || scripts.hasBinding(for: $0, event: "onrightbuttonup")
             } ?? false
@@ -2129,7 +2129,7 @@ final class WinampModernMainView: NSView {
                 return
             }
         }
-        guard let object = renderer.object(at: point) else { return }
+        guard let object = renderer.object(at: point, button: .right) else { return }
         // A `<vis>` box nothing else has claimed answers for itself: which engine paints it, that
         // engine's own options, and Winamp's own `<vis>` attributes (B53). Two conditions, and both
         // are the skin's right to be left alone — the box has to be the **topmost** object at the
@@ -2149,7 +2149,7 @@ final class WinampModernMainView: NSView {
 
     override func rightMouseUp(with event: NSEvent) {
         let point = skinPoint(convert(event.locationInWindow, from: nil))
-        let releasedOver = renderer.object(at: point)
+        let releasedOver = renderer.object(at: point, button: .right)
         // The up goes to whatever the *down* claimed, mirroring the left button: `popAtMouse` runs
         // its own tracking loop inside the down handler, so by the time the up arrives the pointer is
         // wherever the user dismissed the menu, which is usually not over the button any more.

@@ -88,6 +88,29 @@ final class WinampModernDemandTailTests: XCTestCase {
         XCTAssertEqual(try call(runtime, program, list, "getColumnLabel", [.integer(0)]).stringValue, "Title")
     }
 
+    /// Aria of the Soul's Skin Info: a list's markup `items=` are its rows until a script clears them.
+    func testAListShowsItsMarkupItemsUntilAScriptClearsThem() throws {
+        let (runtime, program) = try makeRuntime(body: "<list id=\"l\" w=\"40\" h=\"40\" items=\"\tTitle: Aria;\nAuthor: Saek\"/>")
+        let list = try object(runtime, "l")
+        XCTAssertEqual(WasabiGuiList.items(of: list), ["Title: Aria", "Author: Saek"])
+        _ = try call(runtime, program, list, "deleteAllItems")
+        XCTAssertEqual(WasabiGuiList.items(of: list), [])
+    }
+
+    /// cPro Creed's `displaymods.m`: `ClassicPro.applyStyle(object, id)` writes that `ClassicPro.xml`
+    /// style's attributes, all but its id, onto the object.
+    func testApplyStyleWritesTheClassicProStyle() throws {
+        let style = #"<ClassicPro><TextSettings><Style id="$set:fi" y="32" x="-154"/></TextSettings></ClassicPro>"#
+        let (runtime, program) = try makeRuntime(body: #"<group id="fi" x="0" y="51" w="20" h="10"/>"#,
+                                                 files: ["ClassicPro.xml": Data(style.utf8)])
+        let group = try object(runtime, "fi")
+        _ = try system(runtime, program, "applyStyle",
+                       [.object(MakiObjectReference(.gui(group.stableID))), .string("$set:fi")])
+        XCTAssertEqual(group.attributes["x"], "-154")
+        XCTAssertEqual(group.attributes["y"], "32")
+        XCTAssertEqual(group.attributes["id"], "fi", "the style's id is not an attribute to write")
+    }
+
     /// A tree is a model of script-made items, drawn through the list renderer as visible rows.
     func testTreeItemsAddExpandAndDraw() throws {
         let (runtime, program) = try makeRuntime(body: #"<tree id="t" w="60" h="60"/>"#)
@@ -272,10 +295,11 @@ final class WinampModernDemandTailTests: XCTestCase {
         version: 0x0403, classes: [], methods: [], variables: [], bindings: [], instructions: [],
         source: WalSourceLocation(path: "/Skins/Synthetic/t.maki"), ownerID: nil, parameter: nil)
 
-    private func makeRuntime(body: String = "", definitions: String = "") throws -> (WinampModernScriptRuntime, MakiProgram) {
+    private func makeRuntime(body: String = "", definitions: String = "",
+                             files: [String: Data] = [:]) throws -> (WinampModernScriptRuntime, MakiProgram) {
         let loaded = try makeWinampModernSkin(xml: """
         <WasabiXML>\(definitions)<container id="main"><layout id="normal" w="64" h="64">\(body)</layout></container></WasabiXML>
-        """)
+        """, files: files)
         let runtime = try WinampModernScriptRuntime(loadedSkin: loaded, host: WinampModernStubHost())
         addTeardownBlock { runtime.teardown() }
         return (runtime, Self.program)

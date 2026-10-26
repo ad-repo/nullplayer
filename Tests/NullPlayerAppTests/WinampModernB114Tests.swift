@@ -122,6 +122,147 @@ final class WinampModernB114Tests: XCTestCase {
                        "and the half it kept is opaque")
     }
 
+    /// A cut with nothing positive beside it never takes most of the window: Winampple's holders
+    /// stretch an opaque 1x1 over their whole client at `sysregion="-2"`, and its author saw a
+    /// library there, not the desktop.
+    func testACutAloneNeverTakesMostOfTheWindow() throws {
+        let scene = try makeScene(
+            layoutAttributes: #"desktopalpha="0""#,
+            resources: Self.sheenBitmap + #"<bitmap id="bite" file="bite.png"/>"#,
+            markup: Self.sheenLayer
+                + #"<layer id="bite" x="0" y="0" w="100" h="40" image="bite" sysregion="-2"/>"#,
+            art: Self.sheenArt.merging(["bite.png": Self.solidPNG(red: 255, green: 255, blue: 255)]) { a, _ in a }
+        )
+        XCTAssertEqual(Int(try XCTUnwrap(scene.pixel(x: 30, y: 10)).alpha), 255, "the window stays whole")
+    }
+
+    /// A layer that plays itself is hit where it is now; one a script steps is hit on any frame.
+    /// Celica Amp's `glasscover` lifts once and ends nearly clear, and as a union of its frames it
+    /// covered eight controls for good. multipass's seek fill (`autoplay="0"`) still needs the union.
+    func testAFinishedOneShotAnimationIsHitOnItsLastFrame() throws {
+        func hit(_ play: String) throws -> String? {
+            let scene = try makeScene(
+                layoutAttributes: "", resources: #"<bitmap id="lift" file="lift.png"/>"#,
+                markup: #"<animatedlayer id="glass" x="0" y="0" w="8" h="8" image="lift" frame="1" \#(play)/>"#,
+                art: ["lift.png": Self.liftPNG()])
+            return scene.renderer.object(at: CGPoint(x: 4, y: 4))?.xmlID
+        }
+        XCTAssertNil(try hit(#"autoplay="1" autoreplay="0""#), "the lifted glass takes no click")
+        XCTAssertEqual(try hit(#"autoplay="0""#), "glass", "a stepped strip is hit on any frame")
+    }
+
+    /// A wholly clear layer a script hooks a press on takes its rect: an empty region is no region.
+    /// Official Trapt's volume and seek are such surfaces, shaped by a `Map` the script reads.
+    func testAClearLayerAScriptHooksIsAMousetrap() throws {
+        let scene = try makeScene(
+            layoutAttributes: "", resources: #"<bitmap id="clear" file="lift.png" y="8" h="8"/>"#,
+            markup: #"<layer id="trap" x="0" y="0" image="clear"/>"#, art: ["lift.png": Self.liftPNG()])
+        XCTAssertNil(scene.renderer.object(at: CGPoint(x: 4, y: 4)), "unhooked, it is see-through")
+        scene.renderer.pressBindingProvider = { object, _ in object.xmlID == "trap" }
+        XCTAssertEqual(scene.renderer.object(at: CGPoint(x: 4, y: 4))?.xmlID, "trap")
+    }
+
+    /// Only for a button its script hooks: Ebonitefix's clear `vis` layer opens a menu on a right-click
+    /// over the cover whose double-click opens the track's folder.
+    func testAClearMousetrapIsClaimedOnlyByTheButtonItHooks() throws {
+        let scene = try makeScene(
+            layoutAttributes: "", resources: #"<bitmap id="clear" file="lift.png" y="8" h="8"/>"#,
+            markup: #"<layer id="trap" x="0" y="0" image="clear"/>"#, art: ["lift.png": Self.liftPNG()])
+        scene.renderer.pressBindingProvider = { object, button in object.xmlID == "trap" && button != .left }
+        let point = CGPoint(x: 4, y: 4)
+        XCTAssertNil(scene.renderer.object(at: point, button: .left), "a left press falls through")
+        XCTAssertEqual(scene.renderer.object(at: point, button: .right)?.xmlID, "trap")
+    }
+
+    /// A hooked layer under Layer FX takes its rect: the warp moves its pixels off its bitmap.
+    /// Official 28 Days Later's volume knob is a dot that `fx_onGetPixelR` turns around the dial.
+    func testAHookedLayerUnderLayerFXIsItsRect() throws {
+        let scene = try makeScene(
+            layoutAttributes: "", resources: #"<bitmap id="half" file="lift.png"/>"#,
+            markup: #"<layer id="knob" x="0" y="0" image="half"/>"#, art: ["lift.png": Self.liftPNG()])
+        let clear = CGPoint(x: 4, y: 12)
+        scene.renderer.pressBindingProvider = { object, _ in object.xmlID == "knob" }
+        XCTAssertNil(scene.renderer.object(at: clear), "without FX, its clear half is see-through")
+        scene.renderer.layerFXEnabledProvider = { $0.xmlID == "knob" }
+        XCTAssertEqual(scene.renderer.object(at: clear)?.xmlID, "knob")
+    }
+
+    /// B268, Clock V2.76: a layout whose top-level objects are all positive `sysregion` is composed
+    /// from those marks, so art beside them is outside the window; a hidden (`alpha="0"`) mark adds
+    /// nothing. One unmarked top-level object keeps the rectangle.
+    func testAWholeWindowOfMarksIsComposedFromThem() throws {
+        let resources = #"<bitmap id="red" file="red.png"/><bitmap id="blue" file="blue.png"/>"#
+        let art = ["red.png": Self.solidPNG(red: 255, green: 0, blue: 0),
+                   "blue.png": Self.solidPNG(red: 0, green: 0, blue: 255)]
+        let marks = """
+        <group id="case" x="0" y="0" w="120" h="40" sysregion="1">
+          <layer id="body" x="0" y="0" w="8" h="8" image="red" sysregion="1"/>
+          <layer id="wedge" x="16" y="0" w="8" h="8" image="blue" ghost="1"/>
+        </group>
+        <group id="calendar" x="0" y="0" w="120" h="40" sysregion="1" alpha="0">
+          <layer id="cal" x="16" y="0" w="8" h="8" image="red" sysregion="1"/>
+        </group>
+        """
+        let composed = try makeScene(layoutAttributes: #"desktopalpha="1""#, resources: resources,
+                                     markup: marks, art: art)
+        XCTAssertEqual(try XCTUnwrap(composed.pixel(x: 4, y: 35)).alpha, 255, "the case is window")
+        XCTAssertEqual(try XCTUnwrap(composed.pixel(x: 20, y: 35)).alpha, 0, "the wedge beside it is not")
+
+        let decorated = try makeScene(layoutAttributes: #"desktopalpha="1""#, resources: resources,
+                                      markup: marks + #"<layer id="plain" x="40" y="0" image="red"/>"#, art: art)
+        XCTAssertEqual(try XCTUnwrap(decorated.pixel(x: 20, y: 35)).alpha, 255, "marks that decorate trim nothing")
+    }
+
+    /// A plain `<edit>` is an opaque native window on `wasabi.list.background`, so Clock V2.76's
+    /// comment field, which its box art leaves blank, can be seen and clicked.
+    func testAPlainEditPaintsTheListBackground() throws {
+        let scene = try makeScene(layoutAttributes: "",
+                                  resources: #"<color id="wasabi.list.background" value="0,0,255"/>"#,
+                                  markup: #"<edit id="field" x="0" y="0" w="20" h="40"/>"#)
+        let field = try XCTUnwrap(scene.pixel(x: 10, y: 20))
+        XCTAssertEqual([field.red, field.green, field.blue, field.alpha], [0, 0, 255, 255])
+        XCTAssertEqual(try XCTUnwrap(scene.pixel(x: 60, y: 20)).alpha, 0, "only the field's own box")
+    }
+
+    /// `<AlbumArt>` fits its cover with the aspect kept, centred, unless `stretched="1"`. Winampple's
+    /// small art is a 111×310 box whose 96px middle band is the only part its group shows.
+    func testAlbumArtKeepsItsAspectUnlessStretched() {
+        let box = CGRect(x: 0, y: -107, width: 111, height: 310)
+        let fitted = WasabiSceneRenderer.albumArtRect(of: CGSize(width: 110, height: 96), in: box, stretched: false)
+        XCTAssertEqual(fitted.width, 111, accuracy: 0.01)
+        XCTAssertEqual(fitted.height, 96.87, accuracy: 0.01)
+        XCTAssertEqual(fitted.midY, box.midY, accuracy: 0.01, "centred, so the group's 0…96 band shows all of it")
+        XCTAssertEqual(WasabiSceneRenderer.albumArtRect(of: CGSize(width: 110, height: 96), in: box, stretched: true), box)
+    }
+
+    /// `center_image="1"` draws the face at its own size in the middle of its box, and only the drawn
+    /// pixels take a click. Winampple's 40x40 logo on a 434px button was stretched into a smear.
+    func testACenteredImageIsDrawnAndHitAtItsOwnSize() throws {
+        let scene = try makeScene(
+            layoutAttributes: #"desktopalpha="1""#, resources: #"<bitmap id="face" file="face.png"/>"#,
+            markup: #"<button id="logo" x="0" y="0" w="32" h="8" image="face" center_image="1"/>"#,
+            art: ["face.png": Self.solidPNG(red: 255, green: 0, blue: 0)])
+        // `pixel` counts rows up from the bottom of the 40px canvas: row 35 is the face's middle row.
+        XCTAssertEqual(try XCTUnwrap(scene.pixel(x: 4, y: 35)).alpha, 0, "the margin stays clear")
+        XCTAssertEqual(try XCTUnwrap(scene.pixel(x: 16, y: 35)).red, 255, "the face sits mid-box")
+        XCTAssertNil(scene.renderer.object(at: CGPoint(x: 4, y: 4)))
+        XCTAssertEqual(scene.renderer.object(at: CGPoint(x: 16, y: 4))?.xmlID, "logo")
+    }
+
+    /// LCDx's "plus" player is a frame that states `default_w` and no `w`; it is that wide, not 0.
+    func testAnObjectWithOnlyADefaultWidthIsThatWide() throws {
+        let scene = try makeScene(
+            layoutAttributes: #"desktopalpha="1""#, resources: #"<bitmap id="face" file="face.png"/>"#,
+            markup: #"""
+            <group id="frame" x="0" y="0" h="8" default_w="16">
+              <layer id="body" x="0" y="0" w="0" h="0" relatw="1" relath="1" image="face"/>
+            </group>
+            """#,
+            art: ["face.png": Self.solidPNG(red: 255, green: 0, blue: 0)])
+        XCTAssertEqual(try XCTUnwrap(scene.pixel(x: 8, y: 35)).red, 255, "the body spans default_w")
+        XCTAssertEqual(try XCTUnwrap(scene.pixel(x: 20, y: 35)).alpha, 0, "and stops there")
+    }
+
     /// The buffer the opaque path renders through is snapped to the caller's device grid, so the
     /// picture that comes back is the same one an ordinary draw produces — pixel for pixel, at 2x.
     func testTheOpaquePathIsPixelExactAtRetinaScale() throws {
@@ -392,6 +533,19 @@ final class WinampModernB114Tests: XCTestCase {
             }
         }
         return url
+    }
+
+    /// Two 8x8 frames down an 8x16 sheet: the first opaque white, the second clear.
+    private static func liftPNG() -> Data {
+        let representation = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 8, pixelsHigh: 16,
+                                              bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                              isPlanar: false, colorSpaceName: .deviceRGB,
+                                              bytesPerRow: 32, bitsPerPixel: 32)!
+        for y in 0..<16 {
+            var components = y < 8 ? [255, 255, 255, 255] : [0, 0, 0, 0]
+            for x in 0..<8 { representation.setPixel(&components, atX: x, y: y) }
+        }
+        return representation.representation(using: .png, properties: [:])!
     }
 
     private static func solidPNG(red: UInt8, green: UInt8, blue: UInt8) -> Data {
