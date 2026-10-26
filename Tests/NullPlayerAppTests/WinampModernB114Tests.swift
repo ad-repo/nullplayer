@@ -176,6 +176,20 @@ final class WinampModernB114Tests: XCTestCase {
         XCTAssertEqual(scene.renderer.object(at: CGPoint(x: 16, y: 4))?.xmlID, "logo")
     }
 
+    /// LCDx's "plus" player is a frame that states `default_w` and no `w`; it is that wide, not 0.
+    func testAnObjectWithOnlyADefaultWidthIsThatWide() throws {
+        let scene = try makeScene(
+            layoutAttributes: #"desktopalpha="1""#, resources: #"<bitmap id="face" file="face.png"/>"#,
+            markup: #"""
+            <group id="frame" x="0" y="0" h="8" default_w="16">
+              <layer id="body" x="0" y="0" w="0" h="0" relatw="1" relath="1" image="face"/>
+            </group>
+            """#,
+            art: ["face.png": Self.solidPNG(red: 255, green: 0, blue: 0)])
+        XCTAssertEqual(try XCTUnwrap(scene.pixel(x: 8, y: 35)).red, 255, "the body spans default_w")
+        XCTAssertEqual(try XCTUnwrap(scene.pixel(x: 20, y: 35)).alpha, 0, "and stops there")
+    }
+
     /// The buffer the opaque path renders through is snapped to the caller's device grid, so the
     /// picture that comes back is the same one an ordinary draw produces — pixel for pixel, at 2x.
     func testTheOpaquePathIsPixelExactAtRetinaScale() throws {

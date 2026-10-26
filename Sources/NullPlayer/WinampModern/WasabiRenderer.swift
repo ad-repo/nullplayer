@@ -2357,6 +2357,16 @@ final class WasabiSceneRenderer {
             if object.attributes["w"] == nil { intrinsic.width = WasabiFormWidgets.stockCheckBoxSide }
             if object.attributes["h"] == nil { intrinsic.height = WasabiFormWidgets.stockCheckBoxSide }
         }
+        // An object that states `default_w`/`default_h` but no `w`/`h` is that size, as a layout is.
+        // LCDx's "plus" player is `<Wasabi:StandardFrame:noStatus h="0" relath="1" default_w="543">`
+        // holding the whole player: at 0 wide its body drew nothing but the layout's own buttons.
+        // The only such object in the four tiers (zip scan, 2026-10-25).
+        if !isRoot {
+            if object.attributes["w"] == nil, intrinsic.width == 0,
+               let width = Double(object.attributes["default_w"] ?? ""), width > 0 { intrinsic.width = width }
+            if object.attributes["h"] == nil, intrinsic.height == 0,
+               let height = Double(object.attributes["default_h"] ?? ""), height > 0 { intrinsic.height = height }
+        }
         let resolved: CGRect
         if isRoot {
             resolved = parentFrame

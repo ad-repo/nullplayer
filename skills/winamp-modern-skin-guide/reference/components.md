@@ -249,6 +249,13 @@ content="pledit.content.group">`), **Sony Walkman** and **canum**. Four things c
 - **No top strip, the client starts below the title** — the frame's `wasabi.titlebar` group's bottom.
   Circlo's top band is a `move` tile and two corners; measured as 0, its Color Themes list ran under
   the title, and Celica's playlist covered its own title bar.
+- **A wholly transparent strip is no border** (2026-10-25): a cut that is readable but has nothing
+  opaque in it is an empty box, not an unreadable one, so it neither counts nor falls back to its
+  declared size. LCDx's strips are all one empty 39x37 `frame.png`; counted at their offsets, every
+  framed window lost 39px on the right and 37px below, clipping the Thinger's icons to 21 rows.
+- **No bottom strip, the client ends above the status slot** — the frame's relative `LayoutStatus`
+  top. With LCDx's strips gone it would otherwise run under its own status bar; Celica's playlist
+  had been covering its command bar, and Circlo's client now stops above its status text.
 
 **The synthesizer still rejects these frames, and that is now stale.** `usableFrame` asks the
 bytecode whether a frame can build its own client area, so TRON's Media Library — a window *we*

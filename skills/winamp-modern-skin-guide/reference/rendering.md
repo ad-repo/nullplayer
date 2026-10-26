@@ -1223,6 +1223,14 @@ empty clip is built as an explicit zero-size rect pinned inside the parent clip 
 The same bug was quietly damaging `211786-Cpro_Winamp_Modern`, whose beat-vis bars spilled out of
 their box across the window chrome; it is not a cPro2-only shape.
 
+## An object's `default_w`/`default_h` states its box when `w`/`h` do not (2026-10-25)
+
+An object that declares `default_w`/`default_h` and no `w`/`h` is that size, as a layout is; it fills
+an axis only after every rule below has left it zero. LCDx's "plus" player is
+`<Wasabi:StandardFrame:noStatus h="0" relath="1" default_w="543">` holding the whole player, and at 0
+wide its body drew nothing but the layout's own buttons. It is the only such object in the four
+tiers (zip scan, 2026-10-25).
+
 ## A `<group>`'s `background` bitmap states its box (B109, 2026-09-03)
 
 A group that declares no `w`/`h` is the size of its **`background`** bitmap. That is a *declaration*,

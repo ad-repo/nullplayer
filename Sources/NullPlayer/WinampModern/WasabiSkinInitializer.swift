@@ -1673,8 +1673,9 @@ final class WasabiSkinInitializer {
                     bitmapOpaqueBounds: { [resourceRegistry, vfs] identifier in
                         guard let resource = resourceRegistry?.resolvedDefinition(identifier: identifier)
                         else { return nil }
+                        // A cut with nothing opaque in it is an empty box, not an unreadable one.
                         if let cut = WasabiResourceCache.cutImage(of: resource, in: vfs) {
-                            return WasabiResourceCache.edgeBounds(of: cut)
+                            return WasabiResourceCache.edgeBounds(of: cut) ?? .zero
                         }
                         // A generated (`$solid`) bitmap has no file: it is its declared size.
                         guard let width = resource.attributes["w"].flatMap(Double.init),
