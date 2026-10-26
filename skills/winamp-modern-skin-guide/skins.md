@@ -171,6 +171,7 @@ One file per measured skin. A pointer that says "read `skins.md` for skin X" res
 |---|---|
 | cPro-Bento (+ ClassicPro engine) | [skins/cpro-bento.md](skins/cpro-bento.md) |
 | Anexa | [skins/anexa.md](skins/anexa.md) |
+| intellidesign | [skins/intellidesign.md](skins/intellidesign.md) |
 | T-800 (`T800.wal`) | [skins/t800.md](skins/t800.md) |
 | Ebonite | [skins/ebonite.md](skins/ebonite.md) |
 | JVC Tape | [skins/jvc-tape.md](skins/jvc-tape.md) |
