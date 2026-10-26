@@ -86,9 +86,7 @@ enum WasabiSurfaceSynthesizer {
         let frame = usableFrame(in: definitions, document: document, scriptReader: scriptReader)
         let hostedWindows = hostedWindowCatalog(frame: frame)
 
-        // The skin's own library window, re-framed in the same frame our windows wear.
-        overrideDeclaredLibraryFrame(in: document, frame: frame, definitions: definitions)
-        // And any window the skin framed in tooltip art, re-hosted in the chrome our windows wear.
+        // Any window the skin framed in tooltip art, re-hosted in the chrome our windows wear.
         rehostTooltipFramedContainers(in: document, definitions: definitions)
 
         var appended: [WalXMLNode] = []
@@ -625,77 +623,6 @@ enum WasabiSurfaceSynthesizer {
         let width = Double(node.attribute("w") ?? "") ?? 0
         let height = Double(node.attribute("h") ?? "") ?? 0
         return width < 0 && height < 0
-    }
-
-    /// Put the skin's own **library** window in the thinner frame, when the skin has one.
-    ///
-    /// This is the one place the pass rewrites a window the skin declares rather than adding one of
-    /// our own, and it is deliberate. The library window is the only skin window whose entire contents
-    /// are NullPlayer's and whose rows are dense with information, so a frame drawn for a picture —
-    /// Itemskin puts a 33px surround and a 55px band around its `MLibrary`, the same frame it gives
-    /// its playlist — costs real rows on every screen. Every other window the author framed keeps the
-    /// frame the author chose.
-    ///
-    /// It only ever *reduces* the border: a skin whose library already wears its thinnest frame, or
-    /// which has no second frame to offer, is left exactly as written. `frame` here is the frame
-    /// selection the rest of the pass already made, which is the thinnest the skin declares.
-    private static func overrideDeclaredLibraryFrame(in document: WalExpandedXMLDocument,
-                                                     frame: FrameSelection,
-                                                     definitions: [String: WalXMLNode]) {
-        guard case .success(let frame) = frame, let exemplar = frame.exemplar,
-              let layout = declaredLibraryLayout(in: document),
-              let existing = layout.children.first(where: {
-                  fold($0.name).hasPrefix(fold(standardFrameTagPrefix))
-              }),
-              existing.name.caseInsensitiveCompare(frame.xuiTag) != .orderedSame,
-              let component = layout.children.first(where: {
-                  $0.name.caseInsensitiveCompare("component") == .orderedSame
-              }),
-              weight(of: exemplar.content) < weight(of: rectAttributes(of: component))
-        else { return }
-        // A frame with a script is behaviour, not just art, and swapping the tag swaps the script.
-        // Winampple's frames each pair their window with a `cont.clear.*` of its own; re-framed, the
-        // library ran the video frame's script, which parked the opaque `cont.clear.vid` over it and
-        // took every click.
-        guard !definitions.values.contains(where: {
-            $0.attribute("xuitag").map(fold) == fold(existing.name) && !scriptNodes(in: $0).isEmpty
-        }) else { return }
-        component.setAttributes(exemplar.content)
-        var frameAttributes = existing.attributes
-        for name in rectAttributeNames { frameAttributes[name] = nil }
-        frameAttributes.merge(exemplar.frame) { _, new in new }
-        let replacement = WalXMLNode(name: frame.xuiTag, attributes: frameAttributes,
-                                     location: existing.location, children: existing.children)
-        layout.replaceChildren(layout.children.map { $0 === existing ? replacement : $0 })
-    }
-
-    /// The `<layout>` of the window the skin declares for the media library, if it declares one.
-    private static func declaredLibraryLayout(in document: WalExpandedXMLDocument) -> WalXMLNode? {
-        let libraryGUID = "6b0edf80-c9a5-11d3-9f26-00c04f39ffc6"
-        var found: WalXMLNode?
-        func walk(_ nodes: [WalXMLNode], container: WalXMLNode?) {
-            for node in nodes {
-                if found != nil { return }
-                let isContainer = node.name.caseInsensitiveCompare("container") == .orderedSame
-                if node.name.caseInsensitiveCompare("layout") == .orderedSame,
-                   let component = node.children.first(where: {
-                       $0.name.caseInsensitiveCompare("component") == .orderedSame
-                   }) {
-                    let reference = (component.attribute("param")
-                                     ?? container?.attribute("component") ?? "").lowercased()
-                    if reference.contains(libraryGUID) { found = node; return }
-                }
-                walk(node.children, container: isContainer ? node : container)
-            }
-        }
-        walk(document.roots, container: nil)
-        return found
-    }
-
-    private static func weight(of rect: [String: String]) -> Double {
-        let width = Double(rect["w"] ?? "") ?? 0
-        let height = Double(rect["h"] ?? "") ?? 0
-        return max(0, -width) + max(0, -height)
     }
 
     /// How much of the window this exemplar's border takes up, as one number to order by.

@@ -994,17 +994,14 @@ window that much bigger (`Frame.floor(under:)`, `WinampModernHostedWindowInstant
 as window sizes left Itemskin's 33x55 border eating most of a 343x145 window and reading as chrome far
 too heavy for what it framed.
 
-**The one skin-declared window this pass rewrites is the library.** `overrideDeclaredLibraryFrame` puts
-it in the same thin frame: its contents are entirely NullPlayer's and its rows are dense with
-information, where a frame drawn for a picture costs rows on every screen. It only ever *reduces* the
-border, and playlist, video and visualizer keep the frames their authors chose.
-
-**Never when the library's frame carries a script** (2026-10-26). Swapping the tag swaps the script,
-so the library runs another window's frame behaviour. Winampple's frames each pair their window with
-a `cont.clear.*` of their own: re-framed in `StandardFrame:VID`, the library ran `standardframeVID`,
-which parked the opaque `cont.clear.vid` over it and took every click, while its own `cont.clear.ml`
-never opened. Corpus match set before the guard: Itemskin, both K-jr archives, MoonLight and
-Winampple, every one scripted on both sides — so the override now fires on no corpus skin.
+**A skin's own windows keep the frames their authors chose — the library too** (removed
+2026-10-26). The pass used to re-frame a declared library in the thinner frame, since its rows are
+NullPlayer's and a frame drawn for a picture costs rows. Swapping the tag swaps the frame's script,
+and in Winampple each frame's script pairs its window with a `cont.clear.*` of its own: re-framed in
+`StandardFrame:VID`, the library ran `standardframeVID`, which parked the opaque `cont.clear.vid`
+over it and took every click, while its own `cont.clear.ml` never opened. Every skin the re-frame
+reached — Itemskin, both K-jr archives, MoonLight, Winampple — had a scripted frame on both sides, so
+it was removed rather than guarded.
 
 #### A frame that builds its own client still costs the window (B140, 2026-09-05)
 
