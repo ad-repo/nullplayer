@@ -1428,7 +1428,13 @@ final class WasabiSkinInitializer {
             let lower = node.name.lowercased()
             if lower == "script" {
                 if let rawFile = node.attribute("file"), !rawFile.isEmpty {
-                    pendingScripts.append(PendingScript(owner: parent, rawPath: rawFile,
+                    // A `<scripts>` block inside a layout or group only wraps the declaration: the
+                    // script's group is the object the block sits in. METASKINS-WooHoo-FER's
+                    // playlist centres its logo on `getScriptGroup().getWidth()`, and answered with
+                    // the zero-width wrapper it pushed the logo off the window's left edge. A
+                    // top-level block has no parent and stays skin-level (`isSkinLevel`).
+                    let owner = parent.map { $0.tag.is(.scripts) ? ($0.parent ?? $0) : $0 }
+                    pendingScripts.append(PendingScript(owner: owner, rawPath: rawFile,
                                                         parameter: WasabiXMLMacroResolver.resolve(node.attribute("param")),
                                                         source: node.location))
                 }
@@ -1601,11 +1607,23 @@ final class WasabiSkinInitializer {
                                           definitionStack: definitionStack, createdCount: &createdCount,
                                           documentOrder: documentOrder, enclosingOrder: nodeOrder)
             }
+            let firstInlineScript = pendingScripts.endIndex
             try createObjects(from: instanceChildren, parent: embeddedParent, graph: graph, types: types,
                               pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
                               definitionStack: nextDefinitionStack,
                               createdCount: &createdCount,
                               documentOrder: documentOrder, enclosingOrder: nodeOrder)
+            // A `<group>` naming no `<groupdef>` instantiates nothing; it only brackets markup, and a
+            // script inside it speaks for the object the bracket sits in — the `<scripts>` rule
+            // above. WoopieAMP3 wraps `title.maki` in `<group id="songtitle">` and has it
+            // `getScriptGroup().getObject(...)` the layout's transport buttons and Thinger drawer;
+            // answered from the bracket, every lookup came back null and the drawer never opened.
+            if let parent, node.name.caseInsensitiveCompare("group") == .orderedSame,
+               types.definition(forInstance: node, documentOrder: nodeOrder) == nil {
+                for index in firstInlineScript..<pendingScripts.endIndex where pendingScripts[index].owner === object {
+                    pendingScripts[index].owner = parent
+                }
+            }
             // A `<Wasabi:Frame>` declares its two panes by group id rather than nesting them, so the
             // splitter is what brings them into the graph. cPro-Bento's entire body (library tree,
             // playlist, tabs) hangs off one, and without this the SUI expands to an empty frame.

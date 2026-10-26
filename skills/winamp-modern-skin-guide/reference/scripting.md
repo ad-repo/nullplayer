@@ -164,6 +164,16 @@ Three ordering rules make or break this:
   that may assume the rest of the skin is configured. Defix's lays out its whole SUI tab strip as
   `label.getAutoWidth() + 20` per tab; run before the labels arrived as params, all five tabs came out
   at that bare 20px, stacked at the left edge.
+- **A bracket is not a script group.** A `<scripts>` block *inside* a layout or group, and a `<group>`
+  naming no `<groupdef>`, instantiate nothing of their own; a script declared in one belongs to the
+  object the bracket sits in, and that is what `getScriptGroup()` answers (`WasabiSkinInitializer`,
+  where scripts are owned). METASKINS-WooHoo-FER's playlist centred its logo on the zero-width
+  wrapper's `getWidth()` and pushed it off the left edge, and its main layout's antennas never showed;
+  WoopieAMP3's `title.maki` sits in `<group id="songtitle">` and `getObject`s the layout's transport
+  and Thinger drawer, all null from the bracket. Only a top-level `<scripts>` block is skin-level.
+  `getObject` itself stays subtree-only — widening it to the window (the `findObject` rule) was
+  measured and rejected: cPro's `widgetsManager.m` asks each widget's group for `@uninstaller` and
+  relies on the null, and wide it lit BrowserPro's uninstall button with Now Playing's.
 - **Geometry never reaches the script.** Wasabi hands a tag's attributes to `GuiObject::setXmlParam`
   first and only scripts what that leaves unclaimed, which is why a XUI wrapper can afford to forward
   everything it is given straight to the control it wraps. ClassicPro's `ModernSongticker.maki` is
