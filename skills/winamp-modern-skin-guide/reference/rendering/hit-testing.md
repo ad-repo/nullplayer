@@ -86,6 +86,8 @@ Two rules about *which* objects may claim a point:
   `vis.mousetrap`, `*switch`); only a hooked one changes (`isClearMousetrap`).
 - **A self-playing `animatedlayer` is hit on the frame showing** — see `rendering.md` → the union of
   its frames, which still holds for one a script steps.
+- **A `center_image="1"` face is hit where it is drawn** — at its own size mid-box, not mapped
+  across the whole button (`centeredImageRect`, shared with the draw).
 - **`animatedlayer` is clickable like `layer`.** MMD3's rotary volume/bass/treble knobs are animated
   layers whose scripts hook `onLeftButtonDown`; leaving the type out of `isInteractive` meant no click
   ever reached them.

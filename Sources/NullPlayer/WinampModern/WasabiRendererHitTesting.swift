@@ -43,8 +43,9 @@ extension WasabiSceneRenderer {
                             > Self.regionAlphaFloor
                     else { continue }
                 } else {
-                    let local = CGPoint(x: (point.x - node.frame.minX) / max(1, node.frame.width) * CGFloat(bitmap.width),
-                                        y: (point.y - node.frame.minY) / max(1, node.frame.height) * CGFloat(bitmap.height))
+                    let drawn = centeredImageRect(bitmap, object: object, in: node.frame) ?? node.frame
+                    let local = CGPoint(x: (point.x - drawn.minX) / max(1, drawn.width) * CGFloat(bitmap.width),
+                                        y: (point.y - drawn.minY) / max(1, drawn.height) * CGFloat(bitmap.height))
                     guard bitmap.alpha(at: local) > Self.regionAlphaFloor || isClearMousetrap(object, bitmap)
                     else { continue }
                 }

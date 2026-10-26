@@ -109,11 +109,30 @@ extension WasabiSceneRenderer {
             drawTiled(bitmap, in: frame, tileX: tileX, tileY: tileY, context: context)
             return
         }
+        if let centered = centeredImageRect(bitmap, object: object, in: frame) {
+            context.saveGState()
+            context.clip(to: frame)
+            drawImage(bitmap.image, in: centered, context: context)
+            context.restoreGState()
+            return
+        }
         // A non-tiled layer stretches its bitmap to fill its rect. Resizable window chrome depends on
         // this: `wasabi.frame.top` is a 10×18 sprite stretched across the whole titlebar, and the
         // menubar/titlebar streaks are 5–10px sprites stretched to hundreds of pixels. Drawing them
         // at natural size instead painted one sprite and left the rest of the bar blank.
         drawImage(bitmap.image, in: frame, context: context)
+    }
+
+    /// `center_image="1"`: the bitmap at its own size in the middle of the box, clipped to it, instead
+    /// of stretched. Winampple's logo is a 40x40 face on a full-width 434px button ("Put logo at
+    /// center"); stretched it drew as a dark smear across the whole transport bar. Shared with the hit
+    /// test, so the clickable pixels are the drawn ones.
+    func centeredImageRect(_ bitmap: WasabiBitmap, object: WasabiObject, in frame: CGRect) -> CGRect? {
+        guard object.attributes["center_image"] == "1" else { return nil }
+        let width = CGFloat(bitmap.width), height = CGFloat(bitmap.height)
+        return CGRect(x: frame.minX + ((frame.width - width) / 2).rounded(.down),
+                      y: frame.minY + ((frame.height - height) / 2).rounded(.down),
+                      width: width, height: height)
     }
 
     /// `tile`/`tilex`/`tiley`: repeat the bitmap across the layer instead of stretching it. Every

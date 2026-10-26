@@ -162,6 +162,20 @@ final class WinampModernB114Tests: XCTestCase {
         XCTAssertEqual(scene.renderer.object(at: CGPoint(x: 4, y: 4))?.xmlID, "trap")
     }
 
+    /// `center_image="1"` draws the face at its own size in the middle of its box, and only the drawn
+    /// pixels take a click. Winampple's 40x40 logo on a 434px button was stretched into a smear.
+    func testACenteredImageIsDrawnAndHitAtItsOwnSize() throws {
+        let scene = try makeScene(
+            layoutAttributes: #"desktopalpha="1""#, resources: #"<bitmap id="face" file="face.png"/>"#,
+            markup: #"<button id="logo" x="0" y="0" w="32" h="8" image="face" center_image="1"/>"#,
+            art: ["face.png": Self.solidPNG(red: 255, green: 0, blue: 0)])
+        // `pixel` counts rows up from the bottom of the 40px canvas: row 35 is the face's middle row.
+        XCTAssertEqual(try XCTUnwrap(scene.pixel(x: 4, y: 35)).alpha, 0, "the margin stays clear")
+        XCTAssertEqual(try XCTUnwrap(scene.pixel(x: 16, y: 35)).red, 255, "the face sits mid-box")
+        XCTAssertNil(scene.renderer.object(at: CGPoint(x: 4, y: 4)))
+        XCTAssertEqual(scene.renderer.object(at: CGPoint(x: 16, y: 4))?.xmlID, "logo")
+    }
+
     /// The buffer the opaque path renders through is snapped to the caller's device grid, so the
     /// picture that comes back is the same one an ordinary draw produces — pixel for pixel, at 2x.
     func testTheOpaquePathIsPixelExactAtRetinaScale() throws {

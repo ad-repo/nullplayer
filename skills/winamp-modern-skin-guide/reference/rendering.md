@@ -493,6 +493,11 @@ Shadows (Every Family)*). Trace: `NP_SKIN_SHADOW_TRACE=1` (`reference/harness.md
   depends on this — `wasabi.frame.top` is a 10×18 sprite stretched across the whole titlebar, and the
   menubar/titlebar streaks are 5–10px sprites stretched to hundreds of pixels. Drawing them at
   natural size paints one sprite and leaves the rest of the bar blank.
+- **`center_image="1"`**: the bitmap at its own size in the middle of the box, clipped to it
+  (`centeredImageRect`), and hit-tested where it is drawn. 24 gold+silver skins use it, all on
+  buttons. Winampple's 40x40 logo sits on a 434px button and stretched into a smear across the
+  transport bar; the Thinger scroll arrows of Nullsoft 2000 SP4 Lite, Mad Magazine and
+  wasabi_player, BOOM's drop-down arrows and Azenis² EQ icons were stretched blobs too.
 - **`tile`/`tilex`/`tiley`**: repeat the bitmap instead. Bento-style frames tile their
   top/bottom/left/right/center strips. Tiles are blitted 1:1 with interpolation off, or the resampled
   edges leave a visible seam grid.
