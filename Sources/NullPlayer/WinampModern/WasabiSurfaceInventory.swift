@@ -430,8 +430,10 @@ struct WinampModernSurfaceInventory {
             }
             return 0
         }
-        let width = dimension(["default_w", "w", "minimum_w"])
-        let height = dimension(["default_h", "h", "minimum_h"])
+        // The fixed `w`/`h` only, as `WinampModernContainerTopology.analyze` reads it: a tiny
+        // `default_w`/`default_h` is a resizable window's starting size (Winampple's `PLEdit`).
+        let width = dimension(["w"])
+        let height = dimension(["h"])
         // A layout that declares no box at all is not collapsed — it is sized by its `background`
         // bitmap. Counting its two zeroes as 0×0 made the skin's own equalizer look absent, and the
         // synthesizer then built a plain one over the top of it.

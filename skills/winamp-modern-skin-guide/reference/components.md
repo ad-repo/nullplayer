@@ -126,6 +126,11 @@ The declared value is snapshotted at container creation (`declaredVisibleAttribu
 bare `visible=` at all**, so the check only ever fired on a runtime hide; the collapsed-stub case is
 carried by the 1×1 size test beside it, which is what `window-overrides.xml` actually writes.
 
+That size test reads the fixed `w`/`h` only, in both `WinampModernContainerTopology.analyze` and
+`WinampModernSurfaceInventory.isVisibleWindow`. A tiny `default_w`/`default_h` is where a resizable
+window starts: Winampple's `PLEdit` starts at 1×1 and its `standardframePL.maki` resizes it over the
+player body every 10 ms. Every other ≤2px container in the corpus declares fixed `w`/`h` (B269).
+
 Measured on Defix, the only skin in the corpus that does this: `CORE_SCRIPT.maki` hides `VISCON` — a
 406×360 detached-visualizer window with its own `{0000000A}` holder and control bar — from
 `onScriptLoaded`. `RENDER-DUMP` prints its container list *after* `scripts.start()`, so for the whole

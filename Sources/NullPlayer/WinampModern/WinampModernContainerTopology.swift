@@ -89,8 +89,12 @@ enum WinampModernContainerTopology {
                 // Only a layout that *declares* a tiny box has been collapsed. A layout that declares
                 // no box at all is sized by its `background` bitmap (ZDL's Reel-To-Reel declares its
                 // equalizer that way), and reading its two zeroes as 0×0 hid the window the skin ships.
-                let collapsed = (declared.width > 0 || declared.height > 0) &&
-                    declared.width <= collapsedThreshold && declared.height <= collapsedThreshold
+                // And only the fixed `w`/`h` collapse it, the size `window-overrides` writes: a tiny
+                // `default_w`/`default_h` is where a resizable window starts. Winampple's `PLEdit`
+                // starts at 1×1 and its script sizes it over the player body.
+                let fixed = size(of: layout, keys: [["w"], ["h"]])
+                let collapsed = (fixed.width > 0 || fixed.height > 0) &&
+                    fixed.width <= collapsedThreshold && fixed.height <= collapsedThreshold
                 let minimum = size(of: layout, keys: [["minimum_w"], ["minimum_h"]])
                 let maximum = size(of: layout, keys: [["maximum_w"], ["maximum_h"]])
                 return WinampModernContainerInfo(

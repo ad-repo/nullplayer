@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B269 — A tiny `default_w`/`default_h` is a starting size, not a collapsed stub — closed 2026-10-25
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B269 | **Winampple's playlist window is dropped as a collapsed stub, so its player opens with an empty, see-through body.** Winampple's `PLEdit` (`pl-windowholder.xml`) declares `default_w="1" default_h="1"` and holds the playlist `<component>`; the player's own holder is commented out and draws only `group.PLEditBG`. Its `standardframePL.maki` calls `newDynamicContainer("main")` (the player is `dynamic="1"`) and, every 10 ms, `resize`s the PLEdit layout to the player's rect, so the playlist (content at 9,73) sits glued over the player body. Both stub tests (`WinampModernContainerTopology.analyze`, `WasabiSurfaceInventory.isVisibleWindow`) read the 1×1 as cPro's `window-overrides` neutralisation and drop it; a plain playlist is synthesized instead, and live (2026-10-25, debug build) the player's middle shows the desktop through it. A no-other-holder test does not separate it: a zip scan finds CPro_iPhone3gv2's and Nitrous_Audio_CTI_2_Glass's 1×1 `Pledit` with no matching `windowholder` either. Establish what distinguishes a script-sized window from a neutralised one, keep it as a window, and check the script's `resize` glue moves it with the player. Done when Winampple opens with its playlist filling the player body, the glue follows a drag, and the gold+silver sweep moves nothing else | ≤2px containers in gold+silver (zip scan, 2026-10-25): 17 across 5 skins; 3 `Pledit`s (Winampple, CPro_iPhone3gv2, Nitrous) have no `windowholder` naming their GUID | M | 2 |
+
+**Closed 2026-10-25**. What separates them is which attribute is tiny: every ≤2px container in gold, silver, bronze and quarantine declares a fixed `w`/`h` (the `window-overrides` form) except Winampple's `PLEdit`, which declares only `default_w`/`default_h`. Both stub tests (`WinampModernContainerTopology.analyze`, `WinampModernSurfaceInventory.isVisibleWindow`) now read the fixed `w`/`h` alone. The catalog declares Winampple's playlist (`declared:PLEdit`, nothing synthesized). Live (debug build): its window sits exactly over the player, the playlist fills the body, and a drag moves both to the same origin. `testContainerTopologyClassifiesVisibleAndCollapsedContainers` adds a `default_w="1"` container that must stay a window. `swift test`: 3229 tests, 0 failures. Gold+silver sweep: only Winampple moved, apart from listed noise.
+
 ## B243 — Each MAKI method declares its arity beside its body — closed 2026-10-25
 
 | Id | Item | Reach | Effort | Tier |
