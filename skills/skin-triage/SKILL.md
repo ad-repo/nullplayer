@@ -261,8 +261,13 @@ Applies after the headless pass is clean. Same inventory, now on screen.
    - **disagree** → class W: view `draw`, hierarchy, layer backing, frame, ordering, compositing.
 4. Run the automated window checks on the skin: `skills/app-control/scripts/window-census.sh <skin>
    --shots` (where every window opens and how big it is, compared with the screen) and
-   `window-interaction-matrix.sh <skin> <out.tsv>` (open, stretch and close every window). Open the
-   shots.
+   `window-interaction-matrix.sh <skin> <out.tsv>` (open, stretch and close every window). Lay the
+   shots out beside the reference with `scripts/review_sheet.py <sheet.png> <shots>/*.png --ref
+   <reference> --scale 2`, and open the sheet. Each shot is drawn over magenta, so a missing
+   background is visible; an image viewer shows alpha 0 as white or black. Judge it by
+   `skin-intake` § *The visual review*: transparent background, jumbled text, layout. A headless
+   dump is no substitute here, because its component panes are empty by design and every one of them
+   reads as a hole.
 5. Window-only checks the harness never sees: placement and size on open, drag and resize, docking,
    shade/unshade round trips, z-order (`CGWindowListCopyWindowInfo` with `.optionOnScreenOnly`),
    shadow, 1x and 2x displays, relaunch with persisted state.

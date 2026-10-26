@@ -33,7 +33,7 @@ not a chat summary, not a scratchpad — a record outside it is lost with the se
 | `stage` | below |
 | `updated` | the date the stage last moved |
 | `rows` | backlog ids this skin filed or was fixed under (`B254`, `B261(open)`), or `-` |
-| `note` | one line: where an unfinished stage stopped (`Phase 5: next B262`), what blocks it, or `-`. A `headless` skin with an empty fix list starts its note with `headless clean`, which the status script reads |
+| `note` | one line: where an unfinished stage stopped (`Phase 5: next B262`), what blocks it, or `-`. A `headless` skin with an empty fix list starts its note with `headless clean`, which the status script reads. A skin at `live` carries its visual-review result (`visual: clean (6 windows)`) |
 
 | Stage | Means |
 |---|---|
@@ -54,7 +54,7 @@ The batch's lowest stage decides the next session's work. `wal_intake_status.sh`
 |---|---|---|
 | — (no open batch) | **Admit** batch n: branch `feat/wal-intake-<n>` from `origin/main`; `wal_intake.sh <bronze> <out> --admit`; copy the picks into `WinampModernSkins/`; commit `<out>/intake.tsv` as `intakes/intake-<n>.ranking.tsv` and the ledger at `admitted` | all → `admitted` |
 | `admitted` | **The batch pass** (below); reorder the ledger rows by its rank, since `next:` takes the first unfinished row | all → `headless` |
-| `headless` | **One skin**, the `next:` one: Phases 5–8. Skins whose note says `headless clean` share one live smoke session instead (one launch, switch skins from the menu) | one → `live` |
+| `headless` | **One skin**, the `next:` one: Phases 5–8, then § *The visual review*. Skins whose note says `headless clean` share one live smoke session instead (one launch, switch skins from the menu), and each still gets the visual review | one → `live` |
 | `live` | **Hand over** the `live` skins in one list for the user's UI round; their verdicts go in | → `accepted`, or back with a note |
 | `accepted` | **Promote** every skin in one commit, then the branch's code-quality review and the PR | all → `promoted` |
 | `promoted` | **Close** once the PR is merged: delete the run store (`rm -rf WinampModernCorpus/runs`), then admit batch n+1 | — |
@@ -85,6 +85,30 @@ fresh branch with the same ledger. Merge `origin/main` in every few days; never 
 ¹ Intake #1 went skin by skin, live first, over three passes; most of what it found was visible in
 a headless dump (`corpus-runner-plan.md` § *Done: the B169 intake*).
 
+## The visual review
+
+No skin moves to `live` without it, whether or not it says `headless clean`. A clean sweep is a
+regression result. Intake #3's user round still found see-through panes, text drawn over text and
+controls run into each other (`corpus-runner-plan.md` § *Done: intake #3*). This review exists to
+catch those three.
+
+1. Run `skills/app-control/scripts/window-census.sh <skin> --shots` with a track playing. That
+   captures every window live, with hosted components and cover art.
+2. Run `scripts/review_sheet.py <sheet.png> <shots>/*.png --ref <screenshot.png> --scale 2`, then
+   **open the sheet**. Each window is drawn over magenta under the author's screenshot.
+3. Judge every window against the three classes, and write one verdict per class:
+   - **Transparent background**: magenta inside the body that the reference fills. Open every
+     `HOLES` line first. A window that is mostly magenta has no enclosed hole, so read its
+     `transparent=` share as well.
+   - **Jumbled text**: strings overlapping each other or their art, cut off, in the wrong size or
+     font, or ids/`@TOKEN@` drawn as text.
+   - **Layout**: controls overlapping or out of place against the reference, gaps, content past the
+     edge, a window cut short or stretched.
+4. Each defect is a fix-list entry: Phase 5, then review again. The stage moves only when all three
+   classes read clean. The commit's ledger `note` says so: `visual: clean (<n> windows)`.
+
+A skin with no `screenshot.png` is judged against its own artwork, and the note says `no ref`.
+
 ## A session
 
 No session remembers the last. What the next one needs is in the ledger, the backlog and the
@@ -99,11 +123,55 @@ scripts serve what is stored for this code, and `--rev <commit>` another commit'
 *The run store*). **Write each result into the ledger the moment it is known**, not at the end.
 
 **End**, in the commit that carries the work:
-1. Stage reached: move it, `note` `-`. Not reached: keep it, `note` `Phase <k>: <next action>`,
+1. Stage reached: move it, `note` `-` (at `live`, the visual-review result). Not reached: keep it, `note` `Phase <k>: <next action>`,
    specific enough to start on without reading the session.
 2. A fix-list entry not done is a backlog row, its id in `rows`.
 3. Any plan edit, by § *Changing the plan*.
 4. The status script exits 0. Report "skin X: stage A → B, N rows fixed, M open" and the `next:` line.
+
+## Running it: one worker per phase
+
+An intake is run by an orchestrator. The main session does no phase work itself: it starts one
+worker per phase and keeps only the workers' reports. Cost is calls × context: every call re-sends
+the whole context, so a long session pays again for everything it has read. Intake #3's longest
+session made 1,505 calls and averaged 212k tokens of context per call. That came to 319M
+cache-read tokens against under 1M of actual tool output. A worker starts small and is discarded
+when it finishes, so no session needs compacting.
+
+**A phase**, for the worker's scope, is one row of the batch table's work, cut where the work
+naturally stops:
+
+| Stage | Phases, one worker each |
+|---|---|
+| no open batch | Admit |
+| `admitted` | Phases 1–2 over the batch (dump, inventory) · Phase 3 (interaction and motion sweeps) · Phase 4 (ranked fix list; ledger → `headless`) |
+| `headless`, per skin | Phase 5 (the fix list, a few entries per worker if it is long) · Phase 6 (reference matching) · Phase 7 and the visual review · Phase 8 (verify; ledger → `live`) |
+| `accepted` | Promote · the code-quality review · the PR |
+
+**The loop:**
+
+1. Run `scripts/wal_intake_status.sh`; its `next:` line and the ledger row name the phase.
+2. Start **one** worker, with `model: "opus"`: the environment's default subagent model is
+   Haiku, and judging the review sheet is the step that has failed before. Never run two at once,
+   because two builds or launches break each other and the user's running app.
+3. The worker's prompt is the phase and skin, plus these rules:
+   - Do this one phase of `skills/skin-intake` / `skills/skin-triage`, read from the ledger, the
+     backlog and the branch. Read only the skill sections the phase needs.
+   - Write each result into the ledger as soon as it is known. Commit the work, and the ledger,
+     before reporting.
+   - Do not spawn agents.
+   - Report in at most 10 lines: skin, phase, stage before → after, rows fixed and open, the
+     visual-review verdicts where they ran, the sheet's path, and the `next:` line.
+4. Check the report before passing it on. The status script must exit 0, and `git log -1` must
+   be the worker's commit. After a visual review, **open the sheet yourself**: a second look at
+   the three classes is the reason the review exists.
+5. Pass the report to the user.
+6. **Stop at every phase boundary, never between skins.** End the turn after each phase. When a
+   phase completes a skin, start the next skin's first phase in the same turn, and stop after
+   that.
+
+A blocker the worker cannot clear (a decision for the user, a defect it cannot reproduce) comes
+back in its report and ends the turn the same way.
 
 ## What this skill routes to
 
