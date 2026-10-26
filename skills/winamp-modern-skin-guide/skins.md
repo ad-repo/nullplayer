@@ -173,6 +173,7 @@ One file per measured skin. A pointer that says "read `skins.md` for skin X" res
 | Anexa | [skins/anexa.md](skins/anexa.md) |
 | intellidesign | [skins/intellidesign.md](skins/intellidesign.md) |
 | Official 28 Days Later | [skins/official-28-days-later.md](skins/official-28-days-later.md) |
+| TAL_96 | [skins/tal-96.md](skins/tal-96.md) |
 | T-800 (`T800.wal`) | [skins/t800.md](skins/t800.md) |
 | Ebonite | [skins/ebonite.md](skins/ebonite.md) |
 | JVC Tape | [skins/jvc-tape.md](skins/jvc-tape.md) |

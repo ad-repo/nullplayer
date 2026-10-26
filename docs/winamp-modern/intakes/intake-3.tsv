@@ -19,7 +19,7 @@ Hybridv10.wal	80663b2b266d82c9ac02f11dcb2bfc35f68601503f5293f9f27715dd515deceb	l
 Aria_of_the_Soul.wal	485db40408ecbe71ca1c5674ea5ea6c4e9d1319da4177ef64a19aa7cdf6ea52a	live	2026-10-25	-	-
 BeatSugar.wal	2c4294253d6066f4aedaefacffef31677d66de0ec8d6dc3f041451b3df4a6f06	live	2026-10-25	-	-
 Official_28_Days_Later_Skin.wal	081bbe6cb629fea7b77b7ab3b2ef26b9f1d48ecd9df3c2cef1725fab0e95b63b	live	2026-10-25	-	-
-TAL_96.wal	0a2edbd0884f5629ea04413c4a803f32a82a198dec673105ba3c9a97b00a377a	headless	2026-10-25	-	Phase 5: songticker covered by layer#glass; timer click silent
+TAL_96.wal	0a2edbd0884f5629ea04413c4a803f32a82a198dec673105ba3c9a97b00a377a	live	2026-10-25	-	-
 Ebonitefix.wal	0363af8d2092af23c0d1b4814a63827952ac765c5ba5e52be107e4a58211a893	headless	2026-10-25	-	Phase 5: notifier Nothing and NO MATCHES overlap; cdcover dblclick, sliders silent
 Angrenthoron.wal	8cbefb87a374fb21d42388dc7a540046907f5f695d20140f2ecd1c263b87f484	headless	2026-10-25	-	Phase 5: script asks undefined player/eq/thinger.content.group (null); no hooked control
 WoopieAMP3.wal	84cde4165cda61c6ec0a51dcabe0dd95928fe3b4fce929fe1b484f0d20fee5bf	headless	2026-10-25	-	Phase 5: bitmap right-up missing; no hooked control
