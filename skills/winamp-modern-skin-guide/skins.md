@@ -176,6 +176,7 @@ One file per measured skin. A pointer that says "read `skins.md` for skin X" res
 | TAL_96 | [skins/tal-96.md](skins/tal-96.md) |
 | Angren Thoron | [skins/angrenthoron.md](skins/angrenthoron.md) |
 | WoopieAMP3 | [skins/woopieamp3.md](skins/woopieamp3.md) |
+| Freeform Simpsons | [skins/freeform-simpsons.md](skins/freeform-simpsons.md) |
 | T-800 (`T800.wal`) | [skins/t800.md](skins/t800.md) |
 | Ebonite | [skins/ebonite.md](skins/ebonite.md) |
 | JVC Tape | [skins/jvc-tape.md](skins/jvc-tape.md) |

@@ -301,7 +301,12 @@ extension WinampModernScriptRuntime {
         // the up/down buttons nudge the *inner* one (`cscrollbar.maki`), while the settings page binds
         // its `onSetPosition` to the **outer** `vscroll`. Without the forward the page never learned
         // the bar had moved, so the buttons and the drag both lit up and scrolled nothing (BB19).
-        "onsetposition", "onsetfinalposition", "onpostedposition"
+        "onsetposition", "onsetfinalposition", "onpostedposition",
+        // A button's activation is its wrapper's on the same terms — `setActivated`/`getActivated`
+        // already cross (`embeddedControl(of:)`), and so must the event they raise. Freeform Simpsons'
+        // `T3:Checkbox` embeds `checkbox.toggle` and its options script binds `onActivate` to each
+        // checkbox *wrapper*; without the forward every Enable/Hide box ticked and hid nothing.
+        "onactivate"
     ]
 
     /// The groups that declared `embed_xui` naming this object — the ancestors that speak for it.
