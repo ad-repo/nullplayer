@@ -59,9 +59,14 @@ extension WasabiSceneRenderer {
     /// region is no region, and the layer takes its whole rect. Official Trapt's volume and seek are
     /// `customvol.m`/`customseek.m` surfaces on wholly transparent `volume.png`/`seek.png`, shaped by a
     /// `Map` the script reads at the click; alpha-tested, both were dead.
+    ///
+    /// So is a hooked layer under Layer FX: the warp moves its pixels away from where its bitmap says
+    /// they are. Official 28 Days Later's volume knob is a 90x90 layer whose only artwork is a 6x2 dot
+    /// `fx_onGetPixelR` turns around the dial, and `player.maki` reads `volume.map` at the press.
     /// ponytail: scans the bitmap on each such miss; cache per bitmap id if a large one shows in hover.
     private func isClearMousetrap(_ object: WasabiObject, _ bitmap: WasabiBitmap) -> Bool {
-        pressBindingProvider?(object) == true && WasabiResourceCache.opaqueBounds(of: bitmap.image) == nil
+        guard pressBindingProvider?(object) == true else { return false }
+        return layerFXEnabledProvider?(object) == true || WasabiResourceCache.opaqueBounds(of: bitmap.image) == nil
     }
 
     /// A group's `background`, resolved as the renderer draws it, read as its artwork for the alpha

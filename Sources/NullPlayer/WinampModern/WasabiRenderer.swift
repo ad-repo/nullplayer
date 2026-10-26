@@ -754,6 +754,9 @@ final class WasabiSceneRenderer {
         /// The Layer FX warp for one object, or nil when it has none. Supplied by the script runtime,
     /// which owns the FX state and runs the skin's `fx_onGetPixel*` callbacks (Phase 28).
     var layerFXProvider: ((WasabiObject) -> WasabiLayerFXMesh?)?
+    /// Whether a script has switched Layer FX on for the object, at any warp — identity included,
+    /// which `layerFXProvider` answers nil for. Read by hit testing, which must not run the callbacks.
+    var layerFXEnabledProvider: ((WasabiObject) -> Bool)?
 
     /// Answer every provider above that the script runtime owns from `scripts`, held weakly. The one
     /// place a window connects a renderer to its runtime; every renderer asks the same runtime, so a
@@ -766,6 +769,7 @@ final class WasabiSceneRenderer {
             scripts?.configAttributeValue(section: section, key: key).map { $0 != "0" }
         }
         layerFXProvider = { [weak scripts] in scripts?.layerFXMesh(for: $0) }
+        layerFXEnabledProvider = { [weak scripts] in scripts?.layerFXIsEnabled(for: $0) ?? false }
     }
 
     let resources: WasabiResourceCache

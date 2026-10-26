@@ -84,6 +84,13 @@ Two rules about *which* objects may claim a point:
   click; alpha-tested, both were dead. Unhooked, such a layer stays see-through. 40 corpus skins
   carry a clear non-ghost layer, almost all named as traps (`resize*`, `trigger`, `*Catch`,
   `vis.mousetrap`, `*switch`); only a hooked one changes (`isClearMousetrap`).
+- **So is a hooked layer under Layer FX** (2026-10-25): the warp moves its pixels off its bitmap, so
+  the bitmap's alpha says nothing about where it is drawn. Official 28 Days Later's volume knob is a
+  90x90 layer whose only artwork is a 6x2 dot `fx_onGetPixelR` turns, and `player.maki` reads
+  `volume.map` at the press. The runtime answers through `layerFXEnabledProvider`, never by
+  evaluating the mesh. `RENDER_CLICKABLE` over the 19 gold+silver skins that enable FX and bind a
+  press, rule off then on: four knobs fall off the list (28 Days Later, JRS `BassKnob`, EPS
+  `VolumeKnob` on both EQ layouts, jvc.tape `volumeknob`) and nothing rises.
 - **A self-playing `animatedlayer` is hit on the frame showing** — see `rendering.md` → the union of
   its frames, which still holds for one a script steps.
 - **A `center_image="1"` face is hit where it is drawn** — at its own size mid-box, not mapped

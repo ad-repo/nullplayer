@@ -133,6 +133,10 @@ extension WinampModernScriptRuntime {
         layerFX.invalidate(object.stableID)
     }
 
+    func layerFXIsEnabled(for object: WasabiObject) -> Bool {
+        layerFX.state(of: object.stableID)?.enabled == true
+    }
+
     /// Whether this layer's warp is still waiting to be evaluated — the state `refreshLayerFXMeshes`
     /// exists to clear before the frame is painted rather than during it.
     func layerFXMeshIsPending(for object: WasabiObject) -> Bool {

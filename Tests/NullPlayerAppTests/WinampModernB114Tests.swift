@@ -162,6 +162,19 @@ final class WinampModernB114Tests: XCTestCase {
         XCTAssertEqual(scene.renderer.object(at: CGPoint(x: 4, y: 4))?.xmlID, "trap")
     }
 
+    /// A hooked layer under Layer FX takes its rect: the warp moves its pixels off its bitmap.
+    /// Official 28 Days Later's volume knob is a dot that `fx_onGetPixelR` turns around the dial.
+    func testAHookedLayerUnderLayerFXIsItsRect() throws {
+        let scene = try makeScene(
+            layoutAttributes: "", resources: #"<bitmap id="half" file="lift.png"/>"#,
+            markup: #"<layer id="knob" x="0" y="0" image="half"/>"#, art: ["lift.png": Self.liftPNG()])
+        let clear = CGPoint(x: 4, y: 12)
+        scene.renderer.pressBindingProvider = { $0.xmlID == "knob" }
+        XCTAssertNil(scene.renderer.object(at: clear), "without FX, its clear half is see-through")
+        scene.renderer.layerFXEnabledProvider = { $0.xmlID == "knob" }
+        XCTAssertEqual(scene.renderer.object(at: clear)?.xmlID, "knob")
+    }
+
     /// `center_image="1"` draws the face at its own size in the middle of its box, and only the drawn
     /// pixels take a click. Winampple's 40x40 logo on a 434px button was stretched into a smear.
     func testACenteredImageIsDrawnAndHitAtItsOwnSize() throws {
