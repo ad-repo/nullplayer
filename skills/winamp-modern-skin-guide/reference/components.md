@@ -999,6 +999,13 @@ it in the same thin frame: its contents are entirely NullPlayer's and its rows a
 information, where a frame drawn for a picture costs rows on every screen. It only ever *reduces* the
 border, and playlist, video and visualizer keep the frames their authors chose.
 
+**Never when the library's frame carries a script** (2026-10-26). Swapping the tag swaps the script,
+so the library runs another window's frame behaviour. Winampple's frames each pair their window with
+a `cont.clear.*` of their own: re-framed in `StandardFrame:VID`, the library ran `standardframeVID`,
+which parked the opaque `cont.clear.vid` over it and took every click, while its own `cont.clear.ml`
+never opened. Corpus match set before the guard: Itemskin, both K-jr archives, MoonLight and
+Winampple, every one scripted on both sides — so the override now fires on no corpus skin.
+
 #### A frame that builds its own client still costs the window (B140, 2026-09-05)
 
 The section above is the *exemplar* branch — skins that lay chrome and content out side by side. The

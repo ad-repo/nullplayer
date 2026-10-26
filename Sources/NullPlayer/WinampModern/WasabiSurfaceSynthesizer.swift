@@ -87,7 +87,7 @@ enum WasabiSurfaceSynthesizer {
         let hostedWindows = hostedWindowCatalog(frame: frame)
 
         // The skin's own library window, re-framed in the same frame our windows wear.
-        overrideDeclaredLibraryFrame(in: document, frame: frame)
+        overrideDeclaredLibraryFrame(in: document, frame: frame, definitions: definitions)
         // And any window the skin framed in tooltip art, re-hosted in the chrome our windows wear.
         rehostTooltipFramedContainers(in: document, definitions: definitions)
 
@@ -640,7 +640,8 @@ enum WasabiSurfaceSynthesizer {
     /// which has no second frame to offer, is left exactly as written. `frame` here is the frame
     /// selection the rest of the pass already made, which is the thinnest the skin declares.
     private static func overrideDeclaredLibraryFrame(in document: WalExpandedXMLDocument,
-                                                     frame: FrameSelection) {
+                                                     frame: FrameSelection,
+                                                     definitions: [String: WalXMLNode]) {
         guard case .success(let frame) = frame, let exemplar = frame.exemplar,
               let layout = declaredLibraryLayout(in: document),
               let existing = layout.children.first(where: {
@@ -652,6 +653,13 @@ enum WasabiSurfaceSynthesizer {
               }),
               weight(of: exemplar.content) < weight(of: rectAttributes(of: component))
         else { return }
+        // A frame with a script is behaviour, not just art, and swapping the tag swaps the script.
+        // Winampple's frames each pair their window with a `cont.clear.*` of its own; re-framed, the
+        // library ran the video frame's script, which parked the opaque `cont.clear.vid` over it and
+        // took every click.
+        guard !definitions.values.contains(where: {
+            $0.attribute("xuitag").map(fold) == fold(existing.name) && !scriptNodes(in: $0).isEmpty
+        }) else { return }
         component.setAttributes(exemplar.content)
         var frameAttributes = existing.attributes
         for name in rectAttributeNames { frameAttributes[name] = nil }

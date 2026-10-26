@@ -67,7 +67,9 @@ final class WinampModernBorrowedFrameTests: XCTestCase {
     /// The one window the skin declares that we re-frame: its media library, whose contents are
     /// entirely NullPlayer's and whose rows a frame drawn for a picture costs outright.
     func testTheSkinsOwnLibraryWindowIsReFramedInTheThinnerFrame() throws {
-        let loaded = try makeSkin(xml: Self.borrowedFrameSkin)
+        let unscripted = Self.borrowedFrameSkin.replacingOccurrences(
+            of: Self.libraryFrameScript, with: "")
+        let loaded = try makeSkin(xml: unscripted)
         let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: Host(),
                                                containerID: "MLibrary")
         addTeardownBlock { renderer.teardown() }
@@ -76,6 +78,19 @@ final class WinampModernBorrowedFrameTests: XCTestCase {
         }
         XCTAssertEqual(frames.first?.object.typeName, "Wasabi:StandardFrame:AVS",
                        "the library keeps a frame, and it is the thin one")
+    }
+
+    /// …but never when its frame carries a script: swapping the tag swaps the script, and Winampple's
+    /// library then ran its video frame's, which parked an opaque window over the library.
+    func testALibraryFrameWithAScriptKeepsItsOwnFrame() throws {
+        let loaded = try makeSkin(xml: Self.borrowedFrameSkin)
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: Host(),
+                                               containerID: "MLibrary")
+        addTeardownBlock { renderer.teardown() }
+        let frames = renderer.sceneNodes().filter {
+            $0.object.typeName.lowercased().hasPrefix("wasabi:standardframe")
+        }
+        XCTAssertEqual(frames.first?.object.typeName, "Wasabi:StandardFrame:ML")
     }
 
     /// …and only ever *downward*. A skin whose library already wears its thinnest frame is untouched.
@@ -93,6 +108,11 @@ final class WinampModernBorrowedFrameTests: XCTestCase {
 
     // MARK: - Fixtures
 
+    /// The library frame's `<script>` in `borrowedFrameSkin`, removed to make that frame art-only.
+    private static let libraryFrameScript = """
+    <script id="ml.frame" file="scripts/standardframe.maki"/>
+    """
+
     /// Two frames, neither building its own content: a heavy one the skin puts on its library and a
     /// thin one it puts on its visualizer. The shape of Itemskin, K-jr, MoonLight and Pure Inspired.
     private static let borrowedFrameSkin = """
@@ -104,7 +124,7 @@ final class WinampModernBorrowedFrameTests: XCTestCase {
       </groupdef>
       <groupdef id="wasabi.standardframe.ml" xuitag="Wasabi:StandardFrame:ML">
         <layer id="art" x="0" y="0" image="frame.art"/>
-        <script file="scripts/standardframe.maki"/>
+        <script id="ml.frame" file="scripts/standardframe.maki"/>
       </groupdef>
       <groupdef id="wasabi.standardframe.avs" xuitag="Wasabi:StandardFrame:AVS">
         <layer id="art" x="0" y="0" image="frame.art"/>
