@@ -75,6 +75,28 @@ extension WinampModernScriptRuntime {
             // enumerating results. Skins never gain a filesystem-search capability.
             return .integer(-1)
         }
+        // `ClassicPro.applyStyle(object, id)`: every attribute of the skin's `ClassicPro.xml`
+        // `<Style id=…>` but the id, written to the object as a `setXmlParam`. cPro Creed's
+        // `displaymods.m` opens with one, and while it was missing the whole handler aborted, so its
+        // file-info readouts stayed where the engine put them, on the song title's line.
+        table.add("applystyle", 2) { runtime, call in
+            guard case .object(let target) = call.arguments[0],
+                  let path = runtime.xmlDocumentPath("@SKINPATH@ClassicPro.xml", program: call.program),
+                  let data = try? runtime.loadedSkin.vfs.data(at: path, location: call.program.source),
+                  let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1),
+                  let parsed = try? WalLenientXMLParser().parse(text, path: path) else { return .null }
+            let id = call.arguments[1].stringValue
+            var style: WalXMLNode?
+            WinampModernXmlDocReader.forEachMatch(in: parsed.roots, callbacks: ["ClassicPro/TextSettings*"]) { _, node in
+                if style == nil, node.name.caseInsensitiveCompare("style") == .orderedSame,
+                   node.attributes["id"] == id { style = node }
+            }
+            for (key, value) in style?.orderedAttributes ?? [] where key.lowercased() != "id" {
+                _ = try runtime.invoke(method: "setxmlparam", on: target,
+                                       arguments: [.string(key), .string(value)], program: call.program)
+            }
+            return .null
+        }
         return table
     }()
 }

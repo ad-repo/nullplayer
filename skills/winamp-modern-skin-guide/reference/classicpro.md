@@ -21,6 +21,13 @@ render path. They are adapted under a strict policy: `exploreFile` reveals an ex
 `openFile` opens an existing file with the default app (no URLs, no `~`, no executables), and
 `findFiles` is a bounded no-op returning −1 so callers early-return.
 
+A **skin** can call one more: `ClassicPro.applyStyle(object, id)` writes every attribute of its
+`ClassicPro.xml` `<Style id="…">` (under `TextSettings`), bar the id, onto the object as
+`setXmlParam`s. Only cPro Creed calls it — `displaymods.m` restyles the time, the file-info group,
+the volume and the vis from `$set:*` styles — and while it was missing the handler aborted on its
+first line, leaving the kbps/kHz/stereo readouts on the song title's line (2026-10-26). The skin's
+`screenshot.png` is the check.
+
 `WinampVersionCheck` is satisfied by reporting a build number past the `2405` gate, so `load.xml`
 *branches* through its "please update Winamp" path rather than being hard-blocked. The skin's own
 `warning.maki` runs a **second, independent** check — a `Map` load of the engine's 1×1
