@@ -213,6 +213,17 @@ final class WinampModernB114Tests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(decorated.pixel(x: 20, y: 35)).alpha, 255, "marks that decorate trim nothing")
     }
 
+    /// A plain `<edit>` is an opaque native window on `wasabi.list.background`, so Clock V2.76's
+    /// comment field, which its box art leaves blank, can be seen and clicked.
+    func testAPlainEditPaintsTheListBackground() throws {
+        let scene = try makeScene(layoutAttributes: "",
+                                  resources: #"<color id="wasabi.list.background" value="0,0,255"/>"#,
+                                  markup: #"<edit id="field" x="0" y="0" w="20" h="40"/>"#)
+        let field = try XCTUnwrap(scene.pixel(x: 10, y: 20))
+        XCTAssertEqual([field.red, field.green, field.blue, field.alpha], [0, 0, 255, 255])
+        XCTAssertEqual(try XCTUnwrap(scene.pixel(x: 60, y: 20)).alpha, 0, "only the field's own box")
+    }
+
     /// `<AlbumArt>` fits its cover with the aspect kept, centred, unless `stretched="1"`. Winampple's
     /// small art is a 111×310 box whose 96px middle band is the only part its group shows.
     func testAlbumArtKeepsItsAspectUnlessStretched() {

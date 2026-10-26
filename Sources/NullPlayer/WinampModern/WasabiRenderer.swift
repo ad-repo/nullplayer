@@ -2843,7 +2843,17 @@ final class WasabiSceneRenderer {
     /// draws the string — in Winamp the edit is a native child window. So this paints only the content
     /// and the insertion point, in the object's own font and colour, which is what makes the typed
     /// text land in the box the skin drew rather than in a rectangle of our choosing.
+    ///
+    /// **The native window is opaque, on `wasabi.list.background`.** Winamp's stock colour template,
+    /// which dozens of skins ship verbatim, says so: "lists/trees item background (also bg for
+    /// edit)". Without it Clock V2.76's comment field, which its box art leaves to the native window,
+    /// drew as nothing, and the field could not be found to click. A `Wasabi:EditBox`, or an edit
+    /// inside one, is skipped: the widget has already painted its own plate and border (B113).
     private func drawEdit(_ object: WasabiObject, frame: CGRect, context: WasabiDrawList) {
+        if !sequence(first: object, next: \.parent).contains(where: { WasabiFormWidgets.kind(of: $0) != nil }) {
+            context.setFillColor(palette.contentBackground.cgColor)
+            context.fill(frame)
+        }
         let text = object.attributes["text"] ?? ""
         if !text.isEmpty {
             drawText(text, object: object, frame: frame, context: context,

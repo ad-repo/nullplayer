@@ -1331,7 +1331,12 @@ is the host's, exactly as the playlist panel is.
   sends `onEnter` / `onAbort` / `onEditUpdate`. Printable keys are **consumed**, or a letter typed
   into a search box also fires a skin accelerator. An edit that declares no `color=` draws in
   `wasabi.list.text`, not white — Winamp's edit text is the list colour, which the skins say in their
-  own comments.
+  own comments. Its box is **opaque `wasabi.list.background`** (`contentBackground`), the native
+  window's plate — the stock colour template says "lists/trees item background (also bg for edit)".
+  Clock V2.76's comment field, left blank in its box art, drew as nothing and could not be found to
+  click; BOOM's white `150` readouts, Circlo/Moonkore's and RODE's URL bars were invisible the same
+  way (2026-10-26). A `Wasabi:EditBox`, or an edit inside one, is skipped — the form widget paints
+  its own `wasabi.edit.background` plate and border (B113).
 - **`<list>`**: rows live on the object (`WasabiGuiList`) so the renderer draws what the script just
   wrote. `deleteAllItems` / `addItem` / `getNumItems` / `getItemLabel(item, column)` /
   `getFirstItemSelected` / `getNextItemSelected(after)` / `scrollToItem`, plus wheel scrolling, click
