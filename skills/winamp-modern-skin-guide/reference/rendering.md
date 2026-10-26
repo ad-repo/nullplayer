@@ -171,6 +171,14 @@ cache is dropped on a track change, or the previous track's cover stays on scree
 title. Art arrives asynchronously, so the window controller repaints on
 `NowPlayingManager.artworkDidLoadNotification` — with playback paused nothing else would.
 
+**The cover keeps its aspect, centred, unless the object says `stretched="1"`** — the cover and the
+`notfoundImage` alike (`WasabiSceneRenderer.albumArtRect`). Skins write both values (29 declarations
+in gold+silver), and Big Bento's own backdrop says `stretched="0"`. Winampple's small art depends on
+it: a 111×310 `<albumart>` at `y="-107"` inside a 96px-tall group, so the group's window is exactly
+the fitted 110×96 cover; stretched, it showed a tall sliver of the middle (reported 2026-10-26).
+Sweep effect: Winampple, the four Big Bento Moderns' backdrop, and a pixel of letterbox on a few cPro
+not-found covers in non-square boxes.
+
 #### A cover a script looks for beside the playing file (2026-10-20)
 
 Skins older than `<AlbumArt>` find the cover themselves, by building a file path from the play item

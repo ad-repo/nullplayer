@@ -2590,11 +2590,12 @@ final class WasabiSceneRenderer {
         } else if object.tag.is(.list, in: .colorThemes) {
             drawColorThemeList(object, frame: node.frame, context: context)
         } else if object.tag.is(.albumArt) {
-            if let artwork = host.albumArtwork {
-                drawImage(artwork, in: node.frame, context: context)
-            } else if let fallback = object.attributes["notfoundimage"],
-                      let bitmap = resources.bitmap(identifier: fallback) {
-                draw(bitmap, object: object, frame: node.frame, context: context)
+            if let image = host.albumArtwork
+                ?? object.attributes["notfoundimage"].flatMap({ resources.bitmap(identifier: $0)?.image }) {
+                drawImage(image, in: Self.albumArtRect(of: CGSize(width: image.width, height: image.height),
+                                                       in: node.frame,
+                                                       stretched: object.attributes["stretched"] == "1"),
+                          context: context)
             }
         } else if object.tag.is(.componentBucket) {
             // Before the holder branch: a bucket *is* a holder element, and a skin whose bucket id

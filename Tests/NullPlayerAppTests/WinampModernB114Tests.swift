@@ -187,6 +187,17 @@ final class WinampModernB114Tests: XCTestCase {
         XCTAssertEqual(scene.renderer.object(at: clear)?.xmlID, "knob")
     }
 
+    /// `<AlbumArt>` fits its cover with the aspect kept, centred, unless `stretched="1"`. Winampple's
+    /// small art is a 111×310 box whose 96px middle band is the only part its group shows.
+    func testAlbumArtKeepsItsAspectUnlessStretched() {
+        let box = CGRect(x: 0, y: -107, width: 111, height: 310)
+        let fitted = WasabiSceneRenderer.albumArtRect(of: CGSize(width: 110, height: 96), in: box, stretched: false)
+        XCTAssertEqual(fitted.width, 111, accuracy: 0.01)
+        XCTAssertEqual(fitted.height, 96.87, accuracy: 0.01)
+        XCTAssertEqual(fitted.midY, box.midY, accuracy: 0.01, "centred, so the group's 0…96 band shows all of it")
+        XCTAssertEqual(WasabiSceneRenderer.albumArtRect(of: CGSize(width: 110, height: 96), in: box, stretched: true), box)
+    }
+
     /// `center_image="1"` draws the face at its own size in the middle of its box, and only the drawn
     /// pixels take a click. Winampple's 40x40 logo on a 434px button was stretched into a smear.
     func testACenteredImageIsDrawnAndHitAtItsOwnSize() throws {

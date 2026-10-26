@@ -123,6 +123,18 @@ extension WasabiSceneRenderer {
         drawImage(bitmap.image, in: frame, context: context)
     }
 
+    /// `<AlbumArt>` fits its cover inside the box with the aspect kept, centred, unless the skin
+    /// asks for `stretched="1"` — 29 declarations across the corpus say one or the other. Winampple's
+    /// small art leans on the fit: a 111×310 box at `y="-107"` in a 96px-tall group, which shows the
+    /// fitted 110×96 cover exactly and, stretched, showed a tall sliver of its middle instead.
+    static func albumArtRect(of imageSize: CGSize, in frame: CGRect, stretched: Bool) -> CGRect {
+        guard !stretched, imageSize.width > 0, imageSize.height > 0 else { return frame }
+        let scale = min(frame.width / imageSize.width, frame.height / imageSize.height)
+        let size = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        return CGRect(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2,
+                      width: size.width, height: size.height)
+    }
+
     /// `center_image="1"`: the bitmap at its own size in the middle of the box, clipped to it, instead
     /// of stretched. Winampple's logo is a 40x40 face on a full-width 434px button ("Put logo at
     /// center"); stretched it drew as a dark smear across the whole transport bar. Shared with the hit
