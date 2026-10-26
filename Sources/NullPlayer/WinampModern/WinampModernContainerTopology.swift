@@ -231,6 +231,21 @@ enum WinampModernContainerTopology {
         return leaf == "shadow" || leaf == "aerosnap"
     }
 
+    /// A frame-only container the skin's scripts show around a component window, recognised by
+    /// declaring no component and sharing its `name` with a container that does. Winampple's
+    /// `cont.clear.ml`/`.vis`/`.vid` are the corpus's only instances (2026-10-26): `name="Media
+    /// Library"` beside `MLibrary`, and so on. Opened by itself it is an empty frame, so it is neither
+    /// listed in the Windows menu nor restored at launch; the skin's own pairing script still opens it.
+    static func isComponentChromeCompanion(_ info: WinampModernContainerInfo,
+                                           among containers: [WinampModernContainerInfo]) -> Bool {
+        guard info.kind == nil, info.object.attributes["name"] != nil else { return false }
+        let name = displayName(of: info).lowercased()
+        return containers.contains { other in
+            other.kind != nil && other.id.lowercased() != info.id.lowercased()
+                && displayName(of: other).lowercased() == name
+        }
+    }
+
     /// The container's own display name, which is what the menu shows.
     ///
     /// A `%09` (an escaped tab) ends the name: what follows is the accelerator Winamp right-aligns

@@ -89,6 +89,16 @@ CopperdeckII, Studiosus and Winamp_Single_GUI. The shortcut itself is not bound;
 `onKeyDown` handles it where it declares one. Duplicate names are qualified with the container id by
 `menuLabels` (Bio-Nid's eight `Equalizer` copies).
 
+#### A component's chrome companion is neither listed nor restored (2026-10-26)
+
+Winampple declares `cont.clear.ml`, `.vis` and `.vid`: frame-only containers its scripts show around
+`MLibrary`, `Visualizations` and `video`, each carrying the *same* `name`. Listed, each opened as an
+empty frame; and once opened from the menu the remembered `_nullplayer_windows.cont_clear_ml = 1`
+reopened it at every launch. `WinampModernContainerTopology.isComponentChromeCompanion` — no
+component, same display name as a container that declares one — is the one rule `skinWindows` and
+`applyDefaultContainerVisibility` both read. It is markup, not the catalog, because the launch
+restore runs before the catalog exists. Corpus match set (2026-10-26): Winampple's three only.
+
 #### A window that only fakes a Windows desktop effect never opens (B101, 2026-09-04)
 
 Two containers in the corpus draw no UI at all: they exist to supply something the Windows shell did

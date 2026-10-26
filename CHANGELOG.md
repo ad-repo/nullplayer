@@ -100,6 +100,8 @@
   the Mac OS 8.5 theme fonts, the pixel fonts (Mini, 04b, Silkscreen and others), Textile and SF
   Digital Readout now use bundled lookalikes instead of Helvetica, and Techno Jammo's artist line
   matches its album line. A font you have installed is still used first.
+- **Winampple no longer opens an empty Media Library frame at launch**, and its Windows menu no
+  longer lists empty Media Library, Visualizations and video frames beside the real windows.
 
 ## 0.33.1
 
