@@ -2022,7 +2022,9 @@ class WindowManager {
                 }
             } else if !wasOpen, isOpen, skinOwned, !coordinator.isEmbedded(kind) {
                 // The incoming skin opened its own at load; the user had it closed.
-                routeWinampModernSurface(kind, toggle: true)
+                (mainWindowController as? WinampModernMainWindowController)?.closeCarriedSurface(kind)
+                notifyMainWindowVisibilityChanged()
+                postLayoutChangeNotification()
             }
         }
     }

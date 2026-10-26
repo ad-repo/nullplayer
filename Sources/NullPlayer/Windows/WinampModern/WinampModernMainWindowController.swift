@@ -1723,6 +1723,17 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         WinampModernSkinState.setWindowIsVisible(visible, container: id, in: configuration)
     }
 
+    /// A skin switch carrying "closed" over from the outgoing skin: close this skin's window for it,
+    /// unless the user has already said in *this* skin whether they want it. Not their decision here,
+    /// so not remembered — recording it shut Winampple's playlist, the centre of its player, on every
+    /// later load after one switch in from a skin with its playlist closed.
+    func closeCarriedSurface(_ kind: WinampModernComponentKind) {
+        guard let window = surfaceCoordinator?.nativeWindow(for: kind),
+              let id = auxiliaryContainers.first(where: { $0.window === window })?.containerID,
+              rememberedContainerVisibility(id: id) == nil else { return }
+        setAuxiliaryWindow(id: id, visible: false, record: false)
+    }
+
     /// Close / Minimize as Winamp means them, for the player window; `installWindowCommands(on:id:)`
     /// wires each auxiliary window as it is built.
     ///
