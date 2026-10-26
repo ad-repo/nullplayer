@@ -102,7 +102,8 @@ Applies always. Two questions: has this been seen, and what should it look like?
 
 ```bash
 grep -rniE '<skin name>|<symptom keyword>' tasks/ docs/ skills/*/skins* skills/*/reference/skins/
-mkdir -p "$S/x" && unzip -o -q "/abs/Skin.wal" -d "$S/x"     # .wal/.wmz are zips; S = scratchpad
+scripts/wal_skin_src.sh <skin> [<ERE>]    # .wal: unpacked once, reference images listed, source grepped
+mkdir -p "$S/x" && unzip -o -q "/abs/Skin.wmz" -d "$S/x"     # other families: .wmz is a zip; S = scratchpad
 find "$S/x" -maxdepth 3 -iregex '.*\(screenshot\|preview\|readme\).*' -o -maxdepth 1 -iname '*.png'
 ```
 

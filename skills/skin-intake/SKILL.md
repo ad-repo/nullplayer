@@ -160,6 +160,9 @@ naturally stops:
    - Write each result into the ledger as soon as it is known. Commit the work, and the ledger,
      before reporting.
    - Do not spawn agents.
+   - Use the one-call scripts instead of their hand recipes: `scripts/wal_dump.sh` for a skin's
+     dump or probe run, and `scripts/wal_skin_src.sh` for its source and reference images. Each
+     extra call re-sends the whole context.
    - Report in at most 10 lines: skin, phase, stage before → after, rows fixed and open, the
      visual-review verdicts where they ran, the sheet's path, and the `next:` line.
 4. Check the report before passing it on. The status script must exit 0, and `git log -1` must

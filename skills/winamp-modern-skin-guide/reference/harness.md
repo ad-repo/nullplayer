@@ -24,18 +24,24 @@ ever rendered a frame. `WinampModernRenderDumpTests` renders every container/lay
 PNG and reports the scene:
 
 ```sh
-WINAMP_MODERN_WAL=/path/Skin.wal \
-WINAMP_MODERN_RENDER_DUMP=/tmp/render \
-  swift test --filter WinampModernRenderDumpTests
+scripts/wal_dump.sh <skin|path> [--out <dir>] [--grep <ERE>] [--skip-build]
 ```
 
+`wal_dump.sh` is the one way to run it for one skin. It looks the skin up by name across the corpus
+tiers, empties the output directory, logs to `<dir>/dump.log`, and prints `DUMP PASS|FAIL`, the PNG
+count and at most 60 log lines matching `--grep`. A skipped test counts as `FAIL`. Probe variables are
+read from the caller's environment, so put them in front. The hand form it wraps is
+`WINAMP_MODERN_WAL=<archive> WINAMP_MODERN_RENDER_DUMP=<dir> swift test --filter
+WinampModernRenderDumpTests > <log> 2>&1`. A skin's own XML, MAKI and reference images come from
+`scripts/wal_skin_src.sh <skin> [<ERE>]`, which unpacks the archive once per sha256 and greps it with
+CRLF stripped.
+
 The **triage inventory dump** (`skills/skin-triage` Phase 2) adds missing bitmaps, script bindings and
-script-hooked hit targets in one run; redirect, never pipe:
+script-hooked hit targets in one run:
 
 ```sh
-WINAMP_MODERN_WAL=/abs/Skin.wal WINAMP_MODERN_RENDER_DUMP="$S/base" WINAMP_MODERN_RENDER_BITMAPS=1 \
-  WINAMP_MODERN_RENDER_SCRIPTS=bindings WINAMP_MODERN_RENDER_CLICKABLE=1 \
-  swift test --filter WinampModernRenderDumpTests > "$S/base.log" 2>&1
+WINAMP_MODERN_RENDER_BITMAPS=1 WINAMP_MODERN_RENDER_SCRIPTS=bindings WINAMP_MODERN_RENDER_CLICKABLE=1 \
+  scripts/wal_dump.sh <skin> --grep 'missing=|FINDING'
 ```
 
 `WINAMP_MODERN_WAL` also accepts a **directory**, which renders every `.wal` in it inside one
