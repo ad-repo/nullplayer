@@ -173,9 +173,10 @@ naturally stops:
    be the worker's commit. After a visual review, **open the sheet yourself**: a second look at
    the three classes is the reason the review exists.
 5. Pass the report to the user.
-6. **Stop at every phase boundary, never between skins.** End the turn after each phase. When a
-   phase completes a skin, start the next skin's first phase in the same turn, and stop after
-   that.
+6. **Start the next phase's worker as soon as the report checks out.** Do not stop at phase
+   or skin boundaries, and never ask the user whether to continue. The turn ends only while a
+   worker is running (its notification resumes the loop), on a blocker, at the Admit crawl, or
+   when the batch reaches `live` and goes to the user's UI round.
 
 **The Admit crawl is not a worker's job.** `wal_intake.sh --admit` takes about 47 minutes, longer
 than a foreground call's 10-minute limit. A worker cannot wait on a background run either, because
