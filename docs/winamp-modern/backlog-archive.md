@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B272 — A checked option the skin ghosts itself is not a hit-test defect — closed 2026-10-27
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B272 | **-MfS3-'s two checked option togglebuttons are drawn but never hit.** The intake #4 interaction sweep reads `opt.fontsize.large` and `opt.fontcase.normal` (`options/normal`, group `songticker.options`) as `covered:layout#normal`, the case `harness.md` calls never reachable. `RENDER_CLICK options/normal@116,194` hits `layout#normal`, though the dump draws the checked box there and `opt.on` (`gfx/cfg.controlbuttons.png` 16,17 16x17) is opaque in every pixel. The four siblings with the same artwork and the same `cfgOptionButton` script class are hit and work. The two that fail are the two drawn checked at load. Find what drops them from `object(at:)` (`WINAMP_MODERN_RENDER_PROBE=options/normal`), then fix it. Done when the batch interaction sweep reads both `works` and no gold+silver interaction verdict regresses | intake #4 interaction sweep: -MfS3- (silver); corpus count not taken | S | 2 |
+
+**Closed 2026-10-27**, no code change: not a defect. `RENDER_PROBE=options/normal` reads `ghost=1` on both `opt.fontsize.large` and `opt.fontcase.normal`, set by the skin itself: `code/dotM's/main.m:3411` is `cfgOptionButton.onActivate(int activated) { cfgOptionButton.setXmlParam("ghost", IntegerToString(activated)); }`, so whichever radio option is checked takes no mouse and the click at 116,194 falls to `layout#normal`, as authored. The four siblings are unchecked, hence `ghost=0` and hit. The silent `txt.fontcase.normal` label calls `setOptionButton(Fc_Normal); Fc_Normal.setActivated(1)` on the option already selected, so it re-applies the current state and nothing changes. Recorded in `harness.md` under the interaction sweep's `covered:layout`.
+
 ## B275 — A notifier dumped at its declared size is not the toast — closed 2026-10-27
 
 | Id | Item | Reach | Effort | Tier |

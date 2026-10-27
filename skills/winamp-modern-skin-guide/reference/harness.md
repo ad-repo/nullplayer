@@ -560,7 +560,10 @@ baseline pass and count only what differs from both.
 closed drawer, another layout or a later state is S3.5's. A `covered:` row is often the *other half
 of a state pair* (mmd3's `cttoggle2` sits under `cttoggle` until the drawer opens), so read it as
 "not reachable in this state", not "never reachable"; `covered:layout` is the exception, a control
-the hit test never admits at all. A control whose handler only calls `System.navigateUrl` reads
+the hit test never admits at all — unless the skin ghosts it itself: -MfS3-'s `cfgOptionButton`
+radio options run `setXmlParam("ghost", activated)` in `onActivate`, so the option checked at load is
+`ghost=1` and the click falls to the layout by design (B272). Read the control's `ghost=` in
+`RENDER_PROBE` before calling `covered:layout` a hit-test defect. A control whose handler only calls `System.navigateUrl` reads
 `silent`: the call is routed to the browser hook, which the sweep does not record as an effect
 (Official_Zwan_Skin's `player.web`, 2026-10-26). And a plain `action=` button with no script is not a target at all — its whole behaviour is static,
 and the host-action census answers it. Menus are counted, not walked item by item: the plan's per-item menu sweep is not
