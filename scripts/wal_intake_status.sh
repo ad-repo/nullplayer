@@ -16,14 +16,23 @@ ledger="$dir/intake-$n.tsv"
 # Stage order; the batch's lowest stage decides the next session's work (skills/skin-intake).
 stages="admitted headless live accepted promoted"
 
-awk -F'\t' -v stages="$stages" -v corpus="$WAL_CORPUS_ROOT" -v n="$n" '
+# The return guard: a commit that changes exactly one ledger row is a session spent on that skin.
+# A skin at the budget is never picked again; it goes to the user's round with its open rows.
+budget=4
+spent=" $(git rev-list origin/main..HEAD -- "$ledger" 2>/dev/null | while read -r c; do
+    rows=$(git show --format= "$c" -- "$ledger" | grep '^+[^+]' | cut -f1 | sed 's/^+//')
+    if [ "$(printf '%s\n' "$rows" | wc -l)" -eq 1 ]; then echo "$rows"; fi
+done | sort | uniq -c | awk -v b="$budget" '$1 >= b { print $2 }' | tr '\n' ' ')"
+
+awk -F'\t' -v stages="$stages" -v corpus="$WAL_CORPUS_ROOT" -v n="$n" -v spent="$spent" -v budget="$budget" '
 BEGIN { k = split(stages, s, " "); for (i = 1; i <= k; i++) rank[s[i]] = i }
 FNR == 1 { next }
 FILENAME ~ /corpus-manifest/ { tier[$1] = $3; sha[$1] = $2; tiers[$3]++; next }
 {
     if (!($3 in rank)) { print "bad stage \"" $3 "\" for " $1; bad++; next }
     count[$3]++; total++
-    if ($3 == "headless") { if ($6 ~ /^headless clean/) clean++; else if (first == "") { first = $1; first_note = $6 } }
+    if ($3 == "headless" && index(spent, " " $1 " ")) over = over " " $1
+    else if ($3 == "headless") { if ($6 ~ /^headless clean/) clean++; else if (first == "") { first = $1; first_note = $6 } }
     if (!($1 in tier)) { print "not in manifest: " $1; bad++; next }
     if (sha[$1] != $2) { print "sha256 differs from manifest: " $1; bad++ }
     want = $3 == "promoted" ? "gold" : "silver"
@@ -47,6 +56,7 @@ END {
     else if (stage == "accepted") print "next: promote the batch, then review and PR"
     else print "next: once the PR is merged, close: rm -rf WinampModernCorpus/runs, then admit batch " n + 1
     if (stage == "headless" && first != "" && clean) print "      then one live smoke session over the " clean " headless-clean skins"
+    if (over != "") print "budget spent (" budget " single-skin sessions), hand to the user'"'"'s round as they are, open rows in the note:" over
     if (bad) { print bad " ledger problem(s)"; exit 1 }
 }' docs/winamp-modern/corpus-manifest.tsv "$ledger"
 
