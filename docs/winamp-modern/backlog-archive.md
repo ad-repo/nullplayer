@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B276 — A standard frame placed as a group is still backed — closed 2026-10-26
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B276 | **Component frames paint over their content area in two intake #4 skins.** The_Music_-_Official_Skin draws a white box inside every `Component` layout and `pledit/normal` (its `wasabi.standardframe.*` groups have no frame script that instantiates content, per the dump's catalog line); iCandy-2 draws a strip under the frame title from the stock `component.basetexture` and its `pledit/normal` lists `component.basetexture` missing. Find the node that paints the box/strip (`WINAMP_MODERN_RENDER_PROBE=Component/resizable_status`) and whether both come from the frame's content slot. Done when both skins' frames show their own art around the content and no gold+silver render changes otherwise | intake #4 dump: The_Music_-_Official_Skin, iCandy-2 (silver) | S | 2 |
+
+**Closed 2026-10-26**. Two skins, one defect. **iCandy-2**: the "strip" was transparent, not stock art — its Component layouts (`resizable_status`/`nostatus`/`static`/`modal`) declare no `background=` and place the frame as `<group id="wasabi.standardframe.*">`, which `needsFrameBaseTexture` did not count as a standard frame, so the 12 px band between the title bar and the component (`y=12` inside the content group) showed the desktop. The group form now counts; the skin comments out `component.basetexture`, so the band takes the content colour its `pledit/normal` already showed (pledit's missing `component.basetexture` resolves to that same content colour: no defect). **The_Music_-_Official_Skin**: not a defect — the frames draw their own orange art around the content; the white box is the content slot itself (the empty `guid:default` holder in Component, the empty playlist in pledit) in the skin's own `wasabi.edit.background` 255,255,255 through the list-background chain, with black list text. Gold+silver render (`81163ecbf407314b` → `c47ad841658adbc6`): iCandy-2's four Component images and PionNer_AMP2 `Manual` (2078 px of 1 px desktop slits between its frame and manual art now black, a repair) changed; invariants differ only by GlassAMPfinal's known-nondeterministic `DLibrary/normal` canvas; 6 known noise. Pinned by `testAStandardFrameGroupInABackgroundlessLayoutIsBackedByTheFrameTexture`; rule in `reference/rendering.md`.
+
 ## B273 — A drawbackground-off sysregion layout's backing is a region — closed 2026-10-26
 
 | Id | Item | Reach | Effort | Tier |

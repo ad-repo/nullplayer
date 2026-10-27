@@ -773,6 +773,13 @@ frame on `background="component.bg"` — was gold. `WasabiSceneRenderer.frameBas
 declares no backing and is not `desktopalpha="1"`. JRS's config window and machina's skin-config
 went from white/holed to the skin's texture in the same sweep.
 
+The frame counts in either spelling: the `<Wasabi:StandardFrame:*>` tag or the
+`<group id="wasabi.standardframe.*">` it stands for (B276, 2026-10-26). iCandy-2's four Component
+layouts use the group form with no `background=`, and the 12 px band between the title bar and the
+component showed the desktop; it now takes the content colour its playlist already showed (the skin
+comments out `component.basetexture`). Gold+silver: those four images plus PionNer_AMP2's
+`Manual`, whose 1 px slits between the frame and its manual art were desktop and are now black.
+
 ##### Window-chrome buttons with no artwork (B95, 2026-09-01)
 
 The third instance of the same deliberate exception, and reached the same way — only after the

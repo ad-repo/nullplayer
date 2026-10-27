@@ -348,6 +348,18 @@ final class WinampModernB114Tests: XCTestCase {
         XCTAssertEqual(Int(backing.red), 180, accuracy: 1)
     }
 
+    /// B276 — the same frame placed as `<group id="wasabi.standardframe.*">`, iCandy-2's Component form.
+    func testAStandardFrameGroupInABackgroundlessLayoutIsBackedByTheFrameTexture() throws {
+        let scene = try makeScene(
+            layoutAttributes: "",
+            resources: Self.frameResources + #"<bitmap id="wasabi.frame.basetexture" file="sheen.png"/>"#,
+            markup: #"<group id="wasabi.standardframe.nostatusbar" x="0" y="0" w="0" h="0" relatw="1" relath="1"/>"#,
+            art: Self.sheenArt)
+        let backing = try XCTUnwrap(scene.pixel(x: 60, y: 20))
+        XCTAssertEqual(Int(backing.alpha), 255)
+        XCTAssertEqual(Int(backing.red), 180, accuracy: 1)
+    }
+
     /// Winamp's stock button sizes itself to its label; machina's help `switch` states only a width
     /// and drew 0 tall.
     func testALabelledWasabiButtonWithNoHeightStillDraws() throws {

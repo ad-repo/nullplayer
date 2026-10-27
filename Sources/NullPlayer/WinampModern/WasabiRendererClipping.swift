@@ -182,8 +182,14 @@ extension WasabiSceneRenderer {
     /// stock frame draws it. machina's help window drew its dark-on-transparent help art on the
     /// bare desktop without it, where its playlist — the same frame on `background="component.bg"`
     /// — was gold. A layout that declares a backing, or composites against the desktop, keeps its own.
+    ///
+    /// The XUI tag is shorthand for the group itself, so `<group id="wasabi.standardframe.*">` is the
+    /// same frame: iCandy-2's Component layouts place theirs that way, and the strip between the
+    /// title bar and the component showed the desktop (B276).
     private func needsFrameBaseTexture(_ object: WasabiObject) -> Bool {
-        guard WasabiStandardFrames.isStandardFrame(object),
+        let isFrame = WasabiStandardFrames.isStandardFrame(object)
+            || (object.tag.is(.group) && WasabiStandardFrames.isStandardFrameIdentifier(object.xmlID ?? ""))
+        guard isFrame,
               let layout = object.parent, layout.tag.is(.layout) else { return false }
         return layout.attributes["background"] == nil && layout.attributes["desktopalpha"] != "1"
     }
