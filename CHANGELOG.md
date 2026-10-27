@@ -132,6 +132,8 @@
   script in several of its layouts used to have every copy act on one window: one Rew5s click on
   StarTrek LCARS AMP PADD II skipped five tracks, and Ashen Player's Lite and Mini volume bars did
   not move with the volume.
+- **The `vol +` / `vol -` buttons of Winamp Modern skins change the volume.** Quadelic's and several
+  other skins' volume buttons used to do nothing; each click now steps the volume by 5%.
 
 ## 0.33.1
 

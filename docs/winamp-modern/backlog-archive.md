@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B299 — `VOLUME_UP`/`VOLUME_DOWN` button actions step the volume: Quadelic's `vol +`/`vol -` work — closed 2026-10-27
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B299 | **Quadelic's `vol +`/`vol -` buttons do nothing: `action="VOLUME_UP"`/`"VOLUME_DOWN"` has no handler.** Found in intake #4 Phase 7 (2026-10-27, live, playing): `main.volup`/`main.voldown` (`xml/player.xml:11,28`, also `main.square.*` at 43,60) clicked on screen leave `engine volume` at 0.09 (`playback-snapshot.sh`); no source under `Sources/NullPlayer` names either action. Sencillo_1_1's `VolUp`/`VolDown` read `works` in the interaction sweep only because the pressed art changes. Map both to a volume step (Winamp's step is not known; take one from a skin or the user) at the action dispatch. Done when one click moves `engine volume` both ways on Quadelic and Sencillo | Quadelic (silver), Sencillo_1_1; corpus count of `VOLUME_UP` not taken | S | 1 |
+
+**Closed 2026-10-27**. Cause: `WinampModernMainView.performAction` had no case for the two actions, so a click only changed the pressed art. Both now step the host volume by 5% (the step the arrow keys already take) and tell the skin's readout; the dispatch is shared, so Sencillo_1_1, WINyaMP3, Celica_Amp, EPS_High-End_System and MultiButtons get it too. Unit test `WinampModernB299Tests`. Render sweep: 1680 identical, 5 known noise; interaction on the 7 skins naming the actions: every volume control still `works` (no stored interaction baseline covered them). Not re-checked live.
+
 ## B298 — `findObject` widens to the receiver's layout, not its container: StarTrek's Rew5s steps once per script copy in its own window — closed 2026-10-27
 
 | Id | Item | Reach | Effort | Tier |

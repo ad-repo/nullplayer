@@ -2958,6 +2958,8 @@ final class WinampModernMainView: NSView {
         performAction(action: resolved.action, parameter: resolved.parameter, object: object)
     }
 
+    static let volumeButtonStep = 0.05
+
     private func performAction(action rawAction: String?, parameter rawParameter: String?, object: WasabiObject? = nil) {
         // `ACTION;PARAM` is the other way a skin writes a parameter — mmd3, ZDL and winampmodern566
         // spell every one of their layout switches that way, and winampmodern566 also writes
@@ -2976,6 +2978,11 @@ final class WinampModernMainView: NSView {
         case "PREV": host.previous()
         case "NEXT": host.next()
         case "EJECT": host.openFiles()
+        case "VOLUME_UP", "VOLUME_DOWN":
+            // The same 5% step the arrow keys take (B299); the engine announces no change, so the
+            // skin's readout is told here.
+            host.volume += action?.uppercased() == "VOLUME_UP" ? Self.volumeButtonStep : -Self.volumeButtonStep
+            updatePlaybackState()
         case "SWITCH":
             // The user clicked a control that switches layout — a titlebar shade button, a
             // `dblclickaction="SWITCH;shade"` mousetrap. That is a decision about how they want this
