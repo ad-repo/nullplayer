@@ -449,7 +449,9 @@ skins can share one file.
   item is unchecked, and Accessibility does not report it minimized. Leaving the on-screen list
   alone proves nothing, because a minimize or `orderOut` looks the same.
 - **The close target is searched for.** The search clicks the top-right corner from the outside
-  in, down to 40 pt. The target moves by mode: Classic's 9×9 box, a gloss frame's corner hit area,
+  in, down to 40 pt: up to 42 clicks per close, and a window with no close target takes all 42,
+  at both sizes. That is why it is a chrome regression check and not a per-skin test. Never run
+  it during a skin intake or triage. The target moves by mode: Classic's 9×9 box, a gloss frame's corner hit area,
   a `.wal` skin's art. Sonos Rooms and Waveform sit 10 pt down, and a stretched Classic EQ
   letterboxes its art, pushing the close about 20 pt down. A miss that shades, resizes or minimizes
   the window is logged as `<step>-miss` and undone.

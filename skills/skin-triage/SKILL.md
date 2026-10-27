@@ -253,16 +253,25 @@ Applies after the headless pass is clean. Same inventory, now on screen.
 
 1. Launch with `skills/app-control/scripts/launch.sh <skin>` (playing by default), every probe the
    pass may need exported in front — probes are read once at start. Confirm the family with
-   `menu.applescript family <pid>`; the unskinned `.wmz` view is 440x170.
+   `menu.applescript family <pid>`; the unskinned `.wmz` view is 440x170. **Confirm a track is
+   playing** before anything else: the log's `Now playing` line and a moving time display. A
+   live pass with nothing playing is a different test, so never launch it with `--no-play`.
 2. Mark the log, then drive **every inventory row** on screen (`app-control` Route C), clicking each
    control at the centre of its probed frame. Open every window; play, pause, seek, change volume.
+   This is the phase's test. The census in step 4 only measures where windows open. It never
+   presses a skin control, so a run of it is not Phase 7. Each click lands on a control
+   the inventory names, never on a blind grid of points or the desktop. A click that misses is a
+   wrong coordinate: fix it before going on, never retry the same point.
 3. Capture the window itself (`screencapture -o -x -l <id>`). For each row, compare against the
    headless render of the same state:
    - **agree** → nothing new; a defect here is a scene defect, back to Phase 5 headless;
    - **disagree** → class W: view `draw`, hierarchy, layer backing, frame, ordering, compositing.
-4. Run the automated window checks on the skin: `skills/app-control/scripts/window-census.sh <skin>
-   --shots` (where every window opens and how big it is, compared with the screen) and
-   `window-interaction-matrix.sh <skin> <out.tsv>` (open, stretch and close every window). Lay the
+4. Run the automated window check on the skin: `skills/app-control/scripts/window-census.sh <skin>
+   --shots` (where every window opens and how big it is, compared with the screen). Do **not** run
+   `window-interaction-matrix.sh` here. It is the regression check for a change to window chrome,
+   edge resizing or close handling (`app-control` § *Window open / stretch / close matrix*). It
+   blind-clicks up to 42 corner points per window, twice, on the assumption that a close button
+   is there. A skin's close is an inventory row: click it once, in step 2. Lay the
    shots out beside the reference with `scripts/review_sheet.py <sheet.png> <shots>/*.png --ref
    <reference> --scale 2`, and open the sheet. Each shot is drawn over magenta, so a missing
    background is visible; an image viewer shows alpha 0 as white or black. Judge it by

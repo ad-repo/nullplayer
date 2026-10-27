@@ -2,7 +2,7 @@
 # window-interaction-matrix.sh <skin> <out.tsv> [app args…]
 #
 # Opens, stretches and closes every Windows-menu window of one skin, then the main window, through
-# real menu presses, drags and clicks on the debug build. Per window:
+# real menu presses, drags and clicks on the debug build, with a track playing. Per window:
 #   open             Windows-menu toggle; a new on-screen window, menu checked
 #   close            at the opened size
 #   reopen, stretch  drags br, bottom, right, left, top by 40 pt; each records resize/move/none. A
@@ -15,7 +15,8 @@
 # is off screen, its Windows-menu item is unchecked and Accessibility does not report it minimized.
 # Only points the window draws are clicked or dragged: a transparent pixel passes the click to the
 # desktop, so a grab point there logs `drag-<edge> transparent` and a corner with nothing drawn is
-# NOT-CLOSED without a click. A miss that shades, resizes or minimizes the window is logged as `<step>-miss` and undone.
+# NOT-CLOSED without a click. Before every step the pointer is parked at 100,100 (a move, never a
+# click) so no hover state rides into the next grab. A miss that shades, resizes or minimizes the window is logged as `<step>-miss` and undone.
 # NOT-CLOSED saves `noclose-<skin>-<window>-<step>.png` beside <out.tsv>; it is not by itself a
 # defect: Original/Metal with Hide Title Bars on (`-hideTitleBars NO` shows them for one run) and
 # some gloss-framed `.wmz`/`.wal` windows have no close target, and a synthetic click can miss a window
@@ -33,7 +34,7 @@ WH=$R/skills/app-control/scripts/winhelper; MENU=$R/skills/app-control/scripts/m
 [ -x "$WH" ] || { echo "winhelper missing: run skills/app-control/scripts/build.sh"; exit 1; }
 mkdir -p "$(dirname "$OUT")"; SHOTS=$(cd "$(dirname "$OUT")" && pwd)
 [ -s "$OUT" ] || printf 'skin\twindow\tstep\tresult\tdetail\n' > "$OUT"
-"$R/skills/app-control/scripts/launch.sh" "$SKIN" --no-play ${APPARGS[@]+-- "${APPARGS[@]}"} >/dev/null 2>&1 </dev/null \
+"$R/skills/app-control/scripts/launch.sh" "$SKIN" ${APPARGS[@]+-- "${APPARGS[@]}"} >/dev/null 2>&1 </dev/null \
   || { echo "MATRIX $SKIN$TAG: LAUNCH FAIL"; exit 1; }
 PID=$(pgrep -x NullPlayer | head -1)
 SAFE=${SKIN//[^A-Za-z0-9]/_}$TAG

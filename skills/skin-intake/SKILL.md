@@ -163,6 +163,10 @@ naturally stops:
    - Use the one-call scripts instead of their hand recipes: `scripts/wal_dump.sh` for a skin's
      dump or probe run, and `scripts/wal_skin_src.sh` for its source and reference images. Each
      extra call re-sends the whole context.
+   - A live phase (7 and the visual review) runs with a track playing and drives the skin's own
+     controls (`skin-triage` Phase 7 step 2). The census does not replace that. Never run
+     `window-interaction-matrix.sh` on an intake skin: its close search blind-clicks the corner
+     of every window.
    - Report in at most 10 lines: skin, phase, stage before → after, rows fixed and open, the
      visual-review verdicts where they ran, the sheet's path, and the `next:` line.
 4. Check the report before passing it on. The status script must exit 0, and `git log -1` must
