@@ -2288,6 +2288,14 @@ final class WinampModernMainView: NSView {
             scripts.postPosition(posted, to: .seek)
             traceSeekObjects(posted: posted)
         }
+        repaintTimeDependentObjects()
+    }
+
+    /// Repaint what this scene draws from the playback clock. The other windows of a skin call this
+    /// alone: the script posts and the playback-state check above belong to the one view that drives
+    /// the shared runtime (`drivesScripts`), and running them per window would deliver every
+    /// `onPostedPosition` once per window.
+    func repaintTimeDependentObjects() {
         let rects = timeDependentRects()
         // An *empty* set means this scene has nothing the renderer draws from the clock, which is a
         // real answer and not a classification failure: `display="time"`, a `seek` slider and a seek
@@ -2360,6 +2368,12 @@ final class WinampModernMainView: NSView {
 
     func updateSpectrum(_ levels: [Float]) {
         host.spectrumLevels = levels
+        spectrumDidArrive()
+    }
+
+    /// A spectrum landed in the shared host: start this scene's visualization clock. The skin's other
+    /// windows call this alone, because the levels are the host's and are stored once.
+    func spectrumDidArrive() {
         lastSpectrumArrival = CACurrentMediaTime()
         startVisualizationClock()
     }

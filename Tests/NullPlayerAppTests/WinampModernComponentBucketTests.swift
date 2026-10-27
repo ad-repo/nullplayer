@@ -123,7 +123,7 @@ final class WinampModernComponentBucketTests: XCTestCase {
     /// scroll — otherwise the name beside the thinger describes an icon that has scrolled away.
     func testScrollingMovesTheCaptionWithIt() {
         let state = WinampModernComponentBucketState()
-        XCTAssertEqual(state.focusedTitle, "Playlist Editor")
+        XCTAssertEqual(state.focusedTitle, "", "blank at rest: The Duk Side V3's own screenshot (B314)")
         state.scroll(by: 2, visibleCount: 1)
         XCTAssertEqual(state.focusedIndex, 2)
         XCTAssertEqual(state.focusedTitle, "Media Library")
@@ -138,6 +138,19 @@ final class WinampModernComponentBucketTests: XCTestCase {
         XCTAssertEqual(state.focusedIndex, 3)
     }
 
+    /// The pointer's caption goes blank when it leaves the icons; a scrolled-to one stays.
+    func testThePointersCaptionLeavesWithThePointer() {
+        let state = WinampModernComponentBucketState()
+        XCTAssertFalse(state.pointerLeftTheIcons(), "nothing to blank at rest")
+        state.focus(2)
+        XCTAssertEqual(state.focusedTitle, "Media Library")
+        XCTAssertTrue(state.pointerLeftTheIcons())
+        XCTAssertEqual(state.focusedTitle, "")
+        state.scroll(by: 1, visibleCount: 1)
+        XCTAssertFalse(state.pointerLeftTheIcons())
+        XCTAssertEqual(state.focusedTitle, "Equalizer")
+    }
+
     // MARK: - The caption
 
     /// `<text display="componentbucket">` resolves through the same provider seam `PE_Info` uses, so
@@ -147,8 +160,7 @@ final class WinampModernComponentBucketTests: XCTestCase {
         WasabiTextMetrics.componentBucketTextProvider = { state.focusedTitle }
         addTeardownBlock { WasabiTextMetrics.componentBucketTextProvider = nil }
         let caption = makeBucketCaption()
-        XCTAssertEqual(WasabiTextMetrics.content(of: caption, host: StubHost()),
-                       "Playlist Editor")
+        XCTAssertEqual(WasabiTextMetrics.content(of: caption, host: StubHost()), "")
         state.focus(4)
         XCTAssertEqual(WasabiTextMetrics.content(of: caption, host: StubHost()), "Video")
     }

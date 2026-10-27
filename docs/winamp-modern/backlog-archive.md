@@ -7585,3 +7585,59 @@ which differs between two runs of the same binary. B38.1 and B38.2 confirmed liv
 | B305 | **LG_Free's EQ Studio and Media Library frames carry the playlist's `Add Rem Sel Misc List` bar.** Found in the orchestrator's look at the intake #4 live-pass sheet (2026-10-27): the hosted EQ Studio and Media Library windows show the playlist editor's button bar along their bottom edge (the Playlist window has it too, where it belongs). Find out from the skin's files whether its shared frame carries that bar by design (then not a defect) or our hosted-window chrome takes the pledit frame for every hosted window. Done when hosted non-playlist windows show no playlist buttons, or the row closes citing the skin's frame | LG_Free_touch_the_music_ (silver) | S | 1 |
 
 **Closed 2026-10-27.** The skin's `wasabi.standardframe.statusbar` draws `Add Rem Sel Misc List` (`PE_*` buttons) into its own chrome, by design for the playlist; its `nostatusbar` frame has the same border, so `usableFrame`'s tie went to the status bar for every hosted window. `usableFrame(carryingPlaylistBar:)` now drops a frame containing `PE_*` actions for every window but the playlist when another flavour qualifies (`WINAMP_MODERN_PLAYLIST_BAR_ANY_FRAME=1` is the A/B switch). Render sweep: LG_Free `nullplayer.library` 27 -> 22 nodes, bbox (40,476)-(658,494) = the bar, the fix; no other skin's frame changed. Test `testAFrameCarryingThePlaylistBarIsNotTakenForAnotherWindow`.
+
+## B307 — Ar-Za-Jo's EQ on/off art follows the engine — closed 2026-10-27, not a defect
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B307 | **Ar-Za-Jo's EQ on/off button shows the reversed state: off reads as on.** Found in the intake #4 user UI round (2026-10-27, reporter driving). The EQ toggle's lit/unlit art is the opposite of the EQ's real enabled state. Done when the button's art follows the EQ's state in both directions | Ar-Za-Jo | ? | 1 |
+
+**Closed 2026-10-27, not a defect.** `eq-group.xml` declares the toggle as `<button action="EQ_TOGGLE" image="eq.button" downImage="eq.button.pressed" activeImage="eq.button.pressed">`: the skin pairs its *active* art with its *pressed* art (the pale `ON` is the rest frame, the dark `ON` the pressed one), as EMP2, Avalon, BOOM, Itemskin, JRS and BLAKK do in their EQ buttons. Live, the debug build starts with `EQ bypass = 1` and draws the pale `ON`; three clicks of the button (off, on, off, on in the log's bypass state and the capture) flip it between pale (off) and dark (on), every time agreeing with `engine.isEQEnabled()` (`WinampModernEQSwitch.isOn` reads the same snapshot the button draws). The art is the skin author's; no code change.
+
+## B308 — G2's config mode is reached from the drawer; the drawer hides it — closed 2026-10-27, not a defect
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B308 | **G2's config mode cannot be reached from the drawer (the thinger).** Found in the intake #4 user UI round (2026-10-27, reporter driving). The drawer's config mode button (`Conb`, `drawer.maki`) does not switch the drawer to config mode. Done when clicking the drawer's config button shows the config page | G2 | ? | 1 |
+
+**Closed 2026-10-27, not a defect.** Live, with real clicks: the tab opens the drawer (`settargety(35)`), `CN` (`Conb`) runs `modeswitch.m`'s `cns.onLeftButtonUp` and then `show()` on `group#player.main.con` (`CALL-TRACE`), and with the drawer closed again by its tab the LCD shows the config page (`PL ML LIGHTS`, the LCD-opacity slider), the same as the author's manual. With the drawer still open the page is there but the drawer's own button row sits over its lower half, which is how `drawer.m` is written (the drawer stays where it is until its tab is clicked). The tab itself is the 4 px strip B303 found, so a click a pixel off it opens the manual window (a `songticker` click) instead. No code change.
+
+## B310 — Manchester_United_Red_Devils_Skin's second window follows the clock and the spectrum — fixed 2026-10-27
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B310 | **Manchester_United_Red_Devils_Skin's mini companion player: the spectrum analyzer runs at a very low frame rate and the timer does not advance.** Found in the intake #4 user UI round (2026-10-27, reporter driving). Both in the skin's own mini player layout, with a track playing. Done when the analyzer animates at the normal rate and the timer counts the playing track | Manchester_United_Red_Devils_Skin | ? | 1 |
+
+**Fixed 2026-10-27.** The skin's `visual` container (a `<vis>` and a `display="time"` text) is an auxiliary window, and `WinampModernMainWindowController.updateTime`/`updateSpectrum` fed only the player's view: the audio clock never reached the auxiliary view's `timeDependentRects` or its visualization clock, so its timer redrew only when some other graph change invalidated the window and its analyzer moved in jumps. Both now fan out to `auxiliaryContainers` through repaint-only entry points (`repaintTimeDependentObjects`, `spectrumDidArrive`); the script posts and the playback-state check stay with the view that drives the runtime, so no `onPostedPosition` is delivered twice. `WINAMP_MODERN_AUX_CLOCK=0` is the A/B switch. Live (the debug build): four captures one second apart, before 0:02 stayed 0:02 and the bars did not move, after 0:10, 0:11, 0:12, 0:14 with the bars changing in each. Render, interaction and motion sweeps cannot see it (headless has no window clock), so the live check is the measurement.
+
+## B311 — MIPOD's EQ shows and its sliders work — closed 2026-10-27, not reproduced
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B311 | **MIPOD's EQ never displays.** Found in the intake #4 user UI round (2026-10-27, reporter driving). No EQ is shown by the skin's EQ control. Done when the skin's EQ shows and its sliders work | MIPOD | ? | 1 |
+
+**Closed 2026-10-27, not reproduced.** The skin's EQ page is an LCD group, switched in by `LCDTabs.m`: the wheel's `MENU` shows the `Equalizer` / `Preferences` tiles and a click on `Equalizer` runs `LCDSwitchTo(2)`; `Alt+G` (the skin's `Equalizer` config attribute) does the same. Live, with real clicks: `MENU` then `Equalizer` shows the page (`On`/`A` switches, the eleven sliders); dragging a band slider moves its thumb. The page returns to the song info by itself after 10 s (`tmrMainNormalIdle`, 20 half-second ticks) once the pointer is off the page, which is the skin's own idle timer and reads as the EQ vanishing when the pointer is parked outside it. `ismouseoverrect` answers 1 over the page and 0 off it. No code change.
+
+## B312 — OrbFace's seek bar seeks a local file — closed 2026-10-27, not reproduced
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B312 | **OrbFace's seek bar cannot be dragged or clicked to change position.** Found in the intake #4 user UI round (2026-10-27, reporter driving). The seek control does not move playback. Done when dragging or clicking the seek bar seeks the track | OrbFace | ? | 1 |
+
+**Closed 2026-10-27, not reproduced.** Live on a local file: a click at skin (130,98) calls `seekto(121113)` (`(x - seekImage.getLeft()) / 200 * getPlayItemLength()`, half of 242 s) and a drag from x=850 to 930 ends in `seekto(167135)`; the time readout moves to match. `orb.m` ends `seekImage.onLeftButtonDown` early when `getPlayItemString()` starts with `http` or the length is 0 (a stream), so a server track, whose play item is a URL, cannot be seeked by this skin by its own rule; no `.wal` change makes Winamp do otherwise.
+
+## B313 — Silverskin_3's main-window top row is a row of lamps — closed 2026-10-27, not a defect
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B313 | **Silverskin_3's main-window top buttons (shuffle, etc.) do not react to clicks.** Found in the intake #4 user UI round (2026-10-27, reporter driving). The row of toggle buttons along the main window's top does nothing. Done when each top button toggles its function and its art | Silverskin_3 | ? | 1 |
+
+**Closed 2026-10-27, not a defect.** The row (`Shuffle`, `Crossfade`, `Repeat`, `Mute`, `Light`) is the `LEDs` group of `player.xml`: `ghost="1"` lamp layers beside plain `sh.layer`/`xf.layer`/… captions, with no button and no handler in `os-LEDs.m`, `os-mute.m` or `os-light.m`. The toggles that drive them are the `Shuffle`/`Crossfade`/`Repeat` togglebuttons of the EQ window's `eqbuttons` group. Driven through `WINAMP_MODERN_DEBUG_CLICK="eq@24,170;eq@50,170"`, the main window's Shuffle and Crossfade lamps light, so the skin works as authored. No code change.
+
+## B314 — The_Duk_Side_V3's caption slot is blank until a hover — fixed 2026-10-27
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B314 | **The_Duk_Side_V3's main window shows `Playlist Editor` where the track name belongs.** Found in the intake #4 user UI round (2026-10-27, reporter driving). The song-title text shows the playlist window's title instead of the playing track. Done when the main window's title text shows the playing track | The_Duk_Side_V3 | ? | 1 |
+
+**Fixed 2026-10-27.** The `Playlist Editor` was not the song ticker (`display="songname"`, which was drawing `HACKBEAT KEVIN MAC...` behind the duck, as its own screenshot has the track behind it) but `cbtxt`, `<text display="componentbucket">` at (109,265): B34's caption read the first icon on screen at rest. The skin's `skinshot.png`, taken in Winamp with the thinger drawn, has that slot empty, so the caption now names the icon under the pointer, the first on-screen icon after a `CB_*` scroll, and nothing at rest or once the pointer leaves the icons (`WinampModernComponentBucketState.captionIndex`; the focus plate is unchanged). `WINAMP_MODERN_CAPTION_AT_REST=1` is the A/B switch. Live: the caption slot under the duck is empty at rest. Tests `testThePointersCaptionLeavesWithThePointer`, and the rest-state expectations of the two caption tests now read empty. Lobe's one-icon strip, read through its scroll buttons, keeps its name after a scroll; no reference shows its caption at rest.

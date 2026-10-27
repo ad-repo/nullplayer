@@ -315,6 +315,12 @@ publishes one: the five surfaces `routeComponentToggle` can actually open (Playl
 Equalizer, Media Library, Visualization, Video), drawn as vector glyphs on a rounded plate. Four
 things are worth knowing:
 
+- **The caption is blank at rest (B314).** It names the icon under the pointer, and after a `CB_*`
+  scroll the first icon on screen; it goes blank when the pointer leaves the icons. The Duk Side V3's
+  own screenshot, taken in Winamp, shows its thinger drawn and its caption slot empty, and the old
+  "first icon at rest" put `Playlist Editor` over the duck where a player's title is read. The focus
+  *plate* is separate and still sits on the first icon at rest. Lobe's one-icon strip is read through
+  its scroll buttons, which still name the icon.
 - **The strip's state is skin-wide, not per object** (`WasabiSkinRuntime.componentBucket`). One skin
   has one thinger however many layouts draw it — Mini_Me_2 declares ten (one per variant), mmd3 three
   (`normal` plus both shades) — and a `CB_*` button names no bucket, so a per-object scroll position

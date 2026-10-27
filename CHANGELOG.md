@@ -138,6 +138,11 @@
   NullPlayer used to hide the skin's as well, leaving a blank gap beside minimise.
 - **LG_Free's Equalizer Studio and Media Library no longer carry the playlist's Add / Rem / Sel / Misc /
   List buttons** along their bottom edge.
+- **A Winamp Modern skin's second window keeps time and draws its analyzer.** Manchester United's
+  mini player (its own `visual` window) used to freeze its timer and animate its analyzer only now
+  and then; every window of a skin now follows the playback clock and the spectrum.
+- **The component-bucket caption is blank until you hover an icon or scroll.** The Duk Side V3 used to
+  print `Playlist Editor` over its duck where the track name is read.
 
 ## 0.33.1
 

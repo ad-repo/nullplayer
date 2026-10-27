@@ -1788,7 +1788,7 @@ final class WasabiSceneRenderer {
     /// Move the caption to the icon under the pointer. Returns whether it moved.
     @discardableResult
     func focusComponentBucketIcon(at point: CGPoint) -> Bool {
-        guard let hit = componentBucketIcon(at: point) else { return false }
+        guard let hit = componentBucketIcon(at: point) else { return componentBucket.pointerLeftTheIcons() }
         return componentBucket.focus(hit.index)
     }
 
