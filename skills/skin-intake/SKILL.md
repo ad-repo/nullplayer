@@ -157,8 +157,9 @@ naturally stops:
 **The loop:**
 
 1. Run `scripts/wal_intake_status.sh`; its `next:` line and the ledger row name the phase.
-2. Start **one** worker, with `model: "opus"`: the environment's default subagent model is
-   Haiku, and judging the review sheet is the step that has failed before. Never run two at once,
+2. Start **one** worker, with `model: "sonnet"`. The environment's default subagent model is
+   Haiku, which has misjudged a review sheet before. Opus workers cost several times more, and the
+   orchestrator's own look at every sheet (step 4) is the judgment that has to hold. Never run two at once,
    because two builds or launches break each other and the user's running app.
 3. The worker's prompt is the phase and skin, plus these rules:
    - Do this one phase of `skills/skin-intake` / `skills/skin-triage`, read from the ledger, the
