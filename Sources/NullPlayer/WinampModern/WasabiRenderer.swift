@@ -677,6 +677,17 @@ enum WasabiAnimation {
         if steps >= distance { return (target, false) }
         return (start + (target > start ? steps : -steps), true)
     }
+
+    /// A layer that plays itself from markup (`autoplay`/`autoreplay`, no `play()` yet) starts when it
+    /// is first drawn. Without a stamp `state` counted from uptime 0, so a once-only intro was over
+    /// before the window opened: Official_Zwan_Skin's rainbow wipe and thinger strips sat on their
+    /// last frame (B280). A loop is periodic, so its start only sets its phase.
+    static func stampFirstShow(_ object: WasabiObject, clock: TimeInterval) {
+        let attributes = object.attributes
+        guard attributes["animstart"] == nil, attributes["playing"] == nil,
+              attributes["autoplay"] == "1" || attributes["autoreplay"] == "1" else { return }
+        _ = object.setAttribute("animstart", value: String(clock))
+    }
 }
 
 struct WasabiSceneNode {

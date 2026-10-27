@@ -325,6 +325,7 @@ extension WasabiSceneRenderer {
 
     private func animatedFrameImage(_ bitmap: WasabiBitmap, object: WasabiObject,
                                     grid: AnimationGrid) -> CGImage? {
+        WasabiAnimation.stampFirstShow(object, clock: clock())
         let frameIndex = max(0, min(grid.count - 1, WasabiAnimation.state(of: object, frameCount: grid.count,
                                                                           clock: clock()).frame))
         let column = frameIndex % grid.columns

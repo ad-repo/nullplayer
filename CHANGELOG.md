@@ -106,6 +106,8 @@
   the library, and Itemskin, K-jr and MoonLight keep the library frame their authors drew.
 - **The Official Zwan skin has a player window again.** A skin that declares its main window
   inside another declaration of the same window now keeps the player, shade and thin-shade layouts.
+- **A skin's opening animations play when its window opens.** Animations a skin starts on its own,
+  such as Official Zwan's rainbow intro, used to be over before the window appeared.
 
 ## 0.33.1
 

@@ -341,11 +341,15 @@ final class WasabiObjectGraph {
     /// a five-second window, and `append` + `sceneNodes` were ~25% of the main thread re-deriving a
     /// scene that had not changed shape (B104 item 4).
     ///
+    /// **`animstart`**, the play head's clock origin, clears it on the same terms: only
+    /// `WasabiAnimation.state` reads it, at draw time. The renderer stamps it on a self-playing
+    /// layer's first draw (B280), which must not throw away the scene it is drawing.
+    ///
     /// Anything else added here has to clear the same bar: `visible` does not (it decides
     /// membership), `image`/`text` do not (they can size an object), and an attribute the flag map
     /// does not recognise does not.
     static func isSceneNeutral(attribute: String) -> Bool {
-        attribute == "alpha" || attribute == "frame"
+        attribute == "alpha" || attribute == "frame" || attribute == "animstart"
     }
 
     private var nextRawID: UInt64 = 1

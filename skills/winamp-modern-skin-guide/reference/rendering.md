@@ -1093,6 +1093,16 @@ from its current frame to the last, and stops there, so its `onStop` arrives (B2
 PLAY/PAUSE/STOP status layer hides itself and brings the song ticker back from that `onStop`;
 looping, it never did.
 
+A layer that self-plays from markup (`autoplay="1"` or `autoreplay="1"`, no `play()` yet) starts
+**when it is first drawn**: the renderer stamps `animstart` with its clock on that draw
+(`WasabiAnimation.stampFirstShow`), and `animstart` is scene-neutral, like `frame`. Before, it counted
+from uptime 0, so a once-only intro was over before the window opened — Official_Zwan_Skin's rainbow
+wipe and thinger strips sat on their last frame (B280). A layer a script hides at load
+(`player.web.anim.open`) is stamped when it is first shown. A render dump pinned at clock 0 stamps
+`0` and draws exactly what it did; the motion sweep's ladder now starts a looping self-play at
+rung 0, so a loop a script timer stops on its first tick reads `stuck` there, not `moving` (cPro
+Venus, MIDISUI `vis.animation`) — a classification of rung 0, the pixels are unchanged.
+
 #### `relat*="2"` is a **percentage**, every other non-zero value is additive
 
 `relatx`/`relaty`/`relatw`/`relath` read as `atoi(value)`, and the number matters:
