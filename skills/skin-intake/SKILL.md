@@ -177,8 +177,10 @@ naturally stops:
 than a foreground call's 10-minute limit. A worker cannot wait on a background run either, because
 its report ends the run. So the orchestrator starts the crawl itself with `run_in_background`, with
 its output in the scratchpad. When the run ends, check for its `wal_intake: … -> intake.tsv` line;
-the exit code proves nothing (`harness.md` § *Growing the corpus*). Only then does one worker take
-the output dir and do the rest of Admit: copy the picks, commit the ranking and the ledger, and add
+the exit code proves nothing (`harness.md` § *Growing the corpus*). Then **end the turn**: the
+crawl is a phase boundary, and the user compacts or starts a fresh session there. The last message
+gives the output dir's full absolute path, the one thing the next session cannot find without it.
+In the next session, one worker takes that dir and does the rest of Admit: copy the picks, commit the ranking and the ledger, and add
 the plan bullet. Never tell a worker to run the crawl in the foreground.
 
 A blocker the worker cannot clear (a decision for the user, a defect it cannot reproduce) comes
