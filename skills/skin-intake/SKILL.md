@@ -54,7 +54,7 @@ The batch's lowest stage decides the next session's work. `wal_intake_status.sh`
 |---|---|---|
 | — (no open batch) | **Admit** batch n: branch `feat/wal-intake-<n>` from `origin/main`; `wal_intake.sh <bronze> <out> --admit`; copy the picks into `WinampModernSkins/`; commit `<out>/intake.tsv` as `intakes/intake-<n>.ranking.tsv` and the ledger at `admitted` | all → `admitted` |
 | `admitted` | **The batch pass** (below); reorder the ledger rows by its rank, since `next:` takes the first unfinished row | all → `headless` |
-| `headless` | **One skin**, the `next:` one: Phases 5–8, then § *The visual review*. Skins whose note says `headless clean` share one live smoke session instead (one launch, switch skins from the menu), and each still gets the visual review | one → `live` |
+| `headless` | **A group of skins at once** (below, § *Running it*): a live pass over about four skins, then one fix pass over every row they filed, then one live re-check of the skins a fix touched. Skins whose note says `headless clean` go through the same live passes; each still gets the visual review | a group → `live` |
 | `live` | **Hand over** the `live` skins in one list for the user's UI round; their verdicts go in | → `accepted`, or back with a note |
 | `accepted` | **Promote** every skin in one commit, then the branch's code-quality review and the PR | all → `promoted` |
 | `promoted` | **Close** once the PR is merged: delete the run store (`rm -rf WinampModernCorpus/runs`), then admit batch n+1 | — |
@@ -145,7 +145,7 @@ naturally stops:
 |---|---|
 | no open batch | Admit: the orchestrator runs the crawl, then one worker does the rest (below) |
 | `admitted` | Phases 1–2 over the batch (dump, inventory) · Phase 3 (interaction and motion sweeps) · Phase 4 (ranked fix list; ledger → `headless`) |
-| `headless`, per skin | Phase 5 (the fix list, a few entries per worker if it is long) · Phase 6 (reference matching) · Phase 7 and the visual review · Phase 8 (verify; ledger → `live`) |
+| `headless`, a group | **Live pass**: Phase 7 and the visual review over about four skins in one launch (switch skins from the menu). It files defects as rows and fixes nothing; a clean skin moves to `live` in the same commit, since nothing changed to verify. **Fix pass**: Phase 5 over every row the group filed, one set of sweeps for all of them. **Re-check**: Phase 7 on only the skins a fix touched; Phase 8 is its sweep classification, and needs no worker of its own when the fix pass already classified the sweep on the same code. Phase 6 runs in the live pass when it has not run |
 | `accepted` | Promote · the code-quality review · the PR |
 
 **The loop:**
