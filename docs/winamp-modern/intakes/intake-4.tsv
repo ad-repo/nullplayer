@@ -18,9 +18,9 @@ Manchester_United_Red_Devils_Skin.wal	0717cbe2f68c6e48864baf073fad27524fca564758
 pumaSKIN.wal	2114a8009b97594b5a25644c3031426732b74a0e4405b0d922918cd298bcab15	live	2026-10-26	-	visual: clean (4 windows) no ref
 G2.wal	c0541bd78acfe3a97f322573bd23550521e906595804b68e340ae45e8d323014	headless	2026-10-26	B303	fix pass: B303
 MIPOD.wal	01067a57cea5ac080c5997f39cecb17fe4cba77bf17e417eadb6900d8706c799	live	2026-10-26	-	visual: clean (4 windows) no ref
-Sepultura_Dante_XXI.wal	06d3ea7e11dfcd674d52aebb084b1866c6344ffc2a40cbac6d8b86d1d8f0b2c3	headless	2026-10-26	-	headless clean: drawer area empty vs ref = drawer closed at load (state, live check); History under hstsp splash + cttoggle/eqtoggle = state pairs; window-elements.pn = author typo; int 36 works
-OrbFace.wal	0e7e47441e55b7840c70dea95ce5161109a15cdc114d9f03d9e8ab1d50488f98	headless	2026-10-26	-	headless clean: PNG clean; seekImage/stop silent = H at rest; button hover/press anims = expected
-The_Duk_Side_V3.wal	c9992c1e40e8b0176e402b8846e2d8b3b1fa3ebb4b77cdd90fe943a18ae7e7b7	headless	2026-10-26	-	headless clean: PNG clean (About/library unframed by the author); seek1/vol/songticker silent = H at rest; vis loop reverts = expected
-Ar-Za-Jo.wal	2b0fd1b3bfb5474ddabc2530c8a661757586f755a1a6255c6ca422f8a6a40b59	headless	2026-10-26	-	headless clean: PNG clean; seek click+drag silent = H at rest; motion Timer-only = expected
-PAD.wal	3c64985c8b16572698309ea9a7a193f497648035b1a388c571bac6f302dd90bc	headless	2026-10-26	-	headless clean: PNG clean; choose/reset.color = H (colour dialog); MainVis/time = H at rest; toggle under EQ_BAND6 = speakers state (speakers.m clicks it at load), live check
-LG_Free_touch_the_music_.wal	c9cdc6202e2b4916f44110fe85a3b23a7b706321c435dfdc4a2514c6230cc3fa	headless	2026-10-26	-	headless clean: Web/Middle = navigateUrl(cookie.lgmobile.com), implemented, no in-scene change; Pickup=play()/Hangup=stop() at rest (display.maki strings); all H; EQAnim at rest = expected
+Sepultura_Dante_XXI.wal	06d3ea7e11dfcd674d52aebb084b1866c6344ffc2a40cbac6d8b86d1d8f0b2c3	live	2026-10-27	-	visual: clean (4 windows). drawer opens (toggle button at the right edge slides it out with the EQ pane); transport, volume driven
+OrbFace.wal	0e7e47441e55b7840c70dea95ce5161109a15cdc114d9f03d9e8ab1d50488f98	headless	2026-10-27	B304	fix pass: B304
+The_Duk_Side_V3.wal	c9992c1e40e8b0176e402b8846e2d8b3b1fa3ebb4b77cdd90fe943a18ae7e7b7	live	2026-10-27	-	visual: clean (4 windows). next, thinger driven
+Ar-Za-Jo.wal	2b0fd1b3bfb5474ddabc2530c8a661757586f755a1a6255c6ca422f8a6a40b59	live	2026-10-27	-	visual: clean (5 windows). pause, next driven
+PAD.wal	3c64985c8b16572698309ea9a7a193f497648035b1a388c571bac6f302dd90bc	live	2026-10-27	-	visual: clean (5 windows) (no ref). next, pause driven
+LG_Free_touch_the_music_.wal	c9cdc6202e2b4916f44110fe85a3b23a7b706321c435dfdc4a2514c6230cc3fa	live	2026-10-27	-	visual: clean (4 windows). next, seek driven
