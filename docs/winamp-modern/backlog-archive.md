@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B278 — A diamond the skin declares over its thinger strip is not a draw-order defect — closed 2026-10-27
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B278 | **WINyaMP3's thinger icons draw under its arrow art.** Batch dump against its `screenshot`: the thinger's icon strip is drawn below the arrow layer instead of over it. Establish the draw order the skin declares (group order vs the thinger component's own icons), then fix. Done when the dump's thinger matches the screenshot and no gold+silver render changes otherwise | intake #4 dump: WINyaMP3 (silver) | S | 2 |
+
+**Closed 2026-10-27**, no code change: not a defect. `xml/thinger.xml` declares the order itself: group `thinger.stuff` has `background="thinger.effect3"`, then the `<componentbucket>` (`x=0 y=7 w=346 h=56 alpha=128`), then `<layer image="thinger.effect2" sysregion="1" ghost="1"/>` over it, and the later group `thinger.normal.effects` adds the `ScrollLeft`/`ScrollRight` buttons (x 140/177). `effect2.png` is transparent over the left and right icon bands and opaque only in its centre diamond (group x ≈ 132–205), so the skin puts its arrow art over the middle of the strip on purpose; the dump draws exactly that order: Playlist, EQ and Library whole in the left band at alpha 128, Visualization cut by the diamond's edge, Video under it until `CB_NEXT` scrolls it out. `screenshot.png` shows only the player, so there is no thinger reference to contradict the skin's own declaration.
+
 ## B277 — A ring-shaped thumb at its minimum is not a missing slider — closed 2026-10-27
 
 | Id | Item | Reach | Effort | Tier |
