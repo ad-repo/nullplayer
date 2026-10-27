@@ -503,6 +503,17 @@ so a corpus run can't lose lines, not *what* is measured.
   Winampple_1_1, Clock V2.76, intellidesign, BeatSugar, Nebular, METASKINS-WooHoo-FER, Hybridv10,
   LCDx, cPro__Creed__Full_Circle, Celica_Amp, Ebonitefix, Official_28_Days_Later_Skin, Invicta,
   TAL_96, Freeform_Simpsons_Skin (`.wal` each); copied into `WinampModernSkins/`.
+- **Intake #4 admitted 2026-10-26** (`feat/wal-intake-4`, rev `18622d92`; the census stage logged
+  `dfef14da`). Run over the 777 bronze: **25 silver, 752 bronze, 0 quarantine**, ~45 min. **Gain
+  curve** (first 60): `4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 3 3 3 3 3 3 3 3 3 3 | 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3 3 3 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2`; 41 candidates clear gain ≥ 3, so 16 remain after
+  this batch — batch 5 would be a partial 16 at the floor, as batch 3 predicted. Post-admission
+  sweep: not run at admission. Batch: iCandy-2, Quadelic, Silverskin_3, StarTrek_LCARS_AMP_PADD_II,
+  Official_Zwan_Skin, The_Music_-_Official_Skin, Jenna_loves_mambo, -MfS3-, MBOS, G2, WINyaMP3,
+  The_Duk_Side_V3, LG_Free_touch_the_music_, cPro__Mecha_1_1_1_1, MultiButtons_v0.02, MIPOD,
+  Sepultura_Dante_XXI, Manchester_United_Red_Devils_Skin, OrbFace, pumaSKIN, Ar-Za-Jo,
+  GlassAMPfinal, Ryoko_Asakura__Winamp_Skin_1_1, PAD, NEO (`.wal` each); copied into
+  `WinampModernSkins/`.
 
 ### Decisions (fixed — re-open only with a measurement)
 
