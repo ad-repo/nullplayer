@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B275 — A notifier dumped at its declared size is not the toast — closed 2026-10-27
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B275 | **Text clipped in three intake #4 skins (cross-skin unlocker candidate).** Batch dump: GlassAMPfinal's notifier reads `IS PLAYIN`, cPro__Mecha's notifier text is cut, Silverskin_3's frame titles lose their first letters (`AYLIST EDITO`, `VERSKIN HE`, against its `screenshot`). Compare each text node's box with its string's measured width and its `align`/`hscroll` handling to find whether one clipping rule (centred text wider than the box clipped on both sides) covers all three. Done when the three strings draw whole (or scroll, where the skin asks) and no gold+silver render changes otherwise | intake #4 dump: GlassAMPfinal, cPro__Mecha_1_1_1_1, Silverskin_3 (silver) | S | 2 |
+
+**Closed 2026-10-27**, no code change: three cases, two not defects, one split. **GlassAMPfinal** and **cPro__Mecha_1_1_1_1**: the clipped strings are the notifier rendered at its declared layout (78x141, 128x80). Neither is shown at that size. GlassAMP's `notifier.maki` measures its text on `onShowNotification` (`getAutoWidth` 383 for the title) and asks `resize(…,483,141)` (`RENDER_EVENTS=notifier/normal@onshownotification` + `CALL_TRACE`); the dump harness wires no `layoutResizeRequested`, so its canvas stays declared. Rendered at 483x141 (`RENDER_SIZE`), title, artist and album draw whole. ClassicPro's notifier fills and sizes itself from `AlbumArt.onAlbumArtLoaded`, which NullPlayer never dispatches, so its script stops after `refresh()`; the host's `setNotifierText` writes the strings and widens the toast to max(declared, 350), and at 350x80 every string draws whole. **Silverskin_3**: the bitmap-font titles are wider than the windows themselves (300px in 215, 320px in 190), so no clipping rule draws them whole; what Wasabi does with centred overflow is unsettled and moved to B282.
+
 ## B274 — The render dump draws the glass rim a rehosted window wears — closed 2026-10-27
 
 | Id | Item | Reach | Effort | Tier |

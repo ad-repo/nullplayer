@@ -337,6 +337,14 @@ That is how a title box overlapping the artist beneath it survived a clean rende
 are deliberately long enough to need more room than a toast declares, because auto-width and ticker
 behaviour are only exercised by a string that does not fit.
 
+**A notifier in a plain dump is drawn at its declared size, and the toast never is** (B275). The
+harness wires no `layoutResizeRequested`, so a script's `resize()` on the notifier layout and the
+host's `setNotifierText` widening (to max(declared, 350)) never reach the canvas. Clipped notifier
+text in a batch dump is therefore not a finding until it survives the toast's real size: drive
+`RENDER_EVENTS=notifier/normal@onshownotification` with `CALL_TRACE=1` to read the `resize(…)` the
+script asks for, then dump again at that size with `RENDER_SIZE` (350 wide for a ClassicPro notifier,
+whose own fill waits on `onAlbumArtLoaded`, an event NullPlayer never sends).
+
 ### The corpus census — one structural row per corpus skin
 
 `scripts/wal_skin_census.sh <outdir>` is the sweep's reporting sibling. It runs one render-dump pass
