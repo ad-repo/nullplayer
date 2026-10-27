@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B277 — A ring-shaped thumb at its minimum is not a missing slider — closed 2026-10-27
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B277 | **MultiButtons_v0.02's equalizer shows no sliders, only a `0 0000000000` digit row.** Batch dump `eq/normal` against its `screenshot`. Probe `eq/normal` for the band sliders' bitmaps and visibility. Done when the dump draws the sliders the screenshot shows | intake #4 dump: MultiButtons_v0.02 (silver) | S | 2 |
+
+**Closed 2026-10-27**, no code change: not a defect. The `0 0000000000` row *is* the eleven sliders: the skin's `buton.eq.slider` (`player/eq_but.png`, 9x13) is a white ring shaped like a `0`, the preamp at x 83 and ten bands from x 98. The plain dump installs no component host, so every `EQ_PREAMP`/`EQ_BAND` thumb draws at its minimum, along the bottom of the 82px track (the blind spot `harness.md` names under `WINAMP_MODERN_RENDER_PLAYLIST`). With `WINAMP_MODERN_RENDER_PLAYLIST=3` the flat EQ puts all eleven on the middle tick of `layer.eq`'s scale, and the `eqvis` draws its flat line. `layer.eq` is opaque black with transparent dot holes over the `viseqnormal` analyzers, so the dots show only with audio. `screenshot.png` shows only the player and pledit, so the skin's own art is the reference.
+
 ## B272 — A checked option the skin ghosts itself is not a hit-test defect — closed 2026-10-27
 
 | Id | Item | Reach | Effort | Tier |
