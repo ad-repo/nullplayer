@@ -3,6 +3,22 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B302 — Silverskin_3's `updating...` placeholders are the skin's own first second, not a defect — closed 2026-10-27
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B302 | **Silverskin_3's LCD shows the placeholder `updating...` while playing.** Found in the orchestrator's look at the intake #4 live pass sheet (2026-10-27): the main window's LCD shows `UPDATING..` in three places and the EQ/thinger panes declare `text="updating..."` on `s.xf`, `s.bal`, `s.arr`, `s.mute`, `s.sts`, `s.vis` (`xml/eq.xml:420-577`). The skin's scripts are meant to `setText` them (crossfade, balance, mute, status, vis); find which script call or event we do not deliver. Done when the LCD shows real values while playing and the gold+silver diff touches only texts a script sets | Silverskin_3 (silver) | S | 1 |
+
+**Closed 2026-10-27, not a defect.** Headless `WINAMP_MODERN_RENDER_SETTLE=3` dump: the LCD reads `VOLUME: 70`, `POSITION: 29`, `PLAYING:`, the clock and the stream info, and the EQ pane's thinger/status lines show real text; no handler fails. `os-statustools.m` and `os-daytime.m` set those texts from a 1000 ms `Infotimer`/`onScriptLoaded`, so the `Updating..` markup defaults show for the first second after a skin loads, as the skin authored it. The `s.*` texts in `eq.xml` are set by hover handlers, and show their placeholder until then. No code change; not re-checked live.
+
+## B301 — -MfS3-'s ghost strings are the skin's own cross-fades, not a defect — closed 2026-10-27
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B301 | **-MfS3-'s frequency box draws two strings on top of each other: `44 kHz` over a ghost of a second string.** The orchestrator's look at the sheet saw the same in the main title: `MfS3` drawn over a ghost `WINAMP PLAYER`; check whether one mechanism covers both. Found in intake #4 live pass (2026-10-27): main window, the small box under the time (`frequencyText`, set to `<n> kHz` in `main.m:1317`); zoomed capture shows a second, fainter string in the same box (looks like `Playing`) overlapping the digits. Find which second object writes there (a second text/dynamic holder at the same rect, or the placeholder not cleared) and why we draw both. | S | open |
+
+**Closed 2026-10-27, not a defect; one mechanism covers both.** `main.m` fades objects with `setTargetA`/`gotoTarget` over seconds: the title swaps `MfS3` (`title2`, 2 s out) for the `WINAMP PLAYER` art (`title1`, 3 s in) 3.5 s after load, and `showInfoTimer` cross-fades `Frequency`/`bitrate`/`mono.stereo`/`Status` (3.2 s in, 2.5 s out, one every ~5 s) in the same box. A capture mid-fade shows both strings. Headless dumps with `WINAMP_MODERN_RENDER_SETTLE`: 4.5 s shows both ghosts, 9 s shows only `WINAMP PLAYER` and one clean info string. The engine's linear alpha animation matches the skin's durations. No code change; not re-checked live.
+
 ## B299 — `VOLUME_UP`/`VOLUME_DOWN` button actions step the volume: Quadelic's `vol +`/`vol -` work — closed 2026-10-27
 
 | Id | Item | Reach | Effort | Tier |
