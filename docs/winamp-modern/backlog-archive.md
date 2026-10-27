@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B291 — `PE_Info` reads selected/total, as Winamp's does — closed 2026-10-27
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B291 | **`PE_Info` reads "N items/total"; MultiButtons' screenshot shows Winamp's as "selected/total".** Found in intake #4 Phase 6: the playlist status `display="PE_Info"` (`xml/pledit.xml:19`) in `screenshot.png` reads `3:25/43:40+`, and 3:25 is the length of the one selected row (`10. Green Day - Give Me Novocaine 3:25`). `WinampModernPlaylistSnapshot.infoLine` (`WinampModernComponents.swift:231`) says its format is inferred and that a screenshot of the field would settle it; this is that screenshot. Open: what Winamp shows with no selection, and the `+` (probably "some lengths unknown"). Defix parses token 2 after `/` as the duration (still right); Itemskin parses the string too, so its header must be re-checked. Done when `infoLine` gives selected length / total (with the `+` rule if one is evidenced), Defix's `Time:` readout is unchanged, and the gold+silver diff touches only `PE_Info` texts | MultiButtons_v0.02 (silver); every skin with a `PE_Info` text | S | 2 |
+
+**Closed 2026-10-27**. `WinampModernPlaylistSnapshot.infoLine` is now `selected/total`: the summed length of the selected rows (`selectedRows` plus the anchor), `/`, the queue's total, each `m:ss` or `h:mm:ss`; nothing selected (and an empty queue) reads `0:00/…`. The `+` is left out: the screenshot shows it but not what triggers it. Consumers re-checked headlessly (`RENDER_PLAYLIST=5 RENDER_TEXT=1 CALL_TRACE=1`): Defix's `info.input` and Itemskin's `cd.playlist.text` read `0:00/10:10`, both take `getToken(…, "/", 1)` → `10:10`, so Defix's `Time:` and Itemskin's CD-size readout are unchanged. Gold+silver render sweep vs the HEAD capture: invariants identical, 0 image DIFFs (the sweep stands no queue, so `PE_Info` is empty there); interaction and motion vs HEAD: 131/1256-row diffs, all noise — neither sweep installs `componentTextProvider`, so `infoLine` is unreachable there, and a `--fresh` interaction run of the same code differs from the stored one by 93 rows over 27 skins of the same timing-bound objects (sliders, animated layers, cPro tab buttons). One format string, so no A/B switch. See `compatibility.md` § *Hosted components*.
+
 ## B295 — An axis `fitparent` restated with its `relat*` keeps its own size: krazyPlayer's holders end at the button bar — closed 2026-10-27
 
 | Id | Item | Reach | Effort | Tier |

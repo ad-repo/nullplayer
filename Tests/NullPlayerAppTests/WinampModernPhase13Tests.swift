@@ -934,7 +934,7 @@ final class WinampModernPhase13Tests: XCTestCase {
                 currentIndex: 0, selectedIndex: 1)
         }
         addTeardownBlock { WasabiTextMetrics.componentTextProvider = nil }
-        XCTAssertEqual(WasabiTextMetrics.content(of: info, host: host), "2 items/2:00")
+        XCTAssertEqual(WasabiTextMetrics.content(of: info, host: host), "0:30/2:00")
 
         // The measurement a script gets is of that same string.
         let metrics = loaded.runtime.resources
@@ -970,14 +970,14 @@ final class WinampModernPhase13Tests: XCTestCase {
 
         let byDisplay = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "info.input").first)
         let byID = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "PE_Info").first)
-        XCTAssertEqual(WasabiTextMetrics.content(of: byDisplay, host: host), "1 item/1:30",
+        XCTAssertEqual(WasabiTextMetrics.content(of: byDisplay, host: host), "1:30/1:30",
                        "display=\"PE_Info\" is the form the stock skin uses and must be honoured")
-        XCTAssertEqual(WasabiTextMetrics.content(of: byID, host: host), "1 item/1:30",
+        XCTAssertEqual(WasabiTextMetrics.content(of: byID, host: host), "1:30/1:30",
                        "the id form keeps working")
 
         // A different `display=` must not be captured by the status line.
         let unrelated = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "other").first)
-        XCTAssertNotEqual(WasabiTextMetrics.content(of: unrelated, host: host), "1 item/1:30")
+        XCTAssertNotEqual(WasabiTextMetrics.content(of: unrelated, host: host), "1:30/1:30")
     }
 
     /// A script that mutates an object in an **auxiliary** container must get that window repainted.
@@ -1060,9 +1060,9 @@ final class WinampModernPhase13Tests: XCTestCase {
                 currentIndex: 0, selectedIndex: 0)
         }
         runtime.refreshBoundText()
-        XCTAssertEqual(WasabiTextMetrics.content(of: bound, host: TestHost()), "1 item/2:00",
+        XCTAssertEqual(WasabiTextMetrics.content(of: bound, host: TestHost()), "2:00/2:00",
                        "and the content the event carries is the status line itself")
-        XCTAssertEqual(runtime.lastDispatchedTextForTesting(bound), "1 item/2:00",
+        XCTAssertEqual(runtime.lastDispatchedTextForTesting(bound), "2:00/2:00",
                        "the *first* real value must fire: a queue populated before the first poll "
                        + "never produces a later change, and seeding silently left it blank forever")
 
@@ -1072,17 +1072,20 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertEqual(runtime.unsupportedMethodCalls.count, before)
     }
 
-    /// Item and duration formatting, including the singular and the hour rollover.
+    /// B291: `PE_Info` is "selected/total" (MultiButtons' screenshot: `3:25/43:40+`, 3:25 the
+    /// selected row), including the hour rollover and a multi-row selection.
     func testPlaylistSnapshotSummarizesItsQueue() {
-        func snapshot(_ durations: [TimeInterval]) -> WinampModernPlaylistSnapshot {
+        func snapshot(_ durations: [TimeInterval], selected: Int = -1,
+                      rows extra: Set<Int>? = nil) -> WinampModernPlaylistSnapshot {
             WinampModernPlaylistSnapshot(
                 rows: durations.map { WinampModernPlaylistRow(title: "t", secondary: "", duration: $0,
                                                               isCurrent: false) },
-                currentIndex: -1, selectedIndex: -1)
+                currentIndex: -1, selectedIndex: selected, selectedRows: extra)
         }
-        XCTAssertEqual(WinampModernPlaylistSnapshot.empty.infoLine, "0 items")
-        XCTAssertEqual(snapshot([61]).infoLine, "1 item/1:01")
-        XCTAssertEqual(snapshot([3600, 61]).infoLine, "2 items/1:01:01")
+        XCTAssertEqual(WinampModernPlaylistSnapshot.empty.infoLine, "0:00/0:00")
+        XCTAssertEqual(snapshot([61]).infoLine, "0:00/1:01")
+        XCTAssertEqual(snapshot([3600, 61], selected: 1).infoLine, "1:01/1:01:01")
+        XCTAssertEqual(snapshot([205, 60, 40], selected: 0, rows: [0, 2]).infoLine, "4:05/5:05")
         XCTAssertEqual(snapshot([0, 0]).trackCount, 2)
         XCTAssertEqual(snapshot([10, 20]).totalDuration, 30)
     }

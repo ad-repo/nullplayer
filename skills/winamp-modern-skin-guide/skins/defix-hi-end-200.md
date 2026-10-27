@@ -345,10 +345,10 @@ The same `Bottom.bar.button` wrapper carries the **playlist window's** `PE_Add`/
     matched the status line on **`id="PE_Info"` only**, so this read empty. It now matches
     `display="PE_Info"` too, which is the form the **stock Winamp Modern skin also uses**
     (`<text id="PLTime" display="PE_Info"/>`) — so its playlist time had been silently blank as well.
-  - **The `/` in the info line is inferred, not verified.** Defix takes token 1 of a `/` split, so the
-    separator has to be `/`; `WinampModernPlaylistSnapshot.infoLine` now emits `N items/h:mm:ss`
-    instead of `N items, h:mm:ss`. A capture of Winamp's own playlist showing that field would settle
-    it, and that one line is the only place to change.
+  - **The `/` in the info line was inferred; B291 verified it.** Defix takes token 1 of a `/` split, so the
+    separator has to be `/`; `WinampModernPlaylistSnapshot.infoLine` emitted `N items/h:mm:ss`
+    instead of `N items, h:mm:ss`. Settled by B291 (MultiButtons_v0.02's screenshot): it is
+    `selected/total`, and token 1 is still the total, so `Time:` is unchanged.
   - **`onTextChanged` was the missing piece, and it took three attempts to see it.** The subroutine
     that writes both readouts (instructions 3165–3241) has exactly **one** caller: `onTextChanged`
     calls it (`op25` is a call, not a jump). The `onTimer` sitting beside it only stops a spinner and

@@ -67,8 +67,10 @@ None of these ship with NullPlayer. All fixture-based tests are opt-in behind `W
 the attribute form is what real skins use — the stock Winamp Modern skin
 (`<text id="PLTime" display="PE_Info"/>`) and Defix (a hidden `<text id="info.input" display="PE_Info"
 w="0" h="0" visible="0"/>` its script parses) both do. Matching on the id alone left both blank.
-Its content is `N items/h:mm:ss`; the `/` is load-bearing — Defix reads the duration as
-`getToken(text, "/", 1)`.
+Its content is `selected/total` (`3:25/43:40`, each `m:ss` or `h:mm:ss`), as MultiButtons_v0.02's
+`screenshot.png` shows Winamp's (B291); the `/` is load-bearing — Defix and Itemskin read the total
+as `getToken(text, "/", 1)`. Not drawn, for want of evidence: Winamp's trailing `+` (probably "some
+lengths unknown") and its no-selection form (`0:00/…` here).
 
 | Playlist | Embedded and bound to `AudioEngine` — rows, now-playing marker, selection, bounded scroll, click/double-click/wheel, Delete/Forward-Delete removal while focused, `PE_Info` status line. Drawn in the skin's palette and list font. Scriptable through **`PlEdit`** (Phase 42): length/current entry, per-entry title, length, filename and metadata, and play/remove/move/clear/scroll-to. `System.getPlaylistIndex()`/`getPlaylistLength()` answer from the same queue |
 | EQ | Embedded classic 10-band + preamp, enabled/auto, presets, `<eqvis>`, bound to `AudioEngine`; gains persist across mode switches |

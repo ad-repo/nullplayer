@@ -124,6 +124,8 @@
 - **Shield Amp's display, krazyPlayer's playlist and other Winamp Modern panels end where the skin
   says.** A panel sized to fill its window minus a margin used to ignore the margin, so krazyPlayer's
   playlist ran over its ADD/REM buttons and Shield Amp's compact display ran into the window edge.
+- **A Winamp Modern skin's playlist status reads selected time / total time, as Winamp's does.** It
+  used to read the number of items and the total, e.g. "12 items/43:40" where Winamp shows "3:25/43:40".
 
 ## 0.33.1
 
