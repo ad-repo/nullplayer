@@ -2364,7 +2364,7 @@ final class WasabiSceneRenderer {
             drawComponentBucket(object, frame: node.frame, context: context)
         } else if WinampModernComponentRegistry.isHolderElement(object.tag),
                   let kind = Self.componentKind(of: object) {
-            drawComponent(kind: kind, object: object, frame: node.frame, context: context)
+            drawComponent(kind: kind, node: node, context: context)
         } else if object.tag.is(.images), let image = filmstripFrameImage(object) {
             // Before the plain-bitmap branch: an `<images>` names its sheet with `images=`, not
             // `image=`, so `resolvedBitmapID` answers nil for it and the object drew nothing at all.
@@ -3388,10 +3388,13 @@ final class WasabiSceneRenderer {
         context.restoreGState()
     }
 
-    private func drawComponent(kind: WinampModernComponentKind, object: WasabiObject,
-                               frame: CGRect, context: WasabiDrawList) {
+    private func drawComponent(kind: WinampModernComponentKind, node: WasabiSceneNode,
+                               context: WasabiDrawList) {
+        let object = node.object, frame = node.frame
         guard frame.width > 1, frame.height > 1 else { return }
         switch kind {
+        // Deferred like the seeker (B292): a layer declared after the holder sits under the list.
+        case .playlist where !Self.drawsPlaylistInline: deferredHostComponents.append((kind, node))
         case .playlist: drawPlaylistComponent(object, frame: frame, context: context)
         case .equalizer: drawEqualizerComponent(frame: frame, context: context)
         case .visualization:
@@ -3412,7 +3415,7 @@ final class WasabiSceneRenderer {
             context.setFillColor(NSColor.black.cgColor)
             context.fill(bledHostComponentRect(frame))
         // Deferred to the overlay pass below — see `deferredHostComponents`.
-        case .waveformSeeker: deferredHostComponents.append((kind, frame))
+        case .waveformSeeker: deferredHostComponents.append((kind, node))
         case .library:
             context.setFillColor(palette.contentBackground.cgColor)
             context.fill(bledHostComponentRect(frame))
@@ -3466,16 +3469,32 @@ final class WasabiSceneRenderer {
     /// So a claimed component is drawn last. The frames are collected during the walk (with the
     /// scene's transform already established) and replayed here inside the same `saveGState`, so the
     /// coordinates are the ones the walk computed.
+    ///
+    /// The playlist is the second (B292): Ryoko_Asakura declares its character art `pledit.char`
+    /// after the list's holder, and Winamp's list window floats over it. Each node is replayed under
+    /// its own clip and alpha, which the walk's `saveGState` no longer holds.
+    /// `WINAMP_MODERN_INLINE_PLAYLIST=1` is the A/B switch back to the inline draw.
     private func drawDeferredHostComponents(in context: WasabiDrawList) {
         let pending = deferredHostComponents
         deferredHostComponents.removeAll(keepingCapacity: true)
-        for (kind, frame) in pending where kind == .waveformSeeker {
-            drawWaveformSeeker(frame: frame, context: context)
+        for (kind, node) in pending {
+            context.saveGState()
+            node.clipping.apply(to: context)
+            context.setAlpha(Self.alphaFraction(of: node.object, active: isWindowActive) * node.inheritedAlpha)
+            if kind == .playlist {
+                drawPlaylistComponent(node.object, frame: node.frame, context: context)
+            } else {
+                drawWaveformSeeker(frame: node.frame, context: context)
+            }
+            context.restoreGState()
         }
     }
 
+    static let drawsPlaylistInline =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_INLINE_PLAYLIST"] == "1"
+
     /// Collected during the scene walk, drained by `drawDeferredHostComponents` in the same frame.
-    private var deferredHostComponents: [(kind: WinampModernComponentKind, frame: CGRect)] = []
+    private var deferredHostComponents: [(kind: WinampModernComponentKind, node: WasabiSceneNode)] = []
 
     private func drawWaveformSeeker(frame: CGRect, context: WasabiDrawList) {
         let (samples, isLoading) = host.seekerWaveform
@@ -4551,15 +4570,27 @@ final class WasabiSceneRenderer {
     /// buttons, backing plate and the venus wordmark — sat jammed against the left edge at every
     /// window width. (Its declared `x`/`y` are written *before* `fitparent` and so are the ones
     /// Winamp throws away — see `WasabiGeometrySpec.discardingGeometryOverwrittenByFitParent`.)
+    ///
+    /// An axis whose `relat*` the same tag writes *after* `fitparent` keeps its own size (B295):
+    /// that tag restated the axis in full. krazyPlayer's playlist holder is
+    /// `<component fitparent="1" h="-20" relath="1">`, sized to end at its button bar; answered with
+    /// the parent's height it ran 20px over the ADD/REM bar. A bare `w`/`h` still loses (cPro's SUI).
     func geometry(of object: WasabiObject) -> WasabiGeometrySpec {
         var spec = object.geometry
         guard WasabiGeometrySpec.flag(object.attributes["fitparent"]) else { return spec }
-        spec.width = 0
-        spec.height = 0
-        spec.relativeWidth = true
-        spec.relativeHeight = true
-        spec.percentWidth = false
-        spec.percentHeight = false
+        let order = object.declaredAttributeOrder.map { $0.lowercased() }
+        let fitIndex = order.firstIndex(of: "fitparent") ?? order.endIndex
+        func restated(_ name: String) -> Bool { order.lastIndex(of: name).map { $0 > fitIndex } ?? false }
+        if !restated("relatw") {
+            spec.width = 0
+            spec.relativeWidth = true
+            spec.percentWidth = false
+        }
+        if !restated("relath") {
+            spec.height = 0
+            spec.relativeHeight = true
+            spec.percentHeight = false
+        }
         return spec
     }
 

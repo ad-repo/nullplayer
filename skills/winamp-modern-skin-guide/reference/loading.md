@@ -597,6 +597,12 @@ corner. Three rules around it, each paid for (B142, 2026-09-06):
   `setXmlParam("x", integerToString(w/2-112))`. Answering `fitparent` with the parent's box *origin
   included* pinned that to zero and left the whole cluster jammed against the left edge at every
   window width — the reported defect.
+- **An axis whose `relat*` the same tag writes after it keeps its own size** (B295, 2026-10-27):
+  krazyPlayer's holders are `<component fitparent="1" h="-20" relath="1">`, sized to end at the
+  button bar, and answered with the parent's height its playlist ran 20 px over ADD/REM. A bare
+  `w`/`h` still loses (cPro's SUI above). Gold+silver: krazyPlayer's three holders, Shield_Amp's stick
+  LCD (`w="-396" relatw="1"`, now ending at its rounded cap), CPro_Winamp_for_Mac_Sync's `h="75"
+  relath="0"` meta grid, Big Bento's `y="1" h="-1" relath="1"` tab mousetrap, Defix's SUI tab strip.
 - **It is applied where the tag writes it**, so geometry earlier in the same tag is geometry Winamp
   threw away (`WasabiGeometrySpec.discardingGeometryOverwrittenByFitParent`, applied at object
   creation so a script's later write still wins). Two tags in the 79-skin corpus state geometry before

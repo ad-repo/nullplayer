@@ -119,6 +119,11 @@
   artwork the skin ships, pressed art while held, with the skin's button text colour.
 - **The Ryoko Asakura skin's track notifier shows the song.** It used to show its frame and cover art
   with no artist, title or album, and never went away.
+- **The Ryoko Asakura skin's playlist reads whole.** Track titles used to be cut off under the
+  character art beside the list; the list now draws in front of it, as in the skin's screenshot.
+- **Shield Amp's display, krazyPlayer's playlist and other Winamp Modern panels end where the skin
+  says.** A panel sized to fill its window minus a margin used to ignore the margin, so krazyPlayer's
+  playlist ran over its ADD/REM buttons and Shield Amp's compact display ran into the window edge.
 
 ## 0.33.1
 

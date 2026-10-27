@@ -650,6 +650,14 @@ component box means something painted over it — and the covering object may be
 reveals *in response to* the component being accepted, so a draw-order dump taken at startup will not
 show it. Take that dump late, or after the skin's timers have run at least once.
 
+**The playlist is deferred too** (B292, 2026-10-27): Ryoko_Asakura declares its character art
+`pledit.char` after the list's holder, and painted inline the art cut the start off every title. Each
+deferred node is replayed under its own clip and alpha. Across gold+silver the only other change is a
+1–2 px skin border line, a list-edge strip or a watermark that overlapped a holder and now sits under
+the list (Moon_Groove pl, NEO / NEO_CLASSIC, WMP12 Portrait Connect, LCDx, Sencillo, cPro Mecha).
+It needed B295 first: krazyPlayer's holder resolved 20 px too tall and the deferred list then covered
+its ADD/REM bar. `WINAMP_MODERN_INLINE_PLAYLIST=1` is the A/B switch back to the inline draw.
+
 #### Where a surface lives
 
 `WinampModernSurfaceCoordinator` is the single answer, for menus, skin buttons, and restore alike:
