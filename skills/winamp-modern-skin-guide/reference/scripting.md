@@ -1427,6 +1427,14 @@ against Winamp's 20ms tick). Implemented in `startTargetAnimation` / `tickTarget
 controls: speed=0 to show, speed=0.5 to fade). The code checks `rawSpeed <= 0` at the top and snaps
 immediately — copy targets to actuals, fire `ontargetreached`, no timer.
 
+**A move to where the object already is still takes its duration.** `startTargetAnimation` answers an
+at-target `gotoTarget` with `onTargetReached` from a one-shot timer of `targetspeed` seconds, never
+synchronously: answered inside the `onTargetReached` that re-armed it, the event-reentrancy guard
+dropped it, and Ryoko Asakura's volume readout — a 0.1 s poll built from at-target alpha fades in
+`ryk_volume.m` — froze at the launch volume (B281). A headless dump taken sooner than such a chain's
+speed sees the state before it: Winampple's drawer `SetPLEdit` lands 0.4 s after load (11 fewer
+`main.normal` nodes in the sweep, same pixels; `RENDER_SETTLE=1` restores them).
+
 **Unset target properties stay at their current value.** When a script calls `gotoTarget` without
 setting `setTargetA`, the target alpha must be the object's current alpha, not 0. `targetAttr`
 defaults to `"0"` (correct for x/y/w/h) but wrong for alpha (would fade everything to invisible).

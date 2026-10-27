@@ -220,10 +220,20 @@ extension WinampModernScriptRuntime {
             hasTargetX: hasX, hasTargetY: hasY, hasTargetW: hasW, hasTargetH: hasH, hasTargetA: hasA
         )
 
+        // A move to where the object already is still takes its duration before `onTargetReached`.
+        // Answered synchronously, it landed inside the very `onTargetReached` that asked, and the
+        // re-entrancy guard dropped it: Ryoko Asakura's volume readout re-arms an at-target fade from
+        // there as a 0.1 s poll, and froze at the launch volume after one tick (B281).
         if animationReached(state) {
             _ = object.setAttribute("goingtotarget", value: "0")
             notifyGraphDidMutate()
-            _ = try? dispatch(object: object, event: "ontargetreached")
+            let timerID = TimerNamespace.targetAnimation.id(for: id)
+            _ = try? timers.schedule(id: timerID, period: rawSpeed) { [weak self] in
+                guard let self else { return }
+                timers.cancel(id: timerID)
+                guard let object = loadedSkin.runtime.graph.object(withID: id) else { return }
+                _ = try? dispatch(object: object, event: "ontargetreached")
+            }
             return
         }
 

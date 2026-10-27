@@ -848,6 +848,12 @@ whose `component=` names it. The floor is applied in two places:
 - **Only a holder that stretches gets a floor.** The width is `declared + 440 − holder`, which holds
   only for a `relatw` holder; the renderer re-resolves the holder at a wider canvas and gives a
   fixed-width one no floor, since widening the window around it would only widen the frame.
+- **The floor does not depend on when it is first asked.** It counts hidden holders too, and is
+  cached only after `runtime.hasStartedScripts`: a `Wasabi:*Frame`'s client group, where the holder
+  usually lives, is instantiated by the skin's MAKI, and the component-room fit asks before start.
+  Cached from that early answer, or from a moment a skin's own fade chain had the holder hidden, the
+  floor was a race — EMP2's flipped 400/450 between runs, and five other libraries had none (B281's
+  prerequisite, 2026-10-26).
 - **The floor applies even when the declared size clears it.** Itemskin declares `MLibrary` 660×274
   and its own script shrinks it to the 330×137 minimum on open; a floor gated on the declared size
   never fired. Its glued frame window (`cont.clear.ml`) follows the content to the floor (493 wide).

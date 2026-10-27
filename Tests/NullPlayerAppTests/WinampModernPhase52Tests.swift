@@ -81,6 +81,21 @@ final class WinampModernPhase52Tests: XCTestCase {
                              "alpha must remain near 200, not decay toward 0")
     }
 
+    // MARK: - An at-target move still takes its duration (B281)
+
+    /// Answered synchronously, the reached event landed inside the `onTargetReached` that re-armed
+    /// it and the re-entrancy guard dropped it: Ryoko Asakura's 0.1 s volume poll froze.
+    func testAtTargetMoveDefersReachedEventByItsDuration() throws {
+        let (runtime, object) = try makeRuntimeWithObject()
+        let ref = reference(object)
+        let prog = emptyProgram()
+        _ = try runtime.invoke(method: "settargeta", on: ref, arguments: [.integer(255)], program: prog)
+        _ = try runtime.invoke(method: "settargetspeed", on: ref, arguments: [.double(0.1)], program: prog)
+        _ = try runtime.invoke(method: "gototarget", on: ref, arguments: [], program: prog)
+        XCTAssertTrue(runtime.timers.contains(id: WinampModernScriptRuntime.TimerNamespace.targetAnimation.id(for: object.stableID)),
+                      "the reached event waits on the move's timer, not the caller's dispatch")
+    }
+
     // MARK: - Alpha inheritance in scene tree
 
     func testAlphaInheritancePropagatesParentAlphaToChildren() throws {

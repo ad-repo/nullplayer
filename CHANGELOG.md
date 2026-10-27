@@ -110,6 +110,8 @@
   such as Official Zwan's rainbow intro, used to be over before the window appeared.
 - **The Ryoko Asakura skin's player is no longer a white rectangle.** A see-through window whose
   backing image is missing from the skin now stays see-through instead of filling with a solid colour.
+- **The Ryoko Asakura skin's volume readout follows the volume.** It used to stay at the volume the
+  app started with.
 
 ## 0.33.1
 
