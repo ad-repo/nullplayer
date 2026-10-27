@@ -29,7 +29,8 @@ scripts/wal_dump.sh <skin|path> [--out <dir>] [--grep <ERE>] [--skip-build]
 
 `wal_dump.sh` is the one way to run it for one skin. It looks the skin up by name across the corpus
 tiers, empties the output directory, logs to `<dir>/dump.log`, and prints `DUMP PASS|FAIL`, the PNG
-count and at most 60 log lines matching `--grep`. A skipped test counts as `FAIL`. Probe variables are
+count and at most 60 log lines matching `--grep`. A skipped test counts as `FAIL`. Given a directory
+instead of a skin, it dumps every archive in it in one invocation — an intake batch's Phase 2 dump. Probe variables are
 read from the caller's environment, so put them in front. The hand form it wraps is
 `WINAMP_MODERN_WAL=<archive> WINAMP_MODERN_RENDER_DUMP=<dir> swift test --filter
 WinampModernRenderDumpTests > <log> 2>&1`. A skin's own XML, MAKI and reference images come from

@@ -2,7 +2,7 @@
 # One `.wal` skin's headless render dump in one call: find the archive by name, run
 # WinampModernRenderDumpTests into a fresh directory, log to a file, and print a short verdict.
 #
-#   scripts/wal_dump.sh <skin|path> [--out <dir>] [--grep <ERE>] [--skip-build]
+#   scripts/wal_dump.sh <skin|path|batch dir> [--out <dir>] [--grep <ERE>] [--skip-build]
 #   WINAMP_MODERN_RENDER_CLICK='main/normal@91,188' WINAMP_MODERN_CALL_TRACE=1 scripts/wal_dump.sh Abducted --grep 'CLICK at'
 #
 # Probe variables (harness.md § *Debugging a skin*) are passed through from the caller's environment.
@@ -29,7 +29,8 @@ while [ $# -gt 0 ]; do
     esac
 done
 [ -n "$SKIN" ] || { echo "usage: wal_dump.sh <skin|path> [--out <dir>] [--grep <ERE>] [--skip-build]" >&2; exit 2; }
-WAL=$(wal_resolve_skin "$SKIN") || exit 2
+# A directory is a batch: WINAMP_MODERN_WAL renders every archive in it in one invocation.
+if [ -d "$SKIN" ]; then WAL="${SKIN%/}"; else WAL=$(wal_resolve_skin "$SKIN") || exit 2; fi
 NAME=$(basename "$WAL"); NAME=$(printf '%s' "${NAME%.*}" | tr -c 'A-Za-z0-9._-' '_')
 OUT="${OUT:-$TMP/wal-dump/$NAME}"
 rm -rf "$OUT" && mkdir -p "$OUT"
