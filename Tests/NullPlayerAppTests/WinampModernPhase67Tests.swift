@@ -143,6 +143,15 @@ final class WinampModernPhase67Tests: XCTestCase {
                        "the grey the skin asked for, not unparseableColor's white")
     }
 
+    /// B289: -MfS3- writes `color="black"` on every text and its analyzer over white art; through
+    /// `unparseableColor` all of it drew white on white. A skin's own `<color id="black">` still wins.
+    func testABareBlackInlineIsBlack() throws {
+        let pixels = try renderVis(attributes: #"colorallbands="black""#)
+        XCTAssertEqual(pixel(pixels, x: 1, y: 10), [0, 0, 0, 255])
+        let renderer = try renderer(resources: #"<color id="black" value="1,2,3"/>"#)
+        XCTAssertEqual(channels(renderer.resolvedColor("black")), [1, 2, 3])
+    }
+
     /// The strictness that keeps the parse from swallowing identifiers: only a `#`-prefixed token is
     /// a hex literal, so a bare word stays a resource id.
     func testABareTokenIsStillTreatedAsAResourceIdentifier() throws {

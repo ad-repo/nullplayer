@@ -31,6 +31,11 @@ different signature:
    (`colorband1="#808589"`), Big Bento its 22 analyzer bands. The parse is deliberately strict — only
    a `#`-prefixed token — so a bare `abcdef` stays a resource id, which is what the caller already
    tried it as.
+4. **A bare `black` is black (B289).** -MfS3- writes `color="black"` on ~100 texts and its analyzer
+   over white art, with a CPU tip on its options page its author plainly read; Moonkore, Freeform
+   Simpsons, G2, Hal's Eye, ZDL and Winamp 2000 Lite do the same. It is tried as a resource id first,
+   so a skin's own `<color id="black">` wins. No other name is mapped: `white` already lands on the
+   white fallback (BLAKK, Nebular), and no other bare name appears in gold+silver.
 
 `WINAMP_MODERN_RENDER_PALETTE=1` prints every role, every link of its chain, and why each link
 answered or did not. **Use it before changing a colour path**: it distinguishes "the skin never

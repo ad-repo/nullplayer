@@ -278,6 +278,14 @@ extension WasabiSceneRenderer {
         // and with only the triple parsed every one of them fell through to `unparseableColor`. That
         // is white, so the skin's purple analyzer drew as white slabs wherever it appeared.
         if let hex = hexColor(raw) { return hex }
+        // A bare `black` is a third way, and it means black: -MfS3- writes `color="black"` on all of
+        // its ~100 texts and its analyzer over white art (its options page carries a CPU tip the
+        // author plainly read), and Moonkore, Freeform_Simpsons, G2 and ZDL do the same on light
+        // panels. Through `unparseableColor` every one drew white on white. `white` needs no entry:
+        // the fallback already is white, the reading BLAKK's and Nebular's `color="white"` rely on.
+        if raw.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("black") == .orderedSame {
+            return NSColor(red: 0, green: 0, blue: 0, alpha: 1)
+        }
         let values = raw.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
         guard values.count >= 3 else { return unparseableColor }
         return NSColor(red: max(0, min(255, values[0])) / 255,
