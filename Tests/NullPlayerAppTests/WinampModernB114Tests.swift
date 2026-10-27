@@ -90,6 +90,22 @@ final class WinampModernB114Tests: XCTestCase {
                        "and the half it did not is not there at all")
     }
 
+    /// B286, cPro__Mecha: a `sysregion="0"` overlay in a region layout tints the window and never
+    /// extends it. Its watermark hung into the clear resize strip and came out an opaque smudge.
+    func testASysregionZeroOverlayPaintsOnlyInsideTheWindow() throws {
+        let overlay = #"<layer id="wm" x="0" y="0" w="120" h="40" image="sheen" alpha="112" sysregion="0"/>"#
+        let body = #"<layer id="body" x="0" y="0" w="60" h="40" image="sheen"/>"#
+        let region = try makeScene(layoutAttributes: "", resources: Self.sheenBitmap,
+                                   markup: body + overlay, art: Self.sheenArt)
+        XCTAssertEqual(Int(try XCTUnwrap(region.pixel(x: 30, y: 20)).alpha), 255, "over the body it is window")
+        XCTAssertEqual(Int(try XCTUnwrap(region.pixel(x: 90, y: 20)).alpha), 0, "past it, it is not")
+
+        let perPixel = try makeScene(layoutAttributes: #"desktopalpha="1""#, resources: Self.sheenBitmap,
+                                     markup: body + overlay, art: Self.sheenArt)
+        XCTAssertEqual(Int(try XCTUnwrap(perPixel.pixel(x: 90, y: 20)).alpha), 112,
+                       "with per-pixel alpha there is no region to stay inside")
+    }
+
     // MARK: - The guards
 
     /// A layout that says nothing is a region, not a rectangle: a pixel it never painted stays out

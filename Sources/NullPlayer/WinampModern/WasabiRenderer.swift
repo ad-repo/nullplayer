@@ -2294,6 +2294,7 @@ final class WasabiSceneRenderer {
         // that follow read the same attribute, so they are idempotent.
         context.setAlpha(effectiveAlpha)
         applyFlip(of: object, frame: node.frame, context: context)
+        if paintsOnlyInsideRegion(object) { context.setBlendMode(.sourceAtop) }
 
         // `drawbackground="0"` means the `background` bitmap states the object's box and nothing
         // else — the skin does not want it painted. Free until now, because a group's box resolved

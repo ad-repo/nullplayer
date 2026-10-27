@@ -109,6 +109,26 @@ extension WasabiSceneRenderer {
         context.interpolationQuality = quality
     }
 
+    /// Whether `object` paints only inside the window region the rest of the scene forms: a region
+    /// layout (`layoutWantsOpaqueBacking`) and `sysregion="0"` on the object or a group above it.
+    ///
+    /// A region window is every pixel something paints (`promoteAlphaToRegion`), and `0` is the
+    /// author opting an overlay out of that. cPro__Mecha marks exactly its four watermark and
+    /// overlay-word layers so, and its `wm1` (grey at alpha ≤ 44) hangs past the frame into the 5px
+    /// transparent resize strip whenever the player is narrower than ~393: counted as window, those
+    /// pixels came out an opaque dark smudge its `screenshot.png` does not show (B286). Drawn
+    /// `.sourceAtop`, such an object keeps the alpha already beneath it, so it tints the window and
+    /// never extends it.
+    /// ponytail: clips to what is drawn *before* the object, not to the finished region; an opted-out
+    /// layer under the art that forms the window would vanish. Composite against the final region
+    /// when a skin shows one.
+    func paintsOnlyInsideRegion(_ object: WasabiObject) -> Bool {
+        guard layoutWantsOpaqueBacking else { return false }
+        return sequence(first: object, next: \.parent).contains {
+            $0.attributes["sysregion"]?.trimmingCharacters(in: .whitespaces) == "0"
+        }
+    }
+
     /// The bitmap an object paints as its backing, or nil when it paints none. `background` is
     /// painted by default, as Wasabi does, unless `drawbackground` turns it off.
     ///
