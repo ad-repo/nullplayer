@@ -145,7 +145,7 @@ naturally stops:
 |---|---|
 | no open batch | Admit: the orchestrator runs the crawl, then one worker does the rest (below) |
 | `admitted` | Phases 1–2 over the batch (dump, inventory) · Phase 3 (interaction and motion sweeps) · Phase 4 (ranked fix list; ledger → `headless`) |
-| `headless`, a group | **Live pass**: Phase 7 and the visual review over about four skins in one launch (switch skins from the menu). It files defects as rows and fixes nothing; a clean skin moves to `live` in the same commit, since nothing changed to verify. **Fix pass**: Phase 5 over every row the group filed, one set of sweeps for all of them. **Re-check**: Phase 7 on only the skins a fix touched; Phase 8 is its sweep classification, and needs no worker of its own when the fix pass already classified the sweep on the same code. Phase 6 runs in the live pass when it has not run |
+| `headless`, a group | **Live pass**: Phase 7 and the visual review over about four skins in one launch (switch skins from the menu). It files defects as rows and fixes nothing; a clean skin moves to `live` in the same commit, since nothing changed to verify. **Fix pass**: Phase 5 over every row the group filed, one set of sweeps for all of them. **Re-check**: only the defect itself, on only the skins that filed it: the one window or control, not the skin's whole drive or review again. A skin or window that read clean is never reviewed again, and a fix's sweep diff in another skin is classified from the sweep, not by reopening that skin; Phase 8 is that classification, done in the fix pass, with no worker of its own. Phase 6 runs in the live pass when it has not run |
 | `accepted` | Promote · the code-quality review · the PR |
 
 **The loop:**
