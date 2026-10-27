@@ -240,14 +240,21 @@ final class WinampModernInteractionSweepTests: XCTestCase {
         switch gesture {
         case "click":
             // The flip comes before the release, where the view makes it.
-            func flip() { if !runtime.selectRadioMember(pressed) { _ = runtime.toggleActivation(of: pressed) } }
+            func flip() {
+                if runtime.selectRadioMember(pressed) || runtime.toggleActivation(of: pressed) { return }
+                // The binding is the control's command, as `action=` is a plain button's: a flip is
+                // an effect even where a ticker masks its pixels (NEO's repeat, B279).
+                if pressed.attributes["action"] == nil, runtime.toggleConfigAttribute(of: pressed),
+                   let binding = WinampModernScriptRuntime.configBinding(of: pressed) {
+                    effects.append("cfgattrib:\(binding.key)")
+                }
+            }
             send("onleftbuttondown", at: point)
             flip()
             send("onleftbuttonup", at: point); send("onleftclick")
             if let raw = pressed.attributes["action"], !raw.isEmpty {
                 markup(WasabiClickAction.split(action: raw, parameter: pressed.attributes["param"]))
             }
-            if WinampModernScriptRuntime.configBinding(of: pressed) != nil { runtime.toggleConfigAttribute(of: pressed) }
         case "dblclick":
             send("onleftbuttondown", at: point); send("onleftbuttondblclk", at: point); send("onleftbuttonup", at: point)
             markup(WasabiClickAction.resolve(pressed, gesture: .double))

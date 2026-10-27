@@ -546,7 +546,7 @@ baseline pass and count only what differs from both.
 | `handlers` | handlers run, including script-to-script chains |
 | `failed` | `method:<name>` for a call the runtime lacks — the demand index's unit — else the diagnostic code |
 | `changed` | attributes changed graph-wide, `+px` when this window's pixels moved |
-| `effect` | `action:<action>;<param>` (a script's), `markup:<action>` (the view's), `window:<id>=0/1`, `menu:<items>` |
+| `effect` | `action:<action>;<param>` (a script's), `markup:<action>` (the view's), `cfgattrib:<name>` (the view's flip of a bound control with no `action`, its command as `action=` is a plain button's — counted since B279, because a host flag such as repeat moves no graph attribute and a ticker masks its pixels), `window:<id>=0/1`, `menu:<items>` |
 
 **What it does not do.** Only the opening layout of open windows is walked, at rest: a control in a
 closed drawer, another layout or a later state is S3.5's. A `covered:` row is often the *other half

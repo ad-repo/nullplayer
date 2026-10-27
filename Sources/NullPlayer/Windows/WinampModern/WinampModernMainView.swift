@@ -2825,7 +2825,7 @@ final class WinampModernMainView: NSView {
                                   arguments: [.integer(position)])
     }
 
-    private enum ActivationFlip { case none, toggled, radio }
+    private enum ActivationFlip { case none, toggled, radio, config }
 
     /// A `<Wasabi:CheckBox radioid="…">` is a radio, not a toggle: the clicked member goes on and its
     /// set goes off, and clicking the one already on changes nothing — so it is tried before the
@@ -2838,9 +2838,15 @@ final class WinampModernMainView: NSView {
     /// `setActivated` has the last word: ClassicPro's tab button clears every tab and then
     /// `setActivated(1)` on itself from `onLeftButtonUp`, and flipped afterwards the tab just chosen
     /// went dark.
+    ///
+    /// A `cfgattrib`-bound control with no `action` flips its setting here too, for the same reason:
+    /// NEO's `shuf_rep` reads the new value back from `onLeftClick` to name the button's tooltip, and
+    /// flipped after the release it named the state the click had just left (B279).
     private func flipActivation(of object: WasabiObject, around release: () -> Void) -> ActivationFlip {
         let flip: ActivationFlip = scripts.selectRadioMember(object) ? .radio
-            : scripts.toggleActivation(of: object) ? .toggled : .none
+            : scripts.toggleActivation(of: object) ? .toggled
+            : object.attributes["action"] == nil && scripts.toggleConfigAttribute(of: object) ? .config
+            : .none
         release()
         return flip
     }
@@ -2863,15 +2869,15 @@ final class WinampModernMainView: NSView {
         // it is the only thing that says which list a colour-theme switch acts on.
         performAction(action: action, parameter: parameter, object: object)
         if action == nil {
-            // A `cfgattrib`-bound control carries no `action`: the binding *is* what it does. Defix's
-            // whole settings window is built this way, so without it every switch in that window
-            // moved nothing.
-            // Shuffle, repeat and crossfade reach the host from *inside* this call:
+            // A `cfgattrib`-bound control carries no `action`: the binding *is* what it does, and
+            // `flipActivation` already wrote it. Defix's whole settings window is built this way, so
+            // without it every switch in that window moved nothing.
+            // Shuffle, repeat and crossfade reach the host from *inside* that write:
             // `WinampModernConfigBridge` makes their attributes the host's own state, so for a bound
             // button the write **is** the toggle, and the `xmlID` route below must not run as well —
             // doing both flipped each of them twice and left the skin's lamp disagreeing with the
             // engine.
-            if scripts.toggleConfigAttribute(of: object) {
+            if flip == .config {
                 WindowManager.shared.refreshWinampModernSurfaces()
             } else {
                 // A skin that draws the buttons and binds nothing (boom names its artwork

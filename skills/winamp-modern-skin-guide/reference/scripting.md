@@ -376,6 +376,8 @@ Engines are written to run against skins that omit optional pieces, and they ask
   over to bitmaps that do not exist — visible as holes punched through the window's edges.
 - **`getCurCfgVal()`** — the value of the config attribute the object is bound to via
   `cfgattrib="{GUID};Name"`. The GUID is the section key, the same addressing `getItemByGuid` uses.
+  `getXmlParam("cfgval")` on a bound object answers the same value (B279): NEO's and Ashen's
+  `shuf_rep` read it, not `getCurCfgVal()`, and as markup it was always `""`.
 
 #### Winamp's own preferences answer Winamp's defaults
 
@@ -676,9 +678,12 @@ Two related rules that fell out of the same investigation:
 #### `leftClick()` is a press, not just an event
 
 A script's `obj.leftClick()` does what the mouse does to that object (B71): a togglebutton flips
-(`toggleActivation`), then `onLeftClick`, then the object's `action=`, and — when it has no action — a
-`cfgattrib` control writes its attribute (`toggleConfigAttribute`). That is the order a real click
-runs in `WinampModernMainView`; keep the two in step. Skins use it to
+(`toggleActivation`) or — when it has no action — a `cfgattrib` control writes its attribute
+(`toggleConfigAttribute`), then `onLeftClick`, then the object's `action=`. That is the order a real
+click runs in `WinampModernMainView`; keep the two in step. The bound write comes **before**
+`onLeftClick` since B279: NEO's `shuf_rep` reads `getXmlParam("cfgval")` there to name the button's
+tooltip, and Big Bento announces `Repeat: Playlist` from its release — written after the release, both
+named the state the click had just left. Skins use it to
 route a click through an invisible proxy: Defix's detached visualizer answers Reattach and Random
 with `leftClick()` on a ghosted `cfgattrib` togglebutton (`vis.DTTB`, `vis.random.active`), and while
 `leftClick` dispatched only `onLeftClick` the attribute never moved and both buttons were dead.

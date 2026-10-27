@@ -306,7 +306,15 @@ extension WinampModernScriptRuntime {
             runtime.objectValue(runtime.ancestor(of: call.object, type: .layout))
         }
         table.add("getxmlparam", 1) { runtime, call in
-            .string(call.object.xmlParam(call.arguments[0].stringValue) ?? "")
+            let key = call.arguments[0].stringValue
+            // A bound control's `cfgval` is the setting's current value, the same one `getCurCfgVal()`
+            // answers. NEO's `shuf_rep` names its shuffle/repeat tooltips from it on every click, and
+            // read as markup it was always "" — both tooltips stuck on "Off" (B279).
+            if key.caseInsensitiveCompare("cfgval") == .orderedSame,
+               let value = runtime.configInteger(of: call.object) {
+                return .string(String(value))
+            }
+            return .string(call.object.xmlParam(key) ?? "")
         }
         table.add("setxmlparam", 2) { runtime, call in
             let key = call.arguments[0].stringValue

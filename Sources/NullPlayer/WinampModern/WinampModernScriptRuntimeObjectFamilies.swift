@@ -373,12 +373,13 @@ extension WinampModernScriptRuntime {
             // Defix's detached visualizer is the measured case: its Reattach and Random buttons are
             // plain groups whose script answers a click with `leftClick()` on a ghosted
             // `cfgattrib` togglebutton, and with only `onLeftClick` dispatched the attribute never
-            // moved and neither button did anything. The flip comes first, as the mouse's does.
-            _ = runtime.toggleActivation(of: call.object)
-            _ = try runtime.dispatch(object: call.object, event: "onleftclick")
+            // moved and neither button did anything. Both flips come first, as the mouse's do (B279).
             let action = call.object.attributes["action"]
+            if !runtime.toggleActivation(of: call.object), action == nil {
+                _ = runtime.toggleConfigAttribute(of: call.object)
+            }
+            _ = try runtime.dispatch(object: call.object, event: "onleftclick")
             runtime.hooks.actionRequested?(action ?? "", call.object.attributes["param"])
-            if action == nil { _ = runtime.toggleConfigAttribute(of: call.object) }
             return .null
         }
         table.add("settargetx", 1) { runtime, call in
