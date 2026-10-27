@@ -67,6 +67,8 @@ final class WinampModernMainView: NSView {
     private var pendingMainMenu: DispatchWorkItem?
     private var rightPressedObject: WasabiObject?
     private var pressedEQHolder: WasabiObject?
+    /// The playlist scrollbar being dragged, and where on its thumb the press landed (B284).
+    private var playlistScrollbarGrab: (holder: WasabiObject, offset: CGFloat)?
     private var draggedDivider: WasabiObject?
     private(set) var hoveredObject: WasabiObject?
     private var isDraggingWindow = false
@@ -1780,6 +1782,17 @@ final class WinampModernMainView: NSView {
         if let holder = renderer.componentHolder(at: point) {
             switch holder.kind {
             case .playlist:
+                let rowCount = componentHost?.playlistSnapshot().rows.count ?? 0
+                if let bar = renderer.playlistScrollbar(in: holder.frame, rowCount: rowCount, holder: holder.object),
+                   bar.track.contains(point) {
+                    // On the thumb, drag from where it was grabbed; on the bare track, centre it there.
+                    let offset = bar.thumb.contains(point) ? point.y - bar.thumb.minY : bar.thumb.height / 2
+                    playlistScrollbarGrab = (holder.object, offset)
+                    renderer.dragPlaylistScrollbar(thumbTop: point.y - offset, rowCount: rowCount,
+                                                   in: holder.frame, holder: holder.object)
+                    needsDisplay = true
+                    return
+                }
                 if let row = renderer.playlistRow(at: point, in: holder.frame, holder: holder.object) {
                     if event.clickCount >= 2 { componentHost?.playlistPlay(row: row) }
                     else { componentHost?.playlistSelect(row: row) }
@@ -2015,6 +2028,13 @@ final class WinampModernMainView: NSView {
             updateEqualizer(holder: pressedEQHolder, frame: frame, point: point)
             return
         }
+        if let grab = playlistScrollbarGrab, let frame = renderer.frame(of: grab.holder) {
+            renderer.dragPlaylistScrollbar(thumbTop: point.y - grab.offset,
+                                           rowCount: componentHost?.playlistSnapshot().rows.count ?? 0,
+                                           in: frame, holder: grab.holder)
+            needsDisplay = true
+            return
+        }
         if let pressedObject {
             dispatch(object: pressedObject, event: "onmousemove", point: point)
             updateSlider(pressedObject, point: point)
@@ -2053,6 +2073,7 @@ final class WinampModernMainView: NSView {
             return
         }
         if pressedEQHolder != nil { pressedEQHolder = nil; needsDisplay = true; return }
+        if playlistScrollbarGrab != nil { playlistScrollbarGrab = nil; return }
         let releasedOver = pressTarget(at: point)
         // The drag session is closed **before** any action runs. A titlebar mousetrap is both a drag
         // handle and a `dblclickaction="SWITCH;shade"` control, so its double-click ends in a layout
@@ -2503,6 +2524,7 @@ final class WinampModernMainView: NSView {
         stopVisualizationClock()
         pressedObject = nil
         pressedEQHolder = nil
+        playlistScrollbarGrab = nil
         draggedDivider = nil
         hoveredObject = nil
         for surface in librarySurfaces.values { surface.prepareForUITeardown() }

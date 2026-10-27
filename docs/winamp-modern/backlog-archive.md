@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B284 — The drawn playlist panel draws the skin's scrollbar while its queue overflows — closed 2026-10-27
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B284 | **The drawn playlist panel never draws a scrollbar.** Found in intake #4 Phase 6 on NEO: `screenshot.jpg`'s embedded `guid:pl` list (3977… of a long queue) has a skinned vertical scrollbar at its right edge, drawn from the skin's `wasabi.scrollbar.vertical.*` bitmaps; `WasabiRenderer.drawPlaylistComponent` fills the frame and draws rows only (`playlistScrollOffset` moves with the wheel, nothing shows it), so the dump with `RENDER_PLAYLIST=8` shows 2 of 8 rows in `normal` and no bar. Establish when the component shows the bar (overflow only?) and its width, then draw it from the skin's scrollbar bitmaps (falling back to the `wasabi.scrollbar.*` colours) and make it draggable. Done when NEO's `normal` dump with an overflowing queue shows the bar at the panel's right edge, and a skin whose queue fits is unchanged | every skin whose playlist component is drawn by the renderer (embedded or `Pledit`); NEO's ref is the first to show it | M | 2 |
+
+**Closed 2026-10-27.** When: overflow only — NEO's ref shows it over a long queue, and a bar over a queue that fits would show nothing, so every skin whose queue fits is unchanged. Width: the skin's `wasabi.scrollbar.vertical.button` (13 on NEO). `WasabiPlaylistScrollbar.swift` draws the tiled `.background`, the stretched `.button` thumb (never shorter than its bitmap or half the track) and the centred `.grip`, falling back to the `wasabi.scrollbar.background`/`foreground` colours, then the list text; rows narrow by the bar's width so the time column clears it. No arrow buttons (the ref shows none). Draggable: `WinampModernMainView` takes a press on the bar before row selection, dragging from the grab point, a track press centring the thumb. NEO `normal` with `RENDER_PLAYLIST=8` now shows the bar at the panel's right edge with times beside it; `Pledit` (8 rows fit) unchanged. Gold+silver render against `02fd6472`: 1678 identical, 6 known noise, one diff — GlassAMPfinal `DLibrary` 330x220/200x152, the documented flipper (its own dump reads 330x220 again). Pinned by `WinampModernPhase5Tests.testPlaylistScrollbarShowsOnOverflowAndDrags`; rule in `reference/components.md`.
+
 ## B283 — `getSongInfoText()` gives the rate to one decimal, and `stringToInteger` reads a leading integer — closed 2026-10-27
 
 | Id | Item | Reach | Effort | Tier |

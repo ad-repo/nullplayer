@@ -336,6 +336,32 @@ final class WinampModernPhase5Tests: XCTestCase {
         XCTAssertEqual(renderer.playlistRow(at: top, in: frame), max(0, maxOffset))
     }
 
+    /// B284: the bar shows only while the queue overflows, sits at the panel's right edge, tracks
+    /// the scroll position, and a thumb drag scrolls the list.
+    func testPlaylistScrollbarShowsOnOverflowAndDrags() throws {
+        let loaded = try WinampModernSkinLoader().load(from: try makeArchive(xml: Self.suiSkin))
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: Host())
+        defer { renderer.teardown(); loaded.teardown() }
+        let frame = try XCTUnwrap(renderer.componentHolders().first { $0.kind == .playlist }).frame
+        let visible = renderer.playlistVisibleRowCount(in: frame)
+        XCTAssertGreaterThan(visible, 1)
+        XCTAssertNil(renderer.playlistScrollbar(in: frame, rowCount: visible), "a queue that fits has no bar")
+
+        let rows = visible * 4
+        let bar = try XCTUnwrap(renderer.playlistScrollbar(in: frame, rowCount: rows))
+        XCTAssertEqual(bar.track.maxX, frame.maxX)
+        XCTAssertEqual(bar.track.height, frame.height)
+        XCTAssertEqual(bar.thumb.minY, frame.minY, "unscrolled: thumb at the top")
+
+        renderer.dragPlaylistScrollbar(thumbTop: frame.maxY, rowCount: rows, in: frame)
+        XCTAssertEqual(renderer.playlistScrollOffset, rows - visible, "dragged to the bottom: last page")
+        let bottom = try XCTUnwrap(renderer.playlistScrollbar(in: frame, rowCount: rows))
+        XCTAssertEqual(bottom.thumb.maxY, frame.maxY, accuracy: 1)
+
+        renderer.dragPlaylistScrollbar(thumbTop: frame.minY - 50, rowCount: rows, in: frame)
+        XCTAssertEqual(renderer.playlistScrollOffset, 0)
+    }
+
     func testEmbeddedComponentsRenderWithoutError() throws {
         let loaded = try WinampModernSkinLoader().load(from: try makeArchive(xml: Self.suiSkin))
         let host = Host()

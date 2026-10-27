@@ -815,7 +815,7 @@ final class WasabiSceneRenderer {
     /// Optional sandboxed seam supplying playlist/EQ/library content for embedded component holders.
     /// Weak so the retained graph never keeps the host (owned by the window controller) alive.
     weak var componentHost: WinampModernComponentHost?
-    private var playlistScrollOffset = 0
+    private(set) var playlistScrollOffset = 0
     /// The scroll position `revealPlaylistRow` computes, for the tests that assert the arithmetic.
     var playlistScrollOffsetForTesting: Int { playlistScrollOffset }
     /// How large NullPlayer draws its own text on this scene's host surfaces — the embedded playlist
@@ -4020,14 +4020,17 @@ final class WasabiSceneRenderer {
         let maxOffset = max(0, snapshot.rows.count - visible)
         let offset = max(0, min(maxOffset, playlistScrollOffset))
         let pointSize = playlistTextPointSize(in: holder)
+        let scrollbar = playlistScrollbar(in: frame, rowCount: snapshot.rows.count, holder: holder)
         context.saveGState()
         context.clip(to: frame)
+        if let scrollbar { drawPlaylistScrollbar(scrollbar, context: context) }
+        let rowWidth = frame.width - (scrollbar?.track.width ?? 0)
         for slot in 0..<visible {
             let index = offset + slot
             guard index < snapshot.rows.count else { break }
             let row = snapshot.rows[index]
             let rowRect = CGRect(x: frame.minX, y: frame.minY + CGFloat(slot) * rowHeight,
-                                 width: frame.width, height: rowHeight)
+                                 width: rowWidth, height: rowHeight)
             let selected = snapshot.isSelected(index)
             let bar = rowSelectionBackground
             if selected {

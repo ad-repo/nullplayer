@@ -201,6 +201,15 @@ CornerAmp ships playlist + EQ, Winamp Modern ships playlist + library. The engin
   nothing happened at all. Relatedly, `drawPlaylistComponent` only lets `palette.currentText` win over
   a selected row's `selectionText` when the skin actually named a current colour; `currentText` falls
   back to `listText`, which is exactly the colour the selection background is drawn to avoid.
+- **The playlist draws a scrollbar while the queue overflows (B284)** —
+  `WasabiPlaylistScrollbar.swift`, at the panel's right edge, rows narrowed by its width. Art from
+  the skin's `wasabi.scrollbar.vertical.background` (tiled), `.button` (the thumb, stretched, never
+  shorter than its bitmap or half the track) and `.grip` (centred); width is the thumb bitmap's.
+  Without art, the `wasabi.scrollbar.background`/`foreground` colours, then the list text. No arrow
+  buttons and no hover/pressed art: NEO's `screenshot.jpg`, the one reference, shows none. A press
+  on the thumb drags from where it was grabbed, one on the bare track centres the thumb there. A
+  queue that fits draws no bar, so every sweep with the stock (fitting) queue is unchanged; see it
+  with `WINAMP_MODERN_RENDER_PLAYLIST=<n>` (NEO `normal` overflows at 8).
 
 There is **one** script runtime and **one** component host per loaded skin, shared by the main window
 and every auxiliary container window. Only the main view (`drivesScripts: true`) owns the *global*
