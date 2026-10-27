@@ -175,6 +175,20 @@ extension WinampModernScriptRuntime {
         return layout.map(scriptCollapsedLayouts.contains) ?? false
     }
 
+    static let dispatchesSnapTargetSynchronously =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_SYNC_SNAP_TARGET"] == "1"
+
+    /// `onTargetReached` from a one-shot timer, after the handler that called `gotoTarget` returns.
+    private func scheduleTargetReached(objectID id: WasabiObjectID, after delay: TimeInterval) {
+        let timerID = TimerNamespace.targetAnimation.id(for: id)
+        _ = try? timers.schedule(id: timerID, period: delay) { [weak self] in
+            guard let self else { return }
+            timers.cancel(id: timerID)
+            guard let object = loadedSkin.runtime.graph.object(withID: id) else { return }
+            _ = try? dispatch(object: object, event: "ontargetreached")
+        }
+    }
+
     func startTargetAnimation(object: WasabiObject) {
         let id = object.stableID
         cancelTargetAnimation(objectID: id)
@@ -195,7 +209,15 @@ extension WinampModernScriptRuntime {
             _ = object.setAttribute("goingtotarget", value: "0")
             applyContainerGeometry(object)
             notifyGraphDidMutate()
-            _ = try? dispatch(object: object, event: "ontargetreached")
+            // The snap is immediate, the event is not: Ryoko Asakura's notifier `gotoTarget`s at speed
+            // 0 in `onScriptLoaded` *before* creating the timers its `onTargetReached` starts, so
+            // answered synchronously the handler started two null timers and the notifier never
+            // typed its text or faded (B293). `WINAMP_MODERN_SYNC_SNAP_TARGET=1` is the A/B switch.
+            if Self.dispatchesSnapTargetSynchronously {
+                _ = try? dispatch(object: object, event: "ontargetreached")
+            } else {
+                scheduleTargetReached(objectID: id, after: 0)
+            }
             return
         }
         // `setTargetSpeed` is a **duration**: "the number of seconds in which to reach the target"
@@ -227,13 +249,7 @@ extension WinampModernScriptRuntime {
         if animationReached(state) {
             _ = object.setAttribute("goingtotarget", value: "0")
             notifyGraphDidMutate()
-            let timerID = TimerNamespace.targetAnimation.id(for: id)
-            _ = try? timers.schedule(id: timerID, period: rawSpeed) { [weak self] in
-                guard let self else { return }
-                timers.cancel(id: timerID)
-                guard let object = loadedSkin.runtime.graph.object(withID: id) else { return }
-                _ = try? dispatch(object: object, event: "ontargetreached")
-            }
+            scheduleTargetReached(objectID: id, after: rawSpeed)
             return
         }
 

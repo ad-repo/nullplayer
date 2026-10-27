@@ -117,6 +117,8 @@
 - **Texted buttons in Winamp Modern skins draw the skin's own button art.** Buttons such as Switch,
   Add/Rem or a config window's prev/next used to be a plain outlined box; they now use the button
   artwork the skin ships, pressed art while held, with the skin's button text colour.
+- **The Ryoko Asakura skin's track notifier shows the song.** It used to show its frame and cover art
+  with no artist, title or album, and never went away.
 
 ## 0.33.1
 

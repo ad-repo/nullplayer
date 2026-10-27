@@ -1435,7 +1435,13 @@ against Winamp's 20ms tick). Implemented in `startTargetAnimation` / `tickTarget
 
 **speed = 0 means instant.** Skins use `setTargetSpeed(0)` for snap-to-target (Anaheim's hover
 controls: speed=0 to show, speed=0.5 to fade). The code checks `rawSpeed <= 0` at the top and snaps
-immediately — copy targets to actuals, fire `ontargetreached`, no timer.
+immediately — copy targets to actuals — but answers `ontargetreached` from a one-shot timer on the
+next tick, never inside the caller. Ryoko Asakura's notifier `gotoTarget`s at speed 0 in
+`onScriptLoaded` and only *then* creates the timers its `onTargetReached` starts; answered
+synchronously, the handler started two null timers, so the notifier never typed its text and never
+faded away (B293). `WINAMP_MODERN_SYNC_SNAP_TARGET=1` is the A/B switch back to the synchronous event.
+A sweep taken without `RENDER_SETTLE` can catch a speed-0 chain one tick earlier than before
+(Winampple's `main.normal` gains its `layer.PLEditBG` node; settled, identical).
 
 **A move to where the object already is still takes its duration.** `startTargetAnimation` answers an
 at-target `gotoTarget` with `onTargetReached` from a one-shot timer of `targetspeed` seconds, never

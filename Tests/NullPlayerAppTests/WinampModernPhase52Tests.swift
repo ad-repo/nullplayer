@@ -96,6 +96,20 @@ final class WinampModernPhase52Tests: XCTestCase {
                       "the reached event waits on the move's timer, not the caller's dispatch")
     }
 
+    /// A speed-0 snap moves now and answers later: Ryoko Asakura's notifier snaps in `onScriptLoaded`
+    /// before creating the timers its `onTargetReached` starts (B293).
+    func testSpeedZeroSnapDefersReachedEvent() throws {
+        let (runtime, object) = try makeRuntimeWithObject()
+        let ref = reference(object)
+        let prog = emptyProgram()
+        _ = try runtime.invoke(method: "settargetx", on: ref, arguments: [.integer(100)], program: prog)
+        _ = try runtime.invoke(method: "settargetspeed", on: ref, arguments: [.double(0)], program: prog)
+        _ = try runtime.invoke(method: "gototarget", on: ref, arguments: [], program: prog)
+        XCTAssertEqual(object.attributes["x"], "100")
+        XCTAssertTrue(runtime.timers.contains(id: WinampModernScriptRuntime.TimerNamespace.targetAnimation.id(for: object.stableID)),
+                      "the reached event waits for the next tick, after the caller's handler")
+    }
+
     // MARK: - Alpha inheritance in scene tree
 
     func testAlphaInheritancePropagatesParentAlphaToChildren() throws {
