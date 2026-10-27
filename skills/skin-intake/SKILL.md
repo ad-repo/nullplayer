@@ -167,6 +167,13 @@ naturally stops:
      controls (`skin-triage` Phase 7 step 2). The census does not replace that. Never run
      `window-interaction-matrix.sh` on an intake skin: its close search blind-clicks the corner
      of every window.
+   - Interaction and motion sweeps have no noise file, and a full corpus run costs about 10
+     minutes. Never take a `--fresh` run of either for a phase. Compare against the stored
+     capture, and rerun only the skins that differ, on both revs (`--corpus` on a folder of just
+     those). A difference in a skin that varies between runs of one build (OrbFace, -MfS3-,
+     CopperdeckII, Aria_of_the_Soul, LG_Free's clock frame) is noise unless it is in that
+     phase's skin. A `--rev` baseline missing from the store is the one full run a phase may
+     take.
    - Report in at most 10 lines: skin, phase, stage before → after, rows fixed and open, the
      visual-review verdicts where they ran, the sheet's path, and the `next:` line.
 4. Check the report before passing it on. The status script must exit 0, and `git log -1` must
