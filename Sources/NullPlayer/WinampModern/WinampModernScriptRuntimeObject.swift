@@ -162,6 +162,9 @@ extension WinampModernScriptRuntime {
     }
 
     static let maximumPendingCalls = 256
+    /// `findObject` widens to the receiver's layout, not its container (B298).
+    static let findObjectStopsAtLayout =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_FINDOBJECT_CONTAINER"] != "1"
     static let snapAdjustEdges = ["left", "top", "right", "bottom"]
 
     /// Where a script's `snapAdjust()` stores a layout's snap margin on `edge`.
@@ -211,10 +214,18 @@ extension WinampModernScriptRuntime {
         // its click handlers to nothing, and the SUI body never switched tabs however well the
         // buttons themselves lit up. The nearest match still wins, so a skin with the same id in
         // both places keeps getting its own.
+        //
+        // The window is the receiver's **layout**, not its container (B298). StarTrek_LCARS_AMP_PADD_II
+        // loads `main.maki` in five groups across the normal and compact layouts; widened to the
+        // container, every copy's `findObject("Rew5s")` bound the one normal-layout button, so one
+        // stopped click ran `previous()` five times. A receiver outside any layout (a container, a
+        // detached group) still widens to its container. `WINAMP_MODERN_FINDOBJECT_CONTAINER=1`
+        // restores the container-wide walk.
         table.add("findobject", 1) { runtime, call in
             let wanted = call.arguments[0].stringValue
             if let near = runtime.descendant(of: call.object, xmlID: wanted) { return runtime.objectValue(near) }
-            guard let root = runtime.ancestor(of: call.object, type: .container) else { return .null }
+            let layout = WinampModernScriptRuntime.findObjectStopsAtLayout ? runtime.ancestor(of: call.object, type: .layout) : nil
+            guard let root = layout ?? runtime.ancestor(of: call.object, type: .container) else { return .null }
             return runtime.objectValue(runtime.descendant(of: root, xmlID: wanted))
         }
         // `Layout.getContainer()` takes nothing; `System`'s form names the container.

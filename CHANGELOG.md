@@ -128,6 +128,10 @@
   used to read the number of items and the total, e.g. "12 items/43:40" where Winamp shows "3:25/43:40".
 - **iCandy-2's remote closes its display drawer cleanly.** With the drawer closed, a strip of the
   display used to show to the left of the remote and round its edges.
+- **A Winamp Modern skin's script binds only its own window's controls.** A skin that runs one
+  script in several of its layouts used to have every copy act on one window: one Rew5s click on
+  StarTrek LCARS AMP PADD II skipped five tracks, and Ashen Player's Lite and Mini volume bars did
+  not move with the volume.
 
 ## 0.33.1
 

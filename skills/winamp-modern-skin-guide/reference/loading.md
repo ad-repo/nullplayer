@@ -525,6 +525,18 @@ from descendants alone, all five tab lookups came back null and the script bound
 nothing, so the SUI never changed tabs. The nearest match still wins, so a skin with the same id in
 both places keeps getting its own.
 
+**"The rest" is the receiver's layout, not its container** (B298). A layout is a window, and a skin
+that declares one script in several layouts means each copy to bind its own window's objects.
+StarTrek_LCARS_AMP_PADD_II loads `main.maki` in five groups across `normal` and `compact`; widened to
+the container, every copy's `findObject("Rew5s")` reached the one normal-layout button, and one
+stopped click ran `previous()` five times. Ashen's Lite and Mini volume bars never moved (their copies
+of `volumebyframe.maki` drove Normal's), and motorhead's shade script hooked Normal's buttons. A
+receiver outside any layout still widens to its container. Two copies **in one layout** still both
+bind: StarTrek's `player.normal.playbuttons` copy needs `songticker` from its sibling `player.normal`
+(the author's own comment, and a `messagebox("ooch!!")` if it is null), so the sibling's copy reaches
+`Rew5s` the same way, and a stopped click calls `previous()` twice. That is the skin's doing under any
+rule that serves its songticker. `WINAMP_MODERN_FINDOBJECT_CONTAINER=1` is the A/B switch.
+
 `WasabiObjectGraph` owns every node (including detached ones). IDs are monotonic and deterministic
 for a deterministic expanded document, which makes `snapshot()` the golden-test surface. XML `id`
 values are attributes and are **not** unique, so `objects(xmlID:)` returns an array.
