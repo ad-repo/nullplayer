@@ -223,6 +223,16 @@ render is the ground truth for this kind of thing):
   between them, which declares no `valign` at all. Nine declarations corpus-wide, eight of them
   Bento's; the arithmetic is what identifies them, not the spelling.
 
+#### `alpha=` dims a `<text>`, and `bold="1"` does not invent a weight (B285)
+
+Text alpha applies to the glyphs whatever the font source is. Love is War Miku (system Arial) and
+shark5's 04B_08 TTF labels draw translucent in their screenshots, and Defix Hi-END 200 tells its
+labels from its values only by `alpha="145"`/`"215"`. `bold="1"` on a single-weight face draws the
+face as it is: TAL_96's visitor2 title is crisp in its screenshot. The Music and Moonkore show
+opaque, heavier TTF text, but both are `WinampAbstractionLayer version="0.8"` (Winamp 3-era)
+skins, and so is TAL_96, which disagrees with them on bold. A v0.8 skin's screenshot is weak
+evidence for a text rule. Weigh it against the Winamp 5-era references before changing one.
+
 #### A line is centred in the cell the **skin** declared, even when it does not fit (B144)
 
 Two numbers decide where a string sits in its box, and both were wrong in the same direction.

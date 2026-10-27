@@ -3,6 +3,18 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B285 — The Music's faint timer is its Winamp 3-era screenshot, not our text rule — closed 2026-10-27
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B285 | **The_Music's `display="time"` text draws faint and small where its screenshot shows it bold white.** Found in intake #4 Phase 6. `Timer` is `<text font="player.main.ttf" (HANDGOTB.TTF) fontsize="20" bold="1" alpha="130" color="255,255,255" antialias="1">` at (236,288) 75x20. `Screenshot.png`'s `2:12` is near-opaque white (204 px brighter than 720/765 in that box, glyphs ~14 px tall); the dump's `1:13` has 16 such px and glyphs ~10.5 px, as if drawn at alpha 130 and a 16 px em. The song ticker in the same font at `fontsize="12"` matches its screenshot within a pixel, so the size half may be the bold synthesis rather than the em rule (`rendering/text.md` § *How big the font is*). Establish from gold references whether a `<text>`'s `alpha=` applies to its glyphs and whether `bold="1"` on a face that is already bold thickens it, then fix the rule. Done when The_Music's timer matches `Screenshot.png` in weight and brightness and gold+silver diffs are only text that now matches its screenshots | intake #4: The_Music_-_Official_Skin (silver) | S | 2 |
+
+**Closed 2026-10-27**, no code change: not an engine defect. Size: the em rule is right. HANDGOTB at the 16px em the rule gives draws `2:12` 11 rows tall, the same as `Screenshot.png` (rows 293–303); the "small" was the faint, thin strokes. Brightness and weight were each tried as a rule and each failed the corpus:
+- **Alpha** (a skin-TTF `<text>` draws opaque at any alpha > 0) matches The Music (glyphs 254 white) and Moonkore's `skinshot.png` (Nationalyze TTF timer `alpha="200"` black, drawn (3,3,3)). But shark5's `shark5preview.jpg` draws its 04B_08 TTF button labels (`alpha="100"`) at 154, where our current dump has 156. Defix Hi-END 200's labels and values are both white and differ only by `alpha="145"`/`"215"` on antialiased TTF text, a split that only makes sense if alpha renders. Love is War Miku's system-Arial timer (`alpha="200"`) is exactly 78% black. The rule moved 30 gold+silver skins, Defix's attribute/value hierarchy among them.
+- **Synthetic bold** (`bold="1"` on a single-weight face, stroked at em/24) matched The Music's 3px stems. But TAL_96's `screenshot.png` draws its visitor2 TTF `bold="1"` title crisp and un-emboldened, as our current dump does. The rule moved 36 gold+silver skins.
+
+The skins whose screenshots disagree with us (The Music, Moonkore, TAL_96) are all `WinampAbstractionLayer version="0.8"`, the Winamp 3 format, and they disagree with each other on bold. The Winamp 5-era references (shark5 1.1, Defix 1.35, Miku 1.34) agree with what we draw. The Music's timer is therefore residual: its reference comes from an older engine.
+
 ## B284 — The drawn playlist panel draws the skin's scrollbar while its queue overflows — closed 2026-10-27
 
 | Id | Item | Reach | Effort | Tier |
