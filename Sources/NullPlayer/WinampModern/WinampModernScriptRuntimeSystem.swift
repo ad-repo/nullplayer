@@ -417,8 +417,14 @@ extension WinampModernScriptRuntime {
             let digits = max(0, min(12, Int(call.arguments[1].integerValue)))
             return .string(String(format: "%.*f", digits, call.arguments[0].doubleValue))
         }
+        // Reads the leading integer and ignores the rest: classicPro's `fileinfo.m` writes
+        // `integerToString(stringToInteger(getFrequency()))` to turn the `44.1` of `44.1kHz` into
+        // `44` (B283), which a whole-string parse answers as 0.
         table.add("stringtointeger", 1) { runtime, call in
-            .integer(Int32(call.arguments[0].stringValue) ?? 0)
+            let text = call.arguments[0].stringValue.drop { $0 == " " || $0 == "\t" }
+            let signed = text.first == "-" || text.first == "+" ? 1 : 0
+            let digits = text.dropFirst(signed).prefix { $0.isASCII && $0.isNumber }.count
+            return .integer(Int32(text.prefix(signed + digits)) ?? 0)
         }
         // The mirror of `floattostring`, and the last method Love is War Miku's notifier preferences
         // reached for. A string that is not a number is 0, as it is on the integer side.

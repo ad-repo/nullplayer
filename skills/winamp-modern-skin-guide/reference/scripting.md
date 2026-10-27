@@ -432,8 +432,13 @@ values become zero, and oversized values clamp to `Int32.max` rather than trappi
 
 Skins do not call dedicated bitrate/sample-rate APIs. `songinfo.maki` lowercases
 `System.getSongInfoText()` and pulls values out around the literals `kbps`, `khz`, and the channel
-words. The units must be **attached to the number** (`320kbps`, `44khz`) — a space between them and
-the fields stay empty. `WinampModernHost.songInfoText` builds this; `trackDisplayTitle` supplies the
+words. The units must be **attached to the number** (`320kbps`, `44.1kHz`) — a space between them and
+the fields stay empty. The rate is kHz to **one decimal**, spelled `kHz` (B283): skins compare the
+whole string to `"1411kbps stereo 44.1kHz"`, the stock parser cuts the token at its `.`, NEO slices a
+7-character rate field off the end, and Logicallity's and The_Music's screenshots read `44.1KHZ`.
+classicPro reads it back with `stringToInteger("44.1")`, so `stringToInteger` takes the leading
+integer and ignores the rest (`"44.1"` → 44, `"abc"` → 0), as CardiumII's `44100 HZ` also needs.
+`WinampModernHost.songInfoText` builds this; `trackDisplayTitle` supplies the
 `"Artist - Title"` a song ticker shows (`trackTitle` alone drops the artist).
 
 A skin reads that string through a `<text display="songinfo">`, so that binding must carry

@@ -290,6 +290,9 @@ extension WinampModernHost {
     /// Winamp's `System.getSongInfoText()` string. Skins do not read bitrate/sample rate through
     /// dedicated APIs — `songinfo.maki` lowercases this string and pulls the values out around the
     /// literals "kbps", "khz" and the channel words, so the shape matters more than the wording.
+    /// The rate is kHz to one decimal, spelled `kHz` (B283): skins compare the whole string to
+    /// `"1411kbps stereo 44.1kHz"` (Ebonite's `SC-Cover.m`), the stock parser cuts the token at its
+    /// `.`, NEO slices a 7-character rate field off the end, and The_Music's screenshot reads `44.1KHZ`.
     var songInfoText: String {
         var parts: [String] = []
         if bitrateKbps > 0 { parts.append("\(bitrateKbps)kbps") }
@@ -299,7 +302,7 @@ extension WinampModernHost {
         case let count where count > 2: parts.append("surround")
         default: break
         }
-        if sampleRateHz > 0 { parts.append("\(sampleRateHz / 1_000)khz") }
+        if sampleRateHz > 0 { parts.append(String(format: "%.1fkHz", Double(sampleRateHz) / 1_000)) }
         return parts.joined(separator: " ")
     }
 }
