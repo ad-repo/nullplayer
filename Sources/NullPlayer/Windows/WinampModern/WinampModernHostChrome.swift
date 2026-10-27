@@ -15,10 +15,11 @@ extension WinampModernMainView {
     }
 
     /// The rim, drawn under the scene in skin pixels. `context` is already scaled to skin pixels.
-    func drawHostChrome(in context: WasabiDrawList) {
+    /// Static so the headless render dump draws the same rim the window does: without it a
+    /// rehosted window's body reads as see-through there and nowhere else (B274).
+    static func drawHostChrome(in context: WasabiDrawList, renderer: WasabiSceneRenderer, isActive: Bool) {
         let canvas = CGRect(origin: .zero, size: renderer.canvasSize)
         let style = renderer.surfaceStyle
-        let isActive = window?.isKeyWindow ?? true
         context.saveGState()
         // The gloss frame is drawn top-left, lit from the top edge; this view is not flipped.
         context.translateBy(x: 0, y: canvas.height)
@@ -32,7 +33,9 @@ extension WinampModernMainView {
 
     /// `drawHostChrome` for the canvas builders, or nil when this window has no host chrome.
     var hostChrome: ((WasabiDrawList) -> Void)? {
-        drawsHostChrome ? { [unowned self] in drawHostChrome(in: $0) } : nil
+        drawsHostChrome ? { [unowned self] in
+            Self.drawHostChrome(in: $0, renderer: renderer, isActive: window?.isKeyWindow ?? true)
+        } : nil
     }
 
     /// What a press at `viewPoint` (this view's own coordinates) means to the host's chrome, or nil

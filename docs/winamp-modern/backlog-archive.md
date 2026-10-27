@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B274 — The render dump draws the glass rim a rehosted window wears — closed 2026-10-27
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B274 | **Content panes see-through in three intake #4 skins (cross-skin unlocker candidate).** Batch dump: Quadelic `mini/normal` cover-art area, GlassAMPfinal content panes in most of its 20 windows, cPro__Mecha `widgets.manager/normal` lower body. Run `scripts/review_sheet.py` over the three and read the `HOLES` lines, then find for each which node should fill the hole (a component holder, a `wasabi.frame` client background, a stretched layer) and whether one missing fill explains them. Done when the three read no enclosed hole the art fills and no gold+silver render changes otherwise | intake #4 dump: Quadelic, GlassAMPfinal, cPro__Mecha_1_1_1_1 (silver) | M | 2 |
+
+**Closed 2026-10-27**. Three causes, one a defect. **cPro__Mecha_1_1_1_1** (and every engine-`one` cPro skin): `widgets.manager` is rehosted out of its tooltip frame into NullPlayer's glass chrome, whose `drawGlossFrame(fillGround: true)` fills the body live, but the render dump never drew that chrome, so the lower body (and every glass-chrome `nullplayer.about`) read as see-through in the dump only. `WinampModernMainView.drawHostChrome` is now static and the dump draws it under the scene for a `nullplayer_hostchrome` container. **GlassAMPfinal**: not a defect: its `cont.clear.*` containers are dynamic glass overlays its `standardframe*.m` scripts park over the real window (`newDynamicContainer`, the B110 design), so each overlay dumped alone has the client's hole, which the window underneath fills (PLEdit's component sits at 40,48 against the overlay's 42,48 opening). **Quadelic**: not a defect: `mini/normal`'s cover base `mini/DisplayBaseMini.png` is fully transparent by the author's design ("Mini behind cover", user-selectable in its configuration), and the skin's own `cover` group shows `cover.jpg` from the playing file's folder, so with nothing playing the area is see-through in Winamp too. Gold+silver: only the 15 engine-`one` cPro `widgets.manager` images and 23 `nullplayer.about` images changed (the rim drawn); GlassAMPfinal `DLibrary` 330x220→200x152 is the known DLibrary sizing noise (MoonLight's in `noise.txt`).
+
 ## B276 — A standard frame placed as a group is still backed — closed 2026-10-26
 
 | Id | Item | Reach | Effort | Tier |

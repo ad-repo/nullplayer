@@ -1510,6 +1510,13 @@ final class WinampModernRenderDumpTests: XCTestCase {
                    WasabiMenuBar.isMenu(object) {
                     WasabiMenuBar.apply(.hover, to: object)
                 }
+                // A container rehosted in NullPlayer's glass chrome (a tooltip-framed window, a
+                // frameless About page) has its body filled by the view, under the scene (B274).
+                if info.object.attributes[WinampModernContainerTopology.hostChromeAttribute] == "1" {
+                    let chrome = WasabiDrawList(ctm: context.ctm, clip: context.boundingBoxOfClipPath.applying(context.ctm))
+                    WinampModernMainView.drawHostChrome(in: chrome, renderer: renderer, isActive: true)
+                    chrome.replay(into: context)
+                }
                 renderer.draw(in: context, hovered: hovered)
                 // WINAMP_MODERN_RENDER_TIME=<frames> repaints the whole scene that many times and
                 // reports the per-frame cost — the measurement behind "does this skin hold 30 Hz?",

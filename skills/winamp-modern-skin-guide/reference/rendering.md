@@ -358,7 +358,9 @@ frame's dirty rects after replaying the scene into them; the harness's `draw(in:
 canvas job sized to the caller's clip, so the sweep checks the window's pipeline (B231). Both build
 that job with `WasabiSceneRenderer.canvasJob` and fall back to its `drawDirectly` past the pixel
 limit (`WinampModernCanvas.swift`), so the sweep records the scene as the window does (B235); only
-the window passes a UI Size and host chrome.
+the window passes a UI Size. The render dump draws a `nullplayer_hostchrome` container's glass rim
+under the scene too (`WinampModernMainView.drawHostChrome`, B274): without it every engine-`one` cPro
+Widgets Manager and every glass-chrome About page read as see-through in the dump and nowhere else.
 
 Three traps in that buffer, all measured on `main/normal` at 2x against a 2.81 ms/frame baseline, and
 all of them things to copy rather than rediscover:
