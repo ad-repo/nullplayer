@@ -1329,6 +1329,20 @@ slid over the COMPONENT column and the playlist. The box is the union of the chi
 group at rest keeps the inherited clip `clipAxes` gives an undeclared box. Reach, gold+silver: that
 one group.
 
+**A node wholly left of or above a group's origin is not drawn**, on an axis the group does not
+clip (`liesBeforeOrigin`, B297, 2026-10-27). A group is a window, so whatever size an undeclared
+group really has, nothing before its origin is inside it. That is how a drawer parked off its group
+closes at rest, where `targetAperture` (only while moved) does not reach: iCandy-2's remote parks
+`remote.lcd.def` at `x="-233"` in the sizeless `remote.lcd` at `x=41`, and drawn, a strip of the
+233×72 LCD showed left of the remote body and round its curves. Not the layout's `alphabackground`:
+the LCD layer is `sysregion="1"` itself, so a region union would keep it. **Only wholly**: cutting
+every node at the origin was measured first, and it also trimmed hm_Touch_m_1's shade seek thumb
+(top 2 px gone, bottom 2 px kept, overhanging a sizeless group), the antialiased edge of
+Official_Zwan_Skin's thin-shade overlays (full-window layers each group offsets back to the window
+origin), PAD's parked EQ (an improvement, no reference) and a 2 px line of MIDISUI's drawer. Wholly,
+gold+silver moved only `iCandy-2/main-remote`. `WINAMP_MODERN_GROUP_NO_ORIGIN_CULL=1` is the A/B
+switch.
+
 **`image=` on a `<group>` is not art**. A group states its
 artwork with `background`; MIDISUI instances its one-LED `ledAnimation` group as
 `image="led.animation"`, the 280×14 sheet of 20 frames, and drawn as the group's bitmap it put 20

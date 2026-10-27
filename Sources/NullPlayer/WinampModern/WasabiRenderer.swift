@@ -2207,6 +2207,10 @@ final class WasabiSceneRenderer {
                 nodes[index] = nodes[index].clipped(to: aperture)
             }
         }
+        for index in firstChildNode..<nodes.count
+        where liesBeforeOrigin(of: object, frame: resolved, child: nodes[index].frame) {
+            nodes[index] = nodes[index].clipped(to: .zero)
+        }
     }
 
     /// Is this control laid out along the vertical axis?

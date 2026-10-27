@@ -48,6 +48,26 @@ struct WasabiClip {
 /// not paint, and the aperture a target animation slides a child within — the region a script gives
 /// one object, and the backing an object paints.
 extension WasabiSceneRenderer {
+    static let cullsBeforeGroupOrigin =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_GROUP_NO_ORIGIN_CULL"] != "1"
+
+    /// Whether a group's descendant lies wholly left of or above the group's origin, on an axis the
+    /// group does not clip (`clipAxes`). A group is a window, so such a node shows whatever size the
+    /// group has: it is dropped, as a drawer parked off its group is closed (B297). iCandy-2's remote
+    /// parks its closed LCD at `x="-233"` in the sizeless `remote.lcd`, and drawn, a strip of it
+    /// showed left of the remote body and round its curves.
+    ///
+    /// Only wholly: cutting a node that straddles the origin also trims slider thumbs that overhang a
+    /// sizeless group's top (hm_Touch_m_1's shade seeker lost its top 2 px, not its bottom 2) and
+    /// full-window overlays a group offsets back to the window origin (Official_Zwan_Skin's
+    /// thin shade). `WINAMP_MODERN_GROUP_NO_ORIGIN_CULL=1` is the A/B switch.
+    func liesBeforeOrigin(of group: WasabiObject, frame: CGRect, child: CGRect) -> Bool {
+        guard Self.cullsBeforeGroupOrigin, group.tag.is(.group), !child.isEmpty else { return false }
+        let clipped = clipAxes(of: group)
+        return (!clipped.contains(.x) && child.maxX <= frame.minX)
+            || (!clipped.contains(.y) && child.maxY <= frame.minY)
+    }
+
     /// The box a group that declares none clips to while a target animation has moved one of its
     /// children: the children's union at their **declared** places (`xmlParam`, which `gotoTarget`
     /// leaves alone). A slide is a move within a box. MIDISUI's vis drawer is a 121×124 `Drawer`

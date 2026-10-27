@@ -126,6 +126,8 @@
   playlist ran over its ADD/REM buttons and Shield Amp's compact display ran into the window edge.
 - **A Winamp Modern skin's playlist status reads selected time / total time, as Winamp's does.** It
   used to read the number of items and the total, e.g. "12 items/43:40" where Winamp shows "3:25/43:40".
+- **iCandy-2's remote closes its display drawer cleanly.** With the drawer closed, a strip of the
+  display used to show to the left of the remote and round its edges.
 
 ## 0.33.1
 
