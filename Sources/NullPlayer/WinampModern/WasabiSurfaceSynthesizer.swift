@@ -83,7 +83,10 @@ enum WasabiSurfaceSynthesizer {
                            scriptReader: ScriptReader? = nil) -> Result {
         let kinds = inventory.synthesizableKinds
         let definitions = groupDefinitions(in: document.roots)
-        let frame = usableFrame(in: definitions, document: document, scriptReader: scriptReader)
+        let playlistFrame = usableFrame(in: definitions, document: document, scriptReader: scriptReader)
+        // B305: every window but the playlist wears a frame without the playlist's command bar.
+        let frame = usableFrame(in: definitions, document: document, scriptReader: scriptReader,
+                                carryingPlaylistBar: false)
         let hostedWindows = hostedWindowCatalog(frame: frame)
 
         // Any window the skin framed in tooltip art, re-hosted in the chrome our windows wear.
@@ -119,7 +122,7 @@ enum WasabiSurfaceSynthesizer {
 
         for kind in kinds {
             guard let reference = componentReference(for: kind) else { continue }
-            switch frame {
+            switch kind == .playlist ? playlistFrame : frame {
             case .failure(let reason):
                 unavailable[kind] = reason
                 diagnostics.append(WalDiagnostic(
@@ -476,9 +479,11 @@ enum WasabiSurfaceSynthesizer {
     ///    materialized with no client area and fell back to NullPlayer's own chrome.
     private static func usableFrame(in definitions: [String: WalXMLNode],
                                     document: WalExpandedXMLDocument,
-                                    scriptReader: ScriptReader?) -> FrameSelection {
+                                    scriptReader: ScriptReader?,
+                                    carryingPlaylistBar: Bool = true) -> FrameSelection {
         var reasons: [String] = []
         var declared: [(border: Double, order: Int, frame: Frame)] = []
+        var withPlaylistBar = Set<String>()
         for (order, flavour) in WasabiStandardFrames.Flavour.allCases.enumerated() {
             guard let definition = definitions[fold(flavour.groupIdentifier)] else {
                 reasons.append("\(flavour.rawValue): the skin declares no '\(flavour.groupIdentifier)'")
@@ -503,8 +508,18 @@ enum WasabiSurfaceSynthesizer {
                               hasArtwork: hasArtwork(definition, definitions: definitions),
                               exemplar: nil,
                               clientInsets: clientInsets(of: definition, definitions: definitions))
+            if contains(definition, where: { $0.attribute("action")?.uppercased().hasPrefix("PE_") == true }) {
+                withPlaylistBar.insert(flavour.groupIdentifier)
+            }
             declared.append((border: frame.chromeInset.width + frame.chromeInset.height,
                              order: order, frame: frame))
+        }
+        // A frame that draws Add/Rem/Sel/Misc/List into its own chrome (LG_Free's status-bar frame)
+        // is the playlist's; any other window takes a sibling frame when the skin has one.
+        // `WINAMP_MODERN_PLAYLIST_BAR_ANY_FRAME=1` is the A/B switch: the thinnest frame for all.
+        if !carryingPlaylistBar, ProcessInfo.processInfo.environment["WINAMP_MODERN_PLAYLIST_BAR_ANY_FRAME"] != "1" {
+            let plain = declared.filter { !withPlaylistBar.contains($0.frame.groupIdentifier) }
+            if !plain.isEmpty { declared = plain }
         }
         if let best = declared.sorted(by: { ($0.border, $0.order) < ($1.border, $1.order) }).first {
             return .success(best.frame)

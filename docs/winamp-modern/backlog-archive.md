@@ -7561,3 +7561,27 @@ which differs between two runs of the same binary. B38.1 and B38.2 confirmed liv
       play it back). `swift test`: 1491 passed. Two follow-ups filed: **B74** (T800's five slots
       share one storage key) and **B75** (T800 includes the same script twice, so every handler runs
       twice).
+
+## B303 — G2's drawer opens: the live click landed on the lights plate, not the tab — not a defect
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B303 | **G2's drawer never opens: clicking its tab does nothing.** Found in intake #4 live pass (2026-10-27): the drawer (`DrawerGroup`, `drawer.maki`, closed at load via private int `G2/Drawer`=1) shows only a ~4 px arc under the body, and clicks on it at several heights (104-109 pt below the window top, x centre) change nothing in 3 s; the author's `skinshot.png` shows it open with five mode buttons (`Normb`, `Thb`, `Eqb`, `Conb`, `Visb`). Find whether the `Drawer` layer's `onLeftButtonUp` is not reaching the script (sysregion/clip, the layer sits past the 127 pt window edge) or the slide to `DrawerInfo` (75,35) does not run. Done when clicking the tab slides the drawer out and its five buttons answer, shown by a capture beside `skinshot.png` | G2 (silver) | S | 1 |
+
+**Closed 2026-10-27, not a defect.** The drawer tab is the 4 px of `Drawer` (`menu-tab.png`, group at 75,56) showing below the LCD at y 56-60; the live pass clicked 104-109 pt down, which is `lightgg` (the glow layer at y=-20, `alpha="0"`), whose right-click menu is *Lights Refresh Rate*. Headless `RENDER_CLICK` at (120,57) hits `layer#Drawer`, `drawer.maki` runs `settargety(35)`/`gototarget()`/`setprivateint(G2,Drawer,0)`, and after 3 s the five mode buttons (`Normb Thb Eqb Conb Visb`) show in the LCD, with a second click at (133,45) hitting `button#Eqb`. No code change; not re-checked live.
+
+## B304 — OrbFace's close button: `hideobject` reached a button declared after it — closed 2026-10-27
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B304 | **OrbFace's close button is not drawn.** Found in intake #4 live pass (2026-10-27): `player_full.xml` has `<button id="close" x="179" y="16" w="15" h="26">` beside the minimise and drop-down buttons, and the author's `skinshot.png` shows the `x` there; the live main window shows a blank gap (white ring) at that spot after 10 s of playing. Suspect the layout's `<hideobject target="close;close.inactive"/>` (aimed at the frame's own close) also hides the skin's button of the same id. Done when the `x` is drawn and closes the window, shown by a capture beside `skinshot.png` | OrbFace (silver) | S | 1 |
+
+**Closed 2026-10-27.** `applyMetaCommands` resolved `<hideobject target="close;close.inactive"/>` (line 6 of `player_full.xml`, aimed at the frame's close) to the skin's own `close` button declared 90 lines below it; no frame close exists in that layout (a probe of the match printed only `button close parent=Normal`). A `hideobject`/`showobject` now skips a direct child of its owner that the same file declares after it (`declaredAfter`; `sendparams` unchanged); `WINAMP_MODERN_HIDEOBJECT_LATER=1` is the A/B switch. Render sweep vs HEAD: OrbFace `Main-Normal` bbox (179,16)-(194,40) = the `x`, the fix; Winamp 3.0 Default (gold) +1 node (its second `Close`, the `inactiveAlpha` twin, is no longer hidden; the image is byte-identical); everything else identical or noise (Clock V2.76 clock text, GlassAMPfinal's DLibrary size varies between runs of one build). Interaction and motion on the three skins, new vs switch-on: identical bar OrbFace's B296 noise. Test `testHideobjectDoesNotReachASiblingDeclaredAfterIt`.
+
+## B305 — LG_Free's non-playlist windows no longer take the frame that carries the playlist bar — closed 2026-10-27
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B305 | **LG_Free's EQ Studio and Media Library frames carry the playlist's `Add Rem Sel Misc List` bar.** Found in the orchestrator's look at the intake #4 live-pass sheet (2026-10-27): the hosted EQ Studio and Media Library windows show the playlist editor's button bar along their bottom edge (the Playlist window has it too, where it belongs). Find out from the skin's files whether its shared frame carries that bar by design (then not a defect) or our hosted-window chrome takes the pledit frame for every hosted window. Done when hosted non-playlist windows show no playlist buttons, or the row closes citing the skin's frame | LG_Free_touch_the_music_ (silver) | S | 1 |
+
+**Closed 2026-10-27.** The skin's `wasabi.standardframe.statusbar` draws `Add Rem Sel Misc List` (`PE_*` buttons) into its own chrome, by design for the playlist; its `nostatusbar` frame has the same border, so `usableFrame`'s tie went to the status bar for every hosted window. `usableFrame(carryingPlaylistBar:)` now drops a frame containing `PE_*` actions for every window but the playlist when another flavour qualifies (`WINAMP_MODERN_PLAYLIST_BAR_ANY_FRAME=1` is the A/B switch). Render sweep: LG_Free `nullplayer.library` 27 -> 22 nodes, bbox (40,476)-(658,494) = the bar, the fix; no other skin's frame changed. Test `testAFrameCarryingThePlaylistBarIsNotTakenForAnotherWindow`.

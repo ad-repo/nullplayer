@@ -82,6 +82,22 @@ final class WinampModernB95Tests: XCTestCase {
                        "and it is confined to the title strip, not centred over the client area")
     }
 
+    /// B304: a `hideobject` reaches what exists where it is written. OrbFace's layout hides the
+    /// frame's `close` before declaring its own `close` button, which must stay drawn.
+    func testHideobjectDoesNotReachASiblingDeclaredAfterIt() throws {
+        let runtime = try makeRuntime(markup: """
+        <container id="Main">
+          <layout id="normal" w="64" h="64">
+            <button id="early" x="0" y="0" w="8" h="8"/>
+            <hideobject target="close;early"/>
+            <button id="close" action="CLOSE" x="10" y="0" w="8" h="8"/>
+          </layout>
+        </container>
+        """)
+        XCTAssertNotEqual(try XCTUnwrap(runtime.graph.objects(xmlID: "close").first).attributes["visible"], "0")
+        XCTAssertEqual(try XCTUnwrap(runtime.graph.objects(xmlID: "early").first).attributes["visible"], "0")
+    }
+
     /// A frame naming no content is left alone — nothing to instantiate, and no invented body.
     func testAFrameThatNamesNoContentInstantiatesNothing() throws {
         let runtime = try makeRuntime(markup: """

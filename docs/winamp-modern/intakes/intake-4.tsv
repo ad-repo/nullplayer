@@ -16,11 +16,11 @@ MBOS.wal	9a8a0bc32dead1040a6e7bae3d9686ebd0cb9670b7042d8e52d713a23731d57f	live	2
 Jenna_loves_mambo.wal	6549197e5ed6b85003ff38384a51fa12c65baa69647633037f65dd83cfb7e0f6	live	2026-10-26	-	visual: clean (4 windows; EQ magenta is the pinup cutout, shaped window)
 Manchester_United_Red_Devils_Skin.wal	0717cbe2f68c6e48864baf073fad27524fca5647583caf41bff2fd976b2996c7	live	2026-10-26	-	visual: clean (4 windows + 2 baseline)
 pumaSKIN.wal	2114a8009b97594b5a25644c3031426732b74a0e4405b0d922918cd298bcab15	live	2026-10-26	-	visual: clean (4 windows) no ref
-G2.wal	c0541bd78acfe3a97f322573bd23550521e906595804b68e340ae45e8d323014	headless	2026-10-26	B303	fix pass: B303
+G2.wal	c0541bd78acfe3a97f322573bd23550521e906595804b68e340ae45e8d323014	live	2026-10-27	B303	visual: clean (live pass). B303 not a defect 2026-10-27 (the live click hit the lights plate; the tab is the LCD's lower edge), not re-checked live
 MIPOD.wal	01067a57cea5ac080c5997f39cecb17fe4cba77bf17e417eadb6900d8706c799	live	2026-10-26	-	visual: clean (4 windows) no ref
 Sepultura_Dante_XXI.wal	06d3ea7e11dfcd674d52aebb084b1866c6344ffc2a40cbac6d8b86d1d8f0b2c3	live	2026-10-27	-	visual: clean (4 windows). drawer opens (toggle button at the right edge slides it out with the EQ pane); transport, volume driven
-OrbFace.wal	0e7e47441e55b7840c70dea95ce5161109a15cdc114d9f03d9e8ab1d50488f98	headless	2026-10-27	B304	fix pass: B304
+OrbFace.wal	0e7e47441e55b7840c70dea95ce5161109a15cdc114d9f03d9e8ab1d50488f98	live	2026-10-27	B304	visual: clean (live pass). B304 fixed 2026-10-27, not re-checked live
 The_Duk_Side_V3.wal	c9992c1e40e8b0176e402b8846e2d8b3b1fa3ebb4b77cdd90fe943a18ae7e7b7	live	2026-10-27	-	visual: clean (4 windows). next, thinger driven
 Ar-Za-Jo.wal	2b0fd1b3bfb5474ddabc2530c8a661757586f755a1a6255c6ca422f8a6a40b59	live	2026-10-27	-	visual: clean (5 windows). pause, next driven
 PAD.wal	3c64985c8b16572698309ea9a7a193f497648035b1a388c571bac6f302dd90bc	live	2026-10-27	-	visual: clean (5 windows) (no ref). next, pause driven
-LG_Free_touch_the_music_.wal	c9cdc6202e2b4916f44110fe85a3b23a7b706321c435dfdc4a2514c6230cc3fa	live	2026-10-27	-	visual: clean (4 windows). next, seek driven
+LG_Free_touch_the_music_.wal	c9cdc6202e2b4916f44110fe85a3b23a7b706321c435dfdc4a2514c6230cc3fa	live	2026-10-27	B305	visual: clean (4 windows). next, seek driven. B305 fixed 2026-10-27, not re-checked live

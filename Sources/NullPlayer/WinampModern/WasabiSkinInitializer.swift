@@ -593,6 +593,20 @@ final class WasabiSkinInitializer {
         weak var owner: WasabiObject?
         let kind: String
         let attributes: [String: String]
+        let source: WalSourceLocation
+    }
+
+    /// B304: `hideobject`/`showobject` act on what exists where they are written, so a sibling the
+    /// same file declares further down is out of reach. `WINAMP_MODERN_HIDEOBJECT_LATER=1` is the
+    /// A/B switch (the later sibling is hidden again).
+    private static let metaCommandReachesLaterSiblings =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_HIDEOBJECT_LATER"] == "1"
+
+    private func declaredAfter(_ target: WasabiObject, command: PendingMetaCommand) -> Bool {
+        command.kind != "sendparams" && !Self.metaCommandReachesLaterSiblings
+            && target.parent === command.owner
+            && target.source.path == command.source.path
+            && (target.source.line, target.source.column) > (command.source.line, command.source.column)
     }
 
     let vfs: WalVirtualFileSystem
@@ -1437,7 +1451,8 @@ final class WasabiSkinInitializer {
             }
             if ["sendparams", "hideobject", "showobject"].contains(lower) {
                 pendingMetaCommands.append(PendingMetaCommand(owner: parent, kind: lower,
-                                                              attributes: node.attributes))
+                                                              attributes: node.attributes,
+                                                              source: node.location))
                 continue
             }
             if declarations.contains(lower) { continue }
@@ -1793,7 +1808,8 @@ final class WasabiSkinInitializer {
                 .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
             for targetID in targets {
-                guard let target = findObject(xmlID: targetID, beneath: scope) else { continue }
+                guard let target = findObject(xmlID: targetID, beneath: scope),
+                      !declaredAfter(target, command: command) else { continue }
                 switch command.kind {
                 case "hideobject": _ = target.setAttribute("visible", value: "0")
                 case "showobject": _ = target.setAttribute("visible", value: "1")

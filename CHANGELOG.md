@@ -134,6 +134,10 @@
   not move with the volume.
 - **The `vol +` / `vol -` buttons of Winamp Modern skins change the volume.** Quadelic's and several
   other skins' volume buttons used to do nothing; each click now steps the volume by 5%.
+- **OrbFace's close button is drawn.** The skin hides the window frame's close and then adds its own;
+  NullPlayer used to hide the skin's as well, leaving a blank gap beside minimise.
+- **LG_Free's Equalizer Studio and Media Library no longer carry the playlist's Add / Rem / Sel / Misc /
+  List buttons** along their bottom edge.
 
 ## 0.33.1
 
