@@ -143,7 +143,7 @@ naturally stops:
 
 | Stage | Phases, one worker each |
 |---|---|
-| no open batch | Admit |
+| no open batch | Admit: the orchestrator runs the crawl, then one worker does the rest (below) |
 | `admitted` | Phases 1–2 over the batch (dump, inventory) · Phase 3 (interaction and motion sweeps) · Phase 4 (ranked fix list; ledger → `headless`) |
 | `headless`, per skin | Phase 5 (the fix list, a few entries per worker if it is long) · Phase 6 (reference matching) · Phase 7 and the visual review · Phase 8 (verify; ledger → `live`) |
 | `accepted` | Promote · the code-quality review · the PR |
@@ -172,6 +172,14 @@ naturally stops:
 6. **Stop at every phase boundary, never between skins.** End the turn after each phase. When a
    phase completes a skin, start the next skin's first phase in the same turn, and stop after
    that.
+
+**The Admit crawl is not a worker's job.** `wal_intake.sh --admit` takes about 47 minutes, longer
+than a foreground call's 10-minute limit. A worker cannot wait on a background run either, because
+its report ends the run. So the orchestrator starts the crawl itself with `run_in_background`, with
+its output in the scratchpad. When the run ends, check for its `wal_intake: … -> intake.tsv` line;
+the exit code proves nothing (`harness.md` § *Growing the corpus*). Only then does one worker take
+the output dir and do the rest of Admit: copy the picks, commit the ranking and the ledger, and add
+the plan bullet. Never tell a worker to run the crawl in the foreground.
 
 A blocker the worker cannot clear (a decision for the user, a defect it cannot reproduce) comes
 back in its report and ends the turn the same way.
