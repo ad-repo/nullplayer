@@ -49,13 +49,18 @@ extension WasabiSceneRenderer {
         let overrides = WinampModernSkinState.paletteOverrides(theme: themes.activeTheme,
                                                                in: loadedSkin.configuration)
         let palette = WasabiPalette.make(overrides: overrides) { [weak self] identifier in
-            guard let self,
-                  let definition = loadedSkin.runtime.resources.resolvedColorDefinition(identifier: identifier),
-                  Self.declaredColor(of: definition) != nil else { return nil }
-            return resolvedColor(identifier)
+            self?.declaredSkinColor(identifier)
         }
         paletteCache = palette
         return palette
+    }
+
+    /// The colour a `<color>` resource of this id declares, resolved, or nil when the skin declares
+    /// none — where `resolvedColor` would parse the id itself as a colour.
+    func declaredSkinColor(_ identifier: String) -> NSColor? {
+        guard let definition = loadedSkin.runtime.resources.resolvedColorDefinition(identifier: identifier),
+              Self.declaredColor(of: definition) != nil else { return nil }
+        return resolvedColor(identifier)
     }
 
     /// The chrome those same colours widen into — what NullPlayer paints where a skin expected
@@ -134,10 +139,7 @@ extension WasabiSceneRenderer {
     /// A named `<color>` resource carries its own gammagroup and `resolvedColor` already applies it;
     /// applying the object's on top would tint the same channels twice.
     func objectColor(_ raw: String, gammaGroup: String?) -> NSColor {
-        if let definition = loadedSkin.runtime.resources.resolvedColorDefinition(identifier: raw),
-           Self.declaredColor(of: definition) != nil {
-            return resolvedColor(raw)
-        }
+        if let declared = declaredSkinColor(raw) { return declared }
         let base = Self.color(raw)
         guard let gamma = themes.transform(group: gammaGroup), !gamma.isIdentity else { return base }
         let (red, green, blue) = Self.themed(red: base.redComponent, green: base.greenComponent,

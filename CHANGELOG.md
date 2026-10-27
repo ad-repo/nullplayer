@@ -114,6 +114,9 @@
   app started with.
 - **The NEO skins' Repeat and Shuffle buttons say which mode they are in.** Their tooltips used to
   read "Off" whatever the setting was, and Big Bento's ticker announced the mode the click had just left.
+- **Texted buttons in Winamp Modern skins draw the skin's own button art.** Buttons such as Switch,
+  Add/Rem or a config window's prev/next used to be a plain outlined box; they now use the button
+  artwork the skin ships, pressed art while held, with the skin's button text colour.
 
 ## 0.33.1
 
