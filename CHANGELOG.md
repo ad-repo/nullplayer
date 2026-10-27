@@ -108,6 +108,8 @@
   inside another declaration of the same window now keeps the player, shade and thin-shade layouts.
 - **A skin's opening animations play when its window opens.** Animations a skin starts on its own,
   such as Official Zwan's rainbow intro, used to be over before the window appeared.
+- **The Ryoko Asakura skin's player is no longer a white rectangle.** A see-through window whose
+  backing image is missing from the skin now stays see-through instead of filling with a solid colour.
 
 ## 0.33.1
 

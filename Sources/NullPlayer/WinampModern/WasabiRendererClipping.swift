@@ -143,7 +143,10 @@ extension WasabiSceneRenderer {
         /// between the chrome and the content. The skin's own content background is the nearest
         /// thing we can answer with, and it is the same colour NullPlayer's embedded surfaces already
         /// use. Only when the skin *asked* for a backing: a layout that declares none is deliberately
-        /// shaped and must stay transparent.
+        /// shaped and must stay transparent. So must a `desktopalpha="1"` layout, which composites
+        /// against the desktop: Ryoko Asakura's player (`background="player.mainbg.ghost"`, a `.bmp`
+        /// the archive does not ship) drew a solid white slab where its own screenshot shows the
+        /// player art over the wallpaper (B271).
         case contentBackground
     }
 
@@ -161,7 +164,8 @@ extension WasabiSceneRenderer {
             }
             return .contentBackground
         }
-        return object.tag.is(.layout) && backingID != nil ? .contentBackground : nil
+        guard object.tag.is(.layout), backingID != nil, object.attributes["desktopalpha"] != "1" else { return nil }
+        return .contentBackground
     }
 
     /// The backing Winamp's own standard frame paints, for a frame whose window gives none.

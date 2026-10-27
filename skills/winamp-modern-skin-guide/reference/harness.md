@@ -737,7 +737,8 @@ like S7Reflex's (B237, 2026-10-21). `hm_Touch_m_1`'s `MLibrary/normal` flips its
 `Winamp_Single_GUI`'s `MLibrary/normal` flips `min=354x164`/`min=452x164` the same way (452, 452,
 354 over three solo runs of one build, 2026-10-24). `EMP2`'s `MLibrary/normal` flips its canvas
 400x200/450x200 (`min=303x115`/`min=450x115`) the same way, across B270's before/after sweeps, a
-change that cannot reach it (2026-10-26).
+change that cannot reach it (2026-10-26). `GlassAMPfinal`'s `DLibrary/normal` canvas flips 330x220/200x152 the same way as
+MoonLight's, across B271's before/after sweeps, a layout with no `background=` the change cannot reach (2026-10-26).
 
 Those grep-selected lines are the invariants worth diffing: the container list, the surface catalog,
 the window menu, every layout's canvas size and node count, every hosted holder's frame, and the

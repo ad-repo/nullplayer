@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B271 — A desktop-alpha layout's missing backing stays transparent — closed 2026-10-26
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B271 | **Ryoko_Asakura's player (`main/x`) renders as a solid white rectangle.** 303x488, 30 nodes, every pixel white; the one missing bitmap is `player.mainbg.ghost` (`main_window/mrn_ryk_player_bg_ghost.bmp`, not in the archive), and `screenshot.PNG` shows the full player art. Its About window is blank too (no standard frame to host it). Find the node that paints white over the body (`WINAMP_MODERN_RENDER_PROBE=main/x`), then fix it. Done when the batch dump's `main/x` matches the reference's player | intake #4 dump: Ryoko_Asakura__Winamp_Skin_1_1 (silver) | S | 2 |
+
+**Closed 2026-10-26**. The white was `WasabiSceneRenderer.backing(of:)`'s B90 fallback: a layout whose `background=` does not resolve fills with `contentBackground`, and Ryoko's `x` layout names `player.mainbg.ghost` (`mrn_ryk_player_bg_ghost.bmp`, not in the archive). The layout is `desktopalpha="1"`, which composites against the desktop, so the fallback no longer applies there (the same exclusion `needsFrameBaseTexture` already makes). Every other node on `main/x` starts at `alpha="0"` and `main.m`'s `opening_first()` fades it in by `setTargetA`/`gotoTarget` chains, so the t = 0 dump is now empty and a `WINAMP_MODERN_RENDER_SETTLE=8` dump shows the full player matching `screenshot.PNG` (EQ panel closed; the screenshot has it open). The About window renders its art under the same settle; "blank" was the same t = 0 fade. Corpus match set (declared, unshipped layout background on a `desktopalpha="1"` layout): Ryoko `x`, EPS High-End's two `glassy` speakers, Fuzzy Muffins' shade (paints `alphabackground`, unaffected). Gold+silver render (keys `a4369a3c81184988` → `10b04044425fdc8a`): Ryoko `main-x` white → transparent; EPS `leftspeaker-glassy`/`rightspeaker-glassy` black slab → transparent (same mechanism, the speaker art is missing); EMP2 `MLibrary`, S7Reflex-family `MLibrary`, MoonLight and GlassAMPfinal `DLibrary` canvas flips are noise (no `background=`, unreachable). Pinned by `testADesktopAlphaLayoutWithAnUnresolvableBackgroundStaysTransparent`; rule in `reference/rendering.md`.
+
 ## B280 — A markup self-play starts when first shown — closed 2026-10-26
 
 | Id | Item | Reach | Effort | Tier |

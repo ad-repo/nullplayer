@@ -303,13 +303,20 @@ over the top; where the layout background is the *only* backing the window vanis
 with it — EPS High-End's notifier preferences draws every control in the skin's near-white list
 colours against nothing at all.
 
-Two bounds keep the fill honest, and both are pinned in `WinampModernB90Tests`:
+Three bounds keep the fill honest, all pinned in `WinampModernB90Tests`:
 
 - **Only when the skin asked.** A layout that declares no `background=` stays transparent — that is
   every `sysregion`-shaped player in the corpus, and filling those would square each one off.
 - **Only a layout.** A group with an unresolvable background still draws nothing: a group has no
   region of its own (see *hit-testing*), so an opaque fill there slabs over whatever the layout put
   behind it.
+- **Not a `desktopalpha="1"` layout** (B271, 2026-10-26). It composites against the desktop, so a
+  backing it lacks is nothing. Ryoko Asakura's player names `player.mainbg.ghost`, a `.bmp` the
+  archive does not ship, and drew a solid white 303x488 slab where its screenshot shows the player
+  art over the wallpaper. Corpus match set (a declared, unshipped layout background on a
+  `desktopalpha="1"` layout): that player, EPS High-End's two `glassy` speakers (`speaker3.png`
+  missing; a black slab before, empty now), and Fuzzy Muffins' shade, which paints its
+  `alphabackground` instead and is unaffected.
 
 Corpus sweep, 441 renders: **15 changed**, and 8 of those are Big Bento dialogs already opaque where
 the fill landed underneath existing chrome.
