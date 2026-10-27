@@ -17,7 +17,9 @@ source scripts/lib/wal_corpus.sh
 WAL=$(wal_resolve_skin "$1") || exit 2
 SHA=$(shasum -a 256 "$WAL" | cut -c1-12)
 DIR="$TMP/wal-src/$SHA"
-if [ ! -f "$DIR/.complete" ]; then
+# The marker alone is not trusted: macOS purges old files under $TMPDIR and leaves the newer marker.
+if [ ! -f "$DIR/.complete" ] \
+    || [ "$(find "$DIR" -type f ! -name .complete | wc -l)" -lt "$(unzip -Z1 "$WAL" | grep -vc '/$')" ]; then
     rm -rf "$DIR" && mkdir -p "$DIR" && unzip -o -q "$WAL" -d "$DIR" && touch "$DIR/.complete" \
         || { echo "wal_skin_src: could not unpack $WAL" >&2; exit 1; }
 fi
