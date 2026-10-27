@@ -171,7 +171,8 @@ naturally stops:
      minutes. Never take a `--fresh` run of either for a phase. Compare against the stored
      capture, and rerun only the skins that differ, on both revs (`--corpus` on a folder of just
      those). A difference in a skin that varies between runs of one build (OrbFace, -MfS3-,
-     CopperdeckII, Aria_of_the_Soul, LG_Free's clock frame) is noise unless it is in that
+     CopperdeckII, Aria_of_the_Soul, Invicta, winampmodern566, Cpro_Winamp_Modern, Quadelic,
+     LG_Free's clock frame; B296) is noise unless it is in that
      phase's skin. A `--rev` baseline missing from the store is the one full run a phase may
      take.
    - Report in at most 10 lines: skin, phase, stage before → after, rows fixed and open, the
