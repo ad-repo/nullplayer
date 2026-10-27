@@ -4723,12 +4723,14 @@ final class WasabiSceneRenderer {
         return size
     }
 
-    /// The widest and the tallest visible component holder the active layout resolves at `canvas`,
-    /// or `nil` when it has none — what both the component-room fit and the hosted component's floor
-    /// measure the window's shortfall from.
-    private func holderExtent(atCanvas canvas: CGSize) -> CGSize? {
+    /// The widest and the tallest component holder the active layout resolves at `canvas`, or `nil`
+    /// when it has none — what both the component-room fit and the hosted component's floor measure
+    /// the window's shortfall from. `visibleOnly` is the component-room fit's: a player parks holders
+    /// it is not showing. The floor counts hidden ones too, because a holder's visibility is a skin
+    /// script's moment, not its markup, and the floor must not depend on when it was first asked.
+    private func holderExtent(atCanvas canvas: CGSize, visibleOnly: Bool = true) -> CGSize? {
         let holders = sceneNodes(canvas: canvas).filter {
-            WinampModernComponentRegistry.isHolderElement($0.object.tag) && isVisible($0.object)
+            WinampModernComponentRegistry.isHolderElement($0.object.tag) && (!visibleOnly || isVisible($0.object))
         }
         guard !holders.isEmpty else { return nil }
         return holders.reduce(CGSize.zero) {
@@ -4747,11 +4749,15 @@ final class WasabiSceneRenderer {
     /// It is a floor even where the declared size already clears it, because a script or a restored
     /// frame can take the window below its declared size: Itemskin declares its library 660 wide and
     /// its own script shrinks it to the 330 minimum on open.
+    ///
+    /// Cached only once the scripts have started: a `Wasabi:*Frame`'s client group — where the holder
+    /// lives — is instantiated by the skin's MAKI, so an answer taken earlier (the component-room fit
+    /// asks before start) reads no holder, and caching it left EMP2's library without its floor.
     private var hostedComponentFloorWidth: CGFloat? {
         let key = activeLayoutID
         if let cached = hostedComponentFloorCache[key] { return cached }
         let computed = computeHostedComponentFloorWidth()
-        hostedComponentFloorCache[key] = computed
+        if loadedSkin.runtime.hasStartedScripts { hostedComponentFloorCache[key] = computed }
         return computed
     }
 
@@ -4761,8 +4767,9 @@ final class WasabiSceneRenderer {
         let declared = defaultSize(for: layout)
         // The arithmetic below assumes the holder stretches with the canvas (`relatw`). Checked rather
         // than assumed: around a fixed-width holder, widening the window only widens the frame.
-        guard let holder = holderExtent(atCanvas: declared),
-              let wider = holderExtent(atCanvas: CGSize(width: declared.width + room, height: declared.height)),
+        guard let holder = holderExtent(atCanvas: declared, visibleOnly: false),
+              let wider = holderExtent(atCanvas: CGSize(width: declared.width + room, height: declared.height),
+                                       visibleOnly: false),
               wider.width > holder.width else { return nil }
         return min(layoutMaximumSize.width, declared.width + room - holder.width)
     }
