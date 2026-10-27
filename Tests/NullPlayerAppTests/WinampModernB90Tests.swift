@@ -86,6 +86,18 @@ final class WinampModernB90Tests: XCTestCase {
         XCTAssertEqual(Int(pixel.alpha), 0)
     }
 
+    /// B273 — iCandy's shape: `drawbackground="0"` with `sysregion="1"` makes the backings a region,
+    /// so its flat-black `alphabackground` mask is not painted under the closed EQ drawer.
+    func testADrawbackgroundOffSysregionLayoutPaintsNoBacking() throws {
+        let scene = try makeScene(
+            layoutAttributes: #"background="mask" alphabackground="mask" drawbackground="0" desktopalpha="1" sysregion="1""#,
+            resources: #"<bitmap id="mask" file="mask.png"/>"#,
+            art: ["mask.png": Self.solidPNG(red: 0, green: 0, blue: 0)]
+        )
+        let pixel = try XCTUnwrap(scene.pixel(x: 30, y: 20))
+        XCTAssertEqual(Int(pixel.alpha), 0)
+    }
+
     /// And the fill is the *window's* backing, not a rule about `background=`. A group whose
     /// background does not resolve keeps drawing nothing, because a group with no region of its own
     /// filled opaque would slab over whatever the layout put behind it.

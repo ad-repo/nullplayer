@@ -317,6 +317,13 @@ Three bounds keep the fill honest, all pinned in `WinampModernB90Tests`:
   `desktopalpha="1"` layout): that player, EPS High-End's two `glassy` speakers (`speaker3.png`
   missing; a black slab before, empty now), and Fuzzy Muffins' shade, which paints its
   `alphabackground` instead and is unaffected.
+- **Not a layout that says `drawbackground="0"` *and* `sysregion="1"`** (B273, 2026-10-26). Its
+  backings shape the window and are never painted (`paintedBackingID`). A layout otherwise paints its
+  backing whatever `drawbackground` says (DDtank Glass, Invicta, impulse need that). Corpus match set
+  (all tiers): only the iCandy family — iCandy, i-Skin, iCandy-2 — whose `alphabackground`s are flat
+  masks of where a drawer opens; painted, they were a black slab under the closed EQ drawer, a white
+  one behind the remote's LCD and a black one in the shade. Gold+silver sweep: exactly those 3
+  iCandy-2 images changed.
 
 Corpus sweep, 441 renders: **15 changed**, and 8 of those are Big Bento dialogs already opaque where
 the fill landed underneath existing chrome.

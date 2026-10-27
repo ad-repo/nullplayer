@@ -119,8 +119,15 @@ extension WasabiSceneRenderer {
     /// layout paints its `alphabackground` — `background` is then the opaque or region-map variant
     /// (Fuzzy Muffins' `main.alpha`, impulse's `player.normal.background.region`), and painting it
     /// put the mask's grey through every translucent pane.
+    ///
+    /// The one exception is a layout that pairs `drawbackground="0"` with `sysregion="1"`: its
+    /// backings shape the window and are not painted. Only the iCandy family says both (iCandy,
+    /// i-Skin, iCandy-2), and its `alphabackground`s are flat masks of where a drawer opens —
+    /// painted, they were a black slab under the closed EQ drawer and a white one behind the
+    /// remote's LCD (B273).
     func paintedBackingID(of object: WasabiObject) -> String? {
         if object.tag.is(.layout) {
+            if object.attributes["drawbackground"] == "0", object.attributes["sysregion"] == "1" { return nil }
             if object.attributes["desktopalpha"] == "1", let alpha = object.attributes["alphabackground"] {
                 return alpha
             }
