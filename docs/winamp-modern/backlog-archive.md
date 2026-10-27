@@ -3,6 +3,14 @@
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
 
+## B270 — A container re-declared inside itself is the same window — closed 2026-10-26
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B270 | **A `<container>` re-declared inside itself loses its layouts: Official_Zwan_Skin has no player window.** `xml/player.xml` opens `<container id="main">` and includes `player-normal.xml`, which declares `<container id="main">` again around the `normal`, `shade` and `Thinshade` layouts. The dump drops `main` ("dropped container: main (no layout)") and lists no inner container, so the skin renders only its `Component` frames. Establish from the skin's own behaviour (its layouts are the only player it ships) how a nested same-id container resolves, then make the loader keep the inner layouts. Done when the batch dump renders Zwan's `main/normal` and no gold+silver render changes otherwise | intake #4 dump: Official_Zwan_Skin (silver); corpus count not taken | S | 2 |
+
+**Closed 2026-10-26**. Include expansion (`WalXMLDocumentLoader.expand`) now splices a `<container>`'s direct child `<container>` of the same id (case-insensitive) into it: the inner one's children join the outer, whose attributes stand; a nested container with another id is untouched. The skin's own evidence is that `normal`, `shade` and `Thinshade` are the only player it ships, and nothing else in it declares a player layout. Zwan's batch dump now renders `main/normal` 437x413 (82 nodes), `main/shade` and `main/Thinshade`, no dropped container. Gold+silver render sweep before/after (189 skins, keys `f759b18c049a3c5a` → `d9c724139cf3e7ed`): the only non-noise change is Zwan's three new images and its catalog line (`equalizer=embedded`); every other difference is a `--fresh` noise image or a listed nondeterministic line (EMP2's `MLibrary` flip added to `harness.md`, its XML has no nested container). Pinned by `WinampModernB270Tests`; rule in `reference/loading.md`. The motion sweep it unblocked filed B280.
+
 ## B268 — A layout marked whole is composed from its marks — closed 2026-10-26
 
 | Id | Item | Reach | Effort | Tier |

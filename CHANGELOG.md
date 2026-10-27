@@ -104,6 +104,8 @@
   longer lists empty Media Library, Visualizations and video frames beside the real windows.
 - **Winampple's Media Library can be clicked again.** Its video window's frame no longer sits over
   the library, and Itemskin, K-jr and MoonLight keep the library frame their authors drew.
+- **The Official Zwan skin has a player window again.** A skin that declares its main window
+  inside another declaration of the same window now keeps the player, shade and thin-shade layouts.
 
 ## 0.33.1
 

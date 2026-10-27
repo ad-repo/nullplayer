@@ -474,8 +474,20 @@ final class WalXMLDocumentLoader {
             guard expandedNodeCount <= limits.maximumExpandedNodeCount else {
                 throw WalFailure(WalDiagnostic(.expandedNodeLimitExceeded, "Expanded XML exceeds \(limits.maximumExpandedNodeCount) nodes.", location: node.location))
             }
-            node.replaceChildren(try expand(node.children, sourcePath: sourcePath,
-                                            includeStack: includeStack, depth: depth))
+            var children = try expand(node.children, sourcePath: sourcePath,
+                                      includeStack: includeStack, depth: depth)
+            // A `<container>` re-declared inside itself is the same window: Official_Zwan_Skin's
+            // `player.xml` opens `<container id="main">` around an include that declares `main`
+            // again around the only player layouts the skin ships (B270). The inner one's children
+            // join the outer; the outer's attributes stand.
+            if lower == "container", let id = node.attribute("id") {
+                children = children.flatMap { child in
+                    child.name.caseInsensitiveCompare("container") == .orderedSame
+                        && child.attribute("id")?.caseInsensitiveCompare(id) == .orderedSame
+                        ? child.children : [child]
+                }
+            }
+            node.replaceChildren(children)
             result.append(node)
         }
         return result

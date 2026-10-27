@@ -552,7 +552,9 @@ baseline pass and count only what differs from both.
 closed drawer, another layout or a later state is S3.5's. A `covered:` row is often the *other half
 of a state pair* (mmd3's `cttoggle2` sits under `cttoggle` until the drawer opens), so read it as
 "not reachable in this state", not "never reachable"; `covered:layout` is the exception, a control
-the hit test never admits at all. And a plain `action=` button with no script is not a target at all — its whole behaviour is static,
+the hit test never admits at all. A control whose handler only calls `System.navigateUrl` reads
+`silent`: the call is routed to the browser hook, which the sweep does not record as an effect
+(Official_Zwan_Skin's `player.web`, 2026-10-26). And a plain `action=` button with no script is not a target at all — its whole behaviour is static,
 and the host-action census answers it. Menus are counted, not walked item by item: the plan's per-item menu sweep is not
 built.
 
@@ -733,7 +735,9 @@ flips between 330x137 and 660x274 the same way as MoonLight's (B228's sweeps, bo
 like S7Reflex's (B237, 2026-10-21). `hm_Touch_m_1`'s `MLibrary/normal` flips its canvas between
 354x280 and 528x280, its library holder with it, between solo runs of one build (2026-10-23).
 `Winamp_Single_GUI`'s `MLibrary/normal` flips `min=354x164`/`min=452x164` the same way (452, 452,
-354 over three solo runs of one build, 2026-10-24).
+354 over three solo runs of one build, 2026-10-24). `EMP2`'s `MLibrary/normal` flips its canvas
+400x200/450x200 (`min=303x115`/`min=450x115`) the same way, across B270's before/after sweeps, a
+change that cannot reach it (2026-10-26).
 
 Those grep-selected lines are the invariants worth diffing: the container list, the surface catalog,
 the window menu, every layout's canvas size and node count, every hosted holder's frame, and the

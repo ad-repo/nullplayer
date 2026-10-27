@@ -96,6 +96,18 @@ id took two turns on one renderer and the second ran against a **torn-down** cac
 skin's resource scope. `jvc.tape`'s `Pledit` missing `pl.button.bg` and `pl.button.small` is a real
 and separate two-bitmap miss.
 
+#### A container re-declared *inside* itself is the same window (B270, 2026-10-26)
+
+The nested case is a third shape, settled at include expansion (`WalXMLDocumentLoader.expand`), not
+in the initializer: a `<container>` whose direct child is a `<container>` with the same id (case-
+insensitive) takes that child's children in its place, and the outer's attributes stand.
+Official_Zwan_Skin's `xml/player.xml` opens `<container id="main">` around
+`<include file="player-normal.xml"/>`, which declares `main` again around `normal`, `shade` and
+`Thinshade` — the only player the skin ships, so the skin's own evidence is that they are `main`'s
+layouts. Before, the outer `main` held only a nested container, had no layout and was dropped. A
+nested container with **another** id is left alone. Gold+silver at the time: Zwan was the only skin
+whose render changed.
+
 ### What the XML parser tolerates, and what it still rejects
 
 `WalLenientXMLParser` accepts multiple roots and raw ampersands. It also, since B33, accepts a file
