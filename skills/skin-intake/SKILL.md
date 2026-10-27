@@ -23,7 +23,7 @@ Every session starts with it and does the `next:` line. It exits 1 when the ledg
 manifest or the corpus on disk (sha256, tier, file); then the session's work is fixing the ledger.
 
 **The return guard.** A commit that changes exactly one ledger row counts as a session spent on that
-skin. At 4, the script stops naming the skin in `next:` and lists it under `budget spent`. That skin
+skin. At 2 (one fix, one re-check), the script stops naming the skin in `next:` and lists it under `budget spent`. That skin
 goes to the user's round as it is, marked `live` with its open rows in `note`, and no session works
 on it again unless the user asks. Intake #4 spent 9 sessions on Ryoko and 7 on StarTrek, most of
 them re-running cycles on a skin that already worked.

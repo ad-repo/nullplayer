@@ -18,7 +18,7 @@ stages="admitted headless live accepted promoted"
 
 # The return guard: a commit that changes exactly one ledger row is a session spent on that skin.
 # A skin at the budget is never picked again; it goes to the user's round with its open rows.
-budget=4
+budget=2
 spent=" $(git rev-list origin/main..HEAD -- "$ledger" 2>/dev/null | while read -r c; do
     rows=$(git show --format= "$c" -- "$ledger" | grep '^+[^+]' | cut -f1 | sed 's/^+//')
     if [ "$(printf '%s\n' "$rows" | wc -l)" -eq 1 ]; then echo "$rows"; fi
