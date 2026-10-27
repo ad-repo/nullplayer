@@ -22,7 +22,7 @@ if [ ! -f "$DIR/.complete" ]; then
         || { echo "wal_skin_src: could not unpack $WAL" >&2; exit 1; }
 fi
 echo "$WAL -> $DIR"
-REFS=$(cd "$DIR" && find . -maxdepth 3 -type f \( -iname '*screenshot*' -o -iname '*preview*' -o -iname '*readme*' \) | sed 's#^\./##')
+REFS=$(cd "$DIR" && find . -maxdepth 3 -type f \( -iname '*screenshot*' -o -iname '*skinshot*' -o -iname '*preview*' -o -iname '*readme*' \) | sed 's#^\./##')
 echo "references: ${REFS:-none}" | paste -sd' ' -
 
 [ $# -ge 2 ] || exit 0
