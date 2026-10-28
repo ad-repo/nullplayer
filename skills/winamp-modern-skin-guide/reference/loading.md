@@ -518,8 +518,8 @@ reads `"1"`, whether from this seed or from the user's own pick, nothing is writ
 ### Retained graph and coordinates
 
 **`findObject` is the wide lookup, `getObject` the narrow one.** `getObject(id)` searches the
-receiver's own subtree; `findObject(id)` searches that subtree **first and then the rest of the
-container**, which is the whole reason a skin reaches for one name over the other. Defix's core
+receiver's own subtree; `findObject(id)` searches that subtree **first and then the rest of its
+layout** (its container when it has none; next paragraph), which is the whole reason a skin reaches for one name over the other. Defix's core
 script holds `sui.content` and asks it for `switch.ml`, a tab button in a *sibling* subtree: resolved
 from descendants alone, all five tab lookups came back null and the script bound its handlers to
 nothing, so the SUI never changed tabs. The nearest match still wins, so a skin with the same id in

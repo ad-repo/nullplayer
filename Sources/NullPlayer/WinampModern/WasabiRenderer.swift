@@ -1320,10 +1320,11 @@ final class WasabiSceneRenderer {
 
     private var sceneNodeCache: (generation: UInt64, canvas: CGSize, nodes: [WasabiSceneNode])?
 
-    func sceneNodes(canvas: CGSize) -> [WasabiSceneNode] {
+    func sceneNodes(canvas: CGSize, includingHidden: Bool = false) -> [WasabiSceneNode] {
         let rootRect = CGRect(origin: .zero, size: canvas)
         var nodes: [WasabiSceneNode] = []
-        append(object: layout, frame: rootRect, clip: rootRect, into: &nodes, isRoot: true)
+        append(object: layout, frame: rootRect, clip: rootRect, into: &nodes, isRoot: true,
+               includingHidden: includingHidden)
         return nodes
     }
 
@@ -4707,8 +4708,8 @@ final class WasabiSceneRenderer {
     /// it is not showing. The floor counts hidden ones too, because a holder's visibility is a skin
     /// script's moment, not its markup, and the floor must not depend on when it was first asked.
     private func holderExtent(atCanvas canvas: CGSize, visibleOnly: Bool = true) -> CGSize? {
-        let holders = sceneNodes(canvas: canvas).filter {
-            WinampModernComponentRegistry.isHolderElement($0.object.tag) && (!visibleOnly || isVisible($0.object))
+        let holders = sceneNodes(canvas: canvas, includingHidden: !visibleOnly).filter {
+            WinampModernComponentRegistry.isHolderElement($0.object.tag)
         }
         guard !holders.isEmpty else { return nil }
         return holders.reduce(CGSize.zero) {

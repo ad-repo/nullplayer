@@ -30,8 +30,8 @@ The rubric is in `.claude/skills/wal-skin-report/SKILL.md`. It grades **the user
 skin** — does every surface draw, are the controls live, do the animations run, do the menus work.
 Two kinds of letter appear in the table and they are not equally good:
 
-- **live** — someone drove the skin and filled in the full report. Six skins. These are authoritative.
-  They publish **"as of"** their date, because all six were measured before 77 changes landed in the
+- **live** — someone drove the skin and filled in the full report. Seven skins. These are authoritative.
+  Six publish **"as of"** their date, because they were measured before 77 changes landed in the
   skin engine, and under the staleness rule a grade goes stale when the engine moves under it.
 - **provisional** — derived from a headless pass: the skin is loaded, every container and layout it
   declares is rendered to an image, its scripts are started, and its artwork lookups, unimplemented
@@ -315,7 +315,7 @@ show any of them.
    asking only whether it is recognisably the same skin and ignoring playback state, track text and
    which windows are open. Nine were flagged; five were the author shipping a cropped or shade-mode
    promo shot, one was a fault in the pairing, and three were real.
-5. The six live letters come from `/wal-skin-report` sessions driven by a person and are unchanged.
+5. The seven live letters come from `/wal-skin-report` sessions driven by a person and are unchanged.
 
 Per-skin engineering notes live in `skills/winamp-modern-skin-guide/skins/` — one file per skin, the
 77 graded before 2026-10-17 plus Onyx (the other seven 2026-10-17 additions have none yet); the index is `skills/winamp-modern-skin-guide/skins.md`.

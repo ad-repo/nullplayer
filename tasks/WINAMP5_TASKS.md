@@ -17,7 +17,8 @@ Reach is corpus demand, not severity. Live-reported draw defects are kept in the
 observation is not comparable to a static declaration count.
 
 Effort bands: **S** = one attribute/method/local draw fix; **M** = behavior spanning multiple files
-without a seam change; **L** = a host seam, protocol change, or new fixture harness.
+without a seam change; **L** = a host seam, protocol change, or new fixture harness. **?** = not sized yet:
+the cause is not known.
 
 ### Measured capability gaps
 

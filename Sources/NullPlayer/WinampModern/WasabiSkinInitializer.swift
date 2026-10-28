@@ -602,11 +602,15 @@ final class WasabiSkinInitializer {
     private static let metaCommandReachesLaterSiblings =
         ProcessInfo.processInfo.environment["WINAMP_MODERN_HIDEOBJECT_LATER"] == "1"
 
+    /// Judged on the owner's child that holds `target`, so a target inside a later sibling group
+    /// (reached through `group=`) is out of reach too.
     private func declaredAfter(_ target: WasabiObject, command: PendingMetaCommand) -> Bool {
-        command.kind != "sendparams" && !Self.metaCommandReachesLaterSiblings
-            && target.parent === command.owner
-            && target.source.path == command.source.path
-            && (target.source.line, target.source.column) > (command.source.line, command.source.column)
+        guard command.kind != "sendparams", !Self.metaCommandReachesLaterSiblings else { return false }
+        var sibling = target
+        while let parent = sibling.parent, parent !== command.owner { sibling = parent }
+        return sibling.parent === command.owner
+            && sibling.source.path == command.source.path
+            && (sibling.source.line, sibling.source.column) > (command.source.line, command.source.column)
     }
 
     let vfs: WalVirtualFileSystem

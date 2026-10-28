@@ -1628,6 +1628,8 @@ final class WinampModernMainView: NSView {
             WasabiMenuBar.apply(.normal, to: previous)
         }
         hoveredObject = nil
+        // Leaving the window straight off a bucket icon sends no move that would blank its caption.
+        renderer.componentBucket.pointerLeftTheIcons()
         needsDisplay = true
     }
 

@@ -1512,12 +1512,17 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 }
                 // A container rehosted in NullPlayer's glass chrome (a tooltip-framed window, a
                 // frameless About page) has its body filled by the view, under the scene (B274).
-                if info.object.attributes[WinampModernContainerTopology.hostChromeAttribute] == "1" {
-                    let chrome = WasabiDrawList(ctm: context.ctm, clip: context.boundingBoxOfClipPath.applying(context.ctm))
-                    WinampModernMainView.drawHostChrome(in: chrome, renderer: renderer, isActive: true)
-                    chrome.replay(into: context)
+                // The partial-repaint probe below redraws through this too, as the view does.
+                let hostChrome = info.object.attributes[WinampModernContainerTopology.hostChromeAttribute] == "1"
+                func drawFrame() {
+                    if hostChrome {
+                        let chrome = WasabiDrawList(ctm: context.ctm, clip: context.boundingBoxOfClipPath.applying(context.ctm))
+                        WinampModernMainView.drawHostChrome(in: chrome, renderer: renderer, isActive: true)
+                        chrome.replay(into: context)
+                    }
+                    renderer.draw(in: context, hovered: hovered)
                 }
-                renderer.draw(in: context, hovered: hovered)
+                drawFrame()
                 // WINAMP_MODERN_RENDER_TIME=<frames> repaints the whole scene that many times and
                 // reports the per-frame cost — the measurement behind "does this skin hold 30 Hz?",
                 // and the one Layer FX needs, since a warp is a CPU resample on the paint path. Each
@@ -1644,7 +1649,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
                         context.saveGState()
                         context.clip(to: dirty)
                         context.clear(dirty)
-                        renderer.draw(in: context, hovered: hovered)
+                        drawFrame()
                         context.restoreGState()
                         guard let after = context.makeImage(), let pixels = Self.pixels(of: after) else { continue }
                         // Where the difference is, in device pixels from the top-left, and how many

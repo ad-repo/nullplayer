@@ -78,6 +78,18 @@ final class WinampModernB140Tests: XCTestCase {
         XCTAssertEqual(frame.groupIdentifier, "wasabi.standardframe.nostatusbar")
     }
 
+    /// …and the playlist keeps that bar even when the bar-less frame is thinner. The main window
+    /// holds no playlist here, so the playlist is a window of its own.
+    func testThePlaylistTakesTheFrameCarryingItsBar() throws {
+        let loaded = try makeSkin(statusParam: "25,28,-50,-80", noStatusParam: "5,5,-10,-10",
+                                  playlistBar: true, holds: "guid:none")
+        let frame = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "nullplayer.playlist.content.frame").first)
+        func holds(_ object: WasabiObject, _ id: String) -> Bool {
+            object.xmlID == id || object.children.contains { holds($0, id) }
+        }
+        XCTAssertTrue(holds(frame, "add"), "the playlist wears the status frame, with its PE_Add button")
+    }
+
     /// A frame that states no rect is left exactly where it was: the frame's own script places the
     /// client from `content=`, and the window is the registry's size. Every skin that ships an
     /// unparameterized standard frame is in this case.
@@ -178,7 +190,8 @@ final class WinampModernB140Tests: XCTestCase {
     /// the client.
     private func makeSkin(statusParam: String?, noStatusParam: String?,
                           background: Bool = true,
-                          playlistBar: Bool = false) throws -> WinampModernLoadedSkin {
+                          playlistBar: Bool = false,
+                          holds: String = "guid:pl") throws -> WinampModernLoadedSkin {
         let backgroundAttribute = background ? #" background="frame.base""# : ""
         func script(_ param: String?) -> String {
             let attribute = param.map { #" param="\#($0)""# } ?? ""
@@ -197,7 +210,7 @@ final class WinampModernB140Tests: XCTestCase {
           </groupdef>
           <container id="main">
             <layout id="normal" default_w="300" default_h="160">
-              <windowholder hold="guid:pl" x="0" y="0" w="20" h="20"/>
+              <windowholder hold="\(holds)" x="0" y="0" w="20" h="20"/>
             </layout>
           </container>
         </WasabiXML>

@@ -28,8 +28,9 @@ REFS=$(cd "$DIR" && find . -maxdepth 3 -type f \( -iname '*screenshot*' -o -inam
 echo "references: ${REFS:-none}" | paste -sd' ' -
 
 [ $# -ge 2 ] || exit 0
-MATCHES=$(cd "$DIR" && find . -type f \( -iname '*.xml' -o -iname '*.m' -o -iname '*.txt' -o -iname '*.ini' \) -print0 \
-    | xargs -0 grep -a -n -i -H -E "$2" 2>/dev/null | tr -d '\r' | sed 's#^\./##' | cut -c1-240)
+# CR stripped before grep, so a pattern anchored at `$` matches a CRLF line.
+MATCHES=$(cd "$DIR" && find . -type f \( -iname '*.xml' -o -iname '*.m' -o -iname '*.txt' -o -iname '*.ini' \) \
+    | while IFS= read -r f; do LC_ALL=C tr -d '\r' <"$f" | grep -a -n -i -E "$2" 2>/dev/null | f="${f#./}" awk '{ print ENVIRON["f"] ":" $0 }'; done | cut -c1-240)
 N=$(grep -c . <<<"$MATCHES")
 [ "$N" -gt 0 ] || { echo "no match for $2"; exit 0; }
 head -60 <<<"$MATCHES"

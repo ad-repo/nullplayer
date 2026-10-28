@@ -99,11 +99,12 @@ controls run into each other (`corpus-runner-plan.md` § *Done: intake #3*). Thi
 catch those three.
 
 1. Run `skills/app-control/scripts/window-census.sh <skin> --shots` with a track playing. That
-   captures every window live, with hosted components and cover art. Capture a skin only after it
+   captures every window live, main included, with hosted components and cover art, after the skin
    has played for 10 s. Skins cross-fade and fill their texts from timers. In intake #4, an early
    capture's `updating...` placeholders and half-faded ghost strings were filed as B301/B302, and
    both closed as not defects.
-2. Run `scripts/review_sheet.py <sheet.png> <shots>/*.png --ref <screenshot.png> --scale 2`, then
+2. Run `scripts/review_sheet.py <sheet.png> <shots>/*.png --ref <screenshot.png> --scale <s>`, with `<s>` the
+   `screen0_scale` in the census's `meta.tsv` (2 on Retina), then
    **open the sheet**. Each window is drawn over magenta under the author's screenshot.
 3. Judge every window against the three classes, and write one verdict per class:
    - **Transparent background**: magenta inside the body that the reference fills. Open every

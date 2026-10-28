@@ -19,10 +19,11 @@ stages="admitted headless live accepted promoted"
 # The return guard: a commit that changes exactly one ledger row is a session spent on that skin.
 # A skin at the budget is never picked again; it goes to the user's round with its open rows.
 budget=2
-spent=" $(git rev-list origin/main..HEAD -- "$ledger" 2>/dev/null | while read -r c; do
+spent=$'\t'"$(git rev-list origin/main..HEAD -- "$ledger" 2>/dev/null | while read -r c; do
     rows=$(git show --format= "$c" -- "$ledger" | grep '^+[^+]' | cut -f1 | sed 's/^+//')
     if [ "$(printf '%s\n' "$rows" | wc -l)" -eq 1 ]; then echo "$rows"; fi
-done | sort | uniq -c | awk -v b="$budget" '$1 >= b { print $2 }' | tr '\n' ' ')"
+done | sort | uniq -c | awk -v b="$budget" '$1 >= b { sub(/^ *[0-9]+ /, ""); print }' | tr '\n' '\t')"
+# Tab-separated, not spaces: corpus filenames carry spaces, and the ledger's tab-split $1 never holds a tab.
 
 awk -F'\t' -v stages="$stages" -v corpus="$WAL_CORPUS_ROOT" -v n="$n" -v spent="$spent" -v budget="$budget" '
 BEGIN { k = split(stages, s, " "); for (i = 1; i <= k; i++) rank[s[i]] = i }
@@ -31,7 +32,7 @@ FILENAME ~ /corpus-manifest/ { tier[$1] = $3; sha[$1] = $2; tiers[$3]++; next }
 {
     if (!($3 in rank)) { print "bad stage \"" $3 "\" for " $1; bad++; next }
     count[$3]++; total++
-    if ($3 == "headless" && index(spent, " " $1 " ")) over = over " " $1
+    if ($3 == "headless" && index(spent, "\t" $1 "\t")) over = over " " $1
     else if ($3 == "headless") { if ($6 ~ /^headless clean/) clean++; else if (first == "") { first = $1; first_note = $6 } }
     if (!($1 in tier)) { print "not in manifest: " $1; bad++; next }
     if (sha[$1] != $2) { print "sha256 differs from manifest: " $1; bad++ }

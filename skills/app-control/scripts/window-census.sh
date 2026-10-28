@@ -13,7 +13,7 @@
 #   windows.tsv  one row per window (baseline windows, then each item's), size in points
 #   skins.tsv    one row per skin: main window size, the largest window opened, status counts
 #   meta.tsv     key/value: screens, scale, UI size
-#   report.md    the same, for reading; with --shots, shots/<skin>/<item>.png zipped into shots.zip
+#   report.md    the same, for reading; with --shots, shots/<skin>/<item>.png (and <role>-<id>.png per baseline window) zipped into shots.zip
 # All TSVs are plain: one header row, no comments, one value per column. Pointing --out at an
 # existing census appends to it and skips skins already in skins.tsv, so a long corpus run resumes.
 #
@@ -200,6 +200,9 @@ for SKIN in "${SKINS[@]}"; do
 
   "$WH" raise "$PID" >/dev/null
   osascript "$MENU" closeaux "$PID" >/dev/null 2>&1
+  # Skins cross-fade and fill their texts from timers; a shot before ~10 s of playback catches
+  # placeholders and half-faded strings (skills/skin-intake, B301/B302).
+  [ "$SHOTS" = 1 ] && sleep 10
   wait_stable "$TMP/base"
   # Main is the largest baseline row. The baseline may hold more than main when closeaux gives up
   # (a fixed EQ, a .wmz in-view surface); main only anchors the overlaps-main figure.
@@ -209,7 +212,12 @@ for SKIN in "${SKINS[@]}"; do
   # Baseline rows: main, plus anything closeaux could not close.
   while IFS=$'\t' read -r id _ x y w h _ t; do
     role=baseline; [ "$id" = "$MID" ] && role=main
-    emit "$role" "" baseline "" "$id" "$x" "$y" "$w" "$h" "$t" "" "" ""
+    SHOT=""
+    if [ "$SHOTS" = 1 ]; then
+      mkdir -p "$OUT/shots/$SAFE"; SHOT="shots/$SAFE/$role-$id.png"
+      "$WH" capture "$id" "$OUT/$SHOT" --pid "$PID" >/dev/null 2>&1 || SHOT=unavailable
+    fi
+    emit "$role" "" baseline "" "$id" "$x" "$y" "$w" "$h" "$t" "" "$SHOT" ""
   done <"$TMP/base"
 
   STATUSES=""; UNREACH=0; RESIDUE=0; ERROR=""

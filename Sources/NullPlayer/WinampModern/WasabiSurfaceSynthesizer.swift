@@ -522,7 +522,8 @@ enum WasabiSurfaceSynthesizer {
             frames.min(by: { ($0.border, $0.order) < ($1.border, $1.order) }).map { .success($0.frame) }
         }
         let plain = declared.filter { !withPlaylistBar.contains($0.frame.groupIdentifier) }
-        let playlist = thinnest(declared)
+        let barred = declared.filter { withPlaylistBar.contains($0.frame.groupIdentifier) }
+        let playlist = thinnest(barred.isEmpty || playlistBarOnAnyFrame ? declared : barred)
         let other = thinnest(plain.isEmpty || playlistBarOnAnyFrame ? declared : plain)
         if let playlist, let other { return (playlist, other) }
         let fallback = exemplarFrame(in: definitions, document: document, reasons: reasons)

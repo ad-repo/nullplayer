@@ -374,12 +374,13 @@ extension WinampModernScriptRuntime {
             // plain groups whose script answers a click with `leftClick()` on a ghosted
             // `cfgattrib` togglebutton, and with only `onLeftClick` dispatched the attribute never
             // moved and neither button did anything. Both flips come first, as the mouse's do (B279).
-            let action = call.object.attributes["action"]
-            if !runtime.toggleActivation(of: call.object), action == nil {
+            if !runtime.toggleActivation(of: call.object), call.object.attributes["action"] == nil {
                 _ = runtime.toggleConfigAttribute(of: call.object)
             }
             _ = try runtime.dispatch(object: call.object, event: "onleftclick")
-            runtime.hooks.actionRequested?(action ?? "", call.object.attributes["param"])
+            // Read after the handler, as the mouse does: one that `setXmlParam`s its own action
+            // sends the new one.
+            runtime.hooks.actionRequested?(call.object.attributes["action"] ?? "", call.object.attributes["param"])
             return .null
         }
         table.add("settargetx", 1) { runtime, call in

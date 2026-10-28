@@ -492,7 +492,10 @@ measured on its own from the same baseline**, so a row does not depend on the or
 give the same rows apart from window ids. A stable listing is two identical `winhelper windows`
 reads 250 ms apart, **alpha excluded** (a `.wmz` pane fades in), capped at 4 s. Stdout is one
 `CENSUS <skin>: main WxH, N opened, N no-window, N unreachable, N residue` line per skin. A corpus
-run takes about a minute per skin, so hand it to a worker and run it in the foreground.
+run takes about a minute per skin, so hand it to a worker and run it in the foreground. With
+`--shots` it waits 10 s after launch before the baseline, so timer-filled texts and cross-fades
+have settled, and captures the baseline windows (main first) as `shots/<skin>/<role>-<id>.png`
+beside the item windows.
 
 **Skins are isolated from each other.** The app saves window sizes in its defaults, and some of
 those keys are shared by every skin (`hostedInteriorSize2.*`; see
