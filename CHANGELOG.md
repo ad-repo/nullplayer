@@ -22,6 +22,11 @@
   hm_Touch, MD Ganbare Rakkatan the Sixth, Ayanami Rei the Fifth, MetAlchemy III, H2O Liquid,
   MIDISUI, Moon Groove, Moonkore, Music Show, Mad Magazine, RazorEdge, RODE 3 Lite, Slimline XP,
   The Crow, YoYoBoy, Vision, wasabi.player, Winamp Portrait and Winamp Single GUI.
+- **25 more Winamp Modern (`.wal`) skins checked and fixed in the app** (the fourth corpus intake):
+  cPro - Mecha, G2, GlassAMP, iSkin, Jenna loves Mambo, JIP, LG Cookie, Manchester United Football
+  Club: The Red Devils, MBOS, MfS3, MiPod, MSkin RyokoAsakura, MultiButtons, NEO, Official The
+  Music Skin, OrbFace, PAD, Puma Skin, Quadelic, Sepultura, Silverskin 3, Star Trek LCARS AMP
+  PADD II, The Duk Side, WINyaMP3 and ZWAN.
 
 ### Fixes
 
