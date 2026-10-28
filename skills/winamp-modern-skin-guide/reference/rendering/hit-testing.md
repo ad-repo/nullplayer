@@ -375,6 +375,15 @@ native library pane kept drawing over the hole. Cut leaves are now skipped when 
 is collected, and a wrapper left with none fills its box. The corpus sweep moved only the two Bento
 editions (normal and shade); XENERGY is unchanged.
 
+**`sysregion="0"` opts an overlay out of a region window** (B286, 2026-10-27). In a layout with
+no per-pixel alpha (`layoutWantsOpaqueBacking`) every painted pixel is window, so an object that says
+`sysregion="0"`, itself or by a group above it, draws `.sourceAtop`: it tints what is already there
+and never adds alpha. cPro__Mecha marks exactly its watermark and overlay-word layers so; its `wm1`
+(grey at alpha ≤ 44) hangs into the 5px clear resize strip below ~393 wide and came out an opaque
+dark smudge. The clip is to what is drawn *before* the object, not the finished region (marked
+`ponytail:` in `paintsOnlyInsideRegion`). Gold+silver moved only Prakrit's shutter controls by
+maxdelta 1 (`.sourceAtop` rounding over opaque art). `desktopalpha` layouts are unchanged.
+
 The shape reaches the **window** without any `NSWindow` work: all three `.wal` window paths — the
 player, auxiliary containers, and the hosted-window materializer — already set `isOpaque = false`,
 a clear `backgroundColor` and `hasShadow = false`, so an erased corner is genuinely transparent. It

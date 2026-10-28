@@ -24,18 +24,25 @@ ever rendered a frame. `WinampModernRenderDumpTests` renders every container/lay
 PNG and reports the scene:
 
 ```sh
-WINAMP_MODERN_WAL=/path/Skin.wal \
-WINAMP_MODERN_RENDER_DUMP=/tmp/render \
-  swift test --filter WinampModernRenderDumpTests
+scripts/wal_dump.sh <skin|path> [--out <dir>] [--grep <ERE>] [--skip-build]
 ```
 
+`wal_dump.sh` is the one way to run it for one skin. It looks the skin up by name across the corpus
+tiers, empties the output directory, logs to `<dir>/dump.log`, and prints `DUMP PASS|FAIL`, the PNG
+count and at most 60 log lines matching `--grep`. A skipped test counts as `FAIL`. Given a directory
+instead of a skin, it dumps every archive in it in one invocation — an intake batch's Phase 2 dump. Probe variables are
+read from the caller's environment, so put them in front. The hand form it wraps is
+`WINAMP_MODERN_WAL=<archive> WINAMP_MODERN_RENDER_DUMP=<dir> swift test --filter
+WinampModernRenderDumpTests > <log> 2>&1`. A skin's own XML, MAKI and reference images come from
+`scripts/wal_skin_src.sh <skin> [<ERE>]`, which unpacks the archive once per sha256 and greps it with
+CRLF stripped.
+
 The **triage inventory dump** (`skills/skin-triage` Phase 2) adds missing bitmaps, script bindings and
-script-hooked hit targets in one run; redirect, never pipe:
+script-hooked hit targets in one run:
 
 ```sh
-WINAMP_MODERN_WAL=/abs/Skin.wal WINAMP_MODERN_RENDER_DUMP="$S/base" WINAMP_MODERN_RENDER_BITMAPS=1 \
-  WINAMP_MODERN_RENDER_SCRIPTS=bindings WINAMP_MODERN_RENDER_CLICKABLE=1 \
-  swift test --filter WinampModernRenderDumpTests > "$S/base.log" 2>&1
+WINAMP_MODERN_RENDER_BITMAPS=1 WINAMP_MODERN_RENDER_SCRIPTS=bindings WINAMP_MODERN_RENDER_CLICKABLE=1 \
+  scripts/wal_dump.sh <skin> --grep 'missing=|FINDING'
 ```
 
 `WINAMP_MODERN_WAL` also accepts a **directory**, which renders every `.wal` in it inside one
@@ -82,7 +89,7 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_RENDER_SHOW=<container>[,<container>]` | open auxiliary windows the way the user does from **Skin Windows**, dispatching `onSetVisible` to them and settling again afterwards. Without it the harness only ever sees the windows a skin opens by default, so a defect confined to one that ships `default_visible="0"` — Defix's speaker cabinets, whose `getVisBand` timer *starts* from `onSetVisible` — is invisible to every other probe. **A `default_visible="1"` window is opened without it** (Phase 40), because the app opens it too: the line reads `SHOW <id> (default_visible)`, and a container the app refuses to auto-open prints `DEFAULT-VISIBLE <id> suppressed: <reason>` instead. The settle applies to both |
 | `WINAMP_MODERN_RENDER_EQ=<band>=<value>[,…]` | drive an equalizer change from **outside** the skin — the route a preset, the menu bar or the classic equalizer window takes — and print the handlers it reaches (`EQ handler onEqBandChanged -> ledfillbar.xml`), the values driven, and every `EQ_BAND`/`EQ_PREAMP` slider's resulting position (−127…127 unless it declares a range). `band` is 0…9 or `preamp`, `value` is MAKI's −127…127; bare `1` sweeps every band. Without it the harness installs no equalizer at all, so `getEqBand` answers 0 and the events never fire. Phase 41's addition, and the only headless way to see a readout that follows the *event* rather than the drag |
 | `WINAMP_MODERN_RENDER_TEXT=1` | poll the host-bound text objects the way the running window does, so **`onTextChanged`** fires headlessly. Prints `TEXT handler -> <script> owner=<id>` per handler reached (with its failure, if any), `TEXT ontextchanged handlers=<n>`, and a `TEXT bound` line per object that declares the event with the content it currently reads. The poll lives in the window controller, so without this every `onTextChanged` in the corpus measures as an unreached handler and a skin whose readouts are written *only* from it reads as a skin with no readouts. Pair with `RENDER_PLAYLIST` for the `PE_Info` feeds, which are empty until there is a queue. B38's addition |
-| `WINAMP_MODERN_RENDER_PLAYLIST=<count>[,current=<n>]` | stand a synthetic queue up behind the component seam **before** the scripts start — the only way a skin's `PlEdit` API can be observed headlessly, since the dump harness sets no component host and every script that walks the queue otherwise takes its empty branch. It also fills the drawn playlist panel, which has always come out as an empty box for exactly that reason. Prints `PLAYLIST before:` / `PLAYLIST after:` so an edit a script made (`removeTrack`, `moveTo`, `clear`) is visible, and `PLAYLIST reveal row=<n>` for a `showTrack`. Pair with `WINAMP_MODERN_CALL_TRACE=1` to see each call and its result. Phase 42's addition |
+| `WINAMP_MODERN_RENDER_PLAYLIST=<count>[,current=<n>]` | stand a synthetic queue up behind the component seam **before** the scripts start — the only way a skin's `PlEdit` API can be observed headlessly, since the dump harness sets no component host and every script that walks the queue otherwise takes its empty branch. It also fills the drawn playlist panel, which has always come out as an empty box for exactly that reason. Prints `PLAYLIST before:` / `PLAYLIST after:` so an edit a script made (`removeTrack`, `moveTo`, `clear`) is visible, and `PLAYLIST reveal row=<n>` for a `showTrack`. Pair with `WINAMP_MODERN_CALL_TRACE=1` to see each call and its result. Phase 42's addition. **Set it for any reference match that shows skin EQ sliders:** the same host carries the flat EQ, and without it every `EQ_BAND`/`EQ_PREAMP` thumb draws at its minimum (Ryoko_Asakura's open EQ, intake #4) — a harness blind spot, not a skin defect |
 | `WINAMP_MODERN_RENDER_KEY=<accelerator>[,<accelerator>]` | press keys at the skin the way the window does — `System.onKeyDown("alt+g")` — and print the handlers each one reached (`KEY handler alt+g -> skin.xml`) plus `KEY <accel>: handlers=<n> consumed=<0/1>`, where `consumed` is whether any handler ran MAKI's `complete;` (what tells the view to swallow the key). Accelerators are Winamp's own lowercase strings: `alt+g`, `ctrl+w`, `esc`. Without it the harness has no keyboard at all and every `onKeyDown` in the corpus measures as an unreached handler. Note the harness answers `isActive()` **true** for every object (no windows, so no focus), where the app answers per window — a `ctrl+w` that measures `consumed=1` here is still gated by focus in the app. Phase 43's addition |
 | *(always on, with `RENDER_DUMP`)* | **`VIDEO holder <container>/<layout>: <id><frame> cmdbar=<0/1>`** — the video box a skin declares, and the two things the window layer needs from it: the frame the picture is parked at, and whether the holder asked for Winamp's command bar (`noshowcmdbar=`). A `video=declared:…` catalog entry whose container turns out to hold no `<component>` prints no line at all, which is exactly the Hoop_Life_WA3 / Media_Whore case where the skin routes but has no box and the host's own window takes the video. B20's addition. A holder that is in the graph but **not in the scene** prints `<id> hidden` with no frame (B23) — an SUI skin keeps its video in a tab, so at load every visibility-filtered probe answered "this skin declares no video box" while cPro-Bento's Video tab sat empty and the film opened a window of its own |
 | *(always on, with `RENDER_DUMP`)* | **`VIS holder <container>/<layout>: <id><frame>`** — the skin's AVS/visualization **component** box, the one the host's own engine fills, and **`VIS box <container>/<layout>: <id><frame> mode=<n>(<name>)`** — every `<vis>` in the layout with the mode it asks for. The two are different surfaces (plugin vs. built-in analyzer) and telling them apart is the whole routing question, so both print. A holder in the graph but **not in the scene** prints `<id> hidden` with no frame, the same pass `VIDEO holder` and `PLAYLIST holder` each already needed (B23a, 2026-08-30). Without it every **player-embedded** holder in the corpus measured as absent — a skin parks its visualization group off-canvas under a `visible="0"` group and slides it in from a script (BLAKK: `x="161"` in a 160-wide `remote` layout, moved by `minivis.maki`) — and the corpus table recorded that absence as "none embeds the component in the player" for as long as it stood. **16 skins declare a `{0000000A}` surface and 6 embed one in the player**; the roster is in [components/visualization.md](components/visualization.md) → *The corpus, measured*. Note the failure was **visibility, not layout selection**: the dump activates every layout and printed BLAKK's `VIS box main/remote` throughout. B20a's addition |
@@ -105,6 +112,14 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_DIRTY_TRACE=1` | **live**, debug builds: one `DIRTY` line per *partial* paint of the **direct-draw fallback** (a canvas window never enters `draw(_:)`; its rects are on whole device pixels by construction) — the dirty rect, the rects being drawn and the clip, in **device pixels**, `FRACTIONAL` on any edge off the grid, and the CTM `draw` was handed. Its first reading (B80, 2026-09-28) is the one to remember: **a `.wal` view's `draw` runs at CTM 1.0 on a 2x panel** — AppKit records it into a display list and replays it at the backing scale — so anything that derives a pixel grid from `context.ctm` inside `draw` is aiming at points. That is why the renderer carries `devicePixelsPerContextUnit` |
 | `WINAMP_MODERN_UI_SIZE=<percent>` | **live**, debug builds: apply that UI Size once the skin has loaded, as a skin's `setScale` would. UI Size is otherwise only in the context menu, which cannot be driven, so a fractional-scale defect had no launch route: `WINAMP_MODERN_UI_SIZE=105 skills/app-control/scripts/launch.sh <skin>` |
 | `WINAMP_MODERN_SYNC_FRAMES=1` | **live**: render every frame on the main thread instead of the canvas's queue (`WinampModernMainView+Frames`). The A/B switch for "did rendering off the main thread cause this?" — one binary, two launches. Also the way to see what the queue saves: debug cPro Bento, playing, ran **84.6%** main-thread busy with it and **36.9%** without (2026-10-20) |
+| `WINAMP_MODERN_SYNC_SNAP_TARGET=1` | the A/B switch for B293: a speed-0 `gotoTarget` answers `onTargetReached` synchronously, inside the caller, as before, instead of on the next tick ([scripting.md](scripting.md) → *gotoTarget animation*). Headless and live. Under it Ryoko Asakura's notifier starts no timers (no `MAKI timer start … by=notifier.xml` line) |
+| `WINAMP_MODERN_GROUP_NO_ORIGIN_CULL=1` | the A/B switch for B297: a node lying wholly left of or above a group's origin, on an axis the group does not clip, draws and is hit again ([rendering.md](rendering.md) → *A slide is a move within a box*). Headless and live. Under it iCandy-2's closed remote shows a strip of its LCD left of the body |
+| `WINAMP_MODERN_FINDOBJECT_CONTAINER=1` | the A/B switch for B298: `findObject` widens to the receiver's container again instead of its layout ([loading.md](loading.md) → *Retained graph and coordinates*). Headless and live. Under it one stopped click on StarTrek_LCARS_AMP_PADD_II's `Rew5s` gives `onleftbuttondown -> 5` (`RENDER_CLICK='main/normal@151,179'`, `CALL_TRACE=1`), 2 without |
+| `WINAMP_MODERN_INLINE_PLAYLIST=1` | the A/B switch for B292: the playlist holder draws inline at its declared z-position again instead of in the deferred host-component pass ([components.md](components.md) → *Deferred host components*). Headless and live. Under it Ryoko_Asakura's `pledit.char` art covers the start of every title |
+| `WINAMP_MODERN_HIDEOBJECT_LATER=1` | the A/B switch for B304: a `hideobject`/`showobject` reaches a direct child of its owner that the same file declares after it, or anything inside one (a `group=` scope), again. Headless and live. Under it OrbFace's `close` button (declared after the `hideobject` aimed at the frame's close) is hidden. |
+| `WINAMP_MODERN_PLAYLIST_BAR_ANY_FRAME=1` | the A/B switch for B305: `WasabiSurfaceSynthesizer.usableFrame` takes the thinnest frame for every window, even one whose chrome draws the playlist's `PE_*` buttons. Under it LG_Free's synthesized library wears the Add/Rem/Sel/Misc/List bar. |
+| `WINAMP_MODERN_AUX_CLOCK=0` | **live only** A/B switch for B310: the playback clock and the spectrum no longer reach a skin's other windows (`WinampModernMainWindowController.updateTime`/`updateSpectrum` fan out to `auxiliaryContainers`). Under it Manchester_United_Red_Devils_Skin's `visual` window (a `<vis>` and a `display="time"` text) shows a frozen timer and a barely moving analyzer. |
+| `WINAMP_MODERN_CAPTION_AT_REST=1` | **live only** A/B switch for B314: the `<text display="componentbucket">` caption names the first on-screen icon at rest, as it did before. Under it The_Duk_Side_V3 prints `Playlist Editor` under its duck. |
 | `WINAMP_MODERN_ASSUME_VISIBLE=1` | **live**, debug builds: every `.wal` window counts as on screen whatever its occlusion says. A locked screen or a screen saver occludes every window, which stops them painting by design (B119), so this is what lets an agent drive and capture the app with nobody at the machine. `winhelper capture` still works locked; clicks and `capture-region` do not — use `WINAMP_MODERN_LIVE_CLICKS`. It also makes `SkinWindowShadow` (every family) pull shapes whatever its parent's occlusion says; `capture-region` cannot photograph a locked screen, so capture the shadow child itself: `screencapture -l <id>` of the window titled `NullPlayer.SkinShadow`, 30 pt larger than its parent on every side, and composite the parent over it |
 | `WINAMP_MODERN_LIVE_CLICKS=<s>@<x>,<y>[;…]` | **live**, debug builds: click the main window at view point `x,y` (top-left, 1x points) `s` seconds after it first gets a window, through its own `sendEvent`, with a `mouseMoved` first so hover-revealed controls are there. `<s>@move:<dx>,<dy>` moves the window instead. Posted events never reach a locked session; these do. A background window that never becomes key never links its shadow child, so open with a `move:1,0;…@move:-1,0` pair before measuring a shadow |
 | `WINAMP_MODERN_PAINT_RATE=1` | **live, and release builds too** — the one `WINAMP_MODERN_*` probe that survives a release binary, because the question it answers is a release-profile question. Every 2 s, per window: `paints/s=` (frames shown), then `dirty=` (the mean share of the window covered by a frame's rects' bounding box) and `rects=` (the mean share of the rects themselves). A periodic update that repaints the whole window reads `dirty=100%` at the clock's rate. That is how B152 found WMP11-BlueVU's player at `paints/s=120 dirty=100%` and confirmed the fix at `88 / 25%`. Read it beside `sample`: it says *what* is repainting, and the profile says what that costs. `window=` is blank for a skin window with no title |
@@ -330,6 +345,14 @@ That is how a title box overlapping the artist beneath it survived a clean rende
 are deliberately long enough to need more room than a toast declares, because auto-width and ticker
 behaviour are only exercised by a string that does not fit.
 
+**A notifier in a plain dump is drawn at its declared size, and the toast never is** (B275). The
+harness wires no `layoutResizeRequested`, so a script's `resize()` on the notifier layout and the
+host's `setNotifierText` widening (to max(declared, 350)) never reach the canvas. Clipped notifier
+text in a batch dump is therefore not a finding until it survives the toast's real size: drive
+`RENDER_EVENTS=notifier/normal@onshownotification` with `CALL_TRACE=1` to read the `resize(…)` the
+script asks for, then dump again at that size with `RENDER_SIZE` (350 wide for a ClassicPro notifier,
+whose own fill waits on `onAlbumArtLoaded`, an event NullPlayer never sends).
+
 ### The corpus census — one structural row per corpus skin
 
 `scripts/wal_skin_census.sh <outdir>` is the sweep's reporting sibling. It runs one render-dump pass
@@ -539,13 +562,18 @@ baseline pass and count only what differs from both.
 | `handlers` | handlers run, including script-to-script chains |
 | `failed` | `method:<name>` for a call the runtime lacks — the demand index's unit — else the diagnostic code |
 | `changed` | attributes changed graph-wide, `+px` when this window's pixels moved |
-| `effect` | `action:<action>;<param>` (a script's), `markup:<action>` (the view's), `window:<id>=0/1`, `menu:<items>` |
+| `effect` | `action:<action>;<param>` (a script's), `markup:<action>` (the view's), `cfgattrib:<name>` (the view's flip of a bound control with no `action`, its command as `action=` is a plain button's — counted since B279, because a host flag such as repeat moves no graph attribute and a ticker masks its pixels), `window:<id>=0/1`, `menu:<items>` |
 
 **What it does not do.** Only the opening layout of open windows is walked, at rest: a control in a
 closed drawer, another layout or a later state is S3.5's. A `covered:` row is often the *other half
 of a state pair* (mmd3's `cttoggle2` sits under `cttoggle` until the drawer opens), so read it as
 "not reachable in this state", not "never reachable"; `covered:layout` is the exception, a control
-the hit test never admits at all. And a plain `action=` button with no script is not a target at all — its whole behaviour is static,
+the hit test never admits at all — unless the skin ghosts it itself: -MfS3-'s `cfgOptionButton`
+radio options run `setXmlParam("ghost", activated)` in `onActivate`, so the option checked at load is
+`ghost=1` and the click falls to the layout by design (B272). Read the control's `ghost=` in
+`RENDER_PROBE` before calling `covered:layout` a hit-test defect. A control whose handler only calls `System.navigateUrl` reads
+`silent`: the call is routed to the browser hook, which the sweep does not record as an effect
+(Official_Zwan_Skin's `player.web`, 2026-10-26). And a plain `action=` button with no script is not a target at all — its whole behaviour is static,
 and the host-action census answers it. Menus are counted, not walked item by item: the plan's per-item menu sweep is not
 built.
 
@@ -726,7 +754,10 @@ flips between 330x137 and 660x274 the same way as MoonLight's (B228's sweeps, bo
 like S7Reflex's (B237, 2026-10-21). `hm_Touch_m_1`'s `MLibrary/normal` flips its canvas between
 354x280 and 528x280, its library holder with it, between solo runs of one build (2026-10-23).
 `Winamp_Single_GUI`'s `MLibrary/normal` flips `min=354x164`/`min=452x164` the same way (452, 452,
-354 over three solo runs of one build, 2026-10-24).
+354 over three solo runs of one build, 2026-10-24). `EMP2`'s `MLibrary/normal` flips its canvas
+400x200/450x200 (`min=303x115`/`min=450x115`) the same way, across B270's before/after sweeps, a
+change that cannot reach it (2026-10-26). `GlassAMPfinal`'s `DLibrary/normal` canvas flips 330x220/200x152 the same way as
+MoonLight's, across B271's before/after sweeps, a layout with no `background=` the change cannot reach (2026-10-26).
 
 Those grep-selected lines are the invariants worth diffing: the container list, the surface catalog,
 the window menu, every layout's canvas size and node count, every hosted holder's frame, and the

@@ -219,6 +219,18 @@ final class WinampModernPhase8Tests: XCTestCase {
                                       in: runtime))
     }
 
+    /// B298: StarTrek_LCARS_AMP_PADD_II loads `main.maki` in both layouts of `main`; widened to the
+    /// container, the compact copies bound the normal layout's `Rew5s` and one click ran five times.
+    func testFindObjectDoesNotEscapeTheReceiversLayout() throws {
+        let runtime = try makeGraphRuntime()
+        let receiver = try object(named: "receiver", in: runtime)
+        XCTAssertNotNil(runtime.loadedSkin.runtime.graph.objects(xmlID: "other.layout.target").first,
+                        "the target exists, but only in another layout of the same container")
+
+        XCTAssertNil(try invokeLookup("findobject", id: "other.layout.target", from: receiver,
+                                      in: runtime))
+    }
+
     func testGetObjectStillDoesNotSearchSiblingSubtrees() throws {
         let runtime = try makeGraphRuntime()
         let receiver = try object(named: "receiver", in: runtime)
@@ -446,6 +458,9 @@ final class WinampModernPhase8Tests: XCTestCase {
                 <layer id="sibling.target"/>
                 <layer id="duplicate.target"/>
               </group>
+            </layout>
+            <layout id="compact" w="50" h="50">
+              <layer id="other.layout.target"/>
             </layout>
           </container>
           <container id="Other">

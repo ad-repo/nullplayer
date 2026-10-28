@@ -677,6 +677,17 @@ enum WasabiAnimation {
         if steps >= distance { return (target, false) }
         return (start + (target > start ? steps : -steps), true)
     }
+
+    /// A layer that plays itself from markup (`autoplay`/`autoreplay`, no `play()` yet) starts when it
+    /// is first drawn. Without a stamp `state` counted from uptime 0, so a once-only intro was over
+    /// before the window opened: Official_Zwan_Skin's rainbow wipe and thinger strips sat on their
+    /// last frame (B280). A loop is periodic, so its start only sets its phase.
+    static func stampFirstShow(_ object: WasabiObject, clock: TimeInterval) {
+        let attributes = object.attributes
+        guard attributes["animstart"] == nil, attributes["playing"] == nil,
+              attributes["autoplay"] == "1" || attributes["autoreplay"] == "1" else { return }
+        _ = object.setAttribute("animstart", value: String(clock))
+    }
 }
 
 struct WasabiSceneNode {
@@ -804,7 +815,7 @@ final class WasabiSceneRenderer {
     /// Optional sandboxed seam supplying playlist/EQ/library content for embedded component holders.
     /// Weak so the retained graph never keeps the host (owned by the window controller) alive.
     weak var componentHost: WinampModernComponentHost?
-    private var playlistScrollOffset = 0
+    private(set) var playlistScrollOffset = 0
     /// The scroll position `revealPlaylistRow` computes, for the tests that assert the arithmetic.
     var playlistScrollOffsetForTesting: Int { playlistScrollOffset }
     /// How large NullPlayer draws its own text on this scene's host surfaces — the embedded playlist
@@ -1309,10 +1320,11 @@ final class WasabiSceneRenderer {
 
     private var sceneNodeCache: (generation: UInt64, canvas: CGSize, nodes: [WasabiSceneNode])?
 
-    func sceneNodes(canvas: CGSize) -> [WasabiSceneNode] {
+    func sceneNodes(canvas: CGSize, includingHidden: Bool = false) -> [WasabiSceneNode] {
         let rootRect = CGRect(origin: .zero, size: canvas)
         var nodes: [WasabiSceneNode] = []
-        append(object: layout, frame: rootRect, clip: rootRect, into: &nodes, isRoot: true)
+        append(object: layout, frame: rootRect, clip: rootRect, into: &nodes, isRoot: true,
+               includingHidden: includingHidden)
         return nodes
     }
 
@@ -1777,7 +1789,7 @@ final class WasabiSceneRenderer {
     /// Move the caption to the icon under the pointer. Returns whether it moved.
     @discardableResult
     func focusComponentBucketIcon(at point: CGPoint) -> Bool {
-        guard let hit = componentBucketIcon(at: point) else { return false }
+        guard let hit = componentBucketIcon(at: point) else { return componentBucket.pointerLeftTheIcons() }
         return componentBucket.focus(hit.index)
     }
 
@@ -2191,9 +2203,11 @@ final class WasabiSceneRenderer {
                    includingHidden: includingHidden, inheritedAlpha: childAlpha,
                    masks: childMasks)
         }
-        if let aperture = targetAperture(of: object, children: nodes[firstChildNode...]) {
-            for index in firstChildNode..<nodes.count {
-                nodes[index] = nodes[index].clipped(to: aperture)
+        let aperture = targetAperture(of: object, children: nodes[firstChildNode...])
+        for index in firstChildNode..<nodes.count {
+            if let aperture { nodes[index] = nodes[index].clipped(to: aperture) }
+            if liesBeforeOrigin(of: object, frame: resolved, child: nodes[index].frame) {
+                nodes[index] = nodes[index].clipped(to: .zero)
             }
         }
     }
@@ -2283,6 +2297,7 @@ final class WasabiSceneRenderer {
         // that follow read the same attribute, so they are idempotent.
         context.setAlpha(effectiveAlpha)
         applyFlip(of: object, frame: node.frame, context: context)
+        if paintsOnlyInsideRegion(object) { context.setBlendMode(.sourceAtop) }
 
         // `drawbackground="0"` means the `background` bitmap states the object's box and nothing
         // else — the skin does not want it painted. Free until now, because a group's box resolved
@@ -2352,7 +2367,7 @@ final class WasabiSceneRenderer {
             drawComponentBucket(object, frame: node.frame, context: context)
         } else if WinampModernComponentRegistry.isHolderElement(object.tag),
                   let kind = Self.componentKind(of: object) {
-            drawComponent(kind: kind, object: object, frame: node.frame, context: context)
+            drawComponent(kind: kind, node: node, context: context)
         } else if object.tag.is(.images), let image = filmstripFrameImage(object) {
             // Before the plain-bitmap branch: an `<images>` names its sheet with `images=`, not
             // `image=`, so `resolvedBitmapID` answers nil for it and the object drew nothing at all.
@@ -3376,9 +3391,14 @@ final class WasabiSceneRenderer {
         context.restoreGState()
     }
 
-    private func drawComponent(kind: WinampModernComponentKind, object: WasabiObject,
-                               frame: CGRect, context: WasabiDrawList) {
+    private func drawComponent(kind: WinampModernComponentKind, node: WasabiSceneNode,
+                               context: WasabiDrawList) {
+        let object = node.object, frame = node.frame
         guard frame.width > 1, frame.height > 1 else { return }
+        if Self.defersToOverlayPass(kind) {
+            deferredHostComponents.append((kind, node))
+            return
+        }
         switch kind {
         case .playlist: drawPlaylistComponent(object, frame: frame, context: context)
         case .equalizer: drawEqualizerComponent(frame: frame, context: context)
@@ -3399,8 +3419,7 @@ final class WasabiSceneRenderer {
             // letterbox margins around the hosted picture (B20).
             context.setFillColor(NSColor.black.cgColor)
             context.fill(bledHostComponentRect(frame))
-        // Deferred to the overlay pass below — see `deferredHostComponents`.
-        case .waveformSeeker: deferredHostComponents.append((kind, frame))
+        case .waveformSeeker: break // always deferred, above
         case .library:
             context.setFillColor(palette.contentBackground.cgColor)
             context.fill(bledHostComponentRect(frame))
@@ -3438,34 +3457,10 @@ final class WasabiSceneRenderer {
     /// **No background fill.** The skin has already drawn this rect — Big Bento shows
     /// `waveseeker.rounder.bg` under it in the same frame — and painting over it is what made the
     /// unrecognized-holder path put a slab over the seek bar (BB12).
-    /// Host components the skin backs with its **own** artwork, drawn after the whole scene.
-    ///
-    /// Winamp gives a plugin-hosted surface a real child window, which floats above every layer the
-    /// skin draws. Ours is painted inline at the holder's declared z-position, and for most
-    /// components that is the same thing — nothing is declared over a playlist or a video box.
-    ///
-    /// The seeker is the exception, and it is the skin that makes it one. Big Bento backs its strip
-    /// with `<layer id="waveseeker.rounder.bg" image="songticker.background.center2" … visible="0">`,
-    /// declared *after* the holder and shown by the skin's own timer **because** the component was
-    /// accepted. In Winamp that layer lands behind the plugin's window; here it landed on top, and a
-    /// full-width dark panel over the strip is indistinguishable from a strip that never drew — which
-    /// is exactly how BB18 presented, right down to the box measuring a uniform `rgb(40,42,48)`.
-    ///
-    /// So a claimed component is drawn last. The frames are collected during the walk (with the
-    /// scene's transform already established) and replayed here inside the same `saveGState`, so the
-    /// coordinates are the ones the walk computed.
-    private func drawDeferredHostComponents(in context: WasabiDrawList) {
-        let pending = deferredHostComponents
-        deferredHostComponents.removeAll(keepingCapacity: true)
-        for (kind, frame) in pending where kind == .waveformSeeker {
-            drawWaveformSeeker(frame: frame, context: context)
-        }
-    }
-
     /// Collected during the scene walk, drained by `drawDeferredHostComponents` in the same frame.
-    private var deferredHostComponents: [(kind: WinampModernComponentKind, frame: CGRect)] = []
+    var deferredHostComponents: [(kind: WinampModernComponentKind, node: WasabiSceneNode)] = []
 
-    private func drawWaveformSeeker(frame: CGRect, context: WasabiDrawList) {
+    func drawWaveformSeeker(frame: CGRect, context: WasabiDrawList) {
         let (samples, isLoading) = host.seekerWaveform
         let played = host.duration > 0
             ? CGFloat(min(max(host.currentTime / host.duration, 0), 1)) : 0
@@ -3590,26 +3585,6 @@ final class WasabiSceneRenderer {
               WasabiFormWidgets.kind(of: object) == nil,
               let label = object.attributes["text"], !label.isEmpty else { return nil }
         return label
-    }
-
-    private func drawTextButton(_ object: WasabiObject, frame: CGRect, context: WasabiDrawList,
-                                pressed: Bool) {
-        guard frame.width > 2, frame.height > 2 else { return }
-        let color = palette.listText
-        context.saveGState()
-        context.setStrokeColor(color.cgColor)
-        context.setLineWidth(1)
-        context.stroke(frame.insetBy(dx: 0.5, dy: 0.5))
-        if pressed {
-            context.setFillColor(color.withAlphaComponent(0.25).cgColor)
-            context.fill(frame.insetBy(dx: 1, dy: 1))
-        }
-        if let label = Self.ownLabel(of: object) {
-            let inset = frame.insetBy(dx: 1, dy: max(0, (frame.height - 11) / 2))
-            drawSurfaceText(label, in: inset, color: color, alignment: .center, pointSize: 9,
-                            context: context)
-        }
-        context.restoreGState()
     }
 
     /// The chrome control an object stands in for when `bitmapID` resolves to no artwork, or nil. The
@@ -3995,7 +3970,7 @@ final class WasabiSceneRenderer {
         return (label, ink)
     }
 
-    private func drawPlaylistComponent(_ holder: WasabiObject, frame: CGRect, context: WasabiDrawList) {
+    func drawPlaylistComponent(_ holder: WasabiObject, frame: CGRect, context: WasabiDrawList) {
         // Drawn by us, coloured by the skin: the list sits inside the skin's own frame, so its text
         // and selection follow the skin's colour resources and its active colour theme.
         let palette = rowPalette
@@ -4009,14 +3984,17 @@ final class WasabiSceneRenderer {
         let maxOffset = max(0, snapshot.rows.count - visible)
         let offset = max(0, min(maxOffset, playlistScrollOffset))
         let pointSize = playlistTextPointSize(in: holder)
+        let scrollbar = playlistScrollbar(in: frame, rowCount: snapshot.rows.count, holder: holder)
         context.saveGState()
         context.clip(to: frame)
+        if let scrollbar { drawPlaylistScrollbar(scrollbar, context: context) }
+        let rowWidth = frame.width - (scrollbar?.track.width ?? 0)
         for slot in 0..<visible {
             let index = offset + slot
             guard index < snapshot.rows.count else { break }
             let row = snapshot.rows[index]
             let rowRect = CGRect(x: frame.minX, y: frame.minY + CGFloat(slot) * rowHeight,
-                                 width: frame.width, height: rowHeight)
+                                 width: rowWidth, height: rowHeight)
             let selected = snapshot.isSelected(index)
             let bar = rowSelectionBackground
             if selected {
@@ -4514,15 +4492,27 @@ final class WasabiSceneRenderer {
     /// buttons, backing plate and the venus wordmark — sat jammed against the left edge at every
     /// window width. (Its declared `x`/`y` are written *before* `fitparent` and so are the ones
     /// Winamp throws away — see `WasabiGeometrySpec.discardingGeometryOverwrittenByFitParent`.)
+    ///
+    /// An axis whose `relat*` the same tag writes *after* `fitparent` keeps its own size (B295):
+    /// that tag restated the axis in full. krazyPlayer's playlist holder is
+    /// `<component fitparent="1" h="-20" relath="1">`, sized to end at its button bar; answered with
+    /// the parent's height it ran 20px over the ADD/REM bar. A bare `w`/`h` still loses (cPro's SUI).
     func geometry(of object: WasabiObject) -> WasabiGeometrySpec {
         var spec = object.geometry
         guard WasabiGeometrySpec.flag(object.attributes["fitparent"]) else { return spec }
-        spec.width = 0
-        spec.height = 0
-        spec.relativeWidth = true
-        spec.relativeHeight = true
-        spec.percentWidth = false
-        spec.percentHeight = false
+        let order = object.declaredAttributeOrder.map { $0.lowercased() }
+        let fitIndex = order.firstIndex(of: "fitparent") ?? order.endIndex
+        func restated(_ name: String) -> Bool { order.lastIndex(of: name).map { $0 > fitIndex } ?? false }
+        if !restated("relatw") {
+            spec.width = 0
+            spec.relativeWidth = true
+            spec.percentWidth = false
+        }
+        if !restated("relath") {
+            spec.height = 0
+            spec.relativeHeight = true
+            spec.percentHeight = false
+        }
         return spec
     }
 
@@ -4712,12 +4702,14 @@ final class WasabiSceneRenderer {
         return size
     }
 
-    /// The widest and the tallest visible component holder the active layout resolves at `canvas`,
-    /// or `nil` when it has none — what both the component-room fit and the hosted component's floor
-    /// measure the window's shortfall from.
-    private func holderExtent(atCanvas canvas: CGSize) -> CGSize? {
-        let holders = sceneNodes(canvas: canvas).filter {
-            WinampModernComponentRegistry.isHolderElement($0.object.tag) && isVisible($0.object)
+    /// The widest and the tallest component holder the active layout resolves at `canvas`, or `nil`
+    /// when it has none — what both the component-room fit and the hosted component's floor measure
+    /// the window's shortfall from. `visibleOnly` is the component-room fit's: a player parks holders
+    /// it is not showing. The floor counts hidden ones too, because a holder's visibility is a skin
+    /// script's moment, not its markup, and the floor must not depend on when it was first asked.
+    private func holderExtent(atCanvas canvas: CGSize, visibleOnly: Bool = true) -> CGSize? {
+        let holders = sceneNodes(canvas: canvas, includingHidden: !visibleOnly).filter {
+            WinampModernComponentRegistry.isHolderElement($0.object.tag)
         }
         guard !holders.isEmpty else { return nil }
         return holders.reduce(CGSize.zero) {
@@ -4736,11 +4728,15 @@ final class WasabiSceneRenderer {
     /// It is a floor even where the declared size already clears it, because a script or a restored
     /// frame can take the window below its declared size: Itemskin declares its library 660 wide and
     /// its own script shrinks it to the 330 minimum on open.
+    ///
+    /// Cached only once the scripts have started: a `Wasabi:*Frame`'s client group — where the holder
+    /// lives — is instantiated by the skin's MAKI, so an answer taken earlier (the component-room fit
+    /// asks before start) reads no holder, and caching it left EMP2's library without its floor.
     private var hostedComponentFloorWidth: CGFloat? {
         let key = activeLayoutID
         if let cached = hostedComponentFloorCache[key] { return cached }
         let computed = computeHostedComponentFloorWidth()
-        hostedComponentFloorCache[key] = computed
+        if loadedSkin.runtime.hasStartedScripts { hostedComponentFloorCache[key] = computed }
         return computed
     }
 
@@ -4750,8 +4746,9 @@ final class WasabiSceneRenderer {
         let declared = defaultSize(for: layout)
         // The arithmetic below assumes the holder stretches with the canvas (`relatw`). Checked rather
         // than assumed: around a fixed-width holder, widening the window only widens the frame.
-        guard let holder = holderExtent(atCanvas: declared),
-              let wider = holderExtent(atCanvas: CGSize(width: declared.width + room, height: declared.height)),
+        guard let holder = holderExtent(atCanvas: declared, visibleOnly: false),
+              let wider = holderExtent(atCanvas: CGSize(width: declared.width + room, height: declared.height),
+                                       visibleOnly: false),
               wider.width > holder.width else { return nil }
         return min(layoutMaximumSize.width, declared.width + room - holder.width)
     }

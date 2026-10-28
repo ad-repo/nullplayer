@@ -2506,6 +2506,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     func clearVideoTrackInfo() { skinView?.updateTrackInfo() }
     func updateTime(current: TimeInterval, duration: TimeInterval) {
         skinView?.updateTime(current: current, duration: duration)
+        // A separate-window skin keeps its clock readout or seek bar in another container (B310).
+        if Self.clocksReachAuxiliaryWindows { auxiliaryContainers.forEach { $0.view.repaintTimeDependentObjects() } }
         // The queue's own length and duration can change while the clock is the only thing ticking
         // (the user edits the playlist mid-track), and this is the cheapest regular beat that sees it.
         refreshBoundText()
@@ -2546,7 +2548,16 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         RunLoop.main.add(timer, forMode: .common)
         boundTextTimer = timer
     }
-    func updateSpectrum(_ levels: [Float]) { skinView?.updateSpectrum(levels) }
+    /// `WINAMP_MODERN_AUX_CLOCK=0` is the A/B switch for B310's fan-out of the clock and spectrum to a
+    /// skin's other windows.
+    private static let clocksReachAuxiliaryWindows =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_AUX_CLOCK"] != "0"
+
+    func updateSpectrum(_ levels: [Float]) {
+        skinView?.updateSpectrum(levels)
+        // The visualization of a separate-window skin lives in another container (B310).
+        if Self.clocksReachAuxiliaryWindows { auxiliaryContainers.forEach { $0.view.spectrumDidArrive() } }
+    }
     func skinDidChange() { skinView?.needsDisplay = true }
     func windowVisibilityDidChange() { repaintVisibleSkinWindows() }
 

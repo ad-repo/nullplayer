@@ -227,6 +227,20 @@ final class WinampModernPhase10Tests: XCTestCase {
         XCTAssertTrue(wrapped.isPlaying)
     }
 
+    /// B280 — a markup self-play starts when first shown, not at uptime 0: Official_Zwan_Skin's
+    /// once-only intro strips were over before the window opened. A `play()` stamp is never moved.
+    func testAMarkupSelfPlayStartsWhenFirstShown() throws {
+        let intro = try makeAnimatedLayer(attributes: ["autoplay": "1", "autoreplay": "0", "speed": "100"])
+        WasabiAnimation.stampFirstShow(intro, clock: 1000)
+        WasabiAnimation.stampFirstShow(intro, clock: 2000)
+        XCTAssertEqual(WasabiAnimation.state(of: intro, frameCount: 5, clock: 1000.25).frame, 2)
+        XCTAssertEqual(WasabiAnimation.state(of: intro, frameCount: 5, clock: 1001).frame, 4)
+
+        let played = try makeAnimatedLayer(attributes: ["autoplay": "1", "playing": "1", "animstart": "500"])
+        WasabiAnimation.stampFirstShow(played, clock: 1000)
+        XCTAssertEqual(played.attributes["animstart"], "500")
+    }
+
     /// A knob turned down runs the range backwards.
     func testAnimatedLayerPlaysAFrameRangeBackwards() throws {
         let object = try makeAnimatedLayer(attributes: [

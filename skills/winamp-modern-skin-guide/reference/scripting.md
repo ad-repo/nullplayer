@@ -376,6 +376,8 @@ Engines are written to run against skins that omit optional pieces, and they ask
   over to bitmaps that do not exist — visible as holes punched through the window's edges.
 - **`getCurCfgVal()`** — the value of the config attribute the object is bound to via
   `cfgattrib="{GUID};Name"`. The GUID is the section key, the same addressing `getItemByGuid` uses.
+  `getXmlParam("cfgval")` on a bound object answers the same value (B279): NEO's and Ashen's
+  `shuf_rep` read it, not `getCurCfgVal()`, and as markup it was always `""`.
 
 #### Winamp's own preferences answer Winamp's defaults
 
@@ -430,8 +432,13 @@ values become zero, and oversized values clamp to `Int32.max` rather than trappi
 
 Skins do not call dedicated bitrate/sample-rate APIs. `songinfo.maki` lowercases
 `System.getSongInfoText()` and pulls values out around the literals `kbps`, `khz`, and the channel
-words. The units must be **attached to the number** (`320kbps`, `44khz`) — a space between them and
-the fields stay empty. `WinampModernHost.songInfoText` builds this; `trackDisplayTitle` supplies the
+words. The units must be **attached to the number** (`320kbps`, `44.1kHz`) — a space between them and
+the fields stay empty. The rate is kHz to **one decimal**, spelled `kHz` (B283): skins compare the
+whole string to `"1411kbps stereo 44.1kHz"`, the stock parser cuts the token at its `.`, NEO slices a
+7-character rate field off the end, and Logicallity's and The_Music's screenshots read `44.1KHZ`.
+classicPro reads it back with `stringToInteger("44.1")`, so `stringToInteger` takes the leading
+integer and ignores the rest (`"44.1"` → 44, `"abc"` → 0), as CardiumII's `44100 HZ` also needs.
+`WinampModernHost.songInfoText` builds this; `trackDisplayTitle` supplies the
 `"Artist - Title"` a song ticker shows (`trackTitle` alone drops the artist).
 
 A skin reads that string through a `<text display="songinfo">`, so that binding must carry
@@ -676,9 +683,12 @@ Two related rules that fell out of the same investigation:
 #### `leftClick()` is a press, not just an event
 
 A script's `obj.leftClick()` does what the mouse does to that object (B71): a togglebutton flips
-(`toggleActivation`), then `onLeftClick`, then the object's `action=`, and — when it has no action — a
-`cfgattrib` control writes its attribute (`toggleConfigAttribute`). That is the order a real click
-runs in `WinampModernMainView`; keep the two in step. Skins use it to
+(`toggleActivation`) or — when it has no action — a `cfgattrib` control writes its attribute
+(`toggleConfigAttribute`), then `onLeftClick`, then the object's `action=`. That is the order a real
+click runs in `WinampModernMainView`; keep the two in step. The bound write comes **before**
+`onLeftClick` since B279: NEO's `shuf_rep` reads `getXmlParam("cfgval")` there to name the button's
+tooltip, and Big Bento announces `Repeat: Playlist` from its release — written after the release, both
+named the state the click had just left. Skins use it to
 route a click through an invisible proxy: Defix's detached visualizer answers Reattach and Random
 with `leftClick()` on a ghosted `cfgattrib` togglebutton (`vis.DTTB`, `vis.random.active`), and while
 `leftClick` dispatched only `onLeftClick` the attribute never moved and both buttons were dead.
@@ -1425,7 +1435,21 @@ against Winamp's 20ms tick). Implemented in `startTargetAnimation` / `tickTarget
 
 **speed = 0 means instant.** Skins use `setTargetSpeed(0)` for snap-to-target (Anaheim's hover
 controls: speed=0 to show, speed=0.5 to fade). The code checks `rawSpeed <= 0` at the top and snaps
-immediately — copy targets to actuals, fire `ontargetreached`, no timer.
+immediately — copy targets to actuals — but answers `ontargetreached` from a one-shot timer on the
+next tick, never inside the caller. Ryoko Asakura's notifier `gotoTarget`s at speed 0 in
+`onScriptLoaded` and only *then* creates the timers its `onTargetReached` starts; answered
+synchronously, the handler started two null timers, so the notifier never typed its text and never
+faded away (B293). `WINAMP_MODERN_SYNC_SNAP_TARGET=1` is the A/B switch back to the synchronous event.
+A sweep taken without `RENDER_SETTLE` can catch a speed-0 chain one tick earlier than before
+(Winampple's `main.normal` gains its `layer.PLEditBG` node; settled, identical).
+
+**A move to where the object already is still takes its duration.** `startTargetAnimation` answers an
+at-target `gotoTarget` with `onTargetReached` from a one-shot timer of `targetspeed` seconds, never
+synchronously: answered inside the `onTargetReached` that re-armed it, the event-reentrancy guard
+dropped it, and Ryoko Asakura's volume readout — a 0.1 s poll built from at-target alpha fades in
+`ryk_volume.m` — froze at the launch volume (B281). A headless dump taken sooner than such a chain's
+speed sees the state before it: Winampple's drawer `SetPLEdit` lands 0.4 s after load (11 fewer
+`main.normal` nodes in the sweep, same pixels; `RENDER_SETTLE=1` restores them).
 
 **Unset target properties stay at their current value.** When a script calls `gotoTarget` without
 setting `setTargetA`, the target alpha must be the object's current alpha, not 0. `targetAttr`

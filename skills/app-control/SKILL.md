@@ -449,7 +449,9 @@ skins can share one file.
   item is unchecked, and Accessibility does not report it minimized. Leaving the on-screen list
   alone proves nothing, because a minimize or `orderOut` looks the same.
 - **The close target is searched for.** The search clicks the top-right corner from the outside
-  in, down to 40 pt. The target moves by mode: Classic's 9×9 box, a gloss frame's corner hit area,
+  in, down to 40 pt: up to 42 clicks per close, and a window with no close target takes all 42,
+  at both sizes. That is why it is a chrome regression check and not a per-skin test. Never run
+  it during a skin intake or triage. The target moves by mode: Classic's 9×9 box, a gloss frame's corner hit area,
   a `.wal` skin's art. Sonos Rooms and Waveform sit 10 pt down, and a stretched Classic EQ
   letterboxes its art, pushing the close about 20 pt down. A miss that shades, resizes or minimizes
   the window is logged as `<step>-miss` and undone.
@@ -490,7 +492,10 @@ measured on its own from the same baseline**, so a row does not depend on the or
 give the same rows apart from window ids. A stable listing is two identical `winhelper windows`
 reads 250 ms apart, **alpha excluded** (a `.wmz` pane fades in), capped at 4 s. Stdout is one
 `CENSUS <skin>: main WxH, N opened, N no-window, N unreachable, N residue` line per skin. A corpus
-run takes about a minute per skin, so hand it to a worker and run it in the foreground.
+run takes about a minute per skin, so hand it to a worker and run it in the foreground. With
+`--shots` it waits 10 s after launch before the baseline, so timer-filled texts and cross-fades
+have settled, and captures the baseline windows (main first) as `shots/<skin>/<role>-<id>.png`
+beside the item windows.
 
 **Skins are isolated from each other.** The app saves window sizes in its defaults, and some of
 those keys are shared by every skin (`hostedInteriorSize2.*`; see

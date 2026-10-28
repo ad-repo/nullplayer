@@ -68,6 +68,28 @@ final class WinampModernB140Tests: XCTestCase {
                               height: definition.defaultSize.height + 50))
     }
 
+    /// B305: LG_Free's status-bar frame draws the playlist's Add/Rem/Sel/Misc/List buttons into its
+    /// own chrome. It wins the tie above, so EQ Studio and the library wore that bar.
+    func testAFrameCarryingThePlaylistBarIsNotTakenForAnotherWindow() throws {
+        let loaded = try makeSkin(statusParam: nil, noStatusParam: nil, playlistBar: true)
+        guard case .skinFrame(let frame) = loaded.surfaceSynthesis.hostedWindows[.equalizerStudio] else {
+            return XCTFail("expected a skin-frame route")
+        }
+        XCTAssertEqual(frame.groupIdentifier, "wasabi.standardframe.nostatusbar")
+    }
+
+    /// …and the playlist keeps that bar even when the bar-less frame is thinner. The main window
+    /// holds no playlist here, so the playlist is a window of its own.
+    func testThePlaylistTakesTheFrameCarryingItsBar() throws {
+        let loaded = try makeSkin(statusParam: "25,28,-50,-80", noStatusParam: "5,5,-10,-10",
+                                  playlistBar: true, holds: "guid:none")
+        let frame = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "nullplayer.playlist.content.frame").first)
+        func holds(_ object: WasabiObject, _ id: String) -> Bool {
+            object.xmlID == id || object.children.contains { holds($0, id) }
+        }
+        XCTAssertTrue(holds(frame, "add"), "the playlist wears the status frame, with its PE_Add button")
+    }
+
     /// A frame that states no rect is left exactly where it was: the frame's own script places the
     /// client from `content=`, and the window is the registry's size. Every skin that ships an
     /// unparameterized standard frame is in this case.
@@ -167,7 +189,9 @@ final class WinampModernB140Tests: XCTestCase {
     /// `param` leaves of the window — HeadAMP's shape, including the `background=` it paints under
     /// the client.
     private func makeSkin(statusParam: String?, noStatusParam: String?,
-                          background: Bool = true) throws -> WinampModernLoadedSkin {
+                          background: Bool = true,
+                          playlistBar: Bool = false,
+                          holds: String = "guid:pl") throws -> WinampModernLoadedSkin {
         let backgroundAttribute = background ? #" background="frame.base""# : ""
         func script(_ param: String?) -> String {
             let attribute = param.map { #" param="\#($0)""# } ?? ""
@@ -177,6 +201,7 @@ final class WinampModernB140Tests: XCTestCase {
         <WasabiXML>
           <groupdef id="wasabi.standardframe.statusbar"\(backgroundAttribute) xuitag="Wasabi:StandardFrame:Status">
             <layer id="frame.art" x="0" y="0" w="0" h="8" relatw="1"/>
+            \(playlistBar ? #"<button id="add" action="PE_Add" x="40" y="-44" relaty="1"/>"# : "")
             \(script(statusParam))
           </groupdef>
           <groupdef id="wasabi.standardframe.nostatusbar"\(backgroundAttribute) xuitag="Wasabi:StandardFrame:NoStatus">
@@ -185,7 +210,7 @@ final class WinampModernB140Tests: XCTestCase {
           </groupdef>
           <container id="main">
             <layout id="normal" default_w="300" default_h="160">
-              <windowholder hold="guid:pl" x="0" y="0" w="20" h="20"/>
+              <windowholder hold="\(holds)" x="0" y="0" w="20" h="20"/>
             </layout>
           </container>
         </WasabiXML>

@@ -201,6 +201,15 @@ CornerAmp ships playlist + EQ, Winamp Modern ships playlist + library. The engin
   nothing happened at all. Relatedly, `drawPlaylistComponent` only lets `palette.currentText` win over
   a selected row's `selectionText` when the skin actually named a current colour; `currentText` falls
   back to `listText`, which is exactly the colour the selection background is drawn to avoid.
+- **The playlist draws a scrollbar while the queue overflows (B284)** —
+  `WasabiPlaylistScrollbar.swift`, at the panel's right edge, rows narrowed by its width. Art from
+  the skin's `wasabi.scrollbar.vertical.background` (tiled), `.button` (the thumb, stretched, never
+  shorter than its bitmap or half the track) and `.grip` (centred); width is the thumb bitmap's.
+  Without art, the `wasabi.scrollbar.background`/`foreground` colours, then the list text. No arrow
+  buttons and no hover/pressed art: NEO's `screenshot.jpg`, the one reference, shows none. A press
+  on the thumb drags from where it was grabbed, one on the bare track centres the thumb there. A
+  queue that fits draws no bar, so every sweep with the stock (fitting) queue is unchanged; see it
+  with `WINAMP_MODERN_RENDER_PLAYLIST=<n>` (NEO `normal` overflows at 8).
 
 There is **one** script runtime and **one** component host per loaded skin, shared by the main window
 and every auxiliary container window. Only the main view (`drivesScripts: true`) owns the *global*
@@ -306,6 +315,12 @@ publishes one: the five surfaces `routeComponentToggle` can actually open (Playl
 Equalizer, Media Library, Visualization, Video), drawn as vector glyphs on a rounded plate. Four
 things are worth knowing:
 
+- **The caption is blank at rest (B314).** It names the icon under the pointer, and after a `CB_*`
+  scroll the first icon on screen; it goes blank when the pointer leaves the icons. The Duk Side V3's
+  own screenshot, taken in Winamp, shows its thinger drawn and its caption slot empty, and the old
+  "first icon at rest" put `Playlist Editor` over the duck where a player's title is read. The focus
+  *plate* is separate and still sits on the first icon at rest. Lobe's one-icon strip is read through
+  its scroll buttons, which still name the icon.
 - **The strip's state is skin-wide, not per object** (`WasabiSkinRuntime.componentBucket`). One skin
   has one thinger however many layouts draw it — Mini_Me_2 declares ten (one per variant), mmd3 three
   (`normal` plus both shades) — and a `CB_*` button names no bucket, so a per-object scroll position
@@ -641,6 +656,14 @@ component box means something painted over it — and the covering object may be
 reveals *in response to* the component being accepted, so a draw-order dump taken at startup will not
 show it. Take that dump late, or after the skin's timers have run at least once.
 
+**The playlist is deferred too** (B292, 2026-10-27): Ryoko_Asakura declares its character art
+`pledit.char` after the list's holder, and painted inline the art cut the start off every title. Each
+deferred node is replayed under its own clip and alpha. Across gold+silver the only other change is a
+1–2 px skin border line, a list-edge strip or a watermark that overlapped a holder and now sits under
+the list (Moon_Groove pl, NEO / NEO_CLASSIC, WMP12 Portrait Connect, LCDx, Sencillo, cPro Mecha).
+It needed B295 first: krazyPlayer's holder resolved 20 px too tall and the deferred list then covered
+its ADD/REM bar. `WINAMP_MODERN_INLINE_PLAYLIST=1` is the A/B switch back to the inline draw.
+
 #### Where a surface lives
 
 `WinampModernSurfaceCoordinator` is the single answer, for menus, skin buttons, and restore alike:
@@ -890,7 +913,7 @@ every skin-owned step has declined (B55, above).
   closes on the shared 40×26 top-right corner target, and drags from the rest of the rim
   (`WinampModernHostChrome.swift`). Reach: the 11 installed engine-`one` cPro skins. Engine `two`
   (`load-two_alpha.xml`) paints `cpro2.genframe.*` and keeps its frame; no non-cPro skin matches.
-  `WinampModernTooltipFrameTests`.
+  `WinampModernTooltipFrameTests`. The headless render dump draws the same rim (B274).
 - **Clicking any window raises all of them (2026-09-27)** — the `.wal` port of W273
   (`wmp-skin-guide/reference/windows/placement.md` § *Raising the skin's windows together*). A skin's
   containers and hosted windows are not controllers, so `WindowManager.raiseOrder` appends

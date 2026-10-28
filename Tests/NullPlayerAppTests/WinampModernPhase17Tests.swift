@@ -127,7 +127,7 @@ final class WinampModernPhase17Tests: XCTestCase {
         XCTAssertEqual(WasabiTextMetrics.content(of: title, host: host), "Artist - Title")
         // `songinfo` is the stream-info line a `songinfo.maki` tokenises for kbps/khz, not the
         // artist/album. The units must stay attached to their numbers.
-        XCTAssertEqual(WasabiTextMetrics.content(of: info, host: host), "320kbps stereo 44khz")
+        XCTAssertEqual(WasabiTextMetrics.content(of: info, host: host), "320kbps stereo 44.1kHz")
     }
 
     func testAlternateTextIsAPlaceholderInXMLAndAnOverrideFromAScript() throws {
@@ -158,7 +158,23 @@ final class WinampModernPhase17Tests: XCTestCase {
         let info = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "info").first)
         let value = try runtime.invoke(method: "gettext", on: MakiObjectReference(.gui(info.stableID)),
                                        arguments: [], program: Self.makeProgram())
-        XCTAssertEqual(value.stringValue, "320kbps stereo 44khz")
+        XCTAssertEqual(value.stringValue, "320kbps stereo 44.1kHz")
+    }
+
+    /// B283: the rate is a 7-character `NN.NkHz` field — NEO reads `strLeft(strRight(text, 7), 2)`.
+    /// classicPro reads it back with `stringToInteger("44.1")`, which must answer the leading 44.
+    func testSongInfoRateIsKilohertzToOneDecimal() throws {
+        let host = Host()
+        XCTAssertEqual(String(host.songInfoText.suffix(7).prefix(2)), "44")
+        host.sampleRateHz = 48_000
+        XCTAssertTrue(host.songInfoText.hasSuffix(" 48.0kHz"), host.songInfoText)
+
+        let (_, _, runtime) = try makeSkin()
+        for (text, expected) in [("44.1", Int32(44)), (" -7x", -7), ("abc", 0), ("", 0)] {
+            let value = try runtime.invoke(method: "stringtointeger", on: MakiObjectReference(.system),
+                                           arguments: [.string(text)], program: Self.makeProgram())
+            XCTAssertEqual(value.integerValue, expected, text)
+        }
     }
 
     // MARK: - 17.2  Hit testing

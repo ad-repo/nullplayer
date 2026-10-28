@@ -67,6 +67,8 @@ final class WinampModernMainView: NSView {
     private var pendingMainMenu: DispatchWorkItem?
     private var rightPressedObject: WasabiObject?
     private var pressedEQHolder: WasabiObject?
+    /// The playlist scrollbar being dragged, and where on its thumb the press landed (B284).
+    private var playlistScrollbarGrab: (holder: WasabiObject, offset: CGFloat)?
     private var draggedDivider: WasabiObject?
     private(set) var hoveredObject: WasabiObject?
     private var isDraggingWindow = false
@@ -1626,6 +1628,8 @@ final class WinampModernMainView: NSView {
             WasabiMenuBar.apply(.normal, to: previous)
         }
         hoveredObject = nil
+        // Leaving the window straight off a bucket icon sends no move that would blank its caption.
+        renderer.componentBucket.pointerLeftTheIcons()
         needsDisplay = true
     }
 
@@ -1780,6 +1784,17 @@ final class WinampModernMainView: NSView {
         if let holder = renderer.componentHolder(at: point) {
             switch holder.kind {
             case .playlist:
+                let rowCount = componentHost?.playlistSnapshot().rows.count ?? 0
+                if let bar = renderer.playlistScrollbar(in: holder.frame, rowCount: rowCount, holder: holder.object),
+                   bar.track.contains(point) {
+                    // On the thumb, drag from where it was grabbed; on the bare track, centre it there.
+                    let offset = bar.thumb.contains(point) ? point.y - bar.thumb.minY : bar.thumb.height / 2
+                    playlistScrollbarGrab = (holder.object, offset)
+                    renderer.dragPlaylistScrollbar(thumbTop: point.y - offset, rowCount: rowCount,
+                                                   in: holder.frame, holder: holder.object)
+                    needsDisplay = true
+                    return
+                }
                 if let row = renderer.playlistRow(at: point, in: holder.frame, holder: holder.object) {
                     if event.clickCount >= 2 { componentHost?.playlistPlay(row: row) }
                     else { componentHost?.playlistSelect(row: row) }
@@ -2015,6 +2030,13 @@ final class WinampModernMainView: NSView {
             updateEqualizer(holder: pressedEQHolder, frame: frame, point: point)
             return
         }
+        if let grab = playlistScrollbarGrab, let frame = renderer.frame(of: grab.holder) {
+            renderer.dragPlaylistScrollbar(thumbTop: point.y - grab.offset,
+                                           rowCount: componentHost?.playlistSnapshot().rows.count ?? 0,
+                                           in: frame, holder: grab.holder)
+            needsDisplay = true
+            return
+        }
         if let pressedObject {
             dispatch(object: pressedObject, event: "onmousemove", point: point)
             updateSlider(pressedObject, point: point)
@@ -2053,6 +2075,7 @@ final class WinampModernMainView: NSView {
             return
         }
         if pressedEQHolder != nil { pressedEQHolder = nil; needsDisplay = true; return }
+        if playlistScrollbarGrab != nil { playlistScrollbarGrab = nil; return }
         let releasedOver = pressTarget(at: point)
         // The drag session is closed **before** any action runs. A titlebar mousetrap is both a drag
         // handle and a `dblclickaction="SWITCH;shade"` control, so its double-click ends in a layout
@@ -2267,6 +2290,14 @@ final class WinampModernMainView: NSView {
             scripts.postPosition(posted, to: .seek)
             traceSeekObjects(posted: posted)
         }
+        repaintTimeDependentObjects()
+    }
+
+    /// Repaint what this scene draws from the playback clock. The other windows of a skin call this
+    /// alone: the script posts and the playback-state check above belong to the one view that drives
+    /// the shared runtime (`drivesScripts`), and running them per window would deliver every
+    /// `onPostedPosition` once per window.
+    func repaintTimeDependentObjects() {
         let rects = timeDependentRects()
         // An *empty* set means this scene has nothing the renderer draws from the clock, which is a
         // real answer and not a classification failure: `display="time"`, a `seek` slider and a seek
@@ -2339,6 +2370,12 @@ final class WinampModernMainView: NSView {
 
     func updateSpectrum(_ levels: [Float]) {
         host.spectrumLevels = levels
+        spectrumDidArrive()
+    }
+
+    /// A spectrum landed in the shared host: start this scene's visualization clock. The skin's other
+    /// windows call this alone, because the levels are the host's and are stored once.
+    func spectrumDidArrive() {
         lastSpectrumArrival = CACurrentMediaTime()
         startVisualizationClock()
     }
@@ -2503,6 +2540,7 @@ final class WinampModernMainView: NSView {
         stopVisualizationClock()
         pressedObject = nil
         pressedEQHolder = nil
+        playlistScrollbarGrab = nil
         draggedDivider = nil
         hoveredObject = nil
         for surface in librarySurfaces.values { surface.prepareForUITeardown() }
@@ -2825,7 +2863,7 @@ final class WinampModernMainView: NSView {
                                   arguments: [.integer(position)])
     }
 
-    private enum ActivationFlip { case none, toggled, radio }
+    private enum ActivationFlip { case none, toggled, radio, config }
 
     /// A `<Wasabi:CheckBox radioid="…">` is a radio, not a toggle: the clicked member goes on and its
     /// set goes off, and clicking the one already on changes nothing — so it is tried before the
@@ -2838,9 +2876,15 @@ final class WinampModernMainView: NSView {
     /// `setActivated` has the last word: ClassicPro's tab button clears every tab and then
     /// `setActivated(1)` on itself from `onLeftButtonUp`, and flipped afterwards the tab just chosen
     /// went dark.
+    ///
+    /// A `cfgattrib`-bound control with no `action` flips its setting here too, for the same reason:
+    /// NEO's `shuf_rep` reads the new value back from `onLeftClick` to name the button's tooltip, and
+    /// flipped after the release it named the state the click had just left (B279).
     private func flipActivation(of object: WasabiObject, around release: () -> Void) -> ActivationFlip {
         let flip: ActivationFlip = scripts.selectRadioMember(object) ? .radio
-            : scripts.toggleActivation(of: object) ? .toggled : .none
+            : scripts.toggleActivation(of: object) ? .toggled
+            : object.attributes["action"] == nil && scripts.toggleConfigAttribute(of: object) ? .config
+            : .none
         release()
         return flip
     }
@@ -2863,15 +2907,15 @@ final class WinampModernMainView: NSView {
         // it is the only thing that says which list a colour-theme switch acts on.
         performAction(action: action, parameter: parameter, object: object)
         if action == nil {
-            // A `cfgattrib`-bound control carries no `action`: the binding *is* what it does. Defix's
-            // whole settings window is built this way, so without it every switch in that window
-            // moved nothing.
-            // Shuffle, repeat and crossfade reach the host from *inside* this call:
+            // A `cfgattrib`-bound control carries no `action`: the binding *is* what it does, and
+            // `flipActivation` already wrote it. Defix's whole settings window is built this way, so
+            // without it every switch in that window moved nothing.
+            // Shuffle, repeat and crossfade reach the host from *inside* that write:
             // `WinampModernConfigBridge` makes their attributes the host's own state, so for a bound
             // button the write **is** the toggle, and the `xmlID` route below must not run as well —
             // doing both flipped each of them twice and left the skin's lamp disagreeing with the
             // engine.
-            if scripts.toggleConfigAttribute(of: object) {
+            if flip == .config {
                 WindowManager.shared.refreshWinampModernSurfaces()
             } else {
                 // A skin that draws the buttons and binds nothing (boom names its artwork
@@ -2930,6 +2974,8 @@ final class WinampModernMainView: NSView {
         performAction(action: resolved.action, parameter: resolved.parameter, object: object)
     }
 
+    static let volumeButtonStep = 0.05
+
     private func performAction(action rawAction: String?, parameter rawParameter: String?, object: WasabiObject? = nil) {
         // `ACTION;PARAM` is the other way a skin writes a parameter — mmd3, ZDL and winampmodern566
         // spell every one of their layout switches that way, and winampmodern566 also writes
@@ -2948,6 +2994,11 @@ final class WinampModernMainView: NSView {
         case "PREV": host.previous()
         case "NEXT": host.next()
         case "EJECT": host.openFiles()
+        case "VOLUME_UP", "VOLUME_DOWN":
+            // The same 5% step the arrow keys take (B299); the engine announces no change, so the
+            // skin's readout is told here.
+            host.volume += action?.uppercased() == "VOLUME_UP" ? Self.volumeButtonStep : -Self.volumeButtonStep
+            updatePlaybackState()
         case "SWITCH":
             // The user clicked a control that switches layout — a titlebar shade button, a
             // `dblclickaction="SWITCH;shade"` mousetrap. That is a decision about how they want this

@@ -20,6 +20,23 @@ wal_corpus_archives() {
     find "${dirs[@]}" -maxdepth 1 -type f -name '*.[wW][aA][lL]'
 }
 
+# wal_resolve_skin <name|path>: one archive path. A name is matched without its extension, ignoring
+# case, across every tier, then the user's WinampModernSkins/ (where an admitted skin has a second
+# copy); it fails on none or on several.
+wal_resolve_skin() {
+    [ -f "$1" ] && { echo "$1"; return 0; }
+    local name="${1%.[wW][aA][lL]}" dirs found
+    IFS=: read -ra dirs <<<"$WAL_CORPUS_ALL"
+    found=$(find "${dirs[@]}" -maxdepth 1 -type f -iname "$name.wal" 2>/dev/null)
+    [ -n "$found" ] || found=$(find "$(dirname "$WAL_CORPUS_ROOT")/WinampModernSkins" -maxdepth 1 -type f \
+                                   -iname "$name.wal" 2>/dev/null)
+    case $(grep -c . <<<"$found") in
+        1) echo "$found" ;;
+        0) echo "no skin named $1 in the corpus or WinampModernSkins/" >&2; return 1 ;;
+        *) echo "several skins named $1; pass a path:" >&2; echo "$found" >&2; return 1 ;;
+    esac
+}
+
 # wal_require_clean_tree <script> <allow_dirty>: a sweep is a build, and an edit landing mid-run
 # invalidates the pass — so refuse a dirty tree unless allow_dirty is 1.
 wal_require_clean_tree() {

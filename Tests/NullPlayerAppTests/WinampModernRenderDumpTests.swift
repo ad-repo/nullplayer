@@ -1151,6 +1151,15 @@ final class WinampModernRenderDumpTests: XCTestCase {
                             } else if runtime.toggleActivation(of: target) {
                                 print("CLICK toggled \(target.xmlID ?? "-") "
                                       + "activated=\(target.attributes["activated"] ?? "0")")
+                            } else if target.attributes["action"] == nil,
+                                      let binding = WinampModernScriptRuntime.configBinding(of: target) {
+                                // A `cfgattrib`-bound control carries no `action`; the binding is
+                                // what it does, flipped where the view flips it (B279). Reports the
+                                // stored value either side, so a settings switch can be driven headlessly.
+                                let before = runtime.configValue(of: target)
+                                runtime.toggleConfigAttribute(of: target)
+                                print("CLICK cfgattrib \(binding.section);\(binding.key) "
+                                      + "\(before) -> \(runtime.configValue(of: target))")
                             }
                         }
                         if let target {
@@ -1259,15 +1268,6 @@ final class WinampModernRenderDumpTests: XCTestCase {
                             else { continue }
                             print("CLICK \(gesture.rawValue)action: \(resolved.action) "
                                   + "param=\(resolved.parameter ?? "-")")
-                        }
-                        // A `cfgattrib`-bound control carries no `action`; the binding is what it
-                        // does, and the *view* is what performs it. Mirror that here so a settings
-                        // switch can be driven headlessly, and report the stored value either side.
-                        if let target, let binding = WinampModernScriptRuntime.configBinding(of: target) {
-                            let before = runtime.configValue(of: target)
-                            runtime.toggleConfigAttribute(of: target)
-                            print("CLICK cfgattrib \(binding.section);\(binding.key) "
-                                  + "\(before) -> \(runtime.configValue(of: target))")
                         }
                         // Skins gate a transition on a timer — Defix's tab switch is literally
                         // `if (anim.isRunning()) return; anim.start();` — so with nothing pumping the
@@ -1510,7 +1510,19 @@ final class WinampModernRenderDumpTests: XCTestCase {
                    WasabiMenuBar.isMenu(object) {
                     WasabiMenuBar.apply(.hover, to: object)
                 }
-                renderer.draw(in: context, hovered: hovered)
+                // A container rehosted in NullPlayer's glass chrome (a tooltip-framed window, a
+                // frameless About page) has its body filled by the view, under the scene (B274).
+                // The partial-repaint probe below redraws through this too, as the view does.
+                let hostChrome = info.object.attributes[WinampModernContainerTopology.hostChromeAttribute] == "1"
+                func drawFrame() {
+                    if hostChrome {
+                        let chrome = WasabiDrawList(ctm: context.ctm, clip: context.boundingBoxOfClipPath.applying(context.ctm))
+                        WinampModernMainView.drawHostChrome(in: chrome, renderer: renderer, isActive: true)
+                        chrome.replay(into: context)
+                    }
+                    renderer.draw(in: context, hovered: hovered)
+                }
+                drawFrame()
                 // WINAMP_MODERN_RENDER_TIME=<frames> repaints the whole scene that many times and
                 // reports the per-frame cost — the measurement behind "does this skin hold 30 Hz?",
                 // and the one Layer FX needs, since a warp is a CPU resample on the paint path. Each
@@ -1637,7 +1649,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
                         context.saveGState()
                         context.clip(to: dirty)
                         context.clear(dirty)
-                        renderer.draw(in: context, hovered: hovered)
+                        drawFrame()
                         context.restoreGState()
                         guard let after = context.makeImage(), let pixels = Self.pixels(of: after) else { continue }
                         // Where the difference is, in device pixels from the top-left, and how many

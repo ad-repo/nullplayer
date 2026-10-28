@@ -18,22 +18,50 @@ extension WinampModernScriptRuntime {
         var targetW: Double
         var targetH: Double
         var targetAlpha: Double
-        let startX: Double
-        let startY: Double
-        let startW: Double
-        let startH: Double
-        let startAlpha: Double
+        var startX: Double
+        var startY: Double
+        var startW: Double
+        var startH: Double
+        var startAlpha: Double
         /// Seconds to reach the target — what Winamp's `setTargetSpeed(float insecond)` takes.
-        let duration: Double
-        let startTime: Double
+        var duration: Double
+        var startTime: Double
+        /// Alpha runs on its own clock: a script that re-aims only the alpha on a timer (G2's lights
+        /// glow) must not restart a slide of the same layer that is still under way (B315).
+        var alphaDuration: Double
+        var alphaStartTime: Double
         let hasTargetX: Bool
         let hasTargetY: Bool
         let hasTargetW: Bool
         let hasTargetH: Bool
         let hasTargetA: Bool
+
+        /// The kinds a script re-aimed since the last `gotoTarget` (B315): a kind it did not re-aim
+        /// keeps its clock, if still under way, instead of crawling to the same target over the new
+        /// call's duration.
+        enum Kind { case geometry, alpha }
+        var retargeted: Set<Kind> = []
+
+        private var hasGeometryTarget: Bool { hasTargetX || hasTargetY || hasTargetW || hasTargetH }
+
+        /// This state with, for each kind `prior` did not have re-aimed, the clock `prior` was running.
+        func continuing(_ prior: TargetAnimationState) -> TargetAnimationState {
+            var carried = self
+            if !prior.retargeted.contains(.geometry), hasGeometryTarget, prior.hasGeometryTarget {
+                carried.startX = prior.startX; carried.startY = prior.startY
+                carried.startW = prior.startW; carried.startH = prior.startH
+                carried.duration = prior.duration; carried.startTime = prior.startTime
+            }
+            if !prior.retargeted.contains(.alpha), hasTargetA, prior.hasTargetA {
+                carried.startAlpha = prior.startAlpha
+                carried.alphaDuration = prior.alphaDuration; carried.alphaStartTime = prior.alphaStartTime
+            }
+            return carried
+        }
     }
 
     func setTarget(_ key: String, object: WasabiObject, value: MakiValue) -> MakiValue {
+        activeTargetAnimations[object.stableID]?.retargeted.insert(key == "targeta" ? .alpha : .geometry)
         _ = object.setAttribute(key, value: String(value.integerValue))
         _ = object.setAttribute("goingtotarget", value: "1")
         return .null
@@ -175,8 +203,23 @@ extension WinampModernScriptRuntime {
         return layout.map(scriptCollapsedLayouts.contains) ?? false
     }
 
+    static let dispatchesSnapTargetSynchronously =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_SYNC_SNAP_TARGET"] == "1"
+
+    /// `onTargetReached` from a one-shot timer, after the handler that called `gotoTarget` returns.
+    private func scheduleTargetReached(objectID id: WasabiObjectID, after delay: TimeInterval) {
+        let timerID = TimerNamespace.targetAnimation.id(for: id)
+        _ = try? timers.schedule(id: timerID, period: delay) { [weak self] in
+            guard let self else { return }
+            timers.cancel(id: timerID)
+            guard let object = loadedSkin.runtime.graph.object(withID: id) else { return }
+            _ = try? dispatch(object: object, event: "ontargetreached")
+        }
+    }
+
     func startTargetAnimation(object: WasabiObject) {
         let id = object.stableID
+        let prior = activeTargetAnimations[id]
         cancelTargetAnimation(objectID: id)
 
         let hasX = object.attributes["targetx"] != nil
@@ -195,7 +238,15 @@ extension WinampModernScriptRuntime {
             _ = object.setAttribute("goingtotarget", value: "0")
             applyContainerGeometry(object)
             notifyGraphDidMutate()
-            _ = try? dispatch(object: object, event: "ontargetreached")
+            // The snap is immediate, the event is not: Ryoko Asakura's notifier `gotoTarget`s at speed
+            // 0 in `onScriptLoaded` *before* creating the timers its `onTargetReached` starts, so
+            // answered synchronously the handler started two null timers and the notifier never
+            // typed its text or faded (B293). `WINAMP_MODERN_SYNC_SNAP_TARGET=1` is the A/B switch.
+            if Self.dispatchesSnapTargetSynchronously {
+                _ = try? dispatch(object: object, event: "ontargetreached")
+            } else {
+                scheduleTargetReached(objectID: id, after: 0)
+            }
             return
         }
         // `setTargetSpeed` is a **duration**: "the number of seconds in which to reach the target"
@@ -207,7 +258,8 @@ extension WinampModernScriptRuntime {
         let cw = Double(object.attributes["w"] ?? "0") ?? 0
         let ch = Double(object.attributes["h"] ?? "0") ?? 0
         let ca = Double(object.attributes["alpha"] ?? "255") ?? 255
-        let state = TargetAnimationState(
+        let now = ProcessInfo.processInfo.systemUptime
+        var state = TargetAnimationState(
             currentX: cx, currentY: cy, currentW: cw, currentH: ch, currentAlpha: ca,
             targetX: hasX ? (Double(object.attributes["targetx"]!) ?? cx) : cx,
             targetY: hasY ? (Double(object.attributes["targety"]!) ?? cy) : cy,
@@ -215,15 +267,19 @@ extension WinampModernScriptRuntime {
             targetH: hasH ? (Double(object.attributes["targeth"]!) ?? ch) : ch,
             targetAlpha: hasA ? (Double(object.attributes["targeta"]!) ?? ca) : ca,
             startX: cx, startY: cy, startW: cw, startH: ch, startAlpha: ca,
-            duration: rawSpeed,
-            startTime: ProcessInfo.processInfo.systemUptime,
+            duration: rawSpeed, startTime: now, alphaDuration: rawSpeed, alphaStartTime: now,
             hasTargetX: hasX, hasTargetY: hasY, hasTargetW: hasW, hasTargetH: hasH, hasTargetA: hasA
         )
+        if let prior { state = state.continuing(prior) }
 
+        // A move to where the object already is still takes its duration before `onTargetReached`.
+        // Answered synchronously, it landed inside the very `onTargetReached` that asked, and the
+        // re-entrancy guard dropped it: Ryoko Asakura's volume readout re-arms an at-target fade from
+        // there as a 0.1 s poll, and froze at the launch volume after one tick (B281).
         if animationReached(state) {
             _ = object.setAttribute("goingtotarget", value: "0")
             notifyGraphDidMutate()
-            _ = try? dispatch(object: object, event: "ontargetreached")
+            scheduleTargetReached(objectID: id, after: rawSpeed)
             return
         }
 
@@ -244,7 +300,9 @@ extension WinampModernScriptRuntime {
         }
 
         // Linear from where the move started, over the stated duration, as Wasabi steps it.
-        let progress = min(1, (ProcessInfo.processInfo.systemUptime - state.startTime) / state.duration)
+        let clock = ProcessInfo.processInfo.systemUptime
+        let progress = min(1, (clock - state.startTime) / state.duration)
+        let alphaProgress = min(1, (clock - state.alphaStartTime) / state.alphaDuration)
 
         func lerp(_ start: Double, _ target: Double) -> Double {
             start + (target - start) * progress
@@ -254,7 +312,7 @@ extension WinampModernScriptRuntime {
         state.currentY = lerp(state.startY, state.targetY)
         state.currentW = lerp(state.startW, state.targetW)
         state.currentH = lerp(state.startH, state.targetH)
-        state.currentAlpha = lerp(state.startAlpha, state.targetAlpha)
+        state.currentAlpha = state.startAlpha + (state.targetAlpha - state.startAlpha) * alphaProgress
 
         // What this tick actually *changed*, kept apart by kind. A 60 Hz step writes an integer
         // attribute, so most ticks of a slow fade write the value the object already has —

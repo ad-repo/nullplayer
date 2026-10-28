@@ -147,6 +147,15 @@ final class WinampModernB142Tests: XCTestCase {
                         "and its subtree is still in the scene")
     }
 
+    /// B295: krazyPlayer's holder `<component fitparent="1" h="-20" relath="1">` restates the
+    /// height axis after `fitparent`, so it keeps its own size and ends at its button bar; the
+    /// width it did not restate is still the parent's.
+    func testAnAxisRestatedAfterFitParentKeepsItsOwnSize() throws {
+        let renderer = try makeRenderer()
+
+        XCTAssertEqual(frame(of: "holder", in: renderer), CGRect(x: 0, y: 0, width: 600, height: 380))
+    }
+
     // MARK: -
 
     private func object(withID id: String, in renderer: WasabiSceneRenderer) -> WasabiObject? {
@@ -175,6 +184,7 @@ final class WinampModernB142Tests: XCTestCase {
               <group id="sui" fitparent="1" h="100"/>
               <group id="inset" fitparent="1" x="4" y="10"/>
               <group id="page" fitparent="1" y="1" h="-1"/>
+              <group id="holder" fitparent="1" h="-20" relath="1"/>
             </layout>
           </container>
         </WasabiXML>

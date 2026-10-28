@@ -303,13 +303,27 @@ over the top; where the layout background is the *only* backing the window vanis
 with it — EPS High-End's notifier preferences draws every control in the skin's near-white list
 colours against nothing at all.
 
-Two bounds keep the fill honest, and both are pinned in `WinampModernB90Tests`:
+Three bounds keep the fill honest, all pinned in `WinampModernB90Tests`:
 
 - **Only when the skin asked.** A layout that declares no `background=` stays transparent — that is
   every `sysregion`-shaped player in the corpus, and filling those would square each one off.
 - **Only a layout.** A group with an unresolvable background still draws nothing: a group has no
   region of its own (see *hit-testing*), so an opaque fill there slabs over whatever the layout put
   behind it.
+- **Not a `desktopalpha="1"` layout** (B271, 2026-10-26). It composites against the desktop, so a
+  backing it lacks is nothing. Ryoko Asakura's player names `player.mainbg.ghost`, a `.bmp` the
+  archive does not ship, and drew a solid white 303x488 slab where its screenshot shows the player
+  art over the wallpaper. Corpus match set (a declared, unshipped layout background on a
+  `desktopalpha="1"` layout): that player, EPS High-End's two `glassy` speakers (`speaker3.png`
+  missing; a black slab before, empty now), and Fuzzy Muffins' shade, which paints its
+  `alphabackground` instead and is unaffected.
+- **Not a layout that says `drawbackground="0"` *and* `sysregion="1"`** (B273, 2026-10-26). Its
+  backings shape the window and are never painted (`paintedBackingID`). A layout otherwise paints its
+  backing whatever `drawbackground` says (DDtank Glass, Invicta, impulse need that). Corpus match set
+  (all tiers): only the iCandy family — iCandy, i-Skin, iCandy-2 — whose `alphabackground`s are flat
+  masks of where a drawer opens; painted, they were a black slab under the closed EQ drawer, a white
+  one behind the remote's LCD and a black one in the shade. Gold+silver sweep: exactly those 3
+  iCandy-2 images changed.
 
 Corpus sweep, 441 renders: **15 changed**, and 8 of those are Big Bento dialogs already opaque where
 the fill landed underneath existing chrome.
@@ -344,7 +358,9 @@ frame's dirty rects after replaying the scene into them; the harness's `draw(in:
 canvas job sized to the caller's clip, so the sweep checks the window's pipeline (B231). Both build
 that job with `WasabiSceneRenderer.canvasJob` and fall back to its `drawDirectly` past the pixel
 limit (`WinampModernCanvas.swift`), so the sweep records the scene as the window does (B235); only
-the window passes a UI Size and host chrome.
+the window passes a UI Size. The render dump draws a `nullplayer_hostchrome` container's glass rim
+under the scene too (`WinampModernMainView.drawHostChrome`, B274): without it every engine-`one` cPro
+Widgets Manager and every glass-chrome About page read as see-through in the dump and nowhere else.
 
 Three traps in that buffer, all measured on `main/normal` at 2x against a 2.81 ms/frame baseline, and
 all of them things to copy rather than rediscover:
@@ -759,6 +775,13 @@ frame on `background="component.bg"` — was gold. `WasabiSceneRenderer.frameBas
 declares no backing and is not `desktopalpha="1"`. JRS's config window and machina's skin-config
 went from white/holed to the skin's texture in the same sweep.
 
+The frame counts in either spelling: the `<Wasabi:StandardFrame:*>` tag or the
+`<group id="wasabi.standardframe.*">` it stands for (B276, 2026-10-26). iCandy-2's four Component
+layouts use the group form with no `background=`, and the 12 px band between the title bar and the
+component showed the desktop; it now takes the content colour its playlist already showed (the skin
+comments out `component.basetexture`). Gold+silver: those four images plus PionNer_AMP2's
+`Manual`, whose 1 px slits between the frame and its manual art were desktop and are now black.
+
 ##### Window-chrome buttons with no artwork (B95, 2026-09-01)
 
 The third instance of the same deliberate exception, and reached the same way — only after the
@@ -1093,6 +1116,16 @@ from its current frame to the last, and stops there, so its `onStop` arrives (B2
 PLAY/PAUSE/STOP status layer hides itself and brings the song ticker back from that `onStop`;
 looping, it never did.
 
+A layer that self-plays from markup (`autoplay="1"` or `autoreplay="1"`, no `play()` yet) starts
+**when it is first drawn**: the renderer stamps `animstart` with its clock on that draw
+(`WasabiAnimation.stampFirstShow`), and `animstart` is scene-neutral, like `frame`. Before, it counted
+from uptime 0, so a once-only intro was over before the window opened — Official_Zwan_Skin's rainbow
+wipe and thinger strips sat on their last frame (B280). A layer a script hides at load
+(`player.web.anim.open`) is stamped when it is first shown. A render dump pinned at clock 0 stamps
+`0` and draws exactly what it did; the motion sweep's ladder now starts a looping self-play at
+rung 0, so a loop a script timer stops on its first tick reads `stuck` there, not `moving` (cPro
+Venus, MIDISUI `vis.animation`) — a classification of rung 0, the pixels are unchanged.
+
 #### `relat*="2"` is a **percentage**, every other non-zero value is additive
 
 `relatx`/`relaty`/`relatw`/`relath` read as `atoi(value)`, and the number matters:
@@ -1295,6 +1328,20 @@ slid over the COMPONENT column and the playlist. The box is the union of the chi
 `xmlParam` places (what `gotoTarget` leaves alone), applied only while a child is off its place, so a
 group at rest keeps the inherited clip `clipAxes` gives an undeclared box. Reach, gold+silver: that
 one group.
+
+**A node wholly left of or above a group's origin is not drawn**, on an axis the group does not
+clip (`liesBeforeOrigin`, B297, 2026-10-27). A group is a window, so whatever size an undeclared
+group really has, nothing before its origin is inside it. That is how a drawer parked off its group
+closes at rest, where `targetAperture` (only while moved) does not reach: iCandy-2's remote parks
+`remote.lcd.def` at `x="-233"` in the sizeless `remote.lcd` at `x=41`, and drawn, a strip of the
+233×72 LCD showed left of the remote body and round its curves. Not the layout's `alphabackground`:
+the LCD layer is `sysregion="1"` itself, so a region union would keep it. **Only wholly**: cutting
+every node at the origin was measured first, and it also trimmed hm_Touch_m_1's shade seek thumb
+(top 2 px gone, bottom 2 px kept, overhanging a sizeless group), the antialiased edge of
+Official_Zwan_Skin's thin-shade overlays (full-window layers each group offsets back to the window
+origin), PAD's parked EQ (an improvement, no reference) and a 2 px line of MIDISUI's drawer. Wholly,
+gold+silver moved only `iCandy-2/main-remote`. `WINAMP_MODERN_GROUP_NO_ORIGIN_CULL=1` is the A/B
+switch.
 
 **`image=` on a `<group>` is not art**. A group states its
 artwork with `background`; MIDISUI instances its one-LED `ledAnimation` group as

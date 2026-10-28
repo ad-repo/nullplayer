@@ -102,7 +102,8 @@ Applies always. Two questions: has this been seen, and what should it look like?
 
 ```bash
 grep -rniE '<skin name>|<symptom keyword>' tasks/ docs/ skills/*/skins* skills/*/reference/skins/
-mkdir -p "$S/x" && unzip -o -q "/abs/Skin.wal" -d "$S/x"     # .wal/.wmz are zips; S = scratchpad
+scripts/wal_skin_src.sh <skin> [<ERE>]    # .wal: unpacked once, reference images listed, source grepped
+mkdir -p "$S/x" && unzip -o -q "/abs/Skin.wmz" -d "$S/x"     # other families: .wmz is a zip; S = scratchpad
 find "$S/x" -maxdepth 3 -iregex '.*\(screenshot\|preview\|readme\).*' -o -maxdepth 1 -iname '*.png'
 ```
 
@@ -252,17 +253,31 @@ Applies after the headless pass is clean. Same inventory, now on screen.
 
 1. Launch with `skills/app-control/scripts/launch.sh <skin>` (playing by default), every probe the
    pass may need exported in front — probes are read once at start. Confirm the family with
-   `menu.applescript family <pid>`; the unskinned `.wmz` view is 440x170.
+   `menu.applescript family <pid>`; the unskinned `.wmz` view is 440x170. **Confirm a track is
+   playing** before anything else: the log's `Now playing` line and a moving time display. A
+   live pass with nothing playing is a different test, so never launch it with `--no-play`.
 2. Mark the log, then drive **every inventory row** on screen (`app-control` Route C), clicking each
    control at the centre of its probed frame. Open every window; play, pause, seek, change volume.
+   This is the phase's test. The census in step 4 only measures where windows open. It never
+   presses a skin control, so a run of it is not Phase 7. Each click lands on a control
+   the inventory names, never on a blind grid of points or the desktop. A click that misses is a
+   wrong coordinate: fix it before going on, never retry the same point.
 3. Capture the window itself (`screencapture -o -x -l <id>`). For each row, compare against the
    headless render of the same state:
    - **agree** → nothing new; a defect here is a scene defect, back to Phase 5 headless;
    - **disagree** → class W: view `draw`, hierarchy, layer backing, frame, ordering, compositing.
-4. Run the automated window checks on the skin: `skills/app-control/scripts/window-census.sh <skin>
-   --shots` (where every window opens and how big it is, compared with the screen) and
-   `window-interaction-matrix.sh <skin> <out.tsv>` (open, stretch and close every window). Open the
-   shots.
+4. Run the automated window check on the skin: `skills/app-control/scripts/window-census.sh <skin>
+   --shots` (where every window opens and how big it is, compared with the screen). Do **not** run
+   `window-interaction-matrix.sh` here. It is the regression check for a change to window chrome,
+   edge resizing or close handling (`app-control` § *Window open / stretch / close matrix*). It
+   blind-clicks up to 42 corner points per window, twice, on the assumption that a close button
+   is there. A skin's close is an inventory row: click it once, in step 2. Lay the
+   shots out beside the reference with `scripts/review_sheet.py <sheet.png> <shots>/*.png --ref
+   <reference> --scale 2`, and open the sheet. Each shot is drawn over magenta, so a missing
+   background is visible; an image viewer shows alpha 0 as white or black. Judge it by
+   `skin-intake` § *The visual review*: transparent background, jumbled text, layout. A headless
+   dump is no substitute here, because its component panes are empty by design and every one of them
+   reads as a hole.
 5. Window-only checks the harness never sees: placement and size on open, drag and resize, docking,
    shade/unshade round trips, z-order (`CGWindowListCopyWindowInfo` with `.optionOnScreenOnly`),
    shadow, 1x and 2x displays, relaunch with persisted state.

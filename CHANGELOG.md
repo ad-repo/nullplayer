@@ -22,6 +22,11 @@
   hm_Touch, MD Ganbare Rakkatan the Sixth, Ayanami Rei the Fifth, MetAlchemy III, H2O Liquid,
   MIDISUI, Moon Groove, Moonkore, Music Show, Mad Magazine, RazorEdge, RODE 3 Lite, Slimline XP,
   The Crow, YoYoBoy, Vision, wasabi.player, Winamp Portrait and Winamp Single GUI.
+- **25 more Winamp Modern (`.wal`) skins checked and fixed in the app** (the fourth corpus intake):
+  cPro - Mecha, G2, GlassAMP, iSkin, Jenna loves Mambo, JIP, LG Cookie, Manchester United Football
+  Club: The Red Devils, MBOS, MfS3, MiPod, MSkin RyokoAsakura, MultiButtons, NEO, Official The
+  Music Skin, OrbFace, PAD, Puma Skin, Quadelic, Sepultura, Silverskin 3, Star Trek LCARS AMP
+  PADD II, The Duk Side, WINyaMP3 and ZWAN.
 
 ### Fixes
 
@@ -104,6 +109,47 @@
   longer lists empty Media Library, Visualizations and video frames beside the real windows.
 - **Winampple's Media Library can be clicked again.** Its video window's frame no longer sits over
   the library, and Itemskin, K-jr and MoonLight keep the library frame their authors drew.
+- **The Official Zwan skin has a player window again.** A skin that declares its main window
+  inside another declaration of the same window now keeps the player, shade and thin-shade layouts.
+- **A skin's opening animations play when its window opens.** Animations a skin starts on its own,
+  such as Official Zwan's rainbow intro, used to be over before the window appeared.
+- **The Ryoko Asakura skin's player is no longer a white rectangle.** A see-through window whose
+  backing image is missing from the skin now stays see-through instead of filling with a solid colour.
+- **The Ryoko Asakura skin's volume readout follows the volume.** It used to stay at the volume the
+  app started with.
+- **The NEO skins' Repeat and Shuffle buttons say which mode they are in.** Their tooltips used to
+  read "Off" whatever the setting was, and Big Bento's ticker announced the mode the click had just left.
+- **Texted buttons in Winamp Modern skins draw the skin's own button art.** Buttons such as Switch,
+  Add/Rem or a config window's prev/next used to be a plain outlined box; they now use the button
+  artwork the skin ships, pressed art while held, with the skin's button text colour.
+- **The Ryoko Asakura skin's track notifier shows the song.** It used to show its frame and cover art
+  with no artist, title or album, and never went away.
+- **The Ryoko Asakura skin's playlist reads whole.** Track titles used to be cut off under the
+  character art beside the list; the list now draws in front of it, as in the skin's screenshot.
+- **Shield Amp's display, krazyPlayer's playlist and other Winamp Modern panels end where the skin
+  says.** A panel sized to fill its window minus a margin used to ignore the margin, so krazyPlayer's
+  playlist ran over its ADD/REM buttons and Shield Amp's compact display ran into the window edge.
+- **A Winamp Modern skin's playlist status reads selected time / total time, as Winamp's does.** It
+  used to read the number of items and the total, e.g. "12 items/43:40" where Winamp shows "3:25/43:40".
+- **iCandy-2's remote closes its display drawer cleanly.** With the drawer closed, a strip of the
+  display used to show to the left of the remote and round its edges.
+- **A Winamp Modern skin's script binds only its own window's controls.** A skin that runs one
+  script in several of its layouts used to have every copy act on one window: one Rew5s click on
+  StarTrek LCARS AMP PADD II skipped five tracks, and Ashen Player's Lite and Mini volume bars did
+  not move with the volume.
+- **The `vol +` / `vol -` buttons of Winamp Modern skins change the volume.** Quadelic's and several
+  other skins' volume buttons used to do nothing; each click now steps the volume by 5%.
+- **OrbFace's close button is drawn.** The skin hides the window frame's close and then adds its own;
+  NullPlayer used to hide the skin's as well, leaving a blank gap beside minimise.
+- **LG_Free's Equalizer Studio and Media Library no longer carry the playlist's Add / Rem / Sel / Misc /
+  List buttons** along their bottom edge.
+- **A Winamp Modern skin's second window keeps time and draws its analyzer.** Manchester United's
+  mini player (its own `visual` window) used to freeze its timer and animate its analyzer only now
+  and then; every window of a skin now follows the playback clock and the spectrum.
+- **The component-bucket caption is blank until you hover an icon or scroll.** The Duk Side V3 used to
+  print `Playlist Editor` over its duck where the track name is read.
+- **G2's lights glow with the music.** Opening the lights plate from the config page used to show the
+  base only; the glow layer's fade now no longer restarts its slide, so it lights with the level.
 
 ## 0.33.1
 

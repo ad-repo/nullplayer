@@ -96,6 +96,18 @@ id took two turns on one renderer and the second ran against a **torn-down** cac
 skin's resource scope. `jvc.tape`'s `Pledit` missing `pl.button.bg` and `pl.button.small` is a real
 and separate two-bitmap miss.
 
+#### A container re-declared *inside* itself is the same window (B270, 2026-10-26)
+
+The nested case is a third shape, settled at include expansion (`WalXMLDocumentLoader.expand`), not
+in the initializer: a `<container>` whose direct child is a `<container>` with the same id (case-
+insensitive) takes that child's children in its place, and the outer's attributes stand.
+Official_Zwan_Skin's `xml/player.xml` opens `<container id="main">` around
+`<include file="player-normal.xml"/>`, which declares `main` again around `normal`, `shade` and
+`Thinshade` — the only player the skin ships, so the skin's own evidence is that they are `main`'s
+layouts. Before, the outer `main` held only a nested container, had no layout and was dropped. A
+nested container with **another** id is left alone. Gold+silver at the time: Zwan was the only skin
+whose render changed.
+
 ### What the XML parser tolerates, and what it still rejects
 
 `WalLenientXMLParser` accepts multiple roots and raw ampersands. It also, since B33, accepts a file
@@ -506,12 +518,24 @@ reads `"1"`, whether from this seed or from the user's own pick, nothing is writ
 ### Retained graph and coordinates
 
 **`findObject` is the wide lookup, `getObject` the narrow one.** `getObject(id)` searches the
-receiver's own subtree; `findObject(id)` searches that subtree **first and then the rest of the
-container**, which is the whole reason a skin reaches for one name over the other. Defix's core
+receiver's own subtree; `findObject(id)` searches that subtree **first and then the rest of its
+layout** (its container when it has none; next paragraph), which is the whole reason a skin reaches for one name over the other. Defix's core
 script holds `sui.content` and asks it for `switch.ml`, a tab button in a *sibling* subtree: resolved
 from descendants alone, all five tab lookups came back null and the script bound its handlers to
 nothing, so the SUI never changed tabs. The nearest match still wins, so a skin with the same id in
 both places keeps getting its own.
+
+**"The rest" is the receiver's layout, not its container** (B298). A layout is a window, and a skin
+that declares one script in several layouts means each copy to bind its own window's objects.
+StarTrek_LCARS_AMP_PADD_II loads `main.maki` in five groups across `normal` and `compact`; widened to
+the container, every copy's `findObject("Rew5s")` reached the one normal-layout button, and one
+stopped click ran `previous()` five times. Ashen's Lite and Mini volume bars never moved (their copies
+of `volumebyframe.maki` drove Normal's), and motorhead's shade script hooked Normal's buttons. A
+receiver outside any layout still widens to its container. Two copies **in one layout** still both
+bind: StarTrek's `player.normal.playbuttons` copy needs `songticker` from its sibling `player.normal`
+(the author's own comment, and a `messagebox("ooch!!")` if it is null), so the sibling's copy reaches
+`Rew5s` the same way, and a stopped click calls `previous()` twice. That is the skin's doing under any
+rule that serves its songticker. `WINAMP_MODERN_FINDOBJECT_CONTAINER=1` is the A/B switch.
 
 `WasabiObjectGraph` owns every node (including detached ones). IDs are monotonic and deterministic
 for a deterministic expanded document, which makes `snapshot()` the golden-test surface. XML `id`
@@ -585,6 +609,12 @@ corner. Three rules around it, each paid for (B142, 2026-09-06):
   `setXmlParam("x", integerToString(w/2-112))`. Answering `fitparent` with the parent's box *origin
   included* pinned that to zero and left the whole cluster jammed against the left edge at every
   window width — the reported defect.
+- **An axis whose `relat*` the same tag writes after it keeps its own size** (B295, 2026-10-27):
+  krazyPlayer's holders are `<component fitparent="1" h="-20" relath="1">`, sized to end at the
+  button bar, and answered with the parent's height its playlist ran 20 px over ADD/REM. A bare
+  `w`/`h` still loses (cPro's SUI above). Gold+silver: krazyPlayer's three holders, Shield_Amp's stick
+  LCD (`w="-396" relatw="1"`, now ending at its rounded cap), CPro_Winamp_for_Mac_Sync's `h="75"
+  relath="0"` meta grid, Big Bento's `y="1" h="-1" relath="1"` tab mousetrap, Defix's SUI tab strip.
 - **It is applied where the tag writes it**, so geometry earlier in the same tag is geometry Winamp
   threw away (`WasabiGeometrySpec.discardingGeometryOverwrittenByFitParent`, applied at object
   creation so a script's later write still wins). Two tags in the 79-skin corpus state geometry before
@@ -836,6 +866,12 @@ whose `component=` names it. The floor is applied in two places:
 - **Only a holder that stretches gets a floor.** The width is `declared + 440 − holder`, which holds
   only for a `relatw` holder; the renderer re-resolves the holder at a wider canvas and gives a
   fixed-width one no floor, since widening the window around it would only widen the frame.
+- **The floor does not depend on when it is first asked.** It counts hidden holders too, and is
+  cached only after `runtime.hasStartedScripts`: a `Wasabi:*Frame`'s client group, where the holder
+  usually lives, is instantiated by the skin's MAKI, and the component-room fit asks before start.
+  Cached from that early answer, or from a moment a skin's own fade chain had the holder hidden, the
+  floor was a race — EMP2's flipped 400/450 between runs, and five other libraries had none (B281's
+  prerequisite, 2026-10-26).
 - **The floor applies even when the declared size clears it.** Itemskin declares `MLibrary` 660×274
   and its own script shrinks it to the 330×137 minimum on open; a floor gated on the declared size
   never fired. Its glued frame window (`cont.clear.ml`) follows the content to the floor (493 wide).

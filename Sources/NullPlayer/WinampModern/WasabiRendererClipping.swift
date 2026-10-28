@@ -48,6 +48,26 @@ struct WasabiClip {
 /// not paint, and the aperture a target animation slides a child within — the region a script gives
 /// one object, and the backing an object paints.
 extension WasabiSceneRenderer {
+    static let cullsBeforeGroupOrigin =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_GROUP_NO_ORIGIN_CULL"] != "1"
+
+    /// Whether a group's descendant lies wholly left of or above the group's origin, on an axis the
+    /// group does not clip (`clipAxes`). A group is a window, so such a node shows whatever size the
+    /// group has: it is dropped, as a drawer parked off its group is closed (B297). iCandy-2's remote
+    /// parks its closed LCD at `x="-233"` in the sizeless `remote.lcd`, and drawn, a strip of it
+    /// showed left of the remote body and round its curves.
+    ///
+    /// Only wholly: cutting a node that straddles the origin also trims slider thumbs that overhang a
+    /// sizeless group's top (hm_Touch_m_1's shade seeker lost its top 2 px, not its bottom 2) and
+    /// full-window overlays a group offsets back to the window origin (Official_Zwan_Skin's
+    /// thin shade). `WINAMP_MODERN_GROUP_NO_ORIGIN_CULL=1` is the A/B switch.
+    func liesBeforeOrigin(of group: WasabiObject, frame: CGRect, child: CGRect) -> Bool {
+        guard Self.cullsBeforeGroupOrigin, group.tag.is(.group), !child.isEmpty else { return false }
+        let clipped = clipAxes(of: group)
+        return (!clipped.contains(.x) && child.maxX <= frame.minX)
+            || (!clipped.contains(.y) && child.maxY <= frame.minY)
+    }
+
     /// The box a group that declares none clips to while a target animation has moved one of its
     /// children: the children's union at their **declared** places (`xmlParam`, which `gotoTarget`
     /// leaves alone). A slide is a move within a box. MIDISUI's vis drawer is a 121×124 `Drawer`
@@ -109,6 +129,26 @@ extension WasabiSceneRenderer {
         context.interpolationQuality = quality
     }
 
+    /// Whether `object` paints only inside the window region the rest of the scene forms: a region
+    /// layout (`layoutWantsOpaqueBacking`) and `sysregion="0"` on the object or a group above it.
+    ///
+    /// A region window is every pixel something paints (`promoteAlphaToRegion`), and `0` is the
+    /// author opting an overlay out of that. cPro__Mecha marks exactly its four watermark and
+    /// overlay-word layers so, and its `wm1` (grey at alpha ≤ 44) hangs past the frame into the 5px
+    /// transparent resize strip whenever the player is narrower than ~393: counted as window, those
+    /// pixels came out an opaque dark smudge its `screenshot.png` does not show (B286). Drawn
+    /// `.sourceAtop`, such an object keeps the alpha already beneath it, so it tints the window and
+    /// never extends it.
+    /// ponytail: clips to what is drawn *before* the object, not to the finished region; an opted-out
+    /// layer under the art that forms the window would vanish. Composite against the final region
+    /// when a skin shows one.
+    func paintsOnlyInsideRegion(_ object: WasabiObject) -> Bool {
+        guard layoutWantsOpaqueBacking else { return false }
+        return sequence(first: object, next: \.parent).contains {
+            $0.attributes["sysregion"]?.trimmingCharacters(in: .whitespaces) == "0"
+        }
+    }
+
     /// The bitmap an object paints as its backing, or nil when it paints none. `background` is
     /// painted by default, as Wasabi does, unless `drawbackground` turns it off.
     ///
@@ -119,8 +159,15 @@ extension WasabiSceneRenderer {
     /// layout paints its `alphabackground` — `background` is then the opaque or region-map variant
     /// (Fuzzy Muffins' `main.alpha`, impulse's `player.normal.background.region`), and painting it
     /// put the mask's grey through every translucent pane.
+    ///
+    /// The one exception is a layout that pairs `drawbackground="0"` with `sysregion="1"`: its
+    /// backings shape the window and are not painted. Only the iCandy family says both (iCandy,
+    /// i-Skin, iCandy-2), and its `alphabackground`s are flat masks of where a drawer opens —
+    /// painted, they were a black slab under the closed EQ drawer and a white one behind the
+    /// remote's LCD (B273).
     func paintedBackingID(of object: WasabiObject) -> String? {
         if object.tag.is(.layout) {
+            if object.attributes["drawbackground"] == "0", object.attributes["sysregion"] == "1" { return nil }
             if object.attributes["desktopalpha"] == "1", let alpha = object.attributes["alphabackground"] {
                 return alpha
             }
@@ -143,7 +190,10 @@ extension WasabiSceneRenderer {
         /// between the chrome and the content. The skin's own content background is the nearest
         /// thing we can answer with, and it is the same colour NullPlayer's embedded surfaces already
         /// use. Only when the skin *asked* for a backing: a layout that declares none is deliberately
-        /// shaped and must stay transparent.
+        /// shaped and must stay transparent. So must a `desktopalpha="1"` layout, which composites
+        /// against the desktop: Ryoko Asakura's player (`background="player.mainbg.ghost"`, a `.bmp`
+        /// the archive does not ship) drew a solid white slab where its own screenshot shows the
+        /// player art over the wallpaper (B271).
         case contentBackground
     }
 
@@ -161,7 +211,8 @@ extension WasabiSceneRenderer {
             }
             return .contentBackground
         }
-        return object.tag.is(.layout) && backingID != nil ? .contentBackground : nil
+        guard object.tag.is(.layout), backingID != nil, object.attributes["desktopalpha"] != "1" else { return nil }
+        return .contentBackground
     }
 
     /// The backing Winamp's own standard frame paints, for a frame whose window gives none.
@@ -171,8 +222,14 @@ extension WasabiSceneRenderer {
     /// stock frame draws it. machina's help window drew its dark-on-transparent help art on the
     /// bare desktop without it, where its playlist — the same frame on `background="component.bg"`
     /// — was gold. A layout that declares a backing, or composites against the desktop, keeps its own.
+    ///
+    /// The XUI tag is shorthand for the group itself, so `<group id="wasabi.standardframe.*">` is the
+    /// same frame: iCandy-2's Component layouts place theirs that way, and the strip between the
+    /// title bar and the component showed the desktop (B276).
     private func needsFrameBaseTexture(_ object: WasabiObject) -> Bool {
-        guard WasabiStandardFrames.isStandardFrame(object),
+        let isFrame = WasabiStandardFrames.isStandardFrame(object)
+            || (object.tag.is(.group) && WasabiStandardFrames.isStandardFrameIdentifier(object.xmlID ?? ""))
+        guard isFrame,
               let layout = object.parent, layout.tag.is(.layout) else { return false }
         return layout.attributes["background"] == nil && layout.attributes["desktopalpha"] != "1"
     }

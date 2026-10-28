@@ -31,6 +31,17 @@ final class WinampModernMIDISUITests: XCTestCase {
         XCTAssertEqual(moved.at(25, 10)[3], 0)
     }
 
+    /// B297, iCandy-2's remote: a drawer parked wholly left of its sizeless group's origin is closed.
+    func testANodeWhollyBeforeAnUnsizedGroupsOriginIsNotDrawn() throws {
+        let (_, pixels) = try render(
+            content: #"<group id="lcd" x="20" y="0"/>"#,
+            definitions: #"""
+            <groupdef id="lcd"><group id="lcd.def" x="-20" y="0"/></groupdef>
+            <groupdef id="lcd.def"><layer id="back" x="0" y="0" w="20" h="20" image="red"/></groupdef>
+            """#)
+        XCTAssertEqual(pixels().at(10, 10)[3], 0, "parked before the group's origin, the drawer is closed")
+    }
+
     func testABracedGUIDEndsAtItsBrace() {
         XCTAssertEqual(WinampModernComponentRegistry.kind(
             for: "guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6} (Media library)"), .library)

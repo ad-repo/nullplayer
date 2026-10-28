@@ -70,6 +70,20 @@ final class WinampModernConfigBridgeTests: XCTestCase {
                      "and it is not copied onto the button, which is what let the two disagree")
     }
 
+    /// `getXmlParam("cfgval")` on a bound control is the setting, not markup: NEO's `shuf_rep` names
+    /// its repeat tooltip from it on every click, and read as `""` it said "Repeat Off" forever (B279).
+    func testCfgvalXmlParamAnswersTheSetting() throws {
+        let (runtime, host, program) = try makeRuntime()
+        let repeatButton = try object(runtime, "Repeat")
+        func cfgval() throws -> String {
+            try runtime.invoke(method: "getXmlParam", on: reference(repeatButton),
+                               arguments: [.string("cfgval")], program: program).stringValue
+        }
+        XCTAssertEqual(try cfgval(), "0")
+        host.repeatEnabled = true
+        XCTAssertEqual(try cfgval(), "1")
+    }
+
     /// The renderer's active-image decision reads the same value, so a bound button with distinct
     /// `activeimage` artwork lights up too.
     func testConfigValueFollowsTheHost() throws {
