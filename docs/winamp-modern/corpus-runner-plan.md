@@ -145,6 +145,31 @@ passed by the user in the app, and promoted to gold on 2026-10-26 (manifest tier
 
 Left open: nothing filed by this intake.
 
+### Done: intake #4, promoted to gold (2026-10-27)
+
+The 25 skins admitted at `18622d92` were worked by `skills/skin-intake` on `feat/wal-intake-4`, all
+accepted by the user in the app, and promoted to gold on 2026-10-27 (manifest tier, files moved to
+`WinampModernCorpus/gold/`), with rows on `skin-compatibility.md` (17 B, 8 C, from a census at
+promotion). The per-skin record is `intakes/intake-4.tsv`. Each fix is general, named after the skin
+that showed it; the row ids are in `backlog-archive.md`.
+
+| Skin | What was wrong | Fix |
+|---|---|---|
+| Official_Zwan_Skin | No player window (a container re-declared inside itself lost its layouts); intro strips sat on their last frame | The loader keeps the inner layouts (B270); a once-only markup self-play stamps its start when first shown (B280) |
+| Ryoko_Asakura | White player; volume readout frozen; playlist rows under the art; notifier without text | B271; the synchronous at-target move no longer loses `onTargetReached` (B281, B293); a layer over a playlist holder no longer hides its rows (B292), with `fitparent` keeping an axis restated with `relat*` (B295) |
+| iCandy-2, StarTrek_LCARS_AMP_PADD_II, NEO | Empty band below the body (B273); frames painted over content (B276, iCandy-2, The_Music); NEO's Repeat/Shuffle dead (B279), no playlist scrollbar (B284), `44khz` song info (B283) | Layout extent from the drawn art; the content slot is not painted; bound n-state buttons flip their flag; the playlist draws a skinned scrollbar; the rate field is `44.1 kHz` shaped |
+| iCandy-2 | Closed remote drawer showed its LCD beside the body | Clipped to the layout (B297) |
+| StarTrek_LCARS_AMP_PADD_II | One `Rew5s` click skipped five tracks | A lookup narrows to the script group's own layout (B298) |
+| GlassAMPfinal, cPro__Mecha, Quadelic, Silverskin_3 | See-through panes (B274); clipped centred text (B275); Mecha: dark smudge on the narrowed player (B286), About over its art (B287); Quadelic: plain-border buttons (B288), `vol +/-` dead (B299); Silverskin_3: `updating...` LCD (B302) | One fill rule for the panes; centred overwide text keeps its start; a non-`desktopalpha` region follows its contributing objects; the engine About hides credits at rest; nine-slice Wasabi buttons; `VOLUME_UP/DOWN` actions; the LCD scripts' events delivered |
+| -MfS3- | Two checked toggles never hit (B272); black-on-white text invisible (B289); ghost second string (B301) | Named colour `black` parses; the other two fixed under their rows |
+| MultiButtons, WINyaMP3 | EQ without sliders (B277); thinger icons under the arrows (B278); `PE_Info` read items/total (B291) | Draw order and `PE_Info` selected/total |
+| The_Music | White box in frames (B276); `44KHZ` song info (B283); timer look (B285) | B276 and B283 fixed; B285 closed as the v0.8 reference's own look, no code change |
+| G2, OrbFace, LG_Free, Ar-Za-Jo, Manchester_United, MIPOD, The_Duk_Side | Drawer dead and config unreachable (B303, B308); close button hidden (B304); seek (B312); hosted bar (B305); EQ toggle reversed (B307); mini analyzer and timer (B310); EQ (B311); title shows `Playlist Editor` (B314) | B303/B304/B305/B308/B310/B314 fixed; B307, B311, B312, B313 closed not-a-defect or not reproduced; G2's glow (B315) measured faithful to the skin |
+
+Left open: B306 (-MfS3-'s oscilloscope shows no trace), B309 (GlassAMPfinal's notifier cover and text
+11 px up-left of the panel), B282 (Silverskin_3's frame titles wider than their windows), B290
+(MultiButtons' fontsize-less title draws small), B300 (cPro__Mecha's long tab labels cut).
+
 **Next:** the open intake, by `skills/skin-intake`. Where it stands is
 `scripts/wal_intake_status.sh` over its ledger (`docs/winamp-modern/intakes/`), never this file.
 B212 needs a second display; B216's `.wmz` census waits on a go-ahead.
