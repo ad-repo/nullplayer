@@ -110,14 +110,10 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
     /// Beside an Audion face or a `.wmz` player the playlist wears the gloss frame
     /// (`SkinnedSurfaceChrome.hidesPaletteTitleBar`), with no PLEDIT tiles to step its width by, so it
     /// resizes freely: no 25-pixel step and no 275-pixel minimum, either of which keeps it off the
-    /// player's own width. `.wal` wears that frame too, but only once its palette loads, after these
-    /// limits are set, so it keeps the step until something re-applies them on that load.
-    private static var hasFreeWidth: Bool {
-        switch WindowManager.shared.runningControllerFamily {
-        case .audion, .wmp, .sonique: return true
-        case .classic, .nullPlayerModern, .winampModern: return false
-        }
-    }
+    /// player's own width. `.wal` wears that frame too once its palette loads; the 275-pixel minimum
+    /// was set before that and stays until something re-applies the limits, but the step goes with the
+    /// tiles — kept, it rounded a `.wal` player's width up past the screen edge (B245).
+    private static var hasFreeWidth: Bool { SkinnedSurfaceChrome.hidesPaletteTitleBar }
 
     /// The narrowest a free-width playlist goes. It must stay at or below the narrowest player it
     /// sits beside: the narrowest Audion face is 24 pt.

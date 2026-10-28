@@ -153,6 +153,15 @@
   print `Playlist Editor` over its duck where the track name is read.
 - **G2's lights glow with the music.** Opening the lights plate from the config page used to show the
   base only; the glow layer's fade now no longer restarts its slide, so it lights with the level.
+- **A screen-filling Winamp Modern skin that was hidden during a UI Size change fits the screen when
+  shown again.** Nitrous Audio's monitor mode, hidden across a change to 135%, used to come back
+  larger than the display.
+- **NullPlayer's playlist stays on the screen when UI Size changes beside a screen-filling Winamp
+  Modern skin.** Beside Nitrous Audio's monitor mode it used to grow past the right edge of the
+  display; it now keeps the player's width.
+- **Labels on Winamp Modern skins' text buttons are readable.** Where the skin's button colour would
+  vanish into its button art (MMD3's Switch, Nebular's About, meridian's OK and a dozen others), the
+  label is drawn in black or white instead.
 
 ## 0.33.1
 

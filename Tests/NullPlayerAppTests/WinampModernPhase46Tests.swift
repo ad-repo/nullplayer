@@ -156,6 +156,28 @@ final class WinampModernPhase46Tests: XCTestCase {
         XCTAssertEqual(runtime.dispatchedEventsForTesting.map(\.event), ["onscale"])
     }
 
+    /// A layout not on screen for the change hears it when it comes up, once (B244): a hidden window
+    /// when it is shown, a showing window's other layouts when the skin switches to them.
+    func testALayoutNotShowingHearsTheScaleWhenItComesUp() throws {
+        let (runtime, _) = try makeRuntime()
+        let graph = runtime.loadedSkin.runtime.graph
+        let container = try XCTUnwrap(graph.objects(xmlID: "main").first)
+        let normal = try XCTUnwrap(graph.objects(xmlID: "normal").first)
+        let shade = try XCTUnwrap(graph.objects(xmlID: "shade").first)
+        runtime.recordsDispatchedEventsForTesting = true
+
+        runtime.noteScaleChange(container: container, showing: nil, scale: 1.35)
+        XCTAssertEqual(runtime.dispatchedEventsForTesting.map(\.event), [], "a hidden window is told on show")
+
+        runtime.dispatchMissedLayoutScale(layout: normal, scale: 1.35)
+        runtime.dispatchMissedLayoutScale(layout: normal, scale: 1.35)
+        XCTAssertEqual(runtime.dispatchedEventsForTesting.map(\.object), ["normal"])
+
+        runtime.noteScaleChange(container: container, showing: normal, scale: 1)
+        runtime.dispatchMissedLayoutScale(layout: shade, scale: 1)
+        XCTAssertEqual(runtime.dispatchedEventsForTesting.map(\.object), ["normal", "normal", "shade"])
+    }
+
     /// Defix asks nine times for one click (five scripts, one holder per window). The host is what
     /// de-duplicates — `WindowManager.uiScaleLevel` ignores a write of the level it is already at —
     /// so the runtime must forward every one of them rather than trying to be clever about it.
@@ -196,6 +218,7 @@ final class WinampModernPhase46Tests: XCTestCase {
             <layout id="normal" w="120" h="120">
               <button id="b" x="0" y="0" w="20" h="20"/>
             </layout>
+            <layout id="shade" w="120" h="14"/>
           </container>
         </WasabiXML>
         """)

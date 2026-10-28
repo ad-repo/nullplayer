@@ -387,6 +387,7 @@ final class WinampModernMainView: NSView {
         // A different layout is a different scene, so nothing carries over: every object in it hears
         // its geometry for the first time, exactly as it does when the window first comes up.
         dispatchResize(seeding: true)
+        dispatchMissedScale()
         // A different layout declares a different height, which is what `auto` Text Size is keyed on.
         pushLibraryContentScale()
         matchResizableMaskToLayout()
@@ -482,6 +483,7 @@ final class WinampModernMainView: NSView {
         sceneIsVisible = visible
         scripts.notifyContainerVisibility(containerID: containerID, visible: visible)
         if visible {
+            dispatchMissedScale()
             updateAnimationTimer()
             // The surfaces are made during a layout pass, which for a window that opens later has
             // already happened while it was still hidden — and an engine refused a start then is
@@ -546,10 +548,20 @@ final class WinampModernMainView: NSView {
         scripts.dispatchWindowMove(container: renderer.container, layout: renderer.layout)
     }
 
-    /// UI Size changed. Wasabi's `onScale(newScale)`; see `WinampModernScriptRuntime.dispatchLayoutScale`.
+    /// UI Size changed. Wasabi's `onScale(newScale)` to the layout on screen; a hidden window's layouts
+    /// hear it when they next show. See `WinampModernScriptRuntime.noteScaleChange`.
     func dispatchScaleChanged(to scale: CGFloat) {
         guard !isTornDown else { return }
-        scripts.dispatchLayoutScale(layout: renderer.layout, scale: scale)
+        scripts.noteScaleChange(container: renderer.container,
+                                showing: window?.isVisible == true ? renderer.layout : nil, scale: scale)
+    }
+
+    /// `onScale` for this window's layout when it missed a UI Size change while not on screen (B244).
+    /// On screen means the window, as `dispatchScaleChanged` reads it: the player's `sceneIsVisible`
+    /// stays true while the window is hidden.
+    func dispatchMissedScale() {
+        guard !isTornDown, window?.isVisible == true else { return }
+        scripts.dispatchMissedLayoutScale(layout: renderer.layout, scale: skinScale)
     }
 
     /// Wasabi's `onUserResize()` — the resize the user dragged, which a standard frame answers by

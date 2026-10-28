@@ -763,6 +763,13 @@ machina's help window writes `<wasabi:button text="switch" w="100">` and no heig
 tall and the only route to the winshade help never drew. 20 is machina's own About switch buttons'
 `h`, not a measured label.
 
+**On the skin's `wasabi.button.*` art the label must still read (B294).** It takes
+`wasabi.button.text`, else `studio.button.text`, else `palette.listText`, and then
+`WinampModernSurfaceStyle.legible` against the art's average colour (`WasabiBitmap.averageColor` of the
+centre slice): below `minimumContrast` it falls back to black or white. MMD3's `ctsbig` declares no
+button colour and drew list white on light art; Nebular, meridian, Styx, Moonkore and Tristania declared
+one too close to their art. The gold+silver sweep moved 23 button labels and nothing else.
+
 ##### A standard frame in a layout with no backing (2026-10-20)
 
 Winamp's own `wasabi.standardframe.*` groupdefs carry `background="wasabi.frame.basetexture"`

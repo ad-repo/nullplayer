@@ -2416,9 +2416,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         applyLayoutConstraints()
         skinView?.needsDisplay = true
         guard changed else { return }
-        for view in viewsByContainer.values where view.window?.isVisible == true {
-            view.dispatchScaleChanged(to: skinScale)
-        }
+        for view in viewsByContainer.values { view.dispatchScaleChanged(to: skinScale) }
     }
 
     private func resizeWindow(to size: NSSize, reason: String = "skin") {
@@ -2559,7 +2557,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         if Self.clocksReachAuxiliaryWindows { auxiliaryContainers.forEach { $0.view.spectrumDidArrive() } }
     }
     func skinDidChange() { skinView?.needsDisplay = true }
-    func windowVisibilityDidChange() { repaintVisibleSkinWindows() }
+    func windowVisibilityDidChange() {
+        skinView?.dispatchMissedScale()
+        repaintVisibleSkinWindows()
+    }
 
     /// Mark the entire view tree dirty after WindowServer may have discarded its cached pixels.
     ///

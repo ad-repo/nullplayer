@@ -235,7 +235,25 @@ extension WinampModernScriptRuntime {
     /// from it, or stay sized for the old scale.
     @discardableResult
     func dispatchLayoutScale(layout: WasabiObject, scale: CGFloat) -> Int {
-        (try? dispatch(object: layout, event: "onscale", arguments: [.float(Double(scale))])) ?? 0
+        layoutsMissingScale.remove(layout.stableID)
+        return (try? dispatch(object: layout, event: "onscale", arguments: [.float(Double(scale))])) ?? 0
+    }
+
+    /// A UI Size change reached `container`: the layout on screen hears `onScale` now, and every other
+    /// layout of it — the whole container when its window is hidden, the alternates of a showing one —
+    /// owes it until it next comes up (B244). Left untold, a monitor-mode fill computed at 100% reopens
+    /// at the old size after a change to 135%.
+    func noteScaleChange(container: WasabiObject, showing layout: WasabiObject?, scale: CGFloat) {
+        for child in container.children where child.tag.is(.layout) && child !== layout {
+            layoutsMissingScale.insert(child.stableID)
+        }
+        if let layout { dispatchLayoutScale(layout: layout, scale: scale) }
+    }
+
+    /// `onScale` for a layout coming on screen that missed a UI Size change while it was not showing.
+    func dispatchMissedLayoutScale(layout: WasabiObject, scale: CGFloat) {
+        guard layoutsMissingScale.contains(layout.stableID) else { return }
+        dispatchLayoutScale(layout: layout, scale: scale)
     }
 
     @discardableResult

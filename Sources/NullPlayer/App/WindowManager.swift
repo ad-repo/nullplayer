@@ -340,6 +340,8 @@ class WindowManager {
     private var appliedUIScaleLevel: UIScaleLevel = .p100
     private var isApplyingUIScaleLevel = false
     private var pendingUIScaleLevel: UIScaleLevel?
+    /// Player-wide windows of a `.wal` UI Size change the player was hidden for (B245).
+    private var windowsAwaitingPlayerWidth: [NSWindow] = []
 
     /// Back-compat shim for callers that only need to know whether the UI is at a non-default size.
     var isDoubleSize: Bool {
@@ -1128,7 +1130,7 @@ class WindowManager {
             mainWindowController?.showWindow(nil)
         }
         applyAlwaysOnTopToWindow(mainWindowController?.window)
-        mainWindowController?.windowVisibilityDidChange()
+        notifyMainWindowVisibilityChanged()
     }
 
     static func makeMainWindowController(for mode: PlayerUIMode) -> MainWindowProviding {
@@ -1152,7 +1154,7 @@ class WindowManager {
         } else {
             showMainWindow()
         }
-        mainWindowController?.windowVisibilityDidChange()
+        notifyMainWindowVisibilityChanged()
     }
     
     // MARK: - Winamp Modern surface routing
@@ -4839,6 +4841,21 @@ class WindowManager {
 
     func notifyMainWindowVisibilityChanged() {
         mainWindowController?.windowVisibilityDidChange()
+        guard uiMode.controllerFamily == .winampModern, let player = mainWindowController?.window,
+              player.isVisible, !windowsAwaitingPlayerWidth.isEmpty else { return }
+        isSnappingWindow = true
+        matchPlayerWidth(windowsAwaitingPlayerWidth.filter(\.isVisible), player: player)
+        isSnappingWindow = false
+        windowsAwaitingPlayerWidth = []
+    }
+
+    /// `windows` set to the `.wal` player's width (B245).
+    private func matchPlayerWidth(_ windows: [NSWindow], player: NSWindow) {
+        for window in windows {
+            var frame = window.frame
+            frame.size.width = max(window.minSize.width, player.frame.width)
+            window.setFrame(frame, display: true, animate: false)
+        }
     }
     
     // MARK: - Skin Management
@@ -5170,6 +5187,21 @@ class WindowManager {
             pendingUIScaleLevel = nil
         }
 
+        // NullPlayer's own windows open as wide as a `.wal` player (`nativeWindowDefaultWidth`), and
+        // `applyDoubleSize` scales them by the ratio. A player whose `onScale` re-fits it to the screen
+        // (Nitrous monitor mode) does not grow by that ratio, so they would hang past the display
+        // (B245): the ones as wide as the player — within the playlist's PLEDIT width step, which
+        // rounds it either side — come back to the player's width. A window the user sized keeps it.
+        let playerMatched: [NSWindow]
+        if uiMode.controllerFamily == .winampModern, let player = mainWindowController?.window {
+            let tolerance = 25 * playlistChromeScale
+            playerMatched = snapTargetWindows().filter {
+                $0 !== player && abs($0.frame.width - player.frame.width) < tolerance
+            }
+        } else {
+            playerMatched = []
+        }
+
         var resizedWindows = false
         repeat {
             pendingUIScaleLevel = nil
@@ -5188,6 +5220,10 @@ class WindowManager {
         if resizedWindows, uiMode.controllerFamily == .winampModern,
            let player = mainWindowController?.window {
             isSnappingWindow = true
+            matchPlayerWidth(playerMatched, player: player)
+            // A hidden player hears its `onScale` when it is shown (B244), and re-fits then; the
+            // windows matched to it follow it there (`notifyMainWindowVisibilityChanged`).
+            windowsAwaitingPlayerWidth = player.isVisible ? [] : playerMatched
             arrangeWinampModernScene(player: player)
             isSnappingWindow = false
         }
