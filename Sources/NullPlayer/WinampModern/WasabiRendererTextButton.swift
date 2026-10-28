@@ -19,9 +19,9 @@ extension WasabiSceneRenderer {
             drawNineSlice(art, in: frame, tile: false, context: context)
             color = declaredSkinColor("wasabi.button.text") ?? declaredSkinColor("studio.button.text") ?? color
             // A label that cannot be read on the art falls back to black or white (B294): MMD3's list
-            // white on its light buttons declares no button colour at all.
-            let middle = art[4]  // the nine-slice centre, as `drawNineSlice` reads it
-            if let face = (middle ?? art.compactMap { $0 }.first).flatMap(Self.averageColor) {
+            // white on its light buttons declares no button colour at all. Only the centre slice
+            // (`art[4]`, as `drawNineSlice` reads it) is under the label.
+            if let face = art[4]?.averageColor {
                 color = WinampModernSurfaceStyle.legible(preferring: [color], on: face)
             }
         } else {
@@ -50,17 +50,19 @@ extension WasabiSceneRenderer {
                      art("bottom.left"), art("bottom"), art("bottom.right")]
         return parts.contains { $0 != nil } ? parts : nil
     }
+}
 
-    /// `art`'s alpha-weighted mean colour over at most an 8×8 grid of samples, or nil when every
-    /// sample is transparent.
-    private static func averageColor(of art: WasabiBitmap) -> NSColor? {
+extension WasabiBitmap {
+    /// The alpha-weighted mean colour over at most an 8×8 grid of samples, or nil when every sample
+    /// is transparent.
+    var averageColor: NSColor? {
         var sum = (red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0)
-        let columns = min(art.width, 8), rows = min(art.height, 8)
+        let columns = min(width, 8), rows = min(height, 8)
         for row in 0..<rows {
             for column in 0..<columns {
-                let point = CGPoint(x: (Double(column) + 0.5) * Double(art.width) / Double(columns),
-                                    y: (Double(row) + 0.5) * Double(art.height) / Double(rows))
-                guard let pixel = art.pixel(at: point) else { continue }
+                let point = CGPoint(x: (Double(column) + 0.5) * Double(width) / Double(columns),
+                                    y: (Double(row) + 0.5) * Double(height) / Double(rows))
+                guard let pixel = pixel(at: point) else { continue }
                 let alpha = Double(pixel.alpha)
                 sum.red += Double(pixel.red) * alpha
                 sum.green += Double(pixel.green) * alpha

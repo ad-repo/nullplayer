@@ -553,16 +553,18 @@ final class WinampModernMainView: NSView {
     func dispatchScaleChanged(to scale: CGFloat) {
         guard !isTornDown else { return }
         scripts.noteScaleChange(container: renderer.container,
-                                showing: window?.isVisible == true ? renderer.layout : nil, scale: scale)
+                                showing: isOnScreen ? renderer.layout : nil, scale: scale)
     }
 
     /// `onScale` for this window's layout when it missed a UI Size change while not on screen (B244).
-    /// On screen means the window, as `dispatchScaleChanged` reads it: the player's `sceneIsVisible`
-    /// stays true while the window is hidden.
     func dispatchMissedScale() {
-        guard !isTornDown, window?.isVisible == true else { return }
+        guard !isTornDown, isOnScreen else { return }
         scripts.dispatchMissedLayoutScale(layout: renderer.layout, scale: skinScale)
     }
+
+    /// Whether a UI Size change reaches this layout now. The window, not `sceneIsVisible`: the
+    /// player's stays true while its window is hidden.
+    private var isOnScreen: Bool { window?.isVisible == true }
 
     /// Wasabi's `onUserResize()` — the resize the user dragged, which a standard frame answers by
     /// resizing the window it is glued to. See `WinampModernScriptRuntime.dispatchWindowUserResize`.
