@@ -27,6 +27,9 @@
   Club: The Red Devils, MBOS, MfS3, MiPod, MSkin RyokoAsakura, MultiButtons, NEO, Official The
   Music Skin, OrbFace, PAD, Puma Skin, Quadelic, Sepultura, Silverskin 3, Star Trek LCARS AMP
   PADD II, The Duk Side, WINyaMP3 and ZWAN.
+- **Scroll-wheel volume in the Classic main window** — scroll anywhere on the main window to step
+  the volume 5% (the same step as ↑/↓), or over the balance slider to step the balance 10%. A
+  trackpad swipe stops when your fingers lift instead of flinging the value.
 
 ### Fixes
 

@@ -148,6 +148,7 @@ class MainWindowView: NSView {
     private var pressedButton: ButtonType?
 
     private let clutterbar = ClassicClutterbar()
+    private var scrollStepper = ScrollWheelStepper()
 
     /// Dragging state
 
@@ -2007,17 +2008,29 @@ class MainWindowView: NSView {
                 let newTime = min(duration, currentTime + 5)
                 engine.seek(to: newTime)
             }
-        case 126: // Up Arrow - Volume up
-            engine.volume = min(1.0, engine.volume + 0.05)
-        case 125: // Down Arrow - Volume down
-            engine.volume = max(0.0, engine.volume - 0.05)
+        case 126: MainWindowKeys.stepVolume(1)  // Up Arrow
+        case 125: MainWindowKeys.stepVolume(-1) // Down Arrow
         default:
             super.keyDown(with: event)
         }
         
         needsDisplay = true
     }
-    
+
+    /// Wheel over the balance slider moves balance 10% a step; anywhere else, volume 5% a step (the arrow-key step)
+    override func scrollWheel(with event: NSEvent) {
+        let steps = scrollStepper.steps(for: event)
+        guard steps != 0 else { return }
+
+        let point = convertToOriginalCoordinates(convert(event.locationInWindow, from: nil))
+        if case .setBalance = regionManager.hitTest(point: point, in: .main, windowSize: originalWindowSize) {
+            WindowManager.shared.audioEngine.balance += Float(steps) * 0.1
+        } else {
+            MainWindowKeys.stepVolume(steps)
+        }
+        needsDisplay = true
+    }
+
     // MARK: - Drag and Drop
     
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {

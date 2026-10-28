@@ -58,13 +58,18 @@ enum MainWindowKeys {
 
     /// The arrows' volume half: ↓ and ↑ step it 5%. Answers false for any other key.
     static func performVolumeStep(_ event: NSEvent) -> Bool {
-        let audioEngine = WindowManager.shared.audioEngine
         switch event.keyCode {
-        case 125: audioEngine.volume = max(0, audioEngine.volume - 0.05) // Down arrow
-        case 126: audioEngine.volume = min(1, audioEngine.volume + 0.05) // Up arrow
+        case 125: stepVolume(-1) // Down arrow
+        case 126: stepVolume(1)  // Up arrow
         default: return false
         }
         return true
+    }
+
+    /// Steps the volume 5% per step, clamped to 0…1.
+    static func stepVolume(_ steps: Int) {
+        let audioEngine = WindowManager.shared.audioEngine
+        audioEngine.volume = min(1, max(0, audioEngine.volume + Float(steps) * 0.05))
     }
 
     /// Space: the playing video's player, else the audio engine, plays or pauses.
