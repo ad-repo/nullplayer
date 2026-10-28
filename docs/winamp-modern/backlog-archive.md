@@ -2,6 +2,14 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B315 — G2's faint, pulsing lights glow is the skin's own design — closed 2026-10-27
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B315 | **G2's lights glow looks like a dim flicker, not a glow.** Reopened 2026-10-27: after 9f030a17 the user re-tested (reporter driving) and found the glow "barely there", "a dim flicker". Measured live (debug build, music playing, lights open): the drawn alpha of `lightgg` equals the `getLeftVuMeter`/`getRightVuMeter` mean byte exactly at every 50 ms tick (start alpha 138-252, median 127; VU log `byte=` agrees; the 50 s fade holds it between ticks), the compose is correct (plate-crescent brightness tracks it, 114-150), and the whole art is drawn. What shows is small by the skin's own art: `lightsglow.png` peaks at alpha 153 and the body (`bg.png`, opaque above y~102, plus `bg-overlay`) covers it, leaving a crescent below the body; the alpha follows the VU byte at 20 Hz so it pulses with the beat. Nothing in the host dims it. Open question for the reporter: what Winamp shows (VU scale or smoothing may differ; `getLeftVuMeter` is calibrated for Defix's needles and must not change for this skin). Done when the reporter accepts the glow, or names a Winamp reference that differs | G2 | ? | 1 |
+
+**Closed 2026-10-27, accepted by the user as the skin's own design.** 9f030a17 made the glow light (alpha and geometry target animations on separate clocks). e62d2d88 measured the rest as faithful: the drawn alpha equals the VU byte `drawer2.m` sets every 50 ms (0–252, median 127), the 50 s fade holds it between ticks, and the art is drawn in full. The faintness is `lightsglow.png`'s own alpha (max 153) and the body covering all but a crescent; the pulse is the script driving alpha straight off the VU. No host change.
+
 
 ## B302 — Silverskin_3's `updating...` placeholders are the skin's own first second, not a defect — closed 2026-10-27
 
