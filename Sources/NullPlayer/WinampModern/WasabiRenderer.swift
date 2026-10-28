@@ -2202,14 +2202,12 @@ final class WasabiSceneRenderer {
                    includingHidden: includingHidden, inheritedAlpha: childAlpha,
                    masks: childMasks)
         }
-        if let aperture = targetAperture(of: object, children: nodes[firstChildNode...]) {
-            for index in firstChildNode..<nodes.count {
-                nodes[index] = nodes[index].clipped(to: aperture)
+        let aperture = targetAperture(of: object, children: nodes[firstChildNode...])
+        for index in firstChildNode..<nodes.count {
+            if let aperture { nodes[index] = nodes[index].clipped(to: aperture) }
+            if liesBeforeOrigin(of: object, frame: resolved, child: nodes[index].frame) {
+                nodes[index] = nodes[index].clipped(to: .zero)
             }
-        }
-        for index in firstChildNode..<nodes.count
-        where liesBeforeOrigin(of: object, frame: resolved, child: nodes[index].frame) {
-            nodes[index] = nodes[index].clipped(to: .zero)
         }
     }
 
@@ -3396,9 +3394,11 @@ final class WasabiSceneRenderer {
                                context: WasabiDrawList) {
         let object = node.object, frame = node.frame
         guard frame.width > 1, frame.height > 1 else { return }
+        if Self.defersToOverlayPass(kind) {
+            deferredHostComponents.append((kind, node))
+            return
+        }
         switch kind {
-        // Deferred like the seeker (B292): a layer declared after the holder sits under the list.
-        case .playlist where !Self.drawsPlaylistInline: deferredHostComponents.append((kind, node))
         case .playlist: drawPlaylistComponent(object, frame: frame, context: context)
         case .equalizer: drawEqualizerComponent(frame: frame, context: context)
         case .visualization:
@@ -3418,8 +3418,7 @@ final class WasabiSceneRenderer {
             // letterbox margins around the hosted picture (B20).
             context.setFillColor(NSColor.black.cgColor)
             context.fill(bledHostComponentRect(frame))
-        // Deferred to the overlay pass below — see `deferredHostComponents`.
-        case .waveformSeeker: deferredHostComponents.append((kind, node))
+        case .waveformSeeker: break // always deferred, above
         case .library:
             context.setFillColor(palette.contentBackground.cgColor)
             context.fill(bledHostComponentRect(frame))
@@ -3457,50 +3456,10 @@ final class WasabiSceneRenderer {
     /// **No background fill.** The skin has already drawn this rect — Big Bento shows
     /// `waveseeker.rounder.bg` under it in the same frame — and painting over it is what made the
     /// unrecognized-holder path put a slab over the seek bar (BB12).
-    /// Host components the skin backs with its **own** artwork, drawn after the whole scene.
-    ///
-    /// Winamp gives a plugin-hosted surface a real child window, which floats above every layer the
-    /// skin draws. Ours is painted inline at the holder's declared z-position, and for most
-    /// components that is the same thing — nothing is declared over a playlist or a video box.
-    ///
-    /// The seeker is the exception, and it is the skin that makes it one. Big Bento backs its strip
-    /// with `<layer id="waveseeker.rounder.bg" image="songticker.background.center2" … visible="0">`,
-    /// declared *after* the holder and shown by the skin's own timer **because** the component was
-    /// accepted. In Winamp that layer lands behind the plugin's window; here it landed on top, and a
-    /// full-width dark panel over the strip is indistinguishable from a strip that never drew — which
-    /// is exactly how BB18 presented, right down to the box measuring a uniform `rgb(40,42,48)`.
-    ///
-    /// So a claimed component is drawn last. The frames are collected during the walk (with the
-    /// scene's transform already established) and replayed here inside the same `saveGState`, so the
-    /// coordinates are the ones the walk computed.
-    ///
-    /// The playlist is the second (B292): Ryoko_Asakura declares its character art `pledit.char`
-    /// after the list's holder, and Winamp's list window floats over it. Each node is replayed under
-    /// its own clip and alpha, which the walk's `saveGState` no longer holds.
-    /// `WINAMP_MODERN_INLINE_PLAYLIST=1` is the A/B switch back to the inline draw.
-    private func drawDeferredHostComponents(in context: WasabiDrawList) {
-        let pending = deferredHostComponents
-        deferredHostComponents.removeAll(keepingCapacity: true)
-        for (kind, node) in pending {
-            context.saveGState()
-            node.clipping.apply(to: context)
-            context.setAlpha(Self.alphaFraction(of: node.object, active: isWindowActive) * node.inheritedAlpha)
-            if kind == .playlist {
-                drawPlaylistComponent(node.object, frame: node.frame, context: context)
-            } else {
-                drawWaveformSeeker(frame: node.frame, context: context)
-            }
-            context.restoreGState()
-        }
-    }
-
-    static let drawsPlaylistInline =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_INLINE_PLAYLIST"] == "1"
-
     /// Collected during the scene walk, drained by `drawDeferredHostComponents` in the same frame.
-    private var deferredHostComponents: [(kind: WinampModernComponentKind, node: WasabiSceneNode)] = []
+    var deferredHostComponents: [(kind: WinampModernComponentKind, node: WasabiSceneNode)] = []
 
-    private func drawWaveformSeeker(frame: CGRect, context: WasabiDrawList) {
+    func drawWaveformSeeker(frame: CGRect, context: WasabiDrawList) {
         let (samples, isLoading) = host.seekerWaveform
         let played = host.duration > 0
             ? CGFloat(min(max(host.currentTime / host.duration, 0), 1)) : 0
@@ -3625,48 +3584,6 @@ final class WasabiSceneRenderer {
               WasabiFormWidgets.kind(of: object) == nil,
               let label = object.attributes["text"], !label.isEmpty else { return nil }
         return label
-    }
-
-    ///
-    /// The art such a button lacks is usually still the skin's: the conventional `wasabi.button.*`
-    /// nine-slice, `.pressed.*` while held (B288). Halloween2003's screenshot shows its EQ's
-    /// On/Auto/Learn/Presets drawn on it, and Quadelic's config buttons ship the same set. The border
-    /// stands in only when no slice resolves. On the art the label takes the skin's button text colour,
-    /// which its author chose for that art: Anexa's list white was unreadable on its light buttons.
-    private func drawTextButton(_ object: WasabiObject, frame: CGRect, context: WasabiDrawList,
-                                pressed: Bool) {
-        guard frame.width > 2, frame.height > 2 else { return }
-        var color = palette.listText
-        context.saveGState()
-        let pressedArt = pressed ? textButtonSlices("wasabi.button.pressed.") : nil
-        if let art = pressedArt ?? textButtonSlices("wasabi.button.") {
-            drawNineSlice(art, in: frame, tile: false, context: context)
-            color = declaredSkinColor("wasabi.button.text") ?? declaredSkinColor("studio.button.text") ?? color
-        } else {
-            context.setStrokeColor(color.cgColor)
-            context.setLineWidth(1)
-            context.stroke(frame.insetBy(dx: 0.5, dy: 0.5))
-        }
-        if pressed, pressedArt == nil {
-            context.setFillColor(color.withAlphaComponent(0.25).cgColor)
-            context.fill(frame.insetBy(dx: 1, dy: 1))
-        }
-        if let label = Self.ownLabel(of: object) {
-            let inset = frame.insetBy(dx: 1, dy: max(0, (frame.height - 11) / 2))
-            drawSurfaceText(label, in: inset, color: color, alignment: .center, pointSize: 9,
-                            context: context)
-        }
-        context.restoreGState()
-    }
-
-    /// One `wasabi.button.*` set, row-major for `drawNineSlice`, or nil when none of it resolves. The
-    /// centre is `.center` in most of the corpus and `.middle` in about 200 skins, Quadelic among them.
-    private func textButtonSlices(_ prefix: String) -> [WasabiBitmap?]? {
-        func art(_ slice: String) -> WasabiBitmap? { resources.bitmap(identifier: prefix + slice) }
-        let parts = [art("top.left"), art("top"), art("top.right"),
-                     art("left"), art("center") ?? art("middle"), art("right"),
-                     art("bottom.left"), art("bottom"), art("bottom.right")]
-        return parts.contains { $0 != nil } ? parts : nil
     }
 
     /// The chrome control an object stands in for when `bitmapID` resolves to no artwork, or nil. The
@@ -4052,7 +3969,7 @@ final class WasabiSceneRenderer {
         return (label, ink)
     }
 
-    private func drawPlaylistComponent(_ holder: WasabiObject, frame: CGRect, context: WasabiDrawList) {
+    func drawPlaylistComponent(_ holder: WasabiObject, frame: CGRect, context: WasabiDrawList) {
         // Drawn by us, coloured by the skin: the list sits inside the skin's own frame, so its text
         // and selection follow the skin's colour resources and its active colour theme.
         let palette = rowPalette

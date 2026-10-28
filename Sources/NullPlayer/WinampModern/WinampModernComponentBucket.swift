@@ -209,21 +209,30 @@ final class WinampModernComponentBucketState {
     private(set) var offset = 0
     /// The icon the focus plate is drawn on — the one under the pointer, else the first on screen.
     private(set) var focusedIndex = 0
-    /// The icon whose name the caption reads: the one under the pointer, or the first on screen after
-    /// a `CB_*` scroll, and **nothing at rest**. The Duk Side V3's own screenshot, taken in Winamp,
-    /// shows its caption slot blank under a thinger that is drawn (B314); showing the first icon's
-    /// name there put `Playlist Editor` where a player's title is read.
-    private var captionIndex: Int?
-    /// Whether the caption is the pointer's: it goes blank when the pointer leaves the strip, where a
-    /// scrolled-to name stays because the pointer is on a button beside the strip.
-    private var captionFollowsPointer = false
+    /// What the caption beside the thinger names: the icon under the pointer, or the first on screen
+    /// after a `CB_*` scroll, and **nothing at rest**. The Duk Side V3's own screenshot, taken in
+    /// Winamp, shows its caption slot blank under a thinger that is drawn (B314); showing the first
+    /// icon's name there put `Playlist Editor` where a player's title is read. A pointer's caption goes
+    /// blank when the pointer leaves the strip, where a scrolled-to name stays because the pointer is
+    /// on a button beside the strip.
+    private enum Caption: Equatable {
+        case none
+        case pointer(Int)
+        case scrolled(Int)
+    }
+    private var caption = Caption.none
 
     /// `WINAMP_MODERN_CAPTION_AT_REST=1` is the A/B switch back to the first icon's name at rest (B314).
     private static let namesFirstIconAtRest =
         ProcessInfo.processInfo.environment["WINAMP_MODERN_CAPTION_AT_REST"] == "1"
 
     var focusedTitle: String {
-        (captionIndex ?? (Self.namesFirstIconAtRest ? focusedIndex : nil)).flatMap { icons.indices.contains($0) ? icons[$0].title : nil } ?? ""
+        let index: Int
+        switch caption {
+        case .pointer(let named), .scrolled(let named): index = named
+        case .none: guard Self.namesFirstIconAtRest else { return "" }; index = focusedIndex
+        }
+        return icons.indices.contains(index) ? icons[index].title : ""
     }
 
     func clampedOffset(_ value: Int, visibleCount: Int) -> Int {
@@ -240,27 +249,24 @@ final class WinampModernComponentBucketState {
         // Scrolling with no pointer over the strip (a `CB_*` button) has to move the caption too, or
         // the name beside the thinger describes an icon that has scrolled away.
         focusedIndex = next
-        captionIndex = next
-        captionFollowsPointer = false
+        caption = .scrolled(next)
         return true
     }
 
     @discardableResult
     func focus(_ index: Int) -> Bool {
         guard icons.indices.contains(index),
-              index != focusedIndex || index != captionIndex || !captionFollowsPointer else { return false }
+              index != focusedIndex || caption != .pointer(index) else { return false }
         focusedIndex = index
-        captionIndex = index
-        captionFollowsPointer = true
+        caption = .pointer(index)
         return true
     }
 
     /// The pointer moved off every icon: a caption that was the pointer's goes blank.
     @discardableResult
     func pointerLeftTheIcons() -> Bool {
-        guard captionFollowsPointer else { return false }
-        captionIndex = nil
-        captionFollowsPointer = false
+        guard case .pointer = caption else { return false }
+        caption = .none
         return true
     }
 }

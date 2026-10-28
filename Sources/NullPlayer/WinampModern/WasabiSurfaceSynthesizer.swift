@@ -83,10 +83,9 @@ enum WasabiSurfaceSynthesizer {
                            scriptReader: ScriptReader? = nil) -> Result {
         let kinds = inventory.synthesizableKinds
         let definitions = groupDefinitions(in: document.roots)
-        let playlistFrame = usableFrame(in: definitions, document: document, scriptReader: scriptReader)
         // B305: every window but the playlist wears a frame without the playlist's command bar.
-        let frame = usableFrame(in: definitions, document: document, scriptReader: scriptReader,
-                                carryingPlaylistBar: false)
+        let (playlistFrame, frame) = usableFrames(in: definitions, document: document,
+                                                  scriptReader: scriptReader)
         let hostedWindows = hostedWindowCatalog(frame: frame)
 
         // Any window the skin framed in tooltip art, re-hosted in the chrome our windows wear.
@@ -477,10 +476,12 @@ enum WasabiSurfaceSynthesizer {
     ///    first kind at all: its `wasabi.standardframe.static` runs a script that draws chrome and
     ///    never touches `content`, so left to the first rule every one of NullPlayer's own windows
     ///    materialized with no client area and fell back to NullPlayer's own chrome.
-    private static func usableFrame(in definitions: [String: WalXMLNode],
-                                    document: WalExpandedXMLDocument,
-                                    scriptReader: ScriptReader?,
-                                    carryingPlaylistBar: Bool = true) -> FrameSelection {
+    ///
+    /// Answers twice from one scan: the playlist's frame, and the frame every other window wears.
+    private static func usableFrames(in definitions: [String: WalXMLNode],
+                                     document: WalExpandedXMLDocument,
+                                     scriptReader: ScriptReader?)
+        -> (playlist: FrameSelection, other: FrameSelection) {
         var reasons: [String] = []
         var declared: [(border: Double, order: Int, frame: Frame)] = []
         var withPlaylistBar = Set<String>()
@@ -517,13 +518,25 @@ enum WasabiSurfaceSynthesizer {
         // A frame that draws Add/Rem/Sel/Misc/List into its own chrome (LG_Free's status-bar frame)
         // is the playlist's; any other window takes a sibling frame when the skin has one.
         // `WINAMP_MODERN_PLAYLIST_BAR_ANY_FRAME=1` is the A/B switch: the thinnest frame for all.
-        if !carryingPlaylistBar, ProcessInfo.processInfo.environment["WINAMP_MODERN_PLAYLIST_BAR_ANY_FRAME"] != "1" {
-            let plain = declared.filter { !withPlaylistBar.contains($0.frame.groupIdentifier) }
-            if !plain.isEmpty { declared = plain }
+        func thinnest(_ frames: [(border: Double, order: Int, frame: Frame)]) -> FrameSelection? {
+            frames.min(by: { ($0.border, $0.order) < ($1.border, $1.order) }).map { .success($0.frame) }
         }
-        if let best = declared.sorted(by: { ($0.border, $0.order) < ($1.border, $1.order) }).first {
-            return .success(best.frame)
-        }
+        let plain = declared.filter { !withPlaylistBar.contains($0.frame.groupIdentifier) }
+        let playlist = thinnest(declared)
+        let other = thinnest(plain.isEmpty || playlistBarOnAnyFrame ? declared : plain)
+        if let playlist, let other { return (playlist, other) }
+        let fallback = exemplarFrame(in: definitions, document: document, reasons: reasons)
+        return (playlist ?? fallback, other ?? fallback)
+    }
+
+    private static let playlistBarOnAnyFrame =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_PLAYLIST_BAR_ANY_FRAME"] == "1"
+
+    /// The skin's own window laid out around a component, copied as the frame when none follows the
+    /// `content=` contract.
+    private static func exemplarFrame(in definitions: [String: WalXMLNode],
+                                      document: WalExpandedXMLDocument,
+                                      reasons: [String]) -> FrameSelection {
         // Nothing follows the contract. Copy one of the skin's own windows instead, if it has one:
         // its own layout is proof of where this frame's content goes, which nothing else here is.
         let candidates = exemplarCandidates(in: definitions)

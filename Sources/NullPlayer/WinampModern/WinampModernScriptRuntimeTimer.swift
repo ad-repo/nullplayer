@@ -36,28 +36,32 @@ extension WinampModernScriptRuntime {
         let hasTargetH: Bool
         let hasTargetA: Bool
 
-        /// This state with the geometry clock of `prior`, when `prior` was moving geometry.
-        func carryingGeometry(of prior: TargetAnimationState) -> TargetAnimationState {
-            guard prior.hasTargetX || prior.hasTargetY || prior.hasTargetW || prior.hasTargetH else { return self }
-            var carried = self
-            carried.startX = prior.startX; carried.startY = prior.startY
-            carried.startW = prior.startW; carried.startH = prior.startH
-            carried.duration = prior.duration; carried.startTime = prior.startTime
-            return carried
-        }
+        /// The kinds a script re-aimed since the last `gotoTarget` (B315): a kind it did not re-aim
+        /// keeps its clock, if still under way, instead of crawling to the same target over the new
+        /// call's duration.
+        enum Kind { case geometry, alpha }
+        var retargeted: Set<Kind> = []
 
-        /// This state with the alpha clock of `prior`, when `prior` was fading.
-        func carryingAlpha(of prior: TargetAnimationState) -> TargetAnimationState {
-            guard prior.hasTargetA else { return self }
+        private var hasGeometryTarget: Bool { hasTargetX || hasTargetY || hasTargetW || hasTargetH }
+
+        /// This state with, for each kind `prior` did not have re-aimed, the clock `prior` was running.
+        func continuing(_ prior: TargetAnimationState) -> TargetAnimationState {
             var carried = self
-            carried.startAlpha = prior.startAlpha
-            carried.alphaDuration = prior.alphaDuration; carried.alphaStartTime = prior.alphaStartTime
+            if !prior.retargeted.contains(.geometry), hasGeometryTarget, prior.hasGeometryTarget {
+                carried.startX = prior.startX; carried.startY = prior.startY
+                carried.startW = prior.startW; carried.startH = prior.startH
+                carried.duration = prior.duration; carried.startTime = prior.startTime
+            }
+            if !prior.retargeted.contains(.alpha), hasTargetA, prior.hasTargetA {
+                carried.startAlpha = prior.startAlpha
+                carried.alphaDuration = prior.alphaDuration; carried.alphaStartTime = prior.alphaStartTime
+            }
             return carried
         }
     }
 
     func setTarget(_ key: String, object: WasabiObject, value: MakiValue) -> MakiValue {
-        if key == "targeta" { pendingAlphaRetarget.insert(object.stableID) } else { pendingGeometryRetarget.insert(object.stableID) }
+        activeTargetAnimations[object.stableID]?.retargeted.insert(key == "targeta" ? .alpha : .geometry)
         _ = object.setAttribute(key, value: String(value.integerValue))
         _ = object.setAttribute("goingtotarget", value: "1")
         return .null
@@ -225,10 +229,6 @@ extension WinampModernScriptRuntime {
         let hasA = object.attributes["targeta"] != nil
 
         let rawSpeed = Double(object.attributes["targetspeed"] ?? "0.5") ?? 0.5
-        // B315: what this `gotoTarget` re-aims. A kind it does not re-aim keeps its clock when it is
-        // still under way, instead of crawling to the same target over the new call's duration.
-        let retargetsAlpha = pendingAlphaRetarget.remove(id) != nil
-        let retargetsGeometry = pendingGeometryRetarget.remove(id) != nil
         if rawSpeed <= 0 {
             if hasX { _ = object.moveForTarget("x", to: object.attributes["targetx"]!) }
             if hasY { _ = object.moveForTarget("y", to: object.attributes["targety"]!) }
@@ -270,13 +270,7 @@ extension WinampModernScriptRuntime {
             duration: rawSpeed, startTime: now, alphaDuration: rawSpeed, alphaStartTime: now,
             hasTargetX: hasX, hasTargetY: hasY, hasTargetW: hasW, hasTargetH: hasH, hasTargetA: hasA
         )
-        if let prior {
-            // Whichever kind this call did not re-aim carries on from where it was (B315).
-            if !retargetsGeometry, hasX || hasY || hasW || hasH {
-                state = state.carryingGeometry(of: prior)
-            }
-            if !retargetsAlpha, hasA { state = state.carryingAlpha(of: prior) }
-        }
+        if let prior { state = state.continuing(prior) }
 
         // A move to where the object already is still takes its duration before `onTargetReached`.
         // Answered synchronously, it landed inside the very `onTargetReached` that asked, and the

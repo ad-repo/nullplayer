@@ -264,9 +264,6 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     var popupCommands: [UInt64: [PopupEntry]] = [:]
     var dynamicObjects: [UInt64: DynamicObjectState] = [:]
     var activeTargetAnimations: [WasabiObjectID: TargetAnimationState] = [:]
-    /// Kinds a script re-aimed since its last `gotoTarget` (B315).
-    var pendingAlphaRetarget: Set<WasabiObjectID> = []
-    var pendingGeometryRetarget: Set<WasabiObjectID> = []
     var activeLayoutByContainer: [WasabiObjectID: WasabiObjectID] = [:]
     /// Layouts a script sized to nothing; see `noteScriptSize`.
     var scriptCollapsedLayouts: Set<WasabiObjectID> = []
@@ -1148,7 +1145,6 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         dispatchObserver = nil
         geometryDidSettle = nil
         activeTargetAnimations.removeAll()
-        pendingAlphaRetarget.removeAll(); pendingGeometryRetarget.removeAll()
         timers.teardown()
         interpreter.teardown()
         host.endVisualizationConsumption()
