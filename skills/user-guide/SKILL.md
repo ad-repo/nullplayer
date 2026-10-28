@@ -156,6 +156,7 @@ Windows automatically snap together when dragged near each other:
 - **Position Bar**: Seek through track
 - **Volume Slider**: Adjust playback volume (0-100%)
 - **Balance Slider**: Pan audio left/right
+- **Scroll wheel** (Classic): over the balance slider, steps balance 10%; anywhere else on the main window, steps volume 5% (the ↑/↓ step). Trackpad momentum is ignored.
 
 ### Transport Buttons
 
