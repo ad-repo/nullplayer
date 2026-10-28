@@ -244,6 +244,11 @@ Library Browser → **Source: YouTube**. Subscribe to channels (**+ADD**, or fin
 ### Local Files
 Drag & drop or use File menu. Supports: MP3, M4A, AAC, WAV, AIFF, FLAC, OGG, ALAC
 
+Local M4A files containing Opus audio also play without converting or renaming your music files.
+On macOS versions whose native file reader cannot decode this combination, NullPlayer prepares
+temporary decoded audio before playback. This needs temporary disk space; the original stays in
+your playlist and library, and seeking, EQ, visualizations, gapless and Sweet Fades remain available.
+
 ### .cue Sheets
 Open a `.cue` file (File → Open, drag-drop, or double-click), or open an audio file that has a sibling `.cue` next to it, and the single backing file is **virtually split** into its cue tracks — one row per track in the now-playing playlist, with correct titles/durations. Prev/Next move per cue track, seek stays within the current track, and playback crosses track boundaries **gaplessly** (shuffle and repeat-single still advance correctly, but a small gap is expected in those modes). Nothing is written to disk and nothing is added to the library.
 

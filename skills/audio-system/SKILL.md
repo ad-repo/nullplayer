@@ -162,6 +162,28 @@ is false (`AudioEngineStreamStopTests`).
 
 See `skills/local-library/SKILL.md` — NAS Responsiveness section.
 
+### Opus in MPEG-4 local files
+
+`LocalAudioFile.open` is the local playback/validation/waveform decoding seam. Some macOS versions
+recognize Opus-in-M4A but `AVAudioFile` returns zero frames and throws on read. The helper keeps
+working native readers, otherwise decodes only MPEG-4 Opus through `AVAssetReader` into a temporary
+Float32 CAF. This is not an export: the track's original URL, tags and source bytes stay unchanged.
+The returned `AVAudioFile` owns and deletes its backing directory, including when a deferred open
+is discarded. Presentation duration trims the last Opus packet's padding. Existing segment-based
+seek, cue, gapless, normalization and Sweet Fades continue to use `AVAudioFile`.
+
+Use `LocalAudioFile.sourceURL(of:)` for comparisons with track identity; `file.url` is the actual
+backing URL, suitable for another PCM analysis reader. Metadata-only paths use `AVAsset` duration
+when `AVAudioFile.length` is zero, without decoding the file. Fallback decoding requires temporary
+disk space (48 kHz stereo Float32 is about 23 MB/minute) and a full decode before first playback;
+the normal playlist-double-click and handoff opens run on `deferredIOQueue`. This change does not
+add Opus support to remote cast devices or the HTTP streaming pipeline.
+
+Regression coverage: `LocalAudioFileTests` uses a synthetic stereo Opus-in-M4A fixture with a
+non-packet-aligned duration, checks full PCM reads, exact seek, original identity/bytes, backing-file
+lifetime, corrupt input, native WAV and waveform generation. Reproduce the original failure with
+`AVAudioFile(forReading:)` on that fixture, then open it with `LocalAudioFile.open`.
+
 ### A Local Track That Will Not Open
 
 Two load paths, one rule: **skip a bad file, but never skip past a file whose folder is gone.**

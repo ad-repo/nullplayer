@@ -267,7 +267,7 @@ actor WaveformCacheService {
         let audioFile: AVAudioFile
         do {
             audioFile = try Self.catchingObjCException {
-                try AVAudioFile(forReading: descriptor.sourceURL)
+                try LocalAudioFile.open(descriptor.sourceURL)
             }
         } catch {
             throw NSError(domain: "WaveformCacheService", code: 1, userInfo: [

@@ -141,7 +141,9 @@ struct Track: Identifiable, Equatable {
                 let format = audioFile.processingFormat
                 extractedSampleRate = Int(format.sampleRate)
                 extractedChannels = Int(format.channelCount)
-                extractedDuration = Double(audioFile.length) / format.sampleRate
+                if audioFile.length > 0 {
+                    extractedDuration = Double(audioFile.length) / format.sampleRate
+                }
                 
                 // Estimate bitrate from file size and duration
                 if let duration = extractedDuration, duration > 0 {

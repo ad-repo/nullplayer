@@ -47,7 +47,7 @@ enum AudioFileValidator {
         return nil  // Valid
     }
     
-    /// Full validation - opens file with AVAudioFile (slower, for playback time)
+    /// Full validation - opens file with the local playback decoder (slower, for playback time)
     /// Returns nil if valid, or an error message if invalid
     static func fullValidate(url: URL) -> String? {
         // Remote URLs (streaming) don't need validation
@@ -60,9 +60,9 @@ enum AudioFileValidator {
             return "File does not exist"
         }
         
-        // Try to open with AVAudioFile to validate format
+        // Use the same decoder as playback to validate format
         do {
-            _ = try AVAudioFile(forReading: url)
+            _ = try LocalAudioFile.open(url)
             return nil  // Valid
         } catch {
             let ext = url.pathExtension.lowercased()

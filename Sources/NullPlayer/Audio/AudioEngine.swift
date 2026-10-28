@@ -3354,7 +3354,7 @@ class AudioEngine {
         playerNode.stop()
         // A track picked during the cast only replaced `currentTrack`, never the open file, so the
         // file is the pre-cast track's. Drop it and Play reloads the track on screen.
-        if let file = audioFile, file.url != currentTrack?.url {
+        if let file = audioFile, LocalAudioFile.sourceURL(of: file) != currentTrack?.url {
             audioFile = nil
         }
         resetStoppedTransportToStart()
@@ -4124,7 +4124,10 @@ class AudioEngine {
             var fileDurations: [UUID: TimeInterval] = [:]
             for item in needsFileIO {
                 guard let af = try? AVAudioFile(forReading: item.url) else { continue }
-                let dur = Double(af.length) / af.processingFormat.sampleRate
+                var dur = Double(af.length) / af.processingFormat.sampleRate
+                if dur <= 0 {
+                    dur = (try? await AVURLAsset(url: item.url).load(.duration).seconds) ?? 0
+                }
                 if dur > 0 { fileDurations[item.id] = dur }
             }
             guard !fileDurations.isEmpty else { return }
@@ -4677,7 +4680,7 @@ class AudioEngine {
                 )
                 let playbackURL = tempURL ?? track.url
 
-                let newAudioFile = try AVAudioFile(forReading: playbackURL)
+                let newAudioFile = try LocalAudioFile.open(playbackURL)
                 let openElapsed = CFAbsoluteTimeGetCurrent() - openStart
                 NSLog(
                     "loadLocalTrackForImmediatePlayback: Opened '%@' in %.3fs",
@@ -4788,7 +4791,7 @@ class AudioEngine {
 
         do {
             let openStart = CFAbsoluteTimeGetCurrent()
-            let newAudioFile = try AVAudioFile(forReading: track.url)
+            let newAudioFile = try LocalAudioFile.open(track.url)
             let openElapsed = CFAbsoluteTimeGetCurrent() - openStart
             NSLog("loadLocalTrack: Opened '%@' in %.3fs", track.url.lastPathComponent, openElapsed)
 
@@ -5649,7 +5652,7 @@ class AudioEngine {
                     )
 
                     let playbackURL = gaplessTempURL ?? nextTrackURL
-                    let nextFile = try AVAudioFile(forReading: playbackURL)
+                    let nextFile = try LocalAudioFile.open(playbackURL)
                     let elapsed = CFAbsoluteTimeGetCurrent() - openStart
                     NSLog("Gapless: Opened next track '%@' in %.3fs", nextTrackTitle, elapsed)
                     DispatchQueue.main.async { [weak self] in
@@ -5783,7 +5786,7 @@ class AudioEngine {
         deferredIOQueue.async { [weak self] in
             guard let self else { return }
             do {
-                let nextFile = try AVAudioFile(forReading: nextTrack.url)
+                let nextFile = try LocalAudioFile.open(nextTrack.url)
                 DispatchQueue.main.async { [weak self] in
                     guard let self,
                           self.crossfadeFileLoadToken == token,
