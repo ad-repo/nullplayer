@@ -939,6 +939,19 @@ every skin-owned step has declined (B55, above).
   never yanked back), never when a restored frame exists, and the skin frame's own
   `contentMinSize`/`contentMaxSize` clamp the result, so the renderer is never handed a width it
   would bounce back.
+- **A UI Size change keeps a player-wide window at the player's width (B245).** `applyDoubleSize`
+  scales NullPlayer's own windows by the size ratio, but a player whose `onScale` re-fits it (Nitrous
+  monitor mode) does not grow by that ratio, so a playlist opened at its width hung 650 pt past the
+  screen at 135%. Under Match Main Window Width (the only way NullPlayer's windows open at the
+  player's width), `applyUIScaleLevelChangeIfNeeded` (`.wal` only) notes the windows as wide as the
+  player (within one PLEDIT width step) before the change — a window the user sized wider keeps its
+  own width — and `fitWinampModernScene` sets them to its new width and re-tiles. A player hidden
+  for the change hears its `onScale` only when shown (B244), so the fit waits in
+  `windowsAwaitingPlayerShow` and runs from `notifyMainWindowVisibilityChanged` once it has
+  re-fitted; a skin load drops it (`forgetSkinWindowPlacement`). The classic playlist's 25 pt
+  PLEDIT step is off whenever its palette frame is drawn (`PlaylistWindowController.isWidthStepped`
+  is `!SkinnedSurfaceChrome.hidesPaletteTitleBar`): in `.wal` it had rounded an 1800 player width to
+  1813, off the screen edge. Its 275 pt minimum stays (`hasFreeMinimumWidth`).
 
 - **The width floor is the narrower of the registry minimum and the player itself.** This is what
   makes the paragraph above true rather than merely intended. A hosted window's floor is not really

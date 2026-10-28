@@ -798,6 +798,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
 
     private var containerVisibility: [WasabiObjectID: Bool] = [:]
 
+    /// Layouts that were not on screen for a UI Size change and owe `onScale` (`noteScaleChange`).
+    var layoutsMissingScale: Set<WasabiObjectID> = []
+
     // MARK: - Layer FX
 
     var layerFX = WinampModernLayerFXStore()

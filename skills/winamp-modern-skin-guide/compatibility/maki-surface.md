@@ -94,8 +94,11 @@ By area:
   menu, a state restore — is the user's and drops the skin's claim. Without it Alpha Media Player X5's
   135% opened every later skin at 135%. **`onScale(newScale)`** goes to each showing container's
   active layout whenever UI Size changes (`dispatchLayoutScale`, B239), which is how Nitrous's monitor
-  mode re-fits the screen after a change instead of staying sized for the old scale. A layout hidden
-  during the change is not told (B244)
+  mode re-fits the screen after a change instead of staying sized for the old scale. A layout not on
+  screen for the change — a hidden window's, or a showing window's alternate layouts — is recorded
+  (`noteScaleChange`) and hears `onScale` once when it next comes up: its window shown
+  (`setSceneVisible`, or `windowVisibilityDidChange` for the player) or the layout switched to
+  (B244)
 - **Object validity**: `isInvalid()` is true for a null receiver *and* for an object whose declared
   bitmap never resolved. ClassicPro probes for optional artwork by declaring a hidden layer over it
   and asking that layer whether it is invalid

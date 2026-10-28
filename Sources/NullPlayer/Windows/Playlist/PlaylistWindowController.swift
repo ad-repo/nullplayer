@@ -111,13 +111,18 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
     /// (`SkinnedSurfaceChrome.hidesPaletteTitleBar`), with no PLEDIT tiles to step its width by, so it
     /// resizes freely: no 25-pixel step and no 275-pixel minimum, either of which keeps it off the
     /// player's own width. `.wal` wears that frame too, but only once its palette loads, after these
-    /// limits are set, so it keeps the step until something re-applies them on that load.
-    private static var hasFreeWidth: Bool {
+    /// limits are set, so it keeps the 275-pixel minimum; the step goes with the tiles
+    /// (`isWidthStepped`).
+    private static var hasFreeMinimumWidth: Bool {
         switch WindowManager.shared.runningControllerFamily {
         case .audion, .wmp, .sonique: return true
         case .classic, .nullPlayerModern, .winampModern: return false
         }
     }
+
+    /// The 25-pixel step holds only where PLEDIT tiles are drawn: kept under a `.wal` palette frame, it
+    /// rounded the player's width up past the screen edge (B245).
+    private static var isWidthStepped: Bool { !SkinnedSurfaceChrome.hidesPaletteTitleBar }
 
     /// The narrowest a free-width playlist goes. It must stay at or below the narrowest player it
     /// sits beside: the narrowest Audion face is 24 pt.
@@ -125,7 +130,7 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
 
     /// The playlist's minimum width: `stepped`, the PLEDIT minimum, wherever PLEDIT tiles are drawn.
     static func minimumWidth(stepped: CGFloat) -> CGFloat {
-        hasFreeWidth ? freeMinimumWidth : stepped
+        hasFreeMinimumWidth ? freeMinimumWidth : stepped
     }
 
     private func applySizeLimits(minimumHeight: CGFloat) {
@@ -136,7 +141,7 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
     /// Snap playlist width so PLEDIT title bar tiles align cleanly.
     /// In skin coordinates this enforces: width = (N * 25) + 50.
     private func snappedPlaylistWidth(_ width: CGFloat) -> CGFloat {
-        if Self.hasFreeWidth { return width }
+        if !Self.isWidthStepped { return width }
         let scale = max(0.0001, WindowManager.shared.playlistChromeScale)
         let minSkinWidth = SkinElements.Playlist.minSize.width
         let skinWidth = max(minSkinWidth, width / scale)
