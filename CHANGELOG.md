@@ -143,6 +143,8 @@
   and then; every window of a skin now follows the playback clock and the spectrum.
 - **The component-bucket caption is blank until you hover an icon or scroll.** The Duk Side V3 used to
   print `Playlist Editor` over its duck where the track name is read.
+- **G2's lights glow with the music.** Opening the lights plate from the config page used to show the
+  base only; the glow layer's fade now no longer restarts its slide, so it lights with the level.
 
 ## 0.33.1
 

@@ -18,22 +18,46 @@ extension WinampModernScriptRuntime {
         var targetW: Double
         var targetH: Double
         var targetAlpha: Double
-        let startX: Double
-        let startY: Double
-        let startW: Double
-        let startH: Double
-        let startAlpha: Double
+        var startX: Double
+        var startY: Double
+        var startW: Double
+        var startH: Double
+        var startAlpha: Double
         /// Seconds to reach the target — what Winamp's `setTargetSpeed(float insecond)` takes.
-        let duration: Double
-        let startTime: Double
+        var duration: Double
+        var startTime: Double
+        /// Alpha runs on its own clock: a script that re-aims only the alpha on a timer (G2's lights
+        /// glow) must not restart a slide of the same layer that is still under way (B315).
+        var alphaDuration: Double
+        var alphaStartTime: Double
         let hasTargetX: Bool
         let hasTargetY: Bool
         let hasTargetW: Bool
         let hasTargetH: Bool
         let hasTargetA: Bool
+
+        /// This state with the geometry clock of `prior`, when `prior` was moving geometry.
+        func carryingGeometry(of prior: TargetAnimationState) -> TargetAnimationState {
+            guard prior.hasTargetX || prior.hasTargetY || prior.hasTargetW || prior.hasTargetH else { return self }
+            var carried = self
+            carried.startX = prior.startX; carried.startY = prior.startY
+            carried.startW = prior.startW; carried.startH = prior.startH
+            carried.duration = prior.duration; carried.startTime = prior.startTime
+            return carried
+        }
+
+        /// This state with the alpha clock of `prior`, when `prior` was fading.
+        func carryingAlpha(of prior: TargetAnimationState) -> TargetAnimationState {
+            guard prior.hasTargetA else { return self }
+            var carried = self
+            carried.startAlpha = prior.startAlpha
+            carried.alphaDuration = prior.alphaDuration; carried.alphaStartTime = prior.alphaStartTime
+            return carried
+        }
     }
 
     func setTarget(_ key: String, object: WasabiObject, value: MakiValue) -> MakiValue {
+        if key == "targeta" { pendingAlphaRetarget.insert(object.stableID) } else { pendingGeometryRetarget.insert(object.stableID) }
         _ = object.setAttribute(key, value: String(value.integerValue))
         _ = object.setAttribute("goingtotarget", value: "1")
         return .null
@@ -191,6 +215,7 @@ extension WinampModernScriptRuntime {
 
     func startTargetAnimation(object: WasabiObject) {
         let id = object.stableID
+        let prior = activeTargetAnimations[id]
         cancelTargetAnimation(objectID: id)
 
         let hasX = object.attributes["targetx"] != nil
@@ -200,6 +225,10 @@ extension WinampModernScriptRuntime {
         let hasA = object.attributes["targeta"] != nil
 
         let rawSpeed = Double(object.attributes["targetspeed"] ?? "0.5") ?? 0.5
+        // B315: what this `gotoTarget` re-aims. A kind it does not re-aim keeps its clock when it is
+        // still under way, instead of crawling to the same target over the new call's duration.
+        let retargetsAlpha = pendingAlphaRetarget.remove(id) != nil
+        let retargetsGeometry = pendingGeometryRetarget.remove(id) != nil
         if rawSpeed <= 0 {
             if hasX { _ = object.moveForTarget("x", to: object.attributes["targetx"]!) }
             if hasY { _ = object.moveForTarget("y", to: object.attributes["targety"]!) }
@@ -229,7 +258,8 @@ extension WinampModernScriptRuntime {
         let cw = Double(object.attributes["w"] ?? "0") ?? 0
         let ch = Double(object.attributes["h"] ?? "0") ?? 0
         let ca = Double(object.attributes["alpha"] ?? "255") ?? 255
-        let state = TargetAnimationState(
+        let now = ProcessInfo.processInfo.systemUptime
+        var state = TargetAnimationState(
             currentX: cx, currentY: cy, currentW: cw, currentH: ch, currentAlpha: ca,
             targetX: hasX ? (Double(object.attributes["targetx"]!) ?? cx) : cx,
             targetY: hasY ? (Double(object.attributes["targety"]!) ?? cy) : cy,
@@ -237,10 +267,16 @@ extension WinampModernScriptRuntime {
             targetH: hasH ? (Double(object.attributes["targeth"]!) ?? ch) : ch,
             targetAlpha: hasA ? (Double(object.attributes["targeta"]!) ?? ca) : ca,
             startX: cx, startY: cy, startW: cw, startH: ch, startAlpha: ca,
-            duration: rawSpeed,
-            startTime: ProcessInfo.processInfo.systemUptime,
+            duration: rawSpeed, startTime: now, alphaDuration: rawSpeed, alphaStartTime: now,
             hasTargetX: hasX, hasTargetY: hasY, hasTargetW: hasW, hasTargetH: hasH, hasTargetA: hasA
         )
+        if let prior {
+            // Whichever kind this call did not re-aim carries on from where it was (B315).
+            if !retargetsGeometry, hasX || hasY || hasW || hasH {
+                state = state.carryingGeometry(of: prior)
+            }
+            if !retargetsAlpha, hasA { state = state.carryingAlpha(of: prior) }
+        }
 
         // A move to where the object already is still takes its duration before `onTargetReached`.
         // Answered synchronously, it landed inside the very `onTargetReached` that asked, and the
@@ -270,7 +306,9 @@ extension WinampModernScriptRuntime {
         }
 
         // Linear from where the move started, over the stated duration, as Wasabi steps it.
-        let progress = min(1, (ProcessInfo.processInfo.systemUptime - state.startTime) / state.duration)
+        let clock = ProcessInfo.processInfo.systemUptime
+        let progress = min(1, (clock - state.startTime) / state.duration)
+        let alphaProgress = min(1, (clock - state.alphaStartTime) / state.alphaDuration)
 
         func lerp(_ start: Double, _ target: Double) -> Double {
             start + (target - start) * progress
@@ -280,7 +318,7 @@ extension WinampModernScriptRuntime {
         state.currentY = lerp(state.startY, state.targetY)
         state.currentW = lerp(state.startW, state.targetW)
         state.currentH = lerp(state.startH, state.targetH)
-        state.currentAlpha = lerp(state.startAlpha, state.targetAlpha)
+        state.currentAlpha = state.startAlpha + (state.targetAlpha - state.startAlpha) * alphaProgress
 
         // What this tick actually *changed*, kept apart by kind. A 60 Hz step writes an integer
         // attribute, so most ticks of a slow fade write the value the object already has —
