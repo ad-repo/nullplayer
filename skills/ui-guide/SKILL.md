@@ -493,6 +493,16 @@ This ensures:
 
 The system font fallback maintains the green color and scrolling behavior, just with full Unicode support.
 
+### Scaling
+
+`MainWindowView.updateMarqueeLayerFrame()` sizes the `MarqueeLayer` at base skin size and scales it
+up by the window scale with a transform. Its `contentsScale` must therefore be backing scale ×
+window scale (`marqueeContentsScale`), re-applied on every frame update and backing change, and its
+content layer uses `.nearest` filtering. At backing scale alone the text is stretched on the GPU and
+the bitmap glyphs blur into halos — invisible-ish on Retina, obvious at 1x (#611). Guarded by
+`ClassicMarqueeScaleTests`. The Classic playlist's marquee (`PlaylistView`) uses the same transform
+with backing scale only.
+
 ## White Text Rendering
 
 Some UI elements (like library/server names in the browser) require white text instead of the standard green skin font. This is implemented in `SkinRenderer.drawSkinTextWhite()`.
