@@ -2,6 +2,14 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B282 — A window is wide enough to show its own title — closed 2026-10-29
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B282 | **Silverskin_3's frame titles are wider than their windows, so centred they lose both ends.** Split from B275 (intake #4). `ctitlebar` is `<text align="center" font="sk3.component.font.tb">` in a group `x="30" w="-30" relatw="1"`; the bitmap font is `charwidth="23" hspacing="-3"`, a 20px advance, so `PLAYLIST EDITOR` is 300px in Pledit's 215px box at its 275 minimum and `SILVERSKIN3 HELP` is 320px in the help window's fixed 250 (box 190): `AYLIST EDITO`, `VERSKIN HE`. No rule can draw them whole inside the window; the open question is what Wasabi shows for centred text wider than its box (both ends cut, as now, or left-anchored), and whether the groupdef's `autowidthsource="titlebar"` beats the instance's `w`. `screenshot.png` shows only the player. Done when a reference (a gold skin's screenshot of a centred overflowing string, or the user's verdict at the UI round) settles the rule and the dump follows it, gold+silver otherwise unchanged | intake #4: Silverskin_3 (silver) | S | 2 |
+
+**Closed 2026-10-29**. The window grows rather than the string being re-anchored: a window that cannot show its own name is not a size anybody meant. `WasabiSceneRenderer.titleFittedSize` (`WasabiRendererTitleFit.swift`) widens the window until the title (`WasabiTextMetrics.showsWindowTitle`) draws whole inside its clip, measured on the resolved scene, and only for a title box that stretches with the window. It is a floor that outranks `maximum_w`; `userResizeLimits` keeps the maximum at or above every floor. Gold+silver: Silverskin_3's playlist 275→333 and help 250→353, Aria_of_the_Soul's playlist 180→247; nothing else moved. See `loading.md` § *A window is wide enough to show its own title*.
+
 ## B267 — The Media Library and hosted windows follow focus with the skin's inactive selection pair — closed 2026-10-29
 
 | Id | Item | Reach | Effort | Tier |

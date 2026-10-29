@@ -783,6 +783,20 @@ eight windows grew, all with their content inside the frame. Rika's Color Themes
 one: its content group is empty with a 350x200 minimum and its picker sits on the layout at a fixed
 313, so the window widened 38px and the picker no longer spans it.
 
+#### A window is wide enough to show its own title (B282)
+
+The window's title — a `<text>` whose content is its `:componentname` or its container's name
+(`WasabiTextMetrics.showsWindowTitle`) — widens the window until it draws whole inside its clip.
+Silverskin_3's 20px-advance bitmap titles read `AYLIST EDITO` and `VERSKIN HE` at the skin's own
+widths. `WasabiSceneRenderer.titleFittedSize` (`WasabiRendererTitleFit.swift`) measures on the
+resolved scene, so a group that clips before the box does (Aria_of_the_Soul) is counted, and fits
+only a title whose box stretches with the window: a fixed-width box (JRS) or a script-placed one
+(stock Winamp Modern's titlebar) is left alone. It widens only; the height floor stays the content
+fit's. It runs after the two fits above, in the same two places, from one `contentFit()` measured
+once per layout, and it **outranks `maximum_w`**: it is a floor, and `userResizeLimits` keeps the
+maximum at or above every floor. `WINAMP_MODERN_RENDER_TITLES=1` prints what it measures.
+Gold+silver: three windows grew (Silverskin_3's playlist and help, Aria_of_the_Soul's playlist).
+
 #### `default_w`/`default_h` are `<container>` attributes too (B136, 2026-09-05)
 
 Step 1 of that chain reads the **layout**. A `<container>` may state the same pair, and the fallback

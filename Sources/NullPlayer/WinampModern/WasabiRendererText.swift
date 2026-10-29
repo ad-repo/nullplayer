@@ -47,12 +47,7 @@ extension WasabiSceneRenderer {
         // dictionary may be a null pointer, and only an `Optional` binding can see one.
         let resolved: NSColor? = object.attributes["color"].flatMap(resolvedColor)
         let color = resolved ?? undeclaredColor
-        let alignment: NSTextAlignment
-        switch object.attributes["align"]?.lowercased() {
-        case "center": alignment = .center
-        case "right": alignment = .right
-        default: alignment = .left
-        }
+        let alignment = WasabiTextMetrics.horizontalAlignment(of: object)
         // A wrapping object is laid out as a paragraph rather than as a line: broken at word
         // boundaries inside its own width, stacked downward, and never scrolled. See
         // `WasabiTextMetrics.wraps`.
@@ -435,13 +430,8 @@ extension WasabiSceneRenderer {
 
     private func drawBitmapText(_ text: String, definition: WalResourceDefinition,
                                 object: WasabiObject, frame: CGRect, context: WasabiDrawList) {
-        let alignment: NSTextAlignment
-        switch object.attributes["align"]?.lowercased() {
-        case "center": alignment = .center
-        case "right": alignment = .right
-        default: alignment = .left
-        }
-        drawBitmapText(text, definition: definition, frame: frame, alignment: alignment,
+        drawBitmapText(text, definition: definition, frame: frame,
+                       alignment: WasabiTextMetrics.horizontalAlignment(of: object),
                        verticalAlignment: WasabiTextMetrics.verticalAlignment(of: object),
                        colonWidth: WasabiTextMetrics.bitmapColonWidth(of: object),
                        ticker: object, context: context)

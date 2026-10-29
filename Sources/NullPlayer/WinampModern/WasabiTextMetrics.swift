@@ -584,6 +584,15 @@ final class WasabiTextMetrics {
         }
     }
 
+    /// `align=` — anything other than `center` or `right` reads as `left`.
+    static func horizontalAlignment(of object: WasabiObject) -> NSTextAlignment {
+        switch object.attributes["align"]?.lowercased() {
+        case "center": return .center
+        case "right": return .right
+        default: return .left
+        }
+    }
+
     /// `wrap="1"` — the Text class's multi-line mode. The string is broken at word boundaries inside
     /// the object's own width and laid out downward; it never scrolls, because a paragraph is not a
     /// ticker. This is the whole difference between a label and the body of a `<Wasabi:TitleBox>`,
@@ -664,6 +673,13 @@ final class WasabiTextMetrics {
         return [host.trackTitle, host.trackArtist, host.trackAlbum].contains {
             !$0.isEmpty && text.localizedCaseInsensitiveContains($0)
         }
+    }
+
+    /// Whether this object shows its window's own title — `:componentname`, or the name a script
+    /// wrote into it — which is what `titleFittedSize` sizes a window to.
+    static func showsWindowTitle(_ object: WasabiObject, host: WinampModernHost) -> Bool {
+        let name = componentName(for: object)
+        return !name.isEmpty && content(of: object, host: host).caseInsensitiveCompare(name) == .orderedSame
     }
 
     /// Whether this object is the skin's playlist status line, by **either** of the two forms skins
@@ -888,7 +904,7 @@ final class WasabiTextMetrics {
     }
 
     /// The string itself, without the box margin `width(of:text:)` adds.
-    private func contentWidth(of object: WasabiObject, text: String) -> CGFloat {
+    func contentWidth(of object: WasabiObject, text: String) -> CGFloat {
         let padding = CGFloat((Double(object.attributes["leftpadding"] ?? "0") ?? 0)
                               + (Double(object.attributes["rightpadding"] ?? "0") ?? 0))
         if let fontID = object.attributes["font"],

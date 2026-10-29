@@ -948,7 +948,7 @@ final class WasabiSceneRenderer {
         // `maximum_h="23"` forbids.
         autoFittedCanvas = storedCanvasSize
         hasFittedContent = false
-        contentFloorCache = nil
+        contentFitCache = nil
         if let restored {
             _ = resize(to: restored)
             autoFittedCanvas = nil
@@ -1004,7 +1004,28 @@ final class WasabiSceneRenderer {
         return CGSize(width: max(width, hostedComponentFloorWidth ?? 0), height: height)
     }
 
-    private var contentFloorCache: CGSize??
+    /// The content fit's measurements for the active layout: `fitted` from the content and frame-content
+    /// fits, `titleWidth` the width its title needs on top of that (never less than `fitted.width`).
+    private struct ContentFit {
+        let declared: CGSize
+        let fitted: CGSize
+        let titleWidth: CGFloat
+    }
+
+    private var contentFitCache: ContentFit?
+
+    /// Measured once per layout and shared by the auto-fit and the floor. Every step resolves the
+    /// scene at hypothetical canvases — the title fit alone up to five times — over the object graph
+    /// the scripts own on the main thread, so it cannot move off it; it can only run less.
+    /// Callers set `isFittingContent` around it, so `layoutMaximumSize` reads the skin's own value.
+    private func contentFit() -> ContentFit {
+        if let contentFitCache { return contentFitCache }
+        let declared = defaultSize(for: layout)
+        let fitted = frameContentFittedSize(contentFittedSize(declared, for: layout))
+        let fit = ContentFit(declared: declared, fitted: fitted, titleWidth: titleFittedSize(fitted).width)
+        contentFitCache = fit
+        return fit
+    }
 
     /// The size the content fit asks for, as a **floor** as well as a default — `nil` for a layout
     /// the skin sized itself, which is nearly all of them.
@@ -1022,14 +1043,14 @@ final class WasabiSceneRenderer {
         // Same gate as the fit: before the scripts run, a `Wasabi:StandardFrame`'s content does not
         // exist yet and the measurement would be of an empty frame.
         guard loadedSkin.runtime.hasStartedScripts, !isFittingContent else { return nil }
-        if let contentFloorCache { return contentFloorCache }
         isFittingContent = true
         defer { isFittingContent = false }
-        let declared = Self.defaultSize(for: layout, resources: resources)
-        let fitted = frameContentFittedSize(contentFittedSize(declared, for: layout))
-        let value: CGSize? = fitted == declared ? nil : fitted
-        contentFloorCache = value
-        return value
+        let fit = contentFit()
+        let content: CGSize? = fit.fitted == fit.declared ? nil : fit.fitted
+        // The title floors the width alone: Silverskin_3's playlist states `default_h="154"` over a
+        // `minimum_h="116"`, and a floor of the whole fitted size took that minimum to 154.
+        guard fit.titleWidth > fit.fitted.width else { return content }
+        return CGSize(width: fit.titleWidth, height: content?.height ?? 0)
     }
 
     /// Whether the skin described a resize range for the active layout **at all** — any one of
@@ -1049,9 +1070,14 @@ final class WasabiSceneRenderer {
 
     /// The size range a *window* hosting this layout may take, which is not the same as the range
     /// `resize(to:)` accepts: a script may still resize a fixed layout, exactly as Winamp lets one.
+    /// The maximum never falls below the minimum: a floor may outrank the skin's `maximum_w` —
+    /// Silverskin_3's help window is pinned at 250 and its title needs 320 (B282) — and `resize(to:)`
+    /// already lets the minimum win, so the window's own limits have to agree.
     var userResizeLimits: (minimum: CGSize, maximum: CGSize) {
         guard layoutIsUserResizable else { return (canvasSize, canvasSize) }
-        return (layoutMinimumSize, layoutMaximumSize)
+        let minimum = layoutMinimumSize, maximum = layoutMaximumSize
+        return (minimum, CGSize(width: max(maximum.width, minimum.width),
+                                height: max(maximum.height, minimum.height)))
     }
 
     /// What the layout itself declares — the floor the protective probe starts searching from.
@@ -1066,7 +1092,7 @@ final class WasabiSceneRenderer {
     /// `minimum_h`/`default_h` — a hosted window whose borrowed chrome dropped a strip.
     func layoutBoundsDidChange() {
         protectiveMinimumCache.removeAll()
-        contentFloorCache = nil
+        contentFitCache = nil
         hostedComponentFloorCache.removeAll()
     }
 
@@ -4616,8 +4642,9 @@ final class WasabiSceneRenderer {
               storedCanvasSize == autoFittedCanvas else { return }
         isFittingContent = true
         defer { isFittingContent = false; hasFittedContent = true }
-        let content = frameContentFittedSize(contentFittedSize(defaultSize(for: layout), for: layout))
-        commitAutoFit(componentRoomFittedSize(content, for: layout))
+        let fit = contentFit()
+        commitAutoFit(componentRoomFittedSize(CGSize(width: fit.titleWidth, height: fit.fitted.height),
+                                              for: layout))
     }
 
     /// Adopt a canvas one of the fits chose, raised to the hosted component's floor so the window
