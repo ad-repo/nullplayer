@@ -319,7 +319,6 @@ class MainWindowView: NSView {
         wantsLayer = true  // Ensure view is layer-backed (already set in setupView)
         
         marqueeLayer = MarqueeLayer()
-        marqueeLayer?.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
         // Set anchorPoint to (0, 0) so position corresponds to top-left corner
         marqueeLayer?.anchorPoint = CGPoint(x: 0, y: 0)
         updateMarqueeLayerFrame()
@@ -360,9 +359,7 @@ class MainWindowView: NSView {
     }
     
     @objc private func windowDidChangeBackingProperties(_ notification: Notification) {
-        if let scale = window?.backingScaleFactor {
-            marqueeLayer?.updateContentsScale(scale)
-        }
+        updateMarqueeLayerFrame()
     }
     
     private func updateMarqueeLayerFrame() {
@@ -400,7 +397,7 @@ class MainWindowView: NSView {
         marqueeLayer?.position = CGPoint(x: offsetX + marqueeArea.origin.x * scale, y: layerY)
         
         // Apply scale transform so the layer renders at scaled size on screen
-        marqueeLayer?.transform = CATransform3DMakeScale(scale, scale, 1)
+        marqueeLayer?.applyDisplayScale(scale, backingScale: window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0)
     }
     
     private func updateMarqueeContent() {

@@ -166,6 +166,15 @@ case .list:
     setNeedsDisplay(convertFromSkinCoordinates(NSRect(x: 0, y: area.minY, width: bounds.width, height: area.height)))
 ```
 
+### 6. Main Window Marquee at Scaled Sizes
+
+**Problem**: At UI sizes above 100% the song title was rendered for base skin size and stretched
+with linear filtering, so the `TEXT.BMP` glyphs blurred into grey halos — mild on Retina, obvious
+at 1x (#611).
+
+**Solution**: Render the marquee at backing scale × window scale and use `.nearest` filtering on its
+content layer. See `ui-guide` § *Main Window Marquee → Scaling*.
+
 ## Files Changed
 
 1. **`Skin/SkinRenderer.swift`** - NSImage rendering for title bars, playlist tile fixes
