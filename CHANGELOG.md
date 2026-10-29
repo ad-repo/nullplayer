@@ -30,6 +30,9 @@
 - **Scroll-wheel volume in the Classic main window** — scroll anywhere on the main window to step
   the volume 5% (the same step as ↑/↓), or over the balance slider to step the balance 10%. A
   trackpad swipe stops when your fingers lift instead of flinging the value.
+- **Browse NullPlayer Certified Skins** — at the bottom of the Skins menu, it opens the
+  [nullplayer.fyi skin gallery](https://nullplayer.fyi/skins/), the record of every skin tested
+  working on NullPlayer.
 
 ### Fixes
 
