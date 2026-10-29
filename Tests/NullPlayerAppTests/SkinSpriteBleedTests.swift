@@ -34,12 +34,13 @@ final class SkinSpriteBleedTests: XCTestCase {
         NSGraphicsContext.restoreGraphicsState()
 
         let pixels = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
-        var green = 0
+        var green = 0, magenta = 0
         for i in 0..<(size * size) {
             let (r, g, b) = (pixels[i * 4], pixels[i * 4 + 1], pixels[i * 4 + 2])
-            XCTAssertFalse(r > 40 && b > 40, "neighbouring divider row drawn at pixel \(i)")
+            if r > 40 && b > 40 { magenta += 1 }
             if g > 200 { green += 1 }
         }
+        XCTAssertEqual(magenta, 0, "neighbouring divider row drawn")
         XCTAssertGreaterThan(green, 0, "the sprite itself was not drawn")
     }
 }
