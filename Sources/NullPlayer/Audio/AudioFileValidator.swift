@@ -1,5 +1,4 @@
 import Foundation
-import AVFoundation
 
 /// Validates audio files before adding to playlist or library
 enum AudioFileValidator {
@@ -45,38 +44,6 @@ enum AudioFileValidator {
         }
         
         return nil  // Valid
-    }
-    
-    /// Full validation - opens file with the local playback decoder (slower, for playback time)
-    /// Returns nil if valid, or an error message if invalid
-    static func fullValidate(url: URL) -> String? {
-        // Remote URLs (streaming) don't need validation
-        if url.scheme == "http" || url.scheme == "https" {
-            return nil
-        }
-        
-        // Check file exists
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            return "File does not exist"
-        }
-        
-        // Use the same decoder as playback to validate format
-        do {
-            _ = try LocalAudioFile.open(url)
-            return nil  // Valid
-        } catch {
-            let ext = url.pathExtension.lowercased()
-            var reason = error.localizedDescription
-            
-            // Add helpful hints for common issues
-            if ext == "wav" {
-                reason += " (WAV may use unsupported compression)"
-            } else if ext == "wma" {
-                reason = "WMA format is not supported"
-            }
-            
-            return reason
-        }
     }
     
     /// Quick validate multiple URLs (fast - just checks existence and extension)

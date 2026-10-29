@@ -8,9 +8,9 @@ final class LocalAudioFileTests: XCTestCase {
             .appendingPathComponent("Fixtures/Audio/opus-in-m4a.m4a")
     }
 
-    func testOpusInM4ADecodesToItsPresentationDurationAndSeeks() throws {
+    func testOpusInM4ADecodesToItsPresentationDurationAndSeeks() async throws {
         let original = try Data(contentsOf: opusURL)
-        let file = try LocalAudioFile.open(opusURL)
+        let file = try await LocalAudioFile.open(opusURL)
         XCTAssertEqual(LocalAudioFile.sourceURL(of: file), opusURL)
         XCTAssertEqual(file.processingFormat.sampleRate, 48_000)
         XCTAssertEqual(file.processingFormat.channelCount, 2)
@@ -42,12 +42,11 @@ final class LocalAudioFileTests: XCTestCase {
                            Array(samples[channel][12_345..<12_857]))
         }
         XCTAssertEqual(try Data(contentsOf: opusURL), original, "Opening must not modify the source")
-        XCTAssertNil(AudioFileValidator.fullValidate(url: opusURL))
         XCTAssertEqual(Track(url: opusURL).duration ?? 0, 0.537, accuracy: 1 / 48_000)
     }
 
-    func testBackingAudioLivesUntilTheLastFileReferenceIsReleased() throws {
-        var first: AVAudioFile? = try LocalAudioFile.open(opusURL)
+    func testBackingAudioLivesUntilTheLastFileReferenceIsReleased() async throws {
+        var first: AVAudioFile? = try await LocalAudioFile.open(opusURL)
         let backing = try XCTUnwrap(first).url
         // A future macOS may fix the native reader, in which case no scratch file is needed.
         guard backing != opusURL else { return }
@@ -56,33 +55,42 @@ final class LocalAudioFileTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: backing.path))
         XCTAssertGreaterThan(try readAll(XCTUnwrap(second))[0].count, 0)
         second = nil
+        let removed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            !FileManager.default.fileExists(atPath: backing.path)
+        }, object: nil)
+        await fulfillment(of: [removed], timeout: 2)
         XCTAssertFalse(FileManager.default.fileExists(atPath: backing.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: opusURL.path))
     }
 
-    func testWAVKeepsTheNativePath() throws {
+    func testWAVKeepsTheNativePath() async throws {
         let url = try TestAudioFile.temporaryWAV(tone: true)
         defer { try? FileManager.default.removeItem(at: url) }
-        let file = try LocalAudioFile.open(url)
+        let file = try await LocalAudioFile.open(url)
         XCTAssertEqual(file.url, url)
         XCTAssertEqual(file.length, 24_000)
         XCTAssertEqual(try readAll(file)[0].count, 24_000)
     }
 
-    func testAACInM4AKeepsTheNativePath() throws {
+    func testAACInM4AKeepsTheNativePath() async throws {
         let url = opusURL.deletingLastPathComponent().appendingPathComponent("aac-in-m4a.m4a")
-        let file = try LocalAudioFile.open(url)
+        let file = try await LocalAudioFile.open(url)
         XCTAssertEqual(file.url, url)
         XCTAssertGreaterThan(try readAll(file)[0].count, 25_000)
     }
 
-    func testMissingAndCorruptM4AAreRejected() throws {
+    func testMissingAndCorruptM4AAreRejected() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).m4a")
-        XCTAssertThrowsError(try LocalAudioFile.open(url))
+        do {
+            _ = try await LocalAudioFile.open(url)
+            XCTFail("An unreadable M4A must fail")
+        } catch { /* Expected. */ }
         try Data("not an audio file".utf8).write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
-        XCTAssertThrowsError(try LocalAudioFile.open(url))
-        XCTAssertNotNil(AudioFileValidator.fullValidate(url: url))
+        do {
+            _ = try await LocalAudioFile.open(url)
+            XCTFail("An unreadable M4A must fail")
+        } catch { /* Expected. */ }
     }
 
     func testWaveformUsesTheSameDecoderAndOriginalIdentity() async throws {

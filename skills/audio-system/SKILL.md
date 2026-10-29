@@ -164,25 +164,37 @@ See `skills/local-library/SKILL.md` — NAS Responsiveness section.
 
 ### Opus in MPEG-4 local files
 
-`LocalAudioFile.open` is the local playback/validation/waveform decoding seam. Some macOS versions
-recognize Opus-in-M4A but `AVAudioFile` returns zero frames and throws on read. The helper keeps
-working native readers, otherwise decodes only MPEG-4 Opus through `AVAssetReader` into a temporary
-Float32 CAF. This is not an export: the track's original URL, tags and source bytes stay unchanged.
-The returned `AVAudioFile` owns and deletes its backing directory, including when a deferred open
-is discarded. Presentation duration trims the last Opus packet's padding. Existing segment-based
-seek, cue, gapless, normalization and Sweet Fades continue to use `AVAudioFile`.
+`LocalAudioFile.open` is the async preparation seam. Some macOS versions recognize Opus-in-M4A
+but `AVAudioFile` returns zero frames and throws on read. `openNatively` performs only a native
+header/readability probe and returns nil when preparation is needed; synchronous transports must
+then use the existing deferred local load path. The fallback enforces `.notOnQueue(.main)`, loads
+asset metadata asynchronously, and checks cancellation between decoded buffers.
 
-Use `LocalAudioFile.sourceURL(of:)` for comparisons with track identity; `file.url` is the actual
-backing URL, suitable for another PCM analysis reader. Metadata-only paths use `AVAsset` duration
-when `AVAudioFile.length` is zero, without decoding the file. Fallback decoding requires temporary
-disk space (48 kHz stereo Float32 is about 23 MB/minute) and a full decode before first playback;
-the normal playlist-double-click and handoff opens run on `deferredIOQueue`. This change does not
-add Opus support to remote cast devices or the HTTP streaming pipeline.
+Prepared Float32 CAFs keep existing segment-based seek, cue, gapless and normalization behavior.
+The source URL/bytes remain unchanged. File owners queue directory deletion on a utility queue,
+never on the releasing main/render thread. Each mutable file handle has one consumer; normalization
+opens a separate handle and retains the backing-file owner while analyzing. Both normalization
+identity guards use `LocalAudioFile.sourceURL(of:)`; `file.url` is only the read path.
 
-Regression coverage: `LocalAudioFileTests` uses a synthetic stereo Opus-in-M4A fixture with a
-non-packet-aligned duration, checks full PCM reads, exact seek, original identity/bytes, backing-file
-lifetime, corrupt input, native WAV and waveform generation. Reproduce the original failure with
-`AVAudioFile(forReading:)` on that fixture, then open it with `LocalAudioFile.open`.
+Primary, gapless and crossfade preparations use independent cancellable tasks. Existing load tokens
+cancel superseded work as well as reject stale completions. Deferred transport loads retain Play/
+Pause intent, skip bounds and Play Now rollback, and rejoin `loadTrack` with the prepared result.
+Sweet Fades prepares the next local file at playback start/queue changes, before the fade window.
+If it is not ready at the boundary, decline the fade and keep the outgoing audio through EOF;
+never start a late fade over silence. Local Opus waveform generation streams samples straight from
+`AVAssetReader` into buckets instead of creating a second full PCM backing file.
+
+Fallback needs temporary space (~23 MB/minute at 48 kHz stereo) and a full decode before first
+playback. Compressed Opus-in-CAF passthrough was tested but not adopted: its duration/full reads
+were correct, while native random seeks failed the PCM alignment regression on the tested macOS.
+Do not replace the PCM fallback without preserving seek behavior. HTTP streaming and remote cast
+codec support are unchanged.
+
+`LocalAudioFileTests` covers source bytes/identity, complete decode, pre-skip, duration, exact seek,
+asynchronous cleanup and native AAC/WAV. `AudioEngineOpusPreparationTests` covers normalization,
+transport/paused intent, Stop and replacement cancellation, Play Now bounds/rollback and early
+crossfade preparation. Set `NULLPLAYER_LONG_OPUS_FILE` to a generated long M4A for the optional
+one-hour responsiveness/supersession check.
 
 ### A Local Track That Will Not Open
 

@@ -266,8 +266,10 @@ actor WaveformCacheService {
 
         let audioFile: AVAudioFile
         do {
-            audioFile = try Self.catchingObjCException {
-                try LocalAudioFile.open(descriptor.sourceURL)
+            if let native = try Self.catchingObjCException({ try LocalAudioFile.openNatively(descriptor.sourceURL) }) {
+                audioFile = native
+            } else {
+                return try await generateServiceSnapshotViaAssetReader(with: descriptor)
             }
         } catch {
             throw NSError(domain: "WaveformCacheService", code: 1, userInfo: [
@@ -365,17 +367,22 @@ actor WaveformCacheService {
     private nonisolated func generateServiceSnapshotViaAssetReader(with descriptor: CacheDescriptor) async throws -> WaveformSnapshot {
         try Task.checkCancellation()
 
-        let duration = descriptor.durationHint ?? 0
+        let asset = AVURLAsset(url: descriptor.sourceURL)
+        let duration: TimeInterval
+        if let hint = descriptor.durationHint, hint > 0 {
+            duration = hint
+        } else if descriptor.sourceURL.isFileURL {
+            duration = try await asset.load(.duration).seconds
+        } else {
+            duration = 0
+        }
         guard duration > 0 else {
             throw NSError(domain: "WaveformCacheService", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "Service stream duration unavailable"
             ])
         }
 
-        let asset = AVURLAsset(url: descriptor.sourceURL)
-        try await loadAssetValues(for: asset, keys: ["tracks"])
-
-        guard let audioTrack = asset.tracks(withMediaType: .audio).first else {
+        guard let audioTrack = try await asset.loadTracks(withMediaType: .audio).first else {
             throw NSError(domain: "WaveformCacheService", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "No audio track available for waveform prerender"
             ])
@@ -400,7 +407,7 @@ actor WaveformCacheService {
             AVFormatIDKey: kAudioFormatLinearPCM,
             AVLinearPCMIsFloatKey: true,
             AVLinearPCMBitDepthKey: 32,
-            AVLinearPCMIsNonInterleaved: true,
+            AVLinearPCMIsNonInterleaved: false,
             AVLinearPCMIsBigEndianKey: false
         ]
         let output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: outputSettings)
@@ -422,7 +429,7 @@ actor WaveformCacheService {
             try Task.checkCancellation()
             guard let sampleBuffer = output.copyNextSampleBuffer() else { break }
             let amplitudes = try Self.sampleAmplitudes(from: sampleBuffer)
-            for amplitude in amplitudes {
+            for amplitude in amplitudes.prefix(Int(max(0, totalFrames - frameIndex))) {
                 accumulator.add(frameAmplitude: amplitude, at: frameIndex)
                 frameIndex += 1
             }
@@ -455,10 +462,10 @@ actor WaveformCacheService {
             state: .ready,
             message: nil,
             cacheKey: descriptor.cacheKey,
-            fileSize: nil,
-            modificationDate: nil,
+            fileSize: descriptor.fileSize,
+            modificationDate: descriptor.modificationDate,
             allowsSeeking: true,
-            isStreaming: true
+            isStreaming: descriptor.isStreaming
         )
     }
 

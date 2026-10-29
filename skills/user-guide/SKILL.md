@@ -246,7 +246,8 @@ Drag & drop or use File menu. Supports: MP3, M4A, AAC, WAV, AIFF, FLAC, OGG, ALA
 
 Local M4A files containing Opus audio also play without converting or renaming your music files.
 On macOS versions whose native file reader cannot decode this combination, NullPlayer prepares
-temporary decoded audio before playback. This needs temporary disk space; the original stays in
+temporary decoded audio in the background before playback. Track selections remain responsive,
+and Stop or a new selection cancels superseded work. This needs temporary disk space; the original stays in
 your playlist and library, and seeking, EQ, visualizations, gapless and Sweet Fades remain available.
 
 ### .cue Sheets

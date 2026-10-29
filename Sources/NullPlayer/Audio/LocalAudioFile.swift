@@ -2,37 +2,45 @@ import AVFoundation
 
 /// Opens local audio for the AVAudioEngine pipeline. Core Audio can recognize Opus in an
 /// MPEG-4 container yet report zero frames (and fail on read); AVAssetReader can decode it.
+/// Full preparation is async, cancellable, and must never run on the main queue.
 enum LocalAudioFile {
-    static func open(_ url: URL) throws -> AVAudioFile {
-        var nativeError: Error?
+    static func open(_ url: URL) async throws -> AVAudioFile {
+        try Task.checkCancellation()
+        if let file = try openNatively(url) { return file }
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        return try await decodeOpusAsset(url)
+    }
+
+    /// nil means preparation is required. Synchronous transport paths must defer to `open`.
+    static func openNatively(_ url: URL) throws -> AVAudioFile? {
         do {
             let file = try AVAudioFile(forReading: url)
             guard isMPEG4(url), file.fileFormat.streamDescription.pointee.mFormatID == kAudioFormatOpus else {
                 return file
             }
-            // Keep the native path on systems where Apple's MPEG-4 Opus reader works.
             if file.length > 0,
                let probe = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 1) {
                 do {
                     try file.read(into: probe, frameCount: 1)
                     file.framePosition = 0
                     if probe.frameLength > 0 { return file }
-                } catch { /* Try the asset reader below. */ }
+                } catch { /* Prepare a readable file off the main queue. */ }
             }
         } catch {
             guard isMPEG4(url) else { throw error }
-            nativeError = error
         }
-        do {
-            return try decodeOpusAsset(url)
-        } catch {
-            throw nativeError ?? error
-        }
+        return nil
     }
 
     /// The backing CAF is an implementation detail, never a playlist/library identity.
     static func sourceURL(of file: AVAudioFile) -> URL {
         (file as? DecodedAudioFile)?.sourceURL ?? file.url
+    }
+
+    private static let cleanupQueue = DispatchQueue(label: "com.nullplayer.audio-file-cleanup", qos: .utility)
+
+    fileprivate static func removeBackingDirectory(_ directory: URL) {
+        cleanupQueue.async { try? FileManager.default.removeItem(at: directory) }
     }
 
     private static func isMPEG4(_ url: URL) -> Bool {
@@ -43,15 +51,17 @@ enum LocalAudioFile {
         NSError(domain: "LocalAudioFile", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
 
-    private static func decodeOpusAsset(_ url: URL) throws -> AVAudioFile {
+    private static func decodeOpusAsset(_ url: URL) async throws -> AVAudioFile {
         let asset = AVURLAsset(url: url)
-        guard let track = asset.tracks(withMediaType: .audio).first,
-              let description = track.formatDescriptions.first.map({ $0 as! CMAudioFormatDescription }),
+        guard let track = try await asset.loadTracks(withMediaType: .audio).first,
+              let description = try await track.load(.formatDescriptions).first,
               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(description),
               asbd.pointee.mFormatID == kAudioFormatOpus else {
             throw failure("No supported Opus audio track in MPEG-4 file")
         }
 
+        let duration = try await asset.load(.duration)
+        try Task.checkCancellation()
         let reader = try AVAssetReader(asset: asset)
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
             AVFormatIDKey: kAudioFormatLinearPCM,
@@ -73,9 +83,10 @@ enum LocalAudioFile {
         let directory = try FileManager.default.url(for: .itemReplacementDirectory,
             in: .userDomainMask, appropriateFor: FileManager.default.temporaryDirectory, create: true)
         var transferred = false
-        defer { if !transferred { try? FileManager.default.removeItem(at: directory) } }
+        defer { if !transferred { removeBackingDirectory(directory) } }
         let decodedURL = directory.appendingPathComponent("decoded.caf")
-        try writePCM(from: output, reader: reader, duration: asset.duration, to: decodedURL)
+        try writePCM(from: output, reader: reader, duration: duration, to: decodedURL)
+        try Task.checkCancellation()
         let file = try DecodedAudioFile(decodedURL: decodedURL, sourceURL: url, directory: directory)
         transferred = true
         return file
@@ -86,6 +97,7 @@ enum LocalAudioFile {
         var writer: AVAudioFile?
         var written: AVAudioFramePosition = 0
         while let sample = output.copyNextSampleBuffer() {
+            try Task.checkCancellation()
             guard let description = CMSampleBufferGetFormatDescription(sample) else {
                 throw failure("Missing decoded Opus audio format")
             }
@@ -132,7 +144,8 @@ enum LocalAudioFile {
     }
 }
 
-/// Holding the file keeps its backing audio alive through queued player-node schedules too.
+/// Like AVAudioFile, the mutable reader is handed off to one consumer, not used concurrently.
+/// Only immutable source/directory metadata is added; deletion is dispatched to a utility queue.
 private final class DecodedAudioFile: AVAudioFile, @unchecked Sendable {
     let sourceURL: URL
     private let directory: URL
@@ -143,5 +156,5 @@ private final class DecodedAudioFile: AVAudioFile, @unchecked Sendable {
         try super.init(forReading: decodedURL, commonFormat: .pcmFormatFloat32, interleaved: false)
     }
 
-    deinit { try? FileManager.default.removeItem(at: directory) }
+    deinit { LocalAudioFile.removeBackingDirectory(directory) }
 }
