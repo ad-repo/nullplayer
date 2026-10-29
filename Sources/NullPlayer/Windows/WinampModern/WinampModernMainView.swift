@@ -606,15 +606,28 @@ final class WinampModernMainView: NSView {
     ///
     /// A colour override reuses this whole fan-out rather than growing a parallel one: the work is
     /// identical, and a second route is a second place for a surface to be forgotten. `internal`
-    /// for that reason — the controller calls it after writing an override.
+    /// for that reason — the controller calls it after writing an override. Surfaces are only told
+    /// when the palette they draw with actually changed.
     func paletteDidChange() {
-        for surface in librarySurfaces.values { surface.applyPalette(renderer.palette) }
-        hostedVideoSurface?.applyPalette(renderer.palette)
-        for surface in visualizationSurfaces.values { surface.applyPalette(renderer.palette) }
-        let style = WinampModernSurfaceStyle(palette: renderer.palette)
-        for surface in hostedWindowSurfaces.values { surface.applyPalette(style) }
+        applySurfacePalette()
         NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
         needsDisplay = true
+    }
+
+    private var appliedSurfacePalette: WasabiPalette?
+
+    /// Push `renderer.rowPalette` to every embedded surface, on a palette change and on every key
+    /// change, so they draw the same selection bar as the renderer's own rows beside them (B267).
+    /// A skin declaring no inactive pair projects to the same palette, so focus alone does nothing.
+    private func applySurfacePalette() {
+        let palette = renderer.rowPalette
+        guard palette != appliedSurfacePalette else { return }
+        appliedSurfacePalette = palette
+        for surface in librarySurfaces.values { surface.applyPalette(palette) }
+        hostedVideoSurface?.applyPalette(palette)
+        for surface in visualizationSurfaces.values { surface.applyPalette(palette) }
+        let style = WinampModernSurfaceStyle(palette: palette)
+        for surface in hostedWindowSurfaces.values { surface.applyPalette(style) }
     }
 
     /// An auxiliary container window renders the shared graph but must not clobber the single-owner
@@ -1040,6 +1053,8 @@ final class WinampModernMainView: NSView {
             activeStateObservers.append(NotificationCenter.default.addObserver(
                 forName: name, object: window, queue: .main) { [weak self] _ in
                     guard let self, !self.isTornDown else { return }
+                    self.renderer.isWindowActive = self.window?.isKeyWindow ?? true
+                    self.applySurfacePalette()
                     self.needsDisplay = true
                 })
         }
@@ -1232,7 +1247,7 @@ final class WinampModernMainView: NSView {
                                make: { _ in
                                    guard let made = componentHost?.makeLibrarySurface() else { return nil }
                                    made.applyContentScale(libraryContentScale)
-                                   made.applyPalette(renderer.palette)
+                                   made.applyPalette(renderer.rowPalette)
                                    return made
                                })
         where entry.surface.view.superview !== self {
@@ -1270,7 +1285,7 @@ final class WinampModernMainView: NSView {
             make: { _ in
                 guard let made = componentHost?.makeVisualizationSurface() else { return nil }
                 made.applySkinScale(skinScale)
-                made.applyPalette(renderer.palette)
+                made.applyPalette(renderer.rowPalette)
                 return made
             })
         for (holder, surface, _) in visEntries {
@@ -1307,7 +1322,7 @@ final class WinampModernMainView: NSView {
             }
         }
 
-        let hostedStyle = WinampModernSurfaceStyle(palette: renderer.palette)
+        let hostedStyle = WinampModernSurfaceStyle(palette: renderer.rowPalette)
         let hostedEntries = reconcile(
             &hostedWindowSurfaces,
             to: holders.filter { if case .hostWindow = $0.surfaceID { true } else { false } },

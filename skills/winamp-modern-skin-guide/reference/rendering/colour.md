@@ -360,7 +360,10 @@ being chosen per window.
 palette roles: `WasabiPalette.unfocused()` swaps them in for `selectionText`/`selectionBackground`,
 and the renderer's own rows (playlist panel, colour-theme picker, `<list>`) read `rowPalette` —
 `palette` or that projection, off `isWindowActive` — so the fill, the legibility guards and the
-current-row colour all see one bar. AppKit surfaces keep `palette`. The swap is all-or-nothing and
+current-row colour all see one bar. The main view's embedded AppKit surfaces (library, video,
+visualization, hosted windows) draw with `rowPalette` too: the key/resign observer sets
+`isWindowActive` and `applySurfacePalette` pushes it, only when it changed (B267). A *fallback*
+window's surfaces still take `palette` through `WindowManager.winampModernSurfaceStyle` (M54). The swap is all-or-nothing and
 is skipped when the user overrode **either** selection role (B146). `RENDER_PALETTE` prints both ids
 as `PALETTE unfocused <id>: …` after the roles.
 
